@@ -37,20 +37,20 @@ export interface FaceDimensions {
  * All values are proportional to blobRadius for size-adaptive rendering.
  */
 export function getFaceDimensions(blobRadius: number): FaceDimensions {
-  const faceScale = blobRadius * 0.6;
+  const faceScale = blobRadius * 0.82;
   return {
-    eyeSpacing: faceScale * 0.35,
-    eyeY: -faceScale * 0.1,
-    eyeRx: faceScale * 0.14,
-    eyeRy: faceScale * 0.17,
-    pupilR: faceScale * 0.08,
-    pupilMaxOffset: faceScale * 0.06,
-    browY: -faceScale * 0.32,
-    browHalfWidth: faceScale * 0.13,
-    browStroke: Math.max(1, faceScale * 0.045),
-    mouthY: faceScale * 0.22,
-    mouthBaseWidth: faceScale * 0.3,
-    mouthStroke: Math.max(1, faceScale * 0.04),
+    eyeSpacing: faceScale * 0.30,
+    eyeY: -faceScale * 0.08,
+    eyeRx: faceScale * 0.18,
+    eyeRy: faceScale * 0.22,
+    pupilR: faceScale * 0.10,
+    pupilMaxOffset: faceScale * 0.07,
+    browY: -faceScale * 0.34,
+    browHalfWidth: faceScale * 0.16,
+    browStroke: Math.max(1.5, faceScale * 0.055),
+    mouthY: faceScale * 0.24,
+    mouthBaseWidth: faceScale * 0.38,
+    mouthStroke: Math.max(1.5, faceScale * 0.05),
   };
 }
 

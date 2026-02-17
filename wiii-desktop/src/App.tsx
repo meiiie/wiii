@@ -18,8 +18,14 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { CommandPalette } from "@/components/common/CommandPalette";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { initClient } from "@/api/client";
+import { AvatarPreview } from "@/components/common/AvatarPreview";
 
 export default function App() {
+  // Dev tool: ?preview=avatar shows avatar preview page
+  if (window.location.search.includes("preview=avatar")) {
+    return <AvatarPreview />;
+  }
+
   const { loadSettings, settings, isLoaded: settingsLoaded } = useSettingsStore();
   const { startPolling, stopPolling, setOnReconnect } = useConnectionStore();
   const { startPolling: startContextPolling, stopPolling: stopContextPolling } =
