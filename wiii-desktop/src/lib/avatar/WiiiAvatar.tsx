@@ -13,6 +13,8 @@ import { motion } from "motion/react";
 import type { AvatarState, WiiiAvatarProps } from "./types";
 import { getSizeTier, STATE_CONFIG } from "./state-config";
 import { useAvatarAnimation } from "./use-avatar-animation";
+import { getFaceDimensions, generateMouthPath } from "./face-geometry";
+import { FACE_EXPRESSIONS } from "./face-config";
 import "./avatar.css";
 
 export type { AvatarState } from "./types";
@@ -26,6 +28,121 @@ export const STATE_LABELS: Record<AvatarState, string> = {
   complete: "Wiii — đã hoàn thành",
   error: "Wiii — gặp lỗi",
 };
+
+/** Sprint 129: Static face SVG group rendered inside the blob */
+function FaceGroup({
+  halfSize,
+  blobRadius,
+  faceGroupRef,
+  leftEyeRef,
+  rightEyeRef,
+  leftBrowRef,
+  rightBrowRef,
+  mouthRef,
+  state,
+}: {
+  halfSize: number;
+  blobRadius: number;
+  faceGroupRef: React.RefObject<SVGGElement | null>;
+  leftEyeRef: React.RefObject<SVGGElement | null>;
+  rightEyeRef: React.RefObject<SVGGElement | null>;
+  leftBrowRef: React.RefObject<SVGLineElement | null>;
+  rightBrowRef: React.RefObject<SVGLineElement | null>;
+  mouthRef: React.RefObject<SVGPathElement | null>;
+  state: AvatarState;
+}) {
+  const dims = getFaceDimensions(blobRadius);
+  const faceExpr = FACE_EXPRESSIONS[state] || FACE_EXPRESSIONS.idle;
+
+  // Initial mouth path (updated at 60fps via rAF in the hook)
+  const initialMouth = generateMouthPath(0, dims.mouthY, {
+    curve: faceExpr.mouthCurve,
+    openness: faceExpr.mouthOpenness,
+    width: faceExpr.mouthWidth,
+  }, dims.mouthBaseWidth);
+
+  return (
+    <g
+      ref={faceGroupRef as React.Ref<SVGGElement>}
+      className="wiii-face"
+      transform={`translate(${halfSize}, ${halfSize})`}
+      style={{ pointerEvents: "none" }}
+    >
+      {/* Left eye */}
+      <g ref={leftEyeRef as React.Ref<SVGGElement>} className="wiii-face-eye" style={{ willChange: "transform" }}>
+        <ellipse
+          cx={-dims.eyeSpacing}
+          cy={dims.eyeY}
+          rx={dims.eyeRx}
+          ry={dims.eyeRy}
+          fill="white"
+        />
+        <circle
+          cx={-dims.eyeSpacing}
+          cy={dims.eyeY}
+          r={dims.pupilR}
+          fill="#1a1a1a"
+        />
+      </g>
+
+      {/* Right eye */}
+      <g ref={rightEyeRef as React.Ref<SVGGElement>} className="wiii-face-eye" style={{ willChange: "transform" }}>
+        <ellipse
+          cx={dims.eyeSpacing}
+          cy={dims.eyeY}
+          rx={dims.eyeRx}
+          ry={dims.eyeRy}
+          fill="white"
+        />
+        <circle
+          cx={dims.eyeSpacing}
+          cy={dims.eyeY}
+          r={dims.pupilR}
+          fill="#1a1a1a"
+        />
+      </g>
+
+      {/* Left eyebrow */}
+      <line
+        ref={leftBrowRef as React.Ref<SVGLineElement>}
+        className="wiii-face-brow"
+        x1={-dims.eyeSpacing - dims.browHalfWidth}
+        y1={dims.browY}
+        x2={-dims.eyeSpacing + dims.browHalfWidth}
+        y2={dims.browY}
+        stroke="white"
+        strokeWidth={dims.browStroke}
+        strokeLinecap="round"
+        style={{ willChange: "transform" }}
+      />
+
+      {/* Right eyebrow */}
+      <line
+        ref={rightBrowRef as React.Ref<SVGLineElement>}
+        className="wiii-face-brow"
+        x1={dims.eyeSpacing - dims.browHalfWidth}
+        y1={dims.browY}
+        x2={dims.eyeSpacing + dims.browHalfWidth}
+        y2={dims.browY}
+        stroke="white"
+        strokeWidth={dims.browStroke}
+        strokeLinecap="round"
+        style={{ willChange: "transform" }}
+      />
+
+      {/* Mouth */}
+      <path
+        ref={mouthRef as React.Ref<SVGPathElement>}
+        className="wiii-face-mouth"
+        d={initialMouth}
+        fill={faceExpr.mouthOpenness >= 0.05 ? "rgba(0,0,0,0.3)" : "none"}
+        stroke="white"
+        strokeWidth={dims.mouthStroke}
+        strokeLinecap="round"
+      />
+    </g>
+  );
+}
 
 /** Global instance counter for unique SVG filter IDs */
 let _instanceCounter = 0;
@@ -47,6 +164,12 @@ function WiiiAvatarInner({ state = "idle", size = 24, className = "" }: WiiiAvat
     svgRef,
     canvasRef,
     pathRef,
+    faceGroupRef,
+    leftEyeRef,
+    rightEyeRef,
+    leftBrowRef,
+    rightBrowRef,
+    mouthRef,
     glowOpacity,
     glowColor: _glowColor,
     blobColor,
@@ -159,19 +282,33 @@ function WiiiAvatarInner({ state = "idle", size = 24, className = "" }: WiiiAvat
           d={initialPath}
         />
 
-        {/* "W" character */}
-        <text
-          x={halfSize}
-          y={halfSize}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fill="white"
-          fontWeight="bold"
-          fontSize={fontSize}
-          style={{ pointerEvents: "none" }}
-        >
-          W
-        </text>
+        {/* Sprint 129: Face (large tier) or "W" character (medium tier) */}
+        {tier === "large" ? (
+          <FaceGroup
+            halfSize={halfSize}
+            blobRadius={initRadius}
+            faceGroupRef={faceGroupRef}
+            leftEyeRef={leftEyeRef}
+            rightEyeRef={rightEyeRef}
+            leftBrowRef={leftBrowRef}
+            rightBrowRef={rightBrowRef}
+            mouthRef={mouthRef}
+            state={state}
+          />
+        ) : (
+          <text
+            x={halfSize}
+            y={halfSize}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fill="white"
+            fontWeight="bold"
+            fontSize={fontSize}
+            style={{ pointerEvents: "none" }}
+          >
+            W
+          </text>
+        )}
       </svg>
 
       {/* Online indicator dot */}

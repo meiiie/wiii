@@ -1,9 +1,11 @@
 /**
  * Avatar animation hook — Sprint 115: Living Avatar Foundation.
  * Sprint 119: Reduced motion support (WCAG 2.2), smooth color transitions.
+ * Sprint 129: SVG Face animation (eyes, mouth, eyebrows, blink).
  *
  * Manages: rAF loop, state interpolation, IntersectionObserver visibility,
- * direct DOM updates for SVG path (bypasses React at 60fps), canvas DPI.
+ * direct DOM updates for SVG path (bypasses React at 60fps), canvas DPI,
+ * face expression interpolation, blink controller, speaking mouth oscillation.
  */
 import { useRef, useEffect, useCallback, useState } from "react";
 import type { AvatarState, Particle } from "./types";
@@ -11,6 +13,11 @@ import type { StateVisuals } from "./types";
 import { STATE_CONFIG, getSizeTier, getBlobResolution } from "./state-config";
 import { generateBlobPath } from "./blob-geometry";
 import { spawnParticle, updateParticles, renderParticles } from "./particle-system";
+import { FACE_EXPRESSIONS, lerpFaceExpression } from "./face-config";
+import type { FaceExpression } from "./face-config";
+import { getFaceDimensions, generateMouthPath } from "./face-geometry";
+import { BlinkController } from "./blink-controller";
+import { getNoiseGenerator } from "./noise-engine";
 
 /** Global per-instance seed counter */
 let _seedCounter = 0;
@@ -68,6 +75,13 @@ export interface AnimationResult {
   svgRef: React.RefObject<SVGSVGElement | null>;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   pathRef: React.RefObject<SVGPathElement | null>;
+  /** Sprint 129: Face element refs for direct DOM manipulation */
+  faceGroupRef: React.RefObject<SVGGElement | null>;
+  leftEyeRef: React.RefObject<SVGGElement | null>;
+  rightEyeRef: React.RefObject<SVGGElement | null>;
+  leftBrowRef: React.RefObject<SVGLineElement | null>;
+  rightBrowRef: React.RefObject<SVGLineElement | null>;
+  mouthRef: React.RefObject<SVGPathElement | null>;
   glowOpacity: number;
   glowColor: string;
   blobColor: string;
@@ -83,6 +97,19 @@ export function useAvatarAnimation(
   const svgRef = useRef<SVGSVGElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const pathRef = useRef<SVGPathElement | null>(null);
+
+  // Sprint 129: Face element refs
+  const faceGroupRef = useRef<SVGGElement | null>(null);
+  const leftEyeRef = useRef<SVGGElement | null>(null);
+  const rightEyeRef = useRef<SVGGElement | null>(null);
+  const leftBrowRef = useRef<SVGLineElement | null>(null);
+  const rightBrowRef = useRef<SVGLineElement | null>(null);
+  const mouthRef = useRef<SVGPathElement | null>(null);
+
+  // Sprint 129: Blink controller + face expression tracking
+  const blinkCtrlRef = useRef(new BlinkController(FACE_EXPRESSIONS[state]?.blinkRate ?? 15));
+  const fromFaceRef = useRef<FaceExpression>(FACE_EXPRESSIONS[state] || FACE_EXPRESSIONS.idle);
+  const toFaceRef = useRef<FaceExpression>(FACE_EXPRESSIONS[state] || FACE_EXPRESSIONS.idle);
 
   // Per-instance seed (assigned once on mount)
   const seedRef = useRef<number>(0);
@@ -144,6 +171,17 @@ export function useAvatarAnimation(
         t,
       );
       toVisualsRef.current = STATE_CONFIG[state] || STATE_CONFIG.idle;
+
+      // Sprint 129: Also transition face expression
+      fromFaceRef.current = lerpFaceExpression(
+        fromFaceRef.current,
+        toFaceRef.current,
+        easeInOutCubic(t),
+      );
+      toFaceRef.current = FACE_EXPRESSIONS[state] || FACE_EXPRESSIONS.idle;
+      blinkCtrlRef.current.setRate(toFaceRef.current.blinkRate);
+      blinkCtrlRef.current.triggerBlink(); // Blink on state change for natural feel
+
       transitionRef.current = 0;
       prevStateRef.current = state;
     }
@@ -223,6 +261,73 @@ export function useAvatarAnimation(
         }
       }
 
+      // Sprint 129: Update face features via direct DOM (large tier only)
+      if (tier === "large" && faceGroupRef.current) {
+        const faceT = easeInOutCubic(Math.min(transitionRef.current, 1));
+        const face = lerpFaceExpression(fromFaceRef.current, toFaceRef.current, faceT);
+        const dims = getFaceDimensions(blobRadius);
+
+        // Blink
+        const blinkScale = blinkCtrlRef.current.advance(dt);
+        const eyeScaleY = face.eyeOpenness * blinkScale;
+
+        // Idle pupil drift via noise
+        const noise3D = getNoiseGenerator();
+        const noiseTime = timeRef.current;
+        const seed = seedRef.current;
+        const driftX = noise3D(noiseTime * 0.4, seed + 100, 0) * dims.pupilMaxOffset;
+        const driftY = noise3D(noiseTime * 0.4, 0, seed + 100) * dims.pupilMaxOffset;
+        const pupilDx = face.pupilOffsetX * dims.pupilMaxOffset + driftX;
+        const pupilDy = face.pupilOffsetY * dims.pupilMaxOffset + driftY;
+
+        // Face micro-motion (swim with blob)
+        const microX = noise3D(noiseTime * 0.5, seed + 200, 0) * blobRadius * 0.02;
+        const microY = noise3D(noiseTime * 0.5, 0, seed + 200) * blobRadius * 0.02;
+        faceGroupRef.current.setAttribute("transform",
+          `translate(${(cx + microX).toFixed(1)}, ${(cy + microY).toFixed(1)})`);
+
+        // Eyes — GPU-accelerated transforms
+        if (leftEyeRef.current) {
+          leftEyeRef.current.setAttribute("transform",
+            `translate(${pupilDx.toFixed(2)}, ${pupilDy.toFixed(2)}) scale(1, ${eyeScaleY.toFixed(3)})`);
+        }
+        if (rightEyeRef.current) {
+          rightEyeRef.current.setAttribute("transform",
+            `translate(${pupilDx.toFixed(2)}, ${pupilDy.toFixed(2)}) scale(1, ${eyeScaleY.toFixed(3)})`);
+        }
+
+        // Eyebrows — GPU-accelerated transforms
+        const browRaiseY = face.browRaise * -dims.eyeRy * 0.5;
+        if (leftBrowRef.current) {
+          const tiltAngle = face.browTilt * 12;
+          leftBrowRef.current.setAttribute("transform",
+            `translate(0, ${browRaiseY.toFixed(2)}) rotate(${(-tiltAngle).toFixed(1)})`);
+        }
+        if (rightBrowRef.current) {
+          const tiltAngle = face.browTilt * 12;
+          rightBrowRef.current.setAttribute("transform",
+            `translate(0, ${browRaiseY.toFixed(2)}) rotate(${tiltAngle.toFixed(1)})`);
+        }
+
+        // Mouth — speaking state uses noise-driven oscillation
+        let mouthOpenness = face.mouthOpenness;
+        let mouthCurve = face.mouthCurve;
+        if (state === "speaking") {
+          const speakNoise = noise3D(noiseTime * 4, seed + 300, 0);
+          mouthOpenness = Math.max(0, speakNoise * 0.4 + 0.25);
+          const widthNoise = noise3D(noiseTime * 2, seed + 400, 0);
+          mouthCurve = 0.15 + widthNoise * 0.1;
+        }
+        if (mouthRef.current) {
+          const mouthPath = generateMouthPath(0, dims.mouthY, {
+            curve: mouthCurve,
+            openness: mouthOpenness,
+            width: face.mouthWidth,
+          }, dims.mouthBaseWidth);
+          mouthRef.current.setAttribute("d", mouthPath);
+        }
+      }
+
       // Update React state (throttled — only when values change meaningfully)
       setRenderState((prev) => {
         const changed =
@@ -287,6 +392,12 @@ export function useAvatarAnimation(
     svgRef,
     canvasRef,
     pathRef,
+    faceGroupRef,
+    leftEyeRef,
+    rightEyeRef,
+    leftBrowRef,
+    rightBrowRef,
+    mouthRef,
     ...renderState,
   };
 }

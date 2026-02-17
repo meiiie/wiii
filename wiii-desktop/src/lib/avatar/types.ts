@@ -64,6 +64,9 @@ export interface Particle {
   orbitRadius: number;
 }
 
+/** Re-export FaceExpression from face-config for convenience */
+export type { FaceExpression } from "./face-config";
+
 /** Props for the WiiiAvatar React component */
 export interface WiiiAvatarProps {
   state?: AvatarState;
