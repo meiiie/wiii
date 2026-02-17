@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-utils/schema.json",
+  "identifier": "default",
+  "description": "Wiii Desktop default permissions",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "store:default",
+    "dialog:default",
+    "shell:default",
+    "notification:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "http://localhost:*/**" },
+        { "url": "http://127.0.0.1:*/**" },
+        { "url": "https://**" }
+      ]
+    }
+  ]
+}

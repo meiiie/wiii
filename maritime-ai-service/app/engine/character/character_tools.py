@@ -1,0 +1,204 @@
+"""
+Character Tools — LangChain tools for Wiii to self-edit its character state.
+
+Sprint 93: Inspired by Letta/MemGPT memory_replace / memory_insert pattern.
+Sprint 124: Per-user isolation via ContextVar (same pattern as memory_tools.py).
+
+These tools let Wiii:
+- Write notes to itself (self_notes block)
+- Log what it learned (learned_lessons block)
+- Record favorite topics (favorite_topics block)
+- Note patterns about users (user_patterns block)
+- Log experiences (milestones, funny moments, etc.)
+
+IMPORTANT: These are BACKGROUND tools — they run silently and don't affect
+the user-facing response. The AI decides when to use them based on context.
+"""
+
+import contextvars
+import logging
+from typing import Optional
+
+from langchain_core.tools import tool
+
+from app.engine.character.models import (
+    BlockLabel,
+    CharacterExperienceCreate,
+    ExperienceType,
+)
+
+logger = logging.getLogger(__name__)
+
+# Sprint 124: ContextVar for per-request user isolation
+# Same pattern as memory_tools._memory_tool_state and preference_tools._preference_user_id
+_character_user_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    '_character_user_id', default=None
+)
+
+
+def set_character_user(user_id: str) -> None:
+    """Set current user for character tools (per-request)."""
+    _character_user_id.set(user_id)
+
+
+def _get_user_id() -> str:
+    """Get current user_id from ContextVar, defaulting to '__global__'."""
+    return _character_user_id.get(None) or "__global__"
+
+
+@tool(description="""Ghi chu vao bo nho song cua Wiii.
+Goi khi Wiii muon ghi nho dieu gi do: bai hoc, topic yeu thich, hoac pattern cua user.
+Chi ghi khi thuc su co dieu MOI. Block: learned_lessons, favorite_topics, user_patterns, self_notes.""")
+def tool_character_note(note: str, block: str = "self_notes") -> str:
+    """Write a note to Wiii's living character state.
+
+    Args:
+        note: The note text to add (Vietnamese, concise)
+        block: Which block to write to.
+            Options: learned_lessons, favorite_topics, user_patterns, self_notes
+
+    Returns:
+        Confirmation message
+    """
+    try:
+        from app.engine.character.character_state import get_character_state_manager
+
+        # Validate block label
+        valid_labels = [b.value for b in BlockLabel]
+        if block not in valid_labels:
+            return f"Block không hợp lệ. Các block: {', '.join(valid_labels)}"
+
+        user_id = _get_user_id()
+        manager = get_character_state_manager()
+        formatted_note = f"\n- {note.strip()}"
+        result = manager.update_block(label=block, append=formatted_note, user_id=user_id)
+        if result:
+            remaining = result.remaining_chars()
+            logger.info(
+                "Character note added to '%s' for user '%s' (remaining: %d chars)",
+                block, user_id, remaining,
+            )
+            return f"Đã ghi nhận vào {block}. Còn {remaining} ký tự."
+        return "Không thể ghi nhận (DB chưa sẵn sàng)."
+    except Exception as e:
+        logger.error("tool_character_note failed: %s", e)
+        return f"Loi: {e}"
+
+
+def tool_character_replace(block: str, new_content: str) -> str:
+    """Replace entire content of a character block.
+
+    Use this when Wiii wants to rewrite a block from scratch
+    (e.g., after reflection, reorganizing notes).
+
+    Args:
+        block: Which block to replace (learned_lessons, favorite_topics, etc.)
+        new_content: New content for the block
+
+    Returns:
+        Confirmation message
+    """
+    try:
+        from app.engine.character.character_state import get_character_state_manager
+
+        valid_labels = [b.value for b in BlockLabel]
+        if block not in valid_labels:
+            return f"Block không hợp lệ. Các block: {', '.join(valid_labels)}"
+
+        user_id = _get_user_id()
+        manager = get_character_state_manager()
+        result = manager.update_block(label=block, content=new_content, user_id=user_id)
+        if result:
+            logger.info(
+                "Character block '%s' replaced for user '%s' (version: %d)",
+                block, user_id, result.version,
+            )
+            return f"Đã cập nhật {block} (version {result.version})."
+        return "Không thể cập nhật (DB chưa sẵn sàng)."
+    except Exception as e:
+        logger.error("tool_character_replace failed: %s", e)
+        return f"Loi: {e}"
+
+
+@tool(description="""Ghi trai nghiem dang nho cua Wiii.
+Goi khi co milestone, bai hoc, khoang khac vui, feedback tu user.
+Type: milestone, learning, funny, feedback.""")
+def tool_character_log_experience(
+    content: str,
+    experience_type: str = "learning",
+    importance: float = 0.5,
+    user_id: Optional[str] = None,
+) -> str:
+    """Log an experience event for Wiii.
+
+    Use this to record milestones, learnings, or funny moments.
+
+    Args:
+        content: What happened (Vietnamese, concise)
+        experience_type: milestone, learning, funny, feedback, reflection
+        importance: 0.0-1.0, how significant this experience is
+        user_id: Which user triggered this (optional, falls back to ContextVar)
+
+    Returns:
+        Confirmation message
+    """
+    try:
+        from app.engine.character.character_repository import get_character_repository
+
+        # Validate experience type
+        valid_types = [t.value for t in ExperienceType]
+        if experience_type not in valid_types:
+            return f"Type không hợp lệ. Các type: {', '.join(valid_types)}"
+
+        # Sprint 124: Fall back to ContextVar user_id if not explicitly provided
+        effective_user_id = user_id or _get_user_id()
+
+        repo = get_character_repository()
+        result = repo.log_experience(CharacterExperienceCreate(
+            experience_type=experience_type,
+            content=content.strip(),
+            importance=min(max(importance, 0.0), 1.0),
+            user_id=effective_user_id if effective_user_id != "__global__" else None,
+        ))
+        if result:
+            logger.info("Experience logged: [%s] %s", experience_type, content[:50])
+            return f"Đã ghi nhận trải nghiệm [{experience_type}]."
+        return "Không thể ghi nhận (DB chưa sẵn sàng)."
+    except Exception as e:
+        logger.error("tool_character_log_experience failed: %s", e)
+        return f"Loi: {e}"
+
+
+@tool(description="""Doc noi dung mot block trong bo nho song cua Wiii.
+Goi khi Wiii muon xem lai ghi chu cua minh.
+Block: learned_lessons, favorite_topics, user_patterns, self_notes.""")
+def tool_character_read(block: str = "self_notes") -> str:
+    """Read a character block's current content.
+
+    Args:
+        block: Which block to read
+
+    Returns:
+        Block content or empty message
+    """
+    try:
+        from app.engine.character.character_state import get_character_state_manager
+
+        valid_labels = [b.value for b in BlockLabel]
+        if block not in valid_labels:
+            return f"Block không hợp lệ. Các block: {', '.join(valid_labels)}"
+
+        user_id = _get_user_id()
+        manager = get_character_state_manager()
+        character_block = manager.get_block(block, user_id=user_id)
+        if character_block and character_block.content.strip():
+            return character_block.content
+        return "(Chưa có ghi chú nào trong block này)"
+    except Exception as e:
+        logger.error("tool_character_read failed: %s", e)
+        return f"Loi: {e}"
+
+
+def get_character_tools() -> list:
+    """Get LLM-callable character tools for agent binding."""
+    return [tool_character_note, tool_character_read, tool_character_log_experience]

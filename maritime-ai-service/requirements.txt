@@ -1,0 +1,96 @@
+# Core API
+fastapi>=0.109.2,<1.0.0
+uvicorn[standard]>=0.31.1,<1.0.0
+gunicorn==21.2.0
+python-multipart==0.0.9
+pydantic~=2.12.4
+pydantic-settings~=2.12.0
+
+# Database
+sqlalchemy>=2.0.27,<3.0.0
+asyncpg>=0.30.0,<1.0.0
+psycopg2-binary==2.9.9
+alembic==1.13.1
+pgvector==0.2.5
+
+# --- AI CORE STACK (PINNED to tested minor versions) ---
+langchain~=1.2.9
+langchain-core~=1.2.9
+langchain-community~=0.4.1
+langchain-openai~=1.1.0
+langchain-text-splitters~=1.1.0
+
+langgraph~=1.0.8
+langgraph-checkpoint~=4.0.0
+langgraph-checkpoint-postgres>=3.0.0,<5.0.0
+langgraph-prebuilt>=1.0.0,<2.0.0
+
+# psycopg3 async driver (for LangGraph checkpoint persistence)
+psycopg[binary]>=3.1.0,<4.0.0
+
+# LLM Providers
+langchain-google-genai~=4.2.0
+langchain-ollama>=0.3.0,<1.0.0
+
+# Unified LLM Client (Sprint 55: AsyncOpenAI SDK for OpenAI-compatible endpoints)
+openai~=2.9.0
+
+# MCP Support (Sprint 56: Model Context Protocol)
+mcp~=1.26.0
+fastapi-mcp~=0.4.0
+langchain-mcp-adapters>=0.1.0,<1.0.0
+
+# Google GenAI SDK (UNIFIED - CHỈ THỊ 26 + Semantic Memory)
+# SDK mới thống nhất cho Gemini API - hỗ trợ cả embeddings và vision
+# NOTE: Không dùng google-generativeai vì conflict với langchain-google-genai
+google-genai>=1.53.0,<2.0.0
+
+# Semantic Memory
+numpy>=1.24.0
+scikit-learn>=1.3.0
+
+# Graph DB
+neo4j~=5.28.0
+
+# PDF Processing
+pypdf>=4.0.0
+pymupdf>=1.26.0  # CHỈ THỊ 26: PDF to image (no external deps, replaces pdf2image+Poppler)
+pdf2image>=1.16.3  # Fallback: requires Poppler system package
+Pillow>=10.0.0  # CHỈ THỊ 26: Image processing
+
+# Supabase Storage (CHỈ THỊ 26: Hybrid Infrastructure)
+supabase>=2.0.0
+
+# Web Search (ddgs is the successor of duckduckgo-search)
+ddgs>=6.0.0
+duckduckgo-search>=7.0.0  # Legacy fallback
+feedparser>=6.0.0  # Sprint 102: RSS news feeds (Vietnamese news aggregation)
+
+# Utils
+httpx>=0.28.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.1
+slowapi==0.1.9
+pyyaml>=6.0.0  # CHỈ THỊ SỐ 16: YAML config for personas
+
+# Observability (SOTA 2026: OpenTelemetry GenAI Semantic Conventions)
+opentelemetry-api>=1.25.0
+opentelemetry-sdk>=1.25.0
+opentelemetry-exporter-otlp>=1.25.0
+
+# Structured Logging (SOTA 2026)
+structlog>=24.1.0
+
+# Telegram Bot (Sprint 12: Multi-Channel Gateway, optional)
+aiogram>=3.15.0,<4.0.0
+
+# Background Tasks (Sprint 18: Valkey + Taskiq, optional)
+taskiq>=0.11.0,<1.0.0
+taskiq-redis>=1.0.0,<2.0.0
+
+# Testing
+pytest>=7.4.4
+pytest-asyncio>=0.23.4
+pytest-cov>=4.1.0
+hypothesis>=6.92.0

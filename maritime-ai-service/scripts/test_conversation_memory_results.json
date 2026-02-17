@@ -1,0 +1,85 @@
+{
+  "total": 200,
+  "success": 200,
+  "fail": 0,
+  "routes": {
+    "memory_agent": 12,
+    "tutor_agent": 22,
+    "rag_agent": 40,
+    "direct": 126
+  },
+  "total_time": 3024.1539999999977,
+  "memory_pass": 0,
+  "memory_fail": 7,
+  "memory_details": [
+    {
+      "label": "msg_5",
+      "status": "FAIL",
+      "found": [
+        "Hung"
+      ],
+      "missing": [
+        "Hai Phong",
+        "hang hai"
+      ]
+    },
+    {
+      "label": "msg_21",
+      "status": "FAIL",
+      "found": [],
+      "missing": [
+        "Hung",
+        "Hai Phong"
+      ]
+    },
+    {
+      "label": "msg_41",
+      "status": "FAIL",
+      "found": [],
+      "missing": [
+        "hang hai",
+        "luat"
+      ]
+    },
+    {
+      "label": "msg_61",
+      "status": "FAIL",
+      "found": [],
+      "missing": [
+        "Hung",
+        "Hai Phong",
+        "hang hai"
+      ]
+    },
+    {
+      "label": "msg_101",
+      "status": "FAIL",
+      "found": [],
+      "missing": [
+        "Hung",
+        "Hai Phong",
+        "hang hai"
+      ]
+    },
+    {
+      "label": "msg_121",
+      "status": "FAIL",
+      "found": [],
+      "missing": [
+        "bong da"
+      ]
+    },
+    {
+      "label": "msg_181",
+      "status": "FAIL",
+      "found": [],
+      "missing": [
+        "Hung",
+        "Hai Phong",
+        "hang hai",
+        "luat",
+        "bong da"
+      ]
+    }
+  ]
+}

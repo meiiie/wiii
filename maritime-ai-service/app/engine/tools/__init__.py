@@ -1,0 +1,325 @@
+"""
+Tool Registry Module - Centralized Tool Management
+
+SOTA 2025 Pattern: Tool Registry with Categories
+
+Usage:
+    from app.engine.tools import get_tool_registry, TOOLS
+    
+    # Get all tools
+    tools = get_tool_registry().get_all()
+    
+    # Get by category
+    rag_tools = get_tool_registry().get_by_category(ToolCategory.RAG)
+    memory_tools = get_tool_registry().get_by_category(ToolCategory.MEMORY)
+    learning_tools = get_tool_registry().get_by_category(ToolCategory.LEARNING)
+"""
+
+import logging
+
+# Import registry first
+from app.engine.tools.registry import (
+    ToolRegistry,
+    ToolCategory,
+    ToolAccess,
+    ToolInfo,
+    get_tool_registry,
+    register_tool
+)
+
+# Import and register tools
+from app.engine.tools.rag_tools import (
+    tool_knowledge_search,
+    tool_maritime_search,  # backward compat alias
+    init_rag_tools,
+    get_last_retrieved_sources,
+    clear_retrieved_sources
+)
+
+from app.engine.tools.memory_tools import (
+    tool_save_user_info,
+    tool_get_user_info,
+    tool_remember,
+    tool_forget,
+    tool_list_memories,
+    tool_clear_all_memories,
+    init_memory_tools,
+    set_current_user,
+    get_user_cache
+)
+
+# Tutor Tools - Structured Learning (SOTA 2024)
+from app.engine.tools.tutor_tools import (
+    tool_start_lesson,
+    tool_continue_lesson,
+    tool_lesson_status,
+    tool_end_lesson,
+    init_tutor_tools,
+    set_tutor_user,
+    get_current_session_id
+)
+
+# Utility Tools - Calculator, DateTime (SOTA 2026)
+from app.engine.tools.utility_tools import (
+    tool_calculator,
+    tool_current_datetime,
+    init_utility_tools,
+)
+
+# Web Search Tools - DuckDuckGo (SOTA 2026)
+# Sprint 102: Enhanced with news, legal, maritime search
+from app.engine.tools.web_search_tools import (
+    tool_web_search,
+    tool_search_news,
+    tool_search_legal,
+    tool_search_maritime,
+    init_web_search_tools,
+)
+
+# Sprint 13: Extended Tools (config-gated, lazy imports)
+# Filesystem, Code Execution, and Skill Management tools
+# are imported and registered only when enabled in config.
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# CONVENIENCE EXPORTS
+# =============================================================================
+
+def get_all_tools() -> list:
+    """Get all registered tools."""
+    return get_tool_registry().get_all()
+
+
+def get_tools_for_role(role: str) -> list:
+    """
+    Get tools filtered by user role.
+
+    Sprint 26: Enforces role-based access control at tool level.
+    Sensitive tools (filesystem, code execution, skill management,
+    scheduler, factory reset) are restricted to appropriate roles.
+
+    Args:
+        role: User role (student, teacher, admin)
+
+    Returns:
+        List of tools the role is authorized to use
+    """
+    return get_tool_registry().get_for_role(role)
+
+
+def _init_extended_tools():
+    """
+    Initialize Sprint 13 extended tools (config-gated).
+
+    Only registers tools when explicitly enabled in config.
+    Uses try/except fail-graceful pattern (warn, don't crash).
+    """
+    try:
+        from app.core.config import get_settings
+        settings = get_settings()
+    except Exception as e:
+        logger.debug("Extended tools: config not available: %s", e)
+        return
+
+    registry = get_tool_registry()
+
+    # Filesystem Tools (sandboxed)
+    # Sprint 26: Restricted to admin — file operations are privileged
+    if settings.enable_filesystem_tools:
+        try:
+            from app.engine.tools.filesystem_tools import get_filesystem_tools
+            for tool_fn in get_filesystem_tools():
+                registry.register(
+                    tool_fn, ToolCategory.FILESYSTEM, ToolAccess.WRITE,
+                    roles=["admin"]
+                )
+            logger.info("Filesystem tools registered (sandboxed, admin-only)")
+        except Exception as e:
+            logger.warning("Filesystem tools init failed: %s", e)
+
+    # Code Execution Tool (sandboxed)
+    # Sprint 26: Restricted to admin — code execution is privileged
+    if settings.enable_code_execution:
+        try:
+            from app.engine.tools.code_execution_tools import get_code_execution_tools
+            for tool_fn in get_code_execution_tools():
+                registry.register(
+                    tool_fn, ToolCategory.EXECUTION, ToolAccess.WRITE,
+                    roles=["admin"]
+                )
+            logger.info("Code execution tools registered (sandboxed, admin-only)")
+        except Exception as e:
+            logger.warning("Code execution tools init failed: %s", e)
+
+    # User Preference Tools (Sprint 17: always available)
+    try:
+        from app.engine.tools.preference_tools import get_preference_tools
+        for tool_fn in get_preference_tools():
+            registry.register(tool_fn, ToolCategory.MEMORY, ToolAccess.WRITE)
+        logger.info("User preference tools registered")
+    except Exception as e:
+        logger.warning("Preference tools init failed: %s", e)
+
+    # Skill Management Tools (self-extending agent)
+    # Sprint 26: Restricted to admin — creating/modifying skills is privileged
+    if settings.enable_skill_creation:
+        try:
+            from app.engine.tools.skill_tools import get_skill_tools
+            for tool_fn in get_skill_tools():
+                registry.register(
+                    tool_fn, ToolCategory.SKILL_MANAGEMENT, ToolAccess.WRITE,
+                    roles=["admin"]
+                )
+            logger.info("Skill management tools registered (admin-only)")
+        except Exception as e:
+            logger.warning("Skill management tools init failed: %s", e)
+
+    # Scheduler Tools (Sprint 19: proactive agent)
+    # Sprint 26: Restricted to teacher/admin — students cannot schedule tasks
+    if settings.enable_scheduler:
+        try:
+            from app.engine.tools.scheduler_tools import get_scheduler_tools
+            for tool_fn in get_scheduler_tools():
+                registry.register(
+                    tool_fn, ToolCategory.SCHEDULER, ToolAccess.WRITE,
+                    roles=["teacher", "admin"]
+                )
+            logger.info("Scheduler tools registered (proactive agent, teacher/admin)")
+        except Exception as e:
+            logger.warning("Scheduler tools init failed: %s", e)
+
+    # Character Tools (Sprint 95: self-editing character state)
+    if getattr(settings, 'enable_character_tools', False):
+        try:
+            from app.engine.character.character_tools import get_character_tools
+            for tool_fn in get_character_tools():
+                registry.register(
+                    tool_fn, ToolCategory.CHARACTER, ToolAccess.WRITE,
+                )
+            logger.info("Character tools registered (%d tools)", len(get_character_tools()))
+        except Exception as e:
+            logger.warning("Character tools init failed: %s", e)
+
+
+def init_all_tools(rag_agent=None, semantic_memory=None, user_id: str = None, domain_id: str = None):
+    """
+    Initialize all tools with required dependencies.
+
+    Args:
+        rag_agent: RAG agent for knowledge retrieval
+        semantic_memory: Semantic memory engine for user facts
+        user_id: Current user ID
+        domain_id: Domain ID for domain-specific tool registration
+    """
+    if rag_agent:
+        init_rag_tools(rag_agent)
+
+    if semantic_memory:
+        init_memory_tools(semantic_memory, user_id)
+
+    # Initialize tutor tools with user context
+    if user_id:
+        init_tutor_tools(user_id)
+
+    # Sprint 124: Initialize character tools with user context (per-user isolation)
+    if user_id:
+        try:
+            from app.engine.character.character_tools import set_character_user
+            set_character_user(user_id)
+        except Exception as e:
+            logger.debug("Character user init skipped: %s", e)
+
+    # Initialize utility tools (always available)
+    init_utility_tools()
+
+    # Initialize web search tools (always available)
+    init_web_search_tools()
+
+    # Sprint 13: Extended Tools (config-gated)
+    _init_extended_tools()
+
+    # Register domain-specific tools if available
+    if domain_id:
+        try:
+            from app.domains.registry import get_domain_registry
+            domain_registry = get_domain_registry()
+            domain_plugin = domain_registry.get(domain_id)
+            if domain_plugin:
+                domain_tools = domain_plugin.get_tools()
+                registry = get_tool_registry()
+                for tool_fn in domain_tools:
+                    registry.register(tool_fn, ToolCategory.RAG)
+                if domain_tools:
+                    logger.info("Registered %d domain tools for '%s'", len(domain_tools), domain_id)
+        except Exception as e:
+            logger.debug("Domain tool registration skipped: %s", e)
+
+    registry = get_tool_registry()
+    summary = registry.summary()
+    logger.info("Tool Registry initialized: %s", summary)
+
+
+# Backward compatibility: TOOLS list
+TOOLS = get_all_tools()
+
+
+__all__ = [
+    # Registry
+    "ToolRegistry",
+    "ToolCategory",
+    "ToolAccess",
+    "ToolInfo",
+    "get_tool_registry",
+    "register_tool",
+    
+    # RAG Tools
+    "tool_knowledge_search",
+    "tool_maritime_search",  # backward compat alias
+    "init_rag_tools",
+    "get_last_retrieved_sources",
+    "clear_retrieved_sources",
+    
+    # Memory Tools
+    "tool_save_user_info",
+    "tool_get_user_info",
+    "tool_remember",
+    "tool_forget",
+    "tool_list_memories",
+    "tool_clear_all_memories",
+    "init_memory_tools",
+    "set_current_user",
+    "get_user_cache",
+    
+    # Tutor Tools (Structured Learning)
+    "tool_start_lesson",
+    "tool_continue_lesson",
+    "tool_lesson_status",
+    "tool_end_lesson",
+    "init_tutor_tools",
+    "set_tutor_user",
+    "get_current_session_id",
+    
+    # Utility Tools
+    "tool_calculator",
+    "tool_current_datetime",
+    "init_utility_tools",
+
+    # Web Search Tools (Sprint 102: enhanced)
+    "tool_web_search",
+    "tool_search_news",
+    "tool_search_legal",
+    "tool_search_maritime",
+    "init_web_search_tools",
+
+    # Extended Tools (Sprint 13, config-gated)
+    "_init_extended_tools",
+
+    # Convenience
+    "get_all_tools",
+    "get_tools_for_role",
+    "init_all_tools",
+    "TOOLS"
+]
+

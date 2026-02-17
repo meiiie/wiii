@@ -1,0 +1,16 @@
+# =============================================================================
+# Domain-specific shared config - CUSTOMIZE FOR YOUR DOMAIN
+# =============================================================================
+
+version: "1.0"
+description: "Domain-specific overlay for tool calling and triggers"
+
+tool_calling:
+  description: |
+    Customize tool calling rules for your domain here.
+
+  mandatory_triggers:
+    - "Your trigger phrases here"
+
+  critical_warning: |
+    Always verify information from the knowledge base before responding.

@@ -1,0 +1,72 @@
+id: maritime
+name: "Maritime Education"
+name_vi: "Giáo dục Hàng hải"
+version: "1.0.0"
+description: "AI tutor for maritime: COLREGs, SOLAS, MARPOL, ISM Code"
+
+routing_keywords:
+  - "colregs, colreg"
+  - "solas"
+  - "marpol"
+  - "stcw"
+  - "ism"
+  - "tàu thủy, tàu biển, tàu hàng, tàu chở, tàu container, tàu dầu"
+  - "thuyền, thuyền trưởng, thuyền viên, thuyền buồm"
+  - "hàng hải"
+  - "vessel, ship, seaman, sailor"
+  - "quy tắc phòng ngừa, điều, rule, regulation"
+  - "đèn hành trình, tín hiệu, hải đồ"
+  - "nhường đường, cắt hướng, tránh va"
+  - "maritime"
+  - "hải phận, vùng biển, cảng, bến cảng"
+  - "áo phao, cứu sinh, cứu hỏa, xuồng cứu sinh"
+  # Sprint 86: Ship stability & cargo
+  - "ổn định, ổn định tàu, stability, gm, metacentric"
+  - "ballast, dằn, nước dằn, ballast water"
+  - "mớn nước, draft, trim, nghiêng"
+  - "xếp hàng, chất hàng, dỡ hàng, cargo, loading"
+  # Sprint 86: Dangerous goods
+  - "imdg, hàng nguy hiểm, dangerous goods, nguy hiểm"
+  # Sprint 86: Navigation & operations
+  - "hoa tiêu, pilot, neo, neo đậu, anchor, buoyage"
+  - "máy lái, rudder, chân vịt, propeller"
+  - "boong, deck, buồng máy, engine room"
+  - "sĩ quan, officer, đại phó, máy trưởng, chief"
+  # Sprint 86: Certificates & conventions
+  - "chứng chỉ, certificate, giấy phép, endorsement"
+  - "công ước, convention, imo"
+  # Sprint 86: Safety & emergency
+  - "cháy, fire, tràn dầu, oil spill, man overboard, người rơi"
+  - "vùng nước hạn chế, restricted, tầm nhìn hạn chế, fog"
+  # Sprint 88: Navigation instruments & errors
+  - "la bàn, compass, sai số, compass error, deviation, variation"
+  - "radar, ECDIS, AIS, GMDSS, VTS, EPIRB, SART"
+  # Sprint 88: Inspections & tonnage
+  - "PSC, port state control, kiểm tra tàu, flag state, giám sát"
+  - "tonnage, GT, GRT, DWT, tải trọng, dung tích, trọng tải"
+  - "mạn khô, freeboard, load line, đường nước chở hàng"
+  # Sprint 88: Drills & cargo operations
+  - "diễn tập, drill, muster, abandonment, man overboard drill"
+  - "cẩu, crane, hầm hàng, cargo hold, lashing, chằng buộc"
+  # Sprint 88: Weather & communications
+  - "thời tiết biển, sea state, sóng, gió, bão, typhoon, storm"
+  - "VHF, liên lạc, communication, mayday, pan pan, securite"
+
+mandatory_search_triggers:
+  - "Rule, Quy tắc, Điều, COLREGs, COLREG"
+  - "SOLAS, MARPOL, STCW, ISM Code"
+  - "tàu thủy, tàu biển, vessel, ship, hàng hải, maritime"
+  - "Đèn hành trình, tín hiệu, nhường đường, cắt hướng"
+  - "Luật biển, công ước, quy định hàng hải"
+  - "An toàn hàng hải, cứu sinh, cứu hỏa, xuồng cứu sinh"
+  # Sprint 86: Expanded triggers
+  - "GM, ổn định tàu, stability, metacentric, ballast, trim, draft"
+  - "IMDG, hàng nguy hiểm, dangerous goods, xếp hàng, cargo"
+  - "IMO, công ước, convention, chứng chỉ, certificate"
+  # Sprint 88: Instruments, inspections, operations
+  - "la bàn, compass, sai số, PSC, port state control, kiểm tra tàu"
+  - "radar, ECDIS, AIS, GMDSS, VHF, EPIRB, tonnage, GT, DWT"
+  - "diễn tập, drill, muster, freeboard, load line, mạn khô"
+
+rag_agent_description: "Tra cứu quy định hàng hải (COLREGs, SOLAS, MARPOL), luật, thủ tục"
+tutor_agent_description: "Giải thích, dạy học, quiz về kiến thức hàng hải"

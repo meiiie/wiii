@@ -1,0 +1,82 @@
+# ============================================
+# Wiii Project — Root .gitignore
+# ============================================
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.installed.cfg
+
+# === Virtual Environment ===
+.venv/
+venv/
+ENV/
+
+# === Environment / Secrets ===
+.env
+.env.local
+.env.render
+.env.production
+*.local
+
+# === Testing ===
+.pytest_cache/
+.coverage
+htmlcov/
+.hypothesis/
+.ruff_cache/
+
+# === IDE ===
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# === OS ===
+.DS_Store
+Thumbs.db
+nul
+
+# === Logs ===
+*.log
+logs/
+
+# === Database ===
+*.db
+*.sqlite3
+
+# === Node.js (wiii-desktop) ===
+node_modules/
+
+# === Tauri build artifacts ===
+wiii-desktop/src-tauri/target/
+
+# === Build outputs ===
+build/
+dist/
+downloads/
+wheels/
+sdist/
+develop-eggs/
+eggs/
+.eggs/
+parts/
+var/
+
+# === Temp / generated ===
+_find_untested.py
+docx_output.txt
+
+# === Claude Code artifacts ===
+.claude/plans/
+.claude/reports/
+.claude/tasks/
+
+# === Large data files ===
+maritime-ai-service/data/*.pdf
+maritime-ai-service/data/*.csv

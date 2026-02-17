@@ -1,0 +1,29 @@
+# =============================================================================
+# DOMAIN TEMPLATE - Copy this folder to create a new domain
+# =============================================================================
+# Steps:
+#   1. cp -r app/domains/_template app/domains/your_domain
+#   2. Edit this file with your domain info
+#   3. Write prompt YAML files in prompts/agents/
+#   4. Create SKILL.md files in skills/ (optional)
+#   5. Implement __init__.py (copy from maritime/__init__.py and adapt)
+#   6. Add domain_id to config: active_domains=["maritime","your_domain"]
+#   7. Restart server - domain auto-discovered
+# =============================================================================
+
+id: your_domain_id
+name: "Your Domain Name"
+name_vi: "Tên Domain Tiếng Việt"
+version: "1.0.0"
+description: "Brief description of this domain"
+
+routing_keywords:
+  - "keyword1, keyword2"
+  - "keyword3"
+
+mandatory_search_triggers:
+  - "Trigger phrase 1"
+  - "Trigger phrase 2"
+
+rag_agent_description: "What the RAG agent searches for in this domain"
+tutor_agent_description: "What the Tutor agent teaches in this domain"

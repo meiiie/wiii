@@ -1,0 +1,509 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Wiii Light — Claude-grade warm palette (Sprint 82c) */
+    --surface: #F5F5F0;
+    --surface-secondary: #EEEDE8;
+    --surface-tertiary: #E5E4DF;
+    --surface-white: #FFFFFF;
+    --border: #E5E4DF;
+    --border-secondary: #DDD9CE;
+    --text: #1A1A18;
+    --text-secondary: #6B6A68;
+    --text-tertiary: #9A9893;
+
+    /* Accent — terracotta (Claude-exact #AE5630) */
+    --accent: #AE5630;
+    --accent-hover: #C4633A;
+    --accent-light: #F4F3EE;
+    --accent-teal: #1a8cbe;
+
+    /* User message — warm gray bubble */
+    --user-bg: #DDD9CE;
+    --user-border: transparent;
+
+    /* Thinking — warm amber */
+    --thinking-bg: #fef9ef;
+    --thinking-border: #e8c96e;
+    --thinking-text: #8a6d1b;
+    --thinking-shimmer: #f5e6b8;
+
+    /* Sources */
+    --source-badge: #EEEDE8;
+    --source-text: #5a554e;
+    --source-hover: #E5E4DF;
+
+    /* Tool calls */
+    --tool-bg: #f0f7fa;
+    --tool-border: #c4dde8;
+    --tool-text: #1a6b8a;
+
+    /* Orange accent for actions/tools */
+    --accent-orange: #AE5630;
+    --accent-orange-hover: #C4633A;
+    --accent-green: #1a8a4a;
+
+    /* Shadow system — multi-layer depth (Claude reference) */
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02);
+    --shadow-md: 0 4px 20px rgba(0,0,0,0.035), 0 1px 5px rgba(0,0,0,0.025);
+    --shadow-lg: 0 10px 40px rgba(0,0,0,0.06), 0 2px 10px rgba(0,0,0,0.03);
+
+    /* Easing — premium cubic-bezier (Claude reference) */
+    --ease-default: cubic-bezier(0.165, 0.85, 0.45, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .dark {
+    --surface: #2B2A27;
+    --surface-secondary: #252422;
+    --surface-tertiary: #3A3935;
+    --surface-white: #1F1E1B;
+    --border: #3A3935;
+    --border-secondary: #444340;
+    --text: #EEEEEE;
+    --text-secondary: #9A9893;
+    --text-tertiary: #6B6A68;
+
+    /* Accent — same terracotta in dark (Claude keeps identical) */
+    --accent: #AE5630;
+    --accent-hover: #C4633A;
+    --accent-light: #2a1e14;
+    --accent-teal: #4aafe0;
+
+    --user-bg: #393937;
+    --user-border: transparent;
+
+    --thinking-bg: #2a2618;
+    --thinking-border: #8a7530;
+    --thinking-text: #d4c078;
+    --thinking-shimmer: #3a3220;
+
+    --source-badge: #3A3935;
+    --source-text: #9A9893;
+    --source-hover: #444340;
+
+    /* Tool calls */
+    --tool-bg: #1a2428;
+    --tool-border: #2d4a55;
+    --tool-text: #7cc5ea;
+
+    /* Orange accent for actions/tools */
+    --accent-orange: #AE5630;
+    --accent-orange-hover: #C4633A;
+    --accent-green: #34c474;
+
+    /* Shadow system — dark mode */
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 20px rgba(0,0,0,0.15), 0 1px 5px rgba(0,0,0,0.10);
+    --shadow-lg: 0 10px 40px rgba(0,0,0,0.25), 0 2px 10px rgba(0,0,0,0.12);
+
+    --ease-default: cubic-bezier(0.165, 0.85, 0.45, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  * {
+    @apply border-[var(--border)];
+  }
+
+  body {
+    @apply antialiased;
+    background-color: var(--surface);
+    color: var(--text);
+    font-family: "IBM Plex Sans", "Source Sans 3", "Noto Sans", -apple-system,
+      BlinkMacSystemFont, "Segoe UI", sans-serif;
+    overflow: hidden;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    /* Smooth theme transitions */
+    transition: background-color 200ms ease, color 200ms ease;
+  }
+
+  .selectable {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+}
+
+/* ===== Sidebar slide animation ===== */
+.sidebar-slide {
+  transition: width 300ms var(--ease-default, cubic-bezier(0.165, 0.85, 0.45, 1)),
+              opacity 200ms ease-out;
+  overflow: hidden;
+}
+
+.sidebar-open {
+  width: 16rem; /* w-64 */
+  opacity: 1;
+}
+
+.sidebar-closed {
+  width: 48px;
+  opacity: 1;
+}
+
+/* ===== Modal animations ===== */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 150ms ease-out;
+}
+
+.animate-scale-in {
+  animation: scale-in 200ms ease-out;
+}
+
+/* ===== Custom scrollbar — auto-hide ===== */
+.scroll-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scroll-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-container::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+  transition: background 200ms;
+}
+
+.scroll-container:hover::-webkit-scrollbar-thumb {
+  background: var(--border-secondary);
+}
+
+.scroll-container:hover::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* Default scrollbar (non .scroll-container) */
+::-webkit-scrollbar {
+  width: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-secondary);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* ===== Thinking shimmer animation ===== */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.thinking-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--thinking-bg) 25%,
+    var(--thinking-shimmer) 50%,
+    var(--thinking-bg) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* Tool card inside thinking block */
+.th-tool-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-secondary);
+  margin-top: 6px;
+}
+
+.th-tool-fn {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-orange);
+}
+
+.th-tool-args {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+.th-tool-result {
+  margin-top: 4px;
+  margin-left: 26px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--surface-tertiary);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Shimmer bar between tool call and result */
+@keyframes shimmer-bar {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.th-shimmer-bar {
+  height: 2px;
+  margin: 4px 26px;
+  border-radius: 1px;
+  background: linear-gradient(
+    90deg,
+    var(--border) 25%,
+    var(--accent-orange) 50%,
+    var(--border) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-bar 1.5s ease-in-out infinite;
+}
+
+/* Thinking content — scale down markdown for compact display */
+.thinking-content {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.thinking-content p {
+  margin-bottom: 0.4em;
+}
+
+.thinking-content p:last-child {
+  margin-bottom: 0;
+}
+
+.thinking-content h1,
+.thinking-content h2,
+.thinking-content h3,
+.thinking-content h4 {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 0.6em;
+  margin-bottom: 0.3em;
+}
+
+.thinking-content ul,
+.thinking-content ol {
+  padding-left: 1.2em;
+  margin-bottom: 0.4em;
+}
+
+.thinking-content li {
+  margin-bottom: 0.15em;
+}
+
+.thinking-content code {
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--surface-tertiary);
+}
+
+.thinking-content pre {
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  margin: 0.4em 0;
+  background: var(--surface-tertiary);
+  overflow-x: auto;
+}
+
+.thinking-content blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+  margin: 0.4em 0;
+  opacity: 0.8;
+}
+
+/* Done checkmark animation */
+@keyframes done-circle {
+  from { stroke-dashoffset: 62; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes done-check {
+  from { stroke-dashoffset: 14; }
+  to { stroke-dashoffset: 0; }
+}
+
+.done-anim circle {
+  stroke-dasharray: 62;
+  stroke-dashoffset: 62;
+  animation: done-circle 0.4s ease-out 0.1s forwards;
+}
+
+.done-anim path {
+  stroke-dasharray: 14;
+  stroke-dashoffset: 14;
+  animation: done-check 0.3s ease-out 0.5s forwards;
+}
+
+/* Gear spin for tool calls */
+@keyframes gear-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.gear-spinning {
+  animation: gear-spin 2s linear infinite;
+}
+
+/* Sparkle SVG animation for live state */
+@keyframes sparkle-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes sparkle-pulse {
+  0%, 100% { opacity: 0.6; r: 1.2; }
+  50% { opacity: 1; r: 1.8; }
+}
+
+.sparkle-live {
+  animation: sparkle-rotate 5s linear infinite;
+}
+
+.sparkle-live .sparkle-center {
+  animation: sparkle-pulse 1.5s ease-in-out infinite;
+}
+
+/* ===== Accessibility — prefers-reduced-motion ===== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .sidebar-slide {
+    transition: none;
+  }
+}
+
+/* ===== Skeleton loading pulse ===== */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+
+.skeleton-pulse {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  background: var(--surface-tertiary);
+  border-radius: 6px;
+}
+
+/* ===== Input card — Claude F12 exact: transparent border, ambient shadow + 0.5px ring ===== */
+.input-card {
+  border: 1px solid transparent;
+  border-radius: 20px;
+  background: var(--surface-white, #FFFFFF);
+  box-shadow:
+    0 0.25rem 1.25rem rgba(0, 0, 0, 0.035),
+    0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  transition: all 200ms var(--ease-default, ease);
+  cursor: text;
+}
+
+.input-card:hover {
+  box-shadow:
+    0 0.25rem 1.25rem rgba(0, 0, 0, 0.035),
+    0 0 0 0.5px rgba(0, 0, 0, 0.12);
+}
+
+.input-card:focus-within {
+  box-shadow:
+    0 0.25rem 1.25rem rgba(0, 0, 0, 0.075),
+    0 0 0 0.5px rgba(0, 0, 0, 0.12);
+}
+
+.dark .input-card {
+  box-shadow:
+    0 0.25rem 1.25rem rgba(0, 0, 0, 0.15),
+    0 0 0 0.5px rgba(255, 255, 255, 0.06);
+}
+
+.dark .input-card:hover {
+  box-shadow:
+    0 0.25rem 1.25rem rgba(0, 0, 0, 0.15),
+    0 0 0 0.5px rgba(255, 255, 255, 0.12);
+}
+
+.dark .input-card:focus-within {
+  box-shadow:
+    0 0.25rem 1.25rem rgba(0, 0, 0, 0.25),
+    0 0 0 0.5px rgba(255, 255, 255, 0.12);
+}
+
+/* ===== Welcome staggered reveal (Sprint 82b — cookbook pattern) ===== */
+@keyframes welcome-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.welcome-reveal {
+  opacity: 0;
+  animation: welcome-reveal 0.6s ease-out forwards;
+}
+
+.welcome-reveal-1 { animation-delay: 0.05s; }
+.welcome-reveal-2 { animation-delay: 0.15s; }
+.welcome-reveal-3 { animation-delay: 0.25s; }
+.welcome-reveal-4 { animation-delay: 0.4s; }
+.welcome-reveal-5 { animation-delay: 0.55s; }
+
+/* Welcome background — subtle radial warmth */
+.welcome-bg {
+  background:
+    radial-gradient(ellipse at 50% 40%, var(--accent-light) 0%, transparent 60%),
+    var(--surface);
+}
+
+/* ===== Domain dropdown shadow (Sprint 82) ===== */
+.domain-dropdown {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.dark .domain-dropdown {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.2);
+}

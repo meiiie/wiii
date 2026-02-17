@@ -1,0 +1,24 @@
+[package]
+name = "wiii-desktop"
+version = "0.1.0"
+description = "Wiii — Multi-Domain Agentic RAG Desktop"
+authors = ["The Wiii Lab"]
+edition = "2021"
+
+[lib]
+name = "wiii_desktop_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-store = "2"
+tauri-plugin-http = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["net"] }

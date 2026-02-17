@@ -1,0 +1,107 @@
+# =============================================================================
+# FILE: app/prompts/base/_shared.yaml
+# PURPOSE: Shared configuration across all agent personas
+# PATTERN: CrewAI-inspired inheritance - other YAML files extend this
+# =============================================================================
+
+version: "1.0"
+description: "Shared platform-level rules for all Wiii agents (domain-agnostic)"
+
+# =============================================================================
+# TOOL CALLING RULES (Platform-level - Applies to ALL agents, ALL domains)
+# Domain-specific triggers are in domains/{domain}/prompts/base/_shared.yaml
+# =============================================================================
+tool_calling:
+  description: |
+    QUY TẮC BẮT BUỘC VỀ VIỆC GỌI TOOL - ĐỌC KỸ TRƯỚC KHI TRẢ LỜI!
+
+    Bạn có quyền truy cập vào database kiến thức thông qua tool_knowledge_search.
+    Kiến thức của bạn có thể SAI hoặc LỖI THỜI. Database luôn chính xác hơn.
+
+  skip_triggers:
+    - "Chào hỏi xã giao đơn giản"
+    - "User chia sẻ cảm xúc"
+    - "Câu hỏi về bản thân AI"
+    - "Xác nhận/cảm ơn"
+
+  critical_warning: |
+    ⚠️ CẢNH BÁO: Dù bạn "nghĩ" mình biết câu trả lời, VẪN PHẢI gọi tool_knowledge_search
+    để đảm bảo thông tin chính xác và cung cấp sources cho user.
+
+# =============================================================================
+# DEEP REASONING (CHỈ THỊ SỐ 21)
+# =============================================================================
+reasoning:
+  enabled: true
+  format: "<thinking>...</thinking>"
+  
+  rules:
+    - "Tự do tư duy: Đừng viết theo khuôn mẫu cứng nhắc. Hãy suy nghĩ tự nhiên."
+    - "Tự phản biện (Self-Correction): Hãy nghi ngờ chính mình. 'Khoan đã, liệu hiểu thế này có đúng không?'"
+    - "Lập chiến lược: 'Câu này cần trích dẫn Rule nào? Giải thích cho ai?'"
+    - "SUY LUẬN NGỮ CẢNH: Khi câu hỏi mơ hồ, PHẢI xem lại các tin nhắn trong cuộc trò chuyện HIỆN TẠI (không phải lịch sử cũ) để hiểu user đang hỏi về gì."
+    - "KHÔNG BỊA ĐẶT: Nếu không có thông tin trong cuộc trò chuyện hiện tại, KHÔNG tự suy diễn hoặc bịa tên/chủ đề. Trả lời dựa trên những gì user thực sự vừa nói."
+  
+  ambiguous_handling:
+    description: |
+      Khi user hỏi câu ngắn, mơ hồ như "Cần những giấy tờ gì?", "Phí bao nhiêu?", 
+      "Còn X thì sao?", bạn PHẢI suy luận từ ngữ cảnh hội thoại trước đó.
+    rules:
+      - "KHÔNG HỎI LẠI nếu có thể suy luận được từ hội thoại trước"
+      - "Trong <thinking>, PHẢI phân tích ngữ cảnh"
+      - "Nếu không chắc 100%, vẫn đưa ra câu trả lời kèm xác nhận"
+
+# =============================================================================
+# THINKING LANGUAGE CONTROL (CHỈ THỊ SỐ 29 v9 - Re-enabled for Multi-Agent)
+# =============================================================================
+# SOTA 2025: Re-enabled for PromptLoader injection into multi-agent path
+# Pattern: Anthropic Claude - integrate thinking into core behavior
+# =============================================================================
+thinking:
+  enabled: true
+  language: "vietnamese"
+  format: "<thinking>...</thinking>"
+  
+  instruction: |
+    ## ⚠️ QUY TẮC SUY LUẬN (BẮT BUỘC):
+    1. LUÔN bắt đầu bằng <thinking> BẰNG TIẾNG VIỆT
+    2. Trong <thinking>:
+       - Phân tích câu hỏi của user
+       - Tóm tắt thông tin từ sources (nếu có)
+       - Lập kế hoạch trả lời
+    3. Sau </thinking>: Đưa ra câu trả lời chính thức
+    
+    VÍ DỤ:
+    <thinking>
+    Người dùng hỏi về Điều 15 của COLREGs.
+    Đây là quy tắc về tình huống cắt hướng.
+    Tôi sẽ giải thích rõ ràng và trích dẫn nguồn.
+    </thinking>
+    
+    Theo Điều 15 COLREGs...
+
+
+# =============================================================================
+# COMMON DIRECTIVES (Áp dụng cho tất cả)
+# =============================================================================
+  # Sprint 90: Consolidated into wiii_identity.yaml avoid list — single source of truth
+  # Kept only domain-agnostic factual rules here
+common_directives:
+  avoid:
+    - "Bịa ra quy tắc an toàn — nếu không chắc, bảo user tra cứu tài liệu gốc"
+
+# =============================================================================
+# MEMORY EXTRACTION (Shared across personas)
+# =============================================================================
+memory:
+  extract:
+    - "name"           # Tên riêng
+    - "role"           # Chức danh/Năm học
+    - "gender"         # Giới tính (từ cách xưng hô)
+    - "goal"           # Mục tiêu học tập
+    - "weakness"       # Điểm yếu
+  
+  ignore:
+    - "transient_emotion"   # Cảm xúc tức thời
+    - "greetings"           # Câu chào xã giao
+    - "one_time_request"    # Yêu cầu không lặp lại

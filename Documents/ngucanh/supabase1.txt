@@ -1,0 +1,25 @@
+oject API
+Your API is secured behind an API gateway which requires an API Key for every request.
+You can use the parameters below to use Supabase client libraries.
+
+Project URL
+https://kpjqhiqjkfaqorpehsgc.supabase.co
+
+Copy
+A RESTful endpoint for querying and managing your database.
+API Key
+
+anon
+public
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtwanFoaXFqa2ZhcW9ycGVoc2djIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxNjk4MjEsImV4cCI6MjA4MDc0NTgyMX0.WFb8fP7ld-cKgJXn9EwsBV6TRmblLK7P28B9XILxMPM
+
+Copy
+This key is safe to use in a browser if you have enabled Row Level Security (RLS) for your tables and configured policies. You may also use the service key which can be found here to bypass RLS.
+
+Javascript
+Dart
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = 'https://kpjqhiqjkfaqorpehsgc.supabase.co'
+const supabaseKey = process.env.SUPABASE_KEY
+const supabase = createClient(supabaseUrl, supabaseKey)

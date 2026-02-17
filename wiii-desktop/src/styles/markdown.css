@@ -1,0 +1,82 @@
+/* Markdown content styling */
+.markdown-content {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 15.5px;
+  line-height: 1.85;
+  color: var(--text-secondary);
+}
+
+.markdown-content p {
+  @apply mb-3 last:mb-0;
+}
+
+.markdown-content h1 {
+  @apply text-xl font-bold mb-3 mt-4;
+}
+
+.markdown-content h2 {
+  @apply text-lg font-semibold mb-2 mt-3;
+}
+
+.markdown-content h3 {
+  @apply text-base font-semibold mb-2 mt-3;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  @apply mb-3 pl-6;
+}
+
+.markdown-content ul {
+  @apply list-disc;
+}
+
+.markdown-content ol {
+  @apply list-decimal;
+}
+
+.markdown-content li {
+  @apply mb-1;
+}
+
+.markdown-content blockquote {
+  @apply border-l-4 border-border-secondary pl-4 italic my-3 text-text-secondary;
+}
+
+.markdown-content table {
+  @apply w-full border-collapse mb-3;
+}
+
+.markdown-content th,
+.markdown-content td {
+  @apply border border-border px-3 py-2 text-left text-sm;
+}
+
+.markdown-content th {
+  @apply bg-surface-tertiary font-semibold;
+}
+
+.markdown-content a {
+  @apply text-[var(--accent)] underline hover:opacity-80;
+}
+
+.markdown-content hr {
+  @apply my-4 border-border;
+}
+
+.markdown-content code:not(pre code) {
+  @apply bg-surface-tertiary text-[var(--accent)] px-1.5 py-0.5 rounded text-[13px] font-mono;
+}
+
+.markdown-content pre {
+  @apply mb-3 rounded-lg overflow-hidden;
+}
+
+.markdown-content strong {
+  @apply font-semibold;
+  color: var(--text);
+}
+
+.markdown-content em {
+  @apply italic;
+}

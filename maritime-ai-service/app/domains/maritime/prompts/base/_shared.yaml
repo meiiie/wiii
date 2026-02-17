@@ -1,0 +1,27 @@
+# =============================================================================
+# FILE: app/domains/maritime/prompts/base/_shared.yaml
+# PURPOSE: Maritime-specific shared config (extends platform _shared.yaml)
+# =============================================================================
+
+version: "1.0"
+description: "Maritime domain overlay for tool calling and triggers"
+
+# Maritime-specific tool calling triggers
+tool_calling:
+  description: |
+    QUY TẮC BẮT BUỘC VỀ VIỆC GỌI TOOL - ĐỌC KỸ TRƯỚC KHI TRẢ LỜI!
+
+    Bạn có quyền truy cập vào database kiến thức hàng hải thông qua tool_knowledge_search.
+    Kiến thức của bạn có thể SAI hoặc LỖI THỜI. Database luôn chính xác hơn.
+
+  mandatory_triggers:
+    - "Rule, Quy tắc, Điều, COLREGs, COLREG"
+    - "SOLAS, MARPOL, STCW, ISM Code"
+    - "Tàu, vessel, ship, hàng hải, maritime"
+    - "Đèn, tín hiệu, nhường đường, cắt hướng"
+    - "Luật biển, công ước, quy định"
+    - "An toàn hàng hải, cứu sinh, cứu hỏa"
+
+  critical_warning: |
+    ⚠️ CẢNH BÁO: Dù bạn "nghĩ" mình biết câu trả lời, VẪN PHẢI gọi tool_knowledge_search
+    để đảm bảo thông tin chính xác và cung cấp sources cho user.

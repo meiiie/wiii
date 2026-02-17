@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wiii AI — Desktop</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f5f3ea;
+  --surface: #ffffff;
+  --border: #e5e1d6;
+  --border-light: #eceadf;
+  --text: #1b1710;
+  --text-2: #302b23;
+  --text-dim: #6e685e;
+  --text-muted: #979186;
+  --text-ghost: #b5afa5;
+  --th-color: #b5880e;
+  --th-text: #867660;
+  --th-bg: rgba(181,136,14,0.04);
+  --code-bg: #f0ede4;
+  --code-border: #ddd9ce;
+  --code-text: #4d473d;
+  --accent-orange: #c96a34;
+  --accent-green: #1a8a4a;
+  --mono: 'JetBrains Mono', monospace;
+  --serif: 'Source Serif 4', Georgia, serif;
+  --sans: 'Inter', -apple-system, system-ui, sans-serif;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: var(--sans); background: var(--bg);
+  color: var(--text); height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ═══ APP LAYOUT ═══ */
+.app { display: flex; height: 100vh; }
+
+/* ═══ SIDEBAR ═══ */
+.sidebar {
+  width: 260px; background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  flex-shrink: 0;
+}
+.sb-header {
+  padding: 12px 12px 8px; display: flex;
+  align-items: center; justify-content: space-between;
+}
+.sb-new {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: none; border: 1px solid var(--border);
+  cursor: pointer; display: flex; align-items: center;
+  justify-content: center; color: var(--text-dim);
+  transition: background .15s;
+}
+.sb-new:hover { background: var(--bg); }
+
+.sb-nav { padding: 4px 8px; display: flex; flex-direction: column; gap: 1px; }
+.sb-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer;
+  font-size: 13.5px; color: var(--text-dim);
+  transition: background .12s, color .12s;
+}
+.sb-item:hover { background: var(--bg); color: var(--text-2); }
+.sb-item.active { background: #edeade; color: var(--text); font-weight: 500; }
+.sb-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+.sb-divider { height: 1px; background: var(--border); margin: 8px 12px; }
+
+.sb-section-label {
+  padding: 8px 18px 4px; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-muted); font-weight: 600;
+}
+
+.sb-chat-item {
+  padding: 7px 18px; cursor: pointer; font-size: 13px;
+  color: var(--text-dim); border-radius: 6px; margin: 0 8px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background .12s;
+}
+.sb-chat-item:hover { background: var(--bg); }
+.sb-chat-item.active { background: #edeade; color: var(--text); font-weight: 500; }
+
+.sb-footer {
+  margin-top: auto; padding: 12px;
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+}
+.sb-avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--text-dim); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+}
+.sb-user-info { flex: 1; min-width: 0; }
+.sb-user-name { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.sb-user-plan { font-size: 11px; color: var(--text-muted); }
+
+/* ═══ MAIN AREA ═══ */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.titlebar {
+  height: 46px; background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 16px; gap: 10px; flex-shrink: 0;
+}
+.t-logo {
+  width: 26px; height: 26px; border-radius: 7px;
+  background: var(--accent-orange);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: 14px;
+}
+.t-name { font-size: 14px; font-weight: 600; color: var(--text-2); }
+.t-spacer { flex: 1; }
+.t-badge {
+  font-size: 10.5px; padding: 2px 8px; border-radius: 10px;
+  background: #edeade; color: var(--text-dim); font-weight: 500;
+}
+.t-title { font-size: 14px; font-weight: 500; color: var(--text-dim); }
+.t-mode {
+  display: flex; background: #edeade; border-radius: 8px; overflow: hidden; padding: 2px;
+}
+.t-mode-btn {
+  padding: 3px 12px; font-size: 12px; font-weight: 500;
+  border: none; background: none; cursor: pointer;
+  color: var(--text-dim); transition: all .15s; border-radius: 6px;
+  font-family: var(--sans);
+}
+.t-mode-btn.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+
+/* ═══ CHAT ═══ */
+.chat-scroll { flex: 1; overflow-y: auto; padding: 28px 0; }
+.chat-scroll::-webkit-scrollbar { width: 5px; }
+.chat-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+.chat-inner {
+  max-width: 680px; margin: 0 auto; padding: 0 20px;
+  display: flex; flex-direction: column; gap: 24px;
+}
+
+/* ═══ USER — right-aligned bubble ═══ */
+.u-msg {
+  font-family: var(--serif); font-size: 15.5px;
+  line-height: 1.7; color: var(--text);
+  animation: fIn .3s ease;
+  align-self: flex-end;
+  max-width: 85%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 18px;
+}
+@keyframes fIn {
+  from { opacity:0; transform:translateY(4px); }
+  to { opacity:1; transform:translateY(0); }
+}
+
+/* ═══ ASSISTANT ═══ */
+.a-group {
+  display: flex; gap: 10px;
+  animation: fIn .35s ease;
+}
+.a-avatar {
+  width: 24px; height: 24px; border-radius: 6px;
+  background: var(--accent-orange);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: 11px;
+  flex-shrink: 0; margin-top: 4px;
+  font-family: var(--sans);
+}
+.a-content {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0; flex: 1;
+}
+
+/* ═══ THINKING BLOCK ═══ */
+.th-block { position: relative; }
+.th-head {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 0; cursor: pointer; user-select: none;
+}
+.th-head:hover { opacity: .75; }
+
+.th-sparkle { width: 20px; height: 20px; flex-shrink: 0; color: var(--th-color); }
+.th-sparkle.live { animation: spRot 5s linear infinite; }
+.th-sparkle.off { opacity: .35; animation: none; }
+@keyframes spRot { to { transform: rotate(360deg); } }
+
+.th-label { font-size: 13.5px; font-weight: 500; color: var(--th-text); white-space: nowrap; }
+.th-dur { font-weight: 400; color: var(--text-muted); font-size: 12.5px; margin-left: 1px; }
+
+.th-chev {
+  color: var(--text-ghost); margin-left: 2px;
+  display: inline-flex; align-items: center;
+  transition: transform .25s var(--ease);
+}
+.th-chev.shut { transform: rotate(-90deg); }
+
+.th-body {
+  overflow: hidden;
+  transition: max-height .4s var(--ease), opacity .25s ease, margin-bottom .3s ease;
+  max-height: 5000px; opacity: 1; margin-bottom: 4px;
+}
+.th-body.shut { max-height: 0 !important; opacity: 0; margin-bottom: 0; }
+
+/* Thinking text — regular font, pre-wrap for line breaks */
+.th-txt {
+  padding: 2px 0 8px 27px;
+  font-size: 14px; line-height: 1.8;
+  color: var(--th-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.th-txt strong { color: var(--text-2); font-weight: 600; }
+
+/* Cursor */
+.tc {
+  display: inline-block; width: 6px; height: 15px;
+  background: var(--th-color); border-radius: 1px;
+  opacity: .55; animation: bl .85s step-end infinite;
+  vertical-align: text-bottom; margin-left: 2px;
+}
+@keyframes bl { 50% { opacity:0; } }
+
+/* Tool card inside thinking */
+.th-tool {
+  margin: 10px 0 4px 27px;
+  padding: 9px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px;
+}
+.th-gear { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-muted); }
+.th-gear.spin { animation: spn 1.5s linear infinite; }
+@keyframes spn { to { transform: rotate(360deg); } }
+.th-fn { font-family: var(--mono); font-size: 12.5px; color: var(--accent-orange); font-weight: 500; }
+.th-args { font-family: var(--mono); font-size: 11.5px; color: var(--text-ghost); }
+.th-st {
+  margin-left: auto; font-size: 11px; font-weight: 500;
+  display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+}
+.th-st.on { color: var(--text-muted); }
+.th-st.ok { color: var(--accent-green); }
+
+.th-res {
+  margin: 0 0 8px 27px; padding: 9px 14px;
+  background: var(--code-bg); border: 1px solid var(--code-border);
+  border-radius: 8px; font-family: var(--mono); font-size: 12px;
+  color: var(--text-dim); line-height: 1.6;
+}
+
+.th-shimmer {
+  height: 2px; margin: 2px 0 6px 27px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--border-light), var(--th-color), var(--border-light));
+  background-size: 250% 100%;
+  animation: shm 1.8s ease-in-out infinite;
+}
+@keyframes shm { 0% { background-position: 150% 0; } 100% { background-position: -150% 0; } }
+
+/* ═══ DONE ═══ */
+.done-row { display: flex; align-items: center; gap: 6px; padding: 5px 0; margin: 2px 0; }
+.done-row span { font-size: 13px; color: var(--text-muted); }
+.done-icon { width: 17px; height: 17px; color: var(--text-muted); }
+.done-icon circle { stroke-dasharray: 62; stroke-dashoffset: 62; animation: dc .5s ease forwards; }
+.done-icon path { stroke-dasharray: 14; stroke-dashoffset: 14; animation: dp2 .3s ease .35s forwards; }
+@keyframes dc { to { stroke-dashoffset: 0; } }
+@keyframes dp2 { to { stroke-dashoffset: 0; } }
+
+/* ═══ ANSWER ═══ */
+.ans {
+  padding: 4px 0; font-family: var(--serif);
+  font-size: 15.5px; line-height: 1.85; color: var(--text-2);
+}
+.ans p { margin-bottom: 16px; }
+.ans p:last-child { margin-bottom: 0; }
+.ans strong { color: var(--text); font-weight: 600; }
+.ans code {
+  font-family: var(--mono); font-size: 12.5px;
+  padding: 2px 6px; background: var(--code-bg);
+  border: 1px solid var(--code-border); border-radius: 4px;
+}
+.ans hr { border:none; border-top:1px solid var(--border); margin:14px 0; }
+.ac {
+  display: inline-block; width: 2px; height: 19px;
+  background: var(--text-2); opacity: .5;
+  animation: bl .85s step-end infinite;
+  vertical-align: text-bottom; margin-left: 1px;
+}
+
+/* ═══ INPUT ═══ */
+.inp-area { flex-shrink: 0; max-width: 680px; width: 100%; margin: 0 auto; padding: 6px 20px 14px; }
+.inp-box {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: 14px; padding: 10px 12px;
+  transition: border-color .2s, box-shadow .2s;
+}
+.inp-box:focus-within { border-color: var(--accent-orange); box-shadow: 0 0 0 3px rgba(201,106,52,.1); }
+.inp-box input {
+  flex:1; background:none; border:none; outline:none;
+  font-family: var(--sans); font-size: 14px; color: var(--text);
+}
+.inp-box input::placeholder { color: var(--text-ghost); }
+.btn-s {
+  width: 32px; height: 32px; border-radius: 10px;
+  background: var(--text); border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.btn-s:hover { opacity: .8; }
+.btn-s svg { width: 14px; height: 14px; fill: var(--bg); }
+
+.pills {
+  max-width: 680px; width: 100%; margin: 0 auto;
+  padding: 0 20px 6px; display: flex; gap: 5px; flex-wrap: wrap;
+}
+.pill {
+  padding: 5px 11px; border-radius: 18px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-dim); font-size: 12px; font-family: var(--sans);
+  font-weight: 500; cursor: pointer;
+}
+.pill:hover { border-color: var(--accent-orange); color: var(--accent-orange); }
+
+.dots { display: inline-flex; gap: 2.5px; }
+.dots i {
+  width: 3px; height: 3px; border-radius: 50%;
+  background: currentColor; display: block;
+  animation: dtP 1.2s ease infinite;
+}
+.dots i:nth-child(2) { animation-delay:.15s; }
+.dots i:nth-child(3) { animation-delay:.3s; }
+@keyframes dtP { 0%,80%,100% { opacity:.3; transform:scale(.7); } 40% { opacity:1; transform:scale(1); } }
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ═══ SIDEBAR ═══ -->
+<div class="sidebar">
+  <div class="sb-header">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="t-logo">W</div>
+      <span class="t-name">Wiii AI</span>
+    </div>
+    <button class="sb-new" title="New chat">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+  </div>
+
+  <div class="sb-nav">
+    <div class="sb-item" onclick="this.parentElement.querySelectorAll('.sb-item').forEach(e=>e.classList.remove('active'));this.classList.add('active')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Search
+    </div>
+    <div class="sb-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      Chats
+    </div>
+    <div class="sb-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+      Projects
+    </div>
+  </div>
+
+  <div class="sb-divider"></div>
+  <div class="sb-section-label">Recents</div>
+
+  <div class="sb-chat-item active">Hàng hải COLREGs demo</div>
+  <div class="sb-chat-item">Phân tích Rule 15 vs 16</div>
+  <div class="sb-chat-item">Bài tập navigation lights</div>
+  <div class="sb-chat-item">Tính toán CPA/TCPA</div>
+  <div class="sb-chat-item">Fire safety procedures</div>
+
+  <div class="sb-footer">
+    <div class="sb-avatar">WB</div>
+    <div class="sb-user-info">
+      <div class="sb-user-name">Wiii Bro</div>
+      <div class="sb-user-plan">Pro plan</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MAIN ═══ -->
+<div class="main">
+
+<div class="titlebar">
+  <span class="t-title">Hàng hải COLREGs demo</span>
+  <div class="t-spacer"></div>
+  <div class="t-mode">
+    <button class="t-mode-btn active">Chat</button>
+    <button class="t-mode-btn">Code</button>
+  </div>
+  <span class="t-badge">qwen3:14b · local</span>
+</div>
+
+<div class="chat-scroll" id="scrollBox">
+  <div class="chat-inner" id="chat"></div>
+</div>
+
+<div class="pills">
+  <button class="pill" onclick="run('simple')">💬 Simple</button>
+  <button class="pill" onclick="run('multi')">🔧 Multi-step deep</button>
+  <button class="pill" onclick="run('interleaved')">🧠 Interleaved</button>
+  <button class="pill" onclick="run('direct')">📝 Direct</button>
+  <button class="pill" onclick="document.getElementById('chat').innerHTML=''" style="margin-left:auto">Clear</button>
+</div>
+
+<div class="inp-area">
+  <div class="inp-box">
+    <input id="inp" placeholder="Hỏi về hàng hải..." onkeydown="if(event.key==='Enter')send()">
+    <button class="btn-s" onclick="send()"><svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
+  </div>
+</div>
+
+</div><!-- /main -->
+</div><!-- /app -->
+
+<script>
+/* ═══ SVG ICONS ═══ */
+const SP_LIVE = `<svg class="th-sparkle live" viewBox="0 0 24 24" fill="none"><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="12" y1="1.5" x2="12" y2="5.5"/><line x1="12" y1="18.5" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="5.5" y2="12"/><line x1="18.5" y1="12" x2="22.5" y2="12"/><line x1="4.58" y1="4.58" x2="7.17" y2="7.17"/><line x1="16.83" y1="16.83" x2="19.42" y2="19.42"/><line x1="4.58" y1="19.42" x2="7.17" y2="16.83"/><line x1="16.83" y1="7.17" x2="19.42" y2="4.58"/></g><circle cx="12" cy="12" r="2.5" fill="currentColor" opacity=".65"><animate attributeName="r" values="2;3;2" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" values=".5;.85;.5" dur="2s" repeatCount="indefinite"/></circle></svg>`;
+const SP_OFF = `<svg class="th-sparkle off" viewBox="0 0 24 24" fill="none"><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".4"><line x1="12" y1="2.5" x2="12" y2="5.5"/><line x1="12" y1="18.5" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="5.5" y2="12"/><line x1="18.5" y1="12" x2="21.5" y2="12"/><line x1="5.28" y1="5.28" x2="7.17" y2="7.17"/><line x1="16.83" y1="16.83" x2="18.72" y2="18.72"/><line x1="5.28" y1="18.72" x2="7.17" y2="16.83"/><line x1="16.83" y1="7.17" x2="18.72" y2="5.28"/></g><circle cx="12" cy="12" r="2" fill="currentColor" opacity=".3"/></svg>`;
+const GEAR = (s) => `<svg class="th-gear ${s?'spin':''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/><line x1="4.22" y1="4.22" x2="5.98" y2="5.98"/><line x1="18.02" y1="18.02" x2="19.78" y2="19.78"/><line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/><line x1="4.22" y1="19.78" x2="5.98" y2="18.02"/><line x1="18.02" y1="5.98" x2="19.78" y2="4.22"/></svg>`;
+const CHK = `<svg class="done-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>`;
+const CHK_SM = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg>`;
+
+/* ═══════════════════════════════════════════════════════════
+   SCENARIOS — DEEP THINKING CONTENT
+   
+   Key difference from v4: thinking reads like actual reasoning,
+   not search logs. Long, coherent paragraphs that show the 
+   model analyzing, planning, evaluating, reconsidering.
+   ═══════════════════════════════════════════════════════════ */
+
+const SC = {
+  simple: {
+    q: "COLREGs Rule 5 là gì?",
+    steps: [
+      { a:'tOpen', label:'Phân tích câu hỏi và tìm kiếm tài liệu' },
+      { a:'tText', t:'Học viên đang hỏi về COLREGs Rule 5. Đây là một trong những quy tắc nền tảng nhất trong bộ quy tắc phòng ngừa va chạm trên biển — quy định về trực canh (look-out). Mặc dù đây là kiến thức cơ bản, nhưng mình cần đảm bảo giải thích chính xác theo văn bản gốc của IMO, không được paraphrase sai ý nghĩa pháp lý.\n\nĐể trả lời tốt nhất, mình nên tìm trong knowledge base nội dung chính thức của Rule 5, sau đó bổ sung ví dụ thực tế để học viên dễ hình dung. ', s:12 },
+      { a:'tool', fn:'search_knowledge_base', args:'query="COLREGs Rule 5 lookout"', d:1200 },
+      { a:'tRes', t:'Rule 5 — Look-out: Every vessel shall at all times maintain a proper look-out by sight and hearing as well as by all available means appropriate in the prevailing circumstances and conditions so as to make a full appraisal of the situation and of the risk of collision.' },
+      { a:'tText', t:'Tốt, đã tìm được văn bản gốc đầy đủ. Điểm quan trọng cần nhấn mạnh cho học viên:\n\n1. "At all times" — không phải chỉ khi thời tiết xấu hay vùng nước đông đúc, mà là luôn luôn.\n2. "By sight AND hearing" — nhiều thuyền viên mới chỉ dùng mắt mà quên tai. Tiếng còi, tiếng máy tàu khác, tiếng sóng bất thường đều là tín hiệu quan trọng.\n3. "All available means" — bao gồm radar, AIS, VHF, ECDIS. Không dùng đầy đủ các thiết bị sẵn có = vi phạm Rule 5.\n\nMình cũng nên kiểm tra memory xem học viên này có từng gặp vấn đề gì liên quan đến trực canh hay situational awareness không, để điều chỉnh cách giải thích cho phù hợp. Tuy nhiên, đây là câu hỏi kiến thức cơ bản nên mình sẽ trả lời trực tiếp kèm ví dụ thực tế trên tàu container qua eo biển Singapore — một scenario mà hầu hết học viên hàng hải đều quen thuộc.', s:12 },
+      { a:'tClose' },
+      { a:'done' },
+      { a:'ans', t:'**COLREGs Rule 5 — Trực canh (Look-out)**\n\nMọi tàu phải **luôn luôn** duy trì trực canh thích hợp bằng **thị giác, thính giác** và mọi phương tiện sẵn có phù hợp với hoàn cảnh, để đánh giá đầy đủ tình huống và nguy cơ va chạm.\n\n**3 điểm then chốt:**\n\n"At all times" — áp dụng 24/7, không chỉ khi biển đông. "Sight AND hearing" — lắng nghe tiếng còi, tiếng máy tàu khác, không chỉ dùng mắt. "All available means" — radar, AIS, VHF, ECDIS đều phải được sử dụng.\n\n**Ví dụ thực tế:** Tàu container đi qua eo biển Singapore ban đêm — sĩ quan trực ca phải đồng thời theo dõi radar (target nhiều), AIS (nhận diện tàu), VHF channel 16 (thông báo từ VTS), trong khi thuyền viên trực canh trên mũi tàu quan sát bằng mắt và tai.\n\n**Lưu ý:** Vi phạm Rule 5 là nguyên nhân gốc rễ được viện dẫn nhiều nhất trong các phán quyết của tòa hàng hải sau va chạm.', s:10 },
+    ]
+  },
+
+  multi: {
+    q: "Tôi đang yếu phần nào nhất? Cho tôi bài tập cải thiện.",
+    steps: [
+      { a:'tOpen', label:'Phân tích hồ sơ học tập và xác định điểm yếu' },
+      { a:'tText', t:'Học viên muốn biết điểm yếu của mình và cần bài tập cải thiện. Đây là một yêu cầu rất hay — cho thấy học viên có tư duy chủ động trong việc học.\n\nĐể trả lời chính xác, mình cần:\n1. Truy xuất memory để xem hệ thống đã ghi nhận những learning gaps nào từ các cuộc hội thoại trước\n2. Phân tích xem gap nào có confidence cao nhất (tức là xuất hiện nhiều lần, hoặc học viên đã thể hiện sự nhầm lẫn rõ ràng)\n3. Tìm tài liệu liên quan đến gap lớn nhất trong knowledge base\n4. Tạo bài tập targeted — không phải bài tập random, mà phải đúng vào điểm yếu cụ thể\n\nBắt đầu với bước 1 — recall memory.', s:12 },
+      { a:'tool', fn:'recall_user_memory', args:'user_id="student_001", topic="learning_gap"', d:900 },
+      { a:'tRes', t:'[\n  {"text": "Confused Rule 15 vs Rule 16 — cannot distinguish crossing obligation vs give-way action", "confidence": 0.85, "mention_count": 4},\n  {"text": "Weak on navigation light signals at night — misidentified trawler lights", "confidence": 0.72, "mention_count": 2},\n  {"text": "Fire safety procedures incomplete — missed CO2 system activation steps", "confidence": 0.61, "mention_count": 1}\n]' },
+      { a:'tText', t:'\n\nKết quả rất rõ ràng. Hệ thống đã phát hiện 3 learning gaps, sắp xếp theo confidence:\n\n**Gap 1 (85%): Rule 15 vs Rule 16** — đây là gap nghiêm trọng nhất. Học viên đã nhầm lẫn 4 lần trong các cuộc hội thoại trước, cho thấy đây không phải lỗi nhất thời mà là sự hiểu sai căn bản. Cụ thể, học viên không phân biệt được:\n- Rule 15 giải quyết câu hỏi "AI phải nhường?" (xác định tàu give-way trong crossing situation)\n- Rule 16 giải quyết câu hỏi "Nhường NHƯ THẾ NÀO?" (hành động phải early và substantial)\n\n**Gap 2 (72%): Đèn hàng hải** — nhầm đèn tàu lưới kéo. Nghiêm trọng nhưng ít hơn gap 1.\n\n**Gap 3 (61%): PCCC** — chỉ xuất hiện 1 lần, có thể là do chưa học đến chứ không phải hiểu sai.\n\nQuyết định: Focus vào Gap 1 — Rule 15 vs 16. Đây là gap có confidence cao nhất và cũng là kiến thức core trong COLREGs mà mọi sĩ quan hàng hải đều phải nắm vững. Mình cần search KB để lấy nội dung chính xác của cả 2 rules, sau đó tạo bài tập tình huống thực tế.', s:10 },
+      { a:'tClose' },
+
+      { a:'tOpen', label:'Tìm kiếm tài liệu và thiết kế bài tập' },
+      { a:'tText', t:'Giờ mình cần nội dung chi tiết của Rule 15 và Rule 16 từ knowledge base để tạo bài tập chính xác. Bài tập cần phải:\n- Đặt học viên vào tình huống thực tế trên biển\n- Buộc học viên phải áp dụng đúng rule (không thể đoán)\n- Phân biệt rõ "xác định ai nhường" (Rule 15) vs "cách nhường" (Rule 16)\n\nSearch KB trước:', s:12 },
+      { a:'tool', fn:'search_knowledge_base', args:'query="COLREGs Rule 15 Rule 16 crossing give-way vessel action"', d:1000 },
+      { a:'tRes', t:'Rule 15 — Crossing situation: When two power-driven vessels are crossing so as to involve risk of collision, the vessel which has the other on her own starboard side shall keep out of the way and shall, if the circumstances of the case admit, avoid crossing ahead of the other vessel.\n\nRule 16 — Action by give-way vessel: Every vessel which is directed to keep out of the way of another vessel shall, so far as possible, take early and substantial action to keep well clear.' },
+      { a:'tText', t:'\n\nTốt, đã có đầy đủ nội dung. Giờ thiết kế 3 câu hỏi theo cấp độ tăng dần:\n\n**Câu 1 (Nhận biết):** Cho tình huống crossing cơ bản, hỏi tàu nào nhường → test Rule 15\n**Câu 2 (Áp dụng):** Cho tình huống đã biết ai nhường, hỏi hành động đúng → test Rule 16\n**Câu 3 (Phân tích):** Cho tình huống phức tạp hơn từ radar, học viên phải tự xác định đây có phải crossing không VÀ áp dụng rule nào → test cả 2\n\nCũng nên lưu lại fact rằng học viên đang chủ động cải thiện — đây là behavior tích cực.', s:10 },
+      { a:'tool', fn:'save_user_memory', args:'fact="Actively working on improving Rule 15 vs 16 understanding"', d:500 },
+      { a:'tRes', t:'{"status": "created", "fact_id": 42}' },
+      { a:'tClose' },
+
+      { a:'done' },
+      { a:'ans', t:'**Phân tích điểm yếu của bạn:**\n\n🔴 **Yếu nhất: Rule 15 vs Rule 16** — nhầm lẫn tình huống cắt hướng (85%)\n🟡 Tín hiệu đèn hàng hải ban đêm (72%)\n🟢 Quy trình phòng cháy chữa cháy (61%)\n\n---\n\n**Bài tập tập trung — Rule 15 vs 16:**\n\n**Câu 1 (Nhận biết):** Tàu A heading 090°, phát hiện tàu B bearing 045° mạn phải, CPA 0.3nm. Theo Rule 15, tàu nào phải nhường đường? Giải thích lý do.\n\n**Câu 2 (Áp dụng):** Trong tình huống trên, tàu A là tàu nhường. Theo Rule 16, hành động nào đúng?\na) Giảm tốc 2 knots và quan sát\nb) Đổi hướng sang phải ≥30° sớm khi còn cách xa\nc) Chờ tàu B hành động trước rồi mới phản ứng\n\n**Câu 3 (Phân tích):** Bạn đang heading 180°, radar hiện target bearing 225° relative, speed 12 knots, CPA 0.2nm, TCPA 15 phút. Đây có phải crossing situation không? Nếu có, áp dụng rule nào? Nếu không, đây là tình huống gì?\n\nHãy thử trả lời từng câu — mình sẽ chấm chi tiết và giải thích! 🎯', s:8 },
+    ]
+  },
+
+  interleaved: {
+    q: "So sánh chi tiết Rule 15 và Rule 16, cho ví dụ thực tế cho từng rule.",
+    steps: [
+      { a:'tOpen', label:'Phân tích yêu cầu so sánh hai quy tắc COLREGs' },
+      { a:'tText', t:'Học viên muốn so sánh chi tiết Rule 15 và Rule 16 với ví dụ thực tế. Đây là yêu cầu tốt vì chính sự nhầm lẫn giữa 2 rules này là gap lớn nhất của học viên (confidence 85% trong memory).\n\nCách tiếp cận: Thay vì giải thích cả 2 rules một lúc rồi so sánh, mình sẽ chia thành 2 phần rõ ràng — giải thích Rule 15 trước với ví dụ cụ thể, sau đó Rule 16 với ví dụ cụ thể. Cuối cùng mới đưa ra bảng so sánh tổng hợp. Cách này giúp học viên tiếp thu từng rule riêng biệt trước khi nhìn tổng thể.\n\nBắt đầu với Rule 15 — quy tắc về crossing situation.', s:10 },
+      { a:'tool', fn:'search_knowledge_base', args:'query="COLREGs Rule 15 crossing situation power-driven vessels"', d:900 },
+      { a:'tRes', t:'Rule 15: When two power-driven vessels are crossing so as to involve risk of collision, the vessel which has the other on her own starboard side shall keep out of the way and shall, if the circumstances admit, avoid crossing ahead of the other vessel.' },
+      { a:'tText', t:'\n\nĐã có nội dung Rule 15. Điểm mấu chốt cần giải thích:\n- "Crossing" — hai tàu đi cắt nhau (không phải head-on, không phải overtaking)\n- "On her own starboard side" — tàu thấy tàu kia ở mạn PHẢI thì phải nhường\n- "Avoid crossing ahead" — khi nhường, nên đi SAU đuôi tàu kia, không cắt mũi\n\nVí dụ mình sẽ dùng: tàu container heading East gặp tàu bulk carrier heading North tại giao điểm. Rõ ràng, dễ hình dung. Giải thích phần này trước, rồi tiếp tục tìm Rule 16.', s:10 },
+      { a:'tClose' },
+
+      { a:'ans', t:'**Rule 15 — Tình huống cắt hướng (Crossing Situation)**\n\nKhi hai tàu máy cắt hướng nhau có nguy cơ va chạm, **tàu nào nhìn thấy tàu kia ở mạn phải** (starboard side) phải nhường đường. Khi nhường, nên tránh cắt phía trước mũi tàu kia.\n\n**Ví dụ:** Tàu container của bạn heading 090° (Đông), tàu bulk carrier heading 000° (Bắc) xuất hiện ở mạn phải, bearing 045°. Bạn thấy tàu kia ở mạn phải → bạn là tàu nhường. Bạn nên đổi hướng sang phải để đi sau đuôi tàu bulk carrier, không cắt trước mũi.', s:10 },
+
+      { a:'tOpen', label:'Tìm kiếm và phân tích Rule 16' },
+      { a:'tText', t:'Phần Rule 15 đã giải thích xong. Giờ chuyển sang Rule 16 — quy tắc về cách hành động khi đã xác định mình là tàu nhường (give-way vessel).\n\nĐiểm khác biệt quan trọng mà nhiều học viên bỏ sót: Rule 15 trả lời "AI nhường?", còn Rule 16 trả lời "Nhường NHƯ THẾ NÀO?". Hai câu hỏi hoàn toàn khác nhau nhưng hay bị gộp lại thành một.\n\nSearch KB để lấy nội dung chính xác:', s:10 },
+      { a:'tool', fn:'search_knowledge_base', args:'query="COLREGs Rule 16 give-way vessel early substantial action"', d:1000 },
+      { a:'tRes', t:'Rule 16: Every vessel which is directed to keep out of the way of another vessel shall, so far as possible, take early and substantial action to keep well clear.' },
+      { a:'tText', t:'\n\nTừ khóa quyết định trong Rule 16 là "early" và "substantial". Đây là 2 tiêu chí mà tòa hàng hải luôn dùng để đánh giá hành vi của tàu nhường:\n\n- **"Early"** — hành động ngay khi phát hiện nguy cơ, không chờ đến lúc gần mới xử lý. Cụ thể, nên hành động khi distance > 2-3 nm (tùy vùng nước)\n- **"Substantial"** — hành động phải đủ lớn để tàu kia nhận ra bằng radar. Giảm 1-2 knots KHÔNG đủ. Đổi hướng 5° KHÔNG đủ. Phải đổi ≥30° hoặc giảm tốc đáng kể.\n\nVí dụ mình sẽ cho: so sánh 1 tình huống xử lý đúng vs sai để học viên thấy rõ sự khác biệt giữa "substantial" và "nửa vời".', s:10 },
+      { a:'tClose' },
+
+      { a:'done' },
+
+      { a:'ans', t:'**Rule 16 — Hành động của tàu nhường (Give-way Vessel Action)**\n\nTàu nhường phải hành động **sớm** (early) và **rõ ràng, đáng kể** (substantial) để tránh xa tàu được nhường.\n\n**Ví dụ đúng:** Khi tàu kia còn cách 3nm, bạn đổi hướng sang phải 30° — tàu kia thấy rõ trên radar rằng bạn đang tránh, CPA tăng lên 1.5nm.\n\n**Ví dụ sai:** Bạn chỉ giảm 2 knots khi còn cách 1nm — tàu kia không nhận ra sự thay đổi trên radar, CPA vẫn nguy hiểm. Tòa hàng hải sẽ phán đây là vi phạm Rule 16 vì hành động "not substantial".\n\n---\n\n**So sánh nhanh:**\n\n**Rule 15** → Trả lời: **Ai phải nhường?** (tàu thấy tàu kia ở mạn phải)\n**Rule 16** → Trả lời: **Nhường thế nào?** (sớm + rõ ràng + đáng kể)\n\nHai rules bổ sung cho nhau: Rule 15 xác định nghĩa vụ, Rule 16 quy định tiêu chuẩn hành động.', s:8 },
+    ]
+  },
+
+  direct: {
+    q: "Cảm ơn! Bây giờ tôi đã hiểu sự khác biệt rồi.",
+    steps: [
+      { a:'tOpen', label:'Đánh giá phản hồi học viên' },
+      { a:'tText', t:'Học viên xác nhận đã hiểu sự khác biệt giữa Rule 15 và Rule 16. Đây là tín hiệu tích cực. Tuy nhiên, "hiểu" và "áp dụng được" là 2 mức khác nhau — mình nên khuyến khích học viên làm bài tập thực hành hoặc chuyển sang learning gap tiếp theo (đèn hàng hải ban đêm, confidence 72%).\n\nPhản hồi ngắn gọn, tích cực, đưa ra gợi ý tiếp theo.', s:12 },
+      { a:'tClose' },
+      { a:'done' },
+      { a:'ans', t:'Tuyệt vời! Hiểu khái niệm là bước đầu quan trọng. Nếu muốn củng cố thêm, bạn có thể thử làm bài tập mình đưa ở trên — áp dụng vào tình huống cụ thể sẽ giúp nhớ lâu hơn.\n\nHoặc nếu muốn chuyển sang chủ đề khác — mình thấy bạn còn có thể cải thiện phần **tín hiệu đèn hàng hải ban đêm**. Muốn bắt đầu không? 🎯', s:10 },
+    ]
+  }
+};
+
+/* ═══ ENGINE ═══ */
+const chatEl = document.getElementById('chat');
+const scrollBox = document.getElementById('scrollBox');
+let busy = false, grp = null, body = null, txtEl = null, thId = null, t0 = 0, lastTool = null;
+
+function scroll() { scrollBox.scrollTop = scrollBox.scrollHeight; }
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+function tog(id) {
+  document.getElementById(`bd-${id}`)?.classList.toggle('shut');
+  document.getElementById(`ch-${id}`)?.classList.toggle('shut');
+}
+
+function typeIn(el, text, speed) {
+  return new Promise(res => {
+    let i = 0;
+    const cur = el.querySelector('.tc');
+    (function go() {
+      if (i < text.length) {
+        const n = document.createTextNode(text[i]);
+        if (cur) el.insertBefore(n, cur); else el.appendChild(n);
+        i++; scroll(); setTimeout(go, speed);
+      } else {
+        // Post-process: convert **bold** to <strong> tags
+        const cursorHTML = cur ? cur.outerHTML : '';
+        if (cur) cur.remove();
+        el.innerHTML = el.innerHTML
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        // Re-add cursor
+        if (cursorHTML) el.insertAdjacentHTML('beforeend', cursorHTML);
+        res();
+      }
+    })();
+  });
+}
+
+function typeAns(el, text, speed) {
+  return new Promise(res => {
+    const html = text
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n\n---\n\n/g, '<hr>')
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/\n/g, '<br>');
+    const w = `<p>${html}</p>`;
+    let i=0, buf='', tag=false;
+    (function go() {
+      if (i < w.length) {
+        buf += w[i];
+        if (w[i]==='<') tag=true;
+        if (w[i]==='>') tag=false;
+        if (!tag && i%2===0) {
+          el.innerHTML = buf + '<span class="ac"></span>';
+          scroll();
+        }
+        i++; setTimeout(go, tag ? 0 : speed);
+      } else { el.innerHTML = buf; scroll(); res(); }
+    })();
+  });
+}
+
+async function step(s) {
+  switch (s.a) {
+    case 'tOpen': {
+      thId = 'h' + Date.now(); t0 = Date.now();
+      const b = document.createElement('div');
+      b.className = 'th-block'; b.id = `blk-${thId}`;
+      b.innerHTML = `
+        <div class="th-head" onclick="tog('${thId}')">
+          ${SP_LIVE}
+          <span class="th-label">${s.label}<span class="th-dur" id="dr-${thId}"></span></span>
+          <span class="th-chev" id="ch-${thId}"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 4.5L6 7.5L9 4.5"/></svg></span>
+        </div>
+        <div class="th-body" id="bd-${thId}"></div>`;
+      grp.appendChild(b);
+      body = document.getElementById(`bd-${thId}`);
+      txtEl = null; scroll(); break;
+    }
+    case 'tText': {
+      if (!body) break;
+      if (!txtEl) {
+        txtEl = document.createElement('div');
+        txtEl.className = 'th-txt';
+        txtEl.innerHTML = '<span class="tc"></span>';
+        body.appendChild(txtEl);
+      }
+      await typeIn(txtEl, s.t, s.s); break;
+    }
+    case 'tool': {
+      if (!body) break;
+      if (txtEl) { const c = txtEl.querySelector('.tc'); if(c) c.remove(); }
+      txtEl = null;
+      lastTool = 'tl' + Date.now();
+      const row = document.createElement('div');
+      row.className = 'th-tool'; row.id = lastTool;
+      row.innerHTML = `${GEAR(true)}<span class="th-fn">${s.fn}</span><span class="th-args">(${s.args})</span><span class="th-st on" id="st-${lastTool}"><span class="dots"><i></i><i></i><i></i></span></span>`;
+      body.appendChild(row);
+      const sh = document.createElement('div');
+      sh.className = 'th-shimmer'; sh.id = `sh-${lastTool}`;
+      body.appendChild(sh); scroll(); await wait(s.d); break;
+    }
+    case 'tRes': {
+      if (!lastTool) break;
+      const row = document.getElementById(lastTool);
+      if (row) {
+        const g = row.querySelector('.th-gear'); if(g) g.classList.remove('spin');
+        const st = document.getElementById(`st-${lastTool}`);
+        if(st) { st.className='th-st ok'; st.innerHTML=`${CHK_SM} done`; }
+      }
+      const sh = document.getElementById(`sh-${lastTool}`); if(sh) sh.remove();
+      const r = document.createElement('div');
+      r.className = 'th-res'; r.textContent = s.t;
+      body.appendChild(r); scroll(); await wait(200); break;
+    }
+    case 'tClose': {
+      if (txtEl) { const c = txtEl.querySelector('.tc'); if(c) c.remove(); }
+      txtEl = null;
+      const blk = document.getElementById(`blk-${thId}`);
+      if (blk) { const ic = blk.querySelector('.th-sparkle'); if (ic) ic.outerHTML = SP_OFF; }
+      const el = ((Date.now() - t0)/1000).toFixed(1);
+      const dr = document.getElementById(`dr-${thId}`);
+      if (dr) dr.textContent = ` · ${el}s`;
+      await wait(500);
+      document.getElementById(`bd-${thId}`)?.classList.add('shut');
+      document.getElementById(`ch-${thId}`)?.classList.add('shut');
+      await wait(150); body = null; break;
+    }
+    case 'done': {
+      const d = document.createElement('div');
+      d.className = 'done-row';
+      d.innerHTML = `${CHK} <span>Done</span>`;
+      grp.appendChild(d); scroll(); await wait(300); break;
+    }
+    case 'ans': {
+      const el = document.createElement('div');
+      el.className = 'ans'; grp.appendChild(el); scroll();
+      await typeAns(el, s.t, s.s); break;
+    }
+  }
+}
+
+async function run(name) {
+  if (busy) return; busy = true;
+  const sc = SC[name];
+  const u = document.createElement('div');
+  u.className = 'u-msg'; u.textContent = sc.q;
+  chatEl.appendChild(u); await wait(300);
+  grp = document.createElement('div');
+  grp.className = 'a-group'; chatEl.appendChild(grp);
+  // Avatar
+  const av = document.createElement('div');
+  av.className = 'a-avatar'; av.textContent = 'W';
+  grp.appendChild(av);
+  // Content wrapper — all blocks go here
+  const cw = document.createElement('div');
+  cw.className = 'a-content'; grp.appendChild(cw);
+  grp = cw; // redirect grp to content wrapper
+  for (const st of sc.steps) await step(st);
+  busy = false;
+}
+
+function send() {
+  const inp = document.getElementById('inp');
+  if (!inp.value.trim() || busy) return;
+  const t = inp.value.trim(); inp.value = '';
+  const u = document.createElement('div');
+  u.className = 'u-msg'; u.textContent = t; chatEl.appendChild(u);
+  setTimeout(async () => {
+    busy = true;
+    grp = document.createElement('div');
+    grp.className = 'a-group'; chatEl.appendChild(grp);
+    const av2 = document.createElement('div');
+    av2.className = 'a-avatar'; av2.textContent = 'W';
+    grp.appendChild(av2);
+    const cw2 = document.createElement('div');
+    cw2.className = 'a-content'; grp.appendChild(cw2);
+    grp = cw2;
+    await step({a:'tOpen', label:'Đang phân tích câu hỏi'});
+    await step({a:'tText', t:'Học viên đặt câu hỏi mới. Cần xác định đây thuộc chủ đề nào trong chương trình đào tạo hàng hải, sau đó tìm tài liệu phù hợp trong knowledge base. Cũng nên kiểm tra memory xem học viên có context nào liên quan từ trước không để điều chỉnh cách giải thích cho phù hợp với trình độ hiện tại.', s:10});
+    await step({a:'tClose'});
+    await step({a:'done'});
+    await step({a:'ans', t:'Đây là bản demo UI. Trong production, nội dung thinking sẽ được model generate realtime — mỗi câu hỏi khác nhau sẽ có chain-of-thought khác nhau, dài ngắn tùy độ phức tạp. Frontend chỉ cần nhận SSE events và render đúng block type.', s:10});
+    busy = false;
+  }, 250);
+}
+</script>
+</body>
+</html>

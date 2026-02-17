@@ -1,0 +1,366 @@
+/**
+ * Sidebar — conversation list with time groups, search, pins, domain badges.
+ * Sprint 82b: Icon-rail collapsed mode (48px) with tooltips.
+ * Full mode: 256px conversation list (unchanged).
+ */
+import { useState, useRef, useEffect, useCallback } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { Plus, Trash2, Settings, MessageSquare, Search, Pin, PinOff, Pencil } from "lucide-react";
+import { useChatStore } from "@/stores/chat-store";
+import { useUIStore } from "@/stores/ui-store";
+import { useDomainStore } from "@/stores/domain-store";
+import { useToastStore } from "@/stores/toast-store";
+import { ConnectionBadge } from "@/components/common/ConnectionBadge";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { WiiiAvatar } from "@/components/common/WiiiAvatar";
+import { groupConversations, DOMAIN_BADGES } from "@/lib/conversation-groups";
+import { sidebarItemEntry } from "@/lib/animations";
+import type { Conversation } from "@/api/types";
+
+export function Sidebar() {
+  const {
+    conversations,
+    activeConversationId,
+    searchQuery,
+    createConversation,
+    deleteConversation,
+    renameConversation,
+    setActiveConversation,
+    setSearchQuery,
+    pinConversation,
+    unpinConversation,
+  } = useChatStore();
+  const { sidebarOpen, openSettings } = useUIStore();
+  const { activeDomainId } = useDomainStore();
+  const { addToast } = useToastStore();
+
+  // Sprint 85: Debounce search to prevent O(n) filter on every keystroke
+  const [localSearch, setLocalSearch] = useState(searchQuery);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const handleSearchChange = useCallback((value: string) => {
+    setLocalSearch(value);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setSearchQuery(value), 300);
+  }, [setSearchQuery]);
+
+  // Sync local state if store search changes externally
+  useEffect(() => {
+    setLocalSearch(searchQuery);
+  }, [searchQuery]);
+
+  // Cleanup debounce on unmount
+  useEffect(() => () => clearTimeout(debounceRef.current), []);
+
+  const groups = groupConversations(conversations, searchQuery);
+
+  // Confirm delete state
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  const handleConfirmDelete = () => {
+    if (deleteTarget) {
+      deleteConversation(deleteTarget);
+      addToast("success", "Wiii đã quên cuộc trò chuyện này");
+      setDeleteTarget(null);
+    }
+  };
+
+  // Collapsed icon-rail mode (48px)
+  if (!sidebarOpen) {
+    return (
+      <div className="flex flex-col h-full w-12 bg-surface-secondary border-r border-border items-center py-3 gap-1">
+        {/* New chat */}
+        <button
+          onClick={() => createConversation(activeDomainId)}
+          className="flex items-center justify-center w-9 h-9 rounded-lg text-text-secondary hover:text-text hover:bg-surface-tertiary transition-colors"
+          title="Cuộc trò chuyện mới"
+          aria-label="Tạo cuộc trò chuyện mới"
+        >
+          <Plus size={18} />
+        </button>
+
+        {/* Search (visual only — opens sidebar) */}
+        <button
+          onClick={() => useUIStore.getState().setSidebarOpen(true)}
+          className="flex items-center justify-center w-9 h-9 rounded-lg text-text-secondary hover:text-text hover:bg-surface-tertiary transition-colors"
+          title="Tìm kiếm"
+          aria-label="Mở tìm kiếm"
+        >
+          <Search size={18} />
+        </button>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Connection badge — compact */}
+        <div className="mb-1" title="Trạng thái kết nối">
+          <ConnectionBadge compact />
+        </div>
+
+        {/* Settings */}
+        <button
+          onClick={openSettings}
+          className="flex items-center justify-center w-9 h-9 rounded-lg text-text-secondary hover:text-text hover:bg-surface-tertiary transition-colors"
+          title="Cài đặt"
+          aria-label="Mở cài đặt"
+        >
+          <Settings size={18} />
+        </button>
+      </div>
+    );
+  }
+
+  // Full expanded mode (256px)
+  return (
+    <div className="flex flex-col h-full w-64 bg-surface-secondary border-r border-border">
+      {/* New chat button */}
+      <div className="p-3">
+        <button
+          onClick={() => createConversation(activeDomainId)}
+          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-text hover:bg-[var(--surface-tertiary)] active:scale-[0.985] transition-all duration-300 text-sm font-medium"
+          aria-label="Tạo cuộc trò chuyện mới"
+        >
+          <Plus size={16} />
+          ✨ Trò chuyện mới
+        </button>
+      </div>
+
+      {/* Search */}
+      <div className="px-3 pb-2">
+        <div className="relative">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary" />
+          <input
+            type="text"
+            value={localSearch}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Mình tìm gì nhỉ?"
+            className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-border bg-surface text-text text-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent)] placeholder:text-text-tertiary"
+            aria-label="Tìm kiếm cuộc trò chuyện"
+          />
+        </div>
+      </div>
+
+      {/* Conversation list with groups */}
+      <div className="flex-1 overflow-y-auto px-2" role="list" aria-label="Danh sách cuộc trò chuyện">
+        {groups.length === 0 ? (
+          <div className="flex flex-col items-center text-center text-text-tertiary text-xs mt-8 px-4 gap-3">
+            {!searchQuery && <WiiiAvatar state="idle" size={32} />}
+            <span>
+              {searchQuery
+                ? "Mình không tìm thấy gì. Thử từ khác nhé?"
+                : "Chưa có cuộc trò chuyện nào. Nhấn ✨ để bắt đầu nha!"}
+            </span>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {groups.map((group) => (
+              <div key={group.label}>
+                {/* Group label */}
+                <div className="px-3 py-1 text-[10px] font-semibold text-text-tertiary uppercase tracking-wider">
+                  {group.label === "Ghim" && <Pin size={10} className="inline mr-1" />}
+                  {group.label}
+                </div>
+                {/* Items */}
+                <AnimatePresence initial={false}>
+                  <div className="space-y-0.5">
+                    {group.conversations.map((conv) => (
+                      <motion.div
+                        key={conv.id}
+                        variants={sidebarItemEntry}
+                        initial="hidden"
+                        animate="visible"
+                        exit="exit"
+                        layout
+                      >
+                        <ConversationItem
+                          conv={conv}
+                          isActive={conv.id === activeConversationId}
+                          onSelect={() => setActiveConversation(conv.id)}
+                          onDelete={() => setDeleteTarget(conv.id)}
+                          onRename={(title) => {
+                            renameConversation(conv.id, title);
+                            addToast("success", "Wiii nhớ tên mới rồi!");
+                          }}
+                          onPin={() =>
+                            conv.pinned
+                              ? unpinConversation(conv.id)
+                              : pinConversation(conv.id)
+                          }
+                        />
+                      </motion.div>
+                    ))}
+                  </div>
+                </AnimatePresence>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="p-3 border-t border-border space-y-2">
+        <ConnectionBadge />
+        <button
+          onClick={openSettings}
+          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-tertiary transition-colors"
+          aria-label="Mở cài đặt"
+        >
+          <Settings size={14} />
+          Cài đặt
+        </button>
+      </div>
+
+      {/* Delete confirmation dialog */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Quên cuộc trò chuyện này?"
+        message="Wiii sẽ quên cuộc trò chuyện này vĩnh viễn. Bạn chắc chứ?"
+        confirmLabel="Quên đi"
+        cancelLabel="Thôi, giữ lại"
+        variant="danger"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+    </div>
+  );
+}
+
+function ConversationItem({
+  conv,
+  isActive,
+  onSelect,
+  onDelete,
+  onRename,
+  onPin,
+}: {
+  conv: Conversation;
+  isActive: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+  onRename: (title: string) => void;
+  onPin: () => void;
+}) {
+  const domainBadge = conv.domain_id ? DOMAIN_BADGES[conv.domain_id] : null;
+  const msgCount = conv.message_count ?? conv.messages?.length ?? 0;
+
+  // Inline rename state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(conv.title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  const handleSubmitRename = () => {
+    const trimmed = editTitle.trim();
+    if (trimmed && trimmed !== conv.title) {
+      onRename(trimmed);
+    }
+    setIsEditing(false);
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditTitle(conv.title);
+    setIsEditing(true);
+  };
+
+  return (
+    <div
+      className={`group flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-all duration-150 text-sm ${
+        isActive
+          ? "bg-[var(--border-secondary)] text-text font-medium"
+          : "hover:bg-[var(--surface-tertiary)] text-text-secondary"
+      }`}
+      onClick={onSelect}
+      title={conv.summary || conv.title}
+      role="listitem"
+      aria-selected={isActive}
+    >
+      <MessageSquare size={14} className="shrink-0" />
+
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          value={editTitle}
+          onChange={(e) => setEditTitle(e.target.value)}
+          onBlur={handleSubmitRename}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleSubmitRename();
+            if (e.key === "Escape") setIsEditing(false);
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className="flex-1 bg-surface border border-border rounded px-1.5 py-0.5 text-sm text-text focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+        />
+      ) : (
+        <span className="flex-1 truncate" onDoubleClick={handleDoubleClick}>
+          {conv.title}
+        </span>
+      )}
+
+      {/* Domain badge */}
+      {domainBadge && !isEditing && (
+        <span className="shrink-0 text-[9px] font-bold px-1 py-0.5 rounded bg-surface-tertiary text-text-tertiary">
+          {domainBadge}
+        </span>
+      )}
+
+      {/* Message count */}
+      {msgCount > 0 && !isEditing && (
+        <span className="shrink-0 text-[10px] text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity">
+          {msgCount}
+        </span>
+      )}
+
+      {/* Rename button */}
+      {!isEditing && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setEditTitle(conv.title);
+            setIsEditing(true);
+          }}
+          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-surface-tertiary transition-all"
+          title="Đặt tên mới"
+          aria-label="Đặt tên mới cho cuộc trò chuyện"
+        >
+          <Pencil size={12} />
+        </button>
+      )}
+
+      {/* Pin/Unpin button */}
+      {!isEditing && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onPin();
+          }}
+          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-surface-tertiary transition-all"
+          title={conv.pinned ? "Bỏ ghim" : "Ghim"}
+          aria-label={conv.pinned ? "Bỏ ghim" : "Ghim cuộc trò chuyện"}
+        >
+          {conv.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+        </button>
+      )}
+
+      {/* Delete button */}
+      {!isEditing && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 transition-all"
+          title="Quên cuộc trò chuyện này"
+          aria-label="Xoá cuộc trò chuyện"
+        >
+          <Trash2 size={12} />
+        </button>
+      )}
+    </div>
+  );
+}

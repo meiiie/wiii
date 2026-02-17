@@ -1,0 +1,1 @@
+Và nhớ các test thì phải chạy với .venv nhé. Và lưu ý các test phải thật sự test chứ không phải test giả qua loa và trả về kết quả ảo so với tình trạng thật sự của dự án.

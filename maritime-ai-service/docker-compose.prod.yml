@@ -1,0 +1,277 @@
+# =============================================================================
+# WIII PRODUCTION DOCKER COMPOSE
+# Sprint 83: Production-ready deployment with resource limits and security
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Requirements:
+#   - .env.production file with ALL required secrets
+#   - GOOGLE_API_KEY, API_KEY, JWT_SECRET_KEY must be set
+#   - POSTGRES_PASSWORD, NEO4J_PASSWORD must be changed from defaults
+# =============================================================================
+
+services:
+  # =============================================================================
+  # FASTAPI APP — Production (no hot-reload, Gunicorn workers)
+  # =============================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wiii-app
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    env_file:
+      - .env.production
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-wiii}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wiii_ai}
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-wiii}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_BUCKET=${MINIO_BUCKET:-wiii-docs}
+      - SUPABASE_URL=http://minio:9000
+      - SUPABASE_KEY=${SUPABASE_KEY:-minio-local-key}
+      - VALKEY_URL=redis://valkey:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    command: >
+      gunicorn app.main:app
+      --bind 0.0.0.0:8000
+      --workers ${GUNICORN_WORKERS:-4}
+      --worker-class uvicorn.workers.UvicornWorker
+      --timeout 120
+      --graceful-timeout 30
+      --keep-alive 5
+      --max-requests 1000
+      --max-requests-jitter 50
+      --access-logfile -
+    networks:
+      - wiii-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "${APP_CPU_LIMIT:-2.0}"
+          memory: "${APP_MEM_LIMIT:-4G}"
+        reservations:
+          cpus: "0.5"
+          memory: "512M"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/live"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # =============================================================================
+  # POSTGRESQL — Production (resource limits, no exposed ports by default)
+  # =============================================================================
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: wiii-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wiii}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-wiii_ai}
+    # No external ports exposed in production (access via internal network only)
+    # Uncomment for maintenance access:
+    # ports:
+    #   - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db:/docker-entrypoint-initdb.d:ro
+    networks:
+      - wiii-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "2G"
+        reservations:
+          cpus: "0.25"
+          memory: "256M"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wiii} -d ${POSTGRES_DB:-wiii_ai}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # =============================================================================
+  # NEO4J — Production (no browser exposed externally)
+  # =============================================================================
+  neo4j:
+    image: neo4j:5-community
+    container_name: wiii-neo4j
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 1G
+      NEO4J_dbms_memory_pagecache_size: 512m
+    # No external ports exposed in production
+    # Uncomment for maintenance:
+    # ports:
+    #   - "127.0.0.1:7474:7474"
+    #   - "127.0.0.1:7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    networks:
+      - wiii-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "2G"
+        reservations:
+          cpus: "0.25"
+          memory: "512M"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7474"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # =============================================================================
+  # MINIO — Production Object Storage
+  # =============================================================================
+  minio:
+    image: minio/minio:latest
+    container_name: wiii-minio
+    # No external ports — access via internal network
+    # Uncomment for maintenance console:
+    # ports:
+    #   - "127.0.0.1:9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-wiii}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    networks:
+      - wiii-network
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "512M"
+        reservations:
+          cpus: "0.1"
+          memory: "128M"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # MINIO INIT — Create bucket on startup
+  # =============================================================================
+  minio-init:
+    image: minio/mc:latest
+    container_name: wiii-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-wiii}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET:-wiii-docs}
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5 &&
+      /usr/bin/mc config host add local http://minio:9000 $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY &&
+      /usr/bin/mc mb local/$$MINIO_BUCKET --ignore-existing &&
+      echo 'MinIO bucket created successfully'
+      "
+    networks:
+      - wiii-network
+    restart: "no"
+
+  # =============================================================================
+  # VALKEY — Rate Limiter + Cache Backend (production)
+  # =============================================================================
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: wiii-valkey
+    # No external ports in production
+    volumes:
+      - valkey_data:/data
+    networks:
+      - wiii-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "256M"
+        reservations:
+          cpus: "0.1"
+          memory: "64M"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:
+    driver: local
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+  minio_data:
+    driver: local
+  valkey_data:
+    driver: local
+
+networks:
+  wiii-network:
+    driver: bridge
+    name: wiii-network

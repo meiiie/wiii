@@ -1,0 +1,13 @@
+# Traffic Law domain-specific shared config
+# Extends platform-level app/prompts/base/_shared.yaml
+
+version: "1.0"
+description: "Traffic Law domain tool calling triggers"
+
+tool_calling:
+  mandatory_triggers:
+    - "Luật giao thông, Nghị định, Điều"
+    - "Biển báo, hiệu lệnh, tín hiệu"
+    - "Phạt, vi phạm, mức phạt, penalty"
+    - "Bằng lái, giấy phép lái xe"
+    - "Tốc độ, nồng độ cồn, vượt đèn đỏ"

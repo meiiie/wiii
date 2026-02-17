@@ -1,0 +1,23 @@
+id: traffic_law
+name: "Traffic Law Education"
+name_vi: "Luật Giao thông Đường bộ"
+version: "1.0.0"
+description: "AI tutor for Vietnamese traffic law, road signs, driving regulations"
+
+routing_keywords:
+  - "giao thông, luật giao thông, traffic law"
+  - "biển báo, road sign, traffic sign"
+  - "lái xe, driving, driver license, bằng lái"
+  - "tốc độ, speed limit, nồng độ cồn"
+  - "phạt, vi phạm, violation, penalty, fine"
+  - "đèn đỏ, red light, vạch kẻ đường"
+  - "nghị định 168, nghị định 100"
+
+mandatory_search_triggers:
+  - "Luật giao thông, Nghị định, traffic law"
+  - "Biển báo, road sign, hiệu lệnh"
+  - "Phạt, vi phạm, mức phạt, penalty"
+  - "Bằng lái, giấy phép lái xe, driving license"
+
+rag_agent_description: "Tra cứu luật giao thông đường bộ, nghị định, mức phạt, biển báo"
+tutor_agent_description: "Giải thích, ôn thi bằng lái xe, quiz về luật giao thông"

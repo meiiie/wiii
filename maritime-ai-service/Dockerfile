@@ -1,0 +1,38 @@
+# Wiii Service Dockerfile
+# by The Wiii Lab
+# Multimodal RAG with Vision support (PyMuPDF)
+
+FROM python:3.11-slim
+
+# Install system dependencies (poppler-utils no longer needed - using PyMuPDF)
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Create non-root user for security
+RUN useradd --create-home --shell /bin/bash appuser
+USER appuser
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8000/api/v1/health/live || exit 1
+
+# Run application
+CMD ["gunicorn", "app.main:app", "-w", "1", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--timeout", "180"]

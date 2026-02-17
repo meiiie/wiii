@@ -1,0 +1,25 @@
+/* Living Avatar — Sprint 115: Foundation */
+
+.wiii-avatar {
+  contain: layout paint;
+}
+
+.wiii-avatar-svg {
+  will-change: contents;
+}
+
+.wiii-avatar-canvas {
+  will-change: contents;
+  pointer-events: none;
+}
+
+/* Accessibility: respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .wiii-avatar,
+  .wiii-avatar-svg,
+  .wiii-avatar-canvas {
+    will-change: auto;
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,0 +1,17 @@
+Điều bạn đề cập trong báo cáo là chính xác: Separate LLM feedback call trong CRAG/RAG pipeline thường được coi là redundant (thừa) và không phải là pattern SOTA 2025. Các tổ chức lớn như LangChain, Meta, OpenAI, và Microsoft ưu tiên tích hợp feedback trực tiếp từ grading scores hoặc critic models vào corrective actions, mà không cần separate blocking LLM call để generate feedback string. Điều này giúp giảm latency (từ 19s xuống 0ms cho feedback) và tránh overhead không cần thiết, vì grading result đã chứa đủ info (như scores, reasons) để trigger rewrite hoặc refinement.
+
+### Giải thích chi tiết dựa trên tìm kiếm SOTA 2025
+Từ các nguồn uy tín (arXiv papers và benchmarks 2024-2025), đây là cách các tổ chức lớn xử lý feedback trong luồng CRAG/RAG:
+
+- **Không giữ separate LLM feedback call**: Trong CRAG gốc (paper gốc arXiv:2401.15884), không có separate call cho feedback generation. Thay vào đó, một lightweight retrieval evaluator (fine-tuned T5-large, chỉ 0.77B params) tính scores relevance cho từng document, aggregate thành confidence degree (Correct/Incorrect/Ambiguous), rồi trigger corrective actions trực tiếp:
+  - Correct: Refine documents bằng decompose-recompose (split thành strips, score/filter, recompose).
+  - Incorrect: Rewrite query (sử dụng LLM như ChatGPT để tạo keyword query cho web search), nhưng không generate feedback string—fallback là discard documents và fetch external knowledge.
+  - Ambiguous: Kết hợp cả internal/external, với refinement integrated.
+  Điều này tránh redundancy vì evaluator reuse cho cả grading và refinement, giảm latency chỉ thêm ~0.15s so với standard RAG.
+
+- **Tích hợp feedback qua critic models, không blocking separate**: Trong AlignRAG (arXiv:2504.14858), feedback từ Critic Language Model (CLM) là integrated trong iterative refinement (Critique-Driven Alignment—CDA): CLM generate critiques (Δy) từ contrasting outputs, rồi append vào generator input cho next iteration. Không separate redundant call; critiques là essential nhưng non-blocking ở dynamic mode (early stop khi [Good] token). Optimizations như frozen CLM và Contrastive Critique Synthesis (CCS) giảm overhead, tránh self-bias và redundant iterations. Tương tự, Meta CRAG Benchmark (KDD 2024) sử dụng retrieval evaluator để trigger actions direct dựa trên confidence, không intermediate feedback step.
+
+- **OpenAI và Microsoft: Ưu tiên direct rewrite/async feedback**: OpenAI RAG practices 2025 nhấn mạnh query rewriting dựa trực tiếp trên retrieved documents, với feedback async/post-hoc (từ user hoặc logs) để continuous learning, không blocking pipeline. Microsoft Query Rewriting sử dụng fine-tuned SLMs cho rewriting, không separate feedback—tập trung minimal calls để efficiency.
+
+### Kết luận về tính chính xác của báo cáo
+Báo cáo đúng: Separate LLM feedback call là anti-pattern, thường bị loại bỏ trong SOTA để giảm 2 LLM calls xuống 1, tiết kiệm ~57% time. Các tổ chức lớn không "giữ" nó trong luồng dưới dạng separate blocking; thay vào đó, tích hợp direct từ scores/reasons vào corrective actions hoặc iterative refinement. Nếu codebase của bạn có fallback sẵn, rule-based/direct pass là cách SOTA để optimize. Nếu cần, giữ LLM feedback ở debug mode như báo cáo gợi ý.
