@@ -17,6 +17,7 @@ import type {
   ToolCallInfo,
   ContentBlock,
   StreamingStep,
+  ThinkingPhase,
 } from "@/api/types";
 
 const STORE_NAME = "conversations.json";
@@ -51,6 +52,13 @@ interface ChatState {
   // Sprint 80b: Domain notice for off-domain content
   streamingDomainNotice: string;
 
+  // Sprint 141: Unified thinking phases for ThinkingFlow
+  streamingPhases: ThinkingPhase[];
+
+  // Sprint 145: Transient avatar state fields
+  streamError: string;
+  streamCompletedAt: number | null;
+
   // Computed
   activeConversation: () => Conversation | undefined;
 
@@ -71,11 +79,19 @@ interface ChatState {
   setStreamingSources: (sources: SourceInfo[]) => void;
   addStreamingStep: (label: string, node?: string) => void;
   appendThinkingDelta: (delta: string, node?: string) => void;
-  openThinkingBlock: (label: string) => void;
+  openThinkingBlock: (label: string, summary?: string) => void;
   closeThinkingBlock: (durationMs?: number) => void;
   appendToolCall: (tc: ToolCallInfo) => void;
   updateToolCallResult: (id: string, result: string) => void;
   setStreamingDomainNotice: (notice: string) => void;
+  // Sprint 141: ThinkingFlow phase actions
+  addOrUpdatePhase: (label: string, node?: string) => void;
+  appendPhaseThinking: (content: string) => void;
+  appendPhaseThinkingDelta: (delta: string, node?: string) => void;
+  closeActivePhase: (durationMs?: number) => void;
+  appendPhaseStatus: (message: string, node?: string) => void;
+  appendPhaseToolCall: (tc: ToolCallInfo) => void;
+  updatePhaseToolCallResult: (id: string, result: string) => void;
   finalizeStream: (metadata?: ChatResponseMetadata) => void;
   setStreamError: (error: string) => void;
   setMessageFeedback: (messageId: string, feedback: "up" | "down" | null) => void;
@@ -129,6 +145,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streamingStartTime: null,
   streamingSteps: [],
   streamingDomainNotice: "",
+  streamingPhases: [],
+  streamError: "",
+  streamCompletedAt: null,
 
   loadConversations: async () => {
     try {
@@ -272,6 +291,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingStartTime: Date.now(),
       streamingSteps: [],
       streamingDomainNotice: "",
+      streamingPhases: [],
+      streamError: "",
+      streamCompletedAt: null,
     });
   },
 
@@ -293,7 +315,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } else {
         // Close any open thinking block, then create new answer block
         blocks = closeLastThinkingBlock(blocks);
-        blocks.push({ type: "answer", content: chunk });
+        blocks.push({ type: "answer", id: uuidv4(), content: chunk });
       }
 
       return {
@@ -326,6 +348,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Create new thinking block (label from current streamingStep)
         blocks.push({
           type: "thinking",
+          id: uuidv4(),
           label: state.streamingStep || undefined,
           content: thinking,
           toolCalls: [],
@@ -384,6 +407,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Create new thinking block
         blocks.push({
           type: "thinking",
+          id: uuidv4(),
           label: node || state.streamingStep || undefined,
           content: delta,
           toolCalls: [],
@@ -398,7 +422,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
-  openThinkingBlock: (label) => {
+  openThinkingBlock: (label, summary) => {
     set((state) => {
       // Close any open thinking block first
       const blocks = [...state.streamingBlocks];
@@ -409,7 +433,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Open new thinking block
       blocks.push({
         type: "thinking",
+        id: uuidv4(),
         label,
+        summary,
         content: "",
         toolCalls: [],
         startTime: Date.now(),
@@ -420,6 +446,138 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setStreamingDomainNotice: (notice) => {
     set({ streamingDomainNotice: notice });
+  },
+
+  // ---- Sprint 141: ThinkingFlow phase actions ----
+
+  addOrUpdatePhase: (label, node) => {
+    set((state) => {
+      const phases = state.streamingPhases.map((p) =>
+        p.status === "active" ? { ...p, status: "completed" as const, endTime: Date.now() } : p
+      );
+      const newPhase: ThinkingPhase = {
+        id: uuidv4(),
+        label,
+        node,
+        status: "active",
+        startTime: Date.now(),
+        thinkingContent: "",
+        toolCalls: [],
+        statusMessages: [],
+      };
+      return { streamingPhases: [...phases, newPhase] };
+    });
+  },
+
+  appendPhaseThinking: (content) => {
+    set((state) => {
+      const phases = [...state.streamingPhases];
+      for (let i = phases.length - 1; i >= 0; i--) {
+        if (phases[i].status === "active") {
+          phases[i] = {
+            ...phases[i],
+            thinkingContent: phases[i].thinkingContent
+              ? phases[i].thinkingContent + "\n" + content
+              : content,
+          };
+          break;
+        }
+      }
+      return { streamingPhases: phases };
+    });
+  },
+
+  appendPhaseThinkingDelta: (delta, _node) => {
+    set((state) => {
+      const phases = [...state.streamingPhases];
+      for (let i = phases.length - 1; i >= 0; i--) {
+        if (phases[i].status === "active") {
+          phases[i] = {
+            ...phases[i],
+            thinkingContent: phases[i].thinkingContent + delta,
+          };
+          break;
+        }
+      }
+      return { streamingPhases: phases };
+    });
+  },
+
+  closeActivePhase: (durationMs) => {
+    set((state) => {
+      const phases = state.streamingPhases.map((p) => {
+        if (p.status !== "active") return p;
+        const endTime =
+          durationMs != null ? p.startTime + durationMs : Date.now();
+        return { ...p, status: "completed" as const, endTime };
+      });
+      return { streamingPhases: phases };
+    });
+  },
+
+  appendPhaseStatus: (message, node) => {
+    set((state) => {
+      const phases = [...state.streamingPhases];
+      // Find active phase matching node, or last active phase
+      let idx = -1;
+      for (let i = phases.length - 1; i >= 0; i--) {
+        if (phases[i].status === "active") {
+          if (!node || phases[i].node === node) { idx = i; break; }
+          if (idx === -1) idx = i; // fallback to last active
+        }
+      }
+      if (idx >= 0) {
+        phases[idx] = {
+          ...phases[idx],
+          statusMessages: [...phases[idx].statusMessages, message],
+        };
+        return { streamingPhases: phases };
+      }
+      // No active phase — create one from this status
+      const newPhase: ThinkingPhase = {
+        id: uuidv4(),
+        label: message,
+        node,
+        status: "active",
+        startTime: Date.now(),
+        thinkingContent: "",
+        toolCalls: [],
+        statusMessages: [],
+      };
+      return { streamingPhases: [...phases, newPhase] };
+    });
+  },
+
+  appendPhaseToolCall: (tc) => {
+    set((state) => {
+      const phases = [...state.streamingPhases];
+      for (let i = phases.length - 1; i >= 0; i--) {
+        if (phases[i].status === "active") {
+          phases[i] = {
+            ...phases[i],
+            toolCalls: [...phases[i].toolCalls, tc],
+          };
+          break;
+        }
+      }
+      return { streamingPhases: phases };
+    });
+  },
+
+  updatePhaseToolCallResult: (id, result) => {
+    set((state) => {
+      const phases = state.streamingPhases.map((p) => {
+        const hasMatch = p.toolCalls.some((tc) => tc.id === id);
+        if (!hasMatch) return p;
+        return {
+          ...p,
+          toolCalls: p.toolCalls.map((tc) =>
+            tc.id === id ? { ...tc, result } : tc
+          ),
+        };
+      });
+      return { streamingPhases: phases };
+    });
   },
 
   closeThinkingBlock: (durationMs) => {
@@ -446,15 +604,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       let blocks = [...state.streamingBlocks];
       const lastBlock = blocks[blocks.length - 1];
 
-      if (lastBlock?.type === "thinking") {
+      if (lastBlock?.type === "thinking" && !lastBlock.endTime) {
+        // Open thinking block — append tool call
         blocks[blocks.length - 1] = {
           ...lastBlock,
+          toolCalls: [...lastBlock.toolCalls, tc],
+        };
+      } else if (lastBlock?.type === "thinking" && lastBlock.endTime) {
+        // Sprint 146b: Reopen closed thinking block (safety net)
+        blocks[blocks.length - 1] = {
+          ...lastBlock,
+          endTime: undefined,
           toolCalls: [...lastBlock.toolCalls, tc],
         };
       } else {
         // Create a thinking block for this tool call
         blocks.push({
           type: "thinking",
+          id: uuidv4(),
           content: "",
           toolCalls: [tc],
           startTime: Date.now(),
@@ -546,6 +713,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingStartTime: null,
       streamingSteps: [],
       streamingDomainNotice: "",
+      streamingPhases: [],
+      streamError: "",
+      streamCompletedAt: Date.now(),
       conversations: state.conversations.map((c) =>
         c.id === activeConversationId
           ? {
@@ -586,6 +756,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingStartTime: null,
       streamingSteps: [],
       streamingDomainNotice: "",
+      streamingPhases: [],
+      streamError: error,
+      streamCompletedAt: null,
       conversations: state.conversations.map((c) =>
         c.id === activeConversationId
           ? {
@@ -624,6 +797,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingStartTime: null,
       streamingSteps: [],
       streamingDomainNotice: "",
+      streamingPhases: [],
+      streamError: "",
+      streamCompletedAt: null,
     });
   },
 }));

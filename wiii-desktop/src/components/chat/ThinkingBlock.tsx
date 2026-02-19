@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown, Check, Copy, Clock, CheckCircle } from "lucide-react";
 import type { ToolCallInfo } from "@/api/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
+
+import type { ThinkingLevel } from "@/api/types";
 
 interface ThinkingBlockProps {
   content: string;
@@ -13,18 +15,20 @@ interface ThinkingBlockProps {
   toolCalls?: ToolCallInfo[];
   /** Custom label for the thinking header (e.g. "Phân tích câu hỏi") */
   label?: string;
+  /** Sprint 145: One-line summary for collapsed header (Claude-like) */
+  summary?: string;
+  /** Sprint 140: Thinking display level — controls initial expand state */
+  thinkingLevel?: ThinkingLevel;
 }
 
 /**
- * Claude-style thinking block with inline tool cards and markdown rendering.
+ * Claude-style thinking block — collapsed by default with summary header.
  *
- * - Auto-expands during streaming
- * - Auto-collapses when streaming stops
- * - Shows "Đang suy nghĩ Xs" with live timer
- * - Shows "Đã suy nghĩ Xs" for completed messages
- * - Renders thinking content as rich markdown (not bullet list)
- * - Inline tool call cards (gear spin, orange mono fn name, status)
- * - Custom sparkle SVG (live vs done state)
+ * Sprint 145 "Tư Duy Sâu":
+ * - Collapsed: Clock/Check icon + summary text + duration + chevron
+ * - Expanded: Simple step list with clock icons, no bordered card
+ * - Default collapsed after completion, expandable on click
+ * - Clean, minimal — matches Claude.ai thinking pattern
  */
 export function ThinkingBlock({
   content,
@@ -32,11 +36,29 @@ export function ThinkingBlock({
   savedDuration,
   toolCalls,
   label: customLabel,
+  summary,
+  thinkingLevel = "balanced",
 }: ThinkingBlockProps) {
-  const [expanded, setExpanded] = useState(isStreaming);
+  // detailed: always start expanded; streaming: expanded; balanced: collapsed
+  const [expanded, setExpanded] = useState(
+    thinkingLevel === "detailed" ? true : isStreaming
+  );
   const [duration, setDuration] = useState(savedDuration || 0);
+  const [copied, setCopied] = useState(false);
   const startTimeRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const handleCopy = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!content) return;
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for non-secure contexts
+    }
+  }, [content]);
 
   // Timer for streaming mode
   useEffect(() => {
@@ -51,71 +73,113 @@ export function ThinkingBlock({
     }
 
     if (!isStreaming && startTimeRef.current) {
-      // Streaming ended — freeze timer, auto-collapse
+      // Streaming ended — freeze timer
       if (timerRef.current) clearInterval(timerRef.current);
       setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
       startTimeRef.current = null;
-      // Auto-collapse after a brief moment
-      const collapseTimer = setTimeout(() => setExpanded(false), 500);
-      return () => clearTimeout(collapseTimer);
+      // Auto-collapse after a brief moment (skip for detailed mode)
+      if (thinkingLevel !== "detailed") {
+        const collapseTimer = setTimeout(() => setExpanded(false), 1500);
+        return () => clearTimeout(collapseTimer);
+      }
     }
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isStreaming]);
+  }, [isStreaming, thinkingLevel]);
 
-  if (!content && (!toolCalls || toolCalls.length === 0)) return null;
+  const hasContent = !!(content || (toolCalls && toolCalls.length > 0));
+  const isComplete = !isStreaming;
 
-  // Display label: custom label (from block) or default
-  const baseLabel = customLabel || (isStreaming ? "Wiii đang suy nghĩ" : "Wiii đã suy nghĩ");
-  const durationSuffix = duration > 0 ? ` · ${duration}s` : (isStreaming ? "..." : "");
-  const durationLabel = baseLabel + durationSuffix;
+  // Header text: prefer summary, then label, then default
+  const headerText = summary || customLabel || "Tự Vấn";
+  const durationText = duration > 0 ? `${duration}s` : (isStreaming ? "" : "");
 
   return (
-    <motion.div
-      className="mb-3"
-      animate={isStreaming ? { opacity: [0.85, 1, 0.85] } : { opacity: 1 }}
-      transition={isStreaming ? { duration: 2, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 }}
-    >
-      {/* Trigger — "Thought for X seconds" */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        aria-expanded={expanded}
-        className="flex items-center gap-2 text-[13px] text-[var(--thinking-text)] hover:opacity-80 transition-opacity"
-      >
-        <SparkleIcon live={isStreaming} />
-        <span className="font-medium">{durationLabel}</span>
-        <ChevronDown
-          size={14}
-          className={`transition-transform duration-200 ${
-            expanded ? "rotate-0" : "-rotate-90"
-          }`}
-        />
-      </button>
-
-      {/* Content — collapsible with AnimatePresence */}
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="overflow-hidden"
+    <div className="mb-1.5 group/thinking">
+      {/* Header row — Claude-style collapsed/expanded toggle */}
+      <div className="flex items-center">
+        {hasContent ? (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            aria-expanded={expanded}
+            className="flex items-center gap-1.5 text-[13px] text-text-tertiary hover:text-text-secondary transition-colors"
           >
-            <div
-              className={`mt-2 rounded-lg border border-[var(--thinking-border)]/30 overflow-hidden ${
-                isStreaming ? "thinking-shimmer" : "bg-[var(--thinking-bg)]"
+            {/* Icon: CheckCircle when complete, Clock when streaming */}
+            {isComplete ? (
+              <CheckCircle size={14} className="text-[var(--accent-green)] shrink-0" />
+            ) : (
+              <Clock size={14} className="shrink-0 animate-pulse" />
+            )}
+
+            {/* Summary/label text */}
+            <span className="font-medium truncate max-w-[400px]">{headerText}</span>
+
+            {/* Duration */}
+            {durationText && (
+              <span className="text-text-tertiary tabular-nums">{durationText}</span>
+            )}
+
+            {/* Streaming dot */}
+            {isStreaming && (
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-orange)] animate-pulse shrink-0" />
+            )}
+
+            {/* Chevron */}
+            <ChevronDown
+              size={14}
+              className={`shrink-0 transition-transform duration-200 ${
+                expanded ? "rotate-0" : "-rotate-90"
               }`}
+            />
+          </button>
+        ) : (
+          /* No content — just label + icon, no expand */
+          <span className="flex items-center gap-1.5 text-[13px] text-text-tertiary">
+            {isStreaming ? (
+              <Clock size={14} className="animate-pulse" />
+            ) : (
+              <CheckCircle size={14} className="text-[var(--accent-green)]" />
+            )}
+            <span className="font-medium">{headerText}</span>
+            {isStreaming && (
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-orange)] animate-pulse" />
+            )}
+          </span>
+        )}
+
+        {/* Copy thinking content */}
+        {content && !isStreaming && (
+          <button
+            onClick={handleCopy}
+            className="ml-1 p-0.5 rounded text-text-tertiary opacity-0 group-hover/thinking:opacity-60 hover:!opacity-100 transition-opacity"
+            title="Sao chép suy nghĩ"
+            aria-label="Sao chép nội dung suy nghĩ"
+          >
+            {copied ? <Check size={12} className="text-[var(--accent-green)]" /> : <Copy size={12} />}
+          </button>
+        )}
+      </div>
+
+      {/* Expanded content — simple step list (no bordered card) */}
+      {hasContent && (
+        <AnimatePresence initial={false}>
+          {expanded && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="overflow-hidden"
             >
-              <div className="px-3 py-2.5">
-                {/* Render thinking content as markdown */}
+              <div className="pl-5 mt-1.5 space-y-0.5">
+                {/* Thinking content as simple text steps */}
                 {content && (
-                  <div className="thinking-content text-xs text-[var(--thinking-text)] leading-relaxed">
+                  <div className="text-xs text-text-secondary leading-relaxed">
                     <MarkdownRenderer content={content} />
                     {isStreaming && (!toolCalls || toolCalls.length === 0) && (
-                      <span className="inline-block w-1.5 h-3.5 bg-[var(--thinking-text)] opacity-40 ml-0.5 animate-pulse rounded-sm" />
+                      <span className="inline-block w-1.5 h-3.5 bg-text-tertiary opacity-40 ml-0.5 animate-pulse rounded-sm" />
                     )}
                   </div>
                 )}
@@ -133,18 +197,26 @@ export function ThinkingBlock({
                     ))}
                   </div>
                 )}
+
+                {/* "Hoàn tất" row at bottom when complete */}
+                {isComplete && content && (
+                  <div className="flex items-center gap-1.5 pt-1 text-text-tertiary">
+                    <CheckCircle size={12} className="text-[var(--accent-green)]" />
+                    <span className="text-[11px]">Hoàn tất</span>
+                  </div>
+                )}
               </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
+    </div>
   );
 }
 
-/* ---- Custom Sparkle SVG ---- */
+/* ---- Custom Sparkle SVG (kept for backward compat imports) ---- */
 
-function SparkleIcon({ live }: { live: boolean }) {
+export function SparkleIcon({ live }: { live: boolean }) {
   return (
     <svg
       width="14"
@@ -154,7 +226,6 @@ function SparkleIcon({ live }: { live: boolean }) {
       className={live ? "sparkle-live" : ""}
       style={live ? undefined : { opacity: 0.35 }}
     >
-      {/* 8 rotating lines */}
       {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
         <line
           key={angle}
@@ -168,7 +239,6 @@ function SparkleIcon({ live }: { live: boolean }) {
           transform={`rotate(${angle} 8 8)`}
         />
       ))}
-      {/* Center dot */}
       <circle
         className={live ? "sparkle-center" : ""}
         cx="8"
@@ -182,7 +252,7 @@ function SparkleIcon({ live }: { live: boolean }) {
 
 /* ---- Inline Tool Card ---- */
 
-function InlineToolCard({
+export function InlineToolCard({
   toolCall,
   isLast,
   isStreaming,
@@ -246,7 +316,7 @@ function InlineToolCard({
           ) : hasResult ? (
             <span className="flex items-center gap-1 text-[var(--accent-green)]">
               <Check size={12} />
-              <span className="text-[10px] font-medium">done</span>
+              <span className="text-[10px] font-medium">hoàn thành</span>
             </span>
           ) : null}
         </span>
@@ -261,11 +331,25 @@ function InlineToolCard({
           {truncateResult(toolCall.result!)}
         </div>
       )}
+
+      {/* Sprint 146b: Post-tool processing indicator */}
+      {hasResult && isLast && isStreaming && (
+        <div className="flex items-center gap-1.5 ml-[26px] mt-1 text-text-tertiary">
+          <span className="flex gap-0.5">
+            <span className="w-1 h-1 rounded-full bg-[var(--accent-orange)] animate-pulse-dot" style={{ animationDelay: "0s" }} />
+            <span className="w-1 h-1 rounded-full bg-[var(--accent-orange)] animate-pulse-dot" style={{ animationDelay: "0.2s" }} />
+            <span className="w-1 h-1 rounded-full bg-[var(--accent-orange)] animate-pulse-dot" style={{ animationDelay: "0.4s" }} />
+          </span>
+          <span className="text-[10px]">Đang phân tích kết quả...</span>
+        </div>
+      )}
     </div>
   );
 }
 
 function truncateResult(result: string): string {
-  if (result.length <= 120) return result;
-  return result.slice(0, 120) + "...";
+  if (result.length <= 300) return result;
+  const cut = result.slice(0, 300);
+  const sp = cut.lastIndexOf(" ");
+  return (sp > 200 ? cut.slice(0, sp) : cut) + "...";
 }

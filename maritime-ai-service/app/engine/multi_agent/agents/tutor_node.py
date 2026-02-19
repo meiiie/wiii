@@ -62,6 +62,24 @@ TOOL_INSTRUCTION_DEFAULT = """
 # Legacy alias
 TOOL_INSTRUCTION = TOOL_INSTRUCTION_DEFAULT
 
+# Sprint 146b: Post-tool acknowledgment templates (Vietnamese)
+_TOOL_ACK = {
+    "tool_knowledge_search": "Wiii tìm được kết quả rồi! Đang phân tích nội dung...",
+    "tool_maritime_search": "Đã tìm được tài liệu hàng hải! Đang phân tích...",
+    "tool_web_search": "Tìm được thông tin trên web! Đang tổng hợp...",
+    "tool_calculator": "Đã tính xong rồi!",
+    "tool_current_datetime": "Đã kiểm tra thời gian!",
+}
+
+
+def _iteration_label(iteration: int, tools_used: list) -> str:
+    """Sprint 146b: Context-aware thinking block label."""
+    if iteration == 0:
+        return "Phân tích câu hỏi"
+    if tools_used:
+        return "Soạn câu trả lời"
+    return f"Suy nghĩ (lần {iteration + 1})"
+
 
 class TutorAgentNode:
     """
@@ -423,11 +441,14 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
             # THINK: LLM reasons and decides action
             # Sprint 70: Stream LLM tokens for true interleaved thinking
             if event_queue is not None:
+                # Sprint 146b: Context-aware label
+                _label = _iteration_label(iteration, tools_used)
                 # Emit thinking_start for this iteration
                 await _push({
                     "type": "thinking_start",
-                    "content": f"Suy nghĩ (lần {iteration + 1})",
+                    "content": _label,
                     "node": "tutor_agent",
+                    "summary": _label,
                 })
                 response = None
                 chunk_count = 0
@@ -446,17 +467,15 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                     # Empty response fallback
                     from langchain_core.messages import AIMessage as _AIMsg
                     response = _AIMsg(content="")
-                # Emit thinking_end for this iteration
-                await _push({
-                    "type": "thinking_end",
-                    "content": "",
-                    "node": "tutor_agent",
-                })
+                # Sprint 146b: DO NOT emit thinking_end here — keep block open for tool execution
             else:
                 response = await self._llm_with_tools.ainvoke(messages)
 
             # Check if LLM wants to call tools
             if not response.tool_calls:
+                # Sprint 146b: Close thinking block when no tool calls needed
+                if event_queue is not None:
+                    await _push({"type": "thinking_end", "content": "", "node": "tutor_agent"})
                 # No tool calls = LLM is done, extract final response AND thinking
                 final_response, llm_thinking = self._extract_content_with_thinking(response.content)
                 # Sprint 74 fix: Content was already streamed as thinking_delta.
@@ -508,6 +527,10 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                             },
                             "node": "tutor_agent",
                         })
+
+                        # Sprint 146b: Post-tool acknowledgment
+                        _ack = _TOOL_ACK.get(tool_name, f"Đã nhận kết quả từ {tool_name}.")
+                        await _push_thinking_deltas(f"\n\n{_ack}")
 
                         # OBSERVE: Add result to conversation
                         messages.append(AIMessage(content="", tool_calls=[tool_call]))
@@ -575,6 +598,10 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                             "node": "tutor_agent",
                         })
 
+                        # Sprint 146b: Post-tool acknowledgment
+                        _ack = _TOOL_ACK.get(tool_name, f"Đã nhận kết quả từ {tool_name}.")
+                        await _push_thinking_deltas(f"\n\n{_ack}")
+
                         messages.append(AIMessage(content="", tool_calls=[tool_call]))
                         messages.append(ToolMessage(
                             content=str(result),
@@ -622,6 +649,10 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                             "node": "tutor_agent",
                         })
 
+                        # Sprint 146b: Post-tool acknowledgment
+                        _ack = _TOOL_ACK.get(tool_name, f"Đã nhận kết quả từ {tool_name}.")
+                        await _push_thinking_deltas(f"\n\n{_ack}")
+
                         messages.append(AIMessage(content="", tool_calls=[tool_call]))
                         messages.append(ToolMessage(
                             content=str(result),
@@ -637,6 +668,10 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                             content=f"Error: {str(e)}",
                             tool_call_id=tool_id,
                         ))
+
+            # Sprint 146b: Close thinking block after all tool executions
+            if event_queue is not None:
+                await _push({"type": "thinking_end", "content": "", "node": "tutor_agent"})
 
             # SOTA 2025 Phase 2: Check if we should break outer loop
             confidence, is_complete = get_last_confidence()
