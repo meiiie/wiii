@@ -3,13 +3,16 @@
  * Sprint 62: Interleaved thinking/answer rendering.
  * Sprint 81: Message action bar, timestamps, regenerate/edit/feedback.
  */
-import { useState, useCallback, memo, Fragment } from "react";
+import { useState, useCallback, memo } from "react";
 import { motion } from "motion/react";
 import { Copy, Check, RefreshCw, ThumbsUp, ThumbsDown, Pencil } from "lucide-react";
-import type { Message, ContentBlock, ThinkingBlockData } from "@/api/types";
+import type { Message, ContentBlock, ThinkingBlockData, MoodType, SoulEmotionData } from "@/api/types";
+import type { AvatarState } from "@/lib/avatar/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { ThinkingBlock } from "./ThinkingBlock";
+import { ActionText } from "./ActionText";
+import { ThinkingTimeline } from "./ThinkingTimeline";
 import { SourceCitation } from "./SourceCitation";
 import { SuggestedQuestions } from "./SuggestedQuestions";
 import { ReasoningTrace } from "./ReasoningTrace";
@@ -23,6 +26,10 @@ import { userMessageEntry, aiMessageEntry } from "@/lib/animations";
 interface MessageBubbleProps {
   message: Message;
   isLastAssistant?: boolean;
+  /** Live avatar state — only passed for the latest assistant message */
+  liveAvatarState?: AvatarState;
+  liveAvatarMood?: MoodType;
+  liveSoulEmotion?: SoulEmotionData | null;
   onSuggestedQuestion?: (q: string) => void;
   onRegenerate?: () => void;
   onEditMessage?: (content: string) => void;
@@ -31,12 +38,15 @@ interface MessageBubbleProps {
 export const MessageBubble = memo(function MessageBubble({
   message,
   isLastAssistant,
+  liveAvatarState,
+  liveAvatarMood,
+  liveSoulEmotion,
   onSuggestedQuestion,
   onRegenerate,
   onEditMessage,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
-  const { show_thinking, show_reasoning_trace } = useSettingsStore(
+  const { show_thinking, show_reasoning_trace, thinking_level } = useSettingsStore(
     (s) => s.settings
   );
 
@@ -81,6 +91,14 @@ export const MessageBubble = memo(function MessageBubble({
     );
   }
 
+  // Extract mood from message metadata (saved at finalize time)
+  const messageMood: MoodType | undefined = (() => {
+    const md = message.metadata?.mood as { mood?: string } | undefined;
+    const m = md?.mood;
+    const valid: string[] = ["excited", "warm", "concerned", "gentle", "neutral"];
+    return valid.includes(m ?? "") ? (m as MoodType) : undefined;
+  })();
+
   // Assistant message
   const blocks = message.blocks;
   const hasBlocks = blocks && blocks.length > 0;
@@ -92,14 +110,26 @@ export const MessageBubble = memo(function MessageBubble({
       initial="hidden"
       animate="visible"
     >
-      {/* Wiii avatar — living presence */}
-      <WiiiAvatar state="complete" />
+      {/* Wiii avatar — latest: 64px kawaii face (live state), older: 24px "W" logo */}
+      {isLastAssistant ? (
+        <motion.div layoutId="wiii-active-avatar">
+          <WiiiAvatar
+            state={liveAvatarState ?? "idle"}
+            size={64}
+            mood={liveAvatarMood ?? messageMood}
+            soulEmotion={liveSoulEmotion}
+          />
+        </motion.div>
+      ) : (
+        <WiiiAvatar state="idle" size={24} mood={messageMood} />
+      )}
 
       <div className="flex-1 min-w-0">
         {hasBlocks ? (
           <BlockRenderer
             blocks={blocks}
             showThinking={show_thinking}
+            thinkingLevel={thinking_level}
             message={message}
           />
         ) : (
@@ -286,61 +316,136 @@ function MessageActions({
 }
 
 /**
- * Block-based renderer — supports interleaved thinking + answer.
- * DoneRow appears before the last answer block if there was any thinking.
+ * Block-based renderer — interleaved thinking + answer (Opus pattern).
+ *
+ * Sprint 146: Each thinking block rendered independently, interleaved with
+ * answer blocks in their original order.
+ *
+ * Sprint 149 "Dòng Chảy Tư Duy":
+ * - 0-2 thinking+action_text blocks → render individually (backward compat)
+ * - 3+ thinking+action_text blocks → group into ThinkingTimeline
+ * - Segments: consecutive thinking+action_text → timeline, answer → inline
  */
 function BlockRenderer({
   blocks,
   showThinking,
+  thinkingLevel = "balanced",
   message: _message,
 }: {
   blocks: ContentBlock[];
   showThinking: boolean;
+  thinkingLevel?: import("@/api/types").ThinkingLevel;
   message: Message;
 }) {
-  // Find the index of the last answer block
-  let lastAnswerIndex = -1;
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    if (blocks[i].type === "answer") {
-      lastAnswerIndex = i;
-      break;
+  // If thinking hidden, only render answer blocks
+  if (!showThinking || thinkingLevel === "minimal") {
+    return (
+      <>
+        {blocks
+          .filter((b) => b.type === "answer")
+          .map((block) => (
+            <div key={block.id} className="font-serif relative">
+              <MarkdownRenderer content={block.content} />
+            </div>
+          ))}
+      </>
+    );
+  }
+
+  // Count thinking + action_text blocks
+  const thinkingActionCount = blocks.filter(
+    (b) => b.type === "thinking" || b.type === "action_text"
+  ).length;
+
+  // Simple path: 0-2 blocks → render individually (backward compat)
+  if (thinkingActionCount < 3) {
+    return (
+      <>
+        {blocks.map((block) => {
+          if (block.type === "thinking") {
+            const tb = block as ThinkingBlockData;
+            return (
+              <ThinkingBlock
+                key={block.id}
+                content={tb.content}
+                toolCalls={tb.toolCalls}
+                savedDuration={
+                  tb.startTime && tb.endTime
+                    ? Math.round((tb.endTime - tb.startTime) / 1000)
+                    : undefined
+                }
+                label={tb.label}
+                summary={tb.summary || tb.label}
+                thinkingLevel={thinkingLevel}
+              />
+            );
+          }
+          if (block.type === "action_text") {
+            return <ActionText key={block.id} content={block.content} node={block.node} />;
+          }
+          if (block.type === "answer") {
+            return (
+              <div key={block.id} className="font-serif relative">
+                <MarkdownRenderer content={block.content} />
+              </div>
+            );
+          }
+          return null;
+        })}
+      </>
+    );
+  }
+
+  // Timeline path: 3+ blocks → segment into timeline groups + answer segments
+  const segments: Array<
+    | { kind: "timeline"; blocks: ContentBlock[]; key: string }
+    | { kind: "answer"; block: ContentBlock }
+  > = [];
+
+  let currentTimeline: ContentBlock[] = [];
+
+  for (const block of blocks) {
+    if (block.type === "thinking" || block.type === "action_text") {
+      currentTimeline.push(block);
+    } else {
+      // Flush accumulated timeline blocks
+      if (currentTimeline.length > 0) {
+        segments.push({
+          kind: "timeline",
+          blocks: currentTimeline,
+          key: currentTimeline[0].id,
+        });
+        currentTimeline = [];
+      }
+      segments.push({ kind: "answer", block });
     }
   }
-  const hasThinking = blocks.some((b) => b.type === "thinking");
+  // Flush remaining timeline blocks
+  if (currentTimeline.length > 0) {
+    segments.push({
+      kind: "timeline",
+      blocks: currentTimeline,
+      key: currentTimeline[0].id,
+    });
+  }
 
   return (
     <>
-      {blocks.map((block, i) => {
-        if (block.type === "thinking") {
-          if (!showThinking) return null;
-          const tb = block as ThinkingBlockData;
-          const duration = tb.startTime && tb.endTime
-            ? Math.round((tb.endTime - tb.startTime) / 1000)
-            : undefined;
+      {segments.map((seg) => {
+        if (seg.kind === "timeline") {
           return (
-            <ThinkingBlock
-              key={i}
-              content={tb.content}
-              toolCalls={tb.toolCalls}
-              savedDuration={duration}
-              label={tb.label}
+            <ThinkingTimeline
+              key={seg.key}
+              phases={seg.blocks}
+              thinkingLevel={thinkingLevel}
             />
           );
         }
-
-        if (block.type === "answer") {
-          const isLastAnswer = i === lastAnswerIndex;
-          return (
-            <Fragment key={i}>
-              {isLastAnswer && hasThinking && <DoneRow />}
-              <div className="font-serif relative">
-                <MarkdownRenderer content={block.content} />
-              </div>
-            </Fragment>
-          );
-        }
-
-        return null;
+        return (
+          <div key={seg.block.id} className="font-serif relative">
+            <MarkdownRenderer content={seg.block.content} />
+          </div>
+        );
       })}
     </>
   );
@@ -371,9 +476,6 @@ function LegacyRenderer({
         />
       )}
 
-      {/* DoneRow before answer */}
-      {message.content && <DoneRow />}
-
       {/* Serif answer */}
       <div className="font-serif relative">
         <MarkdownRenderer content={message.content} />
@@ -382,28 +484,3 @@ function LegacyRenderer({
   );
 }
 
-function DoneRow() {
-  return (
-    <div className="flex items-center gap-1.5 py-1 my-1">
-      <svg className="done-anim" width="17" height="17" viewBox="0 0 20 20" fill="none">
-        <circle
-          cx="10"
-          cy="10"
-          r="9"
-          stroke="var(--accent-green)"
-          strokeWidth="1.5"
-          fill="none"
-        />
-        <path
-          d="M6 10.5l2.5 2.5 5-6"
-          stroke="var(--accent-green)"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-        />
-      </svg>
-      <span className="text-[13px] text-text-tertiary">Done</span>
-    </div>
-  );
-}

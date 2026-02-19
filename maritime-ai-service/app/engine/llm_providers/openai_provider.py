@@ -30,6 +30,16 @@ _TIER_MODEL_MAP = {
     "light": None,      # Use openai_model from config
 }
 
+# o-series models that support reasoning_effort parameter
+_O_SERIES_PREFIXES = ("o1", "o3-mini", "o3", "o4-mini")
+
+# Map tier → reasoning_effort for o-series models
+_TIER_REASONING_EFFORT = {
+    "deep": "high",
+    "moderate": "medium",
+    "light": "low",
+}
+
 
 class OpenAIProvider(LLMProvider):
     """
@@ -69,11 +79,23 @@ class OpenAIProvider(LLMProvider):
         else:
             model = settings.openai_model
 
+        # Detect o-series reasoning models
+        is_o_series = any(model.startswith(prefix) for prefix in _O_SERIES_PREFIXES)
+
         llm_kwargs = {
             "model": model,
             "api_key": settings.openai_api_key,
-            "temperature": temperature,
         }
+
+        if is_o_series:
+            # o-series models don't support temperature; use reasoning_effort instead
+            reasoning_effort = _TIER_REASONING_EFFORT.get(tier, "medium")
+            llm_kwargs["model_kwargs"] = {"reasoning_effort": reasoning_effort}
+            logger.info(
+                f"[OPENAI] o-series model detected: reasoning_effort={reasoning_effort}"
+            )
+        else:
+            llm_kwargs["temperature"] = temperature
 
         # Support OpenRouter or custom base URL
         if settings.openai_base_url:
@@ -82,7 +104,8 @@ class OpenAIProvider(LLMProvider):
         llm = ChatOpenAI(**llm_kwargs)
         logger.info(
             f"[OPENAI] Created {tier.upper()} instance "
-            f"(model={model}, base_url={settings.openai_base_url or 'default'})"
+            f"(model={model}, o_series={is_o_series}, "
+            f"base_url={settings.openai_base_url or 'default'})"
         )
         return llm
 

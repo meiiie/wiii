@@ -517,6 +517,37 @@ function PreferencesTab({ settings, onUpdate }: PreferencesTabProps) {
         onChange={(v) => onUpdate("show_thinking", v)}
       />
 
+      {/* Sprint 140: Thinking Level Control */}
+      {settings.show_thinking && (
+        <FieldGroup label="Mức độ hiển thị suy nghĩ">
+          <div className="flex gap-2">
+            {([
+              { value: "minimal" as const, label: "Tối giản", desc: "Chỉ hiện tiến trình" },
+              { value: "balanced" as const, label: "Cân bằng", desc: "Thu gọn suy nghĩ" },
+              { value: "detailed" as const, label: "Chi tiết", desc: "Mở rộng tất cả" },
+            ]).map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => onUpdate("thinking_level", opt.value)}
+                className={`flex-1 px-3 py-2 rounded-lg text-xs text-center transition-all ${
+                  settings.thinking_level === opt.value
+                    ? "bg-[var(--accent)] text-white"
+                    : "bg-[var(--surface-tertiary)] text-text-secondary hover:bg-[var(--border)]"
+                }`}
+                title={opt.desc}
+              >
+                <div className="font-medium">{opt.label}</div>
+                <div className={`mt-0.5 text-[10px] ${
+                  settings.thinking_level === opt.value ? "text-white/80" : "text-text-tertiary"
+                }`}>
+                  {opt.desc}
+                </div>
+              </button>
+            ))}
+          </div>
+        </FieldGroup>
+      )}
+
       <ToggleField
         label="Hiển thị reasoning trace"
         description="Xem chi tiết các bước xử lý"

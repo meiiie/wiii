@@ -40,6 +40,7 @@ class AgentType(str, Enum):
     TUTOR = "tutor_agent"
     MEMORY = "memory_agent"
     DIRECT = "direct"
+    PRODUCT_SEARCH = "product_search_agent"  # Sprint 148
 
 
 # =============================================================================
@@ -49,7 +50,7 @@ class AgentType(str, Enum):
 ROUTING_PROMPT_TEMPLATE = """Bạn là Supervisor Agent cho hệ thống {domain_name}.
 
 ## Phân tích theo bước:
-1. Xác định intent: lookup (tra cứu) | learning (dạy/giải thích/quiz) | personal (cá nhân) | social (chào hỏi) | off_topic (không liên quan) | web_search (tìm kiếm web/tin tức/pháp luật)
+1. Xác định intent: lookup (tra cứu) | learning (dạy/giải thích/quiz) | personal (cá nhân) | social (chào hỏi) | off_topic (không liên quan) | web_search (tìm kiếm web/tin tức/pháp luật) | product_search (tìm/so sánh sản phẩm/giá cả trên sàn TMĐT)
 2. Xác định domain: có THỰC SỰ liên quan {domain_name} hay không? (Lưu ý: "tàu" có thể là tàu hỏa, không phải tàu thủy)
 3. Chọn agent dựa trên intent + domain
 
@@ -57,6 +58,7 @@ ROUTING_PROMPT_TEMPLATE = """Bạn là Supervisor Agent cho hệ thống {domain
 - RAG_AGENT: intent=lookup VÀ CÓ domain keyword RÕ RÀNG → tra cứu quy định, luật, mức phạt. {rag_description}
 - TUTOR_AGENT: intent=learning VÀ CÓ domain keyword → giải thích, quiz, ôn bài, dạy kiến thức. {tutor_description}
 - MEMORY_AGENT: intent=personal → lịch sử học, preferences, nhớ thông tin
+- PRODUCT_SEARCH_AGENT: intent=product_search → tìm kiếm sản phẩm, so sánh giá, mua hàng trên sàn TMĐT (Shopee, Lazada, TikTok Shop, Google Shopping, Facebook Marketplace)
 - DIRECT: intent=social HOẶC intent=off_topic HOẶC intent=web_search → chào hỏi, cảm ơn, tạm biệt, câu NGOÀI chuyên môn, tìm kiếm web/tin tức/pháp luật
 
 ## Quy tắc QUAN TRỌNG:
@@ -64,6 +66,7 @@ ROUTING_PROMPT_TEMPLATE = """Bạn là Supervisor Agent cho hệ thống {domain
 - "tra cứu/cho biết/nội dung/quy định" + domain keyword → RAG_AGENT
 - Câu hỏi ngắn < 10 ký tự không có domain keyword → DIRECT
 - "tên tôi là/tên mình là/nhớ giúp/bạn có nhớ" → MEMORY_AGENT
+- "tìm sản phẩm/mua hàng/so sánh giá/tìm trên shopee/lazada/tiktok shop" → PRODUCT_SEARCH_AGENT (intent=product_search)
 - "tìm trên web/mạng/internet", "search", "thông tin mới nhất", "tin tức" → DIRECT (intent=web_search, DIRECT có tool tìm kiếm web)
 - "nghị định", "thông tư", "văn bản pháp luật" → DIRECT (intent=web_search, DIRECT có tool_search_legal)
 - "tin tức hàng hải", "maritime news", "shipping news" → DIRECT (intent=web_search, DIRECT có tool_search_maritime)
@@ -90,6 +93,10 @@ ROUTING_PROMPT_TEMPLATE = """Bạn là Supervisor Agent cho hệ thống {domain
 - "Quy tắc nhường đường trên biển" → intent=lookup, agent=RAG_AGENT, confidence=0.95
 - "Thời sự hôm nay" → intent=web_search, agent=DIRECT, confidence=0.95
 - "Giá vàng hôm nay" → intent=web_search, agent=DIRECT, confidence=0.95
+- "Tìm cuộn dây điện 3 ruột 2.5mm²" → intent=product_search, agent=PRODUCT_SEARCH_AGENT, confidence=0.95
+- "So sánh giá máy khoan Bosch trên Shopee và Lazada" → intent=product_search, agent=PRODUCT_SEARCH_AGENT, confidence=0.95
+- "Mua ốp lưng iPhone 16 ở đâu rẻ nhất?" → intent=product_search, agent=PRODUCT_SEARCH_AGENT, confidence=0.90
+- "Tìm trên shopee áo khoác nam" → intent=product_search, agent=PRODUCT_SEARCH_AGENT, confidence=0.95
 
 **Query:** {query}
 
@@ -259,6 +266,7 @@ class SupervisorAgent:
             "TUTOR_AGENT": AgentType.TUTOR.value,
             "MEMORY_AGENT": AgentType.MEMORY.value,
             "DIRECT": AgentType.DIRECT.value,
+            "PRODUCT_SEARCH_AGENT": AgentType.PRODUCT_SEARCH.value,
         }
 
         chosen_agent = agent_map.get(result.agent, AgentType.DIRECT.value)
@@ -281,6 +289,14 @@ class SupervisorAgent:
             logger.info("[SUPERVISOR] Intent override (%s): %s → direct", result.intent, chosen_agent)
             chosen_agent = AgentType.DIRECT.value
             method = "structured+intent_override"
+
+        # Sprint 148: Product search feature gate — fallback to DIRECT if disabled
+        if chosen_agent == AgentType.PRODUCT_SEARCH.value:
+            from app.core.config import settings as _settings
+            if not _settings.enable_product_search:
+                logger.info("[SUPERVISOR] Product search disabled, falling back to DIRECT")
+                chosen_agent = AgentType.DIRECT.value
+                method = "structured+product_search_disabled"
 
         # Sprint 80: Domain keyword validation — catch false positives like "tàu đói"
         pre_validation = chosen_agent

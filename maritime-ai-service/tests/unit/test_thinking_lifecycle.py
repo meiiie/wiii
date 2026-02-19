@@ -30,15 +30,29 @@ import pytest
 
 _cs_key = "app.services.chat_service"
 _svc_key = "app.services"
+_graph_key = "app.engine.multi_agent.graph"
 _had_cs = _cs_key in sys.modules
 _had_svc = _svc_key in sys.modules
+_had_graph = _graph_key in sys.modules
 _orig_cs = sys.modules.get(_cs_key)
+_orig_graph = sys.modules.get(_graph_key)
 
 if not _had_cs:
     _mock_chat_svc = types.ModuleType(_cs_key)
     _mock_chat_svc.ChatService = type("ChatService", (), {})
     _mock_chat_svc.get_chat_service = lambda: None
     sys.modules[_cs_key] = _mock_chat_svc
+
+# Break graph_streaming ↔ graph mutual import
+# Note: get_multi_agent_graph_async is async, so use AsyncMock
+from unittest.mock import AsyncMock as _AsyncMock
+if not _had_graph:
+    _mock_graph = types.ModuleType(_graph_key)
+    _mock_graph.get_multi_agent_graph_async = _AsyncMock()
+    _mock_graph._build_domain_config = MagicMock()
+    _mock_graph._TRACERS = {}
+    _mock_graph._cleanup_tracer = MagicMock()
+    sys.modules[_graph_key] = _mock_graph
 
 from app.engine.multi_agent.stream_utils import (
     StreamEventType,
@@ -257,7 +271,7 @@ class TestGraphStreamingLifecycle:
 
     @pytest.mark.asyncio
     async def test_guardian_emits_status_only(self):
-        """Sprint 74: Guardian emits status only (no thinking_start/end — empty blocks glitch)."""
+        """Sprint 145: Guardian demoted to status-only (no thinking lifecycle)."""
         events = await _collect_events([
             {"guardian": {"guardian_passed": True}},
             {"supervisor": {"next_agent": "direct"}},
@@ -272,12 +286,13 @@ class TestGraphStreamingLifecycle:
                         if e.type == "thinking_end" and e.node == "guardian"]
 
         assert len(guardian_status) == 1
+        # Sprint 145: Guardian no longer emits thinking lifecycle
         assert len(guardian_starts) == 0
         assert len(guardian_ends) == 0
 
     @pytest.mark.asyncio
     async def test_grader_emits_status_only(self):
-        """Sprint 74: Grader emits status only (no thinking_start/end — empty blocks glitch)."""
+        """Sprint 145: Grader demoted to status-only (no thinking lifecycle)."""
         events = await _collect_events([
             {"supervisor": {"next_agent": "rag_agent"}},
             {"rag_agent": {"final_response": "answer"}},
@@ -293,6 +308,7 @@ class TestGraphStreamingLifecycle:
                        if e.type == "thinking_end" and e.node == "grader"]
 
         assert len(grader_status) >= 1  # At least the score status
+        # Sprint 145: Grader no longer emits thinking lifecycle
         assert len(grader_starts) == 0
         assert len(grader_ends) == 0
 
@@ -353,7 +369,8 @@ class TestGraphStreamingLifecycle:
                       if e.type == "thinking_end" and e.node == "tutor_agent"]
         assert len(tutor_starts) == 1
         assert len(tutor_ends) == 1
-        assert tutor_starts[0].content == "Giảng dạy"
+        # Sprint 141: _NODE_LABELS updated to "Soạn bài giảng"
+        assert tutor_starts[0].content == "Soạn bài giảng"
 
     @pytest.mark.asyncio
     async def test_tutor_agent_no_thinking_no_lifecycle(self):
@@ -394,8 +411,12 @@ class TestGraphStreamingLifecycle:
         assert tool_call_idx < rag_start_idx, "Tool calls must be outside (before) thinking block"
 
     @pytest.mark.asyncio
-    async def test_extract_thinking_prefers_vietnamese(self):
-        """_extract_thinking_content should prefer thinking_content over thinking."""
+    async def test_extract_thinking_prefers_native(self):
+        """Sprint 140b: _extract_thinking_content prefers native thinking over thinking_content.
+
+        Native thinking is genuine model reasoning (even if English);
+        thinking_content may be a pipeline dump from ReasoningTracer.
+        """
         events = await _collect_events([
             {"supervisor": {"next_agent": "rag_agent"}},
             {"rag_agent": {
@@ -406,11 +427,13 @@ class TestGraphStreamingLifecycle:
             {"synthesizer": {"final_response": "Answer text here."}},
         ])
 
-        thinking_events = [e for e in events if e.type == "thinking"]
-        assert len(thinking_events) >= 1
-        # Should contain Vietnamese content, not English
-        thinking_text = thinking_events[0].content
-        assert "Phân tích" in thinking_text
+        # Sprint 141b: Bulk thinking now emitted as thinking_delta (not thinking)
+        # Sprint 144: Filter by rag_agent node (supervisor also emits thinking_delta now)
+        rag_thinking = [e for e in events if e.type == "thinking_delta" and e.node == "rag_agent"]
+        assert len(rag_thinking) >= 1
+        # Native model reasoning preferred over thinking_content
+        thinking_text = rag_thinking[0].content
+        assert "English native thinking" in thinking_text
 
     @pytest.mark.asyncio
     async def test_memory_agent_lifecycle(self):

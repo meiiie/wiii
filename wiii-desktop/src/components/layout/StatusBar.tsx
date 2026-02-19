@@ -7,11 +7,11 @@ import { useChatStore } from "@/stores/chat-store";
 import { useContextStore } from "@/stores/context-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useCharacterStore, MOOD_LABELS, MOOD_EMOJI, MOOD_COLORS } from "@/stores/character-store";
+import { useAvatarState } from "@/hooks/useAvatarState";
 import { motion } from "motion/react";
 import { Anchor, Database } from "lucide-react";
 import { DOMAIN_ICONS } from "@/lib/domain-config";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
-import type { AvatarState } from "@/components/common/WiiiAvatar";
 import type { ContextStatus } from "@/stores/context-store";
 
 const CONTEXT_BADGE_COLORS: Record<ContextStatus, string> = {
@@ -22,21 +22,13 @@ const CONTEXT_BADGE_COLORS: Record<ContextStatus, string> = {
   red: "text-red-500",
 };
 
-function deriveAvatarState(isStreaming: boolean, hasContent: boolean, inputFocused: boolean): AvatarState {
-  if (isStreaming) return hasContent ? "speaking" : "thinking";
-  if (inputFocused) return "listening";
-  return "idle";
-}
-
 export function StatusBar() {
   const { activeDomainId } = useDomainStore();
-  const { isStreaming, streamingStep, streamingContent } = useChatStore();
+  const { isStreaming, streamingStep } = useChatStore();
   const { info, status, togglePanel } = useContextStore();
-  const inputFocused = useUIStore((s) => s.inputFocused);
   const toggleCharacterPanel = useUIStore((s) => s.toggleCharacterPanel);
   const { mood, moodEnabled } = useCharacterStore();
-
-  const avatarState = deriveAvatarState(isStreaming, !!streamingContent, inputFocused);
+  const { state: avatarState, mood: avatarMood, soulEmotion } = useAvatarState();
 
   const Icon = DOMAIN_ICONS[activeDomainId] || Anchor;
   const utilization = info ? Math.round(info.utilization ?? 0) : null;
@@ -54,7 +46,7 @@ export function StatusBar() {
           title="Tính cách Wiii"
           aria-label="Mở bảng tính cách Wiii"
         >
-          <WiiiAvatar state={avatarState} size={14} />
+          <WiiiAvatar state={avatarState} size={14} mood={avatarMood} soulEmotion={soulEmotion} />
           {moodEnabled && (
             <span
               className={`text-[10px] ${MOOD_COLORS[mood]}`}

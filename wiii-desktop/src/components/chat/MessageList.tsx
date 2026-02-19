@@ -1,17 +1,21 @@
 /**
  * MessageList — renders conversation messages + streaming state.
  * Sprint 81: Scroll-to-bottom FAB, message actions, regenerate.
+ * Sprint 141b: Interleaved thinking+answer blocks ("Tự Vấn").
  */
+import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { ChevronDown } from "lucide-react";
 import type { Message, ThinkingBlockData } from "@/api/types";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
+import { useAvatarState } from "@/hooks/useAvatarState";
 import { MessageBubble } from "./MessageBubble";
-import { StreamingIndicator } from "./StreamingIndicator";
+import { ThinkingBlock } from "./ThinkingBlock";
+import { ActionText } from "./ActionText";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
-import { ThinkingBlock } from "./ThinkingBlock";
 import { SourceCitation } from "./SourceCitation";
 
 interface MessageListProps {
@@ -39,7 +43,8 @@ export function MessageList({
     streamingSteps,
   } = useChatStore();
 
-  const { show_thinking } = useSettingsStore((s) => s.settings);
+  const { show_thinking, thinking_level } = useSettingsStore((s) => s.settings);
+  const { state: avatarState, mood: avatarMood, soulEmotion } = useAvatarState();
 
   const { containerRef, scrollToBottom, isAtBottom } = useAutoScroll(
     isStreaming ? streamingContent : messages.length
@@ -62,67 +67,81 @@ export function MessageList({
         aria-live="polite"
       >
         <div className="max-w-3xl mx-auto space-y-5">
-          {messages.map((msg, idx) => (
-            <MessageBubble
-              key={msg.id}
-              message={msg}
-              isLastAssistant={idx === lastAssistantIdx && msg.role === "assistant"}
-              onSuggestedQuestion={onSuggestedQuestion}
-              onRegenerate={idx === lastAssistantIdx ? onRegenerate : undefined}
-              onEditMessage={msg.role === "user" ? onEditMessage : undefined}
-            />
-          ))}
+          {messages.map((msg, idx) => {
+            const isLast = idx === lastAssistantIdx && msg.role === "assistant";
+            return (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                isLastAssistant={isLast}
+                liveAvatarState={isLast ? avatarState : undefined}
+                liveAvatarMood={isLast ? avatarMood : undefined}
+                liveSoulEmotion={isLast ? soulEmotion : undefined}
+                onSuggestedQuestion={onSuggestedQuestion}
+                onRegenerate={isLast ? onRegenerate : undefined}
+                onEditMessage={msg.role === "user" ? onEditMessage : undefined}
+              />
+            );
+          })}
 
           {/* Streaming message — avatar + interleaved blocks */}
           {isStreaming && (
             <div className="flex gap-2.5 animate-slide-in">
-              {/* Wiii avatar — thinking until answer starts, then speaking */}
-              <WiiiAvatar state={streamingContent ? "speaking" : "thinking"} />
+              {/* Wiii avatar — 64px kawaii face for active streaming (newest message) */}
+              <motion.div layoutId="wiii-active-avatar">
+                <WiiiAvatar state={avatarState} size={64} mood={avatarMood} soulEmotion={soulEmotion} />
+              </motion.div>
 
               <div className="flex-1 min-w-0">
-                {/* Always show progress panel */}
-                <StreamingIndicator
-                  steps={streamingSteps}
-                  startTime={streamingStartTime}
-                  currentStep={streamingStep}
-                />
-
-                {/* Render streaming blocks in order */}
+                {/* Sprint 146: Interleaved thinking+answer — Opus pattern */}
                 {streamingBlocks.map((block, i) => {
-                  const isLastBlock = i === streamingBlocks.length - 1;
-
                   if (block.type === "thinking") {
-                    if (!show_thinking) return null;
+                    if (!show_thinking || thinking_level === "minimal") return null;
                     const tb = block as ThinkingBlockData;
                     return (
                       <ThinkingBlock
-                        key={i}
+                        key={block.id}
                         content={tb.content}
                         toolCalls={tb.toolCalls}
-                        isStreaming={isLastBlock && !tb.endTime}
                         label={tb.label}
-                        savedDuration={
-                          tb.startTime && tb.endTime
-                            ? Math.round((tb.endTime - tb.startTime) / 1000)
-                            : undefined
-                        }
+                        summary={tb.summary || tb.label}
+                        isStreaming={!tb.endTime}
+                        thinkingLevel={thinking_level}
                       />
                     );
                   }
-
-                  if (block.type === "answer") {
+                  if (block.type === "action_text") {
+                    // Sprint 149: Styled action text with orange border + arrow
                     return (
-                      <div key={i} className="font-serif">
+                      <ActionText key={block.id} content={block.content} node={block.node} />
+                    );
+                  }
+                  if (block.type === "answer") {
+                    const isLastAnswer = !streamingBlocks.slice(i + 1).some(b => b.type === "answer");
+                    return (
+                      <div key={block.id} className="font-serif">
                         <MarkdownRenderer content={block.content} />
-                        {isLastBlock && (
+                        {isLastAnswer && isStreaming && (
                           <span className="inline-block w-[2px] h-[1em] bg-[var(--accent-orange)] ml-0.5 align-middle animate-pulse rounded-sm" />
                         )}
                       </div>
                     );
                   }
-
                   return null;
                 })}
+
+                {/* Minimal mode: current step indicator */}
+                {(thinking_level === "minimal" || !show_thinking) && streamingStep && !streamingContent && (
+                  <div className="flex items-center gap-1.5 text-xs text-text-secondary mb-2">
+                    <span className="w-2 h-2 rounded-full bg-[var(--accent-orange)] animate-pulse" />
+                    <span>{streamingStep}</span>
+                  </div>
+                )}
+
+                {/* Overall timer — during streaming */}
+                {streamingStartTime && (
+                  <StreamingTimer startTime={streamingStartTime} />
+                )}
 
                 {/* Sources during streaming */}
                 {streamingSources && streamingSources.length > 0 && (
@@ -156,6 +175,29 @@ export function MessageList({
           <ChevronDown size={18} />
         </button>
       )}
+    </div>
+  );
+}
+
+/** Compact streaming timer — shows elapsed time during streaming */
+function StreamingTimer({ startTime }: { startTime: number }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    setElapsed(Math.floor((Date.now() - startTime) / 1000));
+    const timer = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [startTime]);
+
+  return (
+    <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-text-tertiary animate-pulse">
+      <span className="tabular-nums">
+        {elapsed >= 60
+          ? `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`
+          : `${elapsed}s`}
+      </span>
     </div>
   );
 }

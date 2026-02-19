@@ -110,15 +110,47 @@ class MemoryAgentNode:
         user_id = state.get("user_id", "")
         query = state.get("query", "")
 
+        # Sprint 140: Event bus for real-time phase progress
+        _event_queue = None
+        _bus_id = state.get("_event_bus_id")
+        if _bus_id:
+            from app.engine.multi_agent.graph_streaming import _get_event_queue
+            _event_queue = _get_event_queue(_bus_id)
+
+        async def _push(event: dict):
+            if _event_queue:
+                try:
+                    _event_queue.put_nowait(event)
+                except Exception:
+                    pass
+
         try:
             # Phase 1: RETRIEVE existing facts
+            await _push({"type": "thinking_start", "content": "Tìm kiếm bộ nhớ", "node": "memory_agent"})
             existing_facts_list = await self._retrieve_facts(user_id)
             existing_facts_dict = {f["type"]: f["content"] for f in existing_facts_list}
+            if existing_facts_list:
+                await _push({
+                    "type": "thinking_delta",
+                    "content": f"Đã tìm thấy {len(existing_facts_list)} thông tin về bạn.\n",
+                    "node": "memory_agent",
+                })
 
             # Phase 2: EXTRACT new facts (with existing facts context)
+            await _push({
+                "type": "thinking_delta",
+                "content": "Phân tích thông tin mới từ tin nhắn...\n",
+                "node": "memory_agent",
+            })
             new_facts = await self._extract_and_store_facts(
                 user_id, query, existing_facts_dict,
             )
+            if new_facts:
+                await _push({
+                    "type": "thinking_delta",
+                    "content": f"Trích xuất {len(new_facts)} thông tin mới.\n",
+                    "node": "memory_agent",
+                })
 
             # Phase 3: DECIDE — classify changes via MemoryUpdater
             parsed_facts = []
@@ -146,11 +178,14 @@ class MemoryAgentNode:
                         logger.warning("[MEMORY_AGENT] DELETE failed for %s: %s", d.fact_type, e)
 
             changes_summary = self._updater.summarize_changes(decisions)
+            await _push({"type": "thinking_end", "content": "", "node": "memory_agent"})
 
             # Phase 4: RESPOND with LLM using all context + changes
+            await _push({"type": "thinking_start", "content": "Soạn câu trả lời", "node": "memory_agent"})
             response = await self._generate_response(
                 llm, query, existing_facts_list, new_facts, changes_summary, state,
             )
+            await _push({"type": "thinking_end", "content": "", "node": "memory_agent"})
 
             # Update state
             state["memory_output"] = response

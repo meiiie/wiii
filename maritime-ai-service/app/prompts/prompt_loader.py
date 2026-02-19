@@ -785,6 +785,85 @@ class PromptLoader:
             sections.append(f"\n[MOOD: {mood_hint}]")
 
         # ============================================================
+        # Sprint 135: SOUL EMOTION — LLM-driven avatar expression tags
+        # Feature-gated: only injected when enable_soul_emotion=True
+        # SOTA Feb 2026: Inline tag approach (provider-agnostic).
+        # Future: migrate to tool_use/express_emotion for 99% reliability.
+        # ============================================================
+        try:
+            from app.core.config import settings as _se_settings
+            if getattr(_se_settings, "enable_soul_emotion", False):
+                sections.append("\n--- BIỂU CẢM KHUÔN MẶT AVATAR (BẮT BUỘC) ---")
+                sections.append(
+                    "Bạn có khuôn mặt avatar hiển thị cảm xúc. "
+                    "Trước khi viết câu trả lời, hãy suy nghĩ:\n"
+                    "1. Cảm xúc chính của câu trả lời này là gì?\n"
+                    "2. Khuôn mặt thay đổi phần nào? (miệng cười? mắt mở to? má đỏ?)\n"
+                    "3. Cường độ cảm xúc (0.0 = tinh tế, 1.0 = rất mạnh)?"
+                )
+                sections.append(
+                    "\nSau khi suy nghĩ, chèn ĐÚNG 1 tag ở DÒNG ĐẦU TIÊN, TRƯỚC nội dung:"
+                )
+                sections.append(
+                    '<!--WIII_SOUL:{"mood":"<mood>","face":{<fields>},"intensity":<0.0-1.0>}-->'
+                )
+                sections.append(
+                    "\nJSON Schema (BẮT BUỘC TUÂN THỦ):\n"
+                    "- mood (bắt buộc): excited | warm | concerned | gentle | neutral\n"
+                    "- intensity (bắt buộc): số thực 0.0 đến 1.0\n"
+                    "- face (tùy chọn, CHỈ ghi field thay đổi — bỏ qua field giữ nguyên):\n"
+                    "  mouthCurve: -1.0..1.0 (cười/buồn)\n"
+                    "  mouthOpenness: 0.0..1.0 (miệng mở — ngạc nhiên, ngáp)\n"
+                    "  mouthShape: 0=bình thường, 1=mèo ω, 2=chấm ·, 3=lượn sóng ～, 4=phụng phịu ε\n"
+                    "  blush: 0.0..1.0 (đỏ mặt)\n"
+                    "  eyeOpenness: 0.5..1.5 (mở mắt)\n"
+                    "  eyeShape: 0.0..1.0 (mắt cong vui ^_^)\n"
+                    "  browRaise: -1.0..1.0 (nhướng mày/cau mày)\n"
+                    "  browTilt: -1.0..1.0 (nghiêng mày — lo âu/bất đối xứng)\n"
+                    "  pupilSize: 0.5..1.5 (đồng tử to/nhỏ)\n"
+                    "  pupilOffsetX: -0.3..0.3 (nhìn trái/phải)\n"
+                    "  pupilOffsetY: -0.3..0.3 (nhìn lên/xuống)"
+                )
+                sections.append("\n10 Ví dụ (đủ 5 mood + biểu cảm đa dạng):")
+                sections.append(
+                    '  Vui: <!--WIII_SOUL:{"mood":"excited","face":{"mouthCurve":0.6,"eyeShape":0.4,"blush":0.2,"eyeOpenness":1.3},"intensity":0.9}-->'
+                )
+                sections.append(
+                    '  Ấm áp: <!--WIII_SOUL:{"mood":"warm","face":{"mouthCurve":0.3,"blush":0.4,"eyeOpenness":1.1},"intensity":0.8}-->'
+                )
+                sections.append(
+                    '  Lo lắng: <!--WIII_SOUL:{"mood":"concerned","face":{"browRaise":-0.4,"browTilt":-0.3,"mouthCurve":-0.3,"eyeOpenness":0.8},"intensity":0.7}-->'
+                )
+                sections.append(
+                    '  Nhẹ nhàng: <!--WIII_SOUL:{"mood":"gentle","face":{"mouthCurve":0.2,"pupilSize":0.8,"browRaise":0.1},"intensity":0.6}-->'
+                )
+                sections.append(
+                    '  Bình thường: <!--WIII_SOUL:{"mood":"neutral","face":{},"intensity":0.5}-->'
+                )
+                sections.append(
+                    '  Rất vui: <!--WIII_SOUL:{"mood":"excited","face":{"mouthCurve":0.8,"eyeShape":0.6,"blush":0.5,"eyeOpenness":1.4,"browRaise":0.3},"intensity":1.0}-->'
+                )
+                sections.append(
+                    '  Hơi buồn: <!--WIII_SOUL:{"mood":"concerned","face":{"mouthCurve":-0.15},"intensity":0.3}-->'
+                )
+                sections.append(
+                    '  Phụng phịu: <!--WIII_SOUL:{"mood":"gentle","face":{"mouthShape":4,"blush":0.5,"eyeOpenness":0.85,"browRaise":-0.1},"intensity":0.9}-->'
+                )
+                sections.append(
+                    '  Mèo cười: <!--WIII_SOUL:{"mood":"excited","face":{"mouthShape":1,"eyeShape":0.6,"mouthCurve":0.5,"blush":0.3},"intensity":0.85}-->'
+                )
+                sections.append(
+                    '  Ngạc nhiên: <!--WIII_SOUL:{"mood":"excited","face":{"eyeOpenness":1.4,"mouthOpenness":0.6,"pupilSize":1.3,"browRaise":0.5},"intensity":1.0}-->'
+                )
+                sections.append(
+                    "\n⚠️ QUAN TRỌNG: Chỉ 1 tag duy nhất, ĐẶT Ở DÒNG ĐẦU TIÊN. "
+                    "Sau tag là nội dung trả lời bình thường. "
+                    "KHÔNG giải thích tag. KHÔNG đặt tag trong code block."
+                )
+        except Exception:
+            pass  # Settings not available — skip
+
+        # ============================================================
         # VARIATION INSTRUCTIONS (Anti-repetition)
         # Spec: ai-response-quality, Requirements 7.1, 7.3
         # ============================================================

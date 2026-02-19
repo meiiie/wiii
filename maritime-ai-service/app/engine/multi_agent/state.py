@@ -58,9 +58,10 @@ class AgentState(TypedDict, total=False):
     # CHỈ THỊ SỐ 29: Native thinking from Gemini (SOTA 2025)
     thinking: Optional[str]  # Native Gemini thinking (priority)
     
-    # CHỈ THỊ SỐ 30: Internal tracer reference for graph-level universal tracing
-    # Enables consistent ReasoningTrace across ALL paths (direct, memory, tutor, rag)
-    _tracer: Optional[Any]  # ReasoningTracer instance inherited across nodes
+    # CHỈ THỊ SỐ 30: Trace ID for graph-level universal tracing
+    # Actual ReasoningTracer stored in module-level dict (not in state) to avoid
+    # msgpack serialization failures with LangGraph checkpoint
+    _trace_id: Optional[str]  # Key into graph._TRACERS dict
 
     # Guardian Agent (SOTA 2026: Defense-in-depth Layer 2)
     guardian_passed: Optional[bool]  # Whether Guardian allowed the message through

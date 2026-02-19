@@ -12,7 +12,7 @@ Pattern: Supervisor with specialized worker agents
 
 import logging
 import re
-from typing import Optional, Literal
+from typing import Dict, Optional, Literal
 
 
 from langgraph.graph import StateGraph, END
@@ -36,26 +36,42 @@ logger = logging.getLogger(__name__)
 # Sprint 79: Generate session summary at these message milestones
 _SUMMARY_MILESTONES = {6, 12, 20, 30}
 
+# Sprint 139: Module-level tracer storage to avoid msgpack serialization failures.
+# ReasoningTracer is NOT msgpack-serializable, so we store it outside AgentState.
+# State only carries a string _trace_id key (serializable).
+_TRACERS: Dict[str, ReasoningTracer] = {}
+
 
 def _get_or_create_tracer(state: AgentState) -> ReasoningTracer:
     """
-    Get existing tracer from state or create new one.
-    
+    Get existing tracer from module-level storage or create new one.
+
     CHỈ THỊ SỐ 30: Enables tracer inheritance across nodes for unified trace.
-    This ensures ALL paths (direct, memory, tutor, rag) contribute to
-    the same reasoning trace, matching SOTA patterns from OpenAI o1, Claude, etc.
-    
+    State carries only a serializable _trace_id string; the actual
+    ReasoningTracer lives in _TRACERS dict (never checkpointed).
+
     Args:
         state: Current agent state
-        
+
     Returns:
         ReasoningTracer instance (either inherited or new)
     """
-    tracer = state.get("_tracer")
-    if tracer is None:
-        tracer = get_reasoning_tracer()
-        state["_tracer"] = tracer
+    trace_id = state.get("_trace_id")
+    if trace_id and trace_id in _TRACERS:
+        return _TRACERS[trace_id]
+    # Create new tracer and assign a unique trace_id
+    import uuid
+    tracer = get_reasoning_tracer()
+    trace_id = str(uuid.uuid4())
+    _TRACERS[trace_id] = tracer
+    state["_trace_id"] = trace_id
     return tracer
+
+
+def _cleanup_tracer(trace_id: Optional[str]) -> None:
+    """Remove tracer from module-level storage after graph completes."""
+    if trace_id and trace_id in _TRACERS:
+        del _TRACERS[trace_id]
 
 
 # =============================================================================
@@ -86,9 +102,26 @@ async def supervisor_node(state: AgentState) -> AgentState:
             details={"routed_to": next_agent}
         )
         
-        # Propagate tracer to result state
-        result_state["_tracer"] = tracer
-        
+        # Propagate trace_id to result state (tracer lives in _TRACERS dict)
+        result_state["_trace_id"] = state.get("_trace_id")
+
+        # Sprint 147: Set thinking_effort from routing intent if not already set
+        if not state.get("thinking_effort"):
+            _intent = ""
+            _routing_meta = result_state.get("routing_metadata")
+            if isinstance(_routing_meta, dict):
+                _intent = _routing_meta.get("intent", "")
+            _effort_map = {
+                "social": "low",
+                "personal": "medium",
+                "lookup": "medium",
+                "learning": "high",
+                "web_search": "high",
+                "off_topic": "medium",
+                "product_search": "high",
+            }
+            result_state["thinking_effort"] = _effort_map.get(_intent, "medium")
+
         return result_state
 
 
@@ -149,9 +182,33 @@ async def memory_node(state: AgentState) -> AgentState:
             details={"has_context": bool(memory_output)}
         )
 
-        # Propagate tracer
-        result_state["_tracer"] = tracer
+        # Propagate trace_id (tracer lives in _TRACERS dict)
+        result_state["_trace_id"] = state.get("_trace_id")
 
+        return result_state
+
+
+async def product_search_node(state: AgentState) -> AgentState:
+    """
+    Product Search agent node — multi-platform e-commerce search (Sprint 148).
+
+    Skips grader (like tutor/memory/direct — comparison data doesn't need grading).
+    """
+    registry = get_agent_registry()
+    tracer = _get_or_create_tracer(state)
+    tracer.start_step("PRODUCT_SEARCH", "Tìm kiếm sản phẩm trên nhiều sàn TMĐT")
+
+    with registry.tracer.span("product_search_agent", "process"):
+        from app.engine.multi_agent.agents.product_search_node import get_product_search_agent_node
+        agent = get_product_search_agent_node()
+        result_state = await agent.process(state)
+
+        tracer.end_step(
+            result="Hoàn tất tìm kiếm sản phẩm",
+            confidence=0.85,
+            details={"tools_used": len(result_state.get("tools_used", []))},
+        )
+        result_state["_trace_id"] = state.get("_trace_id")
         return result_state
 
 
@@ -179,9 +236,9 @@ async def grader_node(state: AgentState) -> AgentState:
             details={"score": score, "passed": score >= 6}
         )
         
-        # Propagate tracer
-        result_state["_tracer"] = tracer
-        
+        # Propagate trace_id (tracer lives in _TRACERS dict)
+        result_state["_trace_id"] = state.get("_trace_id")
+
         return result_state
 
 
@@ -289,7 +346,10 @@ async def synthesizer_node(state: AgentState) -> AgentState:
     logger.info("[SYNTHESIZER] Final trace: %d steps", state['reasoning_trace'].total_steps)
     
     logger.info("[SYNTHESIZER] Final response generated, length=%d", len(final_response))
-    
+
+    # Tracer cleanup happens in process_with_multi_agent() after graph.ainvoke()
+    # _trace_id in state is just a string key — safe for msgpack serialization
+
     return state
 
 
@@ -472,6 +532,19 @@ async def direct_response_node(state: AgentState) -> AgentState:
     """
     query = state.get("query", "")
 
+    # Sprint 140: Event bus for real-time tool/thinking streaming
+    _event_queue = None
+    _bus_id = state.get("_event_bus_id")
+    if _bus_id:
+        from app.engine.multi_agent.graph_streaming import _get_event_queue
+        _event_queue = _get_event_queue(_bus_id)
+
+    async def _push_event(event: dict):
+        if _event_queue:
+            try:
+                _event_queue.put_nowait(event)
+            except Exception:
+                pass
 
     # CHỈ THỊ SỐ 30: Get inherited tracer from supervisor
     tracer = _get_or_create_tracer(state)
@@ -613,13 +686,27 @@ async def direct_response_node(state: AgentState) -> AgentState:
                         break
                     messages.append(llm_response)
                     for tc in llm_response.tool_calls:
-                        matched = next((t for t in _direct_tools if t.name == tc["name"]), None)
+                        _tc_id = tc.get("id", f"tc_{_tool_round}")
+                        _tc_name = tc.get("name", "unknown")
+                        # Sprint 140: Stream tool_call event to frontend
+                        await _push_event({
+                            "type": "tool_call",
+                            "content": {"name": _tc_name, "args": tc.get("args", {}), "id": _tc_id},
+                            "node": "direct",
+                        })
+                        matched = next((t for t in _direct_tools if t.name == _tc_name), None)
                         try:
                             result = await asyncio.to_thread(matched.invoke, tc["args"]) if matched else "Unknown tool"
                         except Exception as _te:
-                            logger.warning("[DIRECT] Tool %s failed: %s", tc.get("name", "?"), _te)
+                            logger.warning("[DIRECT] Tool %s failed: %s", _tc_name, _te)
                             result = "Tool unavailable"
-                        messages.append(_TM(content=str(result), tool_call_id=tc.get("id", "")))
+                        # Sprint 140: Stream tool_result event to frontend
+                        await _push_event({
+                            "type": "tool_result",
+                            "content": {"name": _tc_name, "result": str(result)[:500], "id": _tc_id},
+                            "node": "direct",
+                        })
+                        messages.append(_TM(content=str(result), tool_call_id=_tc_id))
                     # Sprint 99 fix: After tool results, use auto (not forced) so
                     # LLM can generate text response or call more tools as needed
                     llm_response = await llm_auto.ainvoke(messages)
@@ -679,7 +766,7 @@ async def direct_response_node(state: AgentState) -> AgentState:
         )
 
     # CHỈ THỊ SỐ 31 v3 SOTA: Single Build Point Pattern
-    state["_tracer"] = tracer
+    # trace_id already in state from _get_or_create_tracer(), tracer in _TRACERS dict
 
     logger.info("[DIRECT] Response prepared, tracer passed to synthesizer")
 
@@ -690,20 +777,22 @@ async def direct_response_node(state: AgentState) -> AgentState:
 # Routing Function
 # =============================================================================
 
-def route_decision(state: AgentState) -> Literal["rag_agent", "tutor_agent", "memory_agent", "direct"]:
+def route_decision(state: AgentState) -> Literal["rag_agent", "tutor_agent", "memory_agent", "direct", "product_search_agent"]:
     """
     Determine next agent based on supervisor decision.
-    
+
     Returns edge name for LangGraph routing.
     """
     next_agent = state.get("next_agent", "rag_agent")
-    
+
     if next_agent == "rag_agent":
         return "rag_agent"
     elif next_agent == "tutor_agent":
         return "tutor_agent"
     elif next_agent == "memory_agent":
         return "memory_agent"
+    elif next_agent == "product_search_agent":
+        return "product_search_agent"
     else:
         return "direct"
 
@@ -920,6 +1009,9 @@ def build_multi_agent_graph(checkpointer=None):
     workflow.add_node("direct", direct_response_node)
     workflow.add_node("grader", grader_node)
     workflow.add_node("synthesizer", synthesizer_node)
+    # Sprint 148: Product search agent (feature-gated at supervisor level)
+    if settings.enable_product_search:
+        workflow.add_node("product_search_agent", product_search_node)
 
     # Set entry point — Guardian validates before routing
     workflow.set_entry_point("guardian")
@@ -932,15 +1024,18 @@ def build_multi_agent_graph(checkpointer=None):
     )
 
     # Conditional routing from supervisor
+    _routing_map = {
+        "rag_agent": "rag_agent",
+        "tutor_agent": "tutor_agent",
+        "memory_agent": "memory_agent",
+        "direct": "direct",
+    }
+    if settings.enable_product_search:
+        _routing_map["product_search_agent"] = "product_search_agent"
     workflow.add_conditional_edges(
         "supervisor",
         route_decision,
-        {
-            "rag_agent": "rag_agent",
-            "tutor_agent": "tutor_agent",
-            "memory_agent": "memory_agent",
-            "direct": "direct"
-        }
+        _routing_map,
     )
     
     # All agents → Grader (with conditional skip)
@@ -962,6 +1057,10 @@ def build_multi_agent_graph(checkpointer=None):
     
     # Direct → Synthesizer (skip grader)
     workflow.add_edge("direct", "synthesizer")
+
+    # Sprint 148: Product search → Synthesizer (skip grader — comparison data, not knowledge)
+    if settings.enable_product_search:
+        workflow.add_edge("product_search_agent", "synthesizer")
     
     # Grader → Synthesizer
     workflow.add_edge("grader", "synthesizer")
@@ -1105,6 +1204,13 @@ async def process_with_multi_agent(
     elif session_id:
         invoke_config = {"configurable": {"thread_id": session_id}}
 
+    # Sprint 144b: Attach LangSmith per-request callback for dashboard tracing
+    from app.core.langsmith import get_langsmith_callback, is_langsmith_enabled
+    if is_langsmith_enabled():
+        ls_cb = get_langsmith_callback(user_id, session_id, domain_id)
+        if ls_cb:
+            invoke_config.setdefault("callbacks", []).append(ls_cb)
+
     # Sprint 85: Import event queue cleanup for sync path leak prevention
     from app.engine.multi_agent.graph_streaming import _cleanup_stale_queues
 
@@ -1112,6 +1218,9 @@ async def process_with_multi_agent(
     _cleanup_stale_queues()
 
     result = await graph.ainvoke(initial_state, config=invoke_config)
+
+    # Sprint 139: Clean up tracer from module-level storage after graph completes
+    _cleanup_tracer(result.get("_trace_id"))
 
     # Sprint 16: Upsert thread view for conversation index (non-blocking)
     if session_id and user_id:

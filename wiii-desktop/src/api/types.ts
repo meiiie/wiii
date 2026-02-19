@@ -175,7 +175,20 @@ export interface SSEDomainNoticeEvent {
   content: string;
 }
 
+/** Sprint 135: Soul emotion event — LLM-driven avatar expression */
+export interface SSEEmotionEvent {
+  mood: MoodType;
+  face: Partial<Record<string, number>>;
+  intensity: number;
+}
+
 export interface SSEThinkingDeltaEvent {
+  content: string;
+  node?: string;
+}
+
+/** Sprint 147: Bold action text event — narrative between thinking blocks */
+export interface SSEActionTextEvent {
   content: string;
   node?: string;
 }
@@ -185,6 +198,8 @@ export interface SSEThinkingStartEvent {
   content: string;  // label (Vietnamese node name)
   node?: string;
   block_id?: string;
+  /** Sprint 145: One-line summary for Claude-like collapsed header */
+  summary?: string;
 }
 
 export interface SSEThinkingEndEvent {
@@ -207,7 +222,9 @@ export type SSEEventType =
   | "status"
   | "thinking_start"
   | "thinking_end"
-  | "domain_notice";
+  | "domain_notice"
+  | "emotion"
+  | "action_text";
 
 export interface ToolCallInfo {
   id: string;
@@ -231,7 +248,10 @@ export interface StreamingStep {
 /** A thinking block with optional inline tool calls */
 export interface ThinkingBlockData {
   type: "thinking";
+  id: string;
   label?: string;
+  /** Sprint 145: One-line summary for Claude-like collapsed header */
+  summary?: string;
   content: string;
   toolCalls: ToolCallInfo[];
   /** epoch ms when block was created (for duration) */
@@ -243,11 +263,34 @@ export interface ThinkingBlockData {
 /** An answer/content block with markdown text */
 export interface AnswerBlockData {
   type: "answer";
+  id: string;
   content: string;
 }
 
+/** Sprint 147: Bold narrative text between thinking blocks (Claude-style action text) */
+export interface ActionTextBlockData {
+  type: "action_text";
+  id: string;
+  content: string;
+  /** Sprint 149: Source agent node for attribution */
+  node?: string;
+}
+
 /** Ordered content block — enables interleaved thinking+answer rendering */
-export type ContentBlock = ThinkingBlockData | AnswerBlockData;
+export type ContentBlock = ThinkingBlockData | AnswerBlockData | ActionTextBlockData;
+
+/** Sprint 141: Unified thinking phase for ThinkingFlow component */
+export interface ThinkingPhase {
+  id: string;
+  label: string;              // Vietnamese label from thinking_start
+  node?: string;              // Backend node name
+  status: "active" | "completed";
+  startTime: number;
+  endTime?: number;
+  thinkingContent: string;    // AI reasoning (from thinking/thinking_delta)
+  toolCalls: ToolCallInfo[];  // Inline tool cards
+  statusMessages: string[];   // Status updates within this phase
+}
 
 // ===== Domain =====
 export interface DomainSummary {
@@ -441,6 +484,9 @@ export interface Message {
   metadata?: Record<string, unknown>;
 }
 
+/** Sprint 140: Thinking display level — progressive disclosure */
+export type ThinkingLevel = "minimal" | "balanced" | "detailed";
+
 export interface AppSettings {
   server_url: string;
   api_key: string;
@@ -454,4 +500,6 @@ export interface AppSettings {
   show_thinking: boolean;
   show_reasoning_trace: boolean;
   streaming_version: "v1" | "v2" | "v3";
+  /** Sprint 140: Thinking level — minimal (status only), balanced (collapsed), detailed (expanded) */
+  thinking_level: ThinkingLevel;
 }

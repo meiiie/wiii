@@ -206,12 +206,23 @@ class GraderAgentNode:
         # Cap at 10
         score = min(10.0, score)
         
+        _is_helpful = score >= 6
+        _is_complete = len(answer) > 200
+        # Sprint 144: Vietnamese feedback with quality breakdown
+        _fb_parts = []
+        if _is_helpful:
+            _fb_parts.append("Hữu ích: Có")
+        else:
+            _fb_parts.append("Hữu ích: Chưa đạt")
+        _fb_parts.append(f"Đầy đủ: {'Có' if _is_complete else 'Chưa đủ chi tiết'}")
+        _fb_parts.append(f"Độ dài: {len(answer)} ký tự")
+        _fb_parts.append(f"Độ phủ từ khóa: {coverage:.0%}")
         return {
             "score": score,
-            "is_helpful": score >= 6,
+            "is_helpful": _is_helpful,
             "is_accurate": True,  # Can't verify without LLM
-            "is_complete": len(answer) > 200,
-            "feedback": "Rule-based grading"
+            "is_complete": _is_complete,
+            "feedback": " | ".join(_fb_parts)
         }
     
     def is_available(self) -> bool:

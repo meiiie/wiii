@@ -37,9 +37,12 @@ from unittest.mock import MagicMock, AsyncMock, patch
 
 _cs_key = "app.services.chat_service"
 _svc_key = "app.services"
+_graph_key = "app.engine.multi_agent.graph"
 _had_cs = _cs_key in sys.modules
 _had_svc = _svc_key in sys.modules
+_had_graph = _graph_key in sys.modules
 _orig_cs = sys.modules.get(_cs_key)
+_orig_graph = sys.modules.get(_graph_key)
 
 if not _had_cs:
     # Create a proper module mock (not MagicMock — MagicMock can't act as package)
@@ -47,6 +50,16 @@ if not _had_cs:
     _mock_chat_svc.ChatService = type("ChatService", (), {})
     _mock_chat_svc.get_chat_service = lambda: None
     sys.modules[_cs_key] = _mock_chat_svc
+
+# Break graph_streaming ↔ graph mutual import: pre-populate graph module
+# Note: get_multi_agent_graph_async is async, so use AsyncMock
+if not _had_graph:
+    _mock_graph = types.ModuleType(_graph_key)
+    _mock_graph.get_multi_agent_graph_async = AsyncMock()
+    _mock_graph._build_domain_config = MagicMock()
+    _mock_graph._TRACERS = {}
+    _mock_graph._cleanup_tracer = MagicMock()
+    sys.modules[_graph_key] = _mock_graph
 
 from app.engine.multi_agent.graph_streaming import (
     _extract_thinking_content,
@@ -56,13 +69,20 @@ from app.engine.multi_agent.graph_streaming import (
     TOKEN_DELAY_SEC,
 )
 
-# Thorough restore: remove mock AND app.services that cached mock ChatService.
+# Thorough restore: remove mocks AND app.services that cached mock ChatService.
 if not _had_cs:
     sys.modules.pop(_cs_key, None)
     if not _had_svc:
         sys.modules.pop(_svc_key, None)
 elif _orig_cs is not None:
     sys.modules[_cs_key] = _orig_cs
+
+if not _had_graph:
+    # Don't remove — graph_streaming already cached references to the mock.
+    # Removing would cause AttributeError on cached function refs.
+    pass
+elif _orig_graph is not None:
+    sys.modules[_graph_key] = _orig_graph
 
 
 # ============================================================================
@@ -151,14 +171,44 @@ class TestExtractThinkingContent:
         result = _extract_thinking_content(output)
         assert result == "This is the real AI reasoning about the question at hand."
 
-    def test_thinking_content_preferred_over_thinking(self):
-        """Sprint 64: thinking_content (Vietnamese) preferred over thinking (may be English)."""
+    def test_native_thinking_preferred_over_thinking_content(self):
+        """Sprint 140b: Native thinking (model reasoning) preferred over thinking_content.
+
+        thinking_content may be a ReasoningTracer pipeline dump; native thinking
+        is always genuine model reasoning even if English.
+        """
         output = {
             "thinking_content": "Phân tích câu hỏi về quy tắc hàng hải...",
             "thinking": "Analyzing the maritime regulation question...",
         }
         result = _extract_thinking_content(output)
-        assert "Phân tích" in result  # Vietnamese content preferred
+        assert "Analyzing" in result  # Native model reasoning preferred
+
+    def test_pipeline_summary_filtered_from_thinking(self):
+        """Sprint 140b: Pipeline dumps in thinking field are filtered out."""
+        output = {
+            "thinking": "**Quá trình suy nghĩ:**\n1. Phân tích câu hỏi\n2. Tìm kiếm",
+            "thinking_content": "",
+        }
+        result = _extract_thinking_content(output)
+        assert result == ""
+
+    def test_pipeline_summary_filtered_from_thinking_content(self):
+        """Sprint 140b: Pipeline dumps in thinking_content are also filtered."""
+        output = {
+            "thinking": "",
+            "thinking_content": "Quá trình suy nghĩ: 1. Bước phân tích câu hỏi 2. Tìm kiếm tài liệu",
+        }
+        result = _extract_thinking_content(output)
+        assert result == ""
+
+    def test_rag_analysis_prefix_not_filtered(self):
+        """Sprint 140b: [RAG Analysis] with genuine thinking is NOT filtered."""
+        output = {
+            "thinking": "[RAG Analysis]\nThe question asks about COLREG Rule 15 crossing situations...",
+        }
+        result = _extract_thinking_content(output)
+        assert "[RAG Analysis]" in result  # Valid combined thinking preserved
 
 
 # ============================================================================
@@ -286,7 +336,8 @@ class TestProcessWithMultiAgentStreaming:
         supervisor_types = {e.type for e in supervisor_events}
         assert "status" in supervisor_types
         # Lifecycle events are allowed alongside status
-        allowed_types = {"status", "thinking_start", "thinking_end", "thinking"}
+        # Sprint 144: thinking_delta now emitted for routing decision
+        allowed_types = {"status", "thinking_start", "thinking_end", "thinking", "thinking_delta"}
         assert supervisor_types <= allowed_types
 
     @pytest.mark.asyncio
@@ -345,7 +396,7 @@ class TestProcessWithMultiAgentStreaming:
 
         # Sprint 63: Grader scores are status events, not thinking
         status_events = [e for e in events if e.type == "status"]
-        assert any("8/10" in e.content for e in status_events)
+        assert any("8.0/10" in e.content for e in status_events)
 
     @pytest.mark.asyncio
     async def test_guardian_node(self):
@@ -477,7 +528,8 @@ class TestProcessWithMultiAgentStreaming:
             async for event in process_with_multi_agent_streaming("Q", "u1"):
                 events.append(event)
 
-        thinking_events = [e for e in events if e.type == "thinking"]
+        # Sprint 141b: Bulk thinking now emitted as thinking_delta (not thinking)
+        thinking_events = [e for e in events if e.type == "thinking_delta"]
         assert len(thinking_events) >= 1
 
     @pytest.mark.asyncio

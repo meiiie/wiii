@@ -76,6 +76,12 @@ from app.engine.tools.web_search_tools import (
     init_web_search_tools,
 )
 
+# Sprint 147: Think Tool — structured mid-workflow reasoning scratchpad
+from app.engine.tools.think_tool import tool_think
+
+# Sprint 148: Progress Report Tool — multi-phase thinking chain
+from app.engine.tools.progress_tool import tool_report_progress
+
 # Sprint 13: Extended Tools (config-gated, lazy imports)
 # Filesystem, Code Execution, and Skill Management tools
 # are imported and registered only when enabled in config.
@@ -190,6 +196,17 @@ def _init_extended_tools():
         except Exception as e:
             logger.warning("Scheduler tools init failed: %s", e)
 
+    # Product Search Tools (Sprint 148: multi-platform e-commerce)
+    if settings.enable_product_search:
+        try:
+            from app.engine.tools.product_search_tools import init_product_search_tools
+            from app.engine.tools.excel_report_tool import init_excel_report_tool
+            init_product_search_tools()
+            init_excel_report_tool()
+            logger.info("Product search + Excel report tools registered")
+        except Exception as e:
+            logger.warning("Product search tools init failed: %s", e)
+
     # Character Tools (Sprint 95: self-editing character state)
     if getattr(settings, 'enable_character_tools', False):
         try:
@@ -233,6 +250,21 @@ def init_all_tools(rag_agent=None, semantic_memory=None, user_id: str = None, do
 
     # Initialize utility tools (always available)
     init_utility_tools()
+
+    # Sprint 147: Register think tool as core utility (always available)
+    registry = get_tool_registry()
+    if "tool_think" not in registry.get_all_names():
+        registry.register(
+            tool_think, ToolCategory.UTILITY, ToolAccess.READ,
+            description="Think step-by-step about complex problems (private scratchpad)",
+        )
+
+    # Sprint 148: Register progress report tool as core utility (always available)
+    if "tool_report_progress" not in registry.get_all_names():
+        registry.register(
+            tool_report_progress, ToolCategory.UTILITY, ToolAccess.READ,
+            description="Report progress and start a new analysis phase (multi-phase thinking)",
+        )
 
     # Initialize web search tools (always available)
     init_web_search_tools()
@@ -315,6 +347,12 @@ __all__ = [
 
     # Extended Tools (Sprint 13, config-gated)
     "_init_extended_tools",
+
+    # Think Tool (Sprint 147)
+    "tool_think",
+
+    # Progress Report Tool (Sprint 148)
+    "tool_report_progress",
 
     # Convenience
     "get_all_tools",

@@ -303,9 +303,34 @@ class InputProcessor:
                     calculate_effective_importance_from_timestamps,
                 )
 
-                raw_facts = self._semantic_memory.get_user_facts(
-                    user_id=user_id, limit=20, deduplicate=True, apply_decay=True,
-                )
+                # Sprint 137: Semantic fact retrieval — query-relevant facts
+                raw_facts = None
+                try:
+                    from app.core.config import settings as _cfg
+                    if _cfg.enable_semantic_fact_retrieval and message:
+                        from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
+                        _emb = GeminiOptimizedEmbeddings()
+                        query_emb = await _emb.aembed_query(message)
+                        if query_emb:
+                            raw_facts = self._semantic_memory.search_relevant_facts(
+                                user_id=user_id,
+                                query_embedding=query_emb,
+                                limit=_cfg.max_injected_facts,
+                                min_similarity=_cfg.fact_min_similarity,
+                            )
+                            if raw_facts:
+                                logger.debug(
+                                    "[SEMANTIC_FACTS] Retrieved %d query-relevant facts",
+                                    len(raw_facts),
+                                )
+                except Exception as e:
+                    logger.debug("Semantic fact retrieval fallback: %s", e)
+
+                # Fallback to importance-based retrieval
+                if not raw_facts:
+                    raw_facts = self._semantic_memory.get_user_facts(
+                        user_id=user_id, limit=20, deduplicate=True, apply_decay=True,
+                    )
                 provenance_facts = []
                 for rf in (raw_facts or []):
                     meta = rf.metadata or {}

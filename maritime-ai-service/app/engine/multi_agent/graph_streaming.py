@@ -61,6 +61,8 @@ from app.engine.multi_agent.stream_utils import (
     create_tool_call_event,
     create_tool_result_event,
     create_domain_notice_event,
+    create_emotion_event,
+    create_action_text_event,
 )
 
 logger = logging.getLogger(__name__)
@@ -133,10 +135,17 @@ async def _convert_bus_event(event: dict) -> StreamEvent:
         return await create_thinking_start_event(
             label=str(event.get("content", "")),
             node=node or "",
+            summary=event.get("summary"),
         )
     elif etype == "thinking_end":
         return await create_thinking_end_event(
             node=node or "",
+        )
+    elif etype == "action_text":
+        # Sprint 148: Bold narrative from tool_report_progress phase transitions
+        return await create_action_text_event(
+            content=str(event.get("content", "")),
+            node=node,
         )
     else:
         return await create_status_event(
@@ -149,12 +158,74 @@ _NODE_LABELS = {
     "guardian": "Kiểm tra an toàn",
     "supervisor": "Phân tích câu hỏi",
     "rag_agent": "Tra cứu tri thức",
-    "tutor_agent": "Giảng dạy",
+    "tutor_agent": "Soạn bài giảng",
     "grader": "Kiểm tra chất lượng",
     "synthesizer": "Tổng hợp câu trả lời",
     "memory_agent": "Truy xuất bộ nhớ",
-    "direct": "Trả lời trực tiếp",
+    "direct": "Suy nghĩ câu trả lời",
+    "product_search_agent": "Tìm kiếm sản phẩm",
 }
+
+# Sprint 147: Bold narrative text emitted after Supervisor routing
+# Provides Claude-like contextual narrative between thinking blocks
+_INTENT_ACTION_TEXT = {
+    "lookup": "Wiii sẽ tìm kiếm tài liệu liên quan trong cơ sở tri thức...",
+    "learning": "Để giải thích rõ ràng, Wiii sẽ tra cứu kiến thức chuyên ngành và soạn bài giảng...",
+    "web_search": "Wiii cần tìm thông tin mới nhất trên web để trả lời chính xác...",
+    "personal": "Wiii nhớ lại những gì biết về bạn...",
+    "social": "Wiii sẽ trò chuyện cùng bạn...",
+    "off_topic": "Wiii sẽ suy nghĩ và trả lời câu hỏi chung...",
+    "product_search": "Wiii sẽ tìm kiếm sản phẩm trên nhiều sàn thương mại điện tử...",
+}
+
+# Sprint 147: Map intent → thinking_effort
+_INTENT_EFFORT = {
+    "social": "low",
+    "personal": "medium",
+    "lookup": "medium",
+    "learning": "high",
+    "web_search": "high",
+    "off_topic": "medium",
+    "product_search": "high",
+}
+
+
+def _generate_thinking_summary(node_output: dict, query: str) -> str:
+    """Generate Claude-style one-line summary for the thinking block header.
+
+    Sprint 145: Creates a concise Vietnamese summary from the routing decision,
+    used as the collapsed header text in the Claude-like thinking UI.
+    """
+    intent = ""
+    if isinstance(node_output.get("routing_metadata"), dict):
+        intent = node_output["routing_metadata"].get("intent", "")
+    next_agent = node_output.get("next_agent", "")
+
+    _summaries = {
+        "lookup": f"Tra cứu kiến thức về: {query[:50]}",
+        "learning": f"Phân tích và giảng dạy: {query[:50]}",
+        "social": "Trò chuyện cùng người dùng",
+        "personal": "Truy xuất bộ nhớ cá nhân",
+        "web_search": f"Tìm kiếm web: {query[:50]}",
+        "off_topic": f"Trả lời câu hỏi chung: {query[:50]}",
+        "product_search": f"Tìm kiếm sản phẩm: {query[:50]}",
+    }
+
+    if intent and intent in _summaries:
+        return _summaries[intent]
+
+    # Fallback based on next_agent
+    _agent_summaries = {
+        "rag_agent": f"Tra cứu kiến thức: {query[:50]}",
+        "tutor_agent": f"Soạn bài giảng: {query[:50]}",
+        "memory_agent": "Truy xuất bộ nhớ cá nhân",
+        "direct": f"Suy nghĩ câu trả lời: {query[:50]}",
+        "product_search_agent": f"Tìm kiếm sản phẩm: {query[:50]}",
+    }
+    if next_agent and next_agent in _agent_summaries:
+        return _agent_summaries[next_agent]
+
+    return f"Phân tích câu hỏi: {query[:60]}"
 
 
 def _is_likely_english(text: str) -> bool:
@@ -225,30 +296,76 @@ async def _stream_answer_tokens(
         await asyncio.sleep(TOKEN_DELAY_SEC)
 
 
+async def _extract_and_stream_emotion_then_answer(
+    text: str,
+    soul_emitted: bool,
+) -> AsyncGenerator[StreamEvent, None]:
+    """Sprint 135: Extract soul emotion from full-text answer, yield emotion + answer events."""
+    if not soul_emitted and settings.enable_soul_emotion:
+        from app.engine.soul_emotion import extract_soul_emotion
+        result = extract_soul_emotion(text)
+        if result.emotion:
+            yield await create_emotion_event(
+                mood=result.emotion.mood,
+                face=result.emotion.face,
+                intensity=result.emotion.intensity,
+            )
+        text = result.clean_text
+
+    async for event in _stream_answer_tokens(text):
+        yield event
+
+
+def _is_pipeline_summary(text: str) -> bool:
+    """Check if text is a ReasoningTracer pipeline dump, not actual AI reasoning.
+
+    Sprint 140b defense-in-depth: After the root cause fix in corrective_rag.py
+    (pipeline steps no longer assigned to ``thinking`` field), this filter
+    catches any remaining edge cases where ``build_thinking_summary()`` output
+    leaks through.
+
+    Detects the canonical ``**Quá trình suy nghĩ:**`` / ``Quá trình suy nghĩ``
+    header from ``ReasoningTracer.build_thinking_summary()``.
+
+    NOTE: ``[RAG Analysis]`` prefix is NOT filtered here — after the root fix,
+    combined ``[RAG Analysis]\\n{genuine_thinking}`` is valid content from
+    tutor_node when native Gemini reasoning IS available.
+    """
+    prefix = text[:300]
+    if "Quá trình suy nghĩ" in prefix:
+        return True
+    return False
+
+
 def _extract_thinking_content(node_output: dict) -> str:
     """
-    Extract raw AI thinking/reasoning content from a node's output.
+    Extract actual AI reasoning for the thinking display block.
 
-    Returns the full thinking text without truncation — the frontend
-    handles display (collapsible block with markdown rendering).
+    Sprint 140b: Follows Claude Code pattern — thinking = model reasoning,
+    status = pipeline progress.  Pipeline step summaries from ReasoningTracer
+    are filtered out; those belong in status events / StreamingIndicator.
 
-    Sources (in priority order):
-    1. `thinking_content` — structured summary from <thinking> tags (Vietnamese)
-    2. `thinking` field — from Gemini extended thinking (may be English)
+    Priority:
+    1. ``thinking`` — native model reasoning (Gemini extended thinking,
+       Claude thinking, Qwen <think> blocks).  May be English.
+    2. ``thinking_content`` — from <thinking> tags in agent prompts.
+       Only used if it's NOT a pipeline summary.
 
-    Does NOT use `agent_outputs` — those contain answer text (not reasoning).
-    Prefers thinking_content because it follows prompt language instructions
-    (Vietnamese), while Gemini's native thinking often defaults to English.
+    Returns empty string when no genuine AI reasoning is available,
+    which correctly results in no thinking block being created.
     """
-    # 1. Structured thinking content (from <thinking> tags — follows prompt language)
-    thinking_content = node_output.get("thinking_content", "")
-    if thinking_content and len(thinking_content) > 20:
-        return thinking_content
-
-    # 2. Raw thinking (Gemini native extended thinking — may be English)
+    # 1. Native AI reasoning (preferred — actual model thought process)
     thinking = node_output.get("thinking", "")
     if thinking and len(thinking) > 20:
-        return thinking
+        if not _is_pipeline_summary(thinking):
+            return thinking
+
+    # 2. Structured thinking from <thinking> tags (fallback)
+    #    Skip if it's a ReasoningTracer pipeline dump
+    thinking_content = node_output.get("thinking_content", "")
+    if thinking_content and len(thinking_content) > 20:
+        if not _is_pipeline_summary(thinking_content):
+            return thinking_content
 
     return ""
 
@@ -335,6 +452,15 @@ async def process_with_multi_agent_streaming(
         # Sprint 74: Track nodes that streamed answer_delta via bus
         _bus_answer_nodes: set = set()
 
+        # Sprint 135: Soul emotion buffer — intercepts first ~512 bytes of answer
+        _soul_buffer = None
+        _soul_emotion_emitted = False
+        if settings.enable_soul_emotion:
+            from app.engine.soul_emotion_buffer import SoulEmotionBuffer
+            _soul_buffer = SoulEmotionBuffer(
+                max_bytes=settings.soul_emotion_buffer_bytes,
+            )
+
         # Build config for thread persistence with per-user isolation (Sprint 16)
         invoke_config = {}
         # Sprint 121b: Defensive str() conversion at call site
@@ -346,6 +472,13 @@ async def process_with_multi_agent_streaming(
             invoke_config = {"configurable": {"thread_id": thread_id}}
         elif _sid:
             invoke_config = {"configurable": {"thread_id": _sid}}
+
+        # Sprint 144b: Attach LangSmith per-request callback for dashboard tracing
+        from app.core.langsmith import get_langsmith_callback, is_langsmith_enabled
+        if is_langsmith_enabled():
+            ls_cb = get_langsmith_callback(_uid, _sid, domain_id)
+            if ls_cb:
+                invoke_config.setdefault("callbacks", []).append(ls_cb)
 
         # Timeout: max 5 min per graph node, 15 min total
         GRAPH_NODE_TIMEOUT = 300
@@ -383,9 +516,10 @@ async def process_with_multi_agent_streaming(
                     if event is _SENTINEL:
                         break
                     # Sprint 70: Track which nodes streamed via bus
+                    # Sprint 144: Also track thinking_start (progressive RAG events)
                     node = event.get("node")
                     etype = event.get("type")
-                    if node and etype == "thinking_delta":
+                    if node and etype in ("thinking_delta", "thinking_start"):
                         _bus_streamed_nodes.add(node)
                     # Sprint 74: Track answer_delta via bus
                     if node and etype == "answer_delta":
@@ -418,6 +552,52 @@ async def process_with_multi_agent_streaming(
                 break
 
             if msg_type == "bus":
+                # Sprint 135: Intercept answer_delta for soul emotion extraction
+                if (
+                    settings.enable_soul_emotion
+                    and _soul_buffer is not None
+                    and not _soul_buffer.is_done
+                    and payload.get("type") == "answer_delta"
+                ):
+                    chunk = payload.get("content", "")
+                    try:
+                        emotion, clean_chunks = _soul_buffer.feed(chunk)
+                    except Exception as _buf_err:
+                        logger.warning("[SOUL] Buffer feed failed: %s, passing through", _buf_err)
+                        emotion, clean_chunks = None, [chunk] if chunk else []
+                    if emotion and not _soul_emotion_emitted:
+                        yield await create_emotion_event(
+                            mood=emotion.mood,
+                            face=emotion.face,
+                            intensity=emotion.intensity,
+                        )
+                        _soul_emotion_emitted = True  # set AFTER successful yield
+                    for cc in clean_chunks:
+                        if cc:
+                            yield await create_answer_event(cc)
+                    continue
+                # Sprint 135: Flush buffer on non-answer event
+                if (
+                    settings.enable_soul_emotion
+                    and _soul_buffer is not None
+                    and not _soul_buffer.is_done
+                ):
+                    try:
+                        emotion, clean_chunks = _soul_buffer.flush()
+                    except Exception as _buf_err:
+                        logger.warning("[SOUL] Buffer flush failed: %s", _buf_err)
+                        emotion, clean_chunks = None, []
+                    if emotion and not _soul_emotion_emitted:
+                        yield await create_emotion_event(
+                            mood=emotion.mood,
+                            face=emotion.face,
+                            intensity=emotion.intensity,
+                        )
+                        _soul_emotion_emitted = True  # set AFTER successful yield
+                    for cc in clean_chunks:
+                        if cc:
+                            yield await create_answer_event(cc)
+
                 yield await _convert_bus_event(payload)
                 continue
             elif msg_type == "error":
@@ -445,6 +625,10 @@ async def process_with_multi_agent_streaming(
                 # ---- SUPERVISOR NODE ----
                 if node_name == "supervisor":
                     next_agent = node_output.get("next_agent", "")
+
+                    # Sprint 145: Generate summary for Claude-like collapsed header
+                    _summary = _generate_thinking_summary(node_output, query)
+
                     yield await create_status_event(
                         NODE_DESCRIPTIONS.get("supervisor", "🎯 Phân tích câu hỏi"),
                         "supervisor",
@@ -454,18 +638,60 @@ async def process_with_multi_agent_streaming(
                     yield await create_thinking_start_event(
                         _NODE_LABELS.get("supervisor", "Phan tich cau hoi"),
                         "supervisor",
+                        summary=_summary,
                     )
 
-                    # Sprint 70: Skip bulk thinking if bus already streamed deltas
+                    # Sprint 145: Prioritize native thinking first, then structured metadata
+                    _routing_parts = []
+
+                    # 1. Native LLM thinking (preferred — actual model reasoning)
                     thinking_content = _extract_thinking_content(node_output)
                     if thinking_content and "supervisor" not in _bus_streamed_nodes:
-                        yield await create_thinking_event(
-                            thinking_content,
-                            "routing",
+                        _routing_parts.append(thinking_content)
+
+                    # 2. Structured routing metadata (append below native thinking)
+                    _routing_meta = node_output.get("routing_metadata", {})
+                    if isinstance(_routing_meta, dict):
+                        _intent = _routing_meta.get("intent", "")
+                        _confidence = _routing_meta.get("confidence", 0)
+                        _reasoning = _routing_meta.get("reasoning", "")
+                        _method = _routing_meta.get("method", "")
+
+                        _intent_labels = {
+                            "lookup": "Tra cứu kiến thức",
+                            "learning": "Học tập/Giải thích",
+                            "personal": "Cá nhân/Bộ nhớ",
+                            "social": "Giao tiếp xã hội",
+                            "off_topic": "Ngoài chuyên ngành",
+                            "web_search": "Tìm kiếm web",
+                        }
+                        if _intent:
+                            _routing_parts.append(
+                                f"Ý định: {_intent_labels.get(_intent, _intent)}"
+                            )
+                        if _reasoning and _reasoning not in ("rule-based (no LLM)",):
+                            _routing_parts.append(f"Phân tích: {_reasoning}")
+                        if _confidence:
+                            _routing_parts.append(
+                                f"Độ tin cậy: {_confidence:.0%}"
+                            )
+                        if _method and _method != "structured":
+                            _routing_parts.append(f"Phương pháp: {_method}")
+
+                    # 3. Routing destination
+                    if next_agent:
+                        route_label = _NODE_LABELS.get(next_agent, next_agent)
+                        _routing_parts.append(f"→ Chuyển đến: {route_label}")
+
+                    # Emit combined thinking
+                    if _routing_parts:
+                        yield await create_thinking_delta_event(
+                            "\n".join(_routing_parts),
+                            "supervisor",
                         )
 
+                    # Also emit status for pipeline indicator
                     if next_agent:
-                        # Routing is pipeline status, not AI reasoning
                         desc = NODE_DESCRIPTIONS.get(next_agent, next_agent)
                         yield await create_status_event(
                             f"→ {desc}",
@@ -476,6 +702,16 @@ async def process_with_multi_agent_streaming(
                         "supervisor",
                         duration_ms=int((time.time() - node_start) * 1000),
                     )
+
+                    # Sprint 147: Emit bold action text after supervisor routing
+                    _routing_meta = node_output.get("routing_metadata", {})
+                    _intent = _routing_meta.get("intent", "") if isinstance(_routing_meta, dict) else ""
+                    _action_text = _INTENT_ACTION_TEXT.get(_intent)
+                    if _action_text:
+                        yield await create_action_text_event(
+                            _action_text,
+                            "supervisor",
+                        )
 
                 # ---- RAG AGENT NODE ----
                 elif node_name == "rag_agent":
@@ -528,15 +764,16 @@ async def process_with_multi_agent_streaming(
 
                     # Thinking lifecycle: open → content → close (AFTER tool calls)
                     # Sprint 70: Skip bulk thinking if bus already streamed deltas
+                    # Sprint 141b: Use thinking_delta (not thinking) so content appears in streamingBlocks
                     thinking_content = _extract_thinking_content(node_output)
                     if thinking_content and "rag_agent" not in _bus_streamed_nodes:
                         yield await create_thinking_start_event(
                             _NODE_LABELS.get("rag_agent", "Tra cứu tri thức"),
                             "rag_agent",
                         )
-                        yield await create_thinking_event(
+                        yield await create_thinking_delta_event(
                             thinking_content,
-                            "retrieval",
+                            "rag_agent",
                         )
                         yield await create_thinking_end_event(
                             "rag_agent",
@@ -555,9 +792,18 @@ async def process_with_multi_agent_streaming(
                                     agent_output_text = val
                                     break
                     if agent_output_text and not answer_emitted:
-                        rag_answer_text = agent_output_text
-                        async for event in _stream_answer_tokens(agent_output_text):
-                            yield event
+                        # Sprint 144: Skip post-hoc answer if bus already streamed tokens
+                        if "rag_agent" not in _bus_answer_nodes:
+                            rag_answer_text = agent_output_text
+                            async for event in _extract_and_stream_emotion_then_answer(
+                                agent_output_text, _soul_emotion_emitted,
+                            ):
+                                if event.type == "emotion":
+                                    _soul_emotion_emitted = True
+                                yield event
+                        else:
+                            rag_answer_text = agent_output_text
+                            logger.debug("[STREAM] RAG answer already streamed via bus, skipping bulk emission")
                         partial_answer_emitted = True
 
                 # ---- TUTOR AGENT NODE ----
@@ -598,15 +844,23 @@ async def process_with_multi_agent_streaming(
 
                     # Thinking lifecycle: open → content → close (AFTER tool calls)
                     # Sprint 70: Skip bulk thinking if bus already streamed deltas
+                    # Sprint 141b: Use thinking_delta (not thinking) so content appears in streamingBlocks
+                    # Sprint 144: Also check _answer_streamed_via_bus flag — reliable
+                    #   because _bus_streamed_nodes has a race condition (graph event
+                    #   can arrive in merged_queue before all bus events are forwarded)
                     thinking_content = _extract_thinking_content(node_output)
-                    if thinking_content and "tutor_agent" not in _bus_streamed_nodes:
+                    _tutor_already_streamed = (
+                        "tutor_agent" in _bus_streamed_nodes
+                        or node_output.get("_answer_streamed_via_bus", False)
+                    )
+                    if thinking_content and not _tutor_already_streamed:
                         yield await create_thinking_start_event(
                             _NODE_LABELS.get("tutor_agent", "Giảng dạy"),
                             "tutor_agent",
                         )
-                        yield await create_thinking_event(
+                        yield await create_thinking_delta_event(
                             thinking_content,
-                            "analysis",
+                            "tutor_agent",
                         )
                         yield await create_thinking_end_event(
                             "tutor_agent",
@@ -622,9 +876,11 @@ async def process_with_multi_agent_streaming(
                             tutor_response = agent_outputs.get("tutor", "")
                     # Fallback: if response is empty but thinking has content,
                     # use thinking as answer (Gemini quirk: entire response in thinking)
+                    # Sprint 140b: Skip pipeline dumps — those are debug info
                     if not tutor_response:
                         thinking_fallback = node_output.get("thinking", "")
-                        if thinking_fallback and len(thinking_fallback) > 50:
+                        if (thinking_fallback and len(thinking_fallback) > 50
+                                and not _is_pipeline_summary(thinking_fallback)):
                             logger.warning(
                                 "[STREAM] Tutor response empty, recovering from "
                                 "thinking field (%d chars)",
@@ -636,25 +892,31 @@ async def process_with_multi_agent_streaming(
                         _answer_via_bus = "tutor_agent" in _bus_answer_nodes
                         _answer_as_thinking = node_output.get("_answer_streamed_via_bus", False)
                         if not _answer_via_bus and not _answer_as_thinking:
-                            async for event in _stream_answer_tokens(tutor_response):
+                            async for event in _extract_and_stream_emotion_then_answer(
+                                tutor_response, _soul_emotion_emitted,
+                            ):
+                                if event.type == "emotion":
+                                    _soul_emotion_emitted = True
                                 yield event
                         partial_answer_emitted = True
                         answer_emitted = True
                         final_state = node_output
 
                 # ---- GRADER NODE ----
+                # Sprint 145: Demoted to status-only (quality check feedback, not deep thinking)
                 elif node_name == "grader":
-                    # Sprint 74: Status only — no thinking_start/end (empty blocks look like glitch)
-                    yield await create_status_event(
-                        NODE_DESCRIPTIONS.get("grader", "✅ Kiểm tra chất lượng"),
-                        "grader",
-                    )
-
                     score = node_output.get("grader_score", 0)
+                    feedback = node_output.get("grader_feedback", "")
+
                     if score > 0:
                         status_icon = "✅" if score >= 6 else "⚠️"
+                        _status_msg = f"{status_icon} Chất lượng: {score:.1f}/10"
+                        if feedback and len(feedback) > 10:
+                            _status_msg += f" — {feedback[:80]}"
+                        yield await create_status_event(_status_msg, "grader")
+                    else:
                         yield await create_status_event(
-                            f"{status_icon} Chất lượng: {score}/10",
+                            "✅ Đánh giá chất lượng câu trả lời...",
                             "grader",
                         )
 
@@ -673,7 +935,11 @@ async def process_with_multi_agent_streaming(
                         if partial_answer_emitted and final_response == rag_answer_text:
                             logger.debug("[STREAM] Synthesizer pass-through, skipping re-emission")
                         else:
-                            async for event in _stream_answer_tokens(final_response):
+                            async for event in _extract_and_stream_emotion_then_answer(
+                                final_response, _soul_emotion_emitted,
+                            ):
+                                if event.type == "emotion":
+                                    _soul_emotion_emitted = True
                                 yield event
                         answer_emitted = True
 
@@ -691,11 +957,12 @@ async def process_with_multi_agent_streaming(
                     )
 
                     # Sprint 72: Emit thinking content if available
+                    # Sprint 141b: Use thinking_delta (not thinking) so content appears in streamingBlocks
                     thinking_content = _extract_thinking_content(node_output)
                     if thinking_content and "memory_agent" not in _bus_streamed_nodes:
-                        yield await create_thinking_event(
+                        yield await create_thinking_delta_event(
                             thinking_content,
-                            "memory",
+                            "memory_agent",
                         )
 
                     yield await create_thinking_end_event(
@@ -710,7 +977,11 @@ async def process_with_multi_agent_streaming(
                         if isinstance(agent_outputs, dict):
                             memory_response = agent_outputs.get("memory", "")
                     if memory_response and not answer_emitted:
-                        async for event in _stream_answer_tokens(memory_response):
+                        async for event in _extract_and_stream_emotion_then_answer(
+                            memory_response, _soul_emotion_emitted,
+                        ):
+                            if event.type == "emotion":
+                                _soul_emotion_emitted = True
                             yield event
                         partial_answer_emitted = True
                         answer_emitted = True
@@ -718,19 +989,41 @@ async def process_with_multi_agent_streaming(
 
                 # ---- DIRECT NODE ----
                 elif node_name == "direct":
-                    # Thinking lifecycle: open
-                    yield await create_thinking_start_event(
-                        _NODE_LABELS.get("direct", "Tra loi truc tiep"),
+                    yield await create_status_event(
+                        NODE_DESCRIPTIONS.get("direct", "💬 Wiii đang suy nghĩ câu trả lời..."),
                         "direct",
                     )
 
-                    # Emit thinking from direct node (if LLM generated)
+                    # Thinking lifecycle: open
+                    yield await create_thinking_start_event(
+                        _NODE_LABELS.get("direct", "Trả lời trực tiếp"),
+                        "direct",
+                    )
+
+                    # Sprint 145: Prioritize native thinking FIRST, then fallback
                     thinking_content = _extract_thinking_content(node_output)
-                    if thinking_content:
-                        yield await create_thinking_event(
+                    if thinking_content and "direct" not in _bus_streamed_nodes:
+                        yield await create_thinking_delta_event(
                             thinking_content,
-                            "direct_response",
+                            "direct",
                         )
+                    elif "direct" not in _bus_streamed_nodes:
+                        # No native thinking — provide context from tools_used
+                        _tools_used = node_output.get("tools_used", [])
+                        if _tools_used:
+                            _direct_parts = [f"Đã sử dụng {len(_tools_used)} công cụ:"]
+                            for _t in _tools_used[:5]:
+                                _tname = _t if isinstance(_t, str) else str(_t)
+                                _direct_parts.append(f"  • {_tname}")
+                            yield await create_thinking_delta_event(
+                                "\n".join(_direct_parts),
+                                "direct",
+                            )
+                        else:
+                            yield await create_thinking_delta_event(
+                                "Trả lời trực tiếp từ kiến thức chung của LLM",
+                                "direct",
+                            )
 
                     # Thinking lifecycle: close
                     yield await create_thinking_end_event(
@@ -741,7 +1034,11 @@ async def process_with_multi_agent_streaming(
                     # Direct response — token-stream it
                     final_response = node_output.get("final_response", "")
                     if final_response and not answer_emitted:
-                        async for event in _stream_answer_tokens(final_response):
+                        async for event in _extract_and_stream_emotion_then_answer(
+                            final_response, _soul_emotion_emitted,
+                        ):
+                            if event.type == "emotion":
+                                _soul_emotion_emitted = True
                             yield event
                         answer_emitted = True
                     final_state = node_output
@@ -751,17 +1048,77 @@ async def process_with_multi_agent_streaming(
                     if domain_notice:
                         yield await create_domain_notice_event(domain_notice)
 
-                # ---- GUARDIAN NODE ----
-                elif node_name == "guardian":
-                    # Sprint 74: Status only — no thinking_start/end (empty blocks look like glitch)
+                # ---- PRODUCT SEARCH NODE (Sprint 148) ----
+                elif node_name == "product_search_agent":
                     yield await create_status_event(
-                        _NODE_LABELS.get("guardian", "Kiểm tra an toàn"),
-                        "guardian",
+                        NODE_DESCRIPTIONS.get("product_search_agent", "🛒 Wiii đang tìm kiếm sản phẩm..."),
+                        "product_search_agent",
                     )
-                    logger.debug(
-                        "[STREAM] Guardian passed: %s",
-                        node_output.get("guardian_passed"),
+
+                    # Thinking lifecycle: open
+                    yield await create_thinking_start_event(
+                        _NODE_LABELS.get("product_search_agent", "Tìm kiếm sản phẩm"),
+                        "product_search_agent",
                     )
+
+                    # Emit native thinking if not already streamed via bus
+                    thinking_content = _extract_thinking_content(node_output)
+                    if thinking_content and "product_search_agent" not in _bus_streamed_nodes:
+                        yield await create_thinking_delta_event(
+                            thinking_content,
+                            "product_search_agent",
+                        )
+                    elif "product_search_agent" not in _bus_streamed_nodes:
+                        _tools_used = node_output.get("tools_used", [])
+                        if _tools_used:
+                            _parts = [f"Đã tìm trên {len(_tools_used)} nền tảng:"]
+                            for _t in _tools_used[:6]:
+                                _tname = _t.get("name", "") if isinstance(_t, dict) else str(_t)
+                                _parts.append(f"  • {_tname}")
+                            yield await create_thinking_delta_event(
+                                "\n".join(_parts),
+                                "product_search_agent",
+                            )
+
+                    # Thinking lifecycle: close
+                    yield await create_thinking_end_event(
+                        "product_search_agent",
+                        duration_ms=int((time.time() - node_start) * 1000),
+                    )
+
+                    # Product search response — token-stream it
+                    final_response = node_output.get("final_response", "")
+                    if final_response and not answer_emitted:
+                        async for event in _extract_and_stream_emotion_then_answer(
+                            final_response, _soul_emotion_emitted,
+                        ):
+                            if event.type == "emotion":
+                                _soul_emotion_emitted = True
+                            yield event
+                        answer_emitted = True
+                    final_state = node_output
+
+                # ---- GUARDIAN NODE ----
+                # Sprint 145: Demoted to status-only (safety check, not deep reasoning)
+                elif node_name == "guardian":
+                    guardian_passed = node_output.get("guardian_passed")
+                    logger.debug("[STREAM] Guardian passed: %s", guardian_passed)
+                    if not guardian_passed:
+                        # Blocked — show reason as status
+                        guardian_reason = (
+                            node_output.get("guardian_reason", "")
+                            or node_output.get("final_response", "")
+                        )
+                        yield await create_status_event(
+                            f"⚠️ Nội dung không phù hợp: {guardian_reason[:100]}" if guardian_reason
+                            else "⚠️ Nội dung không phù hợp",
+                            "guardian",
+                        )
+                    else:
+                        yield await create_status_event(
+                            "✓ Kiểm tra an toàn — Cho phép xử lý",
+                            "guardian",
+                        )
 
           # Safety net: if no answer was emitted by any node, extract from final_state
           if not answer_emitted and final_state:
@@ -772,13 +1129,20 @@ async def process_with_multi_agent_streaming(
                           fallback = val
                           break
               if not fallback:
-                  fallback = final_state.get("thinking", "")
+                  _think_fb = final_state.get("thinking", "")
+                  # Sprint 140b: Don't use pipeline dump as answer
+                  if _think_fb and not _is_pipeline_summary(_think_fb):
+                      fallback = _think_fb
               if fallback:
                   logger.warning(
                       "[STREAM] No answer emitted — using fallback (%d chars)",
                       len(fallback),
                   )
-                  async for event in _stream_answer_tokens(fallback):
+                  async for event in _extract_and_stream_emotion_then_answer(
+                      fallback, _soul_emotion_emitted,
+                  ):
+                      if event.type == "emotion":
+                          _soul_emotion_emitted = True
                       yield event
                   answer_emitted = True
 
@@ -883,6 +1247,10 @@ async def process_with_multi_agent_streaming(
         yield await create_error_event(f"Internal processing error: {type(e).__name__}")
         registry.end_request_trace(trace_id)
     finally:
+        # Sprint 139: Clean up tracer from module-level storage
+        if final_state:
+            from app.engine.multi_agent.graph import _cleanup_tracer
+            _cleanup_tracer(final_state.get("_trace_id"))
         # Sprint 69: Clean up event bus
         _EVENT_QUEUES.pop(bus_id, None)
         _EVENT_QUEUE_CREATED.pop(bus_id, None)

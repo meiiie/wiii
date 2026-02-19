@@ -33,6 +33,7 @@ class SparseSearchResult:
     image_url: str = ""
     page_number: int = 0
     document_id: str = ""
+    domain_id: str = ""  # Sprint 136: Cross-domain search
     # Feature: source-highlight-citation
     bounding_boxes: list = None  # Normalized coordinates for text highlighting
     
@@ -305,13 +306,15 @@ class SparseSearchRepository:
                         COALESCE(image_url, '') as image_url,
                         COALESCE(page_number, 0) as page_number,
                         COALESCE(document_id, '') as document_id,
+                        COALESCE(domain_id, '') as domain_id,
                         bounding_boxes
                     FROM knowledge_embeddings
                     WHERE search_vector @@ to_tsquery('simple', $1)
                 """
 
-                # Add domain_id filter (multi-domain knowledge isolation)
-                if domain_id:
+                # Sprint 136: Cross-domain search — soft boost instead of hard filter
+                from app.core.config import settings as _settings
+                if domain_id and not _settings.cross_domain_search:
                     sql += f" AND domain_id = ${param_idx}"
                     params.append(domain_id)
                     param_idx += 1
@@ -348,6 +351,7 @@ class SparseSearchRepository:
                         image_url=row["image_url"],
                         page_number=row["page_number"],
                         document_id=row["document_id"],
+                        domain_id=row["domain_id"],
                         bounding_boxes=bounding_boxes
                     ))
                 

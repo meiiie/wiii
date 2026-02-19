@@ -44,6 +44,13 @@ export const MOOD_EMOJI: Record<MoodType, string> = {
   neutral: "\u{1F610}",
 };
 
+/** Sprint 135: Soul emotion data from LLM inline tag */
+export interface SoulEmotionData {
+  mood: MoodType;
+  face: Partial<Record<string, number>>;
+  intensity: number;
+}
+
 interface CharacterState {
   blocks: CharacterBlockInfo[];
   totalBlocks: number;
@@ -56,10 +63,16 @@ interface CharacterState {
   energy: number;
   moodEnabled: boolean;
 
+  // Sprint 135: Soul emotion (from LLM inline tag)
+  soulEmotion: SoulEmotionData | null;
+  soulEmotionTimestamp: number;
+
   // Actions
   fetchCharacter: () => Promise<void>;
   setMood: (mood: MoodType, positivity?: number, energy?: number) => void;
   setMoodEnabled: (enabled: boolean) => void;
+  setSoulEmotion: (emotion: SoulEmotionData) => void;
+  clearSoulEmotion: () => void;
 }
 
 export const useCharacterStore = create<CharacterState>((set) => ({
@@ -71,6 +84,8 @@ export const useCharacterStore = create<CharacterState>((set) => ({
   positivity: 0,
   energy: 0.5,
   moodEnabled: false,
+  soulEmotion: null,
+  soulEmotionTimestamp: 0,
 
   fetchCharacter: async () => {
     set({ isLoading: true, error: null });
@@ -97,4 +112,23 @@ export const useCharacterStore = create<CharacterState>((set) => ({
     }),
 
   setMoodEnabled: (enabled) => set({ moodEnabled: enabled }),
+
+  setSoulEmotion: (emotion) => {
+    // Validate: must have mood and numeric intensity
+    if (!emotion || typeof emotion.intensity !== "number" || !isFinite(emotion.intensity)) {
+      return;
+    }
+    const validMoods = ["excited", "warm", "concerned", "gentle", "neutral"];
+    const mood = validMoods.includes(emotion.mood) ? emotion.mood : "neutral";
+    set({
+      soulEmotion: { ...emotion, mood, intensity: Math.max(0, Math.min(1, emotion.intensity)) },
+      soulEmotionTimestamp: Date.now(),
+      // Also update mood + enable it for consistency
+      mood,
+      moodEnabled: true,
+    });
+  },
+
+  clearSoulEmotion: () =>
+    set({ soulEmotion: null, soulEmotionTimestamp: 0 }),
 }));

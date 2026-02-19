@@ -187,6 +187,7 @@ class KnowledgeStatsResponse(BaseModel):
     total_documents: int
     content_types: dict
     avg_confidence: float
+    domain_breakdown: dict = {}  # Sprint 136: Per-domain chunk counts
     warning: Optional[str] = None
 
 
@@ -230,11 +231,22 @@ async def get_statistics(request: Request) -> KnowledgeStatsResponse:
                 "SELECT AVG(confidence_score) FROM knowledge_embeddings WHERE confidence_score IS NOT NULL"
             ) or 0.0
 
+            # Sprint 136: Domain breakdown
+            domain_rows = await conn.fetch(
+                """
+                SELECT COALESCE(domain_id, 'untagged') as domain, COUNT(*) as count
+                FROM knowledge_embeddings
+                GROUP BY domain_id
+                """
+            )
+            domain_breakdown = {row['domain']: row['count'] for row in domain_rows}
+
             return KnowledgeStatsResponse(
                 total_chunks=total_chunks or 0,
                 total_documents=total_documents or 0,
                 content_types=content_types,
                 avg_confidence=round(float(avg_confidence), 3),
+                domain_breakdown=domain_breakdown,
                 warning=None
             )
         finally:
@@ -249,3 +261,137 @@ async def get_statistics(request: Request) -> KnowledgeStatsResponse:
             avg_confidence=0.0,
             warning="Database connection failed"
         )
+
+
+# =============================================================================
+# TEXT/MARKDOWN INGESTION (Sprint 136: Universal KB)
+# =============================================================================
+
+class TextIngestionRequest(BaseModel):
+    """Request body for text/markdown ingestion."""
+    content: str
+    document_id: str
+    domain_id: Optional[str] = None
+    title: Optional[str] = None
+
+
+class TextIngestionResponse(BaseModel):
+    """Response for text ingestion."""
+    status: str
+    document_id: str
+    total_chunks: int
+    domain_id: Optional[str] = None
+    message: str
+
+
+@router.post("/ingest-text", response_model=TextIngestionResponse)
+@limiter.limit("30/minute")
+async def ingest_text_document(
+    request: Request,
+    auth: RequireAdmin,
+    body: TextIngestionRequest,
+) -> TextIngestionResponse:
+    """
+    Ingest raw text or markdown content into the knowledge base.
+
+    Sprint 136: Universal KB — enables quick KB population without PDF processing.
+
+    Pipeline:
+    1. Text → SemanticChunker (general + maritime patterns)
+    2. Chunks → Embedding (Gemini)
+    3. Chunks + Embeddings → pgvector (knowledge_embeddings table)
+
+    - **content**: Raw text or markdown content to ingest
+    - **document_id**: Unique identifier for the document
+    - **domain_id**: Optional domain tag for the content
+    - **title**: Optional document title
+    """
+    from app.core.config import settings
+
+    if not settings.enable_text_ingestion:
+        raise HTTPException(status_code=403, detail="Text ingestion is disabled")
+
+    if not body.content or not body.content.strip():
+        raise HTTPException(status_code=400, detail="Content must not be empty")
+
+    max_bytes = settings.max_ingestion_size_mb * 1024 * 1024
+    if len(body.content.encode("utf-8")) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Content too large. Maximum size is {settings.max_ingestion_size_mb}MB"
+        )
+
+    try:
+        from app.services.chunking_service import get_semantic_chunker
+        from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
+        from app.repositories.dense_search_repository import get_dense_search_repository
+
+        chunker = get_semantic_chunker()
+        embeddings = GeminiOptimizedEmbeddings()
+        dense_repo = get_dense_search_repository()
+
+        # Chunk the text
+        page_metadata = {
+            "document_id": body.document_id,
+            "page_number": 1,
+            "image_url": "",
+            "source_type": "text",
+        }
+        chunks = await chunker.chunk_page_content(body.content, page_metadata)
+
+        if not chunks:
+            return TextIngestionResponse(
+                status="empty",
+                document_id=body.document_id,
+                total_chunks=0,
+                domain_id=body.domain_id,
+                message="No chunks generated from content",
+            )
+
+        # Generate embeddings for all chunks
+        chunk_texts = [c.content for c in chunks]
+        chunk_embeddings = await embeddings.aembed_documents(chunk_texts)
+
+        # Store in database
+        stored = 0
+        for i, (chunk, emb) in enumerate(zip(chunks, chunk_embeddings)):
+            node_id = f"{body.document_id}_chunk_{i}"
+            metadata = chunk.metadata or {}
+            if body.title:
+                metadata["title"] = body.title
+            if body.domain_id:
+                metadata["domain_id"] = body.domain_id
+
+            success = await dense_repo.store_document_chunk(
+                node_id=node_id,
+                content=chunk.content,
+                embedding=emb,
+                document_id=body.document_id,
+                page_number=chunk.metadata.get("page_number", 1) if chunk.metadata else 1,
+                chunk_index=i,
+                content_type=chunk.content_type,
+                confidence_score=chunk.confidence_score,
+                image_url="",
+                metadata=metadata,
+            )
+            if success:
+                stored += 1
+
+        logger.info(
+            "Text ingestion completed: %d/%d chunks stored for document %s",
+            stored, len(chunks), body.document_id,
+        )
+
+        return TextIngestionResponse(
+            status="completed" if stored == len(chunks) else "partial",
+            document_id=body.document_id,
+            total_chunks=stored,
+            domain_id=body.domain_id,
+            message=f"Stored {stored}/{len(chunks)} chunks",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Text ingestion failed: %s", e)
+        raise HTTPException(status_code=500, detail="Text ingestion failed")

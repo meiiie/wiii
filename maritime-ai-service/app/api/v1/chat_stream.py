@@ -445,6 +445,9 @@ async def chat_stream_v3(
                     }
                     if event.details:
                         data.update(event.details)
+                    # Sprint 145: Forward summary for Claude-like collapsed header
+                    if event.details and event.details.get("summary"):
+                        data["summary"] = event.details["summary"]
                     yield format_sse("thinking_start", data, event_id=event_counter)
 
                 elif event_type == "thinking_end":
@@ -472,11 +475,24 @@ async def chat_stream_v3(
                         "step": event.step,
                     }, event_id=event_counter)
 
+                elif event_type == "action_text":
+                    # Sprint 147: Bold narrative between thinking blocks
+                    event_counter += 1
+                    yield format_sse("action_text", {
+                        "content": event.content,
+                        "node": event.node,
+                    }, event_id=event_counter)
+
                 elif event_type == "domain_notice":
                     event_counter += 1
                     yield format_sse("domain_notice", {
                         "content": event.content,
                     }, event_id=event_counter)
+
+                elif event_type == "emotion":
+                    # Sprint 135: Soul emotion event for avatar control
+                    event_counter += 1
+                    yield format_sse("emotion", event.content, event_id=event_counter)
 
                 elif event_type == "sources":
                     event_counter += 1

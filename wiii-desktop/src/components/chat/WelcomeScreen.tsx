@@ -9,6 +9,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { getGreeting, getWiiiSubtitle } from "@/lib/greeting";
 import { DOMAIN_ICONS } from "@/lib/domain-config";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
+import { useAvatarState } from "@/hooks/useAvatarState";
 import { ChatInput } from "./ChatInput";
 
 const DOMAIN_SUGGESTIONS: Record<string, string[]> = {
@@ -34,6 +35,7 @@ export function WelcomeScreen({ onSendMessage, onCancel }: WelcomeScreenProps) {
   const { createConversation, activeConversationId } = useChatStore();
   const { settings } = useSettingsStore();
 
+  const { state: avatarState, mood: avatarMood, soulEmotion } = useAvatarState();
   const greeting = getGreeting(settings.display_name);
   const subtitle = getWiiiSubtitle();
   const suggestions = DOMAIN_SUGGESTIONS[activeDomainId] || [];
@@ -50,7 +52,7 @@ export function WelcomeScreen({ onSendMessage, onCancel }: WelcomeScreenProps) {
       <div className="w-full max-w-2xl flex flex-col items-center gap-7">
         {/* Wiii avatar — staggered reveal 1 */}
         <div className="welcome-reveal welcome-reveal-1">
-          <WiiiAvatar state="idle" size={40} />
+          <WiiiAvatar state={avatarState} size={40} mood={avatarMood} soulEmotion={soulEmotion} />
         </div>
 
         {/* Greeting — staggered reveal 2: light weight, secondary color (Claude uses text-200) */}

@@ -154,7 +154,7 @@ class CharacterRepository:
                     text(f"""
                         INSERT INTO {self.BLOCKS_TABLE}
                             (label, content, char_limit, metadata, user_id)
-                        VALUES (:label, :content, :char_limit, :metadata::jsonb, :user_id)
+                        VALUES (:label, :content, :char_limit, CAST(:metadata AS jsonb), :user_id)
                         ON CONFLICT (user_id, label) DO UPDATE
                             SET content = EXCLUDED.content,
                                 char_limit = EXCLUDED.char_limit,
@@ -300,7 +300,7 @@ class CharacterRepository:
                     text(f"""
                         INSERT INTO {self.EXPERIENCES_TABLE}
                             (experience_type, content, importance, user_id, metadata)
-                        VALUES (:type, :content, :importance, :user_id, :metadata::jsonb)
+                        VALUES (:type, :content, :importance, :user_id, CAST(:metadata AS jsonb))
                         RETURNING id, experience_type, content, importance,
                                   user_id, metadata, created_at
                     """),

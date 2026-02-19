@@ -161,14 +161,14 @@ class TestGradeResponse:
         node = _make_node(mock_llm)
 
         result = await node._grade_response("COLREGs Rule 13", "Rule 13 quy định về tàu vượt")
-        assert result["feedback"] == "Rule-based grading"
+        assert "Hữu ích:" in result["feedback"]
         assert isinstance(result["score"], float)
 
     @pytest.mark.asyncio
     async def test_no_llm_uses_rule_based(self):
         node = _make_node(None)
         result = await node._grade_response("test", "a short answer")
-        assert result["feedback"] == "Rule-based grading"
+        assert "Hữu ích:" in result["feedback"]
 
     @pytest.mark.asyncio
     async def test_invalid_json_falls_back(self, mock_llm):
@@ -178,7 +178,7 @@ class TestGradeResponse:
         with patch(EXTRACT_THINKING_PATCH, return_value=("not json at all", None)):
             result = await node._grade_response("query", "answer")
 
-        assert result["feedback"] == "Rule-based grading"
+        assert "Hữu ích:" in result["feedback"]
 
     @pytest.mark.asyncio
     async def test_answer_truncated_for_grading(self, mock_llm):

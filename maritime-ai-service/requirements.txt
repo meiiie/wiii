@@ -79,8 +79,14 @@ opentelemetry-api>=1.25.0
 opentelemetry-sdk>=1.25.0
 opentelemetry-exporter-otlp>=1.25.0
 
+# LangSmith (Sprint 144b: LangChain/LangGraph tracing dashboard)
+langsmith>=0.4.0,<1.0.0
+
 # Structured Logging (SOTA 2026)
 structlog>=24.1.0
+
+# Excel Report Generation (Sprint 148: Product Search)
+xlsxwriter>=3.2.0
 
 # Telegram Bot (Sprint 12: Multi-Channel Gateway, optional)
 aiogram>=3.15.0,<4.0.0

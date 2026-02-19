@@ -529,10 +529,14 @@ class CorrectiveRAG:
         if thinking_content:
             logger.info("[CRAG] Built structured thinking summary: %d chars", len(thinking_content))
         
-        # Fallback: if no native thinking, use structured
+        # Sprint 140b ROOT CAUSE FIX: Do NOT fall back to thinking_content.
+        # thinking_content is a ReasoningTracer pipeline dump (internal debug)
+        # that was cascading through rag_tools→tutor→graph_streaming→SSE as
+        # "AI thinking".  When native thinking is unavailable, thinking stays
+        # empty — this correctly results in no thinking block on the frontend.
+        # thinking_content is still returned separately for reasoning_trace metadata.
         if not thinking:
-            thinking = thinking_content
-            logger.info("[CRAG] Native thinking unavailable, using structured summary")
+            logger.info("[CRAG] No native thinking available — thinking_content kept separate for metadata only")
         
         logger.info("[CRAG] Complete: iterations=%d, confidence=%.0f%%", iterations, confidence)
         
@@ -900,7 +904,7 @@ class CorrectiveRAG:
         # ═══════════════════════════════════════════════════════════════════
         # PHASE 1: Query Understanding (emit events immediately)
         # ═══════════════════════════════════════════════════════════════════
-        yield {"type": "status", "content": "🎯 Đang phân tích câu hỏi..."}
+        yield {"type": "status", "content": "Phân tích câu hỏi"}
         
         tracer.start_step(StepNames.QUERY_ANALYSIS, "Phân tích độ phức tạp câu hỏi")
         logger.info("[CRAG-V3] Phase 1: Analyzing query: '%s...'", query[:50])
@@ -913,9 +917,19 @@ class CorrectiveRAG:
                 details={"complexity": analysis.complexity.value, "is_domain": analysis.is_domain_related}
             )
             
+            # Sprint 144: Rich analysis thinking — expert-level breakdown
+            _analysis_parts = [f"Độ phức tạp: {analysis.complexity.value}"]
+            if analysis.detected_topics:
+                _analysis_parts.append(f"Chủ đề: {', '.join(analysis.detected_topics[:5])}")
+            if analysis.is_domain_related:
+                _analysis_parts.append("Thuộc lĩnh vực chuyên ngành → Sử dụng Knowledge Base")
+            else:
+                _analysis_parts.append("Ngoài chuyên ngành → Sử dụng kiến thức chung LLM")
+            if hasattr(analysis, 'confidence') and analysis.confidence:
+                _analysis_parts.append(f"Độ tin cậy phân tích: {analysis.confidence:.0%}")
             yield {
-                "type": "thinking", 
-                "content": f"📊 Độ phức tạp: {analysis.complexity.value}",
+                "type": "thinking",
+                "content": "\n".join(_analysis_parts),
                 "step": "analysis",
                 "details": {"topics": analysis.detected_topics, "is_domain": analysis.is_domain_related}
             }
@@ -927,7 +941,7 @@ class CorrectiveRAG:
         # ═══════════════════════════════════════════════════════════════════
         # PHASE 2: Retrieval (hybrid search + optional graphrag)
         # ═══════════════════════════════════════════════════════════════════
-        yield {"type": "status", "content": "🔍 Đang tìm kiếm tài liệu..."}
+        yield {"type": "status", "content": "Tìm kiếm tài liệu"}
         
         tracer.start_step(StepNames.RETRIEVAL, "Tìm kiếm tài liệu")
         logger.info("[CRAG-V3] Phase 2: Retrieving documents")
@@ -940,15 +954,33 @@ class CorrectiveRAG:
                 details={"doc_count": len(documents)}
             )
             
+            # Sprint 144: Rich retrieval thinking — document list with titles
+            _retrieval_parts = [f"Tìm thấy {len(documents)} tài liệu liên quan"]
+            for i, doc in enumerate(documents[:5]):  # Top 5
+                _doc_title = doc.get("title", "").strip() or f"Tài liệu {i+1}"
+                _doc_score = doc.get("score") or doc.get("relevance_score")
+                if _doc_score is not None:
+                    _retrieval_parts.append(f"  {i+1}. {_doc_title} (điểm: {_doc_score:.2f})")
+                else:
+                    _retrieval_parts.append(f"  {i+1}. {_doc_title}")
+            if len(documents) > 5:
+                _retrieval_parts.append(f"  ... và {len(documents) - 5} tài liệu khác")
             yield {
                 "type": "thinking",
-                "content": f"📚 Tìm thấy {len(documents)} tài liệu liên quan",
+                "content": "\n".join(_retrieval_parts),
                 "step": "retrieval",
                 "details": {"doc_count": len(documents)}
             }
             
             if not documents:
-                yield {"type": "answer", "content": "Không tìm thấy thông tin phù hợp trong cơ sở dữ liệu."}
+                no_doc_answer = "Không tìm thấy thông tin phù hợp trong cơ sở dữ liệu."
+                yield {"type": "answer", "content": no_doc_answer}
+                yield {"type": "result", "data": CorrectiveRAGResult(
+                    answer=no_doc_answer,
+                    sources=[],
+                    query_analysis=analysis,
+                    confidence=30.0,
+                )}
                 yield {"type": "done", "content": ""}
                 return
                 
@@ -960,7 +992,7 @@ class CorrectiveRAG:
         # ═══════════════════════════════════════════════════════════════════
         # PHASE 3: Grading (CRAG core - quality control!)  
         # ═══════════════════════════════════════════════════════════════════
-        yield {"type": "status", "content": "⚖️ Đang đánh giá chất lượng tài liệu..."}
+        yield {"type": "status", "content": "Đánh giá chất lượng tài liệu"}
         
         tracer.start_step(StepNames.GRADING, "Đánh giá độ liên quan của tài liệu")
         logger.info("[CRAG-V3] Phase 3: Grading documents")
@@ -981,9 +1013,20 @@ class CorrectiveRAG:
                 }
             )
             
+            # Sprint 144: Rich grading thinking — expert quality assessment
+            _grade_icon = "✅" if passed else "⚠️"
+            _grade_parts = [
+                f"{_grade_icon} Điểm chất lượng: {grading_result.avg_score:.1f}/10 — {'ĐẠT' if passed else 'CHƯA ĐẠT'}",
+                f"Tài liệu liên quan: {grading_result.relevant_count}/{len(documents)}",
+            ]
+            _threshold = getattr(self, '_grade_threshold', 6.0)
+            if not passed:
+                _grade_parts.append(f"Ngưỡng yêu cầu: {_threshold}/10 → Cần tinh chỉnh câu hỏi")
+            else:
+                _grade_parts.append(f"Vượt ngưỡng {_threshold}/10 → Đủ chất lượng để tạo câu trả lời")
             yield {
                 "type": "thinking",
-                "content": f"{'✅' if passed else '⚠️'} Điểm: {grading_result.avg_score:.1f}/10 - {'ĐẠT' if passed else 'CHƯA ĐẠT'}",
+                "content": "\n".join(_grade_parts),
                 "step": "grading",
                 "details": {"score": grading_result.avg_score, "passed": passed}
             }
@@ -999,7 +1042,7 @@ class CorrectiveRAG:
         # ═══════════════════════════════════════════════════════════════════
         rewritten_query = None
         if grading_result and not passed and self._rewriter:
-            yield {"type": "status", "content": "✍️ Tinh chỉnh câu hỏi..."}
+            yield {"type": "status", "content": "Tinh chỉnh câu hỏi"}
             
             try:
                 rewrite_result = await self._rewriter.rewrite(query)
@@ -1009,7 +1052,7 @@ class CorrectiveRAG:
                     
                     yield {
                         "type": "thinking",
-                        "content": f"✍️ Đã tinh chỉnh câu hỏi",
+                        "content": f"Tinh chỉnh câu hỏi để tìm kiếm chính xác hơn\nCâu gốc: {query[:80]}\nCâu mới: {rewritten_query[:80]}",
                         "step": "rewrite"
                     }
                     
@@ -1022,18 +1065,20 @@ class CorrectiveRAG:
         # ═══════════════════════════════════════════════════════════════════
         # PHASE 5: Generation (TRUE streaming via astream!)
         # ═══════════════════════════════════════════════════════════════════
-        yield {"type": "status", "content": "✍️ Đang tạo câu trả lời..."}
+        yield {"type": "status", "content": "Tạo câu trả lời"}
         
         tracer.start_step(StepNames.GENERATION, "Tạo câu trả lời từ context")
         logger.info("[CRAG-V3] Phase 5: Generating response with streaming")
         
         gen_start_time = time.time()
         
+        full_answer_parts = []  # Sprint 144: Accumulate answer tokens for result
+
         if not self._rag:
             yield {"type": "answer", "content": "Không thể tạo câu trả lời do thiếu cấu hình."}
             yield {"type": "done", "content": ""}
             return
-        
+
         try:
             # Build context from documents
             context_parts = []
@@ -1078,6 +1123,12 @@ class CorrectiveRAG:
                 )
                 knowledge_nodes.append(node)
             
+            # Sprint 144: Intermediate response — user sees activity before LLM generation
+            yield {
+                "type": "answer",
+                "content": f"Wiii tìm thấy {len(documents)} tài liệu liên quan, đang phân tích để trả lời...\n\n"
+            }
+
             # Stream tokens from RAGAgent
             # FIXED: Removed invalid 'context' param, pass nodes correctly
             token_count = 0
@@ -1089,6 +1140,7 @@ class CorrectiveRAG:
                 entity_context=""
             ):
                 token_count += 1
+                full_answer_parts.append(chunk)
                 yield {"type": "answer", "content": chunk}
             
             gen_duration = (time.time() - gen_start_time) * 1000
@@ -1148,8 +1200,24 @@ class CorrectiveRAG:
             }
         }
         
+        # Sprint 144: Yield CorrectiveRAGResult for rag_node to capture
+        full_answer = "".join(full_answer_parts)
+        yield {
+            "type": "result",
+            "data": CorrectiveRAGResult(
+                answer=full_answer,
+                sources=sources_data,
+                query_analysis=analysis,
+                grading_result=grading_result,
+                was_rewritten=rewritten_query is not None,
+                rewritten_query=rewritten_query,
+                confidence=confidence,
+                reasoning_trace=reasoning_trace,
+            )
+        }
+
         yield {"type": "done", "content": ""}
-        
+
         logger.info("[CRAG-V3] Complete: %.2fs, confidence=%.0f%%", total_time, confidence)
     
     def _calculate_confidence(

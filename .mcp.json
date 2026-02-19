@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "rivemcp": {
+      "type": "stdio",
+      "command": "E:\\Sach\\Sua\\AI_v1\\tools\\rivemcp-win-x64.exe",
+      "args": [],
+      "env": {}
+    }
+  }
+}

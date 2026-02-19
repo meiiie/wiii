@@ -1,8 +1,10 @@
 /* Living Avatar — Sprint 115: Foundation */
 /* Sprint 129: Face feature GPU hints */
+/* Sprint 130: Clipping fix (contain: layout style), blush/happy will-change */
+/* Sprint 131: Kawaii Phase 1 — iris group, blush hash, nose */
 
 .wiii-avatar {
-  contain: layout paint;
+  contain: layout style;
 }
 
 .wiii-avatar-svg {
@@ -15,11 +17,69 @@
 }
 
 .wiii-face-eye {
+  will-change: transform, opacity;
+}
+
+.wiii-face-iris {
   will-change: transform;
 }
 
 .wiii-face-brow {
   will-change: transform;
+}
+
+.wiii-face-blush {
+  will-change: opacity;
+}
+
+.wiii-face-blush-hash {
+  will-change: opacity;
+}
+
+.wiii-face-happy {
+  will-change: opacity;
+}
+
+/* Sprint 131 Phase 4: Manga emotional indicators */
+.wiii-indicator-sparkle,
+.wiii-indicator-thought,
+.wiii-indicator-sweat,
+.wiii-indicator-music {
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+/* Sprint 143b: GPU hints for new indicator groups */
+.wiii-manga-anger-vein,
+.wiii-manga-gloom,
+.wiii-manga-spiral,
+.wiii-manga-flower,
+.wiii-manga-zzz,
+.wiii-manga-fire {
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+.wiii-thought-dot {
+  will-change: opacity;
+}
+
+/* Sprint 144: Mouth interior, tears, hair GPU hints */
+.wiii-face-teeth,
+.wiii-face-tongue,
+.wiii-face-mouth-glint {
+  will-change: opacity;
+  pointer-events: none;
+}
+
+.wiii-face-tear {
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+.wiii-face-moisture-shine {
+  will-change: opacity;
+  pointer-events: none;
 }
 
 /* Accessibility: respect reduced motion preference */
@@ -33,7 +93,11 @@
   }
 
   .wiii-face-eye,
-  .wiii-face-brow {
+  .wiii-face-iris,
+  .wiii-face-brow,
+  .wiii-face-blush,
+  .wiii-face-blush-hash,
+  .wiii-face-happy {
     will-change: auto;
   }
 }

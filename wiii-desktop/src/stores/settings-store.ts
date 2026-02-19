@@ -27,6 +27,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   show_thinking: true,
   show_reasoning_trace: false,
   streaming_version: DEFAULT_STREAMING_VERSION,
+  thinking_level: "balanced",
 };
 
 interface SettingsState {
@@ -60,6 +61,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       }
     } catch (err) {
       console.warn("[Settings] Failed to load, using defaults:", err);
+      // Browser fallback: try localStorage
+      try {
+        const raw = localStorage.getItem("wiii:app_settings");
+        if (raw) {
+          const saved = JSON.parse(raw) as Partial<AppSettings>;
+          set({ settings: { ...DEFAULT_SETTINGS, ...saved }, isLoaded: true });
+          return;
+        }
+      } catch { /* ignore */ }
       set({ isLoaded: true });
     }
   },
@@ -75,6 +85,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       await store.save();
     } catch (err) {
       console.warn("[Settings] Failed to save:", err);
+      // Browser fallback: save to localStorage
+      try {
+        localStorage.setItem("wiii:app_settings", JSON.stringify(newSettings));
+      } catch { /* ignore */ }
     }
   },
 

@@ -354,7 +354,7 @@ class TestGraderStructuredOutput:
 
         # Falls back to rule-based
         assert "score" in result
-        assert result.get("feedback") == "Rule-based grading"
+        assert "Hữu ích:" in result.get("feedback", "")
 
     @pytest.mark.asyncio
     async def test_legacy_grade_when_disabled(self):

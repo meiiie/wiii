@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronDown, Check, Copy, Clock, CheckCircle } from "lucide-react";
+import { ChevronDown, Check, Copy, Clock, CheckCircle, Search, Globe, BookOpen, Wrench } from "lucide-react";
 import type { ToolCallInfo } from "@/api/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 
@@ -97,7 +97,7 @@ export function ThinkingBlock({
   const durationText = duration > 0 ? `${duration}s` : (isStreaming ? "" : "");
 
   return (
-    <div className="mb-1.5 group/thinking">
+    <div className={`mb-1.5 group/thinking ${isStreaming ? "th-streaming-border" : ""}`}>
       {/* Header row — Claude-style collapsed/expanded toggle */}
       <div className="flex items-center">
         {hasContent ? (
@@ -106,11 +106,20 @@ export function ThinkingBlock({
             aria-expanded={expanded}
             className="flex items-center gap-1.5 text-[13px] text-text-tertiary hover:text-text-secondary transition-colors"
           >
-            {/* Icon: CheckCircle when complete, Clock when streaming */}
+            {/* Sprint 147: Animated indicator — pulsing ring during streaming, scale-pop checkmark on complete */}
             {isComplete ? (
-              <CheckCircle size={14} className="text-[var(--accent-green)] shrink-0" />
+              <motion.span
+                initial={{ scale: 0.6, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: "spring", stiffness: 400, damping: 15 }}
+              >
+                <CheckCircle size={14} className="text-[var(--accent-green)] shrink-0" />
+              </motion.span>
             ) : (
-              <Clock size={14} className="shrink-0 animate-pulse" />
+              <span className="relative shrink-0 flex items-center justify-center w-[14px] h-[14px]">
+                <span className="absolute inset-0 rounded-full border border-[var(--accent-orange)] animate-ping opacity-30" />
+                <Clock size={12} className="relative text-[var(--accent-orange)]" />
+              </span>
             )}
 
             {/* Summary/label text */}
@@ -176,7 +185,7 @@ export function ThinkingBlock({
               <div className="pl-5 mt-1.5 space-y-0.5">
                 {/* Thinking content as simple text steps */}
                 {content && (
-                  <div className="text-xs text-text-secondary leading-relaxed">
+                  <div className="text-xs text-text-secondary leading-relaxed thinking-markdown">
                     <MarkdownRenderer content={content} />
                     {isStreaming && (!toolCalls || toolCalls.length === 0) && (
                       <span className="inline-block w-1.5 h-3.5 bg-text-tertiary opacity-40 ml-0.5 animate-pulse rounded-sm" />
@@ -198,13 +207,6 @@ export function ThinkingBlock({
                   </div>
                 )}
 
-                {/* "Hoàn tất" row at bottom when complete */}
-                {isComplete && content && (
-                  <div className="flex items-center gap-1.5 pt-1 text-text-tertiary">
-                    <CheckCircle size={12} className="text-[var(--accent-green)]" />
-                    <span className="text-[11px]">Hoàn tất</span>
-                  </div>
-                )}
               </div>
             </motion.div>
           )}
@@ -250,7 +252,66 @@ export function SparkleIcon({ live }: { live: boolean }) {
   );
 }
 
-/* ---- Inline Tool Card ---- */
+/* ---- Tool Icon mapping ---- */
+
+function ToolIcon({ name, spinning }: { name: string; spinning?: boolean }) {
+  const cls = `shrink-0 ${spinning ? "animate-spin" : ""}`;
+  const color = "var(--accent-orange)";
+
+  if (name === "tool_knowledge_search" || name === "tool_maritime_search") {
+    return <BookOpen size={14} className={cls} style={{ color }} />;
+  }
+  if (name === "tool_web_search" || name === "tool_search_news" || name === "tool_search_legal" || name === "tool_search_maritime") {
+    return <Globe size={14} className={cls} style={{ color }} />;
+  }
+  if (name === "tool_think") {
+    return <Search size={14} className={cls} style={{ color }} />;
+  }
+  // Generic tool icon (gear SVG)
+  return (
+    <Wrench size={14} className={cls} style={{ color }} />
+  );
+}
+
+/* ---- Parse rich result metadata ---- */
+
+interface ParsedToolResult {
+  title?: string;
+  domain?: string;
+  score?: number;
+  snippet: string;
+}
+
+function parseToolResult(name: string, result: string): ParsedToolResult {
+  // Try to extract structured data for knowledge_search results
+  if (name === "tool_knowledge_search" || name === "tool_maritime_search") {
+    // Try JSON parse first
+    try {
+      const parsed = JSON.parse(result);
+      if (parsed.title || parsed.document_title) {
+        return {
+          title: parsed.title || parsed.document_title,
+          domain: parsed.domain_id || parsed.domain,
+          score: parsed.score || parsed.relevance_score,
+          snippet: parsed.content || parsed.snippet || truncateResult(result),
+        };
+      }
+    } catch {
+      // Not JSON — fall through to text extraction
+    }
+    // Try to extract title from text (e.g., "Title: COLREGs Rule 13\nContent: ...")
+    const titleMatch = result.match(/(?:Title|Tiêu đề|Document):\s*(.+?)(?:\n|$)/i);
+    if (titleMatch) {
+      return {
+        title: titleMatch[1].trim(),
+        snippet: truncateResult(result.replace(titleMatch[0], "").trim()),
+      };
+    }
+  }
+  return { snippet: truncateResult(result) };
+}
+
+/* ---- Inline Tool Card — Sprint 147: Rich result cards ---- */
 
 export function InlineToolCard({
   toolCall,
@@ -261,6 +322,7 @@ export function InlineToolCard({
   isLast: boolean;
   isStreaming: boolean;
 }) {
+  const [resultExpanded, setResultExpanded] = useState(false);
   const hasResult = !!toolCall.result;
   const isPending = isLast && isStreaming && !hasResult;
 
@@ -271,34 +333,22 @@ export function InlineToolCard({
         .join(", ")
     : "";
 
+  // Sprint 147: Parse structured result for rich display
+  const parsed = hasResult ? parseToolResult(toolCall.name, toolCall.result!) : null;
+  const isRichResult = parsed && parsed.title;
+
+  // Sprint 147: Friendly tool name labels
+  const toolLabel = _TOOL_LABELS[toolCall.name] || toolCall.name;
+
   return (
     <div>
       {/* Tool card row */}
       <div className="th-tool-card">
-        {/* Gear icon */}
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 16 16"
-          fill="none"
-          className={isPending ? "gear-spinning shrink-0" : "shrink-0"}
-          style={{ color: "var(--accent-orange)" }}
-        >
-          <path
-            d="M8 10a2 2 0 100-4 2 2 0 000 4z"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          />
-          <path
-            d="M6.9 1.7l-.3 1.2a4.6 4.6 0 00-1.5.9L4 3.4l-1.1 2 .9.9a4.5 4.5 0 000 1.8l-.9.9 1.1 2 1.1-.4a4.6 4.6 0 001.5.9l.3 1.2h2.2l.3-1.2a4.6 4.6 0 001.5-.9l1.1.4 1.1-2-.9-.9a4.5 4.5 0 000-1.8l.9-.9-1.1-2-1.1.4a4.6 4.6 0 00-1.5-.9l-.3-1.2H6.9z"
-            stroke="currentColor"
-            strokeWidth="1.2"
-            strokeLinejoin="round"
-          />
-        </svg>
+        {/* Sprint 147: Contextual tool icon */}
+        <ToolIcon name={toolCall.name} spinning={isPending} />
 
-        {/* Function name */}
-        <span className="th-tool-fn">{toolCall.name}</span>
+        {/* Function name — friendly label */}
+        <span className="th-tool-fn">{toolLabel}</span>
 
         {/* Args preview */}
         {argsPreview && (
@@ -314,10 +364,13 @@ export function InlineToolCard({
               <span className="w-1 h-1 rounded-full bg-[var(--accent-orange)] animate-pulse-dot" style={{ animationDelay: "0.4s" }} />
             </span>
           ) : hasResult ? (
-            <span className="flex items-center gap-1 text-[var(--accent-green)]">
+            <motion.span
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="flex items-center gap-1 text-[var(--accent-green)]"
+            >
               <Check size={12} />
-              <span className="text-[10px] font-medium">hoàn thành</span>
-            </span>
+            </motion.span>
           ) : null}
         </span>
       </div>
@@ -325,10 +378,43 @@ export function InlineToolCard({
       {/* Shimmer bar while loading */}
       {isPending && <div className="th-shimmer-bar" />}
 
-      {/* Result box */}
-      {hasResult && (
+      {/* Sprint 147: Rich result card for knowledge search */}
+      {hasResult && isRichResult && (
+        <button
+          onClick={() => setResultExpanded(!resultExpanded)}
+          className="th-tool-result-rich"
+        >
+          <div className="flex items-start gap-2">
+            <BookOpen size={12} className="mt-0.5 shrink-0 text-[var(--accent-orange)]" />
+            <div className="min-w-0 text-left">
+              <div className="text-[11px] font-medium text-text-primary truncate">
+                {parsed.title}
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                {parsed.domain && (
+                  <span className="th-tool-domain-tag">{parsed.domain}</span>
+                )}
+                {parsed.score != null && (
+                  <span className="text-[9px] text-text-tertiary tabular-nums">
+                    {(parsed.score * 100).toFixed(0)}% relevance
+                  </span>
+                )}
+              </div>
+              {resultExpanded && (
+                <div className="mt-1.5 text-[10px] text-text-secondary leading-relaxed">
+                  {parsed.snippet}
+                </div>
+              )}
+            </div>
+            <ChevronDown size={10} className={`shrink-0 mt-1 text-text-tertiary transition-transform ${resultExpanded ? "rotate-0" : "-rotate-90"}`} />
+          </div>
+        </button>
+      )}
+
+      {/* Standard result box for non-rich tools */}
+      {hasResult && !isRichResult && (
         <div className="th-tool-result">
-          {truncateResult(toolCall.result!)}
+          {parsed?.snippet || truncateResult(toolCall.result!)}
         </div>
       )}
 
@@ -346,6 +432,22 @@ export function InlineToolCard({
     </div>
   );
 }
+
+/* ---- Friendly tool name labels ---- */
+
+const _TOOL_LABELS: Record<string, string> = {
+  tool_knowledge_search: "Tra cứu kiến thức",
+  tool_maritime_search: "Tra cứu hàng hải",
+  tool_web_search: "Tìm kiếm web",
+  tool_search_news: "Tìm tin tức",
+  tool_search_legal: "Tra cứu pháp luật",
+  tool_search_maritime: "Tìm kiếm hàng hải",
+  tool_current_datetime: "Thời gian hiện tại",
+  tool_calculator: "Máy tính",
+  tool_think: "Suy nghĩ",
+  tool_save_user_info: "Lưu thông tin",
+  tool_get_user_info: "Truy xuất thông tin",
+};
 
 function truncateResult(result: string): string {
   if (result.length <= 300) return result;

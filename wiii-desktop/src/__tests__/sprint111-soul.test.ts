@@ -46,11 +46,10 @@ describe("WiiiAvatar component", () => {
 // 2) UI Copy — Wiii voice across components
 // ---------------------------------------------------------------------------
 describe("Wiii voice — ThinkingBlock", () => {
-  it("should use 'Wiii đang suy nghĩ' not bare 'Đang suy nghĩ'", async () => {
+  it("should use 'Tự Vấn' as default label (Sprint 141b)", async () => {
     const src = await import("@/components/chat/ThinkingBlock?raw");
     const code = (src as any).default || src;
-    expect(code).toContain("Wiii đang suy nghĩ");
-    expect(code).toContain("Wiii đã suy nghĩ");
+    expect(code).toContain("Tự Vấn");
   });
 });
 
@@ -140,21 +139,20 @@ describe("StreamingIndicator — Wiii personality", () => {
   it("should have Wiii voice in elapsed timer", async () => {
     const src = await import("@/components/chat/StreamingIndicator?raw");
     const code = (src as any).default || src;
-    expect(code).toContain("Wiii đang đọc...");
-    expect(code).toContain("Wiii suy nghĩ");
-    expect(code).toContain("Wiii tư duy");
+    expect(code).toContain("Wiii đang suy nghĩ...");
+    expect(code).toContain("Wiii tư duy sâu...");
+    expect(code).toContain("Wiii vẫn đang cố gắng...");
   });
 });
 
 describe("MessageList — streaming avatar", () => {
-  it("should use WiiiAvatar with dynamic thinking/speaking state for streaming", async () => {
+  it("should use WiiiAvatar with centralized useAvatarState hook", async () => {
     const src = await import("@/components/chat/MessageList?raw");
     const code = (src as any).default || src;
-    // Sprint 117: dynamic state — thinking until answer content, then speaking
+    // Sprint 145: dynamic state via centralized hook
     expect(code).toContain("WiiiAvatar");
-    expect(code).toContain('"speaking"');
-    expect(code).toContain('"thinking"');
-    expect(code).toContain("streamingContent");
+    expect(code).toContain("useAvatarState");
+    expect(code).toContain("avatarState");
   });
 
   it("should have typing cursor in streaming answer blocks", async () => {

@@ -18,6 +18,7 @@ import type {
   ContentBlock,
   StreamingStep,
   ThinkingPhase,
+  ActionTextBlockData,
 } from "@/api/types";
 
 const STORE_NAME = "conversations.json";
@@ -84,6 +85,8 @@ interface ChatState {
   appendToolCall: (tc: ToolCallInfo) => void;
   updateToolCallResult: (id: string, result: string) => void;
   setStreamingDomainNotice: (notice: string) => void;
+  /** Sprint 147: Append bold action text between thinking blocks */
+  appendActionText: (text: string, node?: string) => void;
   // Sprint 141: ThinkingFlow phase actions
   addOrUpdatePhase: (label: string, node?: string) => void;
   appendPhaseThinking: (content: string) => void;
@@ -446,6 +449,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setStreamingDomainNotice: (notice) => {
     set({ streamingDomainNotice: notice });
+  },
+
+  appendActionText: (text, node) => {
+    set((state) => {
+      // Close any open thinking block first
+      let blocks = closeLastThinkingBlock([...state.streamingBlocks]);
+      // Add action text block with optional node attribution
+      blocks.push({ type: "action_text", id: uuidv4(), content: text, node });
+      return { streamingBlocks: blocks };
+    });
   },
 
   // ---- Sprint 141: ThinkingFlow phase actions ----

@@ -244,7 +244,8 @@ class HybridSearchService:
                 dense_weight=self._dense_weight,
                 sparse_weight=self._sparse_weight,
                 limit=limit,
-                query=query  # Pass query for title match boosting
+                query=query,  # Pass query for title match boosting
+                active_domain_id=domain_id  # Sprint 136: Cross-domain boost
             )
         elif search_method == "dense_only":
             results = self._reranker.merge_single_source(

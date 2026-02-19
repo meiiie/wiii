@@ -341,8 +341,8 @@ class Settings(BaseSettings):
     )
 
     # Agentic Loop (Sprint 57: Generalized tool-calling loop)
-    enable_agentic_loop: bool = Field(default=False, description="Enable generalized agentic loop in LangGraph nodes")
-    agentic_loop_max_steps: int = Field(default=5, ge=1, le=20, description="Max tool-calling steps per agentic loop")
+    enable_agentic_loop: bool = Field(default=True, description="Enable generalized agentic loop in LangGraph nodes (Sprint 147: default=True)")
+    agentic_loop_max_steps: int = Field(default=8, ge=1, le=20, description="Max tool-calling steps per agentic loop (Sprint 147: 5→8 for complex queries)")
 
     # Per-Agent Provider Config (Sprint 69: Per-node LLM configuration)
     agent_provider_configs: str = Field(
@@ -396,6 +396,60 @@ class Settings(BaseSettings):
     enable_emotional_state: bool = Field(default=False, description="Enable 2D mood state machine (keyword-based sentiment detection)")
     emotional_decay_rate: float = Field(default=0.15, description="Rate of mood decay toward neutral per turn (0.0-1.0)")
     enable_personality_eval: bool = Field(default=False, description="Enable personality drift evaluator (opt-in for testing)")
+
+    # Soul Emotion (Sprint 135: LLM-Driven Avatar Expression)
+    enable_soul_emotion: bool = Field(default=False, description="Enable LLM inline <!--WIII_SOUL:{...}--> emotion tags for avatar control")
+    soul_emotion_buffer_bytes: int = Field(default=512, ge=256, le=2048, description="Max bytes to buffer at stream start for soul emotion extraction (min 256 to fit max tag ~170 bytes)")
+
+    # Knowledge Management (Sprint 136: Universal KB)
+    cross_domain_search: bool = Field(default=True, description="Search all domains with soft boost (not hard filter)")
+    domain_boost_score: float = Field(default=0.15, description="RRF boost for same-domain results in cross-domain search")
+    enable_text_ingestion: bool = Field(default=True, description="Allow text/markdown ingestion via API")
+    max_ingestion_size_mb: int = Field(default=50, description="Maximum file size for ingestion in MB")
+
+    # Semantic Fact Retrieval (Sprint 137: Vector Facts)
+    enable_semantic_fact_retrieval: bool = Field(default=True, description="Use embedding similarity for fact retrieval instead of SQL-only")
+    fact_retrieval_alpha: float = Field(default=0.3, description="Importance weight in combined fact scoring")
+    fact_retrieval_beta: float = Field(default=0.5, description="Cosine similarity weight in combined fact scoring")
+    fact_retrieval_gamma: float = Field(default=0.2, description="Recency weight in combined fact scoring")
+    fact_min_similarity: float = Field(default=0.3, description="Minimum cosine similarity for semantic fact retrieval")
+
+    # Intelligent Tool Selection (Sprint 138: Tool Pre-Filtering)
+    enable_tool_selection: bool = Field(default=False, description="Enable semantic tool pre-filtering for direct node")
+    tool_selection_top_k: int = Field(default=5, description="Maximum tools to bind after semantic selection")
+    tool_selection_core_tools: list[str] = Field(
+        default=["tool_current_datetime", "tool_knowledge_search", "tool_think"],
+        description="Tools always included regardless of similarity score"
+    )
+
+    # LangSmith Observability (Sprint 144b)
+    enable_langsmith: bool = Field(default=False, description="Enable LangSmith tracing for LangChain/LangGraph observability")
+    langsmith_api_key: Optional[str] = Field(default=None, description="LangSmith API key (from smith.langchain.com)")
+    langsmith_project: str = Field(default="wiii", description="LangSmith project name for trace grouping")
+    langsmith_endpoint: str = Field(default="https://api.smith.langchain.com", description="LangSmith API endpoint")
+
+    # Multi-Phase Thinking Chain (Sprint 148: "Chuỗi Tư Duy")
+    enable_thinking_chain: bool = Field(default=False, description="Enable multi-phase thinking chain (tool_report_progress for Claude-like phase transitions)")
+
+    # Product Search Agent (Sprint 148: "Săn Hàng" + Sprint 149: "Cắm & Chạy")
+    enable_product_search: bool = Field(default=False, description="Enable product search agent (multi-platform e-commerce search)")
+    serper_api_key: Optional[str] = Field(default=None, description="Serper.dev API key for Google Shopping search")
+    apify_api_token: Optional[str] = Field(default=None, description="Apify API token for e-commerce scrapers (Shopee, TikTok Shop, Lazada, FB)")
+    product_search_max_results: int = Field(default=30, description="Max results per platform search")
+    product_search_timeout: int = Field(default=30, description="Timeout in seconds for each platform search")
+
+    # Sprint 149: Search Platform Plugin Architecture
+    product_search_platforms: list = Field(
+        default=["google_shopping", "shopee", "tiktok_shop", "lazada", "facebook_marketplace", "all_web", "instagram"],
+        description="List of enabled search platform IDs",
+    )
+    enable_tiktok_native_api: bool = Field(default=False, description="Enable TikTok Research API (native, free)")
+    tiktok_client_key: Optional[str] = Field(default=None, description="TikTok Developer Portal client key")
+    tiktok_client_secret: Optional[str] = Field(default=None, description="TikTok Developer Portal client secret")
+
+    # OAuth skeleton (future)
+    enable_oauth_token_store: bool = Field(default=False, description="Enable OAuth token store for platform auth")
+    oauth_encryption_key: Optional[str] = Field(default=None, description="Fernet encryption key for OAuth tokens")
 
     # Quality & Model Config
     quality_skip_threshold: float = Field(default=0.85, description="Skip grader when CRAG confidence >= this value (saves ~7.8s)")

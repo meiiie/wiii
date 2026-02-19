@@ -25,15 +25,28 @@ from typing import Optional
 
 _cs_key = "app.services.chat_service"
 _svc_key = "app.services"
+_graph_key = "app.engine.multi_agent.graph"
 _had_cs = _cs_key in sys.modules
 _had_svc = _svc_key in sys.modules
+_had_graph = _graph_key in sys.modules
 _orig_cs = sys.modules.get(_cs_key)
+_orig_graph = sys.modules.get(_graph_key)
 
 if not _had_cs:
     _mock_chat_svc = types.ModuleType(_cs_key)
     _mock_chat_svc.ChatService = type("ChatService", (), {})
     _mock_chat_svc.get_chat_service = lambda: None
     sys.modules[_cs_key] = _mock_chat_svc
+
+# Break graph_streaming ↔ graph mutual import
+# Note: get_multi_agent_graph_async is async, so use AsyncMock
+if not _had_graph:
+    _mock_graph = types.ModuleType(_graph_key)
+    _mock_graph.get_multi_agent_graph_async = AsyncMock()
+    _mock_graph._build_domain_config = MagicMock()
+    _mock_graph._TRACERS = {}
+    _mock_graph._cleanup_tracer = MagicMock()
+    sys.modules[_graph_key] = _mock_graph
 
 from app.engine.multi_agent.graph_streaming import (
     _convert_bus_event,

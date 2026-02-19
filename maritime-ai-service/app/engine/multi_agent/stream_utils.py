@@ -36,6 +36,8 @@ class StreamEventType:
     DONE = "done"               # Stream complete
     ERROR = "error"             # Error occurred
     DOMAIN_NOTICE = "domain_notice"  # Gentle notice: content outside active domain
+    EMOTION = "emotion"              # Sprint 135: Soul emotion for avatar expression
+    ACTION_TEXT = "action_text"      # Sprint 147: Bold narrative between thinking blocks
 
 
 # =============================================================================
@@ -43,19 +45,21 @@ class StreamEventType:
 # =============================================================================
 
 NODE_DESCRIPTIONS = {
-    "supervisor": "🎯 Phân tích và định tuyến câu hỏi",
-    "rag_agent": "📚 Tra cứu cơ sở tri thức",
-    "tutor_agent": "👨‍🏫 Tạo bài giảng",
-    "memory_agent": "🧠 Truy xuất bộ nhớ",
-    "direct": "💬 Tạo phản hồi trực tiếp",
-    "grader": "✅ Kiểm tra chất lượng",
-    "synthesizer": "📝 Tổng hợp câu trả lời"
+    "supervisor": "🎯 Wiii đang phân tích câu hỏi của bạn...",
+    "rag_agent": "📚 Wiii tra cứu kiến thức chuyên ngành...",
+    "tutor_agent": "👨‍🏫 Wiii soạn bài giảng cho bạn...",
+    "memory_agent": "🧠 Wiii nhớ lại những gì bạn chia sẻ...",
+    "direct": "💬 Wiii đang suy nghĩ câu trả lời...",
+    "grader": "✅ Wiii kiểm tra lại độ chính xác...",
+    "synthesizer": "📝 Wiii tổng hợp và hoàn thiện...",
+    "product_search_agent": "🛒 Wiii đang tìm kiếm sản phẩm trên nhiều sàn...",
 }
 
 NODE_STEPS = {
     "supervisor": "routing",
     "rag_agent": "retrieval",
     "tutor_agent": "teaching",
+    "product_search_agent": "product_search",
     "memory_agent": "memory_lookup",
     "direct": "direct_response",
     "grader": "quality_check",
@@ -193,13 +197,21 @@ async def create_thinking_start_event(
     label: str,
     node: str,
     block_id: Optional[str] = None,
+    summary: Optional[str] = None,
 ) -> StreamEvent:
     """Create a thinking_start event to open a new thinking block."""
+    details: Optional[Dict[str, Any]] = None
+    if block_id or summary:
+        details = {}
+        if block_id:
+            details["block_id"] = block_id
+        if summary:
+            details["summary"] = summary
     return StreamEvent(
         type=StreamEventType.THINKING_START,
         content=label,
         node=node,
-        details={"block_id": block_id} if block_id else None,
+        details=details,
     )
 
 
@@ -262,6 +274,22 @@ async def create_domain_notice_event(message: str) -> StreamEvent:
     )
 
 
+async def create_emotion_event(
+    mood: str,
+    face: dict,
+    intensity: float,
+) -> StreamEvent:
+    """Sprint 135: Create an emotion event for avatar facial expression control."""
+    return StreamEvent(
+        type=StreamEventType.EMOTION,
+        content={
+            "mood": mood,
+            "face": face,
+            "intensity": intensity,
+        },
+    )
+
+
 async def create_thinking_delta_event(
     content: str,
     node: Optional[str] = None,
@@ -269,6 +297,22 @@ async def create_thinking_delta_event(
     """Create a thinking_delta event for incremental thinking token streaming."""
     return StreamEvent(
         type=StreamEventType.THINKING_DELTA,
+        content=content,
+        node=node,
+    )
+
+
+async def create_action_text_event(
+    content: str,
+    node: Optional[str] = None,
+) -> StreamEvent:
+    """Sprint 147: Create an action_text event — bold narrative between thinking blocks.
+
+    Inspired by Claude's bold contextual text between thinking blocks, e.g.:
+    "Để tìm kiếm đầy đủ, Wiii sẽ tra cứu kiến thức chuyên ngành..."
+    """
+    return StreamEvent(
+        type=StreamEventType.ACTION_TEXT,
         content=content,
         node=node,
     )

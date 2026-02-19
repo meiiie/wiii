@@ -48,11 +48,12 @@ class HybridSearchResult:
     chunk_index: int = 0
     image_url: str = ""
     document_id: str = ""
+    domain_id: str = ""  # Sprint 136: Cross-domain search
     section_hierarchy: dict = field(default_factory=dict)  # article, clause, point, rule
-    
+
     # Source highlighting metadata (Feature: source-highlight-citation)
     bounding_boxes: Optional[List[Dict]] = None  # Normalized coordinates for text highlighting
-    
+
     def appears_in_both(self) -> bool:
         """Check if result appeared in both dense and sparse searches."""
         return self.dense_score is not None and self.sparse_score is not None
@@ -85,6 +86,7 @@ class RankedItem:
     chunk_index: int = 0
     image_url: str = ""
     document_id: str = ""
+    domain_id: str = ""  # Sprint 136
     section_hierarchy: dict = field(default_factory=dict)
     # Source highlighting metadata (Feature: source-highlight-citation)
     bounding_boxes: Optional[List[Dict]] = None
@@ -283,7 +285,8 @@ class RRFReranker:
         dense_weight: float = 0.5,
         sparse_weight: float = 0.5,
         limit: int = 5,
-        query: str = ""  # Query for title match boosting
+        query: str = "",  # Query for title match boosting
+        active_domain_id: Optional[str] = None  # Sprint 136: Cross-domain boost
     ) -> List[HybridSearchResult]:
         """
         Merge results using Reciprocal Rank Fusion with Title Match Boosting.
@@ -328,10 +331,11 @@ class RRFReranker:
                 chunk_index = getattr(result, 'chunk_index', 0) or 0
                 image_url = getattr(result, 'image_url', '') or ''
                 document_id = getattr(result, 'document_id', '') or ''
+                domain_id_val = getattr(result, 'domain_id', '') or ''
                 section_hierarchy = getattr(result, 'section_hierarchy', {}) or {}
                 # Feature: source-highlight-citation
                 bounding_boxes = getattr(result, 'bounding_boxes', None)
-                
+
                 items[node_id] = RankedItem(
                     node_id=node_id,
                     title=title,
@@ -344,6 +348,7 @@ class RRFReranker:
                     chunk_index=chunk_index,
                     image_url=image_url,
                     document_id=document_id,
+                    domain_id=domain_id_val,
                     section_hierarchy=section_hierarchy,
                     bounding_boxes=bounding_boxes
                 )
@@ -359,9 +364,10 @@ class RRFReranker:
             sparse_image_url = getattr(result, 'image_url', '') or ''
             sparse_page_number = getattr(result, 'page_number', 0) or 0
             sparse_document_id = getattr(result, 'document_id', '') or ''
+            sparse_domain_id = getattr(result, 'domain_id', '') or ''
             # Feature: source-highlight-citation
             sparse_bounding_boxes = getattr(result, 'bounding_boxes', None)
-            
+
             if node_id not in items:
                 items[node_id] = RankedItem(
                     node_id=node_id,
@@ -373,6 +379,7 @@ class RRFReranker:
                     image_url=sparse_image_url,
                     page_number=sparse_page_number,
                     document_id=sparse_document_id,
+                    domain_id=sparse_domain_id,
                     bounding_boxes=sparse_bounding_boxes
                 )
             else:
@@ -393,7 +400,10 @@ class RRFReranker:
                 # Feature: source-highlight-citation - Update bounding_boxes if not set
                 if sparse_bounding_boxes and not items[node_id].bounding_boxes:
                     items[node_id].bounding_boxes = sparse_bounding_boxes
-            
+                # Sprint 136: Update domain_id if not set
+                if sparse_domain_id and not items[node_id].domain_id:
+                    items[node_id].domain_id = sparse_domain_id
+
             items[node_id].sparse_score = result.score
             items[node_id].sparse_rank = rank
         
@@ -418,9 +428,16 @@ class RRFReranker:
                 sparse_boost = self.SPARSE_PRIORITY_BOOST
                 logger.debug("Sparse priority boost for: %s (score=%s)", item.title[:50], item.sparse_score)
             
+            # Sprint 136: Cross-domain soft boost for same-domain results
+            domain_boost = 1.0
+            if active_domain_id and item.domain_id == active_domain_id:
+                from app.core.config import settings as _settings
+                domain_boost = 1.0 + _settings.domain_boost_score
+                logger.debug("Domain boost %sx for: %s (domain=%s)", domain_boost, item.title[:50], item.domain_id)
+
             # Apply all boosts
-            final_rrf_score = rrf_score * title_boost * sparse_boost
-            
+            final_rrf_score = rrf_score * title_boost * sparse_boost * domain_boost
+
             results.append(HybridSearchResult(
                 node_id=item.node_id,
                 title=item.title,
@@ -440,6 +457,7 @@ class RRFReranker:
                 chunk_index=item.chunk_index,
                 image_url=item.image_url,
                 document_id=item.document_id,
+                domain_id=item.domain_id,
                 section_hierarchy=item.section_hierarchy,
                 # Feature: source-highlight-citation
                 bounding_boxes=item.bounding_boxes

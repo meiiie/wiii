@@ -185,6 +185,156 @@ class FactRepositoryMixin:
         facts.sort(key=lambda f: f.similarity, reverse=True)
         return facts
 
+    def search_relevant_facts(
+        self,
+        user_id: str,
+        query_embedding: List[float],
+        limit: int = 5,
+        min_similarity: float = 0.3,
+    ) -> List[SemanticMemorySearchResult]:
+        """
+        Search user facts by semantic similarity to query (Sprint 137).
+
+        Uses HNSW index on embedding column for efficient vector search.
+        Combines importance, cosine similarity, and recency for scoring.
+
+        Formula: alpha * effective_importance + beta * similarity + gamma * recency
+        Where alpha=0.3, beta=0.5, gamma=0.2 (configurable in settings).
+
+        Args:
+            user_id: User ID
+            query_embedding: Query embedding vector (768-dim)
+            limit: Maximum facts to return
+            min_similarity: Minimum cosine similarity threshold
+
+        Returns:
+            List of facts sorted by combined score (descending)
+        """
+        self._ensure_initialized()
+
+        try:
+            from app.core.config import settings
+            alpha = settings.fact_retrieval_alpha
+            beta = settings.fact_retrieval_beta
+            gamma = settings.fact_retrieval_gamma
+        except Exception:
+            alpha, beta, gamma = 0.3, 0.5, 0.2
+
+        try:
+            with self._session_factory() as session:
+                query = text(f"""
+                    SELECT
+                        id,
+                        content,
+                        memory_type,
+                        importance,
+                        metadata,
+                        created_at,
+                        updated_at,
+                        last_accessed,
+                        1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
+                    FROM {self.TABLE_NAME}
+                    WHERE user_id = :user_id
+                      AND memory_type = :memory_type
+                      AND embedding IS NOT NULL
+                      AND 1 - (embedding <=> CAST(:embedding AS vector)) >= :min_similarity
+                    ORDER BY similarity DESC
+                    LIMIT :fetch_limit
+                """)
+
+                result = session.execute(query, {
+                    "user_id": user_id,
+                    "memory_type": MemoryType.USER_FACT.value,
+                    "embedding": str(query_embedding),
+                    "min_similarity": min_similarity,
+                    "fetch_limit": limit * 3,  # Fetch extra for re-ranking
+                })
+
+                rows = result.fetchall()
+
+                if not rows:
+                    logger.debug("No similar facts found for user %s", user_id)
+                    return []
+
+                # Build results with combined scoring
+                facts = []
+                now = None
+                try:
+                    from datetime import datetime, timezone
+                    now = datetime.now(timezone.utc)
+                except Exception:
+                    pass
+
+                for row in rows:
+                    similarity = float(row.similarity)
+                    meta = row.metadata or {}
+                    fact_type = meta.get("fact_type", "unknown")
+                    access_count = meta.get("access_count", 0)
+
+                    # Calculate effective importance (with decay)
+                    effective_importance = float(row.importance)
+                    try:
+                        from app.engine.semantic_memory.importance_decay import (
+                            calculate_effective_importance_from_timestamps,
+                        )
+                        effective_importance = calculate_effective_importance_from_timestamps(
+                            base_importance=row.importance,
+                            fact_type=fact_type,
+                            last_accessed=meta.get("last_accessed"),
+                            created_at=row.created_at,
+                            access_count=access_count,
+                        )
+                    except ImportError:
+                        pass
+
+                    # Calculate recency score (0-1, higher = more recent)
+                    recency_score = 0.5  # default
+                    if now and row.created_at:
+                        try:
+                            created = row.created_at
+                            if created.tzinfo is None:
+                                from datetime import timezone
+                                created = created.replace(tzinfo=timezone.utc)
+                            hours_ago = (now - created).total_seconds() / 3600
+                            # Exponential decay: 0.995^hours (Stanford pattern)
+                            recency_score = 0.995 ** min(hours_ago, 2000)
+                        except Exception:
+                            recency_score = 0.5
+
+                    # Combined score
+                    combined = (
+                        alpha * effective_importance
+                        + beta * similarity
+                        + gamma * recency_score
+                    )
+
+                    fact = SemanticMemorySearchResult(
+                        id=row.id,
+                        content=row.content,
+                        memory_type=MemoryType(row.memory_type),
+                        importance=row.importance,
+                        similarity=combined,  # Store combined score in similarity field
+                        metadata=meta,
+                        created_at=row.created_at,
+                        updated_at=getattr(row, "updated_at", None),
+                    )
+                    facts.append(fact)
+
+                # Sort by combined score descending
+                facts.sort(key=lambda f: f.similarity, reverse=True)
+                facts = facts[:limit]
+
+                logger.debug(
+                    "Semantic fact search returned %d facts for user %s "
+                    "(alpha=%.1f, beta=%.1f, gamma=%.1f)",
+                    len(facts), user_id, alpha, beta, gamma,
+                )
+                return facts
+
+        except Exception as e:
+            logger.error("Semantic fact search failed: %s", e)
+            return []
+
     def get_all_user_facts(
         self,
         user_id: str

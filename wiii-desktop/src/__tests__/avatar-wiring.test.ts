@@ -18,16 +18,15 @@ describe("ErrorBoundary — avatar error state", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 2) MessageList — dynamic thinking→speaking transition
+// 2) MessageList — uses centralized useAvatarState hook (Sprint 145)
 // ---------------------------------------------------------------------------
 describe("MessageList — avatar state transition", () => {
-  it("should derive avatar state from streamingContent", async () => {
+  it("should use useAvatarState hook for centralized state derivation", async () => {
     const src = await import("@/components/chat/MessageList?raw");
     const code = (src as any).default || src;
-    // Should use conditional: speaking when content exists, thinking otherwise
-    expect(code).toContain('"speaking"');
-    expect(code).toContain('"thinking"');
-    expect(code).toContain("streamingContent");
+    // Sprint 145: state derivation moved to useAvatarState hook
+    expect(code).toContain("useAvatarState");
+    expect(code).toContain("avatarState");
     // Should NOT have hardcoded thinking-only state
     expect(code).not.toContain('state="thinking"');
   });
@@ -37,30 +36,20 @@ describe("MessageList — avatar state transition", () => {
 // 3) StatusBar — 4-state avatar
 // ---------------------------------------------------------------------------
 describe("StatusBar — derived avatar state", () => {
-  it("should import useUIStore for inputFocused", async () => {
+  it("should use useAvatarState hook for centralized state", async () => {
     const src = await import("@/components/layout/StatusBar?raw");
     const code = (src as any).default || src;
-    expect(code).toContain("useUIStore");
-    expect(code).toContain("inputFocused");
-  });
-
-  it("should have deriveAvatarState function with 4 states", async () => {
-    const src = await import("@/components/layout/StatusBar?raw");
-    const code = (src as any).default || src;
-    expect(code).toContain("deriveAvatarState");
-    expect(code).toContain('"speaking"');
-    expect(code).toContain('"thinking"');
-    expect(code).toContain('"listening"');
-    expect(code).toContain('"idle"');
-  });
-
-  it("should no longer hardcode isStreaming ternary", async () => {
-    const src = await import("@/components/layout/StatusBar?raw");
-    const code = (src as any).default || src;
-    // Old pattern: state={isStreaming ? "thinking" : "idle"}
-    expect(code).not.toContain('isStreaming ? "thinking" : "idle"');
-    // New pattern: state={avatarState}
+    // Sprint 145: state derivation moved to useAvatarState hook
+    expect(code).toContain("useAvatarState");
     expect(code).toContain("avatarState");
+  });
+
+  it("should no longer have inline deriveAvatarState function", async () => {
+    const src = await import("@/components/layout/StatusBar?raw");
+    const code = (src as any).default || src;
+    // Sprint 145: removed local derivation — centralized in hook
+    expect(code).not.toContain("deriveAvatarState");
+    expect(code).not.toContain('isStreaming ? "thinking" : "idle"');
   });
 });
 
@@ -155,9 +144,8 @@ describe("deriveAvatarState logic", () => {
 // 7) All 6 avatar states are used across the app
 // ---------------------------------------------------------------------------
 describe("All 6 avatar states have usage", () => {
-  it("idle — used in WelcomeScreen, Sidebar, SettingsPage", async () => {
+  it("idle — used in Sidebar, SettingsPage (WelcomeScreen uses useAvatarState)", async () => {
     const files = [
-      "@/components/chat/WelcomeScreen?raw",
       "@/components/layout/Sidebar?raw",
       "@/components/settings/SettingsPage?raw",
     ];
@@ -166,38 +154,42 @@ describe("All 6 avatar states have usage", () => {
       const code = (src as any).default || src;
       expect(code).toContain('"idle"');
     }
+    // Sprint 145b: WelcomeScreen now uses useAvatarState (live avatar, no static "idle")
+    const ws = await import("@/components/chat/WelcomeScreen?raw");
+    const wsCode = (ws as any).default || ws;
+    expect(wsCode).toContain("useAvatarState");
   });
 
-  it("listening — used in StatusBar via deriveAvatarState", async () => {
-    const src = await import("@/components/layout/StatusBar?raw");
+  it("listening — used in useAvatarState hook", async () => {
+    const src = await import("@/hooks/useAvatarState?raw");
     const code = (src as any).default || src;
     expect(code).toContain('"listening"');
   });
 
-  it("thinking — used in App loading + StatusBar + MessageList", async () => {
+  it("thinking — used in App loading + useAvatarState hook", async () => {
     const app = await import("@/App?raw");
     const appCode = (app as any).default || app;
     expect(appCode).toContain('"thinking"');
 
-    const sb = await import("@/components/layout/StatusBar?raw");
-    const sbCode = (sb as any).default || sb;
-    expect(sbCode).toContain('"thinking"');
+    const hook = await import("@/hooks/useAvatarState?raw");
+    const hookCode = (hook as any).default || hook;
+    expect(hookCode).toContain('"thinking"');
   });
 
-  it("speaking — used in StatusBar + MessageList", async () => {
-    const sb = await import("@/components/layout/StatusBar?raw");
-    const sbCode = (sb as any).default || sb;
-    expect(sbCode).toContain('"speaking"');
-
-    const ml = await import("@/components/chat/MessageList?raw");
-    const mlCode = (ml as any).default || ml;
-    expect(mlCode).toContain('"speaking"');
+  it("speaking — used in useAvatarState hook", async () => {
+    const hook = await import("@/hooks/useAvatarState?raw");
+    const hookCode = (hook as any).default || hook;
+    expect(hookCode).toContain('"speaking"');
   });
 
-  it("complete — used in MessageBubble", async () => {
+  it("complete — used in useAvatarState hook + MessageBubble idle state", async () => {
+    const hook = await import("@/hooks/useAvatarState?raw");
+    const hookCode = (hook as any).default || hook;
+    expect(hookCode).toContain('"complete"');
+
     const src = await import("@/components/chat/MessageBubble?raw");
     const code = (src as any).default || src;
-    expect(code).toContain('"complete"');
+    expect(code).toContain('"idle"');
   });
 
   it("error — used in ErrorBoundary", async () => {

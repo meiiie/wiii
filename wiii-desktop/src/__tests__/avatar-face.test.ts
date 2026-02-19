@@ -229,7 +229,7 @@ describe("BlinkController", () => {
     expect(scale).toBeGreaterThan(0);
   });
 
-  it("blink completes and returns to 1.0", async () => {
+  it("blink completes and returns near 1.0 (with follow-through overshoot)", async () => {
     const { BlinkController } = await import("@/lib/avatar/blink-controller");
     const ctrl = new BlinkController(15);
     ctrl.triggerBlink();
@@ -237,7 +237,9 @@ describe("BlinkController", () => {
     ctrl.advance(0.08);
     ctrl.advance(0.08);
     const afterBlink = ctrl.advance(0.016);
-    expect(afterBlink).toBe(1.0);
+    // Sprint 143b: Blink follow-through causes brief overshoot >1.0 before settling
+    expect(afterBlink).toBeGreaterThanOrEqual(1.0);
+    expect(afterBlink).toBeLessThan(1.06); // max overshoot is 1.05
   });
 
   it("setRate changes blink rate without error", async () => {
@@ -379,11 +381,13 @@ describe("Animation hook face integration (Sprint 129)", () => {
     expect(code).toContain("microY");
   });
 
-  it("speaking state has noise-driven mouth oscillation", async () => {
+  it("speaking state has rhythm-driven mouth oscillation", async () => {
     const src = await import("@/lib/avatar/use-avatar-animation?raw");
     const code = (src as any).default || src;
     expect(code).toContain('"speaking"');
-    expect(code).toContain("speakNoise");
+    // Sprint 142: replaced random noise with Vietnamese syllable rhythm
+    expect(code).toContain("syllableDuration");
+    expect(code).toContain("envelope");
   });
 
   it("state transition updates face expression and triggers blink", async () => {

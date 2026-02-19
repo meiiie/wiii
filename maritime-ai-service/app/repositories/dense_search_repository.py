@@ -52,6 +52,7 @@ class DenseSearchResult:
     chunk_index: int = 0
     image_url: str = ""
     document_id: str = ""
+    domain_id: str = ""  # Sprint 136: Cross-domain search
     section_hierarchy: dict = None  # article, clause, point, rule
     # Source highlighting (Feature: source-highlight-citation)
     bounding_boxes: list = None  # Normalized coordinates for text highlighting
@@ -169,6 +170,7 @@ class DenseSearchRepository:
                         chunk_index,
                         image_url,
                         document_id,
+                        domain_id,
                         metadata,
                         bounding_boxes,
                         (
@@ -184,8 +186,12 @@ class DenseSearchRepository:
                 params = [query_embedding]
                 param_idx = 2
 
-                # Add domain_id filter (multi-domain knowledge isolation)
-                if domain_id:
+                # Sprint 136: Cross-domain search — soft boost instead of hard filter
+                # When cross_domain_search=True, we don't add domain_id filter
+                # (RRF reranker handles domain boosting)
+                # When cross_domain_search=False, preserve original hard filter
+                from app.core.config import settings as _settings
+                if domain_id and not _settings.cross_domain_search:
                     query += f" AND domain_id = ${param_idx}"
                     params.append(domain_id)
                     param_idx += 1
@@ -245,6 +251,7 @@ class DenseSearchRepository:
                         chunk_index=row.get("chunk_index") or 0,
                         image_url=row.get("image_url") or "",
                         document_id=row.get("document_id") or "",
+                        domain_id=row.get("domain_id") or "",
                         section_hierarchy=section_hierarchy,
                         bounding_boxes=bounding_boxes
                     ))

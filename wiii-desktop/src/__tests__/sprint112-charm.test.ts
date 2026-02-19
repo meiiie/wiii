@@ -78,11 +78,11 @@ describe("StatusBar — Wiii presence", () => {
     expect(code).toContain("size={14}");
   });
 
-  it("should derive avatar state from streaming + input focus", async () => {
+  it("should use useAvatarState hook for avatar state", async () => {
     const src = await import("@/components/layout/StatusBar?raw");
     const code = (src as any).default || src;
-    // Sprint 117: 4-state derived avatar (idle/listening/thinking/speaking)
-    expect(code).toContain("deriveAvatarState");
+    // Sprint 145: centralized avatar state via hook
+    expect(code).toContain("useAvatarState");
     expect(code).toContain("avatarState");
   });
 

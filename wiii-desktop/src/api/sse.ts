@@ -21,6 +21,8 @@ import type {
   SSEThinkingStartEvent,
   SSEThinkingEndEvent,
   SSEDomainNoticeEvent,
+  SSEEmotionEvent,
+  SSEActionTextEvent,
 } from "./types";
 
 export interface SSEEventHandler {
@@ -37,6 +39,10 @@ export interface SSEEventHandler {
   onThinkingStart?: (data: SSEThinkingStartEvent) => void;
   onThinkingEnd?: (data: SSEThinkingEndEvent) => void;
   onDomainNotice?: (data: SSEDomainNoticeEvent) => void;
+  /** Sprint 135: Soul emotion — LLM-driven avatar expression */
+  onEmotion?: (data: SSEEmotionEvent) => void;
+  /** Sprint 147: Bold action text between thinking blocks */
+  onActionText?: (data: SSEActionTextEvent) => void;
 }
 
 /**
@@ -162,6 +168,12 @@ function dispatchEvent(
       break;
     case "domain_notice":
       handlers.onDomainNotice?.(data as SSEDomainNoticeEvent);
+      break;
+    case "emotion":
+      handlers.onEmotion?.(data as SSEEmotionEvent);
+      break;
+    case "action_text":
+      handlers.onActionText?.(data as SSEActionTextEvent);
       break;
     default:
       console.warn(`[SSE] Unknown event type: ${eventType}`);

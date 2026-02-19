@@ -1,0 +1,111 @@
+"""
+Search Platforms — Sprint 149: "Cắm & Chạy"
+
+Plugin architecture for product search.
+Auto-discovers and registers platform adapters based on config.
+
+Usage:
+    from app.engine.search_platforms import init_search_platforms, get_search_platform_registry
+
+    # Initialize at startup (called from tools/__init__.py)
+    init_search_platforms()
+
+    # Get all enabled adapters
+    registry = get_search_platform_registry()
+    for adapter in registry.get_all_enabled():
+        results = adapter.search_sync("dây điện 2.5mm")
+"""
+
+import logging
+
+from app.engine.search_platforms.base import (
+    BackendType,
+    PlatformConfig,
+    ProductSearchResult,
+    SearchPlatformAdapter,
+)
+from app.engine.search_platforms.registry import (
+    SearchPlatformRegistry,
+    get_search_platform_registry,
+)
+from app.engine.search_platforms.circuit_breaker import PerPlatformCircuitBreaker
+
+logger = logging.getLogger(__name__)
+
+
+def init_search_platforms() -> SearchPlatformRegistry:
+    """
+    Initialize and register all enabled search platform adapters.
+
+    Reads `product_search_platforms` from config to determine which platforms to enable.
+    For TikTok Shop: uses native API when enabled, otherwise Serper fallback.
+
+    Returns:
+        The populated SearchPlatformRegistry singleton.
+    """
+    from app.core.config import get_settings
+    settings = get_settings()
+
+    registry = get_search_platform_registry()
+    registry.clear()  # Clear for re-init safety
+
+    enabled = set(settings.product_search_platforms)
+
+    # --- Serper-based adapters ---
+    if "google_shopping" in enabled:
+        from app.engine.search_platforms.adapters.serper_shopping import SerperShoppingAdapter
+        registry.register(SerperShoppingAdapter())
+
+    # Site-filtered adapters
+    from app.engine.search_platforms.adapters.serper_site import (
+        create_shopee_adapter,
+        create_lazada_adapter,
+        create_tiktok_shop_serper_adapter,
+        create_facebook_marketplace_adapter,
+        create_instagram_adapter,
+    )
+
+    if "shopee" in enabled:
+        registry.register(create_shopee_adapter())
+
+    if "lazada" in enabled:
+        registry.register(create_lazada_adapter())
+
+    if "facebook_marketplace" in enabled:
+        registry.register(create_facebook_marketplace_adapter())
+
+    if "instagram" in enabled:
+        registry.register(create_instagram_adapter())
+
+    # All web search (independent shops)
+    if "all_web" in enabled:
+        from app.engine.search_platforms.adapters.serper_all_web import SerperAllWebAdapter
+        registry.register(SerperAllWebAdapter())
+
+    # --- TikTok Shop: native API with Serper fallback ---
+    if "tiktok_shop" in enabled:
+        if settings.enable_tiktok_native_api:
+            from app.engine.search_platforms.adapters.tiktok_research import TikTokResearchAdapter
+            serper_fallback = create_tiktok_shop_serper_adapter()
+            registry.register(TikTokResearchAdapter(serper_fallback=serper_fallback))
+        else:
+            registry.register(create_tiktok_shop_serper_adapter())
+
+    logger.info(
+        "Search platforms initialized: %d adapters (%s)",
+        len(registry),
+        ", ".join(registry.list_ids()),
+    )
+    return registry
+
+
+__all__ = [
+    "BackendType",
+    "PlatformConfig",
+    "ProductSearchResult",
+    "SearchPlatformAdapter",
+    "SearchPlatformRegistry",
+    "get_search_platform_registry",
+    "PerPlatformCircuitBreaker",
+    "init_search_platforms",
+]

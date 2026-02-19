@@ -32,6 +32,8 @@ from app.engine.tools.rag_tools import (
 )
 from app.engine.tools.utility_tools import tool_calculator, tool_current_datetime
 from app.engine.tools.web_search_tools import tool_web_search
+from app.engine.tools.think_tool import tool_think
+from app.engine.tools.progress_tool import tool_report_progress
 # SOTA 2025: PromptLoader for YAML-driven persona (CrewAI pattern)
 from app.prompts.prompt_loader import get_prompt_loader
 
@@ -72,6 +74,30 @@ _TOOL_ACK = {
 }
 
 
+# Sprint 148: Max phase transitions per request (prevent LLM spam)
+_MAX_PHASE_TRANSITIONS = 4
+
+# Sprint 148: Multi-phase thinking instruction (appended when thinking_effort >= high)
+THINKING_CHAIN_INSTRUCTION = """
+## PHONG CÁCH TƯ DUY (Multi-Phase Thinking)
+
+Khi xử lý câu hỏi phức tạp, hãy chia quá trình thành nhiều giai đoạn:
+
+1. **Phân tích** → Dùng tool_think để suy nghĩ về câu hỏi
+2. **Báo cáo tiến độ** → Dùng tool_report_progress để thông báo cho người dùng
+3. **Tìm kiếm** → Dùng tool_knowledge_search để tra cứu
+4. **Báo cáo kết quả** → Dùng tool_report_progress
+5. **Tổng hợp** → Trả lời cuối cùng
+
+Ví dụ gọi tool_report_progress:
+- Sau khi phân tích xong: message="Wiii đã hiểu câu hỏi. Đang tìm kiếm tài liệu...", phase_label="Tra cứu tri thức"
+- Sau khi tìm được tài liệu: message="Đã tìm được tài liệu liên quan! Đang phân tích chi tiết...", phase_label="Phân tích kết quả"
+- Sau khi phân tích: message="Phân tích xong. Đang soạn câu trả lời đầy đủ...", phase_label="Soạn câu trả lời"
+
+Chỉ dùng tool_report_progress khi thật sự chuyển sang giai đoạn mới, KHÔNG lạm dụng.
+"""
+
+
 def _iteration_label(iteration: int, tools_used: list) -> str:
     """Sprint 146b: Context-aware thinking block label."""
     if iteration == 0:
@@ -100,7 +126,10 @@ class TutorAgentNode:
         self._llm = None
         self._llm_with_tools = None
         self._config = TUTOR_AGENT_CONFIG
-        self._tools = [tool_knowledge_search, tool_calculator, tool_current_datetime, tool_web_search]
+        self._tools = [
+            tool_knowledge_search, tool_calculator, tool_current_datetime,
+            tool_web_search, tool_think, tool_report_progress,
+        ]
 
         # Sprint 95: Conditionally add character tools
         self._character_tools_enabled = False
@@ -232,6 +261,11 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
 ## QUY TẮC ĐỘ DÀI: Trả lời tối đa 400 từ. Nếu cần dài hơn, chia thành các phần ngắn gọn.
 """
         
+        # Sprint 148: Append thinking chain instruction for complex queries
+        thinking_effort = context.get("thinking_effort", "")
+        if thinking_effort in ("high", "max") and settings.enable_thinking_chain:
+            full_prompt += "\n" + THINKING_CHAIN_INSTRUCTION
+
         logger.debug("[TUTOR_AGENT] Built dynamic prompt from YAML (%d chars)", len(full_prompt))
         return full_prompt
     
@@ -277,6 +311,9 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
             skill_context = state.get("skill_context")
             if skill_context:
                 merged_context["skill_context"] = skill_context
+            # Sprint 148: Pass thinking_effort to context for prompt injection
+            if thinking_effort:
+                merged_context["thinking_effort"] = thinking_effort
 
             # Execute ReAct loop - now returns thinking + bus streaming flag
             response, sources, tools_used, thinking, answer_streamed = await self._react_loop(
@@ -434,9 +471,14 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                     "node": "tutor_agent",
                 })
 
+        # Sprint 148: Track phase transitions for rate limiting and double-close prevention
+        _phase_transition_count = 0
+        _last_tool_was_progress = False
+
         # ReAct Loop
         for iteration in range(max_iterations):
             logger.info("[TUTOR_AGENT] ReAct iteration %d/%d", iteration + 1, max_iterations)
+            _last_tool_was_progress = False  # Reset at start of each iteration
 
             # THINK: LLM reasons and decides action
             # Sprint 70: Stream LLM tokens for true interleaved thinking
@@ -618,6 +660,50 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                             tool_call_id=tool_id
                         ))
 
+                elif tool_name == "tool_think":
+                    # Sprint 148: Think tool → emit thought as thinking_delta, no tool card
+                    thought = tool_args.get("thought", "")
+                    if thought:
+                        await _push_thinking_deltas(f"\n\n{thought}")
+                    messages.append(AIMessage(content="", tool_calls=[tool_call]))
+                    messages.append(ToolMessage(
+                        content=f"[Thought recorded: {len(thought)} chars]",
+                        tool_call_id=tool_id,
+                    ))
+                    logger.info("[TUTOR_AGENT] Think tool: %d chars", len(thought))
+
+                elif tool_name == "tool_report_progress":
+                    # Sprint 148: Phase transition — close block → action_text → open new block
+                    progress_msg = tool_args.get("message", "")
+                    next_label = tool_args.get("phase_label", "") or "Tiếp tục phân tích"
+
+                    # Rate-limit: max _MAX_PHASE_TRANSITIONS per request
+                    if _phase_transition_count < _MAX_PHASE_TRANSITIONS:
+                        if event_queue is not None:
+                            # 1. Close current thinking block
+                            await _push({"type": "thinking_end", "content": "", "node": "tutor_agent"})
+                            # 2. Emit bold narrative (action_text)
+                            if progress_msg:
+                                await _push({"type": "action_text", "content": progress_msg, "node": "tutor_agent"})
+                            # 3. Open new thinking block with next phase label
+                            await _push({
+                                "type": "thinking_start",
+                                "content": next_label,
+                                "node": "tutor_agent",
+                                "summary": next_label,
+                            })
+                        _phase_transition_count += 1
+                        _last_tool_was_progress = True
+                    else:
+                        logger.warning("[TUTOR_AGENT] Phase transition rate limit reached (%d)", _MAX_PHASE_TRANSITIONS)
+
+                    messages.append(AIMessage(content="", tool_calls=[tool_call]))
+                    messages.append(ToolMessage(
+                        content=f"[Progress reported. Next phase: {next_label}]",
+                        tool_call_id=tool_id,
+                    ))
+                    logger.info("[TUTOR_AGENT] Phase transition: '%s' -> '%s'", progress_msg, next_label)
+
                 elif tool_name in ("tool_character_note", "tool_character_read"):
                     try:
                         # Sprint 95: Find matching character tool
@@ -670,7 +756,8 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                         ))
 
             # Sprint 146b: Close thinking block after all tool executions
-            if event_queue is not None:
+            # Sprint 148: Don't double-close if tool_report_progress already closed the block
+            if event_queue is not None and not _last_tool_was_progress:
                 await _push({"type": "thinking_end", "content": "", "node": "tutor_agent"})
 
             # SOTA 2025 Phase 2: Check if we should break outer loop
@@ -681,6 +768,9 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
         
         # If we exhausted iterations without final response, generate one
         if not final_response:
+            # Sprint 148: Close any open thinking block from tool_report_progress
+            if event_queue is not None and _last_tool_was_progress:
+                await _push({"type": "thinking_end", "content": "", "node": "tutor_agent"})
             try:
                 # Sprint 74: Stream final generation as answer_delta (not thinking_delta)
                 # This gives real-time answer streaming — TTFT drops from ~36s to ~15s

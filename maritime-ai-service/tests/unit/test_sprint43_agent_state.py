@@ -97,9 +97,9 @@ class TestAgentState:
         assert "domain_config" in fields
         assert "skill_context" in fields
 
-    def test_internal_tracer_field(self, fields):
-        """Internal tracer reference exists."""
-        assert "_tracer" in fields
+    def test_internal_trace_id_field(self, fields):
+        """Internal trace ID reference exists (Sprint 139: string key, not object)."""
+        assert "_trace_id" in fields
 
     def test_total_field_count(self, fields):
         """State has expected number of fields (catches accidental deletions)."""

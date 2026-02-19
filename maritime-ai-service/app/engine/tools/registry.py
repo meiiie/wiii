@@ -31,6 +31,7 @@ class ToolCategory(Enum):
     SCHEDULER = "scheduler"  # Sprint 19: Proactive agent scheduler
     MCP = "mcp"              # Sprint 56: External MCP server tools
     CHARACTER = "character"   # Sprint 95: Wiii self-editing tools
+    PRODUCT_SEARCH = "product_search"  # Sprint 148: Multi-platform product search
 
 
 class ToolAccess(Enum):
@@ -156,6 +157,20 @@ class ToolRegistry:
             },
             "read_only": len([t for t in self._tools.values() if t.access == ToolAccess.READ]),
             "mutating": len([t for t in self._tools.values() if t.access == ToolAccess.WRITE])
+        }
+
+    def get_tool_descriptions(self) -> Dict[str, str]:
+        """
+        Get name→description mapping for all registered tools.
+
+        Sprint 138: Used by ToolSelector for semantic pre-filtering.
+
+        Returns:
+            Dict mapping tool name to its description string
+        """
+        return {
+            name: info.description
+            for name, info in self._tools.items()
         }
 
 

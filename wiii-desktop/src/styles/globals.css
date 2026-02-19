@@ -299,6 +299,53 @@
   animation: shimmer-bar 1.5s ease-in-out infinite;
 }
 
+/* Sprint 147: Rich tool result card (knowledge search) */
+.th-tool-result-rich {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  margin-left: 26px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  max-width: calc(100% - 26px);
+}
+
+.th-tool-result-rich:hover {
+  background: var(--surface-tertiary);
+  border-color: var(--accent-orange);
+}
+
+/* Sprint 147: Domain tag badge in tool result */
+.th-tool-domain-tag {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: var(--accent-orange);
+  color: white;
+  opacity: 0.85;
+}
+
+/* Sprint 147: Streaming border shimmer on thinking block */
+@keyframes thinking-border-shimmer {
+  0% { border-color: var(--border); }
+  50% { border-color: var(--accent-orange); }
+  100% { border-color: var(--border); }
+}
+
+.th-streaming-border {
+  border-left: 2px solid var(--accent-orange);
+  padding-left: 8px;
+  animation: thinking-border-shimmer 2s ease-in-out infinite;
+}
+
 /* Thinking content — scale down markdown for compact display */
 .thinking-content {
   font-size: 12px;
@@ -515,4 +562,66 @@
 
 .dark .domain-dropdown {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* ===== Sprint 149: Action Text Block ===== */
+.action-text-block {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 6px 0;
+  border-left: 2px solid var(--accent-orange);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--accent-orange) 5%, var(--surface));
+}
+
+.dark .action-text-block {
+  background: color-mix(in srgb, var(--accent-orange) 8%, var(--surface));
+}
+
+/* ===== Sprint 149: Thinking Timeline ===== */
+.thinking-timeline {
+  position: relative;
+  padding-left: 20px;
+}
+
+.thinking-timeline-step {
+  position: relative;
+  padding-bottom: 4px;
+}
+
+.thinking-timeline-dot {
+  position: absolute;
+  left: -20px;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 2px var(--accent-green);
+  z-index: 1;
+}
+
+.thinking-timeline-dot--action {
+  background: var(--accent-orange);
+  box-shadow: 0 0 0 2px var(--accent-orange);
+  width: 6px;
+  height: 6px;
+  top: 8px;
+  left: -19px;
+}
+
+.thinking-timeline-line {
+  position: absolute;
+  left: -17px;
+  top: 16px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-secondary);
+}
+
+.thinking-timeline-content {
+  padding-left: 4px;
 }

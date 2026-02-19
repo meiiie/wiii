@@ -92,7 +92,15 @@ class SemanticChunker:
             'rule': re.compile(r'(Rule|rule)\s+(\d+)', re.IGNORECASE),
             'table': re.compile(r'(Bảng|bảng|Table|table)\s+(\d+)', re.IGNORECASE)
         }
-        
+
+        # Sprint 136: Generalized document patterns (legal, academic, commercial)
+        self.general_patterns = {
+            'section': re.compile(r'(Section|section|Mục|mục)\s+(\d+)', re.IGNORECASE),
+            'chapter': re.compile(r'(Chapter|chapter|Chương|chương)\s+(\w+)', re.IGNORECASE),
+            'part': re.compile(r'(Part|part|Phần|phần)\s+(\w+)', re.IGNORECASE),
+            'paragraph': re.compile(r'(Paragraph|paragraph|Đoạn|đoạn)\s+(\d+)', re.IGNORECASE),
+        }
+
         logger.info(
             f"SemanticChunker initialized: chunk_size={self.chunk_size}, "
             f"overlap={self.chunk_overlap}, min_size={self.min_chunk_size}"
@@ -205,7 +213,13 @@ class SemanticChunker:
             return 'heading'
         if self.maritime_patterns['rule'].search(text):
             return 'heading'
-        
+
+        # Sprint 136: General legal/academic heading patterns
+        for pattern_name in ('section', 'chapter', 'part', 'paragraph'):
+            pattern = self.general_patterns.get(pattern_name)
+            if pattern and pattern.search(text):
+                return 'heading'
+
         # Check for diagram/image references
         diagram_keywords = ['hình', 'sơ đồ', 'biểu đồ', 'figure', 'diagram', 'illustration']
         if any(keyword in text_lower for keyword in diagram_keywords):
@@ -272,7 +286,17 @@ class SemanticChunker:
         # Extract rule number
         if match := self.maritime_patterns['rule'].search(chunk):
             hierarchy['rule'] = match.group(2)
-        
+
+        # Sprint 136: General document hierarchy extraction
+        if match := self.general_patterns['section'].search(chunk):
+            hierarchy['section'] = match.group(2)
+
+        if match := self.general_patterns['chapter'].search(chunk):
+            hierarchy['chapter'] = match.group(2)
+
+        if match := self.general_patterns['part'].search(chunk):
+            hierarchy['part'] = match.group(2)
+
         return hierarchy
     
     def _build_metadata(

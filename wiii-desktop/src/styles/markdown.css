@@ -80,3 +80,23 @@
 .markdown-content em {
   @apply italic;
 }
+
+/* Thinking block overrides — compact text, no list bullets */
+.thinking-markdown .markdown-content {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.thinking-markdown .markdown-content ul,
+.thinking-markdown .markdown-content ol {
+  list-style: none;
+  padding-left: 0;
+}
+
+.thinking-markdown .markdown-content li {
+  margin-bottom: 0.125rem;
+}
+
+.thinking-markdown .markdown-content p {
+  margin-bottom: 0.25rem;
+}

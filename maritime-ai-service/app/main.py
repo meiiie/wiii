@@ -48,6 +48,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app.core.observability import init_telemetry
     init_telemetry(service_name=settings.app_name.lower())
 
+    # LangSmith tracing (Sprint 144b: LangChain/LangGraph observability)
+    # Must be called BEFORE LLM Pool init so env vars are set when providers load
+    if settings.enable_langsmith:
+        from app.core.langsmith import configure_langsmith
+        configure_langsmith(settings)
+
     # Validate database connections (warn only, don't crash)
     neo4j_repo = None
     try:

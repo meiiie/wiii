@@ -15,6 +15,9 @@ import type { ChatResponseMetadata, MoodType } from "@/api/types";
 const MAX_SSE_RETRIES = 3;
 const SSE_BACKOFF_MS = 1000; // 1s, 2s, 4s
 
+// Sprint 147: Track think tool IDs to skip their results
+const _thinkToolIds = new Set<string>();
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -42,20 +45,18 @@ export function useSSEStream() {
 
     // Start streaming
     chatStore.startStreaming();
+    useCharacterStore.getState().clearSoulEmotion();
 
     // Create abort controller
     abortRef.current = new AbortController();
 
     const handlers: SSEEventHandler = {
       onThinking: (data) => {
-        // All thinking events contain real AI reasoning.
+        // Sprint 140b: Thinking events contain AI reasoning ONLY.
         // Pipeline progress is handled by onStatus (event: status).
-        const store = useChatStore.getState();
-        if (data.step) {
-          store.setStreamingStep(data.step);
-        }
         if (data.content) {
-          store.setStreamingThinking(data.content);
+          useChatStore.getState().setStreamingThinking(data.content);
+          useChatStore.getState().appendPhaseThinking(data.content);
         }
       },
       onAnswer: (data) => {
@@ -98,19 +99,42 @@ export function useSSEStream() {
       },
       onToolCall: (data) => {
         const store = useChatStore.getState();
-        store.appendToolCall({
+        // Sprint 147: Think tool — redirect thought content into thinking block
+        if (data.content.name === "tool_think") {
+          const thought = data.content.args?.thought || "";
+          if (thought) {
+            store.appendThinkingDelta(thought, data.node);
+            store.appendPhaseThinkingDelta(thought, data.node);
+          }
+          // Track the ID so onToolResult can skip it
+          _thinkToolIds.add(data.content.id);
+          return;
+        }
+        // Sprint 148: Progress tool — phase transition handled server-side
+        // via thinking_end/action_text/thinking_start. Skip tool card display.
+        if (data.content.name === "tool_report_progress") {
+          _thinkToolIds.add(data.content.id);
+          return;
+        }
+        const tc = {
           id: data.content.id,
           name: data.content.name,
           args: data.content.args,
           node: data.node,
-        });
+        };
+        store.appendToolCall(tc);
         store.setStreamingStep(`🔧 ${data.content.name}`);
+        store.appendPhaseToolCall(tc);
       },
       onToolResult: (data) => {
-        useChatStore.getState().updateToolCallResult(
-          data.content.id,
-          data.content.result
-        );
+        // Sprint 147: Skip think tool results (just acknowledgments)
+        if (_thinkToolIds.has(data.content.id)) {
+          _thinkToolIds.delete(data.content.id);
+          return;
+        }
+        const store = useChatStore.getState();
+        store.updateToolCallResult(data.content.id, data.content.result);
+        store.updatePhaseToolCallResult(data.content.id, data.content.result);
       },
       onStatus: (data) => {
         const store = useChatStore.getState();
@@ -118,19 +142,44 @@ export function useSSEStream() {
         if (label) {
           store.addStreamingStep(label, data.node);
           store.setStreamingStep(label);
+          store.appendPhaseStatus(label, data.node);
         }
       },
       onThinkingDelta: (data) => {
         useChatStore.getState().appendThinkingDelta(data.content, data.node);
+        useChatStore.getState().appendPhaseThinkingDelta(data.content, data.node);
       },
       onThinkingStart: (data) => {
-        useChatStore.getState().openThinkingBlock(data.content || data.node || "");
+        useChatStore.getState().openThinkingBlock(
+          data.content || data.node || "",
+          data.summary,
+        );
+        useChatStore.getState().addOrUpdatePhase(data.content || data.node || "", data.node);
       },
       onThinkingEnd: (data) => {
         useChatStore.getState().closeThinkingBlock(data.duration_ms);
+        useChatStore.getState().closeActivePhase(data.duration_ms);
       },
       onDomainNotice: (data) => {
         useChatStore.getState().setStreamingDomainNotice(data.content);
+      },
+      onEmotion: (data) => {
+        // Sprint 135: Soul emotion — LLM-driven avatar expression
+        try {
+          const charStore = useCharacterStore.getState();
+          charStore.setSoulEmotion({
+            mood: data.mood,
+            face: data.face ?? {},
+            intensity: data.intensity,
+          });
+        } catch (err) {
+          console.error("[Soul Emotion] SSE handler error:", err);
+        }
+      },
+      onActionText: (data) => {
+        // Sprint 147: Bold action text between thinking blocks
+        // Sprint 149: Pass node for agent attribution
+        useChatStore.getState().appendActionText(data.content, data.node);
       },
     };
 
