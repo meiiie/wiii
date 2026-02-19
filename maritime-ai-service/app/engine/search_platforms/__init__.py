@@ -71,8 +71,18 @@ def init_search_platforms() -> SearchPlatformRegistry:
     if "lazada" in enabled:
         registry.register(create_lazada_adapter())
 
-    if "facebook_marketplace" in enabled:
-        registry.register(create_facebook_marketplace_adapter())
+    # Facebook: use browser scraping when enabled (Sprint 152), else Serper
+    if "facebook_marketplace" in enabled or "facebook_search" in enabled:
+        if settings.enable_browser_scraping:
+            try:
+                from app.engine.search_platforms.adapters.facebook_search import FacebookSearchAdapter
+                serper_fallback = create_facebook_marketplace_adapter()
+                registry.register(FacebookSearchAdapter(serper_fallback=serper_fallback))
+            except ImportError:
+                # Playwright or browser_base not available — use Serper
+                registry.register(create_facebook_marketplace_adapter())
+        else:
+            registry.register(create_facebook_marketplace_adapter())
 
     if "instagram" in enabled:
         registry.register(create_instagram_adapter())
@@ -81,6 +91,11 @@ def init_search_platforms() -> SearchPlatformRegistry:
     if "all_web" in enabled:
         from app.engine.search_platforms.adapters.serper_all_web import SerperAllWebAdapter
         registry.register(SerperAllWebAdapter())
+
+    # WebSosanh.vn price comparison aggregator (94+ Vietnamese shops)
+    if "websosanh" in enabled:
+        from app.engine.search_platforms.adapters.websosanh import WebSosanhAdapter
+        registry.register(WebSosanhAdapter())
 
     # --- TikTok Shop: native API with Serper fallback ---
     if "tiktok_shop" in enabled:

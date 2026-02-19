@@ -60,7 +60,7 @@ def _cb_record_success(platform: str):
 # Legacy sync functions (kept for backward compat with Sprint 148 tests)
 # =============================================================================
 
-def _search_google_shopping_sync(query: str, max_results: int = 20) -> list:
+def _search_google_shopping_sync(query: str, max_results: int = 20, page: int = 1) -> list:
     """Sync call to Serper.dev /shopping endpoint (delegates to adapter)."""
     from app.engine.search_platforms import get_search_platform_registry
     registry = get_search_platform_registry()
@@ -76,7 +76,7 @@ def _search_google_shopping_sync(query: str, max_results: int = 20) -> list:
         resp = httpx.post(
             "https://google.serper.dev/shopping",
             headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
-            json={"q": query, "gl": "vn", "hl": "vi", "num": min(max_results, 100)},
+            json={"q": query, "gl": "vn", "hl": "vi", "num": min(max_results, 100), "page": page},
             timeout=_SEARCH_TIMEOUT,
         )
         resp.raise_for_status()
@@ -97,7 +97,7 @@ def _search_google_shopping_sync(query: str, max_results: int = 20) -> list:
             })
         return results
 
-    results = adapter.search_sync(query, max_results)
+    results = adapter.search_sync(query, max_results, page=page)
     return [r.to_dict() for r in results]
 
 
@@ -105,6 +105,7 @@ def _search_platform_via_serper_sync(
     query: str,
     platform_name: str,
     max_results: int = 20,
+    page: int = 1,
 ) -> list:
     """Search a specific platform using Serper.dev (delegates to adapter)."""
     from app.engine.search_platforms import get_search_platform_registry
@@ -144,7 +145,7 @@ def _search_platform_via_serper_sync(
         resp = httpx.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
-            json={"q": full_query, "gl": "vn", "hl": "vi", "num": min(max_results, 100)},
+            json={"q": full_query, "gl": "vn", "hl": "vi", "num": min(max_results, 100), "page": page},
             timeout=_SEARCH_TIMEOUT,
         )
         resp.raise_for_status()
@@ -161,7 +162,7 @@ def _search_platform_via_serper_sync(
             })
         return results
 
-    results = adapter.search_sync(query, max_results)
+    results = adapter.search_sync(query, max_results, page=page)
     return [r.to_dict() for r in results]
 
 
@@ -183,14 +184,14 @@ def _build_platform_tool(adapter, circuit_breaker):
     tool_desc = adapter.get_tool_description()
     default_max = config.max_results_default
 
-    def platform_tool(query: str, max_results: int = default_max) -> str:
+    def platform_tool(query: str, max_results: int = default_max, page: int = 1) -> str:
         if circuit_breaker.is_open(platform_id):
             return json.dumps(
                 {"error": f"{display_name} tạm thời không khả dụng, thử lại sau"},
                 ensure_ascii=False,
             )
         try:
-            results = adapter.search_sync(query, min(max_results, _MAX_RESULTS))
+            results = adapter.search_sync(query, min(max_results, _MAX_RESULTS), page=page)
             circuit_breaker.record_success(platform_id)
             return json.dumps(
                 {
@@ -220,18 +221,19 @@ def _build_platform_tool(adapter, circuit_breaker):
 # =============================================================================
 
 @tool
-def tool_search_google_shopping(query: str, max_results: int = 20) -> str:
+def tool_search_google_shopping(query: str, max_results: int = 20, page: int = 1) -> str:
     """Search Google Shopping for products in Vietnam. Returns structured product data including prices, ratings, and links.
     Use this for the fastest, most structured results across many Vietnamese e-commerce platforms.
 
     Args:
         query: Product search query (e.g., "cuộn dây điện 3 ruột 2.5mm²")
         max_results: Maximum number of results (default 20, max 100)
+        page: Page number for pagination (default 1). Use page=2, 3... to get more results.
     """
     if _cb_is_open("google_shopping"):
         return json.dumps({"error": "Google Shopping tạm thời không khả dụng, thử lại sau"}, ensure_ascii=False)
     try:
-        results = _search_google_shopping_sync(query, min(max_results, _MAX_RESULTS))
+        results = _search_google_shopping_sync(query, min(max_results, _MAX_RESULTS), page=page)
         _cb_record_success("google_shopping")
         return json.dumps({"platform": "Google Shopping", "results": results, "count": len(results)}, ensure_ascii=False)
     except Exception as e:
@@ -240,17 +242,18 @@ def tool_search_google_shopping(query: str, max_results: int = 20) -> str:
 
 
 @tool
-def tool_search_shopee(query: str, max_results: int = 20) -> str:
+def tool_search_shopee(query: str, max_results: int = 20, page: int = 1) -> str:
     """Search Shopee Vietnam for products. Returns product listings from shopee.vn with titles, prices, and links.
 
     Args:
         query: Product search query (e.g., "dây điện Cadivi 2.5mm")
         max_results: Maximum number of results (default 20)
+        page: Page number for pagination (default 1). Use page=2, 3... to get more results.
     """
     if _cb_is_open("shopee"):
         return json.dumps({"error": "Shopee tạm thời không khả dụng, thử lại sau"}, ensure_ascii=False)
     try:
-        results = _search_platform_via_serper_sync(query, "Shopee", min(max_results, _MAX_RESULTS))
+        results = _search_platform_via_serper_sync(query, "Shopee", min(max_results, _MAX_RESULTS), page=page)
         _cb_record_success("shopee")
         return json.dumps({"platform": "Shopee", "results": results, "count": len(results)}, ensure_ascii=False)
     except Exception as e:
@@ -259,17 +262,18 @@ def tool_search_shopee(query: str, max_results: int = 20) -> str:
 
 
 @tool
-def tool_search_tiktok_shop(query: str, max_results: int = 20) -> str:
+def tool_search_tiktok_shop(query: str, max_results: int = 20, page: int = 1) -> str:
     """Search TikTok Shop Vietnam for products. Returns product listings with titles, prices, and links.
 
     Args:
         query: Product search query (e.g., "dây điện 3x2.5mm")
         max_results: Maximum number of results (default 20)
+        page: Page number for pagination (default 1). Use page=2, 3... to get more results.
     """
     if _cb_is_open("tiktok_shop"):
         return json.dumps({"error": "TikTok Shop tạm thời không khả dụng, thử lại sau"}, ensure_ascii=False)
     try:
-        results = _search_platform_via_serper_sync(query, "TikTok Shop", min(max_results, _MAX_RESULTS))
+        results = _search_platform_via_serper_sync(query, "TikTok Shop", min(max_results, _MAX_RESULTS), page=page)
         _cb_record_success("tiktok_shop")
         return json.dumps({"platform": "TikTok Shop", "results": results, "count": len(results)}, ensure_ascii=False)
     except Exception as e:
@@ -278,17 +282,18 @@ def tool_search_tiktok_shop(query: str, max_results: int = 20) -> str:
 
 
 @tool
-def tool_search_lazada(query: str, max_results: int = 20) -> str:
+def tool_search_lazada(query: str, max_results: int = 20, page: int = 1) -> str:
     """Search Lazada Vietnam for products. Returns product listings with titles, prices, and links.
 
     Args:
         query: Product search query (e.g., "dây cáp điện 2.5mm")
         max_results: Maximum number of results (default 20)
+        page: Page number for pagination (default 1). Use page=2, 3... to get more results.
     """
     if _cb_is_open("lazada"):
         return json.dumps({"error": "Lazada tạm thời không khả dụng, thử lại sau"}, ensure_ascii=False)
     try:
-        results = _search_platform_via_serper_sync(query, "Lazada", min(max_results, _MAX_RESULTS))
+        results = _search_platform_via_serper_sync(query, "Lazada", min(max_results, _MAX_RESULTS), page=page)
         _cb_record_success("lazada")
         return json.dumps({"platform": "Lazada", "results": results, "count": len(results)}, ensure_ascii=False)
     except Exception as e:
@@ -297,17 +302,18 @@ def tool_search_lazada(query: str, max_results: int = 20) -> str:
 
 
 @tool
-def tool_search_facebook_marketplace(query: str, max_results: int = 20) -> str:
+def tool_search_facebook_marketplace(query: str, max_results: int = 20, page: int = 1) -> str:
     """Search Facebook Marketplace for products in Vietnam. Returns products with titles, prices, and links.
 
     Args:
         query: Product search query (e.g., "cuộn dây điện")
         max_results: Maximum number of results (default 20)
+        page: Page number for pagination (default 1). Use page=2, 3... to get more results.
     """
     if _cb_is_open("facebook_marketplace"):
         return json.dumps({"error": "Facebook Marketplace tạm thời không khả dụng, thử lại sau"}, ensure_ascii=False)
     try:
-        results = _search_platform_via_serper_sync(query, "Facebook Marketplace", min(max_results, _MAX_RESULTS))
+        results = _search_platform_via_serper_sync(query, "Facebook Marketplace", min(max_results, _MAX_RESULTS), page=page)
         _cb_record_success("facebook_marketplace")
         return json.dumps({"platform": "Facebook Marketplace", "results": results, "count": len(results)}, ensure_ascii=False)
     except Exception as e:
@@ -316,7 +322,7 @@ def tool_search_facebook_marketplace(query: str, max_results: int = 20) -> str:
 
 
 @tool
-def tool_search_all_web(query: str, max_results: int = 20) -> str:
+def tool_search_all_web(query: str, max_results: int = 20, page: int = 1) -> str:
     """Search ALL websites for product prices — not just major platforms.
     This finds small/independent Vietnamese shops, B2B suppliers, wholesale distributors, and niche stores
     that often have better prices than Shopee/Lazada. Uses Google web search with Vietnamese locale.
@@ -324,6 +330,7 @@ def tool_search_all_web(query: str, max_results: int = 20) -> str:
     Args:
         query: Product search query with "giá" or "mua" for best results (e.g., "giá dây điện 3 ruột 2.5mm mua ở đâu")
         max_results: Maximum number of results (default 20)
+        page: Page number for pagination (default 1). Use page=2, 3... to get more results.
     """
     if _cb_is_open("all_web"):
         return json.dumps({"error": "Web search tạm thời không khả dụng, thử lại sau"}, ensure_ascii=False)
@@ -356,7 +363,7 @@ def tool_search_all_web(query: str, max_results: int = 20) -> str:
         resp = httpx.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
-            json={"q": search_query, "gl": "vn", "hl": "vi", "num": min(max_results, 100)},
+            json={"q": search_query, "gl": "vn", "hl": "vi", "num": min(max_results, 100), "page": page},
             timeout=_SEARCH_TIMEOUT,
         )
         resp.raise_for_status()
@@ -379,18 +386,19 @@ def tool_search_all_web(query: str, max_results: int = 20) -> str:
 
 
 @tool
-def tool_search_instagram_shopping(query: str, max_results: int = 20) -> str:
+def tool_search_instagram_shopping(query: str, max_results: int = 20, page: int = 1) -> str:
     """Search Instagram for product posts in Vietnam. Finds public shopping posts, reels, and store pages.
     Note: Only finds publicly indexed content — private groups require separate auth.
 
     Args:
         query: Product search query (e.g., "dây điện 2.5mm")
         max_results: Maximum number of results (default 20)
+        page: Page number for pagination (default 1). Use page=2, 3... to get more results.
     """
     if _cb_is_open("instagram"):
         return json.dumps({"error": "Instagram search tạm thời không khả dụng, thử lại sau"}, ensure_ascii=False)
     try:
-        results = _search_platform_via_serper_sync(query, "Instagram", min(max_results, _MAX_RESULTS))
+        results = _search_platform_via_serper_sync(query, "Instagram", min(max_results, _MAX_RESULTS), page=page)
         _cb_record_success("instagram")
         return json.dumps({"platform": "Instagram", "results": results, "count": len(results)}, ensure_ascii=False)
     except Exception as e:

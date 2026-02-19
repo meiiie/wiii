@@ -38,6 +38,7 @@ class StreamEventType:
     DOMAIN_NOTICE = "domain_notice"  # Gentle notice: content outside active domain
     EMOTION = "emotion"              # Sprint 135: Soul emotion for avatar expression
     ACTION_TEXT = "action_text"      # Sprint 147: Bold narrative between thinking blocks
+    BROWSER_SCREENSHOT = "browser_screenshot"  # Sprint 153: Playwright screenshot
 
 
 # =============================================================================
@@ -314,6 +315,24 @@ async def create_action_text_event(
     return StreamEvent(
         type=StreamEventType.ACTION_TEXT,
         content=content,
+        node=node,
+    )
+
+
+async def create_browser_screenshot_event(
+    url: str,
+    image_base64: str,
+    label: str,
+    node: Optional[str] = None,
+) -> StreamEvent:
+    """Sprint 153: Create a browser screenshot event for visual transparency."""
+    return StreamEvent(
+        type=StreamEventType.BROWSER_SCREENSHOT,
+        content={
+            "url": url,
+            "image": image_base64,
+            "label": label,
+        },
         node=node,
     )
 

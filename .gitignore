@@ -71,6 +71,11 @@ var/
 # === Temp / generated ===
 _find_untested.py
 docx_output.txt
+test_*.txt
+/tools/
+
+# === pip install artifacts ===
+maritime-ai-service/=*
 
 # === Claude Code artifacts ===
 .claude/plans/

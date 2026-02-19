@@ -96,12 +96,17 @@ class ToolRegistry:
             roles=roles or ["student", "teacher", "admin"]
         )
         
+        # Sprint 153: Dedup guard — warn on duplicate, don't append to category list
+        is_update = name in self._tools
         self._tools[name] = info
-        
-        # Track by category
+
+        # Track by category (avoid duplicates)
         if category not in self._categories:
             self._categories[category] = []
-        self._categories[category].append(name)
+        if name not in self._categories[category]:
+            self._categories[category].append(name)
+        elif is_update:
+            logger.debug("Tool '%s' re-registered in category '%s' (updated)", name, category.value)
         
         logger.debug("Registered tool: %s [%s/%s]", name, category.value, access.value)
     

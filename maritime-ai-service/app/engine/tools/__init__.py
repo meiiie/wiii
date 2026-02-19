@@ -203,12 +203,16 @@ def _init_extended_tools():
             from app.engine.tools.excel_report_tool import init_excel_report_tool
             init_product_search_tools()
             init_excel_report_tool()
-            logger.info("Product search + Excel report tools registered")
+            # Sprint 150: Product page scraper tool
+            from app.engine.tools.product_page_scraper import get_product_page_scraper_tools
+            for scraper_tool in get_product_page_scraper_tools():
+                registry.register(scraper_tool, ToolCategory.PRODUCT_SEARCH, ToolAccess.READ)
+            logger.info("Product search + Excel report + page scraper tools registered")
         except Exception as e:
             logger.warning("Product search tools init failed: %s", e)
 
     # Character Tools (Sprint 95: self-editing character state)
-    if getattr(settings, 'enable_character_tools', False):
+    if settings.enable_character_tools:
         try:
             from app.engine.character.character_tools import get_character_tools
             for tool_fn in get_character_tools():
@@ -218,6 +222,9 @@ def _init_extended_tools():
             logger.info("Character tools registered (%d tools)", len(get_character_tools()))
         except Exception as e:
             logger.warning("Character tools init failed: %s", e)
+
+
+_tools_initialized = False
 
 
 def init_all_tools(rag_agent=None, semantic_memory=None, user_id: str = None, domain_id: str = None):
@@ -230,6 +237,11 @@ def init_all_tools(rag_agent=None, semantic_memory=None, user_id: str = None, do
         user_id: Current user ID
         domain_id: Domain ID for domain-specific tool registration
     """
+    global _tools_initialized
+    if _tools_initialized:
+        # Sprint 153: Idempotency guard — per-user context still updates below
+        logger.debug("init_all_tools already called, updating user context only")
+
     if rag_agent:
         init_rag_tools(rag_agent)
 
@@ -291,10 +303,12 @@ def init_all_tools(rag_agent=None, semantic_memory=None, user_id: str = None, do
     registry = get_tool_registry()
     summary = registry.summary()
     logger.info("Tool Registry initialized: %s", summary)
+    _tools_initialized = True
 
 
-# Backward compatibility: TOOLS list
-TOOLS = get_all_tools()
+# Sprint 153: Removed stale module-level TOOLS snapshot.
+# Use get_all_tools() to get current tools (was evaluated before init_all_tools()).
+TOOLS = get_all_tools  # Backward compat: call TOOLS() instead of TOOLS
 
 
 __all__ = [

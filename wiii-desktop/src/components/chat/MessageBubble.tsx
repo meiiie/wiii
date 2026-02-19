@@ -6,12 +6,13 @@
 import { useState, useCallback, memo } from "react";
 import { motion } from "motion/react";
 import { Copy, Check, RefreshCw, ThumbsUp, ThumbsDown, Pencil } from "lucide-react";
-import type { Message, ContentBlock, ThinkingBlockData, MoodType, SoulEmotionData } from "@/api/types";
+import type { Message, ContentBlock, ThinkingBlockData, ScreenshotBlockData, MoodType, SoulEmotionData } from "@/api/types";
 import type { AvatarState } from "@/lib/avatar/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ActionText } from "./ActionText";
+import { ScreenshotBlock } from "./ScreenshotBlock";
 import { ThinkingTimeline } from "./ThinkingTimeline";
 import { SourceCitation } from "./SourceCitation";
 import { SuggestedQuestions } from "./SuggestedQuestions";
@@ -383,6 +384,9 @@ function BlockRenderer({
           if (block.type === "action_text") {
             return <ActionText key={block.id} content={block.content} node={block.node} />;
           }
+          if (block.type === "screenshot") {
+            return <ScreenshotBlock key={block.id} block={block as ScreenshotBlockData} />;
+          }
           if (block.type === "answer") {
             return (
               <div key={block.id} className="font-serif relative">
@@ -440,6 +444,9 @@ function BlockRenderer({
               thinkingLevel={thinkingLevel}
             />
           );
+        }
+        if (seg.block.type === "screenshot") {
+          return <ScreenshotBlock key={seg.block.id} block={seg.block as ScreenshotBlockData} />;
         }
         return (
           <div key={seg.block.id} className="font-serif relative">

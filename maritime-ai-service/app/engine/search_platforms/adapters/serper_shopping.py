@@ -32,12 +32,13 @@ class SerperShoppingAdapter(SearchPlatformAdapter):
                 "Use this for the fastest, most structured results across many Vietnamese e-commerce platforms.\n\n"
                 "Args:\n"
                 "    query: Product search query (e.g., \"cuộn dây điện 3 ruột 2.5mm²\")\n"
-                "    max_results: Maximum number of results (default 20, max 100)"
+                "    max_results: Maximum number of results (default 20, max 100)\n"
+                "    page: Page number for pagination (default 1). Use page=2, 3... to get more results."
             ),
             max_results_default=20,
         )
 
-    def search_sync(self, query: str, max_results: int = 20) -> List[ProductSearchResult]:
+    def search_sync(self, query: str, max_results: int = 20, page: int = 1) -> List[ProductSearchResult]:
         from app.core.config import get_settings
         settings = get_settings()
 
@@ -48,10 +49,14 @@ class SerperShoppingAdapter(SearchPlatformAdapter):
         import httpx
         timeout = settings.product_search_timeout
 
+        payload = {"q": query, "gl": "vn", "hl": "vi", "num": min(max_results, 100)}
+        if page > 1:
+            payload["page"] = page
+
         resp = httpx.post(
             "https://google.serper.dev/shopping",
             headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
-            json={"q": query, "gl": "vn", "hl": "vi", "num": min(max_results, 100)},
+            json=payload,
             timeout=timeout,
         )
         resp.raise_for_status()

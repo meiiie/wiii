@@ -23,6 +23,7 @@ class BackendType(Enum):
     NATIVE_API = "native_api"        # Official platform API (e.g. TikTok Research)
     APIFY = "apify"                  # Apify scraping actors
     CUSTOM = "custom"                # Custom implementation
+    BROWSER = "browser"              # Playwright headless browser + LLM extraction
 
 
 @dataclass
@@ -83,8 +84,14 @@ class SearchPlatformAdapter(ABC):
         ...
 
     @abstractmethod
-    def search_sync(self, query: str, max_results: int = 20) -> List[ProductSearchResult]:
-        """Execute synchronous search and return normalized results."""
+    def search_sync(self, query: str, max_results: int = 20, page: int = 1) -> List[ProductSearchResult]:
+        """Execute synchronous search and return normalized results.
+
+        Args:
+            query: Search query string.
+            max_results: Maximum number of results to return.
+            page: Page number (1-based). Not all backends support pagination.
+        """
         ...
 
     def get_tool_name(self) -> str:

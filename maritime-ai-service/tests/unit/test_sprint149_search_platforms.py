@@ -61,6 +61,7 @@ def mock_settings():
     s.enable_tiktok_native_api = False
     s.tiktok_client_key = None
     s.tiktok_client_secret = None
+    s.enable_browser_scraping = False
     s.product_search_platforms = [
         "google_shopping", "shopee", "tiktok_shop",
         "lazada", "facebook_marketplace", "all_web", "instagram",
@@ -89,7 +90,7 @@ class _DummyAdapter(SearchPlatformAdapter):
             backend=BackendType.CUSTOM, enabled=self._enabled,
         )
 
-    def search_sync(self, query, max_results=20):
+    def search_sync(self, query, max_results=20, page=1):
         return [ProductSearchResult(platform=f"Dummy {self._id}", title=f"Result for {query}")]
 
 

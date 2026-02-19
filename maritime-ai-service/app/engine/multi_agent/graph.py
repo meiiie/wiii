@@ -515,6 +515,181 @@ def _build_direct_tools_context(settings_obj, domain_name_vi: str) -> str:
     return "\n".join(parts)
 
 
+def _collect_direct_tools(query: str):
+    """Collect tools for direct response node and determine forced calling.
+
+    Sprint 154: Extracted from direct_response_node.
+
+    Returns:
+        tuple: (tools_list, llm_with_tools_factory, llm_auto_factory, force_tools)
+            - tools_list: List of available tools
+            - force_tools: Whether to force tool calling (intent detected)
+    """
+    _direct_tools = []
+    try:
+        if settings.enable_character_tools:
+            from app.engine.character.character_tools import get_character_tools
+            _direct_tools = get_character_tools()
+    except Exception:
+        pass
+
+    try:
+        if settings.enable_code_execution:
+            from app.engine.tools.code_execution_tools import get_code_execution_tools
+            _direct_tools.extend(get_code_execution_tools())
+    except Exception:
+        pass
+
+    try:
+        from app.engine.tools.utility_tools import tool_current_datetime
+        from app.engine.tools.web_search_tools import (
+            tool_web_search, tool_search_news,
+            tool_search_legal, tool_search_maritime,
+        )
+        _direct_tools = [
+            *_direct_tools, tool_current_datetime,
+            tool_web_search, tool_search_news,
+            tool_search_legal, tool_search_maritime,
+        ]
+    except Exception:
+        pass
+
+    force_tools = bool(_direct_tools) and (
+        _needs_web_search(query) or _needs_datetime(query)
+        or _needs_news_search(query) or _needs_legal_search(query)
+    )
+    return _direct_tools, force_tools
+
+
+def _bind_direct_tools(llm, tools: list, force: bool):
+    """Bind tools to LLM with optional forced calling.
+
+    Sprint 154: Extracted from direct_response_node.
+
+    Returns:
+        tuple: (llm_with_tools, llm_auto)
+            - llm_with_tools: LLM for first call (may force tool_choice="any")
+            - llm_auto: LLM for follow-up calls (tool_choice="auto")
+    """
+    if tools:
+        llm_auto = llm.bind_tools(tools)
+        if force:
+            llm_with_tools = llm.bind_tools(tools, tool_choice="any")
+        else:
+            llm_with_tools = llm_auto
+    else:
+        llm_with_tools = llm
+        llm_auto = llm
+    return llm_with_tools, llm_auto
+
+
+def _build_direct_system_messages(state: AgentState, query: str, domain_name_vi: str):
+    """Build system prompt and message list for direct response.
+
+    Sprint 154: Extracted from direct_response_node.
+
+    Returns:
+        list: LangChain messages [SystemMessage, ...history, HumanMessage]
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+    from app.prompts.prompt_loader import get_prompt_loader
+
+    ctx = state.get("context", {})
+    loader = get_prompt_loader()
+    tools_ctx = _build_direct_tools_context(settings, domain_name_vi)
+    system_prompt = loader.build_system_prompt(
+        role="direct_agent",
+        user_name=ctx.get("user_name"),
+        is_follow_up=ctx.get("is_follow_up", False),
+        pronoun_style=ctx.get("pronoun_style"),
+        user_facts=ctx.get("user_facts", []),
+        recent_phrases=ctx.get("recent_phrases", []),
+        tools_context=tools_ctx,
+        total_responses=ctx.get("total_responses", 0),
+        name_usage_count=ctx.get("name_usage_count", 0),
+        mood_hint=ctx.get("mood_hint", ""),
+        user_id=state.get("user_id", "__global__"),
+    )
+
+    messages = [SystemMessage(content=system_prompt)]
+    lc_messages = ctx.get("langchain_messages", [])
+    if lc_messages:
+        messages.extend(lc_messages[-10:])
+    messages.append(HumanMessage(content=query))
+    return messages
+
+
+async def _execute_direct_tool_rounds(
+    llm_with_tools, llm_auto, messages: list, tools: list, push_event,
+    max_rounds: int = 3,
+):
+    """Execute multi-round tool calling loop for direct response.
+
+    Sprint 154: Extracted from direct_response_node.
+    Gemini often calls tools sequentially (datetime → web_search → answer).
+
+    Returns:
+        AIMessage: Final LLM response after all tool rounds.
+    """
+    import asyncio
+    from langchain_core.messages import ToolMessage as _TM
+
+    llm_response = await llm_with_tools.ainvoke(messages)
+    _tc = getattr(llm_response, 'tool_calls', [])
+    logger.warning("[DIRECT] LLM response: tool_calls=%d, content_len=%d",
+                   len(_tc) if _tc else 0, len(str(llm_response.content)))
+
+    for _tool_round in range(max_rounds):
+        if not (tools and hasattr(llm_response, 'tool_calls') and llm_response.tool_calls):
+            break
+        messages.append(llm_response)
+        for tc in llm_response.tool_calls:
+            _tc_id = tc.get("id", f"tc_{_tool_round}")
+            _tc_name = tc.get("name", "unknown")
+            await push_event({
+                "type": "tool_call",
+                "content": {"name": _tc_name, "args": tc.get("args", {}), "id": _tc_id},
+                "node": "direct",
+            })
+            matched = next((t for t in tools if t.name == _tc_name), None)
+            try:
+                result = await asyncio.to_thread(matched.invoke, tc["args"]) if matched else "Unknown tool"
+            except Exception as _te:
+                logger.warning("[DIRECT] Tool %s failed: %s", _tc_name, _te)
+                result = "Tool unavailable"
+            await push_event({
+                "type": "tool_result",
+                "content": {"name": _tc_name, "result": str(result)[:500], "id": _tc_id},
+                "node": "direct",
+            })
+            messages.append(_TM(content=str(result), tool_call_id=_tc_id))
+        llm_response = await llm_auto.ainvoke(messages)
+
+    return llm_response, messages
+
+
+def _extract_direct_response(llm_response, messages: list):
+    """Extract response text, thinking content, and tools used from LLM result.
+
+    Sprint 154: Extracted from direct_response_node.
+
+    Returns:
+        tuple: (response_text, thinking_content, tools_used_list)
+    """
+    from app.services.output_processor import extract_thinking_from_response
+    text_content, thinking_content = extract_thinking_from_response(llm_response.content)
+    response = text_content.strip()
+
+    tools_used_names = set()
+    for m in messages:
+        if hasattr(m, 'tool_calls') and m.tool_calls:
+            for tc in m.tool_calls:
+                tools_used_names.add(tc.get("name", "unknown"))
+    tools_used = [{"name": n} for n in sorted(tools_used_names)] if tools_used_names else []
+
+    return response, thinking_content, tools_used
+
+
 async def direct_response_node(state: AgentState) -> AgentState:
     """
     Direct response node - conversational responses without RAG.
@@ -525,10 +700,7 @@ async def direct_response_node(state: AgentState) -> AgentState:
     - Exact greeting matches -> canned response (fast path)
     - Everything else -> LLM-generated conversational response
 
-    Sprint 99: 3-tier forced tool calling
-    - Tier 1: tool_choice="any" when intent detected
-    - Tier 2: _needs_web_search() / _needs_datetime() intent detection
-    - Tier 3: Training cutoff + prompt conflict fix
+    Sprint 154: Refactored — extracted 5 helper functions for testability.
     """
     query = state.get("query", "")
 
@@ -556,6 +728,16 @@ async def direct_response_node(state: AgentState) -> AgentState:
     query_lower = query.lower().strip()
     response = greetings.get(query_lower)
 
+    # Resolve domain_name_vi early (needed for prompt and domain notice)
+    domain_config = state.get("domain_config", {})
+    domain_name_vi = domain_config.get("name_vi", "")
+    if not domain_name_vi:
+        domain_id = state.get("domain_id", settings.default_domain)
+        domain_name_vi = {
+            "maritime": "Hàng hải",
+            "traffic_law": "Luật Giao thông",
+        }.get(domain_id, domain_id)
+
     if response:
         # Exact greeting match — use canned response
         tracer.end_step(
@@ -564,177 +746,48 @@ async def direct_response_node(state: AgentState) -> AgentState:
             details={"response_type": "greeting", "query": query_lower}
         )
     else:
-        # Not a greeting — generate LLM response for general conversation
+        # Not a greeting — generate LLM response
         try:
             from app.engine.multi_agent.agent_config import AgentConfigRegistry
-            from langchain_core.messages import HumanMessage, SystemMessage
 
-            # Sprint 69: Per-node config with thinking effort override
             thinking_effort = state.get("thinking_effort")
             llm = AgentConfigRegistry.get_llm("direct", effort_override=thinking_effort)
             if llm:
-                # Sprint 97: Character tools + web search for direct node
-                _direct_tools = []
-                try:
-                    if settings.enable_character_tools:
-                        from app.engine.character.character_tools import get_character_tools
-                        _direct_tools = get_character_tools()
-                except Exception:
-                    pass
-
-                # Sprint 98: Code execution tool (admin-only, sandboxed)
-                try:
-                    if settings.enable_code_execution:
-                        from app.engine.tools.code_execution_tools import get_code_execution_tools
-                        _direct_tools.extend(get_code_execution_tools())
-                except Exception:
-                    pass
-
-                # Sprint 97b+102: Utility tools — datetime + web search (4 search tools)
-                try:
-                    from app.engine.tools.utility_tools import tool_current_datetime
-                    from app.engine.tools.web_search_tools import (
-                        tool_web_search, tool_search_news,
-                        tool_search_legal, tool_search_maritime,
-                    )
-                    _direct_tools = [
-                        *_direct_tools, tool_current_datetime,
-                        tool_web_search, tool_search_news,
-                        tool_search_legal, tool_search_maritime,
-                    ]
-                except Exception:
-                    pass
-
-                # Sprint 99+102 Tier 1+2: Force tool calling when intent detected
-                _force_tools = _direct_tools and (
-                    _needs_web_search(query) or _needs_datetime(query)
-                    or _needs_news_search(query) or _needs_legal_search(query)
-                )
+                # Phase 1: Collect tools and determine forcing
+                tools, force_tools = _collect_direct_tools(query)
                 logger.warning("[DIRECT] tools=%d, force=%s, web=%s, dt=%s, query='%s'",
-                            len(_direct_tools), _force_tools,
+                            len(tools), force_tools,
                             _needs_web_search(query), _needs_datetime(query),
                             query[:60])
-                # llm_auto: tool_choice=auto (for follow-up calls after tool results)
-                # llm_with_tools: may have tool_choice="any" (for FIRST call only)
-                if _direct_tools:
-                    llm_auto = llm.bind_tools(_direct_tools)
-                    if _force_tools:
-                        llm_with_tools = llm.bind_tools(_direct_tools, tool_choice="any")
-                        logger.warning("[DIRECT] Forced tool_choice='any' (web=%s, datetime=%s)",
-                                    _needs_web_search(query), _needs_datetime(query))
-                    else:
-                        llm_with_tools = llm_auto
-                else:
-                    llm_with_tools = llm
-                    llm_auto = llm
 
-                # Sprint 80: Domain-aware off-topic redirection
-                domain_config = state.get("domain_config", {})
-                domain_name_vi = domain_config.get("name_vi", "")
-                if not domain_name_vi:
-                    domain_id = state.get("domain_id", settings.default_domain)
-                    domain_name_vi = {
-                        "maritime": "Hàng hải",
-                        "traffic_law": "Luật Giao thông",
-                    }.get(domain_id, domain_id)
+                # Phase 2: Bind tools to LLM
+                llm_with_tools, llm_auto = _bind_direct_tools(llm, tools, force_tools)
+                if force_tools:
+                    logger.warning("[DIRECT] Forced tool_choice='any' (web=%s, datetime=%s)",
+                                _needs_web_search(query), _needs_datetime(query))
 
-                # Sprint 100+115: Unified prompt composition via PromptLoader
-                is_follow_up = state.get("context", {}).get("is_follow_up", False)
-                from app.prompts.prompt_loader import get_prompt_loader
-                loader = get_prompt_loader()
-                tools_ctx = _build_direct_tools_context(settings, domain_name_vi)
-                system_prompt = loader.build_system_prompt(
-                    role="direct_agent",
-                    user_name=state.get("context", {}).get("user_name"),
-                    is_follow_up=is_follow_up,
-                    pronoun_style=state.get("context", {}).get("pronoun_style"),
-                    user_facts=state.get("context", {}).get("user_facts", []),
-                    recent_phrases=state.get("context", {}).get("recent_phrases", []),
-                    tools_context=tools_ctx,
-                    # Sprint 115: Forward session counters for identity anchor
-                    total_responses=state.get("context", {}).get("total_responses", 0),
-                    name_usage_count=state.get("context", {}).get("name_usage_count", 0),
-                    # Sprint 115: Mood hint from emotional state machine
-                    mood_hint=state.get("context", {}).get("mood_hint", ""),
-                    # Sprint 124: Per-user character blocks
-                    user_id=state.get("user_id", "__global__"),
+                # Phase 3: Build messages
+                messages = _build_direct_system_messages(state, query, domain_name_vi)
+
+                # Phase 4: Multi-round tool execution
+                llm_response, messages = await _execute_direct_tool_rounds(
+                    llm_with_tools, llm_auto, messages, tools, _push_event,
                 )
-                # Sprint 122 (Bug F4): Removed core_memory_block injection here.
-                # User facts are now ONLY injected via build_system_prompt() →
-                # "THÔNG TIN NGƯỜI DÙNG" section. This eliminates duplicate injection.
 
-                messages = [SystemMessage(content=system_prompt)]
-                # Sprint 77: Inject conversation history for context continuity
-                lc_messages = state.get("context", {}).get("langchain_messages", [])
-                if lc_messages:
-                    messages.extend(lc_messages[-10:])  # Last 10 turns for direct node
-                messages.append(HumanMessage(content=query))
+                # Phase 5: Extract response
+                response, thinking_content, tools_used = _extract_direct_response(llm_response, messages)
 
-                # Sprint 98: Multi-round tool dispatch (up to 3 rounds)
-                # Gemini often calls tools sequentially (datetime → web_search → answer)
-                import asyncio
-                from langchain_core.messages import ToolMessage as _TM
-
-                _MAX_TOOL_ROUNDS = 3
-                llm_response = await llm_with_tools.ainvoke(messages)
-                _tc = getattr(llm_response, 'tool_calls', [])
-                logger.warning("[DIRECT] LLM response: tool_calls=%d, content_len=%d",
-                               len(_tc) if _tc else 0, len(str(llm_response.content)))
-
-                for _tool_round in range(_MAX_TOOL_ROUNDS):
-                    if not (_direct_tools and hasattr(llm_response, 'tool_calls') and llm_response.tool_calls):
-                        break
-                    messages.append(llm_response)
-                    for tc in llm_response.tool_calls:
-                        _tc_id = tc.get("id", f"tc_{_tool_round}")
-                        _tc_name = tc.get("name", "unknown")
-                        # Sprint 140: Stream tool_call event to frontend
-                        await _push_event({
-                            "type": "tool_call",
-                            "content": {"name": _tc_name, "args": tc.get("args", {}), "id": _tc_id},
-                            "node": "direct",
-                        })
-                        matched = next((t for t in _direct_tools if t.name == _tc_name), None)
-                        try:
-                            result = await asyncio.to_thread(matched.invoke, tc["args"]) if matched else "Unknown tool"
-                        except Exception as _te:
-                            logger.warning("[DIRECT] Tool %s failed: %s", _tc_name, _te)
-                            result = "Tool unavailable"
-                        # Sprint 140: Stream tool_result event to frontend
-                        await _push_event({
-                            "type": "tool_result",
-                            "content": {"name": _tc_name, "result": str(result)[:500], "id": _tc_id},
-                            "node": "direct",
-                        })
-                        messages.append(_TM(content=str(result), tool_call_id=_tc_id))
-                    # Sprint 99 fix: After tool results, use auto (not forced) so
-                    # LLM can generate text response or call more tools as needed
-                    llm_response = await llm_auto.ainvoke(messages)
-
-                # Handle Gemini content block format
-                from app.services.output_processor import extract_thinking_from_response
-                text_content, thinking_content = extract_thinking_from_response(llm_response.content)
-                response = text_content.strip()
-
-                # Store thinking in state for streaming pipeline
                 if thinking_content:
                     state["thinking"] = thinking_content
-
-                # Track tools used in state for API response
-                _tools_used_names = set()
-                for m in messages:
-                    if hasattr(m, 'tool_calls') and m.tool_calls:
-                        for tc in m.tool_calls:
-                            _tools_used_names.add(tc.get("name", "unknown"))
-                if _tools_used_names:
-                    state["tools_used"] = [{"name": n} for n in sorted(_tools_used_names)]
+                if tools_used:
+                    state["tools_used"] = tools_used
 
                 tracer.end_step(
                     result=f"Phản hồi LLM: {len(response)} chars",
                     confidence=0.85,
                     details={"response_type": "llm_generated",
-                             "tools_bound": len(_direct_tools),
-                             "force_tools": bool(_force_tools)}
+                             "tools_bound": len(tools),
+                             "force_tools": force_tools}
                 )
             else:
                 response = "Xin chào! Tôi có thể giúp gì cho bạn?"
@@ -764,9 +817,6 @@ async def direct_response_node(state: AgentState) -> AgentState:
             f"Nội dung này nằm ngoài chuyên môn {domain_name_vi}. "
             f"Để được hỗ trợ chính xác hơn, hãy hỏi về {domain_name_vi} nhé!"
         )
-
-    # CHỈ THỊ SỐ 31 v3 SOTA: Single Build Point Pattern
-    # trace_id already in state from _get_or_create_tracer(), tracer in _TRACERS dict
 
     logger.info("[DIRECT] Response prepared, tracer passed to synthesizer")
 
@@ -1217,10 +1267,14 @@ async def process_with_multi_agent(
     # Sprint 85: Clean stale event queues before processing (sync path leak fix)
     _cleanup_stale_queues()
 
-    result = await graph.ainvoke(initial_state, config=invoke_config)
-
-    # Sprint 139: Clean up tracer from module-level storage after graph completes
-    _cleanup_tracer(result.get("_trace_id"))
+    # Sprint 153: try/finally to prevent _TRACERS memory leak on exceptions
+    _trace_id_for_cleanup = initial_state.get("_trace_id")
+    try:
+        result = await graph.ainvoke(initial_state, config=invoke_config)
+        _trace_id_for_cleanup = result.get("_trace_id", _trace_id_for_cleanup)
+    finally:
+        # Sprint 139+153: Always clean up tracer from module-level storage
+        _cleanup_tracer(_trace_id_for_cleanup)
 
     # Sprint 16: Upsert thread view for conversation index (non-blocking)
     if session_id and user_id:

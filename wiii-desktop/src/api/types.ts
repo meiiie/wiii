@@ -193,6 +193,16 @@ export interface SSEActionTextEvent {
   node?: string;
 }
 
+/** Sprint 153: Browser screenshot event — Playwright visual transparency */
+export interface SSEBrowserScreenshotEvent {
+  content: {
+    url: string;
+    image: string;   // Base64 JPEG
+    label: string;
+  };
+  node?: string;
+}
+
 export interface SSEThinkingStartEvent {
   type: "thinking_start";
   content: string;  // label (Vietnamese node name)
@@ -224,7 +234,8 @@ export type SSEEventType =
   | "thinking_end"
   | "domain_notice"
   | "emotion"
-  | "action_text";
+  | "action_text"
+  | "browser_screenshot";
 
 export interface ToolCallInfo {
   id: string;
@@ -276,8 +287,18 @@ export interface ActionTextBlockData {
   node?: string;
 }
 
+/** Sprint 153: Browser screenshot block — Playwright visual transparency */
+export interface ScreenshotBlockData {
+  type: "screenshot";
+  id: string;
+  url: string;
+  image: string;       // Base64 JPEG
+  label: string;
+  node?: string;
+}
+
 /** Ordered content block — enables interleaved thinking+answer rendering */
-export type ContentBlock = ThinkingBlockData | AnswerBlockData | ActionTextBlockData;
+export type ContentBlock = ThinkingBlockData | AnswerBlockData | ActionTextBlockData | ScreenshotBlockData;
 
 /** Sprint 141: Unified thinking phase for ThinkingFlow component */
 export interface ThinkingPhase {

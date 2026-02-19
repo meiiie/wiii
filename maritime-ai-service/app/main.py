@@ -307,6 +307,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning("Sources pool close failed: %s", e)
 
+    # Sprint 153: Close Playwright browser singleton (if initialized)
+    try:
+        from app.engine.search_platforms.adapters.browser_base import close_browser
+        close_browser()
+        logger.info("Playwright browser closed")
+    except Exception as e:
+        logger.debug("Browser close skipped: %s", e)
+
     # Close shared database engine
     try:
         from app.core.database import close_shared_engine
@@ -314,7 +322,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Shared database engine closed successfully")
     except Exception as e:
         logger.error("Failed to close shared database engine: %s", e)
-    
+
     logger.info("[SHUTDOWN] %s shutdown complete", settings.app_name)
 
 

@@ -9,7 +9,7 @@ pydantic-settings~=2.12.0
 # Database
 sqlalchemy>=2.0.27,<3.0.0
 asyncpg>=0.30.0,<1.0.0
-psycopg2-binary==2.9.9
+# psycopg2-binary removed Sprint 154 — psycopg[binary]>=3.1.0 (line 29) is the modern async replacement
 alembic==1.13.1
 pgvector==0.2.5
 
@@ -55,15 +55,15 @@ neo4j~=5.28.0
 # PDF Processing
 pypdf>=4.0.0
 pymupdf>=1.26.0  # CHỈ THỊ 26: PDF to image (no external deps, replaces pdf2image+Poppler)
-pdf2image>=1.16.3  # Fallback: requires Poppler system package
+pdf2image>=1.16.3  # Fallback for Poppler-based PDF rendering (pymupdf is primary)
 Pillow>=10.0.0  # CHỈ THỊ 26: Image processing
 
 # Supabase Storage (CHỈ THỊ 26: Hybrid Infrastructure)
 supabase>=2.0.0
 
-# Web Search (ddgs is the successor of duckduckgo-search)
-ddgs>=6.0.0
-duckduckgo-search>=7.0.0  # Legacy fallback
+# Web Search
+# ddgs removed Sprint 154 — duckduckgo-search>=7.0.0 is the active package (import: duckduckgo_search)
+duckduckgo-search>=7.0.0
 feedparser>=6.0.0  # Sprint 102: RSS news feeds (Vietnamese news aggregation)
 
 # Utils
@@ -87,6 +87,15 @@ structlog>=24.1.0
 
 # Excel Report Generation (Sprint 148: Product Search)
 xlsxwriter>=3.2.0
+
+# HTML Parsing (Sprint 150: Product Page Scraper)
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
+# Browser Scraping (Sprint 152: Playwright headless Chromium + LLM extraction)
+# Optional: only needed when enable_browser_scraping=True
+# Install browser: playwright install chromium
+playwright>=1.49.0
 
 # Telegram Bot (Sprint 12: Multi-Channel Gateway, optional)
 aiogram>=3.15.0,<4.0.0

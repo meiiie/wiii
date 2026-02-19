@@ -63,6 +63,7 @@ from app.engine.multi_agent.stream_utils import (
     create_domain_notice_event,
     create_emotion_event,
     create_action_text_event,
+    create_browser_screenshot_event,
 )
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,15 @@ async def _convert_bus_event(event: dict) -> StreamEvent:
             content=str(event.get("content", "")),
             node=node,
         )
+    elif etype == "browser_screenshot":
+        # Sprint 153: Playwright screenshot for visual transparency
+        _sc = event.get("content", {})
+        return await create_browser_screenshot_event(
+            url=str(_sc.get("url", "")),
+            image_base64=str(_sc.get("image", "")),
+            label=str(_sc.get("label", "")),
+            node=node,
+        )
     else:
         return await create_status_event(
             str(event.get("content", "")),
@@ -177,18 +187,6 @@ _INTENT_ACTION_TEXT = {
     "off_topic": "Wiii sẽ suy nghĩ và trả lời câu hỏi chung...",
     "product_search": "Wiii sẽ tìm kiếm sản phẩm trên nhiều sàn thương mại điện tử...",
 }
-
-# Sprint 147: Map intent → thinking_effort
-_INTENT_EFFORT = {
-    "social": "low",
-    "personal": "medium",
-    "lookup": "medium",
-    "learning": "high",
-    "web_search": "high",
-    "off_topic": "medium",
-    "product_search": "high",
-}
-
 
 def _generate_thinking_summary(node_output: dict, query: str) -> str:
     """Generate Claude-style one-line summary for the thinking block header.
@@ -403,6 +401,9 @@ async def process_with_multi_agent_streaming(
     trace_id = registry.start_request_trace()
     logger.info("[MULTI_AGENT_STREAM] Started streaming trace: %s", trace_id)
 
+    # Sprint 153: Initialize before outer try to prevent NameError in finally
+    bus_id = None
+
     try:
         # Yield initial status
         yield await create_status_event("🚀 Bắt đầu xử lý câu hỏi...", None)
@@ -411,11 +412,10 @@ async def process_with_multi_agent_streaming(
         domain_config = _build_domain_config(domain_id)
 
         # Sprint 69: Create event bus for intra-node streaming
-        import time as _time
         bus_id = str(uuid.uuid4())
         event_queue: asyncio.Queue = asyncio.Queue()
         _EVENT_QUEUES[bus_id] = event_queue
-        _EVENT_QUEUE_CREATED[bus_id] = _time.time()
+        _EVENT_QUEUE_CREATED[bus_id] = time.time()
 
         # Sprint 83: Periodically clean stale queues (leak prevention)
         _cleanup_stale_queues()
@@ -604,12 +604,29 @@ async def process_with_multi_agent_streaming(
                 yield await create_error_event(str(payload))
                 break
             elif msg_type == "graph_done":
-                # Final drain of any remaining bus events
+                # Final drain of any remaining bus events in merged_queue
                 while not merged_queue.empty():
                     try:
                         mt, pl = merged_queue.get_nowait()
                         if mt == "bus":
+                            if pl.get("type") == "answer_delta":
+                                answer_emitted = True
                             yield await _convert_bus_event(pl)
+                    except Exception:
+                        break
+                # Sprint 150 fix: Also drain event_queue directly.
+                # _forward_bus may not have forwarded all events before
+                # graph_done arrived (race condition — answer_delta events
+                # pushed synchronously via put_nowait just before node returns
+                # have minimal time for _forward_bus to process them).
+                while not event_queue.empty():
+                    try:
+                        evt = event_queue.get_nowait()
+                        if evt is _SENTINEL:
+                            continue
+                        if evt.get("type") == "answer_delta":
+                            answer_emitted = True
+                        yield await _convert_bus_event(evt)
                     except Exception:
                         break
                 break
@@ -805,6 +822,8 @@ async def process_with_multi_agent_streaming(
                             rag_answer_text = agent_output_text
                             logger.debug("[STREAM] RAG answer already streamed via bus, skipping bulk emission")
                         partial_answer_emitted = True
+                    # Sprint 153: Set final_state for RAG (matches tutor/direct/product_search)
+                    final_state = node_output
 
                 # ---- TUTOR AGENT NODE ----
                 elif node_name == "tutor_agent":
@@ -898,8 +917,13 @@ async def process_with_multi_agent_streaming(
                                 if event.type == "emotion":
                                     _soul_emotion_emitted = True
                                 yield event
+                            answer_emitted = True
+                        elif _answer_via_bus:
+                            # Bus confirmed answer delivery — safe to mark emitted
+                            answer_emitted = True
+                        # else: _answer_as_thinking=True but bus not confirmed yet.
+                        # Don't set answer_emitted — let safety net catch lost events.
                         partial_answer_emitted = True
-                        answer_emitted = True
                         final_state = node_output
 
                 # ---- GRADER NODE ----
@@ -1034,13 +1058,19 @@ async def process_with_multi_agent_streaming(
                     # Direct response — token-stream it
                     final_response = node_output.get("final_response", "")
                     if final_response and not answer_emitted:
-                        async for event in _extract_and_stream_emotion_then_answer(
-                            final_response, _soul_emotion_emitted,
-                        ):
-                            if event.type == "emotion":
-                                _soul_emotion_emitted = True
-                            yield event
-                        answer_emitted = True
+                        # Sprint 153: Match tutor pattern — check bus before post-hoc emission
+                        _answer_via_bus = "direct" in _bus_answer_nodes
+                        _answer_as_thinking = node_output.get("_answer_streamed_via_bus", False)
+                        if not _answer_via_bus and not _answer_as_thinking:
+                            async for event in _extract_and_stream_emotion_then_answer(
+                                final_response, _soul_emotion_emitted,
+                            ):
+                                if event.type == "emotion":
+                                    _soul_emotion_emitted = True
+                                yield event
+                            answer_emitted = True
+                        elif _answer_via_bus:
+                            answer_emitted = True
                     final_state = node_output
 
                     # Sprint 80b: Emit domain notice if set by DIRECT node
@@ -1089,13 +1119,19 @@ async def process_with_multi_agent_streaming(
                     # Product search response — token-stream it
                     final_response = node_output.get("final_response", "")
                     if final_response and not answer_emitted:
-                        async for event in _extract_and_stream_emotion_then_answer(
-                            final_response, _soul_emotion_emitted,
-                        ):
-                            if event.type == "emotion":
-                                _soul_emotion_emitted = True
-                            yield event
-                        answer_emitted = True
+                        # Sprint 153: Match tutor pattern — check bus before post-hoc emission
+                        _answer_via_bus = "product_search_agent" in _bus_answer_nodes
+                        _answer_as_thinking = node_output.get("_answer_streamed_via_bus", False)
+                        if not _answer_via_bus and not _answer_as_thinking:
+                            async for event in _extract_and_stream_emotion_then_answer(
+                                final_response, _soul_emotion_emitted,
+                            ):
+                                if event.type == "emotion":
+                                    _soul_emotion_emitted = True
+                                yield event
+                            answer_emitted = True
+                        elif _answer_via_bus:
+                            answer_emitted = True
                     final_state = node_output
 
                 # ---- GUARDIAN NODE ----
@@ -1190,7 +1226,7 @@ async def process_with_multi_agent_streaming(
                   if settings.enable_emotional_state:
                       from app.engine.emotional_state import get_emotional_state_manager
                       _esm = get_emotional_state_manager()
-                      _user_id = context.get("user_id", "")
+                      _user_id = (context or {}).get("user_id", "")
                       if _user_id:
                           _es = _esm.get_state(_user_id)
                           _mood_data = {
@@ -1226,8 +1262,10 @@ async def process_with_multi_agent_streaming(
           )
 
         except Exception as e:
-            logger.exception(f"[MULTI_AGENT_STREAM] Inner loop error: {e}")
+            logger.exception("[MULTI_AGENT_STREAM] Inner loop error: %s", e)
             yield await create_error_event(f"Internal processing error: {type(e).__name__}")
+            # Sprint 153: Always emit done so frontend exits streaming state
+            yield await create_done_event(time.time() - start_time)
         finally:
             # Sprint 70: Stop bus forwarder and clean up tasks
             try:
@@ -1243,14 +1281,17 @@ async def process_with_multi_agent_streaming(
                         pass
 
     except Exception as e:
-        logger.exception(f"[MULTI_AGENT_STREAM] Error: {e}")
+        logger.exception("[MULTI_AGENT_STREAM] Error: %s", e)
         yield await create_error_event(f"Internal processing error: {type(e).__name__}")
+        # Sprint 153: Always emit done so frontend exits streaming state
+        yield await create_done_event(time.time() - start_time)
         registry.end_request_trace(trace_id)
     finally:
         # Sprint 139: Clean up tracer from module-level storage
         if final_state:
             from app.engine.multi_agent.graph import _cleanup_tracer
             _cleanup_tracer(final_state.get("_trace_id"))
-        # Sprint 69: Clean up event bus
-        _EVENT_QUEUES.pop(bus_id, None)
-        _EVENT_QUEUE_CREATED.pop(bus_id, None)
+        # Sprint 69+153: Clean up event bus (guard against None bus_id)
+        if bus_id:
+            _EVENT_QUEUES.pop(bus_id, None)
+            _EVENT_QUEUE_CREATED.pop(bus_id, None)

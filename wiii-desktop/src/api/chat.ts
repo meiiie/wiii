@@ -29,7 +29,8 @@ export async function sendMessageStream(
   if (lastEventId) {
     extraHeaders["Last-Event-ID"] = lastEventId;
   }
-  const stream = await client.postStream("/api/v1/chat/stream/v3", request, extraHeaders);
+  // Sprint 153b: Pass abort signal to postStream so initial HTTP request is also cancellable
+  const stream = await client.postStream("/api/v1/chat/stream/v3", request, extraHeaders, abortSignal);
   return parseSSEStream(stream, handlers, abortSignal);
 }
 

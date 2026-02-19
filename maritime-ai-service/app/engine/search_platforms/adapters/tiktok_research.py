@@ -38,39 +38,39 @@ _token_lock = threading.Lock()
 
 
 def _get_access_token(client_key: str, client_secret: str) -> str:
-    """Get or refresh TikTok Client Access Token."""
+    """Get or refresh TikTok Client Access Token (thread-safe)."""
     global _token_cache
 
+    # Sprint 153: Hold lock through entire refresh to prevent thundering herd
     with _token_lock:
         if _token_cache["access_token"] and time.time() < _token_cache["expires_at"] - 60:
             return _token_cache["access_token"]
 
-    import httpx
-    resp = httpx.post(
-        "https://open.tiktokapis.com/v2/oauth/token/",
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        data={
-            "client_key": client_key,
-            "client_secret": client_secret,
-            "grant_type": "client_credentials",
-        },
-        timeout=15,
-    )
-    resp.raise_for_status()
-    data = resp.json()
+        import httpx
+        resp = httpx.post(
+            "https://open.tiktokapis.com/v2/oauth/token/",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            data={
+                "client_key": client_key,
+                "client_secret": client_secret,
+                "grant_type": "client_credentials",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
-    access_token = data.get("access_token")
-    if not access_token:
-        raise ValueError(f"TikTok token error: {data.get('message', 'no access_token')}")
+        access_token = data.get("access_token")
+        if not access_token:
+            raise ValueError(f"TikTok token error: {data.get('message', 'no access_token')}")
 
-    expires_in = data.get("expires_in", 7200)
+        expires_in = data.get("expires_in", 7200)
 
-    with _token_lock:
         _token_cache["access_token"] = access_token
         _token_cache["expires_at"] = time.time() + expires_in
 
-    logger.debug("TikTok access token refreshed (expires in %ds)", expires_in)
-    return access_token
+        logger.debug("TikTok access token refreshed (expires in %ds)", expires_in)
+        return access_token
 
 
 class TikTokResearchAdapter(SearchPlatformAdapter):
@@ -109,19 +109,19 @@ class TikTokResearchAdapter(SearchPlatformAdapter):
         settings = get_settings()
         return bool(settings.tiktok_client_key and settings.tiktok_client_secret)
 
-    def search_sync(self, query: str, max_results: int = 20) -> List[ProductSearchResult]:
+    def search_sync(self, query: str, max_results: int = 20, page: int = 1) -> List[ProductSearchResult]:
         from app.core.config import get_settings
         settings = get_settings()
 
         # Check native API availability
         if not settings.enable_tiktok_native_api or not self.validate_credentials():
-            return self._fallback_search(query, max_results)
+            return self._fallback_search(query, max_results, page)
 
         try:
             return self._native_search(query, max_results, settings)
         except Exception as e:
             logger.warning("[TIKTOK_RESEARCH] Native API error, falling back to Serper: %s", e)
-            return self._fallback_search(query, max_results)
+            return self._fallback_search(query, max_results, page)
 
     def _native_search(
         self, query: str, max_results: int, settings
@@ -175,9 +175,9 @@ class TikTokResearchAdapter(SearchPlatformAdapter):
         logger.info("[TIKTOK_RESEARCH] Native API: %d results for '%s'", len(results), query[:50])
         return results
 
-    def _fallback_search(self, query: str, max_results: int) -> List[ProductSearchResult]:
+    def _fallback_search(self, query: str, max_results: int, page: int = 1) -> List[ProductSearchResult]:
         """Fallback to Serper site: filter."""
         if self._serper_fallback:
             logger.debug("[TIKTOK_RESEARCH] Using Serper fallback for TikTok Shop")
-            return self._serper_fallback.search_sync(query, max_results)
+            return self._serper_fallback.search_sync(query, max_results, page)
         raise ValueError("TikTok native API not available and no Serper fallback configured")

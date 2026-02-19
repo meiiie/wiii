@@ -23,6 +23,7 @@ import type {
   SSEDomainNoticeEvent,
   SSEEmotionEvent,
   SSEActionTextEvent,
+  SSEBrowserScreenshotEvent,
 } from "./types";
 
 export interface SSEEventHandler {
@@ -43,6 +44,8 @@ export interface SSEEventHandler {
   onEmotion?: (data: SSEEmotionEvent) => void;
   /** Sprint 147: Bold action text between thinking blocks */
   onActionText?: (data: SSEActionTextEvent) => void;
+  /** Sprint 153: Browser screenshot — Playwright visual transparency */
+  onBrowserScreenshot?: (data: SSEBrowserScreenshotEvent) => void;
 }
 
 /**
@@ -129,13 +132,24 @@ function dispatchEvent(
   data: unknown,
   handlers: SSEEventHandler
 ) {
+  // Sprint 153b: Type safety guard — ensure data is an object for all events except done
+  if (eventType !== "done" && (data === null || data === undefined || typeof data !== "object")) {
+    console.warn(`[SSE] Invalid data for event "${eventType}":`, data);
+    return;
+  }
+
   switch (eventType) {
     case "thinking":
       handlers.onThinking(data as SSEThinkingEvent);
       break;
-    case "answer":
-      handlers.onAnswer(data as SSEAnswerEvent);
+    case "answer": {
+      // Sprint 153b: Guard — content must be string to avoid appending undefined
+      const answerData = data as SSEAnswerEvent;
+      if (typeof answerData.content === "string") {
+        handlers.onAnswer(answerData);
+      }
       break;
+    }
     case "sources":
       handlers.onSources(data as SSESourcesEvent);
       break;
@@ -148,18 +162,33 @@ function dispatchEvent(
     case "error":
       handlers.onError(data as SSEErrorEvent);
       break;
-    case "tool_call":
-      handlers.onToolCall(data as SSEToolCallEvent);
+    case "tool_call": {
+      // Sprint 153b: Guard — content must have name and id
+      const tcData = data as SSEToolCallEvent;
+      if (tcData.content && typeof tcData.content.name === "string" && typeof tcData.content.id === "string") {
+        handlers.onToolCall(tcData);
+      }
       break;
-    case "tool_result":
-      handlers.onToolResult(data as SSEToolResultEvent);
+    }
+    case "tool_result": {
+      // Sprint 153b: Guard — content must have id
+      const trData = data as SSEToolResultEvent;
+      if (trData.content && typeof trData.content.id === "string") {
+        handlers.onToolResult(trData);
+      }
       break;
+    }
     case "status":
       handlers.onStatus(data as SSEStatusEvent);
       break;
-    case "thinking_delta":
-      handlers.onThinkingDelta?.(data as SSEThinkingDeltaEvent);
+    case "thinking_delta": {
+      // Sprint 153b: Guard — content must be string
+      const tdData = data as SSEThinkingDeltaEvent;
+      if (typeof tdData.content === "string") {
+        handlers.onThinkingDelta?.(tdData);
+      }
       break;
+    }
     case "thinking_start":
       handlers.onThinkingStart?.(data as SSEThinkingStartEvent);
       break;
@@ -174,6 +203,9 @@ function dispatchEvent(
       break;
     case "action_text":
       handlers.onActionText?.(data as SSEActionTextEvent);
+      break;
+    case "browser_screenshot":
+      handlers.onBrowserScreenshot?.(data as SSEBrowserScreenshotEvent);
       break;
     default:
       console.warn(`[SSE] Unknown event type: ${eventType}`);

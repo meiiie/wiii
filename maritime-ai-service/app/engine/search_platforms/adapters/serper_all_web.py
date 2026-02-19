@@ -37,12 +37,13 @@ class SerperAllWebAdapter(SearchPlatformAdapter):
                 "Args:\n"
                 "    query: Product search query with \"giá\" or \"mua\" for best results "
                 "(e.g., \"giá dây điện 3 ruột 2.5mm mua ở đâu\")\n"
-                "    max_results: Maximum number of results (default 20)"
+                "    max_results: Maximum number of results (default 20)\n"
+                "    page: Page number for pagination (default 1). Use page=2, 3... to get more results."
             ),
             max_results_default=20,
         )
 
-    def search_sync(self, query: str, max_results: int = 20) -> List[ProductSearchResult]:
+    def search_sync(self, query: str, max_results: int = 20, page: int = 1) -> List[ProductSearchResult]:
         from app.core.config import get_settings
         settings = get_settings()
 
@@ -54,10 +55,14 @@ class SerperAllWebAdapter(SearchPlatformAdapter):
         timeout = settings.product_search_timeout
 
         search_query = f"{query} giá bán {_EXCLUDE_SITES}"
+        payload = {"q": search_query, "gl": "vn", "hl": "vi", "num": min(max_results, 100)}
+        if page > 1:
+            payload["page"] = page
+
         resp = httpx.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
-            json={"q": search_query, "gl": "vn", "hl": "vi", "num": min(max_results, 100)},
+            json=payload,
             timeout=timeout,
         )
         resp.raise_for_status()

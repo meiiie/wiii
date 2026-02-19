@@ -483,6 +483,14 @@ async def chat_stream_v3(
                         "node": event.node,
                     }, event_id=event_counter)
 
+                elif event_type == "browser_screenshot":
+                    # Sprint 153: Browser screenshot for visual transparency
+                    event_counter += 1
+                    yield format_sse("browser_screenshot", {
+                        "content": event.content,
+                        "node": event.node,
+                    }, event_id=event_counter)
+
                 elif event_type == "domain_notice":
                     event_counter += 1
                     yield format_sse("domain_notice", {

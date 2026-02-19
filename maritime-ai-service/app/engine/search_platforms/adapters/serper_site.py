@@ -32,7 +32,7 @@ class SerperSiteAdapter(SearchPlatformAdapter):
     def get_config(self) -> PlatformConfig:
         return self._config
 
-    def search_sync(self, query: str, max_results: int = 20) -> List[ProductSearchResult]:
+    def search_sync(self, query: str, max_results: int = 20, page: int = 1) -> List[ProductSearchResult]:
         from app.core.config import get_settings
         settings = get_settings()
 
@@ -46,10 +46,14 @@ class SerperSiteAdapter(SearchPlatformAdapter):
         import httpx
         timeout = settings.product_search_timeout
 
+        payload = {"q": full_query, "gl": "vn", "hl": "vi", "num": min(max_results, 100)}
+        if page > 1:
+            payload["page"] = page
+
         resp = httpx.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
-            json={"q": full_query, "gl": "vn", "hl": "vi", "num": min(max_results, 100)},
+            json=payload,
             timeout=timeout,
         )
         resp.raise_for_status()
@@ -83,7 +87,8 @@ def create_shopee_adapter() -> SerperSiteAdapter:
             "Returns product listings from shopee.vn with titles, prices, and links.\n\n"
             "Args:\n"
             "    query: Product search query (e.g., \"dây điện Cadivi 2.5mm\")\n"
-            "    max_results: Maximum number of results (default 20)"
+            "    max_results: Maximum number of results (default 20)\n"
+            "    page: Page number for pagination (default 1). Use page=2, 3... to get more results."
         ),
     ))
 
@@ -99,7 +104,8 @@ def create_lazada_adapter() -> SerperSiteAdapter:
             "Returns product listings with titles, prices, and links.\n\n"
             "Args:\n"
             "    query: Product search query (e.g., \"dây cáp điện 2.5mm\")\n"
-            "    max_results: Maximum number of results (default 20)"
+            "    max_results: Maximum number of results (default 20)\n"
+            "    page: Page number for pagination (default 1). Use page=2, 3... to get more results."
         ),
     ))
 
@@ -116,7 +122,8 @@ def create_tiktok_shop_serper_adapter() -> SerperSiteAdapter:
             "Returns product listings with titles, prices, and links.\n\n"
             "Args:\n"
             "    query: Product search query (e.g., \"dây điện 3x2.5mm\")\n"
-            "    max_results: Maximum number of results (default 20)"
+            "    max_results: Maximum number of results (default 20)\n"
+            "    page: Page number for pagination (default 1). Use page=2, 3... to get more results."
         ),
     ))
 
@@ -132,7 +139,8 @@ def create_facebook_marketplace_adapter() -> SerperSiteAdapter:
             "Returns products with titles, prices, and links.\n\n"
             "Args:\n"
             "    query: Product search query (e.g., \"cuộn dây điện\")\n"
-            "    max_results: Maximum number of results (default 20)"
+            "    max_results: Maximum number of results (default 20)\n"
+            "    page: Page number for pagination (default 1). Use page=2, 3... to get more results."
         ),
     ))
 
@@ -149,6 +157,7 @@ def create_instagram_adapter() -> SerperSiteAdapter:
             "Note: Only finds publicly indexed content — private groups require separate auth.\n\n"
             "Args:\n"
             "    query: Product search query (e.g., \"dây điện 2.5mm\")\n"
-            "    max_results: Maximum number of results (default 20)"
+            "    max_results: Maximum number of results (default 20)\n"
+            "    page: Page number for pagination (default 1). Use page=2, 3... to get more results."
         ),
     ))

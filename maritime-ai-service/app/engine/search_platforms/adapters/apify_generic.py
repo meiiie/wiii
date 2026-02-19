@@ -52,7 +52,7 @@ class ApifyGenericAdapter(SearchPlatformAdapter):
         from app.core.config import get_settings
         return bool(get_settings().apify_api_token)
 
-    def search_sync(self, query: str, max_results: int = 20) -> List[ProductSearchResult]:
+    def search_sync(self, query: str, max_results: int = 20, page: int = 1) -> List[ProductSearchResult]:
         from app.core.config import get_settings
         settings = get_settings()
 

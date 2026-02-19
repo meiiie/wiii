@@ -6,7 +6,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronDown } from "lucide-react";
-import type { Message, ThinkingBlockData } from "@/api/types";
+import type { Message, ThinkingBlockData, ScreenshotBlockData } from "@/api/types";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
@@ -14,6 +14,7 @@ import { useAvatarState } from "@/hooks/useAvatarState";
 import { MessageBubble } from "./MessageBubble";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ActionText } from "./ActionText";
+import { ScreenshotBlock } from "./ScreenshotBlock";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { SourceCitation } from "./SourceCitation";
@@ -115,6 +116,10 @@ export function MessageList({
                     return (
                       <ActionText key={block.id} content={block.content} node={block.node} />
                     );
+                  }
+                  if (block.type === "screenshot") {
+                    // Sprint 153: Browser screenshot during streaming
+                    return <ScreenshotBlock key={block.id} block={block as ScreenshotBlockData} />;
                   }
                   if (block.type === "answer") {
                     const isLastAnswer = !streamingBlocks.slice(i + 1).some(b => b.type === "answer");

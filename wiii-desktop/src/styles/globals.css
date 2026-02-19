@@ -625,3 +625,95 @@
 .thinking-timeline-content {
   padding-left: 4px;
 }
+
+/* Sprint 153: Browser screenshot blocks */
+.screenshot-block {
+  margin: 0.5rem 0;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow 0.2s;
+}
+.screenshot-block:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+.screenshot-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  background: var(--surface-secondary, #f8f9fa);
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  font-size: 0.8rem;
+  color: var(--text-secondary, #6b7280);
+}
+.screenshot-label {
+  font-weight: 500;
+  color: var(--text, #374151);
+}
+.screenshot-url {
+  margin-left: auto;
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+.screenshot-thumbnail {
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+  object-position: top;
+  display: block;
+}
+.screenshot-placeholder {
+  cursor: default;
+}
+.screenshot-thumbnail-placeholder {
+  padding: 1.5rem;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 0.8rem;
+  font-style: italic;
+  background: #f9fafb;
+}
+.screenshot-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+.screenshot-overlay-content {
+  max-width: 90vw;
+  max-height: 90vh;
+  background: var(--surface, white);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+.screenshot-overlay-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  font-size: 0.85rem;
+}
+.screenshot-overlay-url {
+  opacity: 0.5;
+  font-size: 0.75rem;
+}
+.screenshot-overlay-header button {
+  margin-left: auto;
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  cursor: pointer;
+  color: var(--text-secondary, #6b7280);
+}
+.screenshot-full {
+  max-width: 90vw;
+  max-height: calc(90vh - 3rem);
+  object-fit: contain;
+}

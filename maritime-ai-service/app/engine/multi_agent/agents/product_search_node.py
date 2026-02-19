@@ -1,21 +1,21 @@
 """
-Product Search Agent Node — Sprint 148: "Săn Hàng"
+Product Search Agent Node — Sprint 148→150: "Săn Hàng" → "Tìm Sâu"
 
 Specialized LangGraph node for multi-platform e-commerce product search.
 Uses ReAct loop (LLM→tools→observe→decide) pattern from tutor_node.py.
 
-Flow:
-1. LLM analyzes query → understands specs/brand/quantity
-2. LLM calls tool_search_google_shopping first (fastest, structured)
-3. LLM decides which additional platforms to search (Shopee, TikTok, Lazada, FB)
-4. LLM synthesizes, compares, ranks products
-5. If user requests Excel → calls tool_generate_product_report
-6. Max 5 iterations, early exit when data is sufficient
+Sprint 150 enhancements:
+- Configurable max iterations (default 15, was hardcoded 5)
+- Enhanced deep search system prompt with multi-round strategy
+- Context-aware iteration labels
+- Page scraper tool integration (tool_fetch_product_detail)
+- Pagination support (page parameter on all search tools)
 """
 
 import asyncio
 import json
 import logging
+import threading
 from typing import Dict, List, Optional, Tuple
 
 from langchain_core.messages import (
@@ -29,8 +29,8 @@ from app.engine.multi_agent.state import AgentState
 
 logger = logging.getLogger(__name__)
 
-# Max ReAct iterations — product search needs more rounds (multi-platform)
-_MAX_ITERATIONS = 5
+# Max ReAct iterations — read from config at runtime, fallback to default
+_MAX_ITERATIONS_DEFAULT = 15
 
 # Chunk streaming config (matches tutor_node.py)
 _CHUNK_SIZE = 40
@@ -43,9 +43,11 @@ _TOOL_ACK = {
     "tool_search_tiktok_shop": "Đã tìm trên TikTok Shop! Đang so sánh...",
     "tool_search_lazada": "Đã tìm trên Lazada! Đang tổng hợp...",
     "tool_search_facebook_marketplace": "Đã tìm trên Facebook Marketplace!",
+    "tool_search_facebook_search": "Đã tìm trên Facebook! Đang phân tích kết quả...",
     "tool_search_all_web": "Đã quét web cửa hàng nhỏ! Đang xem giá...",
     "tool_search_instagram_shopping": "Đã tìm trên Instagram!",
     "tool_generate_product_report": "Báo cáo Excel đã được tạo!",
+    "tool_fetch_product_detail": "Đã truy cập trang sản phẩm! Đang đọc giá...",
 }
 
 # Vietnamese system prompt for product search agent
@@ -55,6 +57,7 @@ _SYSTEM_PROMPT = """Bạn là Wiii — trợ lý tìm kiếm sản phẩm thông
 - Phân tích yêu cầu tìm kiếm → hiểu thông số kỹ thuật, thương hiệu, số lượng
 - Tìm kiếm sản phẩm trên nhiều sàn TMĐT Việt Nam
 - So sánh giá, seller, đánh giá, lượt bán
+- Truy cập trang sản phẩm để xác minh giá thật
 - Tạo báo cáo Excel nếu user yêu cầu
 
 ## QUY TRÌNH
@@ -62,16 +65,18 @@ _SYSTEM_PROMPT = """Bạn là Wiii — trợ lý tìm kiếm sản phẩm thông
 2. **Tìm Google Shopping TRƯỚC** (nhanh nhất, dữ liệu cấu trúc tốt)
 3. **Tìm thêm sàn khác** nếu cần: Shopee, Lazada, TikTok Shop, web cửa hàng nhỏ
 4. **So sánh & xếp hạng**: Giá, uy tín seller, đánh giá, lượt bán
-5. **Tạo Excel** nếu user yêu cầu "báo cáo", "excel", "xuất file"
+5. **Xác minh giá**: Dùng tool_fetch_product_detail cho 3-5 sản phẩm giá tốt nhất
+6. **Tạo Excel** nếu user yêu cầu "báo cáo", "excel", "xuất file"
 
 ## CÔNG CỤ
-- tool_search_google_shopping: Tìm Google Shopping VN (nhanh nhất, dữ liệu cấu trúc)
-- tool_search_shopee: Tìm Shopee VN
-- tool_search_tiktok_shop: Tìm TikTok Shop VN
-- tool_search_lazada: Tìm Lazada VN
-- tool_search_facebook_marketplace: Tìm Facebook Marketplace VN
-- tool_search_all_web: Quét TẤT CẢ web cửa hàng nhỏ, nhà phân phối, B2B (thường rẻ hơn sàn TMĐT!)
-- tool_search_instagram_shopping: Tìm bài bán hàng trên Instagram VN
+- tool_search_google_shopping: Tìm Google Shopping VN (nhanh nhất, dữ liệu cấu trúc). Hỗ trợ page=1,2,3...
+- tool_search_shopee: Tìm Shopee VN. Hỗ trợ page=1,2,3...
+- tool_search_tiktok_shop: Tìm TikTok Shop VN. Hỗ trợ page=1,2,3...
+- tool_search_lazada: Tìm Lazada VN. Hỗ trợ page=1,2,3...
+- tool_search_facebook_marketplace: Tìm Facebook Marketplace VN. Hỗ trợ page=1,2,3...
+- tool_search_all_web: Quét TẤT CẢ web cửa hàng nhỏ, nhà phân phối, B2B (thường rẻ hơn sàn TMĐT!). Hỗ trợ page=1,2,3...
+- tool_search_instagram_shopping: Tìm bài bán hàng trên Instagram VN. Hỗ trợ page=1,2,3...
+- tool_fetch_product_detail: Truy cập URL trang sản phẩm → lấy giá chính xác, specs
 - tool_generate_product_report: Tạo file Excel so sánh
 
 ## QUY TẮC
@@ -81,17 +86,50 @@ _SYSTEM_PROMPT = """Bạn là Wiii — trợ lý tìm kiếm sản phẩm thông
 - Ghi rõ nguồn (sàn nào, web nào), giá VNĐ, link sản phẩm
 - Nếu một sàn lỗi → bỏ qua, tìm sàn khác
 - ƯU TIÊN gọi tool_search_all_web khi user hỏi "web nào rẻ nhất" hoặc muốn so sánh giá toàn diện
-- KHÔNG cần tìm TẤT CẢ sàn — chỉ tìm đủ để so sánh có ý nghĩa (2-4 nguồn)
+"""
+
+# Deep search strategy appended to system prompt
+_DEEP_SEARCH_PROMPT = """
+## CHIẾN LƯỢC TÌM KIẾM SÂU
+
+Bạn là chuyên gia tìm kiếm sản phẩm. Mục tiêu: tìm TOÀN DIỆN, không bỏ sót nguồn nào.
+
+### Quy trình:
+1. **Vòng 1 — Khám phá**: Tìm trên Google Shopping + 2-3 sàn TMĐT chính
+2. **Vòng 2 — Mở rộng**: Thử query variations (tên tiếng Việt, tiếng Anh, specs chi tiết, thương hiệu)
+3. **Vòng 3 — Phân trang**: Với platform có nhiều kết quả, lấy thêm page=2, page=3
+4. **Vòng 4 — Web độc lập**: Tìm trên all_web để phát hiện đại lý nhỏ, B2B, wholesale
+5. **Vòng 5 — Xác minh giá**: Dùng tool_fetch_product_detail cho 3-5 sản phẩm giá tốt nhất
+
+### Query variations — ví dụ cho "MacBook Pro M4 Pro 24GB":
+- "MacBook Pro 14 M4 Pro 24GB 512GB" (specs đầy đủ)
+- "macbook pro m4 pro giá rẻ" (tìm deal)
+- "Apple MacBook Pro 14 inch 2024 chính hãng" (authorized dealer)
+- "laptop apple m4 pro 24gb" (generic)
+
+### Pagination:
+- Mỗi tool tìm kiếm hỗ trợ tham số `page` (mặc định 1)
+- Dùng page=2, page=3 để lấy thêm kết quả từ cùng một nguồn
+- Đặc biệt hữu ích với Google Shopping và all_web
+
+### Khi nào DỪNG:
+- Đã tìm ≥ 50 kết quả từ ≥ 3 nguồn khác nhau
+- Đã xác minh giá cho ≥ 3 sản phẩm top
+- Các vòng tiếp theo không tìm thêm nguồn mới
 """
 
 
 def _iteration_label(iteration: int, tools_used: list) -> str:
-    """Context-aware thinking block label for product search."""
+    """Context-aware thinking block label for product search (Sprint 150 enhanced)."""
     if iteration == 0:
         return "Phân tích yêu cầu tìm kiếm"
-    if tools_used:
-        return "So sánh và tổng hợp kết quả"
-    return f"Tìm kiếm thêm (vòng {iteration + 1})"
+    if iteration <= 2:
+        return f"Khám phá nguồn hàng (vòng {iteration + 1})"
+    if iteration <= 5:
+        return f"Mở rộng tìm kiếm (vòng {iteration + 1})"
+    if iteration <= 8:
+        return "Xác minh giá và so sánh"
+    return f"Tìm kiếm bổ sung (vòng {iteration + 1})"
 
 
 class ProductSearchAgentNode:
@@ -119,6 +157,12 @@ class ProductSearchAgentNode:
             from app.engine.tools.product_search_tools import get_product_search_tools
             from app.engine.tools.excel_report_tool import tool_generate_product_report
             self._tools = get_product_search_tools() + [tool_generate_product_report]
+            # Sprint 150: Add page scraper tool
+            try:
+                from app.engine.tools.product_page_scraper import tool_fetch_product_detail
+                self._tools.append(tool_fetch_product_detail)
+            except Exception:
+                logger.debug("[PRODUCT_SEARCH] Page scraper tool not available")
         except Exception as e:
             logger.warning("[PRODUCT_SEARCH] Tools init failed: %s", e)
 
@@ -210,8 +254,9 @@ class ProductSearchAgentNode:
                 if i + _CHUNK_SIZE < len(text):
                     await asyncio.sleep(_CHUNK_DELAY)
 
-        # Build messages
-        messages = [SystemMessage(content=_SYSTEM_PROMPT)]
+        # Build system prompt (Sprint 150: append deep search strategy)
+        system_prompt = _SYSTEM_PROMPT + _DEEP_SEARCH_PROMPT
+        messages = [SystemMessage(content=system_prompt)]
         # Inject conversation history (last 6 turns — product search is usually standalone)
         lc_messages = context.get("langchain_messages", [])
         if lc_messages:
@@ -224,7 +269,14 @@ class ProductSearchAgentNode:
         answer_streamed = False
         response = None
 
-        for iteration in range(_MAX_ITERATIONS):
+        # Sprint 150: configurable max iterations
+        try:
+            from app.core.config import get_settings
+            max_iterations = get_settings().product_search_max_iterations
+        except Exception:
+            max_iterations = _MAX_ITERATIONS_DEFAULT
+
+        for iteration in range(max_iterations):
             # Emit thinking_start
             if event_queue is not None:
                 _label = _iteration_label(iteration, tools_used)
@@ -312,13 +364,32 @@ class ProductSearchAgentNode:
                     "node": "product_search_agent",
                 })
 
+                # Sprint 153: Push browser screenshots if available
+                if tool_name.startswith("tool_search_facebook") or tool_name.startswith("tool_search_instagram"):
+                    try:
+                        from app.engine.search_platforms import get_search_platform_registry
+                        _registry = get_search_platform_registry()
+                        _platform_id = tool_name.replace("tool_search_", "")
+                        _adapter = _registry.get(_platform_id)
+                        if _adapter and hasattr(_adapter, "get_last_screenshots"):
+                            for _shot in _adapter.get_last_screenshots():
+                                await _push({
+                                    "type": "browser_screenshot",
+                                    "content": _shot,
+                                    "node": "product_search_agent",
+                                })
+                    except Exception:
+                        pass
+
                 # Post-tool acknowledgment
                 _ack = _TOOL_ACK.get(tool_name, f"Đã nhận kết quả từ {tool_name}.")
                 await _push_thinking_deltas(f"\n\n{_ack}")
 
                 # Add to message history (OBSERVE step)
+                # Sprint 153: Truncate tool results to prevent context window overflow
+                result_str = str(result)[:5000]
                 messages.append(AIMessage(content="", tool_calls=[tool_call]))
-                messages.append(ToolMessage(content=str(result), tool_call_id=tool_id))
+                messages.append(ToolMessage(content=result_str, tool_call_id=tool_id))
 
                 tools_used.append({"name": tool_name, "args": tool_args, "iteration": iteration})
 
@@ -395,11 +466,14 @@ class ProductSearchAgentNode:
 # =============================================================================
 
 _product_search_node: Optional[ProductSearchAgentNode] = None
+_node_lock = threading.Lock()
 
 
 def get_product_search_agent_node() -> ProductSearchAgentNode:
-    """Get or create ProductSearchAgentNode singleton."""
+    """Get or create ProductSearchAgentNode singleton (thread-safe)."""
     global _product_search_node
     if _product_search_node is None:
-        _product_search_node = ProductSearchAgentNode()
+        with _node_lock:
+            if _product_search_node is None:
+                _product_search_node = ProductSearchAgentNode()
     return _product_search_node

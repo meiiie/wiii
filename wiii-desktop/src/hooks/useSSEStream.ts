@@ -1,5 +1,6 @@
 /**
  * SSE streaming hook — connects chat store to SSE parser.
+ * Sprint 150: StreamBuffer integration for smooth token rendering.
  */
 import { useCallback, useRef } from "react";
 import { sendMessageStream } from "@/api/chat";
@@ -9,6 +10,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useDomainStore } from "@/stores/domain-store";
 import { useContextStore } from "@/stores/context-store";
 import { useCharacterStore } from "@/stores/character-store";
+import { StreamBuffer } from "@/lib/stream-buffer";
 import type { SSEEventHandler } from "@/api/sse";
 import type { ChatResponseMetadata, MoodType } from "@/api/types";
 
@@ -24,12 +26,24 @@ function sleep(ms: number): Promise<void> {
 
 export function useSSEStream() {
   const abortRef = useRef<AbortController | null>(null);
+  // Sprint 150: Token smoothing buffers
+  const answerBufferRef = useRef<StreamBuffer | null>(null);
+  const thinkingBufferRef = useRef<StreamBuffer | null>(null);
+  // Track current thinking node for buffer flush callback
+  const thinkingNodeRef = useRef<string | undefined>(undefined);
 
   const sendMessage = useCallback(async (content: string) => {
     const settings = useSettingsStore.getState().settings;
     const authHeaders = useSettingsStore.getState().getAuthHeaders();
     const domainId = useDomainStore.getState().activeDomainId;
     const chatStore = useChatStore.getState();
+
+    // Sprint 153b: Concurrent stream guard — abort previous stream before starting new one
+    if (abortRef.current) {
+      abortRef.current.abort();
+      answerBufferRef.current?.discard();
+      thinkingBufferRef.current?.discard();
+    }
 
     // Ensure we have an active conversation
     let conversationId = chatStore.activeConversationId;
@@ -47,25 +61,51 @@ export function useSSEStream() {
     chatStore.startStreaming();
     useCharacterStore.getState().clearSoulEmotion();
 
+    // Sprint 153b: Clear stale think/progress tool IDs from previous streams
+    _thinkToolIds.clear();
+
     // Create abort controller
     abortRef.current = new AbortController();
+
+    // Sprint 150: Create fresh StreamBuffer instances for this stream
+    answerBufferRef.current = new StreamBuffer({
+      onFlush: (chars) => useChatStore.getState().appendStreamingContent(chars),
+      minCharsPerFrame: 1,
+      maxCharsPerFrame: 12,
+      targetFrames: 8,
+    });
+    thinkingBufferRef.current = new StreamBuffer({
+      onFlush: (chars) => {
+        useChatStore.getState().appendThinkingDelta(chars, thinkingNodeRef.current);
+        useChatStore.getState().appendPhaseThinkingDelta(chars, thinkingNodeRef.current);
+      },
+      minCharsPerFrame: 2,
+      maxCharsPerFrame: 16,
+      targetFrames: 6,
+    });
 
     const handlers: SSEEventHandler = {
       onThinking: (data) => {
         // Sprint 140b: Thinking events contain AI reasoning ONLY.
         // Pipeline progress is handled by onStatus (event: status).
+        // Full thinking events are complete paragraphs — no buffering needed.
         if (data.content) {
-          useChatStore.getState().setStreamingThinking(data.content);
-          useChatStore.getState().appendPhaseThinking(data.content);
+          const store = useChatStore.getState();
+          store.setStreamingThinking(data.content);
+          store.appendPhaseThinking(data.content);
         }
       },
       onAnswer: (data) => {
-        useChatStore.getState().appendStreamingContent(data.content);
+        // Sprint 150: Push to buffer instead of direct store update
+        answerBufferRef.current?.push(data.content);
       },
       onSources: (data) => {
         useChatStore.getState().setStreamingSources(data.sources || []);
       },
       onMetadata: (data) => {
+        // Sprint 150: Drain both buffers before finalization
+        answerBufferRef.current?.drain();
+        thinkingBufferRef.current?.drain();
         // Metadata comes before done — store it for finalization
         useChatStore.getState().finalizeStream(data as Partial<ChatResponseMetadata> as ChatResponseMetadata);
         // Sprint 120: Update mood from metadata if present
@@ -80,6 +120,9 @@ export function useSSEStream() {
         }
       },
       onDone: () => {
+        // Sprint 150: Drain both buffers before finalizing
+        answerBufferRef.current?.drain();
+        thinkingBufferRef.current?.drain();
         // Stream complete — if not already finalized by metadata
         const store = useChatStore.getState();
         if (store.isStreaming) {
@@ -95,6 +138,9 @@ export function useSSEStream() {
         }
       },
       onError: (data) => {
+        // Sprint 150: Discard buffered tokens on error
+        answerBufferRef.current?.discard();
+        thinkingBufferRef.current?.discard();
         useChatStore.getState().setStreamError(data.message);
       },
       onToolCall: (data) => {
@@ -103,8 +149,9 @@ export function useSSEStream() {
         if (data.content.name === "tool_think") {
           const thought = data.content.args?.thought || "";
           if (thought) {
-            store.appendThinkingDelta(thought, data.node);
-            store.appendPhaseThinkingDelta(thought, data.node);
+            // Sprint 150: Push to thinking buffer instead of direct update
+            thinkingNodeRef.current = data.node;
+            thinkingBufferRef.current?.push(thought);
           }
           // Track the ID so onToolResult can skip it
           _thinkToolIds.add(data.content.id);
@@ -116,6 +163,8 @@ export function useSSEStream() {
           _thinkToolIds.add(data.content.id);
           return;
         }
+        // Sprint 150: Drain thinking buffer before tool card
+        thinkingBufferRef.current?.drain();
         const tc = {
           id: data.content.id,
           name: data.content.name,
@@ -137,28 +186,32 @@ export function useSSEStream() {
         store.updatePhaseToolCallResult(data.content.id, data.content.result);
       },
       onStatus: (data) => {
-        const store = useChatStore.getState();
         const label = data.content || data.step;
         if (label) {
+          const store = useChatStore.getState();
           store.addStreamingStep(label, data.node);
           store.setStreamingStep(label);
           store.appendPhaseStatus(label, data.node);
         }
       },
       onThinkingDelta: (data) => {
-        useChatStore.getState().appendThinkingDelta(data.content, data.node);
-        useChatStore.getState().appendPhaseThinkingDelta(data.content, data.node);
+        // Sprint 150: Push to thinking buffer instead of direct update
+        thinkingNodeRef.current = data.node;
+        thinkingBufferRef.current?.push(data.content);
       },
       onThinkingStart: (data) => {
-        useChatStore.getState().openThinkingBlock(
-          data.content || data.node || "",
-          data.summary,
-        );
-        useChatStore.getState().addOrUpdatePhase(data.content || data.node || "", data.node);
+        // Sprint 150: Drain thinking buffer before opening new block
+        thinkingBufferRef.current?.drain();
+        const store = useChatStore.getState();
+        store.openThinkingBlock(data.content || data.node || "", data.summary);
+        store.addOrUpdatePhase(data.content || data.node || "", data.node);
       },
       onThinkingEnd: (data) => {
-        useChatStore.getState().closeThinkingBlock(data.duration_ms);
-        useChatStore.getState().closeActivePhase(data.duration_ms);
+        // Sprint 150: Drain thinking buffer before closing block
+        thinkingBufferRef.current?.drain();
+        const store = useChatStore.getState();
+        store.closeThinkingBlock(data.duration_ms);
+        store.closeActivePhase(data.duration_ms);
       },
       onDomainNotice: (data) => {
         useChatStore.getState().setStreamingDomainNotice(data.content);
@@ -177,9 +230,23 @@ export function useSSEStream() {
         }
       },
       onActionText: (data) => {
+        // Sprint 150: Drain both buffers before action text block
+        answerBufferRef.current?.drain();
+        thinkingBufferRef.current?.drain();
         // Sprint 147: Bold action text between thinking blocks
         // Sprint 149: Pass node for agent attribution
         useChatStore.getState().appendActionText(data.content, data.node);
+      },
+      onBrowserScreenshot: (data) => {
+        // Sprint 153: Browser screenshot — visual transparency during search
+        answerBufferRef.current?.drain();
+        thinkingBufferRef.current?.drain();
+        useChatStore.getState().appendScreenshot({
+          url: data.content.url,
+          image: data.content.image,
+          label: data.content.label,
+          node: data.node,
+        });
       },
     };
 
@@ -215,17 +282,26 @@ export function useSSEStream() {
         if (abortRef.current.signal.aborted) break;
         retryCount++;
         if (retryCount > MAX_SSE_RETRIES) {
+          // Sprint 153b: Discard buffered tokens on final failure
+          answerBufferRef.current?.discard();
+          thinkingBufferRef.current?.discard();
           useChatStore.getState().setStreamError(
             "Mất kết nối. Vui lòng thử lại."
           );
           break;
         }
+        // Sprint 153b: Discard partially-buffered tokens before retry
+        answerBufferRef.current?.discard();
+        thinkingBufferRef.current?.discard();
         await sleep(SSE_BACKOFF_MS * Math.pow(2, retryCount - 1));
       }
     }
   }, []);
 
   const cancelStream = useCallback(() => {
+    // Sprint 150: Discard buffered tokens on cancel
+    answerBufferRef.current?.discard();
+    thinkingBufferRef.current?.discard();
     abortRef.current?.abort();
     useChatStore.getState().clearStreaming();
   }, []);

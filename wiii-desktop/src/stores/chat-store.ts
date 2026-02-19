@@ -5,8 +5,12 @@
  * Sprint 62: Added streamingBlocks for interleaved thinking/answer rendering.
  * Old flat fields (streamingContent, streamingThinking, streamingToolCalls)
  * are kept for backward compatibility with tests and simple consumers.
+ *
+ * Sprint 154: Added immer middleware to eliminate spread operators in streaming mutations.
+ * Direct draft mutations reduce GC pressure during high-frequency token streaming.
  */
 import { create } from "zustand";
+import { immer } from "zustand/middleware/immer";
 import { v4 as uuidv4 } from "uuid";
 import { loadStore, saveStore } from "@/lib/storage";
 import type {
@@ -19,6 +23,7 @@ import type {
   StreamingStep,
   ThinkingPhase,
   ActionTextBlockData,
+  ScreenshotBlockData,
 } from "@/api/types";
 
 const STORE_NAME = "conversations.json";
@@ -87,6 +92,8 @@ interface ChatState {
   setStreamingDomainNotice: (notice: string) => void;
   /** Sprint 147: Append bold action text between thinking blocks */
   appendActionText: (text: string, node?: string) => void;
+  /** Sprint 153: Append browser screenshot block */
+  appendScreenshot: (data: { url: string; image: string; label: string; node?: string }) => void;
   // Sprint 141: ThinkingFlow phase actions
   addOrUpdatePhase: (label: string, node?: string) => void;
   appendPhaseThinking: (content: string) => void;
@@ -120,699 +127,612 @@ function persistConversationsImmediate(conversations: Conversation[]) {
   );
 }
 
-/** Close the last thinking block (set endTime) */
-function closeLastThinkingBlock(blocks: ContentBlock[]): ContentBlock[] {
-  const updated = [...blocks];
-  for (let i = updated.length - 1; i >= 0; i--) {
-    const block = updated[i];
+/** Close the last open thinking block in-place (immer-compatible). */
+function closeLastThinkingBlockDraft(blocks: ContentBlock[]): void {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const block = blocks[i];
     if (block.type === "thinking" && !block.endTime) {
-      updated[i] = { ...block, endTime: Date.now() };
+      block.endTime = Date.now();
       break;
     }
   }
-  return updated;
 }
 
-export const useChatStore = create<ChatState>((set, get) => ({
-  conversations: [],
-  activeConversationId: null,
-  searchQuery: "",
-  isLoaded: false,
-  isStreaming: false,
-  streamingContent: "",
-  streamingThinking: "",
-  streamingSources: [],
-  streamingStep: "",
-  streamingToolCalls: [],
-  streamingBlocks: [],
-  streamingStartTime: null,
-  streamingSteps: [],
-  streamingDomainNotice: "",
-  streamingPhases: [],
-  streamError: "",
-  streamCompletedAt: null,
+export const useChatStore = create<ChatState>()(
+  immer((set, get) => ({
+    conversations: [],
+    activeConversationId: null,
+    searchQuery: "",
+    isLoaded: false,
+    isStreaming: false,
+    streamingContent: "",
+    streamingThinking: "",
+    streamingSources: [],
+    streamingStep: "",
+    streamingToolCalls: [],
+    streamingBlocks: [],
+    streamingStartTime: null,
+    streamingSteps: [],
+    streamingDomainNotice: "",
+    streamingPhases: [],
+    streamError: "",
+    streamCompletedAt: null,
 
-  loadConversations: async () => {
-    try {
-      const saved = await loadStore<Conversation[]>(STORE_NAME, STORE_KEY, []);
-      if (saved.length > 0) {
-        set({
-          conversations: saved,
-          activeConversationId: saved[0]?.id || null,
-          isLoaded: true,
-        });
-      } else {
-        set({ isLoaded: true });
+    loadConversations: async () => {
+      try {
+        const saved = await loadStore<Conversation[]>(STORE_NAME, STORE_KEY, []);
+        if (saved.length > 0) {
+          set((state) => {
+            state.conversations = saved;
+            state.activeConversationId = saved[0]?.id || null;
+            state.isLoaded = true;
+          });
+        } else {
+          set((state) => { state.isLoaded = true; });
+        }
+      } catch (err) {
+        console.warn("[chat-store] Failed to load conversations:", err);
+        set((state) => { state.isLoaded = true; });
       }
-    } catch (err) {
-      console.warn("[chat-store] Failed to load conversations:", err);
-      set({ isLoaded: true });
-    }
-  },
+    },
 
-  activeConversation: () => {
-    const { conversations, activeConversationId } = get();
-    return conversations.find((c) => c.id === activeConversationId);
-  },
+    activeConversation: () => {
+      const { conversations, activeConversationId } = get();
+      return conversations.find((c) => c.id === activeConversationId);
+    },
 
-  createConversation: (domainId) => {
-    const id = uuidv4();
-    const now = new Date().toISOString();
-    const conversation: Conversation = {
-      id,
-      title: "Cuộc trò chuyện mới",
-      domain_id: domainId,
-      created_at: now,
-      updated_at: now,
-      messages: [],
-    };
-
-    set((state) => ({
-      conversations: [conversation, ...state.conversations],
-      activeConversationId: id,
-    }));
-
-    persistConversationsImmediate(get().conversations);
-    return id;
-  },
-
-  deleteConversation: (id) => {
-    set((state) => {
-      const remaining = state.conversations.filter((c) => c.id !== id);
-      return {
-        conversations: remaining,
-        activeConversationId:
-          state.activeConversationId === id
-            ? remaining[0]?.id || null
-            : state.activeConversationId,
+    createConversation: (domainId) => {
+      const id = uuidv4();
+      const now = new Date().toISOString();
+      const conversation: Conversation = {
+        id,
+        title: "Cuộc trò chuyện mới",
+        domain_id: domainId,
+        created_at: now,
+        updated_at: now,
+        messages: [],
       };
-    });
-    persistConversationsImmediate(get().conversations);
-  },
 
-  setActiveConversation: (id) => {
-    set({ activeConversationId: id });
-  },
+      set((state) => {
+        state.conversations.unshift(conversation);
+        state.activeConversationId = id;
+      });
 
-  renameConversation: (id, title) => {
-    set((state) => ({
-      conversations: state.conversations.map((c) =>
-        c.id === id ? { ...c, title, updated_at: new Date().toISOString() } : c
-      ),
-    }));
-    persistConversationsImmediate(get().conversations);
-  },
+      persistConversationsImmediate(get().conversations);
+      return id;
+    },
 
-  setSearchQuery: (query) => {
-    set({ searchQuery: query });
-  },
+    deleteConversation: (id) => {
+      set((state) => {
+        const idx = state.conversations.findIndex((c) => c.id === id);
+        if (idx >= 0) state.conversations.splice(idx, 1);
+        if (state.activeConversationId === id) {
+          state.activeConversationId = state.conversations[0]?.id || null;
+        }
+      });
+      persistConversationsImmediate(get().conversations);
+    },
 
-  pinConversation: (id) => {
-    set((state) => ({
-      conversations: state.conversations.map((c) =>
-        c.id === id ? { ...c, pinned: true } : c
-      ),
-    }));
-    persistConversationsImmediate(get().conversations);
-  },
+    setActiveConversation: (id) => {
+      set((state) => { state.activeConversationId = id; });
+    },
 
-  unpinConversation: (id) => {
-    set((state) => ({
-      conversations: state.conversations.map((c) =>
-        c.id === id ? { ...c, pinned: false } : c
-      ),
-    }));
-    persistConversationsImmediate(get().conversations);
-  },
+    renameConversation: (id, title) => {
+      set((state) => {
+        const conv = state.conversations.find((c) => c.id === id);
+        if (conv) {
+          conv.title = title;
+          conv.updated_at = new Date().toISOString();
+        }
+      });
+      persistConversationsImmediate(get().conversations);
+    },
 
-  addUserMessage: (content) => {
-    const { activeConversationId, conversations } = get();
-    if (!activeConversationId) return null;
+    setSearchQuery: (query) => {
+      set((state) => { state.searchQuery = query; });
+    },
 
-    const messageId = uuidv4();
-    const message: Message = {
-      id: messageId,
-      role: "user",
-      content,
-      timestamp: new Date().toISOString(),
-    };
+    pinConversation: (id) => {
+      set((state) => {
+        const conv = state.conversations.find((c) => c.id === id);
+        if (conv) conv.pinned = true;
+      });
+      persistConversationsImmediate(get().conversations);
+    },
 
-    // Auto-title from first message
-    const conversation = conversations.find(
-      (c) => c.id === activeConversationId
-    );
-    const isFirstMessage = conversation?.messages.length === 0;
+    unpinConversation: (id) => {
+      set((state) => {
+        const conv = state.conversations.find((c) => c.id === id);
+        if (conv) conv.pinned = false;
+      });
+      persistConversationsImmediate(get().conversations);
+    },
 
-    set((state) => ({
-      conversations: state.conversations.map((c) =>
-        c.id === activeConversationId
-          ? {
-              ...c,
-              messages: [...c.messages, message],
-              updated_at: new Date().toISOString(),
-              title: isFirstMessage
-                ? content.slice(0, 50) + (content.length > 50 ? "..." : "")
-                : c.title,
-            }
-          : c
-      ),
-    }));
+    addUserMessage: (content) => {
+      const { activeConversationId, conversations } = get();
+      if (!activeConversationId) return null;
 
-    persistConversations(get().conversations);
-    return messageId;
-  },
-
-  startStreaming: () => {
-    set({
-      isStreaming: true,
-      streamingContent: "",
-      streamingThinking: "",
-      streamingSources: [],
-      streamingStep: "",
-      streamingToolCalls: [],
-      streamingBlocks: [],
-      streamingStartTime: Date.now(),
-      streamingSteps: [],
-      streamingDomainNotice: "",
-      streamingPhases: [],
-      streamError: "",
-      streamCompletedAt: null,
-    });
-  },
-
-  appendStreamingContent: (chunk) => {
-    set((state) => {
-      // Old field — backward compat
-      const newContent = state.streamingContent + chunk;
-
-      // Block-based: append to last answer block, or create new one
-      let blocks = [...state.streamingBlocks];
-      const lastBlock = blocks[blocks.length - 1];
-
-      if (lastBlock?.type === "answer") {
-        // Append to existing answer block
-        blocks[blocks.length - 1] = {
-          ...lastBlock,
-          content: lastBlock.content + chunk,
-        };
-      } else {
-        // Close any open thinking block, then create new answer block
-        blocks = closeLastThinkingBlock(blocks);
-        blocks.push({ type: "answer", id: uuidv4(), content: chunk });
-      }
-
-      return {
-        streamingContent: newContent,
-        streamingBlocks: blocks,
+      const messageId = uuidv4();
+      const message: Message = {
+        id: messageId,
+        role: "user",
+        content,
+        timestamp: new Date().toISOString(),
       };
-    });
-  },
 
-  setStreamingThinking: (thinking) => {
-    set((state) => {
-      // Old field — backward compat
-      const newThinking = state.streamingThinking
-        ? state.streamingThinking + "\n" + thinking
-        : thinking;
+      const conversation = conversations.find(
+        (c) => c.id === activeConversationId
+      );
+      const isFirstMessage = conversation?.messages.length === 0;
 
-      // Block-based: append to last thinking block, or create new one
-      let blocks = [...state.streamingBlocks];
-      const lastBlock = blocks[blocks.length - 1];
+      set((state) => {
+        const conv = state.conversations.find((c) => c.id === activeConversationId);
+        if (conv) {
+          conv.messages.push(message);
+          conv.updated_at = new Date().toISOString();
+          if (isFirstMessage) {
+            conv.title = content.slice(0, 50) + (content.length > 50 ? "..." : "");
+          }
+        }
+      });
 
-      if (lastBlock?.type === "thinking") {
-        // Append to existing thinking block
-        blocks[blocks.length - 1] = {
-          ...lastBlock,
-          content: lastBlock.content
+      persistConversations(get().conversations);
+      return messageId;
+    },
+
+    startStreaming: () => {
+      set((state) => {
+        state.isStreaming = true;
+        state.streamingContent = "";
+        state.streamingThinking = "";
+        state.streamingSources = [];
+        state.streamingStep = "";
+        state.streamingToolCalls = [];
+        state.streamingBlocks = [];
+        state.streamingStartTime = Date.now();
+        state.streamingSteps = [];
+        state.streamingDomainNotice = "";
+        state.streamingPhases = [];
+        state.streamError = "";
+        state.streamCompletedAt = null;
+      });
+    },
+
+    appendStreamingContent: (chunk) => {
+      set((state) => {
+        // Flat field — backward compat
+        state.streamingContent += chunk;
+
+        // Block-based: append to last answer block, or create new one
+        const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
+        if (lastBlock?.type === "answer") {
+          lastBlock.content += chunk;
+        } else {
+          closeLastThinkingBlockDraft(state.streamingBlocks);
+          state.streamingBlocks.push({ type: "answer", id: uuidv4(), content: chunk });
+        }
+      });
+    },
+
+    setStreamingThinking: (thinking) => {
+      set((state) => {
+        // Flat field — backward compat
+        state.streamingThinking = state.streamingThinking
+          ? state.streamingThinking + "\n" + thinking
+          : thinking;
+
+        // Block-based: append to last thinking block, or create new one
+        const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
+        if (lastBlock?.type === "thinking") {
+          lastBlock.content = lastBlock.content
             ? lastBlock.content + "\n" + thinking
-            : thinking,
-        };
-      } else {
-        // Create new thinking block (label from current streamingStep)
-        blocks.push({
+            : thinking;
+        } else {
+          state.streamingBlocks.push({
+            type: "thinking",
+            id: uuidv4(),
+            label: state.streamingStep || undefined,
+            content: thinking,
+            toolCalls: [],
+            startTime: Date.now(),
+          });
+        }
+      });
+    },
+
+    setStreamingStep: (step) => {
+      set((state) => {
+        state.streamingStep = step;
+        const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
+        if (lastBlock?.type === "thinking" && !lastBlock.label && step) {
+          lastBlock.label = step;
+        }
+      });
+    },
+
+    setStreamingSources: (sources) => {
+      set((state) => { state.streamingSources = sources; });
+    },
+
+    addStreamingStep: (label, node) => {
+      set((state) => {
+        state.streamingSteps.push({ label, node, timestamp: Date.now() });
+      });
+    },
+
+    appendThinkingDelta: (delta, node) => {
+      set((state) => {
+        // Flat field — backward compat
+        state.streamingThinking += delta;
+
+        // Block-based: append to last open thinking block, or create new one
+        const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
+        if (lastBlock?.type === "thinking" && !lastBlock.endTime) {
+          lastBlock.content += delta;
+        } else {
+          state.streamingBlocks.push({
+            type: "thinking",
+            id: uuidv4(),
+            label: node || state.streamingStep || undefined,
+            content: delta,
+            toolCalls: [],
+            startTime: Date.now(),
+          });
+        }
+      });
+    },
+
+    openThinkingBlock: (label, summary) => {
+      set((state) => {
+        // Close any open thinking block first
+        const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
+        if (lastBlock?.type === "thinking" && !lastBlock.endTime) {
+          lastBlock.endTime = Date.now();
+        }
+        // Open new thinking block
+        state.streamingBlocks.push({
           type: "thinking",
           id: uuidv4(),
-          label: state.streamingStep || undefined,
-          content: thinking,
-          toolCalls: [],
-          startTime: Date.now(),
-        });
-      }
-
-      return {
-        streamingThinking: newThinking,
-        streamingBlocks: blocks,
-      };
-    });
-  },
-
-  setStreamingStep: (step) => {
-    set((state) => {
-      // Also update label on current thinking block if it has no label yet
-      const blocks = [...state.streamingBlocks];
-      const lastBlock = blocks[blocks.length - 1];
-      if (lastBlock?.type === "thinking" && !lastBlock.label && step) {
-        blocks[blocks.length - 1] = { ...lastBlock, label: step };
-      }
-      return { streamingStep: step, streamingBlocks: blocks };
-    });
-  },
-
-  setStreamingSources: (sources) => {
-    set({ streamingSources: sources });
-  },
-
-  addStreamingStep: (label, node) => {
-    set((state) => ({
-      streamingSteps: [
-        ...state.streamingSteps,
-        { label, node, timestamp: Date.now() },
-      ],
-    }));
-  },
-
-  appendThinkingDelta: (delta, node) => {
-    set((state) => {
-      // Flat field — backward compat
-      const newThinking = state.streamingThinking + delta;
-
-      // Block-based: append to last open thinking block, or create new one
-      let blocks = [...state.streamingBlocks];
-      const lastBlock = blocks[blocks.length - 1];
-
-      if (lastBlock?.type === "thinking" && !lastBlock.endTime) {
-        // Append to existing open thinking block
-        blocks[blocks.length - 1] = {
-          ...lastBlock,
-          content: lastBlock.content + delta,
-        };
-      } else {
-        // Create new thinking block
-        blocks.push({
-          type: "thinking",
-          id: uuidv4(),
-          label: node || state.streamingStep || undefined,
-          content: delta,
-          toolCalls: [],
-          startTime: Date.now(),
-        });
-      }
-
-      return {
-        streamingThinking: newThinking,
-        streamingBlocks: blocks,
-      };
-    });
-  },
-
-  openThinkingBlock: (label, summary) => {
-    set((state) => {
-      // Close any open thinking block first
-      const blocks = [...state.streamingBlocks];
-      const lastBlock = blocks[blocks.length - 1];
-      if (lastBlock?.type === "thinking" && !lastBlock.endTime) {
-        blocks[blocks.length - 1] = { ...lastBlock, endTime: Date.now() };
-      }
-      // Open new thinking block
-      blocks.push({
-        type: "thinking",
-        id: uuidv4(),
-        label,
-        summary,
-        content: "",
-        toolCalls: [],
-        startTime: Date.now(),
-      });
-      return { streamingBlocks: blocks };
-    });
-  },
-
-  setStreamingDomainNotice: (notice) => {
-    set({ streamingDomainNotice: notice });
-  },
-
-  appendActionText: (text, node) => {
-    set((state) => {
-      // Close any open thinking block first
-      let blocks = closeLastThinkingBlock([...state.streamingBlocks]);
-      // Add action text block with optional node attribution
-      blocks.push({ type: "action_text", id: uuidv4(), content: text, node });
-      return { streamingBlocks: blocks };
-    });
-  },
-
-  // ---- Sprint 141: ThinkingFlow phase actions ----
-
-  addOrUpdatePhase: (label, node) => {
-    set((state) => {
-      const phases = state.streamingPhases.map((p) =>
-        p.status === "active" ? { ...p, status: "completed" as const, endTime: Date.now() } : p
-      );
-      const newPhase: ThinkingPhase = {
-        id: uuidv4(),
-        label,
-        node,
-        status: "active",
-        startTime: Date.now(),
-        thinkingContent: "",
-        toolCalls: [],
-        statusMessages: [],
-      };
-      return { streamingPhases: [...phases, newPhase] };
-    });
-  },
-
-  appendPhaseThinking: (content) => {
-    set((state) => {
-      const phases = [...state.streamingPhases];
-      for (let i = phases.length - 1; i >= 0; i--) {
-        if (phases[i].status === "active") {
-          phases[i] = {
-            ...phases[i],
-            thinkingContent: phases[i].thinkingContent
-              ? phases[i].thinkingContent + "\n" + content
-              : content,
-          };
-          break;
-        }
-      }
-      return { streamingPhases: phases };
-    });
-  },
-
-  appendPhaseThinkingDelta: (delta, _node) => {
-    set((state) => {
-      const phases = [...state.streamingPhases];
-      for (let i = phases.length - 1; i >= 0; i--) {
-        if (phases[i].status === "active") {
-          phases[i] = {
-            ...phases[i],
-            thinkingContent: phases[i].thinkingContent + delta,
-          };
-          break;
-        }
-      }
-      return { streamingPhases: phases };
-    });
-  },
-
-  closeActivePhase: (durationMs) => {
-    set((state) => {
-      const phases = state.streamingPhases.map((p) => {
-        if (p.status !== "active") return p;
-        const endTime =
-          durationMs != null ? p.startTime + durationMs : Date.now();
-        return { ...p, status: "completed" as const, endTime };
-      });
-      return { streamingPhases: phases };
-    });
-  },
-
-  appendPhaseStatus: (message, node) => {
-    set((state) => {
-      const phases = [...state.streamingPhases];
-      // Find active phase matching node, or last active phase
-      let idx = -1;
-      for (let i = phases.length - 1; i >= 0; i--) {
-        if (phases[i].status === "active") {
-          if (!node || phases[i].node === node) { idx = i; break; }
-          if (idx === -1) idx = i; // fallback to last active
-        }
-      }
-      if (idx >= 0) {
-        phases[idx] = {
-          ...phases[idx],
-          statusMessages: [...phases[idx].statusMessages, message],
-        };
-        return { streamingPhases: phases };
-      }
-      // No active phase — create one from this status
-      const newPhase: ThinkingPhase = {
-        id: uuidv4(),
-        label: message,
-        node,
-        status: "active",
-        startTime: Date.now(),
-        thinkingContent: "",
-        toolCalls: [],
-        statusMessages: [],
-      };
-      return { streamingPhases: [...phases, newPhase] };
-    });
-  },
-
-  appendPhaseToolCall: (tc) => {
-    set((state) => {
-      const phases = [...state.streamingPhases];
-      for (let i = phases.length - 1; i >= 0; i--) {
-        if (phases[i].status === "active") {
-          phases[i] = {
-            ...phases[i],
-            toolCalls: [...phases[i].toolCalls, tc],
-          };
-          break;
-        }
-      }
-      return { streamingPhases: phases };
-    });
-  },
-
-  updatePhaseToolCallResult: (id, result) => {
-    set((state) => {
-      const phases = state.streamingPhases.map((p) => {
-        const hasMatch = p.toolCalls.some((tc) => tc.id === id);
-        if (!hasMatch) return p;
-        return {
-          ...p,
-          toolCalls: p.toolCalls.map((tc) =>
-            tc.id === id ? { ...tc, result } : tc
-          ),
-        };
-      });
-      return { streamingPhases: phases };
-    });
-  },
-
-  closeThinkingBlock: (durationMs) => {
-    set((state) => {
-      const blocks = [...state.streamingBlocks];
-      const lastBlock = blocks[blocks.length - 1];
-      if (lastBlock?.type === "thinking" && !lastBlock.endTime) {
-        const endTime =
-          durationMs != null && lastBlock.startTime
-            ? lastBlock.startTime + durationMs
-            : Date.now();
-        blocks[blocks.length - 1] = { ...lastBlock, endTime };
-      }
-      return { streamingBlocks: blocks };
-    });
-  },
-
-  appendToolCall: (tc) => {
-    set((state) => {
-      // Old field — backward compat
-      const newToolCalls = [...state.streamingToolCalls, tc];
-
-      // Block-based: add to last thinking block, or create one
-      let blocks = [...state.streamingBlocks];
-      const lastBlock = blocks[blocks.length - 1];
-
-      if (lastBlock?.type === "thinking" && !lastBlock.endTime) {
-        // Open thinking block — append tool call
-        blocks[blocks.length - 1] = {
-          ...lastBlock,
-          toolCalls: [...lastBlock.toolCalls, tc],
-        };
-      } else if (lastBlock?.type === "thinking" && lastBlock.endTime) {
-        // Sprint 146b: Reopen closed thinking block (safety net)
-        blocks[blocks.length - 1] = {
-          ...lastBlock,
-          endTime: undefined,
-          toolCalls: [...lastBlock.toolCalls, tc],
-        };
-      } else {
-        // Create a thinking block for this tool call
-        blocks.push({
-          type: "thinking",
-          id: uuidv4(),
+          label,
+          summary,
           content: "",
-          toolCalls: [tc],
+          toolCalls: [],
           startTime: Date.now(),
         });
-      }
+      });
+    },
 
-      return {
-        streamingToolCalls: newToolCalls,
-        streamingBlocks: blocks,
-      };
-    });
-  },
+    setStreamingDomainNotice: (notice) => {
+      set((state) => { state.streamingDomainNotice = notice; });
+    },
 
-  updateToolCallResult: (id, result) => {
-    set((state) => {
-      // Old field — backward compat
-      const newToolCalls = state.streamingToolCalls.map((tc) =>
-        tc.id === id ? { ...tc, result } : tc
-      );
+    appendActionText: (text, node) => {
+      set((state) => {
+        closeLastThinkingBlockDraft(state.streamingBlocks);
+        state.streamingBlocks.push({ type: "action_text", id: uuidv4(), content: text, node });
+      });
+    },
 
-      // Block-based: find tool call in blocks and update
-      const blocks = state.streamingBlocks.map((block) => {
-        if (block.type !== "thinking") return block;
-        const hasMatch = block.toolCalls.some((tc) => tc.id === id);
-        if (!hasMatch) return block;
-        return {
-          ...block,
-          toolCalls: block.toolCalls.map((tc) =>
-            tc.id === id ? { ...tc, result } : tc
-          ),
+    appendScreenshot: (data) => {
+      set((state) => {
+        closeLastThinkingBlockDraft(state.streamingBlocks);
+        const block: ScreenshotBlockData = {
+          type: "screenshot",
+          id: `screenshot-${Date.now()}`,
+          ...data,
         };
+        state.streamingBlocks.push(block);
+      });
+    },
+
+    // ---- Sprint 141: ThinkingFlow phase actions ----
+
+    addOrUpdatePhase: (label, node) => {
+      set((state) => {
+        for (const p of state.streamingPhases) {
+          if (p.status === "active") {
+            p.status = "completed";
+            p.endTime = Date.now();
+          }
+        }
+        state.streamingPhases.push({
+          id: uuidv4(),
+          label,
+          node,
+          status: "active",
+          startTime: Date.now(),
+          thinkingContent: "",
+          toolCalls: [],
+          statusMessages: [],
+        });
+      });
+    },
+
+    appendPhaseThinking: (content) => {
+      set((state) => {
+        for (let i = state.streamingPhases.length - 1; i >= 0; i--) {
+          if (state.streamingPhases[i].status === "active") {
+            const phase = state.streamingPhases[i];
+            phase.thinkingContent = phase.thinkingContent
+              ? phase.thinkingContent + "\n" + content
+              : content;
+            break;
+          }
+        }
+      });
+    },
+
+    appendPhaseThinkingDelta: (delta, _node) => {
+      set((state) => {
+        for (let i = state.streamingPhases.length - 1; i >= 0; i--) {
+          if (state.streamingPhases[i].status === "active") {
+            state.streamingPhases[i].thinkingContent += delta;
+            break;
+          }
+        }
+      });
+    },
+
+    closeActivePhase: (durationMs) => {
+      set((state) => {
+        for (const p of state.streamingPhases) {
+          if (p.status === "active") {
+            p.status = "completed";
+            p.endTime = durationMs != null ? p.startTime + durationMs : Date.now();
+          }
+        }
+      });
+    },
+
+    appendPhaseStatus: (message, node) => {
+      set((state) => {
+        let idx = -1;
+        for (let i = state.streamingPhases.length - 1; i >= 0; i--) {
+          if (state.streamingPhases[i].status === "active") {
+            if (!node || state.streamingPhases[i].node === node) { idx = i; break; }
+            if (idx === -1) idx = i;
+          }
+        }
+        if (idx >= 0) {
+          state.streamingPhases[idx].statusMessages.push(message);
+        } else {
+          state.streamingPhases.push({
+            id: uuidv4(),
+            label: message,
+            node,
+            status: "active",
+            startTime: Date.now(),
+            thinkingContent: "",
+            toolCalls: [],
+            statusMessages: [],
+          });
+        }
+      });
+    },
+
+    appendPhaseToolCall: (tc) => {
+      set((state) => {
+        for (let i = state.streamingPhases.length - 1; i >= 0; i--) {
+          if (state.streamingPhases[i].status === "active") {
+            state.streamingPhases[i].toolCalls.push(tc);
+            break;
+          }
+        }
+      });
+    },
+
+    updatePhaseToolCallResult: (id, result) => {
+      set((state) => {
+        for (const phase of state.streamingPhases) {
+          const tc = phase.toolCalls.find((t) => t.id === id);
+          if (tc) {
+            tc.result = result;
+            break;
+          }
+        }
+      });
+    },
+
+    closeThinkingBlock: (durationMs) => {
+      set((state) => {
+        const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
+        if (lastBlock?.type === "thinking" && !lastBlock.endTime) {
+          lastBlock.endTime =
+            durationMs != null && lastBlock.startTime
+              ? lastBlock.startTime + durationMs
+              : Date.now();
+        }
+      });
+    },
+
+    appendToolCall: (tc) => {
+      set((state) => {
+        // Flat field — backward compat
+        state.streamingToolCalls.push(tc);
+
+        // Block-based: add to last thinking block, or create one
+        const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
+        if (lastBlock?.type === "thinking" && !lastBlock.endTime) {
+          lastBlock.toolCalls.push(tc);
+        } else if (lastBlock?.type === "thinking" && lastBlock.endTime) {
+          // Sprint 146b: Reopen closed thinking block (safety net)
+          lastBlock.endTime = undefined;
+          lastBlock.toolCalls.push(tc);
+        } else {
+          state.streamingBlocks.push({
+            type: "thinking",
+            id: uuidv4(),
+            content: "",
+            toolCalls: [tc],
+            startTime: Date.now(),
+          });
+        }
+      });
+    },
+
+    updateToolCallResult: (id, result) => {
+      set((state) => {
+        // Flat field — backward compat
+        const flatTc = state.streamingToolCalls.find((tc) => tc.id === id);
+        if (flatTc) flatTc.result = result;
+
+        // Block-based: find tool call in blocks and update
+        for (const block of state.streamingBlocks) {
+          if (block.type !== "thinking") continue;
+          const tc = block.toolCalls.find((t) => t.id === id);
+          if (tc) {
+            tc.result = result;
+            break;
+          }
+        }
+      });
+    },
+
+    finalizeStream: (metadata) => {
+      const {
+        isStreaming,
+        activeConversationId,
+        streamingContent,
+        streamingThinking,
+        streamingSources,
+        streamingToolCalls,
+        streamingBlocks,
+        streamingDomainNotice,
+      } = get();
+
+      // Sprint 153b: Guard against double finalization (onMetadata + onDone race)
+      if (!isStreaming || !activeConversationId) return;
+
+      // Extract suggested_questions from metadata if present
+      const metaAny = metadata as Record<string, unknown> | undefined;
+      const rawSQ = metaAny?.suggested_questions ?? (metaAny?.data as Record<string, unknown> | undefined)?.suggested_questions;
+      const suggestedQuestions = Array.isArray(rawSQ) ? rawSQ as string[] : undefined;
+
+      // Close any remaining open thinking blocks (immutable copy for message)
+      const closedBlocks = streamingBlocks.map((block) => {
+        if (block.type === "thinking" && !block.endTime) {
+          return { ...block, endTime: Date.now() };
+        }
+        return block;
       });
 
-      return {
-        streamingToolCalls: newToolCalls,
-        streamingBlocks: blocks,
+      // Sprint 153: Strip base64 image data from screenshot blocks before persisting.
+      const finalBlocks = closedBlocks.map((block) =>
+        block.type === "screenshot"
+          ? { ...block, image: "" }
+          : block
+      );
+
+      const message: Message = {
+        id: uuidv4(),
+        role: "assistant",
+        content: streamingContent,
+        timestamp: new Date().toISOString(),
+        sources: streamingSources.length > 0 ? streamingSources : undefined,
+        thinking: streamingThinking || undefined,
+        reasoning_trace: metadata?.reasoning_trace,
+        suggested_questions: suggestedQuestions,
+        tool_calls: streamingToolCalls.length > 0 ? [...streamingToolCalls] : undefined,
+        blocks: finalBlocks.length > 0 ? finalBlocks : undefined,
+        domain_notice: streamingDomainNotice || undefined,
+        metadata: metaAny,
       };
-    });
-  },
 
-  finalizeStream: (metadata) => {
-    const {
-      activeConversationId,
-      streamingContent,
-      streamingThinking,
-      streamingSources,
-      streamingToolCalls,
-      streamingBlocks,
-      streamingDomainNotice,
-    } = get();
+      const backendSessionId = metadata?.session_id;
 
-    if (!activeConversationId) return;
+      set((state) => {
+        state.isStreaming = false;
+        state.streamingContent = "";
+        state.streamingThinking = "";
+        state.streamingSources = [];
+        state.streamingStep = "";
+        state.streamingToolCalls = [];
+        state.streamingBlocks = [];
+        state.streamingStartTime = null;
+        state.streamingSteps = [];
+        state.streamingDomainNotice = "";
+        state.streamingPhases = [];
+        state.streamError = "";
+        state.streamCompletedAt = Date.now();
 
-    // Extract suggested_questions from metadata if present
-    // SSE metadata may carry extra fields beyond ChatResponseMetadata
-    const metaAny = metadata as Record<string, unknown> | undefined;
-    const rawSQ = metaAny?.suggested_questions ?? (metaAny?.data as Record<string, unknown> | undefined)?.suggested_questions;
-    const suggestedQuestions = Array.isArray(rawSQ) ? rawSQ as string[] : undefined;
+        const conv = state.conversations.find((c) => c.id === activeConversationId);
+        if (conv) {
+          conv.messages.push(message);
+          conv.updated_at = new Date().toISOString();
+          if (backendSessionId && !conv.session_id) {
+            conv.session_id = backendSessionId;
+          }
+        }
+      });
 
-    // Close any remaining open thinking blocks
-    const finalBlocks = closeLastThinkingBlock(streamingBlocks);
+      persistConversationsImmediate(get().conversations);
+    },
 
-    const message: Message = {
-      id: uuidv4(),
-      role: "assistant",
-      content: streamingContent,
-      timestamp: new Date().toISOString(),
-      sources: streamingSources.length > 0 ? streamingSources : undefined,
-      thinking: streamingThinking || undefined,
-      reasoning_trace: metadata?.reasoning_trace,
-      suggested_questions: suggestedQuestions,
-      tool_calls: streamingToolCalls.length > 0 ? streamingToolCalls : undefined,
-      blocks: finalBlocks.length > 0 ? finalBlocks : undefined,
-      domain_notice: streamingDomainNotice || undefined,
-      metadata: metaAny,
-    };
+    setStreamError: (error) => {
+      const { activeConversationId } = get();
+      if (!activeConversationId) return;
 
-    // Sprint 121b: Save backend session_id to conversation for history continuity
-    const backendSessionId = metadata?.session_id;
+      const message: Message = {
+        id: uuidv4(),
+        role: "assistant",
+        content: `❌ Lỗi: ${error}`,
+        timestamp: new Date().toISOString(),
+      };
 
-    set((state) => ({
-      isStreaming: false,
-      streamingContent: "",
-      streamingThinking: "",
-      streamingSources: [],
-      streamingStep: "",
-      streamingToolCalls: [],
-      streamingBlocks: [],
-      streamingStartTime: null,
-      streamingSteps: [],
-      streamingDomainNotice: "",
-      streamingPhases: [],
-      streamError: "",
-      streamCompletedAt: Date.now(),
-      conversations: state.conversations.map((c) =>
-        c.id === activeConversationId
-          ? {
-              ...c,
-              messages: [...c.messages, message],
-              updated_at: new Date().toISOString(),
-              // Persist backend session_id so next message uses same session
-              ...(backendSessionId && !c.session_id
-                ? { session_id: backendSessionId }
-                : {}),
-            }
-          : c
-      ),
-    }));
+      set((state) => {
+        state.isStreaming = false;
+        state.streamingContent = "";
+        state.streamingThinking = "";
+        state.streamingSources = [];
+        state.streamingStep = "";
+        state.streamingToolCalls = [];
+        state.streamingBlocks = [];
+        state.streamingStartTime = null;
+        state.streamingSteps = [];
+        state.streamingDomainNotice = "";
+        state.streamingPhases = [];
+        state.streamError = error;
+        state.streamCompletedAt = null;
 
-    persistConversationsImmediate(get().conversations);
-  },
+        const conv = state.conversations.find((c) => c.id === activeConversationId);
+        if (conv) {
+          conv.messages.push(message);
+          conv.updated_at = new Date().toISOString();
+        }
+      });
 
-  setStreamError: (error) => {
-    const { activeConversationId } = get();
-    if (!activeConversationId) return;
+      persistConversationsImmediate(get().conversations);
+    },
 
-    const message: Message = {
-      id: uuidv4(),
-      role: "assistant",
-      content: `❌ Lỗi: ${error}`,
-      timestamp: new Date().toISOString(),
-    };
+    setMessageFeedback: (messageId, feedback) => {
+      set((state) => {
+        for (const conv of state.conversations) {
+          const msg = conv.messages.find((m) => m.id === messageId);
+          if (msg) {
+            msg.feedback = feedback;
+            break;
+          }
+        }
+      });
+      persistConversations(get().conversations);
+    },
 
-    set((state) => ({
-      isStreaming: false,
-      streamingContent: "",
-      streamingThinking: "",
-      streamingSources: [],
-      streamingStep: "",
-      streamingToolCalls: [],
-      streamingBlocks: [],
-      streamingStartTime: null,
-      streamingSteps: [],
-      streamingDomainNotice: "",
-      streamingPhases: [],
-      streamError: error,
-      streamCompletedAt: null,
-      conversations: state.conversations.map((c) =>
-        c.id === activeConversationId
-          ? {
-              ...c,
-              messages: [...c.messages, message],
-              updated_at: new Date().toISOString(),
-            }
-          : c
-      ),
-    }));
-
-    persistConversationsImmediate(get().conversations);
-  },
-
-  setMessageFeedback: (messageId, feedback) => {
-    set((state) => ({
-      conversations: state.conversations.map((c) => ({
-        ...c,
-        messages: c.messages.map((m) =>
-          m.id === messageId ? { ...m, feedback } : m
-        ),
-      })),
-    }));
-    persistConversations(get().conversations);
-  },
-
-  clearStreaming: () => {
-    set({
-      isStreaming: false,
-      streamingContent: "",
-      streamingThinking: "",
-      streamingSources: [],
-      streamingStep: "",
-      streamingToolCalls: [],
-      streamingBlocks: [],
-      streamingStartTime: null,
-      streamingSteps: [],
-      streamingDomainNotice: "",
-      streamingPhases: [],
-      streamError: "",
-      streamCompletedAt: null,
-    });
-  },
-}));
+    clearStreaming: () => {
+      set((state) => {
+        state.isStreaming = false;
+        state.streamingContent = "";
+        state.streamingThinking = "";
+        state.streamingSources = [];
+        state.streamingStep = "";
+        state.streamingToolCalls = [];
+        state.streamingBlocks = [];
+        state.streamingStartTime = null;
+        state.streamingSteps = [];
+        state.streamingDomainNotice = "";
+        state.streamingPhases = [];
+        state.streamError = "";
+        state.streamCompletedAt = null;
+      });
+    },
+  }))
+);

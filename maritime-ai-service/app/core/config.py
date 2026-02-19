@@ -2,51 +2,174 @@
 Configuration Management using Pydantic Settings
 Loads configuration from environment variables with validation
 Requirements: 9.1
+
+Sprint 154: Added 8 nested BaseModel config groups for structured access.
+Flat fields remain the source of truth (backward compat for 92 importing files).
+Nested groups are synced FROM flat fields via @model_validator.
+Access: settings.google_api_key (flat, original) or settings.llm.google_api_key (nested, new).
 """
 import logging
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _config_logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# Sprint 154: Nested Config Groups (read-only views of flat fields)
+# =============================================================================
+
+class DatabaseConfig(BaseModel):
+    """PostgreSQL + async pool configuration."""
+    host: str = "localhost"
+    port: int = 5433
+    user: str = "wiii"
+    password: str = "wiii_secret"
+    db: str = "wiii_ai"
+    database_url: Optional[str] = None
+    async_pool_min_size: int = 2
+    async_pool_max_size: int = 10
+
+
+class LLMConfig(BaseModel):
+    """LLM provider settings — Gemini, OpenAI, Ollama."""
+    provider: str = "google"
+    failover_chain: list[str] = ["google", "openai", "ollama"]
+    enable_failover: bool = True
+    google_api_key: Optional[str] = None
+    google_model: str = "gemini-3-flash-preview"
+    openai_api_key: Optional[str] = None
+    openai_model: str = "gpt-4o-mini"
+    ollama_base_url: Optional[str] = "http://localhost:11434"
+    ollama_model: str = "qwen3:8b"
+    ollama_thinking_models: list[str] = ["qwen3", "deepseek-r1", "qwq"]
+
+
+class RAGConfig(BaseModel):
+    """RAG quality, confidence, iteration settings."""
+    enable_corrective_rag: bool = True
+    quality_mode: str = "balanced"
+    confidence_high: float = 0.70
+    confidence_medium: float = 0.60
+    max_iterations: int = 2
+    enable_reflection: bool = True
+    early_exit_on_high_confidence: bool = True
+    grading_threshold: float = 6.0
+    retrieval_grade_threshold: float = 7.0
+    enable_answer_verification: bool = True
+
+
+class MemoryConfig(BaseModel):
+    """Memory system — core memory, facts, character, emotion."""
+    enable_core_memory_block: bool = True
+    core_memory_max_tokens: int = 800
+    core_memory_cache_ttl: int = 300
+    max_user_facts: int = 50
+    max_injected_facts: int = 5
+    fact_injection_min_confidence: float = 0.5
+    enable_memory_decay: bool = True
+    enable_memory_pruning: bool = True
+    enable_semantic_fact_retrieval: bool = True
+    fact_retrieval_alpha: float = 0.3
+    fact_retrieval_beta: float = 0.5
+    fact_retrieval_gamma: float = 0.2
+
+
+class ProductSearchConfig(BaseModel):
+    """Product search — platforms, scraping, browser."""
+    enable_product_search: bool = False
+    serper_api_key: Optional[str] = None
+    apify_api_token: Optional[str] = None
+    max_results: int = 30
+    timeout: int = 30
+    platforms: list[str] = ["google_shopping", "shopee", "tiktok_shop", "lazada", "facebook_marketplace", "all_web", "instagram", "websosanh"]
+    max_iterations: int = 15
+    scrape_timeout: int = 10
+    max_scrape_pages: int = 10
+    enable_tiktok_native_api: bool = False
+    enable_browser_scraping: bool = False
+    browser_scraping_timeout: int = 15
+    enable_browser_screenshots: bool = False
+    browser_screenshot_quality: int = 40
+
+
+class ThinkingConfig(BaseModel):
+    """Deep reasoning and thinking budget."""
+    enabled: bool = True
+    include_summaries: bool = True
+    budget_deep: int = 8192
+    budget_moderate: int = 4096
+    budget_light: int = 1024
+    budget_minimal: int = 512
+    gemini_level: str = "medium"
+    enable_chain: bool = False
+
+
+class CharacterConfig(BaseModel):
+    """Character reflection, personality, emotion."""
+    enable_reflection: bool = True
+    reflection_interval: int = 5
+    enable_tools: bool = True
+    reflection_threshold: float = 5.0
+    experience_retention_days: int = 90
+    enable_emotional_state: bool = False
+    emotional_decay_rate: float = 0.15
+    enable_soul_emotion: bool = False
+
+
+class CacheConfig(BaseModel):
+    """Semantic cache settings."""
+    enabled: bool = True
+    similarity_threshold: float = 0.92
+    response_ttl: int = 7200
+    retrieval_ttl: int = 1800
+    max_entries: int = 10000
+    adaptive_ttl: bool = True
+
+
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables"""
-    
+    """Application settings loaded from environment variables.
+
+    Sprint 154: Added 8 nested config groups (database, llm, rag, memory,
+    product_search, thinking, character, cache) as structured views.
+    All flat fields remain for backward compatibility — nested groups are
+    synced from flat fields via @model_validator.
+    """
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
-    
+
     # Application
     app_name: str = Field(default="Wiii", description="Application name")
     app_version: str = Field(default="0.1.0", description="Application version")
     debug: bool = Field(default=False, description="Debug mode")
     environment: str = Field(default="development", description="Environment: development, staging, production")
-    
+
     # API Settings
     api_v1_prefix: str = Field(default="/api/v1", description="API version 1 prefix")
     api_key: Optional[str] = Field(default=None, description="API Key for authentication")
     jwt_secret_key: str = Field(default="change-me-in-production", description="JWT secret key")
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
     jwt_expire_minutes: int = Field(default=30, description="JWT token expiration in minutes")
-    
+
     # Rate Limiting
     rate_limit_requests: int = Field(default=100, description="Max requests per window")
     rate_limit_window_seconds: int = Field(default=60, description="Rate limit window in seconds")
-    
+
     # Database - PostgreSQL (Local Docker)
     postgres_host: str = Field(default="localhost", description="PostgreSQL host")
     postgres_port: int = Field(default=5433, description="PostgreSQL port (Docker maps to 5433)")
     postgres_user: str = Field(default="wiii", description="PostgreSQL user")
     postgres_password: str = Field(default="wiii_secret", description="PostgreSQL password")
     postgres_db: str = Field(default="wiii_ai", description="PostgreSQL database name")
-    
+
     # Database - Cloud (Production) - CHỈ THỊ 19: Now using Neon
     database_url: Optional[str] = Field(default=None, description="Full database URL (Neon/Cloud)")
 
@@ -58,15 +181,15 @@ class Settings(BaseSettings):
     supabase_url: Optional[str] = Field(default=None, description="Supabase project URL")
     supabase_key: Optional[str] = Field(default=None, description="Supabase anon/service key")
     supabase_storage_bucket: str = Field(default="wiii-docs", description="Supabase Storage bucket for document images")
-    
+
     # LMS API Key (for authentication from LMS)
     lms_api_key: Optional[str] = Field(default=None, description="API Key for LMS integration")
-    
+
     # LMS Callback Configuration (AI-LMS Integration v2.0)
     lms_callback_url: Optional[str] = Field(default=None, description="LMS callback URL for AI events")
     lms_callback_secret: Optional[str] = Field(default=None, description="Shared secret for callback authentication")
 
-    
+
     @property
     def postgres_url(self) -> str:
         """
@@ -82,10 +205,10 @@ class Settings(BaseSettings):
             elif url.startswith("postgres://"):
                 url = url.replace("postgres://", "postgresql+asyncpg://", 1)
             return url
-        
+
         # Fallback to local Docker settings
         return f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-    
+
     @property
     def asyncpg_url(self) -> str:
         """
@@ -107,7 +230,7 @@ class Settings(BaseSettings):
     def postgres_url_sync(self) -> str:
         """
         Construct synchronous PostgreSQL connection URL (for Alembic migrations).
-        
+
         CHỈ THỊ KỸ THUẬT SỐ 19: Xử lý ssl=require cho psycopg2
         """
         if self.database_url:
@@ -120,26 +243,26 @@ class Settings(BaseSettings):
             if "ssl=require" in url:
                 url = url.replace("ssl=require", "sslmode=require")
             return url
-        
+
         return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-    
+
     # Database - Neo4j (Local Docker)
     neo4j_uri: str = Field(default="bolt://localhost:7687", description="Neo4j connection URI (local or Aura)")
     neo4j_user: str = Field(default="neo4j", description="Neo4j user")
     neo4j_username: Optional[str] = Field(default=None, description="Neo4j username (Aura format)")
     neo4j_password: str = Field(default="neo4j_secret", description="Neo4j password")
-    
+
     @property
     def neo4j_username_resolved(self) -> str:
         """Get Neo4j username (supports both neo4j_user and neo4j_username)"""
         return self.neo4j_username or self.neo4j_user
-    
+
     # LLM Settings - OpenAI/OpenRouter (legacy)
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
     openai_base_url: Optional[str] = Field(default=None, description="OpenAI-compatible API base URL (e.g., OpenRouter)")
     openai_model: str = Field(default="gpt-4o-mini", description="OpenAI model for general tasks")
     openai_model_advanced: str = Field(default="gpt-4o", description="OpenAI model for complex tasks")
-    
+
     # LLM Settings - Google Gemini (primary)
     google_api_key: Optional[str] = Field(default=None, description="Google Gemini API key")
     google_model: str = Field(default="gemini-3-flash-preview", description="Google Gemini model (3.0 Flash = 3× faster)")
@@ -159,303 +282,254 @@ class Settings(BaseSettings):
         description="LLM provider failover chain (try in order)"
     )
     enable_llm_failover: bool = Field(default=True, description="Enable automatic LLM provider failover")
-    
+
     # Semantic Memory Settings (v0.3 - Vector Embeddings)
     embedding_model: str = Field(default="models/gemini-embedding-001", description="Gemini embedding model")
     embedding_dimensions: int = Field(default=768, description="Embedding vector dimensions (MRL)")
     semantic_memory_enabled: bool = Field(default=True, description="Enable semantic memory v0.3")
     summarization_token_threshold: int = Field(default=2000, description="Token threshold for summarization")
-    
+
     # Deep Reasoning Settings (CHỈ THỊ KỸ THUẬT SỐ 21)
     deep_reasoning_enabled: bool = Field(default=True, description="Enable Deep Reasoning with <thinking> tags")
     context_window_size: int = Field(default=50, description="Number of messages to include in context window")
 
     # Multi-Agent System Settings (Phase 8: SOTA 2025)
-    # ACTIVE: LangGraph Supervisor + Workers pattern (Self-RAG + Meta CRAG)
     use_multi_agent: bool = Field(default=True, description="Use Multi-Agent System (SOTA 2025) - recommended")
     multi_agent_grading_threshold: float = Field(default=6.0, description="Minimum grader score to accept response")
     enable_corrective_rag: bool = Field(default=True, description="Enable Corrective RAG with self-correction")
     retrieval_grade_threshold: float = Field(default=7.0, description="Minimum score for retrieval grading")
     enable_answer_verification: bool = Field(default=True, description="Enable hallucination checking")
-    
-    # =============================================================================
-    # SELF-REFLECTIVE AGENTIC RAG (SOTA 2025 - Self-RAG + Meta CRAG Pattern)
-    # =============================================================================
-    # Pattern: Confidence-based smart iteration, not hardcoded loops
-    # Reference: Self-RAG (Asai et al.), Meta CRAG (ICLR 2025), Anthropic, Qwen
-    # Quality-first approach for maritime domain (high-stakes accuracy)
-    
-    # Quality Mode: Controls accuracy vs speed trade-off
+
+    # RAG Quality Settings
     rag_quality_mode: str = Field(
         default="balanced",
         description="RAG quality mode: 'speed' (fast, less accurate), 'balanced' (default), 'quality' (slow, high accuracy)"
     )
-    
-    # Confidence Thresholds (normalized 0-1 scale)
-    # HIGH: No iteration needed, generate immediately
-    # MEDIUM: Allow single correction if reflection detects issues
-    # Below MEDIUM: Fallback to web search or extended retrieval
-    rag_confidence_high: float = Field(
-        default=0.70,  # SOTA 2025: 0.85 → 0.70. Maritime domain score 7/10 is often sufficient
-        description="HIGH confidence threshold: Skip iteration, generate immediately"
-    )
-    rag_confidence_medium: float = Field(
-        default=0.60,
-        description="MEDIUM confidence threshold: Allow single correction if needed"
-    )
-    
-    # Iteration Control (soft limits, not hard stops)
-    rag_max_iterations: int = Field(
-        default=2,
-        description="Soft limit on CRAG iterations (can early-exit on high confidence)"
-    )
-    rag_enable_reflection: bool = Field(
-        default=True,
-        description="Enable Self-RAG reflection tokens for quality assessment"
-    )
-    rag_early_exit_on_high_confidence: bool = Field(
-        default=True,
-        description="Exit iteration loop early if HIGH confidence achieved"
-    )
-    
-    # Gemini 3.0 Thinking Level (Dec 2025)
-    # Controls reasoning depth: minimal | low | medium | high
-    gemini_thinking_level: str = Field(
-        default="medium",
-        description="Gemini 3.0 thinking level: 'minimal', 'low', 'medium', 'high'"
-    )
-    
-    # =============================================================================
-    # GEMINI THINKING CONFIGURATION (SOTA 2025 - CHỈ THỊ SỐ 28)
-    # =============================================================================
-    # 4-Tier Thinking Strategy based on Chain of Draft (CoD) pattern
-    # All components need thinking, but level varies by task complexity
-    # Budget values: -1=dynamic, 0=disabled, 1-24576=fixed tokens
-    
-    # Global settings
+    rag_confidence_high: float = Field(default=0.70, description="HIGH confidence threshold")
+    rag_confidence_medium: float = Field(default=0.60, description="MEDIUM confidence threshold")
+    rag_max_iterations: int = Field(default=2, description="Soft limit on CRAG iterations")
+    rag_enable_reflection: bool = Field(default=True, description="Enable Self-RAG reflection tokens")
+    rag_early_exit_on_high_confidence: bool = Field(default=True, description="Exit iteration loop early if HIGH confidence")
+
+    # Gemini Thinking Level
+    gemini_thinking_level: str = Field(default="medium", description="Gemini 3.0 thinking level")
+
+    # Thinking Configuration (4-Tier Strategy)
     thinking_enabled: bool = Field(default=True, description="Enable Gemini native thinking globally")
     include_thought_summaries: bool = Field(default=True, description="Include thinking summaries in API response")
-    
-    # Per-tier budgets (4-tier strategy)
-    thinking_budget_deep: int = Field(
-        default=8192, 
-        description="DEEP tier: Teaching agents (tutor) - requires full explanation"
-    )
-    thinking_budget_moderate: int = Field(
-        default=4096, 
-        description="MODERATE tier: RAG synthesis agents (rag_agent, grader) - requires summarization"
-    )
-    thinking_budget_light: int = Field(
-        default=1024, 
-        description="LIGHT tier: Quick check agents (analyzer, verifier) - basic self-check"
-    )
-    thinking_budget_minimal: int = Field(
-        default=512, 
-        description="MINIMAL tier: Structured tasks (extraction, memory) - minimal buffer"
-    )
-    
-    # Similarity Thresholds (Configurable - Phase 2 Refactoring)
+    thinking_budget_deep: int = Field(default=8192, description="DEEP tier budget")
+    thinking_budget_moderate: int = Field(default=4096, description="MODERATE tier budget")
+    thinking_budget_light: int = Field(default=1024, description="LIGHT tier budget")
+    thinking_budget_minimal: int = Field(default=512, description="MINIMAL tier budget")
+
+    # Similarity Thresholds
     similarity_threshold: float = Field(default=0.7, description="Default similarity threshold for semantic search")
     fact_similarity_threshold: float = Field(default=0.90, description="Similarity threshold for fact deduplication")
     memory_duplicate_threshold: float = Field(default=0.90, description="Similarity threshold for memory duplicates")
     memory_related_threshold: float = Field(default=0.75, description="Similarity threshold for related memories")
-    
+
     # Rate Limits (Configurable)
     chat_rate_limit: str = Field(default="30/minute", description="Rate limit for chat endpoint")
     default_history_limit: int = Field(default=20, description="Default chat history limit")
     max_history_limit: int = Field(default=100, description="Maximum chat history limit")
-    
-    # Contextual RAG Settings (Anthropic-style Context Enrichment)
+
+    # Contextual RAG Settings
     contextual_rag_enabled: bool = Field(default=True, description="Enable Contextual RAG for chunk enrichment")
     contextual_rag_batch_size: int = Field(default=5, description="Number of chunks to enrich concurrently")
-    
-    # Document KG Entity Extraction Settings (Feature: document-kg)
+
+    # Document KG Entity Extraction Settings
     entity_extraction_enabled: bool = Field(default=True, description="Enable entity extraction during ingestion")
     entity_extraction_batch_size: int = Field(default=3, description="Chunks to process concurrently for extraction")
-    
-    # =============================================================================
-    # SEMANTIC CACHE SETTINGS (SOTA 2025 - RAG Latency Optimization)
-    # =============================================================================
-    # Multi-tier caching: Response (L1), Retrieval (L2), Embedding (L3)
-    # Expert-recommended conservative thresholds
-    
+
+    # Semantic Cache Settings
     semantic_cache_enabled: bool = Field(default=True, description="Enable semantic response caching")
-    cache_similarity_threshold: float = Field(default=0.92, description="Similarity threshold for cache hits (industry standard 0.85-0.95)")
-    cache_response_ttl: int = Field(default=7200, description="Base response cache TTL in seconds (2 hours)")
-    cache_retrieval_ttl: int = Field(default=1800, description="Retrieval cache TTL in seconds (30 min)")
-    cache_embedding_ttl: int = Field(default=3600, description="Embedding cache TTL in seconds (1 hour)")
+    cache_similarity_threshold: float = Field(default=0.92, description="Similarity threshold for cache hits")
+    cache_response_ttl: int = Field(default=7200, description="Base response cache TTL in seconds")
+    cache_retrieval_ttl: int = Field(default=1800, description="Retrieval cache TTL in seconds")
+    cache_embedding_ttl: int = Field(default=3600, description="Embedding cache TTL in seconds")
     cache_max_response_entries: int = Field(default=10000, description="Maximum response cache entries")
     cache_log_operations: bool = Field(default=True, description="Log cache hit/miss operations")
-    cache_adaptive_ttl: bool = Field(default=True, description="Enable adaptive TTL (hot queries get longer TTL)")
+    cache_adaptive_ttl: bool = Field(default=True, description="Enable adaptive TTL")
     cache_adaptive_ttl_max_multiplier: float = Field(default=3.0, description="Maximum TTL multiplier for hot queries")
-    
-    # Semantic Chunking Settings (Feature: semantic-chunking)
+
+    # Semantic Chunking Settings
     chunk_size: int = Field(default=800, description="Target chunk size in characters")
     chunk_overlap: int = Field(default=100, description="Overlap between consecutive chunks")
     min_chunk_size: int = Field(default=50, description="Minimum chunk size to avoid tiny fragments")
     dpi_optimized: int = Field(default=100, description="Optimized DPI for PDF to image conversion")
     vision_max_dimension: int = Field(default=1024, description="Max dimension for vision API images")
     vision_image_quality: int = Field(default=85, description="JPEG quality for vision API images")
-    
-    # Hybrid Text/Vision Detection Settings (Feature: hybrid-text-vision)
-    # Goal: Reduce Gemini Vision API calls by 50-70%
+
+    # Hybrid Text/Vision Detection Settings
     hybrid_detection_enabled: bool = Field(default=True, description="Enable hybrid text/vision detection")
     min_text_length_for_direct: int = Field(default=100, description="Minimum text length for direct extraction")
-    force_vision_mode: bool = Field(default=False, description="Force Vision extraction for all pages (bypass hybrid detection)")
-    
+    force_vision_mode: bool = Field(default=False, description="Force Vision extraction for all pages")
+
     # Domain Plugin System (Wiii)
     active_domains: list[str] = Field(default=["maritime", "traffic_law"], description="List of active domain plugin IDs")
     default_domain: str = Field(default="maritime", description="Default domain when not specified")
 
-    # Evaluation Framework (SOTA 2026: opt-in per deployment)
-    enable_evaluation: bool = Field(default=False, description="Enable lightweight evaluation metrics on responses")
+    # Evaluation Framework
+    enable_evaluation: bool = Field(default=False, description="Enable lightweight evaluation metrics")
 
-    # Multi-Channel Gateway (Sprint 12: OpenClaw-inspired)
+    # Multi-Channel Gateway
     enable_websocket: bool = Field(default=True, description="Enable WebSocket chat endpoint")
     enable_telegram: bool = Field(default=False, description="Enable Telegram bot integration")
     telegram_bot_token: Optional[str] = Field(default=None, description="Telegram Bot API token")
     telegram_webhook_url: Optional[str] = Field(default=None, description="Telegram webhook callback URL")
 
-    # Background Infrastructure (Sprint 18: Valkey + Taskiq)
+    # Background Infrastructure
     valkey_url: str = Field(default="redis://localhost:6379/0", description="Valkey/Redis broker URL")
     enable_background_tasks: bool = Field(default=False, description="Enable background task processing via Taskiq")
     enable_scheduler: bool = Field(default=False, description="Enable scheduled task execution (proactive agent)")
 
-    # Scheduler Execution (Sprint 20: Proactive Agent Activation)
+    # Scheduler Execution
     scheduler_poll_interval: int = Field(default=60, description="Seconds between scheduler polls (10-3600)")
     scheduler_max_concurrent: int = Field(default=5, description="Max concurrent task executions (1-20)")
     scheduler_agent_timeout: int = Field(default=120, description="Timeout for agent invocation in seconds")
 
-    # Extended Tools (Sprint 13: OpenClaw-inspired self-extending agent)
+    # Extended Tools
     workspace_root: str = Field(default="~/.wiii/workspace", description="Root directory for workspace operations")
-    enable_filesystem_tools: bool = Field(default=False, description="Enable sandboxed filesystem tools (opt-in)")
-    enable_code_execution: bool = Field(default=False, description="Enable sandboxed Python execution (opt-in, dangerous)")
+    enable_filesystem_tools: bool = Field(default=False, description="Enable sandboxed filesystem tools")
+    enable_code_execution: bool = Field(default=False, description="Enable sandboxed Python execution")
     code_execution_timeout: int = Field(default=30, description="Code execution timeout in seconds")
-    enable_skill_creation: bool = Field(default=False, description="Enable runtime skill creation (opt-in)")
+    enable_skill_creation: bool = Field(default=False, description="Enable runtime skill creation")
 
-    # Unified LLM Client (Sprint 55: AsyncOpenAI SDK alongside LangChain)
-    enable_unified_client: bool = Field(default=False, description="Enable UnifiedLLMClient (AsyncOpenAI SDK for OpenAI-compatible endpoints)")
+    # Unified LLM Client
+    enable_unified_client: bool = Field(default=False, description="Enable UnifiedLLMClient (AsyncOpenAI SDK)")
     google_openai_compat_url: str = Field(
         default="https://generativelanguage.googleapis.com/v1beta/openai/",
         description="Google Gemini OpenAI-compatible endpoint URL"
     )
 
-    # Agentic Loop (Sprint 57: Generalized tool-calling loop)
-    enable_agentic_loop: bool = Field(default=True, description="Enable generalized agentic loop in LangGraph nodes (Sprint 147: default=True)")
-    agentic_loop_max_steps: int = Field(default=8, ge=1, le=20, description="Max tool-calling steps per agentic loop (Sprint 147: 5→8 for complex queries)")
+    # Agentic Loop
+    enable_agentic_loop: bool = Field(default=True, description="Enable generalized agentic loop")
+    agentic_loop_max_steps: int = Field(default=8, ge=1, le=20, description="Max tool-calling steps per agentic loop")
 
-    # Per-Agent Provider Config (Sprint 69: Per-node LLM configuration)
+    # Per-Agent Provider Config
     agent_provider_configs: str = Field(
         default="{}",
         description='JSON per-node overrides: {"tutor_agent": {"tier": "moderate", "provider": "google"}}'
     )
 
-    # MCP Support (Sprint 56: Model Context Protocol)
-    enable_mcp_server: bool = Field(default=False, description="Enable MCP Server (exposes tools at /mcp)")
-    enable_mcp_client: bool = Field(default=False, description="Enable MCP Client (connects to external MCP servers)")
+    # MCP Support
+    enable_mcp_server: bool = Field(default=False, description="Enable MCP Server")
+    enable_mcp_client: bool = Field(default=False, description="Enable MCP Client")
     mcp_server_configs: str = Field(default="[]", description="JSON list of external MCP server configs")
 
-    # Structured Outputs (Sprint 67: LLM JSON schema enforcement)
-    enable_structured_outputs: bool = Field(default=True, description="Enable structured outputs (constrained decoding) for Supervisor, Grader, Guardian, RetrievalGrader. Sprint 103: default=True (was False)")
+    # Structured Outputs
+    enable_structured_outputs: bool = Field(default=True, description="Enable structured outputs")
 
-    # Multi-Tenant (Sprint 24: Multi-Organization Architecture)
+    # Multi-Tenant
     enable_multi_tenant: bool = Field(default=False, description="Enable multi-organization support")
-    default_organization_id: str = Field(default="default", description="Default org for unauthenticated or migrated users")
+    default_organization_id: str = Field(default="default", description="Default org for unauthenticated users")
 
-    # Living Memory System (Sprint 73: Core Memory Blocks + Mem0 Pipeline + Decay)
+    # Living Memory System
     enable_core_memory_block: bool = Field(default=True, description="Compile structured user profile for all agents")
-    core_memory_max_tokens: int = Field(default=800, description="Max tokens for core memory profile block")
-    core_memory_cache_ttl: int = Field(default=300, description="Core memory cache TTL in seconds")
+    core_memory_max_tokens: int = Field(default=800, ge=100, le=5000, description="Max tokens for core memory profile block")
+    core_memory_cache_ttl: int = Field(default=300, ge=10, le=3600, description="Core memory cache TTL in seconds")
     enable_memory_decay: bool = Field(default=True, description="Enable Ebbinghaus importance decay on facts")
-    memory_decay_floor: float = Field(default=0.1, description="Delete facts with effective importance below this")
     enable_enhanced_extraction: bool = Field(default=True, description="Enable Mem0-style 15-type fact extraction")
 
-    # Sprint 122: Configurable memory constants (Bug F6)
-    max_user_facts: int = Field(default=50, description="Maximum user facts per user before eviction")
-    character_cache_ttl: int = Field(default=60, description="Character block cache TTL in seconds")
-    memory_prune_threshold: float = Field(default=0.1, description="Prune facts with effective importance below this")
-    fact_injection_min_confidence: float = Field(default=0.5, description="Minimum confidence for fact injection into prompt")
-    max_injected_facts: int = Field(default=5, description="Maximum facts injected into system prompt")
+    # Sprint 122: Configurable memory constants
+    max_user_facts: int = Field(default=50, ge=1, le=500, description="Maximum user facts per user before eviction")
+    character_cache_ttl: int = Field(default=60, ge=5, le=3600, description="Character block cache TTL in seconds")
+    memory_prune_threshold: float = Field(default=0.1, ge=0.0, le=1.0, description="Prune facts with effective importance below this")
+    fact_injection_min_confidence: float = Field(default=0.5, ge=0.0, le=1.0, description="Minimum confidence for fact injection into prompt")
+    max_injected_facts: int = Field(default=5, ge=1, le=50, description="Maximum facts injected into system prompt")
     enable_memory_pruning: bool = Field(default=True, description="Enable active memory pruning during extraction")
 
-    # Character Reflection Engine (Sprint 94: Self-Evolving Character)
-    enable_character_reflection: bool = Field(default=True, description="Enable periodic character self-reflection after conversations")
-    character_reflection_interval: int = Field(default=5, ge=1, le=50, description="Reflect after every N conversations (1-50)")
-    enable_character_tools: bool = Field(default=True, description="Enable character self-editing tools in agents")
-    character_reflection_threshold: float = Field(default=5.0, description="Importance sum threshold to trigger reflection early")
+    # Character Reflection Engine
+    enable_character_reflection: bool = Field(default=True, description="Enable periodic character self-reflection")
+    character_reflection_interval: int = Field(default=5, ge=1, le=50, description="Reflect after every N conversations")
+    enable_character_tools: bool = Field(default=True, description="Enable character self-editing tools")
+    character_reflection_threshold: float = Field(default=5.0, description="Importance sum threshold for early reflection")
     character_experience_retention_days: int = Field(default=90, description="Delete experiences older than N days")
     character_experience_keep_min: int = Field(default=100, description="Always keep at least N most recent experiences")
 
-    # Stanford Generative Agents Memory Retrieval (Sprint 98)
-    stanford_recency_weight: float = Field(default=0.3, description="Weight for recency in Stanford memory ranking (alpha)")
-    stanford_importance_weight: float = Field(default=0.3, description="Weight for importance in Stanford memory ranking (beta)")
-    stanford_relevance_weight: float = Field(default=0.4, description="Weight for relevance in Stanford memory ranking (gamma)")
+    # Stanford Generative Agents Memory Retrieval
+    stanford_recency_weight: float = Field(default=0.3, description="Weight for recency in Stanford memory ranking")
+    stanford_importance_weight: float = Field(default=0.3, description="Weight for importance in Stanford memory ranking")
+    stanford_relevance_weight: float = Field(default=0.4, description="Weight for relevance in Stanford memory ranking")
 
-    # SOTA Personality System (Sprint 115)
-    identity_anchor_interval: int = Field(default=6, ge=3, le=50, description="Re-inject identity anchor every N responses (research: drift starts at 8 turns)")
-    enable_emotional_state: bool = Field(default=False, description="Enable 2D mood state machine (keyword-based sentiment detection)")
-    emotional_decay_rate: float = Field(default=0.15, description="Rate of mood decay toward neutral per turn (0.0-1.0)")
-    enable_personality_eval: bool = Field(default=False, description="Enable personality drift evaluator (opt-in for testing)")
+    # SOTA Personality System
+    identity_anchor_interval: int = Field(default=6, ge=3, le=50, description="Re-inject identity anchor every N responses")
+    enable_emotional_state: bool = Field(default=False, description="Enable 2D mood state machine")
+    emotional_decay_rate: float = Field(default=0.15, ge=0.0, le=1.0, description="Rate of mood decay toward neutral")
+    enable_personality_eval: bool = Field(default=False, description="Enable personality drift evaluator")
 
-    # Soul Emotion (Sprint 135: LLM-Driven Avatar Expression)
-    enable_soul_emotion: bool = Field(default=False, description="Enable LLM inline <!--WIII_SOUL:{...}--> emotion tags for avatar control")
-    soul_emotion_buffer_bytes: int = Field(default=512, ge=256, le=2048, description="Max bytes to buffer at stream start for soul emotion extraction (min 256 to fit max tag ~170 bytes)")
+    # Soul Emotion
+    enable_soul_emotion: bool = Field(default=False, description="Enable LLM inline emotion tags for avatar")
+    soul_emotion_buffer_bytes: int = Field(default=512, ge=256, le=2048, description="Max bytes to buffer for soul emotion extraction")
 
-    # Knowledge Management (Sprint 136: Universal KB)
-    cross_domain_search: bool = Field(default=True, description="Search all domains with soft boost (not hard filter)")
-    domain_boost_score: float = Field(default=0.15, description="RRF boost for same-domain results in cross-domain search")
+    # Knowledge Management
+    cross_domain_search: bool = Field(default=True, description="Search all domains with soft boost")
+    domain_boost_score: float = Field(default=0.15, ge=0.0, le=1.0, description="RRF boost for same-domain results")
     enable_text_ingestion: bool = Field(default=True, description="Allow text/markdown ingestion via API")
-    max_ingestion_size_mb: int = Field(default=50, description="Maximum file size for ingestion in MB")
+    max_ingestion_size_mb: int = Field(default=50, ge=1, le=500, description="Maximum file size for ingestion in MB")
 
-    # Semantic Fact Retrieval (Sprint 137: Vector Facts)
-    enable_semantic_fact_retrieval: bool = Field(default=True, description="Use embedding similarity for fact retrieval instead of SQL-only")
+    # Semantic Fact Retrieval
+    enable_semantic_fact_retrieval: bool = Field(default=True, description="Use embedding similarity for fact retrieval")
     fact_retrieval_alpha: float = Field(default=0.3, description="Importance weight in combined fact scoring")
     fact_retrieval_beta: float = Field(default=0.5, description="Cosine similarity weight in combined fact scoring")
     fact_retrieval_gamma: float = Field(default=0.2, description="Recency weight in combined fact scoring")
     fact_min_similarity: float = Field(default=0.3, description="Minimum cosine similarity for semantic fact retrieval")
 
-    # Intelligent Tool Selection (Sprint 138: Tool Pre-Filtering)
-    enable_tool_selection: bool = Field(default=False, description="Enable semantic tool pre-filtering for direct node")
-    tool_selection_top_k: int = Field(default=5, description="Maximum tools to bind after semantic selection")
+    # Intelligent Tool Selection
+    enable_tool_selection: bool = Field(default=False, description="Enable semantic tool pre-filtering")
+    tool_selection_top_k: int = Field(default=5, description="Maximum tools after semantic selection")
     tool_selection_core_tools: list[str] = Field(
         default=["tool_current_datetime", "tool_knowledge_search", "tool_think"],
         description="Tools always included regardless of similarity score"
     )
 
-    # LangSmith Observability (Sprint 144b)
-    enable_langsmith: bool = Field(default=False, description="Enable LangSmith tracing for LangChain/LangGraph observability")
-    langsmith_api_key: Optional[str] = Field(default=None, description="LangSmith API key (from smith.langchain.com)")
-    langsmith_project: str = Field(default="wiii", description="LangSmith project name for trace grouping")
+    # LangSmith Observability
+    enable_langsmith: bool = Field(default=False, description="Enable LangSmith tracing")
+    langsmith_api_key: Optional[str] = Field(default=None, description="LangSmith API key")
+    langsmith_project: str = Field(default="wiii", description="LangSmith project name")
     langsmith_endpoint: str = Field(default="https://api.smith.langchain.com", description="LangSmith API endpoint")
 
-    # Multi-Phase Thinking Chain (Sprint 148: "Chuỗi Tư Duy")
-    enable_thinking_chain: bool = Field(default=False, description="Enable multi-phase thinking chain (tool_report_progress for Claude-like phase transitions)")
+    # Multi-Phase Thinking Chain
+    enable_thinking_chain: bool = Field(default=False, description="Enable multi-phase thinking chain")
 
-    # Product Search Agent (Sprint 148: "Săn Hàng" + Sprint 149: "Cắm & Chạy")
-    enable_product_search: bool = Field(default=False, description="Enable product search agent (multi-platform e-commerce search)")
-    serper_api_key: Optional[str] = Field(default=None, description="Serper.dev API key for Google Shopping search")
-    apify_api_token: Optional[str] = Field(default=None, description="Apify API token for e-commerce scrapers (Shopee, TikTok Shop, Lazada, FB)")
-    product_search_max_results: int = Field(default=30, description="Max results per platform search")
-    product_search_timeout: int = Field(default=30, description="Timeout in seconds for each platform search")
+    # Product Search Agent
+    enable_product_search: bool = Field(default=False, description="Enable product search agent")
+    serper_api_key: Optional[str] = Field(default=None, description="Serper.dev API key")
+    apify_api_token: Optional[str] = Field(default=None, description="Apify API token")
+    product_search_max_results: int = Field(default=30, ge=1, le=100, description="Max results per platform search")
+    product_search_timeout: int = Field(default=30, ge=5, le=120, description="Timeout for each platform search")
 
     # Sprint 149: Search Platform Plugin Architecture
     product_search_platforms: list = Field(
-        default=["google_shopping", "shopee", "tiktok_shop", "lazada", "facebook_marketplace", "all_web", "instagram"],
+        default=["google_shopping", "shopee", "tiktok_shop", "lazada", "facebook_marketplace", "all_web", "instagram", "websosanh"],
         description="List of enabled search platform IDs",
     )
-    enable_tiktok_native_api: bool = Field(default=False, description="Enable TikTok Research API (native, free)")
+    enable_tiktok_native_api: bool = Field(default=False, description="Enable TikTok Research API")
     tiktok_client_key: Optional[str] = Field(default=None, description="TikTok Developer Portal client key")
     tiktok_client_secret: Optional[str] = Field(default=None, description="TikTok Developer Portal client secret")
 
-    # OAuth skeleton (future)
-    enable_oauth_token_store: bool = Field(default=False, description="Enable OAuth token store for platform auth")
+    # Sprint 150: Deep Product Search
+    product_search_max_iterations: int = Field(default=15, ge=5, le=30, description="Max ReAct iterations")
+    product_search_scrape_timeout: int = Field(default=10, ge=3, le=30, description="Timeout for scraping product pages")
+    product_search_max_scrape_pages: int = Field(default=10, ge=1, le=30, description="Max pages to scrape per session")
+
+    # Browser Scraping
+    enable_browser_scraping: bool = Field(default=False, description="Enable Playwright headless browser")
+    browser_scraping_timeout: int = Field(default=15, ge=3, le=60, description="Timeout for browser page load")
+
+    # Browser Screenshots
+    enable_browser_screenshots: bool = Field(default=False, description="Stream browser screenshots to UI")
+    browser_screenshot_quality: int = Field(default=40, description="JPEG quality for screenshots (10-90)")
+
+    # OAuth skeleton
+    enable_oauth_token_store: bool = Field(default=False, description="Enable OAuth token store")
     oauth_encryption_key: Optional[str] = Field(default=None, description="Fernet encryption key for OAuth tokens")
 
     # Quality & Model Config
-    quality_skip_threshold: float = Field(default=0.85, description="Skip grader when CRAG confidence >= this value (saves ~7.8s)")
-    rag_model_version: str = Field(default="agentic-rag-v3", description="RAG model version string for metadata")
-    insight_duplicate_threshold: float = Field(default=0.85, description="Cosine similarity threshold for duplicate insight detection")
-    insight_contradiction_threshold: float = Field(default=0.70, description="Cosine similarity threshold for contradiction detection")
+    quality_skip_threshold: float = Field(default=0.85, description="Skip grader when confidence >= this")
+    rag_model_version: str = Field(default="agentic-rag-v3", description="RAG model version string")
+    insight_duplicate_threshold: float = Field(default=0.85, description="Duplicate insight detection threshold")
+    insight_contradiction_threshold: float = Field(default=0.70, description="Contradiction detection threshold")
 
     # Security
     cors_origins: list[str] = Field(default=["*"], description="CORS allowed origins")
@@ -463,7 +537,25 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", description="Logging level")
     log_format: str = Field(default="json", description="Log format: json or text")
     mask_pii: bool = Field(default=True, description="Mask PII in logs")
-    
+
+    # =========================================================================
+    # Sprint 154: Nested Config Groups (synced from flat fields)
+    # =========================================================================
+    # These provide structured access: settings.llm.google_api_key
+    # Flat fields remain the source of truth for env var loading.
+    database: DatabaseConfig = Field(default_factory=DatabaseConfig, exclude=True)
+    llm: LLMConfig = Field(default_factory=LLMConfig, exclude=True)
+    rag: RAGConfig = Field(default_factory=RAGConfig, exclude=True)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig, exclude=True)
+    product_search: ProductSearchConfig = Field(default_factory=ProductSearchConfig, exclude=True)
+    thinking: ThinkingConfig = Field(default_factory=ThinkingConfig, exclude=True)
+    character: CharacterConfig = Field(default_factory=CharacterConfig, exclude=True)
+    cache: CacheConfig = Field(default_factory=CacheConfig, exclude=True)
+
+    # =========================================================================
+    # Field Validators
+    # =========================================================================
+
     @field_validator("environment")
     @classmethod
     def validate_environment(cls, v: str) -> str:
@@ -673,20 +765,18 @@ class Settings(BaseSettings):
         return v
 
     # =========================================================================
-    # Sprint 83: Cross-field validators + security hardening
+    # Cross-field validators + security hardening
     # =========================================================================
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
         """Validate security-critical settings in production."""
         if self.environment == "production":
-            # C1: JWT secret must not be default in production
             if self.jwt_secret_key == "change-me-in-production":
                 raise ValueError(
                     "SECURITY: jwt_secret_key must be changed from default "
                     "in production. Set JWT_SECRET_KEY environment variable."
                 )
-            # C2: CORS wildcard is dangerous in production
             if self.cors_origins == ["*"]:
                 _config_logger.warning(
                     "SECURITY WARNING: cors_origins=['*'] in production. "
@@ -697,24 +787,142 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_cross_field_consistency(self) -> "Settings":
         """Validate related config fields are consistent."""
-        # M8: Confidence thresholds must be ordered
         if self.rag_confidence_high <= self.rag_confidence_medium:
             raise ValueError(
                 f"rag_confidence_high ({self.rag_confidence_high}) must be > "
                 f"rag_confidence_medium ({self.rag_confidence_medium})"
             )
-        # M8: Pool size ordering
         if self.async_pool_min_size > self.async_pool_max_size:
             raise ValueError(
                 f"async_pool_min_size ({self.async_pool_min_size}) must be <= "
                 f"async_pool_max_size ({self.async_pool_max_size})"
             )
-        # M8: Chunk overlap must be less than chunk size
         if self.chunk_overlap >= self.chunk_size:
             raise ValueError(
                 f"chunk_overlap ({self.chunk_overlap}) must be < "
                 f"chunk_size ({self.chunk_size})"
             )
+        # Sprint 153: Dependent feature flag validation
+        if self.enable_tiktok_native_api and not self.enable_product_search:
+            _config_logger.warning(
+                "enable_tiktok_native_api=True requires enable_product_search=True — TikTok API will be unused"
+            )
+        if self.enable_browser_scraping and not self.enable_product_search:
+            _config_logger.warning(
+                "enable_browser_scraping=True requires enable_product_search=True — browser scraping will be unused"
+            )
+        if self.enable_oauth_token_store and not self.oauth_encryption_key:
+            _config_logger.warning(
+                "enable_oauth_token_store=True but oauth_encryption_key is not set — tokens will not be encrypted"
+            )
+        # Sprint 154: Fact retrieval weights must sum to ~1.0
+        alpha = self.fact_retrieval_alpha
+        beta = self.fact_retrieval_beta
+        gamma = self.fact_retrieval_gamma
+        if abs(alpha + beta + gamma - 1.0) > 0.01:
+            raise ValueError(
+                f"fact_retrieval alpha+beta+gamma must sum to 1.0, got {alpha + beta + gamma:.3f}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _sync_nested_groups(self) -> "Settings":
+        """Sync flat fields into nested config groups for structured access.
+
+        Sprint 154: Nested groups are read-only views — flat fields are source of truth.
+        """
+        object.__setattr__(self, "database", DatabaseConfig(
+            host=self.postgres_host,
+            port=self.postgres_port,
+            user=self.postgres_user,
+            password=self.postgres_password,
+            db=self.postgres_db,
+            database_url=self.database_url,
+            async_pool_min_size=self.async_pool_min_size,
+            async_pool_max_size=self.async_pool_max_size,
+        ))
+        object.__setattr__(self, "llm", LLMConfig(
+            provider=self.llm_provider,
+            failover_chain=self.llm_failover_chain,
+            enable_failover=self.enable_llm_failover,
+            google_api_key=self.google_api_key,
+            google_model=self.google_model,
+            openai_api_key=self.openai_api_key,
+            openai_model=self.openai_model,
+            ollama_base_url=self.ollama_base_url,
+            ollama_model=self.ollama_model,
+            ollama_thinking_models=self.ollama_thinking_models,
+        ))
+        object.__setattr__(self, "rag", RAGConfig(
+            enable_corrective_rag=self.enable_corrective_rag,
+            quality_mode=self.rag_quality_mode,
+            confidence_high=self.rag_confidence_high,
+            confidence_medium=self.rag_confidence_medium,
+            max_iterations=self.rag_max_iterations,
+            enable_reflection=self.rag_enable_reflection,
+            early_exit_on_high_confidence=self.rag_early_exit_on_high_confidence,
+            grading_threshold=self.multi_agent_grading_threshold,
+            retrieval_grade_threshold=self.retrieval_grade_threshold,
+            enable_answer_verification=self.enable_answer_verification,
+        ))
+        object.__setattr__(self, "memory", MemoryConfig(
+            enable_core_memory_block=self.enable_core_memory_block,
+            core_memory_max_tokens=self.core_memory_max_tokens,
+            core_memory_cache_ttl=self.core_memory_cache_ttl,
+            max_user_facts=self.max_user_facts,
+            max_injected_facts=self.max_injected_facts,
+            fact_injection_min_confidence=self.fact_injection_min_confidence,
+            enable_memory_decay=self.enable_memory_decay,
+            enable_memory_pruning=self.enable_memory_pruning,
+            enable_semantic_fact_retrieval=self.enable_semantic_fact_retrieval,
+            fact_retrieval_alpha=self.fact_retrieval_alpha,
+            fact_retrieval_beta=self.fact_retrieval_beta,
+            fact_retrieval_gamma=self.fact_retrieval_gamma,
+        ))
+        object.__setattr__(self, "product_search", ProductSearchConfig(
+            enable_product_search=self.enable_product_search,
+            serper_api_key=self.serper_api_key,
+            apify_api_token=self.apify_api_token,
+            max_results=self.product_search_max_results,
+            timeout=self.product_search_timeout,
+            platforms=list(self.product_search_platforms),
+            max_iterations=self.product_search_max_iterations,
+            scrape_timeout=self.product_search_scrape_timeout,
+            max_scrape_pages=self.product_search_max_scrape_pages,
+            enable_tiktok_native_api=self.enable_tiktok_native_api,
+            enable_browser_scraping=self.enable_browser_scraping,
+            browser_scraping_timeout=self.browser_scraping_timeout,
+            enable_browser_screenshots=self.enable_browser_screenshots,
+            browser_screenshot_quality=self.browser_screenshot_quality,
+        ))
+        object.__setattr__(self, "thinking", ThinkingConfig(
+            enabled=self.thinking_enabled,
+            include_summaries=self.include_thought_summaries,
+            budget_deep=self.thinking_budget_deep,
+            budget_moderate=self.thinking_budget_moderate,
+            budget_light=self.thinking_budget_light,
+            budget_minimal=self.thinking_budget_minimal,
+            gemini_level=self.gemini_thinking_level,
+            enable_chain=self.enable_thinking_chain,
+        ))
+        object.__setattr__(self, "character", CharacterConfig(
+            enable_reflection=self.enable_character_reflection,
+            reflection_interval=self.character_reflection_interval,
+            enable_tools=self.enable_character_tools,
+            reflection_threshold=self.character_reflection_threshold,
+            experience_retention_days=self.character_experience_retention_days,
+            enable_emotional_state=self.enable_emotional_state,
+            emotional_decay_rate=self.emotional_decay_rate,
+            enable_soul_emotion=self.enable_soul_emotion,
+        ))
+        object.__setattr__(self, "cache", CacheConfig(
+            enabled=self.semantic_cache_enabled,
+            similarity_threshold=self.cache_similarity_threshold,
+            response_ttl=self.cache_response_ttl,
+            retrieval_ttl=self.cache_retrieval_ttl,
+            max_entries=self.cache_max_response_entries,
+            adaptive_ttl=self.cache_adaptive_ttl,
+        ))
         return self
 
 

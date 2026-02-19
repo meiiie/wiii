@@ -219,11 +219,13 @@ export class WiiiClient {
   /**
    * POST request that returns a ReadableStream for SSE streaming.
    * Used for /chat/stream/v3 endpoint.
+   * Sprint 153b: Added signal param so callers can abort the initial HTTP request.
    */
   async postStream(
     path: string,
     body: unknown,
     extraHeaders?: Record<string, string>,
+    signal?: AbortSignal,
   ): Promise<ReadableStream<Uint8Array>> {
     const url = new URL(path, this.baseUrl).toString();
 
@@ -235,6 +237,7 @@ export class WiiiClient {
         ...extraHeaders,
       },
       body: JSON.stringify(body),
+      signal,
     });
 
     if (!response.ok) {
