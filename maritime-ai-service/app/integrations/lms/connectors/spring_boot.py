@@ -16,7 +16,6 @@ import httpx
 
 from app.engine.search_platforms.circuit_breaker import PerPlatformCircuitBreaker
 from app.integrations.lms.base import (
-    LMSBackendType,
     LMSConnectorAdapter,
     LMSConnectorConfig,
 )

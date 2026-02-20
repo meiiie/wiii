@@ -26,8 +26,6 @@ from urllib.parse import quote_plus
 
 from app.engine.search_platforms.adapters.browser_base import (
     PlaywrightLLMAdapter,
-    _extract_json_array,
-    _MAX_PROMPT_TEXT,
 )
 from app.engine.search_platforms.base import (
     BackendType,

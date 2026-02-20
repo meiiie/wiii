@@ -2,9 +2,9 @@
 
 > Master architecture document following **C4 Model + arc42** best practices.
 
-**Last Updated:** 2025-12-21  
-**Status:** ✅ Complete  
-**Version:** 3.2 (P3 SOTA Streaming + Optimizations)
+**Last Updated:** 2026-02-20
+**Status:** ✅ Complete
+**Version:** 6.0 (Post-Sprint 161)
 
 
 ---
@@ -26,34 +26,45 @@
 
 ```mermaid
 graph TB
-    subgraph "External Systems"
+    subgraph "Clients"
+        Desktop[Wiii Desktop<br/>Tauri v2 + React 18]
         LMS[LMS Backend<br/>Learning Management]
+    end
+
+    subgraph "External Systems"
         Neo4j[(Neo4j Graph Database)]
         Postgres[(PostgreSQL + pgvector)]
-        Supabase[Supabase Storage]
+        MinIO[MinIO Storage]
         Gemini[Google Gemini API]
+        OpenAI[OpenAI API<br/>Failover]
+        Ollama[Ollama Local<br/>Failover]
     end
-    
+
     subgraph "Wiii"
-        API[FastAPI Application]
+        API[FastAPI Application<br/>254 Python files, 46 feature flags]
     end
-    
-    LMS -->|HTTP/REST| API
-    API -->|GraphQL/Cypher| Neo4j
+
+    Desktop -->|HTTP/SSE| API
+    LMS -->|HTTP/REST + HMAC| API
+    API -->|Cypher| Neo4j
     API -->|SQL + Vector| Postgres
-    API -->|S3-compatible| Supabase
+    API -->|S3-compatible| MinIO
     API -->|LLM/Embedding| Gemini
-    
+    API -.->|Failover| OpenAI
+    API -.->|Failover| Ollama
+
     style API fill:#4CAF50,color:white
+    style Desktop fill:#E91E63,color:white
     style LMS fill:#2196F3,color:white
 ```
 
 **Actors:**
-- **LMS Backend**: Sends chat requests, receives AI responses
+- **Wiii Desktop**: Tauri v2 + React 18 desktop app (11 Zustand stores, 1346 tests)
+- **LMS Backend**: Sends chat requests via REST + HMAC token exchange
 - **Neo4j**: Knowledge Graph for maritime regulations
-- **PostgreSQL**: Vector embeddings, user memory, chat history
-- **Supabase**: PDF storage, image assets
-- **Gemini**: LLM generation, embeddings
+- **PostgreSQL**: Vector embeddings, user memory, chat history, org data (12 migrations)
+- **MinIO**: PDF storage, image assets (S3-compatible)
+- **Gemini/OpenAI/Ollama**: Multi-provider LLM failover chain
 
 ---
 
@@ -65,26 +76,34 @@ graph TB
         subgraph "app/"
             API[API Layer<br/>FastAPI Endpoints]
             Core[Core Layer<br/>Config, Security, DB]
+            Auth[Auth Layer<br/>OAuth, Tokens, Federation]
             Services[Services Layer<br/>Business Logic]
             Engine[Engine Layer<br/>AI/ML Components]
+            Integrations[Integrations<br/>LMS Client, Enrichment]
             Repos[Repositories<br/>Data Access]
             Models[Models<br/>Pydantic Schemas]
             Prompts[Prompts<br/>YAML Personas]
         end
     end
-    
+
     API --> Core
+    API --> Auth
     API --> Services
+    Auth --> Core
+    Auth --> Repos
     Services --> Engine
     Services --> Repos
     Engine --> Repos
     Engine --> Prompts
+    Integrations --> Core
     Repos --> Models
-    
+
     style API fill:#e3f2fd
     style Core fill:#fff3e0
+    style Auth fill:#ffe0b2
     style Services fill:#e8f5e9
     style Engine fill:#fce4ec
+    style Integrations fill:#e1f5fe
     style Repos fill:#f3e5f5
     style Models fill:#e0f7fa
     style Prompts fill:#fff8e1
@@ -100,39 +119,101 @@ graph TB
 graph LR
     subgraph "engine/"
         UA[UnifiedAgent<br/>ReAct Pattern]
-        
+
         subgraph "agentic_rag/"
             RA[RAGAgent]
             CRAG[CorrectiveRAG]
             RG[RetrievalGrader]
         end
-        
+
         subgraph "tools/"
             RT[rag_tools]
             MT[memory_tools]
             TT[tutor_tools]
+            PST[product_search_tools]
         end
-        
+
         subgraph "semantic_memory/"
             SMC[core.py]
             SME[extraction.py]
         end
-        
+
         subgraph "tutor/"
             TA[TutorAgent]
         end
+
+        subgraph "search_platforms/"
+            SPB[base.py ABC]
+            SPR[registry.py]
+            SPCB[circuit_breaker.py]
+            subgraph "adapters/"
+                SPS[serper_shopping]
+                SPSS[serper_site]
+                SPW[websosanh]
+                SPA[apify]
+                SPFB[facebook_search]
+                SPFG[facebook_group]
+                SPTK[tiktok_research]
+                SPAW[allweb]
+            end
+        end
+
+        subgraph "character/"
+            CHB[blocks]
+            CHE[experiences]
+            CHR[reflection]
+        end
     end
-    
+
     UA --> RT
     UA --> MT
     UA --> TT
+    UA --> PST
     TT --> TA
     RT --> RA
     CRAG -.->|auto-composes| RA
     CRAG --> RG
     UA --> SMC
-    
+    PST --> SPR
+
     style UA fill:#E91E63,color:white
+```
+
+### Auth Layer Components
+
+```mermaid
+graph LR
+    subgraph "auth/"
+        GO[google_oauth.py<br/>Google OAuth2 PKCE]
+        TS[token_service.py<br/>JWT + Refresh Tokens]
+        US[user_service.py<br/>Identity Federation]
+        UR[user_router.py<br/>User CRUD API]
+        LTE[lms_token_exchange.py<br/>HMAC Token Exchange]
+        LAR[lms_auth_router.py<br/>LMS Auth Endpoints]
+    end
+
+    UR --> US
+    UR --> TS
+    LAR --> LTE
+    LTE --> US
+    LTE --> TS
+    GO --> TS
+
+    style US fill:#FF9800,color:white
+```
+
+### Integrations Layer Components
+
+```mermaid
+graph LR
+    subgraph "integrations/"
+        LC[lms_client.py<br/>LMS API Client]
+        LE[lms_enrichment.py<br/>Context Enrichment]
+    end
+
+    LE --> LC
+
+    style LC fill:#03A9F4,color:white
 ```
 
 ---
@@ -143,41 +224,60 @@ graph LR
 
 | Folder | Chức năng | Key Files | Exports |
 |--------|-----------|-----------|---------|
-| **`app/api/`** | HTTP endpoints, routing | `chat.py`, `admin.py`, `health.py` | FastAPI routers |
-| **`app/core/`** | Config, security, DB connection | `config.py`, `security.py`, `database.py` | Settings, Auth |
-| **`app/services/`** | Business logic (REFACTORED 2025-12-14) | `chat_service.py` (facade), `chat_orchestrator.py` (pipeline) | See Services below |
-| **`app/engine/`** | AI/ML components, agents | `unified_agent.py`, tools/, agentic_rag/ | Agents, Tools |
-| **`app/repositories/`** | Database access layer | `semantic_memory_repo.py`, `neo4j_repo.py` | CRUD operations |
-| **`app/models/`** | Pydantic schemas, DTOs | `schemas.py` (623 lines), `semantic_memory.py` | Data models |
+| **`app/api/`** | HTTP endpoints, routing (18 routers) | `chat.py`, `chat_stream.py`, `admin.py`, `health.py`, `organizations.py`, `websocket.py`, `webhook.py` | FastAPI routers |
+| **`app/core/`** | Config, security, DB, middleware (15 files) | `config.py`, `security.py`, `database.py`, `middleware.py`, `org_context.py`, `org_filter.py`, `org_settings.py`, `constants.py`, `observability.py` | Settings, Auth, OrgContext |
+| **`app/auth/`** | Authentication & Identity Federation (6 files) | `google_oauth.py`, `token_service.py`, `user_service.py`, `user_router.py`, `lms_token_exchange.py`, `lms_auth_router.py` | OAuth, JWT, Federation |
+| **`app/services/`** | Business logic (REFACTORED) | `chat_service.py` (facade), `chat_orchestrator.py` (pipeline), `graph_streaming.py`, `stream_utils.py` | See Services below |
+| **`app/engine/`** | AI/ML components, agents (60+ files) | `unified_agent.py`, tools/, agentic_rag/, multi_agent/, search_platforms/, character/ | Agents, Tools, Search |
+| **`app/engine/search_platforms/`** | Product Search Platform Adapters | `base.py` (ABC), `registry.py` (singleton), `circuit_breaker.py`, `adapters/` (8 adapters), `oauth/` | SearchPlatformAdapter, SearchPlatformRegistry |
+| **`app/engine/search_platforms/adapters/`** | Individual platform adapters (8 adapters) | `serper_shopping.py`, `serper_site.py`, `websosanh.py`, `apify.py`, `facebook_search.py`, `facebook_group.py`, `tiktok_research.py`, `allweb.py` | Adapter implementations |
+| **`app/engine/search_platforms/adapters/browser_base.py`** | Playwright browser scraping base | `BrowserBaseAdapter` | Browser automation for search |
+| **`app/engine/multi_agent/agents/product_search_node.py`** | Product Search agent node | `product_search_agent()` | LangGraph agent node for product search |
+| **`app/integrations/`** | LMS Integration Layer | `lms_client.py`, `lms_enrichment.py` | LMS API client, context enrichment |
+| **`app/repositories/`** | Database access layer (15 repos) | `semantic_memory_repo.py`, `neo4j_repo.py`, `organization_repository.py`, `thread_repository.py`, `scheduler_repository.py` | CRUD operations |
+| **`app/models/`** | Pydantic schemas, DTOs | `schemas.py`, `semantic_memory.py`, `organization.py` | Data models |
+| **`app/models/organization.py`** | Org + OrgSettings + OrgBranding + OrgPermissions | `Organization`, `OrgSettings`, `OrgBranding`, `OrgPermissions` | Multi-tenant models |
+| **`app/domains/`** | Domain plugin system | `base.py`, `registry.py`, `loader.py`, `router.py`, `maritime/`, `traffic_law/` | DomainPlugin, DomainRegistry |
 | **`app/prompts/`** | AI persona configuration | `prompt_loader.py`, agents/*.yaml | System prompts |
+| **`app/core/org_filter.py`** | Multi-tenant org filtering helpers | `get_effective_org_id()`, `org_where_clause()`, `org_where_positional()` | Org-aware SQL filters |
+| **`app/core/org_settings.py`** | Org settings cascade + permissions | Settings resolution per org | OrgSettings cascade |
 
-### 📂 Services Layer (REFACTORED 2025-12-14)
+### 📂 Services Layer (20+ files)
 
 | File | Purpose | Lines | Pattern |
 |------|---------|-------|--------|
 | **`chat_service.py`** | Thin facade, wires dependencies | ~310 | Facade |
 | **`chat_orchestrator.py`** | 6-stage pipeline orchestration | ~320 | Pipeline |
+| **`graph_streaming.py`** | SSE event lifecycle + graph-level streaming | ~450 | Critical Streaming |
+| **`stream_utils.py`** | StreamEvent factory functions | ~200 | Factory |
 | **`session_manager.py`** | Session CRUD, anti-repetition state | ~230 | Singleton |
 | **`input_processor.py`** | Validation, Guardian, context | ~380 | Processor |
 | **`output_processor.py`** | Response formatting, sources | ~220 | Processor |
-| **`thinking_post_processor.py`** | ★ Centralized thinking extraction (v8) | ~180 | Post-Processor |
+| **`thinking_post_processor.py`** | Centralized thinking extraction (v8) | ~180 | Post-Processor |
 | **`background_tasks.py`** | Async task runner | ~260 | Task Runner |
 | `chat_context_builder.py` | Context assembly | ~100 | Builder |
 | `chat_response_builder.py` | Response assembly | ~100 | Builder |
 | `hybrid_search_service.py` | Dense + Sparse search | ~400 | Service |
 | `multimodal_ingestion_service.py` | PDF pipeline | ~600 | Service |
 | `graph_rag_service.py` | GraphRAG with Neo4j | ~200 | Service |
+| `scheduled_task_executor.py` | Async scheduled task polling | ~300 | Background |
+| `notification_dispatcher.py` | WebSocket/Telegram dispatch | ~200 | Dispatcher |
+| **`conversation_window.py`** | Sliding window context management (15 turns) | ~250 | Context |
+| **`context_manager.py`** | Token budget allocation (4-layer) | ~300 | Budget |
 
 ### 📂 Engine Subfolders (app/engine/)
 
 | Subfolder | Chức năng | Key Components |
 |-----------|-----------|----------------|
 | **`agentic_rag/`** | Corrective RAG system (Composition Pattern) | `rag_agent.py`, `corrective_rag.py` (auto-composes RAGAgent), grader, verifier |
-| **`multi_agent/`** | LangGraph SOTA 2025 orchestration | `supervisor.py`, `graph.py`, `tutor_node.py` (ReAct) |
-| **`tools/`** | 11 LangChain tools | `rag_tools.py`, `memory_tools.py`, `tutor_tools.py` |
+| **`multi_agent/`** | LangGraph orchestration | `supervisor.py`, `graph.py`, `tutor_node.py`, `product_search_node.py` |
+| **`tools/`** | LangChain tools (RAG, Memory, Tutor, Product Search) | `rag_tools.py`, `memory_tools.py`, `tutor_tools.py`, `product_search_tools.py` |
 | **`semantic_memory/`** | Vector-based user memory | `core.py`, `extraction.py`, `context.py` |
+| **`search_platforms/`** | Product search plugin architecture (8 platform adapters) | `base.py` (ABC), `registry.py`, `circuit_breaker.py`, `adapters/`, `oauth/` |
+| **`character/`** | Character system (per-user isolated) | `blocks.py`, `experiences.py`, `reflection.py` |
 | **`tutor/`** | State machine tutoring | `tutor_agent.py` |
 | **`agents/`** | Agent base classes, registry | `base.py`, `config.py`, `registry.py` |
+| **`llm_providers/`** | Multi-provider LLM layer | `unified_client.py`, `gemini.py`, `openai.py`, `ollama.py` |
 
 **Key Engine Files:**
 
@@ -249,27 +349,35 @@ graph LR
 | `tool_continue_lesson` | `TutorAgent` | Progress in lesson |
 | `tool_lesson_status` | `TutorAgent` | Check session state |
 | `tool_end_lesson` | `TutorAgent` | Complete session |
+| `tool_search_serper_shopping` | `SerperShoppingAdapter` | Google Shopping product search |
+| `tool_search_websosanh` | `WebSosanhAdapter` | WebSosanh.vn price comparison |
+| `tool_search_facebook` | `FacebookSearchAdapter` | Facebook Marketplace/Groups search |
+| `tool_search_tiktok` | `TikTokResearchAdapter` | TikTok Shop product search |
+| `product_search_tools.py` | `SearchPlatformRegistry` | Platform-based product search (7 tools, 5 platforms) |
 
-### Audit Status
+### Audit Status (Post-Sprint 161)
 
 | Layer | Folder | Files | README | Status |
 |-------|--------|-------|--------|--------|
-| API | `app/api/` | 8 | ✅ | Auth fixed |
-| Core | `app/core/` | 6 | ✅ | Clean |
-| Services | `app/services/` | 16 | ✅ | REFACTORED 2025-12-14 |
-| Engine | `app/engine/` | 44 | ✅ | Dead code removed |
-| Repos | `app/repositories/` | 8 | ✅ | Clean |
-| Models | `app/models/` | 6 | ✅ | Clean |
-| Prompts | `app/prompts/` | 6 | ✅ | Clean |
+| API | `app/api/` | 18 | ✅ | 18 routers (chat, stream, admin, orgs, auth, users, webhook, ws) |
+| Core | `app/core/` | 15 | ✅ | +org_context, org_filter, org_settings, middleware, constants, observability |
+| Auth | `app/auth/` | 6 | ✅ | NEW: OAuth, JWT, Federation, LMS Token Exchange |
+| Services | `app/services/` | 20+ | ✅ | +graph_streaming, stream_utils, conversation_window, context_manager |
+| Engine | `app/engine/` | 60+ | ✅ | +search_platforms (8 adapters), character, llm_providers |
+| Integrations | `app/integrations/` | 3 | ✅ | NEW: LMS client, enrichment |
+| Repos | `app/repositories/` | 15 | ✅ | +organization, thread, scheduler, user_preferences |
+| Models | `app/models/` | 8 | ✅ | +organization.py (OrgSettings, OrgBranding, OrgPermissions) |
+| Domains | `app/domains/` | 12 | ✅ | Plugin system: maritime, traffic_law, _template |
+| Prompts | `app/prompts/` | 8 | ✅ | +domain overlay prompts |
 
 ### Root Folders
 
 | Folder | Purpose | Files | Key Contents |
 |--------|---------|-------|--------------|
 | `archive/` | Legacy/backup code | 10 | Old implementations |
-| `scripts/` | Dev utilities | 50 | test_*.py, migrations |
-| `tests/` | Automated tests | 4 dirs | unit/, integration/, e2e/ |
-| `alembic/` | DB migrations | 6 | Schema evolution |
+| `scripts/` | Dev utilities | 50+ | test_*.py, migrations, ingestion |
+| `tests/` | Automated tests (324 files, 6520+ tests) | 4 dirs | unit/, integration/, property/, e2e/ |
+| `alembic/` | DB migrations | 12 | Schema evolution (011: org_id, 010: auth_method) |
 | `docs/` | Documentation | 4 dirs | architecture/, api/, schemas/ |
 
 ---
@@ -427,97 +535,145 @@ graph LR
 
 ```mermaid
 graph TB
-    subgraph "Frontend (LMS)"
-        UI[Chat Interface]
+    subgraph "Frontend"
+        Desktop[Wiii Desktop<br/>Tauri v2 + React 18]
+        LMS[LMS Backend]
     end
-    
-    subgraph "API Layer"
+
+    subgraph "API Layer (18 routers)"
         Chat[/api/v1/chat]
-        Stream[/api/v1/chat/stream]
+        Stream[/api/v1/chat/stream/v3]
         Admin[/api/v1/admin]
+        AuthAPI[/api/v1/auth]
+        OrgAPI[/api/v1/organizations]
+        UserAPI[/api/v1/users]
     end
-    
+
+    subgraph "Auth Layer"
+        OAuth[Google OAuth]
+        TokenSvc[Token Service]
+        UserSvc[User Service]
+        LMSExchange[LMS Token Exchange]
+    end
+
     subgraph "Services Layer"
         CS[ChatService]
+        GStr[GraphStreaming]
         HS[HybridSearchService]
         GS[GraphRAGService]
         IS[IngestionService]
+        CW[ConversationWindow]
+        CM[ContextManager]
     end
-    
+
     subgraph "Engine Layer"
         UA[UnifiedAgent]
-        
-        subgraph "Tools (11)"
+
+        subgraph "Tools"
             RAG[rag_tools<br/>4 tools]
             MEM[memory_tools<br/>3 tools]
             TUT[tutor_tools<br/>4 tools]
+            PST[product_search_tools<br/>7 tools]
         end
-        
+
         subgraph "Core Components"
             CRAG[CorrectiveRAG]
             SM[SemanticMemory]
             TA[TutorAgent]
             PL[PromptLoader]
+            SP[SearchPlatformRegistry<br/>8 adapters]
+            CHAR[Character System]
         end
     end
-    
+
+    subgraph "Integrations"
+        LMSC[LMS Client]
+        LMSE[LMS Enrichment]
+    end
+
     subgraph "Data Layer"
         PG[(PostgreSQL<br/>+ pgvector)]
         NEO[(Neo4j<br/>Knowledge Graph)]
-        SB[(Supabase<br/>Storage)]
+        SB[(MinIO<br/>Storage)]
     end
-    
-    UI --> Chat
-    UI --> Stream
-    UI --> Admin
-    
+
+    Desktop --> Chat & Stream
+    LMS --> Chat & AuthAPI
+    Desktop --> AuthAPI & OrgAPI & UserAPI
+
+    AuthAPI --> OAuth & TokenSvc & LMSExchange
+    OrgAPI --> UserSvc
+    UserAPI --> UserSvc
+
     Chat --> CS
     Stream --> CS
+    CS --> GStr
     Admin --> IS
-    
+
     CS --> UA
-    UA --> RAG & MEM & TUT
+    CS --> CW & CM
+    UA --> RAG & MEM & TUT & PST
     UA --> PL
-    
+
     RAG --> CRAG
     MEM --> SM
     TUT --> TA
-    
+    PST --> SP
+
     CRAG --> HS
     CRAG --> GS
     HS --> PG
     GS --> NEO
     SM --> PG
-    IS --> SB
-    IS --> PG
-    IS --> NEO
-    
+    IS --> SB & PG & NEO
+
+    LMSExchange --> UserSvc
+    LMSE --> LMSC
+
     style UA fill:#E91E63,color:white
     style CRAG fill:#2196F3,color:white
     style SM fill:#4CAF50,color:white
+    style SP fill:#FF9800,color:white
+    style GStr fill:#9C27B0,color:white
 ```
 
 ---
 
 ## 6. Cross-Cutting Concerns
 
-### Authentication
+### Authentication (Dual: API Key + JWT)
 
 ```
-X-API-Key → core/security.py → AuthenticatedUser
-    ├── user_id: from X-User-ID header
-    ├── role: from X-User-Role header  
-    └── session_id: from X-Session-ID header
+Path 1: API Key
+  X-API-Key → core/security.py → AuthenticatedUser
+      ├── user_id: from X-User-ID header
+      ├── role: from X-User-Role header
+      ├── session_id: from X-Session-ID header
+      └── organization_id: from X-Organization-ID header (optional)
+
+Path 2: Google OAuth + JWT
+  Google OAuth → auth/google_oauth.py → auth/token_service.py → JWT
+      └── Bearer token → core/security.py → AuthenticatedUser
+
+Path 3: LMS Token Exchange (HMAC-signed)
+  LMS Backend → POST /auth/lms/token (HMAC-SHA256) → auth/lms_token_exchange.py → JWT
 ```
 
-### Configuration
+### Configuration (46 feature flags)
 
 ```python
-# app/core/config.py
-use_unified_agent: bool = True      # ReAct agent (default)
-use_multi_agent: bool = False       # LangGraph system
-enable_corrective_rag: bool = True  # CRAG loop
-deep_reasoning_enabled: bool = True # <thinking> tags
+# app/core/config.py (key flags — see CLAUDE.md for full list)
+use_multi_agent: bool = True            # LangGraph multi-agent (default)
+enable_corrective_rag: bool = True      # CRAG loop
+deep_reasoning_enabled: bool = True     # <thinking> tags
+enable_multi_tenant: bool = False       # Multi-org data isolation
+enable_unified_client: bool = False     # AsyncOpenAI SDK
+enable_mcp_server: bool = False         # MCP tool exposure
+enable_agentic_loop: bool = False       # Generalized ReAct
+enable_product_search: bool = False     # Product search agent
+enable_structured_outputs: bool = True  # Constrained decoding
+enable_character_tools: bool = True     # Character introspection
+active_domains: list = ["maritime", "traffic_law"]
 ```
 
 ### Prompt Management
@@ -578,7 +734,7 @@ prompts/
 
 ---
 
-## 8. Audit Summary (2025-12-14)
+## 8. Audit Summary (2026-02-20, Post-Sprint 161)
 
 ### Dead Code Removed
 
@@ -679,13 +835,39 @@ agentic_rag/
 - `RetrievalGrader._build_feedback_direct()` - Zero-latency rule-based feedback
 - `AdaptiveTokenBudget.calculate_budget()` - Query complexity analysis
 
+### Project Stats (Post-Sprint 161)
+
+| Metric | Count |
+|--------|-------|
+| Python source files | 254 |
+| Test files | 324 |
+| Unit tests | 6,520+ |
+| API routers | 18 |
+| Feature flags | 46 |
+| Alembic migrations | 12 |
+| Repositories | 15 |
+| Domain plugins | 2 (maritime, traffic_law) |
+| Search platform adapters | 8 |
+| LangGraph agent nodes | 7 (Guardian, Supervisor, RAG, Tutor, Memory, Direct, ProductSearch) |
+
+### Desktop App (wiii-desktop/) Stats
+
+| Metric | Count |
+|--------|-------|
+| Zustand stores | 11 (settings, chat, connection, domain, ui, auth, org, avatar, stream, context, theme) |
+| Test files | 54 |
+| Vitest tests | 1,346 |
+| API modules | 15 |
+| Lib utilities | 28 |
+| Components | 30+ |
+
 ### Future Work
 
 | Item | Status |
 |------|--------|
-| LMS Event Callbacks | 🟡 Awaiting LMS deploy |
-| Multi-Agent Path | ⏸️ Disabled |
-| Bounding Box Extraction | 🟡 Needs PyMuPDF + Supabase PDF |
+| RLS (Row-Level Security) | Phase 2 follow-up to Sprint 160 app-level isolation |
+| MCP Client integration | Feature-gated, awaiting external MCP servers |
+| Bounding Box Extraction | Needs PyMuPDF + MinIO PDF |
 
 ---
 

@@ -12,7 +12,7 @@ merged with PLATFORM_DEFAULTS using deep_merge(), and cached per-request.
 
 import copy
 import logging
-from typing import Any, Optional
+from typing import Optional
 
 from app.models.organization import OrgSettings
 

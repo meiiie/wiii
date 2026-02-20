@@ -1,10 +1,10 @@
 # Wiii - System Architecture
 
-**Version:** 5.1 (Post-Sprint 124)
-**Updated:** 2026-02-18
+**Version:** 6.0 (Post-Sprint 161)
+**Updated:** 2026-02-20
 **Product:** Wiii by The Wiii Lab
-**Pattern:** Multi-Domain Agentic RAG with Plugin Architecture, LLM-First Routing, Multi-Channel Gateway, MCP Integration
-**Codebase:** 200+ Python files, ~55,000 LOC, 42 API endpoints, 5501 unit tests
+**Pattern:** Multi-Domain Agentic RAG with Plugin Architecture, Product Search Platform, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization
+**Codebase:** 254 Python files, ~75,000 LOC, 60+ API endpoints, 6520 backend + 1346 desktop tests
 
 ---
 
@@ -26,6 +26,12 @@
    - 4.10 [MCP Integration](#410-mcp-integration)
    - 4.11 [Proactive Agent System](#411-proactive-agent-system)
    - 4.12 [Multi-Tenant Architecture](#412-multi-tenant-architecture)
+   - 4.13 [Product Search Platform](#413-product-search-platform)
+   - 4.14 [Browser Scraping (Playwright)](#414-browser-scraping-playwright)
+   - 4.15 [Authentication & Identity Federation](#415-authentication--identity-federation)
+   - 4.16 [LMS Integration](#416-lms-integration)
+   - 4.17 [Multi-Tenant Data Isolation](#417-multi-tenant-data-isolation)
+   - 4.18 [Org-Level Customization](#418-org-level-customization)
 5. [Data Layer](#5-data-layer)
 6. [Security Architecture](#6-security-architecture)
 7. [Desktop Application](#7-desktop-application)
@@ -75,6 +81,7 @@ graph TB
         TUTOR_A["Tutor Agent"]
         MEM_A["Memory Agent"]
         DIRECT_A["Direct Response"]
+        PROD_A["Product Search Agent"]
         GRADE_A["Grader"]
         SYNTH["Synthesizer"]
     end
@@ -85,6 +92,28 @@ graph TB
         CACHE["SemanticCache"]
         GRAPHRAG["GraphRAG"]
         ALOOP["Agentic Loop"]
+    end
+
+    subgraph "Product Search Platform"
+        SREG["SearchPlatformRegistry"]
+        SERP["Serper (Shopping+Site)"]
+        WSS["WebSosanh"]
+        FB_S["Facebook (Search+Groups)"]
+        TIKTOK["TikTok Research"]
+        APIFY_S["Apify"]
+    end
+
+    subgraph "Browser Scraping"
+        PW["Playwright Worker"]
+        FB_SCROLL["Facebook Scroll+Extract"]
+        SCREENSHOT["Screenshot Stream"]
+    end
+
+    subgraph "Authentication"
+        OAUTH["Google OAuth 2.0"]
+        JWT_AUTH["JWT + Refresh Tokens"]
+        LMS_TE["LMS Token Exchange<br/>HMAC-SHA256"]
+        USER_SVC["User Service<br/>Identity Federation"]
     end
 
     subgraph "LLM Provider Layer"
@@ -123,7 +152,7 @@ graph TB
     ORCH --> INPUT & OUTPUT & SESSION & DROUTER
     ORCH --> GUARD
     GUARD --> SUP
-    SUP --> RAG_A & TUTOR_A & MEM_A & DIRECT_A
+    SUP --> RAG_A & TUTOR_A & MEM_A & DIRECT_A & PROD_A
     RAG_A & TUTOR_A --> CRAG
     GRADE_A --> SYNTH
     CRAG --> HYBRID & CACHE & GRAPHRAG
@@ -132,6 +161,12 @@ graph TB
     GRAPHRAG --> NEO
     SMEM --> PG
     DROUTER --> MARITIME & TRAFFIC
+    PROD_A --> SREG
+    SREG --> SERP & WSS & FB_S & TIKTOK & APIFY_S
+    FB_S --> PW
+    PW --> FB_SCROLL & SCREENSHOT
+    OAUTH & JWT_AUTH & LMS_TE --> USER_SVC
+    USER_SVC --> PG
 ```
 
 ---
@@ -140,16 +175,16 @@ graph TB
 
 ```
 maritime-ai-service/                    # Backend (Python)
-├── app/                                # 185 files, ~48,400 LOC
+├── app/                                # 254 files, ~75,000 LOC
 │   ├── main.py                         # FastAPI app + lifespan startup/shutdown
 │   │
-│   ├── api/                            # API Layer (42 endpoints)
+│   ├── api/                            # API Layer (60+ endpoints across 18 routers)
 │   │   ├── deps.py                     # Auth dependencies (RequireAuth, RequireAdmin)
 │   │   └── v1/
 │   │       ├── chat.py                 # POST /chat (JSON response)
 │   │       ├── chat_stream.py          # POST /chat/stream/v1,v2,v3 (SSE)
 │   │       ├── websocket.py            # WS /ws (persistent connection)
-│   │       ├── webhook.py              # POST /webhook/{id} (Telegram)
+│   │       ├── webhook.py              # POST /webhook/{id} (Telegram + LMS)
 │   │       ├── health.py               # GET /health, /health/db, /health/ollama
 │   │       ├── admin.py                # Admin: ingest, stats, domains, skills
 │   │       ├── threads.py              # Thread CRUD per user
@@ -157,16 +192,27 @@ maritime-ai-service/                    # Backend (Python)
 │   │       ├── insights.py             # GET /insights/{user_id}
 │   │       ├── memories.py             # GET/DELETE /memories/{user_id}
 │   │       ├── sources.py              # GET /sources/{node_id}
-│   │       └── organizations.py        # Multi-tenant org CRUD + membership
+│   │       ├── organizations.py        # Multi-tenant org CRUD + membership + settings
+│   │       └── context.py              # Context management (token budget, compaction)
 │   │
-│   ├── core/                           # Framework & Cross-cutting
-│   │   ├── config.py                   # Pydantic Settings (80+ fields, validators)
+│   ├── auth/                           # Authentication & Identity (Sprint 157-159)
+│   │   ├── google_oauth.py             # Google OAuth 2.0 flow + callback
+│   │   ├── token_service.py            # JWT creation, refresh, revocation
+│   │   ├── user_service.py             # Identity federation (3-step: provider→email→create)
+│   │   ├── user_router.py              # /users/me, /users (admin), role/deactivate
+│   │   ├── lms_token_exchange.py       # HMAC-signed LMS→Wiii token exchange
+│   │   └── lms_auth_router.py          # /auth/lms/token, /auth/lms/health
+│   │
+│   ├── core/                           # Framework & Cross-cutting (15 files)
+│   │   ├── config.py                   # Pydantic Settings (120+ fields, 46 feature flags, validators)
 │   │   ├── database.py                 # PostgreSQL pool + Neo4j driver
 │   │   ├── security.py                 # API Key (hmac) + JWT auth
 │   │   ├── rate_limit.py               # slowapi with per-endpoint limits
 │   │   ├── middleware.py               # RequestID + OrgContext middleware
 │   │   ├── org_context.py              # Multi-tenant ContextVars
-│   │   ├── thread_utils.py             # Composite thread ID builder
+│   │   ├── org_filter.py               # App-level org_id filtering helpers (Sprint 160)
+│   │   ├── org_settings.py             # 4-layer settings cascade + permissions (Sprint 161)
+│   │   ├── thread_utils.py             # Composite thread ID builder (org-aware)
 │   │   ├── token_tracker.py            # Per-request LLM usage accounting
 │   │   ├── resilience.py               # Circuit breaker, retry patterns
 │   │   ├── exceptions.py               # WiiiException hierarchy
@@ -198,9 +244,11 @@ maritime-ai-service/                    # Backend (Python)
 │   │   ├── client.py                   # MCPToolManager (langchain-mcp-adapters)
 │   │   └── adapter.py                  # Schema: MCP <-> OpenAI <-> LangChain
 │   │
-│   ├── engine/                         # Core AI Engine
+│   ├── engine/                         # Core AI Engine (60+ files)
 │   │   ├── llm_pool.py                 # 3-tier LLM singleton (Deep/Moderate/Light)
 │   │   ├── llm_factory.py              # LLM creation + ThinkingTier enum
+│   │   ├── conversation_window.py      # Sliding window context management (Sprint 77)
+│   │   ├── context_manager.py          # Token budget allocation (Sprint 78)
 │   │   │
 │   │   ├── llm_providers/              # Multi-Provider Architecture
 │   │   │   ├── base.py                 # LLMProvider ABC
@@ -211,19 +259,41 @@ maritime-ai-service/                    # Backend (Python)
 │   │   │
 │   │   ├── multi_agent/                # LangGraph Multi-Agent System
 │   │   │   ├── graph.py                # Graph definition + compile
-│   │   │   ├── graph_streaming.py      # SSE event emission + lifecycle
-│   │   │   ├── state.py                # AgentState TypedDict
+│   │   │   ├── graph_streaming.py      # SSE event emission + lifecycle + drain
+│   │   │   ├── state.py                # AgentState TypedDict (org_id, tool_events)
 │   │   │   ├── checkpointer.py         # AsyncPostgresSaver singleton
 │   │   │   ├── agent_loop.py           # Generalized ReAct (Path A/B)
-│   │   │   └── agents/                 # Agent nodes
-│   │   │       ├── supervisor.py       # LLM-first routing (RoutingDecision structured output)
+│   │   │   └── agents/                 # Agent nodes (9 agents)
+│   │   │       ├── supervisor.py       # LLM-first routing (RoutingDecision)
 │   │   │       ├── guardian.py         # Content safety (fail-open)
 │   │   │       ├── tutor_node.py       # Teaching + ReAct tool calling
 │   │   │       ├── rag_node.py         # Knowledge retrieval
 │   │   │       ├── memory_node.py      # User memory retrieval
 │   │   │       ├── grader_node.py      # Quality scoring (1-10)
 │   │   │       ├── synthesizer.py      # Final response formatting
-│   │   │       └── direct_response.py  # General responses + web/news/legal search tools
+│   │   │       ├── direct_response.py  # General + web/news/legal search tools
+│   │   │       └── product_search_node.py  # Product search (7 tools, 5 platforms)
+│   │   │
+│   │   ├── search_platforms/           # Product Search Platform (Sprint 148-151)
+│   │   │   ├── base.py                 # SearchPlatformAdapter ABC
+│   │   │   ├── registry.py             # SearchPlatformRegistry singleton
+│   │   │   ├── circuit_breaker.py      # Per-platform circuit breaker
+│   │   │   ├── adapters/               # 8 platform adapters
+│   │   │   │   ├── serper_shopping.py  # Serper Shopping API
+│   │   │   │   ├── serper_site.py      # Serper site-specific (5 sites)
+│   │   │   │   ├── websosanh.py        # WebSosanh.vn price comparison
+│   │   │   │   ├── facebook_search.py  # Facebook Marketplace (Playwright)
+│   │   │   │   ├── facebook_group.py   # Facebook Groups (scroll+extract)
+│   │   │   │   ├── tiktok_research.py  # TikTok Research API
+│   │   │   │   ├── apify.py            # Apify web scraping
+│   │   │   │   ├── allweb.py           # AllWeb adapter
+│   │   │   │   └── browser_base.py     # Playwright browser base class
+│   │   │   └── oauth/                  # Platform OAuth (skeleton)
+│   │   │
+│   │   ├── character/                  # Character System (Sprint 97+124)
+│   │   │   ├── character_repository.py # Per-user character blocks CRUD
+│   │   │   ├── character_tools.py      # Introspection/update tools
+│   │   │   └── reflection_engine.py    # Stanford Generative Agents reflection
 │   │   │
 │   │   ├── agentic_rag/               # Corrective RAG Pipeline
 │   │   │   ├── corrective_rag.py       # 6-step orchestration
@@ -234,12 +304,14 @@ maritime-ai-service/                    # Backend (Python)
 │   │   │   ├── answer_generator.py     # Response generation
 │   │   │   └── verifier.py             # Self-correction loop
 │   │   │
-│   │   ├── tools/                      # LangChain Tool Registry
+│   │   ├── tools/                      # LangChain Tool Registry (15+ tools)
 │   │   │   ├── rag_tools.py            # maritime_search, rag_search
 │   │   │   ├── memory_tools.py         # save/recall/clear memories
 │   │   │   ├── tutor_tools.py          # teaching-specific tools
+│   │   │   ├── product_search_tools.py # 7 platform-based search tools
 │   │   │   ├── scheduler_tools.py      # schedule_task, list_tasks
 │   │   │   ├── preference_tools.py     # get/set user preferences
+│   │   │   ├── character_tools.py      # character introspection/update
 │   │   │   ├── filesystem_tools.py     # Sandboxed file operations
 │   │   │   ├── code_execution_tools.py # Sandboxed Python exec
 │   │   │   └── skill_tools.py          # Self-extending agent skills
@@ -271,32 +343,39 @@ maritime-ai-service/                    # Backend (Python)
 │   │   ├── vision_processor.py         # Gemini Vision for images
 │   │   └── fact_extractor.py           # User fact discovery
 │   │
-│   ├── repositories/                   # Data Access Layer
+│   ├── repositories/                   # Data Access Layer (15 repos)
 │   │   ├── semantic_memory_repository.py    # Memory CRUD + similarity search
 │   │   ├── neo4j_knowledge_repository.py    # Graph operations
-│   │   ├── dense_search_repository.py       # pgvector similarity
-│   │   ├── sparse_search_repository.py      # tsvector FTS
-│   │   ├── thread_repository.py             # Thread persistence
-│   │   ├── scheduler_repository.py          # Scheduled task CRUD
-│   │   ├── organization_repository.py       # Org + membership CRUD
-│   │   ├── user_preferences_repository.py   # Learning prefs
-│   │   ├── fact_repository.py               # User facts
-│   │   └── insight_repository.py            # Learning insights
+│   │   ├── dense_search_repository.py       # pgvector similarity (org-aware)
+│   │   ├── sparse_search_repository.py      # tsvector FTS (org-aware)
+│   │   ├── thread_repository.py             # Thread persistence (org-aware)
+│   │   ├── scheduler_repository.py          # Scheduled task CRUD (org-aware)
+│   │   ├── organization_repository.py       # Org + membership + settings CRUD
+│   │   ├── user_preferences_repository.py   # Learning prefs (org-aware)
+│   │   ├── fact_repository.py               # User facts (org-aware)
+│   │   ├── insight_repository.py            # Learning insights (org-aware)
+│   │   ├── learning_profile_repository.py   # Learning progress (org-aware)
+│   │   ├── chat_message_repository.py       # Chat messages (org-aware)
+│   │   └── chat_history_repository.py       # Chat sessions (org-aware)
 │   │
 │   ├── cache/                          # Caching Layer
 │   │   └── semantic_cache.py           # 3-tier TTL, asyncio.Lock
 │   │
 │   ├── models/                         # Pydantic Schemas
 │   │   ├── schemas.py                  # API request/response models
-│   │   └── organization.py             # Org + membership models
+│   │   └── organization.py             # Org + OrgSettings + OrgBranding + OrgPermissions
+│   │
+│   ├── integrations/                   # LMS Integration (Sprint 155)
+│   │   ├── lms_client.py              # Outbound LMS API client
+│   │   └── lms_enrichment.py          # Webhook data enrichment
 │   │
 │   └── prompts/                        # Prompt System
-│       ├── prompt_loader.py            # YAML persona loader
+│       ├── prompt_loader.py            # YAML persona loader + persona overlay (Sprint 161)
 │       └── agents/                     # Persona configs (tutor.yaml, rag.yaml, etc.)
 │
 ├── tests/                              # Test Suite
 │   ├── conftest.py                     # Hypothesis + sample fixtures
-│   ├── unit/                           # 200+ test files, 5247 tests
+│   ├── unit/                           # 324 test files, 6520+ tests
 │   │   └── conftest.py                 # Autouse: disable rate limiter
 │   ├── integration/                    # 31 files (require services)
 │   ├── property/                       # Hypothesis property tests
@@ -318,18 +397,21 @@ maritime-ai-service/                    # Backend (Python)
 └── .env.example                        # Configuration template
 
 wiii-desktop/                           # Desktop App (Tauri v2)
-├── src/                                # React 18 + TypeScript
-│   ├── api/                            # HTTP client, SSE parser
+├── src/                                # React 18 + TypeScript (158 files)
+│   ├── api/                            # 15 API modules (HTTP, SSE, auth, orgs, users)
 │   ├── components/
-│   │   ├── chat/                       # ChatView, MessageBubble, ThinkingBlock
-│   │   ├── layout/                     # AppShell, TitleBar, Sidebar
-│   │   ├── settings/                   # SettingsPage (3-tab modal)
-│   │   └── common/                     # ErrorBoundary, MarkdownRenderer
-│   ├── stores/                         # Zustand (settings, chat, connection, domain, ui)
-│   ├── hooks/                          # useSSEStream, useAutoScroll
-│   ├── lib/                            # constants, theme, storage
-│   └── __tests__/                      # 190 Vitest tests (6 files)
-├── src-tauri/                          # Rust backend (Tauri plugins)
+│   │   ├── auth/                       # LoginScreen, OAuth callback
+│   │   ├── chat/                       # ChatView, MessageBubble, ThinkingBlock, ThinkingTimeline
+│   │   ├── layout/                     # AppShell, TitleBar, Sidebar, StatusBar
+│   │   ├── settings/                   # SettingsPage (5 tabs), OrgSettingsTab
+│   │   ├── common/                     # PermissionGate, ErrorBoundary, MarkdownRenderer
+│   │   └── welcome/                    # WelcomeScreen (org-aware branding)
+│   ├── stores/                         # 11 Zustand stores (auth, org, avatar, chat, ...)
+│   ├── hooks/                          # useSSEStream, useAutoScroll, useKeyboardShortcuts
+│   ├── lib/                            # 28 utilities (avatar, org-branding, storage, theme)
+│   │   └── avatar/                     # WiiiAvatar, Rive integration, emotion engine
+│   └── __tests__/                      # 54 test files, 1346 Vitest tests
+├── src-tauri/                          # Rust backend (Tauri plugins, splash screen)
 └── package.json                        # Vite 5, Tailwind 3.4
 ```
 
@@ -360,8 +442,11 @@ wiii-desktop/                           # Desktop App (Tauri v2)
 | **HTTP Client** | httpx | >=0.28.1 | Async HTTP requests |
 | **MCP Server** | fastapi-mcp | >=0.3.0 | Expose tools via MCP |
 | **MCP Client** | langchain-mcp-adapters | - | Consume external MCP tools |
+| **Browser** | Playwright | - | Headless Chrome for scraping (Facebook, web) |
 | **PDF** | PyMuPDF (fitz) | - | Page extraction + images |
 | **Tracing** | OpenTelemetry | - | Distributed tracing (opt-in) |
+| **Auth** | Authlib | - | Google OAuth 2.0 + OIDC |
+| **JWT** | PyJWT | - | Token creation + validation |
 
 ### Desktop
 
@@ -372,10 +457,11 @@ wiii-desktop/                           # Desktop App (Tauri v2)
 | **Language** | TypeScript | - | Type safety |
 | **Build** | Vite | 5 | Dev server + bundler |
 | **Styling** | Tailwind CSS | 3.4 | Utility-first CSS |
-| **State** | Zustand | - | 5 stores (settings, chat, connection, domain, ui) |
-| **Persistence** | @tauri-apps/plugin-store | - | Conversation + settings |
+| **State** | Zustand | 5.x | 11 stores (auth, org, chat, avatar, settings, ...) |
+| **Persistence** | @tauri-apps/plugin-store | - | Conversation + settings + auth tokens |
 | **HTTP** | @tauri-apps/plugin-http | - | CORS bypass for backend |
-| **Tests** | Vitest + jsdom | - | 190 tests |
+| **Icons** | Lucide React | - | Icon library |
+| **Tests** | Vitest + jsdom | - | 1346 tests across 54 files |
 
 ### Infrastructure
 
@@ -395,7 +481,7 @@ wiii-desktop/                           # Desktop App (Tauri v2)
 
 ### 4.1 API & Middleware Layer
 
-**42 endpoints** across 12 route files, all rate-limited (except health probes).
+**60+ endpoints** across 18 route files, all rate-limited (except health probes).
 
 ```mermaid
 flowchart LR
@@ -417,10 +503,13 @@ flowchart LR
         R1["Chat: /chat, /chat/stream/*"]
         R2["Management: /threads, /insights, /memories, /sources"]
         R3["Admin: /admin/ingest, /admin/domains, /admin/skills"]
-        R4["Orgs: /organizations/*"]
+        R4["Orgs: /organizations/*, /organizations/{id}/settings"]
         R5["Health: /health, /health/db, /health/ollama"]
         R6["Channels: /ws, /webhook/{id}"]
         R7["MCP: /mcp (feature-gated)"]
+        R8["Auth: /auth/google/*, /auth/token/*, /auth/lms/*"]
+        R9["Users: /users/me, /users (admin)"]
+        R10["Context: /chat/context/info, /context/compact"]
     end
 
     Middleware --> Deps --> Routes
@@ -434,6 +523,8 @@ flowchart LR
 | Write/Delete | 30/min | `DELETE /threads/*`, `DELETE /memories/*`, `PATCH /*` |
 | Admin | 10-60/min | `/admin/*` (ingest=10, read=60) |
 | Organizations | 10-30/min | `/organizations/*` |
+| Auth | 10-30/min | `/auth/*` (login=10, refresh=30) |
+| Users | 30-60/min | `/users/me` (read=60, write=30) |
 | Health | Unlimited | `/health`, `/health/db`, `/health/ollama` |
 
 ---
@@ -506,7 +597,7 @@ flowchart TB
 
 ### 4.3 Multi-Agent System (LangGraph)
 
-8 agents in a directed graph with conditional edges, compiled via `StateGraph`.
+9 agents in a directed graph with conditional edges, compiled via `StateGraph`.
 
 ```mermaid
 stateDiagram-v2
@@ -519,6 +610,7 @@ stateDiagram-v2
     supervisor --> memory_agent: MEMORY
     supervisor --> tutor_agent: TUTOR
     supervisor --> rag_agent: RAG
+    supervisor --> product_search_agent: PRODUCT_SEARCH
 
     direct_response_node --> synthesizer_node
 
@@ -534,6 +626,8 @@ stateDiagram-v2
 
     memory_agent --> quality_check
 
+    product_search_agent --> synthesizer_node
+
     quality_check --> synthesizer_node: score >= 6 [PASS]
     quality_check --> tutor_agent: score < 6 [RETRY, max 1]
 
@@ -543,15 +637,16 @@ stateDiagram-v2
 | Agent | Responsibility | Key Features |
 |-------|---------------|--------------|
 | **Guardian** | Content safety, relevance | Fail-open on errors, skip <3 char messages |
-| **Supervisor** | LLM-first routing (Sprint 103) | `RoutingDecision` structured output with CoT reasoning, confidence gating at 0.7, keyword guardrails as fallback (social→DIRECT, personal→MEMORY). Intents: lookup, learning, personal, social, off_topic, web_search |
+| **Supervisor** | LLM-first routing (Sprint 103) | `RoutingDecision` structured output with CoT reasoning, confidence gating at 0.7, keyword guardrails as fallback (social→DIRECT, personal→MEMORY). Intents: lookup, learning, personal, social, off_topic, web_search, product_search |
 | **RAG Agent** | Knowledge retrieval | CorrectiveRAG pipeline, LLM fallback on empty KB |
 | **Tutor Agent** | Teaching, explanation | ReAct tool-calling loop with domain tools |
 | **Memory Agent** | User context retrieval | Cross-session semantic memory |
 | **Direct Response** | General queries + tool dispatch | 8 tools: 3 character + datetime + 4 web search (web, news, legal, maritime). Handles off-topic, web_search intents |
+| **Product Search** | Product comparison & pricing | 7 tools across 5 platforms (Serper, WebSosanh, Facebook, TikTok, Apify). Plugin architecture with circuit breakers. Handles product_search intent |
 | **Grader** | Quality control | Score 1-10, early exit at confidence >= 0.85 |
 | **Synthesizer** | Final formatting | Vietnamese output, thinking extraction, citations |
 
-**AgentState** fields: `messages`, `query`, `context`, `domain_id`, `thinking`, `agent_outputs`, `tool_call_events`, `confidence`, `sources`, `next_agent`, `retry_count`
+**AgentState** fields: `messages`, `query`, `context`, `domain_id`, `organization_id`, `thinking`, `agent_outputs`, `tool_call_events`, `confidence`, `sources`, `next_agent`, `retry_count`
 
 **Checkpoint persistence:** `AsyncPostgresSaver` — per-user-session LangGraph state stored in PostgreSQL.
 
@@ -963,9 +1058,265 @@ flowchart TB
 **Feature-Gated:** `enable_multi_tenant=False`. When disabled, all domains available, no org ContextVars set.
 
 **Data Models:**
-- `organizations` table: id, name, slug, allowed_domains, settings
+- `organizations` table: id, name, slug, allowed_domains, settings (JSONB)
 - `user_organizations` table: user_id, org_id, role (member/admin/owner)
 - `AddMemberRequest.role`: `Literal["member", "admin", "owner"]` (Sprint 65b)
+
+---
+
+### 4.13 Product Search Platform
+
+Plugin-based product search across 5 platforms with circuit breakers and LLM extraction (Sprints 148-151).
+
+```mermaid
+flowchart TB
+    subgraph Registry["SearchPlatformRegistry (Singleton)"]
+        REG["Registry"] --> CONFIG["product_search_platforms config"]
+        CONFIG --> ENABLED["Enabled adapters list"]
+    end
+
+    subgraph Adapters["Platform Adapters (8)"]
+        SERP_SHOP["SerperShopping<br/>Google Shopping API"]
+        SERP_SITE["SerperSite<br/>5 site-specific searches"]
+        WSS["WebSosanh<br/>94+ shop price comparison"]
+        FB_SEARCH["FacebookSearch<br/>Playwright + LLM extraction"]
+        FB_GROUP["FacebookGroup<br/>Scroll + GraphQL capture"]
+        TIKTOK["TikTokResearch<br/>Native API + Serper fallback"]
+        APIFY["Apify<br/>Web scraping actors"]
+        ALLWEB["AllWeb<br/>General web search"]
+    end
+
+    subgraph Tools["Product Search Tools (7)"]
+        T1["tool_search_serper_shopping"]
+        T2["tool_search_websosanh"]
+        T3["tool_search_facebook"]
+        T4["tool_search_facebook_group"]
+        T5["tool_search_tiktok"]
+        T6["tool_search_apify"]
+        T7["tool_search_allweb"]
+    end
+
+    subgraph Safety["Resilience"]
+        CB["CircuitBreaker<br/>Per-platform"]
+        TIMEOUT["Request timeout<br/>30s default"]
+    end
+
+    REG --> Adapters
+    Adapters --> Tools
+    Adapters --> Safety
+```
+
+**Key Design Decisions:**
+- **Plugin architecture**: `SearchPlatformAdapter` ABC — add new platforms without modifying core
+- **Tool generation**: `StructuredTool.from_function()` (NOT `@tool(name=...)`)
+- **Circuit breaker**: Per-platform, 5 failures → open for 60s
+- **Feature flag**: `enable_product_search=False` — tool list empty when disabled
+- **Output format**: `{"platform": str, "results": [...], "count": int}`
+- **Deep search** (Sprint 150): Pagination + page scraper + 15-iteration LLM search loop
+
+---
+
+### 4.14 Browser Scraping (Playwright)
+
+Headless browser automation for sites that require JavaScript rendering (Sprints 152-154).
+
+```mermaid
+flowchart TB
+    subgraph Worker["Playwright Worker Thread"]
+        PW["Playwright Browser<br/>(Chromium headless)"]
+        PW --> PAGE["Page Navigation"]
+        PAGE --> SCROLL["Infinite Scroll<br/>+ Network Interception"]
+        SCROLL --> EXTRACT["Content Extraction"]
+    end
+
+    subgraph Extraction["Dual Extraction Mode"]
+        LLM_EXT["LLM Extraction<br/>Screenshot → Gemini Vision"]
+        GQL_EXT["GraphQL Capture<br/>Network intercept (Sprint 156)"]
+        EXTRACT --> LLM_EXT
+        EXTRACT --> GQL_EXT
+    end
+
+    subgraph Output["Output"]
+        SCREENSHOTS["Screenshots<br/>Streamed to UI via SSE"]
+        PRODUCTS["Product Data<br/>Structured JSON"]
+    end
+
+    LLM_EXT & GQL_EXT --> SCREENSHOTS & PRODUCTS
+```
+
+**Key Features:**
+- **Worker thread**: Dedicated thread to avoid greenlet "Cannot switch" errors (Sprint 154b)
+- **Facebook login**: Cookie-based persistent session (Sprint 154)
+- **Network interception**: GraphQL capture during scroll — skip LLM when >= 3 products captured (Sprint 156)
+- **Screenshot streaming**: Browser screenshots streamed to desktop UI via SSE events (Sprint 153)
+- **SSRF prevention**: URL validation blocks private IPs and internal networks (Sprint 153)
+- **Feature flag**: `enable_browser_scraping=False`
+
+---
+
+### 4.15 Authentication & Identity Federation
+
+Multi-method authentication with generalized identity federation (Sprints 157-158).
+
+```mermaid
+flowchart TB
+    subgraph Methods["Auth Methods"]
+        APIKEY["API Key<br/>(X-API-Key header)"]
+        GOOGLE["Google OAuth 2.0<br/>(OIDC + Authlib)"]
+        JWT_M["JWT Bearer<br/>(Authorization header)"]
+        LMS_M["LMS Token Exchange<br/>(HMAC-SHA256)"]
+    end
+
+    subgraph Federation["Identity Federation"]
+        FED["find_or_create_by_provider()"]
+        FED --> S1["Step 1: Match by provider + sub"]
+        S1 -->|not found| S2["Step 2: Match by verified email"]
+        S2 -->|not found| S3["Step 3: Create new user"]
+    end
+
+    subgraph Storage["User Storage"]
+        USERS["users table"]
+        IDENT["federated_identities table<br/>(provider, sub, email)"]
+        TOKENS["refresh_tokens table<br/>(auth_method column)"]
+    end
+
+    Methods --> Federation --> Storage
+```
+
+**Key Design Decisions:**
+- **Generalized federation**: `find_or_create_by_provider(provider, sub, email, email_verified)` — works for Google, LMS, future providers
+- **Email auto-link guard**: Only links by email when `email_verified=True` (Sprint 160b security fix)
+- **Token delivery**: URL fragment `#` (not `?`) — fragments never sent to server
+- **Backward compatibility**: `find_or_create_by_google()` is thin wrapper around generic function
+- **Desktop**: Parse tokens from `#fragment` with `?query` fallback
+
+---
+
+### 4.16 LMS Integration
+
+Webhook-based integration with Learning Management Systems (Sprints 155, 159).
+
+```mermaid
+flowchart TB
+    subgraph Inbound["Inbound (LMS → Wiii)"]
+        WH["POST /webhook/lms<br/>Grade/enrollment events"]
+        WH --> ENRICH["LMS Enrichment<br/>Student context injection"]
+        ENRICH --> MEM["Semantic Memory<br/>Store learning context"]
+    end
+
+    subgraph TokenExchange["Token Exchange (Sprint 159)"]
+        LMS["LMS Backend"] --> SIGN["HMAC-SHA256 sign"]
+        SIGN --> POST["POST /auth/lms/token"]
+        POST --> VERIFY["Verify signature<br/>+ timestamp replay check"]
+        VERIFY --> FED["find_or_create_by_provider('lms')"]
+        FED --> ORG["ensure_org_membership()"]
+        ORG --> JWT_PAIR["Return JWT pair"]
+    end
+
+    subgraph Outbound["Outbound (Wiii → LMS)"]
+        CLIENT["LMS API Client"]
+        CLIENT --> GRADE["Post grades"]
+        CLIENT --> PROGRESS["Report progress"]
+    end
+```
+
+**Key Features:**
+- **Token exchange**: HMAC-SHA256 signed backend-to-backend (RFC 8693 pattern)
+- **Secret resolution**: 3-level fallback (JSON connectors → LMSConnectorRegistry → flat secret)
+- **Replay protection**: Timestamp ± `lms_token_exchange_max_age` (default 300s)
+- **Role mapping**: instructor/professor→teacher, admin/administrator→admin, default→student
+- **Feature flag**: `enable_lms_token_exchange=False`
+
+---
+
+### 4.17 Multi-Tenant Data Isolation
+
+App-level `organization_id` filtering across all repositories (Sprint 160).
+
+```mermaid
+flowchart TB
+    subgraph Request["Per-Request Flow"]
+        HDR["X-Organization-ID"] --> MW["OrgContextMiddleware"]
+        MW --> CV["ContextVar: current_org_id"]
+    end
+
+    subgraph Pipeline["Pipeline Threading"]
+        CV --> CTX["ChatContext.organization_id"]
+        CTX --> STATE["AgentState.organization_id"]
+        STATE --> REPOS["Repository Layer"]
+    end
+
+    subgraph Filtering["Filtering Helpers (org_filter.py)"]
+        EFF["get_effective_org_id()"]
+        NAMED["org_where_clause()<br/>SQLAlchemy :param style"]
+        POS["org_where_positional()<br/>asyncpg $N style"]
+    end
+
+    subgraph Tables["Filtered Tables (Migration 011)"]
+        T1["semantic_memories"]
+        T2["chat_messages"]
+        T3["chat_sessions"]
+        T4["chat_history"]
+        T5["learning_profile"]
+        T6["org_audit_log"]
+    end
+
+    REPOS --> Filtering --> Tables
+```
+
+**Key Design Decisions:**
+- **App-level filtering** (Phase 1) — RLS is Phase 2 follow-up
+- **Feature gate**: `enable_multi_tenant=False` → all helpers return empty/None (zero behavior change)
+- **NULL-aware**: `allow_null=True` for shared knowledge base (no org filter on `knowledge_embeddings`)
+- **Cache isolation**: Cache key = `"{org_id}:{user_id}"` when org present
+- **Backfill**: Existing rows → `'default'`; knowledge_embeddings → NULL (shared)
+- **56 tests** in `test_sprint160_data_isolation.py`
+
+---
+
+### 4.18 Org-Level Customization
+
+Per-organization branding, features, AI config, and RBAC (Sprint 161).
+
+```mermaid
+flowchart TB
+    subgraph Admin["Admin Interface"]
+        PATCH["PATCH /organizations/{id}/settings"]
+        PATCH --> DB["organizations.settings JSONB"]
+    end
+
+    subgraph Cascade["4-Layer Settings Cascade"]
+        L1["1. Platform Defaults<br/>(config.py)"]
+        L2["2. Org Settings<br/>(DB JSONB)"]
+        L3["3. Role Overrides<br/>(permissions map)"]
+        L4["4. User Preferences<br/>(user_preferences table)"]
+        L1 --> L2 --> L3 --> L4 --> EFF["get_effective_settings()"]
+    end
+
+    subgraph Settings["OrgSettings Schema"]
+        BRAND["OrgBranding<br/>colors, name, avatar, welcome"]
+        FEAT["OrgFeatureFlags<br/>enable_*, visible_agents, max_iterations"]
+        AI["OrgAIConfig<br/>persona overlay, temperature, domain"]
+        PERMS["OrgPermissions<br/>student/teacher/admin permission lists"]
+        ONBOARD["OrgOnboarding<br/>quick_start_questions, suggestions"]
+    end
+
+    subgraph Desktop["Desktop Rendering"]
+        CSS["CSS Custom Properties<br/>--accent, --accent-hover"]
+        GATE["PermissionGate<br/>Declarative RBAC component"]
+        TAB["OrgSettingsTab<br/>Admin panel for branding/features"]
+    end
+
+    EFF --> Settings --> Desktop
+```
+
+**Key Design Decisions:**
+- **deep_merge()**: Recursive dict merge — org settings override platform defaults
+- **RBAC UX-only**: PermissionGate is UX convenience, backend is actual security boundary
+- **Persona overlay**: `persona_prompt_overlay` injected into system prompt via PromptLoader
+- **Permissions format**: `"action:resource"` strings (e.g., `"manage:settings"`, `"read:chat"`)
+- **API**: `GET/PATCH /organizations/{id}/settings`, `GET /organizations/{id}/permissions`
+- **37 backend + 14 desktop tests**
 
 ---
 
@@ -987,6 +1338,7 @@ erDiagram
     semantic_memories {
         uuid id PK
         text user_id
+        text organization_id "org-aware (Sprint 160)"
         text memory_type "user_fact|insight|summary"
         text content
         vector embedding "768-dim"
@@ -1020,12 +1372,40 @@ erDiagram
         text status
     }
 
+    users {
+        uuid id PK
+        text email UK
+        text name
+        text role "student|teacher|admin"
+        boolean is_active
+        timestamp created_at
+    }
+
+    federated_identities {
+        uuid id PK
+        uuid user_id FK
+        text provider "google|lms|..."
+        text provider_sub "unique per provider"
+        text provider_issuer
+        text email
+        timestamp created_at
+    }
+
+    refresh_tokens {
+        uuid id PK
+        uuid user_id FK
+        text token_hash
+        text auth_method "google|lms"
+        timestamp expires_at
+        boolean revoked
+    }
+
     organizations {
         uuid id PK
         text name
         text slug UK
         jsonb allowed_domains
-        jsonb settings
+        jsonb settings "OrgSettings schema"
         boolean is_active
     }
 
@@ -1035,8 +1415,18 @@ erDiagram
         text role "member|admin|owner"
     }
 
+    org_audit_log {
+        uuid id PK
+        text organization_id
+        text action
+        text user_id
+        jsonb details
+        timestamp created_at
+    }
+
     user_preferences {
         text user_id PK
+        text organization_id "org-aware (Sprint 160)"
         text pronoun_style
         text learning_style
         text difficulty_level
@@ -1060,7 +1450,11 @@ erDiagram
         jsonb metadata
     }
 
+    users ||--o{ federated_identities : has
+    users ||--o{ refresh_tokens : has
+    users ||--o{ user_organizations : joins
     organizations ||--o{ user_organizations : has
+    organizations ||--o{ org_audit_log : logs
     threads ||--o{ conversation_history : contains
     semantic_memories }o--|| user_preferences : "per user"
 ```
@@ -1069,7 +1463,7 @@ erDiagram
 
 | Database | Tables | Purpose |
 |----------|--------|---------|
-| **PostgreSQL 15** | `knowledge_embeddings`, `semantic_memories`, `conversation_history`, `threads`, `scheduled_tasks`, `organizations`, `user_organizations`, `user_preferences`, `wiii_character_blocks`, `langgraph_checkpoints` | Primary OLTP + vector search + FTS |
+| **PostgreSQL 15** | `knowledge_embeddings`, `semantic_memories`, `conversation_history`, `threads`, `scheduled_tasks`, `organizations`, `user_organizations`, `user_preferences`, `wiii_character_blocks`, `langgraph_checkpoints`, `users`, `federated_identities`, `refresh_tokens`, `org_audit_log`, `learning_profile`, `chat_messages`, `chat_sessions` | Primary OLTP + vector search + FTS |
 | **Neo4j 5** | Nodes: `Regulation`, `Concept`, `Entity`; Rels: `REFERENCES`, `RELATED_TO` | Knowledge graph relationships |
 | **MinIO** | `wiii-docs` bucket | PDF pages, extracted images |
 | **Valkey** | Key-value | Session cache, rate limit counters |
@@ -1092,7 +1486,17 @@ flowchart TB
     JWT --> DECODE["Decode + verify signature"]
     DECODE --> PAYLOAD["Role from token payload ONLY<br/>(ignores X-Role header)"]
 
-    HEADERS & PAYLOAD --> USER["AuthenticatedUser<br/>{user_id, role, auth_method}"]
+    CHECK -->|Google OAuth| OAUTH_F["Google OAuth 2.0"]
+    OAUTH_F --> OIDC["OIDC userinfo<br/>(email, sub, email_verified)"]
+    OIDC --> FEDERATE["Identity Federation<br/>find_or_create_by_provider()"]
+    FEDERATE --> JWT_PAIR["Issue JWT pair"]
+
+    CHECK -->|LMS HMAC| LMS_F["LMS Token Exchange"]
+    LMS_F --> HMAC_V["Verify HMAC-SHA256<br/>+ timestamp replay check"]
+    HMAC_V --> LMS_FED["Federation + org membership"]
+    LMS_FED --> JWT_PAIR
+
+    HEADERS & PAYLOAD & JWT_PAIR --> USER["AuthenticatedUser<br/>{user_id, role, auth_method}"]
 
     CHECK -->|No auth (dev mode)| DEV{"Environment?"}
     DEV -->|development| ALLOW["Allow (anonymous)"]
@@ -1111,8 +1515,16 @@ flowchart TB
 | **Input Validation** | Pydantic max 10,000 chars | `ChatRequest.message` |
 | **Error Messages** | Generic in HTTP responses | Details logged server-side |
 | **WebSocket** | Fail-closed auth (Sprint 65) | 4001/4003 close codes |
-| **Config** | Validators for bounds | JWT expiry, ports, intervals |
+| **Google OAuth** | Authlib + OIDC | email_verified guard on auto-link |
+| **JWT Tokens** | Access (15m) + Refresh (7d) | Refresh revocation, auth_method tracking |
+| **LMS Token Exchange** | HMAC-SHA256 signed | Replay protection (timestamp ± max_age) |
+| **Token Delivery** | URL fragment `#` (not `?`) | Fragments never sent to server |
+| **Identity Federation** | 3-step provider matching | provider→email→create (email_verified required) |
+| **SSRF Prevention** | URL validation (Sprint 153) | Block private IPs in browser scraping |
+| **Org Data Isolation** | App-level org_id filtering | All repos filter by organization_id |
+| **Config** | Validators for bounds | JWT expiry, ports, intervals, secrets |
 | **Org Roles** | `Literal["member", "admin", "owner"]` | Sprint 65b validation |
+| **Org RBAC** | `action:resource` permissions | UX gate + backend enforcement |
 
 ---
 
@@ -1128,12 +1540,15 @@ flowchart TB
     end
 
     subgraph React["React 18 Frontend"]
-        subgraph Stores["Zustand Stores (5)"]
+        subgraph Stores["Zustand Stores (11)"]
             S1["settings-store<br/>Server URL, API key, user prefs"]
             S2["chat-store<br/>Conversations, messages, streaming"]
             S3["connection-store<br/>Backend connectivity"]
             S4["domain-store<br/>Available domains"]
             S5["ui-store<br/>Sidebar, modals"]
+            S6["auth-store<br/>JWT tokens, OAuth state"]
+            S7["org-store<br/>Organizations, permissions, org settings"]
+            S8["avatar-store<br/>Avatar state, animations"]
         end
 
         subgraph Components["Key Components"]
@@ -1141,8 +1556,13 @@ flowchart TB
             CHAT["ChatView<br/>MessageList + ChatInput"]
             BUBBLE["MessageBubble<br/>BlockRenderer | LegacyRenderer"]
             THINK["ThinkingBlock<br/>Markdown + inline tool cards"]
+            TIMELINE["ThinkingTimeline<br/>Multi-phase thinking chain"]
             STREAM["StreamingIndicator<br/>Pipeline steps + elapsed timer"]
-            SETTINGS["SettingsPage<br/>Connection / User / Preferences"]
+            SETTINGS["SettingsPage<br/>5 tabs incl. OrgSettingsTab"]
+            LOGIN["LoginScreen<br/>Google OAuth + API key"]
+            WELCOME["WelcomeScreen<br/>Org-aware branding"]
+            PERM_GATE["PermissionGate<br/>Declarative RBAC"]
+            AVATAR["WiiiAvatar<br/>Kawaii/Manga + Rive"]
         end
 
         subgraph Hooks["Custom Hooks"]
@@ -1155,6 +1575,8 @@ flowchart TB
     subgraph Backend["Backend Communication"]
         HTTP_C["/api/v1/chat (JSON)"]
         SSE_C["/chat/stream/v3 (SSE)"]
+        AUTH_C["/auth/* (OAuth + JWT)"]
+        ORG_C["/organizations/* (settings)"]
     end
 
     RUST --> React
@@ -1234,28 +1656,46 @@ NEO4J_URI=bolt://localhost:7687
 MINIO_ENDPOINT=localhost:9000
 ```
 
-### Feature Flags
+### Feature Flags (46 total)
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| **Core** | | |
 | `use_multi_agent` | `True` | LangGraph multi-agent system |
 | `enable_corrective_rag` | `True` | Self-correction loop |
 | `enable_llm_failover` | `True` | Multi-provider chain |
 | `deep_reasoning_enabled` | `True` | `<thinking>` tags |
+| `enable_structured_outputs` | `True` | Constrained decoding (Supervisor, Grader, Guardian) |
+| **Channels** | | |
 | `enable_websocket` | `False` | WebSocket endpoint |
 | `enable_telegram` | `False` | Telegram webhook |
+| **Extensions** | | |
 | `enable_filesystem_tools` | `False` | Sandboxed file operations |
 | `enable_code_execution` | `False` | Sandboxed Python exec |
 | `enable_skill_creation` | `False` | Self-extending agent |
 | `enable_scheduler` | `False` | Proactive task execution |
-| `enable_multi_tenant` | `False` | Organization support |
 | `enable_unified_client` | `False` | AsyncOpenAI SDK |
 | `enable_mcp_server` | `False` | MCP tool server at /mcp |
 | `enable_mcp_client` | `False` | External MCP connections |
 | `enable_agentic_loop` | `False` | Generalized ReAct loop |
-| `enable_structured_outputs` | `True` | Constrained decoding (Supervisor, Grader, Guardian) |
-| `enable_character_tools` | `True` | Character introspection/update tools (per-user since Sprint 124) |
-| `enable_character_reflection` | `True` | Stanford Generative Agents reflection loop |
+| **Character** | | |
+| `enable_character_tools` | `True` | Character introspection/update (per-user) |
+| `enable_character_reflection` | `True` | Stanford Generative Agents reflection |
+| `enable_soul_emotion` | `False` | Soul emotion engine for avatar |
+| **Product Search** | | |
+| `enable_product_search` | `False` | Product search agent (7 tools) |
+| `enable_browser_scraping` | `False` | Playwright browser automation |
+| `enable_tiktok_native_api` | `False` | TikTok Research API (vs Serper fallback) |
+| `enable_thinking_chain` | `False` | Multi-phase thinking chain UX |
+| **Authentication** | | |
+| `enable_google_oauth` | `False` | Google OAuth 2.0 login |
+| `enable_lms_token_exchange` | `False` | LMS HMAC token exchange |
+| **Multi-Tenant** | | |
+| `enable_multi_tenant` | `False` | Organization support + data isolation |
+| **Memory** | | |
+| `enable_tool_selection` | `False` | Dynamic tool selection |
+| `enable_semantic_fact_retrieval` | `True` | Vector-based fact search |
+| **Evaluation** | | |
 | `enable_evaluation` | `False` | Quality scoring |
 
 ---
@@ -1273,6 +1713,19 @@ MINIO_ENDPOINT=localhost:9000
 | `/api/v1/memories/{user_id}` | GET/DELETE | RequireAuth | User memory |
 | `/api/v1/insights/{user_id}` | GET | RequireAuth | Learning analytics |
 | `/api/v1/sources/{node_id}` | GET | RequireAuth | Citation sources |
+| `/api/v1/auth/google/login` | GET | None | Initiate Google OAuth |
+| `/api/v1/auth/google/callback` | GET | None | OAuth callback |
+| `/api/v1/auth/token/refresh` | POST | None | JWT refresh |
+| `/api/v1/auth/lms/token` | POST | HMAC | LMS token exchange |
+| `/api/v1/auth/lms/token/refresh` | POST | None | LMS token refresh |
+| `/api/v1/auth/lms/health` | GET | None | LMS connector health |
+| `/api/v1/users/me` | GET/PATCH | JWT | User profile |
+| `/api/v1/users/me/identities` | GET/DELETE | JWT | Linked accounts |
+| `/api/v1/users` | GET | RequireAdmin | List users |
+| `/api/v1/organizations/{id}/settings` | GET/PATCH | RequireAuth | Org settings (Sprint 161) |
+| `/api/v1/organizations/{id}/permissions` | GET | RequireAuth | User permissions |
+| `/api/v1/chat/context/info` | GET | RequireAuth | Token budget utilization |
+| `/api/v1/chat/context/compact` | POST | RequireAuth | Force conversation compaction |
 | `/api/v1/health` | GET | None | Health check |
 
 ### LMS Integration Flow
@@ -1302,7 +1755,7 @@ sequenceDiagram
 ### Authentication Modes
 
 ```python
-# Mode 1: API Key + LMS headers (recommended for LMS)
+# Mode 1: API Key + LMS headers (recommended for LMS proxy)
 headers = {
     "X-API-Key": "your-api-key",
     "X-User-ID": "student-123",
@@ -1311,11 +1764,23 @@ headers = {
     "X-Organization-ID": "lms-org",  # optional multi-tenant
 }
 
-# Mode 2: JWT (recommended for direct access)
+# Mode 2: JWT (recommended for desktop + direct access)
 headers = {
     "Authorization": "Bearer eyJ...",
     # Role extracted from JWT payload, X-Role header ignored
 }
+
+# Mode 3: LMS Token Exchange (backend-to-backend, Sprint 159)
+import hmac, hashlib, time, json
+payload = {
+    "user_id": "student-123", "email": "student@uni.edu",
+    "role": "student", "org_id": "lms-org",
+    "timestamp": str(int(time.time()))
+}
+payload["signature"] = hmac.new(
+    secret.encode(), json.dumps(payload).encode(), hashlib.sha256
+).hexdigest()
+# POST /api/v1/auth/lms/token → {access_token, refresh_token, user}
 ```
 
 ---
@@ -1352,10 +1817,10 @@ headers = {
 
 | Layer | Framework | Count | Notes |
 |-------|-----------|-------|-------|
-| Unit | pytest + AsyncMock | 5501 | 200+ test files, autouse rate-limit disable |
+| Unit | pytest + AsyncMock | 6520+ | 324 test files, autouse rate-limit disable |
 | Integration | pytest | 31 files | Require running services |
 | Property | Hypothesis | - | Invariant testing |
-| Desktop | Vitest + jsdom | 479 | 6+ test files |
+| Desktop | Vitest + jsdom | 1346 | 54 test files |
 
 ```bash
 # Backend (Windows)
@@ -1367,7 +1832,8 @@ cd wiii-desktop && npx vitest run
 
 ---
 
-**Document Version:** 5.1
-**Last Updated:** 2026-02-18
-**Architecture Pattern:** Multi-Domain Agentic RAG with Plugin System, Multi-Channel Gateway, MCP Integration
-**Total Components:** 200+ Python files, 42 endpoints, 80+ config fields, 5501 backend + 479 desktop tests
+**Document Version:** 6.0
+**Last Updated:** 2026-02-20
+**Architecture Pattern:** Multi-Domain Agentic RAG with Plugin System, Product Search Platform, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization
+**Total Components:** 254 Python files, 60+ endpoints, 120+ config fields (46 feature flags), 6520 backend + 1346 desktop tests
+**Sprints Covered:** 1–161 (161 development sprints)

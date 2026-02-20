@@ -16,7 +16,6 @@ HTML selectors (verified live Feb 2026):
 """
 
 import logging
-import re
 from typing import List, Optional
 from urllib.parse import quote
 

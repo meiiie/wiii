@@ -58,7 +58,7 @@ To work as a different agent:
 
 ## Project Overview
 
-**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, and LMS integration. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. Features unified LLM provider layer (AsyncOpenAI SDK), MCP server/client support, and generalized agentic loop.
+**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright), Google OAuth + LMS integration, multi-tenant data isolation, and org-level customization. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. 254 Python files, 60+ API endpoints, 46 feature flags, 6520+ backend tests, 1346 desktop tests.
 
 ### Domain Plugin System (Feb 2026)
 - **Plugin architecture**: `app/domains/*/domain.yaml` — add new domains by creating a folder + YAML config
@@ -255,6 +255,50 @@ app/domains/
 Access LangChain: `from app.engine.llm_pool import get_llm_deep, get_llm_moderate, get_llm_light`
 Access AsyncOpenAI: `UnifiedLLMClient.get_client("google")` (when `enable_unified_client=True`)
 
+### Product Search Platform (Sprints 148-151)
+- **Feature flag**: `enable_product_search=False` — 7 tools, 5 platforms
+- **Plugin architecture**: `SearchPlatformAdapter` ABC + `SearchPlatformRegistry` singleton
+- **Package**: `app/engine/search_platforms/` — base, registry, circuit_breaker, adapters/, oauth/
+- **Adapters**: SerperShopping, SerperSite (5 platforms), WebSosanh, Facebook (Playwright), TikTok (native API + Serper fallback), Apify, AllWeb
+- **Agent**: `product_search_node.py` — Supervisor routes `product_search` intent here
+- **Tools**: Generated via `StructuredTool.from_function()` per platform
+- **Deep search** (Sprint 150): Pagination + page scraper + 15-iteration LLM search loop
+- **Price comparison** (Sprint 151): WebSosanh.vn HTML scraping, 94+ Vietnamese shops
+
+### Browser Scraping (Sprints 152-154)
+- **Feature flag**: `enable_browser_scraping=False`
+- **Playwright worker thread**: Dedicated thread avoids greenlet "Cannot switch" errors
+- **Facebook search**: Cookie-based login, scroll+extract, group discovery
+- **Network interception** (Sprint 156): GraphQL capture during scroll, skip LLM when >= 3 products
+- **Screenshot streaming** (Sprint 153): Browser screenshots streamed to UI via SSE
+- **SSRF prevention** (Sprint 153): URL validation blocks private IPs
+
+### Authentication & Identity (Sprints 157-159)
+- **Google OAuth**: Authlib + OIDC, `app/auth/google_oauth.py`, redirect to desktop via URL fragment
+- **JWT**: Access (15m) + Refresh (7d), `app/auth/token_service.py`
+- **Identity federation**: `find_or_create_by_provider()` — 3-step: provider→email→create
+- **LMS Token Exchange** (Sprint 159): HMAC-SHA256 signed backend-to-backend, replay protection
+- **User Management** (Sprint 158): CRUD, role management, identity linking/unlinking
+- **Desktop**: OAuth-aware LoginScreen, auth-store, profile UI
+
+### Multi-Tenant Data Isolation (Sprint 160)
+- **App-level filtering**: `org_filter.py` — `get_effective_org_id()`, `org_where_clause()`, `org_where_positional()`
+- **All 15 repos**: org-aware filtering (NULL-aware for shared KB)
+- **Migration 011**: `organization_id TEXT` on 5 tables + org_audit_log
+- **Pipeline threading**: ChatContext → AgentState → repos → search → cache
+- **Cache isolation**: Key = `"{org_id}:{user_id}"`
+- **56 tests** in `test_sprint160_data_isolation.py`
+
+### Org-Level Customization (Sprint 161)
+- **OrgSettings schema**: Branding, Features, AI Config, Permissions, Onboarding (6 Pydantic models)
+- **4-layer cascade**: Platform Defaults ← Org Settings ← Role Overrides ← User Preferences
+- **`deep_merge()`**: Recursive dict merge in `app/core/org_settings.py`
+- **Permissions**: `"action:resource"` strings, role-based (student/teacher/admin)
+- **Persona overlay**: Org-specific prompt injected via PromptLoader
+- **Desktop**: CSS custom properties injection, PermissionGate, OrgSettingsTab
+- **API**: `GET/PATCH /organizations/{id}/settings`, `GET /organizations/{id}/permissions`
+- **37 backend + 14 desktop tests**
+
 ---
 
 ## Key Directories
@@ -270,98 +314,83 @@ Access AsyncOpenAI: `UnifiedLLMClient.get_client("google")` (when `enable_unifie
 │
 ├── wiii-desktop/              # Desktop app (Tauri v2 + React 18)
 │   ├── src/
-│   │   ├── api/               # HTTP client, SSE parser, API modules
+│   │   ├── api/               # 15 API modules (HTTP, SSE, auth, orgs, users)
 │   │   ├── components/
-│   │   │   ├── chat/          # ChatView, MessageList, MessageBubble, ChatInput, ThinkingBlock, StreamingIndicator
+│   │   │   ├── auth/          # LoginScreen, OAuth callback
+│   │   │   ├── chat/          # ChatView, MessageList, MessageBubble, ThinkingBlock, ThinkingTimeline
 │   │   │   ├── layout/        # AppShell, TitleBar, Sidebar, StatusBar
-│   │   │   ├── settings/      # SettingsPage (modal with 3 tabs)
-│   │   │   └── common/        # ErrorBoundary, MarkdownRenderer, CodeBlock, ConnectionBadge
-│   │   ├── stores/            # Zustand: settings, chat (persisted), connection, domain, ui
+│   │   │   ├── settings/      # SettingsPage (5 tabs), OrgSettingsTab
+│   │   │   ├── common/        # PermissionGate, ErrorBoundary, MarkdownRenderer
+│   │   │   └── welcome/       # WelcomeScreen (org-aware branding)
+│   │   ├── stores/            # 11 Zustand stores (auth, org, chat, avatar, settings, ...)
 │   │   ├── hooks/             # useSSEStream, useAutoScroll, useKeyboardShortcuts
-│   │   ├── lib/               # constants, theme, storage (Tauri/localStorage)
-│   │   └── __tests__/         # 115 Vitest tests (6 files)
-│   └── src-tauri/             # Rust backend (Tauri plugins, commands)
+│   │   ├── lib/               # 28 utilities (avatar, org-branding, storage, theme)
+│   │   └── __tests__/         # 54 test files, 1346 Vitest tests
+│   └── src-tauri/             # Rust backend (Tauri plugins, splash screen)
 │
-└── maritime-ai-service/       # Main backend
+└── maritime-ai-service/       # Main backend (254 Python files)
     ├── app/
-    │   ├── api/v1/            # REST endpoints (chat.py, chat_stream.py, admin.py, organizations.py, websocket.py, webhook.py)
-    │   ├── core/              # config.py, database.py, security.py, rate_limit.py, resilience.py, exceptions.py, constants.py, observability.py, logging_config.py, middleware.py, token_tracker.py, org_context.py, thread_utils.py
+    │   ├── api/v1/            # 18 REST routers (60+ endpoints)
+    │   ├── auth/              # Google OAuth, JWT, user service, LMS token exchange
+    │   ├── core/              # config.py (46 flags), security, middleware, org_filter, org_settings
     │   ├── channels/          # Multi-channel gateway (WebSocket, Telegram)
     │   ├── domains/           # Domain plugins (maritime/, traffic_law/, _template/)
-    │   ├── mcp/               # MCP server (fastapi-mcp), client (MCPToolManager), adapter (schema conversion)
-    │   ├── engine/            # Core AI: agentic_rag/, multi_agent/, tools/, llm_providers/, evaluation/, semantic_memory/, conversation_window.py, context_manager.py
-    │   ├── services/          # Business logic: chat_orchestrator.py, session_manager.py, scheduled_task_executor.py, notification_dispatcher.py
-    │   ├── repositories/      # Data access: semantic_memory_repository.py, neo4j_knowledge_repository.py, scheduler_repository.py, thread_repository.py, organization_repository.py
-    │   ├── prompts/           # YAML persona configs (tutor.yaml, rag.yaml, etc.)
-    │   └── models/            # Pydantic schemas (schemas.py, organization.py)
+    │   ├── mcp/               # MCP server (fastapi-mcp), client (MCPToolManager), adapter
+    │   ├── engine/            # Core AI: agentic_rag/, multi_agent/ (9 agents), tools/, search_platforms/ (8 adapters), llm_providers/, character/, semantic_memory/
+    │   ├── integrations/      # LMS integration (webhook, enrichment, API client)
+    │   ├── services/          # Business logic: chat_orchestrator, graph_streaming, session_manager
+    │   ├── repositories/      # 15 data access repos (all org-aware since Sprint 160)
+    │   ├── prompts/           # YAML persona configs + persona overlay (Sprint 161)
+    │   └── models/            # Pydantic schemas (schemas.py, organization.py + OrgSettings)
+    ├── alembic/               # 12 database migrations
     ├── scripts/               # Test and ingestion scripts
-    ├── tests/                 # unit/ (5501 tests), integration/, property/, e2e/
-    └── docs/architecture/     # SYSTEM_FLOW.md, SYSTEM_ARCHITECTURE.md
+    ├── tests/                 # 324 test files, 6520+ unit tests
+    └── docs/architecture/     # SYSTEM_ARCHITECTURE.md (v6.0), SYSTEM_FLOW.md, FOLDER_MAP.md
 ```
 
 ---
 
 ## Key Configuration
 
-Feature flags in `app/core/config.py`:
+46 feature flags in `app/core/config.py` (key flags listed):
 ```python
 # Core
 use_multi_agent: bool = True           # Multi-Agent graph (LangGraph)
 enable_corrective_rag: bool = True     # Self-correction loop
-contextual_rag_enabled: bool = True    # Context enrichment
-entity_extraction_enabled: bool = True # GraphRAG entities
+enable_structured_outputs: bool = True  # Constrained decoding
 deep_reasoning_enabled: bool = True    # <thinking> tags
-active_domains: list = ["maritime", "traffic_law"]  # Enabled domain plugins
-default_domain: str = "maritime"       # Fallback domain
 
 # LLM Providers
 enable_llm_failover: bool = True       # Multi-provider failover chain
-llm_failover_chain: list = ["google", "openai", "ollama"]
+enable_unified_client: bool = False   # AsyncOpenAI SDK
 
-# Channels
-enable_websocket: bool = False         # WebSocket endpoint
-enable_telegram: bool = False          # Telegram webhook
+# Product Search (Sprints 148-151)
+enable_product_search: bool = False    # Product search agent (7 tools, 5 platforms)
+enable_browser_scraping: bool = False  # Playwright browser automation
+enable_tiktok_native_api: bool = False # TikTok Research API
+enable_thinking_chain: bool = False    # Multi-phase thinking chain
 
-# Extended Tools
-enable_filesystem_tools: bool = False  # Sandboxed filesystem
-enable_code_execution: bool = False    # Sandboxed Python exec
-enable_skill_creation: bool = False    # Self-extending agent skills
+# Authentication (Sprints 157-159)
+enable_google_oauth: bool = False      # Google OAuth 2.0 login
+enable_lms_token_exchange: bool = False # LMS HMAC token exchange
 
-# Proactive Agent (Sprint 20)
-enable_scheduler: bool = False         # Scheduled task execution
-scheduler_poll_interval: int = 60      # Poll interval (10-3600 seconds)
-scheduler_max_concurrent: int = 5      # Max concurrent executions (1-20)
-scheduler_agent_timeout: int = 120     # Agent invocation timeout (seconds)
-
-# Multi-Tenant (Sprint 24)
-enable_multi_tenant: bool = False      # Multi-organization support
-default_organization_id: str = "default"  # Default org for unauthenticated users
-
-# Unified Provider Layer (Sprint 55)
-enable_unified_client: bool = False   # AsyncOpenAI SDK alongside LangChain
-google_openai_compat_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
-
-# MCP Support (Sprint 56)
-enable_mcp_server: bool = False       # Expose tools via MCP at /mcp
-enable_mcp_client: bool = False       # Connect to external MCP servers
-
-# Agentic Loop (Sprint 57)
-enable_agentic_loop: bool = False     # Generalized ReAct loop in nodes
-agentic_loop_max_steps: int = 5       # Max tool-calling iterations (1-20)
-
-# Ollama Enhancement (Sprint 59)
-ollama_model: str = "qwen3:8b"        # Default dev model (was llama3.2)
-ollama_thinking_models: list = ["qwen3", "deepseek-r1", "qwq"]
-
-# Structured Outputs (Sprint 103)
-enable_structured_outputs: bool = True  # Constrained decoding for Supervisor, Grader, Guardian
+# Multi-Tenant (Sprints 24, 160-161)
+enable_multi_tenant: bool = False      # Organization support + data isolation
+# When enabled: org_id filtering on all 15 repos, org settings cascade
 
 # Character System (Sprint 97, per-user Sprint 124)
-enable_character_tools: bool = True     # Character introspection/update tools (per-user isolated)
-enable_character_reflection: bool = True # Stanford Generative Agents reflection loop
+enable_character_tools: bool = True     # Character introspection/update (per-user)
+enable_character_reflection: bool = True # Stanford Generative Agents reflection
+enable_soul_emotion: bool = False      # Soul emotion engine for avatar
 
-# Observability
-enable_evaluation: bool = False        # Faithfulness/Relevancy scoring
+# MCP, Channels, Extensions
+enable_mcp_server: bool = False       # Expose tools via MCP at /mcp
+enable_mcp_client: bool = False       # Connect to external MCP servers
+enable_websocket: bool = False        # WebSocket endpoint
+enable_telegram: bool = False         # Telegram webhook
+enable_scheduler: bool = False        # Proactive task execution
+enable_agentic_loop: bool = False     # Generalized ReAct loop
+enable_evaluation: bool = False       # Quality scoring
 ```
 
 ---
@@ -396,7 +425,7 @@ docker compose up -d                # Start all services
 
 ## API Authentication
 
-Dual auth: API Key + JWT with LMS headers
+Triple auth: API Key + JWT + LMS Token Exchange (HMAC)
 ```
 X-API-Key: your-api-key
 X-User-ID: student-123
@@ -434,7 +463,7 @@ GET /api/v1/admin/domains/{id}     # Get domain details
 GET /api/v1/admin/domains/{id}/skills  # List domain skills
 ```
 
-### Organization Admin API (Sprint 24)
+### Organization Admin API (Sprint 24, enhanced Sprint 161)
 ```
 GET    /api/v1/organizations              # List orgs (admin: all, user: own)
 GET    /api/v1/organizations/{org_id}     # Get org details
@@ -445,6 +474,30 @@ POST   /api/v1/organizations/{org_id}/members        # Add member (admin)
 DELETE /api/v1/organizations/{org_id}/members/{uid}   # Remove member (admin)
 GET    /api/v1/organizations/{org_id}/members         # List members (admin)
 GET    /api/v1/users/me/organizations     # List current user's orgs
+GET    /api/v1/organizations/{org_id}/settings        # Org settings (Sprint 161)
+PATCH  /api/v1/organizations/{org_id}/settings        # Update org settings
+GET    /api/v1/organizations/{org_id}/permissions     # User permissions for org
+```
+
+### Authentication API (Sprints 157-159)
+```
+GET  /api/v1/auth/google/login        # Initiate Google OAuth
+GET  /api/v1/auth/google/callback     # OAuth callback → JWT pair
+POST /api/v1/auth/token/refresh       # JWT refresh
+POST /api/v1/auth/lms/token           # LMS token exchange (HMAC-signed)
+POST /api/v1/auth/lms/token/refresh   # LMS token refresh
+GET  /api/v1/auth/lms/health          # LMS connector health
+```
+
+### User Management API (Sprint 158)
+```
+GET   /api/v1/users/me                # Current user profile
+PATCH /api/v1/users/me                # Update profile
+GET   /api/v1/users/me/identities     # Linked accounts (federated)
+DELETE /api/v1/users/me/identities/{id} # Unlink identity
+GET   /api/v1/users                   # Admin: list all users
+PATCH /api/v1/users/{id}/role         # Admin: change user role
+POST  /api/v1/users/{id}/deactivate   # Admin: deactivate user
 ```
 
 ### Context Management API (Sprint 78)
@@ -462,6 +515,7 @@ YAML-based personas in `app/prompts/agents/` + domain overlays in `app/domains/*
 - Load via `PromptLoader.build_system_prompt(role, user_name, pronoun_style)`
 - Pronoun detection: AI adapts to user's self-reference style (mình/cậu, em/anh, tôi/bạn)
 - Template variables: `{{user_name}}`, `{{honorific}}`
+- **Persona overlay** (Sprint 161): Org-specific `persona_prompt_overlay` injected into system prompt
 
 ---
 
@@ -559,7 +613,7 @@ pytest -m integration                   # Tests requiring real services
 pytest tests/property/ -v               # Property-based tests (Hypothesis)
 ```
 
-**Current: Backend 5501 unit tests, Desktop 479 Vitest tests — all passed, 0 failed** (as of Sprint 124)
+**Current: Backend 6520+ unit tests (324 files), Desktop 1346 Vitest tests (54 files) — all passed** (as of Sprint 161)
 
 ### Backend Test Commands
 ```bash

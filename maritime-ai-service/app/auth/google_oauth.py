@@ -187,9 +187,6 @@ async def token_refresh(request: Request):
 @router.post("/logout")
 async def logout(request: Request):
     """Revoke all refresh tokens for the authenticated user (logout everywhere)."""
-    from app.core.security import require_auth
-    from fastapi.security import APIKeyHeader, HTTPBearer
-
     # Simple token extraction from Authorization header
     auth_header = request.headers.get("authorization", "")
     if not auth_header.startswith("Bearer "):
@@ -220,7 +217,6 @@ async def get_current_user(request: Request):
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    from app.auth.user_service import find_user_by_email
     # Fetch full user from DB
     try:
         from app.core.database import get_asyncpg_pool

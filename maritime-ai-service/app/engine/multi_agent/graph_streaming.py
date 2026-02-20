@@ -49,7 +49,6 @@ from app.engine.multi_agent.stream_utils import (
     StreamEvent,
     NODE_DESCRIPTIONS,
     create_status_event,
-    create_thinking_event,
     create_thinking_start_event,
     create_thinking_end_event,
     create_thinking_delta_event,

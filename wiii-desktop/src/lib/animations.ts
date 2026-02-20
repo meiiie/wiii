@@ -7,16 +7,6 @@
 
 import type { Variants } from "motion/react";
 
-/** Message entry — slide up + fade in */
-export const messageEntry: Variants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.25, ease: "easeOut" },
-  },
-};
-
 /** User message — slide from right */
 export const userMessageEntry: Variants = {
   hidden: { opacity: 0, x: 16 },
@@ -34,15 +24,6 @@ export const aiMessageEntry: Variants = {
     opacity: 1,
     x: 0,
     transition: { duration: 0.25, ease: "easeOut" },
-  },
-};
-
-/** Simple fade in */
-export const fadeIn: Variants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { duration: 0.2 },
   },
 };
 
@@ -76,33 +57,6 @@ export const staggerItem: Variants = {
     opacity: 1,
     y: 0,
     transition: { duration: 0.2, ease: "easeOut" },
-  },
-};
-
-/** Pipeline step entry — slide down with stagger */
-export const stepEntry: Variants = {
-  hidden: { opacity: 0, y: -4 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.2, ease: "easeOut" },
-  },
-};
-
-/** Pipeline stagger — 100ms between steps */
-export const stepStagger: Variants = {
-  hidden: {},
-  visible: {
-    transition: { staggerChildren: 0.1 },
-  },
-};
-
-/** Checkmark scale spring */
-export const checkmarkPop: Variants = {
-  hidden: { scale: 0 },
-  visible: {
-    scale: 1,
-    transition: { type: "spring", stiffness: 400, damping: 15 },
   },
 };
 

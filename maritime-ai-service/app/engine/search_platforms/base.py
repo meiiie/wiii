@@ -9,7 +9,7 @@ Each platform implements SearchPlatformAdapter to normalize search results.
 
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
 

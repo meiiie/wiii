@@ -10,7 +10,6 @@ including harmful content detection, prompt injection prevention, and PII maskin
 
 import logging
 import re
-from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional, Protocol, Set
 
@@ -264,22 +263,3 @@ class Guardrails:
     def get_refusal_message(self) -> str:
         """Get the standard refusal message."""
         return self.REFUSAL_MESSAGE
-
-
-def mask_pii_in_log(text: str) -> str:
-    """
-    Utility function to mask PII in log entries.
-    
-    **Validates: Requirements 9.4**
-    """
-    guardrails = Guardrails()
-    return guardrails.mask_pii(text)
-
-
-@dataclass
-class GuardrailsConfig:
-    """Configuration for guardrails behavior."""
-    block_harmful_content: bool = True
-    detect_injection: bool = True
-    mask_pii_in_logs: bool = True
-    flag_safety_misinformation: bool = True

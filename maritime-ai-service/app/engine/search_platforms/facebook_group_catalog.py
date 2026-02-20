@@ -14,7 +14,7 @@ Usage:
 import logging
 import re
 import unicodedata
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 

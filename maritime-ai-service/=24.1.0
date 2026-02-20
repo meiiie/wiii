@@ -1,9 +1,0 @@
-Defaulting to user installation because normal site-packages is not writeable
-Collecting structlog
-  Downloading structlog-25.5.0-py3-none-any.whl.metadata (9.5 kB)
-Downloading structlog-25.5.0-py3-none-any.whl (72 kB)
-Installing collected packages: structlog
-Successfully installed structlog-25.5.0
-
-[notice] A new release of pip is available: 25.2 -> 26.0.1
-[notice] To update, run: python.exe -m pip install --upgrade pip

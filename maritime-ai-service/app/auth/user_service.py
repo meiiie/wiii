@@ -11,8 +11,6 @@ from typing import Optional
 
 import asyncpg
 
-from app.core.config import settings
-
 logger = logging.getLogger(__name__)
 
 _VALID_ROLES = {"student", "teacher", "admin"}

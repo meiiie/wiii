@@ -5,32 +5,14 @@
 
 // ===== Enums =====
 export type UserRole = "student" | "teacher" | "admin";
-export type AgentType = "chat" | "rag" | "tutor";
-export type ComponentStatus = "healthy" | "degraded" | "unavailable";
 
 // ===== Chat Request =====
-export interface UserContext {
-  display_name: string;
-  role: UserRole;
-  level?: string;
-  organization?: string;
-  current_course_id?: string;
-  current_course_name?: string;
-  current_module_id?: string;
-  current_module_name?: string;
-  progress_percent?: number;
-  completed_modules?: string[];
-  quiz_scores?: Record<string, number>;
-  language?: string;
-}
-
 export interface ChatRequest {
   user_id: string;
   message: string;
   role: UserRole;
   session_id?: string;
   thread_id?: string;
-  user_context?: UserContext;
   domain_id?: string;
   organization_id?: string;
 }
@@ -76,7 +58,7 @@ export interface ReasoningTrace {
 export interface ChatResponseMetadata {
   processing_time: number;
   model: string;
-  agent_type: AgentType;
+  agent_type: "chat" | "rag" | "tutor";
   session_id?: string;
   tools_used?: ToolUsageInfo[];
   reasoning_trace?: ReasoningTrace;
@@ -388,18 +370,16 @@ export interface OrgPermissionsResponse {
 }
 
 // ===== Health =====
-export interface HealthComponent {
-  name: string;
-  status: ComponentStatus;
-  latency_ms?: number;
-  message?: string;
-}
-
 export interface HealthResponse {
   status: string;
   version: string;
   environment: string;
-  components?: Record<string, HealthComponent>;
+  components?: Record<string, {
+    name: string;
+    status: "healthy" | "degraded" | "unavailable";
+    latency_ms?: number;
+    message?: string;
+  }>;
 }
 
 // ===== Thread Management (Sprint 16: Server-side conversation index) =====
@@ -500,14 +480,6 @@ export interface CharacterStateResponse {
 
 // ===== Mood / Emotional State (Sprint 120) =====
 export type MoodType = "excited" | "warm" | "concerned" | "gentle" | "neutral";
-
-export interface MoodResponse {
-  positivity: number;
-  energy: number;
-  mood: MoodType;
-  mood_hint: string;
-  enabled: boolean;
-}
 
 // ===== User Preferences (Sprint 120) =====
 export type LearningStyle = "quiz" | "visual" | "reading" | "mixed" | "interactive";
