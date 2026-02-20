@@ -12,11 +12,21 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::health::check_server_reachable,
             commands::files::pick_document,
+            commands::splash::close_splash,
         ])
         .setup(|app| {
             // Create system tray
             tray::create_tray(app)?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Minimize to tray on close (main window only)
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running Wiii desktop");

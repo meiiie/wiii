@@ -4,7 +4,7 @@
  * Sprint 141b: Interleaved thinking+answer blocks ("Tự Vấn").
  */
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import { ChevronDown } from "lucide-react";
 import type { Message, ThinkingBlockData, ScreenshotBlockData } from "@/api/types";
 import { useChatStore } from "@/stores/chat-store";
@@ -41,7 +41,6 @@ export function MessageList({
     streamingSources,
     streamingContent,
     streamingStartTime,
-    streamingSteps,
   } = useChatStore();
 
   const { show_thinking, thinking_level } = useSettingsStore((s) => s.settings);

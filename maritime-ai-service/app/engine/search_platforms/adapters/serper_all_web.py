@@ -6,6 +6,7 @@ Finds B2B, wholesale, and independent Vietnamese shops.
 """
 
 import logging
+import re
 from typing import List
 
 from app.engine.search_platforms.base import (
@@ -14,6 +15,7 @@ from app.engine.search_platforms.base import (
     ProductSearchResult,
     SearchPlatformAdapter,
 )
+from app.engine.search_platforms.utils import parse_vnd_price
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +56,10 @@ class SerperAllWebAdapter(SearchPlatformAdapter):
         import httpx
         timeout = settings.product_search_timeout
 
-        search_query = f"{query} giá bán {_EXCLUDE_SITES}"
+        # Smart query: skip appending "giá bán" if query already contains price-related keywords
+        _price_keywords = re.compile(r"(?:giá|gia|bán|ban|mua)", re.IGNORECASE)
+        price_suffix = "" if _price_keywords.search(query) else " giá bán"
+        search_query = f"{query}{price_suffix} {_EXCLUDE_SITES}"
         payload = {"q": search_query, "gl": "vn", "hl": "vi", "num": min(max_results, 100)}
         if page > 1:
             payload["page"] = page
@@ -70,10 +75,12 @@ class SerperAllWebAdapter(SearchPlatformAdapter):
 
         results = []
         for item in data.get("organic", [])[:max_results]:
+            price_str = item.get("priceRange", "")
             results.append(ProductSearchResult(
                 platform="Web",
                 title=item.get("title", ""),
-                price=item.get("priceRange", ""),
+                price=price_str,
+                extracted_price=parse_vnd_price(price_str),
                 link=item.get("link", ""),
                 snippet=item.get("snippet", ""),
                 source=item.get("source", ""),

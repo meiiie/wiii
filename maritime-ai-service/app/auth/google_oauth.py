@@ -92,16 +92,18 @@ async def google_callback(request: Request):
     email = userinfo.get("email", "")
     name = userinfo.get("name", "")
     picture = userinfo.get("picture", "")
+    email_verified = userinfo.get("email_verified", False)
 
     if not email:
         raise HTTPException(status_code=400, detail="Google account has no email")
 
-    # Find or create Wiii user
+    # Find or create Wiii user (Sprint 160b: pass email_verified for auto-link security)
     user = await find_or_create_by_google(
         google_sub=google_sub,
         email=email,
         name=name,
         avatar_url=picture,
+        email_verified=bool(email_verified),
     )
 
     # Create token pair
@@ -126,7 +128,9 @@ async def google_callback(request: Request):
             "name": user.get("name", ""),
             "avatar_url": user.get("avatar_url", ""),
         })
-        redirect_url = f"http://127.0.0.1:{desktop_port}?{params}"
+        # Sprint 160b: Use URL fragment (#) instead of query (?) — fragments are never
+        # sent to the server in HTTP requests, preventing token leakage to logs/proxies.
+        redirect_url = f"http://127.0.0.1:{desktop_port}#{params}"
         return HTMLResponse(f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Wiii — Đăng nhập thành công</title></head>
 <body style="font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;background:#faf9f7">

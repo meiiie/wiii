@@ -75,15 +75,25 @@ class UserPreferencesRepository:
         if not self._session_factory:
             return {**DEFAULT_PREFERENCES, "user_id": user_id}
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                params: dict = {"user_id": user_id}
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 result = session.execute(
                     text(
                         f"SELECT user_id, display_name, preferred_domain, language, "
                         f"pronoun_style, learning_style, difficulty, timezone, extra_prefs "
                         f"FROM {self.TABLE_NAME} WHERE user_id = :user_id"
+                        f"{org_filter}"
                     ),
-                    {"user_id": user_id},
+                    params,
                 ).fetchone()
 
                 if not result:
@@ -181,10 +191,19 @@ class UserPreferencesRepository:
 
     def _upsert_row(self, session, user_id: str, fields: dict, now: datetime) -> None:
         """Upsert a row with specific column values."""
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
+        base_params: dict = {"user_id": user_id}
+        if eff_org_id is not None:
+            base_params["org_id"] = eff_org_id
+
         # Check if row exists
         exists = session.execute(
-            text(f"SELECT 1 FROM {self.TABLE_NAME} WHERE user_id = :user_id"),
-            {"user_id": user_id},
+            text(f"SELECT 1 FROM {self.TABLE_NAME} WHERE user_id = :user_id{org_filter}"),
+            base_params,
         ).fetchone()
 
         if exists:
@@ -192,28 +211,42 @@ class UserPreferencesRepository:
             session.execute(
                 text(
                     f"UPDATE {self.TABLE_NAME} SET {set_clause}, updated_at = :now "
-                    f"WHERE user_id = :user_id"
+                    f"WHERE user_id = :user_id{org_filter}"
                 ),
-                {"user_id": user_id, "now": now, **fields},
+                {"user_id": user_id, "now": now, **fields, **({} if eff_org_id is None else {"org_id": eff_org_id})},
             )
         else:
             columns = ["user_id", "updated_at"] + list(fields.keys())
             placeholders = [":user_id", ":now"] + [f":{k}" for k in fields]
+            insert_params = {"user_id": user_id, "now": now, **fields}
+            if eff_org_id is not None:
+                columns.append("organization_id")
+                placeholders.append(":org_id")
+                insert_params["org_id"] = eff_org_id
             session.execute(
                 text(
                     f"INSERT INTO {self.TABLE_NAME} ({', '.join(columns)}) "
                     f"VALUES ({', '.join(placeholders)})"
                 ),
-                {"user_id": user_id, "now": now, **fields},
+                insert_params,
             )
 
     def _upsert_extra_pref(
         self, session, user_id: str, key: str, value: str, now: datetime
     ) -> None:
         """Store a preference in the extra_prefs JSONB field."""
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
+        base_params: dict = {"user_id": user_id}
+        if eff_org_id is not None:
+            base_params["org_id"] = eff_org_id
+
         exists = session.execute(
-            text(f"SELECT 1 FROM {self.TABLE_NAME} WHERE user_id = :user_id"),
-            {"user_id": user_id},
+            text(f"SELECT 1 FROM {self.TABLE_NAME} WHERE user_id = :user_id{org_filter}"),
+            base_params,
         ).fetchone()
 
         extra_json = json.dumps({key: value})
@@ -224,17 +257,24 @@ class UserPreferencesRepository:
                     f"UPDATE {self.TABLE_NAME} SET "
                     f"extra_prefs = COALESCE(extra_prefs, '{{}}'::jsonb) || CAST(:extra AS jsonb), "
                     f"updated_at = :now "
-                    f"WHERE user_id = :user_id"
+                    f"WHERE user_id = :user_id{org_filter}"
                 ),
-                {"user_id": user_id, "extra": extra_json, "now": now},
+                {"user_id": user_id, "extra": extra_json, "now": now, **({} if eff_org_id is None else {"org_id": eff_org_id})},
             )
         else:
+            insert_cols = "user_id, extra_prefs, updated_at"
+            insert_vals = ":user_id, CAST(:extra AS jsonb), :now"
+            insert_params: dict = {"user_id": user_id, "extra": extra_json, "now": now}
+            if eff_org_id is not None:
+                insert_cols += ", organization_id"
+                insert_vals += ", :org_id"
+                insert_params["org_id"] = eff_org_id
             session.execute(
                 text(
-                    f"INSERT INTO {self.TABLE_NAME} (user_id, extra_prefs, updated_at) "
-                    f"VALUES (:user_id, CAST(:extra AS jsonb), :now)"
+                    f"INSERT INTO {self.TABLE_NAME} ({insert_cols}) "
+                    f"VALUES ({insert_vals})"
                 ),
-                {"user_id": user_id, "extra": extra_json, "now": now},
+                insert_params,
             )
 
     def format_for_prompt(self, user_id: str) -> str:

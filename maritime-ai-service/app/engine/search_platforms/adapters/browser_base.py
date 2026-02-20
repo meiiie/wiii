@@ -62,6 +62,53 @@ _PRODUCT_INDICATOR_FIELDS = frozenset({
 _MIN_INDICATOR_MATCH = 2
 _INTERCEPTION_FALLBACK_THRESHOLD = 3
 
+# Sprint 157b: Group post indicator fields — distinct from marketplace
+_GROUP_POST_INDICATOR_FIELDS = frozenset({
+    "message", "story", "comet_sections",
+    "attached_story", "attachments",
+})
+_MIN_GROUP_POST_MATCH = 2
+
+# Sprint 157b: Enhanced scroll JS — extracts post links (pfbid + /posts/ + /permalink/)
+# and first product image from each article element.
+_SCROLL_EXTRACT_JS = """() => {
+    const els = document.querySelectorAll('div[role="article"]');
+    if (els.length === 0) return [];
+    const STATIC_PREFIXES = [
+        'https://static.xx.fbcdn.net/rsrc.php/',
+        'data:image/',
+        'https://scontent',
+    ];
+    return Array.from(els).map(a => {
+        // Extract post links: /posts/, /permalink/, pfbid, /marketplace/item/
+        const links = Array.from(a.querySelectorAll('a[href]'))
+            .map(l => l.href)
+            .filter(h => h && (
+                (h.includes('/groups/') && (
+                    h.includes('/posts/') || h.includes('/permalink/') || h.includes('pfbid')
+                ))
+                || h.includes('/marketplace/item/')
+            ));
+        const uniqueLink = links.length > 0 ? links[0] : '';
+
+        // Extract first meaningful image (skip emoji/static)
+        let postImage = '';
+        const imgs = a.querySelectorAll('img[src]');
+        for (const img of imgs) {
+            const src = img.src || '';
+            if (!src) continue;
+            const w = img.naturalWidth || img.width || 0;
+            if (w > 0 && w < 33) continue;  // Skip tiny emoji images
+            const isStatic = STATIC_PREFIXES.some(p => src.startsWith(p));
+            if (isStatic) continue;
+            postImage = src;
+            break;
+        }
+
+        return {text: a.innerText, link: uniqueLink, image: postImage};
+    });
+}"""
+
 # ---------------------------------------------------------------------------
 # Dedicated Playwright worker thread (Sprint 154b)
 # ---------------------------------------------------------------------------
@@ -259,6 +306,130 @@ def _parse_vnd_price(price_str: str) -> Optional[float]:
     return parse_vnd_price(price_str)
 
 
+# ---------------------------------------------------------------------------
+# Sprint 157b: Helpers for group post extraction
+# ---------------------------------------------------------------------------
+
+# Price patterns: "25.000.000đ", "25tr", "25 triệu", "900$", "25.000.000 VND"
+_PRICE_PATTERNS = [
+    # VND with dots: 25.000.000đ / 25.000.000 VND / 25.000.000 đ
+    re.compile(
+        r"(\d{1,3}(?:\.\d{3})+)\s*(?:đ|dong|đồng|vn[dđ])",
+        re.IGNORECASE,
+    ),
+    # Triệu/tr: 25tr, 25.5 triệu, 25,5tr
+    re.compile(
+        r"(\d+[.,]?\d*)\s*(?:tr(?:iệu)?|trieu)\b",
+        re.IGNORECASE,
+    ),
+    # Dollar: 900$, $900, 900 USD
+    re.compile(
+        r"(?:\$\s*(\d[\d,.]*)|(\d[\d,.]*)\s*(?:\$|USD|usd))",
+        re.IGNORECASE,
+    ),
+    # Plain VND large number: 25000000 VND
+    re.compile(
+        r"(\d{6,})\s*(?:đ|dong|đồng|vn[dđ])",
+        re.IGNORECASE,
+    ),
+]
+
+
+def _extract_price_from_text(text: str) -> str:
+    """Extract the first price mention from free text (group post body).
+
+    Sprint 157b: Returns the matched price string as-is (not parsed to float).
+    """
+    if not text:
+        return ""
+    for pattern in _PRICE_PATTERNS:
+        m = pattern.search(text)
+        if m:
+            return m.group(0).strip()
+    return ""
+
+
+def _extract_image_from_attachments(node: dict) -> str:
+    """Walk Facebook group post attachment structures for first image URI.
+
+    Sprint 157b: Handles multiple attachment layouts:
+    - attachments[].media.image.uri
+    - all_subattachments.nodes[].media.image.uri
+    - comet_sections.content.story.attachments[].media.photo.image.uri
+    """
+    if not isinstance(node, dict):
+        return ""
+
+    # 1. Direct attachments array
+    attachments = node.get("attachments")
+    if isinstance(attachments, list):
+        for att in attachments:
+            uri = _dig_image_uri(att)
+            if uri:
+                return uri
+
+    # 2. all_subattachments.nodes
+    sub = node.get("all_subattachments")
+    if isinstance(sub, dict):
+        sub_nodes = sub.get("nodes", [])
+        if isinstance(sub_nodes, list):
+            for sn in sub_nodes:
+                uri = _dig_image_uri(sn)
+                if uri:
+                    return uri
+
+    # 3. comet_sections.content.story (nested)
+    comet = node.get("comet_sections")
+    if isinstance(comet, dict):
+        content = comet.get("content")
+        if isinstance(content, dict):
+            story = content.get("story")
+            if isinstance(story, dict):
+                inner_att = story.get("attachments")
+                if isinstance(inner_att, list):
+                    for att in inner_att:
+                        uri = _dig_image_uri(att)
+                        if uri:
+                            return uri
+
+    return ""
+
+
+def _dig_image_uri(att: dict) -> str:
+    """Dig into an attachment dict for an image URI.
+
+    Handles: media.image.uri, media.photo.image.uri, media.uri
+    """
+    if not isinstance(att, dict):
+        return ""
+    media = att.get("media")
+    if not isinstance(media, dict):
+        return ""
+
+    # media.image.uri
+    img = media.get("image")
+    if isinstance(img, dict):
+        uri = img.get("uri", "")
+        if uri:
+            return uri
+
+    # media.photo.image.uri
+    photo = media.get("photo")
+    if isinstance(photo, dict):
+        pimg = photo.get("image")
+        if isinstance(pimg, dict):
+            uri = pimg.get("uri", "")
+            if uri:
+                return uri
+
+    # media.uri (direct)
+    uri = media.get("uri", "")
+    if uri:
+        return uri
+
+    return ""
+
+
 class PlaywrightLLMAdapter(SearchPlatformAdapter):
     """
     Base class for Playwright + LLM extraction adapters.
@@ -421,15 +592,9 @@ class PlaywrightLLMAdapter(SearchPlatformAdapter):
             no_new_count = 0
 
             for i in range(max_scrolls):
-                # 1. Extract visible articles via JS
+                # 1. Extract visible articles via JS (with post links + images)
                 try:
-                    articles = page.evaluate("""() => {
-                        const els = document.querySelectorAll('div[role="article"]');
-                        if (els.length > 0) {
-                            return Array.from(els).map(a => a.innerText);
-                        }
-                        return [];
-                    }""")
+                    articles = page.evaluate(_SCROLL_EXTRACT_JS)
                 except Exception:
                     articles = []
 
@@ -437,19 +602,28 @@ class PlaywrightLLMAdapter(SearchPlatformAdapter):
                 if not articles:
                     try:
                         body_text = page.inner_text("body")
-                        articles = [body_text] if body_text else []
+                        articles = [{"text": body_text, "link": "", "image": ""}] if body_text else []
                     except Exception:
                         articles = []
 
                 # 2. Dedup by first 200 chars
                 new_count = 0
                 for article in articles:
-                    if not article or not article.strip():
+                    text_content = article.get("text", "") if isinstance(article, dict) else str(article)
+                    link = article.get("link", "") if isinstance(article, dict) else ""
+                    image = article.get("image", "") if isinstance(article, dict) else ""
+                    if not text_content or not text_content.strip():
                         continue
-                    key = article[:200].strip()
+                    key = text_content[:200].strip()
                     if key not in seen_keys:
                         seen_keys.add(key)
-                        all_parts.append(article)
+                        # Embed link + image in article text for LLM extraction
+                        prefix = ""
+                        if link:
+                            prefix += f"[POST_URL: {link}]\n"
+                        if image:
+                            prefix += f"[POST_IMAGE: {image}]\n"
+                        all_parts.append(f"{prefix}{text_content}" if prefix else text_content)
                         new_count += 1
 
                 # 3. End detection: 3 empty scrolls → done
@@ -511,11 +685,11 @@ class PlaywrightLLMAdapter(SearchPlatformAdapter):
 
     @staticmethod
     def _scan_for_products(data, max_depth: int = 20) -> list:
-        """Recursively scan JSON for dicts with 2+ product indicator fields.
+        """Recursively scan JSON for product nodes (marketplace OR group posts).
 
-        Content-based matching: finds dicts containing fields like
-        marketplace_listing_title, listing_price, etc. Resilient to
-        Facebook API changes (doc_id changes every deployment).
+        Sprint 157b: Dual-mode detection — matches marketplace listings
+        (marketplace_listing_title, listing_price) AND group posts
+        (message, story, attachments, comet_sections).
 
         Returns list of raw dicts (product nodes).
         """
@@ -525,8 +699,14 @@ class PlaywrightLLMAdapter(SearchPlatformAdapter):
             if depth <= 0:
                 return
             if isinstance(obj, dict):
-                matched = sum(1 for k in obj if k in _PRODUCT_INDICATOR_FIELDS)
-                if matched >= _MIN_INDICATOR_MATCH:
+                marketplace_match = sum(
+                    1 for k in obj if k in _PRODUCT_INDICATOR_FIELDS
+                )
+                group_match = sum(
+                    1 for k in obj if k in _GROUP_POST_INDICATOR_FIELDS
+                )
+                if (marketplace_match >= _MIN_INDICATOR_MATCH
+                        or group_match >= _MIN_GROUP_POST_MATCH):
                     results.append(obj)
                 for v in obj.values():
                     if isinstance(v, (dict, list)):
@@ -541,7 +721,33 @@ class PlaywrightLLMAdapter(SearchPlatformAdapter):
 
     @staticmethod
     def _extract_product_from_node(node: dict) -> Optional[dict]:
-        """Map a GraphQL product node to a normalized dict.
+        """Dispatch: detect marketplace vs group post, extract accordingly.
+
+        Sprint 157b: Dual-mode — detects node type by field presence, then
+        delegates to the appropriate extractor.
+        """
+        if not isinstance(node, dict):
+            return None
+
+        # Detect type: marketplace has listing_price / marketplace_listing_title
+        marketplace_match = sum(
+            1 for k in node if k in _PRODUCT_INDICATOR_FIELDS
+        )
+        group_match = sum(
+            1 for k in node if k in _GROUP_POST_INDICATOR_FIELDS
+        )
+
+        if marketplace_match >= _MIN_INDICATOR_MATCH:
+            return PlaywrightLLMAdapter._extract_marketplace_product(node)
+        if group_match >= _MIN_GROUP_POST_MATCH:
+            return PlaywrightLLMAdapter._extract_group_post_product(node)
+
+        # Fallback: try marketplace extraction (original behavior)
+        return PlaywrightLLMAdapter._extract_marketplace_product(node)
+
+    @staticmethod
+    def _extract_marketplace_product(node: dict) -> Optional[dict]:
+        """Map a marketplace GraphQL node to normalized dict.
 
         Field mapping:
         - Title: marketplace_listing_title → name → title
@@ -550,9 +756,6 @@ class PlaywrightLLMAdapter(SearchPlatformAdapter):
         - Seller: marketplace_listing_seller.name
         - Location: location.reverse_geocode.city_page.name
         """
-        if not isinstance(node, dict):
-            return None
-
         # Title
         title = (
             node.get("marketplace_listing_title")
@@ -601,12 +804,101 @@ class PlaywrightLLMAdapter(SearchPlatformAdapter):
                 elif isinstance(geo.get("city"), str):
                     location = geo["city"]
 
+        # Link — construct from listing ID
+        link = ""
+        listing_id = (
+            node.get("id")
+            or node.get("listing_id")
+            or node.get("marketplace_listing_id")
+        )
+        if listing_id:
+            link = f"https://www.facebook.com/marketplace/item/{listing_id}/"
+
         return {
             "title": str(title),
             "price": str(price),
             "image": str(image),
             "seller": str(seller),
             "location": str(location),
+            "link": str(link),
+        }
+
+    @staticmethod
+    def _extract_group_post_product(node: dict) -> Optional[dict]:
+        """Map a Facebook group post GraphQL node to normalized dict.
+
+        Sprint 157b: Group posts have completely different field structure
+        from marketplace listings.
+
+        Field mapping:
+        - Title: message.text (first 200 chars) → story.text
+        - Price: regex from message.text (VND, triệu, $)
+        - Image: attachments walk via _extract_image_from_attachments()
+        - Seller: actors[0].name → actor.name
+        - Link: permalink_url → url → story.url
+        """
+        # Title from message.text or story
+        title = ""
+        msg = node.get("message")
+        if isinstance(msg, dict):
+            title = msg.get("text", "")
+        elif isinstance(msg, str):
+            title = msg
+
+        if not title:
+            story = node.get("story")
+            if isinstance(story, dict):
+                title = story.get("text", "")
+            elif isinstance(story, str):
+                title = story
+
+        if not title:
+            return None
+
+        # Truncate title to 200 chars
+        full_text = title
+        if len(title) > 200:
+            title = title[:200] + "..."
+
+        # Price — regex from full message text
+        price = _extract_price_from_text(full_text)
+
+        # Image — walk attachment structures
+        image = _extract_image_from_attachments(node)
+
+        # Seller — actors array or single actor
+        seller = ""
+        actors = node.get("actors")
+        if isinstance(actors, list) and actors:
+            first_actor = actors[0]
+            if isinstance(first_actor, dict):
+                seller = first_actor.get("name", "")
+        actor = node.get("actor")
+        if not seller and isinstance(actor, dict):
+            seller = actor.get("name", "")
+
+        # Link — permalink_url or url or story.url
+        link = ""
+        for link_field in ("permalink_url", "url"):
+            val = node.get(link_field)
+            if isinstance(val, str) and val:
+                link = val
+                break
+        if not link:
+            story = node.get("story")
+            if isinstance(story, dict):
+                link = story.get("url", "")
+
+        # Location — not standard in group posts
+        location = ""
+
+        return {
+            "title": str(title),
+            "price": str(price),
+            "image": str(image),
+            "seller": str(seller),
+            "location": str(location),
+            "link": str(link),
         }
 
     def _fetch_page_with_interception(
@@ -714,31 +1006,33 @@ class PlaywrightLLMAdapter(SearchPlatformAdapter):
 
             for i in range(max_scrolls):
                 try:
-                    articles = page.evaluate("""() => {
-                        const els = document.querySelectorAll('div[role="article"]');
-                        if (els.length > 0) {
-                            return Array.from(els).map(a => a.innerText);
-                        }
-                        return [];
-                    }""")
+                    articles = page.evaluate(_SCROLL_EXTRACT_JS)
                 except Exception:
                     articles = []
 
                 if not articles:
                     try:
                         body_text = page.inner_text("body")
-                        articles = [body_text] if body_text else []
+                        articles = [{"text": body_text, "link": "", "image": ""}] if body_text else []
                     except Exception:
                         articles = []
 
                 new_count = 0
                 for article in articles:
-                    if not article or not article.strip():
+                    text = article.get("text", "") if isinstance(article, dict) else str(article)
+                    link = article.get("link", "") if isinstance(article, dict) else ""
+                    image = article.get("image", "") if isinstance(article, dict) else ""
+                    if not text or not text.strip():
                         continue
-                    key = article[:200].strip()
+                    key = text[:200].strip()
                     if key not in seen_keys:
                         seen_keys.add(key)
-                        all_parts.append(article)
+                        prefix = ""
+                        if link:
+                            prefix += f"[POST_URL: {link}]\n"
+                        if image:
+                            prefix += f"[POST_IMAGE: {image}]\n"
+                        all_parts.append(f"{prefix}{text}" if prefix else text)
                         new_count += 1
 
                 if new_count == 0:
@@ -808,7 +1102,7 @@ class PlaywrightLLMAdapter(SearchPlatformAdapter):
             title=item.get("title", ""),
             price=price_str,
             extracted_price=_parse_vnd_price(price_str) if price_str else None,
-            link="",
+            link=item.get("link", ""),
             seller=item.get("seller", ""),
             image=item.get("image", ""),
             location=item.get("location", ""),
@@ -851,6 +1145,7 @@ class PlaywrightLLMAdapter(SearchPlatformAdapter):
             price=price_str,
             extracted_price=_parse_vnd_price(price_str),
             link=str(item.get("link", "")),
+            image=str(item.get("image", "")),
             seller=str(item.get("seller", "")),
             location=str(item.get("location", "")),
             snippet=str(item.get("description", "")),

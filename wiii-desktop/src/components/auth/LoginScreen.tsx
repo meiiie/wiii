@@ -62,15 +62,19 @@ export function LoginScreen() {
           });
         });
 
-        // Parse tokens from callback URL
+        // Sprint 160b: Parse tokens from URL fragment (#) with fallback to query (?)
+        // Fragments are never sent to the server — prevents token leakage to logs/proxies.
         const url = new URL(callbackUrl);
-        const accessToken = url.searchParams.get("access_token");
-        const refreshToken = url.searchParams.get("refresh_token");
-        const expiresIn = parseInt(url.searchParams.get("expires_in") || "1800", 10);
-        const userId = url.searchParams.get("user_id") || "";
-        const email = url.searchParams.get("email") || "";
-        const name = url.searchParams.get("name") || "";
-        const avatarUrl = url.searchParams.get("avatar_url") || "";
+        const params = url.hash
+          ? new URLSearchParams(url.hash.substring(1))
+          : url.searchParams; // backward compat with pre-160b backends
+        const accessToken = params.get("access_token");
+        const refreshToken = params.get("refresh_token");
+        const expiresIn = parseInt(params.get("expires_in") || "1800", 10);
+        const userId = params.get("user_id") || "";
+        const email = params.get("email") || "";
+        const name = params.get("name") || "";
+        const avatarUrl = params.get("avatar_url") || "";
 
         if (!accessToken || !refreshToken) {
           throw new Error("Missing tokens in callback");

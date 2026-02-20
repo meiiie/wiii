@@ -3,6 +3,8 @@ Organization Management API — Multi-Tenant (Sprint 24).
 
 REST endpoints for organization CRUD and membership management.
 Feature-gated: only active when enable_multi_tenant=True.
+
+Sprint 161: Added settings GET/PATCH + permissions endpoint.
 """
 
 import logging
@@ -17,6 +19,7 @@ from app.models.organization import (
     OrganizationCreate,
     OrganizationResponse,
     OrganizationUpdate,
+    OrgSettings,
     UserOrganizationResponse,
 )
 from app.repositories.organization_repository import get_organization_repository
@@ -268,3 +271,114 @@ async def my_organizations(
     _require_multi_tenant()
     repo = get_organization_repository()
     return repo.get_user_organizations(auth.user_id)
+
+
+# =============================================================================
+# Sprint 161: Org Settings + Permissions
+# =============================================================================
+
+
+@router.get("/{org_id}/settings")
+@limiter.limit("30/minute")
+async def get_org_settings(
+    request: Request,
+    org_id: str,
+    auth: AuthenticatedUser = Depends(require_auth),
+):
+    """Get effective org settings (merged with platform defaults)."""
+    _require_multi_tenant()
+
+    repo = get_organization_repository()
+    org = repo.get_organization(org_id)
+    if not org:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Organization '{org_id}' not found",
+        )
+
+    # Members can read settings (needed for branding); only admin can modify
+    if auth.role != "admin" and not repo.is_user_in_org(auth.user_id, org_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not a member of this organization",
+        )
+
+    from app.core.org_settings import get_effective_settings
+
+    effective = get_effective_settings(org_id)
+    return effective.model_dump()
+
+
+@router.patch("/{org_id}/settings")
+@limiter.limit("10/minute")
+async def update_org_settings(
+    request: Request,
+    org_id: str,
+    body: dict,
+    auth: AuthenticatedUser = Depends(require_auth),
+):
+    """Partial-update org settings (deep merge with existing). Admin only."""
+    _require_multi_tenant()
+    _require_admin(auth)
+
+    repo = get_organization_repository()
+    org = repo.get_organization(org_id)
+    if not org:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Organization '{org_id}' not found",
+        )
+
+    # Deep merge existing settings with new values
+    from app.core.org_settings import deep_merge
+
+    current_settings = org.settings or {}
+    merged = deep_merge(current_settings, body)
+
+    # Validate merged result against schema
+    try:
+        OrgSettings(**merged)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid settings: {str(e)[:200]}",
+        )
+
+    # Persist
+    result = repo.update_organization(
+        org_id,
+        OrganizationUpdate(settings=merged),
+    )
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update settings",
+        )
+
+    # Return effective (merged with platform defaults)
+    from app.core.org_settings import get_effective_settings
+
+    return get_effective_settings(org_id).model_dump()
+
+
+@router.get("/{org_id}/permissions")
+@limiter.limit("30/minute")
+async def get_org_permissions_endpoint(
+    request: Request,
+    org_id: str,
+    auth: AuthenticatedUser = Depends(require_auth),
+):
+    """Get current user's permissions within this organization."""
+    _require_multi_tenant()
+
+    repo = get_organization_repository()
+    if not repo.is_user_in_org(auth.user_id, org_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not a member of this organization",
+        )
+
+    from app.core.org_settings import get_org_permissions
+
+    perms = get_org_permissions(org_id, auth.role)
+    return {"permissions": perms, "role": auth.role, "organization_id": org_id}

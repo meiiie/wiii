@@ -86,7 +86,7 @@ describe("Sprint 154: Immer middleware — chat-store", () => {
     expect(state.streamingContent).toBe("Hello World");
     expect(state.streamingBlocks).toHaveLength(1);
     expect(state.streamingBlocks[0].type).toBe("answer");
-    expect(state.streamingBlocks[0].content).toBe("Hello World");
+    expect((state.streamingBlocks[0] as any).content).toBe("Hello World");
   });
 
   it("appendThinkingDelta updates flat field and creates thinking block", () => {
@@ -97,7 +97,7 @@ describe("Sprint 154: Immer middleware — chat-store", () => {
     expect(state.streamingThinking).toBe("Think more");
     expect(state.streamingBlocks).toHaveLength(1);
     expect(state.streamingBlocks[0].type).toBe("thinking");
-    expect(state.streamingBlocks[0].content).toBe("Think more");
+    expect((state.streamingBlocks[0] as any).content).toBe("Think more");
   });
 
   it("openThinkingBlock closes previous and opens new", () => {
@@ -107,9 +107,9 @@ describe("Sprint 154: Immer middleware — chat-store", () => {
     useChatStore.getState().openThinkingBlock("Phase 2");
     const state = useChatStore.getState();
     expect(state.streamingBlocks).toHaveLength(2);
-    expect(state.streamingBlocks[0].endTime).toBeDefined();
-    expect(state.streamingBlocks[1].endTime).toBeUndefined();
-    expect(state.streamingBlocks[1].label).toBe("Phase 2");
+    expect((state.streamingBlocks[0] as any).endTime).toBeDefined();
+    expect((state.streamingBlocks[1] as any).endTime).toBeUndefined();
+    expect((state.streamingBlocks[1] as any).label).toBe("Phase 2");
   });
 
   it("closeThinkingBlock sets endTime on last open thinking block", () => {
@@ -118,7 +118,7 @@ describe("Sprint 154: Immer middleware — chat-store", () => {
     useChatStore.getState().closeThinkingBlock(1000);
     const block = useChatStore.getState().streamingBlocks[0];
     expect(block.type).toBe("thinking");
-    expect(block.endTime).toBeDefined();
+    expect((block as any).endTime).toBeDefined();
   });
 
   it("appendToolCall adds to flat field and thinking block", () => {
@@ -147,9 +147,9 @@ describe("Sprint 154: Immer middleware — chat-store", () => {
     useChatStore.getState().appendActionText("Action!", "direct");
     const state = useChatStore.getState();
     expect(state.streamingBlocks).toHaveLength(2);
-    expect(state.streamingBlocks[0].endTime).toBeDefined();
+    expect((state.streamingBlocks[0] as any).endTime).toBeDefined();
     expect(state.streamingBlocks[1].type).toBe("action_text");
-    expect(state.streamingBlocks[1].content).toBe("Action!");
+    expect((state.streamingBlocks[1] as any).content).toBe("Action!");
   });
 
   it("appendScreenshot closes thinking and adds screenshot block", () => {
@@ -219,7 +219,7 @@ describe("Sprint 154: Immer middleware — chat-store", () => {
   });
 
   it("setStreamError creates error message", () => {
-    const id = useChatStore.getState().createConversation();
+    useChatStore.getState().createConversation();
     useChatStore.getState().addUserMessage("Test");
     useChatStore.getState().startStreaming();
     useChatStore.getState().setStreamError("Connection failed");

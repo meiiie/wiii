@@ -60,7 +60,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user: AuthUser | null;
         tokens: AuthTokens | null;
         authMode: "oauth" | "legacy";
-      }>(AUTH_STORE_KEY);
+      } | null>(AUTH_STORE_KEY, "data", null);
 
       if (saved?.tokens && saved?.user) {
         // Check if refresh token exists (access token may have expired — that's OK)
@@ -94,7 +94,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     // Persist
     try {
-      await saveStore(AUTH_STORE_KEY, {
+      await saveStore(AUTH_STORE_KEY, "data", {
         user,
         tokens,
         authMode: "oauth",
@@ -131,7 +131,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
 
     try {
-      await saveStore(AUTH_STORE_KEY, { user: null, tokens: null, authMode: "oauth" });
+      await saveStore(AUTH_STORE_KEY, "data", { user: null, tokens: null, authMode: "oauth" });
     } catch {
       // ignore
     }
@@ -170,7 +170,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       // Persist
       try {
-        await saveStore(AUTH_STORE_KEY, {
+        await saveStore(AUTH_STORE_KEY, "data", {
           user,
           tokens: newTokens,
           authMode: "oauth",
@@ -186,7 +186,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  getAuthHeaders: () => {
+  getAuthHeaders: (): Record<string, string> => {
     const { tokens, authMode } = get();
     if (authMode === "oauth" && tokens?.access_token) {
       return { Authorization: `Bearer ${tokens.access_token}` };

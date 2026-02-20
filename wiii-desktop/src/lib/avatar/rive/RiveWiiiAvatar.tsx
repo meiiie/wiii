@@ -74,10 +74,10 @@ function RiveWiiiAvatarInner({
   const smName = stateMachine || MAIN_STATE_MACHINE;
   const isWiiiMode = smName === MAIN_STATE_MACHINE;
 
-  const onLoadError = useCallback((e: Event) => {
+  const onLoadError = useCallback((e: unknown) => {
     console.error("[RiveWiiiAvatar] .riv load error:", e);
     setLoadError(true);
-  }, []);
+  }, []) as import("@rive-app/webgl2").EventCallback;
 
   const { rive, RiveComponent } = useRive({
     src: riveSrc || RIVE_FILE_PATH,

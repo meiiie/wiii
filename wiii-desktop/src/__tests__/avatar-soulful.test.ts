@@ -3,7 +3,7 @@
  * Tests all 6 phases: staggered transitions, asymmetry, momentum lerp,
  * micro-reactions, richer idle poses, and speaking rhythm.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   FACE_EXPRESSIONS,
   lerpFaceExpression,
@@ -13,7 +13,7 @@ import {
   easeInCubic,
   momentumLerp,
 } from "@/lib/avatar/face-config";
-import type { FaceExpression } from "@/lib/avatar/face-config";
+// FaceExpression type used implicitly via FACE_EXPRESSIONS
 import type { MicroReaction } from "@/lib/avatar/types";
 
 // ─── Phase 1: Staggered Feature Transitions ─────────────────────────────────
@@ -74,9 +74,9 @@ describe("Phase 1: Staggered feature transitions", () => {
     const uniform = lerpFaceExpression(from, to, 0.375); // 150/400
 
     // They should not be identical because of per-feature timing
-    const staggeredBrow = staggered.browRaise;
-    const uniformBrow = uniform.browRaise;
     // browRaise (0ms delay) at 150ms has t=150/400 → more advanced
+    void staggered.browRaise;
+    void uniform.browRaise;
     // The values might actually be similar due to easing, but blush should differ
     // blush (120ms delay) at 150ms has only 30ms of progress
     const blushDiff = Math.abs(staggered.blush - uniform.blush);
@@ -202,7 +202,7 @@ describe("Phase 4: MicroReaction type and behavior", () => {
     // complete → nod: 300ms
     // error → flinch: 200ms
     // speaking → perk: 150ms
-    const specs: Record<MicroReaction["type"], number> = {
+    const specs: Partial<Record<MicroReaction["type"], number>> = {
       surprise: 0.18,
       nod: 0.3,
       flinch: 0.2,

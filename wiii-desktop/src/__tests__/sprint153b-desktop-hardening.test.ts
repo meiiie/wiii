@@ -430,7 +430,7 @@ describe("Content block management during streaming", () => {
     expect(state.streamingContent).toBe("Hello world");
     expect(state.streamingBlocks).toHaveLength(1);
     expect(state.streamingBlocks[0].type).toBe("answer");
-    expect(state.streamingBlocks[0].content).toBe("Hello world");
+    expect((state.streamingBlocks[0] as { content: string }).content).toBe("Hello world");
   });
 
   it("appendThinkingDelta creates thinking block", () => {
@@ -455,7 +455,7 @@ describe("Content block management during streaming", () => {
       (state.streamingBlocks[0] as { endTime?: number }).endTime
     ).toBeDefined();
     expect(state.streamingBlocks[1].type).toBe("action_text");
-    expect(state.streamingBlocks[1].content).toBe("Searching products");
+    expect((state.streamingBlocks[1] as { content: string }).content).toBe("Searching products");
   });
 
   it("appendScreenshot closes open thinking block", () => {

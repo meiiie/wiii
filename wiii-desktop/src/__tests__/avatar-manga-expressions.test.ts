@@ -14,18 +14,15 @@ import {
   generateHeartPath,
   generateExclaimPath,
   generateQuestionPath,
-  generateSparklePath,
   HEART_POSITIONS,
   EXCLAIM_POSITION,
   QUESTION_POSITION,
   ANGER_VEIN_POSITION,
   GLOOM_POSITION,
-  SPIRAL_POSITION,
   FLOWER_POSITIONS,
   ZZZ_POSITION,
   FIRE_POSITION,
 } from "@/lib/avatar/manga-indicators";
-import type { MangaIndicatorType } from "@/lib/avatar/manga-indicators";
 import { generateStarPupilPath, generateHeartPupilPath, generateAngerVeinPath, generateGloomLinesPath, generateSpiralPath, generateFlowerPath, generateZzzPath, generateFirePath } from "@/lib/avatar/face-geometry";
 import { REACTION_REGISTRY, computeReactionIntensity } from "@/lib/avatar/micro-reaction-registry";
 import { anticipateEase } from "@/lib/avatar/face-config";
@@ -465,13 +462,13 @@ describe("143b: Reaction registry data integrity", () => {
   });
 
   it("all entries have valid duration > 0", () => {
-    for (const [key, def] of Object.entries(REACTION_REGISTRY)) {
+    for (const [_key, def] of Object.entries(REACTION_REGISTRY)) {
       expect(def.duration).toBeGreaterThan(0);
     }
   });
 
   it("all entries have at least one face modifier key", () => {
-    for (const [key, def] of Object.entries(REACTION_REGISTRY)) {
+    for (const [_key, def] of Object.entries(REACTION_REGISTRY)) {
       expect(Object.keys(def.modifier.face).length).toBeGreaterThan(0);
     }
   });
@@ -504,7 +501,7 @@ describe("143b: computeReactionIntensity easing", () => {
 
   it("pulse easing produces variation via sine wave", () => {
     const a = computeReactionIntensity(0.1, 1, "pulse", 5);
-    const b = computeReactionIntensity(0.2, 1, "pulse", 5);
+    computeReactionIntensity(0.2, 1, "pulse", 5);
     // Pulse should cause values to differ from pure linear
     expect(a).not.toBeCloseTo(0.9, 1); // not exactly linear
   });
@@ -911,7 +908,7 @@ describe("143b: Pupil tremor during distress", () => {
   });
 
   it("no tremor during neutral mood", () => {
-    const mood = "neutral";
+    const mood: string = "neutral";
     const isDistressed = mood === "concerned";
     expect(isDistressed).toBe(false);
   });
@@ -924,11 +921,9 @@ describe("143b: Pupil tremor during distress", () => {
 import { MOOD_DECAY_DURATIONS } from "@/lib/avatar/mood-theme";
 import { generateTeethPath, generateTonguePath, generatePoutMouthPath, generateKnockedOutEyePath } from "@/lib/avatar/face-geometry";
 import { REACTION_CHAINS, advanceChain, createChainPlayback } from "@/lib/avatar/reaction-chains";
-import type { ChainPlayback } from "@/lib/avatar/reaction-chains";
 import { GazeController, GAZE_TARGETS } from "@/lib/avatar/gaze-controller";
-import type { GazeTarget } from "@/lib/avatar/gaze-controller";
 import { createMoistureState, updateMoisture, getMoistureEffects, generateTearDropPath } from "@/lib/avatar/eye-moisture";
-import type { EyeMoistureState, MoistureTriggers } from "@/lib/avatar/eye-moisture";
+import type { MoistureTriggers } from "@/lib/avatar/eye-moisture";
 
 // ─── Phase 1: Squash & Stretch (Disney Principle #1) ────────────────────
 

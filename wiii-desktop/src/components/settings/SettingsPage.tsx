@@ -41,8 +41,10 @@ import { getOrgDisplayName } from "@/lib/org-config";
 import { PERSONAL_ORG_ID } from "@/lib/constants";
 import { fetchIdentities, unlinkIdentity } from "@/api/users";
 import type { AppSettings, UserRole, UserPreferences, UserIdentity, LearningStyle, DifficultyLevel, PronounStyle } from "@/api/types";
+import { OrgSettingsTab } from "./OrgSettingsTab";
+import { Building2 } from "lucide-react";
 
-type Tab = "connection" | "user" | "preferences" | "learning" | "memory" | "context";
+type Tab = "connection" | "user" | "preferences" | "learning" | "memory" | "context" | "organization";
 
 export function SettingsPage() {
   const { settings, updateSettings, resetSettings } = useSettingsStore();
@@ -181,6 +183,7 @@ export function SettingsPage() {
     { id: "learning", label: "Học tập", icon: <GraduationCap size={16} /> },
     { id: "memory", label: "Bộ nhớ", icon: <Brain size={16} /> },
     { id: "context", label: "Ngữ cảnh", icon: <Database size={16} /> },
+    { id: "organization", label: "Tổ chức", icon: <Building2 size={16} /> },
   ];
 
   return (
@@ -255,6 +258,9 @@ export function SettingsPage() {
 
           {activeTab === "context" && (
             <ContextTab />
+          )}
+          {activeTab === "organization" && (
+            <OrgSettingsTab />
           )}
         </div>
 

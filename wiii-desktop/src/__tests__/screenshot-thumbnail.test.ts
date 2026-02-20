@@ -7,7 +7,7 @@
  * 3. ScreenshotBlock rendering — full image expand, placeholder, hostname
  * 4. Facebook cookie in settings
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { createElement } from "react";
 import { render, screen } from "@testing-library/react";
 import { useChatStore } from "@/stores/chat-store";

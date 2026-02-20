@@ -68,17 +68,26 @@ class CharacterRepository:
         if not self._session_factory:
             return []
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                params: dict = {"user_id": user_id}
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 result = session.execute(
                     text(f"""
                         SELECT id, label, content, char_limit, version,
                                metadata, created_at, updated_at
                         FROM {self.BLOCKS_TABLE}
-                        WHERE user_id = :user_id
+                        WHERE user_id = :user_id{org_filter}
                         ORDER BY label
                     """),
-                    {"user_id": user_id},
+                    params,
                 )
                 rows = result.fetchall()
                 return [
@@ -109,16 +118,25 @@ class CharacterRepository:
         if not self._session_factory:
             return None
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                params: dict = {"label": label, "user_id": user_id}
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 result = session.execute(
                     text(f"""
                         SELECT id, label, content, char_limit, version,
                                metadata, created_at, updated_at
                         FROM {self.BLOCKS_TABLE}
-                        WHERE label = :label AND user_id = :user_id
+                        WHERE label = :label AND user_id = :user_id{org_filter}
                     """),
-                    {"label": label, "user_id": user_id},
+                    params,
                 )
                 row = result.fetchone()
                 if not row:
@@ -148,13 +166,31 @@ class CharacterRepository:
         if not self._session_factory:
             return None
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id
+        eff_org_id = get_effective_org_id()
+
         try:
             with self._session_factory() as session:
+                params: dict = {
+                    "label": create.label,
+                    "content": create.content[:create.char_limit],
+                    "char_limit": create.char_limit,
+                    "metadata": "{}",
+                    "user_id": user_id,
+                }
+                insert_cols = "label, content, char_limit, metadata, user_id"
+                insert_vals = ":label, :content, :char_limit, CAST(:metadata AS jsonb), :user_id"
+                if eff_org_id is not None:
+                    insert_cols += ", organization_id"
+                    insert_vals += ", :org_id"
+                    params["org_id"] = eff_org_id
+
                 result = session.execute(
                     text(f"""
                         INSERT INTO {self.BLOCKS_TABLE}
-                            (label, content, char_limit, metadata, user_id)
-                        VALUES (:label, :content, :char_limit, CAST(:metadata AS jsonb), :user_id)
+                            ({insert_cols})
+                        VALUES ({insert_vals})
                         ON CONFLICT (user_id, label) DO UPDATE
                             SET content = EXCLUDED.content,
                                 char_limit = EXCLUDED.char_limit,
@@ -163,13 +199,7 @@ class CharacterRepository:
                         RETURNING id, label, content, char_limit, version,
                                   metadata, created_at, updated_at
                     """),
-                    {
-                        "label": create.label,
-                        "content": create.content[:create.char_limit],
-                        "char_limit": create.char_limit,
-                        "metadata": "{}",
-                        "user_id": user_id,
-                    },
+                    params,
                 )
                 session.commit()
                 row = result.fetchone()
@@ -207,8 +237,17 @@ class CharacterRepository:
         if not self._session_factory:
             return None
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                base_params: dict = {"label": label, "user_id": user_id}
+                if eff_org_id is not None:
+                    base_params["org_id"] = eff_org_id
+
                 # Build update query
                 if update.content is not None:
                     # Replace mode
@@ -221,16 +260,11 @@ class CharacterRepository:
                                 SET content = :content,
                                     version = version + 1,
                                     updated_at = NOW()
-                                WHERE label = :label AND user_id = :user_id AND version = :version
+                                WHERE label = :label AND user_id = :user_id AND version = :version{org_filter}
                                 RETURNING id, label, content, char_limit, version,
                                           metadata, created_at, updated_at
                             """),
-                            {
-                                "content": new_content,
-                                "label": label,
-                                "user_id": user_id,
-                                "version": expected_version,
-                            },
+                            {**base_params, "content": new_content, "version": expected_version},
                         )
                     else:
                         result = session.execute(
@@ -239,11 +273,11 @@ class CharacterRepository:
                                 SET content = :content,
                                     version = version + 1,
                                     updated_at = NOW()
-                                WHERE label = :label AND user_id = :user_id
+                                WHERE label = :label AND user_id = :user_id{org_filter}
                                 RETURNING id, label, content, char_limit, version,
                                           metadata, created_at, updated_at
                             """),
-                            {"content": new_content, "label": label, "user_id": user_id},
+                            {**base_params, "content": new_content},
                         )
                 elif update.append is not None:
                     # Append mode — respect char_limit
@@ -253,11 +287,11 @@ class CharacterRepository:
                             SET content = LEFT(content || :append, char_limit),
                                 version = version + 1,
                                 updated_at = NOW()
-                            WHERE label = :label AND user_id = :user_id
+                            WHERE label = :label AND user_id = :user_id{org_filter}
                             RETURNING id, label, content, char_limit, version,
                                       metadata, created_at, updated_at
                         """),
-                        {"append": update.append, "label": label, "user_id": user_id},
+                        {**base_params, "append": update.append},
                     )
                 else:
                     return self.get_block(label, user_id=user_id)
@@ -294,23 +328,35 @@ class CharacterRepository:
         if not self._session_factory:
             return None
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id
+        eff_org_id = get_effective_org_id()
+
         try:
             with self._session_factory() as session:
+                insert_cols = "experience_type, content, importance, user_id, metadata"
+                insert_vals = ":type, :content, :importance, :user_id, CAST(:metadata AS jsonb)"
+                params: dict = {
+                    "type": create.experience_type,
+                    "content": create.content,
+                    "importance": create.importance,
+                    "user_id": create.user_id,
+                    "metadata": "{}",
+                }
+                if eff_org_id is not None:
+                    insert_cols += ", organization_id"
+                    insert_vals += ", :org_id"
+                    params["org_id"] = eff_org_id
+
                 result = session.execute(
                     text(f"""
                         INSERT INTO {self.EXPERIENCES_TABLE}
-                            (experience_type, content, importance, user_id, metadata)
-                        VALUES (:type, :content, :importance, :user_id, CAST(:metadata AS jsonb))
+                            ({insert_cols})
+                        VALUES ({insert_vals})
                         RETURNING id, experience_type, content, importance,
                                   user_id, metadata, created_at
                     """),
-                    {
-                        "type": create.experience_type,
-                        "content": create.content,
-                        "importance": create.importance,
-                        "user_id": create.user_id,
-                        "metadata": "{}",
-                    },
+                    params,
                 )
                 session.commit()
                 row = result.fetchone()
@@ -342,6 +388,10 @@ class CharacterRepository:
         if not self._session_factory:
             return []
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+
         try:
             with self._session_factory() as session:
                 # Build WHERE conditions dynamically
@@ -354,6 +404,13 @@ class CharacterRepository:
                 if user_id:
                     conditions.append("user_id = :user_id")
                     params["user_id"] = user_id
+
+                # Add org filter
+                org_clause = org_where_clause(eff_org_id)
+                if org_clause:
+                    # Strip leading " AND " and add as a condition
+                    conditions.append(org_clause.lstrip(" AND "))
+                    params["org_id"] = eff_org_id
 
                 where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
                 result = session.execute(
@@ -390,10 +447,21 @@ class CharacterRepository:
         if not self._session_factory:
             return 0
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                params: dict = {}
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                where = f"WHERE 1=1{org_filter}" if org_filter else ""
                 result = session.execute(
-                    text(f"SELECT COUNT(*) FROM {self.EXPERIENCES_TABLE}")
+                    text(f"SELECT COUNT(*) FROM {self.EXPERIENCES_TABLE} {where}"),
+                    params,
                 )
                 return result.scalar() or 0
         except Exception as e:
@@ -424,6 +492,11 @@ class CharacterRepository:
         if not self._session_factory:
             return 0
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 # Build user filter
@@ -431,10 +504,12 @@ class CharacterRepository:
                 params: dict = {"days": str(max_age_days), "keep_min": keep_min}
                 if user_id:
                     params["user_id"] = user_id
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
 
                 # Check total count first
                 total = session.execute(
-                    text(f"SELECT COUNT(*) FROM {self.EXPERIENCES_TABLE} WHERE 1=1 {user_filter}"),
+                    text(f"SELECT COUNT(*) FROM {self.EXPERIENCES_TABLE} WHERE 1=1 {user_filter}{org_filter}"),
                     params,
                 ).scalar() or 0
 
@@ -450,10 +525,10 @@ class CharacterRepository:
                     text(f"""
                         DELETE FROM {self.EXPERIENCES_TABLE}
                         WHERE created_at < NOW() - CAST(:days || ' days' AS INTERVAL)
-                          {user_filter}
+                          {user_filter}{org_filter}
                           AND id NOT IN (
                               SELECT id FROM {self.EXPERIENCES_TABLE}
-                              WHERE 1=1 {user_filter}
+                              WHERE 1=1 {user_filter}{org_filter}
                               ORDER BY created_at DESC
                               LIMIT :keep_min
                           )

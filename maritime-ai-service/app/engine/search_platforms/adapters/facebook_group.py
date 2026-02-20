@@ -150,13 +150,18 @@ class FacebookGroupSearchAdapter(PlaywrightLLMAdapter):
         """LLM extraction prompt for Facebook group posts."""
         return """Analyze this Facebook Group search results page and extract product listings / sale posts.
 
+IMPORTANT:
+- Some posts have a [POST_URL: ...] tag — this is the direct link to the Facebook post. Extract into "link" field.
+- Some posts have a [POST_IMAGE: ...] tag — this is the product image URL. Extract into "image" field.
+
 Return ONLY a JSON array (no markdown, no explanation):
 [
   {{
     "title": "product name or post title",
     "price": "price as shown (e.g., '25.000.000 d', '900$', 'lien he')",
     "seller": "person or page name posting the item",
-    "link": "",
+    "link": "the [POST_URL: ...] value if present, otherwise empty string",
+    "image": "the [POST_IMAGE: ...] value if present, otherwise empty string",
     "location": "city/district if visible",
     "description": "short description of condition, specs, or details"
   }}
@@ -166,6 +171,8 @@ Rules:
 - Include items that are products FOR SALE or trading posts
 - Extract prices as-is including currency (VND, $, d, etc.)
 - Include "lien he" or "inbox" if no price shown but item is for sale
+- ALWAYS extract the [POST_URL: ...] value into the "link" field when present
+- ALWAYS extract the [POST_IMAGE: ...] value into the "image" field when present
 - If no products found, return empty array: []
 - Maximum {max_results} items
 - Group posts often show: seller name, then content with price and product details
@@ -310,8 +317,12 @@ Page text:
 
         # Check cookies — groups require login
         cookies = self._get_cookies()
+        logger.info("[FB_GROUP] search_group_sync: group=%r, query=%r, cookies=%d",
+                    group_name_or_url[:60] if group_name_or_url else "NONE",
+                    query[:40] if query else "NONE",
+                    len(cookies) if cookies else 0)
         if not cookies:
-            logger.info("[FB_GROUP] No Facebook cookie — cannot search groups")
+            logger.warning("[FB_GROUP] No Facebook cookie — cannot search groups")
             return []
 
         # Get scroll + interception config
@@ -373,22 +384,55 @@ Page text:
             worker_timeout = timeout + 20 + int(max_scrolls * (scroll_delay + 2)) + 15
             result = _submit_to_pw_worker(_do_group_search, timeout=worker_timeout)
 
+            # Sprint 157: Build search page URL for source links
+            # Since Facebook React UI doesn't expose individual post URLs,
+            # use the group search page as the source link for all results.
+            search_page_url = ""
+            if _GROUP_URL_RE.search(group_input):
+                _resolved = group_input.strip()
+                if not _resolved.startswith("http"):
+                    _resolved = f"https://www.facebook.com/groups/{_GROUP_URL_RE.search(group_input).group(1)}"
+                search_page_url = self._build_group_search_url(_resolved, search_query)
+            elif group_input.lower() in self._group_cache:
+                search_page_url = self._build_group_search_url(
+                    self._group_cache[group_input.lower()], search_query
+                )
+
             if use_interception:
                 dom_text, intercepted = result if isinstance(result, tuple) else (result, [])
+                logger.info(
+                    "[FB_GROUP] Interception: %d products captured, dom_text=%d chars",
+                    len(intercepted), len(dom_text) if dom_text else 0,
+                )
                 if len(intercepted) >= _INTERCEPTION_FALLBACK_THRESHOLD:
-                    return [
+                    logger.info("[FB_GROUP] Using GraphQL interception path (%d products)", len(intercepted))
+                    results = [
                         self._map_intercepted_to_result(p)
                         for p in intercepted[:max_results]
                     ]
+                    # Fill missing links with search page URL
+                    for r in results:
+                        if not r.link and search_page_url:
+                            r.link = search_page_url
+                    return results
                 # Fallback to LLM on DOM text
                 if dom_text and len(dom_text) >= 100:
-                    return self._llm_extract(dom_text, max_results)
+                    logger.info("[FB_GROUP] Using LLM extraction path on %d chars", len(dom_text))
+                    results = self._llm_extract(dom_text, max_results)
+                    for r in results:
+                        if not r.link and search_page_url:
+                            r.link = search_page_url
+                    return results
                 return []
             else:
                 text = result
                 if not text or len(text) < 100:
                     return []
-                return self._llm_extract(text, max_results)
+                results = self._llm_extract(text, max_results)
+                for r in results:
+                    if not r.link and search_page_url:
+                        r.link = search_page_url
+                return results
         except ImportError:
             logger.warning("[FB_GROUP] playwright not installed")
             return []

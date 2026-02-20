@@ -14,6 +14,7 @@ from app.engine.search_platforms.base import (
     ProductSearchResult,
     SearchPlatformAdapter,
 )
+from app.engine.search_platforms.utils import parse_vnd_price
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +62,12 @@ class SerperSiteAdapter(SearchPlatformAdapter):
 
         results = []
         for item in data.get("organic", [])[:max_results]:
+            price_str = item.get("priceRange", "")
             results.append(ProductSearchResult(
                 platform=self._config.display_name,
                 title=item.get("title", ""),
-                price=item.get("priceRange", ""),
+                price=price_str,
+                extracted_price=parse_vnd_price(price_str),
                 link=item.get("link", ""),
                 snippet=item.get("snippet", ""),
                 source=item.get("source", ""),

@@ -115,21 +115,27 @@ def tool_generate_product_report(products_json: str, title: str = "Báo cáo so 
         })
 
         # Title row
-        worksheet.merge_range("A1:J1", title, title_fmt)
+        worksheet.merge_range("A1:K1", title, title_fmt)
         worksheet.write("A2", f"Ngày tạo: {time.strftime('%d/%m/%Y %H:%M')}", workbook.add_format({"italic": True}))
 
         # Headers (row 3, 0-indexed = row 2 skipped for spacing)
-        headers = ["STT", "Sàn", "Tên SP", "Giá (VNĐ)", "Người bán", "Đánh giá", "Lượt bán", "Vận chuyển", "Địa chỉ", "Link"]
-        col_widths = [5, 18, 45, 16, 25, 10, 12, 15, 20, 35]
+        headers = ["STT", "Sàn", "Tên SP", "Giá (VNĐ)", "Người bán", "Đánh giá", "Lượt bán", "Vận chuyển", "Địa chỉ", "Link", "Mô tả"]
+        col_widths = [5, 18, 45, 16, 25, 10, 12, 15, 20, 35, 35]
         for col, (header, width) in enumerate(zip(headers, col_widths)):
             worksheet.set_column(col, col, width)
             worksheet.write(3, col, header, header_fmt)
 
-        # Extract numeric prices for min/max highlighting
+        # Extract numeric prices for sorting and highlighting
         prices = []
         for p in products:
             price_val = _extract_price(p.get("price", ""), p.get("extracted_price"))
             prices.append(price_val)
+
+        # Sort products by price ascending (cheapest first), None/0 at end
+        paired = list(zip(products, prices))
+        paired.sort(key=lambda x: x[1] if x[1] and x[1] > 0 else float('inf'))
+        products = [p for p, _ in paired]
+        prices = [pr for _, pr in paired]
 
         valid_prices = [p for p in prices if p and p > 0]
         min_price = min(valid_prices) if valid_prices else None
@@ -162,6 +168,10 @@ def tool_generate_product_report(products_json: str, title: str = "Báo cáo so 
                 worksheet.write_url(row, 9, link, link_fmt, "Xem SP")
             else:
                 worksheet.write(row, 9, "", cell_fmt)
+
+            # Description/specs column
+            description = product.get("snippet", "") or product.get("description", "")
+            worksheet.write(row, 10, description, cell_fmt)
 
         # Summary row
         summary_row = 4 + len(products) + 1

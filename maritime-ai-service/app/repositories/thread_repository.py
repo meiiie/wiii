@@ -252,6 +252,11 @@ class ThreadRepository:
         if not self._session_factory:
             return None
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 if user_id is not None:
@@ -261,8 +266,9 @@ class ThreadRepository:
                         f"extra_data, is_deleted "
                         f"FROM {self.TABLE_NAME} "
                         f"WHERE thread_id = :thread_id AND user_id = :user_id"
+                        f"{org_filter}"
                     )
-                    params = {"thread_id": thread_id, "user_id": user_id}
+                    params: dict = {"thread_id": thread_id, "user_id": user_id}
                 else:
                     query = text(
                         f"SELECT thread_id, user_id, domain_id, title, "
@@ -270,8 +276,11 @@ class ThreadRepository:
                         f"extra_data, is_deleted "
                         f"FROM {self.TABLE_NAME} "
                         f"WHERE thread_id = :thread_id"
+                        f"{org_filter}"
                     )
                     params = {"thread_id": thread_id}
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
                 result = session.execute(query, params).fetchone()
 
                 if not result:
@@ -298,20 +307,30 @@ class ThreadRepository:
         if not self._session_factory:
             return False
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                params: dict = {
+                    "thread_id": thread_id,
+                    "user_id": user_id,
+                    "now": datetime.now(timezone.utc),
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 result = session.execute(
                     text(
                         f"UPDATE {self.TABLE_NAME} "
                         f"SET is_deleted = true, updated_at = :now "
                         f"WHERE thread_id = :thread_id AND user_id = :user_id "
                         f"AND (is_deleted = false OR is_deleted IS NULL)"
+                        f"{org_filter}"
                     ),
-                    {
-                        "thread_id": thread_id,
-                        "user_id": user_id,
-                        "now": datetime.now(timezone.utc),
-                    },
+                    params,
                 )
                 session.commit()
                 return result.rowcount > 0
@@ -336,20 +355,30 @@ class ThreadRepository:
         if not self._session_factory:
             return False
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                params: dict = {
+                    "thread_id": thread_id,
+                    "user_id": user_id,
+                    "title": title,
+                    "now": datetime.now(timezone.utc),
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 result = session.execute(
                     text(
                         f"UPDATE {self.TABLE_NAME} "
                         f"SET title = :title, updated_at = :now "
                         f"WHERE thread_id = :thread_id AND user_id = :user_id"
+                        f"{org_filter}"
                     ),
-                    {
-                        "thread_id": thread_id,
-                        "user_id": user_id,
-                        "title": title,
-                        "now": datetime.now(timezone.utc),
-                    },
+                    params,
                 )
                 session.commit()
                 return result.rowcount > 0
@@ -378,22 +407,32 @@ class ThreadRepository:
         if not self._session_factory:
             return False
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             import json
             with self._session_factory() as session:
+                params: dict = {
+                    "thread_id": thread_id,
+                    "user_id": user_id,
+                    "extra": json.dumps(extra_data),
+                    "now": datetime.now(timezone.utc),
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 result = session.execute(
                     text(
                         f"UPDATE {self.TABLE_NAME} "
                         f"SET extra_data = COALESCE(extra_data, '{{}}'::jsonb) || CAST(:extra AS jsonb), "
                         f"updated_at = :now "
                         f"WHERE thread_id = :thread_id AND user_id = :user_id"
+                        f"{org_filter}"
                     ),
-                    {
-                        "thread_id": thread_id,
-                        "user_id": user_id,
-                        "extra": json.dumps(extra_data),
-                        "now": datetime.now(timezone.utc),
-                    },
+                    params,
                 )
                 session.commit()
                 return result.rowcount > 0
@@ -421,8 +460,17 @@ class ThreadRepository:
         if not self._session_factory:
             return []
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                params: dict = {"user_id": user_id, "limit": limit}
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 result = session.execute(
                     text(
                         f"SELECT thread_id, title, "
@@ -431,11 +479,12 @@ class ThreadRepository:
                         f"FROM {self.TABLE_NAME} "
                         f"WHERE user_id = :user_id "
                         f"AND extra_data ? 'summary' "
-                        f"AND (is_deleted = false OR is_deleted IS NULL) "
+                        f"AND (is_deleted = false OR is_deleted IS NULL)"
+                        f"{org_filter} "
                         f"ORDER BY last_message_at DESC "
                         f"LIMIT :limit"
                     ),
-                    {"user_id": user_id, "limit": limit},
+                    params,
                 ).fetchall()
 
                 return [
@@ -458,15 +507,25 @@ class ThreadRepository:
         if not self._session_factory:
             return 0
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                params: dict = {"user_id": user_id}
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 result = session.execute(
                     text(
                         f"SELECT COUNT(*) FROM {self.TABLE_NAME} "
                         f"WHERE user_id = :user_id "
                         f"AND (is_deleted = false OR is_deleted IS NULL)"
+                        f"{org_filter}"
                     ),
-                    {"user_id": user_id},
+                    params,
                 ).scalar()
                 return result or 0
 

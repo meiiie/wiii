@@ -186,7 +186,7 @@ describe("Full lifecycle sequence", () => {
     expect(blocks).toHaveLength(2);
     expect(blocks[0].type).toBe("thinking");
     expect(blocks[1].type).toBe("answer");
-    expect(blocks[1].content).toBe("Here is the answer.");
+    expect((blocks[1] as any).content).toBe("Here is the answer.");
   });
 
   it("should handle thinking → answer → thinking → answer (interleaved)", () => {
@@ -262,7 +262,7 @@ describe("SSE dispatch integration", () => {
     expect(rag.endTime).toBeDefined();
 
     expect(blocks[3].type).toBe("answer");
-    expect(blocks[3].content).toBe("C\u00E2u tr\u1EA3 l\u1EDDi l\u00E0...");
+    expect((blocks[3] as any).content).toBe("C\u00E2u tr\u1EA3 l\u1EDDi l\u00E0...");
 
     const grader = thinkingAt(blocks, 4);
     expect(grader.label).toBe("Ki\u1EC3m tra ch\u1EA5t l\u01B0\u1EE3ng");

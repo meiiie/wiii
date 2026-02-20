@@ -619,9 +619,10 @@ class TestIntegration:
             ],
         ))
 
+        mock_pw_module = MagicMock()
         with patch("app.core.config.get_settings", return_value=mock_settings), \
              patch.object(adapter, "_run_fetch_with_interception", mock_run), \
-             patch("app.engine.search_platforms.adapters.facebook_search.sync_playwright", create=True):
+             patch.dict("sys.modules", {"playwright": MagicMock(), "playwright.sync_api": mock_pw_module}):
             results = adapter.search_sync("test query", max_results=10)
 
         mock_run.assert_called_once()
@@ -649,7 +650,7 @@ class TestIntegration:
         with patch("app.core.config.get_settings", return_value=mock_settings), \
              patch.object(adapter, "_run_fetch_with_interception", mock_run), \
              patch.object(adapter, "_llm_extract", return_value=llm_results), \
-             patch("app.engine.search_platforms.adapters.facebook_search.sync_playwright", create=True):
+             patch.dict("sys.modules", {"playwright": MagicMock(), "playwright.sync_api": MagicMock()}):
             results = adapter.search_sync("test query", max_results=10)
 
         assert len(results) == 2
@@ -667,7 +668,7 @@ class TestIntegration:
         with patch("app.core.config.get_settings", return_value=mock_settings_no_interception), \
              patch.object(adapter, "_run_fetch_with_scroll", return_value=long_text) as mock_scroll, \
              patch.object(adapter, "_llm_extract", return_value=llm_results), \
-             patch("app.engine.search_platforms.adapters.facebook_search.sync_playwright", create=True):
+             patch.dict("sys.modules", {"playwright": MagicMock(), "playwright.sync_api": MagicMock()}):
             results = adapter.search_sync("test query", max_results=10)
 
         mock_scroll.assert_called_once()
@@ -854,7 +855,7 @@ class TestBackwardCompat:
         with patch("app.core.config.get_settings", return_value=mock_settings_no_interception), \
              patch.object(adapter, "_run_fetch_with_scroll", return_value=long_text) as mock_scroll, \
              patch.object(adapter, "_llm_extract", return_value=llm_results), \
-             patch("app.engine.search_platforms.adapters.facebook_search.sync_playwright", create=True):
+             patch.dict("sys.modules", {"playwright": MagicMock(), "playwright.sync_api": MagicMock()}):
             results = adapter.search_sync("test", max_results=5)
 
         mock_scroll.assert_called_once()
@@ -896,7 +897,7 @@ class TestBackwardCompat:
 
         with patch("app.core.config.get_settings", return_value=mock_settings), \
              patch.object(adapter, "_run_fetch_with_interception", side_effect=Exception("browser crashed")), \
-             patch("app.engine.search_platforms.adapters.facebook_search.sync_playwright", create=True):
+             patch.dict("sys.modules", {"playwright": MagicMock(), "playwright.sync_api": MagicMock()}):
             results = adapter.search_sync("test", max_results=5)
 
         mock_serper.search_sync.assert_called_once()
@@ -915,7 +916,7 @@ class TestBackwardCompat:
              patch.object(adapter, "_run_fetch_with_scroll", return_value=long_text) as mock_scroll, \
              patch.object(adapter, "_run_fetch_with_interception") as mock_intercept, \
              patch.object(adapter, "_llm_extract", return_value=llm_results), \
-             patch("app.engine.search_platforms.adapters.facebook_search.sync_playwright", create=True):
+             patch.dict("sys.modules", {"playwright": MagicMock(), "playwright.sync_api": MagicMock()}):
             adapter.search_sync("test", max_results=5)
 
         mock_intercept.assert_not_called()

@@ -15,10 +15,9 @@ import { motion } from "motion/react";
 import type { AvatarState, WiiiAvatarProps } from "./types";
 import { getSizeTier, STATE_CONFIG } from "./state-config";
 import { useAvatarAnimation } from "./use-avatar-animation";
-import { getFaceDimensions, generateMouthPath, generateHappyEyePath, generateStarPupilPath, generateHeartPupilPath, generateAngerVeinPath, generateGloomLinesPath, generateSpiralPath, generateFlowerPath, generateZzzPath, generateFirePath, generateTeethPath, generateTonguePath } from "./face-geometry";
+import { getFaceDimensions, generateMouthPath, generateHappyEyePath, generateStarPupilPath, generateHeartPupilPath, generateAngerVeinPath, generateGloomLinesPath, generateSpiralPath, generateFlowerPath, generateZzzPath, generateFirePath } from "./face-geometry";
 import { FACE_EXPRESSIONS } from "./face-config";
 import {
-  getIndicatorForState,
   generateSparklePath,
   generateSweatDropPath,
   generateMusicNotePath,
@@ -496,7 +495,7 @@ function MangaIndicatorGroup({
   flowerRef,
   zzzRef,
   fireRef,
-  state,
+  state: _state,
 }: {
   halfSize: number;
   blobRadius: number;

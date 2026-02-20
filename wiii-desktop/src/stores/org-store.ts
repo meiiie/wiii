@@ -1,15 +1,17 @@
 /**
  * Organization store — multi-tenant workspace management.
  * Sprint 156: Org-first UI restructuring.
+ * Sprint 161: "Không Gian Riêng" — org settings, branding, permissions.
  *
  * Detects multi-tenant support by calling the organizations API.
  * On 404 → single-tenant mode (personal workspace only).
- * On success → multi-tenant mode with org switching.
+ * On success → multi-tenant mode with org switching + branding.
  */
 import { create } from "zustand";
-import type { OrganizationSummary } from "@/api/types";
-import { listOrganizations } from "@/api/organizations";
+import type { OrganizationSummary, OrgSettings } from "@/api/types";
+import { listOrganizations, getOrgSettings, getOrgPermissions } from "@/api/organizations";
 import { PERSONAL_ORG_ID } from "@/lib/constants";
+import { applyOrgBranding, resetBranding, DEFAULT_BRANDING } from "@/lib/org-branding";
 
 /** Synthesized personal workspace when multi-tenant is disabled. */
 const PERSONAL_ORG: OrganizationSummary = {
@@ -26,13 +28,21 @@ interface OrgState {
   isLoading: boolean;
   multiTenantEnabled: boolean;
 
+  // Sprint 161: Org settings + permissions
+  orgSettings: OrgSettings | null;
+  permissions: string[];
+
   // Actions
   fetchOrganizations: () => Promise<void>;
   setActiveOrg: (id: string | null) => void;
+  fetchOrgSettings: (orgId: string) => Promise<void>;
 
   // Computed helpers
   activeOrg: () => OrganizationSummary | null;
   activeOrgDomains: () => string[]; // [] = all domains allowed
+  hasPermission: (action: string, resource: string) => boolean;
+  chatbotName: () => string;
+  welcomeMessage: () => string;
 }
 
 export const useOrgStore = create<OrgState>((set, get) => ({
@@ -40,6 +50,8 @@ export const useOrgStore = create<OrgState>((set, get) => ({
   activeOrgId: null,
   isLoading: false,
   multiTenantEnabled: false,
+  orgSettings: null,
+  permissions: [],
 
   fetchOrganizations: async () => {
     set({ isLoading: true });
@@ -76,7 +88,44 @@ export const useOrgStore = create<OrgState>((set, get) => ({
   },
 
   setActiveOrg: (id) => {
-    set({ activeOrgId: id === PERSONAL_ORG_ID ? null : id });
+    const orgId = id === PERSONAL_ORG_ID ? null : id;
+    set({ activeOrgId: orgId });
+
+    // Sprint 161: Fetch settings + apply branding on org switch
+    if (orgId) {
+      get().fetchOrgSettings(orgId);
+    } else {
+      // Personal workspace — reset to platform defaults
+      set({ orgSettings: null, permissions: [] });
+      resetBranding();
+    }
+  },
+
+  fetchOrgSettings: async (orgId: string) => {
+    try {
+      const [settings, permsResp] = await Promise.allSettled([
+        getOrgSettings(orgId),
+        getOrgPermissions(orgId),
+      ]);
+
+      const orgSettings =
+        settings.status === "fulfilled" ? settings.value : null;
+      const permissions =
+        permsResp.status === "fulfilled" ? permsResp.value.permissions : [];
+
+      set({ orgSettings, permissions });
+
+      // Apply branding to CSS custom properties
+      if (orgSettings?.branding) {
+        applyOrgBranding(orgSettings.branding);
+      } else {
+        resetBranding();
+      }
+    } catch (err) {
+      console.warn("[OrgStore] Failed to fetch org settings:", err);
+      set({ orgSettings: null, permissions: [] });
+      resetBranding();
+    }
   },
 
   activeOrg: () => {
@@ -90,5 +139,22 @@ export const useOrgStore = create<OrgState>((set, get) => ({
   activeOrgDomains: () => {
     const org = get().activeOrg();
     return org?.allowed_domains ?? [];
+  },
+
+  hasPermission: (action: string, resource: string) => {
+    const { permissions, multiTenantEnabled } = get();
+    // When multi-tenant disabled, all permissions granted
+    if (!multiTenantEnabled) return true;
+    // When no permissions loaded yet, allow basic access
+    if (permissions.length === 0) return true;
+    return permissions.includes(`${action}:${resource}`);
+  },
+
+  chatbotName: () => {
+    return get().orgSettings?.branding?.chatbot_name ?? DEFAULT_BRANDING.chatbot_name;
+  },
+
+  welcomeMessage: () => {
+    return get().orgSettings?.branding?.welcome_message ?? DEFAULT_BRANDING.welcome_message;
   },
 }));

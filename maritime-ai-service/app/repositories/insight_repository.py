@@ -53,8 +53,21 @@ class InsightRepositoryMixin:
         """
         self._ensure_initialized()
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                params: dict = {
+                    "user_id": user_id,
+                    "memory_type": MemoryType.INSIGHT.value if hasattr(MemoryType, 'INSIGHT') else 'insight',
+                    "limit": limit,
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 query = text(f"""
                     SELECT
                         id,
@@ -68,15 +81,12 @@ class InsightRepositoryMixin:
                     FROM {self.TABLE_NAME}
                     WHERE user_id = :user_id
                       AND memory_type = :memory_type
+                      {org_filter}
                     ORDER BY created_at DESC
                     LIMIT :limit
                 """)
 
-                result = session.execute(query, {
-                    "user_id": user_id,
-                    "memory_type": MemoryType.INSIGHT.value if hasattr(MemoryType, 'INSIGHT') else 'insight',
-                    "limit": limit
-                })
+                result = session.execute(query, params)
 
                 rows = result.fetchall()
 
@@ -114,19 +124,29 @@ class InsightRepositoryMixin:
         """
         self._ensure_initialized()
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                params: dict = {
+                    "user_id": user_id,
+                    "memory_type": MemoryType.INSIGHT.value if hasattr(MemoryType, 'INSIGHT') else 'insight',
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 query = text(f"""
                     DELETE FROM {self.TABLE_NAME}
                     WHERE user_id = :user_id
                       AND memory_type = :memory_type
+                      {org_filter}
                     RETURNING id
                 """)
 
-                result = session.execute(query, {
-                    "user_id": user_id,
-                    "memory_type": MemoryType.INSIGHT.value if hasattr(MemoryType, 'INSIGHT') else 'insight'
-                })
+                result = session.execute(query, params)
 
                 deleted = len(result.fetchall())
                 session.commit()
@@ -157,8 +177,21 @@ class InsightRepositoryMixin:
         """
         self._ensure_initialized()
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                params: dict = {
+                    "user_id": user_id,
+                    "category": category,
+                    "limit": limit,
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 query = text(f"""
                     SELECT
                         id,
@@ -172,15 +205,12 @@ class InsightRepositoryMixin:
                     FROM {self.TABLE_NAME}
                     WHERE user_id = :user_id
                       AND metadata->>'insight_category' = :category
+                      {org_filter}
                     ORDER BY last_accessed DESC NULLS LAST, created_at DESC
                     LIMIT :limit
                 """)
 
-                result = session.execute(query, {
-                    "user_id": user_id,
-                    "category": category,
-                    "limit": limit
-                })
+                result = session.execute(query, params)
 
                 rows = result.fetchall()
 

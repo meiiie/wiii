@@ -6,7 +6,8 @@
 import { useState, useCallback, memo } from "react";
 import { motion } from "motion/react";
 import { Copy, Check, RefreshCw, ThumbsUp, ThumbsDown, Pencil } from "lucide-react";
-import type { Message, ContentBlock, ThinkingBlockData, ScreenshotBlockData, MoodType, SoulEmotionData } from "@/api/types";
+import type { Message, ContentBlock, ThinkingBlockData, ScreenshotBlockData, MoodType } from "@/api/types";
+import type { SoulEmotionData } from "@/lib/avatar/types";
 import type { AvatarState } from "@/lib/avatar/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";

@@ -133,14 +133,18 @@ async def find_or_create_by_provider(
     avatar_url: Optional[str] = None,
     role: str = "student",
     auto_create: bool = True,
+    email_verified: bool = False,
 ) -> Optional[dict]:
     """
     Find existing user by provider identity or create a new one.
 
     Strategy:
     1. Look up by (provider, provider_sub, provider_issuer) → exact match
-    2. Look up by email → auto-link provider identity
+    2. Look up by email → auto-link provider identity (only when email_verified)
     3. Create new user + link provider identity (if auto_create=True)
+
+    Sprint 160b: email_verified guard — only auto-link to existing accounts when the
+    provider has verified the email address. Prevents account hijacking via unverified email.
 
     Returns user dict or None (only when auto_create=False and not found).
     """
@@ -150,21 +154,28 @@ async def find_or_create_by_provider(
         logger.debug("%s login: existing user %s", provider, user["id"])
         return user
 
-    # 2. Email match → auto-link
+    # 2. Email match → auto-link (only when email is verified by provider)
     if email:
         user = await find_user_by_email(email)
         if user:
-            await link_identity(
-                user_id=user["id"],
-                provider=provider,
-                provider_sub=provider_sub,
-                provider_issuer=provider_issuer,
-                email=email,
-                display_name=name,
-                avatar_url=avatar_url,
-            )
-            logger.info("%s login: auto-linked to existing user %s via email %s", provider, user["id"], email)
-            return user
+            if email_verified:
+                await link_identity(
+                    user_id=user["id"],
+                    provider=provider,
+                    provider_sub=provider_sub,
+                    provider_issuer=provider_issuer,
+                    email=email,
+                    display_name=name,
+                    avatar_url=avatar_url,
+                )
+                logger.info("%s login: auto-linked to existing user %s via verified email %s", provider, user["id"], email)
+                return user
+            else:
+                logger.warning(
+                    "SECURITY: %s login attempted auto-link to user %s via UNVERIFIED email %s — blocked",
+                    provider, user["id"], email,
+                )
+                # Fall through to step 3 (create new account)
 
     # 3. New user
     if not auto_create:
@@ -189,9 +200,13 @@ async def find_or_create_by_google(
     email: str,
     name: Optional[str] = None,
     avatar_url: Optional[str] = None,
+    email_verified: bool = True,
 ) -> dict:
     """
     Backward-compatible wrapper — delegates to find_or_create_by_provider.
+
+    Sprint 160b: Passes email_verified through for auto-link security.
+    Google emails are verified by default (Google OIDC guarantees this).
     """
     result = await find_or_create_by_provider(
         provider="google",
@@ -199,6 +214,7 @@ async def find_or_create_by_google(
         email=email,
         name=name,
         avatar_url=avatar_url,
+        email_verified=email_verified,
     )
     # find_or_create_by_provider always returns a user when auto_create=True (default)
     assert result is not None

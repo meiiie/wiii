@@ -10,7 +10,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronDown, CheckCircle } from "lucide-react";
-import type { ContentBlock, ThinkingBlockData, ThinkingLevel } from "@/api/types";
+import type { ContentBlock, ThinkingBlockData, ActionTextBlockData, ThinkingLevel } from "@/api/types";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ActionText } from "./ActionText";
 
@@ -121,12 +121,12 @@ export function ThinkingTimeline({ phases, thinkingLevel }: ThinkingTimelineProp
                           summary={(block as ThinkingBlockData).summary || (block as ThinkingBlockData).label}
                           thinkingLevel={thinkingLevel}
                         />
-                      ) : (
+                      ) : block.type === "action_text" ? (
                         <ActionText
-                          content={block.content}
-                          node={"node" in block ? (block as { node?: string }).node : undefined}
+                          content={(block as ActionTextBlockData).content}
+                          node={(block as ActionTextBlockData).node}
                         />
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 );

@@ -22,7 +22,6 @@ import type {
   ContentBlock,
   StreamingStep,
   ThinkingPhase,
-  ActionTextBlockData,
   ScreenshotBlockData,
 } from "@/api/types";
 

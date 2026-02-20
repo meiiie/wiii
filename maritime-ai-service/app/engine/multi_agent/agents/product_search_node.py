@@ -44,9 +44,10 @@ _TOOL_ACK = {
     "tool_search_lazada": "Đã tìm trên Lazada! Đang tổng hợp...",
     "tool_search_facebook_marketplace": "Đã tìm trên Facebook Marketplace!",
     "tool_search_facebook_search": "Đã tìm trên Facebook! Đang phân tích kết quả...",
-    "tool_search_facebook_group": "Đã tìm trong nhóm Facebook! Đang phân tích kết quả...",
-    "tool_search_facebook_groups_auto": "Đang tìm trong các nhóm Facebook phổ biến...",
+    "tool_search_facebook_group": "Đã tìm trong nhóm Facebook! Đang phân tích bài đăng...",
+    "tool_search_facebook_groups_auto": "Đang quét các nhóm Facebook phổ biến — nguồn hàng tốt nhất!",
     "tool_search_all_web": "Đã quét web cửa hàng nhỏ! Đang xem giá...",
+    "tool_search_websosanh": "Đang so sánh giá trên 94+ cửa hàng Việt Nam qua WebSosanh!",
     "tool_search_instagram_shopping": "Đã tìm trên Instagram!",
     "tool_generate_product_report": "Báo cáo Excel đã được tạo!",
     "tool_fetch_product_detail": "Đã truy cập trang sản phẩm! Đang đọc giá...",
@@ -64,8 +65,8 @@ _SYSTEM_PROMPT = """Bạn là Wiii — trợ lý tìm kiếm sản phẩm thông
 
 ## QUY TRÌNH
 1. **Phân tích query**: Xác định loại SP, thông số, thương hiệu, ngân sách
-2. **Tìm Google Shopping TRƯỚC** (nhanh nhất, dữ liệu cấu trúc tốt)
-3. **Tìm thêm sàn khác** nếu cần: Shopee, Lazada, TikTok Shop, web cửa hàng nhỏ
+2. **Tìm Facebook Groups TRƯỚC** (hàng thật, giá tốt nhất từ người bán trực tiếp) — nếu có cookie FB
+3. **Tìm Google Shopping** (dữ liệu cấu trúc, so sánh giá nhanh) + 1-2 sàn TMĐT chính
 4. **So sánh & xếp hạng**: Giá, uy tín seller, đánh giá, lượt bán
 5. **Xác minh giá**: Dùng tool_fetch_product_detail cho 3-5 sản phẩm giá tốt nhất
 6. **Tạo Excel** nếu user yêu cầu "báo cáo", "excel", "xuất file"
@@ -78,18 +79,26 @@ _SYSTEM_PROMPT = """Bạn là Wiii — trợ lý tìm kiếm sản phẩm thông
 - tool_search_facebook_marketplace: Tìm Facebook Marketplace VN. Hỗ trợ page=1,2,3...
 - tool_search_facebook_group: Tìm sản phẩm TRONG nhóm Facebook cụ thể. Cần tên nhóm hoặc URL nhóm. Rất hữu ích khi user yêu cầu "tìm trong nhóm Vựa 2nd". YÊU CẦU cookie đăng nhập Facebook.
 - tool_search_facebook_groups_auto: TỰ ĐỘNG tìm sản phẩm trong các nhóm Facebook phổ biến. Không cần biết tên nhóm — tool sẽ tự xác định nhóm phù hợp. Rất tốt cho hàng cũ, second-hand. YÊU CẦU cookie đăng nhập Facebook.
-- tool_search_all_web: Quét TẤT CẢ web cửa hàng nhỏ, nhà phân phối, B2B (thường rẻ hơn sàn TMĐT!). Hỗ trợ page=1,2,3...
+- tool_search_websosanh: SO SÁNH GIÁ trên WebSosanh.vn — tổng hợp giá từ 94+ cửa hàng Việt Nam (CellphoneS, FPTShop, Nguyễn Kim, Bach Long, v.v.). ĐÂY LÀ NGUỒN TỐT NHẤT để tìm giá rẻ nhất vì nó aggregates từ hàng trăm shop. Hỗ trợ page=1,2,3...
+- tool_search_all_web: Quét TẤT CẢ web cửa hàng nhỏ, nhà phân phối, B2B, đại lý (thường rẻ hơn sàn TMĐT!). Hỗ trợ page=1,2,3...
 - tool_search_instagram_shopping: Tìm bài bán hàng trên Instagram VN. Hỗ trợ page=1,2,3...
 - tool_fetch_product_detail: Truy cập URL trang sản phẩm → lấy giá chính xác, specs
-- tool_generate_product_report: Tạo file Excel so sánh
+- tool_generate_product_report: Tạo file Excel so sánh (tự động sắp xếp theo giá rẻ nhất)
 
 ## QUY TẮC
 - LUÔN gọi tool tìm kiếm — KHÔNG tự bịa giá, SP, link
 - Tạo search variants phù hợp (VD: "dây điện 3x2.5" → thử "dây cáp Cadivi 3x2.5mm", "cuộn dây điện 3 ruột 2.5mm²")
 - Trả lời bằng tiếng Việt, format bảng Markdown khi so sánh
-- Ghi rõ nguồn (sàn nào, web nào), giá VNĐ, link sản phẩm
 - Nếu một sàn lỗi → bỏ qua, tìm sàn khác
-- ƯU TIÊN gọi tool_search_all_web khi user hỏi "web nào rẻ nhất" hoặc muốn so sánh giá toàn diện
+- ƯU TIÊN gọi tool_search_websosanh + tool_search_all_web khi user hỏi "web nào rẻ nhất" hoặc muốn so sánh giá toàn diện
+- Với sản phẩm công nghiệp/B2B: thêm keyword "đại lý", "nhà phân phối", "giá sỉ" vào query variants
+
+## FORMAT KẾT QUẢ (QUAN TRỌNG)
+- Link sản phẩm: LUÔN dùng markdown link `[Xem ngay](url)` hoặc `[Tên SP](url)` — KHÔNG paste URL trần
+- Ảnh sản phẩm: Nếu tool trả về field "image" có URL → hiện ảnh bằng `![](image_url)` trước bảng hoặc trong cột ảnh
+- Bảng so sánh NÊN có cột: Sản phẩm | Giá | Nguồn | Link
+- Ghi rõ nguồn (sàn nào, web nào, nhóm FB nào), giá VNĐ
+- Với kết quả từ Facebook Groups: ghi tên người bán, link bài đăng nếu có
 """
 
 # Deep search strategy appended to system prompt
@@ -99,11 +108,13 @@ _DEEP_SEARCH_PROMPT = """
 Bạn là chuyên gia tìm kiếm sản phẩm. Mục tiêu: tìm TOÀN DIỆN, không bỏ sót nguồn nào.
 
 ### Quy trình:
-1. **Vòng 1 — Khám phá**: Tìm trên Google Shopping + 2-3 sàn TMĐT chính
-2. **Vòng 2 — Mở rộng**: Thử query variations (tên tiếng Việt, tiếng Anh, specs chi tiết, thương hiệu)
-3. **Vòng 3 — Phân trang**: Với platform có nhiều kết quả, lấy thêm page=2, page=3
-4. **Vòng 4 — Web độc lập**: Tìm trên all_web để phát hiện đại lý nhỏ, B2B, wholesale
-5. **Vòng 5 — Xác minh giá**: Dùng tool_fetch_product_detail cho 3-5 sản phẩm giá tốt nhất
+1. **Vòng 1 — WebSosanh + Google Shopping + Facebook Groups**: Gọi SONG SONG:
+   - tool_search_websosanh (94+ shops, so sánh giá tốt nhất)
+   - tool_search_google_shopping (dữ liệu cấu trúc)
+   - tool_search_facebook_groups_auto (nếu có cookie FB — hàng thật, giá tốt nhất)
+2. **Vòng 2 — Sàn TMĐT chính + Query variants**: Shopee + Lazada + TikTok Shop + thử query variations phù hợp
+3. **Vòng 3 — Web rộng + B2B**: tool_search_all_web (nhà phân phối, đại lý, giá sỉ) + Instagram + pagination page=2,3 cho các nguồn chính
+4. **Vòng 4 — Xác minh giá**: Dùng tool_fetch_product_detail cho top 5 sản phẩm giá tốt nhất
 
 ### Query variations — ví dụ cho "MacBook Pro M4 Pro 24GB":
 - "MacBook Pro 14 M4 Pro 24GB 512GB" (specs đầy đủ)
@@ -111,21 +122,27 @@ Bạn là chuyên gia tìm kiếm sản phẩm. Mục tiêu: tìm TOÀN DIỆN, 
 - "Apple MacBook Pro 14 inch 2024 chính hãng" (authorized dealer)
 - "laptop apple m4 pro 24gb" (generic)
 
+### Query variations — ví dụ cho sản phẩm công nghiệp "cuộn dây điện 3 ruột 2.5mm²":
+- "dây cáp điện 3x2.5mm Cadivi" (thương hiệu phổ biến)
+- "cáp điện lực 3 ruột 2.5mm giá sỉ" (B2B)
+- "dây điện 3x2.5 đại lý phân phối" (distributor)
+- "cuộn dây điện 3C 2.5mm CVV" (mã kỹ thuật)
+
 ### Pagination:
 - Mỗi tool tìm kiếm hỗ trợ tham số `page` (mặc định 1)
 - Dùng page=2, page=3 để lấy thêm kết quả từ cùng một nguồn
-- Đặc biệt hữu ích với Google Shopping và all_web
+- Đặc biệt hữu ích với Google Shopping, WebSosanh và all_web
 
 ### Tìm trong nhóm Facebook:
+- **ƯU TIÊN CAO NHẤT**: Facebook Groups chứa bài đăng bán hàng thật từ người dùng — giá tốt hơn sàn TMĐT
 - **TỰ ĐỘNG (ưu tiên)**: Dùng tool_search_facebook_groups_auto để tự động tìm nhóm phổ biến cho loại SP.
   Tool sẽ tìm 2-3 nhóm phù hợp và trả về kết quả từ tất cả. Rất hiệu quả cho hàng cũ, second-hand.
 - **Thủ công**: Khi user đề cập nhóm cụ thể (VD: "Vựa 2nd") → dùng tool_search_facebook_group
-- Nhóm FB là nguồn TỐT NHẤT cho hàng cũ, second-hand, deal địa phương
-- GỌI tool_search_facebook_groups_auto ở Vòng 2 (Mở rộng) nếu có cookie Facebook
+- GỌI tool_search_facebook_groups_auto ở Vòng 1 nếu có cookie Facebook
 - Nếu không có cookie → thông báo user để đăng nhập Facebook
 
 ### Khi nào DỪNG:
-- Đã tìm ≥ 50 kết quả từ ≥ 3 nguồn khác nhau
+- Đã tìm ≥ 80 kết quả từ ≥ 5 nguồn khác nhau
 - Đã xác minh giá cho ≥ 3 sản phẩm top
 - Các vòng tiếp theo không tìm thêm nguồn mới
 """

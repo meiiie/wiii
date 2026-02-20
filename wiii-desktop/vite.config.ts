@@ -29,5 +29,9 @@ export default defineConfig({
     minify: !process.env.TAURI_DEBUG ? "esbuild" : false,
     // Produce sourcemaps for debug builds
     sourcemap: !!process.env.TAURI_DEBUG,
+    rollupOptions: {
+      // Tauri-only plugins resolved at runtime (dynamic import with try/catch fallback)
+      external: ["@fabianlars/tauri-plugin-oauth"],
+    },
   },
 });

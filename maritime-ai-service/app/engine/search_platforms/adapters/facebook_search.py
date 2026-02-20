@@ -149,13 +149,18 @@ class FacebookSearchAdapter(PlaywrightLLMAdapter):
     def _get_extraction_prompt(self) -> str:
         return """Analyze this Facebook search results page text and extract product listings.
 
+IMPORTANT:
+- Some posts have a [POST_URL: ...] tag — this is the direct link to the Facebook post. Extract into "link" field.
+- Some posts have a [POST_IMAGE: ...] tag — this is the product image URL. Extract into "image" field.
+
 Return ONLY a JSON array (no markdown, no explanation):
 [
   {{
     "title": "product name",
     "price": "price as shown (e.g., '900 US$' or '25.000.000 d')",
     "seller": "seller name if visible",
-    "link": "",
+    "link": "the [POST_URL: ...] value if present, otherwise empty string",
+    "image": "the [POST_IMAGE: ...] value if present, otherwise empty string",
     "location": "location/city if visible"
   }}
 ]
@@ -163,6 +168,8 @@ Return ONLY a JSON array (no markdown, no explanation):
 Rules:
 - Only include items that are clearly products FOR SALE with a price
 - Extract prices as-is including currency (US$, VND, d, etc.)
+- ALWAYS extract the [POST_URL: ...] value into the "link" field when present
+- ALWAYS extract the [POST_IMAGE: ...] value into the "image" field when present
 - If no products found, return empty array: []
 - Maximum {max_results} items
 - Each product typically appears as: price, then title, then location
@@ -198,6 +205,8 @@ Page text:
                 max_response_size = 5_000_000
 
             url = self._build_url(query.strip(), page)
+            # Sprint 157: Use search page URL as source link for results
+            search_page_url = url
 
             if use_interception:
                 from app.engine.search_platforms.adapters.browser_base import (
@@ -209,20 +218,30 @@ Page text:
                     max_response_size=max_response_size,
                 )
                 if len(intercepted) >= _INTERCEPTION_FALLBACK_THRESHOLD:
-                    return [
+                    results = [
                         self._map_intercepted_to_result(p)
                         for p in intercepted[:max_results]
                     ]
+                    for r in results:
+                        if not r.link and search_page_url:
+                            r.link = search_page_url
+                    return results
                 # Fallback to LLM on DOM text
                 if dom_text and len(dom_text) >= 100:
                     results = self._llm_extract(dom_text, max_results)
                     if results:
+                        for r in results:
+                            if not r.link and search_page_url:
+                                r.link = search_page_url
                         return results
             else:
                 text = self._run_fetch_with_scroll(url, max_scrolls=max_scrolls)
                 if text and len(text) >= 100:
                     results = self._llm_extract(text, max_results)
                     if results:
+                        for r in results:
+                            if not r.link and search_page_url:
+                                r.link = search_page_url
                         return results
         except ImportError:
             logger.info("[FACEBOOK] Playwright not installed, using Serper fallback")

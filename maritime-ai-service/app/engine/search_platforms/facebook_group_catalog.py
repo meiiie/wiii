@@ -30,8 +30,14 @@ CATEGORY_GROUPS: Dict[str, dict] = {
             "lenovo", "msi", "razer", "chromebook",
         ],
         "groups": [
-            {"name": "Vựa 2nd", "url": "https://www.facebook.com/groups/vua2nd", "priority": 1},
-            {"name": "Hội Mua Bán Laptop Cũ", "url": None, "priority": 2},
+            # Verified 2026-02-20: Vựa 2nd PUBLIC (153K members, 20+ posts/day)
+            {"name": "Vựa 2nd", "url": "https://www.facebook.com/groups/1779682299414133", "priority": 1},
+            # Verified: Chợ Laptop Cũ (active trading group)
+            {"name": "Chợ Laptop Cũ", "url": "https://www.facebook.com/groups/344287045137154", "priority": 2},
+            # Verified: Hội Mua Bán Macbook Việt Nam — returned 7 results in live test
+            {"name": "Hội Mua Bán Macbook VN", "url": "https://www.facebook.com/groups/muabanmacbookvn", "priority": 3},
+            # Verified: Mua Bán Macbook Cũ ✅
+            {"name": "Mua Bán Macbook Cũ", "url": "https://www.facebook.com/groups/muabanmacbookcu", "priority": 4},
         ],
     },
     "electronics_phone": {
@@ -41,8 +47,12 @@ CATEGORY_GROUPS: Dict[str, dict] = {
             "vivo", "huawei", "oneplus",
         ],
         "groups": [
-            {"name": "Hội mua bán iPhone VN", "url": None, "priority": 1},
-            {"name": "Điện Thoại Cũ Giá Rẻ", "url": None, "priority": 2},
+            # Verified: Vựa 2nd PUBLIC (153K, general electronics)
+            {"name": "Vựa 2nd", "url": "https://www.facebook.com/groups/1779682299414133", "priority": 1},
+            # Verified: Hội iPhone Hà Nội (Mua Bán Điện Thoại Cũ Mới)
+            {"name": "Hội iPhone Hà Nội", "url": "https://www.facebook.com/groups/2549665671997956", "priority": 2},
+            # Verified: Cộng Đồng iPhone Việt Nam
+            {"name": "Cộng Đồng iPhone VN", "url": "https://www.facebook.com/groups/696924561239780", "priority": 3},
         ],
     },
     "electronics_general": {
@@ -53,8 +63,10 @@ CATEGORY_GROUPS: Dict[str, dict] = {
             "ipad", "máy tính bảng", "may tinh bang",
         ],
         "groups": [
-            {"name": "Vựa 2nd", "url": "https://www.facebook.com/groups/vua2nd", "priority": 1},
-            {"name": "Hội Mua Bán Đồ Điện Tử Cũ", "url": None, "priority": 2},
+            # Verified: Vựa 2nd PUBLIC (153K, general electronics)
+            {"name": "Vựa 2nd", "url": "https://www.facebook.com/groups/1779682299414133", "priority": 1},
+            # Verified: Vựa 2nd (543K, second largest)
+            {"name": "Vựa 2nd (543K)", "url": "https://www.facebook.com/groups/vua2ndd", "priority": 2},
         ],
     },
     "vehicles_motorbike": {
@@ -64,7 +76,9 @@ CATEGORY_GROUPS: Dict[str, dict] = {
             "sh", "lead", "vision", "xe ga", "xe số",
         ],
         "groups": [
-            {"name": "Hội Mua Bán Xe Máy Cũ", "url": None, "priority": 1},
+            # Use name-based resolution (no verified URL yet)
+            {"name": "Hội Mua Bán Xe Máy Cũ TPHCM", "url": None, "priority": 1},
+            {"name": "Chợ Xe Máy Cũ", "url": None, "priority": 2},
         ],
     },
     "vehicles_car": {
@@ -85,8 +99,8 @@ CATEGORY_GROUPS: Dict[str, dict] = {
             "adidas", "balenciaga", "gucci", "louis vuitton",
         ],
         "groups": [
-            {"name": "Hội Mua Bán Quần Áo Hàng Thùng", "url": None, "priority": 1},
-            {"name": "Thời Trang 2nd Hand", "url": None, "priority": 2},
+            {"name": "Hội Mua Bán Quần Áo 2nd Hand", "url": None, "priority": 1},
+            {"name": "Thời Trang Second Hand VN", "url": None, "priority": 2},
         ],
     },
     "furniture": {

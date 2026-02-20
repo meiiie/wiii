@@ -995,6 +995,35 @@ class PromptLoader:
             if anchor:
                 sections.append(f"\n[PERSONA REMINDER: {anchor.strip()}]")
 
+        # ============================================================
+        # Sprint 161: ORG PERSONA OVERLAY — "Không Gian Riêng"
+        # Injected AFTER all other sections to take precedence.
+        # Pattern: Salesforce metadata-driven, Botpress per-org persona.
+        # ============================================================
+        _org_id = kwargs.get("organization_id")
+        if _org_id:
+            try:
+                from app.core.org_settings import get_effective_settings
+
+                _org_settings = get_effective_settings(_org_id)
+
+                # Branding: override chatbot name if different from default
+                _brand = _org_settings.branding
+                if _brand.chatbot_name != "Wiii":
+                    sections.append(
+                        f"\n--- TÊN HIỂN THỊ ---\n"
+                        f"Trong tổ chức này, bạn được gọi là **{_brand.chatbot_name}**."
+                    )
+
+                # AI config: persona prompt overlay (free-form org-specific instructions)
+                _ai_overlay = _org_settings.ai_config.persona_prompt_overlay
+                if _ai_overlay:
+                    sections.append(
+                        f"\n--- HƯỚNG DẪN TỔ CHỨC ---\n{_ai_overlay.strip()}"
+                    )
+            except Exception:
+                pass  # Org settings not available — skip silently
+
         return "\n".join(sections)
     
     # =========================================================================

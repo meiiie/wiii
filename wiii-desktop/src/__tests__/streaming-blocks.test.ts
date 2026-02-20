@@ -43,11 +43,16 @@ function thinkingAt(blocks: ContentBlock[], i: number): ThinkingBlockData {
   return b as ThinkingBlockData;
 }
 
+/** Helper to get content from a block (answer or action_text) */
+function contentOf(block: ContentBlock): string {
+  return (block as unknown as { content: string }).content;
+}
+
 describe("Streaming Blocks — startStreaming", () => {
   it("should reset streamingBlocks to empty array", () => {
     // Pollute state first
     useChatStore.setState({
-      streamingBlocks: [{ type: "answer", content: "old" }],
+      streamingBlocks: [{ type: "answer", id: "old-1", content: "old" }],
     });
 
     useChatStore.getState().startStreaming();
@@ -96,7 +101,7 @@ describe("Streaming Blocks — Simple Scenario", () => {
     expect(blocks).toHaveLength(2);
     expect(blocks[0].type).toBe("thinking");
     expect(blocks[1].type).toBe("answer");
-    expect(blocks[1].content).toBe("Rule 15 states that...");
+    expect(contentOf(blocks[1])).toBe("Rule 15 states that...");
 
     // Thinking block should now have endTime (closed when answer started)
     expect(thinkingAt(blocks, 0).endTime).toBeGreaterThan(0);
@@ -161,7 +166,7 @@ describe("Streaming Blocks — Multi-step Deep Scenario", () => {
     blocks = getBlocks();
     expect(blocks).toHaveLength(4);
     expect(blocks[3].type).toBe("answer");
-    expect(blocks[3].content).toBe("fire protection measures.");
+    expect(contentOf(blocks[3])).toBe("fire protection measures.");
     // Second thinking should be closed
     expect(thinkingAt(blocks, 2).endTime).toBeGreaterThan(0);
   });
@@ -186,7 +191,7 @@ describe("Streaming Blocks — Interleaved Scenario", () => {
     expect(blocks).toHaveLength(2);
     expect(blocks[0].type).toBe("thinking");
     expect(blocks[1].type).toBe("answer");
-    expect(blocks[1].content).toBe("Initial answer: Rule 15 applies when...");
+    expect(contentOf(blocks[1])).toBe("Initial answer: Rule 15 applies when...");
 
     // 4. Second thinking (creates new thinking block after answer)
     useChatStore.getState().setStreamingThinking("Looking up crossing situation...");
@@ -205,7 +210,7 @@ describe("Streaming Blocks — Interleaved Scenario", () => {
     expect(blocks[1].type).toBe("answer");
     expect(blocks[2].type).toBe("thinking");
     expect(blocks[3].type).toBe("answer");
-    expect(blocks[3].content).toBe(" In a crossing situation...");
+    expect(contentOf(blocks[3])).toBe(" In a crossing situation...");
 
     // Verify both thinking blocks are closed
     expect(thinkingAt(blocks, 0).endTime).toBeGreaterThan(0);
@@ -231,7 +236,7 @@ describe("Streaming Blocks — Direct Scenario (no tools)", () => {
     expect(thinkingAt(blocks, 0).content).toBe("This is a simple greeting.");
     expect(thinkingAt(blocks, 0).toolCalls).toEqual([]);
     expect(blocks[1].type).toBe("answer");
-    expect(blocks[1].content).toBe("Xin chào! Tôi là Wiii.");
+    expect(contentOf(blocks[1])).toBe("Xin chào! Tôi là Wiii.");
   });
 });
 
@@ -244,7 +249,7 @@ describe("Streaming Blocks — Answer only (no thinking)", () => {
     const blocks = getBlocks();
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe("answer");
-    expect(blocks[0].content).toBe("Hello world!");
+    expect(contentOf(blocks[0])).toBe("Hello world!");
   });
 });
 
@@ -315,7 +320,7 @@ describe("Streaming Blocks — Consecutive answer events", () => {
     const blocks = getBlocks();
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe("answer");
-    expect(blocks[0].content).toBe("Part 1 Part 2 Part 3");
+    expect(contentOf(blocks[0])).toBe("Part 1 Part 2 Part 3");
   });
 });
 

@@ -230,6 +230,7 @@ def _build_auto_group_search_tool(circuit_breaker):
             max_groups: Maximum groups to search (default 3, max 5)
         """
         max_groups = max(1, min(max_groups, 5))
+        logger.info("[AUTO_GROUP] query=%r, max_groups=%d", query[:80], max_groups)
 
         # 1. Get groups from catalog
         from app.engine.search_platforms.facebook_group_catalog import (
@@ -237,9 +238,12 @@ def _build_auto_group_search_tool(circuit_breaker):
             discover_groups_via_serper,
         )
         groups = get_groups_for_query(query, max_groups)
+        logger.info("[AUTO_GROUP] Catalog returned %d groups: %s",
+                    len(groups), [g["name"] for g in groups])
 
         # 2. Fallback: Serper discovery if catalog misses
         if not groups:
+            logger.warning("[AUTO_GROUP] Catalog miss — trying Serper discovery")
             groups = discover_groups_via_serper(query, max_groups)
 
         if not groups:
@@ -252,6 +256,7 @@ def _build_auto_group_search_tool(circuit_breaker):
         from app.engine.search_platforms import get_search_platform_registry
         adapter = get_search_platform_registry().get("facebook_group")
         if not adapter:
+            logger.warning("[AUTO_GROUP] facebook_group adapter not in registry!")
             return json.dumps(
                 {"error": "Facebook Group adapter not available", "platform": "Facebook Groups (auto)"},
                 ensure_ascii=False,
@@ -260,38 +265,45 @@ def _build_auto_group_search_tool(circuit_breaker):
         # 4. Search each group sequentially (Playwright single-threaded)
         all_results = []
         groups_searched = []
+        all_screenshots = []
         for g in groups:
             if circuit_breaker.is_open("facebook_group"):
-                logger.info("[AUTO_GROUP] Circuit breaker open — stopping group search")
+                logger.warning("[AUTO_GROUP] Circuit breaker open — stopping group search")
                 break
             try:
                 group_ref = g.get("url") or g["name"]
+                logger.info("[AUTO_GROUP] Searching '%s'", g["name"])
                 results = adapter.search_group_sync(group_ref, query, max_results=10)
                 circuit_breaker.record_success("facebook_group")
                 groups_searched.append(g["name"])
                 all_results.extend([r.to_dict() for r in results])
+                # Collect screenshots from adapter
+                screenshots = adapter.get_last_screenshots()
+                if screenshots:
+                    all_screenshots.extend(screenshots)
                 logger.info(
-                    "[AUTO_GROUP] Found %d results in '%s'",
-                    len(results), g["name"],
+                    "[AUTO_GROUP] Found %d results in '%s' (%d screenshots)",
+                    len(results), g["name"], len(screenshots) if screenshots else 0,
                 )
             except Exception as e:
                 circuit_breaker.record_failure("facebook_group")
                 logger.warning("[AUTO_GROUP] Failed to search '%s': %s", g["name"], e)
 
         logger.info(
-            "[AUTO_GROUP] Searched %d groups for '%s', total %d results",
-            len(groups_searched), query[:50], len(all_results),
+            "[AUTO_GROUP] Searched %d groups, total %d results, %d screenshots",
+            len(groups_searched), len(all_results), len(all_screenshots),
         )
 
-        return json.dumps(
-            {
-                "platform": "Facebook Groups (auto)",
-                "groups_searched": groups_searched,
-                "results": all_results,
-                "count": len(all_results),
-            },
-            ensure_ascii=False,
-        )
+        output = {
+            "platform": "Facebook Groups (auto)",
+            "groups_searched": groups_searched,
+            "results": all_results,
+            "count": len(all_results),
+        }
+        if all_screenshots:
+            output["screenshots"] = all_screenshots
+
+        return json.dumps(output, ensure_ascii=False)
 
     return StructuredTool.from_function(
         func=facebook_groups_auto_tool,
@@ -333,15 +345,16 @@ def _build_group_search_tool(adapter, circuit_breaker):
                 group_name_or_url, query, min(max_results, _MAX_RESULTS),
             )
             circuit_breaker.record_success(platform_id)
-            return json.dumps(
-                {
-                    "platform": display_name,
-                    "group": group_name_or_url,
-                    "results": [r.to_dict() for r in results],
-                    "count": len(results),
-                },
-                ensure_ascii=False,
-            )
+            screenshots = adapter.get_last_screenshots()
+            output = {
+                "platform": display_name,
+                "group": group_name_or_url,
+                "results": [r.to_dict() for r in results],
+                "count": len(results),
+            }
+            if screenshots:
+                output["screenshots"] = screenshots
+            return json.dumps(output, ensure_ascii=False)
         except Exception as e:
             circuit_breaker.record_failure(platform_id)
             return json.dumps(

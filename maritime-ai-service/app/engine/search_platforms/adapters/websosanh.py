@@ -184,6 +184,23 @@ class WebSosanhAdapter(SearchPlatformAdapter):
         )
         seller = seller_el.get_text(strip=True) if seller_el else ""
 
+        # Image — try product thumbnail selectors
+        image = ""
+        img_el = (
+            item.select_one(".product-image img")
+            or item.select_one(".product-single-image img")
+            or item.select_one("img")
+        )
+        if img_el:
+            img_src = img_el.get("src") or img_el.get("data-src") or ""
+            if img_src:
+                if img_src.startswith("//"):
+                    image = f"https:{img_src}"
+                elif img_src.startswith("/"):
+                    image = f"https://websosanh.vn{img_src}"
+                elif img_src.startswith("http"):
+                    image = img_src
+
         if not title and not price_text:
             return None
 
@@ -194,4 +211,5 @@ class WebSosanhAdapter(SearchPlatformAdapter):
             extracted_price=extracted_price,
             link=link,
             seller=seller,
+            image=image,
         )

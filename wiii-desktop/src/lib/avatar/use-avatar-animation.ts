@@ -108,9 +108,6 @@ const VIEWBOX_PAD_RATIO = 0.15;
 /** Sprint 130: Mouse disinterest distance — beyond this, mouse tracking fades */
 const MOUSE_DISINTEREST_DISTANCE = 400;
 
-/** Sprint 130: Mouse influence blend ratio (vs state-based pupil offset) */
-const MOUSE_BLEND_RATIO = 0.6;
-
 // ─── Sprint 133: Idle Personality System ───────────────────────────
 // Spontaneous micro-expressions when idle, making Wiii feel inhabited.
 

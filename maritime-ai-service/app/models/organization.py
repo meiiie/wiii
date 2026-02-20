@@ -2,11 +2,96 @@
 Pydantic Models for Multi-Organization (Multi-Tenant) Architecture.
 
 Sprint 24: Organization CRUD models for API request/response.
+Sprint 161: OrgSettings — typed schema for org-level customization
+             (branding, feature flags, AI config, permissions).
 """
 from datetime import datetime
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+
+# =============================================================================
+# Sprint 161: Org Settings Schema — "Không Gian Riêng"
+# =============================================================================
+
+
+class OrgBranding(BaseModel):
+    """Per-org branding configuration (logo, colors, persona name)."""
+
+    logo_url: Optional[str] = None
+    primary_color: str = "#AE5630"  # Wiii terracotta default
+    accent_color: str = "#C4633A"
+    welcome_message: str = "Xin chào! Mình là Wiii"
+    chatbot_name: str = "Wiii"
+    chatbot_avatar_url: Optional[str] = None
+    institution_type: str = "general"  # university | k12 | corporate | government
+
+
+class OrgFeatureFlags(BaseModel):
+    """Per-org feature toggles — controls which tools/agents are visible."""
+
+    enable_product_search: bool = False
+    enable_deep_scanning: bool = False
+    enable_thinking_chain: bool = False
+    enable_browser_scraping: bool = False
+    visible_agents: list[str] = Field(
+        default_factory=lambda: ["rag", "tutor", "direct", "memory"],
+    )
+    max_search_iterations: int = 5
+
+
+class OrgAIConfig(BaseModel):
+    """Per-org AI behavior overrides — persona overlay and LLM parameters."""
+
+    persona_prompt_overlay: Optional[str] = None  # Merged into system prompt
+    temperature_override: Optional[float] = None
+    max_response_length: Optional[int] = None
+    default_domain: Optional[str] = None  # Org-level domain override
+
+
+class OrgPermissions(BaseModel):
+    """Per-org role-permission mapping override."""
+
+    student: list[str] = Field(
+        default_factory=lambda: ["read:chat", "read:knowledge", "use:tools"],
+    )
+    teacher: list[str] = Field(
+        default_factory=lambda: [
+            "read:chat", "read:knowledge", "use:tools",
+            "read:analytics", "manage:courses",
+        ],
+    )
+    admin: list[str] = Field(
+        default_factory=lambda: [
+            "read:chat", "read:knowledge", "use:tools",
+            "read:analytics", "manage:courses",
+            "manage:members", "manage:settings", "manage:branding",
+        ],
+    )
+
+
+class OrgOnboarding(BaseModel):
+    """Per-org onboarding configuration."""
+
+    quick_start_questions: list[str] = Field(default_factory=list)
+    show_domain_suggestions: bool = True
+
+
+class OrgSettings(BaseModel):
+    """
+    Typed schema for the organizations.settings JSONB column.
+
+    Sprint 161: "Không Gian Riêng" — org-level customization.
+    Merges with PLATFORM_DEFAULTS at runtime via deep_merge().
+    """
+
+    schema_version: int = 1
+    branding: OrgBranding = Field(default_factory=OrgBranding)
+    features: OrgFeatureFlags = Field(default_factory=OrgFeatureFlags)
+    ai_config: OrgAIConfig = Field(default_factory=OrgAIConfig)
+    permissions: OrgPermissions = Field(default_factory=OrgPermissions)
+    onboarding: OrgOnboarding = Field(default_factory=OrgOnboarding)
 
 
 class OrganizationCreate(BaseModel):

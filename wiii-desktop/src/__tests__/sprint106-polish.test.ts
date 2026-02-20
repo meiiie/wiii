@@ -30,6 +30,7 @@ beforeEach(() => {
       show_thinking: true,
       show_reasoning_trace: false,
       streaming_version: "v3",
+      thinking_level: "balanced",
     },
     isLoaded: false,
   });

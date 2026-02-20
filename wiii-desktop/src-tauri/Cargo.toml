@@ -1,7 +1,7 @@
 [package]
 name = "wiii-desktop"
-version = "0.1.0"
-description = "Wiii — Multi-Domain Agentic RAG Desktop"
+version = "1.0.0"
+description = "Wiii — AI Assistant by The Wiii Lab"
 authors = ["The Wiii Lab"]
 edition = "2021"
 

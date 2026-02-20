@@ -56,6 +56,7 @@ class SchedulerRepository:
         max_runs: Optional[int] = None,
         channel: str = "websocket",
         extra_data: Optional[dict] = None,
+        organization_id: Optional[str] = None,
     ) -> Optional[str]:
         """
         Create a new scheduled task.
@@ -88,16 +89,21 @@ class SchedulerRepository:
                 logger.warning("Invalid schedule_expr for 'once': %s", schedule_expr)
                 return None
 
+        # Sprint 160b: Resolve org_id for multi-tenant isolation
+        from app.core.org_filter import get_effective_org_id
+        eff_org_id = organization_id or get_effective_org_id()
+
         try:
             with self._session_factory() as session:
                 session.execute(
                     text(
                         f"INSERT INTO {self.TABLE_NAME} "
                         f"(id, user_id, domain_id, description, schedule_type, "
-                        f"schedule_expr, next_run, max_runs, channel, extra_data) "
+                        f"schedule_expr, next_run, max_runs, channel, extra_data, "
+                        f"organization_id) "
                         f"VALUES (:id, :user_id, :domain_id, :description, "
                         f":schedule_type, :schedule_expr, :next_run, :max_runs, "
-                        f":channel, CAST(:extra AS jsonb))"
+                        f":channel, CAST(:extra AS jsonb), :org_id)"
                     ),
                     {
                         "id": task_id,
@@ -110,6 +116,7 @@ class SchedulerRepository:
                         "max_runs": max_runs,
                         "channel": channel,
                         "extra": json.dumps(extra_data or {}),
+                        "org_id": eff_org_id,
                     },
                 )
                 session.commit()
@@ -142,8 +149,17 @@ class SchedulerRepository:
         if not self._session_factory:
             return []
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                params: dict = {"user_id": user_id, "status": status, "limit": limit}
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 result = session.execute(
                     text(
                         f"SELECT id, user_id, domain_id, description, "
@@ -151,11 +167,12 @@ class SchedulerRepository:
                         f"run_count, max_runs, status, channel, created_at, "
                         f"extra_data "
                         f"FROM {self.TABLE_NAME} "
-                        f"WHERE user_id = :user_id AND status = :status "
+                        f"WHERE user_id = :user_id AND status = :status"
+                        f"{org_filter} "
                         f"ORDER BY COALESCE(next_run, created_at) ASC "
                         f"LIMIT :limit"
                     ),
-                    {"user_id": user_id, "status": status, "limit": limit},
+                    params,
                 ).fetchall()
 
                 return [self._row_to_dict(row) for row in result]
@@ -179,16 +196,26 @@ class SchedulerRepository:
         if not self._session_factory:
             return False
 
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                params: dict = {"task_id": task_id, "user_id": user_id}
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 result = session.execute(
                     text(
                         f"UPDATE {self.TABLE_NAME} "
                         f"SET status = 'cancelled' "
                         f"WHERE id = :task_id AND user_id = :user_id "
                         f"AND status = 'active'"
+                        f"{org_filter}"
                     ),
-                    {"task_id": task_id, "user_id": user_id},
+                    params,
                 )
                 session.commit()
                 return result.rowcount > 0
@@ -213,8 +240,19 @@ class SchedulerRepository:
 
         now = datetime.now(timezone.utc)
 
+        # Sprint 160b: Org-scoped filtering.
+        # Note: Background executor may have no ContextVar → eff_org_id=None → no filter
+        # (correct: worker processes tasks for ALL orgs).
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
+                params: dict = {"now": now, "limit": limit}
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 result = session.execute(
                     text(
                         f"SELECT id, user_id, domain_id, description, "
@@ -225,11 +263,12 @@ class SchedulerRepository:
                         f"WHERE status = 'active' "
                         f"AND next_run IS NOT NULL "
                         f"AND next_run <= :now "
-                        f"AND COALESCE(failure_count, 0) < 3 "
+                        f"AND COALESCE(failure_count, 0) < 3"
+                        f"{org_filter} "
                         f"ORDER BY next_run ASC "
                         f"LIMIT :limit"
                     ),
-                    {"now": now, "limit": limit},
+                    params,
                 ).fetchall()
 
                 return [self._row_to_dict(row) for row in result]

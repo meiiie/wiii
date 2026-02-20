@@ -2,6 +2,7 @@
  * WelcomeScreen — Claude Desktop-inspired centered composition.
  * Sprint 82b: Staggered reveal animation, subtle background gradient,
  * refined typography following Anthropic Frontend Aesthetics Cookbook.
+ * Sprint 161: Org-aware branding (welcome message, chatbot name, quick-start).
  */
 import { useDomainStore } from "@/stores/domain-store";
 import { useChatStore } from "@/stores/chat-store";
@@ -35,12 +36,22 @@ export function WelcomeScreen({ onSendMessage, onCancel }: WelcomeScreenProps) {
   const { activeDomainId } = useDomainStore();
   const { createConversation, activeConversationId } = useChatStore();
   const { settings } = useSettingsStore();
-  const { activeOrgId } = useOrgStore();
+  const { activeOrgId, orgSettings } = useOrgStore();
 
   const { state: avatarState, mood: avatarMood, soulEmotion } = useAvatarState();
   const greeting = getGreeting(settings.display_name);
-  const subtitle = getWiiiSubtitle();
-  const suggestions = DOMAIN_SUGGESTIONS[activeDomainId] || [];
+
+  // Sprint 161: Org-aware subtitle and suggestions
+  const orgBranding = orgSettings?.branding;
+  const subtitle = orgBranding?.chatbot_name && orgBranding.chatbot_name !== "Wiii"
+    ? orgBranding.welcome_message
+    : getWiiiSubtitle();
+
+  // Sprint 161: Org quick-start questions override domain suggestions
+  const orgQuickStart = orgSettings?.onboarding?.quick_start_questions;
+  const suggestions = (orgQuickStart && orgQuickStart.length > 0)
+    ? orgQuickStart
+    : (DOMAIN_SUGGESTIONS[activeDomainId] || []);
 
   const handleSuggestion = (question: string) => {
     if (!activeConversationId) {
@@ -52,9 +63,18 @@ export function WelcomeScreen({ onSendMessage, onCancel }: WelcomeScreenProps) {
   return (
     <div className="flex-1 flex flex-col items-center px-6 pt-[20vh] pb-8 welcome-bg">
       <div className="w-full max-w-2xl flex flex-col items-center gap-7">
-        {/* Wiii avatar — staggered reveal 1 */}
+        {/* Avatar — org logo or Wiii avatar (staggered reveal 1) */}
         <div className="welcome-reveal welcome-reveal-1">
-          <WiiiAvatar state={avatarState} size={40} mood={avatarMood} soulEmotion={soulEmotion} />
+          {orgBranding?.logo_url ? (
+            <img
+              src={orgBranding.logo_url}
+              alt={orgBranding.chatbot_name}
+              className="w-10 h-10 rounded-full object-cover"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+            />
+          ) : (
+            <WiiiAvatar state={avatarState} size={40} mood={avatarMood} soulEmotion={soulEmotion} />
+          )}
         </div>
 
         {/* Greeting — staggered reveal 2: light weight, secondary color (Claude uses text-200) */}

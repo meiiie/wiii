@@ -271,35 +271,42 @@ class SupabaseLearningProfileRepository:
     async def get(self, user_id: str) -> Optional[dict]:
         """
         Get a learning profile by user ID.
-        
+
         Args:
             user_id: The user's unique identifier (string from LMS)
-            
+
         Returns:
             Profile dict if found, None otherwise
         """
         if not self._available:
             return None
-        
+
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
-            # Try to convert to UUID if the database expects UUID
             user_id_param = self._convert_user_id(user_id)
-            
+            params: dict = {"user_id": user_id_param}
+            if eff_org_id is not None:
+                params["org_id"] = eff_org_id
+
             with self._session_factory() as session:
                 result = session.execute(
-                    text("""
-                        SELECT user_id, attributes, weak_areas, strong_areas, 
+                    text(f"""
+                        SELECT user_id, attributes, weak_areas, strong_areas,
                                total_sessions, total_messages, updated_at
                         FROM learning_profile
-                        WHERE user_id = :user_id
+                        WHERE user_id = :user_id{org_filter}
                     """),
-                    {"user_id": user_id_param}
+                    params,
                 )
                 row = result.fetchone()
-                
+
                 if row:
                     return {
-                        "user_id": str(row[0]),  # Convert UUID to string
+                        "user_id": str(row[0]),
                         "attributes": row[1] or {},
                         "weak_areas": row[2] or [],
                         "strong_areas": row[3] or [],
@@ -328,31 +335,42 @@ class SupabaseLearningProfileRepository:
     async def create(self, user_id: str, attributes: dict = None) -> Optional[dict]:
         """
         Create a new learning profile.
-        
+
         Args:
             user_id: The user's unique identifier
             attributes: Initial attributes (level, style, language)
-            
+
         Returns:
             The created profile dict
         """
         if not self._available:
             return None
-        
+
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id
+        eff_org_id = get_effective_org_id()
+
         try:
             user_id_param = self._convert_user_id(user_id)
-            
+            insert_cols = "user_id, attributes"
+            insert_vals = ":user_id, :attributes"
+            params: dict = {
+                "user_id": user_id_param,
+                "attributes": json.dumps(attributes or {"level": "beginner"}),
+            }
+            if eff_org_id is not None:
+                insert_cols += ", organization_id"
+                insert_vals += ", :org_id"
+                params["org_id"] = eff_org_id
+
             with self._session_factory() as session:
                 session.execute(
-                    text("""
-                        INSERT INTO learning_profile (user_id, attributes)
-                        VALUES (:user_id, :attributes)
+                    text(f"""
+                        INSERT INTO learning_profile ({insert_cols})
+                        VALUES ({insert_vals})
                         ON CONFLICT (user_id) DO NOTHING
                     """),
-                    {
-                        "user_id": user_id_param,
-                        "attributes": json.dumps(attributes or {"level": "beginner"})
-                    }
+                    params,
                 )
                 session.commit()
                 logger.info("Created learning profile for user %s", user_id)
@@ -379,31 +397,39 @@ class SupabaseLearningProfileRepository:
     async def update_weak_areas(self, user_id: str, weak_areas: List[str]) -> bool:
         """
         Update user's weak areas.
-        
+
         Args:
             user_id: The user's unique identifier
             weak_areas: List of weak topic names
-            
+
         Returns:
             True if successful
         """
         if not self._available:
             return False
-        
+
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             user_id_param = self._convert_user_id(user_id)
-            
+            params: dict = {
+                "user_id": user_id_param,
+                "weak_areas": json.dumps(weak_areas),
+            }
+            if eff_org_id is not None:
+                params["org_id"] = eff_org_id
+
             with self._session_factory() as session:
                 session.execute(
-                    text("""
+                    text(f"""
                         UPDATE learning_profile
                         SET weak_areas = :weak_areas, updated_at = NOW()
-                        WHERE user_id = :user_id
+                        WHERE user_id = :user_id{org_filter}
                     """),
-                    {
-                        "user_id": user_id_param,
-                        "weak_areas": json.dumps(weak_areas)
-                    }
+                    params,
                 )
                 session.commit()
                 logger.info("Updated weak areas for user %s", user_id)
@@ -415,31 +441,39 @@ class SupabaseLearningProfileRepository:
     async def update_strong_areas(self, user_id: str, strong_areas: List[str]) -> bool:
         """
         Update user's strong areas.
-        
+
         Args:
             user_id: The user's unique identifier
             strong_areas: List of strong topic names
-            
+
         Returns:
             True if successful
         """
         if not self._available:
             return False
-        
+
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             user_id_param = self._convert_user_id(user_id)
-            
+            params: dict = {
+                "user_id": user_id_param,
+                "strong_areas": json.dumps(strong_areas),
+            }
+            if eff_org_id is not None:
+                params["org_id"] = eff_org_id
+
             with self._session_factory() as session:
                 session.execute(
-                    text("""
+                    text(f"""
                         UPDATE learning_profile
                         SET strong_areas = :strong_areas, updated_at = NOW()
-                        WHERE user_id = :user_id
+                        WHERE user_id = :user_id{org_filter}
                     """),
-                    {
-                        "user_id": user_id_param,
-                        "strong_areas": json.dumps(strong_areas)
-                    }
+                    params,
                 )
                 session.commit()
                 logger.info("Updated strong areas for user %s", user_id)
@@ -451,32 +485,38 @@ class SupabaseLearningProfileRepository:
     async def increment_stats(self, user_id: str, messages: int = 1) -> bool:
         """
         Increment user's message count.
-        
+
         Args:
             user_id: The user's unique identifier
             messages: Number of messages to add
-            
+
         Returns:
             True if successful
         """
         if not self._available:
             return False
-        
+
+        # Sprint 160b: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
-            # Ensure profile exists
             await self.get_or_create(user_id)
-            
             user_id_param = self._convert_user_id(user_id)
-            
+            params: dict = {"user_id": user_id_param, "messages": messages}
+            if eff_org_id is not None:
+                params["org_id"] = eff_org_id
+
             with self._session_factory() as session:
                 session.execute(
-                    text("""
+                    text(f"""
                         UPDATE learning_profile
                         SET total_messages = total_messages + :messages,
                             updated_at = NOW()
-                        WHERE user_id = :user_id
+                        WHERE user_id = :user_id{org_filter}
                     """),
-                    {"user_id": user_id_param, "messages": messages}
+                    params,
                 )
                 session.commit()
                 return True

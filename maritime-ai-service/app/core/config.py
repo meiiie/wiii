@@ -899,8 +899,9 @@ class Settings(BaseSettings):
                     "enable_google_oauth=True but google_oauth_client_id/secret not set — OAuth will not work"
                 )
             if self.session_secret_key == "change-session-secret-in-production" and self.environment == "production":
-                _config_logger.warning(
-                    "session_secret_key is default in production — OAuth CSRF protection weakened"
+                raise ValueError(
+                    "SECURITY: session_secret_key must be changed from default in production. "
+                    "Set SESSION_SECRET_KEY environment variable."
                 )
         # Sprint 155: LMS integration without webhook secret
         if self.enable_lms_integration and not self.lms_webhook_secret:
