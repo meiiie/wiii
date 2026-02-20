@@ -1,0 +1,319 @@
+"""
+Sprint 159: "Cầu Nối Trực Tiếp" — LMS Token Exchange tests.
+
+Tests:
+  - Config integration (2 tests)
+  - Connector secret resolution (4 tests)
+  - HMAC validation (4 tests)
+  - Timestamp validation (4 tests)
+  - Role mapping (5 tests)
+  - Token exchange (3 tests)
+
+Total: 22 tests
+"""
+import hashlib
+import hmac
+import json
+import time
+import uuid
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+
+# ===========================================================================
+# Helpers
+# ===========================================================================
+
+def _make_hmac(body_bytes: bytes, secret: str) -> str:
+    """Create a valid HMAC-SHA256 signature."""
+    digest = hmac.new(secret.encode("utf-8"), body_bytes, hashlib.sha256).hexdigest()
+    return f"sha256={digest}"
+
+
+def _mock_settings(**overrides):
+    """Create a mock settings object with defaults."""
+    defaults = {
+        "enable_lms_token_exchange": False,
+        "lms_token_exchange_max_age": 300,
+        "lms_webhook_secret": None,
+        "lms_connectors": "[]",
+    }
+    defaults.update(overrides)
+    mock = MagicMock()
+    for k, v in defaults.items():
+        setattr(mock, k, v)
+    return mock
+
+
+# ===========================================================================
+# TestConfigIntegration
+# ===========================================================================
+
+
+class TestConfigIntegration:
+    """Test config fields."""
+
+    def test_feature_flag_default_false(self):
+        """enable_lms_token_exchange defaults to False."""
+        from app.core.config import settings
+        assert getattr(settings, "enable_lms_token_exchange", False) is False
+
+    def test_max_age_has_range(self):
+        """lms_token_exchange_max_age has ge=30, le=600."""
+        from app.core.config import Settings
+        field = Settings.model_fields["lms_token_exchange_max_age"]
+        metadata = field.metadata
+        # Check from pydantic Field constraints
+        assert field.default == 300
+        # ge and le are stored in field metadata
+        has_ge = any(getattr(m, "ge", None) == 30 for m in metadata)
+        has_le = any(getattr(m, "le", None) == 600 for m in metadata)
+        assert has_ge, "Should have ge=30"
+        assert has_le, "Should have le=600"
+
+
+# ===========================================================================
+# TestConnectorSecretResolution
+# ===========================================================================
+
+
+class TestConnectorSecretResolution:
+    """Test _resolve_connector_secret fallback chain."""
+
+    def test_json_priority(self):
+        """JSON connectors take priority over flat secret."""
+        connectors = json.dumps([{"id": "lms-1", "webhook_secret": "json-secret"}])
+        with patch("app.auth.lms_token_exchange.settings", _mock_settings(
+            lms_connectors=connectors,
+            lms_webhook_secret="flat-secret",
+        )):
+            from app.auth.lms_token_exchange import _resolve_connector_secret
+            assert _resolve_connector_secret("lms-1") == "json-secret"
+
+    def test_registry_fallback(self):
+        """When JSON has no match, falls back to LMSConnectorRegistry."""
+        mock_config = MagicMock()
+        mock_config.webhook_secret = "registry-secret"
+        mock_registry = MagicMock()
+        mock_registry.get_connector.return_value = mock_config
+
+        MockRegistryClass = MagicMock()
+        MockRegistryClass.get_instance.return_value = mock_registry
+
+        with (
+            patch("app.auth.lms_token_exchange.settings", _mock_settings()),
+            patch.dict("sys.modules", {}),
+            patch("app.integrations.lms.base.LMSConnectorRegistry", MockRegistryClass, create=True),
+        ):
+            from app.auth.lms_token_exchange import _resolve_connector_secret
+            assert _resolve_connector_secret("lms-2") == "registry-secret"
+
+    def test_flat_fallback(self):
+        """When no connector match, falls back to flat lms_webhook_secret."""
+        with patch("app.auth.lms_token_exchange.settings", _mock_settings(
+            lms_webhook_secret="flat-secret",
+        )):
+            from app.auth.lms_token_exchange import _resolve_connector_secret
+            assert _resolve_connector_secret("unknown") == "flat-secret"
+
+    def test_none_when_no_secret(self):
+        """Returns None when no secret is configured anywhere."""
+        with patch("app.auth.lms_token_exchange.settings", _mock_settings()):
+            from app.auth.lms_token_exchange import _resolve_connector_secret
+            assert _resolve_connector_secret("unknown") is None
+
+
+# ===========================================================================
+# TestHMACValidation
+# ===========================================================================
+
+
+class TestHMACValidation:
+    """Test HMAC signature validation."""
+
+    def test_valid_passes(self):
+        """Valid HMAC signature passes."""
+        secret = "test-secret"
+        body = b'{"connector_id":"lms-1","lms_user_id":"s1"}'
+        sig = _make_hmac(body, secret)
+
+        with patch("app.auth.lms_token_exchange._resolve_connector_secret", return_value=secret):
+            from app.auth.lms_token_exchange import validate_lms_signature
+            assert validate_lms_signature("lms-1", body, sig) is True
+
+    def test_invalid_raises(self):
+        """Invalid HMAC signature returns False."""
+        secret = "test-secret"
+        body = b'{"connector_id":"lms-1"}'
+
+        with patch("app.auth.lms_token_exchange._resolve_connector_secret", return_value=secret):
+            from app.auth.lms_token_exchange import validate_lms_signature
+            assert validate_lms_signature("lms-1", body, "sha256=wrong") is False
+
+    def test_missing_signature_raises(self):
+        """Missing signature raises ValueError."""
+        with patch("app.auth.lms_token_exchange._resolve_connector_secret", return_value="secret"):
+            from app.auth.lms_token_exchange import validate_lms_signature
+            with pytest.raises(ValueError, match="Missing signature"):
+                validate_lms_signature("lms-1", b"{}", "")
+
+    def test_no_secret_raises(self):
+        """No configured secret raises ValueError."""
+        with patch("app.auth.lms_token_exchange._resolve_connector_secret", return_value=None):
+            from app.auth.lms_token_exchange import validate_lms_signature
+            with pytest.raises(ValueError, match="No HMAC secret"):
+                validate_lms_signature("lms-1", b"{}", "sha256=abc")
+
+
+# ===========================================================================
+# TestTimestampValidation
+# ===========================================================================
+
+
+class TestTimestampValidation:
+    """Test timestamp replay protection."""
+
+    def test_recent_passes(self):
+        """Timestamp within max_age passes."""
+        with patch("app.auth.lms_token_exchange.settings", _mock_settings(lms_token_exchange_max_age=300)):
+            from app.auth.lms_token_exchange import validate_request_timestamp
+            assert validate_request_timestamp(int(time.time())) is True
+
+    def test_old_rejected(self):
+        """Timestamp too old is rejected."""
+        with patch("app.auth.lms_token_exchange.settings", _mock_settings(lms_token_exchange_max_age=300)):
+            from app.auth.lms_token_exchange import validate_request_timestamp
+            old_ts = int(time.time()) - 600
+            with pytest.raises(ValueError, match="too far"):
+                validate_request_timestamp(old_ts)
+
+    def test_future_rejected(self):
+        """Timestamp too far in the future is rejected."""
+        with patch("app.auth.lms_token_exchange.settings", _mock_settings(lms_token_exchange_max_age=300)):
+            from app.auth.lms_token_exchange import validate_request_timestamp
+            future_ts = int(time.time()) + 600
+            with pytest.raises(ValueError, match="too far"):
+                validate_request_timestamp(future_ts)
+
+    def test_none_passes_backward_compat(self):
+        """None timestamp passes (backward compat)."""
+        from app.auth.lms_token_exchange import validate_request_timestamp
+        assert validate_request_timestamp(None) is True
+
+
+# ===========================================================================
+# TestRoleMapping
+# ===========================================================================
+
+
+class TestRoleMapping:
+    """Test LMS → Wiii role mapping."""
+
+    def test_student(self):
+        from app.auth.lms_token_exchange import map_lms_role
+        assert map_lms_role("student") == "student"
+
+    def test_teacher_variants(self):
+        from app.auth.lms_token_exchange import map_lms_role
+        assert map_lms_role("instructor") == "teacher"
+        assert map_lms_role("professor") == "teacher"
+        assert map_lms_role("Lecturer") == "teacher"  # case-insensitive
+
+    def test_admin_variants(self):
+        from app.auth.lms_token_exchange import map_lms_role
+        assert map_lms_role("admin") == "admin"
+        assert map_lms_role("Administrator") == "admin"
+
+    def test_unknown_defaults_to_student(self):
+        from app.auth.lms_token_exchange import map_lms_role
+        assert map_lms_role("unknown_role") == "student"
+        assert map_lms_role("superadmin") == "student"
+
+    def test_none_defaults_to_student(self):
+        from app.auth.lms_token_exchange import map_lms_role
+        assert map_lms_role(None) == "student"
+
+
+# ===========================================================================
+# TestTokenExchange
+# ===========================================================================
+
+
+class TestTokenExchange:
+    """Test end-to-end token exchange flow."""
+
+    @pytest.mark.asyncio
+    async def test_new_user_created(self):
+        """Token exchange creates new user when not found."""
+        new_user = {"id": "u1", "email": "s@lms.edu", "name": "Student 1", "role": "student"}
+        mock_token = MagicMock(
+            access_token="at", refresh_token="rt",
+            token_type="bearer", expires_in=1800,
+        )
+
+        with (
+            patch("app.auth.user_service.find_or_create_by_provider", new_callable=AsyncMock, return_value=new_user) as mock_find,
+            patch("app.auth.token_service.create_token_pair", new_callable=AsyncMock, return_value=mock_token),
+            patch("app.auth.lms_token_exchange._ensure_org_membership", new_callable=AsyncMock),
+        ):
+            from app.auth.lms_token_exchange import exchange_lms_token
+            result = await exchange_lms_token(
+                connector_id="maritime-lms",
+                lms_user_id="student-42",
+                email="s@lms.edu",
+                name="Student 1",
+                role="student",
+            )
+            assert result["access_token"] == "at"
+            assert result["user"]["id"] == "u1"
+            mock_find.assert_called_once()
+            assert mock_find.call_args.kwargs["provider"] == "lms"
+            assert mock_find.call_args.kwargs["provider_issuer"] == "maritime-lms"
+
+    @pytest.mark.asyncio
+    async def test_existing_user_found(self):
+        """Token exchange returns existing user without creating."""
+        existing = {"id": "u1", "email": "s@lms.edu", "name": "Student 1", "role": "student"}
+        mock_token = MagicMock(
+            access_token="at", refresh_token="rt",
+            token_type="bearer", expires_in=1800,
+        )
+
+        with (
+            patch("app.auth.user_service.find_or_create_by_provider", new_callable=AsyncMock, return_value=existing),
+            patch("app.auth.token_service.create_token_pair", new_callable=AsyncMock, return_value=mock_token) as mock_create,
+            patch("app.auth.lms_token_exchange._ensure_org_membership", new_callable=AsyncMock),
+        ):
+            from app.auth.lms_token_exchange import exchange_lms_token
+            result = await exchange_lms_token(
+                connector_id="maritime-lms",
+                lms_user_id="student-42",
+            )
+            assert result["access_token"] == "at"
+            mock_create.assert_called_once()
+            assert mock_create.call_args.kwargs["auth_method"] == "lms"
+
+    @pytest.mark.asyncio
+    async def test_org_membership_added(self):
+        """Token exchange adds org membership when organization_id provided."""
+        user = {"id": "u1", "email": None, "name": None, "role": "student"}
+        mock_token = MagicMock(
+            access_token="at", refresh_token="rt",
+            token_type="bearer", expires_in=1800,
+        )
+
+        with (
+            patch("app.auth.user_service.find_or_create_by_provider", new_callable=AsyncMock, return_value=user),
+            patch("app.auth.token_service.create_token_pair", new_callable=AsyncMock, return_value=mock_token),
+            patch("app.auth.lms_token_exchange._ensure_org_membership", new_callable=AsyncMock) as mock_org,
+        ):
+            from app.auth.lms_token_exchange import exchange_lms_token
+            result = await exchange_lms_token(
+                connector_id="lms-1",
+                lms_user_id="s1",
+                organization_id="maritime-org",
+            )
+            mock_org.assert_called_once_with("u1", "maritime-org")
+            assert result["user"]["id"] == "u1"

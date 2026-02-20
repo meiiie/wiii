@@ -39,6 +39,10 @@ router.include_router(character_router)  # Sprint 120: Character State
 router.include_router(mood_router)  # Sprint 120: Mood/Emotional State
 router.include_router(preferences_router)  # Sprint 120: User Preferences
 
+# Sprint 158: User profile + admin endpoints (always included, JWT-enforced)
+from app.auth.user_router import router as user_router
+router.include_router(user_router)
+
 # Sprint 12: WebSocket endpoint (config-gated)
 try:
     from app.core.config import settings
@@ -61,6 +65,14 @@ try:
     if getattr(settings, "enable_google_oauth", False):
         from app.auth.google_oauth import router as auth_router
         router.include_router(auth_router)
+except Exception:
+    pass
+
+# Sprint 159: LMS Token Exchange (config-gated)
+try:
+    if getattr(settings, "enable_lms_token_exchange", False):
+        from app.auth.lms_auth_router import router as lms_auth_router
+        router.include_router(lms_auth_router)
 except Exception:
     pass
 

@@ -180,6 +180,10 @@ class Settings(BaseSettings):
     session_secret_key: str = Field(default="change-session-secret-in-production", description="Session middleware secret for OAuth CSRF state")
     jwt_refresh_expire_days: int = Field(default=30, ge=1, le=365, description="Refresh token expiration in days")
 
+    # LMS Token Exchange (Sprint 159: Cầu Nối Trực Tiếp)
+    enable_lms_token_exchange: bool = Field(default=False, description="Enable LMS backend → Wiii JWT token exchange")
+    lms_token_exchange_max_age: int = Field(default=300, ge=30, le=600, description="Max request age for replay protection (seconds)")
+
     # Rate Limiting
     rate_limit_requests: int = Field(default=100, description="Max requests per window")
     rate_limit_window_seconds: int = Field(default=60, description="Rate limit window in seconds")

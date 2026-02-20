@@ -114,10 +114,10 @@ async def create_token_pair(
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
-                VALUES ($1, $2, $3, $4, NOW())
+                INSERT INTO refresh_tokens (id, user_id, token_hash, auth_method, expires_at, created_at)
+                VALUES ($1, $2, $3, $4, $5, NOW())
                 """,
-                token_id, user_id, token_hash, expires_at,
+                token_id, user_id, token_hash, auth_method, expires_at,
             )
     except Exception:
         logger.warning("Failed to store refresh token — token will be stateless only")
@@ -145,7 +145,7 @@ async def refresh_access_token(refresh_token: str) -> Optional[TokenPair]:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT rt.id, rt.user_id, rt.expires_at, rt.revoked_at,
+                SELECT rt.id, rt.user_id, rt.expires_at, rt.revoked_at, rt.auth_method,
                        u.email, u.name, u.role
                 FROM refresh_tokens rt
                 JOIN users u ON u.id = rt.user_id
@@ -178,7 +178,7 @@ async def refresh_access_token(refresh_token: str) -> Optional[TokenPair]:
                 email=row["email"],
                 name=row["name"],
                 role=row["role"],
-                auth_method="google",  # Refresh inherits original method
+                auth_method=row.get("auth_method") or "google",  # Refresh inherits original method
             )
     except Exception:
         logger.exception("Error during token refresh")

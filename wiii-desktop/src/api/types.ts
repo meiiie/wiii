@@ -481,6 +481,30 @@ export interface UserPreferencesUpdate {
   timezone?: string;
 }
 
+// ===== User Profile (Sprint 158) =====
+export interface UserProfile {
+  id: string;
+  email?: string;
+  name?: string;
+  avatar_url?: string;
+  role: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface UserIdentity {
+  id: string;
+  provider: string;
+  provider_sub: string;
+  provider_issuer?: string;
+  email?: string;
+  display_name?: string;
+  avatar_url?: string;
+  linked_at?: string;
+  last_used_at?: string;
+}
+
 // ===== Local types (desktop-only) =====
 export interface Conversation {
   id: string;

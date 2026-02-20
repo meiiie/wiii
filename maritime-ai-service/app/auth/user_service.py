@@ -1,5 +1,6 @@
 """
 Sprint 157: User service — find-or-create users, link identities.
+Sprint 158: Generalized find_or_create_by_provider + CRUD operations.
 
 Operates on the `users` and `user_identities` tables.
 """
@@ -13,6 +14,8 @@ import asyncpg
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+_VALID_ROLES = {"student", "teacher", "admin"}
 
 
 async def _get_pool() -> asyncpg.Pool:
@@ -117,6 +120,70 @@ async def link_identity(
     return identity_id
 
 
+# ---------------------------------------------------------------------------
+# Sprint 158: Generalized provider federation
+# ---------------------------------------------------------------------------
+
+async def find_or_create_by_provider(
+    provider: str,
+    provider_sub: str,
+    provider_issuer: Optional[str] = None,
+    email: Optional[str] = None,
+    name: Optional[str] = None,
+    avatar_url: Optional[str] = None,
+    role: str = "student",
+    auto_create: bool = True,
+) -> Optional[dict]:
+    """
+    Find existing user by provider identity or create a new one.
+
+    Strategy:
+    1. Look up by (provider, provider_sub, provider_issuer) → exact match
+    2. Look up by email → auto-link provider identity
+    3. Create new user + link provider identity (if auto_create=True)
+
+    Returns user dict or None (only when auto_create=False and not found).
+    """
+    # 1. Exact provider match
+    user = await find_user_by_provider(provider, provider_sub, provider_issuer)
+    if user:
+        logger.debug("%s login: existing user %s", provider, user["id"])
+        return user
+
+    # 2. Email match → auto-link
+    if email:
+        user = await find_user_by_email(email)
+        if user:
+            await link_identity(
+                user_id=user["id"],
+                provider=provider,
+                provider_sub=provider_sub,
+                provider_issuer=provider_issuer,
+                email=email,
+                display_name=name,
+                avatar_url=avatar_url,
+            )
+            logger.info("%s login: auto-linked to existing user %s via email %s", provider, user["id"], email)
+            return user
+
+    # 3. New user
+    if not auto_create:
+        return None
+
+    user = await create_user(email=email, name=name, avatar_url=avatar_url, role=role)
+    await link_identity(
+        user_id=user["id"],
+        provider=provider,
+        provider_sub=provider_sub,
+        provider_issuer=provider_issuer,
+        email=email,
+        display_name=name,
+        avatar_url=avatar_url,
+    )
+    logger.info("%s login: created new user %s for email %s", provider, user["id"], email)
+    return user
+
+
 async def find_or_create_by_google(
     google_sub: str,
     email: str,
@@ -124,42 +191,213 @@ async def find_or_create_by_google(
     avatar_url: Optional[str] = None,
 ) -> dict:
     """
-    Find existing user by Google identity or create a new one.
-
-    Strategy:
-    1. Look up by (google, google_sub) → exact match
-    2. Look up by email → auto-link Google identity
-    3. Create new user + link Google identity
+    Backward-compatible wrapper — delegates to find_or_create_by_provider.
     """
-    # 1. Exact provider match
-    user = await find_user_by_provider("google", google_sub)
-    if user:
-        logger.debug("Google login: existing user %s", user["id"])
-        return user
-
-    # 2. Email match → auto-link
-    user = await find_user_by_email(email)
-    if user:
-        await link_identity(
-            user_id=user["id"],
-            provider="google",
-            provider_sub=google_sub,
-            email=email,
-            display_name=name,
-            avatar_url=avatar_url,
-        )
-        logger.info("Google login: auto-linked to existing user %s via email %s", user["id"], email)
-        return user
-
-    # 3. New user
-    user = await create_user(email=email, name=name, avatar_url=avatar_url)
-    await link_identity(
-        user_id=user["id"],
+    result = await find_or_create_by_provider(
         provider="google",
         provider_sub=google_sub,
         email=email,
-        display_name=name,
+        name=name,
         avatar_url=avatar_url,
     )
-    logger.info("Google login: created new user %s for email %s", user["id"], email)
-    return user
+    # find_or_create_by_provider always returns a user when auto_create=True (default)
+    assert result is not None
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Sprint 158: CRUD operations
+# ---------------------------------------------------------------------------
+
+async def get_user(user_id: str) -> Optional[dict]:
+    """Get a user by ID. Returns full user dict or None."""
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, email, name, avatar_url, role, is_active, created_at, updated_at FROM users WHERE id = $1",
+            user_id,
+        )
+        if row:
+            result = dict(row)
+            # Convert datetimes to ISO strings for JSON serialization
+            for key in ("created_at", "updated_at"):
+                if result.get(key) and hasattr(result[key], "isoformat"):
+                    result[key] = result[key].isoformat()
+            return result
+    return None
+
+
+async def update_user(user_id: str, name: Optional[str] = None, avatar_url: Optional[str] = None) -> Optional[dict]:
+    """Update user profile fields. Returns updated user or None if not found."""
+    sets = []
+    params = []
+    idx = 1
+
+    if name is not None:
+        sets.append(f"name = ${idx}")
+        params.append(name)
+        idx += 1
+
+    if avatar_url is not None:
+        sets.append(f"avatar_url = ${idx}")
+        params.append(avatar_url)
+        idx += 1
+
+    if not sets:
+        return await get_user(user_id)
+
+    sets.append(f"updated_at = ${idx}")
+    params.append(datetime.now(timezone.utc))
+    idx += 1
+
+    params.append(user_id)
+
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            f"UPDATE users SET {', '.join(sets)} WHERE id = ${idx}",
+            *params,
+        )
+        if result == "UPDATE 0":
+            return None
+    return await get_user(user_id)
+
+
+async def update_user_role(user_id: str, new_role: str) -> Optional[dict]:
+    """Update user role. Validates against whitelist. Returns updated user or None."""
+    if new_role not in _VALID_ROLES:
+        raise ValueError(f"Invalid role '{new_role}'. Must be one of: {', '.join(sorted(_VALID_ROLES))}")
+
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE users SET role = $1, updated_at = $2 WHERE id = $3",
+            new_role, datetime.now(timezone.utc), user_id,
+        )
+        if result == "UPDATE 0":
+            return None
+    return await get_user(user_id)
+
+
+async def deactivate_user(user_id: str) -> Optional[dict]:
+    """Soft-delete a user (set is_active=false) and revoke all tokens."""
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE users SET is_active = false, updated_at = $1 WHERE id = $2",
+            datetime.now(timezone.utc), user_id,
+        )
+        if result == "UPDATE 0":
+            return None
+
+    # Revoke all refresh tokens
+    from app.auth.token_service import revoke_user_tokens
+    await revoke_user_tokens(user_id)
+    logger.info("Deactivated user %s", user_id)
+
+    return await get_user(user_id)
+
+
+async def list_user_identities(user_id: str) -> list[dict]:
+    """List all linked identities for a user."""
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, provider, provider_sub, provider_issuer, email, display_name, avatar_url, linked_at, last_used_at
+            FROM user_identities
+            WHERE user_id = $1
+            ORDER BY linked_at
+            """,
+            user_id,
+        )
+        result = []
+        for row in rows:
+            d = dict(row)
+            for key in ("linked_at", "last_used_at"):
+                if d.get(key) and hasattr(d[key], "isoformat"):
+                    d[key] = d[key].isoformat()
+            result.append(d)
+        return result
+
+
+async def unlink_identity(user_id: str, identity_id: str) -> bool:
+    """
+    Unlink an identity from a user.
+
+    Safety: refuses to unlink if it's the user's last identity.
+    Returns True if unlinked, False if not found.
+    Raises ValueError if it's the last identity.
+    """
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        # Count identities
+        count = await conn.fetchval(
+            "SELECT COUNT(*) FROM user_identities WHERE user_id = $1",
+            user_id,
+        )
+        if count <= 1:
+            raise ValueError("Cannot unlink the last identity — user would be orphaned")
+
+        result = await conn.execute(
+            "DELETE FROM user_identities WHERE id = $1 AND user_id = $2",
+            identity_id, user_id,
+        )
+        deleted = int(result.split()[-1])
+        if deleted == 0:
+            return False
+
+        logger.info("Unlinked identity %s from user %s", identity_id, user_id)
+        return True
+
+
+async def list_users(
+    org_id: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """
+    Paginated user list. Optionally filtered by organization.
+    Returns (users, total_count).
+    """
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        if org_id:
+            total = await conn.fetchval(
+                """
+                SELECT COUNT(*) FROM users u
+                JOIN user_organizations uo ON uo.user_id = u.id
+                WHERE uo.organization_id = $1
+                """,
+                org_id,
+            )
+            rows = await conn.fetch(
+                """
+                SELECT u.id, u.email, u.name, u.avatar_url, u.role, u.is_active, u.created_at
+                FROM users u
+                JOIN user_organizations uo ON uo.user_id = u.id
+                WHERE uo.organization_id = $1
+                ORDER BY u.created_at DESC
+                LIMIT $2 OFFSET $3
+                """,
+                org_id, limit, offset,
+            )
+        else:
+            total = await conn.fetchval("SELECT COUNT(*) FROM users")
+            rows = await conn.fetch(
+                """
+                SELECT id, email, name, avatar_url, role, is_active, created_at
+                FROM users
+                ORDER BY created_at DESC
+                LIMIT $1 OFFSET $2
+                """,
+                limit, offset,
+            )
+
+        users = []
+        for row in rows:
+            d = dict(row)
+            if d.get("created_at") and hasattr(d["created_at"], "isoformat"):
+                d["created_at"] = d["created_at"].isoformat()
+            users.append(d)
+        return users, total

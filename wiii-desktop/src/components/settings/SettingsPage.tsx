@@ -36,9 +36,11 @@ import { setTheme } from "@/lib/theme";
 import { fetchPreferences, updatePreferences } from "@/api/preferences";
 import { useOrgStore } from "@/stores/org-store";
 import { useDomainStore } from "@/stores/domain-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { getOrgDisplayName } from "@/lib/org-config";
 import { PERSONAL_ORG_ID } from "@/lib/constants";
-import type { AppSettings, UserRole, UserPreferences, LearningStyle, DifficultyLevel, PronounStyle } from "@/api/types";
+import { fetchIdentities, unlinkIdentity } from "@/api/users";
+import type { AppSettings, UserRole, UserPreferences, UserIdentity, LearningStyle, DifficultyLevel, PronounStyle } from "@/api/types";
 
 type Tab = "connection" | "user" | "preferences" | "learning" | "memory" | "context";
 
@@ -396,7 +398,7 @@ function ConnectionTab({
   );
 }
 
-/* ===== User Tab ===== */
+/* ===== User Tab (Sprint 158: OAuth-aware) ===== */
 interface UserTabProps {
   settings: AppSettings;
   onUpdate: <K extends keyof AppSettings>(
@@ -409,7 +411,44 @@ function UserTab({ settings, onUpdate }: UserTabProps) {
   const { organizations, multiTenantEnabled, activeOrgId, setActiveOrg } = useOrgStore();
   const { getFilteredDomains, setOrgFilter } = useDomainStore();
   const { updateSettings } = useSettingsStore();
+  const { isAuthenticated, user, authMode, logout } = useAuthStore();
+  const { addToast } = useToastStore();
   const filteredDomains = getFilteredDomains();
+  const isOAuth = authMode === "oauth" && isAuthenticated && user;
+
+  // Linked accounts state (OAuth mode only)
+  const [identities, setIdentities] = useState<UserIdentity[]>([]);
+  const [identitiesLoading, setIdentitiesLoading] = useState(false);
+  const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOAuth) return;
+    let cancelled = false;
+    setIdentitiesLoading(true);
+    fetchIdentities()
+      .then((data) => { if (!cancelled) setIdentities(data); })
+      .catch(() => { /* silent — non-critical */ })
+      .finally(() => { if (!cancelled) setIdentitiesLoading(false); });
+    return () => { cancelled = true; };
+  }, [isOAuth]);
+
+  const handleUnlink = async (identityId: string) => {
+    setUnlinkingId(identityId);
+    try {
+      await unlinkIdentity(identityId);
+      setIdentities((prev) => prev.filter((i) => i.id !== identityId));
+      addToast("success", "Wiii đã hủy liên kết tài khoản");
+    } catch {
+      addToast("error", "Không thể hủy liên kết");
+    } finally {
+      setUnlinkingId(null);
+    }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    addToast("success", "Đã đăng xuất");
+  };
 
   const roles: { value: UserRole; label: string }[] = [
     { value: "student", label: "Sinh viên" },
@@ -425,45 +464,111 @@ function UserTab({ settings, onUpdate }: UserTabProps) {
     setOrgFilter(org?.allowed_domains ?? []);
   };
 
+  const PROVIDER_LABELS: Record<string, string> = {
+    google: "Google",
+    lms: "LMS",
+    api_key: "API Key",
+  };
+
   return (
     <div className="space-y-4">
+      {/* OAuth mode: show profile from server */}
+      {isOAuth && user && (
+        <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-secondary border border-border">
+          {user.avatar_url ? (
+            <img src={user.avatar_url} alt="" className="w-10 h-10 rounded-full" />
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-[var(--accent-light)] flex items-center justify-center text-[var(--accent)] font-bold text-sm">
+              {(user.name || user.email || "?")[0].toUpperCase()}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-text truncate">{user.name || "Chưa đặt tên"}</div>
+            <div className="text-xs text-text-tertiary truncate">{user.email}</div>
+          </div>
+          <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[var(--accent-light)] text-[var(--accent)]">
+            {user.role === "admin" ? "Quản trị" : user.role === "teacher" ? "Giảng viên" : "Sinh viên"}
+          </span>
+        </div>
+      )}
+
+      {/* Name field — editable in both modes */}
       <FieldGroup label="Tên hiển thị" hint="Bảo mình tên bạn để nhớ nhé">
         <input
           type="text"
-          value={settings.display_name}
+          value={isOAuth && user ? (user.name || "") : settings.display_name}
           onChange={(e) => onUpdate("display_name", e.target.value)}
           placeholder="Bạn tên gì?"
           className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
         />
       </FieldGroup>
 
-      <FieldGroup label="User ID">
-        <input
-          type="text"
-          value={settings.user_id}
-          onChange={(e) => onUpdate("user_id", e.target.value)}
-          placeholder="desktop-user"
-          className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-        />
-      </FieldGroup>
+      {/* Legacy mode only: User ID + Role */}
+      {!isOAuth && (
+        <>
+          <FieldGroup label="User ID">
+            <input
+              type="text"
+              value={settings.user_id}
+              onChange={(e) => onUpdate("user_id", e.target.value)}
+              placeholder="desktop-user"
+              className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
+            />
+          </FieldGroup>
 
-      <FieldGroup label="Vai trò">
-        <div className="flex gap-2">
-          {roles.map((r) => (
-            <button
-              key={r.value}
-              onClick={() => onUpdate("user_role", r.value)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                settings.user_role === r.value
-                  ? "bg-[var(--accent)] text-white"
-                  : "border border-border hover:bg-surface-tertiary text-text-secondary"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
+          <FieldGroup label="Vai trò">
+            <div className="flex gap-2">
+              {roles.map((r) => (
+                <button
+                  key={r.value}
+                  onClick={() => onUpdate("user_role", r.value)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    settings.user_role === r.value
+                      ? "bg-[var(--accent)] text-white"
+                      : "border border-border hover:bg-surface-tertiary text-text-secondary"
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </FieldGroup>
+        </>
+      )}
+
+      {/* OAuth mode: Linked accounts section */}
+      {isOAuth && (
+        <div>
+          <div className="text-sm font-medium text-text-secondary mb-1.5">Tài khoản liên kết</div>
+          {identitiesLoading ? (
+            <div className="flex items-center gap-2 text-xs text-text-tertiary py-2">
+              <Loader2 size={12} className="animate-spin" />
+              Đang tải...
+            </div>
+          ) : identities.length === 0 ? (
+            <div className="text-xs text-text-tertiary py-2">Không có tài khoản liên kết</div>
+          ) : (
+            <div className="space-y-1.5">
+              {identities.map((identity) => (
+                <div key={identity.id} className="flex items-center gap-2 p-2 rounded-lg border border-border bg-surface-secondary">
+                  <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent-light)] text-[var(--accent)]">
+                    {PROVIDER_LABELS[identity.provider] || identity.provider}
+                  </span>
+                  <span className="flex-1 text-xs text-text truncate">{identity.email || identity.display_name || identity.provider_sub}</span>
+                  <button
+                    onClick={() => handleUnlink(identity.id)}
+                    disabled={identities.length <= 1 || unlinkingId === identity.id}
+                    className="text-xs text-red-500 hover:text-red-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title={identities.length <= 1 ? "Không thể hủy tài khoản cuối cùng" : "Hủy liên kết"}
+                  >
+                    {unlinkingId === identity.id ? <Loader2 size={10} className="animate-spin" /> : "Hủy"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      </FieldGroup>
+      )}
 
       {/* Sprint 156: Organization selector (only when multi-tenant) */}
       {multiTenantEnabled && organizations.length > 1 && (
@@ -506,6 +611,16 @@ function UserTab({ settings, onUpdate }: UserTabProps) {
           />
         )}
       </FieldGroup>
+
+      {/* OAuth mode: Logout button */}
+      {isOAuth && (
+        <button
+          onClick={handleLogout}
+          className="w-full px-4 py-2 rounded-lg border border-red-300 dark:border-red-800 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+        >
+          Đăng xuất
+        </button>
+      )}
     </div>
   );
 }

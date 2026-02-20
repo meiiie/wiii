@@ -11,6 +11,12 @@ import { useAuthStore } from "@/stores/auth-store";
 import type { AuthUser } from "@/stores/auth-store";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 
+// Dynamic import that bypasses Vite static analysis (plugin may not be installed)
+const _oauthMod = "@fabianlars/tauri-plugin-oauth";
+function loadOAuth(): Promise<{ start: (opts: { ports: number[] }) => Promise<number>; onUrl: (cb: (url: string) => void) => void; cancel: (port: number) => Promise<void> }> {
+  return import(/* @vite-ignore */ _oauthMod) as Promise<any>;
+}
+
 export function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +32,7 @@ export function LoginScreen() {
       // Try to use tauri-plugin-oauth for localhost redirect
       let port: number;
       try {
-        const oauth = await import("@fabianlars/tauri-plugin-oauth");
+        const oauth = await loadOAuth();
         port = await oauth.start({ ports: [8765, 8766, 8767, 8768, 8769] });
       } catch {
         // Fallback: use a fixed port if plugin not available
@@ -47,7 +53,7 @@ export function LoginScreen() {
       // Wait for callback from the OAuth redirect to localhost
       // The tauri-plugin-oauth will capture the URL
       try {
-        const oauth = await import("@fabianlars/tauri-plugin-oauth");
+        const oauth = await loadOAuth();
         const callbackUrl = await new Promise<string>((resolve, reject) => {
           const timeout = setTimeout(() => reject(new Error("OAuth timeout (60s)")), 60000);
           oauth.onUrl((url: string) => {
