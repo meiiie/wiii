@@ -7,7 +7,9 @@ import { AppShell } from "@/components/layout/AppShell";
 import { ChatView } from "@/components/chat/ChatView";
 import { SettingsPage } from "@/components/settings";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { LoginScreen } from "@/components/auth/LoginScreen";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { useConnectionStore } from "@/stores/connection-store";
 import { useContextStore } from "@/stores/context-store";
 import { useDomainStore } from "@/stores/domain-store";
@@ -28,6 +30,7 @@ export default function App() {
   }
 
   const { loadSettings, settings, isLoaded: settingsLoaded } = useSettingsStore();
+  const { loadAuth, isAuthenticated, authMode, isTokenExpiringSoon, refreshAccessToken } = useAuthStore();
   const { startPolling, stopPolling, setOnReconnect } = useConnectionStore();
   const { startPolling: startContextPolling, stopPolling: stopContextPolling } =
     useContextStore();
@@ -45,11 +48,13 @@ export default function App() {
     async function init() {
       // 1. Load persisted settings
       await loadSettings();
-      // 2. Load persisted conversations
+      // 2. Load persisted auth state (Sprint 157)
+      await loadAuth();
+      // 3. Load persisted conversations
       await loadConversations();
     }
     init();
-  }, [loadSettings, loadConversations]);
+  }, [loadSettings, loadAuth, loadConversations]);
 
   // When settings are loaded, initialize client and start health polling
   useEffect(() => {
@@ -104,6 +109,17 @@ export default function App() {
     };
   }, [sessionId, settings.server_url, startContextPolling, stopContextPolling]);
 
+  // Sprint 157: Auto-refresh JWT before expiration
+  useEffect(() => {
+    if (authMode !== "oauth" || !isAuthenticated) return;
+    const interval = setInterval(() => {
+      if (isTokenExpiringSoon()) {
+        refreshAccessToken(settings.server_url);
+      }
+    }, 60_000); // Check every minute
+    return () => clearInterval(interval);
+  }, [authMode, isAuthenticated, isTokenExpiringSoon, refreshAccessToken, settings.server_url]);
+
   // Loading screen while stores initialize
   if (!settingsLoaded || !chatsLoaded) {
     return (
@@ -113,6 +129,15 @@ export default function App() {
           <span className="text-sm text-text-tertiary">Wiii đang thức dậy...</span>
         </div>
       </div>
+    );
+  }
+
+  // Sprint 157: Show login screen when not authenticated
+  if (!isAuthenticated) {
+    return (
+      <ErrorBoundary>
+        <LoginScreen />
+      </ErrorBoundary>
     );
   }
 

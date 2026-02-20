@@ -96,6 +96,8 @@ class ProductSearchConfig(BaseModel):
     browser_screenshot_quality: int = 40
     enable_network_interception: bool = True
     network_interception_max_response_size: int = 5_000_000
+    enable_auto_group_discovery: bool = False
+    auto_group_max_groups: int = 3
 
 
 class ThinkingConfig(BaseModel):
@@ -169,6 +171,14 @@ class Settings(BaseSettings):
     jwt_secret_key: str = Field(default="change-me-in-production", description="JWT secret key")
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
     jwt_expire_minutes: int = Field(default=30, description="JWT token expiration in minutes")
+
+    # Google OAuth (Sprint 157: Đăng Nhập)
+    enable_google_oauth: bool = Field(default=False, description="Enable Google OAuth login")
+    google_oauth_client_id: Optional[str] = Field(default=None, description="Google OAuth 2.0 client ID")
+    google_oauth_client_secret: Optional[str] = Field(default=None, description="Google OAuth 2.0 client secret")
+    oauth_redirect_base_url: Optional[str] = Field(default=None, description="Base URL for OAuth callbacks (e.g. https://api.wiii.app)")
+    session_secret_key: str = Field(default="change-session-secret-in-production", description="Session middleware secret for OAuth CSRF state")
+    jwt_refresh_expire_days: int = Field(default=30, ge=1, le=365, description="Refresh token expiration in days")
 
     # Rate Limiting
     rate_limit_requests: int = Field(default=100, description="Max requests per window")
@@ -555,6 +565,10 @@ class Settings(BaseSettings):
     enable_network_interception: bool = Field(default=True, description="Intercept GraphQL responses for structured product data")
     network_interception_max_response_size: int = Field(default=5_000_000, ge=100_000, le=50_000_000, description="Skip responses larger than this (bytes)")
 
+    # Auto Group Discovery (Sprint 157)
+    enable_auto_group_discovery: bool = Field(default=False, description="Auto-discover and search FB groups by product category")
+    facebook_auto_group_max_groups: int = Field(default=3, ge=1, le=5, description="Max groups to auto-search per query")
+
     # OAuth skeleton
     enable_oauth_token_store: bool = Field(default=False, description="Enable OAuth token store")
     oauth_encryption_key: Optional[str] = Field(default=None, description="Fernet encryption key for OAuth tokens")
@@ -860,6 +874,30 @@ class Settings(BaseSettings):
                 _config_logger.warning(
                     "facebook_group in product_search_platforms requires enable_facebook_cookie=True — group search disabled"
                 )
+        # Sprint 157: Auto group discovery requires browser + cookie + facebook_group
+        if self.enable_auto_group_discovery:
+            if not self.enable_browser_scraping:
+                _config_logger.warning(
+                    "enable_auto_group_discovery=True requires enable_browser_scraping=True"
+                )
+            if not self.enable_facebook_cookie:
+                _config_logger.warning(
+                    "enable_auto_group_discovery=True requires enable_facebook_cookie=True"
+                )
+            if "facebook_group" not in self.product_search_platforms:
+                _config_logger.warning(
+                    "enable_auto_group_discovery=True but 'facebook_group' not in product_search_platforms"
+                )
+        # Sprint 157: Google OAuth validation
+        if self.enable_google_oauth:
+            if not self.google_oauth_client_id or not self.google_oauth_client_secret:
+                _config_logger.warning(
+                    "enable_google_oauth=True but google_oauth_client_id/secret not set — OAuth will not work"
+                )
+            if self.session_secret_key == "change-session-secret-in-production" and self.environment == "production":
+                _config_logger.warning(
+                    "session_secret_key is default in production — OAuth CSRF protection weakened"
+                )
         # Sprint 155: LMS integration without webhook secret
         if self.enable_lms_integration and not self.lms_webhook_secret:
             _config_logger.warning(
@@ -946,6 +984,8 @@ class Settings(BaseSettings):
             browser_screenshot_quality=self.browser_screenshot_quality,
             enable_network_interception=self.enable_network_interception,
             network_interception_max_response_size=self.network_interception_max_response_size,
+            enable_auto_group_discovery=self.enable_auto_group_discovery,
+            auto_group_max_groups=self.facebook_auto_group_max_groups,
         ))
         object.__setattr__(self, "thinking", ThinkingConfig(
             enabled=self.thinking_enabled,

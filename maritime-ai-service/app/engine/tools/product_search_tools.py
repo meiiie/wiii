@@ -215,6 +215,95 @@ def _build_platform_tool(adapter, circuit_breaker):
     )
 
 
+def _build_auto_group_search_tool(circuit_breaker):
+    """Build composite tool that auto-discovers and searches Facebook groups.
+
+    Sprint 157: Searches 2-3 popular groups based on product category,
+    without requiring the user to name specific groups.
+    """
+
+    def facebook_groups_auto_tool(query: str, max_groups: int = 3) -> str:
+        """Auto-discover and search relevant Facebook Groups for a product.
+
+        Args:
+            query: Product search query (e.g., "MacBook M4 Pro 24GB")
+            max_groups: Maximum groups to search (default 3, max 5)
+        """
+        max_groups = max(1, min(max_groups, 5))
+
+        # 1. Get groups from catalog
+        from app.engine.search_platforms.facebook_group_catalog import (
+            get_groups_for_query,
+            discover_groups_via_serper,
+        )
+        groups = get_groups_for_query(query, max_groups)
+
+        # 2. Fallback: Serper discovery if catalog misses
+        if not groups:
+            groups = discover_groups_via_serper(query, max_groups)
+
+        if not groups:
+            return json.dumps(
+                {"error": "Không tìm thấy nhóm Facebook phù hợp", "platform": "Facebook Groups (auto)"},
+                ensure_ascii=False,
+            )
+
+        # 3. Get facebook_group adapter from registry
+        from app.engine.search_platforms import get_search_platform_registry
+        adapter = get_search_platform_registry().get("facebook_group")
+        if not adapter:
+            return json.dumps(
+                {"error": "Facebook Group adapter not available", "platform": "Facebook Groups (auto)"},
+                ensure_ascii=False,
+            )
+
+        # 4. Search each group sequentially (Playwright single-threaded)
+        all_results = []
+        groups_searched = []
+        for g in groups:
+            if circuit_breaker.is_open("facebook_group"):
+                logger.info("[AUTO_GROUP] Circuit breaker open — stopping group search")
+                break
+            try:
+                group_ref = g.get("url") or g["name"]
+                results = adapter.search_group_sync(group_ref, query, max_results=10)
+                circuit_breaker.record_success("facebook_group")
+                groups_searched.append(g["name"])
+                all_results.extend([r.to_dict() for r in results])
+                logger.info(
+                    "[AUTO_GROUP] Found %d results in '%s'",
+                    len(results), g["name"],
+                )
+            except Exception as e:
+                circuit_breaker.record_failure("facebook_group")
+                logger.warning("[AUTO_GROUP] Failed to search '%s': %s", g["name"], e)
+
+        logger.info(
+            "[AUTO_GROUP] Searched %d groups for '%s', total %d results",
+            len(groups_searched), query[:50], len(all_results),
+        )
+
+        return json.dumps(
+            {
+                "platform": "Facebook Groups (auto)",
+                "groups_searched": groups_searched,
+                "results": all_results,
+                "count": len(all_results),
+            },
+            ensure_ascii=False,
+        )
+
+    return StructuredTool.from_function(
+        func=facebook_groups_auto_tool,
+        name="tool_search_facebook_groups_auto",
+        description=(
+            "Tu dong tim san pham trong cac nhom Facebook pho bien. "
+            "Khong can biet ten nhom — tool se tu xac dinh nhom phu hop voi loai san pham. "
+            "Rat tot cho hang cu, second-hand, deal tot. YEU CAU cookie dang nhap Facebook."
+        ),
+    )
+
+
 def _build_group_search_tool(adapter, circuit_breaker):
     """Build custom tool for Facebook Group search with different signature.
 
@@ -517,6 +606,13 @@ def init_product_search_tools():
             else:
                 t = _build_platform_tool(adapter, _circuit_breaker)
             _generated_tools.append(t)
+
+        # Sprint 157: Auto group discovery tool
+        enabled = set(settings.product_search_platforms)
+        if settings.enable_auto_group_discovery and "facebook_group" in enabled:
+            auto_tool = _build_auto_group_search_tool(_circuit_breaker)
+            _generated_tools.append(auto_tool)
+            logger.info("Auto group discovery tool registered")
 
         if _generated_tools:
             logger.info(

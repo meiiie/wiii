@@ -109,6 +109,24 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   getAuthHeaders: () => {
     const { settings } = get();
     const headers: Record<string, string> = {};
+
+    // Sprint 157: Try OAuth JWT first, fallback to API key
+    try {
+      const { useAuthStore } = require("@/stores/auth-store");
+      const authState = useAuthStore.getState();
+      if (authState.authMode === "oauth" && authState.tokens?.access_token) {
+        headers["Authorization"] = `Bearer ${authState.tokens.access_token}`;
+        // Sprint 156: Include org ID when not personal workspace
+        if (settings.organization_id && settings.organization_id !== "personal") {
+          headers["X-Organization-ID"] = settings.organization_id;
+        }
+        return headers;
+      }
+    } catch {
+      // auth-store not available — use legacy mode
+    }
+
+    // Legacy API key mode
     if (settings.api_key) headers["X-API-Key"] = settings.api_key;
     headers["X-User-ID"] = settings.user_id;
     headers["X-Role"] = settings.user_role;

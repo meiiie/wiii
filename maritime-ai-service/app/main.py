@@ -387,6 +387,11 @@ def create_application() -> FastAPI:
         expose_headers=["*"],
     )
 
+    # Sprint 157: Session middleware for OAuth CSRF state (must be before auth routes)
+    if settings.enable_google_oauth:
+        from starlette.middleware.sessions import SessionMiddleware
+        app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
+
     # Request-ID correlation middleware (SOTA 2026)
     from app.core.middleware import RequestIDMiddleware, OrgContextMiddleware
     app.add_middleware(OrgContextMiddleware)  # Sprint 24: Multi-Tenant org context

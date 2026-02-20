@@ -56,6 +56,14 @@ try:
 except Exception:
     pass
 
+# Sprint 157: Google OAuth routes (config-gated)
+try:
+    if getattr(settings, "enable_google_oauth", False):
+        from app.auth.google_oauth import router as auth_router
+        router.include_router(auth_router)
+except Exception:
+    pass
+
 
 @router.get("/")
 async def api_v1_root():

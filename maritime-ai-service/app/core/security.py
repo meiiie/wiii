@@ -30,6 +30,11 @@ class TokenPayload(BaseModel):
     iat: datetime  # Issued at
     type: str = "access"  # Token type
     role: Optional[str] = None  # Sprint 28: role from JWT (prevents X-Role override)
+    # Sprint 157: OAuth-issued tokens include extra claims
+    email: Optional[str] = None
+    name: Optional[str] = None
+    auth_method: Optional[str] = None  # "google", "lti", "api_key"
+    iss: Optional[str] = None  # "wiii" for OAuth-issued tokens
 
 
 class AuthenticatedUser(BaseModel):
@@ -191,9 +196,11 @@ async def require_auth(
         # Sprint 28 SECURITY: JWT role from token payload, NOT from X-Role header
         # X-Role override is only allowed for API key auth (trusted LMS backend)
         jwt_role = token_payload.role or "student"
+        # Sprint 157: OAuth tokens carry auth_method; legacy tokens default to "jwt"
+        auth_method = token_payload.auth_method or "jwt"
         return AuthenticatedUser(
             user_id=token_payload.sub,
-            auth_method="jwt",
+            auth_method=auth_method,
             role=jwt_role,
             session_id=x_session_id,
             organization_id=x_org_id,
