@@ -1243,6 +1243,7 @@ async def process_with_multi_agent(
         "domain_config": domain_config,
         "thinking_effort": thinking_effort,
         "routing_metadata": None,  # Sprint 103: Initialize for API exposure
+        "organization_id": (context or {}).get("organization_id"),  # Sprint 160
     }
     
     # Run graph with composite thread_id for per-user isolation (Sprint 16)

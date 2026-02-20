@@ -130,7 +130,8 @@ class HybridSearchService:
         self,
         query: str,
         limit: int = 5,
-        domain_id: Optional[str] = None
+        domain_id: Optional[str] = None,
+        org_id: Optional[str] = None
     ) -> List[HybridSearchResult]:
         """
         Perform hybrid search combining dense and sparse results.
@@ -168,8 +169,8 @@ class HybridSearchService:
                 query_embedding = await self._generate_query_embedding(query)
 
                 # Create tasks for parallel execution
-                dense_task = self._dense_repo.search(query_embedding, limit=limit * 2, domain_id=domain_id)
-                sparse_task = self._sparse_repo.search(query, limit=limit * 2, domain_id=domain_id)
+                dense_task = self._dense_repo.search(query_embedding, limit=limit * 2, domain_id=domain_id, org_id=org_id)
+                sparse_task = self._sparse_repo.search(query, limit=limit * 2, domain_id=domain_id, org_id=org_id)
 
                 # Run in parallel
                 results = await asyncio.gather(
@@ -210,7 +211,8 @@ class HybridSearchService:
                 dense_results = await self._dense_repo.search(
                     query_embedding,
                     limit=limit * 2,
-                    domain_id=domain_id
+                    domain_id=domain_id,
+                    org_id=org_id
                 )
                 logger.info("Dense search returned %d results", len(dense_results))
                 search_method = "dense_only"
@@ -223,7 +225,8 @@ class HybridSearchService:
                 sparse_results = await self._sparse_repo.search(
                     query,
                     limit=limit * 2,
-                    domain_id=domain_id
+                    domain_id=domain_id,
+                    org_id=org_id
                 )
                 logger.info("Sparse search returned %d results", len(sparse_results))
                 search_method = "sparse_only"

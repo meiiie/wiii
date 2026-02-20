@@ -71,6 +71,11 @@ class FactRepositoryMixin:
 
         try:
             with self._session_factory() as session:
+                # Sprint 160: Org-scoped filtering
+                from app.core.org_filter import get_effective_org_id, org_where_clause
+                eff_org_id = get_effective_org_id()
+                org_filter = org_where_clause(eff_org_id)
+
                 if deduplicate:
                     # Sprint 85: SQL-level dedup with DISTINCT ON — reduces network
                     # transfer by ~66% vs fetching 3x rows and deduplicating in Python
@@ -88,6 +93,7 @@ class FactRepositoryMixin:
                         FROM {self.TABLE_NAME}
                         WHERE user_id = :user_id
                           AND memory_type = :memory_type
+                          {org_filter}
                         ORDER BY metadata->>'fact_type', created_at DESC
                     """)
                 else:
@@ -105,6 +111,7 @@ class FactRepositoryMixin:
                         FROM {self.TABLE_NAME}
                         WHERE user_id = :user_id
                           AND memory_type = :memory_type
+                          {org_filter}
                         ORDER BY importance DESC, created_at DESC
                         LIMIT :limit
                     """)
@@ -113,6 +120,8 @@ class FactRepositoryMixin:
                     "user_id": user_id,
                     "memory_type": MemoryType.USER_FACT.value,
                 }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
                 if not deduplicate:
                     params["limit"] = limit
 
@@ -222,6 +231,11 @@ class FactRepositoryMixin:
 
         try:
             with self._session_factory() as session:
+                # Sprint 160: Org-scoped filtering
+                from app.core.org_filter import get_effective_org_id, org_where_clause
+                eff_org_id = get_effective_org_id()
+                org_filter = org_where_clause(eff_org_id)
+
                 query = text(f"""
                     SELECT
                         id,
@@ -238,17 +252,22 @@ class FactRepositoryMixin:
                       AND memory_type = :memory_type
                       AND embedding IS NOT NULL
                       AND 1 - (embedding <=> CAST(:embedding AS vector)) >= :min_similarity
+                      {org_filter}
                     ORDER BY similarity DESC
                     LIMIT :fetch_limit
                 """)
 
-                result = session.execute(query, {
+                search_params = {
                     "user_id": user_id,
                     "memory_type": MemoryType.USER_FACT.value,
                     "embedding": str(query_embedding),
                     "min_similarity": min_similarity,
                     "fetch_limit": limit * 3,  # Fetch extra for re-ranking
-                })
+                }
+                if eff_org_id is not None:
+                    search_params["org_id"] = eff_org_id
+
+                result = session.execute(query, search_params)
 
                 rows = result.fetchall()
 
@@ -356,6 +375,11 @@ class FactRepositoryMixin:
 
         try:
             with self._session_factory() as session:
+                # Sprint 160: Org-scoped filtering
+                from app.core.org_filter import get_effective_org_id, org_where_clause
+                eff_org_id = get_effective_org_id()
+                org_filter = org_where_clause(eff_org_id)
+
                 query = text(f"""
                     SELECT
                         id,
@@ -368,13 +392,18 @@ class FactRepositoryMixin:
                     FROM {self.TABLE_NAME}
                     WHERE user_id = :user_id
                       AND memory_type = :memory_type
+                      {org_filter}
                     ORDER BY created_at DESC
                 """)
 
-                result = session.execute(query, {
+                get_all_params = {
                     "user_id": user_id,
-                    "memory_type": MemoryType.USER_FACT.value
-                })
+                    "memory_type": MemoryType.USER_FACT.value,
+                }
+                if eff_org_id is not None:
+                    get_all_params["org_id"] = eff_org_id
+
+                result = session.execute(query, get_all_params)
 
                 rows = result.fetchall()
 

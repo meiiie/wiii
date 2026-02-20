@@ -110,11 +110,15 @@ class SemanticMemoryRepository(
                 embedding_str = self._format_embedding(memory.embedding)
                 metadata_json = json.dumps(memory.metadata)
 
+                # Sprint 160: Include organization_id for multi-tenant isolation
+                from app.core.org_filter import get_effective_org_id
+                eff_org_id = get_effective_org_id()
+
                 query = text(f"""
                     INSERT INTO {self.TABLE_NAME}
-                    (user_id, content, embedding, memory_type, importance, metadata, session_id)
+                    (user_id, content, embedding, memory_type, importance, metadata, session_id, organization_id)
                     VALUES
-                    (:user_id, :content, CAST(:embedding AS vector), :memory_type, :importance, CAST(:metadata AS jsonb), :session_id)
+                    (:user_id, :content, CAST(:embedding AS vector), :memory_type, :importance, CAST(:metadata AS jsonb), :session_id, :org_id)
                     RETURNING id, user_id, content, memory_type, importance, metadata, session_id, created_at, updated_at
                 """)
 
@@ -125,7 +129,8 @@ class SemanticMemoryRepository(
                     "memory_type": memory.memory_type.value,
                     "importance": memory.importance,
                     "metadata": metadata_json,
-                    "session_id": memory.session_id
+                    "session_id": memory.session_id,
+                    "org_id": eff_org_id,
                 })
 
                 row = result.fetchone()
@@ -406,6 +411,13 @@ class SemanticMemoryRepository(
                     session_filter = "AND session_id = :session_id"
                     params["session_id"] = session_id
 
+                # Sprint 160: Org-scoped filtering
+                from app.core.org_filter import get_effective_org_id, org_where_clause
+                eff_org_id = get_effective_org_id()
+                org_filter = org_where_clause(eff_org_id)
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 query = text(f"""
                     SELECT
                         id,
@@ -419,6 +431,7 @@ class SemanticMemoryRepository(
                     WHERE user_id = :user_id
                       AND memory_type = :memory_type
                       {session_filter}
+                      {org_filter}
                     ORDER BY created_at DESC
                     LIMIT :limit
                 """)

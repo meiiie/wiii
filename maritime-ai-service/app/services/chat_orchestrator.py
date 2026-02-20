@@ -210,6 +210,9 @@ class ChatOrchestrator:
             session_id=session_id,
             user_name=session.user_name
         )
+
+        # Sprint 160: Thread org_id into ChatContext for data isolation
+        context.organization_id = org_id
         
         # Update session with extracted user name
         if not session.user_name:
@@ -451,6 +454,8 @@ class ChatOrchestrator:
             "recent_phrases": session.state.recent_phrases,
             # Sprint 115: Emotional state mood hint
             "mood_hint": getattr(context, 'mood_hint', "") or "",
+            # Sprint 160: Multi-Tenant Data Isolation
+            "organization_id": getattr(context, 'organization_id', None),
         }
 
         # Use domain_id from Stage 0 (falls back to config default)

@@ -66,6 +66,9 @@ class ChatContext:
     # Sprint 115: Emotional state mood hint
     mood_hint: str = ""
 
+    # Sprint 160: Multi-Tenant Data Isolation
+    organization_id: Optional[str] = None
+
     # Analysis Context
     conversation_analysis: Any = None  # ConversationContext
 

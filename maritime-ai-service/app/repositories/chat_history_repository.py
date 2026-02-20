@@ -224,11 +224,14 @@ class ChatHistoryRepository:
                 if self._use_new_schema:
                     # Use CHỈ THỊ SỐ 04 schema (chat_history table)
                     from sqlalchemy import text
+                    # Sprint 160: Org-scoped insert
+                    from app.core.org_filter import get_effective_org_id
+                    eff_org_id = get_effective_org_id()
                     msg_id = uuid4()
                     session.execute(
                         text("""
-                            INSERT INTO chat_history (id, user_id, session_id, role, content, is_blocked, block_reason)
-                            VALUES (:id, :user_id, :session_id, :role, :content, :is_blocked, :block_reason)
+                            INSERT INTO chat_history (id, user_id, session_id, role, content, is_blocked, block_reason, organization_id)
+                            VALUES (:id, :user_id, :session_id, :role, :content, :is_blocked, :block_reason, :org_id)
                         """),
                         {
                             "id": str(msg_id),
@@ -237,7 +240,8 @@ class ChatHistoryRepository:
                             "role": role,
                             "content": content,
                             "is_blocked": is_blocked,
-                            "block_reason": block_reason
+                            "block_reason": block_reason,
+                            "org_id": eff_org_id,
                         }
                     )
                     session.commit()
@@ -334,16 +338,25 @@ class ChatHistoryRepository:
                     # CHỈ THỊ SỐ 22: Filter blocked messages by default
                     blocked_filter = "" if include_blocked else "AND (is_blocked = FALSE OR is_blocked IS NULL)"
 
+                    # Sprint 160: Org-scoped filtering
+                    from app.core.org_filter import get_effective_org_id, org_where_clause
+                    eff_org_id = get_effective_org_id()
+                    org_filter = org_where_clause(eff_org_id)
+                    query_params = {"query_value": query_value, "limit": limit}
+                    if eff_org_id is not None:
+                        query_params["org_id"] = eff_org_id
+
                     result = session.execute(
                         text(f"""
                             SELECT id, user_id, session_id, role, content, created_at,
                                    COALESCE(is_blocked, FALSE) as is_blocked, block_reason
                             FROM chat_history
                             WHERE {query_field} = :query_value {blocked_filter}
+                            {org_filter}
                             ORDER BY created_at DESC
                             LIMIT :limit
                         """),
-                        {"query_value": query_value, "limit": limit}
+                        query_params
                     )
                     rows = result.fetchall()
 
@@ -488,9 +501,16 @@ class ChatHistoryRepository:
                 if self._use_new_schema:
                     # Delete from chat_history table (CHỈ THỊ SỐ 04)
                     from sqlalchemy import text
+                    # Sprint 160: Org-scoped deletion
+                    from app.core.org_filter import get_effective_org_id, org_where_clause
+                    eff_org_id = get_effective_org_id()
+                    org_filter = org_where_clause(eff_org_id)
+                    del_params = {"user_id": user_id}
+                    if eff_org_id is not None:
+                        del_params["org_id"] = eff_org_id
                     result = session.execute(
-                        text("DELETE FROM chat_history WHERE user_id = :user_id"),
-                        {"user_id": user_id}
+                        text(f"DELETE FROM chat_history WHERE user_id = :user_id{org_filter}"),
+                        del_params
                     )
                     deleted_count = result.rowcount
                     session.commit()

@@ -258,7 +258,8 @@ class SparseSearchRepository:
         self,
         query: str,
         limit: int = 10,
-        domain_id: Optional[str] = None
+        domain_id: Optional[str] = None,
+        org_id: Optional[str] = None
     ) -> List[SparseSearchResult]:
         """
         Search using PostgreSQL full-text search.
@@ -318,6 +319,11 @@ class SparseSearchRepository:
                     sql += f" AND domain_id = ${param_idx}"
                     params.append(domain_id)
                     param_idx += 1
+
+                # Sprint 160: Org-scoped filtering (NULL-aware for shared KB)
+                from app.core.org_filter import org_where_positional
+                sql += org_where_positional(org_id, params, allow_null=True)
+                param_idx = len(params) + 1
 
                 sql += f"""
                     ORDER BY score DESC

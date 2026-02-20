@@ -201,9 +201,12 @@ class CorrectiveRAG:
                 embeddings = get_embeddings()
                 query_embedding = await embeddings.aembed_query(query)
                 
-                # Check cache (user-isolated — Sprint 121 RC-6)
+                # Check cache (user-isolated — Sprint 121 RC-6, org-isolated — Sprint 160)
                 _uid = context.get("user_id", "")
-                cache_result = await self._cache.get(query, query_embedding, user_id=_uid)
+                # Sprint 160: Org-scoped cache key prefix
+                _org = context.get("organization_id") or ""
+                _cache_uid = f"{_org}:{_uid}" if _org else _uid
+                cache_result = await self._cache.get(query, query_embedding, user_id=_cache_uid)
                 
                 if cache_result.hit:
                     logger.info(
@@ -562,13 +565,17 @@ class CorrectiveRAG:
                     "confidence": confidence,
                     "thinking": thinking
                 }
+                # Sprint 160: Org-scoped cache key
+                _cache_org = context.get("organization_id") or ""
+                _cache_uid = context.get("user_id", "")
+                _cache_user = f"{_cache_org}:{_cache_uid}" if _cache_org else _cache_uid
                 await self._cache.set(
                     query=query,
                     embedding=query_embedding,
                     response=cache_data,
                     document_ids=doc_ids,
                     metadata={"iterations": iterations, "was_rewritten": was_rewritten},
-                    user_id=context.get("user_id", ""),
+                    user_id=_cache_user,
                 )
                 logger.info("[CRAG] Response cached (confidence=%.0f%%, docs=%d)", confidence, len(doc_ids))
                 
@@ -618,9 +625,12 @@ class CorrectiveRAG:
             
             if hybrid_search and hybrid_search.is_available():
                 # Direct hybrid search - returns HybridSearchResult with content
+                # Sprint 160: Pass org_id for multi-tenant isolation
+                _org_id = context.get("organization_id")
                 results = await hybrid_search.search(
                     query=query,
-                    limit=10
+                    limit=10,
+                    org_id=_org_id
                 )
                 
                 # Convert to grading format WITH full content

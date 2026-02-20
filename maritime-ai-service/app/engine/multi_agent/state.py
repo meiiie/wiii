@@ -95,4 +95,7 @@ class AgentState(TypedDict, total=False):
     # Sprint 80b: Domain notice — gentle UI indicator when answer is outside active domain
     domain_notice: Optional[str]
 
+    # Sprint 160: Multi-Tenant Data Isolation — org_id threaded through pipeline
+    organization_id: Optional[str]
+
 

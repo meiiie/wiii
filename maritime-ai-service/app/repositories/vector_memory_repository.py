@@ -97,6 +97,13 @@ class VectorMemoryRepositoryMixin:
                     type_filter = "AND memory_type = ANY(:memory_types)"
                     params["memory_types"] = type_values
 
+                # Sprint 160: Org-scoped filtering
+                from app.core.org_filter import get_effective_org_id, org_where_clause
+                eff_org_id = get_effective_org_id()
+                org_filter = org_where_clause(eff_org_id)
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 # Cosine similarity = 1 - cosine distance
                 # pgvector <=> returns cosine distance
                 # Sprint 98: Also fetch last_accessed, access_count for Stanford ranking
@@ -115,6 +122,7 @@ class VectorMemoryRepositoryMixin:
                     WHERE user_id = :user_id
                       AND 1 - (embedding <=> CAST(:embedding AS vector)) >= :threshold
                       {type_filter}
+                      {org_filter}
                     ORDER BY embedding <=> CAST(:embedding AS vector)
                     LIMIT :limit
                 """)
