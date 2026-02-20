@@ -94,6 +94,8 @@ class ProductSearchConfig(BaseModel):
     browser_scraping_timeout: int = 15
     enable_browser_screenshots: bool = False
     browser_screenshot_quality: int = 40
+    enable_network_interception: bool = True
+    network_interception_max_response_size: int = 5_000_000
 
 
 class ThinkingConfig(BaseModel):
@@ -128,6 +130,15 @@ class CacheConfig(BaseModel):
     retrieval_ttl: int = 1800
     max_entries: int = 10000
     adaptive_ttl: bool = True
+
+
+class LMSIntegrationConfig(BaseModel):
+    """LMS integration — Spring Boot LMS webhook + API (Sprint 155)."""
+    enabled: bool = False
+    base_url: Optional[str] = None
+    service_token: Optional[str] = None
+    webhook_secret: Optional[str] = None
+    api_timeout: int = 10
 
 
 class Settings(BaseSettings):
@@ -189,6 +200,17 @@ class Settings(BaseSettings):
     lms_callback_url: Optional[str] = Field(default=None, description="LMS callback URL for AI events")
     lms_callback_secret: Optional[str] = Field(default=None, description="Shared secret for callback authentication")
 
+    # LMS Integration (Sprint 155: Cầu Nối — inbound from LMS)
+    enable_lms_integration: bool = Field(default=False, description="Enable LMS webhook + API integration")
+    lms_base_url: Optional[str] = Field(default=None, description="LMS REST API base URL (single-LMS compat)")
+    lms_service_token: Optional[str] = Field(default=None, description="Service account token for LMS API (single-LMS compat)")
+    lms_webhook_secret: Optional[str] = Field(default=None, description="HMAC-SHA256 secret for incoming webhooks (single-LMS compat)")
+    lms_api_timeout: int = Field(default=10, ge=3, le=60, description="LMS API call timeout (seconds)")
+    # Sprint 155b: Multi-LMS connector list (JSON array — takes precedence over flat fields above)
+    lms_connectors: str = Field(
+        default="[]",
+        description='JSON list of LMS connectors: [{"id":"maritime-lms","backend_type":"spring_boot","base_url":"...","webhook_secret":"..."}]'
+    )
 
     @property
     def postgres_url(self) -> str:
@@ -521,6 +543,18 @@ class Settings(BaseSettings):
     enable_browser_screenshots: bool = Field(default=False, description="Stream browser screenshots to UI")
     browser_screenshot_quality: int = Field(default=40, description="JPEG quality for screenshots (10-90)")
 
+    # Facebook Cookie Login (Sprint 154)
+    enable_facebook_cookie: bool = Field(default=False, description="Allow Facebook cookie injection for logged-in search")
+
+    # Facebook Group Search (Sprint 155)
+    facebook_group_max_scrolls: int = Field(default=10, ge=3, le=20, description="Max scroll iterations for FB group search")
+    facebook_group_scroll_delay: float = Field(default=2.5, ge=1.0, le=5.0, description="Delay between scrolls in group search (seconds)")
+    facebook_scroll_max_scrolls: int = Field(default=8, ge=3, le=20, description="Max scroll iterations for general FB search (upgraded from 3)")
+
+    # Network Interception (Sprint 156)
+    enable_network_interception: bool = Field(default=True, description="Intercept GraphQL responses for structured product data")
+    network_interception_max_response_size: int = Field(default=5_000_000, ge=100_000, le=50_000_000, description="Skip responses larger than this (bytes)")
+
     # OAuth skeleton
     enable_oauth_token_store: bool = Field(default=False, description="Enable OAuth token store")
     oauth_encryption_key: Optional[str] = Field(default=None, description="Fernet encryption key for OAuth tokens")
@@ -551,6 +585,7 @@ class Settings(BaseSettings):
     thinking: ThinkingConfig = Field(default_factory=ThinkingConfig, exclude=True)
     character: CharacterConfig = Field(default_factory=CharacterConfig, exclude=True)
     cache: CacheConfig = Field(default_factory=CacheConfig, exclude=True)
+    lms: LMSIntegrationConfig = Field(default_factory=LMSIntegrationConfig, exclude=True)
 
     # =========================================================================
     # Field Validators
@@ -815,6 +850,21 @@ class Settings(BaseSettings):
             _config_logger.warning(
                 "enable_oauth_token_store=True but oauth_encryption_key is not set — tokens will not be encrypted"
             )
+        # Sprint 155: Facebook group search requires browser + cookie
+        if "facebook_group" in self.product_search_platforms:
+            if not self.enable_browser_scraping:
+                _config_logger.warning(
+                    "facebook_group in product_search_platforms requires enable_browser_scraping=True — group search disabled"
+                )
+            if not self.enable_facebook_cookie:
+                _config_logger.warning(
+                    "facebook_group in product_search_platforms requires enable_facebook_cookie=True — group search disabled"
+                )
+        # Sprint 155: LMS integration without webhook secret
+        if self.enable_lms_integration and not self.lms_webhook_secret:
+            _config_logger.warning(
+                "enable_lms_integration=True but lms_webhook_secret not set — webhooks will accept unsigned requests"
+            )
         # Sprint 154: Fact retrieval weights must sum to ~1.0
         alpha = self.fact_retrieval_alpha
         beta = self.fact_retrieval_beta
@@ -894,6 +944,8 @@ class Settings(BaseSettings):
             browser_scraping_timeout=self.browser_scraping_timeout,
             enable_browser_screenshots=self.enable_browser_screenshots,
             browser_screenshot_quality=self.browser_screenshot_quality,
+            enable_network_interception=self.enable_network_interception,
+            network_interception_max_response_size=self.network_interception_max_response_size,
         ))
         object.__setattr__(self, "thinking", ThinkingConfig(
             enabled=self.thinking_enabled,
@@ -922,6 +974,13 @@ class Settings(BaseSettings):
             retrieval_ttl=self.cache_retrieval_ttl,
             max_entries=self.cache_max_response_entries,
             adaptive_ttl=self.cache_adaptive_ttl,
+        ))
+        object.__setattr__(self, "lms", LMSIntegrationConfig(
+            enabled=self.enable_lms_integration,
+            base_url=self.lms_base_url,
+            service_token=self.lms_service_token,
+            webhook_secret=self.lms_webhook_secret,
+            api_timeout=self.lms_api_timeout,
         ))
         return self
 

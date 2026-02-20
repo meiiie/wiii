@@ -28,6 +28,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   show_reasoning_trace: false,
   streaming_version: DEFAULT_STREAMING_VERSION,
   thinking_level: "balanced",
+  facebook_cookie: "",  // Sprint 154: Facebook cookie for logged-in search
 };
 
 interface SettingsState {
@@ -111,6 +112,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (settings.api_key) headers["X-API-Key"] = settings.api_key;
     headers["X-User-ID"] = settings.user_id;
     headers["X-Role"] = settings.user_role;
+    // Sprint 156: Include org ID when not personal workspace
+    if (settings.organization_id && settings.organization_id !== "personal") {
+      headers["X-Organization-ID"] = settings.organization_id;
+    }
     return headers;
   },
 }));

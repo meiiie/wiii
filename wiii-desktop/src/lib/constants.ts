@@ -25,3 +25,6 @@ export const MAX_MESSAGE_LENGTH = 10_000;
 
 /** Context info polling interval (ms) — Sprint 80 */
 export const CONTEXT_POLL_INTERVAL = 30_000;
+
+/** Sprint 156: Personal workspace org ID (no multi-tenant) */
+export const PERSONAL_ORG_ID = "personal";

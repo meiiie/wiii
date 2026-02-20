@@ -8,6 +8,7 @@ import { initClient } from "@/api/client";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useDomainStore } from "@/stores/domain-store";
+import { useOrgStore } from "@/stores/org-store";
 import { useContextStore } from "@/stores/context-store";
 import { useCharacterStore } from "@/stores/character-store";
 import { StreamBuffer } from "@/lib/stream-buffer";
@@ -147,7 +148,7 @@ export function useSSEStream() {
         const store = useChatStore.getState();
         // Sprint 147: Think tool — redirect thought content into thinking block
         if (data.content.name === "tool_think") {
-          const thought = data.content.args?.thought || "";
+          const thought = String(data.content.args?.thought || "");
           if (thought) {
             // Sprint 150: Push to thinking buffer instead of direct update
             thinkingNodeRef.current = data.node;
@@ -255,13 +256,23 @@ export function useSSEStream() {
     const activeConv = useChatStore.getState().activeConversation();
     const sessionId = activeConv?.session_id || activeConv?.id || "";
 
+    // Sprint 156: Include org ID when not personal workspace
+    const orgId = useOrgStore.getState().activeOrgId;
     const request = {
       user_id: settings.user_id,
       message: content,
       role: settings.user_role,
       domain_id: domainId,
       session_id: sessionId,
+      organization_id: orgId && orgId !== "personal" ? orgId : undefined,
     };
+
+    // Sprint 154: Pass Facebook cookie as custom header if configured
+    const fbCookie = settings.facebook_cookie;
+    if (fbCookie) {
+      authHeaders["X-Facebook-Cookie"] = fbCookie;
+      initClient(settings.server_url, authHeaders);
+    }
 
     let lastEventId: string | null = null;
     let retryCount = 0;

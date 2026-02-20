@@ -246,7 +246,7 @@ describe("finalizeStream screenshot cleanup", () => {
     });
   });
 
-  it("strips base64 image from screenshot blocks on finalize", () => {
+  it("keeps full image in screenshot blocks on finalize", () => {
     useChatStore.getState().finalizeStream({} as any);
 
     const conv = useChatStore.getState().conversations.find((c) => c.id === "conv-1");
@@ -256,10 +256,9 @@ describe("finalizeStream screenshot cleanup", () => {
     const screenshotBlocks = msg.blocks!.filter((b) => b.type === "screenshot") as ScreenshotBlockData[];
     expect(screenshotBlocks.length).toBe(2);
 
-    // Image data stripped
-    for (const s of screenshotBlocks) {
-      expect(s.image).toBe("");
-    }
+    // Sprint 154: Full images kept permanently
+    expect(screenshotBlocks[0].image).toBe("LARGE_BASE64_DATA");
+    expect(screenshotBlocks[1].image).toBe("MORE_BASE64");
 
     // Metadata preserved
     expect(screenshotBlocks[0].url).toBe("https://fb.com");

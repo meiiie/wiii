@@ -2,13 +2,13 @@
 Facebook Search Adapter — Playwright + LLM Extraction
 
 Sprint 152: "Trinh Duyet Thong Minh"
+Sprint 154: "Dang Nhap Facebook" — cookie login for Groups/Posts search
 
-Scrapes public Facebook Marketplace results using headless Chromium (no login),
-then uses Gemini Flash LLM to extract structured product listings.
+Scrapes Facebook using headless Chromium, then uses Gemini Flash LLM to
+extract structured product listings.
 
-Note: /search/top/ requires login, but /marketplace/search/ is public.
-Legal basis: Meta v. Bright Data (01/2024) — scraping public data without
-login is legal.
+Without cookie: /marketplace/search/ (public, no login required)
+With cookie: /search/posts/?q= (logged-in, Groups + Pages visible)
 
 Fallback: When Playwright not installed or browser fails, falls back to
 existing Serper `site:facebook.com` adapter.
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class FacebookSearchAdapter(PlaywrightLLMAdapter):
-    """Facebook Marketplace via Playwright headless browser + LLM extraction."""
+    """Facebook Marketplace/Posts via Playwright headless browser + LLM extraction."""
 
     def __init__(self, serper_fallback: Optional[SearchPlatformAdapter] = None):
         super().__init__()
@@ -54,20 +54,63 @@ class FacebookSearchAdapter(PlaywrightLLMAdapter):
             max_results_default=20,
         )
 
-    def _build_url(self, query: str, page: int = 1) -> str:
-        """Build Facebook Marketplace search URL.
+    def _get_cookies(self) -> list:
+        """Sprint 154: Read Facebook cookie from per-request ContextVar.
 
-        /marketplace/search/ is public (no login required).
-        /search/top/ requires login — don't use it.
+        Called in the asyncio thread BEFORE ThreadPoolExecutor submission.
+        Returns Playwright cookie dicts or empty list.
         """
+        try:
+            from app.core.config import get_settings
+            if not get_settings().enable_facebook_cookie:
+                return []
+            from app.engine.search_platforms.facebook_context import get_facebook_cookie
+            raw = get_facebook_cookie()
+            if not raw:
+                return []
+            return self._parse_cookie_string(raw)
+        except Exception:
+            return []
+
+    @staticmethod
+    def _parse_cookie_string(cookie_str: str) -> list:
+        """Parse 'name=value; name2=value2' into Playwright cookie dicts."""
+        cookies = []
+        for pair in cookie_str.split(";"):
+            pair = pair.strip()
+            if "=" in pair:
+                name, _, value = pair.partition("=")
+                name = name.strip()
+                value = value.strip()
+                if name:
+                    cookies.append({
+                        "name": name,
+                        "value": value,
+                        "domain": ".facebook.com",
+                        "path": "/",
+                    })
+        return cookies
+
+    def _build_url(self, query: str, page: int = 1) -> str:
+        """Build Facebook search URL.
+
+        Sprint 154: Use /search/posts/ when logged in (cookie present),
+        /marketplace/search/ otherwise (public, no login).
+        """
+        has_cookie = bool(self._get_cookies())
+        if has_cookie:
+            return f"https://www.facebook.com/search/posts/?q={quote_plus(query)}"
         return f"https://www.facebook.com/marketplace/search/?query={quote_plus(query)}"
 
     def _post_navigate(self, page) -> None:
-        """Dismiss Facebook login modal and scroll to load content.
+        """Dismiss Facebook login modal.
 
         Facebook's modern login modal can't be dismissed with Escape key.
         We remove it from the DOM directly so the content behind is visible
         and screenshots show actual product listings.
+
+        Sprint 155: Scrolling moved to _fetch_page_text_with_scroll() —
+        this method now only handles modal dismissal.
         """
         import time
         time.sleep(2)  # Wait for login modal to appear
@@ -103,13 +146,8 @@ class FacebookSearchAdapter(PlaywrightLLMAdapter):
             except Exception:
                 pass
 
-        # Scroll down to load more results
-        for _ in range(3):
-            page.evaluate("window.scrollBy(0, 1000)")
-            time.sleep(1)
-
     def _get_extraction_prompt(self) -> str:
-        return """Analyze this Facebook Marketplace search results page text and extract product listings.
+        return """Analyze this Facebook search results page text and extract product listings.
 
 Return ONLY a JSON array (no markdown, no explanation):
 [
@@ -134,16 +172,58 @@ Page text:
 {text}"""
 
     def search_sync(self, query: str, max_results: int = 20, page: int = 1) -> List[ProductSearchResult]:
-        """Search with Playwright, fallback to Serper on failure."""
+        """Search with Playwright scroll-and-extract, fallback to Serper on failure.
+
+        Sprint 155: Uses _run_fetch_with_scroll for enhanced content extraction.
+        Sprint 156: Network interception — captures GraphQL structured data
+        during scrolling. When >= 3 products intercepted, skips LLM extraction.
+        """
         if not query or not query.strip():
             return []
 
-        # Try Playwright first
+        # Try Playwright with scroll-and-extract
         try:
             from playwright.sync_api import sync_playwright  # noqa: F401 — availability check
-            results = super().search_sync(query, max_results, page)
-            if results:
-                return results
+
+            # Get config
+            try:
+                from app.core.config import get_settings
+                settings = get_settings()
+                max_scrolls = settings.facebook_scroll_max_scrolls
+                use_interception = settings.enable_network_interception
+                max_response_size = settings.network_interception_max_response_size
+            except Exception:
+                max_scrolls = 8
+                use_interception = True
+                max_response_size = 5_000_000
+
+            url = self._build_url(query.strip(), page)
+
+            if use_interception:
+                from app.engine.search_platforms.adapters.browser_base import (
+                    _INTERCEPTION_FALLBACK_THRESHOLD,
+                )
+                dom_text, intercepted = self._run_fetch_with_interception(
+                    url,
+                    max_scrolls=max_scrolls,
+                    max_response_size=max_response_size,
+                )
+                if len(intercepted) >= _INTERCEPTION_FALLBACK_THRESHOLD:
+                    return [
+                        self._map_intercepted_to_result(p)
+                        for p in intercepted[:max_results]
+                    ]
+                # Fallback to LLM on DOM text
+                if dom_text and len(dom_text) >= 100:
+                    results = self._llm_extract(dom_text, max_results)
+                    if results:
+                        return results
+            else:
+                text = self._run_fetch_with_scroll(url, max_scrolls=max_scrolls)
+                if text and len(text) >= 100:
+                    results = self._llm_extract(text, max_results)
+                    if results:
+                        return results
         except ImportError:
             logger.info("[FACEBOOK] Playwright not installed, using Serper fallback")
         except Exception as e:

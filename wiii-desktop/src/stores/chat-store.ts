@@ -73,7 +73,7 @@ interface ChatState {
   loadConversations: () => Promise<void>;
 
   // Actions
-  createConversation: (domainId?: string) => string;
+  createConversation: (domainId?: string, organizationId?: string) => string;
   deleteConversation: (id: string) => void;
   setActiveConversation: (id: string | null) => void;
   renameConversation: (id: string, title: string) => void;
@@ -92,7 +92,7 @@ interface ChatState {
   setStreamingDomainNotice: (notice: string) => void;
   /** Sprint 147: Append bold action text between thinking blocks */
   appendActionText: (text: string, node?: string) => void;
-  /** Sprint 153: Append browser screenshot block */
+  /** Sprint 153: Append browser screenshot block. */
   appendScreenshot: (data: { url: string; image: string; label: string; node?: string }) => void;
   // Sprint 141: ThinkingFlow phase actions
   addOrUpdatePhase: (label: string, node?: string) => void;
@@ -181,13 +181,14 @@ export const useChatStore = create<ChatState>()(
       return conversations.find((c) => c.id === activeConversationId);
     },
 
-    createConversation: (domainId) => {
+    createConversation: (domainId, organizationId) => {
       const id = uuidv4();
       const now = new Date().toISOString();
       const conversation: Conversation = {
         id,
         title: "Cuộc trò chuyện mới",
         domain_id: domainId,
+        organization_id: organizationId || undefined,
         created_at: now,
         updated_at: now,
         messages: [],
@@ -616,12 +617,8 @@ export const useChatStore = create<ChatState>()(
         return block;
       });
 
-      // Sprint 153: Strip base64 image data from screenshot blocks before persisting.
-      const finalBlocks = closedBlocks.map((block) =>
-        block.type === "screenshot"
-          ? { ...block, image: "" }
-          : block
-      );
+      // Sprint 154: Keep full screenshot images (no stripping).
+      // Storage cost is minimal and full images look more professional.
 
       const message: Message = {
         id: uuidv4(),
@@ -633,7 +630,7 @@ export const useChatStore = create<ChatState>()(
         reasoning_trace: metadata?.reasoning_trace,
         suggested_questions: suggestedQuestions,
         tool_calls: streamingToolCalls.length > 0 ? [...streamingToolCalls] : undefined,
-        blocks: finalBlocks.length > 0 ? finalBlocks : undefined,
+        blocks: closedBlocks.length > 0 ? closedBlocks : undefined,
         domain_notice: streamingDomainNotice || undefined,
         metadata: metaAny,
       };

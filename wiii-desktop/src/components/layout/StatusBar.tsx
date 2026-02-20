@@ -6,11 +6,13 @@ import { useDomainStore } from "@/stores/domain-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useContextStore } from "@/stores/context-store";
 import { useUIStore } from "@/stores/ui-store";
+import { useOrgStore } from "@/stores/org-store";
 import { useCharacterStore, MOOD_LABELS, MOOD_EMOJI, MOOD_COLORS } from "@/stores/character-store";
 import { useAvatarState } from "@/hooks/useAvatarState";
 import { motion } from "motion/react";
-import { Anchor, Database } from "lucide-react";
+import { Anchor, Building2, Database } from "lucide-react";
 import { DOMAIN_ICONS } from "@/lib/domain-config";
+import { getOrgDisplayName } from "@/lib/org-config";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import type { ContextStatus } from "@/stores/context-store";
 
@@ -27,8 +29,10 @@ export function StatusBar() {
   const { isStreaming, streamingStep } = useChatStore();
   const { info, status, togglePanel } = useContextStore();
   const toggleCharacterPanel = useUIStore((s) => s.toggleCharacterPanel);
+  const { activeOrg, multiTenantEnabled } = useOrgStore();
   const { mood, moodEnabled } = useCharacterStore();
   const { state: avatarState, mood: avatarMood, soulEmotion } = useAvatarState();
+  const currentOrg = activeOrg();
 
   const Icon = DOMAIN_ICONS[activeDomainId] || Anchor;
   const utilization = info ? Math.round(info.utilization ?? 0) : null;
@@ -38,7 +42,7 @@ export function StatusBar() {
 
   return (
     <div className="flex items-center justify-between h-7 px-3 bg-surface border-t border-border text-xs text-text-tertiary">
-      {/* Left: Wiii presence + Mood + Domain */}
+      {/* Left: Wiii presence + Mood + Org > Domain */}
       <div className="flex items-center gap-1.5">
         <button
           onClick={toggleCharacterPanel}
@@ -56,6 +60,14 @@ export function StatusBar() {
             </span>
           )}
         </button>
+        {/* Sprint 156: Org > Domain breadcrumb */}
+        {multiTenantEnabled && currentOrg && (
+          <>
+            <Building2 size={12} />
+            <span>{getOrgDisplayName(currentOrg)}</span>
+            <span className="text-text-quaternary">&middot;</span>
+          </>
+        )}
         <Icon size={12} />
         <span>{activeDomainId}</span>
       </div>

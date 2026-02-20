@@ -59,6 +59,12 @@ def mock_settings():
     s.enable_telegram = False
     s.enable_multi_tenant = False
     s.enable_oauth_token_store = False
+    s.enable_lms_integration = False
+    s.lms_base_url = None
+    s.lms_service_token = None
+    s.lms_webhook_secret = None
+    s.lms_api_timeout = 10
+    s.lms_connectors = "[]"
     s.thinking_enabled = True
     s.semantic_memory_enabled = True
     s.deep_reasoning_enabled = True

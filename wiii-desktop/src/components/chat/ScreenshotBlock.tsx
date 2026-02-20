@@ -1,6 +1,7 @@
 /**
- * ScreenshotBlock — browser screenshot thumbnail + fullscreen overlay.
+ * ScreenshotBlock — browser screenshot with fullscreen overlay.
  * Sprint 153: "Mắt Thần" — visual transparency during Playwright search.
+ * Sprint 154: Full images kept permanently (no stripping on finalize).
  */
 import { useState } from "react";
 import type { ScreenshotBlockData } from "@/api/types";
@@ -15,10 +16,8 @@ export function ScreenshotBlock({ block }: { block: ScreenshotBlockData }) {
     hostname = block.url;
   }
 
-  const hasImage = !!block.image;
-
-  // Persisted messages have image stripped — show placeholder instead
-  if (!hasImage) {
+  if (!block.image) {
+    // No image — placeholder (shouldn't happen with full image persistence)
     return (
       <div className="screenshot-block screenshot-placeholder">
         <div className="screenshot-header">
@@ -26,12 +25,13 @@ export function ScreenshotBlock({ block }: { block: ScreenshotBlockData }) {
           <span className="screenshot-url">{hostname}</span>
         </div>
         <div className="screenshot-thumbnail-placeholder">
-          Ảnh chụp trình duyệt — chỉ hiển thị trong phiên trực tiếp
+          Ảnh chụp trình duyệt không khả dụng
         </div>
       </div>
     );
   }
 
+  // Full image — clickable expand
   return (
     <>
       <div

@@ -34,6 +34,10 @@ import { formatTokens } from "@/lib/format";
 import { initClient } from "@/api/client";
 import { setTheme } from "@/lib/theme";
 import { fetchPreferences, updatePreferences } from "@/api/preferences";
+import { useOrgStore } from "@/stores/org-store";
+import { useDomainStore } from "@/stores/domain-store";
+import { getOrgDisplayName } from "@/lib/org-config";
+import { PERSONAL_ORG_ID } from "@/lib/constants";
 import type { AppSettings, UserRole, UserPreferences, LearningStyle, DifficultyLevel, PronounStyle } from "@/api/types";
 
 type Tab = "connection" | "user" | "preferences" | "learning" | "memory" | "context";
@@ -93,6 +97,7 @@ export function SettingsPage() {
   const [draft, setDraft] = useState({
     server_url: settings.server_url,
     api_key: settings.api_key,
+    facebook_cookie: settings.facebook_cookie || "",
   });
 
   const handleTestConnection = async () => {
@@ -129,6 +134,7 @@ export function SettingsPage() {
     await updateSettings({
       server_url: draft.server_url,
       api_key: draft.api_key,
+      facebook_cookie: draft.facebook_cookie,
     });
 
     // Re-init client with new settings
@@ -278,6 +284,7 @@ export function SettingsPage() {
             setDraft({
               server_url: "http://localhost:8000",
               api_key: "local-dev-key",
+              facebook_cookie: "",
             });
             setTheme("system");
             setShowResetConfirm(false);
@@ -292,8 +299,8 @@ export function SettingsPage() {
 
 /* ===== Connection Tab ===== */
 interface ConnectionTabProps {
-  draft: { server_url: string; api_key: string };
-  setDraft: (d: { server_url: string; api_key: string }) => void;
+  draft: { server_url: string; api_key: string; facebook_cookie: string };
+  setDraft: (d: { server_url: string; api_key: string; facebook_cookie: string }) => void;
   testStatus: "idle" | "testing" | "success" | "error";
   testMessage: string;
   connStatus: string;
@@ -327,6 +334,17 @@ function ConnectionTab({
           value={draft.api_key}
           onChange={(e) => setDraft({ ...draft, api_key: e.target.value })}
           placeholder="your-api-key"
+          className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
+        />
+      </FieldGroup>
+
+      {/* Sprint 154: Facebook cookie for logged-in search */}
+      <FieldGroup label="Facebook Cookie" hint="Cho phép tìm kiếm trong hội nhóm Facebook. Lấy từ DevTools > Application > Cookies.">
+        <input
+          type="password"
+          value={draft.facebook_cookie}
+          onChange={(e) => setDraft({ ...draft, facebook_cookie: e.target.value })}
+          placeholder="c_user=...; xs=...; datr=..."
           className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
         />
       </FieldGroup>
@@ -388,11 +406,24 @@ interface UserTabProps {
 }
 
 function UserTab({ settings, onUpdate }: UserTabProps) {
+  const { organizations, multiTenantEnabled, activeOrgId, setActiveOrg } = useOrgStore();
+  const { getFilteredDomains, setOrgFilter } = useDomainStore();
+  const { updateSettings } = useSettingsStore();
+  const filteredDomains = getFilteredDomains();
+
   const roles: { value: UserRole; label: string }[] = [
     { value: "student", label: "Sinh viên" },
     { value: "teacher", label: "Giảng viên" },
     { value: "admin", label: "Quản trị viên" },
   ];
+
+  const handleOrgChange = (orgId: string) => {
+    const newOrgId = orgId === PERSONAL_ORG_ID ? null : orgId;
+    setActiveOrg(newOrgId);
+    updateSettings({ organization_id: newOrgId });
+    const org = organizations.find((o) => o.id === orgId);
+    setOrgFilter(org?.allowed_domains ?? []);
+  };
 
   return (
     <div className="space-y-4">
@@ -434,14 +465,46 @@ function UserTab({ settings, onUpdate }: UserTabProps) {
         </div>
       </FieldGroup>
 
+      {/* Sprint 156: Organization selector (only when multi-tenant) */}
+      {multiTenantEnabled && organizations.length > 1 && (
+        <FieldGroup label="Không gian làm việc" hint="Chọn tổ chức bạn thuộc về">
+          <select
+            value={activeOrgId || PERSONAL_ORG_ID}
+            onChange={(e) => handleOrgChange(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
+          >
+            {organizations.map((org) => (
+              <option key={org.id} value={org.id}>
+                {getOrgDisplayName(org)}
+              </option>
+            ))}
+          </select>
+        </FieldGroup>
+      )}
+
+      {/* Domain default — now shows only org-filtered domains */}
       <FieldGroup label="Domain mặc định">
-        <input
-          type="text"
-          value={settings.default_domain}
-          onChange={(e) => onUpdate("default_domain", e.target.value)}
-          placeholder="maritime"
-          className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-        />
+        {filteredDomains.length > 0 ? (
+          <select
+            value={settings.default_domain}
+            onChange={(e) => onUpdate("default_domain", e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
+          >
+            {filteredDomains.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name_vi || d.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            value={settings.default_domain}
+            onChange={(e) => onUpdate("default_domain", e.target.value)}
+            placeholder="maritime"
+            className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
+          />
+        )}
       </FieldGroup>
     </div>
   );

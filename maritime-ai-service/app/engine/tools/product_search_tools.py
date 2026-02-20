@@ -215,6 +215,58 @@ def _build_platform_tool(adapter, circuit_breaker):
     )
 
 
+def _build_group_search_tool(adapter, circuit_breaker):
+    """Build custom tool for Facebook Group search with different signature.
+
+    Sprint 155: Group search needs (group_name_or_url, query, max_results)
+    instead of the standard (query, max_results, page) signature.
+    """
+    config = adapter.get_config()
+    platform_id = config.id
+    display_name = config.display_name
+    tool_desc = adapter.get_tool_description()
+
+    def facebook_group_tool(group_name_or_url: str, query: str, max_results: int = 20) -> str:
+        """Search for products WITHIN a specific Facebook Group.
+
+        Args:
+            group_name_or_url: Group name (e.g., 'Vua 2nd') or full Facebook group URL
+            query: Product search query (e.g., 'MacBook M4 Pro')
+            max_results: Maximum number of results (default 20)
+        """
+        if circuit_breaker.is_open(platform_id):
+            return json.dumps(
+                {"error": f"{display_name} tam thoi khong kha dung, thu lai sau"},
+                ensure_ascii=False,
+            )
+        try:
+            results = adapter.search_group_sync(
+                group_name_or_url, query, min(max_results, _MAX_RESULTS),
+            )
+            circuit_breaker.record_success(platform_id)
+            return json.dumps(
+                {
+                    "platform": display_name,
+                    "group": group_name_or_url,
+                    "results": [r.to_dict() for r in results],
+                    "count": len(results),
+                },
+                ensure_ascii=False,
+            )
+        except Exception as e:
+            circuit_breaker.record_failure(platform_id)
+            return json.dumps(
+                {"error": f"Loi tim kiem {display_name}: {str(e)[:200]}"},
+                ensure_ascii=False,
+            )
+
+    return StructuredTool.from_function(
+        func=facebook_group_tool,
+        name="tool_search_facebook_group",
+        description=tool_desc,
+    )
+
+
 # =============================================================================
 # Static tool definitions (backward compat — used when registry not yet init'd)
 # These are replaced by auto-generated tools after init_product_search_tools()
@@ -458,7 +510,12 @@ def init_product_search_tools():
         # Auto-generate tools from registered adapters
         _generated_tools.clear()
         for adapter in registry.get_all_enabled():
-            t = _build_platform_tool(adapter, _circuit_breaker)
+            config = adapter.get_config()
+            # Sprint 155: Facebook Group uses custom tool builder (different signature)
+            if config.id == "facebook_group":
+                t = _build_group_search_tool(adapter, _circuit_breaker)
+            else:
+                t = _build_platform_tool(adapter, _circuit_breaker)
             _generated_tools.append(t)
 
         if _generated_tools:

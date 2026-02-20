@@ -9,12 +9,16 @@ import { Plus, Trash2, Settings, MessageSquare, Search, Pin, PinOff, Pencil } fr
 import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useDomainStore } from "@/stores/domain-store";
+import { useOrgStore } from "@/stores/org-store";
 import { useToastStore } from "@/stores/toast-store";
 import { ConnectionBadge } from "@/components/common/ConnectionBadge";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
+import { WorkspaceSelector } from "@/components/layout/WorkspaceSelector";
 import { groupConversations, DOMAIN_BADGES } from "@/lib/conversation-groups";
+import { getOrgIcon, getOrgDisplayName } from "@/lib/org-config";
 import { sidebarItemEntry } from "@/lib/animations";
+import { PERSONAL_ORG_ID } from "@/lib/constants";
 import type { Conversation } from "@/api/types";
 
 export function Sidebar() {
@@ -32,6 +36,7 @@ export function Sidebar() {
   } = useChatStore();
   const { sidebarOpen, openSettings } = useUIStore();
   const { activeDomainId } = useDomainStore();
+  const { activeOrgId } = useOrgStore();
   const { addToast } = useToastStore();
 
   // Sprint 85: Debounce search to prevent O(n) filter on every keystroke
@@ -52,7 +57,9 @@ export function Sidebar() {
   // Cleanup debounce on unmount
   useEffect(() => () => clearTimeout(debounceRef.current), []);
 
-  const groups = groupConversations(conversations, searchQuery);
+  // Sprint 156: Filter conversations by active org
+  const orgFilterId = activeOrgId || PERSONAL_ORG_ID;
+  const groups = groupConversations(conversations, searchQuery, orgFilterId);
 
   // Confirm delete state
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -65,13 +72,34 @@ export function Sidebar() {
     }
   };
 
+  // Sprint 156: Create conversation with org context
+  const currentOrg = useOrgStore.getState().activeOrg();
+  const displayName = currentOrg ? getOrgDisplayName(currentOrg) : "Wiii Cá nhân";
+
+  const handleNewChat = () => {
+    const orgId = activeOrgId || undefined;
+    createConversation(activeDomainId, orgId);
+  };
+
   // Collapsed icon-rail mode (48px)
   if (!sidebarOpen) {
+    const CollapsedOrgIcon = getOrgIcon(activeOrgId || PERSONAL_ORG_ID);
+
     return (
       <div className="flex flex-col h-full w-12 bg-surface-secondary border-r border-border items-center py-3 gap-1">
+        {/* Org icon (collapsed) */}
+        <button
+          onClick={() => useUIStore.getState().setSidebarOpen(true)}
+          className="flex items-center justify-center w-9 h-9 rounded-lg text-text-secondary hover:text-text hover:bg-surface-tertiary transition-colors"
+          title={displayName}
+          aria-label="Mở sidebar"
+        >
+          <CollapsedOrgIcon size={18} />
+        </button>
+
         {/* New chat */}
         <button
-          onClick={() => createConversation(activeDomainId)}
+          onClick={handleNewChat}
           className="flex items-center justify-center w-9 h-9 rounded-lg text-text-secondary hover:text-text hover:bg-surface-tertiary transition-colors"
           title="Cuộc trò chuyện mới"
           aria-label="Tạo cuộc trò chuyện mới"
@@ -113,10 +141,15 @@ export function Sidebar() {
   // Full expanded mode (256px)
   return (
     <div className="flex flex-col h-full w-64 bg-surface-secondary border-r border-border">
+      {/* Sprint 156: Workspace selector */}
+      <div className="px-3 pt-3 pb-1">
+        <WorkspaceSelector />
+      </div>
+
       {/* New chat button */}
-      <div className="p-3">
+      <div className="px-3 pb-1">
         <button
-          onClick={() => createConversation(activeDomainId)}
+          onClick={handleNewChat}
           className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-text hover:bg-[var(--surface-tertiary)] active:scale-[0.985] transition-all duration-300 text-sm font-medium"
           aria-label="Tạo cuộc trò chuyện mới"
         >

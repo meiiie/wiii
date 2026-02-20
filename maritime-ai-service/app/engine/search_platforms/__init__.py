@@ -97,6 +97,21 @@ def init_search_platforms() -> SearchPlatformRegistry:
         from app.engine.search_platforms.adapters.websosanh import WebSosanhAdapter
         registry.register(WebSosanhAdapter())
 
+    # --- Facebook Group: browser-only, requires cookie (Sprint 155) ---
+    if "facebook_group" in enabled:
+        if settings.enable_browser_scraping and settings.enable_facebook_cookie:
+            try:
+                from app.engine.search_platforms.adapters.facebook_group import FacebookGroupSearchAdapter
+                # Reuse Serper fallback for non-group FB search
+                serper_fb_fallback = create_facebook_marketplace_adapter()
+                registry.register(FacebookGroupSearchAdapter(serper_fallback=serper_fb_fallback))
+            except ImportError:
+                logger.warning("facebook_group adapter skipped — playwright or dependencies missing")
+        else:
+            logger.info(
+                "facebook_group skipped — requires enable_browser_scraping=True + enable_facebook_cookie=True"
+            )
+
     # --- TikTok Shop: native API with Serper fallback ---
     if "tiktok_shop" in enabled:
         if settings.enable_tiktok_native_api:

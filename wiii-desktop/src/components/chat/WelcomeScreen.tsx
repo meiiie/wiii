@@ -6,6 +6,7 @@
 import { useDomainStore } from "@/stores/domain-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useOrgStore } from "@/stores/org-store";
 import { getGreeting, getWiiiSubtitle } from "@/lib/greeting";
 import { DOMAIN_ICONS } from "@/lib/domain-config";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
@@ -34,6 +35,7 @@ export function WelcomeScreen({ onSendMessage, onCancel }: WelcomeScreenProps) {
   const { activeDomainId } = useDomainStore();
   const { createConversation, activeConversationId } = useChatStore();
   const { settings } = useSettingsStore();
+  const { activeOrgId } = useOrgStore();
 
   const { state: avatarState, mood: avatarMood, soulEmotion } = useAvatarState();
   const greeting = getGreeting(settings.display_name);
@@ -42,7 +44,7 @@ export function WelcomeScreen({ onSendMessage, onCancel }: WelcomeScreenProps) {
 
   const handleSuggestion = (question: string) => {
     if (!activeConversationId) {
-      createConversation(activeDomainId);
+      createConversation(activeDomainId, activeOrgId || undefined);
     }
     onSendMessage(question);
   };

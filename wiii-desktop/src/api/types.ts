@@ -32,6 +32,7 @@ export interface ChatRequest {
   thread_id?: string;
   user_context?: UserContext;
   domain_id?: string;
+  organization_id?: string;
 }
 
 // ===== Chat Response =====
@@ -292,7 +293,7 @@ export interface ScreenshotBlockData {
   type: "screenshot";
   id: string;
   url: string;
-  image: string;       // Base64 JPEG
+  image: string;           // Base64 JPEG — kept permanently
   label: string;
   node?: string;
 }
@@ -322,6 +323,17 @@ export interface DomainSummary {
   description: string;
   skill_count: number;
   keyword_count: number;
+}
+
+// ===== Organization (Sprint 156) =====
+export interface OrganizationSummary {
+  id: string;
+  name: string;
+  display_name?: string;
+  description?: string;
+  allowed_domains: string[];
+  default_domain?: string;
+  is_active: boolean;
 }
 
 // ===== Health =====
@@ -474,6 +486,7 @@ export interface Conversation {
   id: string;
   title: string;
   domain_id?: string;
+  organization_id?: string;
   created_at: string;
   updated_at: string;
   messages: Message[];
@@ -515,6 +528,8 @@ export interface AppSettings {
   user_role: UserRole;
   display_name: string;
   default_domain: string;
+  /** Sprint 156: Active organization ID (null = personal workspace) */
+  organization_id?: string | null;
   theme: "light" | "dark" | "system";
   language: "vi" | "en";
   font_size: "small" | "medium" | "large";
@@ -523,4 +538,6 @@ export interface AppSettings {
   streaming_version: "v1" | "v2" | "v3";
   /** Sprint 140: Thinking level — minimal (status only), balanced (collapsed), detailed (expanded) */
   thinking_level: ThinkingLevel;
+  /** Sprint 154: Facebook cookie for logged-in search (optional) */
+  facebook_cookie?: string;
 }

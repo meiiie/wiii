@@ -321,6 +321,12 @@ async def chat_stream_v3(
         yield "retry: 3000\n\n"
         event_counter = 0
 
+        # Sprint 154: Facebook cookie for logged-in search
+        fb_cookie = request.headers.get("x-facebook-cookie", "")
+        if fb_cookie and settings.enable_facebook_cookie:
+            from app.engine.search_platforms.facebook_context import set_facebook_cookie
+            set_facebook_cookie(fb_cookie)
+
         try:
             # Import Multi-Agent streaming function
             from app.engine.multi_agent.graph import process_with_multi_agent_streaming

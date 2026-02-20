@@ -44,6 +44,7 @@ _TOOL_ACK = {
     "tool_search_lazada": "Đã tìm trên Lazada! Đang tổng hợp...",
     "tool_search_facebook_marketplace": "Đã tìm trên Facebook Marketplace!",
     "tool_search_facebook_search": "Đã tìm trên Facebook! Đang phân tích kết quả...",
+    "tool_search_facebook_group": "Đã tìm trong nhóm Facebook! Đang phân tích kết quả...",
     "tool_search_all_web": "Đã quét web cửa hàng nhỏ! Đang xem giá...",
     "tool_search_instagram_shopping": "Đã tìm trên Instagram!",
     "tool_generate_product_report": "Báo cáo Excel đã được tạo!",
@@ -74,6 +75,7 @@ _SYSTEM_PROMPT = """Bạn là Wiii — trợ lý tìm kiếm sản phẩm thông
 - tool_search_tiktok_shop: Tìm TikTok Shop VN. Hỗ trợ page=1,2,3...
 - tool_search_lazada: Tìm Lazada VN. Hỗ trợ page=1,2,3...
 - tool_search_facebook_marketplace: Tìm Facebook Marketplace VN. Hỗ trợ page=1,2,3...
+- tool_search_facebook_group: Tìm sản phẩm TRONG nhóm Facebook cụ thể. Cần tên nhóm hoặc URL nhóm. Rất hữu ích khi user yêu cầu "tìm trong nhóm Vựa 2nd". YÊU CẦU cookie đăng nhập Facebook.
 - tool_search_all_web: Quét TẤT CẢ web cửa hàng nhỏ, nhà phân phối, B2B (thường rẻ hơn sàn TMĐT!). Hỗ trợ page=1,2,3...
 - tool_search_instagram_shopping: Tìm bài bán hàng trên Instagram VN. Hỗ trợ page=1,2,3...
 - tool_fetch_product_detail: Truy cập URL trang sản phẩm → lấy giá chính xác, specs
@@ -111,6 +113,13 @@ Bạn là chuyên gia tìm kiếm sản phẩm. Mục tiêu: tìm TOÀN DIỆN, 
 - Mỗi tool tìm kiếm hỗ trợ tham số `page` (mặc định 1)
 - Dùng page=2, page=3 để lấy thêm kết quả từ cùng một nguồn
 - Đặc biệt hữu ích với Google Shopping và all_web
+
+### Tìm trong nhóm Facebook:
+- Khi user đề cập nhóm cụ thể (VD: "Vựa 2nd", "Hội mua bán MacBook") → dùng tool_search_facebook_group
+- Truyền tên nhóm vào group_name_or_url, sản phẩm vào query
+- Nhóm FB là nguồn tốt cho hàng cũ, second-hand, deal địa phương
+- Nếu user cho URL nhóm → truyền URL trực tiếp vào group_name_or_url
+- Tool này YÊU CẦU cookie đăng nhập — nếu không có cookie, thông báo user
 
 ### Khi nào DỪNG:
 - Đã tìm ≥ 50 kết quả từ ≥ 3 nguồn khác nhau
@@ -364,7 +373,7 @@ class ProductSearchAgentNode:
                     "node": "product_search_agent",
                 })
 
-                # Sprint 153: Push browser screenshots if available
+                # Sprint 153/155: Push browser screenshots if available
                 if tool_name.startswith("tool_search_facebook") or tool_name.startswith("tool_search_instagram"):
                     try:
                         from app.engine.search_platforms import get_search_platform_registry

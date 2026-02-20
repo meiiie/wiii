@@ -262,6 +262,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.warning("Scheduled task executor startup failed: %s", e)
 
+    # =========================================================================
+    # LMS CONNECTOR BOOTSTRAP (Sprint 155: Cầu Nối)
+    # =========================================================================
+    if settings.enable_lms_integration:
+        try:
+            from app.integrations.lms.loader import bootstrap_lms_connectors
+            lms_count = bootstrap_lms_connectors(settings)
+            logger.info("[OK] LMS integration: %d connector(s) registered", lms_count)
+        except Exception as e:
+            logger.warning("[WARN] LMS connector bootstrap failed: %s", e)
+
     logger.info("[START] %s started successfully", settings.app_name)
 
     yield

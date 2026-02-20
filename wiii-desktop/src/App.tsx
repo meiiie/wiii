@@ -11,6 +11,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useConnectionStore } from "@/stores/connection-store";
 import { useContextStore } from "@/stores/context-store";
 import { useDomainStore } from "@/stores/domain-store";
+import { useOrgStore } from "@/stores/org-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useToastStore } from "@/stores/toast-store";
@@ -30,7 +31,8 @@ export default function App() {
   const { startPolling, stopPolling, setOnReconnect } = useConnectionStore();
   const { startPolling: startContextPolling, stopPolling: stopContextPolling } =
     useContextStore();
-  const { fetchDomains } = useDomainStore();
+  const { fetchDomains, setOrgFilter } = useDomainStore();
+  const { fetchOrganizations, setActiveOrg } = useOrgStore();
   const { loadConversations, isLoaded: chatsLoaded } = useChatStore();
   const { settingsOpen, commandPaletteOpen, closeCommandPalette } = useUIStore();
   const { addToast } = useToastStore();
@@ -53,11 +55,15 @@ export default function App() {
   useEffect(() => {
     if (settings.server_url) {
       // Initialize HTTP client with current settings
-      initClient(settings.server_url, {
+      const headers: Record<string, string> = {
         "X-API-Key": settings.api_key,
         "X-User-ID": settings.user_id,
         "X-Role": settings.user_role,
-      });
+      };
+      if (settings.organization_id && settings.organization_id !== "personal") {
+        headers["X-Organization-ID"] = settings.organization_id;
+      }
+      initClient(settings.server_url, headers);
 
       // Start health check polling
       startPolling();
@@ -67,12 +73,24 @@ export default function App() {
 
       // Fetch available domains
       fetchDomains();
+
+      // Sprint 156: Fetch organizations + restore saved org
+      fetchOrganizations().then(() => {
+        const savedOrgId = settings.organization_id;
+        if (savedOrgId) {
+          setActiveOrg(savedOrgId);
+          const org = useOrgStore.getState().organizations.find((o) => o.id === savedOrgId);
+          if (org) {
+            setOrgFilter(org.allowed_domains);
+          }
+        }
+      });
     }
 
     return () => {
       stopPolling();
     };
-  }, [settings.server_url, settings.api_key, settings.user_id, settings.user_role, startPolling, stopPolling, fetchDomains, setOnReconnect, addToast]);
+  }, [settings.server_url, settings.api_key, settings.user_id, settings.user_role, startPolling, stopPolling, fetchDomains, fetchOrganizations, setActiveOrg, setOrgFilter, setOnReconnect, addToast]);
 
   // Start context polling when active conversation changes (handles mid-session creation)
   const activeConv = useChatStore((s) => s.activeConversation());

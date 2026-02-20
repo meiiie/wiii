@@ -15,9 +15,12 @@ interface DomainSelectorProps {
 }
 
 export function DomainSelector({ compact: _compact }: DomainSelectorProps = {}) {
-  const { activeDomainId, setActiveDomain, domains } = useDomainStore();
+  const { activeDomainId, setActiveDomain, domains, getFilteredDomains } = useDomainStore();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Sprint 156: Use org-filtered domains
+  const filteredDomains = getFilteredDomains();
 
   // Outside-click close
   const handleClickOutside = useCallback(
@@ -54,10 +57,14 @@ export function DomainSelector({ compact: _compact }: DomainSelectorProps = {}) 
     domains.find((d) => d.id === activeDomainId)?.name_vi ||
     activeDomainId;
 
-  // Build list: use fetched domains if available, fallback to hardcoded
+  // Sprint 156: Auto-hide when org has exactly 1 domain
+  if (filteredDomains.length <= 1 && filteredDomains.length > 0) return null;
+
+  // Build list: use org-filtered domains if available, fallback to all domains or hardcoded
+  const sourceList = filteredDomains.length > 0 ? filteredDomains : domains;
   const domainList =
-    domains.length > 0
-      ? domains.map((d) => ({
+    sourceList.length > 0
+      ? sourceList.map((d) => ({
           id: d.id,
           label: d.name_vi || DOMAIN_LABELS[d.id] || d.name,
           Icon: DOMAIN_ICONS[d.id] || Anchor,

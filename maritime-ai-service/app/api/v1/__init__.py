@@ -48,6 +48,14 @@ try:
 except Exception:
     pass  # Fail gracefully if WebSocket setup fails
 
+# Sprint 155: LMS Integration webhook (config-gated)
+try:
+    if getattr(settings, "enable_lms_integration", False):
+        from app.api.v1.lms_webhook import router as lms_router
+        router.include_router(lms_router)
+except Exception:
+    pass
+
 
 @router.get("/")
 async def api_v1_root():

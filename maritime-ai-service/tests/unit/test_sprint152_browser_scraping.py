@@ -282,23 +282,9 @@ class TestFallbackBehavior:
 
         adapter = FacebookSearchAdapter(serper_fallback=mock_fallback)
 
-        with patch.dict("sys.modules", {"playwright": None, "playwright.sync_api": None}):
-            with patch("builtins.__import__", side_effect=lambda name, *args: (
-                (_ for _ in ()).throw(ImportError("no playwright"))
-                if "playwright" in name else __builtins__.__import__(name, *args)
-            )):
-                # Simpler approach: patch the super().search_sync to raise ImportError
-                pass
-
-        # Direct test: simulate Playwright unavailable by calling with mock
-        # The adapter tries `from playwright.sync_api import sync_playwright` which will fail
-        # in test env without playwright installed — but we want deterministic test
-
-        # Use mock to simulate Playwright import failure
-        with patch(
-            "app.engine.search_platforms.adapters.facebook_search.PlaywrightLLMAdapter.search_sync",
-            side_effect=ImportError("no playwright"),
-        ):
+        # Sprint 155: search_sync now calls _run_fetch_with_scroll directly.
+        # Simulate Playwright unavailable via ImportError from the import check.
+        with patch.dict("sys.modules", {"playwright.sync_api": None}):
             results = adapter.search_sync("test query")
 
         mock_fallback.search_sync.assert_called_once_with("test query", 20, 1)
@@ -317,13 +303,10 @@ class TestFallbackBehavior:
 
         adapter = FacebookSearchAdapter(serper_fallback=mock_fallback)
 
-        # Mock playwright import to succeed but super().search_sync to raise
-        with patch(
-            "app.engine.search_platforms.adapters.facebook_search.sync_playwright",
-            create=True,
-        ):
-            with patch(
-                "app.engine.search_platforms.adapters.facebook_search.PlaywrightLLMAdapter.search_sync",
+        # Sprint 155: simulate browser failure via _run_fetch_with_scroll
+        with patch.dict("sys.modules", {"playwright.sync_api": MagicMock()}):
+            with patch.object(
+                adapter, "_run_fetch_with_scroll",
                 side_effect=RuntimeError("Browser crashed"),
             ):
                 results = adapter.search_sync("test query")
@@ -337,10 +320,8 @@ class TestFallbackBehavior:
 
         adapter = FacebookSearchAdapter(serper_fallback=None)
 
-        with patch(
-            "app.engine.search_platforms.adapters.facebook_search.PlaywrightLLMAdapter.search_sync",
-            side_effect=ImportError("no playwright"),
-        ):
+        # Sprint 155: simulate Playwright import failure
+        with patch.dict("sys.modules", {"playwright.sync_api": None}):
             results = adapter.search_sync("test query")
 
         assert results == []

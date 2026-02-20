@@ -16,6 +16,8 @@ import {
 import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useDomainStore } from "@/stores/domain-store";
+import { useOrgStore } from "@/stores/org-store";
 import { setTheme } from "@/lib/theme";
 
 interface CommandItem {
@@ -41,6 +43,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const { conversations, setActiveConversation, createConversation } = useChatStore();
   const { toggleSidebar, openSettings } = useUIStore();
   const theme = useSettingsStore((s) => s.settings.theme);
+  const { activeDomainId } = useDomainStore();
+  const { activeOrgId } = useOrgStore();
 
   // Build items list
   const items = useMemo(() => {
@@ -50,7 +54,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         label: "Cuộc trò chuyện mới",
         description: "Tạo cuộc trò chuyện mới",
         icon: <Plus size={16} />,
-        action: () => { createConversation(); onClose(); },
+        action: () => { createConversation(activeDomainId, activeOrgId || undefined); onClose(); },
         category: "action",
       },
       {
@@ -99,14 +103,16 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     const convItems: CommandItem[] = conversations.map((conv) => ({
       id: `conv-${conv.id}`,
       label: conv.title,
-      description: conv.domain_id ?? undefined,
+      description: conv.organization_id
+        ? `${conv.organization_id} · ${conv.domain_id ?? ""}`
+        : conv.domain_id ?? undefined,
       icon: <MessageSquare size={16} />,
       action: () => { setActiveConversation(conv.id); onClose(); },
       category: "conversation" as const,
     }));
 
     return [...actions, ...convItems];
-  }, [conversations, theme, createConversation, toggleSidebar, openSettings, setActiveConversation, onClose]);
+  }, [conversations, theme, createConversation, toggleSidebar, openSettings, setActiveConversation, onClose, activeDomainId, activeOrgId]);
 
   // Filter by query
   const filtered = useMemo(() => {

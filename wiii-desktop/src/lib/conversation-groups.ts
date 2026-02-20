@@ -40,20 +40,31 @@ function isThisWeek(date: Date): boolean {
 }
 
 /**
- * Group conversations by time + pinned status, optionally filtered by search.
+ * Group conversations by time + pinned status, optionally filtered by search and org.
  *
  * Groups: Ghim (pinned) -> Hom nay -> Hom qua -> Tuan nay -> Cu hon
  * Search: case-insensitive match against title.
+ * Sprint 156: Optional org filter — "personal" shows only convs without org_id.
  */
 export function groupConversations(
   conversations: Conversation[],
-  searchQuery?: string
+  searchQuery?: string,
+  orgFilter?: string | null,
 ): ConversationGroup[] {
-  // Filter by search query
+  // Sprint 156: Filter by organization
   let filtered = conversations;
+  if (orgFilter !== undefined && orgFilter !== null) {
+    if (orgFilter === "personal") {
+      filtered = filtered.filter((c) => !c.organization_id);
+    } else {
+      filtered = filtered.filter((c) => c.organization_id === orgFilter);
+    }
+  }
+
+  // Filter by search query
   if (searchQuery && searchQuery.trim()) {
     const query = searchQuery.trim().toLowerCase();
-    filtered = conversations.filter((c) =>
+    filtered = filtered.filter((c) =>
       c.title.toLowerCase().includes(query)
     );
   }
