@@ -1059,9 +1059,16 @@ def build_multi_agent_graph(checkpointer=None):
     workflow.add_node("direct", direct_response_node)
     workflow.add_node("grader", grader_node)
     workflow.add_node("synthesizer", synthesizer_node)
-    # Sprint 148: Product search agent (feature-gated at supervisor level)
+    # Sprint 148/163: Product search agent (feature-gated at supervisor level)
     if settings.enable_product_search:
-        workflow.add_node("product_search_agent", product_search_node)
+        if settings.enable_subagent_architecture:
+            # Sprint 163: Use parallel subgraph (Send() map-reduce)
+            from app.engine.multi_agent.subagents.search.graph import build_search_subgraph
+            _search_subgraph = build_search_subgraph()
+            workflow.add_node("product_search_agent", _search_subgraph)
+            logger.info("Product search: using SUBGRAPH (parallel Send)")
+        else:
+            workflow.add_node("product_search_agent", product_search_node)
 
     # Set entry point — Guardian validates before routing
     workflow.set_entry_point("guardian")
@@ -1334,9 +1341,13 @@ async def process_with_multi_agent(
 
 # =============================================================================
 # V3 STREAMING: Extracted to graph_streaming.py
-# Re-export for backward compatibility
+# Re-export for backward compatibility (lazy to avoid circular import)
 # =============================================================================
 
-from app.engine.multi_agent.graph_streaming import process_with_multi_agent_streaming  # noqa: F401
+def __getattr__(name):
+    if name == "process_with_multi_agent_streaming":
+        from app.engine.multi_agent.graph_streaming import process_with_multi_agent_streaming
+        return process_with_multi_agent_streaming
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

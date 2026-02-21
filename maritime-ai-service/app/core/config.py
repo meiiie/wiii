@@ -448,6 +448,11 @@ class Settings(BaseSettings):
         description='JSON per-node overrides: {"tutor_agent": {"tier": "moderate", "provider": "google"}}'
     )
 
+    # Subagent Architecture (Sprint 163)
+    enable_subagent_architecture: bool = Field(default=False, description="Enable subagent/subgraph architecture")
+    subagent_default_timeout: int = Field(default=60, ge=10, le=300, description="Default subagent timeout (seconds)")
+    subagent_max_parallel: int = Field(default=5, ge=1, le=10, description="Max parallel subagent executions")
+
     # MCP Support
     enable_mcp_server: bool = Field(default=False, description="Enable MCP Server")
     enable_mcp_client: bool = Field(default=False, description="Enable MCP Client")
