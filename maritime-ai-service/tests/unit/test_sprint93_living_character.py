@@ -445,42 +445,42 @@ class TestCharacterTools:
 class TestPromptIntegration:
     """Test that new identity fields appear in built prompt."""
 
-    def test_quirks_in_prompt(self):
+    def _build_prompt(self, **kwargs):
+        """Build prompt with character state manager mocked to avoid DB connection."""
         from app.prompts.prompt_loader import PromptLoader
         loader = PromptLoader()
-        prompt = loader.build_system_prompt(role="student")
+        with patch(
+            "app.engine.character.character_state.get_character_state_manager"
+        ) as mock_mgr:
+            mock_mgr_inst = MagicMock()
+            mock_mgr_inst.compile_living_state.return_value = ""
+            mock_mgr.return_value = mock_mgr_inst
+            return loader.build_system_prompt(**kwargs)
+
+    def test_quirks_in_prompt(self):
+        prompt = self._build_prompt(role="student")
         assert "NÉT RIÊNG:" in prompt
 
     def test_quirks_tilde_in_prompt(self):
-        from app.prompts.prompt_loader import PromptLoader
-        loader = PromptLoader()
-        prompt = loader.build_system_prompt(role="student")
+        prompt = self._build_prompt(role="student")
         assert "~" in prompt
 
     def test_catchphrases_in_prompt(self):
-        from app.prompts.prompt_loader import PromptLoader
-        loader = PromptLoader()
-        prompt = loader.build_system_prompt(role="student")
+        prompt = self._build_prompt(role="student")
         assert "CÂU CỬA MIỆNG:" in prompt
         assert "Hay quá~" in prompt
 
     def test_opinions_in_prompt(self):
-        from app.prompts.prompt_loader import PromptLoader
-        loader = PromptLoader()
-        prompt = loader.build_system_prompt(role="student")
+        prompt = self._build_prompt(role="student")
         assert "WIII THÍCH:" in prompt
         assert "WIII KHÔNG THÍCH:" in prompt
 
     def test_opinions_loves_content(self):
-        from app.prompts.prompt_loader import PromptLoader
-        loader = PromptLoader()
-        prompt = loader.build_system_prompt(role="student")
+        prompt = self._build_prompt(role="student")
         assert "Rule 2" in prompt  # From opinions.loves
 
     def test_backstory_rich_in_prompt(self):
-        from app.prompts.prompt_loader import PromptLoader
-        loader = PromptLoader()
-        prompt = loader.build_system_prompt(role="student")
+        prompt = self._build_prompt(role="student")
         # The tutor YAML backstory may be different, but identity section
         # injects via personality summary which references backstory indirectly
         assert "Wiii" in prompt
@@ -535,41 +535,41 @@ class TestPromptIntegration:
 class TestBackwardCompatibility:
     """Ensure Sprint 92 features still work after Sprint 93 changes."""
 
-    def test_traits_still_injected(self):
+    def _build_prompt(self, **kwargs):
+        """Build prompt with character state manager mocked to avoid DB hang."""
         from app.prompts.prompt_loader import PromptLoader
         loader = PromptLoader()
-        prompt = loader.build_system_prompt(role="student")
+        with patch(
+            "app.engine.character.character_state.get_character_state_manager"
+        ) as mock_mgr:
+            mock_mgr_inst = MagicMock()
+            mock_mgr_inst.compile_living_state.return_value = ""
+            mock_mgr.return_value = mock_mgr_inst
+            return loader.build_system_prompt(**kwargs)
+
+    def test_traits_still_injected(self):
+        prompt = self._build_prompt(role="student")
         assert "ĐẶC ĐIỂM TÍNH CÁCH:" in prompt
 
     def test_goal_still_injected(self):
-        from app.prompts.prompt_loader import PromptLoader
-        loader = PromptLoader()
-        prompt = loader.build_system_prompt(role="student")
+        prompt = self._build_prompt(role="student")
         assert "MỤC TIÊU:" in prompt
 
     def test_voice_still_injected(self):
-        from app.prompts.prompt_loader import PromptLoader
-        loader = PromptLoader()
-        prompt = loader.build_system_prompt(role="student")
+        prompt = self._build_prompt(role="student")
         assert "GIỌNG:" in prompt
 
     def test_greeting_tone_anchor_first_message(self):
-        from app.prompts.prompt_loader import PromptLoader
-        loader = PromptLoader()
-        prompt = loader.build_system_prompt(role="student", is_follow_up=False)
+        prompt = self._build_prompt(role="student", is_follow_up=False)
         assert "LỜI CHÀO MẪU" in prompt
 
     def test_tools_from_yaml(self):
-        from app.prompts.prompt_loader import PromptLoader
-        loader = PromptLoader()
-        prompt = loader.build_system_prompt(role="student")
+        prompt = self._build_prompt(role="student")
         assert "tool_knowledge_search" in prompt
 
     def test_anchor_at_threshold_turns(self):
         """Sprint 115: anchor threshold 10→6."""
-        from app.prompts.prompt_loader import PromptLoader
-        loader = PromptLoader()
-        prompt = loader.build_system_prompt(role="student", total_responses=6)
+        prompt = self._build_prompt(role="student", total_responses=6)
         assert "PERSONA REMINDER" in prompt
 
     def test_avoid_count_still_7(self):
@@ -609,36 +609,41 @@ class TestCharacterRepositoryUnit:
     def test_create_block_no_db(self):
         from app.engine.character.character_repository import CharacterRepository
         from app.engine.character.models import CharacterBlockCreate
-        repo = CharacterRepository()
-        result = repo.create_block(CharacterBlockCreate(label="test", content="hi"))
+        with patch("app.engine.character.character_repository.CharacterRepository._ensure_initialized"):
+            repo = CharacterRepository()
+            result = repo.create_block(CharacterBlockCreate(label="test", content="hi"))
         assert result is None
 
     def test_update_block_no_db(self):
         from app.engine.character.character_repository import CharacterRepository
         from app.engine.character.models import CharacterBlockUpdate
-        repo = CharacterRepository()
-        result = repo.update_block("test", CharacterBlockUpdate(content="new"))
+        with patch("app.engine.character.character_repository.CharacterRepository._ensure_initialized"):
+            repo = CharacterRepository()
+            result = repo.update_block("test", CharacterBlockUpdate(content="new"))
         assert result is None
 
     def test_log_experience_no_db(self):
         from app.engine.character.character_repository import CharacterRepository
         from app.engine.character.models import CharacterExperienceCreate
-        repo = CharacterRepository()
-        result = repo.log_experience(CharacterExperienceCreate(
-            experience_type="learning", content="test"
-        ))
+        with patch("app.engine.character.character_repository.CharacterRepository._ensure_initialized"):
+            repo = CharacterRepository()
+            result = repo.log_experience(CharacterExperienceCreate(
+                experience_type="learning", content="test"
+            ))
         assert result is None
 
     def test_get_recent_experiences_no_db(self):
         from app.engine.character.character_repository import CharacterRepository
-        repo = CharacterRepository()
-        result = repo.get_recent_experiences()
+        with patch("app.engine.character.character_repository.CharacterRepository._ensure_initialized"):
+            repo = CharacterRepository()
+            result = repo.get_recent_experiences()
         assert result == []
 
     def test_count_experiences_no_db(self):
         from app.engine.character.character_repository import CharacterRepository
-        repo = CharacterRepository()
-        result = repo.count_experiences()
+        with patch("app.engine.character.character_repository.CharacterRepository._ensure_initialized"):
+            repo = CharacterRepository()
+            result = repo.count_experiences()
         assert result == 0
 
     def test_singleton_pattern(self):
@@ -708,6 +713,12 @@ class TestEdgeCases:
         from app.prompts.prompt_loader import PromptLoader
         loader = PromptLoader()
         loader._identity = {}
-        prompt = loader.build_system_prompt(role="student")
+        with patch(
+            "app.engine.character.character_state.get_character_state_manager"
+        ) as mock_mgr:
+            mock_mgr_inst = MagicMock()
+            mock_mgr_inst.compile_living_state.return_value = ""
+            mock_mgr.return_value = mock_mgr_inst
+            prompt = loader.build_system_prompt(role="student")
         assert "Wiii" in prompt  # From agent.name in tutor.yaml
         assert "NÉT RIÊNG:" not in prompt  # No identity quirks

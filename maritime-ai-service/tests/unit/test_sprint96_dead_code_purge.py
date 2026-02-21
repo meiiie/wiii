@@ -88,10 +88,10 @@ class TestAgentTypeCleanup:
         values = _get_enum_values(SUPERVISOR_FILE, "AgentType")
         assert "kg_builder" not in values
 
-    def test_four_agent_types_remain(self):
-        """Exactly 4 agent types: RAG, TUTOR, MEMORY, DIRECT."""
+    def test_five_agent_types_remain(self):
+        """Exactly 5 agent types: RAG, TUTOR, MEMORY, DIRECT, PRODUCT_SEARCH."""
         values = _get_enum_values(SUPERVISOR_FILE, "AgentType")
-        assert values == {"rag_agent", "tutor_agent", "memory_agent", "direct"}
+        assert values == {"rag_agent", "tutor_agent", "memory_agent", "direct", "product_search_agent"}
 
     def test_kg_builder_name_not_in_enum(self):
         """KG_BUILDER name must not exist in enum members."""

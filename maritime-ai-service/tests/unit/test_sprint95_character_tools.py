@@ -183,8 +183,8 @@ class TestTutorNodeWiring:
     """Test character tools wiring in TutorAgentNode.__init__."""
 
     @patch("app.engine.multi_agent.agents.tutor_node.AgentConfigRegistry")
-    def test_default_4_tools(self, mock_acr):
-        """Without character tools enabled, should have 4 tools."""
+    def test_default_6_tools(self, mock_acr):
+        """Without character tools enabled, should have 6 base tools."""
         mock_llm = MagicMock()
         mock_acr.get_llm.return_value = mock_llm
         with patch("app.core.config.settings") as mock_settings:
@@ -195,14 +195,14 @@ class TestTutorNodeWiring:
             mod._tutor_node = None
             try:
                 node = TutorAgentNode()
-                assert len(node._tools) == 4
+                assert len(node._tools) == 6
                 assert node._character_tools_enabled is False
             finally:
                 mod._tutor_node = old
 
     @patch("app.engine.multi_agent.agents.tutor_node.AgentConfigRegistry")
-    def test_7_tools_when_enabled(self, mock_acr):
-        """With character tools enabled, should have 7 tools (4 base + 3 character, Sprint 97)."""
+    def test_9_tools_when_enabled(self, mock_acr):
+        """With character tools enabled, should have 9 tools (6 base + 3 character, Sprint 97)."""
         mock_llm = MagicMock()
         mock_acr.get_llm.return_value = mock_llm
         with patch("app.core.config.settings") as mock_settings:
@@ -213,7 +213,7 @@ class TestTutorNodeWiring:
             mod._tutor_node = None
             try:
                 node = TutorAgentNode()
-                assert len(node._tools) == 7
+                assert len(node._tools) == 9
                 assert node._character_tools_enabled is True
                 tool_names = [getattr(t, 'name', getattr(t, '__name__', '')) for t in node._tools]
                 assert "tool_character_note" in tool_names
@@ -236,7 +236,7 @@ class TestTutorNodeWiring:
                 mod._tutor_node = None
                 try:
                     node = TutorAgentNode()
-                    assert len(node._tools) == 4
+                    assert len(node._tools) == 6
                     assert node._character_tools_enabled is False
                 finally:
                     mod._tutor_node = old

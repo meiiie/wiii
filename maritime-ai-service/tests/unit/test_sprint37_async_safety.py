@@ -121,7 +121,7 @@ class TestWebSearchCircuitBreakerThreadSafety:
 
         # Should have recorded all failures without corruption
         with ws_mod._cb_lock:
-            assert ws_mod._failure_count == 10
+            assert ws_mod._cb_states.get("default", {}).get("failures", 0) == 10
 
         # Reset
         _cb_record_success()

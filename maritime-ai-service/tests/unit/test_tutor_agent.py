@@ -75,15 +75,15 @@ class TestToolInstruction:
 # =============================================================================
 
 class TestToolBinding:
-    def test_tutor_has_7_tools(self):
-        """TutorAgentNode should bind 7 tools: 4 base + 3 character (Sprint 97: defaults on)."""
+    def test_tutor_has_9_tools(self):
+        """TutorAgentNode should bind 9 tools: 6 base + 3 character (Sprint 97: defaults on)."""
         with patch.object(AgentConfigRegistry, "get_llm", return_value=MagicMock()):
             from app.engine.multi_agent.agents.tutor_node import TutorAgentNode
             # Reset singleton
             import app.engine.multi_agent.agents.tutor_node as mod
             mod._tutor_node = None
             node = TutorAgentNode()
-        assert len(node._tools) == 7
+        assert len(node._tools) == 9
 
     def test_tutor_tools_have_names(self):
         with patch.object(AgentConfigRegistry, "get_llm", return_value=MagicMock()):

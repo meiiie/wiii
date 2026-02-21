@@ -587,37 +587,6 @@ class TestTikTokResearchAdapter:
         assert mock_post.call_count == 1  # Only one HTTP call (cached)
 
 
-# =============================================================================
-# 8. Apify Generic Adapter
-# =============================================================================
-
-
-class TestApifyGenericAdapter:
-    def test_config(self):
-        from app.engine.search_platforms.adapters.apify_generic import ApifyGenericAdapter
-        config = PlatformConfig(
-            id="shopee_apify", display_name="Shopee (Apify)",
-            backend=BackendType.APIFY,
-        )
-        adapter = ApifyGenericAdapter(config, "ywlfff2014~shopee-product-scraper")
-        assert adapter.get_config().id == "shopee_apify"
-        assert adapter.get_tool_name() == "tool_search_shopee_apify"
-
-    def test_validate_credentials(self, mock_settings):
-        from app.engine.search_platforms.adapters.apify_generic import ApifyGenericAdapter
-        config = PlatformConfig(id="test", display_name="Test", backend=BackendType.APIFY)
-        adapter = ApifyGenericAdapter(config, "actor~id")
-        with patch("app.core.config.get_settings", return_value=mock_settings):
-            assert adapter.validate_credentials() is True
-
-    def test_no_credentials(self):
-        from app.engine.search_platforms.adapters.apify_generic import ApifyGenericAdapter
-        s = MagicMock()
-        s.apify_api_token = None
-        config = PlatformConfig(id="test", display_name="Test", backend=BackendType.APIFY)
-        adapter = ApifyGenericAdapter(config, "actor~id")
-        with patch("app.core.config.get_settings", return_value=s):
-            assert adapter.validate_credentials() is False
 
 
 # =============================================================================

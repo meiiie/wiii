@@ -16,8 +16,8 @@ import app.engine.tools.web_search_tools as ws
 
 def _reset_cb():
     """Reset circuit breaker state."""
-    ws._failure_count = 0
-    ws._last_failure_time = 0.0
+    with ws._cb_lock:
+        ws._cb_states.clear()
 
 
 class TestCircuitBreaker:
@@ -52,22 +52,25 @@ class TestCircuitBreaker:
         assert ws._cb_is_open() is True
 
         # Simulate time passing beyond recovery window
-        ws._last_failure_time = time.time() - ws._CB_RECOVERY_SECONDS - 1
+        with ws._cb_lock:
+            ws._cb_states["default"]["last_failure"] = time.time() - ws._CB_RECOVERY_SECONDS - 1
         assert ws._cb_is_open() is False
 
     def test_success_resets_counter(self):
         """Successful search resets failure count."""
         ws._cb_record_failure()
         ws._cb_record_failure()
-        assert ws._failure_count == 2
+        with ws._cb_lock:
+            assert ws._cb_states["default"]["failures"] == 2
 
         ws._cb_record_success()
-        assert ws._failure_count == 0
+        with ws._cb_lock:
+            assert ws._cb_states["default"]["failures"] == 0
 
     def test_cb_open_returns_error_message(self):
         """When CB open, tool_web_search returns Vietnamese error."""
         for _ in range(ws._CB_THRESHOLD):
-            ws._cb_record_failure()
+            ws._cb_record_failure("web_search")
 
         result = ws.tool_web_search.invoke("test query")
         assert "không khả dụng" in result
@@ -77,7 +80,8 @@ class TestCircuitBreaker:
         with patch.object(ws, "_search_sync", side_effect=Exception("Network error")):
             ws.tool_web_search.invoke("test query")
 
-        assert ws._failure_count == 1
+        with ws._cb_lock:
+            assert ws._cb_states["web_search"]["failures"] == 1
 
     def test_search_timeout_increments_counter(self):
         """Search timeout increments the failure counter."""
@@ -92,7 +96,8 @@ class TestCircuitBreaker:
             ws.WEB_SEARCH_TIMEOUT = 0.01
             try:
                 result = ws.tool_web_search.invoke("test query")
-                assert ws._failure_count == 1
+                with ws._cb_lock:
+                    assert ws._cb_states["web_search"]["failures"] == 1
                 assert "thời gian chờ" in result
             finally:
                 ws.WEB_SEARCH_TIMEOUT = original_timeout
@@ -118,7 +123,9 @@ class TestSearchExecution:
 
         assert "Test" in result
         assert "example.com" in result
-        assert ws._failure_count == 0
+        with ws._cb_lock:
+            state = ws._cb_states.get("web_search", {"failures": 0})
+            assert state["failures"] == 0
 
     def test_empty_results(self):
         """Empty results return Vietnamese no-results message."""

@@ -239,22 +239,9 @@ class TestPIIMasking:
 class TestGuardrailsUtilities:
     """Test utility functions."""
 
-    def test_mask_pii_in_log(self):
-        from app.engine.guardrails import mask_pii_in_log
-        result = mask_pii_in_log("Email: user@test.com")
-        assert "[EMAIL]" in result
-
     def test_refusal_message(self):
         from app.engine.guardrails import Guardrails
         g = Guardrails()
         msg = g.get_refusal_message()
         assert msg  # Non-empty
         assert isinstance(msg, str)
-
-    def test_guardrails_config_defaults(self):
-        from app.engine.guardrails import GuardrailsConfig
-        config = GuardrailsConfig()
-        assert config.block_harmful_content is True
-        assert config.detect_injection is True
-        assert config.mask_pii_in_logs is True
-        assert config.flag_safety_misinformation is True

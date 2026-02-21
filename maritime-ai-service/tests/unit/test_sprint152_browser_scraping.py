@@ -151,7 +151,7 @@ class TestConfigFields:
 
     def test_enable_browser_scraping_default_false(self):
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.enable_browser_scraping is False
 
     def test_browser_scraping_timeout_default_15(self):
