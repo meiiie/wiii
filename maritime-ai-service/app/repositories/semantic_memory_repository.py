@@ -173,6 +173,11 @@ class SemanticMemoryRepository(
         """
         self._ensure_initialized()
 
+        # Org-scoped filtering (audit fix: was missing)
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 query = text(f"""
@@ -181,12 +186,17 @@ class SemanticMemoryRepository(
                         metadata, session_id, created_at, updated_at
                     FROM {self.TABLE_NAME}
                     WHERE id = :memory_id AND user_id = :user_id
+                    {org_filter}
                 """)
 
-                result = session.execute(query, {
+                params = {
                     "memory_id": str(memory_id),
-                    "user_id": user_id
-                })
+                    "user_id": user_id,
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                result = session.execute(query, params)
 
                 row = result.fetchone()
 
@@ -226,6 +236,11 @@ class SemanticMemoryRepository(
         """
         self._ensure_initialized()
 
+        # Org-scoped filtering (audit fix: was missing)
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 query = text(f"""
@@ -233,14 +248,19 @@ class SemanticMemoryRepository(
                     WHERE user_id = :user_id
                       AND session_id = :session_id
                       AND memory_type = :memory_type
+                      {org_filter}
                     RETURNING id
                 """)
 
-                result = session.execute(query, {
+                params = {
                     "user_id": user_id,
                     "session_id": session_id,
-                    "memory_type": MemoryType.MESSAGE.value
-                })
+                    "memory_type": MemoryType.MESSAGE.value,
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                result = session.execute(query, params)
 
                 deleted = len(result.fetchall())
                 session.commit()
@@ -269,6 +289,11 @@ class SemanticMemoryRepository(
         """
         self._ensure_initialized()
 
+        # Org-scoped filtering (audit fix: was missing)
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 type_filter = ""
@@ -278,10 +303,14 @@ class SemanticMemoryRepository(
                     type_filter = "AND memory_type = :memory_type"
                     params["memory_type"] = memory_type.value
 
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
                 query = text(f"""
                     SELECT COUNT(*) as count
                     FROM {self.TABLE_NAME}
                     WHERE user_id = :user_id {type_filter}
+                    {org_filter}
                 """)
 
                 result = session.execute(query, params)
@@ -476,19 +505,29 @@ class SemanticMemoryRepository(
         """
         self._ensure_initialized()
 
+        # Org-scoped filtering (audit fix: was missing)
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 query = text(f"""
                     DELETE FROM {self.TABLE_NAME}
                     WHERE user_id = :user_id
                       AND LOWER(content) LIKE LOWER(:keyword_pattern)
+                      {org_filter}
                     RETURNING id
                 """)
 
-                result = session.execute(query, {
+                params = {
                     "user_id": user_id,
-                    "keyword_pattern": f"%{keyword}%"
-                })
+                    "keyword_pattern": f"%{keyword}%",
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                result = session.execute(query, params)
                 deleted_ids = result.fetchall()
                 session.commit()
 
@@ -518,17 +557,25 @@ class SemanticMemoryRepository(
         """
         self._ensure_initialized()
 
+        # Org-scoped filtering (audit fix: was missing)
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 query = text(f"""
                     DELETE FROM {self.TABLE_NAME}
                     WHERE user_id = :user_id
+                    {org_filter}
                     RETURNING id
                 """)
 
-                result = session.execute(query, {
-                    "user_id": user_id
-                })
+                params = {"user_id": user_id}
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                result = session.execute(query, params)
                 deleted_ids = result.fetchall()
                 session.commit()
 
@@ -563,6 +610,11 @@ class SemanticMemoryRepository(
         if count <= 0:
             return 0
 
+        # Org-scoped filtering (audit fix: was missing)
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 query = text(f"""
@@ -571,17 +623,22 @@ class SemanticMemoryRepository(
                         SELECT id FROM {self.TABLE_NAME}
                         WHERE user_id = :user_id
                           AND memory_type = :memory_type
+                          {org_filter}
                         ORDER BY created_at ASC
                         LIMIT :count
                     )
                     RETURNING id
                 """)
 
-                result = session.execute(query, {
+                params = {
                     "user_id": user_id,
                     "memory_type": MemoryType.INSIGHT.value,
-                    "count": count
-                })
+                    "count": count,
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                result = session.execute(query, params)
 
                 deleted_ids = result.fetchall()
                 session.commit()
@@ -611,18 +668,28 @@ class SemanticMemoryRepository(
         """
         self._ensure_initialized()
 
+        # Org-scoped filtering (audit fix: was missing)
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 query = text(f"""
                     DELETE FROM {self.TABLE_NAME}
                     WHERE id = :memory_id AND user_id = :user_id
+                    {org_filter}
                     RETURNING id
                 """)
 
-                result = session.execute(query, {
+                params = {
                     "memory_id": str(memory_id),
-                    "user_id": user_id
-                })
+                    "user_id": user_id,
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                result = session.execute(query, params)
                 row = result.fetchone()
                 session.commit()
 

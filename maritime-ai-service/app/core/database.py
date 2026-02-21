@@ -35,9 +35,9 @@ def get_shared_engine():
     CHỈ THỊ 19: Now using Neon Serverless Postgres.
     
     Connection Pool Settings:
-    - pool_size=2: Only 2 persistent connections
-    - max_overflow=1: Allow 1 extra connection under load
-    - pool_timeout=10: Fail fast if no connection available
+    - pool_size=5: 5 persistent connections
+    - max_overflow=5: Allow 5 extra connections under load (total max: 10)
+    - pool_timeout=30: Wait 30s for connection (Neon wake-up time)
     - pool_recycle=1800: Recycle connections every 30 minutes
     - pool_pre_ping=True: Check connection health before use
     

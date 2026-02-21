@@ -394,6 +394,7 @@ class FactRepositoryMixin:
                       AND memory_type = :memory_type
                       {org_filter}
                     ORDER BY created_at DESC
+                    LIMIT 500
                 """)
 
                 get_all_params = {
@@ -449,6 +450,11 @@ class FactRepositoryMixin:
         """
         self._ensure_initialized()
 
+        # Org-scoped filtering (audit fix: was missing)
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 query = text(f"""
@@ -464,15 +470,20 @@ class FactRepositoryMixin:
                     WHERE user_id = :user_id
                       AND memory_type = :memory_type
                       AND metadata->>'fact_type' = :fact_type
+                      {org_filter}
                     ORDER BY created_at DESC
                     LIMIT 1
                 """)
 
-                result = session.execute(query, {
+                params = {
                     "user_id": user_id,
                     "memory_type": MemoryType.USER_FACT.value,
-                    "fact_type": fact_type
-                })
+                    "fact_type": fact_type,
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                result = session.execute(query, params)
 
                 row = result.fetchone()
 
@@ -760,6 +771,11 @@ class FactRepositoryMixin:
         if count <= 0:
             return 0
 
+        # Org-scoped filtering (audit fix: was missing)
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 # Delete oldest facts using subquery
@@ -769,17 +785,22 @@ class FactRepositoryMixin:
                         SELECT id FROM {self.TABLE_NAME}
                         WHERE user_id = :user_id
                           AND memory_type = :memory_type
+                          {org_filter}
                         ORDER BY created_at ASC
                         LIMIT :count
                     )
                     RETURNING id
                 """)
 
-                result = session.execute(query, {
+                params = {
                     "user_id": user_id,
                     "memory_type": MemoryType.USER_FACT.value,
-                    "count": count
-                })
+                    "count": count,
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                result = session.execute(query, params)
 
                 deleted_ids = result.fetchall()
                 session.commit()

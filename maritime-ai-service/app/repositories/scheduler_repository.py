@@ -298,31 +298,26 @@ class SchedulerRepository:
 
         try:
             with self._session_factory() as session:
-                # Increment failure_count and record last error
+                # Atomic: increment failure_count, record error, auto-fail at 3
                 session.execute(
                     text(
                         f"UPDATE {self.TABLE_NAME} SET "
                         f"failure_count = COALESCE(failure_count, 0) + 1, "
                         f"last_error = :error, "
-                        f"last_run = :now "
+                        f"last_run = :now, "
+                        f"status = CASE "
+                        f"  WHEN COALESCE(failure_count, 0) + 1 >= 3 THEN 'failed' "
+                        f"  ELSE status "
+                        f"END "
                         f"WHERE id = :task_id"
                     ),
                     {"task_id": task_id, "error": error, "now": now},
                 )
 
-                # If failure_count >= 3, mark as failed
-                session.execute(
-                    text(
-                        f"UPDATE {self.TABLE_NAME} SET status = 'failed' "
-                        f"WHERE id = :task_id "
-                        f"AND COALESCE(failure_count, 0) >= 3"
-                    ),
-                    {"task_id": task_id},
-                )
-
                 session.commit()
                 logger.warning(
-                    f"[SCHEDULER] Task {task_id[:8]} failure recorded: {error}"
+                    "[SCHEDULER] Task %s failure recorded: %s",
+                    task_id[:8], error,
                 )
                 return True
 

@@ -501,7 +501,17 @@ class TestUpsertTriple:
         mock_result_find = MagicMock()
         mock_result_find.fetchone.return_value = existing_row
         mock_result_update = MagicMock()
-        mock_result_update.fetchone.return_value = MagicMock()
+        update_row = MagicMock()
+        update_row.id = existing_row.id
+        update_row.user_id = "user1"
+        update_row.content = "New Name"
+        update_row.memory_type = MemoryType.USER_FACT.value
+        update_row.importance = 0.5
+        update_row.metadata = {"fact_type": "name"}
+        update_row.session_id = "sess1"
+        update_row.created_at = existing_row.created_at
+        update_row.updated_at = existing_row.created_at
+        mock_result_update.fetchone.return_value = update_row
 
         session.execute.side_effect = [mock_result_find, mock_result_update]
 

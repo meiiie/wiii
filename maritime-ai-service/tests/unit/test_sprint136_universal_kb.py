@@ -339,7 +339,7 @@ class TestSemanticChunkerGeneralPatterns:
 class TestHybridSearchServiceCrossDomain:
     """Test HybridSearchService passes active_domain_id to reranker."""
 
-    @patch("app.services.hybrid_search_service.SparseSearchRepository")
+    @patch("app.repositories.sparse_search_repository.get_sparse_search_repository")
     @patch("app.services.hybrid_search_service.get_dense_search_repository")
     @patch("app.services.hybrid_search_service.GeminiOptimizedEmbeddings")
     def test_search_passes_active_domain_id(self, mock_emb, mock_dense, mock_sparse):

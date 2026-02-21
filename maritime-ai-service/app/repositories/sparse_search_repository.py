@@ -380,3 +380,25 @@ class SparseSearchRepository:
             await self._pool.close()
             self._pool = None
             logger.info("Closed SparseSearchRepository connection pool")
+
+
+# =============================================================================
+# SINGLETON INSTANCE
+# =============================================================================
+_sparse_search_instance: Optional["SparseSearchRepository"] = None
+
+
+def get_sparse_search_repository() -> "SparseSearchRepository":
+    """
+    Get singleton SparseSearchRepository instance.
+
+    Ensures only ONE asyncpg connection pool is created,
+    matching DenseSearchRepository singleton pattern.
+    """
+    global _sparse_search_instance
+
+    if _sparse_search_instance is None:
+        _sparse_search_instance = SparseSearchRepository()
+        logger.info("Created singleton SparseSearchRepository instance")
+
+    return _sparse_search_instance

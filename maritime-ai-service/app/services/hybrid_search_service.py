@@ -16,7 +16,6 @@ from typing import List, Optional
 from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
 from app.engine.rrf_reranker import HybridSearchResult, RRFReranker
 from app.repositories.dense_search_repository import get_dense_search_repository
-from app.repositories.sparse_search_repository import SparseSearchRepository
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +60,8 @@ class HybridSearchService:
         # Initialize components (use singleton for dense repo)
         self._embeddings = GeminiOptimizedEmbeddings()
         self._dense_repo = get_dense_search_repository()  # SINGLETON
-        self._sparse_repo = SparseSearchRepository()
+        from app.repositories.sparse_search_repository import get_sparse_search_repository
+        self._sparse_repo = get_sparse_search_repository()  # SINGLETON
         self._reranker = RRFReranker(k=rrf_k)
         
         logger.info(

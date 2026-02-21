@@ -318,6 +318,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning("Sources pool close failed: %s", e)
 
+    # Close Dense/Sparse search asyncpg pools (audit fix: resource leak)
+    try:
+        from app.repositories.dense_search_repository import get_dense_search_repository
+        await get_dense_search_repository().close()
+        logger.info("Dense search pool closed")
+    except Exception as e:
+        logger.debug("Dense search pool close skipped: %s", e)
+    try:
+        from app.repositories.sparse_search_repository import get_sparse_search_repository
+        await get_sparse_search_repository().close()
+        logger.info("Sparse search pool closed")
+    except Exception as e:
+        logger.debug("Sparse search pool close skipped: %s", e)
+
     # Sprint 153: Close Playwright browser singleton (if initialized)
     try:
         from app.engine.search_platforms.adapters.browser_base import close_browser

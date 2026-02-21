@@ -21,13 +21,13 @@ def _make_service(dense_weight=0.5, sparse_weight=0.5, rrf_k=60):
     """Create HybridSearchService with mocked dependencies."""
     with patch("app.services.hybrid_search_service.GeminiOptimizedEmbeddings") as mock_emb_cls, \
          patch("app.services.hybrid_search_service.get_dense_search_repository") as mock_dense_fn, \
-         patch("app.services.hybrid_search_service.SparseSearchRepository") as mock_sparse_cls:
+         patch("app.repositories.sparse_search_repository.get_sparse_search_repository") as mock_sparse_fn:
         mock_emb = MagicMock()
         mock_emb_cls.return_value = mock_emb
         mock_dense = MagicMock()
         mock_dense_fn.return_value = mock_dense
         mock_sparse = MagicMock()
-        mock_sparse_cls.return_value = mock_sparse
+        mock_sparse_fn.return_value = mock_sparse
 
         from app.services.hybrid_search_service import HybridSearchService
         svc = HybridSearchService(
@@ -451,7 +451,7 @@ class TestSingleton:
     def test_get_hybrid_search_service(self):
         with patch("app.services.hybrid_search_service.GeminiOptimizedEmbeddings"), \
              patch("app.services.hybrid_search_service.get_dense_search_repository"), \
-             patch("app.services.hybrid_search_service.SparseSearchRepository"):
+             patch("app.repositories.sparse_search_repository.get_sparse_search_repository"):
             import app.services.hybrid_search_service as mod
             mod._hybrid_search_service = None
             svc1 = mod.get_hybrid_search_service()
