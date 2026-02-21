@@ -11,7 +11,8 @@
 }
 
 .markdown-content h1 {
-  @apply text-xl font-bold mb-3 mt-4;
+  @apply text-xl font-bold mb-3 mt-4 pb-2;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
 }
 
 .markdown-content h2 {
@@ -36,24 +37,36 @@
 }
 
 .markdown-content li {
-  @apply mb-1;
+  @apply mb-1.5;
 }
 
 .markdown-content blockquote {
-  @apply border-l-4 border-border-secondary pl-4 italic my-3 text-text-secondary;
+  @apply pl-4 italic my-3 text-text-secondary;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 40%, var(--border));
 }
 
 .markdown-content table {
-  @apply w-full border-collapse mb-3;
+  @apply w-full border-collapse mb-3 overflow-hidden;
+  border-radius: 8px;
+  border: 1px solid var(--border);
 }
 
 .markdown-content th,
 .markdown-content td {
-  @apply border border-border px-3 py-2 text-left text-sm;
+  @apply px-3 py-2 text-left text-sm;
+  border-bottom: 1px solid var(--border);
 }
 
 .markdown-content th {
   @apply bg-surface-tertiary font-semibold;
+}
+
+.markdown-content tr:last-child td {
+  border-bottom: none;
+}
+
+.markdown-content tbody tr:hover {
+  background: color-mix(in srgb, var(--surface-tertiary) 50%, transparent);
 }
 
 .markdown-content a {
@@ -65,7 +78,9 @@
 }
 
 .markdown-content code:not(pre code) {
-  @apply bg-surface-tertiary text-[var(--accent)] px-1.5 py-0.5 rounded text-[13px] font-mono;
+  @apply px-1.5 py-0.5 rounded text-[13px] font-mono font-medium;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-tertiary));
+  color: color-mix(in srgb, var(--accent) 70%, var(--text));
 }
 
 .markdown-content pre {
@@ -79,6 +94,22 @@
 
 .markdown-content em {
   @apply italic;
+}
+
+/* Shiki code styling (Sprint 169) */
+.markdown-content .shiki {
+  font-family: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  tab-size: 2;
+}
+
+.markdown-content .shiki .line-number {
+  color: var(--text-quaternary);
+  user-select: none;
+  text-align: right;
+  padding-right: 1em;
+  min-width: 2.5em;
 }
 
 /* Thinking block overrides — compact text, no list bullets */
