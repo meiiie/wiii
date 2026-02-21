@@ -18,10 +18,13 @@ import { WorkspaceSelector } from "@/components/layout/WorkspaceSelector";
 import { groupConversations, DOMAIN_BADGES } from "@/lib/conversation-groups";
 import { getOrgIcon, getOrgDisplayName } from "@/lib/org-config";
 import { sidebarItemEntry } from "@/lib/animations";
+import { useReducedMotion, motionSafe } from "@/hooks/useReducedMotion";
+import { useLongPress } from "@/hooks/useLongPress";
 import { PERSONAL_ORG_ID } from "@/lib/constants";
 import type { Conversation } from "@/api/types";
 
 export function Sidebar() {
+  const reduced = useReducedMotion();
   const {
     conversations,
     activeConversationId,
@@ -86,7 +89,7 @@ export function Sidebar() {
     const CollapsedOrgIcon = getOrgIcon(activeOrgId || PERSONAL_ORG_ID);
 
     return (
-      <div className="flex flex-col h-full w-12 bg-surface-secondary border-r border-border items-center py-3 gap-1">
+      <div className="flex flex-col h-full w-[50px] bg-surface-secondary border-r border-border items-center py-3 gap-1">
         {/* Org icon (collapsed) */}
         <button
           onClick={() => useUIStore.getState().setSidebarOpen(true)}
@@ -140,7 +143,7 @@ export function Sidebar() {
 
   // Full expanded mode (256px)
   return (
-    <div className="flex flex-col h-full w-64 bg-surface-secondary border-r border-border">
+    <div className="flex flex-col h-full w-72 bg-surface-secondary border-r border-border">
       {/* Sprint 156: Workspace selector */}
       <div className="px-3 pt-3 pb-1">
         <WorkspaceSelector />
@@ -199,11 +202,11 @@ export function Sidebar() {
                     {group.conversations.map((conv) => (
                       <motion.div
                         key={conv.id}
-                        variants={sidebarItemEntry}
-                        initial="hidden"
+                        variants={motionSafe(reduced, sidebarItemEntry)}
+                        initial={reduced ? false : "hidden"}
                         animate="visible"
-                        exit="exit"
-                        layout
+                        exit={reduced ? undefined : "exit"}
+                        layout={!reduced}
                       >
                         <ConversationItem
                           conv={conv}
@@ -281,6 +284,28 @@ function ConversationItem({
   const [editTitle, setEditTitle] = useState(conv.title);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Touch context menu state
+  const [touchMenuOpen, setTouchMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const longPressHandlers = useLongPress(() => setTouchMenuOpen(true), { delay: 500 });
+
+  // Close touch menu on outside click
+  useEffect(() => {
+    if (!touchMenuOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setTouchMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("touchstart", handleClick as EventListener);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("touchstart", handleClick as EventListener);
+    };
+  }, [touchMenuOpen]);
+
   useEffect(() => {
     if (isEditing && inputRef.current) {
       inputRef.current.focus();
@@ -304,7 +329,7 @@ function ConversationItem({
 
   return (
     <div
-      className={`group flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-all duration-150 text-sm ${
+      className={`group relative flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-all duration-150 text-sm ${
         isActive
           ? "bg-[var(--border-secondary)] text-text font-medium"
           : "hover:bg-[var(--surface-tertiary)] text-text-secondary"
@@ -313,6 +338,7 @@ function ConversationItem({
       title={conv.summary || conv.title}
       role="listitem"
       aria-selected={isActive}
+      {...longPressHandlers}
     >
       <MessageSquare size={14} className="shrink-0" />
 
@@ -349,7 +375,7 @@ function ConversationItem({
         </span>
       )}
 
-      {/* Rename button */}
+      {/* Rename button (hover — desktop) */}
       {!isEditing && (
         <button
           onClick={(e) => {
@@ -365,7 +391,7 @@ function ConversationItem({
         </button>
       )}
 
-      {/* Pin/Unpin button */}
+      {/* Pin/Unpin button (hover — desktop) */}
       {!isEditing && (
         <button
           onClick={(e) => {
@@ -380,7 +406,7 @@ function ConversationItem({
         </button>
       )}
 
-      {/* Delete button */}
+      {/* Delete button (hover — desktop) */}
       {!isEditing && (
         <button
           onClick={(e) => {
@@ -393,6 +419,50 @@ function ConversationItem({
         >
           <Trash2 size={12} />
         </button>
+      )}
+
+      {/* Touch context menu (long-press — touch devices) */}
+      {touchMenuOpen && !isEditing && (
+        <div
+          ref={menuRef}
+          className="absolute right-0 top-full z-50 mt-1 w-40 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg py-1 text-xs"
+          onClick={(e) => e.stopPropagation()}
+          role="menu"
+          aria-label="Thao tác cuộc trò chuyện"
+        >
+          <button
+            className="flex items-center gap-2 w-full px-3 py-2 hover:bg-[var(--surface-tertiary)] text-text-secondary transition-colors"
+            onClick={() => {
+              setEditTitle(conv.title);
+              setIsEditing(true);
+              setTouchMenuOpen(false);
+            }}
+            role="menuitem"
+          >
+            <Pencil size={12} /> Đặt tên mới
+          </button>
+          <button
+            className="flex items-center gap-2 w-full px-3 py-2 hover:bg-[var(--surface-tertiary)] text-text-secondary transition-colors"
+            onClick={() => {
+              onPin();
+              setTouchMenuOpen(false);
+            }}
+            role="menuitem"
+          >
+            {conv.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+            {conv.pinned ? "Bỏ ghim" : "Ghim"}
+          </button>
+          <button
+            className="flex items-center gap-2 w-full px-3 py-2 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 transition-colors"
+            onClick={() => {
+              onDelete();
+              setTouchMenuOpen(false);
+            }}
+            role="menuitem"
+          >
+            <Trash2 size={12} /> Xoá
+          </button>
+        </div>
       )}
     </div>
   );

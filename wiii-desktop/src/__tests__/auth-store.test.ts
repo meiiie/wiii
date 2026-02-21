@@ -162,6 +162,7 @@ describe("AuthStore", () => {
 
     expect(saveStore).toHaveBeenCalledWith(
       "auth_state",
+      "data",
       expect.objectContaining({
         user: MOCK_USER,
         authMode: "oauth",

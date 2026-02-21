@@ -42,7 +42,8 @@ class AnswerGenerator:
         user_role: str = "student",
         entity_context: str = "",
         user_name: Optional[str] = None,
-        is_follow_up: bool = False
+        is_follow_up: bool = False,
+        organization_id: Optional[str] = None,
     ) -> Tuple[str, Optional[str]]:
         """
         Generate response using LLM to synthesize retrieved knowledge.
@@ -102,7 +103,8 @@ class AnswerGenerator:
         base_prompt = prompt_loader.build_system_prompt(
             role=user_role,
             user_name=user_name,
-            is_follow_up=is_follow_up if is_follow_up else bool(conversation_history)
+            is_follow_up=is_follow_up if is_follow_up else bool(conversation_history),
+            organization_id=organization_id,
         )
 
         # Get thinking instruction from YAML
@@ -125,7 +127,17 @@ class AnswerGenerator:
                 HumanMessage(content=user_prompt)
             ]
 
-            response = llm.invoke(messages)
+            # Sprint audit: Timeout-protected invoke (streaming path already has dual-layer timeout)
+            import concurrent.futures
+            _SYNC_INVOKE_TIMEOUT = 120  # seconds
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(llm.invoke, messages)
+                try:
+                    response = future.result(timeout=_SYNC_INVOKE_TIMEOUT)
+                except concurrent.futures.TimeoutError:
+                    logger.warning("[RAG] LLM invoke timeout after %ds", _SYNC_INVOKE_TIMEOUT)
+                    future.cancel()
+                    raise TimeoutError(f"LLM generation timed out after {_SYNC_INVOKE_TIMEOUT}s")
 
             # Extract native thinking from Gemini response
             # Lazy import to avoid circular dependency
@@ -160,7 +172,8 @@ class AnswerGenerator:
         user_role: str = "student",
         entity_context: str = "",
         user_name: Optional[str] = None,
-        is_follow_up: bool = False
+        is_follow_up: bool = False,
+        organization_id: Optional[str] = None,
     ):
         """
         SOTA Streaming Generation - yields tokens as they arrive from LLM.
@@ -211,7 +224,8 @@ class AnswerGenerator:
         base_prompt = prompt_loader.build_system_prompt(
             role=user_role,
             user_name=user_name,
-            is_follow_up=is_follow_up if is_follow_up else bool(conversation_history)
+            is_follow_up=is_follow_up if is_follow_up else bool(conversation_history),
+            organization_id=organization_id,
         )
 
         thinking_instruction = prompt_loader.get_thinking_instruction()

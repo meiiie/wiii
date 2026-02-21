@@ -16,24 +16,24 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
   };
 
   return (
-    <div className="relative group rounded-lg overflow-hidden bg-surface-tertiary my-2">
+    <div className="relative group rounded-lg overflow-hidden bg-white/50 dark:bg-white/5 border border-[var(--border)] my-2">
       {/* Header bar */}
       <div className="flex items-center justify-between px-4 py-2 bg-border/30 text-text-secondary text-xs">
         <span className="font-mono">{language || "text"}</span>
         <button
           onClick={handleCopy}
           className="flex items-center gap-1 hover:text-text transition-colors"
-          title="Copy code"
+          title="Sao chép mã"
         >
           {copied ? (
             <>
               <Check size={14} />
-              <span>Copied!</span>
+              <span>Đã sao chép!</span>
             </>
           ) : (
             <>
               <Copy size={14} />
-              <span>Copy</span>
+              <span>Sao chép</span>
             </>
           )}
         </button>

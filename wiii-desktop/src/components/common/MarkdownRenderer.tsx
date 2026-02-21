@@ -2,6 +2,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { CodeBlock } from "./CodeBlock";
 
 interface MarkdownRendererProps {
@@ -14,7 +15,7 @@ export function MarkdownRenderer({ content, className = "" }: MarkdownRendererPr
     <div className={`markdown-content selectable ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight, rehypeRaw]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, { ...defaultSchema, tagNames: [...(defaultSchema.tagNames || []), "mark", "del", "ins"] }], rehypeHighlight]}
         components={{
           code({ className: codeClassName, children, ...props }) {
             const match = /language-(\w+)/.exec(codeClassName || "");

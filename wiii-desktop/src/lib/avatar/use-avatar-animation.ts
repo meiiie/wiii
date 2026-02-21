@@ -648,9 +648,19 @@ export function useAvatarAnimation(
           break;
       }
 
-      // Sprint 144: Trigger reaction chains on mood+context
-      if (mood === "warm" && soulEmotion && soulEmotion.face.blush && (soulEmotion.face.blush as number) > 0.5) {
-        chainPlaybackRef.current = createChainPlayback("love_struck");
+      // Sprint 144+audit: Trigger reaction chains on mood+context
+      switch (mood) {
+        case "warm":
+          if (soulEmotion && soulEmotion.face.blush && (soulEmotion.face.blush as number) > 0.5) {
+            chainPlaybackRef.current = createChainPlayback("love_struck");
+          }
+          break;
+        case "excited":
+          chainPlaybackRef.current = createChainPlayback("surprise_to_smile");
+          break;
+        case "concerned":
+          chainPlaybackRef.current = createChainPlayback("panic_to_relief");
+          break;
       }
     }
   }, [mood]);

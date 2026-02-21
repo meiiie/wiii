@@ -24,6 +24,7 @@ import { useToastStore } from "@/stores/toast-store";
 import { submitFeedback } from "@/api/feedback";
 import { formatRelativeTime, formatAbsoluteTime } from "@/lib/date-utils";
 import { userMessageEntry, aiMessageEntry } from "@/lib/animations";
+import { useReducedMotion, motionSafe } from "@/hooks/useReducedMotion";
 
 interface MessageBubbleProps {
   message: Message;
@@ -48,6 +49,7 @@ export const MessageBubble = memo(function MessageBubble({
   onEditMessage,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
+  const reduced = useReducedMotion();
   const { show_thinking, show_reasoning_trace, thinking_level } = useSettingsStore(
     (s) => s.settings
   );
@@ -56,13 +58,13 @@ export const MessageBubble = memo(function MessageBubble({
     return (
       <motion.div
         className="flex justify-end group/msg"
-        variants={userMessageEntry}
-        initial="hidden"
+        variants={motionSafe(reduced, userMessageEntry)}
+        initial={reduced ? false : "hidden"}
         animate="visible"
       >
         <div className="max-w-[85%]">
-          <div className="bg-[var(--user-bg)] rounded-2xl rounded-br px-4 py-3 relative">
-            <p className="text-[16px] leading-[1.6] font-serif text-text selectable">
+          <div className="bg-[var(--user-bg)] rounded-xl px-4 py-2.5 relative">
+            <p className="text-[15px] leading-[1.7] font-sans text-text selectable">
               {message.content}
             </p>
             {/* User message actions */}
@@ -108,8 +110,8 @@ export const MessageBubble = memo(function MessageBubble({
   return (
     <motion.div
       className="flex gap-2.5 group/msg"
-      variants={aiMessageEntry}
-      initial="hidden"
+      variants={motionSafe(reduced, aiMessageEntry)}
+      initial={reduced ? false : "hidden"}
       animate="visible"
     >
       {/* Wiii avatar — latest: 64px kawaii face (live state), older: 24px "W" logo */}

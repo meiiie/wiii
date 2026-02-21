@@ -7,7 +7,7 @@
  * 3. ScreenshotBlock rendering — full image expand, placeholder, hostname
  * 4. Facebook cookie in settings
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createElement } from "react";
 import { render, screen } from "@testing-library/react";
 import { useChatStore } from "@/stores/chat-store";
@@ -17,6 +17,13 @@ import type {
   ContentBlock,
   ScreenshotBlockData,
 } from "@/api/types";
+
+// Mock blob-url module (happy-dom lacks URL.createObjectURL / atob for arbitrary strings)
+vi.mock("@/lib/blob-url", () => ({
+  base64ToBlobUrl: (base64: string) => `blob:mock/${base64.slice(0, 16)}`,
+  revokeBlobUrl: vi.fn(),
+  revokeAllBlobUrls: vi.fn(),
+}));
 
 // ===================================================================
 // Group 1: ScreenshotBlockData type
@@ -187,9 +194,9 @@ describe("ScreenshotBlock rendering", () => {
     expect(screen.getByText("Đang tải trang...")).toBeDefined();
     expect(screen.getByText("facebook.com")).toBeDefined();
 
-    // Image should use full base64
+    // Image should use blob URL (converted from base64)
     const img = screen.getByAltText("Đang tải trang...");
-    expect(img.getAttribute("src")).toContain("FULL_BASE64_IMAGE");
+    expect(img.getAttribute("src")).toContain("blob:mock/");
   });
 
   it("no image shows placeholder text", () => {

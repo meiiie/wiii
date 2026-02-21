@@ -392,10 +392,11 @@ def create_application() -> FastAPI:
         from starlette.middleware.sessions import SessionMiddleware
         app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
 
-    # Request-ID correlation middleware (SOTA 2026)
+    # Middleware stack (Starlette executes in REVERSE of add order)
+    # So: add RequestID first, OrgContext second → executes OrgContext first, then RequestID outermost
     from app.core.middleware import RequestIDMiddleware, OrgContextMiddleware
-    app.add_middleware(OrgContextMiddleware)  # Sprint 24: Multi-Tenant org context
     app.add_middleware(RequestIDMiddleware)
+    app.add_middleware(OrgContextMiddleware)  # Sprint 24: Multi-Tenant org context
 
     # Configure Rate Limiting
     app.state.limiter = limiter

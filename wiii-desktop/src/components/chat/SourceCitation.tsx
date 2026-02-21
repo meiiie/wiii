@@ -23,7 +23,7 @@ export function SourceCitation({ sources }: SourceCitationProps) {
 
   return (
     <div className="mt-3 space-y-2">
-      <div className="text-xs text-text-tertiary font-medium">Nguon tham khao:</div>
+      <div className="text-xs text-text-tertiary font-medium">Nguồn tham khảo:</div>
       <div className="flex flex-wrap gap-1.5">
         {sources.map((source, i) => (
           <button

@@ -23,11 +23,9 @@ def mock_ddgs():
 def reset_circuit_breaker():
     """Reset circuit breaker state before each test."""
     import app.engine.tools.web_search_tools as mod
-    mod._failure_count = 0
-    mod._last_failure_time = 0.0
+    mod._cb_states.clear()
     yield
-    mod._failure_count = 0
-    mod._last_failure_time = 0.0
+    mod._cb_states.clear()
 
 
 # =============================================================================
@@ -320,8 +318,7 @@ class TestToolSearchNews:
     def test_circuit_breaker_blocks(self, mock_ddgs):
         """Should block when circuit breaker is open."""
         import app.engine.tools.web_search_tools as mod
-        mod._failure_count = 3
-        mod._last_failure_time = time.time()
+        mod._cb_states["search_news"] = {"failures": 3, "last_failure": time.time()}
 
         from app.engine.tools.web_search_tools import tool_search_news
         result = tool_search_news.invoke({"query": "test"})
@@ -371,8 +368,7 @@ class TestToolSearchLegal:
     def test_circuit_breaker_blocks(self):
         """Should block when circuit breaker is open."""
         import app.engine.tools.web_search_tools as mod
-        mod._failure_count = 3
-        mod._last_failure_time = time.time()
+        mod._cb_states["search_legal"] = {"failures": 3, "last_failure": time.time()}
 
         from app.engine.tools.web_search_tools import tool_search_legal
         result = tool_search_legal.invoke({"query": "test"})
@@ -381,14 +377,13 @@ class TestToolSearchLegal:
 
     def test_timeout_records_failure(self, mock_ddgs):
         """Timeout should record circuit breaker failure."""
-        import concurrent.futures
         mock_ddgs.DDGS.return_value.text.side_effect = Exception("timeout")
 
         from app.engine.tools.web_search_tools import tool_search_legal
         result = tool_search_legal.invoke({"query": "test"})
 
         import app.engine.tools.web_search_tools as mod
-        assert mod._failure_count >= 1
+        assert mod._cb_states.get("search_legal", {}).get("failures", 0) >= 1
         assert "Lỗi" in result
 
 
@@ -424,8 +419,7 @@ class TestToolSearchMaritime:
     def test_circuit_breaker_blocks(self):
         """Should block when circuit breaker is open."""
         import app.engine.tools.web_search_tools as mod
-        mod._failure_count = 3
-        mod._last_failure_time = time.time()
+        mod._cb_states["search_maritime"] = {"failures": 3, "last_failure": time.time()}
 
         from app.engine.tools.web_search_tools import tool_search_maritime
         result = tool_search_maritime.invoke({"query": "test"})
@@ -437,26 +431,31 @@ class TestToolSearchMaritime:
 # Circuit breaker shared state
 # =============================================================================
 
-class TestCircuitBreakerShared:
-    """All tools share the same circuit breaker."""
+class TestCircuitBreakerPerTool:
+    """Per-tool circuit breaker isolation (Sprint audit fix)."""
 
-    def test_failure_from_one_tool_affects_another(self, mock_ddgs):
-        """Failure in legal search should affect news search."""
+    def test_failure_in_one_tool_does_not_affect_another(self, mock_ddgs):
+        """Failure in legal search should NOT affect news search (per-tool isolation)."""
         import app.engine.tools.web_search_tools as mod
 
-        # Record failures as if legal tool failed 3 times
-        mod._failure_count = 3
-        mod._last_failure_time = time.time()
+        # Record failures only for legal tool
+        mod._cb_states["search_legal"] = {"failures": 3, "last_failure": time.time()}
 
-        # News tool should also be blocked
+        # News tool should NOT be blocked
+        mock_ddgs.DDGS.return_value.news.return_value = [
+            {"title": "News OK", "body": "Working", "href": "https://news.com/1"}
+        ]
         from app.engine.tools.web_search_tools import tool_search_news
-        result = tool_search_news.invoke({"query": "test"})
-        assert "tạm thời không khả dụng" in result
+        with patch("app.engine.tools.web_search_tools._rss_fetch_sync", return_value=[]):
+            result = tool_search_news.invoke({"query": "test"})
+        assert "tạm thời không khả dụng" not in result
+        assert "News OK" in result
 
-    def test_success_resets_for_all(self, mock_ddgs):
-        """Success in any tool should reset circuit breaker for all."""
+    def test_success_resets_only_own_tool(self, mock_ddgs):
+        """Success in legal tool should only reset legal CB, not others."""
         import app.engine.tools.web_search_tools as mod
-        mod._failure_count = 2  # Below threshold
+        mod._cb_states["search_legal"] = {"failures": 2, "last_failure": time.time()}
+        mod._cb_states["search_news"] = {"failures": 2, "last_failure": time.time()}
 
         mock_ddgs.DDGS.return_value.text.return_value = [
             {"title": "OK", "body": "Success", "href": "https://example.com"}
@@ -465,7 +464,9 @@ class TestCircuitBreakerShared:
         from app.engine.tools.web_search_tools import tool_search_legal
         tool_search_legal.invoke({"query": "test"})
 
-        assert mod._failure_count == 0  # Reset after success
+        # Legal CB reset, news CB untouched
+        assert mod._cb_states["search_legal"]["failures"] == 0
+        assert mod._cb_states["search_news"]["failures"] == 2
 
 
 # =============================================================================

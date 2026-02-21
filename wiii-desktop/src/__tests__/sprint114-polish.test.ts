@@ -11,7 +11,7 @@ describe("ChatInput — keyboard hints", () => {
   it("should have warm keyboard shortcut hints", async () => {
     const src = await import("@/components/chat/ChatInput?raw");
     const code = (src as any).default || src;
-    expect(code).toContain("Gửi cho Wiii (Enter)");
+    expect(code).toContain("Enter gửi");
     // Should NOT have old cold hints
     expect(code).not.toContain("Enter để gửi");
   });

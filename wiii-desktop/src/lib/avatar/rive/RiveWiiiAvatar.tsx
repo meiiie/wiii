@@ -15,6 +15,15 @@ import type { MoodType } from "../mood-theme";
 import { useRiveEmotions } from "./useRiveEmotions";
 import { RIVE_FILE_PATH, MAIN_STATE_MACHINE } from "./rive-config";
 
+const RIVE_STATE_LABELS: Record<string, string> = {
+  idle: "Wiii",
+  listening: "Wiii — đang lắng nghe",
+  thinking: "Wiii — đang suy nghĩ",
+  speaking: "Wiii — đang trả lời",
+  complete: "Wiii — đã hoàn thành",
+  error: "Wiii — gặp lỗi",
+};
+
 export interface RiveWiiiAvatarProps {
   state?: AvatarState;
   size?: number;
@@ -41,6 +50,8 @@ function RivePlaceholder({ size, state }: { size: number; state: AvatarState }) 
 
   return (
     <div
+      role="img"
+      aria-label={RIVE_STATE_LABELS[state] || "Wiii — đang tải"}
       style={{
         width: size,
         height: size,
@@ -94,10 +105,12 @@ function RiveWiiiAvatarInner({
     rive: isWiiiMode ? rive : null,
   });
 
+  const ariaLabel = RIVE_STATE_LABELS[state] || "Wiii";
+
   // If .riv failed to load, show placeholder
   if (loadError || !RiveComponent) {
     return (
-      <div className={`wiii-rive-avatar ${className}`}>
+      <div className={`wiii-rive-avatar ${className}`} role="img" aria-label={ariaLabel}>
         <RivePlaceholder size={size} state={state} />
       </div>
     );
@@ -106,6 +119,8 @@ function RiveWiiiAvatarInner({
   return (
     <div
       className={`wiii-rive-avatar ${className}`}
+      role="img"
+      aria-label={ariaLabel}
       style={{
         width: size,
         height: size,

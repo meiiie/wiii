@@ -26,7 +26,7 @@ export function TitleBar() {
 
   return (
     <div
-      className="flex items-center h-10 bg-surface border-b border-border select-none"
+      className="flex items-center h-11 bg-surface border-b border-border select-none"
       data-tauri-drag-region
     >
       {/* Left: Toggle sidebar + App name */}
@@ -58,19 +58,22 @@ export function TitleBar() {
         <div className="flex items-center">
           <button
             onClick={() => appWindow.minimize()}
-            className="flex items-center justify-center w-11 h-10 hover:bg-surface-tertiary transition-colors"
+            className="flex items-center justify-center w-11 h-11 hover:bg-surface-tertiary transition-colors"
+            aria-label="Thu nhỏ"
           >
             <Minus size={14} className="text-text-secondary" />
           </button>
           <button
             onClick={() => appWindow.toggleMaximize()}
-            className="flex items-center justify-center w-11 h-10 hover:bg-surface-tertiary transition-colors"
+            className="flex items-center justify-center w-11 h-11 hover:bg-surface-tertiary transition-colors"
+            aria-label="Phóng to"
           >
             <Square size={12} className="text-text-secondary" />
           </button>
           <button
             onClick={() => appWindow.close()}
-            className="flex items-center justify-center w-11 h-10 hover:bg-red-500 hover:text-white transition-colors"
+            className="flex items-center justify-center w-11 h-11 hover:bg-red-500 hover:text-white transition-colors"
+            aria-label="Đóng"
           >
             <X size={14} className="text-text-secondary hover:text-white" />
           </button>

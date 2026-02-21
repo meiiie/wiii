@@ -26,15 +26,15 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
-  const confirmRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // Focus trap + Escape to cancel
   useEffect(() => {
     if (!open) return;
 
-    // Focus the cancel button (safe default) when dialog opens
-    confirmRef.current?.focus();
+    // Focus cancel button (safe default) — prevents accidental confirm
+    cancelRef.current?.focus();
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -72,7 +72,7 @@ export function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 animate-fade-in"
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 animate-fade-in"
       onClick={onCancel}
       role="dialog"
       aria-modal="true"
@@ -80,7 +80,7 @@ export function ConfirmDialog({
     >
       <div
         ref={dialogRef}
-        className="bg-surface rounded-xl shadow-2xl w-full max-w-sm mx-4 border border-border animate-scale-in"
+        className="bg-surface rounded-2xl shadow-2xl w-full max-w-sm mx-4 border border-border animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 pt-5 pb-4">
@@ -103,13 +103,13 @@ export function ConfirmDialog({
         </div>
         <div className="flex justify-end gap-2 px-5 pb-4">
           <button
+            ref={cancelRef}
             onClick={onCancel}
             className="px-4 py-2 rounded-lg border border-border text-sm font-medium text-text-secondary hover:bg-surface-tertiary active:scale-[0.98] transition-all"
           >
             {cancelLabel}
           </button>
           <button
-            ref={confirmRef}
             onClick={onConfirm}
             className={`px-4 py-2 rounded-lg text-sm font-medium text-white active:scale-[0.98] transition-all ${
               isDanger

@@ -29,12 +29,13 @@ WEB_SEARCH_TIMEOUT = 10.0
 # Thread pool for running sync DuckDuckGo in background
 _executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="web_search")
 
-# Simple circuit breaker state (avoids importing resilience.py which is async)
-_failure_count = 0
-_last_failure_time = 0.0
+# Per-tool circuit breaker state (avoids importing resilience.py which is async)
+# Sprint audit: Changed from single global CB to per-tool isolation
+# to prevent one tool's failures from blocking unrelated tools.
 _CB_THRESHOLD = 3
 _CB_RECOVERY_SECONDS = 120
 _cb_lock = threading.Lock()
+_cb_states: dict = {}  # {tool_name: {"failures": int, "last_failure": float}}
 
 
 # =============================================================================
@@ -68,31 +69,34 @@ _NEWS_RSS_FEEDS = {
 # Circuit breaker helpers
 # =============================================================================
 
-def _cb_is_open() -> bool:
-    """Check if circuit breaker is open (too many recent failures)."""
-    global _failure_count, _last_failure_time
+def _cb_is_open(tool_name: str = "default") -> bool:
+    """Check if circuit breaker is open for a specific tool."""
     with _cb_lock:
-        if _failure_count >= _CB_THRESHOLD:
-            if time.time() - _last_failure_time < _CB_RECOVERY_SECONDS:
+        state = _cb_states.get(tool_name)
+        if not state:
+            return False
+        if state["failures"] >= _CB_THRESHOLD:
+            if time.time() - state["last_failure"] < _CB_RECOVERY_SECONDS:
                 return True
             # Recovery period passed — reset
-            _failure_count = 0
+            state["failures"] = 0
         return False
 
 
-def _cb_record_failure():
-    """Record a failure for the circuit breaker."""
-    global _failure_count, _last_failure_time
+def _cb_record_failure(tool_name: str = "default"):
+    """Record a failure for a specific tool's circuit breaker."""
     with _cb_lock:
-        _failure_count += 1
-        _last_failure_time = time.time()
+        if tool_name not in _cb_states:
+            _cb_states[tool_name] = {"failures": 0, "last_failure": 0.0}
+        _cb_states[tool_name]["failures"] += 1
+        _cb_states[tool_name]["last_failure"] = time.time()
 
 
-def _cb_record_success():
-    """Record success — reset failure count."""
-    global _failure_count
+def _cb_record_success(tool_name: str = "default"):
+    """Record success — reset failure count for a specific tool."""
     with _cb_lock:
-        _failure_count = 0
+        if tool_name in _cb_states:
+            _cb_states[tool_name]["failures"] = 0
 
 
 # =============================================================================
@@ -249,8 +253,8 @@ def _format_results(results: list, tag: str = "WEB_SEARCH") -> str:
 @tool(description="Tìm kiếm thông tin trên web. Hữu ích khi cần thông tin mới nhất, tin tức, hoặc kiến thức không có trong cơ sở dữ liệu nội bộ.")
 def tool_web_search(query: str) -> str:
     """Search the web for current information using DuckDuckGo."""
-    # Circuit breaker check
-    if _cb_is_open():
+    _CB_NAME = "web_search"
+    if _cb_is_open(_CB_NAME):
         logger.warning("[WEB_SEARCH] Circuit breaker OPEN — skipping search")
         return "Tìm kiếm web tạm thời không khả dụng. Vui lòng thử lại sau."
 
@@ -263,11 +267,11 @@ def tool_web_search(query: str) -> str:
         if not results:
             return "Không tìm thấy kết quả trên web."
 
-        _cb_record_success()
+        _cb_record_success(_CB_NAME)
         return _format_results(results, "WEB_SEARCH")
 
     except concurrent.futures.TimeoutError:
-        _cb_record_failure()
+        _cb_record_failure(_CB_NAME)
         logger.warning("[WEB_SEARCH] Timeout (%ss) for: %s", WEB_SEARCH_TIMEOUT, query[:50])
         return "Tìm kiếm web quá thời gian chờ. Vui lòng thử lại."
 
@@ -275,7 +279,7 @@ def tool_web_search(query: str) -> str:
         return "Lỗi: Chưa cài đặt duckduckgo-search. Chạy: pip install duckduckgo-search"
 
     except Exception as e:
-        _cb_record_failure()
+        _cb_record_failure(_CB_NAME)
         logger.warning("[WEB_SEARCH] Failed: %s", e)
         return f"Lỗi tìm kiếm: {e}"
 
@@ -290,7 +294,8 @@ def tool_web_search(query: str) -> str:
 ))
 def tool_search_news(query: str) -> str:
     """Search Vietnamese news using DuckDuckGo News + RSS feeds."""
-    if _cb_is_open():
+    _CB_NAME = "search_news"
+    if _cb_is_open(_CB_NAME):
         logger.warning("[NEWS_SEARCH] Circuit breaker OPEN — skipping search")
         return "Tìm kiếm tin tức tạm thời không khả dụng. Vui lòng thử lại sau."
 
@@ -324,14 +329,14 @@ def tool_search_news(query: str) -> str:
         if not all_results:
             return "Không tìm thấy tin tức liên quan."
 
-        _cb_record_success()
+        _cb_record_success(_CB_NAME)
         return _format_results(all_results[:8], "NEWS_SEARCH")
 
     except ImportError:
         return "Lỗi: Chưa cài đặt duckduckgo-search. Chạy: pip install duckduckgo-search"
 
     except Exception as e:
-        _cb_record_failure()
+        _cb_record_failure(_CB_NAME)
         logger.warning("[NEWS_SEARCH] Failed: %s", e)
         return f"Lỗi tìm kiếm tin tức: {e}"
 
@@ -347,7 +352,8 @@ def tool_search_news(query: str) -> str:
 ))
 def tool_search_legal(query: str) -> str:
     """Search Vietnamese legal documents using site-restricted DuckDuckGo."""
-    if _cb_is_open():
+    _CB_NAME = "search_legal"
+    if _cb_is_open(_CB_NAME):
         logger.warning("[LEGAL_SEARCH] Circuit breaker OPEN — skipping search")
         return "Tìm kiếm pháp luật tạm thời không khả dụng. Vui lòng thử lại sau."
 
@@ -362,11 +368,11 @@ def tool_search_legal(query: str) -> str:
         if not results:
             return "Không tìm thấy văn bản pháp luật liên quan."
 
-        _cb_record_success()
+        _cb_record_success(_CB_NAME)
         return _format_results(results, "LEGAL_SEARCH")
 
     except concurrent.futures.TimeoutError:
-        _cb_record_failure()
+        _cb_record_failure(_CB_NAME)
         logger.warning("[LEGAL_SEARCH] Timeout for: %s", query[:50])
         return "Tìm kiếm pháp luật quá thời gian chờ. Vui lòng thử lại."
 
@@ -374,7 +380,7 @@ def tool_search_legal(query: str) -> str:
         return "Lỗi: Chưa cài đặt duckduckgo-search. Chạy: pip install duckduckgo-search"
 
     except Exception as e:
-        _cb_record_failure()
+        _cb_record_failure(_CB_NAME)
         logger.warning("[LEGAL_SEARCH] Failed: %s", e)
         return f"Lỗi tìm kiếm pháp luật: {e}"
 
@@ -391,7 +397,8 @@ def tool_search_legal(query: str) -> str:
 ))
 def tool_search_maritime(query: str) -> str:
     """Search international maritime information using site-restricted DuckDuckGo."""
-    if _cb_is_open():
+    _CB_NAME = "search_maritime"
+    if _cb_is_open(_CB_NAME):
         logger.warning("[MARITIME_SEARCH] Circuit breaker OPEN — skipping search")
         return "Tìm kiếm hàng hải tạm thời không khả dụng. Vui lòng thử lại sau."
 
@@ -406,11 +413,11 @@ def tool_search_maritime(query: str) -> str:
         if not results:
             return "Không tìm thấy thông tin hàng hải liên quan."
 
-        _cb_record_success()
+        _cb_record_success(_CB_NAME)
         return _format_results(results, "MARITIME_SEARCH")
 
     except concurrent.futures.TimeoutError:
-        _cb_record_failure()
+        _cb_record_failure(_CB_NAME)
         logger.warning("[MARITIME_SEARCH] Timeout for: %s", query[:50])
         return "Tìm kiếm hàng hải quá thời gian chờ. Vui lòng thử lại."
 
@@ -418,7 +425,7 @@ def tool_search_maritime(query: str) -> str:
         return "Lỗi: Chưa cài đặt duckduckgo-search. Chạy: pip install duckduckgo-search"
 
     except Exception as e:
-        _cb_record_failure()
+        _cb_record_failure(_CB_NAME)
         logger.warning("[MARITIME_SEARCH] Failed: %s", e)
         return f"Lỗi tìm kiếm hàng hải: {e}"
 

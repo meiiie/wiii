@@ -61,6 +61,7 @@ class CacheEntry:
     value: Any                         # Cached response/documents/embedding
     tier: CacheTier
     user_id: str = ""                  # Sprint 121 RC-6: User isolation for cache
+    org_id: str = ""                   # Sprint 160: Org isolation for multi-tenant cache
     
     # Timestamps
     created_at: float = field(default_factory=time.time)

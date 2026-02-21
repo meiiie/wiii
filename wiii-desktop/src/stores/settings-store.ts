@@ -23,7 +23,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   default_domain: DEFAULT_DOMAIN,
   theme: "system",
   language: DEFAULT_LANGUAGE,
-  font_size: "medium",
   show_thinking: true,
   show_reasoning_trace: false,
   streaming_version: DEFAULT_STREAMING_VERSION,

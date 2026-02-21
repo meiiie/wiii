@@ -119,7 +119,11 @@ class RRFReranker:
     TITLE_MATCH_BOOST_WEAK = 1.1    # For common words (tàu, biển, đi)
     TITLE_MATCH_BOOST_MEDIUM = 1.5  # For 1 keyword match
     
-    # Sparse score threshold for priority boost
+    # Sparse score threshold for priority boost.
+    # NOTE: sparse_score is in raw BM25/ts_rank range (not 0-1 normalized).
+    # Typical ts_rank scores range 0-50+, so threshold 15.0 triggers for
+    # strong exact-match results (e.g., rule numbers, proper nouns).
+    # In merge_single_source(), raw scores are divided by 10.0 for display.
     SPARSE_PRIORITY_THRESHOLD = 15.0
     SPARSE_PRIORITY_BOOST = 1.5
     

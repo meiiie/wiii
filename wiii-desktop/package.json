@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@rive-app/react-webgl2": "^4.27.0",
+    "@tanstack/react-virtual": "^3.13.18",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-http": "^2.0.0",
@@ -27,6 +28,7 @@
     "react-markdown": "^9.0.0",
     "rehype-highlight": "^7.0.0",
     "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.0",
     "simplex-noise": "^4.0.3",
     "uuid": "^9.0.0",

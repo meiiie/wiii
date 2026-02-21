@@ -21,13 +21,12 @@ const config: Config = {
           DEFAULT: "var(--text)",
           secondary: "var(--text-secondary)",
           tertiary: "var(--text-tertiary)",
+          quaternary: "var(--text-quaternary)",
         },
       },
       fontFamily: {
         sans: [
-          "IBM Plex Sans",
-          "Source Sans 3",
-          "Noto Sans",
+          "Inter",
           "-apple-system",
           "BlinkMacSystemFont",
           "Segoe UI",

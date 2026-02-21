@@ -579,7 +579,7 @@ export interface AppSettings {
   organization_id?: string | null;
   theme: "light" | "dark" | "system";
   language: "vi" | "en";
-  font_size: "small" | "medium" | "large";
+  font_size?: "small" | "medium" | "large";
   show_thinking: boolean;
   show_reasoning_trace: boolean;
   streaming_version: "v1" | "v2" | "v3";

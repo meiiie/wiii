@@ -61,8 +61,8 @@ export function WelcomeScreen({ onSendMessage, onCancel }: WelcomeScreenProps) {
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center px-6 pt-[20vh] pb-8 welcome-bg">
-      <div className="w-full max-w-2xl flex flex-col items-center gap-7">
+    <div className="flex-1 flex flex-col items-center px-6 pt-[18vh] pb-8 welcome-bg">
+      <div className="w-full max-w-[720px] flex flex-col items-center gap-7">
         {/* Avatar — org logo or Wiii avatar (staggered reveal 1) */}
         <div className="welcome-reveal welcome-reveal-1">
           {orgBranding?.logo_url ? (

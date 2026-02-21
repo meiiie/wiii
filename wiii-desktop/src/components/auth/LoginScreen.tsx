@@ -159,7 +159,7 @@ export function LoginScreen() {
 
         {/* Error message */}
         {error && (
-          <div className="w-full p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+          <div className="w-full p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
             {error}
           </div>
         )}

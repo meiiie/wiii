@@ -4,32 +4,34 @@
 
 @layer base {
   :root {
-    /* Wiii Light — Claude-grade warm palette (Sprint 82c) */
-    --surface: #F5F5F0;
-    --surface-secondary: #EEEDE8;
-    --surface-tertiary: #E5E4DF;
+    /* Wiii Light — Claude 2026 warm palette (Sprint 162) */
+    --surface: #FAF9F5;
+    --surface-secondary: #F0EEE6;
+    --surface-tertiary: #E8E5DD;
     --surface-white: #FFFFFF;
-    --border: #E5E4DF;
-    --border-secondary: #DDD9CE;
-    --text: #1A1A18;
-    --text-secondary: #6B6A68;
-    --text-tertiary: #9A9893;
+    --border: #D8D5CD;
+    --border-secondary: #E0DDD5;
+    --border-color: var(--border);
+    --text: #141413;
+    --text-secondary: #3D3D3A;
+    --text-tertiary: #73726C;
+    --text-quaternary: #A09F9A;
 
-    /* Accent — terracotta (Claude-exact #AE5630) */
-    --accent: #AE5630;
-    --accent-hover: #C4633A;
-    --accent-light: #F4F3EE;
-    --accent-teal: #1a8cbe;
+    /* Accent — brighter terracotta (Sprint 162) */
+    --accent: #C75B39;
+    --accent-hover: #D4663F;
+    --accent-light: #FBF5F0;
+    --accent-teal: #2C84DB;
 
-    /* User message — warm gray bubble */
-    --user-bg: #DDD9CE;
+    /* User message — Claude cream bubble */
+    --user-bg: #F0EEE6;
     --user-border: transparent;
 
-    /* Thinking — warm amber */
-    --thinking-bg: #fef9ef;
-    --thinking-border: #e8c96e;
-    --thinking-text: #8a6d1b;
-    --thinking-shimmer: #f5e6b8;
+    /* Thinking — flat, no amber (Sprint 162) */
+    --thinking-bg: transparent;
+    --thinking-border: var(--border);
+    --thinking-text: var(--text-secondary);
+    --thinking-shimmer: transparent;
 
     /* Sources */
     --source-badge: #EEEDE8;
@@ -48,7 +50,7 @@
 
     /* Shadow system — multi-layer depth (Claude reference) */
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02);
-    --shadow-md: 0 4px 20px rgba(0,0,0,0.035), 0 1px 5px rgba(0,0,0,0.025);
+    --shadow-md: 0 4px 20px rgba(0,0,0,0.035), 0 0 0 0.5px rgba(31,30,29,0.15);
     --shadow-lg: 0 10px 40px rgba(0,0,0,0.06), 0 2px 10px rgba(0,0,0,0.03);
 
     /* Easing — premium cubic-bezier (Claude reference) */
@@ -57,29 +59,32 @@
   }
 
   .dark {
-    --surface: #2B2A27;
-    --surface-secondary: #252422;
-    --surface-tertiary: #3A3935;
+    --surface: #1E1D1B;
+    --surface-secondary: #282724;
+    --surface-tertiary: #353330;
     --surface-white: #1F1E1B;
     --border: #3A3935;
     --border-secondary: #444340;
-    --text: #EEEEEE;
-    --text-secondary: #9A9893;
-    --text-tertiary: #6B6A68;
+    --border-color: var(--border);
+    --text: #E8E8E4;
+    --text-secondary: #A8A7A2;
+    --text-tertiary: #73726C;
+    --text-quaternary: #5A5955;
 
-    /* Accent — same terracotta in dark (Claude keeps identical) */
-    --accent: #AE5630;
-    --accent-hover: #C4633A;
+    /* Accent — brighter terracotta (Sprint 162) */
+    --accent: #C75B39;
+    --accent-hover: #D4663F;
     --accent-light: #2a1e14;
     --accent-teal: #4aafe0;
 
-    --user-bg: #393937;
+    --user-bg: #353330;
     --user-border: transparent;
 
-    --thinking-bg: #2a2618;
-    --thinking-border: #8a7530;
-    --thinking-text: #d4c078;
-    --thinking-shimmer: #3a3220;
+    /* Thinking — flat (Sprint 162) */
+    --thinking-bg: transparent;
+    --thinking-border: var(--border);
+    --thinking-text: var(--text-secondary);
+    --thinking-shimmer: transparent;
 
     --source-badge: #3A3935;
     --source-text: #9A9893;
@@ -112,8 +117,7 @@
     @apply antialiased;
     background-color: var(--surface);
     color: var(--text);
-    font-family: "IBM Plex Sans", "Source Sans 3", "Noto Sans", -apple-system,
-      BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     overflow: hidden;
     user-select: none;
     -webkit-font-smoothing: antialiased;
@@ -135,12 +139,12 @@
 }
 
 .sidebar-open {
-  width: 16rem; /* w-64 */
+  width: 18rem; /* w-72, 288px Claude-exact */
   opacity: 1;
 }
 
 .sidebar-closed {
-  width: 48px;
+  width: 50px; /* Claude-exact */
   opacity: 1;
 }
 
@@ -333,17 +337,10 @@
   opacity: 0.85;
 }
 
-/* Sprint 147: Streaming border shimmer on thinking block */
-@keyframes thinking-border-shimmer {
-  0% { border-color: var(--border); }
-  50% { border-color: var(--accent-orange); }
-  100% { border-color: var(--border); }
-}
-
+/* Sprint 162: Simple accent left-border when streaming (flat, no shimmer) */
 .th-streaming-border {
-  border-left: 2px solid var(--accent-orange);
+  border-left: 2px solid var(--accent);
   padding-left: 8px;
-  animation: thinking-border-shimmer 2s ease-in-out infinite;
 }
 
 /* Thinking content — scale down markdown for compact display */

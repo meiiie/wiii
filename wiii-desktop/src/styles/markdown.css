@@ -1,9 +1,9 @@
 /* Markdown content styling */
 .markdown-content {
   font-family: 'Source Serif 4', Georgia, serif;
-  font-size: 15.5px;
+  font-size: 16px;
   line-height: 1.85;
-  color: var(--text-secondary);
+  color: var(--text);
 }
 
 .markdown-content p {

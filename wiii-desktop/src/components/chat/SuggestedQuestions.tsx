@@ -1,5 +1,6 @@
 import { motion } from "motion/react";
 import { pillEntry, pillStagger } from "@/lib/animations";
+import { useReducedMotion, motionSafe } from "@/hooks/useReducedMotion";
 
 interface SuggestedQuestionsProps {
   questions: string[];
@@ -7,6 +8,8 @@ interface SuggestedQuestionsProps {
 }
 
 export function SuggestedQuestions({ questions, onSelect }: SuggestedQuestionsProps) {
+  const reduced = useReducedMotion();
+
   if (!questions || questions.length === 0) return null;
 
   return (
@@ -14,8 +17,8 @@ export function SuggestedQuestions({ questions, onSelect }: SuggestedQuestionsPr
       <p className="text-[11px] text-text-tertiary mb-1.5 font-medium">Mình gợi ý:</p>
       <motion.div
         className="flex flex-wrap gap-1.5"
-        variants={pillStagger}
-        initial="hidden"
+        variants={motionSafe(reduced, pillStagger)}
+        initial={reduced ? false : "hidden"}
         animate="visible"
         role="group"
         aria-label="Câu hỏi gợi ý"
@@ -23,11 +26,11 @@ export function SuggestedQuestions({ questions, onSelect }: SuggestedQuestionsPr
       {questions.map((q, i) => (
         <motion.button
           key={i}
-          variants={pillEntry}
+          variants={motionSafe(reduced, pillEntry)}
           onClick={() => onSelect(q)}
-          className="px-3 py-1.5 rounded-full bg-surface border border-border text-xs font-medium text-text-secondary hover:border-[var(--accent-orange)] hover:text-[var(--accent-orange)] transition-colors"
-          whileHover={{ scale: 1.04, boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}
-          whileTap={{ scale: 0.97 }}
+          className="px-3 py-1.5 rounded-full bg-transparent border border-[var(--border)] text-xs font-medium text-text-secondary hover:bg-surface-secondary hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+          whileHover={reduced ? undefined : { scale: 1.04, boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}
+          whileTap={reduced ? undefined : { scale: 0.97 }}
           aria-label={`Hỏi: ${q}`}
         >
           {q}

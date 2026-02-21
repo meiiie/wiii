@@ -8,7 +8,7 @@
  * - OrgSettingsTab form behavior
  * - WelcomeScreen org-aware branding
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { useOrgStore } from "@/stores/org-store";
 import {

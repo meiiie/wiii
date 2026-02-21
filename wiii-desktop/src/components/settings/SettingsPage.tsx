@@ -193,7 +193,7 @@ export function SettingsPage() {
       aria-modal="true"
       aria-labelledby="settings-title"
     >
-      <div ref={dialogRef} className="bg-surface rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col border border-border animate-scale-in">
+      <div ref={dialogRef} className="bg-surface rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col border border-border animate-scale-in">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div className="flex items-center gap-2.5">
@@ -1320,6 +1320,8 @@ function ToggleField({
         <div className="text-xs text-text-tertiary">{description}</div>
       </div>
       <button
+        role="switch"
+        aria-checked={checked}
         onClick={() => onChange(!checked)}
         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
           checked ? "bg-[var(--accent)]" : "bg-gray-300 dark:bg-gray-600"

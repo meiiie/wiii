@@ -2,9 +2,11 @@
  * MessageList — renders conversation messages + streaming state.
  * Sprint 81: Scroll-to-bottom FAB, message actions, regenerate.
  * Sprint 141b: Interleaved thinking+answer blocks ("Tự Vấn").
+ * Sprint 162b: Virtual scrolling via @tanstack/react-virtual (>50 messages).
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "motion/react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown } from "lucide-react";
 import type { Message, ThinkingBlockData, ScreenshotBlockData } from "@/api/types";
 import { useChatStore } from "@/stores/chat-store";
@@ -18,6 +20,11 @@ import { ScreenshotBlock } from "./ScreenshotBlock";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { SourceCitation } from "./SourceCitation";
+
+/** Virtualize only when message count exceeds this threshold */
+const VIRTUALIZATION_THRESHOLD = 50;
+/** Gap between message items (space-y-5 = 20px) */
+const MESSAGE_GAP = 20;
 
 interface MessageListProps {
   messages: Message[];
@@ -59,33 +66,90 @@ export function MessageList({
     }
   }
 
+  const useVirtual = messages.length > VIRTUALIZATION_THRESHOLD;
+
+  // Virtual scrolling for large conversations
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: useCallback((index: number) => {
+      // Rough estimate: user messages ~60px, assistant ~200px
+      return messages[index]?.role === "user" ? 70 : 200;
+    }, [messages]),
+    overscan: 5,
+    gap: MESSAGE_GAP,
+    enabled: useVirtual,
+  });
+
   return (
     <div className="relative flex-1 overflow-hidden">
       <div
         ref={containerRef}
         className="h-full overflow-y-auto px-4 py-6 scroll-container"
-        aria-live="polite"
+        aria-live={isStreaming ? "off" : "polite"}
       >
-        <div className="max-w-3xl mx-auto space-y-5">
-          {messages.map((msg, idx) => {
-            const isLast = idx === lastAssistantIdx && msg.role === "assistant";
-            return (
-              <MessageBubble
-                key={msg.id}
-                message={msg}
-                isLastAssistant={isLast}
-                liveAvatarState={isLast ? avatarState : undefined}
-                liveAvatarMood={isLast ? avatarMood : undefined}
-                liveSoulEmotion={isLast ? soulEmotion : undefined}
-                onSuggestedQuestion={onSuggestedQuestion}
-                onRegenerate={isLast ? onRegenerate : undefined}
-                onEditMessage={msg.role === "user" ? onEditMessage : undefined}
-              />
-            );
-          })}
+        {useVirtual ? (
+          /* Virtualized path — only render visible messages */
+          <div className="max-w-[720px] mx-auto">
+            <div
+              style={{ height: virtualizer.getTotalSize(), position: "relative", width: "100%" }}
+            >
+              {virtualizer.getVirtualItems().map((virtualRow) => {
+                const msg = messages[virtualRow.index];
+                const isLast = virtualRow.index === lastAssistantIdx && msg.role === "assistant";
+                return (
+                  <div
+                    key={msg.id}
+                    data-index={virtualRow.index}
+                    ref={virtualizer.measureElement}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    <MessageBubble
+                      message={msg}
+                      isLastAssistant={isLast}
+                      liveAvatarState={isLast ? avatarState : undefined}
+                      liveAvatarMood={isLast ? avatarMood : undefined}
+                      liveSoulEmotion={isLast ? soulEmotion : undefined}
+                      onSuggestedQuestion={onSuggestedQuestion}
+                      onRegenerate={isLast ? onRegenerate : undefined}
+                      onEditMessage={msg.role === "user" ? onEditMessage : undefined}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          /* Standard path — render all messages (< threshold) */
+          <div className="max-w-[720px] mx-auto space-y-5">
+            {messages.map((msg, idx) => {
+              const isLast = idx === lastAssistantIdx && msg.role === "assistant";
+              return (
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  isLastAssistant={isLast}
+                  liveAvatarState={isLast ? avatarState : undefined}
+                  liveAvatarMood={isLast ? avatarMood : undefined}
+                  liveSoulEmotion={isLast ? soulEmotion : undefined}
+                  onSuggestedQuestion={onSuggestedQuestion}
+                  onRegenerate={isLast ? onRegenerate : undefined}
+                  onEditMessage={msg.role === "user" ? onEditMessage : undefined}
+                />
+              );
+            })}
+          </div>
+        )}
 
-          {/* Streaming message — avatar + interleaved blocks */}
-          {isStreaming && (
+        {/* Streaming message — avatar + interleaved blocks (always rendered) */}
+        {isStreaming && (
+          <div className="max-w-[720px] mx-auto mt-5">
             <div className="flex gap-2.5 animate-slide-in">
               {/* Wiii avatar — 64px kawaii face for active streaming (newest message) */}
               <motion.div layoutId="wiii-active-avatar">
@@ -111,13 +175,11 @@ export function MessageList({
                     );
                   }
                   if (block.type === "action_text") {
-                    // Sprint 149: Styled action text with orange border + arrow
                     return (
                       <ActionText key={block.id} content={block.content} node={block.node} />
                     );
                   }
                   if (block.type === "screenshot") {
-                    // Sprint 153: Browser screenshot during streaming
                     return <ScreenshotBlock key={block.id} block={block as ScreenshotBlockData} />;
                   }
                   if (block.type === "answer") {
@@ -164,8 +226,8 @@ export function MessageList({
                 )}
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Scroll-to-bottom FAB */}

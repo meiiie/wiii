@@ -92,6 +92,7 @@ class SemanticResponseCache:
         query: str,
         query_embedding: List[float],
         user_id: str = "",
+        org_id: str = "",
     ) -> CacheLookupResult:
         """
         Find semantically similar cached response.
@@ -100,6 +101,7 @@ class SemanticResponseCache:
             query: Original query text
             query_embedding: Query embedding vector (768-dim)
             user_id: User ID for isolation — only match entries from same user
+            org_id: Organization ID for multi-tenant isolation (Sprint 160)
 
         Returns:
             CacheLookupResult with hit status and cached value if found
@@ -126,6 +128,10 @@ class SemanticResponseCache:
 
                 # Sprint 121 RC-6: Skip entries from different users
                 if user_id and entry.user_id and entry.user_id != user_id:
+                    continue
+
+                # Sprint 160: Skip entries from different organizations
+                if org_id and getattr(entry, 'org_id', '') and entry.org_id != org_id:
                     continue
 
                 # Calculate cosine similarity
@@ -185,6 +191,7 @@ class SemanticResponseCache:
         document_ids: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         user_id: str = "",
+        org_id: str = "",
     ) -> None:
         """
         Store response with semantic key.
@@ -196,12 +203,15 @@ class SemanticResponseCache:
             document_ids: List of document IDs used (for invalidation)
             metadata: Additional metadata
             user_id: User ID for isolation — cached entries are user-scoped
+            org_id: Organization ID for multi-tenant isolation (Sprint 160)
         """
         if not self._config.enabled:
             return
 
-        # Sprint 121 RC-6: Use user_id-prefixed key for isolation
-        cache_key = f"{user_id}::{query}" if user_id else query
+        # Sprint 121 RC-6 + Sprint 160: Use org_id:user_id-prefixed key for isolation
+        prefix = f"{org_id}:" if org_id else ""
+        prefix += f"{user_id}::" if user_id else ""
+        cache_key = f"{prefix}{query}"
 
         async with self._lock:
             # Evict if at capacity
@@ -222,6 +232,7 @@ class SemanticResponseCache:
                 document_ids=document_ids or [],
                 metadata=metadata or {},
                 user_id=user_id,
+                org_id=org_id,
             )
 
             self._cache[cache_key] = entry

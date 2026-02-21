@@ -35,7 +35,7 @@ export function AppShell({ children }: AppShellProps) {
         >
           <Sidebar />
         </div>
-        <main className="flex-1 flex flex-col overflow-hidden transition-all duration-250">
+        <main className="flex-1 flex flex-col overflow-hidden transition-all duration-200">
           {/* Disconnected banner */}
           <AnimatePresence>
             {showDisconnected && (

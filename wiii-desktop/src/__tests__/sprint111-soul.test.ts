@@ -135,15 +135,7 @@ describe("WelcomeScreen — Wiii personality", () => {
 // ---------------------------------------------------------------------------
 // 4) Streaming personality
 // ---------------------------------------------------------------------------
-describe("StreamingIndicator — Wiii personality", () => {
-  it("should have Wiii voice in elapsed timer", async () => {
-    const src = await import("@/components/chat/StreamingIndicator?raw");
-    const code = (src as any).default || src;
-    expect(code).toContain("Wiii đang suy nghĩ...");
-    expect(code).toContain("Wiii tư duy sâu...");
-    expect(code).toContain("Wiii vẫn đang cố gắng...");
-  });
-});
+// StreamingIndicator tests removed — component deprecated Sprint 141, deleted Sprint 161
 
 describe("MessageList — streaming avatar", () => {
   it("should use WiiiAvatar with centralized useAvatarState hook", async () => {

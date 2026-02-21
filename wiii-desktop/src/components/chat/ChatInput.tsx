@@ -163,10 +163,10 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
     );
   }
 
-  // Normal bottom-bar mode
+  // Normal bottom-bar mode — input-card style (Sprint 162)
   return (
-    <div className="bg-surface px-4 py-3 border-t border-border">
-      <div className="max-w-3xl mx-auto">
+    <div className="bg-surface px-4 py-3">
+      <div className="max-w-[720px] mx-auto">
         {/* Edit mode banner */}
         {editingMessage && onClearEdit && (
           <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-lg bg-[var(--accent-light)] text-[var(--accent)] text-xs">
@@ -184,61 +184,63 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
           </div>
         )}
 
-        <div className="relative">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={handleInput}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            onFocus={() => setInputFocused(true)}
-            onBlur={() => setInputFocused(false)}
-            placeholder="Hỏi Wiii bất cứ điều gì..."
-            className="w-full resize-none rounded-2xl border border-border bg-surface-secondary px-4 py-3 pr-12 text-[14px] text-text placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 focus:border-[var(--accent)] transition-all"
-            rows={1}
-            maxLength={MAX_MESSAGE_LENGTH}
-            disabled={isStreaming}
-            aria-label="Nhập tin nhắn"
-          />
-          <div className="absolute right-2 bottom-2">
-            {isStreaming ? (
-              <button
-                onClick={onCancel}
-                className="flex items-center justify-center w-8 h-8 rounded-full bg-red-500/90 text-white hover:bg-red-600 transition-colors"
-                title="Dừng"
-                aria-label="Dừng tạo phản hồi"
-              >
-                <Square size={13} />
-              </button>
-            ) : (
-              <button
-                onClick={handleSend}
-                disabled={!input.trim()}
-                className="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150"
-                title="Gửi (Enter)"
-                aria-label="Gửi tin nhắn"
-              >
-                <ArrowUp size={15} strokeWidth={2.5} />
-              </button>
-            )}
+        <div className="input-card">
+          <div className="m-3 flex flex-col gap-2">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={handleInput}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              onFocus={() => setInputFocused(true)}
+              onBlur={() => setInputFocused(false)}
+              placeholder="Hỏi Wiii bất cứ điều gì..."
+              className="w-full resize-none bg-transparent px-1.5 pt-1 text-[14px] text-text placeholder:text-text-tertiary focus:outline-none min-h-[2.5rem] max-h-48"
+              rows={1}
+              maxLength={MAX_MESSAGE_LENGTH}
+              disabled={isStreaming}
+              aria-label="Nhập tin nhắn"
+            />
+            <div className="flex items-center justify-between h-8">
+              <div className="flex items-center gap-3">
+                <DomainSelector />
+                <span className="text-[10px] text-text-tertiary">
+                  Enter gửi · Shift+Enter xuống dòng
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {showCharCount && (
+                  <span
+                    className={`text-[10px] tabular-nums ${
+                      isNearLimit ? "text-red-500" : "text-text-tertiary"
+                    }`}
+                  >
+                    {charCount}/{MAX_MESSAGE_LENGTH}
+                  </span>
+                )}
+                {isStreaming ? (
+                  <button
+                    onClick={onCancel}
+                    className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/90 text-white hover:bg-red-600 active:scale-95 transition-all duration-300"
+                    title="Dừng"
+                    aria-label="Dừng tạo phản hồi"
+                  >
+                    <Square size={13} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSend}
+                    disabled={!input.trim()}
+                    className="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150"
+                    title="Gửi (Enter)"
+                    aria-label="Gửi tin nhắn"
+                  >
+                    <ArrowUp size={15} strokeWidth={2.5} />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="mt-1 px-1 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <DomainSelector />
-            <span className="text-[10px] text-text-tertiary">
-              Gửi cho Wiii (Enter) · Xuống dòng (Shift+Enter)
-            </span>
-          </div>
-          {showCharCount && (
-            <span
-              className={`text-[10px] tabular-nums ${
-                isNearLimit ? "text-red-500" : "text-text-tertiary"
-              }`}
-            >
-              {charCount}/{MAX_MESSAGE_LENGTH}
-            </span>
-          )}
         </div>
       </div>
     </div>

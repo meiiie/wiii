@@ -810,6 +810,7 @@ function WiiiAvatarInner({ state = "idle", size = 24, className = "", mood = "ne
         <canvas
           ref={canvasRef as React.Ref<HTMLCanvasElement>}
           className="absolute wiii-avatar-canvas"
+          aria-hidden="true"
           style={{
             width: expandedSize,
             height: expandedSize,

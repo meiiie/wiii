@@ -41,7 +41,7 @@ export function StatusBar() {
   const shouldPulse = status === "orange" || status === "red";
 
   return (
-    <div className="flex items-center justify-between h-7 px-3 bg-surface border-t border-border text-xs text-text-tertiary">
+    <div className="flex items-center justify-between h-8 px-3 bg-surface border-t border-border text-xs text-text-tertiary">
       {/* Left: Wiii presence + Mood + Org > Domain */}
       <div className="flex items-center gap-1.5">
         <button

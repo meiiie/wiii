@@ -57,7 +57,7 @@ export function SourcesPanel() {
           initial="hidden"
           animate="visible"
           exit="exit"
-          className="fixed right-0 top-0 bottom-0 w-[360px] max-w-[90vw] bg-surface border-l border-border shadow-xl z-40 flex flex-col"
+          className="fixed right-0 top-11 bottom-0 w-[360px] max-w-[90vw] bg-surface border-l border-border shadow-xl z-40 flex flex-col"
           role="complementary"
           aria-label="Nguồn tham khảo"
         >
