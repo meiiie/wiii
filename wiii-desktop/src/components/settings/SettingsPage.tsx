@@ -42,9 +42,10 @@ import { PERSONAL_ORG_ID } from "@/lib/constants";
 import { fetchIdentities, unlinkIdentity } from "@/api/users";
 import type { AppSettings, UserRole, UserPreferences, UserIdentity, LearningStyle, DifficultyLevel, PronounStyle } from "@/api/types";
 import { OrgSettingsTab } from "./OrgSettingsTab";
-import { Building2 } from "lucide-react";
+import { LivingAgentPanel } from "@/components/living-agent/LivingAgentPanel";
+import { Building2, Heart } from "lucide-react";
 
-type Tab = "connection" | "user" | "preferences" | "learning" | "memory" | "context" | "organization";
+type Tab = "connection" | "user" | "preferences" | "learning" | "memory" | "context" | "organization" | "living-agent";
 
 export function SettingsPage() {
   const { settings, updateSettings, resetSettings } = useSettingsStore();
@@ -184,6 +185,7 @@ export function SettingsPage() {
     { id: "memory", label: "Bộ nhớ", icon: <Brain size={16} /> },
     { id: "context", label: "Ngữ cảnh", icon: <Database size={16} /> },
     { id: "organization", label: "Tổ chức", icon: <Building2 size={16} /> },
+    { id: "living-agent", label: "Linh hồn", icon: <Heart size={16} /> },
   ];
 
   return (
@@ -261,6 +263,9 @@ export function SettingsPage() {
           )}
           {activeTab === "organization" && (
             <OrgSettingsTab />
+          )}
+          {activeTab === "living-agent" && (
+            <LivingAgentPanel />
           )}
         </div>
 
@@ -738,6 +743,22 @@ function PreferencesTab({ settings, onUpdate }: PreferencesTabProps) {
         checked={settings.show_reasoning_trace}
         onChange={(v) => onUpdate("show_reasoning_trace", v)}
       />
+
+      {/* Sprint 166: Preview Cards Toggle */}
+      <ToggleField
+        label="Xem trước nội dung"
+        description="Hiển thị thẻ xem trước cho tài liệu, sản phẩm, và liên kết"
+        checked={settings.show_previews !== false}
+        onChange={(v) => onUpdate("show_previews", v)}
+      />
+
+      {/* Sprint 167: Artifacts toggle */}
+      <ToggleField
+        label="Không gian sáng tạo"
+        description="Hiển thị artifact tương tác (code, HTML, bảng dữ liệu) với khả năng thực thi"
+        checked={settings.show_artifacts !== false}
+        onChange={(v) => onUpdate("show_artifacts", v)}
+      />
     </div>
   );
 }
@@ -1103,12 +1124,10 @@ function ContextTab() {
   const { addToast } = useToastStore();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
-  // Fetch on mount
-  const [loaded, setLoaded] = useState(false);
-  if (!loaded) {
-    setLoaded(true);
+  // Fetch on mount — Sprint 165: useEffect to avoid setState during render
+  useEffect(() => {
     if (sessionId) fetchContextInfo(sessionId);
-  }
+  }, [sessionId]);
 
   const utilization = info ? Math.round(info.utilization ?? 0) : 0;
   const totalBudget = info?.total_budget ?? 0;

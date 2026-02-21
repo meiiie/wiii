@@ -116,14 +116,20 @@ class KGBuilderAgentNode:
     async def extract(self, text: str, source: Optional[str] = None) -> ExtractionOutput:
         """
         Extract entities and relations from text.
-        
+
         Args:
             text: Text content to extract from
             source: Optional source identifier
-            
+
         Returns:
             ExtractionOutput with entities and relations
         """
+        # Sprint 165: Early return when Neo4j is disabled
+        from app.core.config import settings
+        if not getattr(settings, "enable_neo4j", False):
+            logger.debug("KG Builder skipped — enable_neo4j=False")
+            return ExtractionOutput()
+
         if not self._structured_llm:
             logger.warning("KG Builder LLM not available")
             return ExtractionOutput()

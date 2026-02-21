@@ -35,8 +35,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      neo4j:
-        condition: service_healthy
+      # Neo4j: Legacy — opt-in with: docker compose --profile neo4j up
       # MinIO is optional — app starts without it, storage features degrade gracefully
       # To require MinIO, uncomment:
       # minio:
@@ -76,7 +75,8 @@ services:
       retries: 5
 
   # =============================================================================
-  # NEO4J - Knowledge Graph
+  # NEO4J - Knowledge Graph (Legacy — reserved for future Learning Graph)
+  # Start with: docker compose --profile neo4j up
   # =============================================================================
   neo4j:
     image: neo4j:5-community
@@ -100,6 +100,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    profiles:
+      - neo4j  # Opt-in: docker compose --profile neo4j up
 
   # =============================================================================
   # MINIO - Local S3-Compatible Object Storage

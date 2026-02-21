@@ -134,6 +134,22 @@ class CacheConfig(BaseModel):
     adaptive_ttl: bool = True
 
 
+class LivingAgentConfig(BaseModel):
+    """Living Agent — autonomous life, browsing, learning, emotion (Sprint 170)."""
+    enabled: bool = False
+    heartbeat_interval: int = 1800
+    active_hours_start: int = 8
+    active_hours_end: int = 23
+    local_model: str = "qwen3:8b"
+    max_browse_items: int = 10
+    enable_social_browse: bool = False
+    enable_skill_building: bool = False
+    enable_journal: bool = True
+    require_human_approval: bool = True
+    max_actions_per_heartbeat: int = 3
+    max_skills_per_week: int = 5
+
+
 class LMSIntegrationConfig(BaseModel):
     """LMS integration — Spring Boot LMS webhook + API (Sprint 155)."""
     enabled: bool = False
@@ -265,17 +281,18 @@ class Settings(BaseSettings):
     @property
     def postgres_url_sync(self) -> str:
         """
-        Construct synchronous PostgreSQL connection URL (for Alembic migrations).
+        Construct synchronous PostgreSQL connection URL (standard postgresql:// format).
 
-        CHỈ THỊ KỸ THUẬT SỐ 19: Xử lý ssl=require cho psycopg2
+        Used by: checkpointer (psycopg3 libpq), SQLAlchemy (via database.py dialect override).
+        Sprint 165: psycopg2-binary removed Sprint 154, psycopg[binary]>=3.1 is the replacement.
         """
         if self.database_url:
             url = self.database_url
-            # Ensure it's standard postgresql:// format
+            # Normalize to standard postgresql:// (no dialect suffix)
             if url.startswith("postgres://"):
                 url = url.replace("postgres://", "postgresql://", 1)
             url = url.replace("postgresql+asyncpg://", "postgresql://")
-            # Convert ssl=require to sslmode=require for psycopg2
+            # Convert ssl=require to sslmode=require for psycopg3
             if "ssl=require" in url:
                 url = url.replace("ssl=require", "sslmode=require")
             return url
@@ -405,9 +422,6 @@ class Settings(BaseSettings):
     active_domains: list[str] = Field(default=["maritime", "traffic_law"], description="List of active domain plugin IDs")
     default_domain: str = Field(default="maritime", description="Default domain when not specified")
 
-    # Evaluation Framework
-    enable_evaluation: bool = Field(default=False, description="Enable lightweight evaluation metrics")
-
     # Multi-Channel Gateway
     enable_websocket: bool = Field(default=True, description="Enable WebSocket chat endpoint")
     enable_telegram: bool = Field(default=False, description="Enable Telegram bot integration")
@@ -447,6 +461,9 @@ class Settings(BaseSettings):
         default="{}",
         description='JSON per-node overrides: {"tutor_agent": {"tier": "moderate", "provider": "google"}}'
     )
+
+    # Neo4j (Legacy — reserved for future Learning Graph)
+    enable_neo4j: bool = Field(default=False, description="Enable Neo4j graph database (legacy, reserved for Learning Graph)")
 
     # Subagent Architecture (Sprint 163)
     enable_subagent_architecture: bool = Field(default=False, description="Enable subagent/subgraph architecture")
@@ -533,6 +550,26 @@ class Settings(BaseSettings):
     # Multi-Phase Thinking Chain
     enable_thinking_chain: bool = Field(default=False, description="Enable multi-phase thinking chain")
 
+    # Living Agent System (Sprint 170)
+    enable_living_agent: bool = Field(default=False, description="Enable Wiii's autonomous living agent system")
+    living_agent_heartbeat_interval: int = Field(default=1800, ge=300, le=86400, description="Heartbeat interval in seconds (default 30 min)")
+    living_agent_active_hours_start: int = Field(default=8, ge=0, le=23, description="Start hour for active period (UTC+7)")
+    living_agent_active_hours_end: int = Field(default=23, ge=0, le=23, description="End hour for active period (UTC+7)")
+    living_agent_local_model: str = Field(default="qwen3:8b", description="Local Ollama model for autonomous tasks")
+    living_agent_max_browse_items: int = Field(default=10, ge=1, le=50, description="Max items to process per browsing session")
+    living_agent_enable_social_browse: bool = Field(default=False, description="Allow Wiii to browse social media autonomously")
+    living_agent_enable_skill_building: bool = Field(default=False, description="Allow Wiii to learn new skills autonomously")
+    living_agent_enable_journal: bool = Field(default=True, description="Enable daily journal writing")
+    living_agent_require_human_approval: bool = Field(default=True, description="Require human approval for external actions")
+    living_agent_max_actions_per_heartbeat: int = Field(default=3, ge=1, le=10, description="Max actions per heartbeat cycle")
+    living_agent_max_skills_per_week: int = Field(default=5, ge=1, le=20, description="Max new skills to discover per week")
+
+    # Preview System (Sprint 166)
+    enable_preview: bool = Field(default=True, description="Rich preview cards in streaming responses")
+
+    # Artifact System (Sprint 167)
+    enable_artifacts: bool = Field(default=True, description="Interactive artifacts (code execution, file preview)")
+
     # Product Search Agent
     enable_product_search: bool = Field(default=False, description="Enable product search agent")
     serper_api_key: Optional[str] = Field(default=None, description="Serper.dev API key")
@@ -608,6 +645,7 @@ class Settings(BaseSettings):
     thinking: ThinkingConfig = Field(default_factory=ThinkingConfig, exclude=True)
     character: CharacterConfig = Field(default_factory=CharacterConfig, exclude=True)
     cache: CacheConfig = Field(default_factory=CacheConfig, exclude=True)
+    living_agent: LivingAgentConfig = Field(default_factory=LivingAgentConfig, exclude=True)
     lms: LMSIntegrationConfig = Field(default_factory=LMSIntegrationConfig, exclude=True)
 
     # =========================================================================
@@ -1024,6 +1062,20 @@ class Settings(BaseSettings):
             retrieval_ttl=self.cache_retrieval_ttl,
             max_entries=self.cache_max_response_entries,
             adaptive_ttl=self.cache_adaptive_ttl,
+        ))
+        object.__setattr__(self, "living_agent", LivingAgentConfig(
+            enabled=self.enable_living_agent,
+            heartbeat_interval=self.living_agent_heartbeat_interval,
+            active_hours_start=self.living_agent_active_hours_start,
+            active_hours_end=self.living_agent_active_hours_end,
+            local_model=self.living_agent_local_model,
+            max_browse_items=self.living_agent_max_browse_items,
+            enable_social_browse=self.living_agent_enable_social_browse,
+            enable_skill_building=self.living_agent_enable_skill_building,
+            enable_journal=self.living_agent_enable_journal,
+            require_human_approval=self.living_agent_require_human_approval,
+            max_actions_per_heartbeat=self.living_agent_max_actions_per_heartbeat,
+            max_skills_per_week=self.living_agent_max_skills_per_week,
         ))
         object.__setattr__(self, "lms", LMSIntegrationConfig(
             enabled=self.enable_lms_integration,

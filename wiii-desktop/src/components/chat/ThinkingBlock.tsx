@@ -77,9 +77,12 @@ export function ThinkingBlock({
       if (timerRef.current) clearInterval(timerRef.current);
       setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
       startTimeRef.current = null;
-      // Auto-collapse after a brief moment (skip for detailed mode)
+      // Sprint 165: Dynamic collapse delay based on content length
+      // Short content collapses quickly, long content stays visible longer
       if (thinkingLevel !== "detailed") {
-        const collapseTimer = setTimeout(() => setExpanded(false), 1500);
+        const contentLen = content?.length ?? 0;
+        const collapseDelay = Math.min(Math.max(1500, contentLen * 5), 5000);
+        const collapseTimer = setTimeout(() => setExpanded(false), collapseDelay);
         return () => clearTimeout(collapseTimer);
       }
     }

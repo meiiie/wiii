@@ -13,7 +13,7 @@ import { useContextStore } from "@/stores/context-store";
 import { useCharacterStore } from "@/stores/character-store";
 import { StreamBuffer } from "@/lib/stream-buffer";
 import type { SSEEventHandler } from "@/api/sse";
-import type { ChatResponseMetadata, MoodType } from "@/api/types";
+import type { AggregationSummary, ArtifactType, ChatResponseMetadata, MoodType, PreviewType } from "@/api/types";
 
 const MAX_SSE_RETRIES = 3;
 const SSE_BACKOFF_MS = 1000; // 1s, 2s, 4s
@@ -23,6 +23,44 @@ const _thinkToolIds = new Set<string>();
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Sprint 165: Map error types to Vietnamese-specific messages. */
+function _getVietnameseErrorMessage(err: unknown): string {
+  if (err instanceof TypeError && err.message.includes("fetch")) {
+    return "Mất kết nối với máy chủ. Vui lòng kiểm tra kết nối mạng.";
+  }
+  if (err instanceof DOMException && err.name === "TimeoutError") {
+    return "Phản hồi quá lâu. Vui lòng thử lại.";
+  }
+  if (err instanceof DOMException && err.name === "AbortError") {
+    return "Đã hủy yêu cầu.";
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes("500") || msg.includes("Internal")) {
+    return "Lỗi xử lý nội bộ. Wiii đang khắc phục...";
+  }
+  if (msg.includes("429") || msg.includes("rate")) {
+    return "Quá nhiều yêu cầu. Vui lòng đợi một chút.";
+  }
+  return "Mất kết nối. Vui lòng thử lại.";
+}
+
+/**
+ * Sprint 164: Extract agent names from parallel dispatch status content.
+ * Examples: "Triển khai song song: rag, tutor" → ["rag", "tutor"]
+ *           "Dispatching: rag_agent, tutor_agent" → ["rag_agent", "tutor_agent"]
+ */
+export function _parseParallelTargets(content: string): string[] {
+  if (!content) return [];
+  // Try colon-separated format: "Label: agent1, agent2"
+  const colonIdx = content.indexOf(":");
+  const segment = colonIdx >= 0 ? content.slice(colonIdx + 1) : content;
+  const names = segment
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && /^[a-z_]+$/i.test(s));
+  return names;
 }
 
 export function useSSEStream() {
@@ -188,8 +226,35 @@ export function useSSEStream() {
       },
       onStatus: (data) => {
         const label = data.content || data.step;
+        const store = useChatStore.getState();
+
+        // Sprint 164: Detect parallel dispatch → open subagent group
+        if (data.node === "parallel_dispatch") {
+          const agentNames = _parseParallelTargets(data.content);
+          if (agentNames.length > 0) {
+            store.openSubagentGroup(
+              label || "Triển khai song song",
+              agentNames,
+            );
+          }
+        }
+
+        // Sprint 164: Detect aggregator → close group + extract decision
+        if (data.node === "aggregator") {
+          store.closeSubagentGroup();
+          const details = (data as unknown as Record<string, unknown>).details as Record<string, unknown> | undefined;
+          if (details?.aggregation) {
+            store.setAggregationSummary(details.aggregation as AggregationSummary);
+          }
+        }
+
+        // Sprint 164: Forward status to worker lane when inside group
+        if (label && data.node && store._activeSubagentGroupId
+            && data.node !== "parallel_dispatch" && data.node !== "aggregator") {
+          store.appendWorkerStatus(data.node, label);
+        }
+
         if (label) {
-          const store = useChatStore.getState();
           store.addStreamingStep(label, data.node);
           store.setStreamingStep(label);
           store.appendPhaseStatus(label, data.node);
@@ -204,7 +269,8 @@ export function useSSEStream() {
         // Sprint 150: Drain thinking buffer before opening new block
         thinkingBufferRef.current?.drain();
         const store = useChatStore.getState();
-        store.openThinkingBlock(data.content || data.node || "", data.summary);
+        // Sprint 164: Pass node for workerNode tagging inside subagent groups
+        store.openThinkingBlock(data.content || data.node || "", data.summary, data.node);
         store.addOrUpdatePhase(data.content || data.node || "", data.node);
       },
       onThinkingEnd: (data) => {
@@ -213,6 +279,10 @@ export function useSSEStream() {
         const store = useChatStore.getState();
         store.closeThinkingBlock(data.duration_ms);
         store.closeActivePhase(data.duration_ms);
+        // Sprint 164: Mark the specific worker as completed in active group
+        if (data.node && store._activeSubagentGroupId) {
+          store.markWorkerCompleted(data.node);
+        }
       },
       onDomainNotice: (data) => {
         useChatStore.getState().setStreamingDomainNotice(data.content);
@@ -248,6 +318,28 @@ export function useSSEStream() {
           label: data.content.label,
           node: data.node,
         });
+      },
+      onPreview: (data) => {
+        // Sprint 166: Rich preview cards
+        answerBufferRef.current?.drain();
+        thinkingBufferRef.current?.drain();
+        const previewSettings = useSettingsStore.getState().settings;
+        if (previewSettings.show_previews === false) return;
+        useChatStore.getState().addPreviewItem({
+          ...data.content,
+          preview_type: data.content.preview_type as PreviewType,
+        }, data.node);
+      },
+      onArtifact: (data) => {
+        // Sprint 167: Interactive artifacts (code, HTML, data)
+        answerBufferRef.current?.drain();
+        thinkingBufferRef.current?.drain();
+        const artifactSettings = useSettingsStore.getState().settings;
+        if (artifactSettings.show_artifacts === false) return;
+        useChatStore.getState().addArtifact({
+          ...data.content,
+          artifact_type: data.content.artifact_type as ArtifactType,
+        }, data.node);
       },
     };
 
@@ -296,9 +388,9 @@ export function useSSEStream() {
           // Sprint 153b: Discard buffered tokens on final failure
           answerBufferRef.current?.discard();
           thinkingBufferRef.current?.discard();
-          useChatStore.getState().setStreamError(
-            "Mất kết nối. Vui lòng thử lại."
-          );
+          // Sprint 165: Localized error messages based on error type
+          const errorMsg = _getVietnameseErrorMessage(err);
+          useChatStore.getState().setStreamError(errorMsg);
           break;
         }
         // Sprint 153b: Discard partially-buffered tokens before retry

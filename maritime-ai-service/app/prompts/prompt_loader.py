@@ -979,6 +979,30 @@ class PromptLoader:
             pass  # DB not available — skip silently
 
         # ============================================================
+        # Sprint 170: LIVING AGENT — Soul + Emotion injection
+        # Injects soul identity and dynamic emotional state when living agent
+        # is enabled. These override static identity for a "living" Wiii.
+        # Feature-gated: enable_living_agent=False by default.
+        # ============================================================
+        try:
+            from app.core.config import settings as _la_settings
+            if getattr(_la_settings, "enable_living_agent", False):
+                from app.engine.living_agent.soul_loader import compile_soul_prompt
+                from app.engine.living_agent.emotion_engine import get_emotion_engine
+
+                # Soul prompt: identity, truths, boundaries, interests
+                soul_prompt = compile_soul_prompt()
+                if soul_prompt:
+                    sections.append(f"\n{soul_prompt}")
+
+                # Emotion prompt: current mood, energy, behavior modifiers
+                emotion_prompt = get_emotion_engine().compile_emotion_prompt()
+                if emotion_prompt:
+                    sections.append(f"\n{emotion_prompt}")
+        except Exception:
+            pass  # Living agent not available — skip silently
+
+        # ============================================================
         # Sprint 92+115: Identity anchor re-injection for long conversations
         # Research: persona drift after 8 turns. Configurable interval (default: 6).
         # Sprint 115 BUG FIX: total_responses now actually flows from session state.

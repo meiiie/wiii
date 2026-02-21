@@ -58,6 +58,12 @@ if not _had_cs:
 elif _orig_cs is not None:
     sys.modules[_cs_key] = _orig_cs
 
+# Restore graph module to avoid polluting later test files
+if not _had_graph:
+    sys.modules.pop(_graph_key, None)
+elif _orig_graph is not None:
+    sys.modules[_graph_key] = _orig_graph
+
 
 # ============================================================================
 # Helpers

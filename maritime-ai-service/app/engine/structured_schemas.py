@@ -109,3 +109,36 @@ class BatchDocGradeItem(BaseModel):
 class BatchDocGrades(BaseModel):
     """Structured output for batch document grading."""
     grades: List[BatchDocGradeItem] = Field(description="List of document grades")
+
+
+# =============================================================================
+# Aggregator Decision (Sprint 163 Phase 4)
+# =============================================================================
+
+class AggregatorDecisionSchema(BaseModel):
+    """Structured output for aggregator merge strategy decision."""
+    action: Literal["synthesize", "use_best", "re_route", "escalate"] = Field(
+        description="Merge strategy: synthesize=combine, use_best=pick one, re_route=retry, escalate=fail"
+    )
+    primary_agent: str = Field(
+        default="",
+        description="Name of the primary agent to use"
+    )
+    secondary_agents: List[str] = Field(
+        default_factory=list,
+        description="Names of secondary agents for supplementary content"
+    )
+    reasoning: str = Field(
+        default="",
+        description="Brief reasoning for the decision (Vietnamese)"
+    )
+    re_route_target: Optional[str] = Field(
+        default=None,
+        description="Target agent for re-routing (only when action=re_route)"
+    )
+    confidence: float = Field(
+        default=0.8,
+        ge=0.0,
+        le=1.0,
+        description="Decision confidence 0-1"
+    )

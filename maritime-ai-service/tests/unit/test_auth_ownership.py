@@ -39,12 +39,10 @@ class TestInsightsOwnership:
 
         auth = _make_auth("student-123", "student")
         # Should not raise 403 — may raise other errors (no DB) which is fine
-        try:
-            await get_user_insights(request=_make_request(), user_id="student-123", auth=auth)
-        except Exception as e:
-            # Any error except 403 is acceptable (DB not running)
-            if hasattr(e, "status_code"):
-                assert e.status_code != 403
+        with patch("app.api.v1.insights.SemanticMemoryRepository") as mock_repo:
+            mock_repo.return_value.get_user_insights.return_value = []
+            result = await get_user_insights(request=_make_request(), user_id="student-123", auth=auth)
+            assert result is not None  # Ownership check passed
 
     @pytest.mark.asyncio
     async def test_other_user_blocked(self):
@@ -64,11 +62,10 @@ class TestInsightsOwnership:
         from app.api.v1.insights import get_user_insights
 
         auth = _make_auth("admin-1", "admin")
-        try:
-            await get_user_insights(request=_make_request(), user_id="other-user", auth=auth)
-        except Exception as e:
-            if hasattr(e, "status_code"):
-                assert e.status_code != 403
+        with patch("app.api.v1.insights.SemanticMemoryRepository") as mock_repo:
+            mock_repo.return_value.get_user_insights.return_value = []
+            result = await get_user_insights(request=_make_request(), user_id="other-user", auth=auth)
+            assert result is not None  # Ownership check passed
 
 
 class TestMemoriesOwnership:
@@ -80,11 +77,10 @@ class TestMemoriesOwnership:
         from app.api.v1.memories import get_user_memories
 
         auth = _make_auth("student-456", "student")
-        try:
-            await get_user_memories(request=_make_request(), user_id="student-456", auth=auth)
-        except Exception as e:
-            if hasattr(e, "status_code"):
-                assert e.status_code != 403
+        with patch("app.api.v1.memories.SemanticMemoryRepository") as mock_repo:
+            mock_repo.return_value.get_user_memories.return_value = []
+            result = await get_user_memories(request=_make_request(), user_id="student-456", auth=auth)
+            assert result is not None  # Ownership check passed
 
     @pytest.mark.asyncio
     async def test_other_user_blocked(self):
@@ -104,11 +100,10 @@ class TestMemoriesOwnership:
         from app.api.v1.memories import get_user_memories
 
         auth = _make_auth("admin-1", "admin")
-        try:
-            await get_user_memories(request=_make_request(), user_id="other-user", auth=auth)
-        except Exception as e:
-            if hasattr(e, "status_code"):
-                assert e.status_code != 403
+        with patch("app.api.v1.memories.SemanticMemoryRepository") as mock_repo:
+            mock_repo.return_value.get_user_memories.return_value = []
+            result = await get_user_memories(request=_make_request(), user_id="other-user", auth=auth)
+            assert result is not None  # Ownership check passed
 
     @pytest.mark.asyncio
     async def test_teacher_blocked_from_other(self):

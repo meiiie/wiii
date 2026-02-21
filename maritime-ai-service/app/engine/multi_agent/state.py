@@ -98,4 +98,11 @@ class AgentState(TypedDict, total=False):
     # Sprint 160: Multi-Tenant Data Isolation — org_id threaded through pipeline
     organization_id: Optional[str]
 
+    # Sprint 163 Phase 4: Parallel dispatch + aggregator
+    subagent_reports: Optional[List[Dict[str, Any]]]  # List[SubagentReport.model_dump()]
+    _aggregator_action: Optional[str]  # "synthesize"|"use_best"|"re_route"|"escalate"
+    _aggregator_reasoning: Optional[str]
+    _reroute_count: Optional[int]
+    _parallel_targets: Optional[List[str]]  # Agent names for parallel dispatch
+
 

@@ -3,10 +3,6 @@
  */
 import type {
   ChatRequest,
-  ChatResponse,
-  ThreadListResponse,
-  ThreadView,
-  ThreadActionResponse,
 } from "./types";
 import { parseSSEStream, type SSEEventHandler, type SSEStreamResult } from "./sse";
 import { getClient } from "./client";
@@ -34,66 +30,3 @@ export async function sendMessageStream(
   return parseSSEStream(stream, handlers, abortSignal);
 }
 
-/**
- * Send a chat message synchronously (non-streaming).
- * Uses /chat endpoint — returns complete response.
- */
-export async function sendMessageSync(
-  request: ChatRequest
-): Promise<ChatResponse> {
-  const client = getClient();
-  return client.post<ChatResponse>("/api/v1/chat", request);
-}
-
-// =============================================================================
-// Thread Management API (Sprint 16: Server-side conversation index)
-// =============================================================================
-
-/**
- * List all conversation threads for the authenticated user.
- * Server-side conversation index — used for multi-device sync.
- */
-export async function listThreads(
-  limit = 50,
-  offset = 0
-): Promise<ThreadListResponse> {
-  const client = getClient();
-  return client.get<ThreadListResponse>("/api/v1/threads", {
-    limit: String(limit),
-    offset: String(offset),
-  });
-}
-
-/**
- * Get a specific thread by ID.
- */
-export async function getThread(threadId: string): Promise<ThreadView> {
-  const client = getClient();
-  return client.get<ThreadView>(`/api/v1/threads/${encodeURIComponent(threadId)}`);
-}
-
-/**
- * Delete (soft-delete) a thread.
- */
-export async function deleteThread(
-  threadId: string
-): Promise<ThreadActionResponse> {
-  const client = getClient();
-  return client.delete<ThreadActionResponse>(
-    `/api/v1/threads/${encodeURIComponent(threadId)}`
-  );
-}
-
-/**
- * Rename a thread.
- */
-export async function renameThread(
-  threadId: string,
-  title: string
-): Promise<ThreadActionResponse> {
-  const client = getClient();
-  return client.patch<ThreadActionResponse>(
-    `/api/v1/threads/${encodeURIComponent(threadId)}/title`,
-    { title }
-  );
-}

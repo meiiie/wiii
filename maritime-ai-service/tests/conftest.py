@@ -46,7 +46,6 @@ def mock_settings():
     s.enable_character_reflection = True
     s.enable_code_execution = False
     s.enable_corrective_rag = True
-    s.enable_evaluation = False
     s.enable_agentic_loop = True
     s.enable_structured_outputs = True
     s.enable_core_memory_block = True

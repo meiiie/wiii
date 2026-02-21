@@ -29,6 +29,18 @@ if _cs_key not in sys.modules:
 from app.prompts.prompt_loader import PromptLoader
 
 
+@pytest.fixture(autouse=True)
+def _mock_character_state_manager():
+    """Prevent build_system_prompt from connecting to PostgreSQL."""
+    with patch(
+        "app.engine.character.character_state.get_character_state_manager"
+    ) as m:
+        inst = MagicMock()
+        inst.compile_living_state.return_value = ""
+        m.return_value = inst
+        yield
+
+
 # =============================================================================
 # Phase 1: Character-driven response style
 # =============================================================================

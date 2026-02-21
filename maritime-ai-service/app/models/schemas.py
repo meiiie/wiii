@@ -141,7 +141,15 @@ class ChatRequest(BaseModel):
         description="Thinking effort level. Controls LLM reasoning depth and cost. "
                     "low=fast/cheap, medium=balanced (default), high=thorough, max=deepest reasoning."
     )
-    
+
+    # v6.0: Preview Configuration (Sprint 166)
+    show_previews: Optional[bool] = Field(default=None, description="Enable preview cards in streaming")
+    preview_types: Optional[list[str]] = Field(default=None, description="Allowed preview types (document, product, web, link, code)")
+    preview_max_count: Optional[int] = Field(default=None, ge=1, le=50, description="Max number of preview cards per response")
+
+    # v7.0: Artifact Configuration (Sprint 167)
+    enable_artifacts: Optional[bool] = Field(default=None, description="Enable interactive artifacts in streaming")
+
     @field_validator("message")
     @classmethod
     def validate_message_not_empty(cls, v: str) -> str:

@@ -76,6 +76,14 @@ try:
 except Exception:
     pass
 
+# Sprint 170: Living Agent (config-gated)
+try:
+    if getattr(settings, "enable_living_agent", False):
+        from app.api.v1.living_agent import router as living_agent_router
+        router.include_router(living_agent_router)
+except Exception:
+    pass
+
 
 @router.get("/")
 async def api_v1_root():

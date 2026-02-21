@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+" />
-  <img src="https://img.shields.io/badge/tests-6520%20backend%20%7C%201346%20desktop-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-6550%2B%20backend%20%7C%201468%20desktop-brightgreen" alt="Tests" />
   <img src="https://img.shields.io/badge/LLM-Gemini%20%7C%20OpenAI%20%7C%20Ollama-blueviolet" alt="LLM Providers" />
-  <img src="https://img.shields.io/badge/sprints-161-orange" alt="Sprints" />
+  <img src="https://img.shields.io/badge/sprints-170-orange" alt="Sprints" />
 </p>
 
 <p align="center">
@@ -31,9 +31,10 @@
 | **Corrective RAG** | Hybrid search (dense + sparse + RRF), tiered grading (MiniJudge → Full LLM), self-correction loop, LLM fallback |
 | **Living Memory** | Semantic fact extraction (15 types), importance-aware eviction, Ebbinghaus decay, vector retrieval, active pruning |
 | **Domain Plugins** | Drop-in domain support via `domain.yaml` — Maritime (primary), Traffic Law (PoC), auto-discovered at startup |
+| **Living Agent** | Autonomous soul with heartbeat scheduler, 4D emotion engine, skill lifecycle (DISCOVER→MASTER), daily journal, social browsing — all via local LLM (Ollama) |
 | **Character System** | VTuber-card personality, Stanford Generative Agents reflection, 2D emotional state, per-user isolation |
 | **Product Search** | Plugin-based search across 8 platforms (Shopee, Lazada, TikTok Shop, Facebook, WebSosanh, etc.) with browser scraping |
-| **Desktop App** | Tauri v2 + React 18 — native Windows app with living avatar, multi-phase thinking UX, SSE streaming |
+| **Desktop App** | Tauri v2 + React 18 — native Windows app with living avatar, Living Agent dashboard, multi-phase thinking UX, SSE streaming |
 | **Multi-Tenant** | Organization-level branding, feature scoping, RBAC permissions, per-org AI persona overlay |
 | **Authentication** | Google OAuth + JWT + LMS Token Exchange (HMAC-SHA256) + Identity Federation |
 | **MCP Support** | Model Context Protocol server (expose tools) and client (consume external tools) |
@@ -152,6 +153,7 @@ MINIO_ENDPOINT=localhost:9000
 │   │   │   ├── search_platforms/ # 8 search adapters (plugin architecture)
 │   │   │   ├── tools/            # 8 tool modules
 │   │   │   ├── character/        # Stanford Generative Agents
+│   │   │   ├── living_agent/     # Autonomous soul, emotion, heartbeat, skills
 │   │   │   └── semantic_memory/  # Fact extraction + decay
 │   │   ├── integrations/         # LMS webhook + API client
 │   │   ├── services/             # Business logic (23 service files)
@@ -159,18 +161,18 @@ MINIO_ENDPOINT=localhost:9000
 │   │   ├── prompts/              # YAML persona configs
 │   │   ├── mcp/                  # MCP server + client
 │   │   └── models/               # Pydantic schemas
-│   ├── alembic/                  # 12 database migrations
-│   ├── tests/                    # 6520+ unit + integration tests
+│   ├── alembic/                  # 14 database migrations
+│   ├── tests/                    # 6550+ unit + integration tests
 │   └── docker-compose.yml        # Full stack orchestration
 │
 ├── wiii-desktop/                  # Desktop app (Tauri v2 + React 18)
 │   ├── src/
 │   │   ├── components/           # Chat, Layout, Settings, Auth, Common
-│   │   ├── stores/               # 11 Zustand stores
-│   │   ├── api/                  # 15 API modules
+│   │   ├── stores/               # 12 Zustand stores
+│   │   ├── api/                  # 16 API modules
 │   │   ├── hooks/                # 4 custom hooks
 │   │   ├── lib/                  # 28 utility modules + avatar system
-│   │   └── __tests__/            # 54 test files (1346 tests)
+│   │   └── __tests__/            # 55 test files (1468 tests)
 │   └── src-tauri/                # Rust backend (Tauri plugins, commands)
 │
 ├── docs/                         # Architecture, flow, API documentation
@@ -224,6 +226,9 @@ enable_google_oauth = False         # Google OAuth 2.0 login
 enable_lms_token_exchange = False   # Backend-to-backend HMAC JWT
 enable_multi_tenant = False         # Multi-org data isolation
 
+# Living Agent (opt-in)
+enable_living_agent = False         # Autonomous soul, emotion, heartbeat, skills
+
 # Infrastructure (opt-in)
 enable_mcp_server = False           # Expose tools via MCP
 enable_mcp_client = False           # Consume external MCP tools
@@ -234,11 +239,11 @@ enable_lms_integration = False      # LMS webhook enrichment
 ## Testing
 
 ```bash
-# Backend (6520+ tests)
+# Backend (6550+ tests)
 cd maritime-ai-service
 PYTHONIOENCODING=utf-8 pytest tests/unit/ -v -p no:capture --tb=short
 
-# Desktop (1346 tests)
+# Desktop (1468 tests)
 cd wiii-desktop
 npx vitest run
 
@@ -281,6 +286,8 @@ Authorization: Bearer <jwt-token>      # Optional: OAuth JWT
 | `GET` | `/api/v1/organizations/{id}/permissions` | User permissions in org |
 | `GET/PATCH` | `/api/v1/users/me` | User profile management |
 | `POST` | `/api/v1/auth/lms/token` | LMS token exchange (HMAC) |
+| `GET` | `/api/v1/living-agent/status` | Living Agent status (soul, mood, heartbeat) |
+| `POST` | `/api/v1/living-agent/heartbeat/trigger` | Manually trigger heartbeat cycle |
 | `GET` | `/auth/oauth/login` | Google OAuth login |
 | `WS` | `/api/v1/ws` | WebSocket real-time chat |
 
@@ -306,7 +313,7 @@ cp -r app/domains/_template app/domains/my_domain
 
 ## Development History
 
-161 sprints of iterative development:
+170 sprints of iterative development:
 
 | Phase | Sprints | Highlights |
 |-------|---------|------------|
@@ -315,8 +322,9 @@ cp -r app/domains/_template app/domains/my_domain
 | **Living Desktop** | 104-135 | Living Avatar, SVG Face, Kawaii, Emotion Engine, Soul Emotion |
 | **Search & Tools** | 136-153 | Universal KB, Product Search (8 platforms), Browser Scraping |
 | **Enterprise** | 154-161 | OAuth, User Management, LMS Integration, Multi-Tenant, Org Customization |
+| **Architecture** | 162-170 | UI Overhaul, Subagent Architecture, Code Rendering, **Living Agent** |
 
-**Current:** 254 Python files, 158 TypeScript files, 46 feature flags, 12 DB migrations, 7866 tests total.
+**Current:** 264+ Python files, 165+ TypeScript files, 47 feature flags, 14 DB migrations, 8000+ tests total.
 
 ## Contributing
 

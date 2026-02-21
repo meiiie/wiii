@@ -63,7 +63,7 @@ class TestFindOrCreateByProvider:
 
     @pytest.mark.asyncio
     async def test_email_match_auto_links(self):
-        """When email matches existing user, auto-link identity."""
+        """When email matches existing user AND email_verified=True, auto-link identity."""
         existing = _make_user()
         with (
             patch("app.auth.user_service.find_user_by_provider", new_callable=AsyncMock, return_value=None),
@@ -71,7 +71,7 @@ class TestFindOrCreateByProvider:
             patch("app.auth.user_service.link_identity", new_callable=AsyncMock) as mock_link,
         ):
             from app.auth.user_service import find_or_create_by_provider
-            result = await find_or_create_by_provider("lms", "lms-user-1", email="test@example.com", name="LMS User")
+            result = await find_or_create_by_provider("lms", "lms-user-1", email="test@example.com", name="LMS User", email_verified=True)
             assert result["id"] == existing["id"]
             mock_link.assert_called_once()
             assert mock_link.call_args.kwargs["provider"] == "lms"

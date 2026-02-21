@@ -3,7 +3,22 @@ Test Deep Reasoning Prompt - CHI THI SO 21
 Verify that PromptLoader builds valid system prompts for all roles.
 """
 
+import pytest
+from unittest.mock import MagicMock, patch
+
 from app.prompts.prompt_loader import PromptLoader
+
+
+@pytest.fixture(autouse=True)
+def _mock_character_state_manager():
+    """Prevent build_system_prompt from connecting to PostgreSQL."""
+    with patch(
+        "app.engine.character.character_state.get_character_state_manager"
+    ) as m:
+        inst = MagicMock()
+        inst.compile_living_state.return_value = ""
+        m.return_value = inst
+        yield
 
 
 def test_student_prompt_builds():

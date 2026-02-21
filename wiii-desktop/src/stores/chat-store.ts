@@ -23,6 +23,13 @@ import type {
   StreamingStep,
   ThinkingPhase,
   ScreenshotBlockData,
+  SubagentGroupBlockData,
+  SubagentWorker,
+  AggregationSummary,
+  PreviewItemData,
+  PreviewBlockData,
+  ArtifactData,
+  ArtifactBlockData,
 } from "@/api/types";
 
 const STORE_NAME = "conversations.json";
@@ -60,6 +67,15 @@ interface ChatState {
   // Sprint 141: Unified thinking phases for ThinkingFlow
   streamingPhases: ThinkingPhase[];
 
+  // Sprint 166: Preview cards state
+  streamingPreviews: PreviewItemData[];
+
+  // Sprint 167: Artifact state
+  streamingArtifacts: ArtifactData[];
+
+  // Sprint 164: Active subagent group tracking
+  _activeSubagentGroupId: string | null;
+
   // Sprint 145: Transient avatar state fields
   streamError: string;
   streamCompletedAt: number | null;
@@ -84,7 +100,7 @@ interface ChatState {
   setStreamingSources: (sources: SourceInfo[]) => void;
   addStreamingStep: (label: string, node?: string) => void;
   appendThinkingDelta: (delta: string, node?: string) => void;
-  openThinkingBlock: (label: string, summary?: string) => void;
+  openThinkingBlock: (label: string, summary?: string, node?: string) => void;
   closeThinkingBlock: (durationMs?: number) => void;
   appendToolCall: (tc: ToolCallInfo) => void;
   updateToolCallResult: (id: string, result: string) => void;
@@ -93,6 +109,20 @@ interface ChatState {
   appendActionText: (text: string, node?: string) => void;
   /** Sprint 153: Append browser screenshot block. */
   appendScreenshot: (data: { url: string; image: string; label: string; node?: string }) => void;
+  /** Sprint 164: Open a subagent parallel dispatch group */
+  openSubagentGroup: (label: string, agentNames: string[]) => void;
+  /** Sprint 164: Close the active subagent group */
+  closeSubagentGroup: () => void;
+  /** Sprint 164: Attach aggregation decision to the most recent subagent group */
+  setAggregationSummary: (summary: AggregationSummary) => void;
+  /** Sprint 164: Mark a specific worker as completed within the active group */
+  markWorkerCompleted: (workerNode: string) => void;
+  /** Sprint 164: Append a status message to a specific worker */
+  appendWorkerStatus: (workerNode: string, message: string) => void;
+  /** Sprint 166: Add a preview item to the streaming state */
+  addPreviewItem: (item: PreviewItemData, node?: string) => void;
+  /** Sprint 167: Add an artifact to the streaming state */
+  addArtifact: (artifact: ArtifactData, node?: string) => void;
   // Sprint 141: ThinkingFlow phase actions
   addOrUpdatePhase: (label: string, node?: string) => void;
   appendPhaseThinking: (content: string) => void;
@@ -154,6 +184,9 @@ export const useChatStore = create<ChatState>()(
     streamingSteps: [],
     streamingDomainNotice: "",
     streamingPhases: [],
+    streamingPreviews: [],
+    streamingArtifacts: [],
+    _activeSubagentGroupId: null,
     streamError: "",
     streamCompletedAt: null,
 
@@ -293,6 +326,9 @@ export const useChatStore = create<ChatState>()(
         state.streamingSteps = [];
         state.streamingDomainNotice = "";
         state.streamingPhases = [];
+        state.streamingPreviews = [];
+        state.streamingArtifacts = [];
+        state._activeSubagentGroupId = null;
         state.streamError = "";
         state.streamCompletedAt = null;
       });
@@ -370,6 +406,7 @@ export const useChatStore = create<ChatState>()(
         if (lastBlock?.type === "thinking" && !lastBlock.endTime) {
           lastBlock.content += delta;
         } else {
+          const groupId = state._activeSubagentGroupId;
           state.streamingBlocks.push({
             type: "thinking",
             id: uuidv4(),
@@ -377,19 +414,21 @@ export const useChatStore = create<ChatState>()(
             content: delta,
             toolCalls: [],
             startTime: Date.now(),
+            ...(groupId ? { groupId, workerNode: node } : {}),
           });
         }
       });
     },
 
-    openThinkingBlock: (label, summary) => {
+    openThinkingBlock: (label, summary, node) => {
       set((state) => {
         // Close any open thinking block first
         const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
         if (lastBlock?.type === "thinking" && !lastBlock.endTime) {
           lastBlock.endTime = Date.now();
         }
-        // Open new thinking block
+        // Open new thinking block — tag with group + workerNode if inside parallel dispatch
+        const groupId = state._activeSubagentGroupId;
         state.streamingBlocks.push({
           type: "thinking",
           id: uuidv4(),
@@ -398,6 +437,7 @@ export const useChatStore = create<ChatState>()(
           content: "",
           toolCalls: [],
           startTime: Date.now(),
+          ...(groupId ? { groupId, workerNode: node } : {}),
         });
       });
     },
@@ -422,6 +462,176 @@ export const useChatStore = create<ChatState>()(
           ...data,
         };
         state.streamingBlocks.push(block);
+      });
+    },
+
+    // ---- Sprint 164: Subagent group actions ----
+
+    openSubagentGroup: (label, agentNames) => {
+      set((state) => {
+        // Close any open thinking block first
+        closeLastThinkingBlockDraft(state.streamingBlocks);
+
+        const groupId = uuidv4();
+        const workers: SubagentWorker[] = agentNames.map((name) => ({
+          agentName: name,
+          label: name,
+          status: "active" as const,
+          startTime: Date.now(),
+          statusMessages: [],
+        }));
+
+        const block: SubagentGroupBlockData = {
+          type: "subagent_group",
+          id: groupId,
+          label,
+          workers,
+          startTime: Date.now(),
+        };
+
+        state.streamingBlocks.push(block);
+        state._activeSubagentGroupId = groupId;
+      });
+    },
+
+    closeSubagentGroup: () => {
+      set((state) => {
+        const groupId = state._activeSubagentGroupId;
+        if (!groupId) return;
+
+        // Close any open thinking block
+        closeLastThinkingBlockDraft(state.streamingBlocks);
+
+        // Find the group block and set endTime + mark workers completed
+        for (const block of state.streamingBlocks) {
+          if (block.type === "subagent_group" && block.id === groupId) {
+            block.endTime = Date.now();
+            for (const w of block.workers) {
+              if (w.status === "active") {
+                w.status = "completed";
+                w.endTime = Date.now();
+              }
+            }
+            break;
+          }
+        }
+
+        state._activeSubagentGroupId = null;
+      });
+    },
+
+    setAggregationSummary: (summary) => {
+      set((state) => {
+        // Find the most recent subagent_group block
+        for (let i = state.streamingBlocks.length - 1; i >= 0; i--) {
+          const block = state.streamingBlocks[i];
+          if (block.type === "subagent_group") {
+            block.aggregation = summary;
+            break;
+          }
+        }
+      });
+    },
+
+    markWorkerCompleted: (workerNode) => {
+      set((state) => {
+        const groupId = state._activeSubagentGroupId;
+        if (!groupId) return;
+
+        for (const block of state.streamingBlocks) {
+          if (block.type === "subagent_group" && block.id === groupId) {
+            const worker = block.workers.find((w) => w.agentName === workerNode);
+            if (worker && worker.status === "active") {
+              worker.status = "completed";
+              worker.endTime = Date.now();
+            }
+            break;
+          }
+        }
+      });
+    },
+
+    appendWorkerStatus: (workerNode, message) => {
+      set((state) => {
+        const groupId = state._activeSubagentGroupId;
+        if (!groupId) return;
+
+        for (const block of state.streamingBlocks) {
+          if (block.type === "subagent_group" && block.id === groupId) {
+            const worker = block.workers.find((w) => w.agentName === workerNode);
+            if (worker) {
+              worker.statusMessages.push(message);
+            }
+            break;
+          }
+        }
+      });
+    },
+
+    // ---- Sprint 166: Preview card actions ----
+
+    addPreviewItem: (item, node) => {
+      set((state) => {
+        // Dedup by preview_id
+        if (state.streamingPreviews.some((p) => p.preview_id === item.preview_id)) return;
+        state.streamingPreviews.push(item);
+
+        // Find or create preview block in streamingBlocks
+        const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
+        if (lastBlock?.type === "preview" && (lastBlock as PreviewBlockData).node === node) {
+          // Append to existing group
+          (lastBlock as PreviewBlockData).items.push(item);
+        } else {
+          // New preview block
+          closeLastThinkingBlockDraft(state.streamingBlocks);
+          state.streamingBlocks.push({
+            type: "preview",
+            id: uuidv4(),
+            items: [item],
+            node,
+          } as PreviewBlockData);
+        }
+      });
+    },
+
+    // ---- Sprint 167: Artifact actions ----
+
+    addArtifact: (artifact, node) => {
+      set((state) => {
+        // L-4: Content size limit (1MB)
+        const MAX_ARTIFACT_SIZE = 1_000_000;
+        if (artifact.content.length > MAX_ARTIFACT_SIZE) {
+          console.warn(`[chat-store] Artifact ${artifact.artifact_id} exceeds 1MB, truncating`);
+          artifact = { ...artifact, content: artifact.content.slice(0, MAX_ARTIFACT_SIZE) + "\n// ... truncated" };
+        }
+
+        // M-1: Upsert — update existing artifact instead of dropping
+        const existingIdx = state.streamingArtifacts.findIndex(
+          (a) => a.artifact_id === artifact.artifact_id
+        );
+        if (existingIdx >= 0) {
+          state.streamingArtifacts[existingIdx] = artifact;
+          // Update block too
+          const blockIdx = state.streamingBlocks.findIndex(
+            (b) => b.type === "artifact" && (b as ArtifactBlockData).id === artifact.artifact_id
+          );
+          if (blockIdx >= 0) {
+            (state.streamingBlocks[blockIdx] as ArtifactBlockData).artifact = artifact;
+          }
+          return;
+        }
+
+        // New artifact
+        state.streamingArtifacts.push(artifact);
+
+        // Add artifact block to streamingBlocks
+        closeLastThinkingBlockDraft(state.streamingBlocks);
+        state.streamingBlocks.push({
+          type: "artifact",
+          id: artifact.artifact_id,
+          artifact,
+          node,
+        } as ArtifactBlockData);
       });
     },
 
@@ -598,6 +808,8 @@ export const useChatStore = create<ChatState>()(
         streamingToolCalls,
         streamingBlocks,
         streamingDomainNotice,
+        streamingPreviews,
+        streamingArtifacts,
       } = get();
 
       // Sprint 153b: Guard against double finalization (onMetadata + onDone race)
@@ -631,6 +843,8 @@ export const useChatStore = create<ChatState>()(
         tool_calls: streamingToolCalls.length > 0 ? [...streamingToolCalls] : undefined,
         blocks: closedBlocks.length > 0 ? closedBlocks : undefined,
         domain_notice: streamingDomainNotice || undefined,
+        previews: streamingPreviews.length > 0 ? [...streamingPreviews] : undefined,
+        artifacts: streamingArtifacts.length > 0 ? [...streamingArtifacts] : undefined,
         metadata: metaAny,
       };
 
@@ -648,6 +862,9 @@ export const useChatStore = create<ChatState>()(
         state.streamingSteps = [];
         state.streamingDomainNotice = "";
         state.streamingPhases = [];
+        state.streamingPreviews = [];
+        state.streamingArtifacts = [];
+        state._activeSubagentGroupId = null;
         state.streamError = "";
         state.streamCompletedAt = Date.now();
 
@@ -687,6 +904,9 @@ export const useChatStore = create<ChatState>()(
         state.streamingSteps = [];
         state.streamingDomainNotice = "";
         state.streamingPhases = [];
+        state.streamingPreviews = [];
+        state.streamingArtifacts = [];
+        state._activeSubagentGroupId = null;
         state.streamError = error;
         state.streamCompletedAt = null;
 
@@ -726,6 +946,9 @@ export const useChatStore = create<ChatState>()(
         state.streamingSteps = [];
         state.streamingDomainNotice = "";
         state.streamingPhases = [];
+        state.streamingPreviews = [];
+        state.streamingArtifacts = [];
+        state._activeSubagentGroupId = null;
         state.streamError = "";
         state.streamCompletedAt = null;
       });

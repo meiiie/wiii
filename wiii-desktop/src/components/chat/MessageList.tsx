@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback } from "react";
 import { motion } from "motion/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown } from "lucide-react";
-import type { Message, ThinkingBlockData, ScreenshotBlockData } from "@/api/types";
+import type { Message, ThinkingBlockData, ScreenshotBlockData, SubagentGroupBlockData, PreviewBlockData } from "@/api/types";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
@@ -17,6 +17,8 @@ import { MessageBubble } from "./MessageBubble";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ActionText } from "./ActionText";
 import { ScreenshotBlock } from "./ScreenshotBlock";
+import { SubagentGroup } from "./SubagentGroup";
+import { PreviewGroup } from "./PreviewGroup";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { SourceCitation } from "./SourceCitation";
@@ -158,43 +160,74 @@ export function MessageList({
 
               <div className="flex-1 min-w-0">
                 {/* Sprint 146: Interleaved thinking+answer — Opus pattern */}
-                {streamingBlocks.map((block, i) => {
-                  if (block.type === "thinking") {
-                    if (!show_thinking || thinking_level === "minimal") return null;
-                    const tb = block as ThinkingBlockData;
-                    return (
-                      <ThinkingBlock
-                        key={block.id}
-                        content={tb.content}
-                        toolCalls={tb.toolCalls}
-                        label={tb.label}
-                        summary={tb.summary || tb.label}
-                        isStreaming={!tb.endTime}
-                        thinkingLevel={thinking_level}
-                      />
-                    );
+                {/* Sprint 164: Collect groupIds to skip individually-rendered grouped blocks */}
+                {(() => {
+                  const groupedBlockIds = new Set<string>();
+                  for (const b of streamingBlocks) {
+                    if (b.type === "thinking" && (b as ThinkingBlockData).groupId) {
+                      groupedBlockIds.add(b.id);
+                    }
                   }
-                  if (block.type === "action_text") {
-                    return (
-                      <ActionText key={block.id} content={block.content} node={block.node} />
-                    );
-                  }
-                  if (block.type === "screenshot") {
-                    return <ScreenshotBlock key={block.id} block={block as ScreenshotBlockData} />;
-                  }
-                  if (block.type === "answer") {
-                    const isLastAnswer = !streamingBlocks.slice(i + 1).some(b => b.type === "answer");
-                    return (
-                      <div key={block.id} className="font-serif">
-                        <MarkdownRenderer content={block.content} />
-                        {isLastAnswer && isStreaming && (
-                          <span className="inline-block w-[2px] h-[1em] bg-[var(--accent-orange)] ml-0.5 align-middle animate-pulse rounded-sm" />
-                        )}
-                      </div>
-                    );
-                  }
-                  return null;
-                })}
+                  return streamingBlocks.map((block, i) => {
+                    // Skip thinking blocks rendered inside a SubagentGroup
+                    if (block.type === "thinking" && groupedBlockIds.has(block.id)) {
+                      return null;
+                    }
+                    if (block.type === "subagent_group") {
+                      const group = block as SubagentGroupBlockData;
+                      const childBlocks = streamingBlocks.filter(
+                        (b) => b.type === "thinking" && (b as ThinkingBlockData).groupId === group.id,
+                      ) as ThinkingBlockData[];
+                      return (
+                        <SubagentGroup
+                          key={group.id}
+                          group={group}
+                          childBlocks={childBlocks}
+                          isStreaming={isStreaming}
+                          thinkingLevel={thinking_level}
+                        />
+                      );
+                    }
+                    if (block.type === "thinking") {
+                      if (!show_thinking || thinking_level === "minimal") return null;
+                      const tb = block as ThinkingBlockData;
+                      return (
+                        <ThinkingBlock
+                          key={block.id}
+                          content={tb.content}
+                          toolCalls={tb.toolCalls}
+                          label={tb.label}
+                          summary={tb.summary || tb.label}
+                          isStreaming={!tb.endTime}
+                          thinkingLevel={thinking_level}
+                        />
+                      );
+                    }
+                    if (block.type === "action_text") {
+                      return (
+                        <ActionText key={block.id} content={block.content} node={block.node} />
+                      );
+                    }
+                    if (block.type === "screenshot") {
+                      return <ScreenshotBlock key={block.id} block={block as ScreenshotBlockData} />;
+                    }
+                    if (block.type === "preview") {
+                      return <PreviewGroup key={block.id} block={block as PreviewBlockData} />;
+                    }
+                    if (block.type === "answer") {
+                      const isLastAnswer = !streamingBlocks.slice(i + 1).some(b => b.type === "answer");
+                      return (
+                        <div key={block.id} className="font-serif">
+                          <MarkdownRenderer content={block.content} />
+                          {isLastAnswer && isStreaming && (
+                            <span className="inline-block w-[2px] h-[1em] bg-[var(--accent-orange)] ml-0.5 align-middle animate-pulse rounded-sm" />
+                          )}
+                        </div>
+                      );
+                    }
+                    return null;
+                  });
+                })()}
 
                 {/* Minimal mode: current step indicator */}
                 {(thinking_level === "minimal" || !show_thinking) && streamingStep && !streamingContent && (

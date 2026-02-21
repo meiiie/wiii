@@ -26,6 +26,12 @@ from app.engine.multi_agent.subagents.config import (
 from app.engine.multi_agent.subagents.registry import SubagentRegistry
 from app.engine.multi_agent.subagents.tool_cache import RequestScopedToolCache
 from app.engine.multi_agent.subagents.metrics import SubagentMetrics
+from app.engine.multi_agent.subagents.report import (
+    SubagentReport,
+    ReportVerdict,
+    AggregatorDecision,
+    build_report,
+)
 
 __all__ = [
     "SubagentResult",
@@ -38,4 +44,9 @@ __all__ = [
     "SubagentRegistry",
     "RequestScopedToolCache",
     "SubagentMetrics",
+    # Phase 4
+    "SubagentReport",
+    "ReportVerdict",
+    "AggregatorDecision",
+    "build_report",
 ]

@@ -148,6 +148,18 @@ PERSONAL_KEYWORDS = [
 # Confidence threshold for rule-based override
 CONFIDENCE_THRESHOLD = 0.7
 
+# Sprint 163 Phase 4: Parallel dispatch thresholds
+_COMPLEX_QUERY_MIN_LENGTH = 80
+_MIXED_INTENT_PAIRS = [
+    # (lookup signal, learning signal) → needs both RAG and Tutor
+    ("tra cứu", "giải thích"),
+    ("nội dung", "dạy"),
+    ("quy định", "giải thích"),
+    ("luật", "quiz"),
+    ("cho biết", "hướng dẫn"),
+    ("thông tin", "phân tích"),
+]
+
 
 class SupervisorAgent:
     """
@@ -443,6 +455,30 @@ class SupervisorAgent:
             logger.warning("Synthesis failed: %s", e)
             return list(outputs.values())[0]  # Return first output
 
+    def _is_complex_query(self, query: str, routing_metadata: dict) -> bool:
+        """Heuristic: does this query benefit from parallel dispatch?
+
+        Returns True when the query is long AND shows mixed-intent signals
+        (e.g., both lookup and learning keywords).  Short or single-intent
+        queries should use the normal single-agent path.
+        """
+        if len(query) < _COMPLEX_QUERY_MIN_LENGTH:
+            return False
+
+        query_lower = query.lower()
+
+        # Check for mixed intent signals
+        for lookup_kw, learning_kw in _MIXED_INTENT_PAIRS:
+            if lookup_kw in query_lower and learning_kw in query_lower:
+                return True
+
+        # Check routing metadata for borderline confidence
+        confidence = routing_metadata.get("confidence", 1.0)
+        if confidence < 0.75 and len(query) > 120:
+            return True
+
+        return False
+
     async def process(self, state: AgentState) -> AgentState:
         """
         Process state as supervisor node.
@@ -474,6 +510,20 @@ class SupervisorAgent:
 
         # Route to appropriate agent (also sets routing_metadata in state)
         next_agent = await self.route(state)
+
+        # Sprint 163 Phase 4: Parallel dispatch for complex queries
+        try:
+            from app.core.config import settings as _settings
+            if (
+                _settings.enable_subagent_architecture
+                and next_agent in (AgentType.RAG.value, AgentType.TUTOR.value)
+                and self._is_complex_query(query, state.get("routing_metadata") or {})
+            ):
+                logger.info("[SUPERVISOR] Complex query detected → parallel_dispatch")
+                next_agent = "parallel_dispatch"
+                state["_parallel_targets"] = ["rag", "tutor"]
+        except Exception as e:
+            logger.debug("Parallel dispatch check failed: %s", e)
 
         state["next_agent"] = next_agent
         state["current_agent"] = "supervisor"

@@ -50,6 +50,19 @@ if not _had_graph:
     _mock_graph._cleanup_tracer = MagicMock()
     sys.modules[_graph_key] = _mock_graph
 
+# Restore sys.modules to avoid polluting later test files
+if not _had_cs:
+    sys.modules.pop(_cs_key, None)
+    if not _had_svc:
+        sys.modules.pop(_svc_key, None)
+elif _orig_cs is not None:
+    sys.modules[_cs_key] = _orig_cs
+
+if not _had_graph:
+    sys.modules.pop(_graph_key, None)
+elif _orig_graph is not None:
+    sys.modules[_graph_key] = _orig_graph
+
 
 # =============================================================================
 # Test 1 & 2: tool_report_progress definition

@@ -6,7 +6,7 @@
 import { useState, useCallback, memo } from "react";
 import { motion } from "motion/react";
 import { Copy, Check, RefreshCw, ThumbsUp, ThumbsDown, Pencil } from "lucide-react";
-import type { Message, ContentBlock, ThinkingBlockData, ScreenshotBlockData, MoodType } from "@/api/types";
+import type { Message, ContentBlock, ThinkingBlockData, ScreenshotBlockData, SubagentGroupBlockData, PreviewBlockData, ArtifactBlockData, MoodType } from "@/api/types";
 import type { SoulEmotionData } from "@/lib/avatar/types";
 import type { AvatarState } from "@/lib/avatar/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
@@ -14,6 +14,9 @@ import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ActionText } from "./ActionText";
 import { ScreenshotBlock } from "./ScreenshotBlock";
+import { SubagentGroup } from "./SubagentGroup";
+import { PreviewGroup } from "./PreviewGroup";
+import { ArtifactCard } from "./ArtifactCard";
 import { ThinkingTimeline } from "./ThinkingTimeline";
 import { SourceCitation } from "./SourceCitation";
 import { SuggestedQuestions } from "./SuggestedQuestions";
@@ -341,7 +344,15 @@ function BlockRenderer({
   thinkingLevel?: import("@/api/types").ThinkingLevel;
   message: Message;
 }) {
-  // If thinking hidden, only render answer blocks
+  // Sprint 164: Collect grouped block IDs so they render inside SubagentGroup
+  const groupedBlockIds = new Set<string>();
+  for (const b of blocks) {
+    if (b.type === "thinking" && (b as ThinkingBlockData).groupId) {
+      groupedBlockIds.add(b.id);
+    }
+  }
+
+  // If thinking hidden, only render answer + subagent_group blocks
   if (!showThinking || thinkingLevel === "minimal") {
     return (
       <>
@@ -356,62 +367,88 @@ function BlockRenderer({
     );
   }
 
-  // Count thinking + action_text blocks
+  // Count thinking + action_text blocks (excluding grouped ones)
   const thinkingActionCount = blocks.filter(
-    (b) => b.type === "thinking" || b.type === "action_text"
+    (b) => (b.type === "thinking" || b.type === "action_text") && !groupedBlockIds.has(b.id)
   ).length;
+
+  // Helper to render a single block (reused in simple + timeline paths)
+  const renderBlock = (block: ContentBlock) => {
+    // Skip blocks rendered inside SubagentGroup
+    if (block.type === "thinking" && groupedBlockIds.has(block.id)) return null;
+
+    if (block.type === "subagent_group") {
+      const group = block as SubagentGroupBlockData;
+      const childBlocks = blocks.filter(
+        (b) => b.type === "thinking" && (b as ThinkingBlockData).groupId === group.id,
+      ) as ThinkingBlockData[];
+      return (
+        <SubagentGroup
+          key={group.id}
+          group={group}
+          childBlocks={childBlocks}
+          isStreaming={false}
+          thinkingLevel={thinkingLevel}
+        />
+      );
+    }
+    if (block.type === "thinking") {
+      const tb = block as ThinkingBlockData;
+      return (
+        <ThinkingBlock
+          key={block.id}
+          content={tb.content}
+          toolCalls={tb.toolCalls}
+          savedDuration={
+            tb.startTime && tb.endTime
+              ? Math.round((tb.endTime - tb.startTime) / 1000)
+              : undefined
+          }
+          label={tb.label}
+          summary={tb.summary || tb.label}
+          thinkingLevel={thinkingLevel}
+        />
+      );
+    }
+    if (block.type === "action_text") {
+      return <ActionText key={block.id} content={block.content} node={block.node} />;
+    }
+    if (block.type === "screenshot") {
+      return <ScreenshotBlock key={block.id} block={block as ScreenshotBlockData} />;
+    }
+    if (block.type === "preview") {
+      return <PreviewGroup key={block.id} block={block as PreviewBlockData} />;
+    }
+    if (block.type === "artifact") {
+      return <ArtifactCard key={block.id} artifact={(block as ArtifactBlockData).artifact} />;
+    }
+    if (block.type === "answer") {
+      return (
+        <div key={block.id} className="font-serif relative">
+          <MarkdownRenderer content={block.content} />
+        </div>
+      );
+    }
+    return null;
+  };
 
   // Simple path: 0-2 blocks → render individually (backward compat)
   if (thinkingActionCount < 3) {
-    return (
-      <>
-        {blocks.map((block) => {
-          if (block.type === "thinking") {
-            const tb = block as ThinkingBlockData;
-            return (
-              <ThinkingBlock
-                key={block.id}
-                content={tb.content}
-                toolCalls={tb.toolCalls}
-                savedDuration={
-                  tb.startTime && tb.endTime
-                    ? Math.round((tb.endTime - tb.startTime) / 1000)
-                    : undefined
-                }
-                label={tb.label}
-                summary={tb.summary || tb.label}
-                thinkingLevel={thinkingLevel}
-              />
-            );
-          }
-          if (block.type === "action_text") {
-            return <ActionText key={block.id} content={block.content} node={block.node} />;
-          }
-          if (block.type === "screenshot") {
-            return <ScreenshotBlock key={block.id} block={block as ScreenshotBlockData} />;
-          }
-          if (block.type === "answer") {
-            return (
-              <div key={block.id} className="font-serif relative">
-                <MarkdownRenderer content={block.content} />
-              </div>
-            );
-          }
-          return null;
-        })}
-      </>
-    );
+    return <>{blocks.map(renderBlock)}</>;
   }
 
   // Timeline path: 3+ blocks → segment into timeline groups + answer segments
   const segments: Array<
     | { kind: "timeline"; blocks: ContentBlock[]; key: string }
-    | { kind: "answer"; block: ContentBlock }
+    | { kind: "standalone"; block: ContentBlock }
   > = [];
 
   let currentTimeline: ContentBlock[] = [];
 
   for (const block of blocks) {
+    // Skip grouped thinking blocks (rendered inside SubagentGroup)
+    if (block.type === "thinking" && groupedBlockIds.has(block.id)) continue;
+
     if (block.type === "thinking" || block.type === "action_text") {
       currentTimeline.push(block);
     } else {
@@ -424,7 +461,7 @@ function BlockRenderer({
         });
         currentTimeline = [];
       }
-      segments.push({ kind: "answer", block });
+      segments.push({ kind: "standalone", block });
     }
   }
   // Flush remaining timeline blocks
@@ -448,8 +485,30 @@ function BlockRenderer({
             />
           );
         }
+        // Standalone blocks: subagent_group, screenshot, answer
+        if (seg.block.type === "subagent_group") {
+          const group = seg.block as SubagentGroupBlockData;
+          const childBlocks = blocks.filter(
+            (b) => b.type === "thinking" && (b as ThinkingBlockData).groupId === group.id,
+          ) as ThinkingBlockData[];
+          return (
+            <SubagentGroup
+              key={group.id}
+              group={group}
+              childBlocks={childBlocks}
+              isStreaming={false}
+              thinkingLevel={thinkingLevel}
+            />
+          );
+        }
         if (seg.block.type === "screenshot") {
           return <ScreenshotBlock key={seg.block.id} block={seg.block as ScreenshotBlockData} />;
+        }
+        if (seg.block.type === "preview") {
+          return <PreviewGroup key={seg.block.id} block={seg.block as PreviewBlockData} />;
+        }
+        if (seg.block.type === "artifact") {
+          return <ArtifactCard key={seg.block.id} artifact={(seg.block as ArtifactBlockData).artifact} />;
         }
         return (
           <div key={seg.block.id} className="font-serif relative">

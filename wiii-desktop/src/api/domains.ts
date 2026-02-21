@@ -13,8 +13,3 @@ export async function listDomains(): Promise<DomainSummary[]> {
   return response.domains || [];
 }
 
-/** Get domain details */
-export async function getDomain(domainId: string): Promise<DomainSummary> {
-  const client = getClient();
-  return client.get<DomainSummary>(`/api/v1/admin/domains/${domainId}`);
-}

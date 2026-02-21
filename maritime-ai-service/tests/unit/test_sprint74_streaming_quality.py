@@ -19,6 +19,18 @@ from dataclasses import dataclass
 from typing import Optional
 
 
+@pytest.fixture(autouse=True)
+def _mock_character_state_manager():
+    """Prevent build_system_prompt from connecting to PostgreSQL."""
+    with patch(
+        "app.engine.character.character_state.get_character_state_manager"
+    ) as m:
+        inst = MagicMock()
+        inst.compile_living_state.return_value = ""
+        m.return_value = inst
+        yield
+
+
 # ============================================================================
 # Break circular import chain (same pattern as test_sprint54_graph_streaming.py)
 # ============================================================================
@@ -64,6 +76,12 @@ if not _had_cs:
         sys.modules.pop(_svc_key, None)
 elif _orig_cs is not None:
     sys.modules[_cs_key] = _orig_cs
+
+# Restore graph module to avoid polluting later test files
+if not _had_graph:
+    sys.modules.pop(_graph_key, None)
+elif _orig_graph is not None:
+    sys.modules[_graph_key] = _orig_graph
 
 
 # ============================================================================

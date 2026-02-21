@@ -73,7 +73,8 @@ async def grade_node(state: Dict[str, Any]) -> dict:
     if not docs:
         return {"retrieval_confidence": 0.0, "grading_results": []}
 
-    # Simple confidence from retrieval scores
+    # Confidence from retrieval scores — 0-1 scale
+    # (matches quality_skip_threshold=0.85 comparison in graph.py)
     scores = state.get("retrieval_scores", [])
     avg_score = sum(scores) / len(scores) if scores else 0.0
     confidence = min(avg_score, 1.0)
@@ -108,13 +109,19 @@ async def correct_node(state: Dict[str, Any]) -> dict:
 
 
 async def generate_node(state: Dict[str, Any]) -> dict:
-    """Generate final response from retrieved documents."""
+    """Generate final response from retrieved documents.
+
+    Sprint 165: When no docs found, uses LLM general knowledge (like corrective_rag._generate_fallback)
+    instead of returning a hardcoded error message.
+    """
     docs = state.get("retrieval_docs", [])
     query = state.get("query", "")
     confidence = state.get("retrieval_confidence", 0.0)
 
     if not docs:
-        response = "Xin lỗi, không tìm thấy tài liệu liên quan."
+        # Sprint 165: LLM fallback — use general knowledge instead of hardcoded error
+        response = await _generate_fallback_response(query, state)
+        confidence = 0.55  # Capped confidence for fallback (0-1 scale)
     else:
         # Build context from relevant docs
         context_parts = [d.get("content", "")[:500] for d in docs[:5]]
@@ -132,6 +139,27 @@ async def generate_node(state: Dict[str, Any]) -> dict:
         "sources": sources,
         "crag_confidence": confidence,
     }
+
+
+async def _generate_fallback_response(query: str, state: Dict[str, Any]) -> str:
+    """Generate LLM response when KB has 0 documents.
+
+    Reuses CorrectiveRAG._generate_fallback() logic for consistency.
+    Falls back to static message if LLM is unavailable.
+    """
+    try:
+        from app.engine.agentic_rag.corrective_rag import get_corrective_rag
+
+        crag = get_corrective_rag()
+        context = state.get("context") or {}
+        context.setdefault("domain_name", state.get("domain_id", ""))
+        response = await crag._generate_fallback(query, context)
+        if response:
+            return response
+    except Exception as exc:
+        logger.warning("[RAG_SUBGRAPH] LLM fallback failed: %s", exc)
+
+    return "Xin lỗi, không tìm thấy tài liệu liên quan."
 
 
 def build_rag_subgraph() -> StateGraph:

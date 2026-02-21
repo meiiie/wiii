@@ -753,7 +753,7 @@ class CorrectiveRAG:
 
             llm = get_llm_light()
             if not llm:
-                return "Xin lỗi, tôi không tìm thấy thông tin trong cơ sở dữ liệu."
+                return ""
 
             from app.core.config import settings
             # Sprint 80: Extract domain name for off-topic boundary
@@ -788,15 +788,18 @@ class CorrectiveRAG:
                     f"{name_hint}"
                     f"{avoid_text} "
                     f"Chuyên ngành: {domain_name}. "
-                    "Cơ sở dữ liệu không có tài liệu phù hợp cho câu hỏi này. "
-                    f"CHỈ trả lời nếu câu hỏi THỰC SỰ liên quan đến {domain_name}. "
+                    f"Hãy dùng KIẾN THỨC TỔNG QUÁT của bạn về {domain_name} để trả lời. "
+                    "BẮT BUỘC: LUÔN LUÔN đưa ra câu trả lời có nội dung thực chất. "
+                    "TUYỆT ĐỐI KHÔNG nói 'không tìm thấy', 'không có thông tin', "
+                    "'không thể trả lời' hay bất kỳ từ chối nào tương tự. "
                     f"Nếu câu hỏi KHÔNG liên quan đến {domain_name} (ví dụ: nấu ăn, "
                     "giải trí, thời tiết, lập trình, v.v.), hãy lịch sự từ chối: "
                     f"'Mình là trợ lý chuyên về {domain_name}. "
                     f"Bạn có muốn hỏi về {domain_name} không?' "
                     "Nếu là lời chào, hãy chào lại tự nhiên. "
-                    f"Nếu là câu hỏi liên quan {domain_name}, trả lời ngắn gọn và lưu ý "
-                    "rằng đây là kiến thức tổng quát (chưa được xác minh từ tài liệu gốc). "
+                    f"Nếu là câu hỏi liên quan {domain_name}, hãy trả lời đầy đủ dựa trên "
+                    "kiến thức chung của bạn. Cuối câu trả lời, ghi chú ngắn: "
+                    "'(Thông tin dựa trên kiến thức tổng quát, chưa xác minh từ tài liệu gốc)' "
                     f"{emoji_usage} "
                     "BẮT BUỘC: Trả lời hoàn toàn bằng TIẾNG VIỆT. "
                     "TUYỆT ĐỐI KHÔNG trả lời bằng tiếng Anh. "
@@ -820,7 +823,7 @@ class CorrectiveRAG:
 
         except Exception as e:
             logger.warning("[CRAG] Fallback generation failed: %s", e)
-            return "Xin lỗi, tôi không tìm thấy thông tin trong cơ sở dữ liệu."
+            return ""
 
     async def _generate(
         self,
@@ -983,13 +986,17 @@ class CorrectiveRAG:
             }
             
             if not documents:
-                no_doc_answer = "Không tìm thấy thông tin phù hợp trong cơ sở dữ liệu."
-                yield {"type": "answer", "content": no_doc_answer}
+                # Sprint 165: LLM fallback — use general knowledge instead of hardcoded error
+                yield {"type": "status", "content": "Dùng kiến thức tổng quát...", "step": "llm_fallback"}
+                fallback_answer = await self._generate_fallback(query, context or {})
+                if not fallback_answer:
+                    fallback_answer = "Xin lỗi, hiện tại tôi chưa có thông tin về chủ đề này."
+                yield {"type": "answer", "content": fallback_answer}
                 yield {"type": "result", "data": CorrectiveRAGResult(
-                    answer=no_doc_answer,
+                    answer=fallback_answer,
                     sources=[],
                     query_analysis=analysis,
-                    confidence=30.0,
+                    confidence=45.0,
                 )}
                 yield {"type": "done", "content": ""}
                 return

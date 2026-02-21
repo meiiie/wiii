@@ -4,7 +4,7 @@
 ![React 18](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-06B6D4?logo=tailwindcss&logoColor=white)
-![Vitest](https://img.shields.io/badge/Vitest-1346_tests-6E9F18?logo=vitest&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-1468_tests-6E9F18?logo=vitest&logoColor=white)
 
 **Cross-platform desktop client for the Wiii AI platform.**
 
@@ -26,6 +26,7 @@
 - **Keyboard Shortcuts** -- Ctrl+Enter to send, command palette, and configurable bindings
 - **Context Panel** -- Token budget visualization, conversation compaction controls
 - **Character Panel** -- AI character traits and personality inspection
+- **Living Agent Dashboard** -- Soul status, 4D mood indicator, heartbeat monitor, skill tree, daily journal viewer
 - **Screenshot Blocks** -- Inline browser screenshot rendering from product search
 
 ---
@@ -41,7 +42,7 @@
 | Tailwind CSS | 3.4 | Utility-first styling |
 | Zustand | 4.5 | State management (11 stores) |
 | Immer | 11.x | Immutable state updates |
-| Vitest | 1.6 | Testing framework (1346 tests) |
+| Vitest | 1.6 | Testing framework (1468 tests) |
 | Lucide React | 0.400 | Icon library |
 | Motion | 12.x | Animation library |
 | React Markdown | 9.x | Markdown rendering with GFM and syntax highlighting |
@@ -64,7 +65,7 @@
 ```
 wiii-desktop/
 ├── src/
-│   ├── api/                     # 15 API modules
+│   ├── api/                     # 16 API modules
 │   │   ├── client.ts            # HTTP client (Tauri plugin-http / fetch fallback)
 │   │   ├── sse.ts               # SSE parser for /chat/stream/v3
 │   │   ├── chat.ts              # Chat endpoints
@@ -76,6 +77,7 @@ wiii-desktop/
 │   │   ├── domains.ts           # Domain listing
 │   │   ├── feedback.ts          # User feedback
 │   │   ├── health.ts            # Health check
+│   │   ├── living-agent.ts      # Living Agent status, skills, journal
 │   │   ├── memories.ts          # Semantic memory
 │   │   ├── preferences.ts       # User preferences
 │   │   ├── sources.ts           # Source citations
@@ -109,8 +111,14 @@ wiii-desktop/
 │   │   │   ├── ContextPanel.tsx # Token budget and compaction
 │   │   │   ├── CharacterPanel.tsx # AI character inspection
 │   │   │   └── SourcesPanel.tsx # Source documents panel
+│   │   ├── living-agent/         # Living Agent dashboard (5 components)
+│   │   │   ├── LivingAgentPanel.tsx # Main 3-tab panel (overview/skills/journal)
+│   │   │   ├── MoodIndicator.tsx # 4D emotional state with energy bars
+│   │   │   ├── SkillTree.tsx    # Skill lifecycle cards (active + mastered)
+│   │   │   ├── JournalView.tsx  # Collapsible daily journal entries
+│   │   │   └── HeartbeatStatus.tsx # Heartbeat monitor with manual trigger
 │   │   ├── settings/            # Settings modal
-│   │   │   ├── SettingsPage.tsx # Tabbed settings (Connection/User/Preferences)
+│   │   │   ├── SettingsPage.tsx # Tabbed settings (Connection/User/Preferences/Linh hồn)
 │   │   │   └── OrgSettingsTab.tsx # Organization admin config
 │   │   └── common/              # Shared components (10 components)
 │   │       ├── MarkdownRenderer.tsx # Rich markdown with code highlighting
@@ -124,7 +132,7 @@ wiii-desktop/
 │   │       ├── AvatarPreview.tsx # Avatar preview component
 │   │       └── WiiiAvatar.tsx   # Avatar display wrapper
 │   │
-│   ├── stores/                  # 11 Zustand stores
+│   ├── stores/                  # 12 Zustand stores
 │   │   ├── settings-store.ts    # Server URL, API key, theme, user preferences
 │   │   ├── chat-store.ts        # Conversations, messages, streaming state (largest)
 │   │   ├── auth-store.ts        # JWT tokens, OAuth flow, login state
@@ -135,6 +143,7 @@ wiii-desktop/
 │   │   ├── avatar-store.ts      # Avatar animations, emotion state
 │   │   ├── character-store.ts   # AI character traits and config
 │   │   ├── context-store.ts     # Token budget, context info
+│   │   ├── living-agent-store.ts # Living Agent soul, mood, skills, journal
 │   │   ├── memory-store.ts      # Semantic memory viewer
 │   │   └── toast-store.ts       # Toast notification queue
 │   │
@@ -176,7 +185,7 @@ wiii-desktop/
 │   │   ├── animations.ts        # Animation utilities
 │   │   └── conversation-groups.ts # Conversation grouping logic
 │   │
-│   └── __tests__/               # 54 test files, 1346 Vitest tests
+│   └── __tests__/               # 55 test files, 1468 Vitest tests
 │
 ├── src-tauri/                   # Rust backend
 │   ├── src/
@@ -245,7 +254,7 @@ The installer is output to `src-tauri/target/release/bundle/nsis/`.
 ### Run Tests
 
 ```bash
-npx vitest run          # All 1346 tests
+npx vitest run          # All 1468 tests
 npx vitest run --ui     # Interactive test UI
 npx vitest run --coverage  # With coverage report
 ```
@@ -262,7 +271,7 @@ npm run lint
 
 ### State Management
 
-11 Zustand stores manage application state, with Tauri plugin-store providing persistent storage across sessions:
+12 Zustand stores manage application state, with Tauri plugin-store providing persistent storage across sessions:
 
 | Store | Key Responsibilities |
 |---|---|
@@ -276,6 +285,7 @@ npm run lint
 | `avatar-store` | Avatar emotion state, animation triggers, expression config |
 | `character-store` | AI character traits, personality blocks |
 | `context-store` | Token budget info, utilization percentage, compaction state |
+| `living-agent-store` | Living Agent soul status, 4D emotional state, skills, journal, heartbeat |
 | `memory-store` | Semantic memory entries, memory filter state |
 | `toast-store` | Toast notification queue |
 
@@ -351,13 +361,14 @@ npx vitest run --coverage                   # With coverage report
 npx vitest run --ui                         # Interactive browser UI
 ```
 
-**1346 tests** across **54 test files** -- all passing.
+**1468 tests** across **55 test files** -- all passing.
 
 Test coverage areas:
-- Store logic (chat, auth, org, settings, context, memory, avatar)
+- Store logic (chat, auth, org, settings, context, memory, avatar, living-agent)
 - SSE streaming and stream buffer
 - Thinking block lifecycle and multi-phase thinking flow
 - Avatar emotion engine and animation system
+- Living Agent types, store, and API module structure
 - Organization UI consistency and integration
 - Screenshot rendering and thumbnails
 - Conversation persistence and grouping

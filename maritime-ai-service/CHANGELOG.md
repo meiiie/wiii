@@ -9,6 +9,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added (2026-02-22) — Sprint 170: "Linh Hồn Sống" (Living Agent)
+- **Living Agent System**: Autonomous soul, emotion engine, heartbeat scheduler, skill lifecycle, daily journal, social browsing
+  - 10 modules in `app/engine/living_agent/`: models, soul_loader, emotion_engine, heartbeat, local_llm, skill_builder, journal, social_browser
+  - Soul config: `app/prompts/soul/wiii_soul.yaml` — identity, truths, boundaries, interests, goals
+  - Emotion engine: Rule-based 4D state (mood/energy/social_battery/engagement), 13 event types, natural recovery (no LLM cost)
+  - Heartbeat scheduler: AsyncIO background task (30-min interval, active hours 08:00-23:00 UTC+7)
+  - Local LLM: Ollama `qwen3:8b` via httpx async for zero-cost 24/7 inference
+  - Skill lifecycle: DISCOVER → LEARN → PRACTICE → EVALUATE → MASTER with confidence scoring
+  - Journal: Daily structured entries via local LLM (mood_summary, learnings, goals_next)
+  - Social browser: Serper API + HackerNews API with keyword/LLM relevance scoring
+- **System Integration**: Heartbeat in `main.py` lifespan, soul/emotion prompt injection in `build_system_prompt()`, emotion event in `chat_stream.py`
+- **REST API**: 6 endpoints at `/api/v1/living-agent/` — status, emotional-state, journal, skills, heartbeat, heartbeat/trigger (feature-gated)
+- **Desktop UI**: `LivingAgentPanel` in Settings "Linh hồn" tab — MoodIndicator (10 moods), SkillTree, JournalView, HeartbeatStatus (5 components)
+- **Zustand Store**: `living-agent-store.ts` — fetchStatus, fetchSkills, fetchJournal, triggerHeartbeat
+- **Database**: Migration 014 — 4 new tables (wiii_skills, wiii_journal, wiii_browsing_log, wiii_emotional_snapshots)
+- **Config**: `enable_living_agent` feature flag (default: False) + 12 sub-config fields
+- **Tests**: 99 backend (71 core + 28 integration) + 14 desktop = 113 new tests
+
 ### Added (2025-12-21)
 - **P3 SOTA Token Streaming (Dec 2025)**:
   - True token-by-token streaming using `llm.astream()` (ChatGPT/Claude pattern)

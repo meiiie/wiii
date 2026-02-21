@@ -363,6 +363,7 @@ class TestRAGNodes:
 
     @pytest.mark.asyncio
     async def test_generate_no_docs(self):
+        """Sprint 165: Empty KB now uses LLM fallback instead of hardcoded error."""
         from app.engine.multi_agent.subagents.rag.graph import generate_node
 
         result = await generate_node({
@@ -371,7 +372,9 @@ class TestRAGNodes:
             "retrieval_confidence": 0.0,
         })
 
-        assert "không tìm thấy" in result["final_response"].lower()
+        # Sprint 165: LLM fallback provides a real response (or falls back to static)
+        assert result["final_response"]  # Non-empty response
+        assert result["crag_confidence"] == 0.55  # Capped fallback confidence
 
 
 class TestRAGSubgraphBuild:

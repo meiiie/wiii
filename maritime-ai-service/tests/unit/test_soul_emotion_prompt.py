@@ -3,6 +3,18 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 
+@pytest.fixture(autouse=True)
+def _mock_character_state_manager():
+    """Prevent build_system_prompt from connecting to PostgreSQL."""
+    with patch(
+        "app.engine.character.character_state.get_character_state_manager"
+    ) as m:
+        inst = MagicMock()
+        inst.compile_living_state.return_value = ""
+        m.return_value = inst
+        yield
+
+
 class TestSoulEmotionPromptInjection:
     """Tests for soul emotion instructions in prompt_loader."""
 

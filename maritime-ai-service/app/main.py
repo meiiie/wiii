@@ -263,6 +263,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning("Scheduled task executor startup failed: %s", e)
 
     # =========================================================================
+    # LIVING AGENT HEARTBEAT (Sprint 170: Linh Hồn Sống)
+    # =========================================================================
+    _heartbeat = None
+    if settings.enable_living_agent:
+        try:
+            from app.engine.living_agent.heartbeat import get_heartbeat_scheduler
+            _heartbeat = get_heartbeat_scheduler()
+            await _heartbeat.start()
+            logger.info(
+                "[OK] Living Agent heartbeat started "
+                "(interval=%ds, active %d:00-%d:00 UTC+7)",
+                settings.living_agent_heartbeat_interval,
+                settings.living_agent_active_hours_start,
+                settings.living_agent_active_hours_end,
+            )
+        except Exception as e:
+            logger.warning("[WARN] Living Agent heartbeat startup failed: %s", e)
+
+    # =========================================================================
     # LMS CONNECTOR BOOTSTRAP (Sprint 155: Cầu Nối)
     # =========================================================================
     if settings.enable_lms_integration:
@@ -294,6 +313,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.info("Scheduled task executor stopped")
         except Exception as e:
             logger.warning("Executor shutdown failed: %s", e)
+
+    # Stop Living Agent heartbeat (Sprint 170)
+    if _heartbeat:
+        try:
+            await _heartbeat.stop()
+            logger.info("Living Agent heartbeat stopped")
+        except Exception as e:
+            logger.warning("Heartbeat shutdown failed: %s", e)
 
     # Shut down MCP Client (Sprint 56)
     if settings.enable_mcp_client:

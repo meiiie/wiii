@@ -44,10 +44,18 @@ class UserGraphRepository:
         self._init_driver()
     
     def _init_driver(self):
-        """Initialize Neo4j driver."""
+        """Initialize Neo4j driver.
+
+        Sprint 165: Guarded by enable_neo4j flag.
+        """
+        if not getattr(settings, "enable_neo4j", False):
+            logger.info("[USER GRAPH] Neo4j disabled (enable_neo4j=False)")
+            self._available = False
+            return
+
         try:
             from neo4j import GraphDatabase
-            
+
             username = settings.neo4j_username_resolved
             self._driver = GraphDatabase.driver(
                 settings.neo4j_uri,

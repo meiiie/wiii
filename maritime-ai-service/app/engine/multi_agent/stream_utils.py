@@ -39,6 +39,8 @@ class StreamEventType:
     EMOTION = "emotion"              # Sprint 135: Soul emotion for avatar expression
     ACTION_TEXT = "action_text"      # Sprint 147: Bold narrative between thinking blocks
     BROWSER_SCREENSHOT = "browser_screenshot"  # Sprint 153: Playwright screenshot
+    PREVIEW = "preview"                          # Sprint 166: Rich preview cards
+    ARTIFACT = "artifact"                        # Sprint 167: Interactive artifacts (code, HTML, data)
 
 
 # =============================================================================
@@ -115,14 +117,16 @@ class StreamEvent:
 
 async def create_status_event(
     message: str,
-    node: Optional[str] = None
+    node: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
 ) -> StreamEvent:
     """Create a status event for progress indication."""
     return StreamEvent(
         type=StreamEventType.STATUS,
         content=message,
         node=node,
-        step=NODE_STEPS.get(node) if node else None
+        step=NODE_STEPS.get(node) if node else None,
+        details=details,
     )
 
 
@@ -332,6 +336,88 @@ async def create_browser_screenshot_event(
             "url": url,
             "image": image_base64,
             "label": label,
+        },
+        node=node,
+    )
+
+
+async def create_artifact_event(
+    artifact_type: str,
+    artifact_id: str,
+    title: str,
+    content: str,
+    language: str = "",
+    node: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> StreamEvent:
+    """Sprint 167: Create an artifact event for interactive content rendering.
+
+    Emits structured artifact data — frontend renders in ArtifactCard (inline)
+    or ArtifactPanel (expanded). Supports code execution, HTML preview, data tables.
+
+    Args:
+        artifact_type: "code" | "html" | "react" | "table" | "chart" | "document" | "excel"
+        artifact_id: Unique ID for dedup + panel reference
+        title: Artifact title
+        content: Source code / HTML / JSON data
+        language: Programming language (for code: "python", "javascript", etc.)
+        node: Source agent node name
+        metadata: Extra metadata (execution_status, output, error, etc.)
+    """
+    return StreamEvent(
+        type=StreamEventType.ARTIFACT,
+        content={
+            "artifact_type": artifact_type,
+            "artifact_id": artifact_id,
+            "title": title,
+            "content": content,
+            "language": language,
+            "metadata": metadata or {},
+        },
+        node=node,
+    )
+
+
+async def create_preview_event(
+    preview_type: str,
+    preview_id: str,
+    title: str,
+    snippet: str = "",
+    url: Optional[str] = None,
+    image_url: Optional[str] = None,
+    citation_index: Optional[int] = None,
+    node: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> StreamEvent:
+    """Sprint 166: Create a preview card event for rich content rendering.
+
+    Emits structured preview data — frontend decides rendering (document, product,
+    web, link, code cards). Backend sends data, frontend renders.
+
+    Args:
+        preview_type: "document" | "product" | "web" | "link" | "code"
+        preview_id: Unique ID for dedup + panel reference
+        title: Card title (truncated to PREVIEW_TITLE_MAX_LENGTH)
+        snippet: Content snippet (truncated to PREVIEW_SNIPPET_MAX_LENGTH)
+        url: Source URL (optional)
+        image_url: Thumbnail URL (optional)
+        citation_index: Citation number [N] (optional)
+        node: Source agent node name
+        metadata: Type-specific metadata (score, price, platform, etc.)
+    """
+    from app.core.constants import PREVIEW_SNIPPET_MAX_LENGTH, PREVIEW_TITLE_MAX_LENGTH
+
+    return StreamEvent(
+        type=StreamEventType.PREVIEW,
+        content={
+            "preview_type": preview_type,
+            "preview_id": preview_id,
+            "title": title[:PREVIEW_TITLE_MAX_LENGTH],
+            "snippet": snippet[:PREVIEW_SNIPPET_MAX_LENGTH] if snippet else "",
+            "url": url,
+            "image_url": image_url,
+            "citation_index": citation_index,
+            "metadata": metadata or {},
         },
         node=node,
     )

@@ -28,6 +28,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   streaming_version: DEFAULT_STREAMING_VERSION,
   thinking_level: "balanced",
   facebook_cookie: "",  // Sprint 154: Facebook cookie for logged-in search
+  show_previews: true,  // Sprint 166: Rich preview cards
+  show_artifacts: true, // Sprint 167: Interactive artifacts
 };
 
 interface SettingsState {

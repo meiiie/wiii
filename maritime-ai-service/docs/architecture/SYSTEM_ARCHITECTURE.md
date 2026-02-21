@@ -1,10 +1,10 @@
 # Wiii - System Architecture
 
-**Version:** 6.0 (Post-Sprint 161)
-**Updated:** 2026-02-20
+**Version:** 7.0 (Post-Sprint 170)
+**Updated:** 2026-02-22
 **Product:** Wiii by The Wiii Lab
-**Pattern:** Multi-Domain Agentic RAG with Plugin Architecture, Product Search Platform, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization
-**Codebase:** 254 Python files, ~75,000 LOC, 60+ API endpoints, 6520 backend + 1346 desktop tests
+**Pattern:** Multi-Domain Agentic RAG with Plugin Architecture, Product Search Platform, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization, Living Agent Autonomy
+**Codebase:** 264+ Python files, ~80,000 LOC, 60+ API endpoints, 6550+ backend + 1468 desktop tests
 
 ---
 
@@ -32,6 +32,7 @@
    - 4.16 [LMS Integration](#416-lms-integration)
    - 4.17 [Multi-Tenant Data Isolation](#417-multi-tenant-data-isolation)
    - 4.18 [Org-Level Customization](#418-org-level-customization)
+   - 4.19 [Living Agent System](#419-living-agent-system)
 5. [Data Layer](#5-data-layer)
 6. [Security Architecture](#6-security-architecture)
 7. [Desktop Application](#7-desktop-application)
@@ -1317,6 +1318,69 @@ flowchart TB
 - **Permissions format**: `"action:resource"` strings (e.g., `"manage:settings"`, `"read:chat"`)
 - **API**: `GET/PATCH /organizations/{id}/settings`, `GET /organizations/{id}/permissions`
 - **37 backend + 14 desktop tests**
+
+### 4.19 Living Agent System
+
+**Sprint 170 — "Linh Hồn Sống"**
+
+Makes Wiii a continuously living agent with its own soul, emotions, skills, and daily activities — inspired by OpenClaw autonomous agent architecture.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Living Agent System                          │
+│                                                                 │
+│  ┌──────────┐  ┌──────────────┐  ┌──────────────┐             │
+│  │   Soul    │  │   Emotion    │  │  Heartbeat   │             │
+│  │  Loader   │  │   Engine     │  │  Scheduler   │             │
+│  │ (YAML)    │  │  (4D state)  │  │ (30min cron) │             │
+│  └─────┬─────┘  └──────┬───────┘  └──────┬───────┘             │
+│        │               │                 │                      │
+│        ▼               ▼                 ▼                      │
+│  ┌─────────────────────────────────────────────┐               │
+│  │           build_system_prompt()              │               │
+│  │    (Soul + Emotion prompt injection)         │               │
+│  └─────────────────────────────────────────────┘               │
+│                                                                 │
+│  ┌──────────┐  ┌──────────────┐  ┌──────────────┐             │
+│  │  Local   │  │   Skill      │  │   Social     │             │
+│  │  LLM     │  │   Builder    │  │   Browser    │             │
+│  │ (Ollama) │  │  (lifecycle) │  │  (Serper+HN) │             │
+│  └─────┬─────┘  └──────┬───────┘  └──────┬───────┘             │
+│        │               │                 │                      │
+│        ▼               ▼                 ▼                      │
+│  ┌─────────────────────────────────────────────┐               │
+│  │              Journal Writer                  │               │
+│  │   (Daily entries via local LLM reflection)   │               │
+│  └─────────────────────────────────────────────┘               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Components:**
+
+| Component | Module | Description |
+|-----------|--------|-------------|
+| Soul Loader | `soul_loader.py` | Loads YAML soul config (`wiii_soul.yaml`), compiles identity/truths/boundaries into system prompt |
+| Emotion Engine | `emotion_engine.py` | Rule-based 4D state (mood, energy, social_battery, engagement), 13 event types, natural recovery |
+| Heartbeat Scheduler | `heartbeat.py` | AsyncIO background task, 30-min interval, active hours 08:00-23:00 UTC+7 |
+| Local LLM | `local_llm.py` | Ollama `qwen3:8b` via httpx async — zero-cost 24/7 inference |
+| Skill Builder | `skill_builder.py` | DISCOVER → LEARN → PRACTICE → EVALUATE → MASTER lifecycle |
+| Journal Writer | `journal.py` | Daily structured entries via local LLM (mood_summary, learnings, goals_next) |
+| Social Browser | `social_browser.py` | Serper API + HackerNews API, keyword/LLM relevance scoring |
+
+**Feature gate:** `enable_living_agent=False` (default)
+
+**Integration points:**
+- `main.py` lifespan: heartbeat start/stop
+- `prompt_loader.py`: soul + emotion prompt injection in `build_system_prompt()`
+- `chat_stream.py`: USER_CONVERSATION emotion event after each response
+
+**API:** 6 endpoints at `/api/v1/living-agent/` (status, emotional-state, journal, skills, heartbeat, trigger)
+
+**Desktop:** `LivingAgentPanel` in Settings "Linh hồn" tab — MoodIndicator, SkillTree, JournalView, HeartbeatStatus
+
+**Database:** Migration 014 — `wiii_skills`, `wiii_journal`, `wiii_browsing_log`, `wiii_emotional_snapshots`
+
+**Tests:** 99 backend + 14 desktop = 113
 
 ---
 

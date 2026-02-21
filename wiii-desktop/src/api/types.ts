@@ -152,6 +152,8 @@ export interface SSEStatusEvent {
   content: string;
   step?: string;
   node?: string;
+  /** Sprint 164: Extra details (e.g. aggregation decision) */
+  details?: Record<string, unknown>;
 }
 
 export interface SSEDomainNoticeEvent {
@@ -218,7 +220,9 @@ export type SSEEventType =
   | "domain_notice"
   | "emotion"
   | "action_text"
-  | "browser_screenshot";
+  | "browser_screenshot"
+  | "preview"
+  | "artifact";
 
 export interface ToolCallInfo {
   id: string;
@@ -252,6 +256,10 @@ export interface ThinkingBlockData {
   startTime?: number;
   /** epoch ms when block was closed (next block started) */
   endTime?: number;
+  /** Sprint 164: Parent subagent group ID (for grouped rendering) */
+  groupId?: string;
+  /** Sprint 164: Agent name within the parallel group */
+  workerNode?: string;
 }
 
 /** An answer/content block with markdown text */
@@ -280,8 +288,108 @@ export interface ScreenshotBlockData {
   node?: string;
 }
 
+/** Sprint 164: Subagent worker status within a parallel dispatch group */
+export interface SubagentWorker {
+  agentName: string;
+  label: string;
+  status: "active" | "completed" | "error";
+  startTime: number;
+  endTime?: number;
+  /** Status messages for per-worker progress display */
+  statusMessages: string[];
+}
+
+/** Sprint 164: Aggregation decision summary from the aggregator node */
+export interface AggregationSummary {
+  strategy: string;
+  primaryAgent?: string;
+  confidence: number;
+  reasoning: string;
+}
+
+/** Sprint 164: Subagent group block — visual container for parallel dispatch */
+export interface SubagentGroupBlockData {
+  type: "subagent_group";
+  id: string;
+  label: string;
+  workers: SubagentWorker[];
+  aggregation?: AggregationSummary;
+  startTime: number;
+  endTime?: number;
+}
+
+// ===== Execution Result (Sprint 167b: deduplicated from artifact-sandbox + pyodide-runtime) =====
+export interface ExecutionResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  images: string[];      // base64 PNG from matplotlib
+  tables: unknown[][];   // pandas DataFrame as arrays
+  executionTime: number;  // ms
+}
+
+// ===== Artifact System (Sprint 167) =====
+export type ArtifactType = "code" | "html" | "react" | "table" | "chart" | "document" | "excel";
+
+export interface ArtifactData {
+  artifact_type: ArtifactType;
+  artifact_id: string;
+  title: string;
+  content: string;
+  language?: string;
+  metadata?: {
+    execution_status?: "pending" | "running" | "success" | "error";
+    output?: string;
+    error?: string;
+    image_url?: string;
+    table_data?: unknown[];
+    file_url?: string;
+    [key: string]: unknown;
+  };
+}
+
+export interface ArtifactBlockData {
+  type: "artifact";
+  id: string;
+  artifact: ArtifactData;
+  node?: string;
+}
+
+/** Sprint 167: SSE artifact event */
+export interface SSEArtifactEvent {
+  content: ArtifactData;
+  node?: string;
+}
+
+// ===== Preview System (Sprint 166) =====
+export type PreviewType = "document" | "product" | "web" | "link" | "code";
+
+export interface PreviewItemData {
+  preview_type: PreviewType;
+  preview_id: string;
+  title: string;
+  snippet?: string;
+  url?: string;
+  image_url?: string;
+  citation_index?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface PreviewBlockData {
+  type: "preview";
+  id: string;
+  items: PreviewItemData[];
+  node?: string;
+}
+
+/** Sprint 166: SSE preview event */
+export interface SSEPreviewEvent {
+  content: PreviewItemData;
+  node?: string;
+}
+
 /** Ordered content block — enables interleaved thinking+answer rendering */
-export type ContentBlock = ThinkingBlockData | AnswerBlockData | ActionTextBlockData | ScreenshotBlockData;
+export type ContentBlock = ThinkingBlockData | AnswerBlockData | ActionTextBlockData | ScreenshotBlockData | SubagentGroupBlockData | PreviewBlockData | ArtifactBlockData;
 
 /** Sprint 141: Unified thinking phase for ThinkingFlow component */
 export interface ThinkingPhase {
@@ -380,30 +488,6 @@ export interface HealthResponse {
     latency_ms?: number;
     message?: string;
   }>;
-}
-
-// ===== Thread Management (Sprint 16: Server-side conversation index) =====
-export interface ThreadView {
-  thread_id: string;
-  user_id: string;
-  domain_id: string;
-  title?: string;
-  message_count: number;
-  last_message_at?: string;
-  created_at?: string;
-  updated_at?: string;
-  extra_data: Record<string, unknown>;
-}
-
-export interface ThreadListResponse {
-  status: string;
-  threads: ThreadView[];
-  total: number;
-}
-
-export interface ThreadActionResponse {
-  status: string;
-  message: string;
 }
 
 // ===== Context Management (Sprint 78/80) =====
@@ -561,6 +645,10 @@ export interface Message {
   domain_notice?: string;
   /** Sprint 107: User feedback rating */
   feedback?: "up" | "down" | null;
+  /** Sprint 166: Rich preview cards */
+  previews?: PreviewItemData[];
+  /** Sprint 167: Interactive artifacts */
+  artifacts?: ArtifactData[];
   is_streaming?: boolean;
   metadata?: Record<string, unknown>;
 }
@@ -587,4 +675,96 @@ export interface AppSettings {
   thinking_level: ThinkingLevel;
   /** Sprint 154: Facebook cookie for logged-in search (optional) */
   facebook_cookie?: string;
+  /** Sprint 166: Show rich preview cards */
+  show_previews?: boolean;
+  /** Sprint 167: Show interactive artifacts */
+  show_artifacts?: boolean;
+}
+
+// ===== Sprint 170: Living Agent Types =====
+
+/** Wiii's mood types */
+export type WiiiMoodType =
+  | "curious"
+  | "happy"
+  | "excited"
+  | "focused"
+  | "calm"
+  | "tired"
+  | "concerned"
+  | "reflective"
+  | "proud"
+  | "neutral";
+
+/** Skill development status */
+export type SkillStatus =
+  | "discovered"
+  | "learning"
+  | "practicing"
+  | "evaluating"
+  | "mastered"
+  | "archived";
+
+/** Emotional state response */
+export interface LivingAgentEmotionalState {
+  primary_mood: WiiiMoodType;
+  energy_level: number;
+  social_battery: number;
+  engagement: number;
+  mood_label: string;
+  behavior_modifiers: Record<string, string>;
+  last_updated: string | null;
+}
+
+/** Heartbeat info */
+export interface LivingAgentHeartbeat {
+  is_running: boolean;
+  heartbeat_count: number;
+  interval_seconds: number;
+  active_hours: string;
+}
+
+/** Overall living agent status */
+export interface LivingAgentStatus {
+  enabled: boolean;
+  emotional_state: LivingAgentEmotionalState | null;
+  heartbeat: LivingAgentHeartbeat | null;
+  skills_count: number;
+  journal_entries_count: number;
+  soul_loaded: boolean;
+  soul_name: string;
+}
+
+/** Journal entry */
+export interface LivingAgentJournalEntry {
+  id: string;
+  entry_date: string;
+  content: string;
+  mood_summary: string;
+  energy_avg: number;
+  notable_events: string[];
+  learnings: string[];
+  goals_next: string[];
+}
+
+/** Tracked skill */
+export interface LivingAgentSkill {
+  id: string;
+  skill_name: string;
+  domain: string;
+  status: SkillStatus;
+  confidence: number;
+  usage_count: number;
+  success_rate: number;
+  discovered_at: string | null;
+  last_practiced: string | null;
+  mastered_at: string | null;
+}
+
+/** Heartbeat trigger result */
+export interface HeartbeatTriggerResult {
+  success: boolean;
+  actions_taken: number;
+  duration_ms: number;
+  error: string | null;
 }

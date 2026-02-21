@@ -20,12 +20,6 @@ export async function listOrganizations(): Promise<OrganizationSummary[]> {
   return client.get<OrganizationSummary[]>("/api/v1/organizations");
 }
 
-/** Get single organization details */
-export async function getOrganization(orgId: string): Promise<OrganizationSummary> {
-  const client = getClient();
-  return client.get<OrganizationSummary>(`/api/v1/organizations/${encodeURIComponent(orgId)}`);
-}
-
 /** Sprint 161: Get effective org settings (merged with platform defaults) */
 export async function getOrgSettings(orgId: string): Promise<OrgSettings> {
   const client = getClient();

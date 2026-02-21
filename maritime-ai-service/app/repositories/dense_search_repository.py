@@ -121,6 +121,21 @@ class DenseSearchRepository:
     def is_available(self) -> bool:
         """Check if dense search is available."""
         return self._available
+
+    # Sprint 165: Schema introspection cache for missing columns
+    _column_cache: dict = {}
+
+    async def _has_column(self, conn, table: str, column: str) -> bool:
+        """Check if a column exists in a table (cached per session)."""
+        key = f"{table}.{column}"
+        if key not in self._column_cache:
+            row = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+                "WHERE table_name=$1 AND column_name=$2)",
+                table, column,
+            )
+            self._column_cache[key] = bool(row)
+        return self._column_cache[key]
     
     async def search(
         self,
@@ -158,7 +173,10 @@ class DenseSearchRepository:
                 # Build query with optional filters
                 # Note: Schema uses 'id' (UUID) not 'node_id'
                 # Embedding is float8[] array, compute cosine similarity manually
-                query = """
+                # Sprint 165: Check if domain_id column exists (added Sprint 136 but migration missing)
+                _has_domain_col = await self._has_column(conn, 'knowledge_embeddings', 'domain_id')
+
+                query = f"""
                     WITH query_emb AS (
                         SELECT $1::float8[] as emb
                     )
@@ -171,7 +189,7 @@ class DenseSearchRepository:
                         chunk_index,
                         image_url,
                         document_id,
-                        domain_id,
+                        {'domain_id,' if _has_domain_col else "'' as domain_id,"}
                         metadata,
                         bounding_boxes,
                         (
@@ -188,11 +206,9 @@ class DenseSearchRepository:
                 param_idx = 2
 
                 # Sprint 136: Cross-domain search — soft boost instead of hard filter
-                # When cross_domain_search=True, we don't add domain_id filter
-                # (RRF reranker handles domain boosting)
-                # When cross_domain_search=False, preserve original hard filter
+                # Sprint 165: Only filter if domain_id column exists in DB
                 from app.core.config import settings as _settings
-                if domain_id and not _settings.cross_domain_search:
+                if _has_domain_col and domain_id and not _settings.cross_domain_search:
                     query += f" AND domain_id = ${param_idx}"
                     params.append(domain_id)
                     param_idx += 1

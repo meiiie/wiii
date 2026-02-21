@@ -24,6 +24,8 @@ import type {
   SSEEmotionEvent,
   SSEActionTextEvent,
   SSEBrowserScreenshotEvent,
+  SSEPreviewEvent,
+  SSEArtifactEvent,
 } from "./types";
 
 export interface SSEEventHandler {
@@ -46,6 +48,10 @@ export interface SSEEventHandler {
   onActionText?: (data: SSEActionTextEvent) => void;
   /** Sprint 153: Browser screenshot — Playwright visual transparency */
   onBrowserScreenshot?: (data: SSEBrowserScreenshotEvent) => void;
+  /** Sprint 166: Rich preview card */
+  onPreview?: (data: SSEPreviewEvent) => void;
+  /** Sprint 167: Interactive artifact */
+  onArtifact?: (data: SSEArtifactEvent) => void;
 }
 
 /**
@@ -206,6 +212,12 @@ function dispatchEvent(
       break;
     case "browser_screenshot":
       handlers.onBrowserScreenshot?.(data as SSEBrowserScreenshotEvent);
+      break;
+    case "preview":
+      handlers.onPreview?.(data as SSEPreviewEvent);
+      break;
+    case "artifact":
+      handlers.onArtifact?.(data as SSEArtifactEvent);
       break;
     default:
       console.warn(`[SSE] Unknown event type: ${eventType}`);

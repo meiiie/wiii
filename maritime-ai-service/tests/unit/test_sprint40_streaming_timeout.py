@@ -237,19 +237,11 @@ class TestSemanticCacheAsyncSafety:
 class TestRateLimitingDecorators:
     """Verify all API endpoints have rate limiting."""
 
-    @pytest.mark.parametrize("endpoint_name", [
-        "chat_stream",
-        "chat_stream_v3",
-    ])
-    def test_chat_stream_has_rate_limit(self, endpoint_name):
-        """All /chat/stream endpoints have @limiter.limit decorator."""
+    def test_chat_stream_v3_has_rate_limit(self):
+        """V3 /chat/stream/v3 endpoint has @limiter.limit decorator."""
         from app.api.v1 import chat_stream
 
-        fn = getattr(chat_stream, endpoint_name)
-        # slowapi stores rate limit info in __rate_limit_decorator__
-        # Check source code for @limiter.limit
-        source = inspect.getsource(fn)
-        # The function should have rate limiting applied
+        fn = getattr(chat_stream, "chat_stream_v3")
         # Check that the module imports limiter
         mod_source = inspect.getsource(chat_stream)
         assert "from app.core.rate_limit import limiter" in mod_source
@@ -268,9 +260,9 @@ class TestRateLimitingDecorators:
         with open("app/api/v1/chat_stream.py", encoding="utf-8") as f:
             content = f.read()
 
-        # Count @limiter.limit occurrences — should be >= 2 (v1 + v3)
+        # Count @limiter.limit occurrences — should be >= 1 (v3)
         count = content.count(line_pattern)
-        assert count >= 2, f"Expected >= 2 {line_pattern} decorators, found {count}"
+        assert count >= 1, f"Expected >= 1 {line_pattern} decorators, found {count}"
 
     def test_admin_module_imports_limiter(self):
         """admin.py imports the limiter."""

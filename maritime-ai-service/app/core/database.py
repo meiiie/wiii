@@ -48,8 +48,14 @@ def get_shared_engine():
     
     if _shared_engine is None:
         try:
+            # Sprint 165: Use postgresql+psycopg:// dialect for psycopg3 sync driver
+            # (psycopg2-binary was removed in Sprint 154, replaced by psycopg[binary]>=3.1)
+            sync_url = settings.postgres_url_sync
+            if sync_url.startswith("postgresql://") and "+psycopg" not in sync_url:
+                sync_url = sync_url.replace("postgresql://", "postgresql+psycopg://", 1)
+
             _shared_engine = create_engine(
-                settings.postgres_url_sync,
+                sync_url,
                 echo=False,
                 pool_pre_ping=True,
                 pool_size=5,        # CHỈ THỊ 19: Neon Pooled Connection

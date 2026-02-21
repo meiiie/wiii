@@ -11,6 +11,8 @@ import { StatusBar } from "./StatusBar";
 import { ContextPanel } from "./ContextPanel";
 import { CharacterPanel } from "./CharacterPanel";
 import { SourcesPanel } from "./SourcesPanel";
+import { PreviewPanel } from "./PreviewPanel";
+import { ArtifactPanel } from "./ArtifactPanel";
 import { ToastContainer } from "@/components/common/Toast";
 import { useUIStore } from "@/stores/ui-store";
 import { useConnectionStore } from "@/stores/connection-store";
@@ -67,6 +69,8 @@ export function AppShell({ children }: AppShellProps) {
       <ContextPanel />
       <CharacterPanel />
       <SourcesPanel />
+      <PreviewPanel />
+      <ArtifactPanel />
       <StatusBar />
       <ToastContainer />
     </div>

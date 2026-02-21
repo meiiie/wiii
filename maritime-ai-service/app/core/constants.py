@@ -48,3 +48,19 @@ DEFAULT_RELEVANCE_THRESHOLD = 7.0
 
 EXPECTED_EMBEDDING_DIMENSIONS = 768
 """Expected embedding vector dimensions (Gemini embedding-001 default)."""
+
+# =============================================================================
+# Preview System (Sprint 166)
+# =============================================================================
+
+PREVIEW_SNIPPET_MAX_LENGTH = 300
+"""Max characters for preview card snippet text."""
+
+PREVIEW_TITLE_MAX_LENGTH = 120
+"""Max characters for preview card title."""
+
+PREVIEW_MAX_PER_MESSAGE = 20
+"""Max preview cards emitted per single message/response."""
+
+PREVIEW_CONFIDENCE_THRESHOLD = 0.3
+"""Minimum relevance score for a source to generate a preview card."""

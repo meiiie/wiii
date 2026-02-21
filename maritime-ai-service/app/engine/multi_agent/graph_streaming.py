@@ -37,7 +37,7 @@ import uuid
 from typing import Dict, Optional, AsyncGenerator
 
 from app.core.config import settings
-from app.core.constants import MAX_CONTENT_SNIPPET_LENGTH
+from app.core.constants import MAX_CONTENT_SNIPPET_LENGTH, PREVIEW_MAX_PER_MESSAGE, PREVIEW_SNIPPET_MAX_LENGTH
 from app.engine.multi_agent.state import AgentState
 from app.engine.multi_agent.graph import (
     get_multi_agent_graph_async,
@@ -63,6 +63,8 @@ from app.engine.multi_agent.stream_utils import (
     create_emotion_event,
     create_action_text_event,
     create_browser_screenshot_event,
+    create_preview_event,
+    create_artifact_event,
 )
 
 logger = logging.getLogger(__name__)
@@ -156,10 +158,37 @@ async def _convert_bus_event(event: dict) -> StreamEvent:
             label=str(_sc.get("label", "")),
             node=node,
         )
+    elif etype == "preview":
+        # Sprint 166: Rich preview card
+        _pv = event.get("content", {})
+        return await create_preview_event(
+            preview_type=str(_pv.get("preview_type", "document")),
+            preview_id=str(_pv.get("preview_id", "")),
+            title=str(_pv.get("title", "")),
+            snippet=str(_pv.get("snippet", "")),
+            url=_pv.get("url"),
+            image_url=_pv.get("image_url"),
+            citation_index=_pv.get("citation_index"),
+            node=node,
+            metadata=_pv.get("metadata"),
+        )
+    elif etype == "artifact":
+        # Sprint 167: Interactive artifact (code, HTML, data)
+        _af = event.get("content", {})
+        return await create_artifact_event(
+            artifact_type=str(_af.get("artifact_type", "code")),
+            artifact_id=str(_af.get("artifact_id", "")),
+            title=str(_af.get("title", "")),
+            content=str(_af.get("content", "")),
+            language=str(_af.get("language", "")),
+            node=node,
+            metadata=_af.get("metadata"),
+        )
     else:
         return await create_status_event(
             str(event.get("content", "")),
             node=node,
+            details=event.get("details"),
         )
 
 # Vietnamese labels for thinking block headers (Sprint 64)
@@ -173,6 +202,12 @@ _NODE_LABELS = {
     "memory_agent": "Truy xuất bộ nhớ",
     "direct": "Suy nghĩ câu trả lời",
     "product_search_agent": "Tìm kiếm sản phẩm",
+    "parallel_dispatch": "Triển khai song song",
+    "aggregator": "Tổng hợp báo cáo",
+    # Sprint 164: Per-worker subagent labels (short names from parallel_dispatch)
+    "rag": "Tra cứu tri thức",
+    "tutor": "Soạn bài giảng",
+    "search": "Tìm kiếm sản phẩm",
 }
 
 # Sprint 147: Bold narrative text emitted after Supervisor routing
@@ -450,6 +485,20 @@ async def process_with_multi_agent_streaming(
         _bus_streamed_nodes: set = set()
         # Sprint 74: Track nodes that streamed answer_delta via bus
         _bus_answer_nodes: set = set()
+
+        # Sprint 166: Preview dedup — track emitted preview IDs per request
+        _emitted_preview_ids: set = set()
+        # Sprint 166: Preview settings from context (ChatRequest)
+        _preview_enabled = settings.enable_preview
+        _preview_types: set | None = None
+        _preview_max = PREVIEW_MAX_PER_MESSAGE
+        if context:
+            if context.get("show_previews") is False:
+                _preview_enabled = False
+            if context.get("preview_types"):
+                _preview_types = set(context["preview_types"])
+            if context.get("preview_max_count"):
+                _preview_max = int(context["preview_max_count"])
 
         # Sprint 135: Soul emotion buffer — intercepts first ~512 bytes of answer
         _soul_buffer = None
@@ -778,6 +827,28 @@ async def process_with_multi_agent_streaming(
                             "rag_agent",
                         )
 
+                    # Sprint 166: Emit document preview cards for RAG sources
+                    if _preview_enabled and sources and (not _preview_types or "document" in _preview_types):
+                        for idx, src in enumerate(sources[:_preview_max]):
+                            _pid = f"doc-{src.get('node_id', src.get('document_id', idx))}"
+                            if _pid in _emitted_preview_ids:
+                                continue
+                            _emitted_preview_ids.add(_pid)
+                            yield await create_preview_event(
+                                preview_type="document",
+                                preview_id=_pid,
+                                title=src.get("title", "Nguồn tham khảo"),
+                                snippet=str(src.get("content", ""))[:PREVIEW_SNIPPET_MAX_LENGTH],
+                                url=None,
+                                image_url=src.get("image_url"),
+                                citation_index=idx + 1,
+                                node="rag_agent",
+                                metadata={
+                                    "relevance_score": src.get("score"),
+                                    "page_number": src.get("page_number"),
+                                },
+                            )
+
                     # Thinking lifecycle: open → content → close (AFTER tool calls)
                     # Sprint 70: Skip bulk thinking if bus already streamed deltas
                     # Sprint 141b: Use thinking_delta (not thinking) so content appears in streamingBlocks
@@ -1054,6 +1125,101 @@ async def process_with_multi_agent_streaming(
                         duration_ms=int((time.time() - node_start) * 1000),
                     )
 
+                    # Sprint 166: Emit web preview cards from direct node tool results
+                    _direct_tc_events = node_output.get("tool_call_events", [])
+                    if _preview_enabled and (not _preview_types or "web" in _preview_types):
+                        _web_count = 0
+                        for tc in _direct_tc_events:
+                            _tcname = tc.get("name", "")
+                            if "search" not in _tcname and "web" not in _tcname and "news" not in _tcname:
+                                continue
+                            if tc.get("type") != "result" or _web_count >= _preview_max:
+                                continue
+                            _raw = tc.get("result", "")
+                            try:
+                                import json as _json
+                                # Try JSON first (product search, structured results)
+                                _results = []
+                                try:
+                                    _parsed = _json.loads(_raw) if isinstance(_raw, str) else _raw
+                                    if isinstance(_parsed, dict):
+                                        _results = _parsed.get("results", _parsed.get("organic", []))
+                                    elif isinstance(_parsed, list):
+                                        _results = _parsed
+                                except (ValueError, TypeError):
+                                    pass
+
+                                if _results:
+                                    # JSON path — structured results
+                                    for _wi, _wr in enumerate(_results[:8]):
+                                        if not isinstance(_wr, dict):
+                                            continue
+                                        _wurl = _wr.get("url") or _wr.get("link", "")
+                                        _pid = f"web-{_wi}-{hash(_wurl) % 10000}"
+                                        if _pid in _emitted_preview_ids:
+                                            continue
+                                        _emitted_preview_ids.add(_pid)
+                                        _web_count += 1
+                                        yield await create_preview_event(
+                                            preview_type="web",
+                                            preview_id=_pid,
+                                            title=str(_wr.get("title", ""))[:120],
+                                            snippet=str(_wr.get("snippet", _wr.get("description", "")))[:300],
+                                            url=_wurl or None,
+                                            node="direct",
+                                            metadata={
+                                                "date": _wr.get("date"),
+                                                "source": _wr.get("source"),
+                                            },
+                                        )
+                                else:
+                                    # Text path — parse markdown-formatted results
+                                    # Format: **Title** (date) [source]\nbody\nURL: href\n---\n
+                                    import re
+                                    _blocks = re.split(r'\n---\n', str(_raw))
+                                    for _bi, _block in enumerate(_blocks[:8]):
+                                        _block = _block.strip()
+                                        if not _block:
+                                            continue
+                                        # Extract title: **Title** or first line
+                                        _tmatch = re.match(r'\*\*(.+?)\*\*', _block)
+                                        _title = _tmatch.group(1) if _tmatch else _block.split('\n')[0][:120]
+                                        # Extract URL
+                                        _umatch = re.search(r'URL:\s*(https?://\S+)', _block)
+                                        _wurl = _umatch.group(1) if _umatch else ""
+                                        # Extract date
+                                        _dmatch = re.search(r'\((\d{4}-\d{2}-\d{2}[^)]*)\)', _block)
+                                        _date = _dmatch.group(1) if _dmatch else None
+                                        # Extract source [Source]
+                                        _smatch = re.search(r'\[([^\]]+)\]', _block)
+                                        _source = _smatch.group(1) if _smatch else None
+                                        # Extract body (lines after title, before URL)
+                                        _lines = _block.split('\n')
+                                        _body_lines = [l for l in _lines[1:] if not l.startswith('URL:')]
+                                        _snippet = ' '.join(_body_lines).strip()[:300]
+
+                                        _pid = f"web-{_bi}-{hash(_wurl or _title) % 10000}"
+                                        if _pid in _emitted_preview_ids:
+                                            continue
+                                        _emitted_preview_ids.add(_pid)
+                                        _web_count += 1
+                                        yield await create_preview_event(
+                                            preview_type="web",
+                                            preview_id=_pid,
+                                            title=_title[:120],
+                                            snippet=_snippet,
+                                            url=_wurl or None,
+                                            node="direct",
+                                            metadata={
+                                                "date": _date,
+                                                "source": _source,
+                                            },
+                                        )
+                                        if _web_count >= _preview_max:
+                                            break
+                            except Exception:
+                                continue
+
                     # Direct response — token-stream it
                     final_response = node_output.get("final_response", "")
                     if final_response and not answer_emitted:
@@ -1114,6 +1280,45 @@ async def process_with_multi_agent_streaming(
                         "product_search_agent",
                         duration_ms=int((time.time() - node_start) * 1000),
                     )
+
+                    # Sprint 166: Emit product preview cards from tool_call_events
+                    if _preview_enabled and (not _preview_types or "product" in _preview_types):
+                        _product_count = 0
+                        for tc in node_output.get("tool_call_events", []):
+                            if tc.get("type") != "result" or _product_count >= _preview_max:
+                                continue
+                            _raw = tc.get("result", "")
+                            try:
+                                import json as _json
+                                _parsed = _json.loads(_raw) if isinstance(_raw, str) else _raw
+                                if not isinstance(_parsed, dict):
+                                    continue
+                                _platform = _parsed.get("platform", "")
+                                for _pi, _prod in enumerate(_parsed.get("results", [])[:10]):
+                                    if not isinstance(_prod, dict):
+                                        continue
+                                    _pid = f"prod-{_platform}-{_pi}"
+                                    if _pid in _emitted_preview_ids:
+                                        continue
+                                    _emitted_preview_ids.add(_pid)
+                                    _product_count += 1
+                                    yield await create_preview_event(
+                                        preview_type="product",
+                                        preview_id=_pid,
+                                        title=str(_prod.get("title", _prod.get("name", "Sản phẩm")))[:120],
+                                        snippet=str(_prod.get("description", ""))[:300],
+                                        url=_prod.get("url") or _prod.get("link"),
+                                        image_url=_prod.get("image") or _prod.get("image_url") or _prod.get("thumbnail"),
+                                        node="product_search_agent",
+                                        metadata={
+                                            "price": _prod.get("price"),
+                                            "rating": _prod.get("rating"),
+                                            "seller": _prod.get("seller") or _prod.get("shop"),
+                                            "platform": _platform,
+                                        },
+                                    )
+                            except Exception:
+                                continue
 
                     # Product search response — token-stream it
                     final_response = node_output.get("final_response", "")

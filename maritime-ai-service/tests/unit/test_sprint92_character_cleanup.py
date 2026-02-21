@@ -27,7 +27,21 @@ if _cs_key not in sys.modules:
     _mock_cs.get_chat_service = lambda: None
     sys.modules[_cs_key] = _mock_cs
 
+from unittest.mock import MagicMock, patch
+
 from app.prompts.prompt_loader import PromptLoader
+
+
+@pytest.fixture(autouse=True)
+def _mock_character_state_manager():
+    """Prevent build_system_prompt from connecting to PostgreSQL."""
+    with patch(
+        "app.engine.character.character_state.get_character_state_manager"
+    ) as m:
+        inst = MagicMock()
+        inst.compile_living_state.return_value = ""
+        m.return_value = inst
+        yield
 
 
 # =============================================================================

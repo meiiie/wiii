@@ -134,7 +134,15 @@ class Neo4jKnowledgeRepository:
         return value
 
     def _init_driver(self):
-        """Initialize Neo4j driver with Aura-optimized settings."""
+        """Initialize Neo4j driver with Aura-optimized settings.
+
+        Sprint 165: Guarded by enable_neo4j flag — skips connection when disabled.
+        """
+        if not getattr(settings, "enable_neo4j", False):
+            logger.info("Neo4j disabled (enable_neo4j=False) — Learning Graph unavailable")
+            self._available = False
+            return
+
         try:
             from neo4j import GraphDatabase
 

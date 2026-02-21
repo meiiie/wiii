@@ -26,6 +26,18 @@ PROMPTS_DIR = Path(__file__).parent.parent.parent / "app" / "prompts"
 IDENTITY_PATH = PROMPTS_DIR / "wiii_identity.yaml"
 
 
+@pytest.fixture(autouse=True)
+def _mock_character_state_manager():
+    """Prevent build_system_prompt from connecting to PostgreSQL."""
+    with patch(
+        "app.engine.character.character_state.get_character_state_manager"
+    ) as mock_mgr:
+        inst = MagicMock()
+        inst.compile_living_state.return_value = ""
+        mock_mgr.return_value = inst
+        yield
+
+
 # =============================================================================
 # TEST 1: ANTICHARACTER SECTION
 # =============================================================================

@@ -58,7 +58,7 @@ To work as a different agent:
 
 ## Project Overview
 
-**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright), Google OAuth + LMS integration, multi-tenant data isolation, and org-level customization. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. 254 Python files, 60+ API endpoints, 46 feature flags, 6520+ backend tests, 1346 desktop tests.
+**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright), Google OAuth + LMS integration, multi-tenant data isolation, org-level customization, and Living Agent autonomy system. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. 264+ Python files, 60+ API endpoints, 47 feature flags, 6550+ backend tests, 1468 desktop tests.
 
 ### Domain Plugin System (Feb 2026)
 - **Plugin architecture**: `app/domains/*/domain.yaml` — add new domains by creating a folder + YAML config
@@ -299,6 +299,25 @@ Access AsyncOpenAI: `UnifiedLLMClient.get_client("google")` (when `enable_unifie
 - **API**: `GET/PATCH /organizations/{id}/settings`, `GET /organizations/{id}/permissions`
 - **37 backend + 14 desktop tests**
 
+### Living Agent System (Sprint 170)
+- **Feature-gated**: `enable_living_agent=False` by default — autonomous soul, emotions, skills, journal
+- **Package**: `app/engine/living_agent/` — models, soul_loader, emotion_engine, heartbeat, local_llm, skill_builder, journal, social_browser
+- **Soul config**: `app/prompts/soul/wiii_soul.yaml` — identity, truths, boundaries, interests, goals
+- **Emotion engine**: Rule-based 4D state (mood/energy/social_battery/engagement), 13 event types, natural recovery (no LLM cost)
+- **Heartbeat scheduler**: AsyncIO background task, 30-min interval, active hours 08:00-23:00 UTC+7
+- **Local LLM**: Ollama `qwen3:8b` via httpx async — zero-cost 24/7 for journal/skill/reflection
+- **Skill lifecycle**: DISCOVER → LEARN → PRACTICE → EVALUATE → MASTER, weekly discovery limit
+- **Journal**: Daily entries via local LLM, structured sections (mood_summary, learnings, goals_next)
+- **Social browser**: Serper API + HackerNews API, keyword + LLM relevance scoring
+- **System integration**: Heartbeat in `main.py` lifespan, soul/emotion prompt in `build_system_prompt()`, emotion event in `chat_stream.py`
+- **API**: 6 endpoints at `/api/v1/living-agent/` — status, emotional-state, journal, skills, heartbeat, heartbeat/trigger
+- **Desktop**: `LivingAgentPanel` (3-tab dashboard) in Settings "Linh hồn" tab — MoodIndicator, SkillTree, JournalView, HeartbeatStatus
+- **Store**: `living-agent-store.ts` — fetchStatus, fetchSkills, fetchJournal, triggerHeartbeat
+- **DB**: Migration 014 — wiii_skills, wiii_journal, wiii_browsing_log, wiii_emotional_snapshots
+- **Singletons**: `get_soul()`, `get_emotion_engine()`, `get_heartbeat_scheduler()`, `get_local_llm()`, `get_skill_builder()`, `get_journal_writer()`, `get_social_browser()`
+- **Config**: `living_agent_heartbeat_interval`, `living_agent_active_hours_start/end`, `living_agent_local_model`, sub-feature toggles
+- **99 backend + 14 desktop = 113 tests**
+
 ---
 
 ## Key Directories
@@ -314,45 +333,46 @@ Access AsyncOpenAI: `UnifiedLLMClient.get_client("google")` (when `enable_unifie
 │
 ├── wiii-desktop/              # Desktop app (Tauri v2 + React 18)
 │   ├── src/
-│   │   ├── api/               # 15 API modules (HTTP, SSE, auth, orgs, users)
+│   │   ├── api/               # 16 API modules (HTTP, SSE, auth, orgs, users, living-agent)
 │   │   ├── components/
 │   │   │   ├── auth/          # LoginScreen, OAuth callback
 │   │   │   ├── chat/          # ChatView, MessageList, MessageBubble, ThinkingBlock, ThinkingTimeline
 │   │   │   ├── layout/        # AppShell, TitleBar, Sidebar, StatusBar
+│   │   │   ├── living-agent/  # LivingAgentPanel, MoodIndicator, SkillTree, JournalView, HeartbeatStatus
 │   │   │   ├── settings/      # SettingsPage (5 tabs), OrgSettingsTab
 │   │   │   ├── common/        # PermissionGate, ErrorBoundary, MarkdownRenderer
 │   │   │   └── welcome/       # WelcomeScreen (org-aware branding)
-│   │   ├── stores/            # 11 Zustand stores (auth, org, chat, avatar, settings, ...)
+│   │   ├── stores/            # 12 Zustand stores (auth, org, chat, avatar, settings, living-agent, ...)
 │   │   ├── hooks/             # useSSEStream, useAutoScroll, useKeyboardShortcuts
 │   │   ├── lib/               # 28 utilities (avatar, org-branding, storage, theme)
-│   │   └── __tests__/         # 54 test files, 1346 Vitest tests
+│   │   └── __tests__/         # 55 test files, 1468 Vitest tests
 │   └── src-tauri/             # Rust backend (Tauri plugins, splash screen)
 │
-└── maritime-ai-service/       # Main backend (254 Python files)
+└── maritime-ai-service/       # Main backend (264+ Python files)
     ├── app/
-    │   ├── api/v1/            # 18 REST routers (60+ endpoints)
+    │   ├── api/v1/            # 19 REST routers (60+ endpoints)
     │   ├── auth/              # Google OAuth, JWT, user service, LMS token exchange
-    │   ├── core/              # config.py (46 flags), security, middleware, org_filter, org_settings
+    │   ├── core/              # config.py (47 flags), security, middleware, org_filter, org_settings
     │   ├── channels/          # Multi-channel gateway (WebSocket, Telegram)
     │   ├── domains/           # Domain plugins (maritime/, traffic_law/, _template/)
     │   ├── mcp/               # MCP server (fastapi-mcp), client (MCPToolManager), adapter
-    │   ├── engine/            # Core AI: agentic_rag/, multi_agent/ (9 agents), tools/, search_platforms/ (8 adapters), llm_providers/, character/, semantic_memory/
+    │   ├── engine/            # Core AI: agentic_rag/, multi_agent/ (9 agents), tools/, search_platforms/, llm_providers/, character/, semantic_memory/, living_agent/
     │   ├── integrations/      # LMS integration (webhook, enrichment, API client)
     │   ├── services/          # Business logic: chat_orchestrator, graph_streaming, session_manager
-    │   ├── repositories/      # 15 data access repos (all org-aware since Sprint 160)
-    │   ├── prompts/           # YAML persona configs + persona overlay (Sprint 161)
+    │   ├── repositories/      # 16 data access repos (all org-aware since Sprint 160)
+    │   ├── prompts/           # YAML persona configs + persona overlay + soul config
     │   └── models/            # Pydantic schemas (schemas.py, organization.py + OrgSettings)
-    ├── alembic/               # 12 database migrations
+    ├── alembic/               # 14 database migrations
     ├── scripts/               # Test and ingestion scripts
-    ├── tests/                 # 324 test files, 6520+ unit tests
-    └── docs/architecture/     # SYSTEM_ARCHITECTURE.md (v6.0), SYSTEM_FLOW.md, FOLDER_MAP.md
+    ├── tests/                 # 326+ test files, 6550+ unit tests
+    └── docs/architecture/     # SYSTEM_ARCHITECTURE.md (v7.0), SYSTEM_FLOW.md, FOLDER_MAP.md
 ```
 
 ---
 
 ## Key Configuration
 
-46 feature flags in `app/core/config.py` (key flags listed):
+47 feature flags in `app/core/config.py` (key flags listed):
 ```python
 # Core
 use_multi_agent: bool = True           # Multi-Agent graph (LangGraph)
@@ -382,6 +402,9 @@ enable_multi_tenant: bool = False      # Organization support + data isolation
 enable_character_tools: bool = True     # Character introspection/update (per-user)
 enable_character_reflection: bool = True # Stanford Generative Agents reflection
 enable_soul_emotion: bool = False      # Soul emotion engine for avatar
+
+# Living Agent (Sprint 170)
+enable_living_agent: bool = False     # Autonomous soul, emotion, heartbeat, skills, journal
 
 # MCP, Channels, Extensions
 enable_mcp_server: bool = False       # Expose tools via MCP at /mcp
@@ -507,6 +530,16 @@ POST /api/v1/chat/context/compact  # Trigger conversation compaction (summarize 
 POST /api/v1/chat/context/clear    # Clear conversation context for session
 ```
 
+### Living Agent API (Sprint 170)
+```
+GET  /api/v1/living-agent/status           # Full status (soul, mood, heartbeat, counts)
+GET  /api/v1/living-agent/emotional-state  # Current 4D emotional state
+GET  /api/v1/living-agent/journal          # Recent journal entries
+GET  /api/v1/living-agent/skills           # All skills with lifecycle status
+GET  /api/v1/living-agent/heartbeat        # Heartbeat scheduler info
+POST /api/v1/living-agent/heartbeat/trigger # Manually trigger heartbeat cycle
+```
+
 ---
 
 ## Prompt System
@@ -574,11 +607,11 @@ cd wiii-desktop
 npm install
 npm run dev          # Vite dev server at localhost:1420
 npx tauri dev        # Full Tauri app with Rust backend
-npx vitest run       # Run 190 tests
+npx vitest run       # Run 1468 tests
 ```
 
 ### Architecture
-- **State**: 5 Zustand stores (settings, chat, connection, domain, ui)
+- **State**: 12 Zustand stores (settings, chat, auth, org, connection, domain, ui, avatar, character, context, living-agent, memory)
 - **Persistence**: `settings-store.ts` + `chat-store.ts` use `@tauri-apps/plugin-store` (localStorage fallback)
 - **HTTP**: `@tauri-apps/plugin-http` bypasses CORS; adaptive fallback to browser fetch
 - **Streaming**: SSE parser for `/chat/stream/v3` endpoint
@@ -587,11 +620,12 @@ npx vitest run       # Run 190 tests
 ### Key Components
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| `SettingsPage` | `components/settings/` | Modal with Connection/User/Preferences tabs |
+| `SettingsPage` | `components/settings/` | Modal with Connection/User/Preferences/Linh hồn tabs |
 | `ChatView` | `components/chat/` | Main chat UI with streaming display |
 | `AppShell` | `components/layout/` | Root layout (TitleBar + Sidebar + StatusBar) |
 | `ThinkingBlock` | `components/chat/` | AI thinking display with markdown rendering and inline tool cards |
 | `StreamingIndicator` | `components/chat/` | Pipeline progress steps with checkmarks + live elapsed timer |
+| `LivingAgentPanel` | `components/living-agent/` | Living Agent dashboard — mood, heartbeat, skills, journal |
 
 ### Settings Page (Sprint 15)
 - **Connection tab**: Server URL, API Key (masked), Test Connection button, Save
@@ -613,7 +647,7 @@ pytest -m integration                   # Tests requiring real services
 pytest tests/property/ -v               # Property-based tests (Hypothesis)
 ```
 
-**Current: Backend 6520+ unit tests (324 files), Desktop 1346 Vitest tests (54 files) — all passed** (as of Sprint 161)
+**Current: Backend 6550+ unit tests (326+ files), Desktop 1468 Vitest tests (55 files) — all passed** (as of Sprint 170)
 
 ### Backend Test Commands
 ```bash

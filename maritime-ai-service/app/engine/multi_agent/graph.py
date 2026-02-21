@@ -12,7 +12,7 @@ Pattern: Supervisor with specialized worker agents
 
 import logging
 import re
-from typing import Dict, Optional, Literal
+from typing import Dict, List, Optional, Literal
 
 
 from langgraph.graph import StateGraph, END
@@ -629,10 +629,13 @@ async def _execute_direct_tool_rounds(
     Gemini often calls tools sequentially (datetime → web_search → answer).
 
     Returns:
-        AIMessage: Final LLM response after all tool rounds.
+        tuple: (AIMessage, messages, tool_call_events) — final response, messages, and
+               structured tool events for downstream preview emission (Sprint 166).
     """
     import asyncio
     from langchain_core.messages import ToolMessage as _TM
+
+    tool_call_events: list[dict] = []
 
     llm_response = await llm_with_tools.ainvoke(messages)
     _tc = getattr(llm_response, 'tool_calls', [])
@@ -651,6 +654,10 @@ async def _execute_direct_tool_rounds(
                 "content": {"name": _tc_name, "args": tc.get("args", {}), "id": _tc_id},
                 "node": "direct",
             })
+            tool_call_events.append({
+                "type": "call", "name": _tc_name,
+                "args": tc.get("args", {}), "id": _tc_id,
+            })
             matched = next((t for t in tools if t.name == _tc_name), None)
             try:
                 result = await asyncio.to_thread(matched.invoke, tc["args"]) if matched else "Unknown tool"
@@ -662,10 +669,15 @@ async def _execute_direct_tool_rounds(
                 "content": {"name": _tc_name, "result": str(result)[:500], "id": _tc_id},
                 "node": "direct",
             })
+            # Sprint 166: Store full result for preview extraction
+            tool_call_events.append({
+                "type": "result", "name": _tc_name,
+                "result": str(result), "id": _tc_id,
+            })
             messages.append(_TM(content=str(result), tool_call_id=_tc_id))
         llm_response = await llm_auto.ainvoke(messages)
 
-    return llm_response, messages
+    return llm_response, messages, tool_call_events
 
 
 def _extract_direct_response(llm_response, messages: list):
@@ -770,9 +782,13 @@ async def direct_response_node(state: AgentState) -> AgentState:
                 messages = _build_direct_system_messages(state, query, domain_name_vi)
 
                 # Phase 4: Multi-round tool execution
-                llm_response, messages = await _execute_direct_tool_rounds(
+                llm_response, messages, _tc_events = await _execute_direct_tool_rounds(
                     llm_with_tools, llm_auto, messages, tools, _push_event,
                 )
+
+                # Sprint 166: Store tool_call_events for preview extraction
+                if _tc_events:
+                    state["tool_call_events"] = _tc_events
 
                 # Phase 5: Extract response
                 response, thinking_content, tools_used = _extract_direct_response(llm_response, messages)
@@ -824,10 +840,302 @@ async def direct_response_node(state: AgentState) -> AgentState:
 
 
 # =============================================================================
+# Sprint 163 Phase 4: Parallel Dispatch + Subagent Adapters
+# Sprint 164: Added per-worker event emission for UX visualization
+# =============================================================================
+
+
+def _emit_subagent_event(state: dict, event: dict) -> None:
+    """Emit an SSE event from a subagent adapter via the event bus."""
+    bus_id = state.get("_event_bus_id")
+    if not bus_id:
+        return
+    try:
+        from app.engine.multi_agent.graph_streaming import _get_event_queue
+        queue = _get_event_queue(bus_id)
+        if queue:
+            queue.put_nowait(event)
+    except Exception:
+        pass
+
+
+async def _run_rag_subagent(state: dict, **kwargs) -> "SubagentResult":
+    """Adapter: run existing RAG agent and wrap output as SubagentResult."""
+    from app.engine.multi_agent.subagents.result import SubagentResult, SubagentStatus
+
+    # Sprint 164: Emit thinking lifecycle events for desktop UX
+    _emit_subagent_event(state, {
+        "type": "thinking_start",
+        "content": "Tra cứu tri thức",
+        "node": "rag",
+    })
+    _emit_subagent_event(state, {
+        "type": "status",
+        "content": "Tìm kiếm trong kho tri thức...",
+        "node": "rag",
+    })
+
+    try:
+        rag_agent = get_rag_agent_node()
+        result_state = await rag_agent.process(state)
+
+        _emit_subagent_event(state, {
+            "type": "status",
+            "content": "Đánh giá tài liệu và tạo câu trả lời...",
+            "node": "rag",
+        })
+
+        output = result_state.get("rag_output", "") or result_state.get("final_response", "")
+        confidence = 0.0
+        trace = result_state.get("reasoning_trace")
+        if trace and hasattr(trace, "final_confidence"):
+            confidence = trace.final_confidence or 0.0
+        elif result_state.get("grader_score"):
+            confidence = result_state["grader_score"] / 10.0
+        else:
+            confidence = 0.6 if output else 0.0
+
+        # Emit thinking summary if available
+        thinking = result_state.get("thinking")
+        if thinking:
+            _emit_subagent_event(state, {
+                "type": "thinking_delta",
+                "content": thinking[:500],
+                "node": "rag",
+            })
+
+        _emit_subagent_event(state, {
+            "type": "thinking_end",
+            "node": "rag",
+        })
+
+        return SubagentResult(
+            status=SubagentStatus.SUCCESS if output else SubagentStatus.PARTIAL,
+            output=output,
+            confidence=confidence,
+            sources=result_state.get("sources", []),
+            thinking=thinking,
+        )
+    except Exception as e:
+        logger.warning("[PARALLEL_DISPATCH] RAG subagent error: %s", e)
+        _emit_subagent_event(state, {
+            "type": "thinking_end",
+            "node": "rag",
+        })
+        return SubagentResult(
+            status=SubagentStatus.ERROR,
+            error_message=str(e),
+        )
+
+
+async def _run_tutor_subagent(state: dict, **kwargs) -> "SubagentResult":
+    """Adapter: run existing Tutor agent and wrap output as SubagentResult."""
+    from app.engine.multi_agent.subagents.result import SubagentResult, SubagentStatus
+
+    # Sprint 164: Emit thinking lifecycle events for desktop UX
+    _emit_subagent_event(state, {
+        "type": "thinking_start",
+        "content": "Soạn bài giảng",
+        "node": "tutor",
+    })
+    _emit_subagent_event(state, {
+        "type": "status",
+        "content": "Phân tích câu hỏi và chuẩn bị nội dung...",
+        "node": "tutor",
+    })
+
+    try:
+        tutor_agent = get_tutor_agent_node()
+        result_state = await tutor_agent.process(state)
+
+        _emit_subagent_event(state, {
+            "type": "status",
+            "content": "Soạn nội dung giảng dạy...",
+            "node": "tutor",
+        })
+
+        output = result_state.get("tutor_output", "") or result_state.get("final_response", "")
+        confidence = 0.7 if output else 0.0
+
+        # Emit thinking summary if available
+        thinking = result_state.get("thinking")
+        if thinking:
+            _emit_subagent_event(state, {
+                "type": "thinking_delta",
+                "content": thinking[:500],
+                "node": "tutor",
+            })
+
+        _emit_subagent_event(state, {
+            "type": "thinking_end",
+            "node": "tutor",
+        })
+
+        return SubagentResult(
+            status=SubagentStatus.SUCCESS if output else SubagentStatus.PARTIAL,
+            output=output,
+            confidence=confidence,
+            sources=result_state.get("sources", []),
+            tools_used=result_state.get("tools_used", []),
+            thinking=thinking,
+        )
+    except Exception as e:
+        logger.warning("[PARALLEL_DISPATCH] Tutor subagent error: %s", e)
+        _emit_subagent_event(state, {
+            "type": "thinking_end",
+            "node": "tutor",
+        })
+        return SubagentResult(
+            status=SubagentStatus.ERROR,
+            error_message=str(e),
+        )
+
+
+async def _run_search_subagent(state: dict, **kwargs) -> "SubagentResult":
+    """Adapter: run product search and wrap output as SubagentResult."""
+    from app.engine.multi_agent.subagents.result import SubagentResult, SubagentStatus
+
+    # Sprint 164: Emit thinking lifecycle events for desktop UX
+    _emit_subagent_event(state, {
+        "type": "thinking_start",
+        "content": "Tìm kiếm sản phẩm",
+        "node": "search",
+    })
+
+    try:
+        from app.engine.multi_agent.agents.product_search_node import get_product_search_agent_node
+        agent = get_product_search_agent_node()
+        result_state = await agent.process(state)
+        output = result_state.get("final_response", "")
+        confidence = 0.7 if output else 0.0
+
+        _emit_subagent_event(state, {
+            "type": "thinking_end",
+            "node": "search",
+        })
+
+        return SubagentResult(
+            status=SubagentStatus.SUCCESS if output else SubagentStatus.PARTIAL,
+            output=output,
+            confidence=confidence,
+            tools_used=result_state.get("tools_used", []),
+        )
+    except Exception as e:
+        logger.warning("[PARALLEL_DISPATCH] Search subagent error: %s", e)
+        _emit_subagent_event(state, {
+            "type": "thinking_end",
+            "node": "search",
+        })
+        return SubagentResult(
+            status=SubagentStatus.ERROR,
+            error_message=str(e),
+        )
+
+
+# Registry of subagent adapter functions
+_SUBAGENT_ADAPTERS = {
+    "rag": _run_rag_subagent,
+    "tutor": _run_tutor_subagent,
+    "search": _run_search_subagent,
+}
+
+# Subagent type mapping for report building
+_SUBAGENT_TYPES = {
+    "rag": "retrieval",
+    "tutor": "teaching",
+    "search": "product_search",
+}
+
+
+async def parallel_dispatch_node(state: AgentState) -> AgentState:
+    """Dispatch query to multiple subagents in parallel, collect reports.
+
+    Reads state["_parallel_targets"] for the list of agent names to dispatch.
+    Wraps each result as a SubagentReport and stores in state["subagent_reports"].
+    """
+    from app.engine.multi_agent.subagents.config import SubagentConfig
+    from app.engine.multi_agent.subagents.executor import execute_parallel_subagents
+    from app.engine.multi_agent.subagents.report import build_report
+
+    targets = state.get("_parallel_targets")
+    if targets is None:
+        targets = ["rag", "tutor"]
+
+    logger.info("[PARALLEL_DISPATCH] Dispatching to: %s", targets)
+
+    # Emit status event
+    _bus_id = state.get("_event_bus_id")
+    if _bus_id:
+        try:
+            from app.engine.multi_agent.graph_streaming import _get_event_queue
+            queue = _get_event_queue(_bus_id)
+            if queue:
+                queue.put_nowait({
+                    "type": "status",
+                    "content": f"Triển khai song song: {', '.join(targets)}",
+                    "node": "parallel_dispatch",
+                })
+        except Exception:
+            pass
+
+    # Build task list for parallel execution
+    tasks = []
+    timeout = 60
+    try:
+        from app.core.config import settings as _settings
+        timeout = _settings.subagent_default_timeout
+    except Exception:
+        pass
+
+    for name in targets:
+        adapter = _SUBAGENT_ADAPTERS.get(name)
+        if adapter is None:
+            logger.warning("[PARALLEL_DISPATCH] Unknown target: %s, skipping", name)
+            continue
+        config = SubagentConfig(name=name, timeout_seconds=timeout)
+        tasks.append((adapter, config, dict(state), {}))
+
+    if not tasks:
+        logger.warning("[PARALLEL_DISPATCH] No valid targets, skipping")
+        state["subagent_reports"] = []
+        return state
+
+    # Execute all subagents in parallel
+    max_concurrent = 5
+    try:
+        from app.core.config import settings as _settings
+        max_concurrent = _settings.subagent_max_parallel
+    except Exception:
+        pass
+
+    results = await execute_parallel_subagents(tasks, max_concurrent=max_concurrent)
+
+    # Wrap results as reports
+    reports = []
+    for name, result in zip(targets, results):
+        agent_type = _SUBAGENT_TYPES.get(name, "general")
+        report = build_report(name, agent_type, result)
+        reports.append(report.model_dump())
+
+    state["subagent_reports"] = reports
+
+    logger.info(
+        "[PARALLEL_DISPATCH] Collected %d reports: %s",
+        len(reports),
+        [(r.get("agent_name"), r.get("verdict")) for r in reports],
+    )
+
+    # Propagate trace_id
+    state["_trace_id"] = state.get("_trace_id")
+
+    return state
+
+
+# =============================================================================
 # Routing Function
 # =============================================================================
 
-def route_decision(state: AgentState) -> Literal["rag_agent", "tutor_agent", "memory_agent", "direct", "product_search_agent"]:
+def route_decision(state: AgentState) -> str:
     """
     Determine next agent based on supervisor decision.
 
@@ -835,16 +1143,14 @@ def route_decision(state: AgentState) -> Literal["rag_agent", "tutor_agent", "me
     """
     next_agent = state.get("next_agent", "rag_agent")
 
-    if next_agent == "rag_agent":
-        return "rag_agent"
-    elif next_agent == "tutor_agent":
-        return "tutor_agent"
-    elif next_agent == "memory_agent":
-        return "memory_agent"
-    elif next_agent == "product_search_agent":
-        return "product_search_agent"
-    else:
-        return "direct"
+    valid_routes = {
+        "rag_agent", "tutor_agent", "memory_agent",
+        "direct", "product_search_agent", "parallel_dispatch",
+    }
+
+    if next_agent in valid_routes:
+        return next_agent
+    return "direct"
 
 
 # =============================================================================
@@ -1070,6 +1376,16 @@ def build_multi_agent_graph(checkpointer=None):
         else:
             workflow.add_node("product_search_agent", product_search_node)
 
+    # Sprint 163 Phase 4: Parallel dispatch + aggregator (feature-gated)
+    if settings.enable_subagent_architecture:
+        from app.engine.multi_agent.subagents.aggregator import (
+            aggregator_node,
+            aggregator_route,
+        )
+        workflow.add_node("parallel_dispatch", parallel_dispatch_node)
+        workflow.add_node("aggregator", aggregator_node)
+        logger.info("Phase 4: parallel_dispatch + aggregator nodes added")
+
     # Set entry point — Guardian validates before routing
     workflow.set_entry_point("guardian")
 
@@ -1089,6 +1405,9 @@ def build_multi_agent_graph(checkpointer=None):
     }
     if settings.enable_product_search:
         _routing_map["product_search_agent"] = "product_search_agent"
+    # Sprint 163 Phase 4: parallel dispatch route
+    if settings.enable_subagent_architecture:
+        _routing_map["parallel_dispatch"] = "parallel_dispatch"
     workflow.add_conditional_edges(
         "supervisor",
         route_decision,
@@ -1118,6 +1437,15 @@ def build_multi_agent_graph(checkpointer=None):
     # Sprint 148: Product search → Synthesizer (skip grader — comparison data, not knowledge)
     if settings.enable_product_search:
         workflow.add_edge("product_search_agent", "synthesizer")
+
+    # Sprint 163 Phase 4: parallel_dispatch → aggregator → conditional
+    if settings.enable_subagent_architecture:
+        workflow.add_edge("parallel_dispatch", "aggregator")
+        workflow.add_conditional_edges(
+            "aggregator",
+            aggregator_route,
+            {"synthesizer": "synthesizer", "supervisor": "supervisor"},
+        )
     
     # Grader → Synthesizer
     workflow.add_edge("grader", "synthesizer")
