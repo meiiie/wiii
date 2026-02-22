@@ -49,10 +49,11 @@ class TestOrgFilter:
     """Tests for app.core.org_filter helper functions."""
 
     def test_get_effective_org_id_disabled(self):
-        """When multi-tenant disabled, returns None."""
+        """When multi-tenant disabled, returns default org (Sprint 175b: NOT NULL support)."""
         with _patch_settings(enable_multi_tenant=False):
             from app.core.org_filter import get_effective_org_id
-            assert get_effective_org_id() is None
+            result = get_effective_org_id()
+            assert result == "default"  # Sprint 175b: returns "default" instead of None
 
     def test_get_effective_org_id_enabled_with_context(self):
         """When enabled + ContextVar set, returns ContextVar value."""

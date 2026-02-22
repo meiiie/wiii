@@ -61,6 +61,7 @@ class BackgroundTaskRunner:
         message: str,
         response: str,
         skip_fact_extraction: bool = False,
+        org_id: str = "",
     ) -> None:
         """
         Schedule all background tasks after response is sent.
@@ -73,6 +74,9 @@ class BackgroundTaskRunner:
             response: AI's response
             skip_fact_extraction: If True, skip fact extraction (memory agent
                 already handled it). Prevents double/triple LLM calls.
+            org_id: Organization ID for multi-tenant context (Sprint 175b).
+                Background tasks run AFTER middleware resets ContextVar,
+                so org_id must be passed explicitly.
         """
         # NOTE: Message saving (user + assistant) is handled by ChatOrchestrator
         # directly — do NOT duplicate here. See Sprint 83 audit fix (H7).
@@ -82,7 +86,7 @@ class BackgroundTaskRunner:
             background_save(
                 self._store_semantic_interaction,
                 user_id, message, response, str(session_id),
-                skip_fact_extraction,
+                skip_fact_extraction, org_id,
             )
         
         # Task 2: Summarize memory if needed
@@ -159,6 +163,7 @@ class BackgroundTaskRunner:
         response: str,
         session_id: str,
         skip_fact_extraction: bool = False,
+        org_id: str = "",
     ) -> None:
         """
         Store interaction in Semantic Memory.
@@ -167,7 +172,18 @@ class BackgroundTaskRunner:
             skip_fact_extraction: When True, skips both fact and insight
                 extraction (memory agent already did it). Only stores the
                 raw interaction and checks summarization.
+            org_id: Organization ID — set as ContextVar for this background task
+                since middleware already reset it before this runs (Sprint 175b).
         """
+        # Sprint 175b: Restore org context for background task
+        _org_token = None
+        if org_id:
+            try:
+                from app.core.org_context import current_org_id
+                _org_token = current_org_id.set(org_id)
+            except Exception:
+                pass
+
         try:
             if not skip_fact_extraction:
                 # Extract behavioral insights
@@ -209,6 +225,14 @@ class BackgroundTaskRunner:
             logger.debug("Background stored semantic interaction for user %s (skip_extract=%s)", user_id, skip_fact_extraction)
         except Exception as e:
             logger.error("Failed to store semantic interaction: %s", e)
+        finally:
+            # Sprint 175b: Reset org ContextVar to prevent leakage
+            if _org_token is not None:
+                try:
+                    from app.core.org_context import current_org_id
+                    current_org_id.reset(_org_token)
+                except Exception:
+                    pass
     
     async def _summarize_memory(
         self,

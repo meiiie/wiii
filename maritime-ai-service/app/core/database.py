@@ -77,12 +77,30 @@ def get_shared_engine():
                 cursor.execute(f"SET idle_in_transaction_session_timeout = {int(idle_timeout)}")
                 cursor.close()
 
+            # Sprint 175b: RLS context injection on connection checkout
+            # Sets app.current_org_id so PostgreSQL RLS policies can filter rows.
+            # No-op when enable_rls=False (default).
+            @event.listens_for(_shared_engine, "checkout")
+            def _set_rls_context(dbapi_conn, connection_record, connection_proxy):
+                if not settings.enable_rls:
+                    return
+                try:
+                    from app.core.org_context import get_current_org_id
+                    org_id = get_current_org_id() or ""
+                    cursor = dbapi_conn.cursor()
+                    cursor.execute("SET app.current_org_id = %s", (org_id,))
+                    cursor.close()
+                except Exception:
+                    # Don't block connection checkout on RLS context failure
+                    pass
+
             _engine_initialized = True
             logger.info(
                 "Shared database engine created: "
                 "pool_size=%d, max_overflow=%d, pool_timeout=30s, "
-                "statement_timeout=%dms, idle_tx_timeout=%dms",
+                "statement_timeout=%dms, idle_tx_timeout=%dms, rls=%s",
                 pool_size, max_overflow, stmt_timeout, idle_timeout,
+                settings.enable_rls,
             )
         except Exception as e:
             logger.error("Failed to create shared database engine: %s", e)

@@ -30,8 +30,8 @@ class DatabaseConfig(BaseModel):
     password: str = "wiii_secret"
     db: str = "wiii_ai"
     database_url: Optional[str] = None
-    async_pool_min_size: int = 2
-    async_pool_max_size: int = 10
+    async_pool_min_size: int = 10
+    async_pool_max_size: int = 50
 
 
 class LLMConfig(BaseModel):
@@ -219,8 +219,8 @@ class Settings(BaseSettings):
     database_url: Optional[str] = Field(default=None, description="Full database URL (Neon/Cloud)")
 
     # AsyncPG Connection Pool Settings
-    async_pool_min_size: int = Field(default=2, description="Minimum async connection pool size")
-    async_pool_max_size: int = Field(default=10, description="Maximum async connection pool size")
+    async_pool_min_size: int = Field(default=10, description="Minimum async connection pool size")
+    async_pool_max_size: int = Field(default=50, description="Maximum async connection pool size")
 
     # PostgreSQL Safety (Sprint 171: CIS Benchmark 5.4)
     postgres_statement_timeout_ms: int = Field(default=30000, ge=1000, le=300000, description="Query timeout in ms (default 30s)")
@@ -437,11 +437,35 @@ class Settings(BaseSettings):
     enable_telegram: bool = Field(default=False, description="Enable Telegram bot integration")
     telegram_bot_token: Optional[str] = Field(default=None, description="Telegram Bot API token")
     telegram_webhook_url: Optional[str] = Field(default=None, description="Telegram webhook callback URL")
+    enable_messenger_webhook: bool = Field(default=False, description="Enable Facebook Messenger Platform webhook")
+    facebook_app_id: Optional[str] = Field(default=None, description="Facebook App ID")
+    facebook_page_id: Optional[str] = Field(default=None, description="Facebook Page ID")
+    facebook_page_access_token: Optional[str] = Field(default=None, description="Facebook Page Access Token for Messenger API")
+    facebook_verify_token: Optional[str] = Field(default=None, description="Verify token for Messenger webhook handshake")
     enable_zalo: bool = Field(default=False, description="Enable Zalo OA notification channel")
     zalo_oa_access_token: Optional[str] = Field(default=None, description="Zalo OA access token")
     zalo_oa_refresh_token: Optional[str] = Field(default=None, description="Zalo OA refresh token")
     zalo_oa_app_id: Optional[str] = Field(default=None, description="Zalo OA application ID")
     zalo_oa_secret_key: Optional[str] = Field(default=None, description="Zalo OA secret key")
+
+    # Sprint 174b: OTP Identity Linking
+    otp_link_expiry_seconds: int = Field(default=300, ge=60, le=900, description="OTP code expiry in seconds (default 5 min)")
+
+    # Sprint 174: Cross-Platform Identity + Dual Personality
+    enable_cross_platform_identity: bool = Field(default=False, description="Enable canonical identity resolution across platforms")
+    enable_zalo_webhook: bool = Field(default=False, description="Enable Zalo OA incoming message webhook")
+    zalo_webhook_token: Optional[str] = Field(default=None, description="Verify token for Zalo webhook handshake")
+    default_personality_mode: str = Field(default="professional", description="Default personality mode: professional or soul")
+    channel_personality_map: str = Field(
+        default='{"web":"professional","desktop":"professional","messenger":"soul","zalo":"soul","telegram":"professional"}',
+        description="JSON map of channel_type → personality mode",
+    )
+
+    # Sprint 176: Embed iframe support
+    embed_allowed_origins: str = Field(
+        default="",
+        description="Space-separated list of allowed origins for iframe embedding (CSP frame-ancestors). Empty = 'self' only.",
+    )
 
     # Background Infrastructure
     valkey_url: str = Field(default="redis://localhost:6379/0", description="Valkey/Redis broker URL")
@@ -496,6 +520,7 @@ class Settings(BaseSettings):
     # Multi-Tenant
     enable_multi_tenant: bool = Field(default=False, description="Enable multi-organization support")
     default_organization_id: str = Field(default="default", description="Default org for unauthenticated users")
+    enable_rls: bool = Field(default=False, description="Enable PostgreSQL Row-Level Security (requires enable_multi_tenant)")
 
     # Living Memory System
     enable_core_memory_block: bool = Field(default=True, description="Compile structured user profile for all agents")
@@ -583,6 +608,40 @@ class Settings(BaseSettings):
     living_agent_callmebot_api_key: Optional[str] = Field(default=None, description="CallMeBot API key for Facebook Messenger notifications")
     living_agent_notification_channel: str = Field(default="websocket", description="Notification channel for heartbeat discoveries (websocket, telegram, messenger)")
 
+    # Soul AGI: Weather (Phase 1B)
+    living_agent_enable_weather: bool = Field(default=False, description="Enable weather awareness via OpenWeatherMap")
+    living_agent_weather_api_key: Optional[str] = Field(default=None, description="OpenWeatherMap API key")
+    living_agent_weather_city: str = Field(default="Ho Chi Minh City", description="Default city for weather queries")
+
+    # Soul AGI: Briefing (Phase 2A)
+    living_agent_enable_briefing: bool = Field(default=False, description="Enable scheduled briefings (morning/midday/evening)")
+    living_agent_briefing_channels: str = Field(default='["messenger"]', description="JSON list of channels for briefing delivery")
+    living_agent_briefing_users: str = Field(default='[]', description="JSON list of user_ids to receive briefings")
+
+    # Soul AGI: Routine Tracking (Phase 3B)
+    living_agent_enable_routine_tracking: bool = Field(default=False, description="Track user behavior patterns for personalization")
+
+    # Soul AGI: Dynamic Goals (Phase 4B)
+    living_agent_enable_dynamic_goals: bool = Field(default=False, description="Enable evolving goal management")
+
+    # Soul AGI: Proactive Messaging (Phase 5A)
+    living_agent_enable_proactive_messaging: bool = Field(default=False, description="Allow Wiii to send messages proactively")
+    living_agent_max_proactive_per_day: int = Field(default=3, ge=0, le=10, description="Max unsolicited messages per day per user")
+    living_agent_proactive_quiet_start: int = Field(default=23, ge=0, le=23, description="Quiet hours start (UTC+7, no proactive messages)")
+    living_agent_proactive_quiet_end: int = Field(default=5, ge=0, le=23, description="Quiet hours end (UTC+7)")
+
+    # Soul AGI: Autonomy Graduation (Phase 5B)
+    living_agent_autonomy_level: int = Field(default=0, ge=0, le=3, description="Current autonomy level (0=supervised, 3=full trust)")
+    living_agent_enable_autonomy_graduation: bool = Field(default=False, description="Enable automatic trust level graduation")
+
+    # Facebook Messenger (for webhooks)
+    facebook_verify_token: Optional[str] = Field(default=None, description="Facebook webhook verification token")
+    facebook_page_access_token: Optional[str] = Field(default=None, description="Facebook Page access token for Send API")
+
+    # Zalo OA
+    zalo_oa_access_token: Optional[str] = Field(default=None, description="Zalo OA access token")
+    zalo_oa_secret_key: Optional[str] = Field(default=None, description="Zalo OA secret key for MAC verification")
+
     # Preview System (Sprint 166)
     enable_preview: bool = Field(default=True, description="Rich preview cards in streaming responses")
 
@@ -646,6 +705,11 @@ class Settings(BaseSettings):
 
     # Security
     cors_origins: list[str] = Field(default=["*"], description="CORS allowed origins")
+    cors_origin_regex: str = Field(default="", description="Regex pattern for CORS origin matching (e.g. r'https://.*\\.holilihu\\.online')")
+
+    # Sprint 175: Subdomain → Org routing
+    subdomain_base_domain: str = Field(default="", description="Base domain for subdomain org extraction (e.g. 'holilihu.online')")
+
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
     log_format: str = Field(default="json", description="Log format: json or text")

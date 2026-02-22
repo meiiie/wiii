@@ -20,13 +20,20 @@ logger = logging.getLogger(__name__)
 def get_effective_org_id() -> Optional[str]:
     """Get the effective organization ID for the current request.
 
-    Returns None when multi-tenant is disabled (skip all filtering).
-    When enabled, falls back through: ContextVar → config default.
+    When multi-tenant disabled: returns default_organization_id ("default")
+    so INSERTs always have a valid org_id (Sprint 175b: NOT NULL support).
+
+    When enabled: falls back through ContextVar → config default.
+
+    Note: org_where_clause() / org_where_positional() still return ""
+    when multi-tenant is disabled — query filtering is unchanged.
     """
     from app.core.config import settings
 
     if not settings.enable_multi_tenant:
-        return None
+        # Sprint 175b: Return default instead of None so INSERTs always
+        # have a valid org_id (prerequisite for NOT NULL constraints).
+        return settings.default_organization_id
 
     from app.core.org_context import get_current_org_id
 

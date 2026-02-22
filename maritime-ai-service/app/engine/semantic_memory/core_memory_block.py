@@ -94,12 +94,17 @@ class CoreMemoryBlock:
     """
 
     def __init__(self):
-        # Cache: user_id → (block_text, timestamp)
+        # Sprint 175b: Cache keyed by "org_id:user_id" for multi-tenant isolation
+        # (was user_id only → cross-org cache leakage)
         self._cache: Dict[str, Tuple[str, float]] = {}
 
-    def invalidate(self, user_id: str) -> None:
+    def _cache_key(self, user_id: str, org_id: str = "") -> str:
+        """Build org-scoped cache key."""
+        return f"{org_id}:{user_id}" if org_id else user_id
+
+    def invalidate(self, user_id: str, org_id: str = "") -> None:
         """Invalidate cached profile for a user (call on fact write)."""
-        self._cache.pop(user_id, None)
+        self._cache.pop(self._cache_key(user_id, org_id), None)
 
     def invalidate_all(self) -> None:
         """Clear all cached profiles."""
@@ -128,9 +133,14 @@ class CoreMemoryBlock:
         if not user_id:
             return ""
 
+        # Sprint 175b: Org-scoped cache key to prevent cross-org leakage
+        from app.core.org_filter import get_effective_org_id
+        org_id = get_effective_org_id() or ""
+        cache_key = self._cache_key(user_id, org_id)
+
         # Check cache
         ttl = settings.core_memory_cache_ttl
-        cached = self._cache.get(user_id)
+        cached = self._cache.get(cache_key)
         if cached is not None:
             block, ts = cached
             if time.time() - ts < ttl:
@@ -147,7 +157,7 @@ class CoreMemoryBlock:
                 return ""
 
         if not facts_dict:
-            self._cache[user_id] = ("", time.time())
+            self._cache[cache_key] = ("", time.time())
             return ""
 
         # Compile block
@@ -158,7 +168,7 @@ class CoreMemoryBlock:
         block = self._truncate(block, max_tokens)
 
         # Cache
-        self._cache[user_id] = (block, time.time())
+        self._cache[cache_key] = (block, time.time())
         return block
 
     def _compile(self, facts: Dict[str, Any]) -> str:

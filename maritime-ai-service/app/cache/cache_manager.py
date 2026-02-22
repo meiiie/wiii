@@ -125,6 +125,7 @@ class CacheManager:
         query: str,
         query_embedding: List[float],
         user_id: str = "",
+        org_id: str = "",
     ) -> CacheLookupResult:
         """
         Look up query in cache tiers.
@@ -136,6 +137,7 @@ class CacheManager:
             query: Original query text
             query_embedding: Query embedding vector
             user_id: User ID for cache isolation
+            org_id: Organization ID for cache isolation (Sprint 175b)
 
         Returns:
             CacheLookupResult with hit status and value
@@ -149,8 +151,8 @@ class CacheManager:
             return CacheLookupResult(hit=False)
 
         try:
-            # L1: Response cache (user-isolated)
-            result = await self._response_cache.get(query, query_embedding, user_id=user_id)
+            # L1: Response cache (user + org isolated)
+            result = await self._response_cache.get(query, query_embedding, user_id=user_id, org_id=org_id)
             
             if result.hit:
                 self._circuit.record_success()
@@ -174,6 +176,7 @@ class CacheManager:
         document_ids: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         user_id: str = "",
+        org_id: str = "",
     ) -> bool:
         """
         Store response in cache.
@@ -185,6 +188,7 @@ class CacheManager:
             document_ids: Document IDs used (for invalidation)
             metadata: Additional metadata
             user_id: User ID for cache isolation
+            org_id: Organization ID for cache isolation (Sprint 175b)
 
         Returns:
             True if stored successfully
@@ -202,6 +206,7 @@ class CacheManager:
                 document_ids=document_ids,
                 metadata=metadata,
                 user_id=user_id,
+                org_id=org_id,
             )
             self._circuit.record_success()
             return True

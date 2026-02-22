@@ -305,7 +305,8 @@ class HybridSearchService:
         self,
         query: str,
         limit: int = 5,
-        domain_id: Optional[str] = None
+        domain_id: Optional[str] = None,
+        org_id: Optional[str] = None,
     ) -> List[HybridSearchResult]:
         """
         Perform sparse-only search (keyword matching).
@@ -314,12 +315,13 @@ class HybridSearchService:
             query: Search query
             limit: Maximum results
             domain_id: Filter by domain (multi-domain knowledge isolation)
+            org_id: Organization ID for multi-tenant isolation (Sprint 175b)
 
         Returns:
             List of results from sparse search only
         """
         try:
-            sparse_results = await self._sparse_repo.search(query, limit, domain_id=domain_id)
+            sparse_results = await self._sparse_repo.search(query, limit, domain_id=domain_id, org_id=org_id)
             return self._reranker.merge_single_source(sparse_results, "sparse", limit)
         except Exception as e:
             logger.error("Sparse-only search failed: %s", e)

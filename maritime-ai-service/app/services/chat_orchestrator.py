@@ -244,7 +244,7 @@ class ChatOrchestrator:
         # ================================================================
         
         # Option A: Multi-Agent System (SOTA 2025)
-        if self._use_multi_agent and self._multi_agent_graph is not None:
+        if self._use_multi_agent:
             result = await self._process_with_multi_agent(context, session)
 
         # Option B: Fallback to direct RAG mode
@@ -311,6 +311,7 @@ class ChatOrchestrator:
                 message=message,
                 response=result.message,
                 skip_fact_extraction=current_agent == "memory_agent",
+                org_id=getattr(context, 'organization_id', '') or '',
             )
         
         return response
