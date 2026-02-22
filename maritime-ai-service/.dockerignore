@@ -1,0 +1,66 @@
+# ===========================================
+# .dockerignore — Wiii Service
+# Reduce build context ~500MB → ~50MB
+# ===========================================
+
+# Version control
+.git/
+.gitignore
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Tests & scripts (not needed in production image)
+tests/
+scripts/
+_find_untested.py
+
+# Documentation
+docs/
+CHANGELOG.md
+*.md
+!README.md
+
+# Docker files (don't copy compose into image)
+docker-compose*.yml
+Dockerfile
+
+# Environment files (secrets — never bake into image)
+.env
+.env.*
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude multi-agent system
+.claude/
+
+# Logs & temp
+*.log
+tmp/
+temp/
+
+# Data files (mounted as volumes in production)
+data/

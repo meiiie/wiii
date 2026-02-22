@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'maritime-ai-service/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'maritime-ai-service/**'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff check
+        working-directory: maritime-ai-service
+        run: ruff check app/
+
+  test:
+    name: Unit Tests
+    needs: lint
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://wiii:wiii_secret@localhost:5433/wiii_ai
+      API_KEY: test-key
+      GOOGLE_API_KEY: fake-key-for-unit-tests
+      ENVIRONMENT: test
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: maritime-ai-service/requirements.txt
+
+      - name: Install dependencies
+        working-directory: maritime-ai-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run unit tests
+        working-directory: maritime-ai-service
+        run: pytest tests/unit/ -x -p no:capture --tb=short -q
+
+  docker-build:
+    name: Docker Build
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        working-directory: maritime-ai-service
+        run: docker build -t wiii-service:ci-${{ github.sha }} .
