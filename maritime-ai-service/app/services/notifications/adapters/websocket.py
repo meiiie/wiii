@@ -38,7 +38,9 @@ class WebSocketAdapter(NotificationChannelAdapter):
             from app.api.v1.websocket import manager
 
             if not manager.is_user_online(user_id):
-                logger.info("[NOTIFY] User %s is offline, WS notification queued", user_id)
+                logger.info(
+                    "[NOTIFY] User %s offline, WS queued", user_id,
+                )
                 return NotificationResult(
                     delivered=False,
                     channel="websocket",
@@ -46,7 +48,10 @@ class WebSocketAdapter(NotificationChannelAdapter):
                 )
 
             sent = await manager.send_to_user(user_id, message)
-            logger.info("[NOTIFY] WS notification sent to user %s (%d sessions)", user_id, sent)
+            logger.info(
+                "[NOTIFY] WS sent to user %s (%d sessions)",
+                user_id, sent,
+            )
             return NotificationResult(
                 delivered=True,
                 channel="websocket",

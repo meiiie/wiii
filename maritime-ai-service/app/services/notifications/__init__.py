@@ -5,7 +5,10 @@ Plugin architecture for notification delivery channels.
 Auto-registers adapters based on config flags.
 
 Usage:
-    from app.services.notifications import init_notification_channels, get_notification_channel_registry
+    from app.services.notifications import (
+        init_notification_channels,
+        get_notification_channel_registry,
+    )
 
     # Initialize at startup or on first use (lazy)
     init_notification_channels()
@@ -57,6 +60,10 @@ def init_notification_channels() -> NotificationChannelRegistry:
     if settings.living_agent_callmebot_api_key:
         from app.services.notifications.adapters.messenger import MessengerAdapter
         registry.register(MessengerAdapter())
+
+    if settings.enable_zalo and settings.zalo_oa_access_token:
+        from app.services.notifications.adapters.zalo import ZaloAdapter
+        registry.register(ZaloAdapter())
 
     logger.info(
         "Notification channels initialized: %d adapters (%s)",

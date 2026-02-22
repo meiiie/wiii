@@ -1,6 +1,6 @@
 # Wiii - System Architecture
 
-**Version:** 7.0 (Post-Sprint 170)
+**Version:** 7.1 (Post-Sprint 172)
 **Updated:** 2026-02-22
 **Product:** Wiii by The Wiii Lab
 **Pattern:** Multi-Domain Agentic RAG with Plugin Architecture, Product Search Platform, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization, Living Agent Autonomy
@@ -338,7 +338,15 @@ maritime-ai-service/                    # Backend (Python)
 │   │   ├── session_summarizer.py       # Long conversation compression
 │   │   ├── conversation_analyzer.py    # Context analysis
 │   │   ├── scheduled_task_executor.py  # Proactive agent (asyncio poll)
-│   │   ├── notification_dispatcher.py  # WS/Telegram push
+│   │   ├── notification_dispatcher.py  # Thin wrapper → registry routing
+│   │   ├── notifications/              # Plugin architecture (Sprint 172)
+│   │   │   ├── base.py                 # NotificationChannelAdapter ABC
+│   │   │   ├── registry.py             # NotificationChannelRegistry singleton
+│   │   │   └── adapters/               # 4 channel adapters
+│   │   │       ├── websocket.py        # WebSocket push
+│   │   │       ├── telegram.py         # Telegram Bot API
+│   │   │       ├── messenger.py        # CallMeBot Messenger
+│   │   │       └── zalo.py             # Zalo OA API v3
 │   │   ├── multimodal_ingestion_service.py  # PDF/image ingestion
 │   │   ├── pdf_processor.py            # PyMuPDF page extraction
 │   │   ├── vision_processor.py         # Gemini Vision for images
@@ -1020,9 +1028,12 @@ flowchart TB
         TYPE -->|agent| INVOKE["Invoke multi-agent graph"]
     end
 
-    subgraph Dispatch["Delivery"]
-        SEND & INVOKE --> WS["WebSocket push"]
-        SEND & INVOKE --> TG["Telegram Bot API"]
+    subgraph Dispatch["Delivery (Plugin Architecture)"]
+        SEND & INVOKE --> REG["NotificationChannelRegistry"]
+        REG --> WS["WebSocket push"]
+        REG --> TG["Telegram Bot API"]
+        REG --> MSG["Messenger (CallMeBot)"]
+        REG --> ZALO["Zalo OA API v3"]
     end
 
     subgraph Failure["Failure Tracking"]
@@ -1033,6 +1044,29 @@ flowchart TB
 ```
 
 **Feature-Gated:** `enable_scheduler=False` by default. Wired in `main.py` lifespan.
+
+#### Notification Plugin Architecture (Sprint 172)
+
+Notification delivery uses a plugin pattern (same as `search_platforms/`):
+
+```
+app/services/notifications/
+├── base.py          # NotificationChannelAdapter ABC, ChannelConfig, NotificationResult
+├── registry.py      # NotificationChannelRegistry singleton (thread-safe)
+├── __init__.py      # init_notification_channels() — auto-register from config
+└── adapters/
+    ├── websocket.py # WebSocket push (enable_websocket)
+    ├── telegram.py  # Telegram Bot API (enable_telegram + telegram_bot_token)
+    ├── messenger.py # CallMeBot Messenger (living_agent_callmebot_api_key)
+    └── zalo.py      # Zalo OA API v3 (enable_zalo + zalo_oa_access_token)
+```
+
+**Adding a new channel:**
+1. Create `adapters/new_channel.py` implementing `NotificationChannelAdapter`
+2. Register in `__init__.py` with feature flag guard
+3. Done — `NotificationDispatcher` routes automatically via `registry.get(channel).send()`
+
+**Config:** `enable_zalo`, `zalo_oa_access_token`, `zalo_oa_refresh_token`, `zalo_oa_app_id`, `zalo_oa_secret_key`
 
 ---
 

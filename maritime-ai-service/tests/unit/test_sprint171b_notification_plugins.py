@@ -195,6 +195,8 @@ class TestInitNotificationChannels:
         mock_settings.enable_telegram = True
         mock_settings.telegram_bot_token = "bot-123"
         mock_settings.living_agent_callmebot_api_key = "api-key"
+        mock_settings.enable_zalo = False
+        mock_settings.zalo_oa_access_token = None
 
         # Clear singleton state
         import app.services.notifications.registry as reg_mod
@@ -221,6 +223,8 @@ class TestInitNotificationChannels:
         mock_settings.enable_telegram = False
         mock_settings.telegram_bot_token = None
         mock_settings.living_agent_callmebot_api_key = None
+        mock_settings.enable_zalo = False
+        mock_settings.zalo_oa_access_token = None
 
         import app.services.notifications.registry as reg_mod
         old = reg_mod._registry_instance
@@ -242,6 +246,8 @@ class TestInitNotificationChannels:
         mock_settings.enable_telegram = False
         mock_settings.telegram_bot_token = None
         mock_settings.living_agent_callmebot_api_key = None
+        mock_settings.enable_zalo = False
+        mock_settings.zalo_oa_access_token = None
 
         import app.services.notifications.registry as reg_mod
         old = reg_mod._registry_instance
@@ -263,6 +269,8 @@ class TestInitNotificationChannels:
         mock_settings.enable_telegram = True
         mock_settings.telegram_bot_token = None  # No token
         mock_settings.living_agent_callmebot_api_key = None
+        mock_settings.enable_zalo = False
+        mock_settings.zalo_oa_access_token = None
 
         import app.services.notifications.registry as reg_mod
         old = reg_mod._registry_instance
@@ -284,6 +292,8 @@ class TestInitNotificationChannels:
         mock_settings.enable_telegram = False
         mock_settings.telegram_bot_token = None
         mock_settings.living_agent_callmebot_api_key = "key-123"
+        mock_settings.enable_zalo = False
+        mock_settings.zalo_oa_access_token = None
 
         import app.services.notifications.registry as reg_mod
         old = reg_mod._registry_instance

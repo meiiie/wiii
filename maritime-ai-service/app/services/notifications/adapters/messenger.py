@@ -50,7 +50,7 @@ class MessengerAdapter(NotificationChannelAdapter):
                 return NotificationResult(
                     delivered=False,
                     channel="messenger",
-                    detail="CallMeBot API key not configured (LIVING_AGENT_CALLMEBOT_API_KEY)",
+                    detail="CallMeBot API key not configured",
                 )
 
             # Parse message if it's a JSON payload
@@ -80,9 +80,15 @@ class MessengerAdapter(NotificationChannelAdapter):
                     detail="Sent via CallMeBot",
                 )
             else:
-                detail = f"CallMeBot API error: {response.status_code} — {response.text[:200]}"
+                detail = (
+                    f"CallMeBot API error: {response.status_code}"
+                    f" — {response.text[:200]}"
+                )
                 logger.warning("[NOTIFY] %s", detail)
-                return NotificationResult(delivered=False, channel="messenger", detail=detail)
+                return NotificationResult(
+                    delivered=False, channel="messenger",
+                    detail=detail,
+                )
 
         except Exception as e:
             logger.error("[NOTIFY] Messenger notification failed: %s", e)

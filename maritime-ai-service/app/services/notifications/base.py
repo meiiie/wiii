@@ -9,7 +9,7 @@ Each channel implements NotificationChannelAdapter to normalize delivery.
 
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -75,5 +75,8 @@ class NotificationChannelAdapter(ABC):
         ...
 
     def validate_config(self) -> bool:
-        """Check if required configuration is available. Override for channels needing credentials."""
+        """Check if required config is available.
+
+        Override for channels needing credentials.
+        """
         return True

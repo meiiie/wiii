@@ -79,10 +79,16 @@ class TelegramAdapter(NotificationChannelAdapter):
             else:
                 detail = f"Telegram API error: {response.status_code}"
                 logger.warning("[NOTIFY] %s", detail)
-                return NotificationResult(delivered=False, channel="telegram", detail=detail)
+                return NotificationResult(
+                    delivered=False, channel="telegram",
+                    detail=detail,
+                )
 
         except Exception as e:
-            logger.error("[NOTIFY] Telegram notification failed for user %s: %s", user_id, e)
+            logger.error(
+                "[NOTIFY] Telegram failed for user %s: %s",
+                user_id, e,
+            )
             return NotificationResult(
                 delivered=False,
                 channel="telegram",

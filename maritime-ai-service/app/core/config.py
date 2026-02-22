@@ -226,10 +226,10 @@ class Settings(BaseSettings):
     postgres_statement_timeout_ms: int = Field(default=30000, ge=1000, le=300000, description="Query timeout in ms (default 30s)")
     postgres_idle_in_transaction_timeout_ms: int = Field(default=60000, ge=10000, le=600000, description="Idle transaction timeout in ms (default 60s)")
 
-    # Supabase Settings (CHỈ THỊ 26: Multimodal RAG - Hybrid Infrastructure)
-    supabase_url: Optional[str] = Field(default=None, description="Supabase project URL")
-    supabase_key: Optional[str] = Field(default=None, description="Supabase anon/service key")
-    supabase_storage_bucket: str = Field(default="wiii-docs", description="Supabase Storage bucket for document images")
+    # Object Storage (MinIO / S3-compatible)
+    storage_url: Optional[str] = Field(default=None, description="Object storage endpoint URL (MinIO / S3)")
+    storage_key: Optional[str] = Field(default=None, description="Object storage access key")
+    storage_bucket: str = Field(default="wiii-docs", description="Storage bucket for document images")
 
     # LMS API Key (for authentication from LMS)
     lms_api_key: Optional[str] = Field(default=None, description="API Key for LMS integration")
@@ -435,6 +435,11 @@ class Settings(BaseSettings):
     enable_telegram: bool = Field(default=False, description="Enable Telegram bot integration")
     telegram_bot_token: Optional[str] = Field(default=None, description="Telegram Bot API token")
     telegram_webhook_url: Optional[str] = Field(default=None, description="Telegram webhook callback URL")
+    enable_zalo: bool = Field(default=False, description="Enable Zalo OA notification channel")
+    zalo_oa_access_token: Optional[str] = Field(default=None, description="Zalo OA access token")
+    zalo_oa_refresh_token: Optional[str] = Field(default=None, description="Zalo OA refresh token")
+    zalo_oa_app_id: Optional[str] = Field(default=None, description="Zalo OA application ID")
+    zalo_oa_secret_key: Optional[str] = Field(default=None, description="Zalo OA secret key")
 
     # Background Infrastructure
     valkey_url: str = Field(default="redis://localhost:6379/0", description="Valkey/Redis broker URL")
