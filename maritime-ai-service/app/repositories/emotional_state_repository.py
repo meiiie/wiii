@@ -2,6 +2,7 @@
 Emotional State Repository — Persistence for Wiii's emotional snapshots.
 
 Sprint 170: "Linh Hồn Sống"
+Sprint 170b: Fixed org_id filtering to use Sprint 160 pattern (get_effective_org_id + org_where_clause).
 
 Stores and retrieves emotional state snapshots from PostgreSQL.
 Uses the shared database engine (singleton pattern from database.py).
@@ -14,6 +15,7 @@ from typing import Dict, List, Optional
 from uuid import uuid4
 
 from app.core.database import get_shared_session_factory
+from app.core.org_filter import get_effective_org_id, org_where_clause
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,7 @@ class EmotionalStateRepository:
 
         snapshot_id = str(uuid4())
         session_factory = get_shared_session_factory()
+        effective_org_id = get_effective_org_id() or organization_id
 
         try:
             with session_factory() as session:
@@ -59,7 +62,7 @@ class EmotionalStateRepository:
                         "engagement": engagement,
                         "trigger": trigger_event,
                         "snapshot_at": datetime.now(timezone.utc),
-                        "org_id": organization_id,
+                        "org_id": effective_org_id,
                         "state": json.dumps(state_json or {}, ensure_ascii=False),
                     },
                 )
@@ -80,6 +83,7 @@ class EmotionalStateRepository:
         from sqlalchemy import text
 
         session_factory = get_shared_session_factory()
+        effective_org_id = get_effective_org_id() or organization_id
 
         try:
             with session_factory() as session:
@@ -90,9 +94,11 @@ class EmotionalStateRepository:
                     WHERE 1=1
                 """
                 params = {}
-                if organization_id:
-                    query += " AND organization_id = :org_id"
-                    params["org_id"] = organization_id
+
+                org_clause = org_where_clause(effective_org_id)
+                if org_clause:
+                    query += org_clause
+                    params["org_id"] = effective_org_id
 
                 query += " ORDER BY snapshot_at DESC LIMIT 1"
 
@@ -132,6 +138,7 @@ class EmotionalStateRepository:
         from sqlalchemy import text
 
         session_factory = get_shared_session_factory()
+        effective_org_id = get_effective_org_id() or organization_id
 
         try:
             with session_factory() as session:
@@ -139,20 +146,18 @@ class EmotionalStateRepository:
                     SELECT id, primary_mood, energy_level, social_battery, engagement,
                            trigger_event, snapshot_at
                     FROM wiii_emotional_snapshots
-                    WHERE snapshot_at >= NOW() - INTERVAL ':hours hours'
+                    WHERE snapshot_at >= NOW() - INTERVAL '1 hour' * :hours
                 """
                 params: dict = {"hours": hours}
-                if organization_id:
-                    query += " AND organization_id = :org_id"
-                    params["org_id"] = organization_id
+
+                org_clause = org_where_clause(effective_org_id)
+                if org_clause:
+                    query += org_clause
+                    params["org_id"] = effective_org_id
 
                 query += " ORDER BY snapshot_at ASC"
 
-                # Use string interpolation for interval (parameterized interval not supported)
-                actual_query = query.replace(":hours hours", f"{hours} hours")
-                actual_params = {k: v for k, v in params.items() if k != "hours"}
-
-                results = session.execute(text(actual_query), actual_params).fetchall()
+                results = session.execute(text(query), params).fetchall()
                 return [
                     {
                         "id": row[0],
@@ -183,10 +188,11 @@ class EmotionalStateRepository:
         try:
             with session_factory() as session:
                 result = session.execute(
-                    text(f"""
+                    text("""
                         DELETE FROM wiii_emotional_snapshots
-                        WHERE snapshot_at < NOW() - INTERVAL '{keep_days} days'
+                        WHERE snapshot_at < NOW() - INTERVAL '1 day' * :keep_days
                     """),
+                    {"keep_days": keep_days},
                 )
                 session.commit()
                 count = result.rowcount

@@ -42,13 +42,15 @@ def get_url():
     # Ưu tiên DATABASE_URL (Neon/Cloud)
     database_url = os.getenv("DATABASE_URL")
     if database_url:
-        # Convert to sync driver (psycopg2) for Alembic
+        # Convert to sync driver (psycopg3) for Alembic
         url = database_url
         if "+asyncpg" in url:
-            url = url.replace("+asyncpg", "")
-        if url.startswith("postgres://"):
-            url = url.replace("postgres://", "postgresql://", 1)
-        # Convert ssl=require to sslmode=require for psycopg2
+            url = url.replace("+asyncpg", "+psycopg")
+        elif url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+psycopg://", 1)
+        elif url.startswith("postgresql://") and "+psycopg" not in url:
+            url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+        # Convert ssl=require to sslmode=require for psycopg
         if "ssl=require" in url:
             url = url.replace("ssl=require", "sslmode=require")
         return url
@@ -60,8 +62,8 @@ def get_url():
     password = os.getenv("POSTGRES_PASSWORD", "wiii_secret")
     db = os.getenv("POSTGRES_DB", "wiii_ai")
     
-    # Use psycopg2 driver (sync) for alembic
-    return f"postgresql://{user}:{password}@{host}:{port}/{db}"
+    # Use psycopg3 driver (sync) for alembic
+    return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{db}"
 
 
 def run_migrations_offline() -> None:

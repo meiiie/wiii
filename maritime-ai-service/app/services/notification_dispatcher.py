@@ -2,8 +2,11 @@
 Notification Dispatcher — Multi-channel notification routing for Wiii.
 
 Sprint 20: Proactive Agent Activation.
-Routes notifications to users via their preferred channel (WebSocket, Telegram).
-Used by the scheduled task executor to deliver task results.
+Sprint 171b: Refactored to plugin architecture — delegates to NotificationChannelRegistry.
+
+Routes notifications to users via their preferred channel
+(WebSocket, Telegram, Messenger, or any registered plugin).
+Used by the scheduled task executor and heartbeat system.
 """
 
 import json
@@ -18,9 +21,20 @@ class NotificationDispatcher:
     """
     Routes notifications to users based on channel preference.
 
-    Supports WebSocket (push to connected sessions) and Telegram (bot API).
+    Delegates to registered NotificationChannelAdapter instances via
+    NotificationChannelRegistry (plugin architecture).
     Falls back gracefully when a channel is unavailable.
     """
+
+    def __init__(self):
+        self._registry = None
+
+    def _get_registry(self):
+        """Lazy-initialize the notification channel registry."""
+        if self._registry is None:
+            from app.services.notifications import init_notification_channels
+            self._registry = init_notification_channels()
+        return self._registry
 
     async def notify_user(
         self,
@@ -35,23 +49,23 @@ class NotificationDispatcher:
         Args:
             user_id: Target user ID
             message: Notification content
-            channel: Delivery channel ("websocket" or "telegram")
+            channel: Delivery channel ("websocket", "telegram", "messenger", etc.)
             metadata: Additional metadata to include in the notification
 
         Returns:
             {"delivered": bool, "channel": str, "detail": str}
         """
-        if channel == "websocket":
-            return await self._notify_websocket(user_id, message, metadata)
-        elif channel == "telegram":
-            return await self._notify_telegram(user_id, message, metadata)
-        else:
+        adapter = self._get_registry().get(channel)
+        if adapter is None:
             logger.warning("[NOTIFY] Unknown channel '%s' for user %s", channel, user_id)
             return {
                 "delivered": False,
                 "channel": channel,
                 "detail": f"Unknown channel: {channel}",
             }
+
+        result = await adapter.send(user_id, message, metadata)
+        return result.to_dict()
 
     async def notify_task_result(self, task: dict, result: dict) -> dict:
         """
@@ -85,92 +99,6 @@ class NotificationDispatcher:
             channel=channel,
             metadata={"task_id": task.get("id")},
         )
-
-    async def _notify_websocket(
-        self, user_id: str, message: str, metadata: Optional[dict] = None
-    ) -> dict:
-        """Send notification via WebSocket to all user sessions."""
-        try:
-            from app.api.v1.websocket import manager
-
-            if not manager.is_user_online(user_id):
-                logger.info("[NOTIFY] User %s is offline, WS notification queued", user_id)
-                return {
-                    "delivered": False,
-                    "channel": "websocket",
-                    "detail": "User offline",
-                }
-
-            sent = await manager.send_to_user(user_id, message)
-            logger.info("[NOTIFY] WS notification sent to user %s (%d sessions)", user_id, sent)
-            return {
-                "delivered": True,
-                "channel": "websocket",
-                "detail": f"Sent to {sent} sessions",
-            }
-
-        except Exception as e:
-            logger.error("[NOTIFY] WS notification failed for user %s: %s", user_id, e)
-            return {
-                "delivered": False,
-                "channel": "websocket",
-                "detail": str(e),
-            }
-
-    async def _notify_telegram(
-        self, user_id: str, message: str, metadata: Optional[dict] = None
-    ) -> dict:
-        """Send notification via Telegram bot API."""
-        try:
-            from app.core.config import settings
-
-            if not settings.telegram_bot_token:
-                return {
-                    "delivered": False,
-                    "channel": "telegram",
-                    "detail": "Telegram bot token not configured",
-                }
-
-            # Parse message if it's a JSON payload, extract content for Telegram
-            try:
-                payload = json.loads(message)
-                text = payload.get("content") or payload.get("description", message)
-            except (json.JSONDecodeError, TypeError):
-                text = message
-
-            # Use httpx to call Telegram Bot API
-            import httpx
-
-            url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.post(
-                    url,
-                    json={
-                        "chat_id": user_id,
-                        "text": text,
-                        "parse_mode": "Markdown",
-                    },
-                )
-
-            if response.status_code == 200:
-                logger.info("[NOTIFY] Telegram notification sent to user %s", user_id)
-                return {
-                    "delivered": True,
-                    "channel": "telegram",
-                    "detail": "Sent via Telegram Bot API",
-                }
-            else:
-                detail = f"Telegram API error: {response.status_code}"
-                logger.warning("[NOTIFY] %s", detail)
-                return {"delivered": False, "channel": "telegram", "detail": detail}
-
-        except Exception as e:
-            logger.error("[NOTIFY] Telegram notification failed for user %s: %s", user_id, e)
-            return {
-                "delivered": False,
-                "channel": "telegram",
-                "detail": str(e),
-            }
 
 
 # =============================================================================

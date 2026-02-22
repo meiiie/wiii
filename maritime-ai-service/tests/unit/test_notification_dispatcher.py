@@ -2,6 +2,7 @@
 Tests for NotificationDispatcher — Multi-channel notification routing.
 
 Sprint 20: Proactive Agent Activation.
+Sprint 171b: Updated for plugin architecture (adapters + registry).
 
 Verifies:
 - WebSocket notification delivery (user online/offline)
@@ -27,8 +28,12 @@ from app.services.notification_dispatcher import (
 
 @pytest.fixture
 def dispatcher():
-    """Fresh NotificationDispatcher instance."""
-    return NotificationDispatcher()
+    """Fresh NotificationDispatcher instance with pre-initialized registry."""
+    d = NotificationDispatcher()
+    # Pre-populate registry so tests don't trigger lazy init
+    from app.services.notifications.registry import NotificationChannelRegistry
+    d._registry = NotificationChannelRegistry()
+    return d
 
 
 @pytest.fixture
@@ -55,84 +60,103 @@ def sample_result():
 
 
 # =============================================================================
-# WebSocket notifications
+# WebSocket notifications (via adapter)
 # =============================================================================
 
 class TestWebSocketNotification:
 
     @pytest.mark.asyncio
-    async def test_notify_user_online(self, dispatcher):
+    async def test_notify_user_online(self):
         """Delivers notification when user is online."""
+        from app.services.notifications.adapters.websocket import WebSocketAdapter
+
+        adapter = WebSocketAdapter()
         mock_manager = MagicMock()
         mock_manager.is_user_online.return_value = True
         mock_manager.send_to_user = AsyncMock(return_value=2)
 
-        # Lazy import inside _notify_websocket → patch at source module
         with patch("app.api.v1.websocket.manager", mock_manager):
-            result = await dispatcher._notify_websocket("user-1", "hello")
+            result = await adapter.send("user-1", "hello")
 
-        assert result["delivered"] is True
-        assert result["channel"] == "websocket"
-        assert "2 sessions" in result["detail"]
+        assert result.delivered is True
+        assert result.channel == "websocket"
+        assert "2 sessions" in result.detail
 
     @pytest.mark.asyncio
-    async def test_notify_user_offline(self, dispatcher):
+    async def test_notify_user_offline(self):
         """Handles offline user gracefully."""
+        from app.services.notifications.adapters.websocket import WebSocketAdapter
+
+        adapter = WebSocketAdapter()
         mock_manager = MagicMock()
         mock_manager.is_user_online.return_value = False
 
         with patch("app.api.v1.websocket.manager", mock_manager):
-            result = await dispatcher._notify_websocket("user-1", "hello")
+            result = await adapter.send("user-1", "hello")
 
-        assert result["delivered"] is False
-        assert "offline" in result["detail"].lower()
+        assert result.delivered is False
+        assert "offline" in result.detail.lower()
 
     @pytest.mark.asyncio
-    async def test_notify_websocket_exception(self, dispatcher):
+    async def test_notify_websocket_exception(self):
         """Handles WebSocket errors gracefully."""
+        from app.services.notifications.adapters.websocket import WebSocketAdapter
+
+        adapter = WebSocketAdapter()
         with patch(
             "app.api.v1.websocket.manager",
             side_effect=RuntimeError("Connection pool full"),
         ):
-            result = await dispatcher._notify_websocket("user-1", "hello")
+            result = await adapter.send("user-1", "hello")
 
-        assert result["delivered"] is False
-        assert result["channel"] == "websocket"
+        assert result.delivered is False
+        assert result.channel == "websocket"
 
     @pytest.mark.asyncio
     async def test_notify_user_via_channel_websocket(self, dispatcher):
-        """notify_user routes to WebSocket correctly."""
-        dispatcher._notify_websocket = AsyncMock(
-            return_value={"delivered": True, "channel": "websocket", "detail": "ok"}
-        )
+        """notify_user routes to WebSocket adapter correctly."""
+        from app.services.notifications.base import NotificationResult
+
+        mock_adapter = MagicMock()
+        mock_adapter.get_config.return_value = MagicMock(id="websocket", enabled=True)
+        mock_adapter.send = AsyncMock(return_value=NotificationResult(
+            delivered=True, channel="websocket", detail="ok"
+        ))
+        dispatcher._registry.register(mock_adapter)
 
         result = await dispatcher.notify_user("user-1", "test", channel="websocket")
 
         assert result["delivered"] is True
-        dispatcher._notify_websocket.assert_called_once()
+        mock_adapter.send.assert_called_once()
 
 
 # =============================================================================
-# Telegram notifications
+# Telegram notifications (via adapter)
 # =============================================================================
 
 class TestTelegramNotification:
 
     @pytest.mark.asyncio
-    async def test_notify_telegram_no_token(self, dispatcher):
+    async def test_notify_telegram_no_token(self):
         """Returns not delivered when bot token is not configured."""
+        from app.services.notifications.adapters.telegram import TelegramAdapter
+
+        adapter = TelegramAdapter()
         mock_settings = MagicMock()
         mock_settings.telegram_bot_token = None
 
         with patch("app.core.config.settings", mock_settings):
-            result = await dispatcher._notify_telegram("user-1", "test")
+            result = await adapter.send("user-1", "test")
 
-        assert result["delivered"] is False
-        assert "not configured" in result["detail"]
+        assert result.delivered is False
+        assert "not configured" in result.detail
 
     @pytest.mark.asyncio
-    async def test_notify_telegram_success(self, dispatcher):
+    async def test_notify_telegram_success(self):
         """Delivers via Telegram Bot API successfully."""
+        from app.services.notifications.adapters.telegram import TelegramAdapter
+
+        adapter = TelegramAdapter()
         mock_settings = MagicMock()
         mock_settings.telegram_bot_token = "bot-token-123"
 
@@ -146,14 +170,17 @@ class TestTelegramNotification:
 
         with patch("app.core.config.settings", mock_settings), \
              patch("httpx.AsyncClient", return_value=mock_client):
-            result = await dispatcher._notify_telegram("user-1", "Hello!")
+            result = await adapter.send("user-1", "Hello!")
 
-        assert result["delivered"] is True
-        assert result["channel"] == "telegram"
+        assert result.delivered is True
+        assert result.channel == "telegram"
 
     @pytest.mark.asyncio
-    async def test_notify_telegram_api_error(self, dispatcher):
+    async def test_notify_telegram_api_error(self):
         """Handles Telegram API error response."""
+        from app.services.notifications.adapters.telegram import TelegramAdapter
+
+        adapter = TelegramAdapter()
         mock_settings = MagicMock()
         mock_settings.telegram_bot_token = "bot-token-123"
 
@@ -167,14 +194,17 @@ class TestTelegramNotification:
 
         with patch("app.core.config.settings", mock_settings), \
              patch("httpx.AsyncClient", return_value=mock_client):
-            result = await dispatcher._notify_telegram("user-1", "test")
+            result = await adapter.send("user-1", "test")
 
-        assert result["delivered"] is False
-        assert "403" in result["detail"]
+        assert result.delivered is False
+        assert "403" in result.detail
 
     @pytest.mark.asyncio
-    async def test_notify_telegram_json_payload(self, dispatcher):
+    async def test_notify_telegram_json_payload(self):
         """Extracts content from JSON payload for Telegram text."""
+        from app.services.notifications.adapters.telegram import TelegramAdapter
+
+        adapter = TelegramAdapter()
         mock_settings = MagicMock()
         mock_settings.telegram_bot_token = "bot-token-123"
 
@@ -190,24 +220,28 @@ class TestTelegramNotification:
 
         with patch("app.core.config.settings", mock_settings), \
              patch("httpx.AsyncClient", return_value=mock_client):
-            await dispatcher._notify_telegram("user-1", payload)
+            await adapter.send("user-1", payload)
 
-        # Verify the text sent is the extracted content, not raw JSON
         call_args = mock_client.post.call_args
         sent_text = call_args[1]["json"]["text"]
         assert sent_text == "Đã đến giờ ôn tập!"
 
     @pytest.mark.asyncio
     async def test_notify_user_via_channel_telegram(self, dispatcher):
-        """notify_user routes to Telegram correctly."""
-        dispatcher._notify_telegram = AsyncMock(
-            return_value={"delivered": True, "channel": "telegram", "detail": "ok"}
-        )
+        """notify_user routes to Telegram adapter correctly."""
+        from app.services.notifications.base import NotificationResult
+
+        mock_adapter = MagicMock()
+        mock_adapter.get_config.return_value = MagicMock(id="telegram", enabled=True)
+        mock_adapter.send = AsyncMock(return_value=NotificationResult(
+            delivered=True, channel="telegram", detail="ok"
+        ))
+        dispatcher._registry.register(mock_adapter)
 
         result = await dispatcher.notify_user("user-1", "test", channel="telegram")
 
         assert result["delivered"] is True
-        dispatcher._notify_telegram.assert_called_once()
+        mock_adapter.send.assert_called_once()
 
 
 # =============================================================================

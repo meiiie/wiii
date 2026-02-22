@@ -2,21 +2,26 @@
 Social Browser — Wiii's autonomous content discovery engine.
 
 Sprint 170: "Linh Hồn Sống"
+Sprint 171: "Quyền Tự Chủ" — Routes through existing web tools + safety.
 
 Browses news, tech blogs, and social media to discover content
-aligned with Wiii's interests. Uses feed adapters for platform-specific
-fetching and local LLM for relevance scoring.
+aligned with Wiii's interests. Uses existing web_search_tools.py
+(DuckDuckGo + circuit breaker + RSS) instead of raw Serper/HN API calls.
 
-Design:
-    - Platform adapters: news (RSS/web), hackernews, reddit, tech blogs
-    - Interest-driven selection: content filtered by soul interests
-    - Rate limiting: max items per session, max API calls per heartbeat
-    - Content safety: blocked categories, NSFW filtering
-    - All analysis via LOCAL MODEL (zero cost)
+Sprint 171 changes:
+    - Routes searches through existing tools (DuckDuckGo, RSS, maritime, news)
+    - Inherits circuit breaker (3 failures × 120s recovery)
+    - URL validation via safety.validate_url (SSRF prevention)
+    - Content sanitization via safety.sanitize_content
+    - Prompt injection detection before LLM calls
+    - Serper + HackerNews kept as fallback only
+    - Topic tracking for proper tool routing
 """
 
+import asyncio
 import logging
 import random
+import re
 from typing import List, Optional
 
 from app.engine.living_agent.models import BrowsingItem
@@ -56,6 +61,12 @@ _TOPIC_QUERIES = {
     ],
 }
 
+# Topic → tool routing
+_TOPIC_TOOL_MAP = {
+    "maritime": "tool_search_maritime",
+    "news": "tool_search_news",
+}
+
 
 class SocialBrowser:
     """Autonomous content browser for Wiii's learning.
@@ -63,10 +74,16 @@ class SocialBrowser:
     Browses various platforms to find content relevant to Wiii's interests.
     All content is filtered for safety and scored for relevance.
 
+    Sprint 171: Routes through existing web_search_tools.py for DuckDuckGo
+    integration with circuit breaker, RSS feeds, and site-restricted search.
+
     Usage:
         browser = SocialBrowser()
         items = await browser.browse_feed(topic="tech", interests=["AI", "ML"])
     """
+
+    def __init__(self):
+        self._current_topic: str = "general"
 
     async def browse_feed(
         self,
@@ -89,10 +106,12 @@ class SocialBrowser:
         if not settings.living_agent_enable_social_browse:
             return []
 
+        self._current_topic = topic
+
         queries = _TOPIC_QUERIES.get(topic, _TOPIC_QUERIES["general"])
         query = random.choice(queries)
 
-        # Try web search via existing tools
+        # Search via existing tools (Sprint 171)
         items = await self._search_web(query, max_items * 2)
 
         if not items:
@@ -117,20 +136,130 @@ class SocialBrowser:
         return results
 
     async def _search_web(self, query: str, max_results: int) -> List[BrowsingItem]:
-        """Search the web using available tools.
+        """Search using existing web_search_tools (DuckDuckGo + circuit breaker).
 
-        Tries multiple approaches:
-        1. Serper API (if key configured)
-        2. Simple web fetch for known sites
+        Sprint 171: Routes by topic to appropriate existing tool, inheriting:
+        - Circuit breaker (3 failures × 120s recovery)
+        - DuckDuckGo Vietnamese region search
+        - RSS feed aggregation for news
+        - Maritime site-restricted search (IMO, Safety4Sea, VINAMARINE)
         """
+        from app.engine.living_agent.safety import validate_url, sanitize_content
+
+        items: List[BrowsingItem] = []
+
+        # 1. Try existing tools first
+        try:
+            raw = await self._invoke_tool(query)
+            if raw:
+                items = self._parse_tool_results(raw, max_results)
+        except Exception as e:
+            logger.debug("[BROWSER] Tool search failed: %s", e)
+
+        # 2. Fallback to Serper/HN if tools returned nothing
+        if not items:
+            items = await self._fallback_search(query, max_results)
+
+        # 3. Safety: validate URLs and sanitize content
+        safe_items = []
+        for item in items:
+            if item.url and not validate_url(item.url):
+                logger.warning("[BROWSER] Blocked unsafe URL: %s", (item.url or "")[:50])
+                continue
+            item.summary = sanitize_content(item.summary)
+            safe_items.append(item)
+
+        return safe_items
+
+    async def _invoke_tool(self, query: str) -> str:
+        """Invoke the appropriate existing web search tool based on current topic.
+
+        Returns the raw formatted string output from the tool.
+        """
+        from app.engine.tools.web_search_tools import (
+            tool_web_search,
+            tool_search_news,
+            tool_search_maritime,
+        )
+
+        tool_name = _TOPIC_TOOL_MAP.get(self._current_topic)
+
+        if tool_name == "tool_search_maritime":
+            tool_fn = tool_search_maritime
+        elif tool_name == "tool_search_news":
+            tool_fn = tool_search_news
+        else:
+            tool_fn = tool_web_search
+
+        # Tools are sync (DuckDuckGo uses ThreadPoolExecutor internally)
+        result = await asyncio.to_thread(tool_fn.invoke, query)
+        return result
+
+    def _parse_tool_results(self, raw: str, max_results: int) -> List[BrowsingItem]:
+        """Parse formatted tool output back into BrowsingItem objects.
+
+        Existing tools output markdown-formatted text like:
+            **Title** (date) [source]
+            Body text here
+            URL: https://example.com
+
+            ---
+
+            **Title 2**
+            ...
+        """
+        if not raw or raw.startswith("Không tìm") or raw.startswith("Lỗi") or raw.startswith("Tìm kiếm"):
+            return []
+
         items = []
+        blocks = raw.split("\n\n---\n\n")
+
+        for block in blocks[:max_results]:
+            block = block.strip()
+            if not block:
+                continue
+
+            title = ""
+            url = ""
+            summary = ""
+
+            lines = block.split("\n")
+            for line in lines:
+                line = line.strip()
+                if line.startswith("**") and not title:
+                    # Extract title from **title** pattern
+                    match = re.match(r"\*\*(.+?)\*\*", line)
+                    if match:
+                        title = match.group(1)
+                elif line.startswith("URL:"):
+                    url = line[4:].strip()
+                else:
+                    if line and not line.startswith("**"):
+                        summary += line + " "
+
+            if title:
+                items.append(BrowsingItem(
+                    platform="web_search",
+                    url=url if url else None,
+                    title=title[:500],
+                    summary=summary.strip()[:2000],
+                ))
+
+        return items
+
+    async def _fallback_search(self, query: str, max_results: int) -> List[BrowsingItem]:
+        """Fallback search via Serper API and HackerNews when existing tools fail.
+
+        Sprint 171: Only called when all existing tools fail (circuit breaker open).
+        """
+        items: List[BrowsingItem] = []
 
         # Try Serper API if available
         try:
             serper_items = await self._search_via_serper(query, max_results)
             items.extend(serper_items)
         except Exception as e:
-            logger.debug("[BROWSER] Serper search failed: %s", e)
+            logger.debug("[BROWSER] Serper fallback failed: %s", e)
 
         # If Serper unavailable, try HackerNews API (free, no key)
         if not items:
@@ -138,12 +267,12 @@ class SocialBrowser:
                 hn_items = await self._search_hackernews(query, max_results)
                 items.extend(hn_items)
             except Exception as e:
-                logger.debug("[BROWSER] HackerNews search failed: %s", e)
+                logger.debug("[BROWSER] HackerNews fallback failed: %s", e)
 
         return items
 
     async def _search_via_serper(self, query: str, max_results: int) -> List[BrowsingItem]:
-        """Search via Serper API."""
+        """Search via Serper API (fallback only)."""
         import httpx
         from app.core.config import settings
 
@@ -164,7 +293,7 @@ class SocialBrowser:
                 items = []
                 for result in data.get("organic", [])[:max_results]:
                     items.append(BrowsingItem(
-                        platform="web_search",
+                        platform="serper_fallback",
                         url=result.get("link", ""),
                         title=result.get("title", ""),
                         summary=result.get("snippet", ""),
@@ -175,7 +304,7 @@ class SocialBrowser:
             return []
 
     async def _search_hackernews(self, query: str, max_results: int) -> List[BrowsingItem]:
-        """Search HackerNews (free API, no key needed)."""
+        """Search HackerNews (free API, no key needed — fallback only)."""
         import httpx
 
         try:
@@ -208,6 +337,7 @@ class SocialBrowser:
     ) -> List[BrowsingItem]:
         """Score items by relevance to Wiii's interests using local LLM."""
         from app.engine.living_agent.local_llm import get_local_llm
+        from app.engine.living_agent.safety import detect_prompt_injection, sanitize_content
 
         llm = get_local_llm()
 
@@ -220,7 +350,13 @@ class SocialBrowser:
         for item in items:
             content = f"{item.title} {item.summary}"
             if content.strip():
-                score = await llm.rate_relevance(content, interests)
+                # Sprint 171: Check for prompt injection before LLM call
+                clean_content = sanitize_content(content, max_len=1000)
+                if detect_prompt_injection(clean_content):
+                    logger.warning("[BROWSER] Prompt injection detected in content: %s", item.title[:80])
+                    item.relevance_score = 0.0
+                    continue
+                score = await llm.rate_relevance(clean_content, interests)
                 item.relevance_score = score
 
         return items

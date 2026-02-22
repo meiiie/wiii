@@ -484,9 +484,11 @@ class ConversationCompactor:
         """Also save as thread session summary for cross-session retrieval."""
         try:
             from app.core.thread_utils import build_thread_id
+            from app.core.org_filter import get_effective_org_id
             from app.repositories.thread_repository import get_thread_repository
 
-            thread_id = build_thread_id(user_id, session_id)
+            # Sprint 170c: Include org_id for cross-org thread isolation
+            thread_id = build_thread_id(user_id, session_id, org_id=get_effective_org_id())
             repo = get_thread_repository()
             repo.update_extra_data(thread_id, user_id, {"summary": summary})
         except Exception as e:

@@ -6,12 +6,12 @@ This module provides a SINGLE shared database engine for all repositories.
 **CHỈ THỊ KỸ THUẬT SỐ 19: Migration to Neon**
 - Neon Serverless Postgres với Pooled Connection
 - Khắc phục vĩnh viễn lỗi MaxClients từ Supabase
-- pool_size=5, max_overflow=5 → Max 10 connections (Neon cho phép nhiều hơn)
+- Pool sizes from config: async_pool_min_size / async_pool_max_size
 """
 
 import logging
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
@@ -34,10 +34,10 @@ def get_shared_engine():
     Creates ONE engine that all repositories share.
     CHỈ THỊ 19: Now using Neon Serverless Postgres.
     
-    Connection Pool Settings:
-    - pool_size=5: 5 persistent connections
-    - max_overflow=5: Allow 5 extra connections under load (total max: 10)
-    - pool_timeout=30: Wait 30s for connection (Neon wake-up time)
+    Connection Pool Settings (from config.py):
+    - pool_size=settings.async_pool_min_size: Persistent connections
+    - max_overflow=max_size - min_size: Extra connections under load
+    - pool_timeout=30: Wait 30s for connection
     - pool_recycle=1800: Recycle connections every 30 minutes
     - pool_pre_ping=True: Check connection health before use
     
@@ -54,19 +54,35 @@ def get_shared_engine():
             if sync_url.startswith("postgresql://") and "+psycopg" not in sync_url:
                 sync_url = sync_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
+            pool_size = settings.async_pool_min_size
+            max_overflow = settings.async_pool_max_size - settings.async_pool_min_size
             _shared_engine = create_engine(
                 sync_url,
                 echo=False,
                 pool_pre_ping=True,
-                pool_size=5,        # CHỈ THỊ 19: Neon Pooled Connection
-                max_overflow=5,     # Allow 5 extra under load (total max: 10)
-                pool_timeout=30,    # Neon có thể cần thời gian wake up
-                pool_recycle=1800   # Recycle connections every 30 minutes
+                pool_size=pool_size,
+                max_overflow=max_overflow,
+                pool_timeout=30,
+                pool_recycle=1800
             )
+            # Sprint 171: Set statement_timeout + idle_in_transaction on checkout
+            # CIS PostgreSQL Benchmark 5.4 — prevent runaway queries
+            stmt_timeout = getattr(settings, "postgres_statement_timeout_ms", 30000)
+            idle_timeout = getattr(settings, "postgres_idle_in_transaction_timeout_ms", 60000)
+
+            @event.listens_for(_shared_engine, "connect")
+            def _set_pg_timeouts(dbapi_conn, connection_record):
+                cursor = dbapi_conn.cursor()
+                cursor.execute(f"SET statement_timeout = {int(stmt_timeout)}")
+                cursor.execute(f"SET idle_in_transaction_session_timeout = {int(idle_timeout)}")
+                cursor.close()
+
             _engine_initialized = True
             logger.info(
-                "Shared database engine created (Neon): "
-                "pool_size=5, max_overflow=5, pool_timeout=30s"
+                "Shared database engine created: "
+                "pool_size=%d, max_overflow=%d, pool_timeout=30s, "
+                "statement_timeout=%dms, idle_tx_timeout=%dms",
+                pool_size, max_overflow, stmt_timeout, idle_timeout,
             )
         except Exception as e:
             logger.error("Failed to create shared database engine: %s", e)

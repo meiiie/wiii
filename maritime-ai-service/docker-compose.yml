@@ -22,9 +22,6 @@ services:
       - LOG_LEVEL=DEBUG
       # Database URLs pointing to Docker services (override .env for container networking)
       - DATABASE_URL=postgresql://${POSTGRES_USER:-wiii}:${POSTGRES_PASSWORD:-wiii_secret}@postgres:5432/${POSTGRES_DB:-wiii_ai}
-      - NEO4J_URI=bolt://neo4j:7687
-      - NEO4J_USER=${NEO4J_USER:-neo4j}
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-neo4j_secret}
       # MinIO (local S3 replacement)
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-wiii}
@@ -32,10 +29,11 @@ services:
       - MINIO_BUCKET=${MINIO_BUCKET:-wiii-docs}
       - SUPABASE_URL=http://minio:9000
       - SUPABASE_KEY=${SUPABASE_KEY:-minio-local-key}
+      # Ollama (when --profile ollama is active)
+      - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
       postgres:
         condition: service_healthy
-      # Neo4j: Legacy — opt-in with: docker compose --profile neo4j up
       # MinIO is optional — app starts without it, storage features degrade gracefully
       # To require MinIO, uncomment:
       # minio:
@@ -55,7 +53,7 @@ services:
   # POSTGRESQL - User Profiles & Application Data
   # =============================================================================
   postgres:
-    image: pgvector/pgvector:pg15
+    image: pgvector/pgvector:pg17
     container_name: wiii-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-wiii}
@@ -73,35 +71,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  # =============================================================================
-  # NEO4J - Knowledge Graph (Legacy — reserved for future Learning Graph)
-  # Start with: docker compose --profile neo4j up
-  # =============================================================================
-  neo4j:
-    image: neo4j:5-community
-    container_name: wiii-neo4j
-    environment:
-      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-neo4j_secret}
-      NEO4J_PLUGINS: '["apoc"]'
-      NEO4J_dbms_memory_heap_initial__size: 512m
-      NEO4J_dbms_memory_heap_max__size: 1G
-    ports:
-      - "7474:7474"  # Browser UI
-      - "7687:7687"  # Bolt protocol
-    volumes:
-      - neo4j_data:/data
-      - neo4j_logs:/logs
-    networks:
-      - wiii-network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7474"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    profiles:
-      - neo4j  # Opt-in: docker compose --profile neo4j up
 
   # =============================================================================
   # MINIO - Local S3-Compatible Object Storage
@@ -146,8 +115,8 @@ services:
       sleep 5 &&
       /usr/bin/mc config host add local http://minio:9000 $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY &&
       /usr/bin/mc mb local/$$MINIO_BUCKET --ignore-existing &&
-      /usr/bin/mc policy set public local/$$MINIO_BUCKET &&
-      echo 'MinIO bucket created successfully'
+      /usr/bin/mc anonymous set download local/$$MINIO_BUCKET &&
+      echo 'MinIO bucket created (read-only public access)'
       "
     networks:
       - wiii-network
@@ -196,21 +165,44 @@ services:
       - tasks  # Only start with: docker-compose --profile tasks up
 
   # =============================================================================
-  # NEO4J BROWSER - Already included in neo4j service (port 7474)
+  # OLLAMA - Local LLM for Living Agent (journal, skills, reflection)
+  # Start with: docker compose --profile ollama up
   # =============================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: wiii-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - wiii-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    profiles:
+      - ollama  # Opt-in: docker compose --profile ollama up
 
 volumes:
   postgres_data:
-    driver: local
-  neo4j_data:
-    driver: local
-  neo4j_logs:
     driver: local
   minio_data:
     driver: local
   pgadmin_data:
     driver: local
   valkey_data:
+    driver: local
+  ollama_data:
     driver: local
 
 networks:

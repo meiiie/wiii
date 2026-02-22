@@ -474,6 +474,7 @@ async def process_with_multi_agent_streaming(
             "domain_id": domain_id,
             "domain_config": domain_config,
             "thinking_effort": thinking_effort,
+            "organization_id": (context or {}).get("organization_id"),  # Sprint 170c
             "_event_bus_id": bus_id,
         }
 
@@ -510,13 +511,15 @@ async def process_with_multi_agent_streaming(
             )
 
         # Build config for thread persistence with per-user isolation (Sprint 16)
+        # Sprint 170c: Include org_id for cross-org thread isolation
         invoke_config = {}
         # Sprint 121b: Defensive str() conversion at call site
         _sid = str(session_id) if session_id else ""
         _uid = str(user_id) if user_id else ""
+        _org_id = (context or {}).get("organization_id")
         if _sid and _uid:
             from app.core.thread_utils import build_thread_id
-            thread_id = build_thread_id(_uid, _sid)
+            thread_id = build_thread_id(_uid, _sid, org_id=_org_id)
             invoke_config = {"configurable": {"thread_id": thread_id}}
         elif _sid:
             invoke_config = {"configurable": {"thread_id": _sid}}

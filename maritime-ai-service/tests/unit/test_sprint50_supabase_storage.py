@@ -1,5 +1,5 @@
 """
-Tests for Sprint 50: SupabaseStorageClient coverage.
+Tests for Sprint 50: ObjectStorageClient coverage.
 
 Tests Supabase storage including:
 - UploadResult dataclass
@@ -30,7 +30,7 @@ class TestUploadResult:
     """Test UploadResult dataclass."""
 
     def test_defaults(self):
-        from app.services.supabase_storage import UploadResult
+        from app.services.object_storage import UploadResult
         r = UploadResult(success=True)
         assert r.success is True
         assert r.public_url is None
@@ -38,7 +38,7 @@ class TestUploadResult:
         assert r.error is None
 
     def test_with_all_fields(self):
-        from app.services.supabase_storage import UploadResult
+        from app.services.object_storage import UploadResult
         r = UploadResult(success=True, public_url="https://example.com/img.jpg",
                          path="doc1/page_1.jpg")
         assert r.public_url == "https://example.com/img.jpg"
@@ -53,18 +53,18 @@ class TestInitAndPath:
     """Test initialization and path building."""
 
     def test_build_path(self):
-        from app.services.supabase_storage import SupabaseStorageClient
-        with patch("app.services.supabase_storage.settings") as mock_s:
+        from app.services.object_storage import ObjectStorageClient
+        with patch("app.services.object_storage.settings") as mock_s:
             mock_s.supabase_url = "https://test.supabase.co"
             mock_s.supabase_key = "test-key"
             mock_s.supabase_storage_bucket = "test-bucket"
-            client = SupabaseStorageClient(url="https://test.supabase.co", key="key")
+            client = ObjectStorageClient(url="https://test.supabase.co", key="key")
         assert client._build_path("doc123", 5) == "doc123/page_5.jpg"
         assert client._build_path("abc", 1) == "abc/page_1.jpg"
 
     def test_custom_params(self):
-        from app.services.supabase_storage import SupabaseStorageClient
-        client = SupabaseStorageClient(
+        from app.services.object_storage import ObjectStorageClient
+        client = ObjectStorageClient(
             url="https://custom.supabase.co",
             key="custom-key",
             bucket="custom-bucket"
@@ -74,17 +74,17 @@ class TestInitAndPath:
         assert client.bucket == "custom-bucket"
 
     def test_client_lazy_init(self):
-        from app.services.supabase_storage import SupabaseStorageClient
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        from app.services.object_storage import ObjectStorageClient
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         assert client._client is None
 
     def test_client_missing_credentials(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
         # Must set url/key directly to bypass `or settings.xxx` fallback
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         client.url = ""
         client.key = ""
-        with pytest.raises(ValueError, match="Supabase URL and Key are required"):
+        with pytest.raises(ValueError, match="URL and Key are required"):
             _ = client.client
 
 
@@ -98,18 +98,22 @@ class TestUploadImage:
 
     @pytest.mark.asyncio
     async def test_success(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         mock_storage = MagicMock()
         mock_bucket = MagicMock()
         mock_storage.from_.return_value = mock_bucket
         mock_bucket.get_public_url.return_value = "https://test.co/storage/v1/object/public/b/doc1/page_1.jpg"
+        # Sprint 171: upload_image now tries signed URL first
+        mock_bucket.create_signed_url.return_value = {
+            "signedURL": "https://test.co/storage/v1/object/sign/b/doc1/page_1.jpg?token=abc"
+        }
         mock_supabase = MagicMock()
         mock_supabase.storage = mock_storage
         client._client = mock_supabase
 
-        with patch("app.services.supabase_storage._cb", None):
+        with patch("app.services.object_storage._cb", None):
             result = await client.upload_image(b"image_data", "doc1", 1)
 
         assert result.success is True
@@ -117,14 +121,14 @@ class TestUploadImage:
 
     @pytest.mark.asyncio
     async def test_circuit_breaker_open(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         mock_cb = MagicMock()
         mock_cb.is_available.return_value = False
         mock_cb.retry_after = 60.0
 
-        with patch("app.services.supabase_storage._cb", mock_cb):
+        with patch("app.services.object_storage._cb", mock_cb):
             result = await client.upload_image(b"data", "doc1", 1)
 
         assert result.success is False
@@ -132,9 +136,9 @@ class TestUploadImage:
 
     @pytest.mark.asyncio
     async def test_retry_then_success(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         mock_bucket = MagicMock()
         call_count = 0
 
@@ -155,7 +159,7 @@ class TestUploadImage:
         # Reduce retry delay for test speed
         client.RETRY_DELAY = 0.01
 
-        with patch("app.services.supabase_storage._cb", None):
+        with patch("app.services.object_storage._cb", None):
             result = await client.upload_image(b"data", "doc1", 1)
 
         assert result.success is True
@@ -163,9 +167,9 @@ class TestUploadImage:
 
     @pytest.mark.asyncio
     async def test_max_retries_exhausted(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         mock_bucket = MagicMock()
         mock_bucket.upload.side_effect = Exception("Persistent error")
         mock_storage = MagicMock()
@@ -176,7 +180,7 @@ class TestUploadImage:
 
         client.RETRY_DELAY = 0.01
 
-        with patch("app.services.supabase_storage._cb", None):
+        with patch("app.services.object_storage._cb", None):
             result = await client.upload_image(b"data", "doc1", 1)
 
         assert result.success is False
@@ -193,9 +197,9 @@ class TestUploadPilImage:
 
     @pytest.mark.asyncio
     async def test_converts_and_uploads(self):
-        from app.services.supabase_storage import SupabaseStorageClient, UploadResult
+        from app.services.object_storage import ObjectStorageClient, UploadResult
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         client.upload_image = AsyncMock(return_value=UploadResult(
             success=True, public_url="https://url.com/img.jpg", path="doc1/page_1.jpg"
         ))
@@ -219,9 +223,9 @@ class TestGetPublicUrl:
     """Test public URL generation."""
 
     def test_returns_url(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         mock_bucket = MagicMock()
         mock_bucket.get_public_url.return_value = "https://test.co/storage/v1/object/public/b/doc1/page_1.jpg"
         mock_storage = MagicMock()
@@ -244,9 +248,9 @@ class TestDeleteImage:
 
     @pytest.mark.asyncio
     async def test_success(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         mock_bucket = MagicMock()
         mock_storage = MagicMock()
         mock_storage.from_.return_value = mock_bucket
@@ -254,27 +258,27 @@ class TestDeleteImage:
         mock_supabase.storage = mock_storage
         client._client = mock_supabase
 
-        with patch("app.services.supabase_storage._cb", None):
+        with patch("app.services.object_storage._cb", None):
             result = await client.delete_image("doc1/page_1.jpg")
         assert result is True
 
     @pytest.mark.asyncio
     async def test_circuit_breaker_open(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         mock_cb = MagicMock()
         mock_cb.is_available.return_value = False
 
-        with patch("app.services.supabase_storage._cb", mock_cb):
+        with patch("app.services.object_storage._cb", mock_cb):
             result = await client.delete_image("doc1/page_1.jpg")
         assert result is False
 
     @pytest.mark.asyncio
     async def test_error(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         mock_bucket = MagicMock()
         mock_bucket.remove.side_effect = Exception("Delete failed")
         mock_storage = MagicMock()
@@ -283,7 +287,7 @@ class TestDeleteImage:
         mock_supabase.storage = mock_storage
         client._client = mock_supabase
 
-        with patch("app.services.supabase_storage._cb", None):
+        with patch("app.services.object_storage._cb", None):
             result = await client.delete_image("doc1/page_1.jpg")
         assert result is False
 
@@ -298,9 +302,9 @@ class TestDeleteDocumentImages:
 
     @pytest.mark.asyncio
     async def test_success(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         mock_bucket = MagicMock()
         mock_bucket.list.return_value = [
             {"name": "page_1.jpg"}, {"name": "page_2.jpg"}
@@ -311,15 +315,15 @@ class TestDeleteDocumentImages:
         mock_supabase.storage = mock_storage
         client._client = mock_supabase
 
-        with patch("app.services.supabase_storage._cb", None):
+        with patch("app.services.object_storage._cb", None):
             count = await client.delete_document_images("doc1")
         assert count == 2
 
     @pytest.mark.asyncio
     async def test_empty(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         mock_bucket = MagicMock()
         mock_bucket.list.return_value = []
         mock_storage = MagicMock()
@@ -328,27 +332,27 @@ class TestDeleteDocumentImages:
         mock_supabase.storage = mock_storage
         client._client = mock_supabase
 
-        with patch("app.services.supabase_storage._cb", None):
+        with patch("app.services.object_storage._cb", None):
             count = await client.delete_document_images("doc1")
         assert count == 0
 
     @pytest.mark.asyncio
     async def test_circuit_breaker_open(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         mock_cb = MagicMock()
         mock_cb.is_available.return_value = False
 
-        with patch("app.services.supabase_storage._cb", mock_cb):
+        with patch("app.services.object_storage._cb", mock_cb):
             count = await client.delete_document_images("doc1")
         assert count == 0
 
     @pytest.mark.asyncio
     async def test_error(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         mock_bucket = MagicMock()
         mock_bucket.list.side_effect = Exception("List failed")
         mock_storage = MagicMock()
@@ -357,7 +361,7 @@ class TestDeleteDocumentImages:
         mock_supabase.storage = mock_storage
         client._client = mock_supabase
 
-        with patch("app.services.supabase_storage._cb", None):
+        with patch("app.services.object_storage._cb", None):
             count = await client.delete_document_images("doc1")
         assert count == 0
 
@@ -372,9 +376,9 @@ class TestCheckHealth:
 
     @pytest.mark.asyncio
     async def test_healthy(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         mock_bucket = MagicMock()
         mock_storage = MagicMock()
         mock_storage.from_.return_value = mock_bucket
@@ -382,15 +386,15 @@ class TestCheckHealth:
         mock_supabase.storage = mock_storage
         client._client = mock_supabase
 
-        with patch("app.services.supabase_storage._cb", None):
+        with patch("app.services.object_storage._cb", None):
             result = await client.check_health()
         assert result is True
 
     @pytest.mark.asyncio
     async def test_unhealthy(self):
-        from app.services.supabase_storage import SupabaseStorageClient
+        from app.services.object_storage import ObjectStorageClient
 
-        client = SupabaseStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
         mock_bucket = MagicMock()
         mock_bucket.list.side_effect = Exception("Connection refused")
         mock_storage = MagicMock()
@@ -399,6 +403,6 @@ class TestCheckHealth:
         mock_supabase.storage = mock_storage
         client._client = mock_supabase
 
-        with patch("app.services.supabase_storage._cb", None):
+        with patch("app.services.object_storage._cb", None):
             result = await client.check_health()
         assert result is False

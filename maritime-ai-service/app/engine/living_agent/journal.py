@@ -133,13 +133,13 @@ class JournalWriter:
         try:
             session_factory = get_shared_session_factory()
             with session_factory() as session:
-                query = f"""
+                query = """
                     SELECT id, entry_date, content, mood_summary, energy_avg,
                            notable_events, learnings, goals_next
                     FROM wiii_journal
-                    WHERE entry_date >= CURRENT_DATE - INTERVAL '{days} days'
+                    WHERE entry_date >= CURRENT_DATE - INTERVAL '1 day' * :days
                 """
-                params = {}
+                params = {"days": days}
                 if organization_id:
                     query += " AND organization_id = :org_id"
                     params["org_id"] = organization_id
@@ -225,22 +225,38 @@ class JournalWriter:
 def _extract_section(content: str, heading: str) -> list:
     """Extract bullet items from a markdown section.
 
-    Looks for a section starting with '### {heading}' and collects
-    lines starting with '-' until the next heading or end of content.
+    Looks for a section starting with '### {heading}' or '**{heading}**'
+    and collects lines starting with '-' or numbered lists until the next
+    heading or end of content.
     """
     items = []
     in_section = False
+    heading_lower = heading.lower()
 
     for line in content.split("\n"):
         stripped = line.strip()
-        if stripped.startswith("###") and heading.lower() in stripped.lower():
+        stripped_lower = stripped.lower()
+
+        # Match ### heading or **heading**
+        is_heading = (
+            (stripped.startswith("###") or stripped.startswith("**"))
+            and heading_lower in stripped_lower
+        )
+        is_other_heading = (
+            not is_heading
+            and (stripped.startswith("###") or (stripped.startswith("**") and stripped.endswith("**")))
+        )
+
+        if is_heading:
             in_section = True
             continue
         if in_section:
-            if stripped.startswith("###"):
+            if is_other_heading:
                 break  # Next section
             if stripped.startswith("-"):
                 items.append(stripped.lstrip("- ").strip())
+            elif len(stripped) > 2 and stripped[0].isdigit() and stripped[1] in ".)" :
+                items.append(stripped[2:].strip().lstrip(". "))
 
     return items
 

@@ -11,40 +11,25 @@ import json
 import logging
 from typing import Optional
 
-import asyncpg
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import RequireAuth
-from app.core.config import settings
 from app.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
-# Module-level pool for async operations
-_pool: Optional[asyncpg.Pool] = None
 
-
-async def get_pool() -> asyncpg.Pool:
-    """Get or create connection pool."""
-    global _pool
-    if _pool is None:
-        _pool = await asyncpg.create_pool(
-            settings.asyncpg_url,
-            min_size=1,
-            max_size=2
-        )
-        logger.info("Sources API: Created asyncpg connection pool")
-    return _pool
+async def get_pool():
+    """Get shared asyncpg pool from DenseSearchRepository (Sprint 171: pool consolidation)."""
+    from app.repositories.dense_search_repository import get_dense_search_repository
+    repo = get_dense_search_repository()
+    return await repo._get_pool()
 
 
 async def close_pool() -> None:
-    """Close the asyncpg connection pool on shutdown."""
-    global _pool
-    if _pool is not None:
-        await _pool.close()
-        _pool = None
-        logger.info("Sources API: Connection pool closed")
+    """No-op: pool lifecycle managed by DenseSearchRepository singleton."""
+    pass
 
 router = APIRouter(prefix="/sources", tags=["sources"])
 

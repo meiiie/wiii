@@ -529,6 +529,11 @@ class FactRepositoryMixin:
         """
         self._ensure_initialized()
 
+        # Sprint 170c: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 query = text(f"""
@@ -544,15 +549,20 @@ class FactRepositoryMixin:
                     WHERE user_id = :user_id
                       AND memory_type = :memory_type
                       AND embedding IS NOT NULL
+                      {org_filter}
                     ORDER BY embedding <=> CAST(:embedding AS vector)
                     LIMIT 1
                 """)
 
-                result = session.execute(query, {
+                params = {
                     "user_id": user_id,
                     "memory_type": memory_type.value,
-                    "embedding": str(embedding)
-                })
+                    "embedding": str(embedding),
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                result = session.execute(query, params)
 
                 row = result.fetchone()
 
@@ -614,6 +624,11 @@ class FactRepositoryMixin:
 
         self._ensure_initialized()
 
+        # Sprint 170c: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 embedding_str = self._format_embedding(embedding)
@@ -628,6 +643,7 @@ class FactRepositoryMixin:
                             metadata = CAST(:metadata AS jsonb),
                             updated_at = NOW()
                         WHERE id = :fact_id AND user_id = :user_id
+                        {org_filter}
                         RETURNING id
                     """)
                     params = {
@@ -645,6 +661,7 @@ class FactRepositoryMixin:
                             metadata = CAST(:metadata AS jsonb),
                             updated_at = NOW()
                         WHERE id = :fact_id
+                        {org_filter}
                         RETURNING id
                     """)
                     params = {
@@ -653,6 +670,9 @@ class FactRepositoryMixin:
                         "embedding": embedding_str,
                         "metadata": metadata_json,
                     }
+
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
 
                 result = session.execute(query, params)
 
@@ -702,6 +722,11 @@ class FactRepositoryMixin:
             logger.warning("[BUGFIX] Invalid fact_id: %s, skipping metadata update", fact_id)
             return False
 
+        # Sprint 170c: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 metadata_json = json.dumps(metadata)
@@ -713,6 +738,7 @@ class FactRepositoryMixin:
                         SET metadata = CAST(:metadata AS jsonb),
                             updated_at = NOW()
                         WHERE id = :fact_id AND user_id = :user_id
+                        {org_filter}
                         RETURNING id
                     """)
                     params = {
@@ -726,12 +752,16 @@ class FactRepositoryMixin:
                         SET metadata = CAST(:metadata AS jsonb),
                             updated_at = NOW()
                         WHERE id = :fact_id
+                        {org_filter}
                         RETURNING id
                     """)
                     params = {
                         "fact_id": str(fact_id),
                         "metadata": metadata_json,
                     }
+
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
 
                 result = session.execute(query, params)
 
@@ -889,6 +919,11 @@ class FactRepositoryMixin:
         """
         self._ensure_initialized()
 
+        # Sprint 170c: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 query = text(f"""
@@ -907,6 +942,7 @@ class FactRepositoryMixin:
                           metadata->>'predicate' = :predicate
                           OR metadata->>'fact_type' = :fact_type
                       )
+                      {org_filter}
                     ORDER BY created_at DESC
                     LIMIT 1
                 """)
@@ -921,12 +957,16 @@ class FactRepositoryMixin:
                     Predicate.WEAK_AT: "weakness",
                 }
 
-                result = session.execute(query, {
+                params = {
                     "user_id": user_id,
                     "memory_type": MemoryType.USER_FACT.value,
                     "predicate": predicate.value,
-                    "fact_type": fact_type_map.get(predicate, predicate.value)
-                })
+                    "fact_type": fact_type_map.get(predicate, predicate.value),
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                result = session.execute(query, params)
 
                 row = result.fetchone()
 
@@ -992,6 +1032,11 @@ class FactRepositoryMixin:
             embedding_str = self._format_embedding(embedding)
             metadata_json = json.dumps(new_metadata)
 
+            # Sprint 170c: Org-scoped filtering
+            from app.core.org_filter import get_effective_org_id, org_where_clause
+            eff_org_id = get_effective_org_id()
+            org_filter = org_where_clause(eff_org_id)
+
             with self._session_factory() as session:
                 query = text(f"""
                     UPDATE {self.TABLE_NAME}
@@ -1001,18 +1046,23 @@ class FactRepositoryMixin:
                         importance = :importance,
                         updated_at = NOW()
                     WHERE id = :memory_id AND user_id = :user_id
+                    {org_filter}
                     RETURNING id, user_id, content, memory_type, importance,
                               metadata, session_id, created_at, updated_at
                 """)
 
-                result = session.execute(query, {
+                params = {
                     "memory_id": str(memory_id),
                     "user_id": user_id,
                     "content": new_content,
                     "embedding": embedding_str,
                     "metadata": metadata_json,
-                    "importance": new_metadata.get("confidence", 0.5)
-                })
+                    "importance": new_metadata.get("confidence", 0.5),
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                result = session.execute(query, params)
 
                 row = result.fetchone()
                 session.commit()

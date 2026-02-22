@@ -1582,10 +1582,12 @@ async def process_with_multi_agent(
     }
     
     # Run graph with composite thread_id for per-user isolation (Sprint 16)
+    # Sprint 170c: Include org_id for cross-org thread isolation
     invoke_config = {}
     if session_id and user_id:
         from app.core.thread_utils import build_thread_id
-        thread_id = build_thread_id(user_id, session_id)
+        _org_id = (context or {}).get("organization_id")
+        thread_id = build_thread_id(user_id, session_id, org_id=_org_id)
         invoke_config = {"configurable": {"thread_id": thread_id}}
     elif session_id:
         invoke_config = {"configurable": {"thread_id": session_id}}
@@ -1617,7 +1619,7 @@ async def process_with_multi_agent(
         try:
             from app.repositories.thread_repository import get_thread_repository
             from app.core.thread_utils import build_thread_id as _build_tid
-            _tid = _build_tid(user_id, session_id)
+            _tid = _build_tid(user_id, session_id, org_id=(context or {}).get("organization_id"))
             _title = query[:60] + ("..." if len(query) > 60 else "")
             thread_data = get_thread_repository().upsert_thread(
                 thread_id=_tid,

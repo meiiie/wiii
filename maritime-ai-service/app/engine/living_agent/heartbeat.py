@@ -2,15 +2,22 @@
 Heartbeat Scheduler — Wiii's periodic autonomy engine.
 
 Sprint 170: "Linh Hồn Sống"
+Sprint 171: "Quyền Tự Chủ" — Safety-first autonomy.
 
 Wakes Wiii at configurable intervals to:
 1. Load soul and emotional state
 2. Check active goals
 3. Choose and execute an action (browse, learn, reflect, journal)
-4. Update emotional state based on results
-5. Log experience for long-term memory
+4. Enforce human approval gate for external actions (Sprint 171)
+5. Update emotional state based on results
+6. Save audit record for every cycle (Sprint 171)
+7. Log experience for long-term memory
 
-Inspired by OpenClaw's heartbeat (30-min interval, HEARTBEAT.md, HEARTBEAT_OK).
+Safety features (Sprint 171):
+    - Human approval gate: external actions queued when require_human_approval=True
+    - Audit logging: every heartbeat cycle persisted to wiii_heartbeat_audit
+    - Daily cycle cap: max 48 cycles/day (prevent runaway)
+    - Search rate limit: max 3 web searches per heartbeat cycle
 
 Design:
     - Reuses existing ScheduledTaskExecutor pattern (asyncio poll loop)
@@ -21,11 +28,13 @@ Design:
 """
 
 import asyncio
+import json
 import logging
 import random
 import time
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import List, Optional
+from uuid import uuid4
 
 from app.engine.living_agent.models import (
     ActionType,
@@ -40,6 +49,10 @@ logger = logging.getLogger(__name__)
 # UTC+7 offset for Vietnamese timezone
 _VN_OFFSET = timedelta(hours=7)
 
+# Actions that require human approval when require_human_approval=True
+# Low-risk actions (no external I/O) are always auto-approved.
+_APPROVAL_REQUIRED_ACTIONS = {ActionType.BROWSE_SOCIAL, ActionType.LEARN_TOPIC}
+
 
 class HeartbeatScheduler:
     """Periodic autonomy engine for Wiii's living agent.
@@ -49,9 +62,10 @@ class HeartbeatScheduler:
     1. Checks if within active hours
     2. Loads current emotional state + soul
     3. Plans actions based on mood, energy, and goals
-    4. Executes actions (browse, learn, reflect, journal)
-    5. Updates emotional state
-    6. Saves snapshot
+    4. Enforces approval gate for external actions (Sprint 171)
+    5. Executes actions (browse, learn, reflect, journal)
+    6. Updates emotional state
+    7. Saves snapshot + audit record
 
     Usage:
         scheduler = HeartbeatScheduler()
@@ -65,6 +79,8 @@ class HeartbeatScheduler:
         self._shutdown_event = asyncio.Event()
         self._running = False
         self._heartbeat_count = 0
+        self._daily_cycle_count = 0
+        self._daily_reset_date: Optional[str] = None  # "YYYY-MM-DD" in UTC+7
 
     @property
     def is_running(self) -> bool:
@@ -73,6 +89,10 @@ class HeartbeatScheduler:
     @property
     def heartbeat_count(self) -> int:
         return self._heartbeat_count
+
+    @property
+    def daily_cycle_count(self) -> int:
+        return self._daily_cycle_count
 
     async def start(self) -> None:
         """Start the heartbeat loop as a background task."""
@@ -108,19 +128,23 @@ class HeartbeatScheduler:
         while not self._shutdown_event.is_set():
             try:
                 if self._is_active_hours():
-                    result = await self._execute_heartbeat()
-                    if result.error:
-                        logger.warning("[HEARTBEAT] Cycle error: %s", result.error)
-                    elif result.is_noop:
-                        logger.debug("[HEARTBEAT] NOOP — nothing to do")
+                    # Check daily cycle cap (Sprint 171)
+                    if self._check_daily_limit():
+                        result = await self._execute_heartbeat()
+                        if result.error:
+                            logger.warning("[HEARTBEAT] Cycle error: %s", result.error)
+                        elif result.is_noop:
+                            logger.debug("[HEARTBEAT] NOOP — nothing to do")
+                        else:
+                            logger.info(
+                                "[HEARTBEAT] Cycle #%d complete: %d actions, %d insights, %dms",
+                                self._heartbeat_count,
+                                len(result.actions_taken),
+                                result.insights_gained,
+                                result.duration_ms,
+                            )
                     else:
-                        logger.info(
-                            "[HEARTBEAT] Cycle #%d complete: %d actions, %d insights, %dms",
-                            self._heartbeat_count,
-                            len(result.actions_taken),
-                            result.insights_gained,
-                            result.duration_ms,
-                        )
+                        logger.warning("[HEARTBEAT] Daily cycle limit reached, skipping")
                 else:
                     logger.debug("[HEARTBEAT] Outside active hours, sleeping")
             except Exception as e:
@@ -138,11 +162,13 @@ class HeartbeatScheduler:
 
     async def _execute_heartbeat(self) -> HeartbeatResult:
         """Execute a single heartbeat cycle."""
+        from app.core.config import settings
         from app.engine.living_agent.emotion_engine import get_emotion_engine
         from app.engine.living_agent.soul_loader import get_soul
 
         start_time = time.monotonic()
         self._heartbeat_count += 1
+        self._daily_cycle_count += 1
 
         result = HeartbeatResult()
 
@@ -162,10 +188,32 @@ class HeartbeatScheduler:
             actions = self._plan_actions(engine.mood.value, engine.energy)
             if not actions:
                 result.is_noop = True
+                result.duration_ms = int((time.monotonic() - start_time) * 1000)
+                await self._save_heartbeat_audit(result)
                 return result
 
-            # 3. Execute actions
+            # 3. Sprint 171: Separate actions into auto-approved vs needs-approval
+            require_approval = settings.living_agent_require_human_approval
+            auto_actions: List[HeartbeatAction] = []
+            pending_actions: List[HeartbeatAction] = []
+
             for action in actions:
+                if require_approval and action.action_type in _APPROVAL_REQUIRED_ACTIONS:
+                    pending_actions.append(action)
+                else:
+                    auto_actions.append(action)
+
+            # 4. Queue actions needing approval
+            if pending_actions:
+                await self._queue_pending_actions(pending_actions)
+                logger.info(
+                    "[HEARTBEAT] Queued %d actions for human approval: %s",
+                    len(pending_actions),
+                    [a.action_type.value for a in pending_actions],
+                )
+
+            # 5. Execute auto-approved actions
+            for action in auto_actions:
                 try:
                     await self._execute_action(action, soul, engine)
                     result.actions_taken.append(action)
@@ -175,15 +223,65 @@ class HeartbeatScheduler:
                         action.action_type.value, e,
                     )
 
-            # 4. Take emotional snapshot
+            # 6. Take emotional snapshot
             engine.take_snapshot()
 
-            # 5. Save emotional state to DB
+            # 7. Save emotional state to DB
             await self._save_emotional_snapshot(engine)
 
         except Exception as e:
             result.error = str(e)
             logger.error("[HEARTBEAT] Cycle failed: %s", e, exc_info=True)
+
+        result.duration_ms = int((time.monotonic() - start_time) * 1000)
+
+        # 8. Sprint 171: Save audit record
+        await self._save_heartbeat_audit(result)
+
+        return result
+
+    async def execute_approved_action(self, action_id: str) -> HeartbeatResult:
+        """Execute a previously approved pending action.
+
+        Called by the API when a human approves a queued action.
+
+        Args:
+            action_id: The ID of the pending action in wiii_pending_actions.
+
+        Returns:
+            HeartbeatResult with the action execution outcome.
+        """
+        from app.engine.living_agent.emotion_engine import get_emotion_engine
+        from app.engine.living_agent.soul_loader import get_soul
+
+        start_time = time.monotonic()
+        result = HeartbeatResult()
+
+        try:
+            # Load pending action from DB
+            action_data = await self._load_pending_action(action_id)
+            if not action_data:
+                result.error = f"Pending action {action_id} not found or not approved"
+                return result
+
+            soul = get_soul()
+            engine = get_emotion_engine()
+
+            action = HeartbeatAction(
+                action_type=ActionType(action_data["action_type"]),
+                target=action_data.get("target", ""),
+                priority=action_data.get("priority", 0.5),
+            )
+
+            await self._execute_action(action, soul, engine)
+            result.actions_taken.append(action)
+
+            # Mark as completed in DB
+            await self._mark_action_completed(action_id)
+
+        except Exception as e:
+            result.error = str(e)
+            logger.error("[HEARTBEAT] Approved action execution failed: %s", e)
 
         result.duration_ms = int((time.monotonic() - start_time) * 1000)
         return result
@@ -300,6 +398,8 @@ class HeartbeatScheduler:
                     description=high_relevance[0].title[:200],
                     importance=0.7,
                 ))
+                # Sprint 171b: Notify user of interesting discoveries
+                await self._notify_discovery(high_relevance[:3], action.target)
 
     async def _action_learn(self, soul, engine) -> None:
         """Learn about a topic from wants_to_learn list."""
@@ -361,6 +461,166 @@ class HeartbeatScheduler:
         except Exception as e:
             logger.warning("[HEARTBEAT] Failed to save emotional snapshot: %s", e)
 
+    # =========================================================================
+    # Sprint 171: Approval gate helpers
+    # =========================================================================
+
+    async def _queue_pending_actions(self, actions: List[HeartbeatAction]) -> None:
+        """Queue actions to wiii_pending_actions table for human approval."""
+        try:
+            from sqlalchemy import text
+            from app.core.database import get_shared_session_factory
+            from app.core.org_filter import get_effective_org_id
+
+            effective_org_id = get_effective_org_id()
+            session_factory = get_shared_session_factory()
+            with session_factory() as session:
+                for action in actions:
+                    session.execute(
+                        text("""
+                            INSERT INTO wiii_pending_actions
+                            (id, action_type, target, priority, metadata, status,
+                             organization_id, created_at)
+                            VALUES (:id, :action_type, :target, :priority, :metadata,
+                                    'pending', :org_id, NOW())
+                        """),
+                        {
+                            "id": str(uuid4()),
+                            "action_type": action.action_type.value,
+                            "target": action.target,
+                            "priority": action.priority,
+                            "metadata": json.dumps(action.metadata, ensure_ascii=False),
+                            "org_id": effective_org_id,
+                        },
+                    )
+                session.commit()
+        except Exception as e:
+            logger.warning("[HEARTBEAT] Failed to queue pending actions: %s", e)
+
+    async def _load_pending_action(self, action_id: str) -> Optional[dict]:
+        """Load a pending action from DB if it has 'approved' status, scoped by org."""
+        try:
+            from sqlalchemy import text
+            from app.core.database import get_shared_session_factory
+            from app.core.org_filter import get_effective_org_id, org_where_clause
+
+            effective_org_id = get_effective_org_id()
+            session_factory = get_shared_session_factory()
+            with session_factory() as session:
+                query = """
+                    SELECT action_type, target, priority, metadata
+                    FROM wiii_pending_actions
+                    WHERE id = :id AND status = 'approved'
+                """
+                params: dict = {"id": action_id}
+
+                org_clause = org_where_clause(effective_org_id)
+                if org_clause:
+                    query += org_clause
+                    params["org_id"] = effective_org_id
+
+                row = session.execute(text(query), params).fetchone()
+                if row:
+                    return {
+                        "action_type": row[0],
+                        "target": row[1],
+                        "priority": row[2],
+                        "metadata": row[3],
+                    }
+        except Exception as e:
+            logger.warning("[HEARTBEAT] Failed to load pending action: %s", e)
+        return None
+
+    async def _mark_action_completed(self, action_id: str) -> None:
+        """Mark a pending action as completed after execution, scoped by org."""
+        try:
+            from sqlalchemy import text
+            from app.core.database import get_shared_session_factory
+            from app.core.org_filter import get_effective_org_id, org_where_clause
+
+            effective_org_id = get_effective_org_id()
+            session_factory = get_shared_session_factory()
+            with session_factory() as session:
+                query = """
+                    UPDATE wiii_pending_actions
+                    SET status = 'completed', resolved_at = NOW()
+                    WHERE id = :id
+                """
+                params: dict = {"id": action_id}
+
+                org_clause = org_where_clause(effective_org_id)
+                if org_clause:
+                    query += org_clause
+                    params["org_id"] = effective_org_id
+
+                session.execute(text(query), params)
+                session.commit()
+        except Exception as e:
+            logger.warning("[HEARTBEAT] Failed to mark action completed: %s", e)
+
+    # =========================================================================
+    # Sprint 171: Audit logging
+    # =========================================================================
+
+    async def _save_heartbeat_audit(self, result: HeartbeatResult) -> None:
+        """Persist heartbeat cycle result to wiii_heartbeat_audit table."""
+        try:
+            from sqlalchemy import text
+            from app.core.database import get_shared_session_factory
+            from app.core.org_filter import get_effective_org_id
+
+            effective_org_id = get_effective_org_id()
+
+            actions_json = json.dumps(
+                [
+                    {"action_type": a.action_type.value, "target": a.target}
+                    for a in result.actions_taken
+                ],
+                ensure_ascii=False,
+            )
+
+            session_factory = get_shared_session_factory()
+            with session_factory() as session:
+                session.execute(
+                    text("""
+                        INSERT INTO wiii_heartbeat_audit
+                        (id, cycle_number, actions_taken, insights_gained, duration_ms,
+                         error, organization_id, created_at)
+                        VALUES (:id, :cycle_number, :actions_taken, :insights_gained,
+                                :duration_ms, :error, :org_id, NOW())
+                    """),
+                    {
+                        "id": str(result.cycle_id),
+                        "cycle_number": self._heartbeat_count,
+                        "actions_taken": actions_json,
+                        "insights_gained": result.insights_gained,
+                        "duration_ms": result.duration_ms,
+                        "error": result.error,
+                        "org_id": effective_org_id,
+                    },
+                )
+                session.commit()
+        except Exception as e:
+            logger.warning("[HEARTBEAT] Failed to save audit record: %s", e)
+
+    # =========================================================================
+    # Sprint 171: Rate limiting
+    # =========================================================================
+
+    def _check_daily_limit(self) -> bool:
+        """Check if daily cycle limit has been reached. Resets at midnight UTC+7."""
+        from app.core.config import settings
+
+        now_vn = datetime.now(timezone.utc) + _VN_OFFSET
+        today_str = now_vn.strftime("%Y-%m-%d")
+
+        # Reset counter at midnight
+        if self._daily_reset_date != today_str:
+            self._daily_reset_date = today_str
+            self._daily_cycle_count = 0
+
+        return self._daily_cycle_count < settings.living_agent_max_daily_cycles
+
     def _is_active_hours(self) -> bool:
         """Check if current time is within configured active hours (UTC+7)."""
         from app.core.config import settings
@@ -379,6 +639,53 @@ class HeartbeatScheduler:
         """Check if it's the right time for daily journal (evening)."""
         now_vn = datetime.now(timezone.utc) + _VN_OFFSET
         return 20 <= now_vn.hour <= 22
+
+    # =========================================================================
+    # Sprint 171b: Messenger notification for discoveries
+    # =========================================================================
+
+    async def _notify_discovery(self, items: list, topic: str) -> None:
+        """Send notification about interesting discoveries via configured channel.
+
+        Called when browsing finds high-relevance items (score > 0.7).
+        Uses NotificationDispatcher to route to Messenger/WebSocket/Telegram.
+        """
+        try:
+            from app.core.config import settings
+
+            channel = settings.living_agent_notification_channel
+            if channel == "websocket" and not settings.enable_websocket:
+                return  # No point sending WS notification if WS is disabled
+
+            # Format discovery message in Vietnamese
+            lines = [f"Wiii tìm thấy {len(items)} nội dung thú vị về {topic}:"]
+            for item in items[:3]:
+                title = item.title[:100] if item.title else "Không có tiêu đề"
+                url = item.url or ""
+                score = f" ({item.relevance_score:.0%})" if item.relevance_score else ""
+                lines.append(f"• {title}{score}")
+                if url:
+                    lines.append(f"  {url}")
+            message = "\n".join(lines)
+
+            from app.services.notification_dispatcher import get_notification_dispatcher
+            dispatcher = get_notification_dispatcher()
+            result = await dispatcher.notify_user(
+                user_id="wiii_owner",
+                message=message,
+                channel=channel,
+            )
+
+            if result.get("delivered"):
+                logger.info("[HEARTBEAT] Discovery notification sent via %s", channel)
+            else:
+                logger.debug(
+                    "[HEARTBEAT] Discovery notification not delivered: %s",
+                    result.get("detail", "unknown"),
+                )
+
+        except Exception as e:
+            logger.debug("[HEARTBEAT] Discovery notification failed: %s", e)
 
 
 # =============================================================================

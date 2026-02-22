@@ -148,6 +148,10 @@ class LivingAgentConfig(BaseModel):
     require_human_approval: bool = True
     max_actions_per_heartbeat: int = 3
     max_skills_per_week: int = 5
+    max_searches_per_heartbeat: int = 3
+    max_daily_cycles: int = 48
+    callmebot_api_key: Optional[str] = None
+    notification_channel: str = "websocket"
 
 
 class LMSIntegrationConfig(BaseModel):
@@ -217,6 +221,10 @@ class Settings(BaseSettings):
     # AsyncPG Connection Pool Settings
     async_pool_min_size: int = Field(default=2, description="Minimum async connection pool size")
     async_pool_max_size: int = Field(default=10, description="Maximum async connection pool size")
+
+    # PostgreSQL Safety (Sprint 171: CIS Benchmark 5.4)
+    postgres_statement_timeout_ms: int = Field(default=30000, ge=1000, le=300000, description="Query timeout in ms (default 30s)")
+    postgres_idle_in_transaction_timeout_ms: int = Field(default=60000, ge=10000, le=600000, description="Idle transaction timeout in ms (default 60s)")
 
     # Supabase Settings (CHỈ THỊ 26: Multimodal RAG - Hybrid Infrastructure)
     supabase_url: Optional[str] = Field(default=None, description="Supabase project URL")
@@ -563,6 +571,10 @@ class Settings(BaseSettings):
     living_agent_require_human_approval: bool = Field(default=True, description="Require human approval for external actions")
     living_agent_max_actions_per_heartbeat: int = Field(default=3, ge=1, le=10, description="Max actions per heartbeat cycle")
     living_agent_max_skills_per_week: int = Field(default=5, ge=1, le=20, description="Max new skills to discover per week")
+    living_agent_max_searches_per_heartbeat: int = Field(default=3, ge=1, le=10, description="Max web searches per heartbeat cycle")
+    living_agent_max_daily_cycles: int = Field(default=48, ge=1, le=200, description="Max heartbeat cycles per 24h")
+    living_agent_callmebot_api_key: Optional[str] = Field(default=None, description="CallMeBot API key for Facebook Messenger notifications")
+    living_agent_notification_channel: str = Field(default="websocket", description="Notification channel for heartbeat discoveries (websocket, telegram, messenger)")
 
     # Preview System (Sprint 166)
     enable_preview: bool = Field(default=True, description="Rich preview cards in streaming responses")
@@ -1076,6 +1088,10 @@ class Settings(BaseSettings):
             require_human_approval=self.living_agent_require_human_approval,
             max_actions_per_heartbeat=self.living_agent_max_actions_per_heartbeat,
             max_skills_per_week=self.living_agent_max_skills_per_week,
+            max_searches_per_heartbeat=self.living_agent_max_searches_per_heartbeat,
+            max_daily_cycles=self.living_agent_max_daily_cycles,
+            callmebot_api_key=self.living_agent_callmebot_api_key,
+            notification_channel=self.living_agent_notification_channel,
         ))
         object.__setattr__(self, "lms", LMSIntegrationConfig(
             enabled=self.enable_lms_integration,

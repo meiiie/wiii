@@ -360,6 +360,11 @@ class SemanticMemoryRepository(
         """
         self._ensure_initialized()
 
+        # Sprint 170c: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 # Sprint 122: Increment access_count in metadata alongside last_accessed
@@ -373,6 +378,7 @@ class SemanticMemoryRepository(
                                 (COALESCE((metadata->>'access_count')::int, 0) + 1)::text::jsonb
                             )
                         WHERE id = :memory_id AND user_id = :user_id
+                        {org_filter}
                         RETURNING id
                     """)
                     params = {"memory_id": str(memory_id), "user_id": user_id}
@@ -386,9 +392,13 @@ class SemanticMemoryRepository(
                                 (COALESCE((metadata->>'access_count')::int, 0) + 1)::text::jsonb
                             )
                         WHERE id = :memory_id
+                        {org_filter}
                         RETURNING id
                     """)
                     params = {"memory_id": str(memory_id)}
+
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
 
                 result = session.execute(query, params)
                 row = result.fetchone()
@@ -719,6 +729,11 @@ class SemanticMemoryRepository(
         """
         self._ensure_initialized()
 
+        # Sprint 170c: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 # Try update first
@@ -727,27 +742,32 @@ class SemanticMemoryRepository(
                     SET content = :content, updated_at = NOW()
                     WHERE session_id = :session_id
                       AND memory_type = :memory_type
+                      {org_filter}
                     RETURNING id
                 """)
 
-                result = session.execute(update_query, {
+                update_params = {
                     "content": summary,
                     "session_id": session_id,
                     "memory_type": MemoryType.RUNNING_SUMMARY.value,
-                })
+                }
+                if eff_org_id is not None:
+                    update_params["org_id"] = eff_org_id
+
+                result = session.execute(update_query, update_params)
                 row = result.fetchone()
 
                 if row:
                     session.commit()
                     return True
 
-                # No existing row — insert new
+                # No existing row — insert new (include organization_id)
                 metadata = json.dumps({"content_type": "running_summary", "source": "repository"})
                 insert_query = text(f"""
                     INSERT INTO {self.TABLE_NAME}
-                    (user_id, content, embedding, memory_type, importance, metadata, session_id)
+                    (user_id, content, embedding, memory_type, importance, metadata, session_id, organization_id)
                     VALUES
-                    ('__system__', :content, CAST(:embedding AS vector), :memory_type, :importance, CAST(:metadata AS jsonb), :session_id)
+                    ('__system__', :content, CAST(:embedding AS vector), :memory_type, :importance, CAST(:metadata AS jsonb), :session_id, :org_id)
                     RETURNING id
                 """)
 
@@ -758,6 +778,7 @@ class SemanticMemoryRepository(
                     "importance": 0.9,
                     "metadata": metadata,
                     "session_id": session_id,
+                    "org_id": eff_org_id,
                 })
                 session.commit()
                 return result.fetchone() is not None
@@ -780,6 +801,11 @@ class SemanticMemoryRepository(
         """
         self._ensure_initialized()
 
+        # Sprint 170c: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 query = text(f"""
@@ -787,14 +813,19 @@ class SemanticMemoryRepository(
                     FROM {self.TABLE_NAME}
                     WHERE session_id = :session_id
                       AND memory_type = :memory_type
+                      {org_filter}
                     ORDER BY updated_at DESC NULLS LAST
                     LIMIT 1
                 """)
 
-                result = session.execute(query, {
+                params = {
                     "session_id": session_id,
                     "memory_type": MemoryType.RUNNING_SUMMARY.value,
-                })
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                result = session.execute(query, params)
                 row = result.fetchone()
                 return row.content if row else None
 
@@ -806,19 +837,29 @@ class SemanticMemoryRepository(
         """Delete running summary for a session. Sprint 122: Uses RUNNING_SUMMARY type."""
         self._ensure_initialized()
 
+        # Sprint 170c: Org-scoped filtering
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+        eff_org_id = get_effective_org_id()
+        org_filter = org_where_clause(eff_org_id)
+
         try:
             with self._session_factory() as session:
                 query = text(f"""
                     DELETE FROM {self.TABLE_NAME}
                     WHERE session_id = :session_id
                       AND memory_type = :memory_type
+                      {org_filter}
                     RETURNING id
                 """)
 
-                result = session.execute(query, {
+                params = {
                     "session_id": session_id,
                     "memory_type": MemoryType.RUNNING_SUMMARY.value,
-                })
+                }
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                result = session.execute(query, params)
                 session.commit()
                 return result.fetchone() is not None
 

@@ -18,6 +18,14 @@ from app.models.schemas import ComponentStatus
 class TestAsyncPoolHealth:
     """Test async pool health check function."""
 
+    @pytest.fixture(autouse=True)
+    def reset_shared_engine(self):
+        """Reset singleton async engine between tests."""
+        import app.api.v1.health as health_mod
+        health_mod._shared_async_engine = None
+        yield
+        health_mod._shared_async_engine = None
+
     @pytest.mark.asyncio
     async def test_healthy_connection(self):
         """Returns HEALTHY when async engine connects successfully."""
@@ -30,7 +38,6 @@ class TestAsyncPoolHealth:
 
         mock_engine = AsyncMock()
         mock_engine.connect = MagicMock(return_value=mock_conn)
-        mock_engine.dispose = AsyncMock()
 
         with patch("app.api.v1.health.create_async_engine", return_value=mock_engine):
             result = await check_async_pool_health()
@@ -60,7 +67,6 @@ class TestAsyncPoolHealth:
         """Returns UNAVAILABLE when asyncpg not installed."""
         from app.api.v1.health import check_async_pool_health
 
-        # Patch at the module level to simulate ImportError
         with patch(
             "app.api.v1.health.create_async_engine",
             side_effect=ImportError("No module named 'asyncpg'"),
@@ -82,7 +88,6 @@ class TestAsyncPoolHealth:
 
         mock_engine = AsyncMock()
         mock_engine.connect = MagicMock(return_value=mock_conn)
-        mock_engine.dispose = AsyncMock()
 
         with patch("app.api.v1.health.create_async_engine", return_value=mock_engine):
             result = await check_async_pool_health()

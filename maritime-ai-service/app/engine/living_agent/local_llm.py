@@ -22,8 +22,8 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# Default timeout for local model calls (generous for large models)
-_DEFAULT_TIMEOUT = 120.0
+# Default timeout for local model calls (generous for thinking models)
+_DEFAULT_TIMEOUT = 300.0
 _DEFAULT_BASE_URL = "http://localhost:11434"
 
 
@@ -83,6 +83,7 @@ class LocalLLMClient:
         system: str = "",
         temperature: float = 0.7,
         max_tokens: int = 2048,
+        think: bool = True,
     ) -> str:
         """Generate text from the local model.
 
@@ -91,6 +92,8 @@ class LocalLLMClient:
             system: Optional system prompt.
             temperature: Sampling temperature (0-1).
             max_tokens: Maximum tokens to generate.
+            think: Enable thinking mode (slower but higher quality).
+                   Set to False for simple tasks like scoring (6x faster).
 
         Returns:
             Generated text, or empty string if unavailable.
@@ -100,17 +103,19 @@ class LocalLLMClient:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        return await self._chat(messages, temperature, max_tokens)
+        return await self._chat(messages, temperature, max_tokens, think=think)
 
     async def generate_json(
         self,
         prompt: str,
         system: str = "",
         temperature: float = 0.3,
+        think: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """Generate structured JSON from the local model.
 
         Uses lower temperature and JSON format instruction for reliability.
+        Defaults to think=False for faster structured extraction.
 
         Returns:
             Parsed JSON dict, or None if generation/parsing fails.
@@ -120,7 +125,7 @@ class LocalLLMClient:
             "IMPORTANT: Respond ONLY with valid JSON. No markdown, no explanation."
         ) if system else "Respond ONLY with valid JSON. No markdown, no explanation."
 
-        text = await self.generate(prompt, system=json_system, temperature=temperature)
+        text = await self.generate(prompt, system=json_system, temperature=temperature, think=think)
         if not text:
             return None
 
@@ -175,7 +180,8 @@ class LocalLLMClient:
             f"Nội dung: {content[:2000]}\n\n"
             f"Trả lời chỉ một số từ 0.0 đến 1.0 (ví dụ: 0.7). Không giải thích."
         )
-        text = await self.generate(prompt, temperature=0.1, max_tokens=10)
+        # think=False: simple scoring, no deep reasoning needed (6x faster)
+        text = await self.generate(prompt, temperature=0.1, max_tokens=10, think=False)
 
         try:
             score = float(text.strip().split()[0])
@@ -188,15 +194,26 @@ class LocalLLMClient:
         messages: List[Dict[str, str]],
         temperature: float,
         max_tokens: int,
+        think: bool = True,
     ) -> str:
-        """Execute a chat completion against Ollama API."""
+        """Execute a chat completion against Ollama API.
+
+        Args:
+            think: Enable thinking mode. When True, qwen3 separates reasoning
+                   from content (slower, ~40s). When False, reasoning leaks into
+                   content but response is 6x faster (~6s). Use False for simple
+                   scoring/classification tasks.
+        """
+        # Budget x3 when thinking to account for thinking tokens (discarded).
+        num_predict = max_tokens * 3 if think else max_tokens
         payload = {
             "model": self._model,
             "messages": messages,
             "stream": False,
+            "think": think,
             "options": {
                 "temperature": temperature,
-                "num_predict": max_tokens,
+                "num_predict": num_predict,
             },
         }
 

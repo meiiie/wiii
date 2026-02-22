@@ -24,7 +24,7 @@ from app.models.schemas import ComponentHealth, ComponentStatus, HealthResponse
 from app.repositories.chat_history_repository import get_chat_history_repository
 from app.repositories.semantic_memory_repository import get_semantic_memory_repository
 from app.repositories.sparse_search_repository import SparseSearchRepository
-from app.services.supabase_storage import get_storage_client
+from app.services.object_storage import get_storage_client
 
 logger = logging.getLogger(__name__)
 
@@ -108,45 +108,48 @@ async def check_memory_health() -> ComponentHealth:
 
 
 
-async def check_supabase_storage_health() -> ComponentHealth:
+async def check_object_storage_health() -> ComponentHealth:
     """
-    Check Supabase Storage health for Multimodal RAG.
-    
+    Check Object Storage (MinIO) health for Multimodal RAG.
+
     CHỈ THỊ KỸ THUẬT SỐ 26: Hybrid Infrastructure
-    
+
     Requirements: 4.5
     """
     start = time.time()
-    
+
     try:
         storage = get_storage_client()
         is_healthy = await storage.check_health()
-        
+
         latency = (time.time() - start) * 1000
-        
+
         if is_healthy:
             return ComponentHealth(
-                name="Supabase Storage",
+                name="Object Storage",
                 status=ComponentStatus.HEALTHY,
                 latency_ms=round(latency, 2),
-                message="Supabase Storage connected",
+                message="Object Storage connected",
             )
         else:
             return ComponentHealth(
-                name="Supabase Storage",
+                name="Object Storage",
                 status=ComponentStatus.UNAVAILABLE,
                 latency_ms=round(latency, 2),
-                message="Supabase Storage unavailable",
+                message="Object Storage unavailable",
             )
     except Exception as e:
         latency = (time.time() - start) * 1000
-        logger.warning("Supabase Storage health check failed: %s", e)
+        logger.warning("Object Storage health check failed: %s", e)
         return ComponentHealth(
-            name="Supabase Storage",
+            name="Object Storage",
             status=ComponentStatus.UNAVAILABLE,
             latency_ms=round(latency, 2),
             message="Service check failed",
         )
+
+# Backward-compat alias
+check_supabase_storage_health = check_object_storage_health
 
 
 async def check_sparse_search_health() -> ComponentHealth:
@@ -254,23 +257,38 @@ async def check_knowledge_graph_health() -> ComponentHealth:
         )
 
 
+_shared_async_engine = None
+
+
+async def _get_shared_async_engine():
+    """Get or create a module-level singleton async engine for health checks."""
+    global _shared_async_engine
+    if _shared_async_engine is None:
+        _shared_async_engine = create_async_engine(
+            settings.postgres_url,
+            pool_pre_ping=True,
+            pool_size=1,
+            max_overflow=0,
+        )
+    return _shared_async_engine
+
+
 async def check_async_pool_health() -> ComponentHealth:
     """
     Check async PostgreSQL connection pool health.
 
     SOTA 2026: Verifies the async engine (used by LangGraph checkpointer
     and async repositories) can execute queries.
+
+    Sprint 171: Uses singleton engine — no longer creates/disposes per call.
     """
     start = time.time()
 
     try:
-        async_url = settings.postgres_url
-        engine = create_async_engine(async_url, pool_pre_ping=True)
+        engine = await _get_shared_async_engine()
 
         async with engine.connect() as conn:
             await conn.execute(sa_text("SELECT 1"))
-
-        await engine.dispose()
 
         latency = (time.time() - start) * 1000
         return ComponentHealth(
@@ -412,7 +430,7 @@ async def health_check_deep() -> HealthResponse:
     memory_health = await check_with_timeout(check_memory_health, "Memory Engine")
     sparse_health = await check_with_timeout(check_sparse_search_health, "Sparse Search")
     kg_health = await check_with_timeout(check_knowledge_graph_health, "Neo4j Knowledge Graph")
-    supabase_health = await check_with_timeout(check_supabase_storage_health, "Supabase Storage")
+    supabase_health = await check_with_timeout(check_object_storage_health, "Object Storage")
     async_pool_health = await check_with_timeout(check_async_pool_health, "Async Pool")
 
     components = {

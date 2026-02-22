@@ -478,9 +478,11 @@ class TestSearchRepoOrgIsolation:
         from app.repositories.dense_search_repository import DenseSearchRepository
         repo = DenseSearchRepository.__new__(DenseSearchRepository)
         repo._available = True
+        repo._column_cache = {}
 
-        # Use MagicMock pool + real async context manager
-        mock_conn = MagicMock()
+        # Sprint 170b: conn must be AsyncMock (SET LOCAL hnsw.ef_search)
+        mock_conn = AsyncMock()
+        mock_conn.fetchval = AsyncMock(return_value=True)
         mock_conn.fetch = AsyncMock(return_value=[])
 
         mock_pool = MagicMock()
@@ -504,8 +506,11 @@ class TestSearchRepoOrgIsolation:
         from app.repositories.dense_search_repository import DenseSearchRepository
         repo = DenseSearchRepository.__new__(DenseSearchRepository)
         repo._available = True
+        repo._column_cache = {}
 
-        mock_conn = MagicMock()
+        # Sprint 170b: conn must be AsyncMock (SET LOCAL hnsw.ef_search)
+        mock_conn = AsyncMock()
+        mock_conn.fetchval = AsyncMock(return_value=True)
         mock_conn.fetch = AsyncMock(return_value=[])
 
         mock_pool = MagicMock()

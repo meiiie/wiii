@@ -28,8 +28,9 @@ def reset_database_singletons():
 class TestGetSharedEngine:
     """Test singleton engine creation."""
 
+    @patch("app.core.database.event")
     @patch("app.core.database.create_engine")
-    def test_creates_engine_once(self, mock_create_engine):
+    def test_creates_engine_once(self, mock_create_engine, mock_event):
         mock_engine = MagicMock()
         mock_create_engine.return_value = mock_engine
 
@@ -39,15 +40,18 @@ class TestGetSharedEngine:
         assert engine1 is engine2
         mock_create_engine.assert_called_once()
 
+    @patch("app.core.database.event")
     @patch("app.core.database.create_engine")
-    def test_engine_pool_settings(self, mock_create_engine):
+    def test_engine_pool_settings(self, mock_create_engine, mock_event):
         mock_create_engine.return_value = MagicMock()
         get_shared_engine()
 
         call_kwargs = mock_create_engine.call_args[1]
         assert call_kwargs["pool_pre_ping"] is True
-        assert call_kwargs["pool_size"] == 5
-        assert call_kwargs["max_overflow"] == 5
+        # Sprint 170b: pool_size reads from settings (default min=2, max=10)
+        from app.core.config import settings
+        assert call_kwargs["pool_size"] == settings.async_pool_min_size
+        assert call_kwargs["max_overflow"] == settings.async_pool_max_size - settings.async_pool_min_size
         assert call_kwargs["pool_timeout"] == 30
         assert call_kwargs["pool_recycle"] == 1800
         assert call_kwargs["echo"] is False
@@ -78,8 +82,9 @@ class TestGetSharedSessionFactory:
 class TestCloseSharedEngine:
     """Test engine cleanup."""
 
+    @patch("app.core.database.event")
     @patch("app.core.database.create_engine")
-    def test_dispose_and_reset(self, mock_create_engine):
+    def test_dispose_and_reset(self, mock_create_engine, mock_event):
         mock_engine = MagicMock()
         mock_create_engine.return_value = mock_engine
 
