@@ -281,7 +281,7 @@ class InputProcessor:
                     insights = []
                 elif insights:
                     insight_lines = [f"- [{i.category.value}] {i.content}" for i in insights[:5]]
-                    semantic_parts.append(f"=== Behavioral Insights ===\n" + "\n".join(insight_lines))
+                    semantic_parts.append("=== Behavioral Insights ===\n" + "\n".join(insight_lines))
                     logger.info("[INSIGHT ENGINE] Retrieved %d prioritized insights for user %s", len(insights), user_id)
 
                 # Handle context result
@@ -408,11 +408,11 @@ class InputProcessor:
                     graph_context = graph_result
                     if graph_context.get("learning_path"):
                         path_items = [f"- {m['title']}" for m in graph_context["learning_path"][:5]]
-                        semantic_parts.append(f"=== Learning Path ===\n" + "\n".join(path_items))
+                        semantic_parts.append("=== Learning Path ===\n" + "\n".join(path_items))
 
                     if graph_context.get("knowledge_gaps"):
                         gap_items = [f"- {g['topic_name']}" for g in graph_context["knowledge_gaps"][:5]]
-                        semantic_parts.append(f"=== Knowledge Gaps ===\n" + "\n".join(gap_items))
+                        semantic_parts.append("=== Knowledge Gaps ===\n" + "\n".join(gap_items))
 
                     logger.info("[LEARNING GRAPH] Added graph context for %s", user_id)
 

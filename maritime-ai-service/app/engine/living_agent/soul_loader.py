@@ -11,7 +11,6 @@ Usage:
 """
 
 import logging
-from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -182,6 +181,6 @@ def compile_soul_prompt(soul: Optional[SoulConfig] = None) -> str:
             sections.append(f"- {goal}")
 
     sections.append("")
-    sections.append(f"--- HẾT LINH HỒN ---")
+    sections.append("--- HẾT LINH HỒN ---")
 
     return "\n".join(sections)

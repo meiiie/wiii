@@ -18,7 +18,6 @@ from typing import Optional
 from dataclasses import dataclass
 
 from minio import Minio
-from minio.error import S3Error
 from PIL import Image
 
 from app.core.config import settings

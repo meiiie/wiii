@@ -751,10 +751,14 @@ class TestSocialBrowser:
 class TestConfigFlags:
     """Tests for Living Agent config flags."""
 
-    def test_living_agent_flags_default_off(self):
+    def test_living_agent_flags_default_off(self, monkeypatch):
         """All living agent features are OFF by default."""
+        monkeypatch.delenv("ENABLE_LIVING_AGENT", raising=False)
+        monkeypatch.delenv("LIVING_AGENT_ENABLE_SOCIAL_BROWSE", raising=False)
+        monkeypatch.delenv("LIVING_AGENT_ENABLE_SKILL_BUILDING", raising=False)
         from app.core.config import Settings
         s = Settings(
+            _env_file=None,
             google_api_key="test",
             api_key="test",
         )
@@ -787,9 +791,11 @@ class TestConfigFlags:
         )
         assert s.living_agent_heartbeat_interval == 300
 
-    def test_living_agent_default_values(self):
+    def test_living_agent_default_values(self, monkeypatch):
+        monkeypatch.delenv("LIVING_AGENT_LOCAL_MODEL", raising=False)
+        monkeypatch.delenv("LIVING_AGENT_REQUIRE_HUMAN_APPROVAL", raising=False)
         from app.core.config import Settings
-        s = Settings(google_api_key="test", api_key="test")
+        s = Settings(_env_file=None, google_api_key="test", api_key="test")
         assert s.living_agent_heartbeat_interval == 1800
         assert s.living_agent_active_hours_start == 8
         assert s.living_agent_active_hours_end == 23

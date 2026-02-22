@@ -1,0 +1,16 @@
+# Ruff configuration for Wiii Service
+# Only check real errors, not style — style rules are too noisy for this codebase
+
+[lint]
+select = [
+    "F",      # Pyflakes — real bugs (unused imports, undefined names, etc.)
+    "E721",   # Type comparison using == instead of isinstance()
+]
+ignore = [
+    "F821",   # Undefined name — false positives from forward reference type annotations
+]
+
+# Per-file ignores for intentional patterns
+[lint.per-file-ignores]
+"app/engine/multi_agent/subagents/rag/graph.py" = ["F841"]   # query assigned for future use
+"app/engine/multi_agent/subagents/tutor/graph.py" = ["F841"] # level assigned for future use

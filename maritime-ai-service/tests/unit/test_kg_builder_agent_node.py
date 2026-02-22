@@ -125,9 +125,10 @@ class TestPydanticModels:
 # extract() tests
 # ---------------------------------------------------------------------------
 
+@patch("app.core.config.settings")
 class TestKGBuilderExtract:
     @pytest.mark.asyncio
-    async def test_extract_happy_path(self):
+    async def test_extract_happy_path(self, mock_settings):
         extraction = ExtractionOutput(
             entities=_sample_entities(),
             relations=_sample_relations(),
@@ -136,6 +137,7 @@ class TestKGBuilderExtract:
         structured_llm.ainvoke = AsyncMock(return_value=extraction)
         node = _make_node(structured_llm=structured_llm)
 
+        mock_settings.enable_neo4j = True
         result = await node.extract("COLREGs Rule 13 text...", source="COLREGs")
 
         assert len(result.entities) == 2
@@ -143,7 +145,7 @@ class TestKGBuilderExtract:
         assert result.entities[0].id == "colregs_rule_13"
 
     @pytest.mark.asyncio
-    async def test_extract_no_llm_returns_empty(self):
+    async def test_extract_no_llm_returns_empty(self, mock_settings):
         node = _make_node(structured_llm=None)
         result = await node.extract("some text")
 
@@ -151,7 +153,8 @@ class TestKGBuilderExtract:
         assert result.relations == []
 
     @pytest.mark.asyncio
-    async def test_extract_llm_error_returns_empty(self):
+    async def test_extract_llm_error_returns_empty(self, mock_settings):
+        mock_settings.enable_neo4j = True
         structured_llm = MagicMock()
         structured_llm.ainvoke = AsyncMock(side_effect=Exception("API error"))
         node = _make_node(structured_llm=structured_llm)
@@ -161,7 +164,8 @@ class TestKGBuilderExtract:
         assert result.relations == []
 
     @pytest.mark.asyncio
-    async def test_extract_with_source_in_prompt(self):
+    async def test_extract_with_source_in_prompt(self, mock_settings):
+        mock_settings.enable_neo4j = True
         structured_llm = MagicMock()
         structured_llm.ainvoke = AsyncMock(return_value=ExtractionOutput())
         node = _make_node(structured_llm=structured_llm)
@@ -174,7 +178,8 @@ class TestKGBuilderExtract:
         assert "SOLAS_doc" in user_msg
 
     @pytest.mark.asyncio
-    async def test_extract_truncates_long_text(self):
+    async def test_extract_truncates_long_text(self, mock_settings):
+        mock_settings.enable_neo4j = True
         structured_llm = MagicMock()
         structured_llm.ainvoke = AsyncMock(return_value=ExtractionOutput())
         node = _make_node(structured_llm=structured_llm)
@@ -194,9 +199,11 @@ class TestKGBuilderExtract:
 # process() tests
 # ---------------------------------------------------------------------------
 
+@patch("app.core.config.settings")
 class TestKGBuilderProcess:
     @pytest.mark.asyncio
-    async def test_process_extracts_from_context(self, base_state):
+    async def test_process_extracts_from_context(self, mock_settings, base_state):
+        mock_settings.enable_neo4j = True
         extraction = ExtractionOutput(
             entities=_sample_entities(),
             relations=_sample_relations(),
@@ -213,7 +220,8 @@ class TestKGBuilderProcess:
         assert result["agent_outputs"]["kg_builder"]["relation_count"] == 1
 
     @pytest.mark.asyncio
-    async def test_process_falls_back_to_query(self):
+    async def test_process_falls_back_to_query(self, mock_settings):
+        mock_settings.enable_neo4j = True
         state = {"query": "COLREGs Rule 13", "context": {}}
         structured_llm = MagicMock()
         structured_llm.ainvoke = AsyncMock(return_value=ExtractionOutput())
@@ -226,7 +234,8 @@ class TestKGBuilderProcess:
         assert "COLREGs Rule 13" in user_msg
 
     @pytest.mark.asyncio
-    async def test_process_entities_serialized(self, base_state):
+    async def test_process_entities_serialized(self, mock_settings, base_state):
+        mock_settings.enable_neo4j = True
         extraction = ExtractionOutput(
             entities=_sample_entities(),
             relations=_sample_relations(),

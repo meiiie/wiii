@@ -6,14 +6,13 @@
  * These tests validate store logic and component contracts without full React rendering.
  * Component behavior is tested through store state assertions and module export checks.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import type {
   PreviewItemData,
   PreviewBlockData,
-  ContentBlock,
 } from "@/api/types";
 
 // ---- Helpers ----

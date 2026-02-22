@@ -124,33 +124,20 @@ class TestSimilarityThresholdValidators:
 
 
 class TestSourcesPoolCleanup:
-    """Test the close_pool() function for resource cleanup."""
+    """Test the close_pool() function for resource cleanup.
+
+    Sprint 171: Pool consolidated into DenseSearchRepository singleton.
+    close_pool() is now a no-op — pool lifecycle managed by the repository.
+    """
 
     @pytest.mark.asyncio
-    async def test_close_pool_when_none(self):
-        """close_pool() should be no-op when pool is None."""
+    async def test_close_pool_is_noop(self):
+        """close_pool() should be a no-op (pool managed by DenseSearchRepository)."""
         from app.api.v1 import sources
-        original = sources._pool
-        sources._pool = None
-        try:
-            await sources.close_pool()  # Should not raise
-            assert sources._pool is None
-        finally:
-            sources._pool = original
+        await sources.close_pool()  # Should not raise
 
     @pytest.mark.asyncio
-    async def test_close_pool_calls_close(self):
-        """close_pool() should call pool.close() and reset to None."""
-        from unittest.mock import AsyncMock, MagicMock
+    async def test_close_pool_no_pool_attribute(self):
+        """sources module should not have _pool attribute (consolidated to repo)."""
         from app.api.v1 import sources
-
-        mock_pool = MagicMock()
-        mock_pool.close = AsyncMock()
-        original = sources._pool
-        sources._pool = mock_pool
-        try:
-            await sources.close_pool()
-            mock_pool.close.assert_called_once()
-            assert sources._pool is None
-        finally:
-            sources._pool = original
+        assert not hasattr(sources, '_pool')

@@ -193,13 +193,16 @@ class TestPromptInjection:
 
     def test_soul_prompt_not_injected_when_disabled(self):
         """Soul prompt NOT in system prompt when living agent disabled."""
-        from app.prompts.prompt_loader import get_prompt_loader
+        with patch("app.core.config.settings") as mock_settings:
+            mock_settings.enable_living_agent = False
+            mock_settings.enable_soul_emotion = False
+            mock_settings.enable_multi_tenant = False
+            from app.prompts.prompt_loader import get_prompt_loader
 
-        loader = get_prompt_loader()
-        # Default settings have enable_living_agent=False
-        prompt = loader.build_system_prompt(role="student")
+            loader = get_prompt_loader()
+            prompt = loader.build_system_prompt(role="student")
 
-        assert "LINH HỒN CỦA WIII" not in prompt
+            assert "LINH HỒN CỦA WIII" not in prompt
 
     def test_prompt_injection_graceful_on_error(self):
         """Prompt injection silently skips on import/runtime errors."""

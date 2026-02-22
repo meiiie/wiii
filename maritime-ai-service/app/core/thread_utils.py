@@ -100,7 +100,7 @@ def parse_thread_id(thread_id: str) -> tuple[str, str]:
 
     if len(parts) != 2 or not parts[0] or not parts[1]:
         raise ValueError(
-            f"Invalid thread_id format: could not extract user_id and session_id"
+            "Invalid thread_id format: could not extract user_id and session_id"
         )
 
     return parts[0], parts[1]

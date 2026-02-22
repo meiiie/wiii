@@ -61,5 +61,5 @@ export async function getHeartbeatInfo(): Promise<LivingAgentHeartbeat> {
 /** Manually trigger a heartbeat cycle */
 export async function triggerHeartbeat(): Promise<HeartbeatTriggerResult> {
   const client = getClient();
-  return client.post<HeartbeatTriggerResult>(`${PREFIX}/heartbeat/trigger`);
+  return client.post<HeartbeatTriggerResult>(`${PREFIX}/heartbeat/trigger`, {});
 }

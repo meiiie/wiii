@@ -17,7 +17,6 @@ Feature-gated: enable_living_agent=False by default.
 """
 
 import logging
-from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request

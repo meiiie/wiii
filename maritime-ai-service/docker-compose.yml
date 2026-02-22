@@ -112,7 +112,7 @@ services:
     entrypoint: >
       /bin/sh -c "
       sleep 5 &&
-      /usr/bin/mc config host add local http://minio:9000 $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY &&
+      /usr/bin/mc alias set local http://minio:9000 $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY &&
       /usr/bin/mc mb local/$$MINIO_BUCKET --ignore-existing &&
       /usr/bin/mc anonymous set download local/$$MINIO_BUCKET &&
       echo 'MinIO bucket created (read-only public access)'

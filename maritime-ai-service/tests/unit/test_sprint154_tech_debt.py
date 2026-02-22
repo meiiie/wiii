@@ -293,10 +293,11 @@ class TestExecuteDirectToolRounds:
         async def noop_push(e):
             pass
 
-        result, msgs = await _execute_direct_tool_rounds(
+        result, msgs, tool_events = await _execute_direct_tool_rounds(
             llm_with_tools, llm_auto, [], [], noop_push,
         )
         assert result.content == "Direct answer"
+        assert tool_events == []
         llm_auto.ainvoke.assert_not_called()
 
 

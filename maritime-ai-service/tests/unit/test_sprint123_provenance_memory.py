@@ -309,14 +309,16 @@ class TestP4ActiveMemoryPruning:
         mock_settings.enable_memory_pruning = True
         mock_settings.memory_prune_threshold = 0.1
 
-        # Patch lazy imports at source module level
+        # Patch lazy imports at source module level + reload to avoid test pollution
+        import importlib
+        import app.services.memory_lifecycle as _ml_mod
         with patch("app.core.config.settings", mock_settings):
             with patch(
                 "app.repositories.semantic_memory_repository.get_semantic_memory_repository",
                 return_value=mock_repo,
             ):
-                from app.services.memory_lifecycle import prune_stale_memories
-                pruned = await prune_stale_memories("user-1")
+                importlib.reload(_ml_mod)
+                pruned = await _ml_mod.prune_stale_memories("user-1")
 
         # Volatile emotion from 10 days ago should be pruned (effective ≈ 0)
         # Identity name should NOT be pruned (never decays)

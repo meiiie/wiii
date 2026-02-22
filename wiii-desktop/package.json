@@ -12,6 +12,8 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
+    "@codesandbox/sandpack-react": "^2.20.0",
+    "@monaco-editor/react": "^4.7.0",
     "@rive-app/react-webgl2": "^4.27.0",
     "@tanstack/react-virtual": "^3.13.18",
     "@tauri-apps/api": "^2.0.0",

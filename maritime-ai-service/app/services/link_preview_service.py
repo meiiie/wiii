@@ -2,10 +2,8 @@
 Link Preview Service — OG metadata fetcher for URL previews.
 Sprint 166: SSRF-safe, cached, async.
 """
-import asyncio
 import hashlib
 import logging
-import re
 import time
 from html.parser import HTMLParser
 from ipaddress import ip_address

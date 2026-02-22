@@ -18,7 +18,6 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional
-from uuid import uuid4
 
 from app.engine.living_agent.models import SkillStatus, WiiiSkill
 

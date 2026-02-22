@@ -7,8 +7,19 @@ Covers:
 - Singleton pattern
 """
 
+import importlib
+import sys
+import types
+
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
+
+
+# Ensure clean chat_service module — earlier tests may pollute sys.modules
+# with a MagicMock stub (graph_streaming workaround).
+_mod_key = "app.services.chat_service"
+if _mod_key in sys.modules and isinstance(sys.modules[_mod_key], types.ModuleType):
+    importlib.reload(sys.modules[_mod_key])
 
 
 # =============================================================================

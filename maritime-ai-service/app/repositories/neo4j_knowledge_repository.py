@@ -93,7 +93,7 @@ def neo4j_retry(max_attempts: int = 2, backoff: float = 1.0):
 
             logger.error("Neo4j operation failed after %d attempts: %s", max_attempts, last_exception)
             return_type = func.__annotations__.get('return')
-            if return_type == bool:
+            if return_type is bool:
                 return False
             elif return_type and 'List' in str(return_type):
                 return []

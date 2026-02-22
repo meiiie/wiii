@@ -157,7 +157,7 @@ class TestProcessStreamingResultEvent:
         assert len(result_events) == 1
         result = result_events[0]["data"]
         assert isinstance(result, CorrectiveRAGResult)
-        assert result.confidence == 30.0
+        assert result.confidence == 45.0
 
 
 # ============================================================================

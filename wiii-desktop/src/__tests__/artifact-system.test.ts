@@ -70,7 +70,7 @@ beforeEach(() => {
   useUIStore.setState({
     sidebarOpen: true,
     previewPanelOpen: false,
-    sourcePanelOpen: false,
+    sourcesPanelOpen: false,
     artifactPanelOpen: false,
     selectedArtifactId: null,
     artifactActiveTab: "code",

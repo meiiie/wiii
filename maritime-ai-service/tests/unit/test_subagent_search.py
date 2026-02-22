@@ -956,10 +956,11 @@ class TestOrganizationPropagation:
 class TestFeatureFlag:
     """Feature flag controls subgraph activation."""
 
-    def test_default_disabled(self):
+    def test_default_disabled(self, monkeypatch):
+        monkeypatch.delenv("ENABLE_SUBAGENT_ARCHITECTURE", raising=False)
         from app.core.config import Settings
 
-        s = Settings(google_api_key="test", api_key="test")
+        s = Settings(_env_file=None, google_api_key="test", api_key="test")
         assert s.enable_subagent_architecture is False
 
     def test_enabled_explicitly(self):

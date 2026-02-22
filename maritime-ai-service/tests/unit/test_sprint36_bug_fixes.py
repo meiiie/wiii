@@ -76,7 +76,13 @@ class TestNoStrEInHttpResponses:
         assert "'message': str(e)" not in content
 
     def test_evaluator_no_str_e_in_details(self):
-        with open("app/engine/evaluation/evaluator.py", "r", encoding="utf-8") as f:
+        """Evaluator module was removed (refactored into confidence_evaluator).
+        Check the replacement file instead."""
+        import os
+        old_path = "app/engine/evaluation/evaluator.py"
+        new_path = "app/engine/agentic_rag/confidence_evaluator.py"
+        assert not os.path.exists(old_path), "Old evaluator.py should not exist"
+        with open(new_path, "r", encoding="utf-8") as f:
             content = f.read()
         # EvaluationResult should not include str(e) in details
         assert '"error": str(e)' not in content

@@ -11,7 +11,8 @@ import { Pencil, Eye } from "lucide-react";
 import { useSettingsStore } from "@/stores/settings-store";
 
 // Lazy-load Monaco
-const MonacoEditor = lazy(async () => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const MonacoEditor = lazy(async (): Promise<{ default: React.ComponentType<any> }> => {
   try {
     const mod = await import("@monaco-editor/react");
     return { default: mod.default };
@@ -111,7 +112,7 @@ export function CodeEditor({
           language={monacoLang}
           value={code}
           theme={isDark ? "vs-dark" : "vs-light"}
-          onChange={(val) => onChange?.(val || "")}
+          onChange={(val: string | undefined) => onChange?.(val || "")}
           options={{
             readOnly,
             minimap: { enabled: false },

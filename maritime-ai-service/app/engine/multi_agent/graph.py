@@ -12,7 +12,7 @@ Pattern: Supervisor with specialized worker agents
 
 import logging
 import re
-from typing import Dict, List, Optional, Literal
+from typing import Dict, Optional, Literal
 
 
 from langgraph.graph import StateGraph, END

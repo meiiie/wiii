@@ -149,10 +149,6 @@ class ChatHistoryRepository:
         if not self._available:
             return None
 
-        # Sprint 170c: Org-scoped filtering
-        from app.core.org_filter import get_effective_org_id
-        eff_org_id = get_effective_org_id()
-
         try:
             with self._session_factory() as session:
                 # Find existing session for user
@@ -433,10 +429,6 @@ class ChatHistoryRepository:
             return False
 
         norm_session_id = _normalize_session_id(session_id)
-
-        # Sprint 170c: Org-scoped filtering for new schema path
-        from app.core.org_filter import get_effective_org_id, org_where_clause
-        eff_org_id = get_effective_org_id()
 
         try:
             with self._session_factory() as session:

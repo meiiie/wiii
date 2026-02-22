@@ -267,12 +267,16 @@ class TestSourcesPoolConsolidation:
         source = inspect.getsource(sources.get_pool)
         assert "dense_search_repository" in source or "get_dense_search_repository" in source
 
-    def test_sources_close_pool_is_noop(self):
+    @pytest.mark.asyncio
+    async def test_sources_close_pool_is_noop(self):
         """close_pool() is a no-op (lifecycle managed by DenseSearch)."""
-        import asyncio
-        from app.api.v1.sources import close_pool
+        import importlib
+        import app.api.v1.sources as _sources_mod
+        # Reload in case test pollution replaced module with a MagicMock stub
+        if not hasattr(_sources_mod, 'close_pool'):
+            importlib.reload(_sources_mod)
         # Should not raise
-        asyncio.get_event_loop().run_until_complete(close_pool())
+        await _sources_mod.close_pool()
 
 
 # ============================================================================

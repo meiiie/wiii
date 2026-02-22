@@ -662,7 +662,7 @@ class SemanticContext(BaseModel):
                     facts_lines.append(f"- {label}: {value}")
 
             if facts_lines:
-                parts.append(f"=== Hồ sơ người dùng ===\n" + "\n".join(facts_lines))
+                parts.append("=== Hồ sơ người dùng ===\n" + "\n".join(facts_lines))
         
         # Add relevant memories section
         if self.relevant_memories:

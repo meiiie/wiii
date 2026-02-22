@@ -3,7 +3,7 @@
  * Tests type shapes, chat store preview actions, renderer registry,
  * SSE event type, UI store preview panel state, and settings defaults.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useSettingsStore } from "@/stores/settings-store";

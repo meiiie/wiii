@@ -20,7 +20,6 @@ Design:
 """
 
 import logging
-import math
 from datetime import datetime, timezone
 from typing import Dict, Optional
 

@@ -87,7 +87,7 @@ class InsightExtractor:
         context = ""
         if history:
             recent_history = history[-3:]  # Last 3 messages for context
-            context = f"\n\nConversation context:\n" + "\n".join([f"- {msg}" for msg in recent_history])
+            context = "\n\nConversation context:\n" + "\n".join([f"- {msg}" for msg in recent_history])
         
         prompt = f"""
 Bạn là chuyên gia phân tích hành vi học tập. Nhiệm vụ của bạn là trích xuất BEHAVIORAL INSIGHTS (sự thấu hiểu hành vi) từ tin nhắn của người dùng, KHÔNG PHẢI atomic facts (dữ liệu đơn lẻ).

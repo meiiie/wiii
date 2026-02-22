@@ -20,7 +20,6 @@ import json
 import logging
 from datetime import datetime, date, timezone
 from typing import Optional
-from uuid import uuid4
 
 from app.engine.living_agent.models import EmotionalState, JournalEntry
 

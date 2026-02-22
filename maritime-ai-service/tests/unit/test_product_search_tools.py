@@ -476,9 +476,10 @@ class TestStreamingLabels:
         summary = _generate_thinking_summary(output, "dây điện 3x2.5mm")
         assert "sản phẩm" in summary.lower()
 
-    def test_effort_map_product_search(self):
-        from app.engine.multi_agent.graph_streaming import _INTENT_EFFORT
-        assert _INTENT_EFFORT.get("product_search") == "high"
+    def test_node_label_product_search(self):
+        """_INTENT_EFFORT was removed; verify product_search_agent is in _NODE_LABELS instead."""
+        from app.engine.multi_agent.graph_streaming import _NODE_LABELS
+        assert "product_search_agent" in _NODE_LABELS
 
 
 # =============================================================================
