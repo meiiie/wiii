@@ -276,12 +276,12 @@ class TestPreferencesOrgFilter:
 # ============================================================================
 
 class TestLearningProfileOrgFilter:
-    """Test org filtering on SupabaseLearningProfileRepository."""
+    """Test org filtering on LearningProfileRepository."""
 
     def _make_repo(self):
-        from app.repositories.learning_profile_repository import SupabaseLearningProfileRepository
+        from app.repositories.learning_profile_repository import LearningProfileRepository
         # Use __new__ to skip __init__ (which tries to connect to DB)
-        repo = SupabaseLearningProfileRepository.__new__(SupabaseLearningProfileRepository)
+        repo = LearningProfileRepository.__new__(LearningProfileRepository)
         factory, session = _mock_session_factory()
         repo._engine = MagicMock()
         repo._session_factory = factory

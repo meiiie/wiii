@@ -108,7 +108,7 @@ Main chat endpoint for synchronous responses.
       "content_snippet": "When two power-driven vessels are crossing...",
       "page_number": 12,
       "document_id": "colregs_2024",
-      "image_url": "https://storage.supabase.co/...",
+      "image_url": "https://storage.example.com/...",
       "bounding_boxes": [
         {"x": 10, "y": 20, "width": 80, "height": 15}
       ]
@@ -342,7 +342,7 @@ Get detailed source information with bounding boxes for PDF highlighting.
   "content": "Full text of the source...",
   "document_id": "colregs_2024",
   "page_number": 12,
-  "image_url": "https://storage.supabase.co/...",
+  "image_url": "https://storage.example.com/...",
   "bounding_boxes": [
     {
       "x": 10.5,

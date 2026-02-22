@@ -49,7 +49,7 @@ class SourceDetailResponse(BaseModel):
     content: str = Field(..., description="Full text content of the chunk")
     document_id: Optional[str] = Field(default=None, description="Document ID for PDF reference")
     page_number: Optional[int] = Field(default=None, description="Page number in PDF")
-    image_url: Optional[str] = Field(default=None, description="URL to page image (Supabase)")
+    image_url: Optional[str] = Field(default=None, description="URL to page image")
     bounding_boxes: Optional[list[dict]] = Field(
         default=None, 
         description="Normalized coordinates for text highlighting (0-100 percentage)"
@@ -67,7 +67,7 @@ class SourceDetailResponse(BaseModel):
                     "content": "Rule 15 - Crossing Situation\nWhen two power-driven vessels are crossing...",
                     "document_id": "colregs_2024",
                     "page_number": 15,
-                    "image_url": "https://xyz.supabase.co/storage/v1/object/public/maritime-docs/colregs/page_15.jpg",
+                    "image_url": "https://storage.example.com/wiii-docs/colregs/page_15.jpg",
                     "bounding_boxes": [
                         {"x0": 10.5, "y0": 45.2, "x1": 90.3, "y1": 52.7}
                     ],

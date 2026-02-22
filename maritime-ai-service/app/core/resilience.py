@@ -2,7 +2,7 @@
 Resilience patterns for external service calls.
 
 Provides circuit breaker pattern to prevent cascading failures
-when external services (Gemini API, Supabase, LMS webhook) are degraded.
+when external services (Gemini API, object storage, LMS webhook) are degraded.
 
 Extracted from cache_manager.py CircuitBreakerState and generalized.
 
@@ -12,7 +12,7 @@ Usage as decorator:
         ...
 
 Usage as context manager:
-    cb = get_circuit_breaker("supabase")
+    cb = get_circuit_breaker("object_storage")
     async with cb:
         await do_upload()
 
@@ -94,7 +94,7 @@ class CircuitBreaker:
         Initialize circuit breaker.
 
         Args:
-            name: Identifier for logging (e.g. "gemini", "supabase")
+            name: Identifier for logging (e.g. "gemini", "object_storage")
             failure_threshold: Number of consecutive failures before opening
             recovery_timeout: Seconds to wait before half-open test
         """

@@ -95,7 +95,7 @@ async def ingest_multimodal_document(
 
     Pipeline:
     1. PDF → Images (PyMuPDF - no external dependencies)
-    2. Images → Supabase Storage (public URLs)
+    2. Images → Object Storage (public URLs)
     3. Images → Gemini Vision (text extraction)
     4. Text → Semantic Chunking (maritime-specific patterns)
     5. Chunks + Embeddings + image_url → Neon Database

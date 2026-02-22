@@ -246,17 +246,25 @@ class SkillBuilder:
             logger.error("[SKILL] Failed to update skill: %s", e)
 
     def _find_by_name(self, name: str) -> Optional[WiiiSkill]:
-        """Find a skill by name (case-insensitive)."""
+        """Find a skill by name (case-insensitive), scoped by org_id."""
         from sqlalchemy import text
         from app.core.database import get_shared_session_factory
+        from app.core.org_filter import get_effective_org_id, org_where_clause
 
         try:
+            effective_org_id = get_effective_org_id()
             session_factory = get_shared_session_factory()
             with session_factory() as session:
-                row = session.execute(
-                    text("SELECT * FROM wiii_skills WHERE LOWER(skill_name) = LOWER(:name) LIMIT 1"),
-                    {"name": name},
-                ).fetchone()
+                query = "SELECT * FROM wiii_skills WHERE LOWER(skill_name) = LOWER(:name)"
+                params: dict = {"name": name}
+
+                org_clause = org_where_clause(effective_org_id)
+                if org_clause:
+                    query += org_clause
+                    params["org_id"] = effective_org_id
+
+                query += " LIMIT 1"
+                row = session.execute(text(query), params).fetchone()
                 if row:
                     return self._row_to_skill(row)
         except Exception as e:
@@ -268,15 +276,23 @@ class SkillBuilder:
         status: Optional[SkillStatus] = None,
         domain: Optional[str] = None,
     ) -> List[WiiiSkill]:
-        """Query skills with optional filters."""
+        """Query skills with optional filters, scoped by org_id."""
         from sqlalchemy import text
         from app.core.database import get_shared_session_factory
+        from app.core.org_filter import get_effective_org_id, org_where_clause
 
         try:
+            effective_org_id = get_effective_org_id()
             session_factory = get_shared_session_factory()
             with session_factory() as session:
                 query = "SELECT * FROM wiii_skills WHERE 1=1"
-                params = {}
+                params: dict = {}
+
+                org_clause = org_where_clause(effective_org_id)
+                if org_clause:
+                    query += org_clause
+                    params["org_id"] = effective_org_id
+
                 if status:
                     query += " AND status = :status"
                     params["status"] = status.value
@@ -292,19 +308,27 @@ class SkillBuilder:
             return []
 
     def _count_recent_discoveries(self) -> int:
-        """Count skills discovered in the last 7 days."""
+        """Count skills discovered in the last 7 days, scoped by org_id."""
         from sqlalchemy import text
         from app.core.database import get_shared_session_factory
+        from app.core.org_filter import get_effective_org_id, org_where_clause
 
         try:
+            effective_org_id = get_effective_org_id()
             session_factory = get_shared_session_factory()
             with session_factory() as session:
-                result = session.execute(
-                    text("""
-                        SELECT COUNT(*) FROM wiii_skills
-                        WHERE discovered_at >= NOW() - INTERVAL '7 days'
-                    """),
-                ).scalar()
+                query = """
+                    SELECT COUNT(*) FROM wiii_skills
+                    WHERE discovered_at >= NOW() - INTERVAL '7 days'
+                """
+                params: dict = {}
+
+                org_clause = org_where_clause(effective_org_id)
+                if org_clause:
+                    query += org_clause
+                    params["org_id"] = effective_org_id
+
+                result = session.execute(text(query), params).scalar()
                 return result or 0
         except Exception:
             return 0

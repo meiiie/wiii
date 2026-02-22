@@ -1,10 +1,10 @@
 # Wiii - System Architecture
 
-**Version:** 7.1 (Post-Sprint 172)
+**Version:** 7.2 (Post-Sprint 171b — Production Hardening)
 **Updated:** 2026-02-22
 **Product:** Wiii by The Wiii Lab
 **Pattern:** Multi-Domain Agentic RAG with Plugin Architecture, Product Search Platform, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization, Living Agent Autonomy
-**Codebase:** 264+ Python files, ~80,000 LOC, 60+ API endpoints, 6550+ backend + 1468 desktop tests
+**Codebase:** 286+ Python files, ~80,000 LOC, 60+ API endpoints, 7076+ backend + 1468 desktop tests
 
 ---
 
@@ -1266,7 +1266,7 @@ flowchart TB
 
 ### 4.17 Multi-Tenant Data Isolation
 
-App-level `organization_id` filtering across all repositories (Sprint 160).
+App-level `organization_id` filtering across all repositories (Sprint 160, hardened Sprint 170c).
 
 ```mermaid
 flowchart TB
@@ -1287,13 +1287,16 @@ flowchart TB
         POS["org_where_positional()<br/>asyncpg $N style"]
     end
 
-    subgraph Tables["Filtered Tables (Migration 011)"]
+    subgraph Tables["Filtered Tables (Migrations 011, 012, 017)"]
         T1["semantic_memories"]
         T2["chat_messages"]
         T3["chat_sessions"]
         T4["chat_history"]
         T5["learning_profile"]
         T6["org_audit_log"]
+        T7["knowledge_embeddings"]
+        T8["wiii_character_blocks"]
+        T9["refresh_tokens"]
     end
 
     REPOS --> Filtering --> Tables
@@ -1302,10 +1305,12 @@ flowchart TB
 **Key Design Decisions:**
 - **App-level filtering** (Phase 1) — RLS is Phase 2 follow-up
 - **Feature gate**: `enable_multi_tenant=False` → all helpers return empty/None (zero behavior change)
-- **NULL-aware**: `allow_null=True` for shared knowledge base (no org filter on `knowledge_embeddings`)
+- **NULL-aware**: `allow_null=True` for shared knowledge base (knowledge_embeddings uses `OR organization_id IS NULL`)
 - **Cache isolation**: Cache key = `"{org_id}:{user_id}"` when org present
 - **Backfill**: Existing rows → `'default'`; knowledge_embeddings → NULL (shared)
-- **56 tests** in `test_sprint160_data_isolation.py`
+- **B-tree indexes** on `organization_id` for all filtered tables + composite `(user_id, organization_id)` indexes (Migration 017)
+- **Thread isolation**: `build_thread_id()` embeds org_id → cross-org LangGraph checkpoint isolation
+- **86 tests** across `test_sprint160_data_isolation.py` (56) + `test_sprint170c_tenant_hardening.py` (30)
 
 ---
 
@@ -1494,6 +1499,7 @@ erDiagram
         uuid user_id FK
         text token_hash
         text auth_method "google|lms"
+        text organization_id "org-aware (Sprint 170c)"
         timestamp expires_at
         boolean revoked
     }
@@ -1561,7 +1567,7 @@ erDiagram
 
 | Database | Tables | Purpose |
 |----------|--------|---------|
-| **PostgreSQL 15** | `knowledge_embeddings`, `semantic_memories`, `conversation_history`, `threads`, `scheduled_tasks`, `organizations`, `user_organizations`, `user_preferences`, `wiii_character_blocks`, `langgraph_checkpoints`, `users`, `federated_identities`, `refresh_tokens`, `org_audit_log`, `learning_profile`, `chat_messages`, `chat_sessions` | Primary OLTP + vector search + FTS |
+| **PostgreSQL 17** | `knowledge_embeddings`, `semantic_memories`, `conversation_history`, `threads`, `scheduled_tasks`, `organizations`, `user_organizations`, `user_preferences`, `wiii_character_blocks`, `langgraph_checkpoints`, `users`, `federated_identities`, `refresh_tokens`, `org_audit_log`, `learning_profile`, `chat_messages`, `chat_sessions`, `wiii_skills`, `wiii_journal`, `wiii_browsing_log`, `wiii_emotional_snapshots` | Primary OLTP + vector search (HNSW) + FTS |
 | **Neo4j 5** | Nodes: `Regulation`, `Concept`, `Entity`; Rels: `REFERENCES`, `RELATED_TO` | Knowledge graph relationships |
 | **MinIO** | `wiii-docs` bucket | PDF pages, extracted images |
 | **Valkey** | Key-value | Session cache, rate limit counters |
@@ -1915,10 +1921,10 @@ payload["signature"] = hmac.new(
 
 | Layer | Framework | Count | Notes |
 |-------|-----------|-------|-------|
-| Unit | pytest + AsyncMock | 6520+ | 324 test files, autouse rate-limit disable |
+| Unit | pytest + AsyncMock | 7076+ | 278 test files, autouse rate-limit disable |
 | Integration | pytest | 31 files | Require running services |
 | Property | Hypothesis | - | Invariant testing |
-| Desktop | Vitest + jsdom | 1346 | 54 test files |
+| Desktop | Vitest + jsdom | 1468 | 55 test files |
 
 ```bash
 # Backend (Windows)
@@ -1930,8 +1936,8 @@ cd wiii-desktop && npx vitest run
 
 ---
 
-**Document Version:** 6.0
-**Last Updated:** 2026-02-20
-**Architecture Pattern:** Multi-Domain Agentic RAG with Plugin System, Product Search Platform, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization
-**Total Components:** 254 Python files, 60+ endpoints, 120+ config fields (46 feature flags), 6520 backend + 1346 desktop tests
-**Sprints Covered:** 1–161 (161 development sprints)
+**Document Version:** 7.2
+**Last Updated:** 2026-02-22
+**Architecture Pattern:** Multi-Domain Agentic RAG with Plugin System, Product Search Platform, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization, Living Agent Autonomy
+**Total Components:** 286 Python files, 60+ endpoints, 120+ config fields (47 feature flags), 7076 backend + 1468 desktop tests
+**Sprints Covered:** 1–171b (Production Hardening)

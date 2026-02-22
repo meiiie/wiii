@@ -148,9 +148,6 @@ async def check_object_storage_health() -> ComponentHealth:
             message="Service check failed",
         )
 
-# Backward-compat alias
-check_supabase_storage_health = check_object_storage_health
-
 
 async def check_sparse_search_health() -> ComponentHealth:
     """
@@ -430,7 +427,7 @@ async def health_check_deep() -> HealthResponse:
     memory_health = await check_with_timeout(check_memory_health, "Memory Engine")
     sparse_health = await check_with_timeout(check_sparse_search_health, "Sparse Search")
     kg_health = await check_with_timeout(check_knowledge_graph_health, "Neo4j Knowledge Graph")
-    supabase_health = await check_with_timeout(check_object_storage_health, "Object Storage")
+    storage_health = await check_with_timeout(check_object_storage_health, "Object Storage")
     async_pool_health = await check_with_timeout(check_async_pool_health, "Async Pool")
 
     components = {
@@ -438,7 +435,7 @@ async def health_check_deep() -> HealthResponse:
         "memory": memory_health,
         "sparse_search": sparse_health,  # Feature: sparse-search-migration
         "knowledge_graph": kg_health,  # Optional for RAG, reserved for Learning Graph
-        "supabase_storage": supabase_health,  # CHỈ THỊ 26: Hybrid Infrastructure
+        "object_storage": storage_health,  # MinIO / S3-compatible storage
         "async_pool": async_pool_health,  # SOTA 2026: Async connection pool
     }
     

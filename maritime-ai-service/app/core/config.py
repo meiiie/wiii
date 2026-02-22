@@ -227,9 +227,11 @@ class Settings(BaseSettings):
     postgres_idle_in_transaction_timeout_ms: int = Field(default=60000, ge=10000, le=600000, description="Idle transaction timeout in ms (default 60s)")
 
     # Object Storage (MinIO / S3-compatible)
-    storage_url: Optional[str] = Field(default=None, description="Object storage endpoint URL (MinIO / S3)")
-    storage_key: Optional[str] = Field(default=None, description="Object storage access key")
-    storage_bucket: str = Field(default="wiii-docs", description="Storage bucket for document images")
+    minio_endpoint: Optional[str] = Field(default=None, description="MinIO endpoint (host:port, no scheme)")
+    minio_access_key: Optional[str] = Field(default=None, description="MinIO access key")
+    minio_secret_key: Optional[str] = Field(default=None, description="MinIO secret key")
+    minio_bucket: str = Field(default="wiii-docs", description="Storage bucket for document images")
+    minio_secure: bool = Field(default=False, description="Use HTTPS for MinIO connection")
 
     # LMS API Key (for authentication from LMS)
     lms_api_key: Optional[str] = Field(default=None, description="API Key for LMS integration")

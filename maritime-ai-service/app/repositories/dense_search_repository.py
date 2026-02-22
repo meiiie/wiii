@@ -6,7 +6,7 @@ Uses pgvector for vector similarity search with Gemini embeddings.
 Feature: hybrid-search
 Requirements: 2.1, 2.5, 6.1, 6.2, 6.3
 
-**SINGLETON PATTERN**: Only ONE instance to avoid exceeding Supabase connection limits.
+**SINGLETON PATTERN**: Only ONE instance to avoid exceeding connection limits.
 """
 
 import logging
@@ -28,7 +28,7 @@ def get_dense_search_repository() -> "DenseSearchRepository":
     Get singleton DenseSearchRepository instance.
     
     This ensures only ONE asyncpg connection pool is created,
-    avoiding Supabase Free Tier connection limit issues.
+    avoiding connection limit issues.
     """
     global _dense_search_instance
     

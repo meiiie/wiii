@@ -5,7 +5,7 @@ This module provides a SINGLE shared database engine for all repositories.
 
 **CHỈ THỊ KỸ THUẬT SỐ 19: Migration to Neon**
 - Neon Serverless Postgres với Pooled Connection
-- Khắc phục vĩnh viễn lỗi MaxClients từ Supabase
+- Khắc phục vĩnh viễn lỗi MaxClients
 - Pool sizes from config: async_pool_min_size / async_pool_max_size
 """
 

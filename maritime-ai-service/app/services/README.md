@@ -33,7 +33,7 @@ app/services/
 ├── graph_rag_service.py         # GraphRAG with Neo4j
 ├── chunking_service.py          # Document chunking
 ├── learning_graph_service.py    # Learning path management
-├── supabase_storage.py          # Cloud storage
+├── object_storage.py            # Object storage (MinIO / S3-compatible)
 ├── event_callback_service.py    # LMS webhooks (pending)
 └── README.md                    # This file
 ```

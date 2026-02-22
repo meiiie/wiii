@@ -2,7 +2,7 @@
 Semantic Memory Repository for Wiii v0.3
 CHI THI KY THUAT SO 06
 
-Repository for semantic memory operations with pgvector on Supabase.
+Repository for semantic memory operations with pgvector on PostgreSQL.
 Facade class that delegates to specialized mixin modules:
 - FactRepositoryMixin: Fact CRUD, semantic triples, deduplication
 - InsightRepositoryMixin: Insight retrieval and management
@@ -39,7 +39,7 @@ class SemanticMemoryRepository(
     """
     Repository for semantic memory CRUD operations with pgvector.
 
-    Uses Supabase PostgreSQL with pgvector extension for vector similarity search.
+    Uses PostgreSQL with pgvector extension for vector similarity search.
     Implements cosine similarity search with HNSW index.
 
     Delegates specialized operations to mixin modules:
@@ -69,7 +69,7 @@ class SemanticMemoryRepository(
         """Lazy initialization using SHARED database engine."""
         if not self._initialized:
             try:
-                # Use SHARED engine to minimize connections (Supabase Free Tier)
+                # Use SHARED engine to minimize connections
                 from app.core.database import get_shared_engine, get_shared_session_factory
 
                 self._engine = get_shared_engine()

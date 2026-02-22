@@ -2,7 +2,7 @@
 Multimodal Ingestion Service for Vision-based RAG
 
 CHI THI KY THUAT SO 26: Multimodal RAG Pipeline
-Full pipeline: PDF -> Images -> Supabase -> Vision -> Embeddings -> Database
+Full pipeline: PDF -> Images -> Object Storage (MinIO) -> Vision -> Embeddings -> Database
 
 **Feature: multimodal-rag-vision**
 **Validates: Requirements 2.1, 7.1, 7.4, 7.5**
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     import fitz
 
 from app.core.config import settings
-from app.services.supabase_storage import SupabaseStorageClient, get_storage_client
+from app.services.object_storage import ObjectStorageClient, get_storage_client
 from app.services.chunking_service import SemanticChunker, get_semantic_chunker
 from app.engine.vision_extractor import VisionExtractor, get_vision_extractor
 from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
@@ -92,7 +92,7 @@ class MultimodalIngestionService:
 
     Pipeline:
     1. Rasterization: PDF -> High-quality images (pdf2image)
-    2. Storage: Upload images to Supabase Storage
+    2. Storage: Upload images to object storage
     3. Vision Extraction: Gemini Vision extracts text from images
     4. Indexing: Store text + embeddings + image_url in Neon
 
@@ -111,7 +111,7 @@ class MultimodalIngestionService:
 
     def __init__(
         self,
-        storage_client: Optional[SupabaseStorageClient] = None,
+        storage_client: Optional[ObjectStorageClient] = None,
         vision_extractor: Optional[VisionExtractor] = None,
         embedding_service: Optional[GeminiOptimizedEmbeddings] = None,
         chunker: Optional[SemanticChunker] = None,
@@ -125,7 +125,7 @@ class MultimodalIngestionService:
         Initialize Multimodal Ingestion Service.
 
         Args:
-            storage_client: Supabase Storage client
+            storage_client: Object storage client
             vision_extractor: Vision extraction service
             embedding_service: Embedding generation service
             chunker: Semantic chunking service

@@ -1,10 +1,10 @@
 """
 Tests for Sprint 51: LearningProfileRepository coverage.
 
-Tests both InMemory and Supabase implementations:
+Tests both InMemory and PostgreSQL implementations:
 - InMemoryLearningProfileRepository: get, create, update, delete, get_or_create,
   add_assessment, update_level, update_learning_style, count, clear
-- SupabaseLearningProfileRepository: init, is_available, get, create,
+- LearningProfileRepository: init, is_available, get, create,
   get_or_create, update_weak_areas, update_strong_areas, increment_stats,
   _convert_user_id, singleton
 """
@@ -21,7 +21,7 @@ from app.models.learning_profile import (
 )
 from app.repositories.learning_profile_repository import (
     InMemoryLearningProfileRepository,
-    SupabaseLearningProfileRepository,
+    LearningProfileRepository,
 )
 
 
@@ -197,12 +197,12 @@ class TestInMemoryCountClear:
 
 
 # ============================================================================
-# SupabaseLearningProfileRepository
+# LearningProfileRepository
 # ============================================================================
 
 
-def _make_supabase_repo(available=True):
-    """Create SupabaseLearningProfileRepository with mocked DB.
+def _make_pg_repo(available=True):
+    """Create LearningProfileRepository with mocked DB.
 
     Lazy import inside _init_connection(): patch at source module
     app.core.database.get_shared_engine / get_shared_session_factory
@@ -218,7 +218,7 @@ def _make_supabase_repo(available=True):
         if not available:
             mock_session.execute.side_effect = Exception("Connection refused")
 
-        repo = SupabaseLearningProfileRepository()
+        repo = LearningProfileRepository()
 
     if available:
         repo._available = True
@@ -231,39 +231,39 @@ def _make_supabase_repo(available=True):
     return repo, None
 
 
-class TestSupabaseInit:
-    """Test Supabase repository initialization."""
+class TestPgInit:
+    """Test PG repository initialization."""
 
     def test_available(self):
-        repo, _ = _make_supabase_repo(available=True)
+        repo, _ = _make_pg_repo(available=True)
         assert repo.is_available() is True
 
     def test_unavailable(self):
-        repo, _ = _make_supabase_repo(available=False)
+        repo, _ = _make_pg_repo(available=False)
         assert repo.is_available() is False
 
 
-class TestSupabaseConvertUserId:
+class TestPgConvertUserId:
     """Test user ID conversion."""
 
     def test_valid_uuid(self):
-        repo, _ = _make_supabase_repo()
+        repo, _ = _make_pg_repo()
         uid = str(uuid4())
         result = repo._convert_user_id(uid)
         assert isinstance(result, UUID)
 
     def test_invalid_uuid(self):
-        repo, _ = _make_supabase_repo()
+        repo, _ = _make_pg_repo()
         result = repo._convert_user_id("test-user")
         assert result == "test-user"
 
 
-class TestSupabaseGet:
-    """Test Supabase get."""
+class TestPgGet:
+    """Test PG get."""
 
     @pytest.mark.asyncio
     async def test_found(self):
-        repo, session = _make_supabase_repo()
+        repo, session = _make_pg_repo()
         mock_row = (str(uuid4()), {"level": "beginner"}, ["Rule 15"], ["Rule 7"], 5, 20, None)
         mock_result = MagicMock()
         mock_result.fetchone.return_value = mock_row
@@ -275,7 +275,7 @@ class TestSupabaseGet:
 
     @pytest.mark.asyncio
     async def test_not_found(self):
-        repo, session = _make_supabase_repo()
+        repo, session = _make_pg_repo()
         mock_result = MagicMock()
         mock_result.fetchone.return_value = None
         session.execute.return_value = mock_result
@@ -285,24 +285,24 @@ class TestSupabaseGet:
 
     @pytest.mark.asyncio
     async def test_unavailable(self):
-        repo, _ = _make_supabase_repo(available=False)
+        repo, _ = _make_pg_repo(available=False)
         result = await repo.get("user1")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_error(self):
-        repo, session = _make_supabase_repo()
+        repo, session = _make_pg_repo()
         session.execute.side_effect = Exception("DB error")
         result = await repo.get("user1")
         assert result is None
 
 
-class TestSupabaseCreate:
-    """Test Supabase create."""
+class TestPgCreate:
+    """Test PG create."""
 
     @pytest.mark.asyncio
     async def test_success(self):
-        repo, session = _make_supabase_repo()
+        repo, session = _make_pg_repo()
         # Mock the get call after create
         mock_row = ("user1", {"level": "beginner"}, [], [], 0, 0, None)
         mock_result = MagicMock()
@@ -314,63 +314,63 @@ class TestSupabaseCreate:
 
     @pytest.mark.asyncio
     async def test_unavailable(self):
-        repo, _ = _make_supabase_repo(available=False)
+        repo, _ = _make_pg_repo(available=False)
         result = await repo.create("user1")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_error(self):
-        repo, session = _make_supabase_repo()
+        repo, session = _make_pg_repo()
         session.execute.side_effect = Exception("DB error")
         result = await repo.create("user1")
         assert result is None
 
 
-class TestSupabaseUpdateWeakAreas:
-    """Test Supabase update_weak_areas."""
+class TestPgUpdateWeakAreas:
+    """Test PG update_weak_areas."""
 
     @pytest.mark.asyncio
     async def test_success(self):
-        repo, session = _make_supabase_repo()
+        repo, session = _make_pg_repo()
         result = await repo.update_weak_areas("user1", ["Rule 15", "SOLAS"])
         assert result is True
 
     @pytest.mark.asyncio
     async def test_unavailable(self):
-        repo, _ = _make_supabase_repo(available=False)
+        repo, _ = _make_pg_repo(available=False)
         result = await repo.update_weak_areas("user1", ["Rule 15"])
         assert result is False
 
     @pytest.mark.asyncio
     async def test_error(self):
-        repo, session = _make_supabase_repo()
+        repo, session = _make_pg_repo()
         session.execute.side_effect = Exception("DB error")
         result = await repo.update_weak_areas("user1", ["Rule 15"])
         assert result is False
 
 
-class TestSupabaseUpdateStrongAreas:
-    """Test Supabase update_strong_areas."""
+class TestPgUpdateStrongAreas:
+    """Test PG update_strong_areas."""
 
     @pytest.mark.asyncio
     async def test_success(self):
-        repo, session = _make_supabase_repo()
+        repo, session = _make_pg_repo()
         result = await repo.update_strong_areas("user1", ["Rule 7"])
         assert result is True
 
     @pytest.mark.asyncio
     async def test_unavailable(self):
-        repo, _ = _make_supabase_repo(available=False)
+        repo, _ = _make_pg_repo(available=False)
         result = await repo.update_strong_areas("user1", [])
         assert result is False
 
 
-class TestSupabaseIncrementStats:
-    """Test Supabase increment_stats."""
+class TestPgIncrementStats:
+    """Test PG increment_stats."""
 
     @pytest.mark.asyncio
     async def test_success(self):
-        repo, session = _make_supabase_repo()
+        repo, session = _make_pg_repo()
         # Mock get_or_create (returns profile dict or creates)
         mock_row = ("user1", {}, [], [], 0, 0, None)
         mock_result = MagicMock()
@@ -382,12 +382,12 @@ class TestSupabaseIncrementStats:
 
     @pytest.mark.asyncio
     async def test_unavailable(self):
-        repo, _ = _make_supabase_repo(available=False)
+        repo, _ = _make_pg_repo(available=False)
         result = await repo.increment_stats("user1")
         assert result is False
 
 
-class TestSupabaseSingleton:
+class TestPgSingleton:
     """Test singleton factory."""
 
     def test_get_learning_profile_repository(self):

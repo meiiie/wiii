@@ -1,7 +1,7 @@
 """
 Tests for Sprint 50: ObjectStorageClient coverage.
 
-Tests Supabase storage including:
+Tests ObjectStorageClient coverage including:
 - UploadResult dataclass
 - __init__ (defaults, custom)
 - _build_path (path structure)
@@ -55,35 +55,43 @@ class TestInitAndPath:
     def test_build_path(self):
         from app.services.object_storage import ObjectStorageClient
         with patch("app.services.object_storage.settings") as mock_s:
-            mock_s.supabase_url = "https://test.supabase.co"
-            mock_s.supabase_key = "test-key"
-            mock_s.supabase_storage_bucket = "test-bucket"
-            client = ObjectStorageClient(url="https://test.supabase.co", key="key")
+            mock_s.minio_endpoint = "localhost:9000"
+            mock_s.minio_access_key = "test-key"
+            mock_s.minio_secret_key = "test-secret"
+            mock_s.minio_bucket = "test-bucket"
+            mock_s.minio_secure = False
+            client = ObjectStorageClient(endpoint="localhost:9000", access_key="key", secret_key="secret")
         assert client._build_path("doc123", 5) == "doc123/page_5.jpg"
         assert client._build_path("abc", 1) == "abc/page_1.jpg"
 
     def test_custom_params(self):
         from app.services.object_storage import ObjectStorageClient
         client = ObjectStorageClient(
-            url="https://custom.supabase.co",
-            key="custom-key",
+            endpoint="custom.storage.local:9000",
+            access_key="custom-key",
+            secret_key="custom-secret",
             bucket="custom-bucket"
         )
-        assert client.url == "https://custom.supabase.co"
-        assert client.key == "custom-key"
+        assert client.endpoint == "custom.storage.local:9000"
+        assert client.access_key == "custom-key"
         assert client.bucket == "custom-bucket"
+
+    def test_url_scheme_stripped(self):
+        """URL scheme is stripped from endpoint (MinIO takes host:port only)."""
+        from app.services.object_storage import ObjectStorageClient
+        client = ObjectStorageClient(url="https://storage.local:9000", key="key", bucket="b")
+        assert client.endpoint == "storage.local:9000"
 
     def test_client_lazy_init(self):
         from app.services.object_storage import ObjectStorageClient
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
         assert client._client is None
 
     def test_client_missing_credentials(self):
         from app.services.object_storage import ObjectStorageClient
-        # Must set url/key directly to bypass `or settings.xxx` fallback
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
-        client.url = ""
-        client.key = ""
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
+        client.endpoint = ""
+        client.access_key = ""
         with pytest.raises(ValueError, match="URL and Key are required"):
             _ = client.client
 
@@ -100,18 +108,11 @@ class TestUploadImage:
     async def test_success(self):
         from app.services.object_storage import ObjectStorageClient
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
-        mock_storage = MagicMock()
-        mock_bucket = MagicMock()
-        mock_storage.from_.return_value = mock_bucket
-        mock_bucket.get_public_url.return_value = "https://test.co/storage/v1/object/public/b/doc1/page_1.jpg"
-        # Sprint 171: upload_image now tries signed URL first
-        mock_bucket.create_signed_url.return_value = {
-            "signedURL": "https://test.co/storage/v1/object/sign/b/doc1/page_1.jpg?token=abc"
-        }
-        mock_supabase = MagicMock()
-        mock_supabase.storage = mock_storage
-        client._client = mock_supabase
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
+        mock_minio = MagicMock()
+        mock_minio.put_object.return_value = None
+        mock_minio.presigned_get_object.return_value = "http://test.co:9000/b/doc1/page_1.jpg?token=abc"
+        client._client = mock_minio
 
         with patch("app.services.object_storage._cb", None):
             result = await client.upload_image(b"image_data", "doc1", 1)
@@ -123,7 +124,7 @@ class TestUploadImage:
     async def test_circuit_breaker_open(self):
         from app.services.object_storage import ObjectStorageClient
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
         mock_cb = MagicMock()
         mock_cb.is_available.return_value = False
         mock_cb.retry_after = 60.0
@@ -138,25 +139,20 @@ class TestUploadImage:
     async def test_retry_then_success(self):
         from app.services.object_storage import ObjectStorageClient
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
-        mock_bucket = MagicMock()
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
         call_count = 0
 
-        def upload_side_effect(*args, **kwargs):
+        def put_side_effect(*args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count < 2:
                 raise Exception("Temporary error")
 
-        mock_bucket.upload = MagicMock(side_effect=upload_side_effect)
-        mock_bucket.get_public_url.return_value = "https://url.com/img.jpg"
-        mock_storage = MagicMock()
-        mock_storage.from_.return_value = mock_bucket
-        mock_supabase = MagicMock()
-        mock_supabase.storage = mock_storage
-        client._client = mock_supabase
+        mock_minio = MagicMock()
+        mock_minio.put_object = MagicMock(side_effect=put_side_effect)
+        mock_minio.presigned_get_object.return_value = "http://test.co:9000/b/img.jpg?token=x"
+        client._client = mock_minio
 
-        # Reduce retry delay for test speed
         client.RETRY_DELAY = 0.01
 
         with patch("app.services.object_storage._cb", None):
@@ -169,14 +165,10 @@ class TestUploadImage:
     async def test_max_retries_exhausted(self):
         from app.services.object_storage import ObjectStorageClient
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
-        mock_bucket = MagicMock()
-        mock_bucket.upload.side_effect = Exception("Persistent error")
-        mock_storage = MagicMock()
-        mock_storage.from_.return_value = mock_bucket
-        mock_supabase = MagicMock()
-        mock_supabase.storage = mock_storage
-        client._client = mock_supabase
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
+        mock_minio = MagicMock()
+        mock_minio.put_object.side_effect = Exception("Persistent error")
+        client._client = mock_minio
 
         client.RETRY_DELAY = 0.01
 
@@ -199,7 +191,7 @@ class TestUploadPilImage:
     async def test_converts_and_uploads(self):
         from app.services.object_storage import ObjectStorageClient, UploadResult
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
         client.upload_image = AsyncMock(return_value=UploadResult(
             success=True, public_url="https://url.com/img.jpg", path="doc1/page_1.jpg"
         ))
@@ -209,7 +201,6 @@ class TestUploadPilImage:
 
         assert result.success is True
         client.upload_image.assert_called_once()
-        # Verify image_data is bytes
         call_args = client.upload_image.call_args
         assert isinstance(call_args.kwargs.get("image_data") or call_args[1].get("image_data", call_args[0][0] if call_args[0] else b""), bytes)
 
@@ -225,17 +216,19 @@ class TestGetPublicUrl:
     def test_returns_url(self):
         from app.services.object_storage import ObjectStorageClient
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
-        mock_bucket = MagicMock()
-        mock_bucket.get_public_url.return_value = "https://test.co/storage/v1/object/public/b/doc1/page_1.jpg"
-        mock_storage = MagicMock()
-        mock_storage.from_.return_value = mock_bucket
-        mock_supabase = MagicMock()
-        mock_supabase.storage = mock_storage
-        client._client = mock_supabase
-
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
+        client.secure = False
         url = client.get_public_url("doc1/page_1.jpg")
         assert "page_1.jpg" in url
+        assert "test.co:9000" in url
+        assert url == "http://test.co:9000/b/doc1/page_1.jpg"
+
+    def test_returns_https_when_secure(self):
+        from app.services.object_storage import ObjectStorageClient
+
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b", secure=True)
+        url = client.get_public_url("doc1/page_1.jpg")
+        assert url.startswith("https://")
 
 
 # ============================================================================
@@ -250,23 +243,20 @@ class TestDeleteImage:
     async def test_success(self):
         from app.services.object_storage import ObjectStorageClient
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
-        mock_bucket = MagicMock()
-        mock_storage = MagicMock()
-        mock_storage.from_.return_value = mock_bucket
-        mock_supabase = MagicMock()
-        mock_supabase.storage = mock_storage
-        client._client = mock_supabase
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
+        mock_minio = MagicMock()
+        client._client = mock_minio
 
         with patch("app.services.object_storage._cb", None):
             result = await client.delete_image("doc1/page_1.jpg")
         assert result is True
+        mock_minio.remove_object.assert_called_once_with("b", "doc1/page_1.jpg")
 
     @pytest.mark.asyncio
     async def test_circuit_breaker_open(self):
         from app.services.object_storage import ObjectStorageClient
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
         mock_cb = MagicMock()
         mock_cb.is_available.return_value = False
 
@@ -278,14 +268,10 @@ class TestDeleteImage:
     async def test_error(self):
         from app.services.object_storage import ObjectStorageClient
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
-        mock_bucket = MagicMock()
-        mock_bucket.remove.side_effect = Exception("Delete failed")
-        mock_storage = MagicMock()
-        mock_storage.from_.return_value = mock_bucket
-        mock_supabase = MagicMock()
-        mock_supabase.storage = mock_storage
-        client._client = mock_supabase
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
+        mock_minio = MagicMock()
+        mock_minio.remove_object.side_effect = Exception("Delete failed")
+        client._client = mock_minio
 
         with patch("app.services.object_storage._cb", None):
             result = await client.delete_image("doc1/page_1.jpg")
@@ -304,16 +290,17 @@ class TestDeleteDocumentImages:
     async def test_success(self):
         from app.services.object_storage import ObjectStorageClient
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
-        mock_bucket = MagicMock()
-        mock_bucket.list.return_value = [
-            {"name": "page_1.jpg"}, {"name": "page_2.jpg"}
-        ]
-        mock_storage = MagicMock()
-        mock_storage.from_.return_value = mock_bucket
-        mock_supabase = MagicMock()
-        mock_supabase.storage = mock_storage
-        client._client = mock_supabase
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
+        # Mock list_objects to return 2 objects
+        obj1 = MagicMock()
+        obj1.object_name = "doc1/page_1.jpg"
+        obj2 = MagicMock()
+        obj2.object_name = "doc1/page_2.jpg"
+
+        mock_minio = MagicMock()
+        mock_minio.list_objects.return_value = [obj1, obj2]
+        mock_minio.remove_objects.return_value = iter([])  # no errors
+        client._client = mock_minio
 
         with patch("app.services.object_storage._cb", None):
             count = await client.delete_document_images("doc1")
@@ -323,14 +310,10 @@ class TestDeleteDocumentImages:
     async def test_empty(self):
         from app.services.object_storage import ObjectStorageClient
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
-        mock_bucket = MagicMock()
-        mock_bucket.list.return_value = []
-        mock_storage = MagicMock()
-        mock_storage.from_.return_value = mock_bucket
-        mock_supabase = MagicMock()
-        mock_supabase.storage = mock_storage
-        client._client = mock_supabase
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
+        mock_minio = MagicMock()
+        mock_minio.list_objects.return_value = []
+        client._client = mock_minio
 
         with patch("app.services.object_storage._cb", None):
             count = await client.delete_document_images("doc1")
@@ -340,7 +323,7 @@ class TestDeleteDocumentImages:
     async def test_circuit_breaker_open(self):
         from app.services.object_storage import ObjectStorageClient
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
         mock_cb = MagicMock()
         mock_cb.is_available.return_value = False
 
@@ -352,14 +335,10 @@ class TestDeleteDocumentImages:
     async def test_error(self):
         from app.services.object_storage import ObjectStorageClient
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
-        mock_bucket = MagicMock()
-        mock_bucket.list.side_effect = Exception("List failed")
-        mock_storage = MagicMock()
-        mock_storage.from_.return_value = mock_bucket
-        mock_supabase = MagicMock()
-        mock_supabase.storage = mock_storage
-        client._client = mock_supabase
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
+        mock_minio = MagicMock()
+        mock_minio.list_objects.side_effect = Exception("List failed")
+        client._client = mock_minio
 
         with patch("app.services.object_storage._cb", None):
             count = await client.delete_document_images("doc1")
@@ -378,13 +357,10 @@ class TestCheckHealth:
     async def test_healthy(self):
         from app.services.object_storage import ObjectStorageClient
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
-        mock_bucket = MagicMock()
-        mock_storage = MagicMock()
-        mock_storage.from_.return_value = mock_bucket
-        mock_supabase = MagicMock()
-        mock_supabase.storage = mock_storage
-        client._client = mock_supabase
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
+        mock_minio = MagicMock()
+        mock_minio.bucket_exists.return_value = True
+        client._client = mock_minio
 
         with patch("app.services.object_storage._cb", None):
             result = await client.check_health()
@@ -394,14 +370,10 @@ class TestCheckHealth:
     async def test_unhealthy(self):
         from app.services.object_storage import ObjectStorageClient
 
-        client = ObjectStorageClient(url="https://test.co", key="key", bucket="b")
-        mock_bucket = MagicMock()
-        mock_bucket.list.side_effect = Exception("Connection refused")
-        mock_storage = MagicMock()
-        mock_storage.from_.return_value = mock_bucket
-        mock_supabase = MagicMock()
-        mock_supabase.storage = mock_storage
-        client._client = mock_supabase
+        client = ObjectStorageClient(endpoint="test.co:9000", access_key="key", secret_key="s", bucket="b")
+        mock_minio = MagicMock()
+        mock_minio.bucket_exists.side_effect = Exception("Connection refused")
+        client._client = mock_minio
 
         with patch("app.services.object_storage._cb", None):
             result = await client.check_health()

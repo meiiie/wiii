@@ -166,9 +166,9 @@ DATABASE_URL=postgresql+asyncpg://wiii:wiii_secret@localhost:5433/wiii_ai
 NEO4J_URI=bolt://localhost:7687
 REDIS_URL=redis://localhost:6379/0
 
-# MinIO thay thế Supabase
+# MinIO Object Storage
 MINIO_ENDPOINT=localhost:9000
-SUPABASE_URL=http://localhost:9000
+STORAGE_URL=http://localhost:9000
 
 # Development flags
 DEBUG=true
@@ -398,7 +398,7 @@ git push origin main
 **Lưu ý:** Render sử dụng:
 - Neon PostgreSQL (thay vì local Postgres)
 - Neo4j Aura (thay vì local Neo4j)
-- Supabase Storage (thay vì MinIO)
+- Object Storage (MinIO)
 
 ---
 

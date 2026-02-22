@@ -31,12 +31,14 @@ class ConnectionManager:
     and ensures clean disconnect handling.
 
     Sprint 20: Added user_id tracking for proactive notifications.
+    Sprint 171b: Added organization_id tracking for multi-tenant isolation.
     """
 
     def __init__(self):
         self._connections: Dict[str, WebSocket] = {}       # session_id → ws
         self._user_sessions: Dict[str, Set[str]] = {}      # user_id → {session_ids}
         self._session_users: Dict[str, str] = {}            # session_id → user_id
+        self._session_orgs: Dict[str, str] = {}             # session_id → org_id
 
     async def connect(self, websocket: WebSocket, session_id: str) -> None:
         """Accept a WebSocket connection and register it."""
@@ -44,17 +46,25 @@ class ConnectionManager:
         self._connections[session_id] = websocket
         logger.info("[WS] Connected: session=%s", session_id)
 
-    def register_user(self, session_id: str, user_id: str) -> None:
-        """Link a session to a user_id for targeted notifications."""
+    def register_user(
+        self, session_id: str, user_id: str, organization_id: str = ""
+    ) -> None:
+        """Link a session to a user_id and optional org_id."""
         self._session_users[session_id] = user_id
+        if organization_id:
+            self._session_orgs[session_id] = organization_id
         if user_id not in self._user_sessions:
             self._user_sessions[user_id] = set()
         self._user_sessions[user_id].add(session_id)
-        logger.debug("[WS] Registered user=%s on session=%s", user_id, session_id)
+        logger.debug(
+            "[WS] Registered user=%s org=%s on session=%s",
+            user_id, organization_id or "(none)", session_id,
+        )
 
     def disconnect(self, session_id: str) -> None:
-        """Remove a WebSocket connection and clean up user mapping."""
+        """Remove a WebSocket connection and clean up user/org mapping."""
         self._connections.pop(session_id, None)
+        self._session_orgs.pop(session_id, None)
         user_id = self._session_users.pop(session_id, None)
         if user_id and user_id in self._user_sessions:
             self._user_sessions[user_id].discard(session_id)
@@ -68,15 +78,23 @@ class ConnectionManager:
         if ws:
             await ws.send_text(data)
 
-    async def send_to_user(self, user_id: str, data: str) -> int:
+    async def send_to_user(
+        self, user_id: str, data: str, organization_id: str = ""
+    ) -> int:
         """
-        Send a message to all sessions belonging to a user.
+        Send a message to sessions belonging to a user.
+
+        When organization_id is provided, only sends to sessions in that org
+        (prevents cross-org message leakage in multi-tenant mode).
 
         Returns the number of sessions the message was sent to.
         """
         session_ids = self._user_sessions.get(user_id, set())
         sent = 0
         for sid in list(session_ids):
+            # Filter by org if specified
+            if organization_id and self._session_orgs.get(sid) != organization_id:
+                continue
             ws = self._connections.get(sid)
             if ws:
                 try:
@@ -102,6 +120,10 @@ class ConnectionManager:
         """Get all session_ids for a user."""
         return self._user_sessions.get(user_id, set()).copy()
 
+    def get_session_org(self, session_id: str) -> str:
+        """Get organization_id for a session."""
+        return self._session_orgs.get(session_id, "")
+
 
 # Global connection manager
 manager = ConnectionManager()
@@ -112,6 +134,7 @@ async def websocket_chat(
     websocket: WebSocket,
     session_id: str,
     api_key: str = Query(default=None, alias="api_key"),
+    organization_id: str = Query(default="", alias="org_id"),
 ):
     """
     WebSocket endpoint for real-time chat.
@@ -162,8 +185,10 @@ async def websocket_chat(
                 continue
 
             # Register user_id from sender_id (first message auto-links)
+            # Also pick up org_id from message metadata (overrides query param)
+            msg_org_id = channel_msg.metadata.get("organization_id", "") or organization_id
             if channel_msg.sender_id:
-                manager.register_user(session_id, channel_msg.sender_id)
+                manager.register_user(session_id, channel_msg.sender_id, msg_org_id)
 
             # Handle ping/pong heartbeat
             if channel_msg.metadata.get("ws_message_type") == "ping":
@@ -179,10 +204,21 @@ async def websocket_chat(
                 # Send typing indicator
                 await websocket.send_text(_ws_adapter.format_typing(True))
 
+                # Set org context ContextVar for downstream filtering
+                if msg_org_id:
+                    try:
+                        from app.core.org_context import current_org_id
+                        current_org_id.set(msg_org_id)
+                    except Exception:
+                        pass  # org_context not available
+
                 # Convert to ChatRequest
                 chat_request = to_chat_request(channel_msg)
                 # Override session_id from URL
                 chat_request.session_id = session_id
+                # Pass organization_id if available
+                if msg_org_id:
+                    chat_request.organization_id = msg_org_id
 
                 # Process via ChatOrchestrator
                 from app.services.chat_orchestrator import ChatOrchestrator

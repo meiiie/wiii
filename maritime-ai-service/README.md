@@ -53,7 +53,8 @@ uvicorn app.main:app --reload
 | **Hybrid Search** | Dense (pgvector) + Sparse (tsvector) + RRF reranking |
 | **Memory System** | Cross-session facts, insights, learning patterns, character system with Stanford reflection |
 | **Authentication** | Google OAuth 2.0, JWT (access + refresh), LMS Token Exchange (HMAC-signed) |
-| **Multi-Tenant** | Org-level data isolation, domain filtering, org-prefixed thread IDs, RBAC |
+| **Multi-Tenant** | Org-level data isolation (all 16 repos), domain filtering, org-prefixed thread IDs, RBAC |
+| **Living Agent** | Autonomous soul, emotion engine, heartbeat scheduler, skill lifecycle, journal, social browsing |
 | **LMS Integration** | Webhook enrichment, backend-to-backend token exchange, Moodle/Canvas compatibility |
 | **MCP Support** | Server (`/mcp` endpoint via fastapi-mcp) + Client (external MCP tool consumption) |
 | **Web Search** | DuckDuckGo, News, Legal, Maritime-specific, price comparison (WebSosanh) |
@@ -72,7 +73,7 @@ maritime-ai-service/
 │   ├── auth/                  # Google OAuth, JWT, LMS token exchange, user service
 │   ├── cache/                 # Semantic cache system
 │   ├── channels/              # Multi-channel gateway (WebSocket, Telegram)
-│   ├── core/                  # Config (46+ feature flags), security, middleware, org filtering
+│   ├── core/                  # Config (47+ feature flags), security, middleware, org filtering
 │   ├── domains/               # Domain plugins (maritime/, traffic_law/, _template/)
 │   ├── engine/                # AI engine
 │   │   ├── agentic_rag/       # Corrective RAG pipeline (hybrid search, grading, generation)
@@ -87,13 +88,13 @@ maritime-ai-service/
 │   ├── mcp/                   # MCP server + client + schema adapter
 │   ├── models/                # Pydantic schemas (chat, organization, user)
 │   ├── prompts/               # YAML persona configs (tutor, rag, supervisor, etc.)
-│   ├── repositories/          # 15 data access repositories
-│   ├── services/              # Business logic (orchestrator, session, scheduler, notifications)
+│   ├── repositories/          # 16 data access repositories (all org-aware)
+│   ├── services/              # Business logic (orchestrator, session, scheduler, object storage)
 │   └── tasks/                 # Background task infrastructure
-├── alembic/                   # 12 database migrations
+├── alembic/                   # 18 database migrations
 ├── docs/architecture/         # SYSTEM_FLOW.md, SYSTEM_ARCHITECTURE.md
 ├── scripts/                   # Utility & test scripts
-└── tests/                     # 319 test files, 6200+ unit tests
+└── tests/                     # 278 test files, 7076+ unit tests
     ├── unit/                  # Unit tests (mock-based, no services required)
     ├── integration/           # Integration tests (require DB, Redis, etc.)
     ├── property/              # Property-based tests (Hypothesis)
@@ -197,6 +198,17 @@ X-Session-ID: session-abc
 | `/api/v1/admin/domains/{id}/skills` | GET | Domain skill manifest |
 | `/api/v1/admin/stats` | GET | System statistics |
 
+### Living Agent
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/living-agent/status` | GET | Full status (soul, mood, heartbeat, counts) |
+| `/api/v1/living-agent/emotional-state` | GET | Current 4D emotional state |
+| `/api/v1/living-agent/journal` | GET | Recent journal entries |
+| `/api/v1/living-agent/skills` | GET | All skills with lifecycle status |
+| `/api/v1/living-agent/heartbeat` | GET | Heartbeat scheduler info |
+| `/api/v1/living-agent/heartbeat/trigger` | POST | Manually trigger heartbeat cycle |
+
 ### Health
 
 | Endpoint | Method | Description |
@@ -276,6 +288,31 @@ app/engine/search_platforms/
 └── oauth/             # OAuth token management for platform APIs
 ```
 
+### Object Storage (MinIO)
+
+```
+app/services/object_storage.py   # ObjectStorageClient (MinIO SDK)
+                                 # - Singleton pattern, circuit breaker, retry logic
+                                 # - Upload validation (size, content-type, timeout)
+                                 # - Presigned URLs with fallback to public URLs
+                                 # - Multi-tenant org-prefixed storage paths
+                                 # - Health check via bucket_exists()
+```
+
+### Living Agent System
+
+```
+app/engine/living_agent/
+├── models.py           # EmotionalState, SkillEntry, JournalEntry, HeartbeatResult
+├── soul_loader.py      # YAML soul config loader (identity, truths, boundaries)
+├── emotion_engine.py   # Rule-based 4D emotional state (mood/energy/social/engagement)
+├── heartbeat.py        # AsyncIO background scheduler (30-min interval)
+├── local_llm.py        # Ollama qwen3:8b async client (zero-cost 24/7)
+├── skill_builder.py    # Skill lifecycle (DISCOVER→LEARN→PRACTICE→EVALUATE→MASTER)
+├── journal.py          # Daily journal entries via local LLM
+└── social_browser.py   # Serper + HackerNews API browsing
+```
+
 ---
 
 ## Configuration
@@ -321,7 +358,7 @@ LMS_WEBHOOK_SECRET=...
 
 ### Feature Flags
 
-The application uses 46+ feature flags in `app/core/config.py`. Key flags:
+The application uses 47+ feature flags in `app/core/config.py`. Key flags:
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -338,6 +375,7 @@ The application uses 46+ feature flags in `app/core/config.py`. Key flags:
 | `enable_agentic_loop` | `False` | Generalized ReAct loop |
 | `enable_scheduler` | `False` | Background task execution |
 | `enable_lms_token_exchange` | `False` | LMS backend token exchange |
+| `enable_living_agent` | `False` | Autonomous soul, emotion, heartbeat, skills |
 | `enable_llm_failover` | `True` | Multi-provider failover chain |
 
 See `.env.example` and `app/core/config.py` for the full list.
@@ -385,7 +423,7 @@ pytest tests/property/ -v
 pytest tests/unit/ --cov=app --cov-report=html
 ```
 
-**Stats:** 6200+ unit tests across 319 test files. All passing.
+**Stats:** 7076+ unit tests across 278 test files. All passing.
 
 ---
 
@@ -408,7 +446,7 @@ docker compose up -d        # Start all services
 
 ## Database Migrations
 
-Managed via Alembic (12 migrations as of Sprint 160):
+Managed via Alembic (18 migrations as of Sprint 171):
 
 ```bash
 # Run all pending migrations
@@ -421,7 +459,7 @@ alembic revision --autogenerate -m "description"
 alembic current
 ```
 
-Key migrations include: initial schema, pgvector extension, semantic memory tables, character system, organization tables, org data isolation columns, auth method tracking.
+Key migrations include: initial schema, pgvector extension, semantic memory tables, character system, organization tables, org data isolation columns, auth method tracking, living agent tables, pgvector HNSW performance overhaul, multi-tenant hardening indexes, autovacuum tuning.
 
 ---
 

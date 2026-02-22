@@ -3,7 +3,7 @@ Tests for Sprint 37: Async safety and resource management.
 
 Covers:
 - vision_extractor._rate_limit() is async (no time.sleep)
-- supabase_storage retry uses asyncio.sleep (no time.sleep)
+- object_storage retry uses asyncio.sleep (no time.sleep)
 - web_search_tools circuit breaker is thread-safe
 - admin.py _ingestion_jobs has bounded cleanup
 """
@@ -44,9 +44,9 @@ class TestNoBlockingSleepInAsyncCode:
                                 f"uses blocking time.sleep() at line {child.lineno}"
                             )
 
-    def test_supabase_storage_no_time_sleep_in_async(self):
-        """supabase_storage async methods should not use time.sleep()."""
-        with open("app/services/supabase_storage.py", "r", encoding="utf-8") as f:
+    def test_object_storage_no_time_sleep_in_async(self):
+        """object_storage async methods should not use time.sleep()."""
+        with open("app/services/object_storage.py", "r", encoding="utf-8") as f:
             tree = ast.parse(f.read())
 
         for node in ast.walk(tree):

@@ -33,7 +33,7 @@ def upgrade() -> None:
     """
     Create knowledge_embeddings table with multimodal columns.
     
-    - image_url: URL to the page image stored in Supabase Storage
+    - image_url: URL to the page image stored in object storage
     - page_number: Page number in the original PDF document
     - document_id: Identifier for the source document
     """

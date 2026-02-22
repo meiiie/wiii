@@ -113,4 +113,5 @@ def to_chat_request(msg: ChannelMessage, default_role: str = "student") -> "Chat
         session_id=msg.metadata.get("session_id", msg.channel_id),
         thread_id=msg.metadata.get("thread_id"),
         domain_id=msg.metadata.get("domain_id"),
+        organization_id=msg.metadata.get("organization_id"),
     )

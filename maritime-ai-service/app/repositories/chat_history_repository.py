@@ -93,7 +93,7 @@ class ChatHistoryRepository:
     def _init_connection(self):
         """Initialize database connection using SHARED engine."""
         try:
-            # Use SHARED engine to minimize connections (Supabase Free Tier)
+            # Use SHARED engine to minimize connections
             from app.core.database import get_shared_engine, get_shared_session_factory
             
             self._engine = get_shared_engine()

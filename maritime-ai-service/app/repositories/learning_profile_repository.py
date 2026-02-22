@@ -228,9 +228,9 @@ class InMemoryLearningProfileRepository:
         self._profiles.clear()
 
 
-class SupabaseLearningProfileRepository:
+class LearningProfileRepository:
     """
-    Supabase PostgreSQL implementation of Learning Profile repository.
+    PostgreSQL implementation of Learning Profile repository.
     
     Uses the learning_profile table created by CHỈ THỊ SỐ 04 SQL script.
     
@@ -248,7 +248,7 @@ class SupabaseLearningProfileRepository:
     def _init_connection(self):
         """Initialize database connection using SHARED engine."""
         try:
-            # Use SHARED engine to minimize connections (Supabase Free Tier)
+            # Use SHARED engine to minimize connections
             from app.core.database import get_shared_engine, get_shared_session_factory
             
             self._engine = get_shared_engine()
@@ -526,14 +526,12 @@ class SupabaseLearningProfileRepository:
 
 
 # Singleton instance
-# Note: Class name kept as SupabaseLearningProfileRepository for backward compatibility
-# but it actually uses PostgreSQL (Neon) via SQLAlchemy
-_pg_profile_repo: Optional[SupabaseLearningProfileRepository] = None
+_pg_profile_repo: Optional[LearningProfileRepository] = None
 
 
-def get_learning_profile_repository() -> SupabaseLearningProfileRepository:
+def get_learning_profile_repository() -> LearningProfileRepository:
     """Get or create PostgreSQL LearningProfileRepository singleton."""
     global _pg_profile_repo
     if _pg_profile_repo is None:
-        _pg_profile_repo = SupabaseLearningProfileRepository()
+        _pg_profile_repo = LearningProfileRepository()
     return _pg_profile_repo

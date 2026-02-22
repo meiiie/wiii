@@ -4,7 +4,7 @@ Re-ingest COLREGs data with embeddings for Hybrid Search.
 This script:
 1. Reads existing Knowledge nodes from Neo4j
 2. Generates Gemini embeddings (768 dims)
-3. Stores embeddings in pgvector (Supabase)
+3. Stores embeddings in pgvector (PostgreSQL)
 
 Usage:
     python scripts/reingest_with_embeddings.py
@@ -22,7 +22,7 @@ load_dotenv()
 
 
 async def create_embeddings_table():
-    """Create knowledge_embeddings table in Supabase if not exists."""
+    """Create knowledge_embeddings table if not exists."""
     print("\n" + "="*60)
     print("STEP 1: Create pgvector table")
     print("="*60)

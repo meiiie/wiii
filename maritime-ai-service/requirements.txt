@@ -62,8 +62,8 @@ pymupdf>=1.26.0  # CHỈ THỊ 26: PDF to image (no external deps, replaces pdf2
 pdf2image>=1.16.3  # Fallback for Poppler-based PDF rendering (pymupdf is primary)
 Pillow>=10.0.0  # CHỈ THỊ 26: Image processing
 
-# Supabase Storage (CHỈ THỊ 26: Hybrid Infrastructure)
-supabase>=2.0.0
+# Object Storage (MinIO SDK)
+minio>=7.2.0
 
 # Web Search
 # ddgs removed Sprint 154 — duckduckgo-search>=7.0.0 is the active package (import: duckduckgo_search)

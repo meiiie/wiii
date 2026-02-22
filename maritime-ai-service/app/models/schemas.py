@@ -594,7 +594,7 @@ class ChatResponseDataWithEvidence(ChatResponseData):
                     ],
                     "evidence_images": [
                         {
-                            "url": "https://xyz.supabase.co/storage/v1/object/public/maritime-docs/colregs/page_15.jpg",
+                            "url": "https://storage.example.com/wiii-docs/colregs/page_15.jpg",
                             "page_number": 15,
                             "document_id": "colregs_2024"
                         }

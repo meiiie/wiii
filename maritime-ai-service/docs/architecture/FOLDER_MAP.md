@@ -430,7 +430,7 @@ sequenceDiagram
 
 ```mermaid
 graph LR
-    PDF[PDF File] --> Upload[Supabase Upload]
+    PDF[PDF File] --> Upload[Object Storage Upload]
     Upload --> Vision[Gemini Vision]
     Vision --> Chunk[Semantic Chunking]
     Chunk --> Embed[Embeddings]

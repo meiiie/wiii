@@ -35,9 +35,9 @@ def _make_settings(**overrides):
     s.async_pool_max_size = 10
     s.postgres_statement_timeout_ms = 30000
     s.postgres_idle_in_transaction_timeout_ms = 60000
-    s.supabase_url = "http://localhost:9000"
-    s.supabase_key = "test-key"
-    s.supabase_storage_bucket = "wiii-docs"
+    s.storage_url = "http://localhost:9000"
+    s.storage_key = "test-key"
+    s.storage_bucket = "wiii-docs"
     s.app_name = "wiii"
     s.app_version = "1.0"
     s.environment = "test"
@@ -294,25 +294,23 @@ class TestPresignedUrls:
         sig = inspect.signature(ObjectStorageClient.get_signed_url)
         assert sig.parameters["expires_in"].default == 3600
 
-    def test_get_signed_url_calls_create_signed_url(self):
-        """get_signed_url delegates to Supabase SDK create_signed_url."""
+    def test_get_signed_url_calls_presigned_get_object(self):
+        """get_signed_url delegates to MinIO presigned_get_object."""
         from app.services.object_storage import ObjectStorageClient
+        from datetime import timedelta
         client = ObjectStorageClient.__new__(ObjectStorageClient)
         client.bucket = "test"
+        client.secure = False
+        client.endpoint = "test.co:9000"
 
-        mock_storage = MagicMock()
-        mock_storage.from_.return_value.create_signed_url.return_value = {
-            "signedURL": "https://example.com/signed?token=abc"
-        }
-
-        mock_supabase = MagicMock()
-        mock_supabase.storage = mock_storage
-        client._client = mock_supabase
+        mock_minio = MagicMock()
+        mock_minio.presigned_get_object.return_value = "http://test.co:9000/test/test/path.jpg?X-Amz-Signature=abc"
+        client._client = mock_minio
 
         url = client.get_signed_url("test/path.jpg", expires_in=7200)
-        assert "signed" in url.lower() or "token" in url.lower()
-        mock_storage.from_.return_value.create_signed_url.assert_called_once_with(
-            "test/path.jpg", 7200
+        assert "path.jpg" in url
+        mock_minio.presigned_get_object.assert_called_once_with(
+            "test", "test/path.jpg", expires=timedelta(seconds=7200)
         )
 
     def test_get_signed_url_fallback_to_public(self):
@@ -320,17 +318,15 @@ class TestPresignedUrls:
         from app.services.object_storage import ObjectStorageClient
         client = ObjectStorageClient.__new__(ObjectStorageClient)
         client.bucket = "test"
+        client.secure = False
+        client.endpoint = "test.co:9000"
 
-        mock_storage = MagicMock()
-        mock_storage.from_.return_value.create_signed_url.side_effect = Exception("SDK error")
-        mock_storage.from_.return_value.get_public_url.return_value = "https://public.url/path"
-
-        mock_supabase = MagicMock()
-        mock_supabase.storage = mock_storage
-        client._client = mock_supabase
+        mock_minio = MagicMock()
+        mock_minio.presigned_get_object.side_effect = Exception("SDK error")
+        client._client = mock_minio
 
         url = client.get_signed_url("test/path.jpg")
-        assert url == "https://public.url/path"
+        assert url == "http://test.co:9000/test/test/path.jpg"
 
 
 # ============================================================================

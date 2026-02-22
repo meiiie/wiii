@@ -307,7 +307,7 @@ class HeartbeatScheduler:
             if settings.living_agent_enable_social_browse:
                 candidates.append(HeartbeatAction(
                     action_type=ActionType.BROWSE_SOCIAL,
-                    target=random.choice(["news", "tech", "maritime"]),
+                    target=random.choice(["news", "tech", "maritime", "facebook"]),
                     priority=0.6,
                 ))
             if settings.living_agent_enable_skill_building:

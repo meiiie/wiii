@@ -21,7 +21,7 @@ from PIL import Image
 
 from app.core.config import settings
 from app.core.database import get_shared_session_factory
-from app.services.supabase_storage import SupabaseStorageClient
+from app.services.object_storage import ObjectStorageClient
 from app.services.chunking_service import SemanticChunker, ChunkResult
 from app.engine.vision_extractor import VisionExtractor
 from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
@@ -47,7 +47,7 @@ class VisionProcessor:
 
     Responsibilities:
     - Hybrid detection (direct PyMuPDF vs Vision API extraction)
-    - Image upload to Supabase
+    - Image upload to object storage (MinIO/S3)
     - Semantic chunking
     - Contextual RAG enrichment
     - Embedding generation and database storage
@@ -58,7 +58,7 @@ class VisionProcessor:
 
     def __init__(
         self,
-        storage: SupabaseStorageClient,
+        storage: ObjectStorageClient,
         vision: VisionExtractor,
         embeddings: GeminiOptimizedEmbeddings,
         chunker: SemanticChunker,
@@ -76,7 +76,7 @@ class VisionProcessor:
         Initialize VisionProcessor with all required services.
 
         Args:
-            storage: Supabase Storage client
+            storage: Object storage client
             vision: Vision extraction service
             embeddings: Embedding generation service
             chunker: Semantic chunking service
@@ -153,7 +153,7 @@ class VisionProcessor:
         Process a single page through the pipeline with semantic chunking.
 
         Steps:
-        1. Upload image to Supabase
+        1. Upload image to object storage
         2. Analyze page for hybrid detection (if enabled)
         3. Extract text using Vision OR Direct method
         4. Apply semantic chunking
@@ -169,7 +169,7 @@ class VisionProcessor:
         extraction_method = "vision"
         was_fallback = False
 
-        # Step 1: Upload to Supabase
+        # Step 1: Upload to object storage
         upload_result = await self.storage.upload_pil_image(
             image=image,
             document_id=document_id,

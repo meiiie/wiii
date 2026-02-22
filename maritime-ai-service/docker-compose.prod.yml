@@ -37,8 +37,7 @@ services:
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-wiii}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       - MINIO_BUCKET=${MINIO_BUCKET:-wiii-docs}
-      - SUPABASE_URL=http://minio:9000
-      - SUPABASE_KEY=${SUPABASE_KEY:-minio-local-key}
+      - MINIO_SECURE=false
       - VALKEY_URL=redis://valkey:6379/0
     depends_on:
       postgres:

@@ -76,7 +76,7 @@ def get_processed_pages(document_id: str) -> dict:
     - 'stats': processing statistics (vision/direct counts)
     
     Logic: Chỉ pages có record trong knowledge_embeddings mới được coi là "processed".
-    Nếu ảnh đã upload lên Supabase nhưng chưa có embedding → sẽ được retry.
+    Nếu ảnh đã upload lên storage nhưng chưa có embedding → sẽ được retry.
     """
     try:
         import asyncpg

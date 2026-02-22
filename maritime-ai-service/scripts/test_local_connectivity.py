@@ -98,13 +98,13 @@ async def test_gemini_api() -> Dict[str, any]:
         }
 
 
-async def test_supabase_storage() -> Dict[str, any]:
-    """Test Supabase Storage connection."""
+async def test_object_storage() -> Dict[str, any]:
+    """Test Object Storage (MinIO) connection."""
     try:
-        from app.services.supabase_storage import SupabaseStorage
-        
+        from app.services.object_storage import ObjectStorageClient
+
         start = time.time()
-        storage = SupabaseStorage()
+        storage = ObjectStorageClient()
         # Check if client is initialized
         if storage.client:
             elapsed = time.time() - start
@@ -140,7 +140,7 @@ async def main():
         "Neon PostgreSQL": test_neon_postgresql(),
         "Neo4j AuraDB": test_neo4j_auradb(),
         "Google Gemini API": test_gemini_api(),
-        "Supabase Storage": test_supabase_storage(),
+        "Object Storage": test_object_storage(),
     }
     
     results = {}

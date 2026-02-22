@@ -3,6 +3,7 @@ Social Browser — Wiii's autonomous content discovery engine.
 
 Sprint 170: "Linh Hồn Sống"
 Sprint 171: "Quyền Tự Chủ" — Routes through existing web tools + safety.
+Sprint 173: "Tự Khám Phá" — Facebook browsing via Serper site:facebook.com.
 
 Browses news, tech blogs, and social media to discover content
 aligned with Wiii's interests. Uses existing web_search_tools.py
@@ -16,6 +17,11 @@ Sprint 171 changes:
     - Prompt injection detection before LLM calls
     - Serper + HackerNews kept as fallback only
     - Topic tracking for proper tool routing
+
+Sprint 173 changes:
+    - Added "facebook" topic with site:facebook.com queries
+    - _search_facebook(): lightweight Serper-based search (no Playwright)
+    - Facebook topic routes to _search_facebook() instead of _invoke_tool()
 """
 
 import asyncio
@@ -53,6 +59,13 @@ _TOPIC_QUERIES = {
         "astronomy discoveries 2026",
         "ocean conservation",
         "renewable energy maritime",
+    ],
+    "facebook": [
+        "site:facebook.com maritime shipping news",
+        "site:facebook.com hàng hải Việt Nam",
+        "site:facebook.com AI technology 2026",
+        "site:facebook.com machine learning news",
+        "site:facebook.com Vietnam technology community",
     ],
     "general": [
         "trending technology news",
@@ -148,19 +161,27 @@ class SocialBrowser:
 
         items: List[BrowsingItem] = []
 
-        # 1. Try existing tools first
-        try:
-            raw = await self._invoke_tool(query)
-            if raw:
-                items = self._parse_tool_results(raw, max_results)
-        except Exception as e:
-            logger.debug("[BROWSER] Tool search failed: %s", e)
+        # 1. Try Facebook-specific search for facebook topic (Sprint 173)
+        if self._current_topic == "facebook":
+            try:
+                items = await self._search_facebook(query, max_results)
+            except Exception as e:
+                logger.debug("[BROWSER] Facebook search failed: %s", e)
 
-        # 2. Fallback to Serper/HN if tools returned nothing
+        # 2. Try existing tools for other topics
+        if not items:
+            try:
+                raw = await self._invoke_tool(query)
+                if raw:
+                    items = self._parse_tool_results(raw, max_results)
+            except Exception as e:
+                logger.debug("[BROWSER] Tool search failed: %s", e)
+
+        # 3. Fallback to Serper/HN if tools returned nothing
         if not items:
             items = await self._fallback_search(query, max_results)
 
-        # 3. Safety: validate URLs and sanitize content
+        # 4. Safety: validate URLs and sanitize content
         safe_items = []
         for item in items:
             if item.url and not validate_url(item.url):
@@ -194,6 +215,48 @@ class SocialBrowser:
         # Tools are sync (DuckDuckGo uses ThreadPoolExecutor internally)
         result = await asyncio.to_thread(tool_fn.invoke, query)
         return result
+
+    async def _search_facebook(self, query: str, max_results: int) -> List[BrowsingItem]:
+        """Search Facebook via Serper API (site:facebook.com).
+
+        Sprint 173: Lightweight Facebook search — no Playwright, no cookies.
+        Uses Google index of public Facebook content via Serper API.
+
+        Args:
+            query: Search query (should contain site:facebook.com).
+            max_results: Maximum results to return.
+
+        Returns:
+            List of BrowsingItem with platform="facebook".
+        """
+        import httpx
+        from app.core.config import settings
+
+        api_key = settings.serper_api_key
+        if not api_key:
+            return []
+
+        # Ensure query targets Facebook
+        search_query = query if "site:facebook.com" in query else f"site:facebook.com {query}"
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                "https://google.serper.dev/search",
+                headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+                json={"q": search_query, "num": max_results, "gl": "vn", "hl": "vi"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        items = []
+        for result in data.get("organic", [])[:max_results]:
+            items.append(BrowsingItem(
+                platform="facebook",
+                url=result.get("link", ""),
+                title=result.get("title", ""),
+                summary=result.get("snippet", ""),
+            ))
+        return items
 
     def _parse_tool_results(self, raw: str, max_results: int) -> List[BrowsingItem]:
         """Parse formatted tool output back into BrowsingItem objects.

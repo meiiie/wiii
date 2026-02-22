@@ -74,7 +74,7 @@ async def test_repository(embeddings):
     
     if not is_available:
         print("  ⚠️ Repository not available - skipping database tests")
-        print("  Make sure pgvector is enabled in Supabase")
+        print("  Make sure pgvector is enabled in PostgreSQL")
         return None
     
     # Test save_memory

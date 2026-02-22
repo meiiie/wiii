@@ -2,7 +2,7 @@
 Local Full PDF Ingestion Script.
 
 Runs ingestion directly on local machine (bypasses Render timeout).
-Connects to production databases (Neon, Supabase).
+Connects to production databases (PostgreSQL, MinIO).
 
 Feature: hybrid-text-vision
 Usage:
