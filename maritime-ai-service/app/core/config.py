@@ -152,6 +152,10 @@ class LivingAgentConfig(BaseModel):
     max_daily_cycles: int = 48
     callmebot_api_key: Optional[str] = None
     notification_channel: str = "websocket"
+    # Sprint 177: Skill Learning
+    enable_skill_learning: bool = False
+    quiz_questions_per_session: int = 3
+    review_confidence_weight: float = 0.3
 
 
 class LMSIntegrationConfig(BaseModel):
@@ -190,7 +194,7 @@ class Settings(BaseSettings):
     api_key: Optional[str] = Field(default=None, description="API Key for authentication")
     jwt_secret_key: str = Field(default="change-me-in-production", description="JWT secret key")
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
-    jwt_expire_minutes: int = Field(default=30, description="JWT token expiration in minutes")
+    jwt_expire_minutes: int = Field(default=15, description="JWT token expiration in minutes")
 
     # Google OAuth (Sprint 157: Đăng Nhập)
     enable_google_oauth: bool = Field(default=False, description="Enable Google OAuth login")
@@ -198,6 +202,11 @@ class Settings(BaseSettings):
     google_oauth_client_secret: Optional[str] = Field(default=None, description="Google OAuth 2.0 client secret")
     oauth_redirect_base_url: Optional[str] = Field(default=None, description="Base URL for OAuth callbacks (e.g. https://api.wiii.app)")
     session_secret_key: str = Field(default="change-session-secret-in-production", description="Session middleware secret for OAuth CSRF state")
+    # Sprint 193: Allowed redirect origins for web OAuth (comma-separated whitelist)
+    oauth_allowed_redirect_origins: str = Field(
+        default="http://localhost:1420,http://localhost:1421",
+        description="Comma-separated whitelist of allowed origins for web OAuth redirect_uri",
+    )
     jwt_refresh_expire_days: int = Field(default=30, ge=1, le=365, description="Refresh token expiration in days")
 
     # LMS Token Exchange (Sprint 159: Cầu Nối Trực Tiếp)
@@ -439,6 +448,7 @@ class Settings(BaseSettings):
     telegram_webhook_url: Optional[str] = Field(default=None, description="Telegram webhook callback URL")
     enable_messenger_webhook: bool = Field(default=False, description="Enable Facebook Messenger Platform webhook")
     facebook_app_id: Optional[str] = Field(default=None, description="Facebook App ID")
+    facebook_app_secret: Optional[str] = Field(default=None, description="Facebook App Secret for X-Hub-Signature verification")
     facebook_page_id: Optional[str] = Field(default=None, description="Facebook Page ID")
     facebook_page_access_token: Optional[str] = Field(default=None, description="Facebook Page Access Token for Messenger API")
     facebook_verify_token: Optional[str] = Field(default=None, description="Verify token for Messenger webhook handshake")
@@ -460,6 +470,65 @@ class Settings(BaseSettings):
         default='{"web":"professional","desktop":"professional","messenger":"soul","zalo":"soul","telegram":"professional"}',
         description="JSON map of channel_type → personality mode",
     )
+
+    # Sprint 176: Auth Hardening
+    enable_auth_audit: bool = Field(default=True, description="Log auth events to auth_events table")
+
+    # Sprint 192: Auth Hardening — "Khiên Sắt"
+    enable_org_membership_check: bool = Field(default=True, description="Validate org membership on X-Organization-ID header")
+    enable_jti_denylist: bool = Field(default=False, description="Enable in-memory JTI denylist for token revocation")
+    jwt_audience: str = Field(default="wiii", description="JWT audience claim value")
+    enforce_api_key_role_restriction: bool = Field(default=True, description="Block admin role via API key auth in production")
+    otp_max_generate_per_window: int = Field(default=5, ge=1, le=20, description="Max OTP codes per user per window")
+    otp_generate_window_minutes: int = Field(default=15, ge=1, le=60, description="OTP generation rate limit window (minutes)")
+    otp_max_verify_attempts: int = Field(default=5, ge=1, le=10, description="Max failed OTP verify attempts before lockout")
+
+    # Sprint 178: Admin Module
+    enable_admin_module: bool = Field(default=False, description="Enable admin dashboard, audit, analytics")
+
+    # Sprint 181: Org-Level Admin
+    enable_org_admin: bool = Field(default=False, description="Enable org-level admin for org admins/owners")
+    admin_ip_allowlist: str = Field(default="", description="Comma-separated IP allowlist for admin routes (empty=allow all)")
+    admin_rate_limit: str = Field(default="30/minute", description="Rate limit for admin endpoints")
+
+    # Sprint 190: Org Knowledge Management
+    enable_org_knowledge: bool = Field(default=False, description="Enable org-level knowledge base management (upload/list/delete)")
+    org_knowledge_max_file_size_mb: int = Field(default=50, ge=1, le=200, description="Max PDF file size in MB for org knowledge upload")
+    org_knowledge_rate_limit: str = Field(default="5/minute", description="Per-org upload rate limit")
+
+    # Sprint 191: Knowledge Visualization
+    enable_knowledge_visualization: bool = Field(default=False, description="Enable knowledge base visualization (scatter, graph, RAG flow)")
+
+    # Sprint 179: Multimodal Vision Input
+    enable_vision: bool = Field(default=False, description="Enable vision/image understanding in chat")
+    vision_max_images_per_request: int = Field(default=5, ge=1, le=20, description="Max images per chat request")
+    vision_default_detail: str = Field(default="auto", description="Default vision detail level (low/auto/high)")
+    vision_max_file_size_mb: int = Field(default=10, ge=1, le=50, description="Max image file size in MB")
+
+    # Sprint 179: Chart/Diagram Generation
+    enable_chart_tools: bool = Field(default=False, description="Enable Mermaid diagram and chart generation tools")
+
+    # Sprint 179+: Visual RAG — understand charts/tables in documents
+    enable_visual_rag: bool = Field(default=False, description="Enable visual context enrichment during RAG retrieval")
+    visual_rag_max_images: int = Field(default=3, ge=1, le=10, description="Max images to analyze per RAG query")
+    visual_rag_timeout: float = Field(default=15.0, ge=5.0, le=60.0, description="Timeout for image fetch + analysis (seconds)")
+
+    # Sprint 182: Graph RAG — entity-aware knowledge graph retrieval
+    enable_graph_rag: bool = Field(default=False, description="Enable entity extraction + graph context in RAG pipeline")
+    graph_rag_max_entities: int = Field(default=5, ge=1, le=20, description="Max entities to extract per query")
+
+    # Sprint 184: Temporal Knowledge Graph Memory
+    enable_temporal_memory: bool = Field(default=False, description="Enable temporal knowledge graph for memory (entity-relation-episode)")
+
+    # Sprint 186: Visual Memory — remember images users send
+    enable_visual_memory: bool = Field(default=False, description="Enable image memory storage and retrieval")
+    visual_memory_max_per_user: int = Field(default=100, ge=10, le=500, description="Max image memories per user")
+    visual_memory_context_max_items: int = Field(default=3, ge=1, le=10, description="Max visual memories injected into context")
+
+    # Sprint 187: Advanced RAG — HyDE + Adaptive RAG
+    enable_hyde: bool = Field(default=False, description="Enable Hypothetical Document Embeddings for improved retrieval")
+    hyde_blend_alpha: float = Field(default=0.5, ge=0.0, le=1.0, description="HyDE embedding blend weight (0=query only, 1=HyDE only)")
+    enable_adaptive_rag: bool = Field(default=False, description="Enable adaptive routing to different retrieval strategies")
 
     # Sprint 176: Embed iframe support
     embed_allowed_origins: str = Field(
@@ -513,6 +582,10 @@ class Settings(BaseSettings):
     enable_mcp_server: bool = Field(default=False, description="Enable MCP Server")
     enable_mcp_client: bool = Field(default=False, description="Enable MCP Client")
     mcp_server_configs: str = Field(default="[]", description="JSON list of external MCP server configs")
+
+    # MCP Tool Server (Sprint 193)
+    enable_mcp_tool_server: bool = Field(default=False, description="Expose individual tools as MCP tool definitions")
+    mcp_auto_register_external: bool = Field(default=False, description="Auto-register MCP external tools into ToolRegistry")
 
     # Structured Outputs
     enable_structured_outputs: bool = Field(default=True, description="Enable structured outputs")
@@ -634,9 +707,19 @@ class Settings(BaseSettings):
     living_agent_autonomy_level: int = Field(default=0, ge=0, le=3, description="Current autonomy level (0=supervised, 3=full trust)")
     living_agent_enable_autonomy_graduation: bool = Field(default=False, description="Enable automatic trust level graduation")
 
+    # Sprint 177: Real Skill Learning via Browsing
+    living_agent_enable_skill_learning: bool = Field(default=False, description="Enable browsing→skill learning pipeline with SM-2 spaced repetition")
+    living_agent_quiz_questions_per_session: int = Field(default=3, ge=1, le=10, description="Number of quiz questions per practice session")
+    living_agent_review_confidence_weight: float = Field(default=0.3, ge=0.0, le=1.0, description="EMA alpha weight for quiz→confidence updates")
+
+    # Sprint 177: Cross-Platform Memory Sync
+    enable_cross_platform_memory: bool = Field(default=False, description="Enable memory merge on OTP link + cross-platform context injection")
+    cross_platform_context_max_items: int = Field(default=3, ge=1, le=10, description="Max items in cross-platform activity summary")
+
     # Facebook Messenger (for webhooks)
     facebook_verify_token: Optional[str] = Field(default=None, description="Facebook webhook verification token")
     facebook_page_access_token: Optional[str] = Field(default=None, description="Facebook Page access token for Send API")
+    facebook_graph_api_version: str = Field(default="v22.0", description="Facebook Graph API version (Sprint 188)")
 
     # Zalo OA
     zalo_oa_access_token: Optional[str] = Field(default=None, description="Zalo OA access token")
@@ -692,6 +775,43 @@ class Settings(BaseSettings):
     # Auto Group Discovery (Sprint 157)
     enable_auto_group_discovery: bool = Field(default=False, description="Auto-discover and search FB groups by product category")
     facebook_auto_group_max_groups: int = Field(default=3, ge=1, le=5, description="Max groups to auto-search per query")
+
+    # Sprint 190: Enhanced Scraping Backends
+    enable_crawl4ai: bool = Field(default=False, description="Enable Crawl4AI scraping backend (general web crawling + AI extraction)")
+    crawl4ai_headless: bool = Field(default=True, description="Run Crawl4AI browser in headless mode")
+    crawl4ai_use_llm_extraction: bool = Field(default=False, description="Use LLM extraction in Crawl4AI (costs tokens)")
+    enable_scrapling: bool = Field(default=False, description="Enable Scrapling stealth scraping backend (anti-bot bypass)")
+    scrapling_stealth_mode: bool = Field(default=True, description="Enable Scrapling TLS fingerprint spoofing for Cloudflare bypass")
+    enable_scraping_metrics: bool = Field(default=False, description="Record per-backend scraping metrics to DB for strategy optimization")
+    # Sprint 195: Jina Reader fallback
+    enable_jina_reader: bool = Field(default=False, description="Enable Jina AI Reader as lightweight web-to-markdown fallback")
+
+    # Sprint 196: Professional Product Sourcing
+    enable_dealer_search: bool = Field(default=False, description="Enable dealer/distributor discovery via DuckDuckGo + Jina Reader")
+    enable_contact_extraction: bool = Field(default=False, description="Enable contact info extraction from web pages (phone, Zalo, email)")
+    enable_international_search: bool = Field(default=False, description="Enable international product search with USD→VND conversion")
+    enable_advanced_excel_report: bool = Field(default=False, description="Enable 3-sheet Excel reports with dealer contacts and recommendations")
+    usd_vnd_exchange_rate: float = Field(default=25500.0, description="USD to VND exchange rate for international price conversion")
+    exchange_rate_overrides: dict = Field(
+        default_factory=dict,
+        description="Override exchange rates. Keys=ISO currency, values=to-USD factor. E.g. {'EUR': 1.10}",
+    )
+
+    # Sprint 198: Serper.dev for web/B2B search (replaces DuckDuckGo)
+    enable_serper_web_search: bool = Field(default=True, description="Use Serper.dev for web/B2B search (requires SERPER_API_KEY, falls back to DuckDuckGo)")
+
+    # Sprint 197: LLM Query Planner
+    enable_query_planner: bool = Field(default=False, description="LLM query planning before product search (optimizes search queries for Vietnamese/B2B)")
+
+    # Unified Skill Architecture (Sprint 191)
+    enable_unified_skill_index: bool = Field(default=False, description="Enable unified skill index across all skill/tool systems")
+    enable_skill_metrics: bool = Field(default=False, description="Track per-tool/skill execution metrics (latency, success, cost)")
+    skill_metrics_flush_interval_seconds: int = Field(default=60, description="Seconds between DB flushes for skill metrics")
+
+    # Intelligent Tool Selection (Sprint 192)
+    enable_intelligent_tool_selection: bool = Field(default=False, description="Enable intelligent tool selection (4-step pipeline)")
+    tool_selection_strategy: str = Field(default="hybrid", description="Tool selection strategy: all, category, semantic, metrics, hybrid")
+    tool_selection_max_candidates: int = Field(default=15, description="Maximum tools to select per query")
 
     # OAuth skeleton
     enable_oauth_token_store: bool = Field(default=False, description="Enable OAuth token store")
@@ -1029,6 +1149,12 @@ class Settings(BaseSettings):
                     "SECURITY: session_secret_key must be changed from default in production. "
                     "Set SESSION_SECRET_KEY environment variable."
                 )
+            # Sprint 194c (B5/B9): Validate session secret length for secure CSRF state
+            if len(self.session_secret_key) < 32:
+                _config_logger.warning(
+                    "SECURITY: session_secret_key is %d chars — should be at least 32 for secure OAuth CSRF state",
+                    len(self.session_secret_key),
+                )
         # Sprint 155: LMS integration without webhook secret
         if self.enable_lms_integration and not self.lms_webhook_secret:
             _config_logger.warning(
@@ -1163,6 +1289,9 @@ class Settings(BaseSettings):
             max_daily_cycles=self.living_agent_max_daily_cycles,
             callmebot_api_key=self.living_agent_callmebot_api_key,
             notification_channel=self.living_agent_notification_channel,
+            enable_skill_learning=self.living_agent_enable_skill_learning,
+            quiz_questions_per_session=self.living_agent_quiz_questions_per_session,
+            review_confidence_weight=self.living_agent_review_confidence_weight,
         ))
         object.__setattr__(self, "lms", LMSIntegrationConfig(
             enabled=self.enable_lms_integration,
