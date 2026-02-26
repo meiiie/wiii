@@ -229,6 +229,12 @@ async def chat_stream_v3(
                     "history_list": chat_context.history_list or [],
                     "mood_hint": getattr(chat_context, 'mood_hint', ""),
                     "is_follow_up": bool(chat_context.history_list),
+                    # Sprint 203: Compute conversation phase (Pi/Gemini-inspired)
+                    "conversation_phase": (
+                        "opening" if getattr(session.state, 'total_responses', 0) == 0
+                        else ("engaged" if getattr(session.state, 'total_responses', 0) < 5
+                              else ("deep" if getattr(session.state, 'total_responses', 0) < 20 else "closing"))
+                    ),
                     "total_responses": getattr(session.state, 'total_responses', 0),
                     "name_usage_count": getattr(session.state, 'name_usage_count', 0),
                     "recent_phrases": getattr(session.state, 'recent_phrases', []),
@@ -236,6 +242,8 @@ async def chat_stream_v3(
                     "show_previews": chat_request.show_previews,
                     "preview_types": chat_request.preview_types,
                     "preview_max_count": chat_request.preview_max_count,
+                    # Sprint 179: Multimodal Vision images
+                    "images": [img.model_dump() for img in chat_context.images] if getattr(chat_context, 'images', None) else None,
                 }
             except Exception as ctx_err:
                 logger.warning("[STREAM-V3] Full context build failed, using minimal: %s", ctx_err)
@@ -449,6 +457,8 @@ async def chat_stream_v3(
                 "message": f"Internal processing error: {type(e).__name__}",
                 "type": "internal_error"
             })
+            # Sprint 189b: Always emit "done" so frontend exits streaming state
+            yield format_sse("done", {"processing_time": time.time() - start_time})
 
     # Sprint 26: Wrap with keepalive heartbeat + client disconnect detection
     return StreamingResponse(

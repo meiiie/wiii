@@ -424,7 +424,9 @@ class TestAggregateResults:
         assert len(result["deduped_products"]) == 2
 
     @pytest.mark.asyncio
-    async def test_sorts_by_price_ascending(self):
+    async def test_preserves_insertion_order(self):
+        """Sprint 202b: aggregate_results no longer sorts by price —
+        curation LLM sees platform-interleaved results instead."""
         from app.engine.multi_agent.subagents.search.workers import aggregate_results
 
         with patch(
@@ -441,11 +443,12 @@ class TestAggregateResults:
                 "query": "test",
             })
 
-        prices = [p["extracted_price"] for p in result["deduped_products"]]
-        assert prices == [100, 300, 500]
+        titles = [p["title"] for p in result["deduped_products"]]
+        assert titles == ["Expensive", "Cheap", "Medium"]  # insertion order preserved
 
     @pytest.mark.asyncio
-    async def test_none_prices_at_end(self):
+    async def test_mixed_prices_preserved(self):
+        """Sprint 202b: products with/without prices keep insertion order."""
         from app.engine.multi_agent.subagents.search.workers import aggregate_results
 
         with patch(
@@ -463,9 +466,10 @@ class TestAggregateResults:
             })
 
         products = result["deduped_products"]
-        assert products[0]["title"] == "Has price"
-        # None and 0 prices at end
-        assert products[0]["extracted_price"] == 50
+        assert len(products) == 3
+        assert products[0]["title"] == "No price"  # insertion order, not price-sorted
+        assert products[1]["title"] == "Has price"
+        assert products[2]["title"] == "Zero price"
 
     @pytest.mark.asyncio
     async def test_empty_products(self):

@@ -24,6 +24,10 @@ def _make_settings(**overrides):
         "living_agent_max_skills_per_week": 5,
         "living_agent_max_searches_per_heartbeat": 3,
         "living_agent_max_daily_cycles": 48,
+        # Flags added in later sprints (default off in tests)
+        "living_agent_enable_weather": False,
+        "living_agent_enable_briefing": False,
+        "living_agent_enable_skill_learning": False,
     }
     defaults.update(overrides)
     mock = MagicMock()
@@ -53,6 +57,9 @@ def _make_engine():
     engine.state.social_battery = 0.7
     engine.state.engagement = 0.6
     engine.to_dict.return_value = {}
+    # Async methods added in later sprints
+    engine.load_state_from_db = AsyncMock()
+    engine.save_state_to_db = AsyncMock()
     return engine
 
 
@@ -147,7 +154,7 @@ class TestHeartbeatAudit:
         with patch(_SOUL_PATCH, return_value=soul), \
              patch(_ENGINE_PATCH, return_value=engine), \
              patch(_SETTINGS_PATCH, settings), \
-             patch.object(scheduler, "_plan_actions", return_value=[]), \
+             patch.object(scheduler, "_plan_actions", new_callable=AsyncMock, return_value=[]), \
              patch.object(scheduler, "_save_heartbeat_audit", new_callable=AsyncMock) as mock_audit:
 
             result = await scheduler._execute_heartbeat()

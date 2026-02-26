@@ -11,7 +11,7 @@ beforeEach(() => {
     settings: {
       server_url: "http://localhost:8000",
       api_key: "local-dev-key",
-      user_id: "desktop-user",
+      user_id: "test-user-fixed",
       user_role: "student",
       display_name: "User",
       default_domain: "maritime",
@@ -38,7 +38,7 @@ describe("Settings Store", () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.server_url).toBe("http://localhost:8000");
     expect(settings.api_key).toBe("local-dev-key");
-    expect(settings.user_id).toBe("desktop-user");
+    expect(settings.user_id).toBe("test-user-fixed");
     expect(settings.user_role).toBe("student");
     expect(settings.theme).toBe("system");
     expect(settings.show_thinking).toBe(true);
@@ -55,7 +55,7 @@ describe("Settings Store", () => {
     expect(settings.server_url).toBe("http://example.com:9000");
     expect(settings.api_key).toBe("new-key");
     // Other fields unchanged
-    expect(settings.user_id).toBe("desktop-user");
+    expect(settings.user_id).toBe("test-user-fixed");
     expect(settings.theme).toBe("system");
   });
 

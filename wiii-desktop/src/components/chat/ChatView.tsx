@@ -15,6 +15,7 @@ import { slideDown } from "@/lib/animations";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
 import { WelcomeScreen } from "./WelcomeScreen";
+import type { ImageInput } from "@/api/types";
 
 export function ChatView() {
   const { activeConversationId, conversations } = useChatStore();
@@ -85,9 +86,9 @@ export function ChatView() {
     setEditingMessage(content);
   }, []);
 
-  const handleSend = useCallback((message: string) => {
+  const handleSend = useCallback((message: string, images?: ImageInput[]) => {
     setEditingMessage(null);
-    sendMessage(message);
+    sendMessage(message, images);
   }, [sendMessage]);
 
   if (showWelcome) {

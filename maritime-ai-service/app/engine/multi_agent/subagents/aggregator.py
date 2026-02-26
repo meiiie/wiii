@@ -345,16 +345,20 @@ async def aggregator_node(state: Dict[str, Any]) -> Dict[str, Any]:
         if decision.re_route_target:
             state["next_agent"] = decision.re_route_target
 
-    # Propagate sources and tools from reports
+    # Propagate sources, tools, and evidence images from reports
     all_sources = []
     all_tools = []
+    all_evidence_images = []
     for r in reports:
         all_sources.extend(r.result.sources)
         all_tools.extend(r.result.tools_used)
+        all_evidence_images.extend(r.result.evidence_images)  # Sprint 189b
     if all_sources:
         state["sources"] = all_sources
     if all_tools:
         state["tools_used"] = all_tools
+    if all_evidence_images:
+        state["evidence_images"] = all_evidence_images  # Sprint 189b
 
     return state
 

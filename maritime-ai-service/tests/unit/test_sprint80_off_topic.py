@@ -640,8 +640,9 @@ class TestDirectNodeHelpfulBehavior:
         assert result.get("domain_notice") is not None
 
     @pytest.mark.asyncio
-    async def test_direct_node_sets_domain_notice_for_greeting(self):
-        """DIRECT node should set domain_notice when intent is greeting."""
+    async def test_direct_node_no_domain_notice_for_greeting(self):
+        """Sprint 203 fix: greeting intent should NOT trigger domain_notice.
+        Greeting is a normal social interaction, not an off-topic query."""
         from app.engine.multi_agent.graph import direct_response_node
 
         state = {
@@ -661,7 +662,8 @@ class TestDirectNodeHelpfulBehavior:
                    return_value=("Xin chào! Tôi có thể giúp gì?", None)):
             result = await direct_response_node(state)
 
-        assert result.get("domain_notice") is not None
+        # Sprint 203: "greeting" removed from domain notice triggers — UX bugfix
+        assert result.get("domain_notice") is None
 
     @pytest.mark.asyncio
     async def test_direct_node_no_notice_without_routing_metadata(self):

@@ -28,6 +28,7 @@ import asyncio
 import logging
 import random
 import re
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from app.engine.living_agent.models import BrowsingItem
@@ -97,6 +98,8 @@ class SocialBrowser:
 
     def __init__(self):
         self._current_topic: str = "general"
+        self._smart_topics_enabled: bool = False
+        self._recent_topics: list = []  # Sprint 188: Track recent topics for rotation
 
     async def browse_feed(
         self,
@@ -121,6 +124,11 @@ class SocialBrowser:
 
         self._current_topic = topic
 
+        # Phase 3A: Smart topic selection when topic is "auto"
+        if topic == "auto":
+            topic = await self._select_smart_topic()
+            self._current_topic = topic
+
         queries = _TOPIC_QUERIES.get(topic, _TOPIC_QUERIES["general"])
         query = random.choice(queries)
 
@@ -142,11 +150,126 @@ class SocialBrowser:
         # Save to browsing log
         self._save_browsing_log(results)
 
+        # Sprint 177: Feed results to skill learning pipeline
+        if results and settings.living_agent_enable_skill_learning:
+            try:
+                from app.engine.living_agent.skill_learner import get_skill_learner
+                learner = get_skill_learner()
+                all_interests = interests or []
+                learner.process_browsing_results(results, all_interests)
+            except Exception as e:
+                logger.debug("[BROWSER] Skill learning pipeline failed: %s", e)
+
         logger.info(
             "[BROWSER] Browsed %d items for topic '%s' (query: %s)",
             len(results), topic, query,
         )
         return results
+
+    async def _select_smart_topic(self) -> str:
+        """Sprint 188: Context-aware topic selection.
+
+        Priority:
+        1. User interests from semantic_memories (conversation context)
+        2. Active skills being learned (LEARNING status)
+        3. Time-weighted topic distribution
+        4. Topic rotation (no repeat within 3 cycles)
+        """
+        from datetime import timedelta
+
+        now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
+        hour = now_vn.hour
+
+        available_topics = list(_TOPIC_QUERIES.keys())
+
+        # Sprint 188: Filter out recently used topics (no repeat within 3 cycles)
+        if len(self._recent_topics) >= 3:
+            self._recent_topics = self._recent_topics[-3:]
+        fresh_topics = [t for t in available_topics if t not in self._recent_topics]
+        if not fresh_topics:
+            fresh_topics = available_topics  # Fallback if all exhausted
+
+        # 1. Check semantic_memories for user interests
+        topic_from_memory = await self._get_topic_from_memories()
+        if topic_from_memory and topic_from_memory in fresh_topics:
+            self._recent_topics.append(topic_from_memory)
+            return topic_from_memory
+
+        # 2. Check active skills
+        topic_from_skills = self._get_topic_from_skills()
+        if topic_from_skills and topic_from_skills in fresh_topics:
+            self._recent_topics.append(topic_from_skills)
+            return topic_from_skills
+
+        # 3. Time-weighted selection from fresh topics
+        time_weights = {}
+        for t in fresh_topics:
+            if hour < 10:
+                time_weights[t] = 3.0 if t == "news" else 1.0
+            elif hour < 16:
+                time_weights[t] = 3.0 if t in ("tech", "maritime") else 1.0
+            elif hour < 20:
+                time_weights[t] = 3.0 if t in ("science", "general") else 1.0
+            else:
+                time_weights[t] = 2.0 if t == "general" else 1.0
+
+        weighted_topics = list(time_weights.keys())
+        weights = [time_weights[t] for t in weighted_topics]
+        chosen = random.choices(weighted_topics, weights=weights, k=1)[0]
+        self._recent_topics.append(chosen)
+        return chosen
+
+    async def _get_topic_from_memories(self) -> Optional[str]:
+        """Sprint 188: Query semantic_memories for user interest patterns."""
+        try:
+            from app.core.database import get_shared_session_factory
+            from sqlalchemy import text
+
+            session_factory = get_shared_session_factory()
+            with session_factory() as session:
+                rows = session.execute(
+                    text("""
+                        SELECT content FROM semantic_memories
+                        WHERE memory_type = 'fact'
+                        ORDER BY importance DESC, updated_at DESC
+                        LIMIT 5
+                    """),
+                ).fetchall()
+
+            if not rows:
+                return None
+
+            # Simple keyword matching against topic names
+            all_text = " ".join(r[0] for r in rows if r[0]).lower()
+            topic_scores = {}
+            for topic, queries in _TOPIC_QUERIES.items():
+                keywords = set()
+                for q in queries:
+                    keywords.update(w.lower() for w in q.split() if len(w) > 3 and not w.startswith("site:"))
+                matches = sum(1 for kw in keywords if kw in all_text)
+                if matches > 0:
+                    topic_scores[topic] = matches
+
+            if topic_scores:
+                return max(topic_scores, key=topic_scores.get)
+        except Exception:
+            pass
+        return None
+
+    def _get_topic_from_skills(self) -> Optional[str]:
+        """Sprint 188: Check active skills for topic hints."""
+        try:
+            from app.engine.living_agent.skill_builder import get_skill_builder
+            builder = get_skill_builder()
+            skills = builder.get_all_skills(status=None)
+            learning_skills = [s for s in skills if s.status.value == "learning"]
+            if learning_skills:
+                skill = random.choice(learning_skills)
+                if skill.domain in _TOPIC_QUERIES:
+                    return skill.domain
+        except Exception:
+            pass
+        return None
 
     async def _search_web(self, query: str, max_results: int) -> List[BrowsingItem]:
         """Search using existing web_search_tools (DuckDuckGo + circuit breaker).
@@ -447,6 +570,9 @@ class SocialBrowser:
         from app.core.database import get_shared_session_factory
 
         try:
+            from app.core.org_filter import get_effective_org_id
+            default_org_id = get_effective_org_id()
+
             session_factory = get_shared_session_factory()
             with session_factory() as session:
                 for item in items:
@@ -466,7 +592,7 @@ class SocialBrowser:
                             "summary": item.summary[:2000],
                             "score": item.relevance_score,
                             "reaction": item.emotional_reaction,
-                            "org_id": item.organization_id,
+                            "org_id": item.organization_id or default_org_id,
                         },
                     )
                 session.commit()

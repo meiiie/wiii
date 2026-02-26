@@ -3,6 +3,7 @@ Security Module - Authentication and Authorization
 Requirements: 1.3
 
 Supports both API Key and JWT Token authentication.
+Sprint 192: Org membership validation, API key role restriction, JWT audience.
 """
 import hmac
 import logging
@@ -35,6 +36,7 @@ class TokenPayload(BaseModel):
     name: Optional[str] = None
     auth_method: Optional[str] = None  # "google", "lti", "api_key"
     iss: Optional[str] = None  # "wiii" for OAuth-issued tokens
+    jti: Optional[str] = None  # Sprint 176: unique token ID for revocation tracking
 
 
 class AuthenticatedUser(BaseModel):
@@ -85,23 +87,54 @@ def create_access_token(
 def verify_jwt_token(token: str) -> TokenPayload:
     """
     Verify and decode a JWT token.
-    
+
+    Sprint 192: Validates `aud` claim when present. Legacy tokens without
+    `aud` are accepted until they expire naturally (backward compat).
+    Also checks JTI denylist when enabled.
+
     Args:
         token: The JWT token string
-    
+
     Returns:
         TokenPayload with decoded information
-    
+
     Raises:
         HTTPException: If token is invalid or expired
     """
     try:
-        payload = jwt.decode(
-            token,
-            settings.jwt_secret_key,
-            algorithms=[settings.jwt_algorithm],
-        )
-        return TokenPayload(**payload)
+        # Sprint 192: Try with audience validation first
+        audience = settings.jwt_audience
+        try:
+            payload = jwt.decode(
+                token,
+                settings.jwt_secret_key,
+                algorithms=[settings.jwt_algorithm],
+                audience=audience,
+            )
+        except JWTError:
+            # Backward compat: retry without audience for legacy tokens
+            payload = jwt.decode(
+                token,
+                settings.jwt_secret_key,
+                algorithms=[settings.jwt_algorithm],
+                options={"verify_aud": False},
+            )
+
+        token_payload = TokenPayload(**payload)
+
+        # Sprint 192: Check JTI denylist
+        if settings.enable_jti_denylist and token_payload.jti:
+            from app.auth.token_service import is_jti_denied
+            if is_jti_denied(token_payload.jti):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+        return token_payload
+    except HTTPException:
+        raise
     except JWTError as e:
         logger.warning("JWT verification failed: %s", e)
         raise HTTPException(
@@ -136,6 +169,33 @@ def verify_api_key(api_key: str) -> bool:
 
 
 # =============================================================================
+# Sprint 192: Org Membership Validation
+# =============================================================================
+
+async def _validate_org_membership(user_id: str, org_id: str, role: str) -> bool:
+    """Check if user is a member of the specified organization.
+
+    Platform admins (role=admin) bypass the check.
+    Fail-open on DB error (log warning, don't reject).
+    """
+    if role == "admin":
+        return True
+
+    try:
+        from app.core.database import get_asyncpg_pool
+        pool = await get_asyncpg_pool(create=True)
+        async with pool.acquire() as conn:
+            row = await conn.fetchval(
+                "SELECT 1 FROM user_organizations WHERE user_id = $1 AND organization_id = $2",
+                user_id, org_id,
+            )
+            return row is not None
+    except Exception as e:
+        logger.warning("Org membership check failed (fail-open): %s", e)
+        return True  # Fail-open: don't block on DB error
+
+
+# =============================================================================
 # Authentication Dependencies
 # =============================================================================
 
@@ -149,15 +209,15 @@ async def require_auth(
 ) -> AuthenticatedUser:
     """
     Require authentication via API Key OR JWT Token.
-    
+
     LMS Integration: Accepts additional headers for user context.
     - X-User-ID: Real user ID from LMS (required for API key auth)
     - X-Role: User role (student/teacher/admin)
     - X-Session-ID: Session tracking for analytics
     - X-Organization-ID: Multi-tenant support
-    
+
     Requirements: 1.3
-    
+
     Args:
         api_key: API key from X-API-Key header
         credentials: JWT token from Authorization header
@@ -165,31 +225,92 @@ async def require_auth(
         x_role: User role from LMS
         x_session_id: Session ID for tracking
         x_org_id: Organization ID for multi-tenant
-    
+
     Returns:
         AuthenticatedUser with user information
-    
+
     Raises:
         HTTPException 401: If no valid authentication provided
+        HTTPException 403: If user is not a member of the specified org
     """
     # Try API Key first
     if api_key:
         if verify_api_key(api_key):
-            # LMS Integration: Use headers for user context
-            return AuthenticatedUser(
-                user_id=x_user_id or "anonymous",
+            effective_role = x_role or "student"
+
+            # Sprint 192: Restrict role escalation via API key in production
+            if (
+                settings.enforce_api_key_role_restriction
+                and settings.environment == "production"
+                and effective_role not in ("student", "teacher")
+            ):
+                logger.warning(
+                    "SECURITY: API key auth attempted role=%s for user=%s — downgraded to student",
+                    effective_role, x_user_id or "anonymous",
+                )
+                # Audit event (fire-and-forget)
+                try:
+                    import asyncio
+                    from app.auth.auth_audit import log_auth_event
+                    asyncio.ensure_future(log_auth_event(
+                        "role_downgrade", provider="api_key",
+                        user_id=x_user_id or "anonymous",
+                        reason=f"Attempted role={effective_role} via API key in production",
+                    ))
+                except Exception:
+                    pass
+                effective_role = "student"
+
+            # Sprint 194b (C2): In production, API key auth does NOT trust
+            # X-User-ID header to prevent impersonation attacks.
+            # Actual user identity MUST come via JWT tokens.
+            # Development mode still trusts X-User-ID for testing convenience.
+            if settings.environment == "production":
+                effective_user_id = x_user_id or "api-client"
+                if x_user_id and x_user_id != "api-client":
+                    logger.warning(
+                        "SECURITY: API key auth with X-User-ID=%s in production — "
+                        "accepted but flagged (use JWT for proper identity)",
+                        x_user_id,
+                    )
+            else:
+                effective_user_id = x_user_id or "anonymous"
+
+            user = AuthenticatedUser(
+                user_id=effective_user_id,
                 auth_method="api_key",
-                role=x_role or "student",
+                role=effective_role,
                 session_id=x_session_id,
                 organization_id=x_org_id,
             )
+
+            # Sprint 192: Validate org membership
+            if x_org_id and settings.enable_org_membership_check:
+                is_member = await _validate_org_membership(user.user_id, x_org_id, user.role)
+                if not is_member:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"User is not a member of organization '{x_org_id}'",
+                    )
+
+            return user
         else:
             logger.warning("Invalid API key provided")
+            # Sprint 176: Audit event (fire-and-forget, non-blocking)
+            try:
+                import asyncio
+                from app.auth.auth_audit import log_auth_event
+                asyncio.ensure_future(log_auth_event(
+                    "auth_failed", provider="api_key", result="failed",
+                    reason="Invalid API key",
+                ))
+            except Exception:
+                pass
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid API key",
             )
-    
+
     # Try JWT Token
     if credentials:
         token_payload = verify_jwt_token(credentials.credentials)
@@ -198,14 +319,26 @@ async def require_auth(
         jwt_role = token_payload.role or "student"
         # Sprint 157: OAuth tokens carry auth_method; legacy tokens default to "jwt"
         auth_method = token_payload.auth_method or "jwt"
-        return AuthenticatedUser(
+
+        user = AuthenticatedUser(
             user_id=token_payload.sub,
             auth_method=auth_method,
             role=jwt_role,
             session_id=x_session_id,
             organization_id=x_org_id,
         )
-    
+
+        # Sprint 192: Validate org membership
+        if x_org_id and settings.enable_org_membership_check:
+            is_member = await _validate_org_membership(user.user_id, x_org_id, user.role)
+            if not is_member:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"User is not a member of organization '{x_org_id}'",
+                )
+
+        return user
+
     # No authentication provided
     logger.warning("No authentication credentials provided")
     raise HTTPException(

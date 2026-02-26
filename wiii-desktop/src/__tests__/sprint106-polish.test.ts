@@ -20,7 +20,7 @@ beforeEach(() => {
     settings: {
       server_url: "http://localhost:8000",
       api_key: "",
-      user_id: "desktop-user",
+      user_id: "test-user-fixed",
       user_role: "student",
       display_name: "User",
       default_domain: "maritime",

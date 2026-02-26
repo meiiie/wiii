@@ -39,7 +39,6 @@ def mock_settings():
     s.enable_browser_scraping = False
     s.enable_browser_screenshots = False
     s.enable_soul_emotion = False
-    s.enable_tool_selection = False
     s.enable_thinking_chain = False
     s.enable_tiktok_native_api = False
     s.enable_character_tools = True

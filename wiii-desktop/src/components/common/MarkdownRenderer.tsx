@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactNode, lazy, Suspense } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -7,6 +7,8 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import "katex/dist/katex.min.css";
 import { CodeBlock } from "./CodeBlock";
+
+const MermaidDiagram = lazy(() => import("./MermaidDiagram"));
 
 /**
  * Extended sanitize schema — allows KaTeX-generated HTML elements.
@@ -80,6 +82,15 @@ export function MarkdownRenderer({ content, className = "" }: MarkdownRendererPr
 
             // Extract raw text — rehype plugins may wrap children in React elements
             const rawCode = extractText(children).replace(/\n$/, "");
+
+            // Sprint 179: Route mermaid code blocks to MermaidDiagram
+            if (match && match[1] === "mermaid") {
+              return (
+                <Suspense fallback={<pre className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm"><code>{rawCode}</code></pre>}>
+                  <MermaidDiagram code={rawCode} />
+                </Suspense>
+              );
+            }
 
             return (
               <CodeBlock

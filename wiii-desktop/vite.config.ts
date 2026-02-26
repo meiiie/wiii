@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
+const isEmbed = process.env.BUILD_TARGET === "embed";
+
 // https://tauri.app/start/frontend/vite/
 export default defineConfig({
   plugins: [react()],
@@ -13,7 +15,7 @@ export default defineConfig({
   // Prevent vite from obscuring rust errors
   clearScreen: false,
   server: {
-    port: 1420,
+    port: isEmbed ? 1421 : 1420,
     strictPort: true,
     watch: {
       // Tell vite to ignore watching `src-tauri`
@@ -23,15 +25,23 @@ export default defineConfig({
   // Env variables starting with TAURI_ are accessible in the client code
   envPrefix: ["VITE_", "TAURI_"],
   build: {
-    // Tauri uses Chromium on Windows and WebKit on macOS and Linux
-    target: process.env.TAURI_PLATFORM === "windows" ? "chrome105" : "safari13",
-    // Don't minify for debug builds
-    minify: !process.env.TAURI_DEBUG ? "esbuild" : false,
-    // Produce sourcemaps for debug builds
-    sourcemap: !!process.env.TAURI_DEBUG,
+    outDir: isEmbed ? "dist-embed" : "dist",
+    // Embed: modern browsers only; Tauri: Chromium/WebKit
+    target: isEmbed
+      ? "es2020"
+      : process.env.TAURI_PLATFORM === "windows"
+        ? "chrome105"
+        : "safari13",
+    // Embed: always minify; Tauri: only in release
+    minify: isEmbed ? "esbuild" : !process.env.TAURI_DEBUG ? "esbuild" : false,
+    // Embed: no sourcemaps; Tauri: only in debug
+    sourcemap: isEmbed ? false : !!process.env.TAURI_DEBUG,
     rollupOptions: {
+      input: isEmbed
+        ? { embed: path.resolve(__dirname, "embed.html") }
+        : undefined,
       // Tauri-only plugins resolved at runtime (dynamic import with try/catch fallback)
-      external: ["@fabianlars/tauri-plugin-oauth"],
+      external: isEmbed ? [] : ["@fabianlars/tauri-plugin-oauth"],
     },
   },
 });

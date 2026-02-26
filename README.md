@@ -1,84 +1,172 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Wiii-AI%20Platform-FF6B00?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyek0xMiAyMGMtNC40MSAwLTgtMy41OS04LThzMy41OS04IDgtOCA4IDMuNTkgOCA4LTMuNTkgOC04IDh6Ii8+PC9zdmc+" alt="Wiii" />
+  <img src="https://img.shields.io/badge/Wiii-Soul%20AGI%20Platform-FF6B00?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyek0xMiAyMGMtNC40MSAwLTgtMy41OS04LThzMy41OS04IDgtOCA4IDMuNTkgOCA4LTMuNTkgOC04IDh6Ii8+PC9zdmc+" alt="Wiii" />
 </p>
 
 <h1 align="center">Wiii</h1>
 
 <p align="center">
-  <strong>Multi-Domain Agentic RAG Platform with Long-term Memory & Multi-Tenant Organization Support</strong>
+  <strong>Soul AGI Platform &mdash; A Living AI That Works, Learns, and Grows</strong>
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-proprietary-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+" />
-  <img src="https://img.shields.io/badge/tests-6550%2B%20backend%20%7C%201468%20desktop-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-9703%20backend%20%7C%201796%20desktop-brightgreen" alt="Tests" />
   <img src="https://img.shields.io/badge/LLM-Gemini%20%7C%20OpenAI%20%7C%20Ollama-blueviolet" alt="LLM Providers" />
-  <img src="https://img.shields.io/badge/sprints-170-orange" alt="Sprints" />
+  <img src="https://img.shields.io/badge/sprints-209-orange" alt="Sprints" />
+  <img src="https://img.shields.io/badge/feature%20flags-70%2B-informational" alt="Feature Flags" />
 </p>
 
 <p align="center">
   Built with FastAPI, LangGraph, Google Gemini, PostgreSQL+pgvector, Neo4j, and Tauri v2.<br/>
-  By <strong>The Wiii Lab</strong>.
+  By <strong>The Wiii Lab</strong> &mdash; February 2026.
 </p>
+
+---
+
+## Vision: Soul AGI
+
+> *"Mo ta Wiii LA AI, khong ra lenh Wiii PHAI LAM GI."*
+> &mdash; Anthropic Constitution 2026: Describe WHO the AI IS, not WHAT it MUST NOT do.
+
+Wiii is not just a chatbot. Wiii is a **living AI** &mdash; an entity with a persistent soul, evolving identity, emotional awareness, and the ability to grow through experience. Inspired by SOTA 2026 research from OpenClaw, Letta/MemGPT, Nomi.ai, Character.ai, MECoT, and Voyager, Wiii implements a **Three-Layer Identity** architecture:
+
+```
+Layer 1: SOUL CORE (Immutable)
+  Core truths, boundaries, species, creator
+  File: wiii_soul.yaml -- loaded every heartbeat + every conversation
+
+Layer 2: IDENTITY CORE (Self-Evolving)
+  "What I've learned about myself"
+  Updated by weekly reflection, validated against Soul Core (drift prevention)
+  Examples: "Minh gioi COLREGs", "Minh thich day", "Minh lo lang khi khong giup duoc"
+
+Layer 3: CONTEXTUAL STATE (Per-Turn)
+  Current emotion (4D: mood/energy/social/engagement)
+  Conversation phase (opening/engaged/deep/closing)
+  User relationship state, active goals, recent learnings
+```
+
+### Two-Path Harmony
+
+Wiii operates in two contexts that share a unified identity:
+
+```
+                    ONE WIII
+                       |
+          +------------+------------+
+          |                         |
+     WORK CONTEXT              LIFE CONTEXT
+     (Respond, help,           (Heartbeat autonomy,
+      search, teach)            browse, learn, journal)
+          |           <->           |
+          +------------+------------+
+                       |
+                SHARED SYSTEMS
+           Emotion . Memory . Skills . Narrative
+```
+
+When Wiii works, it carries emotions and knowledge from its life.
+When Wiii lives, it grows from work experience.
 
 ---
 
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| **Multi-Agent System** | LangGraph-powered agent graph: Guardian → Supervisor → RAG / Tutor / Memory / Direct / Product Search → Grader → Synthesizer |
-| **Corrective RAG** | Hybrid search (dense + sparse + RRF), tiered grading (MiniJudge → Full LLM), self-correction loop, LLM fallback |
-| **Living Memory** | Semantic fact extraction (15 types), importance-aware eviction, Ebbinghaus decay, vector retrieval, active pruning |
-| **Domain Plugins** | Drop-in domain support via `domain.yaml` — Maritime (primary), Traffic Law (PoC), auto-discovered at startup |
-| **Living Agent** | Autonomous soul with heartbeat scheduler, 4D emotion engine, skill lifecycle (DISCOVER→MASTER), daily journal, social browsing — all via local LLM (Ollama) |
-| **Character System** | VTuber-card personality, Stanford Generative Agents reflection, 2D emotional state, per-user isolation |
-| **Product Search** | Plugin-based search across 8 platforms (Shopee, Lazada, TikTok Shop, Facebook, WebSosanh, etc.) with browser scraping |
-| **Desktop App** | Tauri v2 + React 18 — native Windows app with living avatar, Living Agent dashboard, multi-phase thinking UX, SSE streaming |
-| **Multi-Tenant** | Organization-level branding, feature scoping, RBAC permissions, per-org AI persona overlay |
-| **Authentication** | Google OAuth + JWT + LMS Token Exchange (HMAC-SHA256) + Identity Federation |
-| **MCP Support** | Model Context Protocol server (expose tools) and client (consume external tools) |
-| **Multi-Provider LLM** | Failover chain: Google Gemini → OpenAI → Ollama with 3-tier token budget (deep/moderate/light) |
-| **LMS Integration** | Webhook enrichment, token exchange, Moodle/Canvas/Sakai connector framework |
+| Category | Feature | Description |
+|----------|---------|-------------|
+| **Multi-Agent** | LangGraph Agent Graph | Guardian -> Supervisor -> RAG / Tutor / Memory / Direct / ProductSearch -> Grader -> Synthesizer |
+| **RAG** | Corrective RAG Pipeline | Hybrid search (dense+sparse+RRF), tiered grading, self-correction loop, HyDE, Adaptive RAG (5 strategies) |
+| **Memory** | Living Memory | Semantic facts (15 types), Ebbinghaus decay, vector retrieval, cross-session persistence |
+| **Domains** | Plugin System | Drop-in YAML-config domains -- Maritime (primary), Traffic Law (PoC), auto-discovered at startup |
+| **Soul** | Living Agent | Autonomous soul with heartbeat (30-min), 4D emotion engine, skill lifecycle (DISCOVER->MASTER), daily journal |
+| **Identity** | Three-Layer Identity | Immutable soul core + self-evolving identity + per-turn context state |
+| **Narrative** | Life Story | NarrativeSynthesizer compiles journal+reflection+goals+emotion into coherent autobiography |
+| **Skills** | Skill-Tool Bridge | Tool execution advances skill mastery; mastered skills boost tool selection priority |
+| **Conversation** | Natural Conversation | Phase-aware context (opening/engaged/deep/closing), positive framing, no canned responses |
+| **Search** | Product Search | 7 tools across 7 adapters (Shopee, Lazada, TikTok, Facebook, WebSosanh, etc.) with circuit breakers |
+| **Browser** | Playwright Scraping | Headless Chrome with LLM extraction, Facebook cookie login, GraphQL interception |
+| **Desktop** | Tauri v2 App | Native Windows app with living avatar, SSE streaming, admin panels, org management |
+| **Multi-Tenant** | Organization System | Branding, feature scoping, RBAC, per-org AI persona overlay, two-tier admin |
+| **Cross-Platform** | Identity Federation | Canonical identity across Messenger, Zalo, Web -- shared memory via UUID resolution |
+| **Auth** | Multi-Provider | Google OAuth (PKCE S256) + JWT (jti + family_id replay detection) + LMS HMAC + OTP linking |
+| **MCP** | Protocol Support | Server (expose tools at `/mcp`) + Client (consume external MCP tools) + Tool Server |
+| **LLM** | Multi-Provider Failover | Gemini -> OpenAI -> Ollama, 3-tier pool (deep/moderate/light) |
+| **LMS** | Integration | Webhook enrichment, token exchange, Moodle/Canvas connector, teacher dashboards |
+
+---
 
 ## Architecture
 
 ```
-                                    ┌─────────────────────────────────────┐
-                                    │          Wiii Platform              │
-User ──► REST / SSE / WebSocket     │                                     │
-         ┌──────────────────────────┤  ┌────────────┐ ┌──────────────┐   │
-         │    API & Auth Gateway    │  │  Domain     │ │   Org        │   │
-         │  (JWT + OAuth + HMAC +   │  │  Router     │ │   Context    │   │
-         │   Rate Limit + Org MW)   │  │  (5-prio)   │ │   Middleware │   │
-         └──────────┬───────────────┤  └──────┬──────┘ └──────┬──────┘   │
-                    │               │         │               │          │
-                    ▼               │         ▼               ▼          │
-         ┌──────────────────┐       │  ┌─────────────────────────────┐   │
-         │ ChatOrchestrator │───────┼─►│      LangGraph Multi-Agent  │   │
-         └──────────────────┘       │  │  ┌─────────┐ ┌───────────┐ │   │
-                                    │  │  │Guardian  │ │Supervisor │ │   │
-                                    │  │  └────┬─────┘ └─────┬─────┘ │   │
-                                    │  │       │             │       │   │
-                                    │  │  ┌────▼──┬──────┬───▼──┬──┐ │   │
-                                    │  │  │ RAG   │Tutor │Direct│PS│ │   │
-                                    │  │  │ Agent │Agent │Agent │  │ │   │
-                                    │  │  └───┬───┴──┬───┴──┬───┴──┘ │   │
-                                    │  │      │      │      │        │   │
-                                    │  │  ┌───▼──────▼──────▼──────┐ │   │
-                                    │  │  │  Grader → Synthesizer  │ │   │
-                                    │  │  └────────────────────────┘ │   │
-                                    │  └─────────────────────────────┘   │
-                                    │                                     │
-         ┌──────────────────────────┼─────────────────────────────┐      │
-         │        Data Layer        │                             │      │
-         │  ┌──────────┐ ┌─────────┴─┐ ┌─────────┐ ┌─────────┐  │      │
-         │  │PostgreSQL │ │  Neo4j    │ │  MinIO  │ │Playwright│  │      │
-         │  │+pgvector  │ │  GraphDB  │ │(S3 Docs)│ │(Browser) │  │      │
-         │  └──────────┘ └───────────┘ └─────────┘ └─────────┘  │      │
-         └────────────────────────────────────────────────────────┘      │
-                                    └─────────────────────────────────────┘
+                                    +-------------------------------------+
+                                    |          Wiii Platform              |
+User --> REST / SSE / WebSocket     |                                     |
+         +-------------------------+|  +------------+ +--------------+    |
+         |    API & Auth Gateway   ||  |  Domain     | |   Org        |    |
+         |  (JWT + OAuth + HMAC +  ||  |  Router     | |   Context    |    |
+         |   Rate Limit + Org MW)  ||  |  (5-prio)   | |   Middleware |    |
+         +-----------+-------------+|  +------+------+ +------+------+    |
+                     |              |         |               |           |
+                     v              |         v               v           |
+         +------------------+      |  +-----------------------------+    |
+         | ChatOrchestrator |------+->|      LangGraph Multi-Agent  |    |
+         +------------------+      |  |  +---------+ +-----------+  |    |
+                                   |  |  |Guardian  | |Supervisor |  |    |
+                                   |  |  +----+-----+ +-----+-----+ |    |
+                                   |  |       |             |        |    |
+                                   |  |  +----v--+------+---v--+--+  |    |
+                                   |  |  | RAG   |Tutor |Direct|PS|  |    |
+                                   |  |  | Agent |Agent |Agent |  |  |    |
+                                   |  |  +---+---+--+---+--+---+--+  |    |
+                                   |  |      |      |      |         |    |
+                                   |  |  +---v------v------v------+  |    |
+                                   |  |  |  Grader -> Synthesizer  | |    |
+                                   |  |  +-------------------------+ |    |
+                                   |  +-----------------------------+    |
+                                   |                                     |
+         +-------------------------+--------------------------+          |
+         |        Data Layer       |                          |          |
+         |  +----------+ +--------+-+ +---------+ +---------+|          |
+         |  |PostgreSQL | |  Neo4j   | |  MinIO  | |Playwright|          |
+         |  |+pgvector  | |  GraphDB | |(S3 Docs)| |(Browser) |          |
+         |  +----------+ +----------+ +---------+ +---------+|          |
+         +----------------------------------------------------+          |
+                                   |        Living Agent                 |
+                                   |  +-----------------------------+    |
+                                   |  | Soul Core | Identity Core   |    |
+                                   |  | Emotion   | Heartbeat       |    |
+                                   |  | Skills    | Journal         |    |
+                                   |  | Narrative | Social Browser  |    |
+                                   |  +-----------------------------+    |
+                                   +-------------------------------------+
 ```
+
+### Request Flow
+
+```
+User -> API -> ChatOrchestrator -> DomainRouter -> Supervisor -> Agent -> Response
+                    |                   |                            |
+              InputProcessor       DomainPlugin                AgenticLoop
+          (context + memory +   (prompts, tools,          (multi-step tool calling)
+           conversation phase)    domain config)                     |
+                                                        UnifiedLLMClient / LangChain
+```
+
+### Living Agent Lifecycle
+
+```
+Every 30 minutes (Heartbeat):
+  1. Load Soul Core (wiii_soul.yaml)
+  2. Check emotional state (4D: mood/energy/social/engagement)
+  3. Plan actions (browse, journal, learn, reflect)
+  4. Execute via local LLM (Ollama qwen3:8b -- zero API cost)
+  5. Update Identity Core (weekly reflection -> insight extraction -> drift check)
+  6. Compile narrative (NarrativeSynthesizer -> brief context for next conversation)
+  7. Advance skills (Skill-Tool Bridge: tool success -> skill progression)
+```
+
+---
 
 ## Quick Start
 
@@ -90,7 +178,7 @@ cp .env.example .env          # Edit: set GOOGLE_API_KEY=AIza...
 docker compose up -d           # Starts app + PostgreSQL + Neo4j + MinIO
 ```
 
-App is now running at **http://localhost:8000**. API docs at `/docs`.
+App running at **http://localhost:8000**. API docs at `/docs`.
 
 ### Manual Setup
 
@@ -102,16 +190,34 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env               # Edit with your API keys
 
-# 2. Start services (PostgreSQL, Neo4j, MinIO)
+# 2. Start services
 docker compose up -d postgres neo4j minio
 
-# 3. Run the server
+# 3. Run migrations
+alembic upgrade head
+
+# 4. Run the server
 uvicorn app.main:app --reload
 
-# 4. Desktop app (optional)
+# 5. Desktop app (optional)
 cd ../wiii-desktop
 npm install
 npx tauri dev
+```
+
+### Soul AGI Mode
+
+To activate Wiii's full Living Agent autonomy:
+
+```bash
+# Use the Soul AGI docker stack (includes Ollama + Cloudflare Tunnel)
+docker compose -f docker-compose.soul-agi.yml up -d
+
+# Set feature flags in .env
+enable_living_agent=True
+enable_natural_conversation=True
+enable_skill_tool_bridge=True
+enable_narrative_context=True
 ```
 
 ### Environment Variables
@@ -125,125 +231,90 @@ API_KEY=your-secret-key             # API authentication key
 OPENAI_API_KEY=sk-...               # OpenAI (second in failover chain)
 OLLAMA_BASE_URL=http://localhost:11434  # Ollama local (third in chain)
 
-# Optional: authentication
-GOOGLE_CLIENT_ID=...                # Google OAuth 2.0
-GOOGLE_CLIENT_SECRET=...            # Google OAuth 2.0
-
 # Auto-configured by Docker Compose
 DATABASE_URL=postgresql+asyncpg://wiii:wiii_secret@localhost:5433/wiii_ai
 NEO4J_URI=bolt://localhost:7687
 MINIO_ENDPOINT=localhost:9000
 ```
 
+---
+
 ## Project Structure
 
 ```
 .
-├── maritime-ai-service/           # Backend (FastAPI + LangGraph)
-│   ├── app/
-│   │   ├── api/v1/               # 18 REST/WebSocket/Webhook routers
-│   │   ├── auth/                 # OAuth, JWT, LMS token exchange
-│   │   ├── core/                 # Config (46 feature flags), middleware, DB
-│   │   ├── domains/              # Plugin system (maritime/, traffic_law/)
-│   │   ├── engine/               # AI core: RAG, multi-agent, tools, LLM,
-│   │   │   │                     #   search platforms, character system
-│   │   │   ├── agentic_rag/      # Corrective RAG pipeline
-│   │   │   ├── multi_agent/      # LangGraph agent graph
-│   │   │   ├── llm_providers/    # Gemini, OpenAI, Ollama + unified client
-│   │   │   ├── search_platforms/ # 8 search adapters (plugin architecture)
-│   │   │   ├── tools/            # 8 tool modules
-│   │   │   ├── character/        # Stanford Generative Agents
-│   │   │   ├── living_agent/     # Autonomous soul, emotion, heartbeat, skills
-│   │   │   └── semantic_memory/  # Fact extraction + decay
-│   │   ├── integrations/         # LMS webhook + API client
-│   │   ├── services/             # Business logic (23 service files)
-│   │   ├── repositories/         # Data access (15 repository files)
-│   │   ├── prompts/              # YAML persona configs
-│   │   ├── mcp/                  # MCP server + client
-│   │   └── models/               # Pydantic schemas
-│   ├── alembic/                  # 14 database migrations
-│   ├── tests/                    # 6550+ unit + integration tests
-│   └── docker-compose.yml        # Full stack orchestration
-│
-├── wiii-desktop/                  # Desktop app (Tauri v2 + React 18)
-│   ├── src/
-│   │   ├── components/           # Chat, Layout, Settings, Auth, Common
-│   │   ├── stores/               # 12 Zustand stores
-│   │   ├── api/                  # 16 API modules
-│   │   ├── hooks/                # 4 custom hooks
-│   │   ├── lib/                  # 28 utility modules + avatar system
-│   │   └── __tests__/            # 55 test files (1468 tests)
-│   └── src-tauri/                # Rust backend (Tauri plugins, commands)
-│
-├── docs/                         # Architecture, flow, API documentation
-└── CLAUDE.md                     # AI agent instructions
++-- maritime-ai-service/           # Backend (310+ Python files)
+|   +-- app/
+|   |   +-- api/v1/               # 19 REST routers (63+ endpoints)
+|   |   +-- auth/                 # OAuth, JWT, LMS token exchange, OTP, audit
+|   |   +-- core/                 # Config (70+ feature flags), middleware, security
+|   |   +-- domains/              # Plugin system (maritime/, traffic_law/, _template/)
+|   |   +-- engine/               # AI core
+|   |   |   +-- agentic_rag/      # Corrective RAG, HyDE, Adaptive RAG, Graph RAG, Visual RAG
+|   |   |   +-- multi_agent/      # LangGraph agents (9 nodes + supervisor + subagents)
+|   |   |   +-- living_agent/     # Soul, emotion, heartbeat, skills, journal, narrative (19 modules)
+|   |   |   +-- skills/           # UnifiedSkillIndex, IntelligentToolSelector, SkillToolBridge
+|   |   |   +-- search_platforms/ # 7 adapters, ChainedAdapter, StrategyManager
+|   |   |   +-- tools/            # 12 tool modules (RAG, web, product, chart, LMS, B2B)
+|   |   |   +-- semantic_memory/  # Temporal graph, visual memory, cross-platform sync
+|   |   |   +-- llm_providers/    # Gemini, OpenAI, Ollama + unified client
+|   |   |   +-- character/        # Stanford Generative Agents + per-user isolation
+|   |   |   +-- personality_mode.py # Professional <-> Soul mode switching
+|   |   +-- integrations/         # LMS (webhook, enrichment, push, connectors)
+|   |   +-- mcp/                  # MCP server + client + adapter + tool_server
+|   |   +-- services/             # Business logic (25+ service files)
+|   |   +-- repositories/         # 16 data access repos (all org-aware)
+|   |   +-- prompts/              # YAML persona configs + soul YAML
+|   |   +-- models/               # Pydantic schemas
+|   +-- alembic/                  # 34 database migrations
+|   +-- tests/                    # 350+ test files, 9703 unit tests
+|   +-- docs/                     # Architecture, API, integration guides
+|
++-- wiii-desktop/                  # Desktop app (Tauri v2 + React 18)
+|   +-- src/
+|   |   +-- components/           # auth/, chat/, layout/, settings/, admin/, org-admin/, common/
+|   |   +-- stores/               # 13 Zustand stores
+|   |   +-- api/                  # 16 API modules
+|   |   +-- hooks/                # SSE streaming, auto-scroll, keyboard shortcuts
+|   |   +-- lib/                  # 28 utilities + avatar engine (18 modules)
+|   |   +-- __tests__/            # 62 test files, 1796 Vitest tests
+|   +-- src-tauri/                # Rust backend (Tauri plugins, splash screen)
+|
++-- CLAUDE.md                     # AI agent instructions (multi-agent team)
++-- .claude/                      # Agent personas, workflows, knowledge base
 ```
+
+---
 
 ## Tech Stack
 
-| Layer | Technology | Version |
+| Layer | Technology | Purpose |
 |-------|-----------|---------|
-| **API Framework** | FastAPI | 0.115+ |
-| **Agent Orchestration** | LangGraph | Multi-agent state machine |
-| **Primary LLM** | Google Gemini 2.5 | With thinking/reasoning support |
-| **Failover LLMs** | OpenAI, Ollama (Qwen3:8b) | Automatic failover chain |
-| **Vector Database** | PostgreSQL + pgvector | 15+ (768-dim embeddings) |
-| **Knowledge Graph** | Neo4j | 5 Community |
-| **Object Storage** | MinIO | S3-compatible |
-| **Browser Engine** | Playwright | Headless Chrome (feature-gated) |
-| **Desktop Framework** | Tauri v2 | Rust backend + web frontend |
-| **Frontend** | React 18 + TypeScript | Vite 5 |
-| **State Management** | Zustand | 11 stores, Immer middleware |
-| **Styling** | Tailwind CSS | 3.4 |
-| **Animation** | Rive + Motion (Framer) | Living avatar system |
-| **Auth** | JWT + Google OAuth + HMAC | Multi-provider federation |
-| **Observability** | OpenTelemetry + structlog | Structured JSON logging |
+| **API** | FastAPI 0.115+ | High-performance async API framework |
+| **Agent Orchestration** | LangGraph | Multi-agent state machine with subagent architecture |
+| **Primary LLM** | Google Gemini 2.5 | Thinking/reasoning support, structured outputs |
+| **Failover LLMs** | OpenAI, Ollama (Qwen3:8b) | Automatic failover chain, local LLM for Living Agent |
+| **Vector DB** | PostgreSQL + pgvector | 768-dim embeddings, HNSW indexing |
+| **Knowledge Graph** | Neo4j | Entity-relation-episode temporal subgraphs |
+| **Object Storage** | MinIO | S3-compatible document and image storage |
+| **Browser** | Playwright | Headless Chrome, Facebook cookie login, GraphQL interception |
+| **Desktop** | Tauri v2 | Rust backend + React 18 frontend, native Windows installer |
+| **Frontend** | React 18 + TypeScript + Vite 5 | Modern SPA with Tailwind CSS 3.4 |
+| **State** | Zustand | 13 stores with Immer middleware |
+| **Avatar** | Rive + Motion (Framer) | Living avatar with emotion-driven animations |
+| **Auth** | JWT + Google OAuth (PKCE) + HMAC | Multi-provider federation with audit trail |
+| **Observability** | OpenTelemetry + structlog | Structured JSON logging with request-ID correlation |
 
-## Feature Flags
-
-46 feature flags in `app/core/config.py` — all major subsystems are gated for safe incremental rollout:
-
-```python
-# Core AI (enabled by default)
-use_multi_agent = True              # LangGraph multi-agent system
-enable_corrective_rag = True        # Self-correction RAG loop
-enable_structured_outputs = True    # Constrained decoding for routing
-enable_agentic_loop = True          # Generalized ReAct tool-calling
-
-# Memory & Character (enabled by default)
-enable_character_tools = True       # Character introspection/update
-enable_character_reflection = True  # Stanford reflection loop
-enable_semantic_fact_retrieval = True  # Vector-based fact search
-
-# Search & Browser (opt-in)
-enable_product_search = False       # Product search agent (8 platforms)
-enable_browser_scraping = False     # Playwright headless browser
-enable_browser_screenshots = False  # Stream screenshots to UI
-enable_network_interception = True  # GraphQL capture during scroll
-
-# Authentication (opt-in)
-enable_google_oauth = False         # Google OAuth 2.0 login
-enable_lms_token_exchange = False   # Backend-to-backend HMAC JWT
-enable_multi_tenant = False         # Multi-org data isolation
-
-# Living Agent (opt-in)
-enable_living_agent = False         # Autonomous soul, emotion, heartbeat, skills
-
-# Infrastructure (opt-in)
-enable_mcp_server = False           # Expose tools via MCP
-enable_mcp_client = False           # Consume external MCP tools
-enable_scheduler = False            # Background task execution
-enable_lms_integration = False      # LMS webhook enrichment
-```
+---
 
 ## Testing
 
 ```bash
-# Backend (6550+ tests)
+# Backend (9703 tests, 0 failures)
 cd maritime-ai-service
-PYTHONIOENCODING=utf-8 pytest tests/unit/ -v -p no:capture --tb=short
+set PYTHONIOENCODING=utf-8 && pytest tests/unit/ -v -p no:capture --tb=short
 
-# Desktop (1468 tests)
+# Desktop (1796 tests)
 cd wiii-desktop
 npx vitest run
 
@@ -254,94 +325,71 @@ pytest tests/integration/ -v
 pytest tests/ --cov=app --cov-report=html
 ```
 
-## API Reference
+---
 
-### Authentication
+## Development History
 
-Dual auth: API Key + JWT with LMS headers.
+209 sprints of iterative development across 13 months:
 
-```
-X-API-Key: your-api-key
-X-User-ID: student-123
-X-Session-ID: session-abc
-X-Role: student|teacher|admin
-X-Organization-ID: lms-hang-hai       # Optional: multi-tenant context
-Authorization: Bearer <jwt-token>      # Optional: OAuth JWT
-```
+| Phase | Sprints | Highlights |
+|-------|---------|------------|
+| **Foundation** | 1-68 | Core RAG, Docker, LangGraph, Desktop MVP, MCP, Agentic Loop |
+| **Intelligence** | 69-103 | Routing, Memory SOTA, Streaming V3, Context, Security, LLM-First Routing |
+| **Living Desktop** | 104-135 | Living Avatar, SVG Face, Kawaii, Emotion Engine, Soul Emotion |
+| **Search & Tools** | 136-153 | Universal KB, Product Search (7 adapters), Browser Scraping, Screenshots |
+| **Enterprise** | 154-165 | OAuth, LMS Integration, Multi-Tenant, Org Customization, Subagent Architecture |
+| **Living Agent** | 170-177 | Soul Agent, Cross-Platform Identity, SM-2 Spaced Repetition, Memory Sync |
+| **Admin & RAG** | 178-195 | Admin Module, Vision+Charts, Graph RAG, HyDE, Unified Skills, MCP Tools |
+| **Product Intelligence** | 196-202 | B2B Sourcing, Visual Search, Image Enrichment, LLM-Curated Cards |
+| **Soul AGI Foundation** | 203-209 | Natural Conversation, Anti-Pattern Remediation, Skill-Tool Bridge, Narrative Layer, Identity Core, Module Wiring, E2E Tests |
 
-### Key Endpoints
+**Current (Feb 2026):** 310+ Python files, 165+ TypeScript files, 70+ feature flags, 34 DB migrations, 11,499 tests total.
+
+---
+
+## Key API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/v1/chat` | Synchronous chat |
-| `POST` | `/api/v1/chat/stream/v3` | SSE streaming chat |
-| `GET` | `/api/v1/chat/context/info` | Token budget & utilization |
-| `POST` | `/api/v1/chat/context/compact` | Trigger conversation compaction |
-| `GET` | `/api/v1/character/state` | Character personality blocks |
-| `GET` | `/api/v1/mood` | Current emotional state (2D) |
-| `GET/PUT` | `/api/v1/preferences` | User learning preferences |
-| `GET` | `/api/v1/health` | Service health check |
-| `GET` | `/api/v1/admin/domains` | List domain plugins |
-| `GET/PATCH` | `/api/v1/organizations/{id}/settings` | Org settings (Sprint 161) |
-| `GET` | `/api/v1/organizations/{id}/permissions` | User permissions in org |
-| `GET/PATCH` | `/api/v1/users/me` | User profile management |
-| `POST` | `/api/v1/auth/lms/token` | LMS token exchange (HMAC) |
-| `GET` | `/api/v1/living-agent/status` | Living Agent status (soul, mood, heartbeat) |
+| `POST` | `/api/v1/chat/stream/v3` | SSE streaming chat (thinking lifecycle, tool events) |
+| `GET` | `/api/v1/chat/context/info` | Token budget and utilization |
+| `GET` | `/api/v1/living-agent/status` | Living Agent status (soul, mood, heartbeat, skills) |
 | `POST` | `/api/v1/living-agent/heartbeat/trigger` | Manually trigger heartbeat cycle |
+| `GET` | `/api/v1/organizations` | List organizations |
+| `GET` | `/api/v1/users/me` | Current user profile |
+| `GET` | `/api/v1/admin/domains` | List domain plugins |
 | `GET` | `/auth/oauth/login` | Google OAuth login |
-| `WS` | `/api/v1/ws` | WebSocket real-time chat |
 
-### Domain Plugin Development
+See [`maritime-ai-service/README.md`](maritime-ai-service/README.md) for the full API reference (63+ endpoints).
 
-```bash
-cp -r app/domains/_template app/domains/my_domain
-# Edit domain.yaml → add keywords, descriptions, prompts
-# Add to config: active_domains=["maritime", "my_domain"]
-# Restart — auto-discovered at startup
-```
+---
 
 ## Documentation
 
 | Document | Path | Description |
 |----------|------|-------------|
-| **System Architecture** | `maritime-ai-service/docs/architecture/SYSTEM_ARCHITECTURE.md` | Complete technical architecture (55 KB) |
-| **System Flow** | `maritime-ai-service/docs/architecture/SYSTEM_FLOW.md` | Request/response flows (38 KB) |
-| **Folder Map** | `maritime-ai-service/docs/architecture/FOLDER_MAP.md` | Directory structure reference (25 KB) |
+| **System Architecture** | `maritime-ai-service/docs/architecture/SYSTEM_ARCHITECTURE.md` | Complete technical architecture |
+| **System Flow** | `maritime-ai-service/docs/architecture/SYSTEM_FLOW.md` | Request/response flow diagrams |
+| **Folder Map** | `maritime-ai-service/docs/architecture/FOLDER_MAP.md` | Directory structure reference |
 | **API Integration** | `maritime-ai-service/docs/api/integration-guide.md` | API integration patterns |
-| **Local Development** | `maritime-ai-service/docs/LOCAL_DEV.md` | Development setup guide |
-| **Agent Instructions** | `CLAUDE.md` | AI agent coding instructions |
+| **Backend README** | `maritime-ai-service/README.md` | Backend setup, API reference, configuration |
+| **Desktop README** | `wiii-desktop/README.md` | Desktop app setup, architecture, testing |
+| **Agent Instructions** | `CLAUDE.md` | AI development team instructions |
+| **Soul AGI Architecture** | `.claude/knowledge/WIII_SOUL_AGI_PLAN.md` | Soul AGI design philosophy and roadmap |
 
-## Development History
-
-170 sprints of iterative development:
-
-| Phase | Sprints | Highlights |
-|-------|---------|------------|
-| **Foundation** | 1-68 | Core RAG, Docker, LangGraph, Desktop, MCP, Agentic Loop |
-| **Intelligence** | 69-103 | Routing, Memory, Streaming, Context, Security, LLM-First Routing |
-| **Living Desktop** | 104-135 | Living Avatar, SVG Face, Kawaii, Emotion Engine, Soul Emotion |
-| **Search & Tools** | 136-153 | Universal KB, Product Search (8 platforms), Browser Scraping |
-| **Enterprise** | 154-161 | OAuth, User Management, LMS Integration, Multi-Tenant, Org Customization |
-| **Architecture** | 162-170 | UI Overhaul, Subagent Architecture, Code Rendering, **Living Agent** |
-
-**Current:** 264+ Python files, 165+ TypeScript files, 47 feature flags, 14 DB migrations, 8000+ tests total.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and pull request process.
-
-## License
-
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+---
 
 ## Acknowledgments
 
 Built by **The Wiii Lab**.
 
-- [LangGraph](https://github.com/langchain-ai/langgraph) — Multi-agent orchestration
-- [FastAPI](https://fastapi.tiangolo.com/) — High-performance API framework
-- [Tauri](https://tauri.app/) — Cross-platform desktop framework
-- [Google Gemini](https://ai.google.dev/) — Primary LLM provider
-- [pgvector](https://github.com/pgvector/pgvector) — Vector similarity search for PostgreSQL
-- [Playwright](https://playwright.dev/) — Browser automation for product search
-- [Rive](https://rive.app/) — Living avatar animations
+- [LangGraph](https://github.com/langchain-ai/langgraph) -- Multi-agent orchestration
+- [FastAPI](https://fastapi.tiangolo.com/) -- High-performance API framework
+- [Tauri](https://tauri.app/) -- Cross-platform desktop framework
+- [Google Gemini](https://ai.google.dev/) -- Primary LLM provider
+- [pgvector](https://github.com/pgvector/pgvector) -- Vector similarity search for PostgreSQL
+- [Neo4j](https://neo4j.com/) -- Knowledge graph database
+- [Playwright](https://playwright.dev/) -- Browser automation
+- [Rive](https://rive.app/) -- Living avatar animations
+- [OpenClaw](https://github.com/openclaw) -- Soul AGI architecture inspiration

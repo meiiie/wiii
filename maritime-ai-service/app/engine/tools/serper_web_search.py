@@ -13,7 +13,7 @@ Gate: enable_serper_web_search (default True, requires SERPER_API_KEY)
 """
 
 import logging
-from typing import List, Optional
+from typing import List
 
 import httpx
 

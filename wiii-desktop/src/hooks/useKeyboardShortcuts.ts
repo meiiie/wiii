@@ -22,16 +22,17 @@ export function useKeyboardShortcuts() {
       const isCtrl = e.ctrlKey || e.metaKey;
       const ui = useUIStore.getState();
 
-      // Escape — close any open modal/panel
+      // Escape — close any open modal/panel or navigate back to chat
       if (e.key === "Escape") {
         if (ui.commandPaletteOpen) {
           e.preventDefault();
           ui.closeCommandPalette();
           return;
         }
-        if (ui.settingsOpen) {
+        // Sprint 192: Escape from any admin/settings view → back to chat
+        if (ui.activeView !== "chat") {
           e.preventDefault();
-          ui.closeSettings();
+          ui.navigateToChat();
           return;
         }
         const ctx = useContextStore.getState();

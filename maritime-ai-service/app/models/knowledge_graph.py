@@ -141,6 +141,7 @@ class Citation(BaseModel):
     page_number: Optional[int] = Field(default=None, description="Page number in PDF (Feature: source-highlight-citation)")
     document_id: Optional[str] = Field(default=None, description="Document ID (Feature: source-highlight-citation)")
     bounding_boxes: Optional[list] = Field(default=None, description="Normalized coordinates for highlighting (Feature: source-highlight-citation)")
+    content_type: Optional[str] = Field(default=None, description="Content type: text, table, heading, diagram_reference, formula (Sprint 189)")
 
 
 class IKnowledgeGraph(Protocol):

@@ -384,7 +384,8 @@ class RAGAgent:
         conversation_history: str = "",
         user_role: str = "student",
         user_name: Optional[str] = None,
-        is_follow_up: bool = False
+        is_follow_up: bool = False,
+        entity_context: str = "",
     ) -> RAGResponse:
         """
         Generate response from pre-retrieved documents (no re-retrieval).
@@ -421,7 +422,7 @@ class RAGAgent:
             nodes=nodes,
             conversation_history=conversation_history,
             user_role=user_role,
-            entity_context="",
+            entity_context=entity_context,
             user_name=user_name,
             is_follow_up=is_follow_up
         )

@@ -60,6 +60,11 @@ class SkillBuilder:
             logger.debug("[SKILL] Skill already tracked: %s", skill_name)
             return None
 
+        # Ensure org_id is set (heartbeat runs without request context)
+        if organization_id is None:
+            from app.core.org_filter import get_effective_org_id
+            organization_id = get_effective_org_id()
+
         skill = WiiiSkill(
             skill_name=skill_name,
             domain=domain,
@@ -171,6 +176,56 @@ class SkillBuilder:
         learning = self._query_skills(status=SkillStatus.LEARNING)
         practicing = self._query_skills(status=SkillStatus.PRACTICING)
         return learning + practicing
+
+    async def learn_from_material(self, topic: str, material) -> bool:
+        """Learn from actual content material (Sprint 177).
+
+        Delegates to SkillLearner for content-based learning with real articles.
+
+        Args:
+            topic: Skill name to learn about.
+            material: LearningMaterial instance.
+
+        Returns:
+            True if learning occurred.
+        """
+        from app.engine.living_agent.skill_learner import get_skill_learner
+        learner = get_skill_learner()
+        return await learner.learn_from_content(topic, material)
+
+    def get_skills_for_review(self) -> List[WiiiSkill]:
+        """Get skills due for spaced repetition review (Sprint 177).
+
+        Returns:
+            Skills whose review_schedule.next_review_at has passed.
+        """
+        from app.engine.living_agent.skill_learner import get_skill_learner
+        learner = get_skill_learner()
+        return learner.get_skills_due_for_review()
+
+    def update_skill_metadata(self, skill: WiiiSkill) -> None:
+        """Persist skill metadata JSON changes to database (Sprint 177)."""
+        try:
+            from sqlalchemy import text
+            from app.core.database import get_shared_session_factory
+
+            session_factory = get_shared_session_factory()
+            with session_factory() as session:
+                session.execute(
+                    text("""
+                        UPDATE wiii_skills SET
+                            metadata = :meta,
+                            updated_at = NOW()
+                        WHERE id = :id
+                    """),
+                    {
+                        "id": str(skill.id),
+                        "meta": json.dumps(skill.metadata, ensure_ascii=False),
+                    },
+                )
+                session.commit()
+        except Exception as e:
+            logger.error("[SKILL] Failed to update skill metadata: %s", e)
 
     # =========================================================================
     # Database operations

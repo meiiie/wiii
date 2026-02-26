@@ -138,6 +138,68 @@ class HeartbeatAuditResponse(BaseModel):
     created_at: str
 
 
+# Soul AGI response schemas
+class GoalResponse(BaseModel):
+    """A dynamic goal."""
+    id: str
+    title: str
+    description: str = ""
+    status: str = "proposed"
+    priority: str = "medium"
+    progress: float = 0.0
+    source: str = "reflection"
+    milestones: List[str] = Field(default_factory=list)
+    completed_milestones: List[str] = Field(default_factory=list)
+    created_at: Optional[str] = None
+    target_date: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class CreateGoalRequest(BaseModel):
+    """Request to create a new goal."""
+    title: str = Field(..., min_length=1, max_length=500)
+    description: str = Field(default="", max_length=2000)
+    priority: str = Field(default="medium")
+    milestones: List[str] = Field(default_factory=list)
+
+
+class UpdateGoalProgressRequest(BaseModel):
+    """Request to update goal progress."""
+    progress: float = Field(..., ge=0.0, le=1.0)
+    milestone: Optional[str] = None
+
+
+class ReflectionResponse(BaseModel):
+    """A reflection entry."""
+    id: str
+    content: str
+    insights: List[str] = Field(default_factory=list)
+    goals_next_week: List[str] = Field(default_factory=list)
+    patterns_noticed: List[str] = Field(default_factory=list)
+    emotion_trend: str = ""
+    reflection_date: Optional[str] = None
+
+
+class RoutineResponse(BaseModel):
+    """User routine data."""
+    user_id: str
+    typical_active_hours: List[int] = Field(default_factory=list)
+    preferred_briefing_time: int = 7
+    conversation_frequency: float = 0.0
+    common_topics: List[str] = Field(default_factory=list)
+    total_messages: int = 0
+    last_seen: Optional[str] = None
+
+
+class AutonomyStatusResponse(BaseModel):
+    """Autonomy level status."""
+    level: int = 0
+    level_name: str = "Giam sat hoan toan"
+    allowed_actions: List[str] = Field(default_factory=list)
+    needs_approval: List[str] = Field(default_factory=list)
+    graduation_criteria: dict = Field(default_factory=dict)
+
+
 # =============================================================================
 # Helper: Feature gate check
 # =============================================================================
@@ -178,6 +240,20 @@ async def get_living_agent_status(
         scheduler = get_heartbeat_scheduler()
         state = engine.state
 
+        # Count skills and journal entries
+        skill_count = 0
+        journal_count = 0
+        try:
+            from app.engine.living_agent.skill_builder import get_skill_builder
+            skill_count = len(get_skill_builder().get_all_skills())
+        except Exception:
+            pass
+        try:
+            from app.engine.living_agent.journal import get_journal_writer
+            journal_count = len(get_journal_writer().get_recent_entries(limit=100))
+        except Exception:
+            pass
+
         return LivingAgentStatusResponse(
             enabled=True,
             emotional_state=EmotionalStateResponse(
@@ -195,6 +271,8 @@ async def get_living_agent_status(
                 interval_seconds=settings.living_agent_heartbeat_interval,
                 active_hours=f"{settings.living_agent_active_hours_start:02d}:00-{settings.living_agent_active_hours_end:02d}:00 UTC+7",
             ),
+            skills_count=skill_count,
+            journal_entries_count=journal_count,
             soul_loaded=True,
             soul_name=soul.name,
         )
@@ -385,19 +463,28 @@ async def get_browsing_log(
     try:
         from sqlalchemy import text
         from app.core.database import get_shared_session_factory
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+
+        org_id = get_effective_org_id()
+        org_clause = org_where_clause(org_id)
 
         session_factory = get_shared_session_factory()
         with session_factory() as session:
+            params = {"days": days, "limit": limit}
+            if org_id:
+                params["org_id"] = org_id
+
             rows = session.execute(
-                text("""
+                text(f"""
                     SELECT id, platform, COALESCE(url, '') as url, title,
                            COALESCE(summary, '') as summary, relevance_score, browsed_at
                     FROM wiii_browsing_log
-                    WHERE browsed_at >= NOW() - INTERVAL ':days days'
+                    WHERE browsed_at >= NOW() - INTERVAL '1 day' * :days
+                    {org_clause}
                     ORDER BY browsed_at DESC
                     LIMIT :limit
-                """.replace(":days days", f"{days} days")),
-                {"limit": limit},
+                """),
+                params,
             ).fetchall()
 
             return [
@@ -434,6 +521,10 @@ async def get_pending_actions(
     try:
         from sqlalchemy import text
         from app.core.database import get_shared_session_factory
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+
+        org_id = get_effective_org_id()
+        org_clause = org_where_clause(org_id)
 
         session_factory = get_shared_session_factory()
         with session_factory() as session:
@@ -441,11 +532,15 @@ async def get_pending_actions(
                 SELECT id, action_type, COALESCE(target, '') as target,
                        priority, status, created_at, resolved_at, approved_by
                 FROM wiii_pending_actions
+                WHERE 1=1
             """
             params = {}
             if status_filter:
-                query += " WHERE status = :status"
+                query += " AND status = :status"
                 params["status"] = status_filter
+            query += org_clause
+            if org_id:
+                params["org_id"] = org_id
             query += " ORDER BY created_at DESC LIMIT 100"
 
             rows = session.execute(text(query), params).fetchall()
@@ -492,13 +587,20 @@ async def resolve_pending_action(
     try:
         from sqlalchemy import text
         from app.core.database import get_shared_session_factory
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+
+        org_id = get_effective_org_id()
+        org_clause = org_where_clause(org_id)
 
         session_factory = get_shared_session_factory()
         with session_factory() as session:
-            # Check action exists and is pending
+            # Check action exists and is pending (org-scoped)
+            select_params = {"id": action_id}
+            if org_id:
+                select_params["org_id"] = org_id
             row = session.execute(
-                text("SELECT status FROM wiii_pending_actions WHERE id = :id"),
-                {"id": action_id},
+                text(f"SELECT status FROM wiii_pending_actions WHERE id = :id{org_clause}"),
+                select_params,
             ).fetchone()
 
             if not row:
@@ -512,13 +614,16 @@ async def resolve_pending_action(
             new_status = "approved" if body.decision == "approve" else "rejected"
             user_id = getattr(auth, "user_id", "system")
 
+            update_params = {"status": new_status, "approved_by": user_id, "id": action_id}
+            if org_id:
+                update_params["org_id"] = org_id
             session.execute(
-                text("""
+                text(f"""
                     UPDATE wiii_pending_actions
                     SET status = :status, approved_by = :approved_by, resolved_at = NOW()
-                    WHERE id = :id
+                    WHERE id = :id{org_clause}
                 """),
-                {"status": new_status, "approved_by": user_id, "id": action_id},
+                update_params,
             )
             session.commit()
 
@@ -562,18 +667,27 @@ async def get_heartbeat_audit(
         import json
         from sqlalchemy import text
         from app.core.database import get_shared_session_factory
+        from app.core.org_filter import get_effective_org_id, org_where_clause
+
+        org_id = get_effective_org_id()
+        org_clause = org_where_clause(org_id)
 
         session_factory = get_shared_session_factory()
         with session_factory() as session:
+            params = {"limit": limit}
+            if org_id:
+                params["org_id"] = org_id
+
             rows = session.execute(
-                text("""
+                text(f"""
                     SELECT id, cycle_number, actions_taken, insights_gained,
                            duration_ms, error, created_at
                     FROM wiii_heartbeat_audit
+                    WHERE 1=1{org_clause}
                     ORDER BY created_at DESC
                     LIMIT :limit
                 """),
-                {"limit": limit},
+                params,
             ).fetchall()
 
             results = []
@@ -598,3 +712,263 @@ async def get_heartbeat_audit(
     except Exception as e:
         logger.error("[LIVING_AGENT_API] Heartbeat audit error: %s", e)
         return []
+
+
+# =============================================================================
+# Soul AGI: Goals (Phase 4B)
+# =============================================================================
+
+@router.get("/goals", response_model=List[GoalResponse])
+@limiter.limit("30/minute")
+async def get_goals(
+    request: Request,
+    auth: RequireAuth,
+    active_only: bool = Query(default=True, description="Only show non-terminal goals"),
+) -> List[GoalResponse]:
+    """Get Wiii's goals."""
+    _check_enabled()
+
+    try:
+        from app.engine.living_agent.goal_manager import get_goal_manager
+        manager = get_goal_manager()
+
+        if active_only:
+            goals = await manager.get_active_goals()
+        else:
+            goals = await manager.get_all_goals()
+
+        return [
+            GoalResponse(
+                id=str(g.id),
+                title=g.title,
+                description=g.description,
+                status=g.status.value,
+                priority=g.priority.value,
+                progress=round(g.progress, 3),
+                source=g.source,
+                milestones=g.milestones,
+                completed_milestones=g.completed_milestones,
+                created_at=g.created_at.isoformat() if g.created_at else None,
+                target_date=g.target_date.isoformat() if g.target_date else None,
+                completed_at=g.completed_at.isoformat() if g.completed_at else None,
+            )
+            for g in goals
+        ]
+    except Exception as e:
+        logger.error("[LIVING_AGENT_API] Goals error: %s", e)
+        return []
+
+
+@router.post("/goals", response_model=GoalResponse)
+@limiter.limit("10/minute")
+async def create_goal(
+    request: Request,
+    auth: RequireAuth,
+    body: CreateGoalRequest,
+) -> GoalResponse:
+    """Create a new goal for Wiii."""
+    _check_enabled()
+
+    try:
+        from app.engine.living_agent.goal_manager import get_goal_manager
+        manager = get_goal_manager()
+
+        goal = await manager.create_goal(
+            title=body.title,
+            description=body.description,
+            priority=body.priority,
+            source="api",
+            milestones=body.milestones,
+        )
+
+        return GoalResponse(
+            id=str(goal.id),
+            title=goal.title,
+            description=goal.description,
+            status=goal.status.value,
+            priority=goal.priority.value,
+            progress=0.0,
+            source=goal.source,
+            milestones=goal.milestones,
+            created_at=goal.created_at.isoformat() if goal.created_at else None,
+        )
+    except Exception as e:
+        logger.error("[LIVING_AGENT_API] Create goal error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/goals/{goal_id}/progress")
+@limiter.limit("20/minute")
+async def update_goal_progress(
+    request: Request,
+    auth: RequireAuth,
+    goal_id: str,
+    body: UpdateGoalProgressRequest,
+):
+    """Update goal progress and optionally record a milestone."""
+    _check_enabled()
+
+    try:
+        from app.engine.living_agent.goal_manager import get_goal_manager
+        manager = get_goal_manager()
+        success = await manager.update_progress(goal_id, body.progress, body.milestone)
+        if not success:
+            raise HTTPException(status_code=404, detail="Goal not found")
+        return {"status": "updated", "progress": body.progress}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/goals/{goal_id}/activate")
+@limiter.limit("10/minute")
+async def activate_goal(request: Request, auth: RequireAuth, goal_id: str):
+    """Activate a proposed goal."""
+    _check_enabled()
+    from app.engine.living_agent.goal_manager import get_goal_manager
+    manager = get_goal_manager()
+    success = await manager.activate_goal(goal_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Goal not found or update failed")
+    return {"status": "activated"}
+
+
+@router.post("/goals/{goal_id}/complete")
+@limiter.limit("10/minute")
+async def complete_goal(request: Request, auth: RequireAuth, goal_id: str):
+    """Mark a goal as completed."""
+    _check_enabled()
+    from app.engine.living_agent.goal_manager import get_goal_manager
+    manager = get_goal_manager()
+    success = await manager.complete_goal(goal_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Goal not found or update failed")
+    return {"status": "completed"}
+
+
+# =============================================================================
+# Soul AGI: Reflections (Phase 4A)
+# =============================================================================
+
+@router.get("/reflections", response_model=List[ReflectionResponse])
+@limiter.limit("20/minute")
+async def get_reflections(
+    request: Request,
+    auth: RequireAuth,
+    count: int = Query(default=4, ge=1, le=20),
+) -> List[ReflectionResponse]:
+    """Get Wiii's recent reflections."""
+    _check_enabled()
+
+    try:
+        from app.engine.living_agent.reflector import get_reflector
+        reflector = get_reflector()
+        entries = await reflector.get_recent_reflections(count=count)
+
+        return [
+            ReflectionResponse(
+                id=str(e.id),
+                content=e.content,
+                insights=e.insights,
+                goals_next_week=e.goals_next_week,
+                patterns_noticed=e.patterns_noticed,
+                emotion_trend=e.emotion_trend,
+                reflection_date=e.reflection_date.isoformat() if e.reflection_date else None,
+            )
+            for e in entries
+        ]
+    except Exception as e:
+        logger.error("[LIVING_AGENT_API] Reflections error: %s", e)
+        return []
+
+
+@router.post("/reflections/trigger", response_model=ReflectionResponse)
+@limiter.limit("2/hour")
+async def trigger_reflection(request: Request, auth: RequireAuth):
+    """Manually trigger a deep reflection."""
+    _check_enabled()
+
+    try:
+        from app.engine.living_agent.reflector import get_reflector
+        reflector = get_reflector()
+        entry = await reflector.weekly_reflection()
+        if not entry:
+            raise HTTPException(status_code=409, detail="Already reflected this week or generation failed")
+
+        return ReflectionResponse(
+            id=str(entry.id),
+            content=entry.content,
+            insights=entry.insights,
+            goals_next_week=entry.goals_next_week,
+            patterns_noticed=entry.patterns_noticed,
+            emotion_trend=entry.emotion_trend,
+            reflection_date=entry.reflection_date.isoformat() if entry.reflection_date else None,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Soul AGI: Autonomy (Phase 5B)
+# =============================================================================
+
+@router.get("/autonomy", response_model=AutonomyStatusResponse)
+@limiter.limit("30/minute")
+async def get_autonomy_status(request: Request, auth: RequireAuth):
+    """Get current autonomy level and status."""
+    _check_enabled()
+
+    try:
+        from app.engine.living_agent.autonomy_manager import get_autonomy_manager
+        manager = get_autonomy_manager()
+        status = manager.get_status()
+
+        return AutonomyStatusResponse(
+            level=status["level"],
+            level_name=status["level_name"],
+            allowed_actions=status["allowed_actions"],
+            needs_approval=status["needs_approval"],
+            graduation_criteria=status["graduation_criteria"],
+        )
+    except Exception as e:
+        logger.error("[LIVING_AGENT_API] Autonomy status error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Soul AGI: User Routine (Phase 3B)
+# =============================================================================
+
+@router.get("/routine/{user_id}", response_model=Optional[RoutineResponse])
+@limiter.limit("20/minute")
+async def get_user_routine(
+    request: Request,
+    auth: RequireAuth,
+    user_id: str,
+):
+    """Get learned routine for a user."""
+    _check_enabled()
+
+    try:
+        from app.engine.living_agent.routine_tracker import get_routine_tracker
+        tracker = get_routine_tracker()
+        routine = await tracker.get_routine(user_id)
+
+        if not routine:
+            return None
+
+        return RoutineResponse(
+            user_id=routine.user_id,
+            typical_active_hours=routine.typical_active_hours,
+            preferred_briefing_time=routine.preferred_briefing_time,
+            conversation_frequency=routine.conversation_frequency,
+            common_topics=routine.common_topics,
+            total_messages=routine.total_messages,
+            last_seen=routine.last_seen.isoformat() if routine.last_seen else None,
+        )
+    except Exception as e:
+        logger.error("[LIVING_AGENT_API] Routine error: %s", e)
+        return None

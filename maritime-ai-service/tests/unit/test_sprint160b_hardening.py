@@ -597,8 +597,9 @@ class TestTokenFragment:
         with open(oauth_path, "r", encoding="utf-8") as f:
             source = f.read()
         # Should use fragment (#) not query (?) for token delivery
-        assert "#{params}" in source, "google_oauth.py should use URL fragment (#{params}) for token redirect"
-        assert "?{params}" not in source, "google_oauth.py should NOT use query params (?{params}) for tokens"
+        # Sprint 193b: variable renamed from `params` to `token_params`
+        assert "#{token_params}" in source, "google_oauth.py should use URL fragment (#{token_params}) for token redirect"
+        assert "?{token_params}" not in source, "google_oauth.py should NOT use query params (?{token_params}) for tokens"
 
     def test_desktop_login_screen_parses_fragment(self):
         """Desktop LoginScreen should parse tokens from URL hash."""

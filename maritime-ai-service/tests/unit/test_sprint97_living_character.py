@@ -282,6 +282,8 @@ class TestDirectNodeCharacterTools:
             mock_settings.default_domain = "maritime"
             mock_settings.enable_character_tools = True
             mock_settings.enable_code_execution = False  # Sprint 98: explicit
+            mock_settings.enable_lms_integration = False  # Sprint 175: LMS tools
+            mock_settings.enable_chart_tools = False  # Sprint 179: chart tools
 
             mock_mgr = MagicMock()
             mock_mgr.compile_living_state.return_value = ""

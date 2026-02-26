@@ -13,6 +13,7 @@ import { DOMAIN_ICONS } from "@/lib/domain-config";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { useAvatarState } from "@/hooks/useAvatarState";
 import { ChatInput } from "./ChatInput";
+import type { ImageInput } from "@/api/types";
 
 const DOMAIN_SUGGESTIONS: Record<string, string[]> = {
   maritime: [
@@ -28,7 +29,7 @@ const DOMAIN_SUGGESTIONS: Record<string, string[]> = {
 };
 
 interface WelcomeScreenProps {
-  onSendMessage: (message: string) => void;
+  onSendMessage: (message: string, images?: ImageInput[]) => void;
   onCancel: () => void;
 }
 

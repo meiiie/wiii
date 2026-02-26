@@ -119,6 +119,22 @@ class LMSConnectorAdapter(ABC):
         """Fetch upcoming assignments from LMS API. Override for pull support."""
         return []
 
+    def get_student_enrollments(self, student_id: str) -> List[dict]:
+        """Fetch student course enrollments. Override for pull support."""
+        return []
+
+    def get_student_quiz_history(self, student_id: str) -> List[dict]:
+        """Fetch student quiz attempt history. Override for pull support."""
+        return []
+
+    def get_course_students(self, course_id: str) -> List[dict]:
+        """Fetch student roster for a course. Override for pull support."""
+        return []
+
+    def get_course_stats(self, course_id: str) -> Optional[dict]:
+        """Fetch course statistics. Override for pull support."""
+        return None
+
 
 def verify_hmac_sha256(payload_bytes: bytes, signature: str, secret: str) -> bool:
     """Verify HMAC-SHA256 webhook signature (shared utility).

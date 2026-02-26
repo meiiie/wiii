@@ -144,6 +144,16 @@ class TutorAgentNode:
         except Exception as e:
             logger.debug("[TUTOR_AGENT] Character tools not available: %s", e)
 
+        # Sprint 179: Chart tools (feature-gated by enable_chart_tools)
+        try:
+            from app.engine.tools.chart_tools import get_chart_tools
+            chart_tools = get_chart_tools()
+            if chart_tools:
+                self._tools.extend(chart_tools)
+                logger.info("[TUTOR_AGENT] Chart tools enabled: %d tools", len(chart_tools))
+        except Exception as e:
+            logger.debug("[TUTOR_AGENT] Chart tools not available: %s", e)
+
         self._init_llm()
         logger.info("TutorAgentNode initialized with YAML persona, tools: %d", len(self._tools))
     
@@ -197,6 +207,8 @@ class TutorAgentNode:
             mood_hint=context.get("mood_hint", ""),
             # Sprint 124: Per-user character blocks
             user_id=context.get("user_id", "__global__"),
+            # Sprint 174: Personality mode (soul vs professional)
+            personality_mode=context.get("personality_mode"),
         )
         
         # Build context string for query
@@ -397,7 +409,31 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
         lc_messages = context.get("langchain_messages", [])
         if lc_messages:
             messages.extend(lc_messages[-10:])  # Last 10 turns for tutor
-        messages.append(HumanMessage(content=query))
+
+        # Sprint 179: Multimodal content blocks when images are present
+        images = context.get("images") or []
+        if images:
+            content_blocks = [{"type": "text", "text": query}]
+            for img in images:
+                if img.get("type") == "base64":
+                    content_blocks.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{img['media_type']};base64,{img['data']}",
+                            "detail": img.get("detail", "auto"),
+                        }
+                    })
+                elif img.get("type") == "url":
+                    content_blocks.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": img["data"],
+                            "detail": img.get("detail", "auto"),
+                        }
+                    })
+            messages.append(HumanMessage(content=content_blocks))
+        else:
+            messages.append(HumanMessage(content=query))
         
         tools_used = []
         max_iterations = 2  # Sprint 103b: 3 → 2 (most queries resolve in 1-2 iterations)
@@ -583,6 +619,13 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
 
                         logger.info("[TUTOR_AGENT] Tool result length: %d", len(str(result)))
 
+                        # Sprint 205: Record tool usage for Skill↔Tool bridge
+                        try:
+                            from app.engine.skills.skill_tool_bridge import record_tool_usage
+                            record_tool_usage(tool_name, success=True, query_snippet=search_query[:100])
+                        except Exception:
+                            pass
+
                         # ============================================================
                         # SOTA 2025 Phase 2: Confidence-Based Early Termination
                         # Pattern: Focused ReAct (arXiv Oct 2024) - exit on first success
@@ -605,6 +648,12 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                             content=f"Error: {str(e)}",
                             tool_call_id=tool_id
                         ))
+                        # Sprint 205: Record failed knowledge tool usage
+                        try:
+                            from app.engine.skills.skill_tool_bridge import record_tool_usage
+                            record_tool_usage(tool_name, success=False, error_message=str(e)[:200])
+                        except Exception:
+                            pass
 
                 elif tool_name in ("tool_calculator", "tool_current_datetime", "tool_web_search"):
                     try:
@@ -652,6 +701,13 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
 
                         logger.info("[TUTOR_AGENT] %s result length: %d", tool_name, len(str(result)))
 
+                        # Sprint 205: Record tool usage for Skill↔Tool bridge
+                        try:
+                            from app.engine.skills.skill_tool_bridge import record_tool_usage
+                            record_tool_usage(tool_name, success=True, query_snippet=str(tool_input)[:100])
+                        except Exception:
+                            pass
+
                     except Exception as e:
                         logger.error("[TUTOR_AGENT] %s error: %s", tool_name, e)
                         messages.append(AIMessage(content="", tool_calls=[tool_call]))
@@ -659,6 +715,12 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                             content=f"Error: {str(e)}",
                             tool_call_id=tool_id
                         ))
+                        # Sprint 205: Record failed tool usage
+                        try:
+                            from app.engine.skills.skill_tool_bridge import record_tool_usage
+                            record_tool_usage(tool_name, success=False, error_message=str(e)[:200])
+                        except Exception:
+                            pass
 
                 elif tool_name == "tool_think":
                     # Sprint 148: Think tool → emit thought as thinking_delta, no tool card
@@ -746,6 +808,13 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                         ))
 
                         logger.info("[TUTOR_AGENT] Character tool %s done", tool_name)
+
+                        # Sprint 205: Record character tool usage
+                        try:
+                            from app.engine.skills.skill_tool_bridge import record_tool_usage
+                            record_tool_usage(tool_name, success=True)
+                        except Exception:
+                            pass
 
                     except Exception as e:
                         logger.error("[TUTOR_AGENT] Character tool %s error: %s", tool_name, e)

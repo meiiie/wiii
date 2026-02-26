@@ -180,8 +180,8 @@ class TestOrgContextMiddlewareEnabled:
     @pytest.mark.asyncio
     @patch("app.repositories.organization_repository.get_organization_repository")
     @patch("app.core.config.settings")
-    async def test_repo_failure_graceful(self, mock_settings, mock_repo_fn):
-        """If repo fails, middleware still works — just no domain filtering."""
+    async def test_repo_failure_clears_org_context(self, mock_settings, mock_repo_fn):
+        """Sprint 194c: If repo fails, middleware clears org context (fail-closed)."""
         mock_settings.enable_multi_tenant = True
         mock_repo_fn.side_effect = Exception("DB down")
 
@@ -199,8 +199,8 @@ class TestOrgContextMiddlewareEnabled:
 
         await middleware.dispatch(request, call_next)
 
-        # org_id still set even if repo failed
-        assert captured_org_id == "org-1"
+        # Sprint 194c: fail-closed — org context cleared on DB error
+        assert captured_org_id is None
 
     @pytest.mark.asyncio
     @patch("app.repositories.organization_repository.get_organization_repository")

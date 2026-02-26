@@ -122,6 +122,11 @@ class LMSEnrichmentService:
             if await self._save_fact(user_id, "strength", strong_content, confidence=0.85, source_lms_id=source_lms_id):
                 count += 1
 
+        # Sprint 175: Course context fact — enriches AI with current course info
+        course_fact = f"course_context: Đang học môn {course} (mã: {payload.course_id})"
+        if await self._save_fact(user_id, "course_context", course_fact, confidence=0.90, source_lms_id=source_lms_id):
+            count += 1
+
         return count
 
     async def enrich_from_enrollment(
@@ -195,8 +200,28 @@ class LMSEnrichmentService:
     async def enrich_from_attendance(
         self, payload: AttendanceMarkedPayload, source_lms_id: Optional[str] = None
     ) -> int:
-        """Attendance is too noisy in v1 — skip."""
-        return 0
+        """Enrich from attendance_marked event.
+
+        Sprint 175: Now tracks attendance patterns instead of skipping.
+        Creates BEHAVIOR fact only for absent/late patterns.
+        """
+        if payload.status == "present":
+            return 0  # Only track issues, not normal attendance
+
+        count = 0
+        user_id = payload.student_id
+        course = payload.course_name or payload.course_id
+
+        if payload.status == "absent":
+            content = f"behavior: Vắng mặt lớp {course} ngày {payload.date}"
+            if await self._save_fact(user_id, "behavior", content, confidence=0.85, source_lms_id=source_lms_id):
+                count += 1
+        elif payload.status == "late":
+            content = f"behavior: Đi trễ lớp {course} ngày {payload.date}"
+            if await self._save_fact(user_id, "behavior", content, confidence=0.80, source_lms_id=source_lms_id):
+                count += 1
+
+        return count
 
     # =========================================================================
     # API pull enrichments (for future Sprint 157 on-demand use)

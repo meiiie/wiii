@@ -239,9 +239,11 @@ describe("ScreenshotBlock rendering", () => {
 // ===================================================================
 
 describe("AppSettings facebook_cookie", () => {
-  it("default settings include facebook_cookie as empty string", () => {
+  // Sprint 194b (H5): facebook_cookie moved to secure-token-storage
+  // It is no longer in DEFAULT_SETTINGS, but may still exist as an optional field
+  it("default settings do not include facebook_cookie (moved to secure storage)", () => {
     const { settings } = useSettingsStore.getState();
-    expect(settings.facebook_cookie).toBeDefined();
-    expect(settings.facebook_cookie).toBe("");
+    // facebook_cookie is no longer set in defaults — it's either undefined or from saved data
+    expect(settings.facebook_cookie).toBeFalsy();
   });
 });

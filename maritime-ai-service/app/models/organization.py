@@ -67,6 +67,7 @@ class OrgPermissions(BaseModel):
             "read:chat", "read:knowledge", "use:tools",
             "read:analytics", "manage:courses",
             "manage:members", "manage:settings", "manage:branding",
+            "manage:knowledge",
         ],
     )
 

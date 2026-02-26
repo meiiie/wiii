@@ -454,13 +454,26 @@ async def process_with_multi_agent_streaming(
         # Sprint 83: Periodically clean stale queues (leak prevention)
         _cleanup_stale_queues()
 
+        # Sprint 189b: Deserialize langchain messages from context (was hardcoded [])
+        # Same logic as sync path in graph.py:1611-1620
+        langchain_messages = (context or {}).get("langchain_messages", [])
+        serialized_messages = []
+        for m in langchain_messages:
+            if isinstance(m, dict):
+                serialized_messages.append(m)
+            else:
+                serialized_messages.append({
+                    "role": getattr(m, "type", "human"),
+                    "content": m.content,
+                })
+
         # Create initial state
         initial_state: AgentState = {
             "query": query,
             "user_id": user_id,
             "session_id": session_id,
             "context": context or {},
-            "messages": [],
+            "messages": serialized_messages,
             "current_agent": "",
             "next_agent": "",
             "agent_outputs": {},
@@ -474,6 +487,7 @@ async def process_with_multi_agent_streaming(
             "domain_id": domain_id,
             "domain_config": domain_config,
             "thinking_effort": thinking_effort,
+            "routing_metadata": None,  # Sprint 189b-R5: parity with sync (graph.py:1643)
             "organization_id": (context or {}).get("organization_id"),  # Sprint 170c
             "_event_bus_id": bus_id,
         }
@@ -576,7 +590,8 @@ async def process_with_multi_agent_streaming(
                     if node and etype == "answer_delta":
                         _bus_answer_nodes.add(node)
                     await merged_queue.put(("bus", event))
-                except Exception:
+                except Exception as _bus_err:
+                    logger.warning("[STREAM] Bus forwarding stopped: %s", _bus_err)
                     break
 
         graph_task = asyncio.create_task(_forward_graph())
@@ -1284,8 +1299,17 @@ async def process_with_multi_agent_streaming(
                         duration_ms=int((time.time() - node_start) * 1000),
                     )
 
-                    # Sprint 166: Emit product preview cards from tool_call_events
-                    if _preview_enabled and (not _preview_types or "product" in _preview_types):
+                    # Sprint 166→200: Emit product preview cards from tool_call_events
+                    # Sprint 200: Skip post-hoc emission if real-time emission is active
+                    # (product_search_node.py emits previews via event bus during ReAct loop)
+                    _realtime_preview = False
+                    try:
+                        from app.core.config import get_settings as _gs200
+                        _realtime_preview = _gs200().enable_product_preview_cards
+                    except Exception:
+                        pass
+
+                    if _preview_enabled and not _realtime_preview and (not _preview_types or "product" in _preview_types):
                         _product_count = 0
                         for tc in node_output.get("tool_call_events", []):
                             if tc.get("type") != "result" or _product_count >= _preview_max:
@@ -1408,6 +1432,8 @@ async def process_with_multi_agent_streaming(
                                   "image_url": s.get("image_url"),
                                   "page_number": s.get("page_number"),
                                   "document_id": s.get("document_id"),
+                                  "content_type": s.get("content_type"),      # Sprint 189b
+                                  "bounding_boxes": s.get("bounding_boxes"),  # Sprint 189b
                               }
                           )
                   if formatted_sources:
@@ -1451,10 +1477,13 @@ async def process_with_multi_agent_streaming(
                   model=f"{settings.rag_model_version}-streaming",
                   doc_count=len(sources),
                   thinking=final_state.get("thinking"),
+                  thinking_content=final_state.get("thinking_content"),  # Sprint 189b-R5
                   agent_type=final_state.get("next_agent", "rag_agent"),
                   mood=_mood_data,
                   # Sprint 121b: Include session_id so frontend can reuse it
                   session_id=final_state.get("session_id", session_id),
+                  # Sprint 189b: Evidence images for document thumbnails
+                  evidence_images=final_state.get("evidence_images", []),
               )
 
           # Done signal

@@ -13,7 +13,7 @@ import { useContextStore } from "@/stores/context-store";
 import { useCharacterStore } from "@/stores/character-store";
 import { StreamBuffer } from "@/lib/stream-buffer";
 import type { SSEEventHandler } from "@/api/sse";
-import type { AggregationSummary, ArtifactType, ChatResponseMetadata, MoodType, PreviewType } from "@/api/types";
+import type { AggregationSummary, ArtifactType, ChatResponseMetadata, ImageInput, MoodType, PreviewType } from "@/api/types";
 
 const MAX_SSE_RETRIES = 3;
 const SSE_BACKOFF_MS = 1000; // 1s, 2s, 4s
@@ -71,7 +71,7 @@ export function useSSEStream() {
   // Track current thinking node for buffer flush callback
   const thinkingNodeRef = useRef<string | undefined>(undefined);
 
-  const sendMessage = useCallback(async (content: string) => {
+  const sendMessage = useCallback(async (content: string, images?: ImageInput[]) => {
     const settings = useSettingsStore.getState().settings;
     const authHeaders = useSettingsStore.getState().getAuthHeaders();
     const domainId = useDomainStore.getState().activeDomainId;
@@ -90,8 +90,8 @@ export function useSSEStream() {
       conversationId = chatStore.createConversation(domainId);
     }
 
-    // Add user message
-    chatStore.addUserMessage(content);
+    // Add user message (Sprint 179: with optional images)
+    chatStore.addUserMessage(content, images);
 
     // Initialize the HTTP client with current settings
     initClient(settings.server_url, authHeaders);
@@ -357,13 +357,20 @@ export function useSSEStream() {
       domain_id: domainId,
       session_id: sessionId,
       organization_id: orgId && orgId !== "personal" ? orgId : undefined,
+      // Sprint 179: Include images for multimodal vision
+      images: images && images.length > 0 ? images : undefined,
     };
 
-    // Sprint 154: Pass Facebook cookie as custom header if configured
-    const fbCookie = settings.facebook_cookie;
-    if (fbCookie) {
-      authHeaders["X-Facebook-Cookie"] = fbCookie;
-      initClient(settings.server_url, authHeaders);
+    // Sprint 194b (H5): Facebook cookie now in secure storage, not settings
+    try {
+      const { loadFacebookCookie } = await import("@/lib/secure-token-storage");
+      const fbCookie = await loadFacebookCookie();
+      if (fbCookie) {
+        authHeaders["X-Facebook-Cookie"] = fbCookie;
+        initClient(settings.server_url, authHeaders);
+      }
+    } catch {
+      // Secure storage not available — skip Facebook cookie
     }
 
     let lastEventId: string | null = null;

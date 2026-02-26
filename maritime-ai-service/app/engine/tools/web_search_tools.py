@@ -1,10 +1,11 @@
 """
-Web Search Tools - DuckDuckGo integration for AI agents.
+Web Search Tools - Serper.dev (Sprint 198) + DuckDuckGo fallback for AI agents.
 
 SOTA 2026: Agents need web search with resilience (circuit breaker + timeout).
-Uses duckduckgo-search (free, no API key required).
+Sprint 198: Primary backend is Serper.dev (Google search API) for reliable
+Vietnamese search. Falls back to DuckDuckGo when Serper unavailable.
 
-Sprint 102: Enhanced Vietnamese search — news (RSS + DuckDuckGo News),
+Sprint 102: Enhanced Vietnamese search — news (RSS + Serper News),
 legal (site-restricted), maritime (site-restricted).
 """
 
@@ -252,13 +253,24 @@ def _format_results(results: list, tag: str = "WEB_SEARCH") -> str:
 
 @tool(description="Tìm kiếm thông tin trên web. Hữu ích khi cần thông tin mới nhất, tin tức, hoặc kiến thức không có trong cơ sở dữ liệu nội bộ.")
 def tool_web_search(query: str) -> str:
-    """Search the web for current information using DuckDuckGo."""
+    """Search the web for current information. Uses Serper.dev (Sprint 198) with DuckDuckGo fallback."""
     _CB_NAME = "web_search"
     if _cb_is_open(_CB_NAME):
         logger.warning("[WEB_SEARCH] Circuit breaker OPEN — skipping search")
         return "Tìm kiếm web tạm thời không khả dụng. Vui lòng thử lại sau."
 
     try:
+        # Sprint 198: Try Serper first
+        from app.engine.tools.serper_web_search import is_serper_available, _serper_search
+
+        if is_serper_available():
+            results = _serper_search(query, max_results=5)
+            if results:
+                _cb_record_success(_CB_NAME)
+                return _format_results(results, "WEB_SEARCH")
+            # Serper returned empty — fall through to DuckDuckGo
+
+        # DuckDuckGo fallback
         import concurrent.futures
 
         future = _executor.submit(_search_sync, query)
@@ -288,12 +300,13 @@ def tool_web_search(query: str) -> str:
 # Sprint 102: Tool — Vietnamese news search
 # =============================================================================
 
+# Sprint 204: Neutral description — guidance is in system prompt, not tool metadata
 @tool(description=(
-    "Tìm kiếm TIN TỨC Việt Nam. BẮT BUỘC dùng khi user hỏi về tin tức, thời sự, "
-    "sự kiện, bản tin, báo chí. Nguồn: VnExpress, Tuổi Trẻ, Thanh Niên, Dân Trí + RSS feeds."
+    "Tìm kiếm TIN TỨC Việt Nam — tin tức, thời sự, sự kiện, bản tin, báo chí. "
+    "Nguồn: VnExpress, Tuổi Trẻ, Thanh Niên, Dân Trí + RSS feeds."
 ))
 def tool_search_news(query: str) -> str:
-    """Search Vietnamese news using DuckDuckGo News + RSS feeds."""
+    """Search Vietnamese news using Serper.dev News (Sprint 198) + RSS feeds."""
     _CB_NAME = "search_news"
     if _cb_is_open(_CB_NAME):
         logger.warning("[NEWS_SEARCH] Circuit breaker OPEN — skipping search")
@@ -302,16 +315,24 @@ def tool_search_news(query: str) -> str:
     try:
         import concurrent.futures
 
-        # Run DuckDuckGo news + RSS in parallel
-        news_future = _executor.submit(_news_search_sync, query, 5)
-        rss_future = _executor.submit(_rss_fetch_sync, query, 5)
+        # Sprint 198: Try Serper news + RSS in parallel
+        from app.engine.tools.serper_web_search import is_serper_available, _serper_news_search
 
-        ddg_results = []
+        serper_results = []
         rss_results = []
-        try:
-            ddg_results = news_future.result(timeout=WEB_SEARCH_TIMEOUT)
-        except concurrent.futures.TimeoutError:
-            logger.warning("[NEWS_SEARCH] DuckDuckGo news timeout")
+
+        if is_serper_available():
+            serper_results = _serper_news_search(query, max_results=5, gl="vn", hl="vi")
+        else:
+            # DuckDuckGo News fallback
+            news_future = _executor.submit(_news_search_sync, query, 5)
+            try:
+                serper_results = news_future.result(timeout=WEB_SEARCH_TIMEOUT)
+            except concurrent.futures.TimeoutError:
+                logger.warning("[NEWS_SEARCH] DuckDuckGo news timeout")
+
+        # RSS always runs (independent source)
+        rss_future = _executor.submit(_rss_fetch_sync, query, 5)
         try:
             rss_results = rss_future.result(timeout=WEB_SEARCH_TIMEOUT)
         except concurrent.futures.TimeoutError:
@@ -320,7 +341,7 @@ def tool_search_news(query: str) -> str:
         # Merge and deduplicate by URL
         all_results = []
         seen_urls = set()
-        for r in ddg_results + rss_results:
+        for r in serper_results + rss_results:
             url = r.get("href", r.get("url", r.get("link", "")))
             if url and url not in seen_urls:
                 seen_urls.add(url)
@@ -345,19 +366,36 @@ def tool_search_news(query: str) -> str:
 # Sprint 102: Tool — Vietnamese legal search
 # =============================================================================
 
+# Sprint 204: Neutral description — guidance is in system prompt, not tool metadata
 @tool(description=(
-    "Tìm kiếm VĂN BẢN PHÁP LUẬT Việt Nam. BẮT BUỘC dùng khi user hỏi về luật, nghị định, "
-    "thông tư, quy định pháp luật, mức phạt, bộ luật. "
+    "Tìm kiếm VĂN BẢN PHÁP LUẬT Việt Nam — luật, nghị định, thông tư, quy định, mức phạt, bộ luật. "
     "Nguồn: Thư viện Pháp luật, Cổng TTĐT Chính phủ, Luật Việt Nam, Công báo."
 ))
 def tool_search_legal(query: str) -> str:
-    """Search Vietnamese legal documents using site-restricted DuckDuckGo."""
+    """Search Vietnamese legal documents using site-restricted Serper.dev (Sprint 198)."""
     _CB_NAME = "search_legal"
     if _cb_is_open(_CB_NAME):
         logger.warning("[LEGAL_SEARCH] Circuit breaker OPEN — skipping search")
         return "Tìm kiếm pháp luật tạm thời không khả dụng. Vui lòng thử lại sau."
 
     try:
+        # Sprint 198: Serper supports site: natively via Google
+        from app.engine.tools.serper_web_search import is_serper_available, _serper_search
+
+        if is_serper_available():
+            site_filter = " OR ".join(f"site:{s}" for s in _LEGAL_SITES)
+            restricted_query = f"({site_filter}) {query}"
+            results = _serper_search(restricted_query, max_results=7, gl="vn", hl="vi")
+            if results:
+                _cb_record_success(_CB_NAME)
+                return _format_results(results, "LEGAL_SEARCH")
+            # Serper returned empty — try without site restriction
+            results = _serper_search(query, max_results=7, gl="vn", hl="vi")
+            if results:
+                _cb_record_success(_CB_NAME)
+                return _format_results(results, "LEGAL_SEARCH")
+
+        # DuckDuckGo fallback
         import concurrent.futures
 
         future = _executor.submit(
@@ -396,13 +434,30 @@ def tool_search_legal(query: str) -> str:
     "Nguồn: IMO, Safety4Sea, Maritime Executive, VINAMARINE."
 ))
 def tool_search_maritime(query: str) -> str:
-    """Search international maritime information using site-restricted DuckDuckGo."""
+    """Search international maritime information using site-restricted Serper.dev (Sprint 198)."""
     _CB_NAME = "search_maritime"
     if _cb_is_open(_CB_NAME):
         logger.warning("[MARITIME_SEARCH] Circuit breaker OPEN — skipping search")
         return "Tìm kiếm hàng hải tạm thời không khả dụng. Vui lòng thử lại sau."
 
     try:
+        # Sprint 198: Serper supports site: natively via Google
+        from app.engine.tools.serper_web_search import is_serper_available, _serper_search
+
+        if is_serper_available():
+            site_filter = " OR ".join(f"site:{s}" for s in _MARITIME_SITES)
+            restricted_query = f"({site_filter}) {query}"
+            results = _serper_search(restricted_query, max_results=7, gl="vn", hl="vi")
+            if results:
+                _cb_record_success(_CB_NAME)
+                return _format_results(results, "MARITIME_SEARCH")
+            # Serper returned empty — try without site restriction
+            results = _serper_search(query, max_results=7, gl="vn", hl="vi")
+            if results:
+                _cb_record_success(_CB_NAME)
+                return _format_results(results, "MARITIME_SEARCH")
+
+        # DuckDuckGo fallback
         import concurrent.futures
 
         future = _executor.submit(
@@ -439,10 +494,10 @@ def init_web_search_tools() -> None:
     registry = get_tool_registry()
 
     for tool_fn, desc in [
-        (tool_web_search, "Web search via DuckDuckGo"),
-        (tool_search_news, "Vietnamese news search (DuckDuckGo News + RSS)"),
-        (tool_search_legal, "Vietnamese legal document search (site-restricted)"),
-        (tool_search_maritime, "Maritime international search (site-restricted)"),
+        (tool_web_search, "Web search via Serper.dev (DuckDuckGo fallback)"),
+        (tool_search_news, "Vietnamese news search (Serper News + RSS)"),
+        (tool_search_legal, "Vietnamese legal document search (site-restricted Serper)"),
+        (tool_search_maritime, "Maritime international search (site-restricted Serper)"),
     ]:
         registry.register(
             tool_fn,

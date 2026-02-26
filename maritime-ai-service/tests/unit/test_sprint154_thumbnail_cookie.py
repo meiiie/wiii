@@ -431,11 +431,17 @@ class TestThreadPoolCookiePropagation:
 
         adapter._fetch_page_text = mock_fetch_page_text
 
+        def fake_submit(fn, timeout=30):
+            """Execute the closure directly with a mock browser."""
+            return fn("mock_browser")
+
         with patch(
             "app.core.config.get_settings",
             return_value=mock_settings_cookie,
+        ), patch(
+            "app.engine.search_platforms.adapters.browser_base._submit_to_pw_worker",
+            side_effect=fake_submit,
         ):
-            # Call without asyncio loop to use direct path
             result = adapter._run_fetch("https://www.facebook.com/search/posts/")
 
         assert call_order.index("get_cookies") < call_order.index("fetch_page_text")
@@ -456,9 +462,15 @@ class TestThreadPoolCookiePropagation:
 
         adapter._fetch_page_text = mock_fetch
 
+        def fake_submit(fn, timeout=30):
+            return fn("mock_browser")
+
         with patch(
             "app.core.config.get_settings",
             return_value=mock_settings_cookie,
+        ), patch(
+            "app.engine.search_platforms.adapters.browser_base._submit_to_pw_worker",
+            side_effect=fake_submit,
         ):
             adapter._run_fetch("https://www.facebook.com/marketplace/search/")
 
@@ -483,9 +495,15 @@ class TestThreadPoolCookiePropagation:
 
         adapter._fetch_page_text = mock_fetch
 
+        def fake_submit(fn, timeout=30):
+            return fn("mock_browser")
+
         with patch(
             "app.core.config.get_settings",
             return_value=mock_settings_no_cookie,
+        ), patch(
+            "app.engine.search_platforms.adapters.browser_base._submit_to_pw_worker",
+            side_effect=fake_submit,
         ):
             adapter._run_fetch("https://www.facebook.com/marketplace/search/")
 

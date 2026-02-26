@@ -311,12 +311,14 @@ async def synthesizer_node(state: AgentState) -> AgentState:
     final_response = await supervisor.synthesize(state)
 
     # Sprint 78c: Strip greeting prefix on follow-up messages (deterministic post-filter)
-    is_follow_up = state.get("context", {}).get("is_follow_up", False)
-    if is_follow_up and final_response:
-        stripped = _strip_greeting_prefix(final_response)
-        if stripped != final_response:
-            logger.debug("[SYNTHESIZER] Greeting stripped from follow-up response")
-            final_response = stripped
+    # Sprint 203: Skip when natural conversation enabled (positive framing prevents at source)
+    if not getattr(settings, "enable_natural_conversation", False):
+        is_follow_up = state.get("context", {}).get("is_follow_up", False)
+        if is_follow_up and final_response:
+            stripped = _strip_greeting_prefix(final_response)
+            if stripped != final_response:
+                logger.debug("[SYNTHESIZER] Greeting stripped from follow-up response")
+                final_response = stripped
 
     state["final_response"] = final_response
 
@@ -444,37 +446,87 @@ def _needs_legal_search(query: str) -> bool:
     return any(kw in normalized for kw in _LEGAL_INTENT_KEYWORDS)
 
 
+# Sprint 175: LMS intent detection keywords
+_LMS_INTENT_KEYWORDS: list[str] = [
+    "diem so", "diem cua toi", "ket qua hoc tap", "bang diem",
+    "bai tap", "deadline", "han nop", "sap den han",
+    "mon hoc", "khoa hoc", "tien do hoc",
+    "kiem tra", "bai kiem tra", "quiz",
+    "nguy co", "sinh vien yeu", "hoc kem",
+    "lop hoc", "tong quan lop",
+    "grade", "assignment", "course", "enrollment",
+]
+
+
+def _needs_lms_query(query: str) -> bool:
+    """Detect if query needs LMS data tools (Sprint 175)."""
+    from app.core.config import settings as _s
+    if not _s.enable_lms_integration:
+        return False
+    normalized = _normalize_for_intent(query)
+    return any(kw in normalized for kw in _LMS_INTENT_KEYWORDS)
+
+
 def _build_direct_tools_context(settings_obj, domain_name_vi: str) -> str:
     """Build tools context string for direct node from settings + knowledge limits.
 
     Sprint 100: Extracted from direct_response_node f-string soup.
     Produces the same content as Sprint 97b-99 tool hints + knowledge limits.
     """
+    # Sprint 204: Natural guidance vs legacy constraint prompts
+    try:
+        _natural_guidance = getattr(settings_obj, "enable_natural_conversation", False) is True
+    except Exception:
+        _natural_guidance = False
+
     tool_hints = []
     if settings_obj.enable_character_tools:
         tool_hints.append(
             "- tool_character_note: Ghi chú khi user chia sẻ thông tin cá nhân MỚI."
         )
-    tool_hints.append(
-        "- tool_current_datetime: Lấy ngày giờ hiện tại (UTC+7). "
-        "BẮT BUỘC gọi khi user hỏi 'hôm nay ngày mấy', 'bây giờ mấy giờ', hoặc bất kỳ câu hỏi về thời gian hiện tại."
-    )
-    tool_hints.append(
-        "- tool_web_search: Tìm kiếm TỔNG HỢP trên web. "
-        "Dùng khi câu hỏi KHÔNG thuộc tin tức, pháp luật, hay hàng hải. "
-        "VD: thời tiết, giá vàng, thông tin chung."
-    )
-    # Sprint 102: Specialized search tools
-    tool_hints.append(
-        "- tool_search_news: Tìm kiếm TIN TỨC Việt Nam. "
-        "BẮT BUỘC khi user hỏi 'tin tức', 'thời sự', 'bản tin', 'sự kiện hôm nay'. "
-        "Nguồn: VnExpress, Tuổi Trẻ, Thanh Niên, Dân Trí + RSS."
-    )
-    tool_hints.append(
-        "- tool_search_legal: Tìm kiếm VĂN BẢN PHÁP LUẬT VN. "
-        "BẮT BUỘC khi user hỏi về luật, nghị định, thông tư, mức phạt, bộ luật. "
-        "Nguồn: Thư viện Pháp luật, Cổng TTĐT Chính phủ."
-    )
+
+    if _natural_guidance:
+        # Sprint 204: Identity-based guidance (Anthropic 2026: "Describe WHO, not WHAT MUST NOT")
+        tool_hints.append(
+            "- tool_current_datetime: Lấy ngày giờ hiện tại (UTC+7). "
+            "Wiii luôn chính xác — khi cần biết thời gian, Wiii dùng tool để đảm bảo."
+        )
+        tool_hints.append(
+            "- tool_web_search: Tìm kiếm TỔNG HỢP trên web. "
+            "Dùng cho thời tiết, giá vàng, thông tin chung không thuộc tin tức hay pháp luật."
+        )
+        tool_hints.append(
+            "- tool_search_news: Tìm kiếm TIN TỨC Việt Nam. "
+            "Wiii chọn tool này khi người dùng quan tâm tin tức, thời sự, bản tin. "
+            "Nguồn: VnExpress, Tuổi Trẻ, Thanh Niên, Dân Trí + RSS."
+        )
+        tool_hints.append(
+            "- tool_search_legal: Tìm kiếm VĂN BẢN PHÁP LUẬT VN. "
+            "Wiii chọn tool này khi câu hỏi liên quan luật, nghị định, thông tư, mức phạt. "
+            "Nguồn: Thư viện Pháp luật, Cổng TTĐT Chính phủ."
+        )
+    else:
+        # LEGACY: constraint-based tool hints
+        tool_hints.append(
+            "- tool_current_datetime: Lấy ngày giờ hiện tại (UTC+7). "
+            "BẮT BUỘC gọi khi user hỏi 'hôm nay ngày mấy', 'bây giờ mấy giờ', hoặc bất kỳ câu hỏi về thời gian hiện tại."
+        )
+        tool_hints.append(
+            "- tool_web_search: Tìm kiếm TỔNG HỢP trên web. "
+            "Dùng khi câu hỏi KHÔNG thuộc tin tức, pháp luật, hay hàng hải. "
+            "VD: thời tiết, giá vàng, thông tin chung."
+        )
+        tool_hints.append(
+            "- tool_search_news: Tìm kiếm TIN TỨC Việt Nam. "
+            "BẮT BUỘC khi user hỏi 'tin tức', 'thời sự', 'bản tin', 'sự kiện hôm nay'. "
+            "Nguồn: VnExpress, Tuổi Trẻ, Thanh Niên, Dân Trí + RSS."
+        )
+        tool_hints.append(
+            "- tool_search_legal: Tìm kiếm VĂN BẢN PHÁP LUẬT VN. "
+            "BẮT BUỘC khi user hỏi về luật, nghị định, thông tư, mức phạt, bộ luật. "
+            "Nguồn: Thư viện Pháp luật, Cổng TTĐT Chính phủ."
+        )
+
     tool_hints.append(
         "- tool_search_maritime: Tìm kiếm HÀNG HẢI quốc tế. "
         "Dùng khi hỏi về IMO, quy định quốc tế, shipping news, DNV, Cục Hàng hải."
@@ -487,28 +539,52 @@ def _build_direct_tools_context(settings_obj, domain_name_vi: str) -> str:
 
     parts = []
     parts.append("## CÔNG CỤ CÓ SẴN:\n" + "\n".join(tool_hints))
-    parts.append(
-        "\n## GIỚI HẠN KIẾN THỨC (QUAN TRỌNG):"
-        "\n- Kiến thức huấn luyện của bạn CŨ — ngắt vào đầu năm 2024."
-        "\n- Bạn KHÔNG CÓ Internet trực tiếp — chỉ có thể truy cập web QUA tool_web_search."
-        "\n- Bạn KHÔNG BIẾT ngày giờ hiện tại — chỉ biết qua tool_current_datetime."
-        "\n- Bất kỳ câu hỏi về sự kiện, tin tức, thời tiết, giá cả SAU năm 2024 → PHẢI gọi tool."
-    )
-    parts.append(
-        "\n## QUY TẮC BẮT BUỘC VỀ TOOL:"
-        "\n1. PHẢI gọi tool_current_datetime khi hỏi về ngày/giờ. TUYỆT ĐỐI KHÔNG tự đoán."
-        "\n2. CHỌN ĐÚNG TOOL tìm kiếm:"
-        "\n   - Tin tức / thời sự / bản tin → tool_search_news"
-        "\n   - Luật / nghị định / thông tư / mức phạt → tool_search_legal"
-        "\n   - Hàng hải quốc tế / IMO / shipping → tool_search_maritime"
-        "\n   - Thời tiết, giá cả, thông tin chung → tool_web_search"
-        "\n3. GỌI TOOL TRƯỚC — trả lời SAU. Không bao giờ trả lời trước rồi mới gọi tool."
-        "\n4. Nếu không chắc thông tin có còn đúng không → gọi tool tìm kiếm để xác minh."
-        "\n5. Có thể gọi NHIỀU tool cùng lúc."
-        "\n6. KHÔNG BAO GIỜ tự bịa tin tức, sự kiện, số liệu, nhiệt độ, độ ẩm, tốc độ gió."
-        "\n   Nếu tool thất bại hoặc không gọi được → nói thẳng 'Mình không tra cứu được lúc này'."
-        "\n7. KHÔNG gợi ý chuyển chủ đề. Trả lời đúng câu hỏi của user, KHÔNG hỏi ngược về chủ đề khác."
-    )
+
+    if _natural_guidance:
+        # Sprint 204: Identity-based knowledge context (positive framing)
+        parts.append(
+            "\n## VỀ KIẾN THỨC CỦA WIII:"
+            "\n- Wiii có kiến thức huấn luyện đến đầu 2024."
+            "\n- Khi cần thông tin mới (tin tức, thời tiết, giá cả, sự kiện sau 2024), "
+            "Wiii dùng tool tìm kiếm để đảm bảo chính xác."
+            "\n- Khi cần biết ngày giờ, Wiii dùng tool_current_datetime."
+        )
+        parts.append(
+            "\n## CÁCH WIII SỬ DỤNG TOOL:"
+            "\n- Wiii chọn tool phù hợp nhất với nội dung câu hỏi:"
+            "\n   - Tin tức / thời sự → tool_search_news"
+            "\n   - Luật / nghị định / mức phạt → tool_search_legal"
+            "\n   - Hàng hải / IMO / shipping → tool_search_maritime"
+            "\n   - Thời tiết, giá cả, thông tin chung → tool_web_search"
+            "\n- Wiii tra cứu trước, trả lời sau — luôn dựa trên dữ liệu thực."
+            "\n- Có thể dùng nhiều tool cùng lúc khi cần."
+            "\n- Wiii trung thực: nếu tool không trả về kết quả, Wiii nói thẳng."
+            "\n- Wiii tập trung trả lời đúng câu hỏi, không gợi ý chuyển chủ đề."
+        )
+    else:
+        # LEGACY: constraint-based rules
+        parts.append(
+            "\n## GIỚI HẠN KIẾN THỨC (QUAN TRỌNG):"
+            "\n- Kiến thức huấn luyện của bạn CŨ — ngắt vào đầu năm 2024."
+            "\n- Bạn KHÔNG CÓ Internet trực tiếp — chỉ có thể truy cập web QUA tool_web_search."
+            "\n- Bạn KHÔNG BIẾT ngày giờ hiện tại — chỉ biết qua tool_current_datetime."
+            "\n- Bất kỳ câu hỏi về sự kiện, tin tức, thời tiết, giá cả SAU năm 2024 → PHẢI gọi tool."
+        )
+        parts.append(
+            "\n## QUY TẮC BẮT BUỘC VỀ TOOL:"
+            "\n1. PHẢI gọi tool_current_datetime khi hỏi về ngày/giờ. TUYỆT ĐỐI KHÔNG tự đoán."
+            "\n2. CHỌN ĐÚNG TOOL tìm kiếm:"
+            "\n   - Tin tức / thời sự / bản tin → tool_search_news"
+            "\n   - Luật / nghị định / thông tư / mức phạt → tool_search_legal"
+            "\n   - Hàng hải quốc tế / IMO / shipping → tool_search_maritime"
+            "\n   - Thời tiết, giá cả, thông tin chung → tool_web_search"
+            "\n3. GỌI TOOL TRƯỚC — trả lời SAU. Không bao giờ trả lời trước rồi mới gọi tool."
+            "\n4. Nếu không chắc thông tin có còn đúng không → gọi tool tìm kiếm để xác minh."
+            "\n5. Có thể gọi NHIỀU tool cùng lúc."
+            "\n6. KHÔNG BAO GIỜ tự bịa tin tức, sự kiện, số liệu, nhiệt độ, độ ẩm, tốc độ gió."
+            "\n   Nếu tool thất bại hoặc không gọi được → nói thẳng 'Mình không tra cứu được lúc này'."
+            "\n7. KHÔNG gợi ý chuyển chủ đề. Trả lời đúng câu hỏi của user, KHÔNG hỏi ngược về chủ đề khác."
+        )
     # Sprint 121: Only mention domain expertise if relevant
     # Removed unconditional domain mention — it caused LLM to redirect
     # off-topic queries back to domain topics (e.g., weather → SOLAS)
@@ -554,9 +630,25 @@ def _collect_direct_tools(query: str):
     except Exception:
         pass
 
+    # Sprint 175: LMS tools (role-aware)
+    try:
+        if settings.enable_lms_integration:
+            from app.engine.tools.lms_tools import get_all_lms_tools
+            _direct_tools.extend(get_all_lms_tools(role="student"))
+    except Exception:
+        pass
+
+    # Sprint 179: Chart/diagram generation tools (feature-gated)
+    try:
+        from app.engine.tools.chart_tools import get_chart_tools
+        _direct_tools.extend(get_chart_tools())
+    except Exception:
+        pass
+
     force_tools = bool(_direct_tools) and (
         _needs_web_search(query) or _needs_datetime(query)
         or _needs_news_search(query) or _needs_legal_search(query)
+        or _needs_lms_query(query)
     )
     return _direct_tools, force_tools
 
@@ -609,13 +701,39 @@ def _build_direct_system_messages(state: AgentState, query: str, domain_name_vi:
         name_usage_count=ctx.get("name_usage_count", 0),
         mood_hint=ctx.get("mood_hint", ""),
         user_id=state.get("user_id", "__global__"),
+        personality_mode=ctx.get("personality_mode"),
+        conversation_phase=ctx.get("conversation_phase"),  # Sprint 203
     )
 
     messages = [SystemMessage(content=system_prompt)]
     lc_messages = ctx.get("langchain_messages", [])
     if lc_messages:
         messages.extend(lc_messages[-10:])
-    messages.append(HumanMessage(content=query))
+
+    # Sprint 179: Multimodal content blocks when images are present
+    images = ctx.get("images") or []
+    if images:
+        content_blocks = [{"type": "text", "text": query}]
+        for img in images:
+            if img.get("type") == "base64":
+                content_blocks.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{img['media_type']};base64,{img['data']}",
+                        "detail": img.get("detail", "auto"),
+                    }
+                })
+            elif img.get("type") == "url":
+                content_blocks.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": img["data"],
+                        "detail": img.get("detail", "auto"),
+                    }
+                })
+        messages.append(HumanMessage(content=content_blocks))
+    else:
+        messages.append(HumanMessage(content=query))
     return messages
 
 
@@ -659,11 +777,29 @@ async def _execute_direct_tool_rounds(
                 "args": tc.get("args", {}), "id": _tc_id,
             })
             matched = next((t for t in tools if t.name == _tc_name), None)
+            _tool_start = asyncio.get_event_loop().time()
+            _tool_success = False
+            _tool_error = ""
             try:
                 result = await asyncio.to_thread(matched.invoke, tc["args"]) if matched else "Unknown tool"
+                _tool_success = result is not None and result != "Unknown tool"
             except Exception as _te:
                 logger.warning("[DIRECT] Tool %s failed: %s", _tc_name, _te)
                 result = "Tool unavailable"
+                _tool_error = str(_te)[:200]
+            # Sprint 205: Record tool usage for Skill↔Tool bridge
+            try:
+                from app.engine.skills.skill_tool_bridge import record_tool_usage
+                _latency = int((asyncio.get_event_loop().time() - _tool_start) * 1000)
+                record_tool_usage(
+                    tool_name=_tc_name,
+                    success=_tool_success,
+                    latency_ms=_latency,
+                    query_snippet=str(tc.get("args", {}).get("query", ""))[:100],
+                    error_message=_tool_error,
+                )
+            except Exception:
+                pass  # Never block tool execution for metrics
             await push_event({
                 "type": "tool_result",
                 "content": {"name": _tc_name, "result": str(result)[:500], "id": _tc_id},
@@ -702,6 +838,18 @@ def _extract_direct_response(llm_response, messages: list):
     return response, thinking_content, tools_used
 
 
+def _get_phase_fallback(state: AgentState) -> str:
+    """Sprint 203: Context-appropriate fallback based on conversation phase."""
+    phase = state.get("context", {}).get("conversation_phase", "opening")
+    _FALLBACKS = {
+        "opening": "Mình là Wiii! Bạn muốn tìm hiểu gì hôm nay?",
+        "engaged": "Hmm, mình gặp chút trục trặc khi xử lý. Bạn thử hỏi lại nhé?",
+        "deep": "Xin lỗi, mình chưa xử lý được câu này. Bạn diễn đạt cách khác giúp mình nhé~",
+        "closing": "Mình chưa hiểu rõ lắm. Bạn hỏi cụ thể hơn được không?",
+    }
+    return _FALLBACKS.get(phase, _FALLBACKS["engaged"])
+
+
 async def direct_response_node(state: AgentState) -> AgentState:
     """
     Direct response node - conversational responses without RAG.
@@ -734,11 +882,16 @@ async def direct_response_node(state: AgentState) -> AgentState:
     tracer = _get_or_create_tracer(state)
     tracer.start_step(StepNames.DIRECT_RESPONSE, "Tạo phản hồi trực tiếp")
 
-    # Load greetings from domain plugin (falls back to defaults)
-    greetings = _get_domain_greetings(state.get("domain_id", settings.default_domain))
-
-    query_lower = query.lower().strip()
-    response = greetings.get(query_lower)
+    # Sprint 203: When natural conversation enabled, always use LLM (OpenClaw: runtime honors the soul)
+    _use_natural = getattr(settings, "enable_natural_conversation", False) is True
+    if not _use_natural:
+        # LEGACY: exact-match canned greetings
+        greetings = _get_domain_greetings(state.get("domain_id", settings.default_domain))
+        query_lower = query.lower().strip()
+        response = greetings.get(query_lower)
+    else:
+        query_lower = query.lower().strip()
+        response = None  # Always LLM path — Wiii's identity is in system prompt
 
     # Resolve domain_name_vi early (needed for prompt and domain notice)
     domain_config = state.get("domain_config", {})
@@ -764,6 +917,17 @@ async def direct_response_node(state: AgentState) -> AgentState:
 
             thinking_effort = state.get("thinking_effort")
             llm = AgentConfigRegistry.get_llm("direct", effort_override=thinking_effort)
+
+            # Sprint 203: Diversity params for response variation
+            if llm and getattr(settings, "enable_natural_conversation", False) is True:
+                _pp = getattr(settings, "llm_presence_penalty", 0.0)
+                _fp = getattr(settings, "llm_frequency_penalty", 0.0)
+                if _pp or _fp:
+                    try:
+                        llm = llm.bind(presence_penalty=_pp, frequency_penalty=_fp)
+                    except Exception:
+                        pass  # .bind() not supported by this provider — skip
+
             if llm:
                 # Phase 1: Collect tools and determine forcing
                 tools, force_tools = _collect_direct_tools(query)
@@ -806,7 +970,7 @@ async def direct_response_node(state: AgentState) -> AgentState:
                              "force_tools": force_tools}
                 )
             else:
-                response = "Xin chào! Tôi có thể giúp gì cho bạn?"
+                response = _get_phase_fallback(state) if getattr(settings, "enable_natural_conversation", False) is True else "Xin chào! Tôi có thể giúp gì cho bạn?"
                 tracer.end_step(
                     result="Fallback (LLM unavailable)",
                     confidence=0.5,
@@ -814,7 +978,7 @@ async def direct_response_node(state: AgentState) -> AgentState:
                 )
         except Exception as e:
             logger.warning("[DIRECT] LLM generation failed: %s", e)
-            response = "Xin chào! Tôi có thể giúp gì cho bạn?"
+            response = _get_phase_fallback(state) if getattr(settings, "enable_natural_conversation", False) is True else "Xin chào! Tôi có thể giúp gì cho bạn?"
             tracer.end_step(
                 result=f"Fallback (error): {str(e)[:50]}",
                 confidence=0.5,
@@ -828,7 +992,8 @@ async def direct_response_node(state: AgentState) -> AgentState:
     # Sprint 80b: Set domain notice if supervisor detected off-topic/general intent
     routing_meta = state.get("routing_metadata", {})
     intent = routing_meta.get("intent", "") if routing_meta else ""
-    if intent in ("off_topic", "general", "greeting"):
+    # Sprint 203: "greeting" should NOT show domain notice (unconditional bugfix)
+    if intent in ("off_topic", "general"):
         state["domain_notice"] = (
             f"Nội dung này nằm ngoài chuyên môn {domain_name_vi}. "
             f"Để được hỗ trợ chính xác hơn, hãy hỏi về {domain_name_vi} nhé!"
@@ -914,6 +1079,7 @@ async def _run_rag_subagent(state: dict, **kwargs) -> "SubagentResult":
             output=output,
             confidence=confidence,
             sources=result_state.get("sources", []),
+            evidence_images=result_state.get("evidence_images", []),  # Sprint 189b
             thinking=thinking,
         )
     except Exception as e:
@@ -1642,6 +1808,24 @@ async def process_with_multi_agent(
     logger.info("[MULTI_AGENT] Trace completed: %d spans, %.1fms",
                 trace_summary.get('span_count', 0), trace_summary.get('total_duration_ms', 0))
 
+    # Sprint 178: Persist LLM usage to admin analytics
+    tracker = get_tracker()
+    if tracker:
+        try:
+            _calls = getattr(tracker, "calls", None)
+            if _calls:
+                import asyncio
+                from app.services.llm_usage_logger import log_llm_usage_batch
+                asyncio.ensure_future(log_llm_usage_batch(
+                    request_id=session_id or "",
+                    user_id=user_id or "",
+                    session_id=session_id or "",
+                    calls=_calls,
+                    organization_id=(context or {}).get("organization_id"),
+                ))
+        except Exception:
+            pass
+
     return {
         "response": result.get("final_response", ""),
         "sources": result.get("sources", []),
@@ -1661,11 +1845,13 @@ async def process_with_multi_agent(
         "domain_notice": result.get("domain_notice"),
         # Sprint 103: Expose routing metadata (intent, confidence, reasoning) for API
         "routing_metadata": result.get("routing_metadata"),
+        # Sprint 189b: Evidence images from RAG pipeline
+        "evidence_images": result.get("evidence_images", []),
         # Trace info
         "trace_id": trace_id,
         "trace_summary": trace_summary,
         # SOTA 2026: Token usage accounting
-        "token_usage": get_tracker().summary() if get_tracker() else None,
+        "token_usage": tracker.summary() if tracker else None,
     }
 
 

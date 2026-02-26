@@ -80,7 +80,12 @@ class TestTokenService:
             expires_delta=timedelta(hours=1),
         )
 
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        # Sprint 192: tokens now include `aud` claim — must pass audience to decode
+        payload = jwt.decode(
+            token, settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+            audience=settings.jwt_audience,
+        )
         exp = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
         now = datetime.now(timezone.utc)
         # Should expire ~1 hour from now

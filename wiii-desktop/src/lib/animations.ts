@@ -123,3 +123,18 @@ export const slideInRight: Variants = {
     transition: { duration: 0.2, ease: "easeIn" },
   },
 };
+
+/** Sprint 192: View enter/exit — for full-page admin/settings transitions */
+export const viewEnter: Variants = {
+  hidden: { opacity: 0, x: 8 },
+  visible: {
+    opacity: 1,
+    x: 0,
+    transition: { duration: 0.2, ease: "easeOut" },
+  },
+  exit: {
+    opacity: 0,
+    x: -8,
+    transition: { duration: 0.15 },
+  },
+};

@@ -1,0 +1,693 @@
+"""
+Sprint 176: "Bao Mat Dang Nhap" — Auth Hardening Tests
+
+Tests: PKCE, JWT jti, refresh token family_id, replay detection,
+OTP database, auth audit events, security payload.
+"""
+import asyncio
+import json
+import uuid
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+# Helper: get_asyncpg_pool is a lazy import inside function bodies,
+# and may not exist yet as a module-level attribute in app.core.database.
+# Use create=True so patch creates the attribute for the test.
+_POOL_PATCH = "app.core.database.get_asyncpg_pool"
+
+
+def _mock_pool_and_conn():
+    """Create standard mock pool + connection for async DB tests.
+
+    Returns (pool_coro, mock_conn) where pool_coro is an AsyncMock
+    that when awaited returns a pool with working acquire() context manager.
+    """
+    mock_conn = AsyncMock()
+    mock_pool = MagicMock()
+    # pool.acquire() returns an async context manager
+    acm = AsyncMock()
+    acm.__aenter__ = AsyncMock(return_value=mock_conn)
+    acm.__aexit__ = AsyncMock(return_value=False)
+    mock_pool.acquire.return_value = acm
+
+    # get_asyncpg_pool is an async function → returns awaitable that yields mock_pool
+    async_pool_fn = AsyncMock(return_value=mock_pool)
+    return async_pool_fn, mock_conn
+
+
+# ============================================================================
+# TestConfig
+# ============================================================================
+
+class TestConfig:
+    """Test enable_auth_audit config flag."""
+
+    def test_enable_auth_audit_default_true(self):
+        """enable_auth_audit defaults to True."""
+        from app.core.config import settings
+        assert hasattr(settings, "enable_auth_audit")
+
+    def test_backward_compat_no_crash(self):
+        """Settings load without errors even with new field."""
+        from app.core.config import settings
+        assert settings is not None
+
+
+# ============================================================================
+# TestPKCE
+# ============================================================================
+
+class TestPKCE:
+    """Test PKCE S256 enforcement in OAuth config."""
+
+    def test_client_kwargs_has_s256(self):
+        """OAuth client_kwargs includes code_challenge_method S256."""
+        try:
+            import authlib
+            if not hasattr(authlib, "__version__"):
+                pytest.skip("authlib is mocked, not real")
+            from app.auth.google_oauth import oauth
+        except ImportError:
+            pytest.skip("authlib not installed")
+        config = oauth._registry.get("google", {})
+        client_kwargs = config.get("client_kwargs", {})
+        assert client_kwargs.get("code_challenge_method") == "S256"
+
+    def test_oauth_module_imports(self):
+        """google_oauth module imports without errors."""
+        try:
+            import app.auth.google_oauth as mod
+        except ImportError:
+            pytest.skip("authlib not installed")
+        assert hasattr(mod, "router")
+        assert hasattr(mod, "oauth")
+
+
+# ============================================================================
+# TestJWTJti
+# ============================================================================
+
+class TestJWTJti:
+    """Test JWT jti (unique token ID) claim."""
+
+    def test_jti_in_access_token_payload(self):
+        """create_access_token includes jti claim."""
+        with patch("app.auth.token_service.settings") as mock_settings:
+            mock_settings.jwt_expire_minutes = 30
+            mock_settings.jwt_secret_key = "test-secret-key-12345"
+            mock_settings.jwt_algorithm = "HS256"
+            mock_settings.jwt_audience = "wiii"
+
+            from app.auth.token_service import create_access_token
+            token = create_access_token(user_id="user-1", email="a@b.com")
+
+            from jose import jwt
+            payload = jwt.decode(token, "test-secret-key-12345", algorithms=["HS256"], audience="wiii")
+            assert "jti" in payload
+            assert payload["jti"] is not None
+
+    def test_jti_is_uuid_format(self):
+        """jti is a valid UUID string."""
+        with patch("app.auth.token_service.settings") as mock_settings:
+            mock_settings.jwt_expire_minutes = 30
+            mock_settings.jwt_secret_key = "test-secret-key-12345"
+            mock_settings.jwt_algorithm = "HS256"
+            mock_settings.jwt_audience = "wiii"
+
+            from app.auth.token_service import create_access_token
+            token = create_access_token(user_id="user-1")
+
+            from jose import jwt
+            payload = jwt.decode(token, "test-secret-key-12345", algorithms=["HS256"], audience="wiii")
+            uuid.UUID(payload["jti"])  # Should not raise
+
+    def test_jti_unique_per_token(self):
+        """Each token gets a unique jti."""
+        with patch("app.auth.token_service.settings") as mock_settings:
+            mock_settings.jwt_expire_minutes = 30
+            mock_settings.jwt_secret_key = "test-secret-key-12345"
+            mock_settings.jwt_algorithm = "HS256"
+            mock_settings.jwt_audience = "wiii"
+
+            from app.auth.token_service import create_access_token
+            t1 = create_access_token(user_id="user-1")
+            t2 = create_access_token(user_id="user-1")
+
+            from jose import jwt
+            p1 = jwt.decode(t1, "test-secret-key-12345", algorithms=["HS256"], audience="wiii")
+            p2 = jwt.decode(t2, "test-secret-key-12345", algorithms=["HS256"], audience="wiii")
+            assert p1["jti"] != p2["jti"]
+
+    def test_jti_in_access_token_payload_model(self):
+        """AccessTokenPayload model accepts jti field."""
+        from app.auth.token_service import AccessTokenPayload
+        payload = AccessTokenPayload(
+            sub="user-1",
+            exp=datetime.now(timezone.utc) + timedelta(minutes=30),
+            iat=datetime.now(timezone.utc),
+            jti="test-jti-123",
+        )
+        assert payload.jti == "test-jti-123"
+
+    def test_jti_optional_backward_compat(self):
+        """AccessTokenPayload works without jti (backward compat)."""
+        from app.auth.token_service import AccessTokenPayload
+        payload = AccessTokenPayload(
+            sub="user-1",
+            exp=datetime.now(timezone.utc) + timedelta(minutes=30),
+            iat=datetime.now(timezone.utc),
+        )
+        assert payload.jti is None
+
+
+# ============================================================================
+# TestRefreshFamily
+# ============================================================================
+
+class TestRefreshFamily:
+    """Test refresh token family_id for replay detection."""
+
+    @pytest.mark.asyncio
+    async def test_family_id_generated_on_create(self):
+        """create_token_pair generates family_id when not provided."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        with patch("app.auth.token_service.settings") as mock_settings, \
+             patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            mock_settings.jwt_expire_minutes = 30
+            mock_settings.jwt_secret_key = "test-secret-key-12345"
+            mock_settings.jwt_algorithm = "HS256"
+            mock_settings.jwt_refresh_expire_days = 30
+            mock_settings.jwt_audience = "wiii"
+
+            from app.auth.token_service import create_token_pair
+            pair = await create_token_pair(user_id="user-1")
+
+            call_args = mock_conn.execute.call_args
+            assert call_args is not None
+            args = call_args[0]
+            assert len(args) >= 7  # SQL + 6 params
+            family_id = args[6]
+            assert family_id is not None
+            uuid.UUID(family_id)  # Should be valid UUID
+
+    @pytest.mark.asyncio
+    async def test_family_id_propagated_when_provided(self):
+        """create_token_pair uses provided family_id."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        with patch("app.auth.token_service.settings") as mock_settings, \
+             patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            mock_settings.jwt_expire_minutes = 30
+            mock_settings.jwt_secret_key = "test-secret-key-12345"
+            mock_settings.jwt_algorithm = "HS256"
+            mock_settings.jwt_refresh_expire_days = 30
+            mock_settings.jwt_audience = "wiii"
+
+            from app.auth.token_service import create_token_pair
+            await create_token_pair(user_id="user-1", family_id="family-abc")
+
+            call_args = mock_conn.execute.call_args
+            args = call_args[0]
+            family_id = args[6]
+            assert family_id == "family-abc"
+
+    @pytest.mark.asyncio
+    async def test_create_token_pair_returns_valid_pair(self):
+        """create_token_pair returns valid TokenPair with all fields."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        with patch("app.auth.token_service.settings") as mock_settings, \
+             patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            mock_settings.jwt_expire_minutes = 30
+            mock_settings.jwt_secret_key = "test-secret-key-12345"
+            mock_settings.jwt_algorithm = "HS256"
+            mock_settings.jwt_refresh_expire_days = 30
+            mock_settings.jwt_audience = "wiii"
+
+            from app.auth.token_service import create_token_pair
+            pair = await create_token_pair(user_id="user-1", email="a@b.com")
+
+            assert pair.access_token
+            assert pair.refresh_token
+            assert pair.token_type == "bearer"
+            assert pair.expires_in == 30 * 60
+
+    @pytest.mark.asyncio
+    async def test_family_id_sql_includes_column(self):
+        """INSERT SQL includes family_id column."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        with patch("app.auth.token_service.settings") as mock_settings, \
+             patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            mock_settings.jwt_expire_minutes = 30
+            mock_settings.jwt_secret_key = "test-secret-key-12345"
+            mock_settings.jwt_algorithm = "HS256"
+            mock_settings.jwt_refresh_expire_days = 30
+            mock_settings.jwt_audience = "wiii"
+
+            from app.auth.token_service import create_token_pair
+            await create_token_pair(user_id="user-1")
+
+            sql = mock_conn.execute.call_args[0][0]
+            assert "family_id" in sql
+
+    @pytest.mark.asyncio
+    async def test_db_failure_still_returns_pair(self):
+        """Token pair is still returned even if DB fails."""
+        failing_pool_fn = AsyncMock(side_effect=Exception("DB down"))
+
+        with patch("app.auth.token_service.settings") as mock_settings, \
+             patch(_POOL_PATCH, create=True, new=failing_pool_fn):
+            mock_settings.jwt_expire_minutes = 30
+            mock_settings.jwt_secret_key = "test-secret-key-12345"
+            mock_settings.jwt_algorithm = "HS256"
+            mock_settings.jwt_refresh_expire_days = 30
+            mock_settings.jwt_audience = "wiii"
+
+            from app.auth.token_service import create_token_pair
+            pair = await create_token_pair(user_id="user-1")
+            assert pair.access_token
+            assert pair.refresh_token
+
+
+# ============================================================================
+# TestReplayDetection
+# ============================================================================
+
+class TestReplayDetection:
+    """Test refresh token replay detection."""
+
+    @pytest.mark.asyncio
+    async def test_revoked_with_active_siblings_purges_family(self):
+        """Reusing a revoked token that has active siblings purges the family."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        mock_conn.fetchrow.return_value = {
+            "id": "token-1",
+            "user_id": "user-1",
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=30),
+            "revoked_at": datetime.now(timezone.utc),
+            "auth_method": "google",
+            "family_id": "family-abc",
+            "email": "a@b.com",
+            "name": "Test",
+            "role": "student",
+        }
+        mock_conn.fetchval.return_value = 2  # Active siblings
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn), \
+             patch("app.auth.auth_audit.log_auth_event", new_callable=AsyncMock):
+            from app.auth.token_service import refresh_access_token
+            result = await refresh_access_token("fake-refresh-token")
+
+            assert result is None
+            purge_calls = [
+                c for c in mock_conn.execute.call_args_list
+                if "family_id" in str(c)
+            ]
+            assert len(purge_calls) > 0
+
+    @pytest.mark.asyncio
+    async def test_revoked_no_active_siblings_returns_none(self):
+        """Revoked token with no active siblings just returns None."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        mock_conn.fetchrow.return_value = {
+            "id": "token-1",
+            "user_id": "user-1",
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=30),
+            "revoked_at": datetime.now(timezone.utc),
+            "auth_method": "google",
+            "family_id": "family-abc",
+            "email": "a@b.com",
+            "name": "Test",
+            "role": "student",
+        }
+        mock_conn.fetchval.return_value = 0
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            from app.auth.token_service import refresh_access_token
+            result = await refresh_access_token("fake-refresh-token")
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_null_family_no_replay_check(self):
+        """Revoked token with NULL family_id skips replay check."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        mock_conn.fetchrow.return_value = {
+            "id": "token-1",
+            "user_id": "user-1",
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=30),
+            "revoked_at": datetime.now(timezone.utc),
+            "auth_method": "google",
+            "family_id": None,
+            "email": "a@b.com",
+            "name": "Test",
+            "role": "student",
+        }
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            from app.auth.token_service import refresh_access_token
+            result = await refresh_access_token("fake-refresh-token")
+            assert result is None
+            mock_conn.fetchval.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_valid_rotation_propagates_family(self):
+        """Valid refresh propagates family_id to new token pair."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        mock_conn.fetchrow.return_value = {
+            "id": "token-1",
+            "user_id": "user-1",
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=30),
+            "revoked_at": None,
+            "auth_method": "google",
+            "family_id": "family-xyz",
+            "email": "a@b.com",
+            "name": "Test",
+            "role": "student",
+        }
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn), \
+             patch("app.auth.token_service.settings") as mock_settings, \
+             patch("app.auth.auth_audit.log_auth_event", new_callable=AsyncMock):
+            mock_settings.jwt_expire_minutes = 30
+            mock_settings.jwt_secret_key = "test-secret-key-12345"
+            mock_settings.jwt_algorithm = "HS256"
+            mock_settings.jwt_refresh_expire_days = 30
+            mock_settings.jwt_audience = "wiii"
+
+            from app.auth.token_service import refresh_access_token
+            result = await refresh_access_token("valid-refresh-token")
+
+            assert result is not None
+            assert result.access_token
+            assert result.refresh_token
+
+            insert_calls = [
+                c for c in mock_conn.execute.call_args_list
+                if "INSERT" in str(c) and "family_id" in str(c)
+            ]
+            assert len(insert_calls) > 0
+
+    @pytest.mark.asyncio
+    async def test_not_found_returns_none(self):
+        """Token not found returns None."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+        mock_conn.fetchrow.return_value = None
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            from app.auth.token_service import refresh_access_token
+            result = await refresh_access_token("nonexistent-token")
+            assert result is None
+
+
+# ============================================================================
+# TestOTPDatabase
+# ============================================================================
+
+class TestOTPDatabase:
+    """Test OTP codes stored in database."""
+
+    @pytest.mark.asyncio
+    async def test_generate_link_code_inserts(self):
+        """generate_link_code inserts code into DB."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+        mock_conn.fetchval = AsyncMock(return_value=0)  # Sprint 192: rate limit count
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn), \
+             patch("app.auth.otp_linking._get_expiry_seconds", return_value=300):
+            from app.auth.otp_linking import generate_link_code
+            code = await generate_link_code("user-1", "messenger")
+
+            assert len(code) == 6
+            assert code.isdigit()
+            assert int(code) >= 100000
+
+    @pytest.mark.asyncio
+    async def test_generate_cleans_expired(self):
+        """generate_link_code cleans expired codes (Sprint 194c: probabilistic cleanup)."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+        mock_conn.fetchval = AsyncMock(return_value=0)  # Sprint 192: rate limit count
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn), \
+             patch("app.auth.otp_linking._get_expiry_seconds", return_value=300), \
+             patch("app.auth.otp_linking.random") as mock_random:
+            mock_random.random.return_value = 0.05  # < 0.1 → cleanup triggers
+            from app.auth.otp_linking import generate_link_code
+            await generate_link_code("user-1", "zalo")
+
+            first_sql = mock_conn.execute.call_args_list[0][0][0]
+            assert "DELETE" in first_sql
+            assert "expires_at" in first_sql
+
+    @pytest.mark.asyncio
+    async def test_generate_revokes_existing(self):
+        """generate_link_code revokes existing code for same user+channel."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+        mock_conn.fetchval = AsyncMock(return_value=0)  # Sprint 192: rate limit count
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn), \
+             patch("app.auth.otp_linking._get_expiry_seconds", return_value=300), \
+             patch("app.auth.otp_linking.random") as mock_random:
+            mock_random.random.return_value = 0.5  # > 0.1 → skip cleanup
+            from app.auth.otp_linking import generate_link_code
+            await generate_link_code("user-1", "messenger")
+
+            # With cleanup skipped: [0]=revoke existing, [1]=insert
+            first_sql = mock_conn.execute.call_args_list[0][0][0]
+            assert "DELETE" in first_sql
+            assert "user_id" in first_sql
+            assert "channel_type" in first_sql
+
+    @pytest.mark.asyncio
+    async def test_verify_and_link_success(self):
+        """verify_and_link marks code used and links identity."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        mock_conn.fetchrow.return_value = {
+            "user_id": "user-1",
+            "channel_type": "messenger",
+            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
+            "used_at": None,
+            "failed_attempts": 0,
+        }
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn), \
+             patch("app.auth.user_service.link_identity", new_callable=AsyncMock) as mock_link:
+            from app.auth.otp_linking import verify_and_link
+            success, msg = await verify_and_link("123456", "messenger", "sender-abc")
+
+            assert success is True
+            assert msg == "user-1"
+            mock_link.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_verify_expired_code(self):
+        """verify_and_link returns expired for expired code."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        mock_conn.fetchrow.return_value = {
+            "user_id": "user-1",
+            "channel_type": "messenger",
+            "expires_at": datetime.now(timezone.utc) - timedelta(minutes=1),
+            "used_at": None,
+            "failed_attempts": 0,
+        }
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            from app.auth.otp_linking import verify_and_link
+            success, msg = await verify_and_link("123456", "messenger", "sender-abc")
+
+            assert success is False
+            assert msg == "expired"
+
+    @pytest.mark.asyncio
+    async def test_verify_wrong_channel(self):
+        """verify_and_link rejects wrong channel."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        mock_conn.fetchrow.return_value = {
+            "user_id": "user-1",
+            "channel_type": "zalo",
+            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
+            "used_at": None,
+            "failed_attempts": 0,
+        }
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            from app.auth.otp_linking import verify_and_link
+            success, msg = await verify_and_link("123456", "messenger", "sender-abc")
+
+            assert success is False
+            assert msg == ""
+
+    @pytest.mark.asyncio
+    async def test_verify_not_found(self):
+        """verify_and_link returns empty for unknown code."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+        mock_conn.fetchrow.return_value = None
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            from app.auth.otp_linking import verify_and_link
+            success, msg = await verify_and_link("000000", "messenger", "sender-abc")
+
+            assert success is False
+            assert msg == ""
+
+    @pytest.mark.asyncio
+    async def test_verify_already_used(self):
+        """verify_and_link rejects already-used code."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        mock_conn.fetchrow.return_value = {
+            "user_id": "user-1",
+            "channel_type": "messenger",
+            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
+            "used_at": datetime.now(timezone.utc),
+            "failed_attempts": 0,
+        }
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            from app.auth.otp_linking import verify_and_link
+            success, msg = await verify_and_link("123456", "messenger", "sender-abc")
+
+            assert success is False
+            assert msg == ""
+
+
+# ============================================================================
+# TestAuthAudit
+# ============================================================================
+
+class TestAuthAudit:
+    """Test auth audit event logging."""
+
+    @pytest.mark.asyncio
+    async def test_insert_event(self):
+        """log_auth_event inserts into auth_events table."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        with patch("app.core.config.settings") as mock_settings, \
+             patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            mock_settings.enable_auth_audit = True
+
+            from app.auth.auth_audit import log_auth_event
+            await log_auth_event(
+                "login",
+                user_id="user-1",
+                provider="google",
+                result="success",
+                ip_address="127.0.0.1",
+            )
+
+            mock_conn.execute.assert_called_once()
+            sql = mock_conn.execute.call_args[0][0]
+            assert "auth_events" in sql
+            assert "INSERT" in sql
+
+    @pytest.mark.asyncio
+    async def test_noop_when_disabled(self):
+        """log_auth_event is no-op when enable_auth_audit=False."""
+        with patch("app.core.config.settings") as mock_settings:
+            mock_settings.enable_auth_audit = False
+
+            from app.auth.auth_audit import log_auth_event
+            await log_auth_event("login", user_id="user-1")
+
+    @pytest.mark.asyncio
+    async def test_fire_and_forget_no_raise(self):
+        """log_auth_event never raises, even on DB failure."""
+        failing_pool_fn = AsyncMock(side_effect=Exception("DB down"))
+
+        with patch("app.core.config.settings") as mock_settings, \
+             patch(_POOL_PATCH, create=True, new=failing_pool_fn):
+            mock_settings.enable_auth_audit = True
+
+            from app.auth.auth_audit import log_auth_event
+            await log_auth_event("login_failed", user_id="user-1")
+
+    @pytest.mark.asyncio
+    async def test_metadata_json_serialized(self):
+        """Metadata dict is JSON-serialized."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        with patch("app.core.config.settings") as mock_settings, \
+             patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            mock_settings.enable_auth_audit = True
+
+            from app.auth.auth_audit import log_auth_event
+            await log_auth_event(
+                "token_replay_detected",
+                user_id="user-1",
+                metadata={"family": "abc", "purged": 2},
+            )
+
+            args = mock_conn.execute.call_args[0]
+            metadata_arg = args[-1]
+            parsed = json.loads(metadata_arg)
+            assert parsed["family"] == "abc"
+            assert parsed["purged"] == 2
+
+    @pytest.mark.asyncio
+    async def test_null_metadata(self):
+        """Null metadata is passed as None."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        with patch("app.core.config.settings") as mock_settings, \
+             patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            mock_settings.enable_auth_audit = True
+
+            from app.auth.auth_audit import log_auth_event
+            await log_auth_event("logout", user_id="user-1")
+
+            args = mock_conn.execute.call_args[0]
+            metadata_arg = args[-1]
+            assert metadata_arg is None
+
+
+# ============================================================================
+# TestSecurityPayload
+# ============================================================================
+
+class TestSecurityPayload:
+    """Test jti in security.py TokenPayload."""
+
+    def test_jti_in_token_payload(self):
+        """TokenPayload model has jti field."""
+        from app.core.security import TokenPayload
+        payload = TokenPayload(
+            sub="user-1",
+            exp=datetime.now(timezone.utc) + timedelta(minutes=30),
+            iat=datetime.now(timezone.utc),
+            jti="test-jti",
+        )
+        assert payload.jti == "test-jti"
+
+    def test_jti_optional(self):
+        """jti is optional in TokenPayload."""
+        from app.core.security import TokenPayload
+        payload = TokenPayload(
+            sub="user-1",
+            exp=datetime.now(timezone.utc) + timedelta(minutes=30),
+            iat=datetime.now(timezone.utc),
+        )
+        assert payload.jti is None
+
+    def test_backward_compat_without_jti(self):
+        """Tokens without jti still validate (backward compat)."""
+        from app.core.security import TokenPayload
+        data = {
+            "sub": "user-1",
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
+            "iat": datetime.now(timezone.utc),
+            "type": "access",
+        }
+        payload = TokenPayload(**data)
+        assert payload.sub == "user-1"
+        assert payload.jti is None

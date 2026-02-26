@@ -4,14 +4,45 @@
  */
 
 let Store: any = null;
+let tauriAvailable: boolean | null = null;
+
+/**
+ * Get storage key prefix for embed mode.
+ * In embed mode, keys are namespaced by org and user to avoid conflicts
+ * between multiple embed instances and the main app.
+ */
+function getEmbedPrefix(): string {
+  const config = (window as any).__WIII_EMBED_CONFIG__;
+  if (!config) return "";
+  const org = config.org || "default";
+  const user = config.user_id || config.token ? "jwt" : "anon";
+  return `embed:${org}:${user}:`;
+}
+
+function isEmbedMode(): boolean {
+  return !!(window as any).__WIII_EMBED__;
+}
+
+function namespacedStoreName(name: string): string {
+  if (!isEmbedMode()) return name;
+  return getEmbedPrefix() + name;
+}
 
 async function getStoreClass() {
-  if (Store) return Store;
+  if (tauriAvailable === false) return null;
+  if (Store && tauriAvailable) return Store;
   try {
     const mod = await import("@tauri-apps/plugin-store");
+    // Verify Tauri runtime is actually available (not just the module)
+    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
+      tauriAvailable = false;
+      return null;
+    }
     Store = mod.Store;
+    tauriAvailable = true;
     return Store;
   } catch {
+    tauriAvailable = false;
     return null;
   }
 }
@@ -57,21 +88,22 @@ export async function loadStore<T>(
   key: string,
   defaultValue: T
 ): Promise<T> {
+  const effectiveName = namespacedStoreName(storeName);
   const StoreClass = await getStoreClass();
 
   if (StoreClass) {
     try {
-      const store = await StoreClass.load(storeName);
+      const store = await StoreClass.load(effectiveName);
       const value = (await store.get(key)) as T | undefined;
       return value ?? defaultValue;
     } catch (err) {
-      console.warn(`[storage] Failed to load ${storeName}/${key}:`, err);
+      console.warn(`[storage] Failed to load ${effectiveName}/${key}:`, err);
       return defaultValue;
     }
   }
 
   // Fallback: memory + localStorage
-  const map = getMemoryStore(storeName);
+  const map = getMemoryStore(effectiveName);
   return (map.get(key) as T) ?? defaultValue;
 }
 
@@ -80,64 +112,67 @@ export async function saveStore<T>(
   key: string,
   value: T
 ): Promise<void> {
+  const effectiveName = namespacedStoreName(storeName);
   const StoreClass = await getStoreClass();
 
   if (StoreClass) {
     try {
-      const store = await StoreClass.load(storeName);
+      const store = await StoreClass.load(effectiveName);
       await store.set(key, value);
       await store.save();
       return;
     } catch (err) {
-      console.warn(`[storage] Failed to save ${storeName}/${key}:`, err);
+      console.warn(`[storage] Failed to save ${effectiveName}/${key}:`, err);
     }
   }
 
   // Fallback
-  const map = getMemoryStore(storeName);
+  const map = getMemoryStore(effectiveName);
   map.set(key, value);
-  persistMemoryStore(storeName);
+  persistMemoryStore(effectiveName);
 }
 
 export async function deleteStore(
   storeName: string,
   key: string
 ): Promise<void> {
+  const effectiveName = namespacedStoreName(storeName);
   const StoreClass = await getStoreClass();
 
   if (StoreClass) {
     try {
-      const store = await StoreClass.load(storeName);
+      const store = await StoreClass.load(effectiveName);
       await store.delete(key);
       await store.save();
       return;
     } catch (err) {
-      console.warn(`[storage] Failed to delete ${storeName}/${key}:`, err);
+      console.warn(`[storage] Failed to delete ${effectiveName}/${key}:`, err);
     }
   }
 
-  const map = getMemoryStore(storeName);
+  const map = getMemoryStore(effectiveName);
   map.delete(key);
-  persistMemoryStore(storeName);
+  persistMemoryStore(effectiveName);
 }
 
 export async function clearStore(storeName: string): Promise<void> {
+  const effectiveName = namespacedStoreName(storeName);
   const StoreClass = await getStoreClass();
 
   if (StoreClass) {
     try {
-      const store = await StoreClass.load(storeName);
+      const store = await StoreClass.load(effectiveName);
       await store.clear();
       await store.save();
       return;
     } catch (err) {
-      console.warn(`[storage] Failed to clear ${storeName}:`, err);
+      console.warn(`[storage] Failed to clear ${effectiveName}:`, err);
     }
   }
 
-  memoryStore.delete(storeName);
+  memoryStore.delete(effectiveName);
   try {
-    localStorage.removeItem(`wiii:${storeName}`);
+    localStorage.removeItem(`wiii:${effectiveName}`);
   } catch {
     // ignore
   }

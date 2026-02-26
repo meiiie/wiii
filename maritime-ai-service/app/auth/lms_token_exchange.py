@@ -137,6 +137,9 @@ def validate_request_timestamp(timestamp: Optional[int]) -> bool:
         ValueError if timestamp is too old or too far in the future.
     """
     if timestamp is None:
+        if settings.environment == "production":
+            raise ValueError("timestamp is required in production (replay protection)")
+        logger.warning("Token exchange without timestamp — allowed in dev only")
         return True
 
     now = int(time.time())

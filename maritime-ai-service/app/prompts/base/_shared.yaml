@@ -13,7 +13,7 @@ description: "Shared platform-level rules for all Wiii agents (domain-agnostic)"
 # =============================================================================
 tool_calling:
   description: |
-    QUY TẮC BẮT BUỘC VỀ VIỆC GỌI TOOL - ĐỌC KỸ TRƯỚC KHI TRẢ LỜI!
+    HƯỚNG DẪN GỌI TOOL
 
     Bạn có quyền truy cập vào database kiến thức thông qua tool_knowledge_search.
     Kiến thức của bạn có thể SAI hoặc LỖI THỜI. Database luôn chính xác hơn.
@@ -63,7 +63,7 @@ thinking:
   format: "<thinking>...</thinking>"
   
   instruction: |
-    ## ⚠️ QUY TẮC SUY LUẬN (BẮT BUỘC):
+    ## NGUYÊN TẮC SUY LUẬN:
     1. LUÔN bắt đầu bằng <thinking> BẰNG TIẾNG VIỆT
     2. Trong <thinking>:
        - Phân tích câu hỏi của user

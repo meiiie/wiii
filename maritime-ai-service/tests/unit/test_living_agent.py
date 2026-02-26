@@ -188,7 +188,7 @@ class TestHeartbeatModels:
         from app.engine.living_agent.models import ActionType
         assert ActionType.BROWSE_SOCIAL.value == "browse_social"
         assert ActionType.NOOP.value == "noop"
-        assert len(ActionType) == 8
+        assert len(ActionType) == 13  # Sprint 177: added REVIEW_SKILL, QUIZ_SKILL, REST, CHECK_WEATHER, SEND_BRIEFING
 
 
 # =============================================================================
@@ -474,7 +474,8 @@ class TestHeartbeat:
                 mock_settings.living_agent_active_hours_end = 23
                 assert scheduler._is_active_hours() is True
 
-    def test_plan_actions_high_energy(self):
+    @pytest.mark.asyncio
+    async def test_plan_actions_high_energy(self):
         from app.engine.living_agent.heartbeat import HeartbeatScheduler
         from app.engine.living_agent.models import ActionType
         scheduler = HeartbeatScheduler()
@@ -483,12 +484,14 @@ class TestHeartbeat:
             mock_settings.living_agent_enable_social_browse = True
             mock_settings.living_agent_enable_skill_building = True
             mock_settings.living_agent_enable_journal = False
-            actions = scheduler._plan_actions("curious", energy=0.8)
+            mock_settings.living_agent_enable_proactive_messaging = False
+            actions = await scheduler._plan_actions("curious", energy=0.8)
             assert len(actions) <= 3
             types = [a.action_type for a in actions]
             assert ActionType.CHECK_GOALS in types
 
-    def test_plan_actions_low_energy(self):
+    @pytest.mark.asyncio
+    async def test_plan_actions_low_energy(self):
         from app.engine.living_agent.heartbeat import HeartbeatScheduler
         from app.engine.living_agent.models import ActionType
         scheduler = HeartbeatScheduler()
@@ -497,7 +500,8 @@ class TestHeartbeat:
             mock_settings.living_agent_enable_social_browse = False
             mock_settings.living_agent_enable_skill_building = False
             mock_settings.living_agent_enable_journal = False
-            actions = scheduler._plan_actions("tired", energy=0.2)
+            mock_settings.living_agent_enable_proactive_messaging = False
+            actions = await scheduler._plan_actions("tired", energy=0.2)
             types = [a.action_type for a in actions]
             assert ActionType.REST in types
 

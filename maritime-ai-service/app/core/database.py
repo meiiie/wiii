@@ -146,14 +146,62 @@ def test_connection() -> bool:
 def close_shared_engine():
     """
     Close the shared engine and release all connections.
-    
+
     Call this during application shutdown.
     """
     global _shared_engine, _shared_session_factory, _engine_initialized
-    
+
     if _shared_engine is not None:
         _shared_engine.dispose()
         _shared_engine = None
         _shared_session_factory = None
         _engine_initialized = False
         logger.info("Shared database engine closed")
+
+
+# =============================================================================
+# ASYNCPG POOL — Sprint 179: Raw asyncpg for admin dashboard queries
+# =============================================================================
+
+_asyncpg_pool = None
+
+
+async def get_asyncpg_pool(create: bool = True):
+    """
+    Get a raw asyncpg connection pool for lightweight admin queries.
+
+    Uses settings.asyncpg_url (plain postgresql:// format).
+    The pool is created lazily on first call and reused thereafter.
+    """
+    global _asyncpg_pool
+
+    if _asyncpg_pool is not None:
+        return _asyncpg_pool
+
+    if not create:
+        return None
+
+    try:
+        import asyncpg
+
+        pool = await asyncpg.create_pool(
+            dsn=settings.asyncpg_url,
+            min_size=2,
+            max_size=5,
+            command_timeout=15,
+        )
+        _asyncpg_pool = pool
+        logger.info("asyncpg pool created (min=2, max=5)")
+        return pool
+    except Exception as e:
+        logger.error("Failed to create asyncpg pool: %s", e)
+        raise
+
+
+async def close_asyncpg_pool():
+    """Close the asyncpg pool on shutdown."""
+    global _asyncpg_pool
+    if _asyncpg_pool is not None:
+        await _asyncpg_pool.close()
+        _asyncpg_pool = None
+        logger.info("asyncpg pool closed")

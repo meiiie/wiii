@@ -5,12 +5,14 @@
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Plus, Trash2, Settings, MessageSquare, Search, Pin, PinOff, Pencil } from "lucide-react";
+import { Plus, Trash2, Settings, MessageSquare, Search, Pin, PinOff, Pencil, Shield, Building2, LogOut, User } from "lucide-react";
 import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useDomainStore } from "@/stores/domain-store";
 import { useOrgStore } from "@/stores/org-store";
 import { useToastStore } from "@/stores/toast-store";
+import { useAuthStore } from "@/stores/auth-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { ConnectionBadge } from "@/components/common/ConnectionBadge";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
@@ -37,10 +39,20 @@ export function Sidebar() {
     pinConversation,
     unpinConversation,
   } = useChatStore();
-  const { sidebarOpen, openSettings } = useUIStore();
+  const { sidebarOpen, activeView, openSettings, openAdminPanel, openOrgManagerPanel, navigateToChat } = useUIStore();
+  const { isSystemAdmin, isOrgAdmin, adminContext } = useOrgStore();
   const { activeDomainId } = useDomainStore();
   const { activeOrgId } = useOrgStore();
   const { addToast } = useToastStore();
+
+  // Sprint 193: User profile + logout
+  const { user, logout, isAuthenticated } = useAuthStore();
+  const displayUserName = user?.name || useSettingsStore.getState().settings.display_name || "";
+
+  const handleLogout = async () => {
+    await logout();
+    addToast("success", "Đã đăng xuất");
+  };
 
   // Sprint 85: Debounce search to prevent O(n) filter on every keystroke
   const [localSearch, setLocalSearch] = useState(searchQuery);
@@ -84,41 +96,67 @@ export function Sidebar() {
     createConversation(activeDomainId, orgId);
   };
 
+  // Sprint 192: Helper for active icon styling
+  const iconBtnClass = (isActive: boolean) =>
+    `flex items-center justify-center w-9 h-9 rounded-lg transition-colors ${
+      isActive
+        ? "bg-[var(--accent)]/10 text-[var(--accent)]"
+        : "text-text-secondary hover:text-text hover:bg-surface-tertiary"
+    }`;
+
   // Collapsed icon-rail mode (48px)
   if (!sidebarOpen) {
     const CollapsedOrgIcon = getOrgIcon(activeOrgId || PERSONAL_ORG_ID);
+    const isInAdminView = activeView !== "chat";
 
     return (
       <div className="flex flex-col h-full w-[50px] bg-surface-secondary border-r border-border items-center py-3 gap-1">
-        {/* Org icon (collapsed) */}
-        <button
-          onClick={() => useUIStore.getState().setSidebarOpen(true)}
-          className="flex items-center justify-center w-9 h-9 rounded-lg text-text-secondary hover:text-text hover:bg-surface-tertiary transition-colors"
-          title={displayName}
-          aria-label="Mở sidebar"
-        >
-          <CollapsedOrgIcon size={18} />
-        </button>
+        {/* Sprint 192: Chat quick-switch when in admin views */}
+        {isInAdminView ? (
+          <>
+            <button
+              onClick={navigateToChat}
+              className={iconBtnClass(false)}
+              title="Quay lại trò chuyện"
+              aria-label="Quay lại trò chuyện"
+            >
+              <MessageSquare size={18} />
+            </button>
+            <div className="w-6 border-t border-border my-1" />
+          </>
+        ) : (
+          <>
+            {/* Org icon (collapsed) */}
+            <button
+              onClick={() => useUIStore.getState().setSidebarOpen(true)}
+              className={iconBtnClass(false)}
+              title={displayName}
+              aria-label="Mở sidebar"
+            >
+              <CollapsedOrgIcon size={18} />
+            </button>
 
-        {/* New chat */}
-        <button
-          onClick={handleNewChat}
-          className="flex items-center justify-center w-9 h-9 rounded-lg text-text-secondary hover:text-text hover:bg-surface-tertiary transition-colors"
-          title="Cuộc trò chuyện mới"
-          aria-label="Tạo cuộc trò chuyện mới"
-        >
-          <Plus size={18} />
-        </button>
+            {/* New chat */}
+            <button
+              onClick={handleNewChat}
+              className={iconBtnClass(false)}
+              title="Cuộc trò chuyện mới"
+              aria-label="Tạo cuộc trò chuyện mới"
+            >
+              <Plus size={18} />
+            </button>
 
-        {/* Search (visual only — opens sidebar) */}
-        <button
-          onClick={() => useUIStore.getState().setSidebarOpen(true)}
-          className="flex items-center justify-center w-9 h-9 rounded-lg text-text-secondary hover:text-text hover:bg-surface-tertiary transition-colors"
-          title="Tìm kiếm"
-          aria-label="Mở tìm kiếm"
-        >
-          <Search size={18} />
-        </button>
+            {/* Search (visual only — opens sidebar) */}
+            <button
+              onClick={() => useUIStore.getState().setSidebarOpen(true)}
+              className={iconBtnClass(false)}
+              title="Tìm kiếm"
+              aria-label="Mở tìm kiếm"
+            >
+              <Search size={18} />
+            </button>
+          </>
+        )}
 
         {/* Spacer */}
         <div className="flex-1" />
@@ -128,10 +166,44 @@ export function Sidebar() {
           <ConnectionBadge compact />
         </div>
 
+        {/* Sprint 193: Logout button (compact) */}
+        {isAuthenticated && (
+          <button
+            onClick={handleLogout}
+            className="flex items-center justify-center w-9 h-9 rounded-lg text-text-secondary hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+            title="Đăng xuất"
+            aria-label="Đăng xuất"
+          >
+            <LogOut size={18} />
+          </button>
+        )}
+
+        {/* Sprint 192: Admin buttons with active highlighting */}
+        {isSystemAdmin() && (
+          <button
+            onClick={openAdminPanel}
+            className={iconBtnClass(activeView === "system-admin")}
+            title="Quản trị hệ thống"
+            aria-label="Mở bảng quản trị hệ thống"
+          >
+            <Shield size={18} />
+          </button>
+        )}
+        {(isOrgAdmin() || isSystemAdmin()) && activeOrgId && activeOrgId !== "personal" && (
+          <button
+            onClick={() => openOrgManagerPanel(activeOrgId)}
+            className={iconBtnClass(activeView === "org-admin")}
+            title="Quản lý tổ chức"
+            aria-label="Mở bảng quản lý tổ chức"
+          >
+            <Building2 size={18} />
+          </button>
+        )}
+
         {/* Settings */}
         <button
           onClick={openSettings}
-          className="flex items-center justify-center w-9 h-9 rounded-lg text-text-secondary hover:text-text hover:bg-surface-tertiary transition-colors"
+          className={iconBtnClass(activeView === "settings")}
           title="Cài đặt"
           aria-label="Mở cài đặt"
         >
@@ -236,6 +308,55 @@ export function Sidebar() {
       {/* Footer */}
       <div className="p-3 border-t border-border space-y-2">
         <ConnectionBadge />
+
+        {/* Sprint 193: User profile row with logout */}
+        {isAuthenticated && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg">
+            {user?.avatar_url ? (
+              <img
+                src={user.avatar_url}
+                alt=""
+                className="w-6 h-6 rounded-full shrink-0"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <User size={16} className="shrink-0 text-text-tertiary" />
+            )}
+            <span className="flex-1 text-sm text-text-secondary truncate">
+              {displayUserName || "User"}
+            </span>
+            <button
+              onClick={handleLogout}
+              className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 text-text-tertiary transition-colors"
+              title="Đăng xuất"
+              aria-label="Đăng xuất"
+            >
+              <LogOut size={14} />
+            </button>
+          </div>
+        )}
+
+        {/* Sprint 179+181: Admin buttons — system admin (Shield) or org admin (Building2) */}
+        {isSystemAdmin() && (
+          <button
+            onClick={openAdminPanel}
+            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-tertiary transition-colors"
+            aria-label="Mở bảng quản trị hệ thống"
+          >
+            <Shield size={14} />
+            Quản trị hệ thống
+          </button>
+        )}
+        {(isOrgAdmin() || isSystemAdmin()) && activeOrgId && activeOrgId !== "personal" && (
+          <button
+            onClick={() => openOrgManagerPanel(activeOrgId)}
+            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-tertiary transition-colors"
+            aria-label="Mở bảng quản lý tổ chức"
+          >
+            <Building2 size={14} />
+            Quản lý tổ chức
+          </button>
+        )}
         <button
           onClick={openSettings}
           className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-tertiary transition-colors"

@@ -2,6 +2,8 @@
 API Version 1 Router
 Aggregates all v1 endpoints (REST, WebSocket, Webhook)
 """
+import logging
+
 from fastapi import APIRouter
 
 from app.api.v1.chat import router as chat_router
@@ -19,6 +21,8 @@ from app.api.v1.feedback import router as feedback_router  # Sprint 107: Feedbac
 from app.api.v1.character import router as character_router  # Sprint 120: Character State
 from app.api.v1.mood import router as mood_router  # Sprint 120: Mood/Emotional State
 from app.api.v1.preferences import router as preferences_router  # Sprint 120: User Preferences
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["v1"])
 
@@ -43,46 +47,68 @@ router.include_router(preferences_router)  # Sprint 120: User Preferences
 from app.auth.user_router import router as user_router
 router.include_router(user_router)
 
-# Sprint 12: WebSocket endpoint (config-gated)
-try:
-    from app.core.config import settings
-    if settings.enable_websocket:
-        from app.api.v1.websocket import router as ws_router
-        router.include_router(ws_router)  # WS /ws/{session_id}
-except Exception:
-    pass  # Fail gracefully if WebSocket setup fails
 
-# Sprint 155: LMS Integration webhook (config-gated)
+# ---------------------------------------------------------------------------
+# Config-gated routers — log success/failure for debuggability
+# ---------------------------------------------------------------------------
+
+def _register_optional_router(
+    flag_name: str, import_path: str, label: str,
+) -> None:
+    """Register an optional router, logging success or failure."""
+    from app.core.config import settings
+    if not getattr(settings, flag_name, False):
+        return
+    try:
+        import importlib
+        parts = import_path.rsplit(".", 1)
+        mod = importlib.import_module(parts[0])
+        sub_router = getattr(mod, parts[1])
+        router.include_router(sub_router)
+        logger.info("[OK] %s router registered", label)
+    except Exception as e:
+        logger.error("[FAIL] %s router registration failed: %s", label, e)
+
+
+_register_optional_router("enable_websocket", "app.api.v1.websocket.router", "WebSocket")
+_register_optional_router("enable_google_oauth", "app.auth.google_oauth.router", "Google OAuth")
+_register_optional_router("enable_lms_token_exchange", "app.auth.lms_auth_router.router", "LMS Token Exchange")
+_register_optional_router("enable_living_agent", "app.api.v1.living_agent.router", "Living Agent")
+_register_optional_router("enable_messenger_webhook", "app.api.v1.messenger_webhook.router", "Messenger Webhook")
+_register_optional_router("enable_zalo_webhook", "app.api.v1.zalo_webhook.router", "Zalo Webhook")
+_register_optional_router("enable_org_knowledge", "app.api.v1.org_knowledge.router", "Org Knowledge")
+_register_optional_router("enable_knowledge_visualization", "app.api.v1.knowledge_visualization.router", "Knowledge Visualization")
+
+# Sprint 155: LMS Integration (multiple routers)
 try:
-    if getattr(settings, "enable_lms_integration", False):
+    from app.core.config import settings as _settings
+    if getattr(_settings, "enable_lms_integration", False):
         from app.api.v1.lms_webhook import router as lms_router
         router.include_router(lms_router)
-except Exception:
-    pass
+        from app.api.v1.lms_data import router as lms_data_router
+        router.include_router(lms_data_router)
+        from app.api.v1.lms_dashboard import router as lms_dashboard_router
+        router.include_router(lms_dashboard_router)
+        logger.info("[OK] LMS Integration routers registered (3 routers)")
+except Exception as e:
+    logger.error("[FAIL] LMS Integration router registration failed: %s", e)
 
-# Sprint 157: Google OAuth routes (config-gated)
+# Sprint 178: Admin Module (multiple routers)
 try:
-    if getattr(settings, "enable_google_oauth", False):
-        from app.auth.google_oauth import router as auth_router
-        router.include_router(auth_router)
-except Exception:
-    pass
-
-# Sprint 159: LMS Token Exchange (config-gated)
-try:
-    if getattr(settings, "enable_lms_token_exchange", False):
-        from app.auth.lms_auth_router import router as lms_auth_router
-        router.include_router(lms_auth_router)
-except Exception:
-    pass
-
-# Sprint 170: Living Agent (config-gated)
-try:
-    if getattr(settings, "enable_living_agent", False):
-        from app.api.v1.living_agent import router as living_agent_router
-        router.include_router(living_agent_router)
-except Exception:
-    pass
+    if getattr(_settings, "enable_admin_module", False):
+        from app.api.v1.admin_dashboard import router as admin_dashboard_router
+        router.include_router(admin_dashboard_router)
+        from app.api.v1.admin_feature_flags import router as admin_ff_router
+        router.include_router(admin_ff_router)
+        from app.api.v1.admin_analytics import router as admin_analytics_router
+        router.include_router(admin_analytics_router)
+        from app.api.v1.admin_audit import router as admin_audit_router
+        router.include_router(admin_audit_router)
+        from app.api.v1.admin_gdpr import router as admin_gdpr_router
+        router.include_router(admin_gdpr_router)
+        logger.info("[OK] Admin Module routers registered (5 routers)")
+except Exception as e:
+    logger.error("[FAIL] Admin Module router registration failed: %s", e)
 
 
 @router.get("/")

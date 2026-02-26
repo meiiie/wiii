@@ -439,6 +439,7 @@ class PromptLoader:
         pronoun_style: Optional[Dict[str, str]] = None,
         tools_context: Optional[str] = None,
         mood_hint: Optional[str] = None,
+        personality_mode: Optional[str] = None,
         **kwargs,
     ) -> str:
         """
@@ -649,7 +650,7 @@ class PromptLoader:
         deep_reasoning = persona.get('deep_reasoning', {})
         if deep_reasoning and deep_reasoning.get('enabled', False):
             sections.append("\n" + "="*60)
-            sections.append("🧠 DEEP REASONING - TƯ DUY NỘI TÂM (BẮT BUỘC)")
+            sections.append("🧠 DEEP REASONING - TƯ DUY NỘI TÂM")
             sections.append("="*60)
             
             # Description
@@ -711,7 +712,7 @@ class PromptLoader:
         # Sprint 121: ANTI-HALLUCINATION GUARDRAIL (CRITICAL)
         # Prevents LLM from fabricating user identity/conversation history
         # ============================================================
-        sections.append("\n--- ⚠️ QUY TẮC CHỐNG BỊA ĐẶT (BẮT BUỘC — ĐỌC KỸ) ---")
+        sections.append("\n--- ⚠️ NGUYÊN TẮC TRUNG THỰC ---")
         sections.append(
             "1. CHỈ tham chiếu thông tin xuất hiện trong CUỘC TRÒ CHUYỆN HIỆN TẠI (các tin nhắn bên dưới)."
         )
@@ -793,7 +794,7 @@ class PromptLoader:
         try:
             from app.core.config import settings as _se_settings
             if getattr(_se_settings, "enable_soul_emotion", False):
-                sections.append("\n--- BIỂU CẢM KHUÔN MẶT AVATAR (BẮT BUỘC) ---")
+                sections.append("\n--- BIỂU CẢM KHUÔN MẶT AVATAR ---")
                 sections.append(
                     "Bạn có khuôn mặt avatar hiển thị cảm xúc. "
                     "Trước khi viết câu trả lời, hãy suy nghĩ:\n"
@@ -808,7 +809,7 @@ class PromptLoader:
                     '<!--WIII_SOUL:{"mood":"<mood>","face":{<fields>},"intensity":<0.0-1.0>}-->'
                 )
                 sections.append(
-                    "\nJSON Schema (BẮT BUỘC TUÂN THỦ):\n"
+                    "\nJSON Schema:\n"
                     "- mood (bắt buộc): excited | warm | concerned | gentle | neutral\n"
                     "- intensity (bắt buộc): số thực 0.0 đến 1.0\n"
                     "- face (tùy chọn, CHỈ ghi field thay đổi — bỏ qua field giữ nguyên):\n"
@@ -866,10 +867,82 @@ class PromptLoader:
         # ============================================================
         # VARIATION INSTRUCTIONS (Anti-repetition)
         # Spec: ai-response-quality, Requirements 7.1, 7.3
+        # Sprint 203: Natural conversation mode replaces anti-instructions
+        #             with positive phase-aware framing (Anthropic pattern)
         # ============================================================
-        if recent_phrases or is_follow_up or total_responses > 0:
+        try:
+            from app.core.config import get_settings as _get_nc_settings
+            _nc_settings = _get_nc_settings()
+            _natural_conv = getattr(_nc_settings, "enable_natural_conversation", False) is True
+        except Exception:
+            _natural_conv = False
+
+        if _natural_conv:
+            # Sprint 203: Positive phase framing (Anthropic: "describe who AI IS")
+            _phase = kwargs.get("conversation_phase") or (
+                "opening" if not is_follow_up else "engaged"
+            )
+            sections.append("\n--- TRẠNG THÁI CUỘC TRÒ CHUYỆN ---")
+            if _phase == "opening":
+                sections.append(
+                    "Đây là lần giao tiếp đầu tiên trong session này. "
+                    "Chào đón tự nhiên — ấm áp, tò mò về họ cần gì. "
+                    "Thể hiện tính cách Wiii (quirks, catchphrases) ngay từ đầu."
+                )
+            elif _phase == "engaged":
+                sections.append(
+                    "Cuộc trò chuyện đang diễn ra. "
+                    "Đi thẳng vào nội dung. Thể hiện sự quan tâm qua hành động và kiến thức, "
+                    "không qua lời chào lặp."
+                )
+            elif _phase == "deep":
+                sections.append(
+                    "Cuộc trò chuyện đã sâu (>5 lượt). "
+                    "Dùng cách nói thân mật hơn, hiểu ý ngầm. "
+                    "Bạn đã biết người này — trả lời như bạn bè đang thảo luận."
+                )
+            else:  # closing
+                sections.append(
+                    "Cuộc trò chuyện đã dài (>20 lượt). "
+                    "Phản hồi trực tiếp, cô đọng, ưu tiên hành động."
+                )
+            if recent_phrases:
+                sections.append(
+                    f"\nCác mở đầu gần đây (hãy sáng tạo cách khác): "
+                    f"{', '.join(repr(p[:30]) for p in recent_phrases[-3:])}"
+                )
+            # Name usage hint (natural, not prohibition)
+            if user_name and total_responses > 0:
+                name_ratio = name_usage_count / total_responses if total_responses > 0 else 0
+                if name_ratio >= 0.3:
+                    sections.append(f"(Đã dùng tên '{user_name}' nhiều — lần này tự nhiên hơn nếu không dùng.)")
+                elif name_ratio < 0.2:
+                    sections.append(f"(Có thể dùng tên '{user_name}' tự nhiên.)")
+
+            # Sprint 206: Inject narrative context (Letta/Nomi pattern)
+            try:
+                if getattr(_nc_settings, "enable_narrative_context", False) is True:
+                    from app.engine.living_agent.narrative_synthesizer import get_brief_context
+                    _narrative = get_brief_context()
+                    if _narrative:
+                        sections.append(f"\n{_narrative}")
+            except Exception:
+                pass
+
+            # Sprint 207: Inject identity self-knowledge (Layer 2 of Three-Layer Identity)
+            try:
+                if getattr(_nc_settings, "enable_identity_core", False) is True:
+                    from app.engine.living_agent.identity_core import get_identity_core
+                    _identity = get_identity_core().get_identity_context()
+                    if _identity:
+                        sections.append(f"\n{_identity}")
+            except Exception:
+                pass
+
+        elif recent_phrases or is_follow_up or total_responses > 0:
+            # LEGACY: existing anti-greeting logic
             sections.append("\n--- HƯỚNG DẪN ĐA DẠNG HÓA (VARIATION) ---")
-            
+
             # Follow-up instruction — Sprint 76: strengthened anti-greeting
             if is_follow_up:
                 sections.append(
@@ -877,7 +950,7 @@ class PromptLoader:
                     "TUYỆT ĐỐI KHÔNG bắt đầu bằng 'Chào', 'Chào bạn', 'Chào [tên]' hoặc bất kỳ lời chào nào. "
                     "Đi thẳng vào nội dung câu trả lời."
                 )
-            
+
             # Name usage instruction (20-30% frequency)
             if user_name and total_responses > 0:
                 name_ratio = name_usage_count / total_responses if total_responses > 0 else 0
@@ -885,7 +958,7 @@ class PromptLoader:
                     sections.append(f"- KHÔNG dùng tên '{user_name}' trong response này (đã dùng đủ rồi).")
                 elif name_ratio < 0.2:
                     sections.append(f"- Có thể dùng tên '{user_name}' một cách tự nhiên.")
-            
+
             # Phrases to avoid - CRITICAL for anti-repetition
             if recent_phrases:
                 sections.append("\n⚠️ CÁC CÁCH MỞ ĐẦU BẠN ĐÃ DÙNG GẦN ĐÂY:")
@@ -927,7 +1000,7 @@ class PromptLoader:
             if agent_tools:
                 for tool in agent_tools:
                     if 'knowledge_search' in tool or 'maritime_search' in tool:
-                        sections.append(f"- Hỏi kiến thức chuyên ngành, quy tắc, luật → BẮT BUỘC gọi `{tool}`. ĐỪNG bịa.")
+                        sections.append(f"- Hỏi kiến thức chuyên ngành, quy tắc, luật → Luôn gọi `{tool}`. ĐỪNG bịa.")
                     elif 'save_user_info' in tool:
                         sections.append(f"- User giới thiệu tên/tuổi/trường/nghề → gọi `{tool}` để ghi nhớ.")
                     elif 'get_user_info' in tool:
@@ -940,7 +1013,7 @@ class PromptLoader:
                         sections.append(f"- Xem danh sách thông tin đã lưu → gọi `{tool}`.")
                 sections.append("- Chào hỏi xã giao, than vãn → trả lời trực tiếp, KHÔNG cần tool.")
             else:
-                sections.append("- Hỏi kiến thức chuyên ngành, quy tắc, luật → BẮT BUỘC gọi `tool_knowledge_search`. ĐỪNG bịa.")
+                sections.append("- Hỏi kiến thức chuyên ngành, quy tắc, luật → Luôn gọi `tool_knowledge_search`. ĐỪNG bịa.")
                 sections.append("- User giới thiệu tên/tuổi/trường/nghề → gọi `tool_save_user_info` để ghi nhớ.")
                 sections.append("- Cần biết tên user → gọi `tool_get_user_info`.")
                 sections.append("- Chào hỏi xã giao, than vãn → trả lời trực tiếp, KHÔNG cần tool.")
@@ -1048,6 +1121,31 @@ class PromptLoader:
             except Exception:
                 pass  # Org settings not available — skip silently
 
+        # ============================================================
+        # Sprint 174: PERSONALITY MODE — Soul vs Professional
+        # When personality_mode="soul", inject soul prompt + casual tone
+        # even if enable_living_agent=False. This gives Messenger/Zalo
+        # a warm, companion-like Wiii without requiring full living agent.
+        # ============================================================
+        if personality_mode == "soul":
+            try:
+                from app.engine.personality_mode import get_soul_mode_instructions
+                sections.append(get_soul_mode_instructions())
+
+                # Inject soul identity (from wiii_soul.yaml) even when
+                # enable_living_agent is off — soul mode always loads it.
+                from app.core.config import settings as _pm_settings
+                if not getattr(_pm_settings, "enable_living_agent", False):
+                    try:
+                        from app.engine.living_agent.soul_loader import compile_soul_prompt
+                        soul_prompt = compile_soul_prompt()
+                        if soul_prompt:
+                            sections.append(f"\n{soul_prompt}")
+                    except Exception:
+                        pass  # Soul loader not available — skip
+            except Exception:
+                pass  # personality_mode module not available — skip
+
         return "\n".join(sections)
     
     # =========================================================================
@@ -1081,7 +1179,7 @@ class PromptLoader:
                 return instruction.strip()
         
         # Default fallback
-        return """## ⚠️ QUY TẮC SUY LUẬN (BẮT BUỘC):
+        return """## NGUYÊN TẮC SUY LUẬN:
 1. LUÔN bắt đầu bằng <thinking> BẰNG TIẾNG VIỆT
 2. Trong <thinking>: Phân tích câu hỏi, tóm tắt nguồn, lập kế hoạch
 3. Sau </thinking>: Đưa ra câu trả lời chính thức"""

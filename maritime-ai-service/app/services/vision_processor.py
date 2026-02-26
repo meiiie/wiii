@@ -147,7 +147,8 @@ class VisionProcessor:
         document_id: str,
         page_number: int,
         pdf_page: Optional["fitz.Page"] = None,
-        domain_id: Optional[str] = None
+        domain_id: Optional[str] = None,
+        organization_id: Optional[str] = None
     ):
         """
         Process a single page through the pipeline with semantic chunking.
@@ -277,6 +278,37 @@ class VisionProcessor:
             except Exception as ctx_err:
                 logger.warning("Context enrichment failed, continuing without: %s", ctx_err)
 
+        # Step 4.7: Visual description generation (Sprint 179+)
+        # For pages with visual content (tables, diagrams), generate a descriptive chunk
+        if settings.enable_visual_rag and extraction_method == "vision":
+            has_visual = any(
+                c.content_type in ("table", "diagram_reference", "formula")
+                for c in chunks
+            )
+            if has_visual and image_url:
+                try:
+                    from app.engine.agentic_rag.visual_rag import _analyze_image_with_vision, _fetch_image_as_base64
+
+                    img_b64 = await _fetch_image_as_base64(image_url)
+                    if img_b64:
+                        visual_desc = await _analyze_image_with_vision(
+                            img_b64,
+                            query=f"Mô tả nội dung trang {page_number} của tài liệu {document_id}",
+                        )
+                        if visual_desc:
+                            desc_metadata = dict(page_metadata)
+                            desc_metadata["visual_description"] = True
+                            chunks.append(ChunkResult(
+                                chunk_index=len(chunks),
+                                content=f"[Mô tả hình ảnh trang {page_number}]: {visual_desc}",
+                                content_type="visual_description",
+                                confidence_score=0.85,
+                                metadata=desc_metadata,
+                            ))
+                            logger.info("Page %d: Generated visual description chunk", page_number)
+                except Exception as vis_err:
+                    logger.warning("Visual description generation failed for page %d: %s", page_number, vis_err)
+
         # Step 5 & 6: Generate embedding and store each chunk
         # Feature: source-highlight-citation - Extract bounding boxes for each chunk
         successful_chunks = 0
@@ -313,7 +345,8 @@ class VisionProcessor:
                     confidence_score=chunk.confidence_score,
                     metadata=chunk.metadata,
                     bounding_boxes=bounding_boxes,  # Feature: source-highlight-citation
-                    domain_id=domain_id
+                    domain_id=domain_id,
+                    organization_id=organization_id
                 )
                 successful_chunks += 1
 
@@ -366,7 +399,8 @@ class VisionProcessor:
         confidence_score: float = 1.0,
         metadata: Optional[dict] = None,
         bounding_boxes: Optional[List[dict]] = None,  # Feature: source-highlight-citation
-        domain_id: Optional[str] = None
+        domain_id: Optional[str] = None,
+        organization_id: Optional[str] = None
     ):
         """
         Store a semantic chunk in Neon database.
@@ -378,6 +412,8 @@ class VisionProcessor:
         """
         domain_id = domain_id or settings.default_domain
         from sqlalchemy import text as sql_text
+        from app.core.org_filter import get_effective_org_id
+        organization_id = organization_id or get_effective_org_id()
 
         session_factory = get_shared_session_factory()
 
@@ -413,6 +449,7 @@ class VisionProcessor:
                             metadata = :metadata,
                             bounding_boxes = :bounding_boxes,
                             domain_id = :domain_id,
+                            organization_id = :org_id,
                             updated_at = NOW()
                         WHERE document_id = :doc_id
                         AND page_number = :page_num
@@ -428,6 +465,7 @@ class VisionProcessor:
                         "metadata": metadata_json,
                         "bounding_boxes": bounding_boxes_json,
                         "domain_id": domain_id,
+                        "org_id": organization_id,
                         "doc_id": document_id,
                         "page_num": page_number,
                         "chunk_idx": chunk_index
@@ -439,9 +477,11 @@ class VisionProcessor:
                     sql_text("""
                         INSERT INTO knowledge_embeddings
                         (id, content, contextual_content, embedding, document_id, page_number, chunk_index,
-                         image_url, content_type, confidence_score, metadata, source, bounding_boxes, domain_id)
+                         image_url, content_type, confidence_score, metadata, source, bounding_boxes, domain_id,
+                         organization_id)
                         VALUES (:id, :content, :contextual_content, :embedding, :doc_id, :page_num, :chunk_idx,
-                                :image_url, :content_type, :confidence_score, :metadata, :source, :bounding_boxes, :domain_id)
+                                :image_url, :content_type, :confidence_score, :metadata, :source, :bounding_boxes,
+                                :domain_id, :org_id)
                     """),
                     {
                         "id": str(uuid.uuid4()),
@@ -457,7 +497,8 @@ class VisionProcessor:
                         "metadata": metadata_json,
                         "source": f"{document_id}_page_{page_number}_chunk_{chunk_index}",
                         "bounding_boxes": bounding_boxes_json,
-                        "domain_id": domain_id
+                        "domain_id": domain_id,
+                        "org_id": organization_id
                     }
                 )
 

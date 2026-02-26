@@ -13,9 +13,11 @@ Routes:
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+
+from app.core.security import AuthenticatedUser, require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,10 @@ router = APIRouter(prefix="/users", tags=["users"])
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
+
+class IdentityLinkRequest(BaseModel):
+    channel_type: str = Field(..., description="Platform to link: messenger, zalo, telegram")
+
 
 class UserProfileUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
@@ -123,6 +129,28 @@ async def update_my_profile(request: Request, body: UserProfileUpdate):
     return UserProfileResponse(**user)
 
 
+@router.post("/me/identity-link")
+async def request_identity_link(request: Request, body: IdentityLinkRequest):
+    """Generate OTP code for linking a messaging platform identity.
+
+    Sprint 174b: User sends this code on the target platform to link accounts.
+    """
+    jwt_user = _extract_jwt_user(request)
+    if body.channel_type not in ("messenger", "zalo", "telegram"):
+        raise HTTPException(status_code=400, detail="Invalid channel_type. Must be: messenger, zalo, telegram")
+
+    from app.auth.otp_linking import generate_link_code
+    from app.core.config import settings
+    code = await generate_link_code(jwt_user["sub"], body.channel_type)
+
+    return {
+        "code": code,
+        "channel_type": body.channel_type,
+        "expires_in": settings.otp_link_expiry_seconds,
+        "instructions": f"Gui ma '{code}' cho Wiii tren {body.channel_type} de lien ket tai khoan.",
+    }
+
+
 @router.get("/me/identities", response_model=list[IdentityResponse])
 async def list_my_identities(request: Request):
     """List all linked provider identities for the current user."""
@@ -209,3 +237,69 @@ async def deactivate_user_admin(request: Request, user_id: str):
         raise HTTPException(status_code=404, detail="User not found")
 
     return UserProfileResponse(**user)
+
+
+@router.post("/{user_id}/reactivate", response_model=UserProfileResponse)
+async def reactivate_user_admin(request: Request, user_id: str):
+    """Re-enable a deactivated user (admin only)."""
+    jwt_user = _extract_jwt_user(request)
+    _require_admin(jwt_user)
+    from app.auth.user_service import reactivate_user
+
+    user = await reactivate_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return UserProfileResponse(**user)
+
+
+# ---------------------------------------------------------------------------
+# Sprint 181: Admin Context — two-tier admin capabilities
+# ---------------------------------------------------------------------------
+
+@router.get("/me/admin-context")
+async def get_my_admin_context(
+    auth: AuthenticatedUser = Depends(require_auth),
+):
+    """
+    Returns admin capabilities for the current user.
+
+    Sprint 181: Enables desktop to show the right admin panel:
+    - System admin → AdminPanel (7 tabs, all orgs)
+    - Org admin/owner → OrgManagerPanel (4 tabs, own org only)
+    - Regular user → no admin UI
+
+    Sprint 194c (B1 CRITICAL): Now uses require_auth() dependency — consistent
+    with all other endpoints. API key mode in production no longer trusts
+    X-User-ID/X-Role headers for admin determination (prevents privilege escalation).
+    """
+    from app.core.config import settings
+
+    user_id = auth.user_id
+    user_role = auth.role
+
+    is_system_admin = user_role == "admin"
+    admin_org_ids: list[str] = []
+
+    if settings.enable_org_admin and settings.enable_multi_tenant:
+        try:
+            from app.repositories.organization_repository import get_organization_repository
+            repo = get_organization_repository()
+            admin_org_ids = repo.get_user_admin_orgs(user_id)
+        except Exception as e:
+            logger.warning("Failed to fetch admin org roles: %s", e)
+            # Sprint 194c (B4): Return safe defaults with warning on failure
+            return {
+                "is_system_admin": is_system_admin,
+                "is_org_admin": is_system_admin,
+                "admin_org_ids": [],
+                "enable_org_admin": settings.enable_org_admin and settings.enable_multi_tenant,
+                "_warning": "org admin lookup failed",
+            }
+
+    return {
+        "is_system_admin": is_system_admin,
+        "is_org_admin": (len(admin_org_ids) > 0 and settings.enable_multi_tenant) or is_system_admin,
+        "admin_org_ids": admin_org_ids,
+        "enable_org_admin": settings.enable_org_admin and settings.enable_multi_tenant,
+    }

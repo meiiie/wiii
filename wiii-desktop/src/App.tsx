@@ -4,8 +4,6 @@
  */
 import { useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
-import { ChatView } from "@/components/chat/ChatView";
-import { SettingsPage } from "@/components/settings";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { LoginScreen } from "@/components/auth/LoginScreen";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -29,19 +27,57 @@ export default function App() {
     return <AvatarPreview />;
   }
 
-  const { loadSettings, settings, isLoaded: settingsLoaded } = useSettingsStore();
-  const { loadAuth, isAuthenticated, authMode, isTokenExpiringSoon, refreshAccessToken } = useAuthStore();
+  const { loadSettings, settings, updateSettings, isLoaded: settingsLoaded } = useSettingsStore();
+  const { loadAuth, loginWithTokens, isAuthenticated, authMode, isTokenExpiringSoon, refreshAccessToken } = useAuthStore();
   const { startPolling, stopPolling, setOnReconnect } = useConnectionStore();
   const { startPolling: startContextPolling, stopPolling: stopContextPolling } =
     useContextStore();
   const { fetchDomains, setOrgFilter } = useDomainStore();
-  const { fetchOrganizations, setActiveOrg } = useOrgStore();
+  const { fetchOrganizations, setActiveOrg, detectSubdomainOrg, fetchAdminContext } = useOrgStore();
   const { loadConversations, isLoaded: chatsLoaded } = useChatStore();
-  const { settingsOpen, commandPaletteOpen, closeCommandPalette } = useUIStore();
+  const { commandPaletteOpen, closeCommandPalette } = useUIStore();
   const { addToast } = useToastStore();
 
   // Register global keyboard shortcuts
   useKeyboardShortcuts();
+
+  // Sprint 193: Handle web OAuth callback (hash-based token delivery)
+  // Must run BEFORE auth state is checked so tokens are available immediately.
+  useEffect(() => {
+    if (!window.location.hash) return;
+    const params = new URLSearchParams(window.location.hash.substring(1));
+    const accessToken = params.get("access_token");
+    const refreshToken = params.get("refresh_token");
+    if (!accessToken || !refreshToken) return;
+
+    const expiresIn = parseInt(params.get("expires_in") || "900", 10);
+    const user = {
+      id: params.get("user_id") || "",
+      email: params.get("email") || "",
+      name: params.get("name") || "",
+      avatar_url: params.get("avatar_url") || "",
+      role: params.get("role") || "student",
+    };
+
+    // Sprint 193b: Extract organization_id from OAuth callback
+    const orgId = params.get("organization_id") || "";
+
+    // Login immediately, then persist settings + clear hash
+    loginWithTokens(accessToken, refreshToken, expiresIn, user).then(() => {
+      updateSettings({
+        user_id: user.id,
+        display_name: user.name || user.email,
+        user_role: (user.role as "student" | "teacher" | "admin") || "student",
+        ...(orgId ? { organization_id: orgId } : {}),
+      });
+      // Clear hash AFTER login succeeds to prevent token leakage in browser history
+      window.history.replaceState(null, "", window.location.pathname);
+    }).catch((err) => {
+      console.error("[OAuth] Login failed:", err);
+      // Clear hash even on failure to prevent stale token in URL
+      window.history.replaceState(null, "", window.location.pathname);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialize on mount
   useEffect(() => {
@@ -59,16 +95,18 @@ export default function App() {
   // When settings are loaded, initialize client and start health polling
   useEffect(() => {
     if (settings.server_url) {
-      // Initialize HTTP client with current settings
-      const headers: Record<string, string> = {
-        "X-API-Key": settings.api_key,
-        "X-User-ID": settings.user_id,
-        "X-Role": settings.user_role,
-      };
-      if (settings.organization_id && settings.organization_id !== "personal") {
-        headers["X-Organization-ID"] = settings.organization_id;
-      }
-      initClient(settings.server_url, headers);
+      // Sprint 192: Initialize HTTP client with dynamic header resolver
+      // Headers are resolved at request time from getAuthHeaders() — always fresh
+      const client = initClient(settings.server_url, {});
+      client.setHeaderResolver(() => useSettingsStore.getState().getAuthHeaders());
+      // Sprint 192: Wire 401 interceptor for automatic token refresh
+      client.setOnUnauthorized(async () => {
+        const authState = useAuthStore.getState();
+        if (authState.authMode !== "oauth") return false;
+        return authState.refreshAccessToken(
+          useSettingsStore.getState().settings.server_url,
+        );
+      });
 
       // Start health check polling
       startPolling();
@@ -79,12 +117,19 @@ export default function App() {
       // Fetch available domains
       fetchDomains();
 
+      // Sprint 175: Detect org from subdomain (web deployment)
+      detectSubdomainOrg();
+
       // Sprint 156: Fetch organizations + restore saved org
       fetchOrganizations().then(() => {
-        const savedOrgId = settings.organization_id;
-        if (savedOrgId) {
-          setActiveOrg(savedOrgId);
-          const org = useOrgStore.getState().organizations.find((o) => o.id === savedOrgId);
+        // Sprint 181: Fetch admin context after auth/org init
+        fetchAdminContext();
+        // Sprint 175: If subdomain detected, use it (skip saved org)
+        const subdomainOrg = useOrgStore.getState().subdomainOrgId;
+        const orgToActivate = subdomainOrg || settings.organization_id;
+        if (orgToActivate) {
+          setActiveOrg(orgToActivate);
+          const org = useOrgStore.getState().organizations.find((o) => o.id === orgToActivate);
           if (org) {
             setOrgFilter(org.allowed_domains);
           }
@@ -95,7 +140,7 @@ export default function App() {
     return () => {
       stopPolling();
     };
-  }, [settings.server_url, settings.api_key, settings.user_id, settings.user_role, startPolling, stopPolling, fetchDomains, fetchOrganizations, setActiveOrg, setOrgFilter, setOnReconnect, addToast]);
+  }, [settings.server_url, settings.api_key, settings.user_id, settings.user_role, startPolling, stopPolling, fetchDomains, fetchOrganizations, setActiveOrg, setOrgFilter, setOnReconnect, addToast, detectSubdomainOrg, fetchAdminContext, refreshAccessToken]);
 
   // Start context polling when active conversation changes (handles mid-session creation)
   const activeConv = useChatStore((s) => s.activeConversation());
@@ -143,10 +188,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <AppShell>
-        <ChatView />
-      </AppShell>
-      {settingsOpen && <SettingsPage />}
+      <AppShell />
       <CommandPalette open={commandPaletteOpen} onClose={closeCommandPalette} />
     </ErrorBoundary>
   );

@@ -96,21 +96,25 @@ def get_effective_settings(org_id: Optional[str] = None) -> OrgSettings:
         return PLATFORM_DEFAULTS
 
 
-def get_org_permissions(org_id: Optional[str], role: str) -> list[str]:
+def get_org_permissions(org_id: Optional[str], role: str, org_role: Optional[str] = None) -> list[str]:
     """
     Get permissions list for a role within an organization.
 
     Resolves org-level permission overrides, falling back to platform defaults.
 
+    Sprint 181: When org_role is 'admin' or 'owner' and enable_org_admin is True,
+    additional management permissions are granted.
+
     Args:
         org_id: Organization ID (None = platform defaults).
-        role: User role (student, teacher, admin).
+        role: User platform role (student, teacher, admin).
+        org_role: User's role within the org (member, admin, owner). Optional.
 
     Returns:
         List of permission strings like ["read:chat", "use:tools"].
     """
-    settings = get_effective_settings(org_id)
-    perms = settings.permissions
+    effective = get_effective_settings(org_id)
+    perms = effective.permissions
 
     role_map = {
         "student": perms.student,
@@ -118,23 +122,38 @@ def get_org_permissions(org_id: Optional[str], role: str) -> list[str]:
         "admin": perms.admin,
     }
 
-    return role_map.get(role, perms.student)
+    base_perms = role_map.get(role, perms.student)
+
+    # Sprint 181: Org admin/owner gets additional management permissions
+    if org_role in ("admin", "owner"):
+        from app.core.config import settings as app_settings
+        if app_settings.enable_org_admin:
+            extra = ["manage:members", "read:org_analytics", "read:org_dashboard", "manage:knowledge"]
+            if org_role == "owner":
+                extra.append("manage:org_settings")
+            return list(set(base_perms + extra))
+
+    return base_perms
 
 
-def has_permission(org_id: Optional[str], role: str, action: str, resource: str) -> bool:
+def has_permission(
+    org_id: Optional[str], role: str, action: str, resource: str,
+    org_role: Optional[str] = None,
+) -> bool:
     """
     Check if a role has a specific permission within an organization.
 
     Args:
         org_id: Organization ID.
-        role: User role.
+        role: User platform role.
         action: Permission action (e.g., "read", "manage").
         resource: Permission resource (e.g., "chat", "settings").
+        org_role: User's org-level role (member/admin/owner). Sprint 181.
 
     Returns:
         True if the role has the permission.
     """
-    perms = get_org_permissions(org_id, role)
+    perms = get_org_permissions(org_id, role, org_role=org_role)
     return f"{action}:{resource}" in perms
 
 

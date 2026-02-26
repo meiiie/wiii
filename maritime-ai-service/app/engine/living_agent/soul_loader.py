@@ -6,8 +6,8 @@ Cached with TTL — reloads when file changes (hot-reload support).
 
 Usage:
     soul = get_soul()
-    print(soul.core_truths)
-    print(soul.interests.primary)
+    logger.debug(soul.core_truths)
+    logger.debug(soul.interests.primary)
 """
 
 import logging

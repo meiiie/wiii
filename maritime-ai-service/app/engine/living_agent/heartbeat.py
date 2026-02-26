@@ -81,6 +81,8 @@ class HeartbeatScheduler:
         self._heartbeat_count = 0
         self._daily_cycle_count = 0
         self._daily_reset_date: Optional[str] = None  # "YYYY-MM-DD" in UTC+7
+        self._emotion_loaded = False  # Phase 1A: Track if emotion restored from DB
+        self._graduation_checked_date: Optional[str] = None  # Sprint 208: daily graduation check
 
     @property
     def is_running(self) -> bool:
@@ -177,6 +179,14 @@ class HeartbeatScheduler:
             soul = get_soul()
             engine = get_emotion_engine()
 
+            # Phase 1A: Restore emotion from DB on first cycle
+            if not self._emotion_loaded:
+                await engine.load_state_from_db()
+                self._emotion_loaded = True
+
+            # Phase 2B: Apply circadian rhythm
+            engine.apply_circadian_modifier()
+
             # Signal wake-up
             engine.process_event(LifeEvent(
                 event_type=LifeEventType.HEARTBEAT_WAKE,
@@ -185,7 +195,7 @@ class HeartbeatScheduler:
             ))
 
             # 2. Plan actions based on mood and energy
-            actions = self._plan_actions(engine.mood.value, engine.energy)
+            actions = await self._plan_actions(engine.mood.value, engine.energy)
             if not actions:
                 result.is_noop = True
                 result.duration_ms = int((time.monotonic() - start_time) * 1000)
@@ -217,6 +227,12 @@ class HeartbeatScheduler:
                 try:
                     await self._execute_action(action, soul, engine)
                     result.actions_taken.append(action)
+                    # Sprint 208: Record success for autonomy graduation
+                    try:
+                        from app.engine.living_agent.autonomy_manager import get_autonomy_manager
+                        get_autonomy_manager().record_success()
+                    except Exception:
+                        pass
                 except Exception as e:
                     logger.warning(
                         "[HEARTBEAT] Action %s failed: %s",
@@ -228,6 +244,12 @@ class HeartbeatScheduler:
 
             # 7. Save emotional state to DB
             await self._save_emotional_snapshot(engine)
+
+            # Phase 1A: Persist emotion to DB for restart resilience
+            await engine.save_state_to_db()
+
+            # Sprint 208: Daily autonomy graduation check
+            await self._check_graduation_daily()
 
         except Exception as e:
             result.error = str(e)
@@ -286,28 +308,43 @@ class HeartbeatScheduler:
         result.duration_ms = int((time.monotonic() - start_time) * 1000)
         return result
 
-    def _plan_actions(self, mood: str, energy: float) -> list:
+    async def _plan_actions(self, mood: str, energy: float) -> list:
         """Plan actions for this heartbeat based on mood and energy.
 
         Returns list of HeartbeatAction, max limited by config.
+        Enhanced with Soul AGI phases: weather, briefing, reflection, goals.
         """
         from app.core.config import settings
         max_actions = settings.living_agent_max_actions_per_heartbeat
 
         candidates = []
 
-        # Always available: check goals and reflect (low energy cost)
+        # Always available: check goals (low energy cost)
         candidates.append(HeartbeatAction(
             action_type=ActionType.CHECK_GOALS,
             priority=0.8,
         ))
+
+        # Phase 1B: Weather check (morning hours, 05-07 UTC+7)
+        if settings.living_agent_enable_weather and self._is_morning():
+            candidates.append(HeartbeatAction(
+                action_type=ActionType.CHECK_WEATHER,
+                priority=0.95,
+            ))
+
+        # Phase 2A: Briefing delivery
+        if settings.living_agent_enable_briefing and self._is_briefing_time():
+            candidates.append(HeartbeatAction(
+                action_type=ActionType.SEND_BRIEFING,
+                priority=0.9,
+            ))
 
         if energy > 0.5:
             # Good energy — can browse and learn
             if settings.living_agent_enable_social_browse:
                 candidates.append(HeartbeatAction(
                     action_type=ActionType.BROWSE_SOCIAL,
-                    target=random.choice(["news", "tech", "maritime", "facebook"]),
+                    target="auto",  # Phase 3A: smart topic selection
                     priority=0.6,
                 ))
             if settings.living_agent_enable_skill_building:
@@ -328,12 +365,51 @@ class HeartbeatScheduler:
                 priority=0.9,
             ))
 
+        # Sprint 177: Review skills due for spaced repetition
+        if settings.living_agent_enable_skill_learning:
+            try:
+                from app.engine.living_agent.skill_learner import get_skill_learner
+                learner = get_skill_learner()
+                due_skills = learner.get_skills_due_for_review()
+                if due_skills:
+                    candidates.append(HeartbeatAction(
+                        action_type=ActionType.REVIEW_SKILL,
+                        target=due_skills[0].skill_name,
+                        priority=0.75,
+                        metadata={"due_count": len(due_skills)},
+                    ))
+            except Exception as e:
+                logger.debug("[HEARTBEAT] Review check failed: %s", e)
+
         # Daily journal (once per day, evening)
         if settings.living_agent_enable_journal and self._is_journal_time():
             candidates.append(HeartbeatAction(
                 action_type=ActionType.WRITE_JOURNAL,
                 priority=0.9,
             ))
+
+        # Phase 4A: Weekly deep reflection (Sunday 20:00)
+        if self._is_reflection_time():
+            candidates.append(HeartbeatAction(
+                action_type=ActionType.DEEP_REFLECT,
+                priority=0.95,
+            ))
+
+        # Sprint 208: Proactive re-engagement — check for inactive users
+        if settings.living_agent_enable_proactive_messaging and energy > 0.4:
+            try:
+                from app.engine.living_agent.routine_tracker import get_routine_tracker
+                tracker = get_routine_tracker()
+                inactive = await tracker.get_inactive_users(days=2)
+                if inactive:
+                    candidates.append(HeartbeatAction(
+                        action_type=ActionType.SEND_BRIEFING,
+                        target=f"reengage:{inactive[0]}",
+                        priority=0.55,
+                        metadata={"trigger": "inactive_user", "user_id": inactive[0]},
+                    ))
+            except Exception as e:
+                logger.debug("[HEARTBEAT] Inactive user check failed: %s", e)
 
         # Sort by priority descending, take top N
         candidates.sort(key=lambda a: a.priority, reverse=True)
@@ -359,6 +435,25 @@ class HeartbeatScheduler:
 
         elif action.action_type == ActionType.WRITE_JOURNAL:
             await self._action_journal(engine)
+
+        elif action.action_type == ActionType.CHECK_WEATHER:
+            await self._action_check_weather()
+
+        elif action.action_type == ActionType.SEND_BRIEFING:
+            # Sprint 208: Re-engagement via ProactiveMessenger
+            if action.target and action.target.startswith("reengage:"):
+                await self._action_reengage(action, engine)
+            else:
+                await self._action_send_briefing(engine)
+
+        elif action.action_type == ActionType.DEEP_REFLECT:
+            await self._action_deep_reflect(engine)
+
+        elif action.action_type == ActionType.REVIEW_SKILL:
+            await self._action_review_skill(action, engine)
+
+        elif action.action_type == ActionType.QUIZ_SKILL:
+            await self._action_quiz_skill(action, engine)
 
         elif action.action_type == ActionType.REST:
             # Rest = do nothing, let natural energy recovery happen
@@ -443,6 +538,148 @@ class HeartbeatScheduler:
                 description="Daily journal entry written",
                 importance=0.4,
             ))
+
+    async def _action_check_weather(self) -> None:
+        """Check weather and cache for briefing use."""
+        from app.engine.living_agent.weather_service import get_weather_service
+
+        service = get_weather_service()
+        weather = await service.get_current()
+        if weather:
+            logger.debug("[HEARTBEAT] Weather: %s, %.1f°C", weather.city, weather.temp)
+
+    async def _action_send_briefing(self, engine) -> None:
+        """Compose and deliver a scheduled briefing."""
+        from app.engine.living_agent.briefing_composer import get_briefing_composer
+
+        composer = get_briefing_composer()
+        briefing = await composer.compose_for_time()
+        if briefing:
+            delivered = await composer.deliver(briefing)
+            if delivered:
+                logger.info("[HEARTBEAT] Briefing sent to %d users", len(delivered))
+
+    async def _action_reengage(self, action: HeartbeatAction, engine) -> None:
+        """Send a re-engagement proactive message to an inactive user.
+
+        Sprint 208: Uses ProactiveMessenger with anti-spam guardrails.
+        """
+        user_id = action.target.removeprefix("reengage:")
+        if not user_id:
+            return
+
+        try:
+            from app.engine.living_agent.proactive_messenger import get_proactive_messenger
+
+            messenger = get_proactive_messenger()
+            content = (
+                "Lâu rồi không thấy bạn ghé chơi! "
+                "Mình có vài điều thú vị muốn chia sẻ. Quay lại nói chuyện với mình nhé? 😊"
+            )
+            channel = action.metadata.get("channel", "messenger") if action.metadata else "messenger"
+            sent = await messenger.send(
+                user_id=user_id,
+                channel=channel,
+                content=content,
+                trigger="inactive_reengage",
+                priority=0.4,
+            )
+            if sent:
+                logger.info("[HEARTBEAT] Re-engagement sent to %s", user_id)
+        except Exception as e:
+            logger.debug("[HEARTBEAT] Re-engagement failed: %s", e)
+
+    async def _action_deep_reflect(self, engine) -> None:
+        """Perform weekly deep reflection and propose goals."""
+        from app.engine.living_agent.reflector import get_reflector
+        from app.engine.living_agent.goal_manager import get_goal_manager
+        from app.core.config import settings
+
+        reflector = get_reflector()
+        entry = await reflector.weekly_reflection()
+
+        if entry:
+            engine.process_event(LifeEvent(
+                event_type=LifeEventType.REFLECTION_COMPLETED,
+                description="Weekly deep reflection completed",
+                importance=0.7,
+            ))
+
+            # Phase 4B: Auto-propose goals from reflection
+            if settings.living_agent_enable_dynamic_goals and entry.goals_next_week:
+                manager = get_goal_manager()
+                await manager.propose_from_reflection(entry.goals_next_week)
+
+            # Review stale goals
+            if settings.living_agent_enable_dynamic_goals:
+                manager = get_goal_manager()
+                await manager.review_stale_goals()
+
+    async def _action_review_skill(self, action: HeartbeatAction, engine) -> None:
+        """Review a skill due for spaced repetition — generate and self-evaluate quiz."""
+        from app.engine.living_agent.skill_learner import get_skill_learner
+
+        skill_name = action.target
+        if not skill_name:
+            return
+
+        learner = get_skill_learner()
+        logger.debug("[HEARTBEAT] Reviewing skill: %s", skill_name)
+
+        # Generate quiz
+        questions = await learner.generate_quiz(skill_name)
+        if not questions:
+            logger.debug("[HEARTBEAT] No quiz generated for %s", skill_name)
+            return
+
+        # Self-evaluate using local LLM (simulate answering)
+        answers = await self._self_answer_quiz(questions)
+        result = await learner.evaluate_quiz(skill_name, questions, answers)
+
+        if result:
+            event_type = LifeEventType.QUIZ_COMPLETED
+            engine.process_event(LifeEvent(
+                event_type=event_type,
+                description=f"Quiz: {skill_name} — {result.questions_correct}/{result.questions_total}",
+                importance=0.6,
+            ))
+
+    async def _action_quiz_skill(self, action: HeartbeatAction, engine) -> None:
+        """Dedicated quiz action — same as review but explicitly requested."""
+        await self._action_review_skill(action, engine)
+
+    async def _self_answer_quiz(self, questions) -> list:
+        """Use local LLM to self-answer quiz questions (simulate student)."""
+        from app.engine.living_agent.local_llm import get_local_llm
+
+        llm = get_local_llm()
+        answers = []
+        for q in questions:
+            prompt = (
+                f"Câu hỏi: {q.question}\n"
+                f"Đáp án: {', '.join(q.options)}\n"
+                f"Trả lời CHỈ bằng đáp án đúng (ví dụ: A hoặc B hoặc C hoặc D). "
+                f"Không giải thích."
+            )
+            answer = await llm.generate(prompt, temperature=0.1, max_tokens=10)
+            answers.append(answer.strip() if answer else "")
+        return answers
+
+    def _is_morning(self) -> bool:
+        """Check if it's morning hours (05-07 UTC+7)."""
+        now_vn = datetime.now(timezone.utc) + _VN_OFFSET
+        return 5 <= now_vn.hour < 7
+
+    def _is_briefing_time(self) -> bool:
+        """Check if it's time for any briefing (morning/midday/evening)."""
+        now_vn = datetime.now(timezone.utc) + _VN_OFFSET
+        hour = now_vn.hour
+        return (5 <= hour < 7) or (11 <= hour < 13) or (17 <= hour < 19)
+
+    def _is_reflection_time(self) -> bool:
+        """Check if it's time for weekly reflection (Sunday 20:00 UTC+7)."""
+        now_vn = datetime.now(timezone.utc) + _VN_OFFSET
+        return now_vn.weekday() == 6 and 20 <= now_vn.hour <= 21
 
     async def _save_emotional_snapshot(self, engine) -> None:
         """Persist current emotional state to database."""
@@ -639,6 +876,32 @@ class HeartbeatScheduler:
         """Check if it's the right time for daily journal (evening)."""
         now_vn = datetime.now(timezone.utc) + _VN_OFFSET
         return 20 <= now_vn.hour <= 22
+
+    # =========================================================================
+    # Sprint 208: Autonomy graduation daily check
+    # =========================================================================
+
+    async def _check_graduation_daily(self) -> None:
+        """Check autonomy graduation once per day (idempotent)."""
+        try:
+            now_vn = datetime.now(timezone.utc) + _VN_OFFSET
+            today = now_vn.strftime("%Y-%m-%d")
+            if self._graduation_checked_date == today:
+                return  # Already checked today
+
+            self._graduation_checked_date = today
+
+            from app.core.config import settings
+            if not getattr(settings, "living_agent_enable_autonomy_graduation", False):
+                return
+
+            from app.engine.living_agent.autonomy_manager import get_autonomy_manager
+            manager = get_autonomy_manager()
+            upgraded = await manager.check_graduation()
+            if upgraded:
+                logger.info("[HEARTBEAT] Autonomy graduation proposed")
+        except Exception as e:
+            logger.debug("[HEARTBEAT] Graduation check failed: %s", e)
 
     # =========================================================================
     # Sprint 171b: Messenger notification for discoveries

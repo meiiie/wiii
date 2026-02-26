@@ -75,8 +75,8 @@ prompt = prompt_loader.build_system_prompt(
 ```yaml
 agent:
   id: "tutor_agent"
-  name: "Maritime Mentor"
-  backstory: "Bạn là gia sư hàng hải thân thiện..."
+  name: "Knowledge Mentor"
+  backstory: "Bạn là gia sư thân thiện..."
 
 style:
   tone: "Thân thiện, gần gũi như bạn bè"

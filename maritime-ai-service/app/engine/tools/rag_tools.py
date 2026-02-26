@@ -150,7 +150,8 @@ async def tool_knowledge_search(query: str) -> str:
                     "image_url": src.get("image_url"),
                     "page_number": src.get("page_number"),
                     "document_id": src.get("document_id"),
-                    "bounding_boxes": src.get("bounding_boxes")
+                    "bounding_boxes": src.get("bounding_boxes"),
+                    "content_type": src.get("content_type"),  # Sprint 189b
                 }
                 for src in crag_result.sources[:5]
             ]

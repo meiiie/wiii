@@ -1,15 +1,18 @@
 /**
  * Sprint 156: Organization store tests.
- * Tests multi-tenant detection, org switching, domain filtering.
+ * Sprint 175: Subdomain auto-detection tests.
+ * Tests multi-tenant detection, org switching, domain filtering, subdomain org.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { useOrgStore } from "@/stores/org-store";
+import { useOrgStore, detectOrgFromSubdomain } from "@/stores/org-store";
 import { PERSONAL_ORG_ID } from "@/lib/constants";
 import type { OrganizationSummary } from "@/api/types";
 
 // Mock the organizations API
 vi.mock("@/api/organizations", () => ({
   listOrganizations: vi.fn(),
+  getOrgSettings: vi.fn().mockRejectedValue(new Error("Not configured in test")),
+  getOrgPermissions: vi.fn().mockRejectedValue(new Error("Not configured in test")),
 }));
 
 const { listOrganizations } = await import("@/api/organizations");
@@ -46,6 +49,7 @@ function resetStore() {
     activeOrgId: null,
     isLoading: false,
     multiTenantEnabled: false,
+    subdomainOrgId: null,
   });
 }
 
@@ -190,5 +194,114 @@ describe("OrgStore", () => {
     const state = useOrgStore.getState();
     expect(state.organizations).toHaveLength(3); // 4 - 1 inactive
     expect(state.organizations.find((o) => o.id === "inactive-org")).toBeUndefined();
+  });
+});
+
+
+// =============================================================================
+// Sprint 175: Subdomain Auto-Detection Tests
+// =============================================================================
+
+describe("detectOrgFromSubdomain", () => {
+  it("returns null in Tauri environment", () => {
+    // Simulate Tauri
+    (window as any).__TAURI_INTERNALS__ = {};
+    const result = detectOrgFromSubdomain();
+    expect(result).toBeNull();
+    delete (window as any).__TAURI_INTERNALS__;
+  });
+
+  it("returns null for localhost", () => {
+    // jsdom default hostname is 'localhost' — no subdomain match
+    const result = detectOrgFromSubdomain();
+    expect(result).toBeNull();
+  });
+
+  it("returns org slug from subdomain", () => {
+    // Override hostname for this test
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "phuong-luu-kiem.holilihu.online" },
+      writable: true,
+    });
+
+    const result = detectOrgFromSubdomain();
+    expect(result).toBe("phuong-luu-kiem");
+
+    // Restore
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "localhost" },
+      writable: true,
+    });
+  });
+
+  it("returns null for reserved subdomains", () => {
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "www.holilihu.online" },
+      writable: true,
+    });
+
+    const result = detectOrgFromSubdomain();
+    expect(result).toBeNull();
+
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "localhost" },
+      writable: true,
+    });
+  });
+
+  it("returns null for bare domain", () => {
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "holilihu.online" },
+      writable: true,
+    });
+
+    const result = detectOrgFromSubdomain();
+    expect(result).toBeNull();
+
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "localhost" },
+      writable: true,
+    });
+  });
+});
+
+describe("OrgStore subdomain mode", () => {
+  beforeEach(() => {
+    resetStore();
+    vi.clearAllMocks();
+  });
+
+  it("has correct initial subdomain state", () => {
+    const state = useOrgStore.getState();
+    expect(state.subdomainOrgId).toBeNull();
+    expect(state.isSubdomainMode()).toBe(false);
+  });
+
+  it("detectSubdomainOrg sets subdomainOrgId when subdomain found", () => {
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "lms-hang-hai.holilihu.online" },
+      writable: true,
+    });
+
+    useOrgStore.getState().detectSubdomainOrg();
+
+    const state = useOrgStore.getState();
+    expect(state.subdomainOrgId).toBe("lms-hang-hai");
+    expect(state.activeOrgId).toBe("lms-hang-hai");
+    expect(state.isSubdomainMode()).toBe(true);
+
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "localhost" },
+      writable: true,
+    });
+  });
+
+  it("detectSubdomainOrg does nothing for localhost", () => {
+    useOrgStore.getState().detectSubdomainOrg();
+
+    const state = useOrgStore.getState();
+    expect(state.subdomainOrgId).toBeNull();
+    expect(state.activeOrgId).toBeNull();
+    expect(state.isSubdomainMode()).toBe(false);
   });
 });

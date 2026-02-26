@@ -10,7 +10,6 @@ Gate: enable_contact_extraction
 import json
 import logging
 import re
-from typing import Optional
 
 import httpx
 from langchain_core.tools import StructuredTool

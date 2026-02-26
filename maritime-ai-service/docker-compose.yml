@@ -28,8 +28,10 @@ services:
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-wiii_secret}
       - MINIO_BUCKET=${MINIO_BUCKET:-wiii-docs}
       - MINIO_SECURE=false
-      # Ollama (when --profile ollama is active)
-      - OLLAMA_BASE_URL=http://ollama:11434
+      # Ollama: use Docker service when --profile ollama, else host machine
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy

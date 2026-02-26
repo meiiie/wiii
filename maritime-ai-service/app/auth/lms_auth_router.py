@@ -15,8 +15,12 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.core.config import settings
+
+limiter = Limiter(key_func=get_remote_address)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +54,7 @@ class LMSTokenResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("/token")
+@limiter.limit("10/minute")
 async def lms_token_exchange(request: Request):
     """
     Exchange LMS user credentials for a Wiii JWT token pair.
@@ -57,7 +62,7 @@ async def lms_token_exchange(request: Request):
     The LMS backend signs the request body with HMAC-SHA256 using the shared secret.
     Header: X-LMS-Signature: sha256=<hex>
 
-    Rate limited to 30 requests/minute.
+    Rate limited to 10 requests/minute per IP.
     """
     from app.auth.lms_token_exchange import (
         validate_lms_signature,
@@ -110,12 +115,38 @@ async def lms_token_exchange(request: Request):
         )
     except Exception as e:
         logger.exception("LMS token exchange failed")
+        # Sprint 176: Audit failed login
+        try:
+            from app.auth.auth_audit import log_auth_event
+            await log_auth_event(
+                "login_failed", provider="lms",
+                result="failed", reason=str(e),
+                ip_address=request.client.host if request.client else None,
+                organization_id=token_req.organization_id,
+                metadata={"connector_id": token_req.connector_id},
+            )
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail=f"Token exchange failed: {e}")
+
+    # Sprint 176: Audit successful LMS login
+    try:
+        from app.auth.auth_audit import log_auth_event
+        user_id = result.get("user", {}).get("id") if isinstance(result, dict) else None
+        await log_auth_event(
+            "login", user_id=user_id, provider="lms",
+            ip_address=request.client.host if request.client else None,
+            organization_id=token_req.organization_id,
+            metadata={"connector_id": token_req.connector_id},
+        )
+    except Exception:
+        pass
 
     return JSONResponse(result)
 
 
 @router.post("/token/refresh")
+@limiter.limit("30/minute")
 async def lms_token_refresh(request: Request):
     """Refresh a Wiii access token using a refresh token (standard flow)."""
     try:

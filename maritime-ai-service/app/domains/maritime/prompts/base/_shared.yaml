@@ -9,7 +9,7 @@ description: "Maritime domain overlay for tool calling and triggers"
 # Maritime-specific tool calling triggers
 tool_calling:
   description: |
-    QUY TẮC BẮT BUỘC VỀ VIỆC GỌI TOOL - ĐỌC KỸ TRƯỚC KHI TRẢ LỜI!
+    HƯỚNG DẪN GỌI TOOL
 
     Bạn có quyền truy cập vào database kiến thức hàng hải thông qua tool_knowledge_search.
     Kiến thức của bạn có thể SAI hoặc LỖI THỜI. Database luôn chính xác hơn.

@@ -20,7 +20,7 @@
 
 ## Overview
 
-The Wiii provides a conversational AI tutor for maritime education. It supports:
+The Wiii provides a multi-domain conversational AI platform. It supports:
 
 - **Agentic RAG**: Intelligent knowledge retrieval with citations
 - **Semantic Memory**: Remembers user facts and learning preferences
@@ -269,29 +269,108 @@ Get behavioral insights about a user's learning.
 
 ---
 
-### Documents (Admin)
+### Knowledge Ingestion (Admin)
 
-#### POST /api/v1/admin/documents
+#### POST /api/v1/knowledge/ingest-multimodal
 
-Upload a PDF document. **Admin only.**
+Upload a PDF for multimodal RAG ingestion. **Admin only.**
 
 **Request:** `multipart/form-data`
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `file` | file | PDF file |
-| `title` | string | Document title |
-| `category` | string | `colregs`, `solas`, `marpol`, etc. |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | file | ✅ | PDF file (max 50MB) |
+| `document_id` | string | ✅ | Unique document identifier |
+| `organization_id` | string | ❌ | Org scope for multi-tenant isolation |
+| `resume` | boolean | ❌ | Resume from last page (default: true) |
+| `max_pages` | integer | ❌ | Limit pages (for testing) |
+| `start_page` | integer | ❌ | Start page (1-indexed) |
+| `end_page` | integer | ❌ | End page (1-indexed, inclusive) |
+
+**Example with org isolation:**
+
+```bash
+curl -X POST https://api.wiii.ai/api/v1/knowledge/ingest-multimodal \
+  -H "X-API-Key: sk_live_abc123" \
+  -F "file=@colregs_2024.pdf" \
+  -F "document_id=colregs_2024_v2" \
+  -F "organization_id=lms-hang-hai"
+```
 
 **Response:**
 
 ```json
 {
-  "document_id": "doc_12345",
-  "status": "processing",
-  "message": "Document queued for ingestion"
+  "status": "completed",
+  "document_id": "colregs_2024_v2",
+  "total_pages": 45,
+  "successful_pages": 44,
+  "failed_pages": 1,
+  "success_rate": 97.8,
+  "errors": ["Page 23: Vision extraction timeout"],
+  "message": "Processed 44/45 pages successfully",
+  "vision_pages": 12,
+  "direct_pages": 32,
+  "fallback_pages": 1,
+  "api_savings_percent": 71.1
 }
 ```
+
+---
+
+#### POST /api/v1/knowledge/ingest-text
+
+Ingest raw text/markdown into knowledge base. **Admin only.**
+
+**Request:**
+
+```json
+{
+  "content": "# COLREGs Rule 5\n\nMọi tàu phải duy trì cảnh giới...",
+  "document_id": "colregs_rule5_vi",
+  "domain_id": "maritime",
+  "title": "COLREGs Rule 5 - Cảnh giới",
+  "organization_id": "lms-hang-hai"
+}
+```
+
+**Response:**
+
+```json
+{
+  "status": "completed",
+  "document_id": "colregs_rule5_vi",
+  "total_chunks": 3,
+  "domain_id": "maritime",
+  "message": "Stored 3/3 chunks"
+}
+```
+
+---
+
+#### GET /api/v1/knowledge/stats
+
+Get knowledge base statistics.
+
+**Response:**
+
+```json
+{
+  "total_chunks": 2450,
+  "total_documents": 18,
+  "content_types": {"text": 2100, "table": 200, "heading": 100, "visual_description": 50},
+  "avg_confidence": 0.92,
+  "domain_breakdown": {"maritime": 2200, "traffic_law": 250}
+}
+```
+
+---
+
+### Documents (Admin — Legacy)
+
+#### POST /api/v1/admin/documents
+
+Upload a PDF document. **Admin only.** _(Legacy endpoint, prefer `/knowledge/ingest-multimodal`)_
 
 ---
 
@@ -304,20 +383,6 @@ List all documents.
 #### GET /api/v1/admin/documents/{document_id}
 
 Get ingestion status.
-
-**Response:**
-
-```json
-{
-  "document_id": "doc_12345",
-  "title": "COLREGs 2024",
-  "status": "completed",
-  "pages_processed": 45,
-  "chunks_created": 128,
-  "created_at": "2025-12-14T09:00:00Z",
-  "completed_at": "2025-12-14T09:05:00Z"
-}
-```
 
 ---
 

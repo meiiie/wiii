@@ -83,6 +83,7 @@ async def ingest_multimodal_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     document_id: str = Form(...),
+    organization_id: Optional[str] = Form(default=None),
     resume: bool = Form(default=True),
     max_pages: Optional[int] = Form(default=None),
     start_page: Optional[int] = Form(default=None),
@@ -102,6 +103,7 @@ async def ingest_multimodal_document(
 
     - **file**: PDF file to upload (max 50MB)
     - **document_id**: Unique identifier for the document
+    - **organization_id**: Organization scope for multi-tenant isolation (optional)
     - **resume**: Resume from last successful page if interrupted (default: True)
     - **max_pages**: Maximum pages to process (optional, for testing)
     - **start_page**: Start processing from this page (1-indexed, for batch processing)
@@ -141,7 +143,8 @@ async def ingest_multimodal_document(
             resume=resume,
             max_pages=max_pages,
             start_page=start_page,
-            end_page=end_page
+            end_page=end_page,
+            organization_id=organization_id
         )
         
         logger.info(
@@ -273,6 +276,7 @@ class TextIngestionRequest(BaseModel):
     document_id: str
     domain_id: Optional[str] = None
     title: Optional[str] = None
+    organization_id: Optional[str] = None
 
 
 class TextIngestionResponse(BaseModel):
@@ -373,6 +377,7 @@ async def ingest_text_document(
                 confidence_score=chunk.confidence_score,
                 image_url="",
                 metadata=metadata,
+                organization_id=body.organization_id,
             )
             if success:
                 stored += 1

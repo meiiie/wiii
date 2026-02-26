@@ -351,7 +351,8 @@ class TestGetBlock:
         """Expired cache entry triggers re-fetch."""
         mock_semantic_memory.get_user_facts = AsyncMock(return_value={"name": "Fresh"})
 
-        with patch("app.engine.semantic_memory.core_memory_block.settings") as mock_settings:
+        with patch("app.engine.semantic_memory.core_memory_block.settings") as mock_settings, \
+             patch("app.core.org_filter.get_effective_org_id", return_value=""):
             mock_settings.enable_core_memory_block = True
             mock_settings.core_memory_cache_ttl = 1  # 1 second TTL
             mock_settings.core_memory_max_tokens = 800
@@ -362,7 +363,8 @@ class TestGetBlock:
         # Manually expire cache entry by backdating timestamp
         block._cache["user5"] = (block._cache["user5"][0], time.time() - 10)
 
-        with patch("app.engine.semantic_memory.core_memory_block.settings") as mock_settings:
+        with patch("app.engine.semantic_memory.core_memory_block.settings") as mock_settings, \
+             patch("app.core.org_filter.get_effective_org_id", return_value=""):
             mock_settings.enable_core_memory_block = True
             mock_settings.core_memory_cache_ttl = 1
             mock_settings.core_memory_max_tokens = 800
@@ -447,7 +449,8 @@ class TestCacheManagement:
     @pytest.mark.asyncio
     async def test_invalidate_removes_user(self, block):
         """16. invalidate() removes a specific user from cache."""
-        with patch("app.engine.semantic_memory.core_memory_block.settings") as mock_settings:
+        with patch("app.engine.semantic_memory.core_memory_block.settings") as mock_settings, \
+             patch("app.core.org_filter.get_effective_org_id", return_value=""):
             mock_settings.enable_core_memory_block = True
             mock_settings.core_memory_cache_ttl = 300
             mock_settings.core_memory_max_tokens = 800
@@ -489,7 +492,8 @@ class TestCacheManagement:
         """After invalidate, next get_block fetches fresh data."""
         mock_semantic_memory.get_user_facts = AsyncMock(return_value={"name": "Old"})
 
-        with patch("app.engine.semantic_memory.core_memory_block.settings") as mock_settings:
+        with patch("app.engine.semantic_memory.core_memory_block.settings") as mock_settings, \
+             patch("app.core.org_filter.get_effective_org_id", return_value=""):
             mock_settings.enable_core_memory_block = True
             mock_settings.core_memory_cache_ttl = 300
             mock_settings.core_memory_max_tokens = 800

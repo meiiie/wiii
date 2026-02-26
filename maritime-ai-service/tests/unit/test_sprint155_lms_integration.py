@@ -238,7 +238,7 @@ class TestGradeEnrichment:
             grade=4.0, max_grade=10.0,
         )
         count = await service.enrich_from_grade(payload)
-        assert count == 2
+        assert count == 3  # level + weakness + course_context (Sprint 175)
         types_saved = [call.kwargs.get("fact_type") or call.args[1] for call in service._save_fact.call_args_list]
         assert "level" in types_saved
         assert "weakness" in types_saved
@@ -250,7 +250,7 @@ class TestGradeEnrichment:
             grade=9.0, max_grade=10.0,
         )
         count = await service.enrich_from_grade(payload)
-        assert count == 2
+        assert count == 3  # level + strength + course_context (Sprint 175)
         types_saved = [call.kwargs.get("fact_type") or call.args[1] for call in service._save_fact.call_args_list]
         assert "level" in types_saved
         assert "strength" in types_saved
@@ -262,7 +262,7 @@ class TestGradeEnrichment:
             grade=7.0, max_grade=10.0,
         )
         count = await service.enrich_from_grade(payload)
-        assert count == 1
+        assert count == 2  # level + course_context (Sprint 175)
         types_saved = [call.kwargs.get("fact_type") or call.args[1] for call in service._save_fact.call_args_list]
         assert "level" in types_saved
         assert "weakness" not in types_saved
@@ -398,8 +398,8 @@ class TestOtherEnrichments:
             LMSGrade(course_id="c2", course_name="SOLAS", grade=4.0, max_grade=10.0),
         ]
         count = await service.enrich_from_grades("u1", grades)
-        # 9/10 → level + strength = 2,  4/10 → level + weakness = 2
-        assert count == 4
+        # 9/10 → level + strength + course_context = 3,  4/10 → level + weakness + course_context = 3
+        assert count == 6
 
 
 # =============================================================================

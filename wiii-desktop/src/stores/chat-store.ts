@@ -30,6 +30,7 @@ import type {
   PreviewBlockData,
   ArtifactData,
   ArtifactBlockData,
+  ImageInput,
 } from "@/api/types";
 
 const STORE_NAME = "conversations.json";
@@ -92,7 +93,7 @@ interface ChatState {
   deleteConversation: (id: string) => void;
   setActiveConversation: (id: string | null) => void;
   renameConversation: (id: string, title: string) => void;
-  addUserMessage: (content: string) => string | null;
+  addUserMessage: (content: string, images?: ImageInput[]) => string | null;
   startStreaming: () => void;
   appendStreamingContent: (chunk: string) => void;
   setStreamingThinking: (thinking: string) => void;
@@ -281,7 +282,7 @@ export const useChatStore = create<ChatState>()(
       persistConversationsImmediate(get().conversations);
     },
 
-    addUserMessage: (content) => {
+    addUserMessage: (content, images) => {
       const { activeConversationId, conversations } = get();
       if (!activeConversationId) return null;
 
@@ -291,6 +292,8 @@ export const useChatStore = create<ChatState>()(
         role: "user",
         content,
         timestamp: new Date().toISOString(),
+        // Sprint 179: Attach images to user message for display
+        ...(images && images.length > 0 ? { images } : {}),
       };
 
       const conversation = conversations.find(

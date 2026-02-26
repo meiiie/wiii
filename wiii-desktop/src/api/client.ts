@@ -50,20 +50,37 @@ async function adaptiveFetch(
 export class WiiiClient {
   private baseUrl: string;
   private headers: Record<string, string>;
+  private headerResolver?: () => Record<string, string>;
+  private onUnauthorized?: () => Promise<boolean>;
 
   constructor(baseUrl: string, headers: Record<string, string> = {}) {
     this.baseUrl = baseUrl.replace(/\/+$/, ""); // Remove trailing slash
     this.headers = headers;
   }
 
-  /** Update authentication headers */
+  /** Update authentication headers (static — prefer setHeaderResolver for dynamic) */
   setHeaders(headers: Record<string, string>) {
     this.headers = headers;
+  }
+
+  /** Sprint 192: Set dynamic header resolver — called before each request */
+  setHeaderResolver(resolver: () => Record<string, string>) {
+    this.headerResolver = resolver;
+  }
+
+  /** Sprint 192: Set 401 handler for automatic token refresh */
+  setOnUnauthorized(handler: () => Promise<boolean>) {
+    this.onUnauthorized = handler;
   }
 
   /** Update base URL */
   setBaseUrl(url: string) {
     this.baseUrl = url.replace(/\/+$/, "");
+  }
+
+  /** Resolve current headers — dynamic resolver takes priority */
+  private resolveHeaders(): Record<string, string> {
+    return this.headerResolver ? this.headerResolver() : this.headers;
   }
 
   /** GET request */
@@ -78,10 +95,21 @@ export class WiiiClient {
       );
     }
 
-    const response = await adaptiveFetch(url.toString(), {
+    let response = await adaptiveFetch(url.toString(), {
       method: "GET",
-      headers: this.headers,
+      headers: this.resolveHeaders(),
     });
+
+    // Sprint 192: Auto-retry on 401
+    if (response.status === 401 && this.onUnauthorized) {
+      const refreshed = await this.onUnauthorized();
+      if (refreshed) {
+        response = await adaptiveFetch(url.toString(), {
+          method: "GET",
+          headers: this.resolveHeaders(),
+        });
+      }
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -94,14 +122,29 @@ export class WiiiClient {
   async post<T>(path: string, body: unknown): Promise<T> {
     const url = new URL(path, this.baseUrl).toString();
 
-    const response = await adaptiveFetch(url, {
+    let response = await adaptiveFetch(url, {
       method: "POST",
       headers: {
-        ...this.headers,
+        ...this.resolveHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
     });
+
+    // Sprint 192: Auto-retry on 401
+    if (response.status === 401 && this.onUnauthorized) {
+      const refreshed = await this.onUnauthorized();
+      if (refreshed) {
+        response = await adaptiveFetch(url, {
+          method: "POST",
+          headers: {
+            ...this.resolveHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+      }
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -123,10 +166,20 @@ export class WiiiClient {
       );
     }
 
-    const response = await adaptiveFetch(url.toString(), {
+    let response = await adaptiveFetch(url.toString(), {
       method: "GET",
-      headers: { ...this.headers, ...extraHeaders },
+      headers: { ...this.resolveHeaders(), ...extraHeaders },
     });
+
+    if (response.status === 401 && this.onUnauthorized) {
+      const refreshed = await this.onUnauthorized();
+      if (refreshed) {
+        response = await adaptiveFetch(url.toString(), {
+          method: "GET",
+          headers: { ...this.resolveHeaders(), ...extraHeaders },
+        });
+      }
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -143,15 +196,30 @@ export class WiiiClient {
   ): Promise<T> {
     const url = new URL(path, this.baseUrl).toString();
 
-    const response = await adaptiveFetch(url, {
+    let response = await adaptiveFetch(url, {
       method: "POST",
       headers: {
-        ...this.headers,
+        ...this.resolveHeaders(),
         "Content-Type": "application/json",
         ...extraHeaders,
       },
       body: JSON.stringify(body),
     });
+
+    if (response.status === 401 && this.onUnauthorized) {
+      const refreshed = await this.onUnauthorized();
+      if (refreshed) {
+        response = await adaptiveFetch(url, {
+          method: "POST",
+          headers: {
+            ...this.resolveHeaders(),
+            "Content-Type": "application/json",
+            ...extraHeaders,
+          },
+          body: JSON.stringify(body),
+        });
+      }
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -164,10 +232,20 @@ export class WiiiClient {
   async delete<T>(path: string): Promise<T> {
     const url = new URL(path, this.baseUrl).toString();
 
-    const response = await adaptiveFetch(url, {
+    let response = await adaptiveFetch(url, {
       method: "DELETE",
-      headers: this.headers,
+      headers: this.resolveHeaders(),
     });
+
+    if (response.status === 401 && this.onUnauthorized) {
+      const refreshed = await this.onUnauthorized();
+      if (refreshed) {
+        response = await adaptiveFetch(url, {
+          method: "DELETE",
+          headers: this.resolveHeaders(),
+        });
+      }
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -180,14 +258,28 @@ export class WiiiClient {
   async put<T>(path: string, body: unknown): Promise<T> {
     const url = new URL(path, this.baseUrl).toString();
 
-    const response = await adaptiveFetch(url, {
+    let response = await adaptiveFetch(url, {
       method: "PUT",
       headers: {
-        ...this.headers,
+        ...this.resolveHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
     });
+
+    if (response.status === 401 && this.onUnauthorized) {
+      const refreshed = await this.onUnauthorized();
+      if (refreshed) {
+        response = await adaptiveFetch(url, {
+          method: "PUT",
+          headers: {
+            ...this.resolveHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+      }
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -200,14 +292,60 @@ export class WiiiClient {
   async patch<T>(path: string, body: unknown): Promise<T> {
     const url = new URL(path, this.baseUrl).toString();
 
-    const response = await adaptiveFetch(url, {
+    let response = await adaptiveFetch(url, {
       method: "PATCH",
       headers: {
-        ...this.headers,
+        ...this.resolveHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
     });
+
+    if (response.status === 401 && this.onUnauthorized) {
+      const refreshed = await this.onUnauthorized();
+      if (refreshed) {
+        response = await adaptiveFetch(url, {
+          method: "PATCH",
+          headers: {
+            ...this.resolveHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    return (await response.json()) as T;
+  }
+
+  /** POST request with multipart/form-data (e.g., file uploads) */
+  async postFormData<T>(path: string, formData: FormData): Promise<T> {
+    const url = new URL(path, this.baseUrl).toString();
+
+    // Do NOT set Content-Type — browser sets it with boundary automatically
+    const { "Content-Type": _, ...headersWithoutCT } = this.resolveHeaders();
+
+    let response = await adaptiveFetch(url, {
+      method: "POST",
+      headers: headersWithoutCT,
+      body: formData,
+    });
+
+    if (response.status === 401 && this.onUnauthorized) {
+      const refreshed = await this.onUnauthorized();
+      if (refreshed) {
+        const { "Content-Type": __, ...retryHeaders } = this.resolveHeaders();
+        response = await adaptiveFetch(url, {
+          method: "POST",
+          headers: retryHeaders,
+          body: formData,
+        });
+      }
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -229,16 +367,33 @@ export class WiiiClient {
   ): Promise<ReadableStream<Uint8Array>> {
     const url = new URL(path, this.baseUrl).toString();
 
-    const response = await adaptiveFetch(url, {
+    let response = await adaptiveFetch(url, {
       method: "POST",
       headers: {
-        ...this.headers,
+        ...this.resolveHeaders(),
         "Content-Type": "application/json",
         ...extraHeaders,
       },
       body: JSON.stringify(body),
       signal,
     });
+
+    // Sprint 192: Auto-retry on 401 (stream requests)
+    if (response.status === 401 && this.onUnauthorized) {
+      const refreshed = await this.onUnauthorized();
+      if (refreshed) {
+        response = await adaptiveFetch(url, {
+          method: "POST",
+          headers: {
+            ...this.resolveHeaders(),
+            "Content-Type": "application/json",
+            ...extraHeaders,
+          },
+          body: JSON.stringify(body),
+          signal,
+        });
+      }
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);

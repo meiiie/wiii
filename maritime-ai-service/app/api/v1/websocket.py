@@ -7,6 +7,8 @@ chat. Supports JSON message protocol with typing indicators and heartbeat.
 Sprint 12: Multi-Channel Gateway.
 """
 
+import asyncio
+import json
 import logging
 from typing import Dict, Set
 
@@ -133,47 +135,85 @@ manager = ConnectionManager()
 async def websocket_chat(
     websocket: WebSocket,
     session_id: str,
-    api_key: str = Query(default=None, alias="api_key"),
     organization_id: str = Query(default="", alias="org_id"),
 ):
     """
     WebSocket endpoint for real-time chat.
 
     Protocol:
+    - First message MUST be auth: {"type": "auth", "api_key": "xxx", "user_id": "...", "role": "..."}
+    - Server responds: {"type": "auth_ok"} or closes with 4001
     - Client sends: {"type": "message", "content": "question", "sender_id": "user-123"}
     - Server responds: {"type": "response", "content": "answer", "sources": [...]}
     - Heartbeat: Client sends {"type": "ping"}, server responds {"type": "pong"}
     - Typing: Server sends {"type": "typing", "content": true/false}
 
-    Auth: Pass api_key as query parameter: /ws/{session_id}?api_key=xxx
+    Sprint 194c (B2 CRITICAL): API key moved from query parameter to first-message
+    auth to prevent leaking credentials in access logs, browser history, and CDN logs.
     """
-    # Authenticate — reject invalid API keys (fail-closed)
-    if api_key:
-        try:
-            from app.core.config import settings
-            import hmac
-            if settings.api_key and not hmac.compare_digest(api_key, settings.api_key):
+    await websocket.accept()
+
+    # ── First-message auth (timeout 10s) ──────────────────────────
+    try:
+        raw_auth = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
+        auth_msg = json.loads(raw_auth)
+    except asyncio.TimeoutError:
+        await websocket.close(code=4001, reason="Auth timeout — send auth message within 10s")
+        return
+    except (json.JSONDecodeError, Exception) as e:
+        logger.warning("[WS] Auth message parse failed: %s", e)
+        await websocket.close(code=4001, reason="Invalid auth message format")
+        return
+
+    if auth_msg.get("type") != "auth":
+        await websocket.close(code=4001, reason="First message must be type='auth'")
+        return
+
+    api_key = auth_msg.get("api_key", "")
+    try:
+        from app.core.config import settings
+        import hmac as _hmac
+
+        if settings.api_key:
+            if not api_key or not _hmac.compare_digest(api_key, settings.api_key):
                 await websocket.close(code=4001, reason="Invalid API key")
                 return
-        except Exception as e:
-            logger.error("[WS] Auth module error: %s", e)
-            await websocket.close(code=4003, reason="Authentication error")
+        elif settings.environment == "production":
+            await websocket.close(code=4001, reason="API key required in production")
             return
-    elif not api_key:
-        # No API key provided — check if auth is required in production
-        try:
-            from app.core.config import settings
-            if settings.api_key and not settings.debug:
-                await websocket.close(code=4001, reason="API key required")
-                return
-        except Exception:
-            pass  # Allow connection if config unavailable (dev mode)
+    except Exception as e:
+        logger.error("[WS] Auth module error: %s", e)
+        await websocket.close(code=4003, reason="Authentication error")
+        return
 
-    await manager.connect(websocket, session_id)
+    # Sprint 194c (B7): Extract user context from auth message
+    ws_user_id = auth_msg.get("user_id", "anonymous")
+    ws_user_role = auth_msg.get("role", "student")
 
+    # Sprint 194c: In production, API key auth does NOT trust user_id/role
+    # (mirrors security.py require_auth behavior)
+    if settings.environment == "production":
+        if ws_user_role not in ("student", "teacher"):
+            logger.warning(
+                "[WS] SECURITY: API key auth attempted role=%s — downgraded to student",
+                ws_user_role,
+            )
+            ws_user_role = "student"
+
+    # Auth OK — register connection
+    manager._connections[session_id] = websocket
+    logger.info("[WS] Connected: session=%s user=%s", session_id, ws_user_id)
+
+    # Register user from auth message
+    msg_org_id = auth_msg.get("organization_id", "") or organization_id
+    if ws_user_id:
+        manager.register_user(session_id, ws_user_id, msg_org_id)
+
+    await websocket.send_json({"type": "auth_ok"})
+
+    # ── Message loop ──────────────────────────────────────────────
     try:
         while True:
-            # Receive message
             raw_data = await websocket.receive_text()
 
             try:
@@ -184,8 +224,7 @@ async def websocket_chat(
                 )
                 continue
 
-            # Register user_id from sender_id (first message auto-links)
-            # Also pick up org_id from message metadata (overrides query param)
+            # Update org_id from message metadata (overrides query param)
             msg_org_id = channel_msg.metadata.get("organization_id", "") or organization_id
             if channel_msg.sender_id:
                 manager.register_user(session_id, channel_msg.sender_id, msg_org_id)
@@ -210,13 +249,11 @@ async def websocket_chat(
                         from app.core.org_context import current_org_id
                         current_org_id.set(msg_org_id)
                     except Exception:
-                        pass  # org_context not available
+                        pass
 
                 # Convert to ChatRequest
                 chat_request = to_chat_request(channel_msg)
-                # Override session_id from URL
                 chat_request.session_id = session_id
-                # Pass organization_id if available
                 if msg_org_id:
                     chat_request.organization_id = msg_org_id
 
@@ -239,7 +276,6 @@ async def websocket_chat(
                     _ws_adapter.format_error("Internal processing error")
                 )
             finally:
-                # Stop typing indicator
                 await websocket.send_text(_ws_adapter.format_typing(False))
 
     except WebSocketDisconnect:

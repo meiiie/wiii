@@ -96,10 +96,33 @@ class UserContext(BaseModel):
     }
 
 
+class ImageInput(BaseModel):
+    """Image input for multimodal chat. Supports base64 and URL."""
+    type: Literal["base64", "url"] = Field(default="base64", description="Image source type")
+    media_type: str = Field(default="image/jpeg", description="MIME type: image/jpeg, image/png, image/webp, image/gif")
+    data: str = Field(..., description="Base64 encoded image data or URL")
+    detail: Literal["auto", "low", "high"] = Field(default="auto", description="Vision detail level (low=85 tokens, high=up to 1105 tokens)")
+
+    @field_validator("media_type")
+    @classmethod
+    def validate_media_type(cls, v: str) -> str:
+        allowed = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+        if v not in allowed:
+            raise ValueError(f"Unsupported media type: {v}. Allowed: {allowed}")
+        return v
+
+    @field_validator("data")
+    @classmethod
+    def validate_data_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Image data cannot be empty")
+        return v.strip()
+
+
 class ChatRequest(BaseModel):
     """
     Chat request payload from LMS Core.
-    
+
     v2.0: Added user_context for Contextual RAG pattern.
     Spec: AI_LMS_INTEGRATION_PROPOSAL.md
     Feature: ai-lms-integration-v2
@@ -149,6 +172,13 @@ class ChatRequest(BaseModel):
 
     # v7.0: Artifact Configuration (Sprint 167)
     enable_artifacts: Optional[bool] = Field(default=None, description="Enable interactive artifacts in streaming")
+
+    # v8.0: Multimodal Vision Input (Sprint 179)
+    images: Optional[list[ImageInput]] = Field(
+        default=None,
+        max_length=5,
+        description="Optional images for multimodal chat. Max 5 images per request."
+    )
 
     @field_validator("message")
     @classmethod

@@ -1,8 +1,11 @@
 """
 Unit tests for web search tools.
 
-Tests tool_web_search with mocked DuckDuckGo results.
+Tests tool_web_search with mocked search backends.
 No real web requests are made.
+
+Sprint 198: Serper is now primary, DuckDuckGo is fallback.
+Tests must mock Serper path to avoid real API calls.
 """
 import sys
 import pytest
@@ -11,15 +14,23 @@ from unittest.mock import patch, MagicMock
 
 @pytest.fixture(autouse=True)
 def mock_ddgs():
-    """Mock duckduckgo_search/ddgs module for all tests.
-
-    _search_sync() tries `from ddgs import DDGS` first, falls back to
-    `from duckduckgo_search import DDGS`.  Patch both so the mock wins
-    regardless of which package is installed.
-    """
+    """Mock duckduckgo_search/ddgs module for all tests."""
     mock_module = MagicMock()
     with patch.dict(sys.modules, {"ddgs": mock_module, "duckduckgo_search": mock_module}):
         yield mock_module
+
+
+@pytest.fixture(autouse=True)
+def disable_serper():
+    """Force DuckDuckGo path by disabling Serper (Sprint 198).
+
+    Without this, tool_web_search calls real Serper API if SERPER_API_KEY is set.
+    """
+    with patch(
+        "app.engine.tools.serper_web_search.is_serper_available",
+        return_value=False,
+    ):
+        yield
 
 
 class TestWebSearchTool:

@@ -1,0 +1,166 @@
+##############################################################################
+# Wiii Soul AGI — VPS Production Deployment
+# ===========================================================================
+#
+# Docker Compose for 24/7 autonomous Wiii on a VPS.
+# Recommended: GCP e2-standard-2 (2 vCPU, 8GB RAM)
+#
+# Usage:
+#   cp .env.soul-agi .env
+#   docker compose -f docker-compose.soul-agi.yml up -d
+#
+# Services:
+#   - wiii-app:     FastAPI backend with Living Agent enabled
+#   - wiii-postgres: PostgreSQL 16 + pgvector
+#   - wiii-ollama:   Ollama with local LLM (qwen3:4b)
+#   - cloudflared:   Cloudflare Tunnel for stable webhook URL
+##############################################################################
+
+services:
+  # =========================================================================
+  # Wiii Backend — FastAPI with Living Agent
+  # =========================================================================
+  app:
+    image: wiii/maritime-ai-service:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wiii-soul-app
+    env_file: .env
+    environment:
+      # Core
+      - DATABASE_URL=postgresql+asyncpg://wiii:wiii_secret@postgres:5432/wiii_ai
+      - OLLAMA_BASE_URL=http://ollama:11434
+
+      # Living Agent — Enable all features
+      - ENABLE_LIVING_AGENT=true
+      - LIVING_AGENT_ENABLE_SOCIAL_BROWSE=true
+      - LIVING_AGENT_ENABLE_SKILL_BUILDING=true
+      - LIVING_AGENT_ENABLE_JOURNAL=true
+      - LIVING_AGENT_ACTIVE_HOURS_START=5
+      - LIVING_AGENT_ACTIVE_HOURS_END=23
+      - LIVING_AGENT_LOCAL_MODEL=qwen3:4b
+      - LIVING_AGENT_HEARTBEAT_INTERVAL=1800
+      - LIVING_AGENT_REQUIRE_HUMAN_APPROVAL=false
+
+      # Weather
+      - LIVING_AGENT_ENABLE_WEATHER=true
+
+      # Briefing
+      - LIVING_AGENT_ENABLE_BRIEFING=true
+
+      # Routine tracking
+      - LIVING_AGENT_ENABLE_ROUTINE_TRACKING=true
+
+      # Dynamic goals
+      - LIVING_AGENT_ENABLE_DYNAMIC_GOALS=true
+
+      # Proactive messaging
+      - LIVING_AGENT_ENABLE_PROACTIVE_MESSAGING=true
+      - LIVING_AGENT_MAX_PROACTIVE_PER_DAY=3
+
+      # Autonomy
+      - LIVING_AGENT_AUTONOMY_LEVEL=1
+      - LIVING_AGENT_ENABLE_AUTONOMY_GRADUATION=true
+
+      # Soul AGI (Sprint 203-209)
+      - ENABLE_NATURAL_CONVERSATION=true
+      - ENABLE_NARRATIVE_CONTEXT=true
+      - ENABLE_SKILL_TOOL_BRIDGE=true
+      - ENABLE_SKILL_METRICS=true
+
+      # Cross-Platform Identity
+      - ENABLE_CROSS_PLATFORM_IDENTITY=true
+      - ENABLE_ZALO_WEBHOOK=true
+      - DEFAULT_PERSONALITY_MODE=soul
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/live"]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 5
+
+  # =========================================================================
+  # PostgreSQL — pgvector for semantic search
+  # =========================================================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: wiii-soul-postgres
+    environment:
+      POSTGRES_USER: wiii
+      POSTGRES_PASSWORD: wiii_secret
+      POSTGRES_DB: wiii_ai
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wiii -d wiii_ai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      postgres
+        -c max_connections=100
+        -c shared_buffers=256MB
+        -c effective_cache_size=512MB
+        -c work_mem=4MB
+        -c maintenance_work_mem=64MB
+
+  # =========================================================================
+  # Ollama — Local LLM for zero-cost autonomous tasks
+  # =========================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: wiii-soul-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_NUM_PARALLEL=1
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_KEEP_ALIVE=24h
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  # =========================================================================
+  # Cloudflare Tunnel — Stable webhook URL (free)
+  # =========================================================================
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: wiii-soul-tunnel
+    command: tunnel run --token ${CF_TUNNEL_TOKEN}
+    restart: unless-stopped
+    depends_on:
+      - app
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+volumes:
+  postgres_data:
+    driver: local
+  ollama_data:
+    driver: local

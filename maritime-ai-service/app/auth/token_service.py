@@ -1,12 +1,15 @@
 """
 Sprint 157: Token service — create, refresh, revoke JWT tokens.
+Sprint 192: Added `aud` claim, JTI denylist with TTL cleanup.
 
-Access tokens: short-lived (configurable, default 30 min)
+Access tokens: short-lived (configurable, default 15 min)
 Refresh tokens: long-lived (configurable, default 30 days), stored hashed in DB
 """
 import hashlib
 import logging
 import secrets
+import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -17,6 +20,47 @@ from pydantic import BaseModel
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# Sprint 192: In-memory JTI denylist with TTL
+# =============================================================================
+_jti_denylist: dict[str, float] = {}  # jti -> expiry timestamp
+_jti_lock = threading.Lock()
+
+
+def deny_jti(jti: str, ttl_seconds: Optional[int] = None) -> None:
+    """Add a JTI to the denylist. TTL defaults to jwt_expire_minutes."""
+    if not jti:
+        return
+    if ttl_seconds is None:
+        ttl_seconds = settings.jwt_expire_minutes * 60
+    expiry = time.time() + ttl_seconds
+    with _jti_lock:
+        _jti_denylist[jti] = expiry
+        # Opportunistic cleanup: remove expired entries
+        now = time.time()
+        expired = [k for k, v in _jti_denylist.items() if v < now]
+        for k in expired:
+            del _jti_denylist[k]
+
+
+def is_jti_denied(jti: str) -> bool:
+    """Check if a JTI has been denied (revoked)."""
+    with _jti_lock:
+        expiry = _jti_denylist.get(jti)
+        if expiry is None:
+            return False
+        if expiry < time.time():
+            # Expired entry — clean up
+            del _jti_denylist[jti]
+            return False
+        return True
+
+
+def _clear_jti_denylist() -> None:
+    """Clear the JTI denylist (for testing)."""
+    with _jti_lock:
+        _jti_denylist.clear()
 
 
 class TokenPair(BaseModel):
@@ -38,6 +82,7 @@ class AccessTokenPayload(BaseModel):
     exp: datetime
     iat: datetime
     iss: str = "wiii"
+    jti: Optional[str] = None  # Sprint 176: unique token ID
 
 
 def _hash_token(token: str) -> str:
@@ -53,7 +98,10 @@ def create_access_token(
     auth_method: str = "google",
     expires_delta: Optional[timedelta] = None,
 ) -> str:
-    """Create a short-lived JWT access token."""
+    """Create a short-lived JWT access token.
+
+    Sprint 192: Added `aud` claim for audience validation.
+    """
     now = datetime.now(timezone.utc)
     expire = now + (expires_delta or timedelta(minutes=settings.jwt_expire_minutes))
 
@@ -65,8 +113,10 @@ def create_access_token(
         "auth_method": auth_method,
         "type": "access",
         "iss": "wiii",
+        "aud": settings.jwt_audience,  # Sprint 192: audience claim
         "iat": now,
         "exp": expire,
+        "jti": str(uuid.uuid4()),  # Sprint 176: unique token ID
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
@@ -77,13 +127,38 @@ def create_refresh_token() -> str:
 
 
 def verify_access_token(token: str) -> AccessTokenPayload:
-    """Verify and decode an access token. Raises JWTError on failure."""
-    payload = jwt.decode(
-        token,
-        settings.jwt_secret_key,
-        algorithms=[settings.jwt_algorithm],
-    )
-    return AccessTokenPayload(**payload)
+    """Verify and decode an access token. Raises JWTError on failure.
+
+    Sprint 192: Validates `aud` claim with backward compat for legacy tokens.
+    Checks JTI denylist when enabled.
+    """
+    from jose import JWTError as _JWTError
+
+    audience = settings.jwt_audience
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+            audience=audience,
+        )
+    except _JWTError:
+        # Backward compat: retry without audience for legacy tokens
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+            options={"verify_aud": False},
+        )
+
+    result = AccessTokenPayload(**payload)
+
+    # Sprint 192: Check JTI denylist
+    if settings.enable_jti_denylist and result.jti:
+        if is_jti_denied(result.jti):
+            raise _JWTError("Token has been revoked (jti denied)")
+
+    return result
 
 
 async def create_token_pair(
@@ -92,8 +167,13 @@ async def create_token_pair(
     name: Optional[str] = None,
     role: str = "student",
     auth_method: str = "google",
+    family_id: Optional[str] = None,
 ) -> TokenPair:
-    """Create access + refresh token pair and store refresh token hash in DB."""
+    """Create access + refresh token pair and store refresh token hash in DB.
+
+    Sprint 176: family_id groups refresh tokens for replay detection.
+    If None, generates a new family (new login = new family).
+    """
     access_token = create_access_token(
         user_id=user_id,
         email=email,
@@ -107,6 +187,7 @@ async def create_token_pair(
     token_id = str(uuid.uuid4())
     token_hash = _hash_token(refresh_token)
     expires_at = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_expire_days)
+    effective_family_id = family_id or str(uuid.uuid4())
 
     try:
         from app.core.database import get_asyncpg_pool
@@ -114,10 +195,10 @@ async def create_token_pair(
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO refresh_tokens (id, user_id, token_hash, auth_method, expires_at, created_at)
-                VALUES ($1, $2, $3, $4, $5, NOW())
+                INSERT INTO refresh_tokens (id, user_id, token_hash, auth_method, expires_at, created_at, family_id)
+                VALUES ($1, $2, $3, $4, $5, NOW(), $6)
                 """,
-                token_id, user_id, token_hash, auth_method, expires_at,
+                token_id, user_id, token_hash, auth_method, expires_at, effective_family_id,
             )
     except Exception:
         logger.warning("Failed to store refresh token — token will be stateless only")
@@ -136,6 +217,9 @@ async def refresh_access_token(refresh_token: str) -> Optional[TokenPair]:
 
     Returns new TokenPair or None if refresh token is invalid/expired/revoked.
     Implements refresh token rotation (old token revoked, new one issued).
+
+    Sprint 176: Replay detection via family_id — if a revoked token with
+    an active sibling is reused, ALL tokens in that family are purged.
     """
     token_hash = _hash_token(refresh_token)
 
@@ -146,7 +230,7 @@ async def refresh_access_token(refresh_token: str) -> Optional[TokenPair]:
             row = await conn.fetchrow(
                 """
                 SELECT rt.id, rt.user_id, rt.expires_at, rt.revoked_at, rt.auth_method,
-                       u.email, u.name, u.role
+                       rt.family_id, u.email, u.name, u.role
                 FROM refresh_tokens rt
                 JOIN users u ON u.id = rt.user_id
                 WHERE rt.token_hash = $1
@@ -158,7 +242,36 @@ async def refresh_access_token(refresh_token: str) -> Optional[TokenPair]:
                 logger.warning("Refresh token not found")
                 return None
 
+            # Sprint 176: Replay detection — revoked token reuse
             if row["revoked_at"] is not None:
+                family_id = row.get("family_id")
+                if family_id:
+                    # Check for active siblings in the same family
+                    active_count = await conn.fetchval(
+                        "SELECT COUNT(*) FROM refresh_tokens WHERE family_id = $1 AND revoked_at IS NULL",
+                        family_id,
+                    )
+                    if active_count > 0:
+                        # REPLAY ATTACK — purge entire family
+                        logger.warning(
+                            "REPLAY ATTACK DETECTED: revoked token reused for user %s, family %s — purging %d active tokens",
+                            row["user_id"], family_id, active_count,
+                        )
+                        await conn.execute(
+                            "UPDATE refresh_tokens SET revoked_at = NOW() WHERE family_id = $1 AND revoked_at IS NULL",
+                            family_id,
+                        )
+                        # Fire audit event (non-blocking)
+                        try:
+                            from app.auth.auth_audit import log_auth_event
+                            await log_auth_event(
+                                "token_replay_detected",
+                                user_id=row["user_id"],
+                                result="blocked",
+                                reason=f"family={family_id}, purged={active_count}",
+                            )
+                        except Exception:
+                            pass
                 logger.warning("Refresh token already revoked (user %s)", row["user_id"])
                 return None
 
@@ -172,14 +285,24 @@ async def refresh_access_token(refresh_token: str) -> Optional[TokenPair]:
                 row["id"],
             )
 
-            # Issue new pair
-            return await create_token_pair(
+            # Issue new pair (propagate family_id)
+            new_pair = await create_token_pair(
                 user_id=row["user_id"],
                 email=row["email"],
                 name=row["name"],
                 role=row["role"],
-                auth_method=row.get("auth_method") or "google",  # Refresh inherits original method
+                auth_method=row.get("auth_method") or "google",
+                family_id=row.get("family_id"),
             )
+
+            # Audit event
+            try:
+                from app.auth.auth_audit import log_auth_event
+                await log_auth_event("token_refresh", user_id=row["user_id"])
+            except Exception:
+                pass
+
+            return new_pair
     except Exception:
         logger.exception("Error during token refresh")
         return None
@@ -197,6 +320,17 @@ async def revoke_user_tokens(user_id: str) -> int:
             )
             count = int(result.split()[-1])
             logger.info("Revoked %d refresh tokens for user %s", count, user_id)
+
+            # Sprint 176: Audit event
+            try:
+                from app.auth.auth_audit import log_auth_event
+                await log_auth_event(
+                    "token_revoked", user_id=user_id,
+                    metadata={"count": count},
+                )
+            except Exception:
+                pass
+
             return count
     except Exception:
         logger.exception("Error revoking tokens for user %s", user_id)

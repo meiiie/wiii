@@ -6,12 +6,30 @@ Verifies:
 - Circuit breaker recovers after timeout
 - Timeout handling for slow searches
 - Success resets failure count
+
+Sprint 198: Serper is now primary, DuckDuckGo is fallback.
+Tests must disable Serper to exercise the DuckDuckGo/_search_sync path.
 """
 
 import time
+import pytest
 from unittest.mock import patch, MagicMock
 
 import app.engine.tools.web_search_tools as ws
+
+
+@pytest.fixture(autouse=True)
+def disable_serper():
+    """Force DuckDuckGo path by disabling Serper (Sprint 198).
+
+    Without this, tool_web_search calls real Serper API if SERPER_API_KEY is set,
+    bypassing any _search_sync patches.
+    """
+    with patch(
+        "app.engine.tools.serper_web_search.is_serper_available",
+        return_value=False,
+    ):
+        yield
 
 
 def _reset_cb():

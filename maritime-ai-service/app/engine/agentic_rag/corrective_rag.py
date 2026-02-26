@@ -19,7 +19,7 @@ Features:
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any, Tuple, AsyncGenerator
 
 from app.engine.agentic_rag.query_analyzer import (
@@ -71,6 +71,7 @@ class CorrectiveRAGResult:
     reasoning_trace: Optional[ReasoningTrace] = None  # Feature: reasoning-trace
     thinking_content: Optional[str] = None  # Legacy: structured summary (fallback)
     thinking: Optional[str] = None  # CHỈ THỊ SỐ 29: Natural Vietnamese thinking
+    evidence_images: List[Dict[str, Any]] = field(default_factory=list)  # Sprint 189b
 
     @property
     def has_warning(self) -> bool:
@@ -88,7 +89,7 @@ class CorrectiveRAG:
         crag = CorrectiveRAG(rag_agent)
         result = await crag.process("What is Rule 15?", context)
         if result.has_warning:
-            print(f"Warning: {result.verification_result.warning}")
+            logger.warning("Verification warning: %s", result.verification_result.warning)
     """
     
     def __init__(
@@ -241,9 +242,15 @@ class CorrectiveRAG:
                             adapted.adaptation_time_ms, adapted.adaptation_method,
                         )
                         
+                        # Sprint 189b: Ensure cached sources have content_type
+                        _cached_sources = cache_result.value.get("sources", [])
+                        for _cs in _cached_sources:
+                            if isinstance(_cs, dict) and "content_type" not in _cs:
+                                _cs["content_type"] = "text"
+
                         return CorrectiveRAGResult(
                             answer=adapted.answer,
-                            sources=cache_result.value.get("sources", []),
+                            sources=_cached_sources,
                             iterations=0,
                             confidence=cache_result.value.get("confidence", 0.9),
                             reasoning_trace=None,
@@ -253,9 +260,14 @@ class CorrectiveRAG:
                     else:
                         # Fallback for edge cases
                         cached_data = cache_result.value
+                        _cached_sources = cached_data.get("sources", [])
+                        for _cs in _cached_sources:
+                            if isinstance(_cs, dict) and "content_type" not in _cs:
+                                _cs["content_type"] = "text"
+
                         return CorrectiveRAGResult(
                             answer=cached_data.get("answer", ""),
-                            sources=cached_data.get("sources", []),
+                            sources=_cached_sources,
                             iterations=0,
                             confidence=cached_data.get("confidence", 0.9),
                             reasoning_trace=None,
@@ -282,6 +294,51 @@ class CorrectiveRAG:
             details={"complexity": analysis.complexity.value, "is_domain": analysis.is_domain_related, "topics": analysis.detected_topics}
         )
         
+        # Step 1.5: Adaptive RAG routing (Sprint 187)
+        adaptive_decision = None
+        if settings.enable_adaptive_rag:
+            try:
+                from app.engine.agentic_rag.adaptive_rag import route_query
+                adaptive_decision = route_query(
+                    query=query,
+                    complexity=analysis.complexity.value,
+                    is_domain_related=analysis.is_domain_related,
+                    detected_topics=analysis.detected_topics,
+                    requires_multi_step=analysis.requires_multi_step,
+                )
+                logger.info(
+                    "[CRAG] Adaptive RAG: strategy=%s, reason=%s",
+                    adaptive_decision.strategy.value,
+                    adaptive_decision.reason,
+                )
+            except Exception as e:
+                logger.warning("[CRAG] Adaptive RAG routing failed: %s", e)
+
+        # Step 1.6: HyDE embedding (Sprint 187)
+        hyde_embedding = None
+        if settings.enable_hyde:
+            use_hyde = True
+            if adaptive_decision:
+                from app.engine.agentic_rag.adaptive_rag import should_use_hyde
+                use_hyde = should_use_hyde(adaptive_decision)
+            if use_hyde:
+                try:
+                    from app.engine.agentic_rag.hyde_generator import generate_hyde_embedding, blend_embeddings
+                    hyde_result = await generate_hyde_embedding(query, query_embedding)
+                    if hyde_result.used and hyde_result.hyde_embedding:
+                        hyde_embedding = blend_embeddings(
+                            query_embedding or [],
+                            hyde_result.hyde_embedding,
+                            alpha=settings.hyde_blend_alpha,
+                        )
+                        logger.info(
+                            "[CRAG] HyDE: blended embedding (%.0fms gen + %.0fms emb)",
+                            hyde_result.generation_time_ms,
+                            hyde_result.embedding_time_ms,
+                        )
+                except Exception as e:
+                    logger.warning("[CRAG] HyDE generation failed: %s", e)
+
         # Step 2: Initial retrieval
         current_query = query
         documents = []
@@ -289,7 +346,7 @@ class CorrectiveRAG:
         was_rewritten = False
         rewritten_query = None
         iterations = 0
-        
+
         for iteration in range(self._max_iterations):
             iterations = iteration + 1
             
@@ -413,6 +470,57 @@ class CorrectiveRAG:
                 )
                 tracer.record_correction(f"Không tìm thấy doc liên quan (score={grading_result.avg_score:.1f}/10)")
         
+        # Step 4.5: Visual RAG enrichment (Sprint 179+)
+        if settings.enable_visual_rag and documents:
+            try:
+                from app.engine.agentic_rag.visual_rag import enrich_documents_with_visual_context
+
+                visual_result = await enrich_documents_with_visual_context(
+                    documents=documents,
+                    query=query,
+                    max_images=settings.visual_rag_max_images,
+                )
+                if visual_result.total_images_analyzed > 0:
+                    documents = visual_result.enriched_documents
+                    logger.info(
+                        "[CRAG] Visual RAG: enriched %d documents with image analysis",
+                        visual_result.total_images_analyzed,
+                    )
+            except Exception as e:
+                logger.warning("[CRAG] Visual RAG enrichment failed, continuing without: %s", e)
+
+        # Step 4.6: Graph RAG enrichment (Sprint 182)
+        graph_entity_context = ""
+        if settings.enable_graph_rag and documents:
+            try:
+                from app.engine.agentic_rag.graph_rag_retriever import enrich_with_graph_context
+
+                graph_result = await enrich_with_graph_context(
+                    documents=documents,
+                    query=query,
+                )
+                if graph_result.entity_context_text:
+                    graph_entity_context = graph_result.entity_context_text
+                    logger.info(
+                        "[CRAG] Graph RAG: %d entities, mode=%s (%.0fms)",
+                        len(graph_result.entities),
+                        graph_result.mode,
+                        graph_result.total_time_ms,
+                    )
+                # Append additional graph-discovered docs
+                if graph_result.additional_docs:
+                    documents.extend(graph_result.additional_docs)
+                    logger.info(
+                        "[CRAG] Graph RAG: added %d additional documents",
+                        len(graph_result.additional_docs),
+                    )
+            except Exception as e:
+                logger.warning("[CRAG] Graph RAG enrichment failed, continuing without: %s", e)
+
+        # Inject entity context into generation context
+        if graph_entity_context:
+            context["entity_context"] = graph_entity_context
+
         # Step 5: Generate answer
         tracer.start_step(StepNames.GENERATION, "Tạo câu trả lời từ context")
         logger.info("[CRAG] Step 5: Generating answer")
@@ -580,6 +688,21 @@ class CorrectiveRAG:
             except Exception as e:
                 logger.warning("[CRAG] Failed to cache response: %s", e)
         
+        # Sprint 189b: Collect evidence images from retrieved documents
+        evidence_images = []
+        if sources:
+            try:
+                node_ids = [s.get("node_id", "") for s in sources if s.get("node_id")]
+                if node_ids:
+                    from app.engine.agentic_rag.document_retriever import DocumentRetriever
+                    ev_imgs = await DocumentRetriever.collect_evidence_images(node_ids, max_images=3)
+                    evidence_images = [
+                        {"url": img.url, "page_number": img.page_number, "document_id": img.document_id}
+                        for img in ev_imgs
+                    ]
+            except Exception as e:
+                logger.warning("[CRAG] Evidence image collection failed: %s", e)
+
         return CorrectiveRAGResult(
             answer=answer,
             sources=sources,
@@ -592,7 +715,8 @@ class CorrectiveRAG:
             confidence=confidence,
             reasoning_trace=reasoning_trace,
             thinking_content=thinking_content,  # Structured summary (legacy)
-            thinking=thinking  # CHỈ THỊ SỐ 29: Natural thinking
+            thinking=thinking,  # CHỈ THỊ SỐ 29: Natural thinking
+            evidence_images=evidence_images,  # Sprint 189b
         )
     
     async def _retrieve(
@@ -644,6 +768,8 @@ class CorrectiveRAG:
                         "page_number": r.page_number if hasattr(r, 'page_number') else None,
                         "document_id": r.document_id if hasattr(r, 'document_id') else None,
                         "bounding_boxes": r.bounding_boxes if hasattr(r, 'bounding_boxes') else None,
+                        # Sprint 179+: Visual RAG needs content_type
+                        "content_type": r.content_type if hasattr(r, 'content_type') else "text",
                     }
                     documents.append(doc)
                 
@@ -780,8 +906,32 @@ class CorrectiveRAG:
             avoid_rules = identity.get("response_style", {}).get("avoid", [])
             avoid_text = " ".join(f"Tránh: {r}." for r in avoid_rules) if avoid_rules else ""
 
-            messages = [
-                SystemMessage(content=(
+            # Sprint 204: Natural guidance vs legacy constraints
+            try:
+                _natural = getattr(settings, "enable_natural_conversation", False) is True
+            except Exception:
+                _natural = False
+
+            if _natural:
+                # Sprint 204: Identity-based guidance (Anthropic 2026 positive framing)
+                _sys_content = (
+                    f"Bạn là {settings.app_name}. {personality} "
+                    f"{name_hint}"
+                    f"{avoid_text} "
+                    f"Chuyên ngành: {domain_name}. "
+                    f"Hãy dùng kiến thức tổng quát của bạn về {domain_name} để trả lời. "
+                    f"Wiii luôn cố gắng giúp đỡ — khi không có tài liệu cụ thể, "
+                    f"Wiii dùng kiến thức chung và ghi chú nguồn để người dùng tự xác minh thêm. "
+                    f"Nếu câu hỏi nằm ngoài {domain_name}, Wiii lịch sự hướng dẫn lại. "
+                    "Nếu là lời chào, Wiii chào lại tự nhiên theo tính cách của mình. "
+                    f"Với câu hỏi về {domain_name}, Wiii trả lời đầy đủ và ghi chú: "
+                    "'(Thông tin dựa trên kiến thức tổng quát, chưa xác minh từ tài liệu gốc)' "
+                    f"{emoji_usage} "
+                    "Wiii trả lời bằng tiếng Việt, đi thẳng vào nội dung."
+                )
+            else:
+                # LEGACY: constraint-based fallback prompt
+                _sys_content = (
                     f"Bạn là {settings.app_name}. {personality} "
                     f"{name_hint}"
                     f"{avoid_text} "
@@ -803,7 +953,10 @@ class CorrectiveRAG:
                     "TUYỆT ĐỐI KHÔNG trả lời bằng tiếng Anh. "
                     "QUAN TRỌNG: CHỈ trả lời nội dung, KHÔNG bao gồm quá trình suy nghĩ, "
                     "phân tích hay reasoning. Đi thẳng vào câu trả lời."
-                )),
+                )
+
+            messages = [
+                SystemMessage(content=_sys_content),
                 HumanMessage(content=query),
             ]
             response = await llm.ainvoke(messages)
@@ -863,7 +1016,8 @@ class CorrectiveRAG:
                 conversation_history=history,
                 user_role=user_role,
                 user_name=user_name,
-                is_follow_up=is_follow_up
+                is_follow_up=is_follow_up,
+                entity_context=context.get("entity_context", ""),
             )
 
             # CHỈ THỊ SỐ 29: Capture native_thinking from RAGResponse
@@ -947,16 +1101,37 @@ class CorrectiveRAG:
         except Exception as e:
             logger.error("[CRAG-V3] Analysis failed: %s", e)
             yield {"type": "error", "content": f"Lỗi phân tích: {e}"}
+            yield {"type": "done", "content": ""}  # Sprint 189b: ensure done
             return
         
+        # Sprint 187: Adaptive RAG routing (streaming path)
+        adaptive_decision_stream = None
+        if settings.enable_adaptive_rag:
+            try:
+                from app.engine.agentic_rag.adaptive_rag import route_query
+                adaptive_decision_stream = route_query(
+                    query=query,
+                    complexity=analysis.complexity.value,
+                    is_domain_related=analysis.is_domain_related,
+                    detected_topics=analysis.detected_topics,
+                    requires_multi_step=analysis.requires_multi_step,
+                )
+                yield {
+                    "type": "thinking",
+                    "content": f"Chiến lược tìm kiếm: {adaptive_decision_stream.strategy.value} — {adaptive_decision_stream.reason}",
+                    "step": "adaptive_rag",
+                }
+            except Exception as e:
+                logger.warning("[CRAG-V3] Adaptive RAG routing failed: %s", e)
+
         # ═══════════════════════════════════════════════════════════════════
         # PHASE 2: Retrieval (hybrid search + optional graphrag)
         # ═══════════════════════════════════════════════════════════════════
         yield {"type": "status", "content": "Tìm kiếm tài liệu"}
-        
+
         tracer.start_step(StepNames.RETRIEVAL, "Tìm kiếm tài liệu")
         logger.info("[CRAG-V3] Phase 2: Retrieving documents")
-        
+
         try:
             documents = await self._retrieve(query, context)
             tracer.end_step(
@@ -983,6 +1158,58 @@ class CorrectiveRAG:
                 "details": {"doc_count": len(documents)}
             }
             
+            # Sprint 179+: Visual RAG enrichment (streaming path)
+            if settings.enable_visual_rag and documents:
+                try:
+                    from app.engine.agentic_rag.visual_rag import enrich_documents_with_visual_context
+
+                    yield {"type": "status", "content": "Phân tích hình ảnh tài liệu"}
+                    visual_result = await enrich_documents_with_visual_context(
+                        documents=documents,
+                        query=query,
+                        max_images=settings.visual_rag_max_images,
+                    )
+                    if visual_result.total_images_analyzed > 0:
+                        documents = visual_result.enriched_documents
+                        yield {
+                            "type": "thinking",
+                            "content": f"Phân tích {visual_result.total_images_analyzed} hình ảnh từ tài liệu ({visual_result.total_time_ms:.0f}ms)",
+                            "step": "visual_rag",
+                        }
+                        logger.info(
+                            "[CRAG-V3] Visual RAG: enriched %d documents",
+                            visual_result.total_images_analyzed,
+                        )
+                except Exception as e:
+                    logger.warning("[CRAG-V3] Visual RAG failed: %s", e)
+
+            # Sprint 182: Graph RAG enrichment (streaming path)
+            graph_entity_context_streaming = ""
+            if settings.enable_graph_rag and documents:
+                try:
+                    from app.engine.agentic_rag.graph_rag_retriever import enrich_with_graph_context
+
+                    yield {"type": "status", "content": "Phân tích đồ thị tri thức"}
+                    graph_result = await enrich_with_graph_context(
+                        documents=documents,
+                        query=query,
+                    )
+                    if graph_result.entity_context_text:
+                        graph_entity_context_streaming = graph_result.entity_context_text
+                        yield {
+                            "type": "thinking",
+                            "content": f"Đồ thị tri thức: {len(graph_result.entities)} thực thể, chế độ {graph_result.mode} ({graph_result.total_time_ms:.0f}ms)",
+                            "step": "graph_rag",
+                        }
+                    if graph_result.additional_docs:
+                        documents.extend(graph_result.additional_docs)
+                        logger.info(
+                            "[CRAG-V3] Graph RAG: added %d additional documents",
+                            len(graph_result.additional_docs),
+                        )
+                except Exception as e:
+                    logger.warning("[CRAG-V3] Graph RAG failed: %s", e)
+
             if not documents:
                 # Sprint 165: LLM fallback — use general knowledge instead of hardcoded error
                 yield {"type": "status", "content": "Dùng kiến thức tổng quát...", "step": "llm_fallback"}
@@ -995,6 +1222,9 @@ class CorrectiveRAG:
                     sources=[],
                     query_analysis=analysis,
                     confidence=45.0,
+                    was_rewritten=False,          # Sprint 189b-R5: parity with sync
+                    rewritten_query=None,         # Sprint 189b-R5
+                    evidence_images=[],           # Sprint 189b: explicit empty
                 )}
                 yield {"type": "done", "content": ""}
                 return
@@ -1002,6 +1232,7 @@ class CorrectiveRAG:
         except Exception as e:
             logger.error("[CRAG-V3] Retrieval failed: %s", e)
             yield {"type": "error", "content": f"Lỗi tìm kiếm: {e}"}
+            yield {"type": "done", "content": ""}  # Sprint 189b: ensure done
             return
         
         # ═══════════════════════════════════════════════════════════════════
@@ -1112,14 +1343,31 @@ class CorrectiveRAG:
                     "page_number": doc.get("page_number"),
                     "image_url": doc.get("image_url"),
                     "document_id": doc.get("document_id"),
-                    "bounding_boxes": doc.get("bounding_boxes")
+                    "node_id": doc.get("node_id"),              # Sprint 189b-R5: parity with sync
+                    "bounding_boxes": doc.get("bounding_boxes"),
+                    "content_type": doc.get("content_type"),    # Sprint 189b
                 })
             
+            # Sprint 189b: Collect evidence images from retrieved documents
+            evidence_image_list = []
+            if documents:
+                try:
+                    node_ids = [d.get("node_id", "") for d in documents if d.get("node_id")]
+                    if node_ids:
+                        from app.engine.agentic_rag.document_retriever import DocumentRetriever
+                        ev_imgs = await DocumentRetriever.collect_evidence_images(node_ids, max_images=3)
+                        evidence_image_list = [
+                            {"url": img.url, "page_number": img.page_number, "document_id": img.document_id}
+                            for img in ev_imgs
+                        ]
+                except Exception as e:
+                    logger.warning("[CRAG-V3] Evidence image collection failed: %s", e)
+
             # Get user context
             user_context = context  # The dict passed to process_streaming
             user_role = user_context.get("user_role", "student")
             history = user_context.get("conversation_history", "")
-            
+
             # SOTA PATTERN: Defensive defaults for data quality issues
             # Following OpenAI/Anthropic pattern - graceful degradation, never crash
             from app.models.knowledge_graph import KnowledgeNode, NodeType
@@ -1152,7 +1400,7 @@ class CorrectiveRAG:
                 nodes=knowledge_nodes,
                 conversation_history=history,
                 user_role=user_role,
-                entity_context=""
+                entity_context=graph_entity_context_streaming
             ):
                 token_count += 1
                 full_answer_parts.append(chunk)
@@ -1169,8 +1417,10 @@ class CorrectiveRAG:
             
         except Exception as e:
             logger.error("[CRAG-V3] Generation failed: %s", e)
-            yield {"type": "answer", "content": f"Lỗi khi tạo câu trả lời: {e}"}
-        
+            _error_msg = f"Lỗi khi tạo câu trả lời: {e}"
+            yield {"type": "answer", "content": _error_msg}
+            full_answer_parts.append(_error_msg)  # Sprint 189b: capture in result
+
         # ═══════════════════════════════════════════════════════════════════
         # PHASE 6: Finalize (sources + metadata)
         # ═══════════════════════════════════════════════════════════════════
@@ -1185,7 +1435,11 @@ class CorrectiveRAG:
         
         # Build reasoning trace
         reasoning_trace = tracer.build_trace(final_confidence=confidence / 100)
-        
+
+        # Sprint 189b-R5: Build thinking_content from tracer (parity with sync path)
+        thinking_content = tracer.build_thinking_summary()
+        # Note: native_thinking unavailable in streaming (generate_response_streaming yields text only)
+
         # Emit sources
         yield {
             "type": "sources",
@@ -1204,17 +1458,18 @@ class CorrectiveRAG:
                 reasoning_dict = reasoning_trace.dict()
         
         yield {
-            "type": "metadata", 
+            "type": "metadata",
             "content": {
                 "reasoning_trace": reasoning_dict,
                 "processing_time": total_time,
                 "confidence": confidence,
                 "model": settings.rag_model_version,
                 "was_rewritten": rewritten_query is not None,
-                "doc_count": len(documents)
+                "doc_count": len(documents),
+                "evidence_images": evidence_image_list,  # Sprint 189b
             }
         }
-        
+
         # Sprint 144: Yield CorrectiveRAGResult for rag_node to capture
         full_answer = "".join(full_answer_parts)
         yield {
@@ -1228,6 +1483,8 @@ class CorrectiveRAG:
                 rewritten_query=rewritten_query,
                 confidence=confidence,
                 reasoning_trace=reasoning_trace,
+                thinking_content=thinking_content,  # Sprint 189b-R5: parity with sync
+                evidence_images=evidence_image_list,  # Sprint 189b
             )
         }
 

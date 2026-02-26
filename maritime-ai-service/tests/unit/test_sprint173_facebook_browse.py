@@ -36,6 +36,11 @@ def _make_settings(**overrides):
     s.living_agent_active_hours_end = 23
     s.serper_api_key = "test-serper-key"
     s.enable_living_agent = True
+    # Flags added in later sprints (default off in tests)
+    s.living_agent_enable_weather = False
+    s.living_agent_enable_briefing = False
+    s.living_agent_enable_skill_learning = False
+    s.living_agent_enable_proactive_messaging = False
     for k, v in overrides.items():
         setattr(s, k, v)
     return s
@@ -308,8 +313,9 @@ class TestTopicRouting:
 class TestHeartbeatFacebookIntegration:
     """Verify heartbeat includes 'facebook' in browse targets."""
 
-    def test_facebook_in_browse_targets(self):
-        """_plan_actions includes 'facebook' as possible browse target."""
+    @pytest.mark.asyncio
+    async def test_browse_target_is_auto(self):
+        """_plan_actions BROWSE_SOCIAL uses target='auto' (Phase 3A smart topic)."""
         from app.engine.living_agent.heartbeat import HeartbeatScheduler
         from app.engine.living_agent.models import ActionType
 
@@ -321,32 +327,22 @@ class TestHeartbeatFacebookIntegration:
             living_agent_max_actions_per_heartbeat=5,
         )
 
-        # Run _plan_actions many times to verify facebook appears
-        facebook_appeared = False
         with patch(_SETTINGS_PATCH, settings):
-            for _ in range(200):
-                actions = scheduler._plan_actions("curious", 0.8)
-                browse_actions = [a for a in actions if a.action_type == ActionType.BROWSE_SOCIAL]
-                for a in browse_actions:
-                    if a.target == "facebook":
-                        facebook_appeared = True
-                        break
-                if facebook_appeared:
-                    break
+            actions = await scheduler._plan_actions("curious", 0.8)
+            browse_actions = [a for a in actions if a.action_type == ActionType.BROWSE_SOCIAL]
+            assert len(browse_actions) >= 1
+            # Phase 3A: target is "auto" (smart topic selection at execution time)
+            assert browse_actions[0].target == "auto"
 
-        assert facebook_appeared, "facebook never appeared as browse target in 200 iterations"
-
-    def test_browse_targets_include_all_four(self):
-        """Browse target list includes news, tech, maritime, and facebook."""
+    def test_browse_target_auto_in_source(self):
+        """_plan_actions source contains 'auto' target for BROWSE_SOCIAL."""
         import inspect
         from app.engine.living_agent import heartbeat
         source = inspect.getsource(heartbeat.HeartbeatScheduler._plan_actions)
-        assert '"facebook"' in source, "facebook not in _plan_actions random.choice list"
-        assert '"news"' in source
-        assert '"tech"' in source
-        assert '"maritime"' in source
+        assert '"auto"' in source, "auto not in _plan_actions source"
 
-    def test_plan_actions_browse_when_energy_high(self):
+    @pytest.mark.asyncio
+    async def test_plan_actions_browse_when_energy_high(self):
         """With energy > 0.5 and social_browse enabled, BROWSE_SOCIAL is planned."""
         from app.engine.living_agent.heartbeat import HeartbeatScheduler
         from app.engine.living_agent.models import ActionType
@@ -360,7 +356,7 @@ class TestHeartbeatFacebookIntegration:
         )
 
         with patch(_SETTINGS_PATCH, settings):
-            actions = scheduler._plan_actions("curious", 0.8)
+            actions = await scheduler._plan_actions("curious", 0.8)
 
         action_types = [a.action_type for a in actions]
         assert ActionType.BROWSE_SOCIAL in action_types
@@ -483,7 +479,8 @@ class TestConfigFlags:
 
         assert results == []
 
-    def test_no_browse_when_social_browse_disabled(self):
+    @pytest.mark.asyncio
+    async def test_no_browse_when_social_browse_disabled(self):
         """_plan_actions doesn't include BROWSE_SOCIAL when disabled."""
         from app.engine.living_agent.heartbeat import HeartbeatScheduler
         from app.engine.living_agent.models import ActionType
@@ -497,7 +494,7 @@ class TestConfigFlags:
         )
 
         with patch(_SETTINGS_PATCH, settings):
-            actions = scheduler._plan_actions("curious", 0.8)
+            actions = await scheduler._plan_actions("curious", 0.8)
 
         action_types = [a.action_type for a in actions]
         assert ActionType.BROWSE_SOCIAL not in action_types

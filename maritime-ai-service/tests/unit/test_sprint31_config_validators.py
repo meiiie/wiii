@@ -34,7 +34,7 @@ def _make_settings(**overrides):
 class TestAsyncPoolMinSize:
     def test_default_valid(self):
         s = _make_settings()
-        assert s.async_pool_min_size == 2
+        assert s.async_pool_min_size == 10  # Sprint 173: scaled up from 2
 
     def test_zero_rejected(self):
         with pytest.raises(ValidationError, match="async_pool_min_size"):
@@ -66,7 +66,7 @@ class TestAsyncPoolMinSize:
 class TestAsyncPoolMaxSize:
     def test_default_valid(self):
         s = _make_settings()
-        assert s.async_pool_max_size == 10
+        assert s.async_pool_max_size == 50  # Sprint 173: scaled up from 10
 
     def test_zero_rejected(self):
         with pytest.raises(ValidationError, match="async_pool_max_size"):

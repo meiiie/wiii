@@ -115,6 +115,17 @@ async def link_identity(
             identity_id, user_id, provider, provider_sub, provider_issuer, email, display_name, avatar_url,
         )
     logger.info("Linked identity %s/%s to user %s", provider, provider_sub, user_id)
+
+    # Sprint 176: Audit event
+    try:
+        from app.auth.auth_audit import log_auth_event
+        await log_auth_event(
+            "identity_linked", user_id=user_id, provider=provider,
+            metadata={"provider_sub": provider_sub},
+        )
+    except Exception:
+        pass
+
     return identity_id
 
 
@@ -312,6 +323,20 @@ async def deactivate_user(user_id: str) -> Optional[dict]:
     return await get_user(user_id)
 
 
+async def reactivate_user(user_id: str) -> Optional[dict]:
+    """Re-enable a deactivated user (set is_active=true)."""
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE users SET is_active = true, updated_at = $1 WHERE id = $2",
+            datetime.now(timezone.utc), user_id,
+        )
+        if result == "UPDATE 0":
+            return None
+    logger.info("Reactivated user %s", user_id)
+    return await get_user(user_id)
+
+
 async def list_user_identities(user_id: str) -> list[dict]:
     """List all linked identities for a user."""
     pool = await _get_pool()
@@ -362,6 +387,17 @@ async def unlink_identity(user_id: str, identity_id: str) -> bool:
             return False
 
         logger.info("Unlinked identity %s from user %s", identity_id, user_id)
+
+        # Sprint 176: Audit event
+        try:
+            from app.auth.auth_audit import log_auth_event
+            await log_auth_event(
+                "identity_unlinked", user_id=user_id,
+                metadata={"identity_id": identity_id},
+            )
+        except Exception:
+            pass
+
         return True
 
 

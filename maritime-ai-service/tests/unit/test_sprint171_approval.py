@@ -7,7 +7,7 @@ Sprint 171: "Quyền Tự Chủ" — Safety-first autonomous capabilities.
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 
 def _make_settings(**overrides):
@@ -25,6 +25,10 @@ def _make_settings(**overrides):
         "living_agent_max_skills_per_week": 5,
         "living_agent_max_searches_per_heartbeat": 3,
         "living_agent_max_daily_cycles": 48,
+        # Flags added in later sprints (default off in tests)
+        "living_agent_enable_weather": False,
+        "living_agent_enable_briefing": False,
+        "living_agent_enable_skill_learning": False,
     }
     defaults.update(overrides)
     mock = MagicMock()
@@ -55,6 +59,9 @@ def _make_engine():
     engine.state.engagement = 0.6
     engine.get_behavior_modifiers.return_value = {"mood_label": "tò mò"}
     engine.to_dict.return_value = {}
+    # Async methods added in later sprints
+    engine.load_state_from_db = AsyncMock()
+    engine.save_state_to_db = AsyncMock()
     return engine
 
 
@@ -198,7 +205,9 @@ class TestDailyCycleLimit:
         with patch(_SETTINGS_PATCH, settings):
             # Simulate reaching the limit
             scheduler._daily_cycle_count = 5
-            scheduler._daily_reset_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            # _check_daily_limit uses UTC+7 date, so we must match
+            _VN_OFFSET = timedelta(hours=7)
+            scheduler._daily_reset_date = (datetime.now(timezone.utc) + _VN_OFFSET).strftime("%Y-%m-%d")
 
             assert scheduler._check_daily_limit() is False
 
@@ -211,7 +220,8 @@ class TestDailyCycleLimit:
 
         with patch(_SETTINGS_PATCH, settings):
             scheduler._daily_cycle_count = 10
-            scheduler._daily_reset_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            _VN_OFFSET = timedelta(hours=7)
+            scheduler._daily_reset_date = (datetime.now(timezone.utc) + _VN_OFFSET).strftime("%Y-%m-%d")
 
             assert scheduler._check_daily_limit() is True
 

@@ -7,6 +7,7 @@ does not supply one via X-Request-ID.  The ID is:
   2. Returned in the response X-Request-ID header.
 
 Sprint 24: OrgContextMiddleware propagates X-Organization-ID into ContextVar.
+Sprint 175: Subdomain → org_id extraction (fallback when no header).
 
 SOTA 2026: Every production service must propagate correlation IDs.
 """
@@ -20,6 +21,40 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 logger = logging.getLogger(__name__)
+
+# Subdomains that should NOT be treated as org slugs
+_RESERVED_SUBDOMAINS = frozenset({"www", "api", "admin", "app", "mail", "static", "cdn"})
+
+
+def extract_org_from_subdomain(host: str, base_domain: str) -> str | None:
+    """
+    Extract org slug from Host header using the configured base domain.
+
+    Example: 'phuong-luu-kiem.holilihu.online' with base_domain='holilihu.online' → 'phuong-luu-kiem'
+
+    Returns None if:
+    - base_domain is empty/not configured
+    - Host doesn't end with base_domain
+    - Extracted subdomain is reserved (www, api, admin, etc.)
+    - No subdomain present (bare domain)
+    """
+    if not base_domain or not host:
+        return None
+
+    # Strip port (e.g. 'org.holilihu.online:8080' → 'org.holilihu.online')
+    hostname = host.split(":")[0].lower()
+    base = base_domain.lower()
+
+    # Host must end with '.{base_domain}' — not just equal to base_domain
+    suffix = f".{base}"
+    if not hostname.endswith(suffix):
+        return None
+
+    subdomain = hostname[: -len(suffix)]
+    if not subdomain or subdomain in _RESERVED_SUBDOMAINS:
+        return None
+
+    return subdomain
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
@@ -42,7 +77,12 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
 class OrgContextMiddleware(BaseHTTPMiddleware):
     """
-    Propagate X-Organization-ID into ContextVar for multi-tenant isolation.
+    Propagate organization context into ContextVar for multi-tenant isolation.
+
+    Resolution priority (Sprint 175):
+      1. X-Organization-ID header (explicit — from client or Nginx proxy)
+      2. Subdomain extraction from Host header (when subdomain_base_domain configured)
+      3. None (no org context — personal workspace)
 
     Sprint 24: Feature-gated by settings.enable_multi_tenant.
     When disabled, this middleware is a no-op pass-through.
@@ -56,7 +96,12 @@ class OrgContextMiddleware(BaseHTTPMiddleware):
 
         from app.core.org_context import current_org_id, current_org_allowed_domains
 
+        # Sprint 175: Priority — header first, then subdomain fallback
         org_id = request.headers.get("X-Organization-ID")
+        if not org_id and settings.subdomain_base_domain:
+            host = request.headers.get("host", "")
+            org_id = extract_org_from_subdomain(host, settings.subdomain_base_domain)
+
         token_org = None
         token_domains = None
 
@@ -64,7 +109,9 @@ class OrgContextMiddleware(BaseHTTPMiddleware):
             token_org = current_org_id.set(org_id)
             structlog.contextvars.bind_contextvars(organization_id=org_id)
 
-            # Optionally load allowed_domains from repository
+            # Load allowed_domains from repository
+            # Sprint 194c (B6): Fail-closed — if DB lookup fails, clear org context
+            # entirely rather than proceeding with org_id set but no domain restrictions.
             try:
                 from app.repositories.organization_repository import get_organization_repository
                 repo = get_organization_repository()
@@ -72,8 +119,14 @@ class OrgContextMiddleware(BaseHTTPMiddleware):
                 if org and org.allowed_domains:
                     token_domains = current_org_allowed_domains.set(org.allowed_domains)
             except Exception as e:
-                # Sprint 28: Log instead of silent pass — helps debug multi-tenant issues
-                logger.warning("[MIDDLEWARE] Failed to load org domains for %s: %s", org_id, e)
+                logger.warning(
+                    "[MIDDLEWARE] Failed to load org for %s: %s — clearing org context (fail-closed)",
+                    org_id, e,
+                )
+                # Fail-closed: clear the org_id since we can't verify domain restrictions
+                if token_org is not None:
+                    current_org_id.reset(token_org)
+                    token_org = None
 
         try:
             response: Response = await call_next(request)

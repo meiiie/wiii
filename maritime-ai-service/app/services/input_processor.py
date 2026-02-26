@@ -69,6 +69,9 @@ class ChatContext:
     # Sprint 160: Multi-Tenant Data Isolation
     organization_id: Optional[str] = None
 
+    # Sprint 179: Multimodal Vision
+    images: Optional[list] = None  # List[ImageInput] from ChatRequest
+
     # Analysis Context
     conversation_analysis: Any = None  # ConversationContext
 
@@ -329,10 +332,10 @@ class InputProcessor:
                 except Exception as e:
                     logger.debug("Semantic fact retrieval fallback: %s", e)
 
-                # Fallback to importance-based retrieval
-                if not raw_facts:
-                    raw_facts = self._semantic_memory.get_user_facts(
-                        user_id=user_id, limit=20, deduplicate=True, apply_decay=True,
+                # Fallback to importance-based retrieval via repository
+                if not raw_facts and self._semantic_memory and hasattr(self._semantic_memory, '_repository'):
+                    raw_facts = self._semantic_memory._repository.get_user_facts(
+                        user_id=user_id, limit=20, deduplicate=True,
                     )
                 provenance_facts = []
                 for rf in (raw_facts or []):
@@ -433,6 +436,43 @@ class InputProcessor:
                     semantic_parts.append(ss_result)
                     logger.info("[SESSION_SUMMARY] Layer 3 context added for %s", user_id)
 
+        # Sprint 177: Cross-platform context injection
+        if settings.enable_cross_platform_memory:
+            try:
+                from app.engine.semantic_memory.cross_platform import (
+                    get_cross_platform_memory,
+                    _detect_channel,
+                )
+                xp_memory = get_cross_platform_memory()
+                current_channel = _detect_channel(str(session_id))
+                xp_summary = await xp_memory.get_cross_platform_summary(
+                    user_id=user_id,
+                    current_channel=current_channel,
+                )
+                if xp_summary:
+                    semantic_parts.append(
+                        f"=== Hoạt động đa nền tảng ===\n{xp_summary}"
+                    )
+            except Exception as e:
+                logger.debug("[XP_MEMORY] Cross-platform context failed: %s", e)
+
+        # Sprint 186: Visual memory context injection
+        if settings.enable_visual_memory:
+            try:
+                from app.engine.semantic_memory.visual_memory import (
+                    get_visual_memory_manager,
+                )
+                vm = get_visual_memory_manager()
+                visual_ctx = await vm.retrieve_visual_memories(
+                    user_id=user_id,
+                    query=message,
+                    limit=settings.visual_memory_context_max_items,
+                )
+                if visual_ctx.context_text:
+                    semantic_parts.append(visual_ctx.context_text)
+            except Exception as e:
+                logger.debug("[VISUAL_MEMORY] Visual memory context failed: %s", e)
+
         context.semantic_context = "\n\n".join(semantic_parts)
 
         # 2b. Sprint 73: Compile Core Memory Block (structured profile)
@@ -513,6 +553,31 @@ class InputProcessor:
 
         context.conversation_history = window_mgr.format_for_prompt(context.history_list or [])
         # semantic_context stays in its own field — injected separately into system prompts
+
+        # Sprint 179: Vision — pass images through (feature-gated)
+        if getattr(request, 'images', None) and settings.enable_vision:
+            context.images = request.images
+
+            # Sprint 186: Store images as visual memories (fire-and-forget)
+            if settings.enable_visual_memory:
+                try:
+                    from app.engine.semantic_memory.visual_memory import (
+                        get_visual_memory_manager,
+                    )
+                    vm = get_visual_memory_manager()
+                    for img in request.images:
+                        if getattr(img, 'type', 'base64') == 'base64' and getattr(img, 'data', ''):
+                            asyncio.create_task(
+                                vm.store_image_memory(
+                                    user_id=user_id,
+                                    image_base64=img.data,
+                                    media_type=getattr(img, 'media_type', 'image/jpeg'),
+                                    session_id=str(session_id),
+                                    context_hint=message,
+                                )
+                            )
+                except Exception as e:
+                    logger.debug("[VISUAL_MEMORY] Image storage scheduling failed: %s", e)
 
         # Sprint 115: Detect emotional state (feature-gated)
         if settings.enable_emotional_state:

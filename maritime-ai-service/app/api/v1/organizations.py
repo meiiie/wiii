@@ -47,6 +47,34 @@ def _require_admin(auth: AuthenticatedUser) -> None:
         )
 
 
+def _require_org_admin_or_platform_admin(auth: AuthenticatedUser, org_id: str) -> str:
+    """
+    Raise 403 if user is neither platform admin nor org admin/owner for this org.
+
+    Sprint 181: Two-tier admin — system admin always passes, org admin passes
+    only for their own org(s) when enable_org_admin=True.
+
+    Returns the org-level role ('admin'/'owner') or 'platform_admin' for downstream checks.
+    """
+    if auth.role == "admin":
+        return "platform_admin"
+
+    if not settings.enable_org_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required",
+        )
+
+    repo = get_organization_repository()
+    org_role = repo.get_user_org_role(auth.user_id, org_id)
+    if org_role not in ("admin", "owner"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization admin role required",
+        )
+    return org_role
+
+
 # =============================================================================
 # Organization CRUD
 # =============================================================================
@@ -86,7 +114,8 @@ async def get_organization(
             detail=f"Organization '{org_id}' not found",
         )
 
-    # Non-admin users can only view their own organizations
+    # Sprint 194b (M4): Non-admin users can only view their own organizations.
+    # Platform admins always pass; org members can view their org.
     if auth.role != "admin" and not repo.is_user_in_org(auth.user_id, org_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -197,9 +226,16 @@ async def add_member(
     body: AddMemberRequest,
     auth: AuthenticatedUser = Depends(require_auth),
 ):
-    """Add a user to an organization (admin only)."""
+    """Add a user to an organization (platform admin or org admin/owner)."""
     _require_multi_tenant()
-    _require_admin(auth)
+    caller_level = _require_org_admin_or_platform_admin(auth, org_id)
+
+    # Sprint 181: Org admin cannot assign admin/owner roles (escalation prevention)
+    if caller_level not in ("platform_admin", "owner") and body.role in ("admin", "owner"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform admin or org owner can assign admin/owner roles",
+        )
 
     repo = get_organization_repository()
 
@@ -228,11 +264,26 @@ async def remove_member(
     user_id: str,
     auth: AuthenticatedUser = Depends(require_auth),
 ):
-    """Remove a user from an organization (admin only)."""
+    """Remove a user from an organization (platform admin or org admin/owner)."""
     _require_multi_tenant()
-    _require_admin(auth)
+    caller_level = _require_org_admin_or_platform_admin(auth, org_id)
 
+    # Sprint 181: Prevent self-removal (could leave org with no admin/owner)
+    if user_id == auth.user_id and caller_level != "platform_admin":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot remove yourself from the organization",
+        )
+
+    # Sprint 181: Org admin cannot remove admin/owner members (only owner/platform admin can)
     repo = get_organization_repository()
+    if caller_level not in ("platform_admin", "owner"):
+        target_role = repo.get_user_org_role(user_id, org_id)
+        if target_role in ("admin", "owner"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only platform admin or org owner can remove admin/owner members",
+            )
     removed = repo.remove_user_from_org(user_id, org_id)
     if not removed:
         raise HTTPException(
@@ -248,9 +299,9 @@ async def list_members(
     org_id: str,
     auth: AuthenticatedUser = Depends(require_auth),
 ):
-    """List members of an organization (admin only)."""
+    """List members of an organization (platform admin or org admin/owner)."""
     _require_multi_tenant()
-    _require_admin(auth)
+    _require_org_admin_or_platform_admin(auth, org_id)
 
     repo = get_organization_repository()
     return repo.get_org_members(org_id)
@@ -296,7 +347,9 @@ async def get_org_settings(
             detail=f"Organization '{org_id}' not found",
         )
 
-    # Members can read settings (needed for branding); only admin can modify
+    # Members can read settings (needed for branding); only admin/org admin can modify
+    # Sprint 194b (M4): Consistent with two-tier admin model — platform admin
+    # always passes, org members can read their org settings
     if auth.role != "admin" and not repo.is_user_in_org(auth.user_id, org_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -317,9 +370,23 @@ async def update_org_settings(
     body: dict,
     auth: AuthenticatedUser = Depends(require_auth),
 ):
-    """Partial-update org settings (deep merge with existing). Admin only."""
+    """Partial-update org settings (deep merge with existing). Admin or org admin."""
     _require_multi_tenant()
-    _require_admin(auth)
+    caller_level = _require_org_admin_or_platform_admin(auth, org_id)
+
+    # Sprint 181: Org admin can only change branding + onboarding (not features/ai_config/permissions)
+    # Org owner gets same restriction — full settings requires platform admin
+    _ORG_ADMIN_ALLOWED_KEYS = {"branding", "onboarding", "schema_version"}
+    if caller_level != "platform_admin":
+        restricted_keys = set(body.keys()) - _ORG_ADMIN_ALLOWED_KEYS
+        if restricted_keys:
+            # Silently strip restricted keys instead of 403 (graceful degradation)
+            body = {k: v for k, v in body.items() if k in _ORG_ADMIN_ALLOWED_KEYS}
+            if not body:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Org admin can only update branding and onboarding settings",
+                )
 
     repo = get_organization_repository()
     org = repo.get_organization(org_id)
@@ -380,5 +447,10 @@ async def get_org_permissions_endpoint(
 
     from app.core.org_settings import get_org_permissions
 
-    perms = get_org_permissions(org_id, auth.role)
+    # Sprint 181: Pass org-level role for additional management permissions
+    org_role = None
+    if settings.enable_org_admin:
+        org_role = repo.get_user_org_role(auth.user_id, org_id)
+
+    perms = get_org_permissions(org_id, auth.role, org_role=org_role)
     return {"permissions": perms, "role": auth.role, "organization_id": org_id}

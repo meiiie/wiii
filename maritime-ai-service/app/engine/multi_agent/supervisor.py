@@ -119,6 +119,22 @@ QUY TẮC:
 
 Tạo câu trả lời:"""
 
+# Sprint 203: Natural synthesis prompt (OpenClaw: soul-aligned, no artificial limits)
+SYNTHESIS_PROMPT_NATURAL = """Tổng hợp các outputs từ agents thành câu trả lời cuối cùng.
+
+Query gốc: {query}
+
+Outputs:
+{outputs}
+
+PHONG CÁCH:
+- Trả lời trực tiếp, tự nhiên, viết ở ngôi thứ hai
+- Trả lời bằng tiếng Việt, giọng ấm áp thân thiện
+- Độ dài tùy theo nội dung — ngắn khi đơn giản, chi tiết khi phức tạp
+- Đi thẳng vào nội dung — thể hiện sự hiểu biết qua câu trả lời, không qua lời mở đầu
+
+Tạo câu trả lời:"""
+
 
 # =============================================================================
 # Sprint 71: Keyword Lists for Intent-Aware Routing
@@ -437,8 +453,17 @@ class SupervisorAgent:
                 f"[{k}]: {v}" for k, v in outputs.items()
             ])
 
+            # Sprint 203: Use natural prompt when enabled (no word limits)
+            from app.core.config import get_settings as _get_synth_settings
+            try:
+                _synth_s = _get_synth_settings()
+                _synth_prompt = SYNTHESIS_PROMPT_NATURAL if getattr(_synth_s, "enable_natural_conversation", False) is True else SYNTHESIS_PROMPT
+            except Exception as e:
+                logger.debug("Natural conversation config unavailable: %s", e)
+                _synth_prompt = SYNTHESIS_PROMPT
+
             messages = [
-                HumanMessage(content=SYNTHESIS_PROMPT.format(
+                HumanMessage(content=_synth_prompt.format(
                     query=state.get("query", ""),
                     outputs=output_text
                 ))

@@ -22,6 +22,7 @@ class MemoryType(str, Enum):
     RUNNING_SUMMARY = "running_summary"  # Sprint 122: Per-session running summary (distinct from SUMMARY)
     USER_FACT = "user_fact"  # Extracted user information
     INSIGHT = "insight"      # Behavioral insight (v0.5)
+    IMAGE_MEMORY = "image_memory"  # Sprint 186: Visual/image memory
 
 
 class InsightCategory(str, Enum):

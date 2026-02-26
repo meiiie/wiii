@@ -80,6 +80,7 @@ class RAGAgentNode:
             # Update state
             state["rag_output"] = result.answer
             state["sources"] = result.sources
+            state["evidence_images"] = getattr(result, "evidence_images", [])  # Sprint 189b
             state["agent_outputs"] = state.get("agent_outputs", {})
             state["agent_outputs"]["rag"] = result.answer
             state["current_agent"] = "rag_agent"
@@ -103,6 +104,7 @@ class RAGAgentNode:
             logger.error("[RAG_AGENT] Error: %s", e)
             state["rag_output"] = "Xin lỗi, đã xảy ra lỗi khi tra cứu. Vui lòng thử lại."
             state["error"] = "rag_error"
+            state["evidence_images"] = []  # Sprint 189b: ensure clean state
 
         return state
 

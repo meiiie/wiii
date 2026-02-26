@@ -24,12 +24,22 @@ export function LoginScreen() {
   const { settings, updateSettings } = useSettingsStore();
   const { loginWithTokens, setLegacyMode } = useAuthStore();
 
+  // Sprint 193: Detect Tauri vs browser environment
+  const isTauri = !!(window as any).__TAURI_INTERNALS__;
+
   const handleGoogleLogin = async () => {
     setError(null);
     setIsLoading(true);
 
     try {
-      // Try to use tauri-plugin-oauth for localhost redirect
+      // Sprint 193: Web browser flow — redirect with hash-based token delivery
+      if (!isTauri) {
+        const redirectUri = encodeURIComponent(window.location.origin);
+        window.location.href = `${settings.server_url}/api/v1/auth/google/login?redirect_uri=${redirectUri}`;
+        return; // Page will navigate away — no finally needed
+      }
+
+      // Tauri desktop flow — tauri-plugin-oauth localhost port
       let port: number;
       try {
         const oauth = await loadOAuth();
@@ -80,7 +90,9 @@ export function LoginScreen() {
           throw new Error("Missing tokens in callback");
         }
 
-        const user: AuthUser = { id: userId, email, name, avatar_url: avatarUrl, role: "student" };
+        // Sprint 192: Parse role from backend instead of hardcoding
+        const role = params.get("role") || "student";
+        const user: AuthUser = { id: userId, email, name, avatar_url: avatarUrl, role };
         await loginWithTokens(accessToken, refreshToken, expiresIn, user);
 
         // Sync user info to settings
@@ -103,8 +115,17 @@ export function LoginScreen() {
     }
   };
 
-  const handleDevModeActivate = () => {
-    setLegacyMode();
+  const handleDevModeActivate = async () => {
+    // Sprint 192: Save API key to secure store
+    try {
+      const { storeApiKey } = await import("@/lib/secure-token-storage");
+      if (settings.api_key) {
+        await storeApiKey(settings.api_key);
+      }
+    } catch {
+      // Non-critical — API key stays in settings only
+    }
+    await setLegacyMode();
   };
 
   return (

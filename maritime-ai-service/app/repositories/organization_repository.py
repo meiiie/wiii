@@ -387,6 +387,58 @@ class OrganizationRepository:
             return False
 
     # =========================================================================
+    # Sprint 181: Org-Level Admin Queries
+    # =========================================================================
+
+    def get_user_org_role(self, user_id: str, org_id: str) -> Optional[str]:
+        """Get user's role within an organization. Returns None if not a member."""
+        self._ensure_initialized()
+        if not self._session_factory:
+            return None
+
+        try:
+            with self._session_factory() as session:
+                row = session.execute(
+                    text(
+                        f"SELECT uo.role FROM {self.MEMBERSHIP_TABLE} uo "
+                        f"JOIN {self.ORG_TABLE} o ON uo.organization_id = o.id "
+                        f"WHERE uo.user_id = :user_id AND uo.organization_id = :org_id "
+                        f"AND o.is_active = true"
+                    ),
+                    {"user_id": user_id, "org_id": org_id},
+                ).fetchone()
+
+                return row[0] if row else None
+
+        except Exception as e:
+            logger.error("Get user org role failed: %s", e)
+            return None
+
+    def get_user_admin_orgs(self, user_id: str) -> list[str]:
+        """Get org IDs where user has admin or owner role."""
+        self._ensure_initialized()
+        if not self._session_factory:
+            return []
+
+        try:
+            with self._session_factory() as session:
+                rows = session.execute(
+                    text(
+                        f"SELECT uo.organization_id FROM {self.MEMBERSHIP_TABLE} uo "
+                        f"JOIN {self.ORG_TABLE} o ON uo.organization_id = o.id "
+                        f"WHERE uo.user_id = :user_id AND uo.role IN ('admin', 'owner') "
+                        f"AND o.is_active = true"
+                    ),
+                    {"user_id": user_id},
+                ).fetchall()
+
+                return [row[0] for row in rows]
+
+        except Exception as e:
+            logger.error("Get user admin orgs failed: %s", e)
+            return []
+
+    # =========================================================================
     # Helpers
     # =========================================================================
 

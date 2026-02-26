@@ -28,6 +28,19 @@ def reset_circuit_breaker():
     mod._cb_states.clear()
 
 
+@pytest.fixture(autouse=True)
+def disable_serper():
+    """Force DuckDuckGo path by disabling Serper (Sprint 198).
+
+    Without this, tool_search_* calls real Serper API if SERPER_API_KEY is set.
+    """
+    with patch(
+        "app.engine.tools.serper_web_search.is_serper_available",
+        return_value=False,
+    ):
+        yield
+
+
 # =============================================================================
 # Constants
 # =============================================================================

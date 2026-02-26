@@ -64,3 +64,9 @@ temp/
 
 # Data files (mounted as volumes in production)
 data/
+
+# Production infrastructure (not needed in app image)
+nginx/
+postgres/
+backups/
+secrets/

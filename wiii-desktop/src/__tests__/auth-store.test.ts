@@ -1,15 +1,24 @@
 /**
- * Sprint 157: Auth store tests.
+ * Sprint 157 + 176: Auth store tests.
  * Tests OAuth login, logout, token refresh, legacy mode.
+ * Sprint 176: Secure token storage, refresh mutex, migration.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { useAuthStore } from "@/stores/auth-store";
+import { useAuthStore, _getRefreshPromise, _resetRefreshPromise } from "@/stores/auth-store";
 import type { AuthUser } from "@/stores/auth-store";
 
 // Mock storage
 vi.mock("@/lib/storage", () => ({
   loadStore: vi.fn().mockResolvedValue(null),
   saveStore: vi.fn().mockResolvedValue(undefined),
+  deleteStore: vi.fn().mockResolvedValue(undefined),
+}));
+
+// Mock secure token storage
+vi.mock("@/lib/secure-token-storage", () => ({
+  storeTokens: vi.fn().mockResolvedValue(undefined),
+  loadTokens: vi.fn().mockResolvedValue(null),
+  clearTokens: vi.fn().mockResolvedValue(undefined),
 }));
 
 const MOCK_USER: AuthUser = {
@@ -27,6 +36,7 @@ function resetStore() {
     tokens: null,
     authMode: "legacy",
   });
+  _resetRefreshPromise();
 }
 
 describe("AuthStore", () => {
@@ -93,8 +103,8 @@ describe("AuthStore", () => {
     expect(state.tokens).toBeNull();
   });
 
-  it("setLegacyMode enables legacy auth", () => {
-    useAuthStore.getState().setLegacyMode();
+  it("setLegacyMode enables legacy auth", async () => {
+    await useAuthStore.getState().setLegacyMode();
     const state = useAuthStore.getState();
     expect(state.authMode).toBe("legacy");
     expect(state.isAuthenticated).toBe(true);
@@ -112,8 +122,8 @@ describe("AuthStore", () => {
     expect(headers["Authorization"]).toBe("Bearer my-access-token");
   });
 
-  it("getAuthHeaders returns empty in legacy mode", () => {
-    useAuthStore.getState().setLegacyMode();
+  it("getAuthHeaders returns empty in legacy mode", async () => {
+    await useAuthStore.getState().setLegacyMode();
     const headers = useAuthStore.getState().getAuthHeaders();
     expect(headers["Authorization"]).toBeUndefined();
   });
@@ -150,7 +160,24 @@ describe("AuthStore", () => {
     expect(useAuthStore.getState().isTokenExpiringSoon()).toBe(false);
   });
 
-  it("persists auth state via saveStore", async () => {
+  it("loginWithTokens stores tokens in secure storage", async () => {
+    const { storeTokens } = await import("@/lib/secure-token-storage");
+
+    await useAuthStore.getState().loginWithTokens(
+      "access-token",
+      "refresh-token",
+      1800,
+      MOCK_USER,
+    );
+
+    expect(storeTokens).toHaveBeenCalledWith(
+      "access-token",
+      "refresh-token",
+      expect.any(Number),
+    );
+  });
+
+  it("loginWithTokens saves user/authMode to regular store without tokens", async () => {
     const { saveStore } = await import("@/lib/storage");
 
     await useAuthStore.getState().loginWithTokens(
@@ -166,12 +193,14 @@ describe("AuthStore", () => {
       expect.objectContaining({
         user: MOCK_USER,
         authMode: "oauth",
-        tokens: expect.objectContaining({
-          access_token: "access-token",
-          refresh_token: "refresh-token",
-        }),
       }),
     );
+
+    // Verify no tokens in regular store
+    const lastCall = (saveStore as any).mock.calls.find(
+      (c: any[]) => c[0] === "auth_state",
+    );
+    expect(lastCall[2]).not.toHaveProperty("tokens");
   });
 
   it("refreshAccessToken calls server and updates tokens", async () => {
@@ -214,5 +243,153 @@ describe("AuthStore", () => {
     const result = await useAuthStore.getState().refreshAccessToken("http://localhost:8000");
     expect(result).toBe(false);
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
+  // Sprint 176: New tests
+
+  it("refreshAccessToken stores new tokens in secure storage", async () => {
+    const { storeTokens } = await import("@/lib/secure-token-storage");
+
+    await useAuthStore.getState().loginWithTokens(
+      "old-access",
+      "old-refresh",
+      1800,
+      MOCK_USER,
+    );
+    vi.clearAllMocks();
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: "new-access",
+        refresh_token: "new-refresh",
+        expires_in: 1800,
+      }),
+    });
+    globalThis.fetch = mockFetch;
+
+    await useAuthStore.getState().refreshAccessToken("http://localhost:8000");
+
+    expect(storeTokens).toHaveBeenCalledWith(
+      "new-access",
+      "new-refresh",
+      expect.any(Number),
+    );
+  });
+
+  it("refresh mutex prevents concurrent refresh calls", async () => {
+    await useAuthStore.getState().loginWithTokens(
+      "access",
+      "refresh",
+      1800,
+      MOCK_USER,
+    );
+
+    let resolveFirst: (v: any) => void;
+    const firstFetch = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    let fetchCallCount = 0;
+    globalThis.fetch = vi.fn().mockImplementation(() => {
+      fetchCallCount++;
+      return firstFetch;
+    });
+
+    // Fire two concurrent refresh calls
+    const p1 = useAuthStore.getState().refreshAccessToken("http://localhost:8000");
+    const p2 = useAuthStore.getState().refreshAccessToken("http://localhost:8000");
+
+    // Resolve the fetch
+    resolveFirst!({
+      ok: true,
+      json: async () => ({
+        access_token: "new",
+        refresh_token: "new-r",
+        expires_in: 1800,
+      }),
+    });
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+    expect(r1).toBe(true);
+    expect(r2).toBe(true);
+
+    // Only ONE fetch call should have been made (mutex dedup)
+    expect(fetchCallCount).toBe(1);
+  });
+
+  it("logout clears secure token storage", async () => {
+    const { clearTokens } = await import("@/lib/secure-token-storage");
+
+    await useAuthStore.getState().loginWithTokens(
+      "access",
+      "refresh",
+      1800,
+      MOCK_USER,
+    );
+
+    await useAuthStore.getState().logout();
+
+    expect(clearTokens).toHaveBeenCalled();
+  });
+
+  it("loadAuth migrates tokens from old location", async () => {
+    const { loadTokens, storeTokens } = await import("@/lib/secure-token-storage");
+    const { loadStore } = await import("@/lib/storage");
+
+    // Secure store empty
+    (loadTokens as any).mockResolvedValue(null);
+
+    // Old location has tokens
+    (loadStore as any).mockResolvedValue({
+      user: MOCK_USER,
+      authMode: "oauth",
+      tokens: {
+        access_token: "old-access",
+        refresh_token: "old-refresh",
+        expires_at: Date.now() + 1800000,
+      },
+    });
+
+    await useAuthStore.getState().loadAuth();
+
+    // Should have migrated to secure store
+    expect(storeTokens).toHaveBeenCalledWith(
+      "old-access",
+      "old-refresh",
+      expect.any(Number),
+    );
+
+    const state = useAuthStore.getState();
+    expect(state.isAuthenticated).toBe(true);
+    expect(state.tokens?.access_token).toBe("old-access");
+  });
+
+  it("loadAuth prefers secure store over old location", async () => {
+    const { loadTokens } = await import("@/lib/secure-token-storage");
+    const { loadStore } = await import("@/lib/storage");
+
+    // Secure store has tokens
+    (loadTokens as any).mockResolvedValue({
+      access_token: "secure-access",
+      refresh_token: "secure-refresh",
+      expires_at: Date.now() + 1800000,
+    });
+
+    // Old location also has tokens (should be ignored)
+    (loadStore as any).mockResolvedValue({
+      user: MOCK_USER,
+      authMode: "oauth",
+      tokens: {
+        access_token: "old-access",
+        refresh_token: "old-refresh",
+        expires_at: Date.now() + 1800000,
+      },
+    });
+
+    await useAuthStore.getState().loadAuth();
+
+    const state = useAuthStore.getState();
+    expect(state.tokens?.access_token).toBe("secure-access");
   });
 });

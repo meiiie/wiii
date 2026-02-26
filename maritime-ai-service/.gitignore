@@ -60,3 +60,14 @@ nul
 
 # Generated
 _find_untested.py
+
+# Production backups (database dumps)
+backups/*.dump
+backups/*.sql.gz
+backups/*.log
+
+# Secrets (never commit)
+secrets/
+
+# Nginx logs (Docker volume, but in case mounted locally)
+nginx/logs/

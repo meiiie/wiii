@@ -313,7 +313,23 @@ class ChatOrchestrator:
                 skip_fact_extraction=current_agent == "memory_agent",
                 org_id=getattr(context, 'organization_id', '') or '',
             )
-        
+
+        # Sprint 208: Record user interaction for routine learning (fire-and-forget)
+        try:
+            from app.core.config import get_settings as _rt_settings
+            _rts = _rt_settings()
+            if getattr(_rts, "living_agent_enable_routine_tracking", False):
+                from app.engine.living_agent.routine_tracker import get_routine_tracker
+                tracker = get_routine_tracker()
+                import asyncio
+                asyncio.ensure_future(tracker.record_interaction(
+                    user_id=user_id,
+                    channel="web",
+                    topic=self._current_domain_id or "",
+                ))
+        except Exception:
+            pass  # Never block chat pipeline for routine tracking
+
         return response
     
     def _load_pronoun_style_from_facts(
@@ -449,6 +465,12 @@ class ChatOrchestrator:
             "core_memory_block": context.core_memory_block,
             # Sprint 76: Follow-up detection — suppress repeated greetings
             "is_follow_up": bool(context.history_list) and len(context.history_list) > 0,
+            # Sprint 203: Compute conversation phase (Pi/Gemini-inspired)
+            "conversation_phase": (
+                "opening" if session.state.total_responses == 0
+                else ("engaged" if session.state.total_responses < 5
+                      else ("deep" if session.state.total_responses < 20 else "closing"))
+            ),
             # Sprint 115: Identity anchor data flow fix — pass session counters
             "total_responses": session.state.total_responses,
             "name_usage_count": session.state.name_usage_count,
@@ -457,6 +479,8 @@ class ChatOrchestrator:
             "mood_hint": getattr(context, 'mood_hint', "") or "",
             # Sprint 160: Multi-Tenant Data Isolation
             "organization_id": getattr(context, 'organization_id', None),
+            # Sprint 179: Multimodal Vision images
+            "images": [img.model_dump() if hasattr(img, 'model_dump') else img for img in context.images] if getattr(context, 'images', None) else None,
         }
 
         # Use domain_id from Stage 0 (falls back to config default)

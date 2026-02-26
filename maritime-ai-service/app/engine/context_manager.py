@@ -403,8 +403,12 @@ class ConversationCompactor:
         """Upsert running summary to semantic_memories table (fire-and-forget)."""
         try:
             from app.core.database import get_shared_session_factory
+            from app.core.org_filter import get_effective_org_id, org_where_clause
             from sqlalchemy import text as sa_text
             import json
+
+            eff_org_id = get_effective_org_id()
+            org_filter = org_where_clause(eff_org_id)
 
             factory = get_shared_session_factory()
             with factory() as session:
@@ -413,22 +417,23 @@ class ConversationCompactor:
                     sa_text(
                         "DELETE FROM semantic_memories "
                         "WHERE user_id = :uid AND memory_type = 'running_summary' "
-                        "AND session_id = :sid"
+                        "AND session_id = :sid" + org_filter
                     ),
-                    {"uid": user_id, "sid": session_id},
+                    {"uid": user_id, "sid": session_id, "org_id": eff_org_id},
                 )
                 session.execute(
                     sa_text(
                         "INSERT INTO semantic_memories "
-                        "(user_id, memory_type, content, session_id, metadata, "
-                        "created_at, updated_at) "
-                        "VALUES (:uid, 'running_summary', :content, :sid, "
+                        "(user_id, memory_type, content, session_id, organization_id, "
+                        "metadata, created_at, updated_at) "
+                        "VALUES (:uid, 'running_summary', :content, :sid, :org_id, "
                         ":meta::jsonb, NOW(), NOW())"
                     ),
                     {
                         "uid": user_id,
                         "sid": session_id,
                         "content": summary,
+                        "org_id": eff_org_id,
                         "meta": json.dumps({"source": "compactor"}, ensure_ascii=False),
                     },
                 )
@@ -440,7 +445,11 @@ class ConversationCompactor:
         """Load running summary from semantic_memories table."""
         try:
             from app.core.database import get_shared_session_factory
+            from app.core.org_filter import get_effective_org_id, org_where_clause
             from sqlalchemy import text as sa_text
+
+            eff_org_id = get_effective_org_id()
+            org_filter = org_where_clause(eff_org_id)
 
             factory = get_shared_session_factory()
             with factory() as session:
@@ -448,10 +457,10 @@ class ConversationCompactor:
                     sa_text(
                         "SELECT content FROM semantic_memories "
                         "WHERE user_id = :uid AND memory_type = 'running_summary' "
-                        "AND session_id = :sid "
+                        "AND session_id = :sid" + org_filter + " "
                         "ORDER BY updated_at DESC LIMIT 1"
                     ),
-                    {"uid": user_id, "sid": session_id},
+                    {"uid": user_id, "sid": session_id, "org_id": eff_org_id},
                 ).fetchone()
                 return row[0] if row else ""
         except Exception as e:
@@ -462,7 +471,11 @@ class ConversationCompactor:
         """Delete running summary from DB."""
         try:
             from app.core.database import get_shared_session_factory
+            from app.core.org_filter import get_effective_org_id, org_where_clause
             from sqlalchemy import text as sa_text
+
+            eff_org_id = get_effective_org_id()
+            org_filter = org_where_clause(eff_org_id)
 
             factory = get_shared_session_factory()
             with factory() as session:
@@ -470,9 +483,9 @@ class ConversationCompactor:
                     sa_text(
                         "DELETE FROM semantic_memories "
                         "WHERE user_id = :uid AND memory_type = 'running_summary' "
-                        "AND session_id = :sid"
+                        "AND session_id = :sid" + org_filter
                     ),
-                    {"uid": user_id, "sid": session_id},
+                    {"uid": user_id, "sid": session_id, "org_id": eff_org_id},
                 )
                 session.commit()
         except Exception as e:
@@ -811,7 +824,7 @@ class ConversationCompactor:
                 f"Thêm các tin nhắn mới sau vào tóm tắt (5-8 câu):\n"
                 f"{conversation}\n\n"
                 f"Tóm tắt cập nhật (tiếng Việt, 5-8 câu). "
-                f"BẮT BUỘC giữ lại: tên user, thông tin cá nhân, TẤT CẢ chủ đề đã thảo luận (liệt kê), quyết định quan trọng:"
+                f"Giữ lại: tên user, thông tin cá nhân, TẤT CẢ chủ đề đã thảo luận (liệt kê), quyết định quan trọng:"
                 f"{identity_anchor}"
             )
 

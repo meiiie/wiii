@@ -11,9 +11,17 @@ import { useUIStore } from "@/stores/ui-store";
 import { MAX_MESSAGE_LENGTH } from "@/lib/constants";
 import { getWelcomePlaceholder } from "@/lib/greeting";
 import { DomainSelector } from "./DomainSelector";
+import type { ImageInput } from "@/api/types";
+
+/** Sprint 179: Attached image before upload */
+interface AttachedImage {
+  data: string;
+  media_type: string;
+  preview: string;
+}
 
 interface ChatInputProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, images?: ImageInput[]) => void;
   onCancel: () => void;
   editingMessage?: string | null;
   onClearEdit?: () => void;
@@ -23,6 +31,7 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, centered }: ChatInputProps) {
   const [input, setInput] = useState("");
+  const [images, setImages] = useState<AttachedImage[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { isStreaming } = useChatStore();
   const { addToast } = useToastStore();
@@ -43,14 +52,19 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
   const handleSend = useCallback(() => {
     const trimmed = input.trim();
     if (!trimmed || isStreaming) return;
-    onSend(trimmed);
+    // Sprint 179: Include attached images in send
+    const imageInputs: ImageInput[] | undefined = images.length > 0
+      ? images.map(img => ({ type: "base64" as const, media_type: img.media_type, data: img.data, detail: "auto" as const }))
+      : undefined;
+    onSend(trimmed, imageInputs);
     setInput("");
+    setImages([]);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
       // Re-focus input after sending (Sprint 106)
       textareaRef.current.focus();
     }
-  }, [input, isStreaming, onSend]);
+  }, [input, images, isStreaming, onSend]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -71,14 +85,49 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
     for (const item of items) {
       if (item.type.startsWith("image/")) {
         e.preventDefault();
-        addToast("info", "Mình chưa xem được ảnh, xin lỗi bạn!");
+        const file = item.getAsFile();
+        if (!file || images.length >= 5) {
+          if (images.length >= 5) addToast("info", "Tối đa 5 ảnh mỗi tin nhắn.");
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(",")[1];
+          const preview = reader.result as string;
+          setImages(prev => [...prev, { data: base64, media_type: file.type, preview }]);
+        };
+        reader.onerror = () => addToast("error", "Không thể đọc ảnh từ clipboard.");
+        reader.readAsDataURL(file);
         return;
       }
     }
   };
 
   const handleAttach = () => {
-    addToast("info", "Mình chưa nhận được file, xin lỗi bạn!");
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/jpeg,image/png,image/webp,image/gif";
+    input.multiple = true;
+    input.onchange = (e) => {
+      const files = (e.target as HTMLInputElement).files;
+      if (!files) return;
+      const remaining = 5 - images.length;
+      if (remaining <= 0) {
+        addToast("info", "Tối đa 5 ảnh mỗi tin nhắn.");
+        return;
+      }
+      Array.from(files).slice(0, remaining).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(",")[1];
+          const preview = reader.result as string;
+          setImages(prev => [...prev, { data: base64, media_type: file.type, preview }]);
+        };
+        reader.onerror = () => addToast("error", "Không thể đọc file ảnh.");
+        reader.readAsDataURL(file);
+      });
+    };
+    input.click();
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,6 +143,23 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
       <div className="w-full">
         <div className="input-card">
           <div className="m-3.5 flex flex-col gap-3">
+            {/* Sprint 179: Image preview strip */}
+            {images.length > 0 && (
+              <div className="flex gap-2 flex-wrap">
+                {images.map((img, i) => (
+                  <div key={`img-${img.data.substring(0, 16)}`} className="relative group">
+                    <img src={img.preview} alt={`Ảnh đính kèm ${i + 1}`} className="w-16 h-16 object-cover rounded-lg border border-gray-200 dark:border-gray-700" />
+                    <button
+                      onClick={() => setImages(prev => prev.filter((_, idx) => idx !== i))}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                      aria-label={`Xoá ảnh ${i + 1}`}
+                    >
+                      &times;
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             {/* Textarea — min-h-[3rem], max-h-96 */}
             <textarea
               ref={textareaRef}
@@ -186,6 +252,23 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
 
         <div className="input-card">
           <div className="m-3 flex flex-col gap-2">
+            {/* Sprint 179: Image preview strip */}
+            {images.length > 0 && (
+              <div className="flex gap-2 flex-wrap">
+                {images.map((img, i) => (
+                  <div key={`img-${img.data.substring(0, 16)}`} className="relative group">
+                    <img src={img.preview} alt={`Ảnh đính kèm ${i + 1}`} className="w-16 h-16 object-cover rounded-lg border border-gray-200 dark:border-gray-700" />
+                    <button
+                      onClick={() => setImages(prev => prev.filter((_, idx) => idx !== i))}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                      aria-label={`Xoá ảnh ${i + 1}`}
+                    >
+                      &times;
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <textarea
               ref={textareaRef}
               value={input}
@@ -203,6 +286,15 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
             />
             <div className="flex items-center justify-between h-8">
               <div className="flex items-center gap-3">
+                <button
+                  onClick={handleAttach}
+                  className="flex items-center justify-center w-7 h-7 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-surface-tertiary active:scale-95 transition-all duration-300"
+                  style={{ border: "0.5px solid var(--border)" }}
+                  title="Đính kèm ảnh"
+                  aria-label="Đính kèm ảnh"
+                >
+                  <Paperclip size={14} />
+                </button>
                 <DomainSelector />
                 <span className="text-[10px] text-text-tertiary">
                   Enter gửi · Shift+Enter xuống dòng

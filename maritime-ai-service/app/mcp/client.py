@@ -4,7 +4,10 @@ MCP Client — Connects to external MCP servers and loads tools.
 Sprint 56: Uses langchain-mcp-adapters for LangGraph-compatible tool loading.
 Supports stdio, HTTP (Streamable HTTP), and SSE transports.
 
-Feature-gated: enable_mcp_client=False by default.
+Sprint 193: Added register_discovered_tools() — bridges MCP external tools
+into ToolRegistry for unified tool management.
+
+Feature-gated: enable_mcp_client=False, mcp_auto_register_external=False.
 """
 
 import json
@@ -152,6 +155,78 @@ class MCPToolManager:
         cls._tools = []
         cls._initialized = False
         cls._configs = []
+
+    @classmethod
+    def register_discovered_tools(cls) -> int:
+        """
+        Sprint 193: Bridge MCP external tools into ToolRegistry.
+
+        Reads loaded MCP tools from get_tools() and registers each
+        into ToolRegistry with category=MCP, so they appear alongside
+        built-in tools in the unified tool system.
+
+        Feature-gated: mcp_auto_register_external=False (default).
+
+        Returns:
+            Number of tools registered.
+        """
+        if not cls._initialized or not cls._tools:
+            return 0
+
+        try:
+            from app.core.config import get_settings
+            settings = get_settings()
+            if not getattr(settings, "mcp_auto_register_external", False) is True:
+                return 0
+        except ImportError:
+            return 0
+
+        try:
+            from app.engine.tools.registry import (
+                get_tool_registry,
+                ToolCategory,
+                ToolAccess,
+            )
+            registry = get_tool_registry()
+        except ImportError:
+            logger.warning(
+                "ToolRegistry not available — cannot register MCP tools"
+            )
+            return 0
+
+        count = 0
+        for tool in cls._tools:
+            try:
+                name = getattr(tool, "name", None)
+                if not name:
+                    continue
+
+                # Skip if already registered (avoid overwriting built-in tools)
+                if registry.get_info(name) is not None:
+                    logger.debug(
+                        "MCP tool '%s' already in registry — skipped", name
+                    )
+                    continue
+
+                registry.register(
+                    tool=tool,
+                    category=ToolCategory.MCP,
+                    access=ToolAccess.READ,
+                    description=getattr(tool, "description", "") or "",
+                    roles=["student", "teacher", "admin"],
+                )
+                count += 1
+            except Exception as e:
+                logger.warning(
+                    "Failed to register MCP tool '%s': %s",
+                    getattr(tool, "name", "?"), e,
+                )
+
+        if count:
+            logger.info(
+                "[OK] Registered %d MCP tools into ToolRegistry", count
+            )
+        return count
 
     @classmethod
     def parse_configs(cls, json_str: str) -> List[MCPServerConfig]:

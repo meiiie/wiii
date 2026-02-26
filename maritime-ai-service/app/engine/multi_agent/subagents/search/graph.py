@@ -6,6 +6,7 @@ Flow::
       → plan_search
       → [platform_worker × N]  (parallel via Send)
       → aggregate_results
+      → curate_products       (Sprint 202: LLM curation)
       → synthesize_response
       → END
 
@@ -24,6 +25,7 @@ from langgraph.types import Send
 from app.engine.multi_agent.subagents.search.state import SearchSubgraphState
 from app.engine.multi_agent.subagents.search.workers import (
     aggregate_results,
+    curate_products,
     plan_search,
     platform_worker,
     synthesize_response,
@@ -94,12 +96,14 @@ def build_search_subgraph() -> StateGraph:
     builder.add_node("plan_search", plan_search)
     builder.add_node("platform_worker", platform_worker)
     builder.add_node("aggregate_results", aggregate_results)
+    builder.add_node("curate_products", curate_products)
     builder.add_node("synthesize_response", synthesize_response)
 
     builder.add_edge(START, "plan_search")
     builder.add_conditional_edges("plan_search", route_to_platforms, ["platform_worker"])
     builder.add_edge("platform_worker", "aggregate_results")
-    builder.add_edge("aggregate_results", "synthesize_response")
+    builder.add_edge("aggregate_results", "curate_products")
+    builder.add_edge("curate_products", "synthesize_response")
     builder.add_edge("synthesize_response", END)
 
     return builder.compile()

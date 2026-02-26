@@ -627,7 +627,6 @@ class Settings(BaseSettings):
     identity_anchor_interval: int = Field(default=6, ge=3, le=50, description="Re-inject identity anchor every N responses")
     enable_emotional_state: bool = Field(default=False, description="Enable 2D mood state machine")
     emotional_decay_rate: float = Field(default=0.15, ge=0.0, le=1.0, description="Rate of mood decay toward neutral")
-    enable_personality_eval: bool = Field(default=False, description="Enable personality drift evaluator")
 
     # Soul Emotion
     enable_soul_emotion: bool = Field(default=False, description="Enable LLM inline emotion tags for avatar")
@@ -645,14 +644,6 @@ class Settings(BaseSettings):
     fact_retrieval_beta: float = Field(default=0.5, description="Cosine similarity weight in combined fact scoring")
     fact_retrieval_gamma: float = Field(default=0.2, description="Recency weight in combined fact scoring")
     fact_min_similarity: float = Field(default=0.3, description="Minimum cosine similarity for semantic fact retrieval")
-
-    # Intelligent Tool Selection
-    enable_tool_selection: bool = Field(default=False, description="Enable semantic tool pre-filtering")
-    tool_selection_top_k: int = Field(default=5, description="Maximum tools after semantic selection")
-    tool_selection_core_tools: list[str] = Field(
-        default=["tool_current_datetime", "tool_knowledge_search", "tool_think"],
-        description="Tools always included regardless of similarity score"
-    )
 
     # LangSmith Observability
     enable_langsmith: bool = Field(default=False, description="Enable LangSmith tracing")
@@ -782,7 +773,6 @@ class Settings(BaseSettings):
     crawl4ai_use_llm_extraction: bool = Field(default=False, description="Use LLM extraction in Crawl4AI (costs tokens)")
     enable_scrapling: bool = Field(default=False, description="Enable Scrapling stealth scraping backend (anti-bot bypass)")
     scrapling_stealth_mode: bool = Field(default=True, description="Enable Scrapling TLS fingerprint spoofing for Cloudflare bypass")
-    enable_scraping_metrics: bool = Field(default=False, description="Record per-backend scraping metrics to DB for strategy optimization")
     # Sprint 195: Jina Reader fallback
     enable_jina_reader: bool = Field(default=False, description="Enable Jina AI Reader as lightweight web-to-markdown fallback")
 
@@ -797,6 +787,85 @@ class Settings(BaseSettings):
         description="Override exchange rates. Keys=ISO currency, values=to-USD factor. E.g. {'EUR': 1.10}",
     )
 
+    # Sprint 200: Product Preview Cards (carousel in UI)
+    enable_product_preview_cards: bool = Field(
+        default=True,
+        description="Emit SSE preview events for product search results (card carousel in UI)",
+    )
+    product_preview_max_cards: int = Field(
+        default=20, ge=1, le=50,
+        description="Max product preview cards emitted per search session",
+    )
+
+    # Sprint 200: Visual Product Search (image → product identification)
+    enable_visual_product_search: bool = Field(
+        default=False,
+        description="Enable Vision LLM product identification from uploaded images",
+    )
+    visual_product_search_provider: str = Field(
+        default="google",
+        description="Vision provider for product identification: google, openai (extensible via _PROVIDER_REGISTRY)",
+    )
+    visual_product_search_model: str = Field(
+        default="",
+        description=(
+            "Vision model for product identification. "
+            "Empty = provider default. "
+            "Google options: gemini-2.5-pro (default, best stable), "
+            "gemini-2.5-flash (fast/cheap), gemini-3-flash-preview (SOTA preview), "
+            "gemini-3-pro-preview, gemini-3.1-pro-preview. "
+            "OpenAI options: gpt-4o (default), gpt-4o-mini."
+        ),
+    )
+
+    # Sprint 201: Product Image Enrichment (Google-cached thumbnails for Serper site-filtered results)
+    enable_product_image_enrichment: bool = Field(
+        default=False,
+        description="Enrich product search results with Google-cached thumbnail images via Serper /images API",
+    )
+    image_enrichment_timeout: int = Field(
+        default=8, ge=2, le=30,
+        description="Timeout in seconds for Serper /images API call",
+    )
+    image_enrichment_min_similarity: float = Field(
+        default=0.4, ge=0.0, le=1.0,
+        description="Minimum Jaccard title similarity for image-to-product matching (Sprint 201b: raised from 0.25 to reduce wrong matches)",
+    )
+
+    # Sprint 202: LLM-Curated Product Cards ("Kết Quả Sạch")
+    enable_curated_product_cards: bool = Field(
+        default=False,
+        description="Suppress raw preview cards; emit only LLM-curated top picks after aggregation",
+    )
+    curated_product_max_cards: int = Field(
+        default=8, ge=3, le=15,
+        description="Max curated product cards to show (3-15)",
+    )
+    curated_product_llm_tier: str = Field(
+        default="light",
+        description="LLM tier for product curation: light (fast) / moderate / deep",
+    )
+
+    # Sprint 203: Natural Conversation (SOTA 2026)
+    enable_natural_conversation: bool = Field(
+        default=False,
+        description="Phase-aware natural conversation — no canned greetings, positive framing, no word limits",
+    )
+    llm_presence_penalty: float = Field(
+        default=0.0, ge=-2.0, le=2.0,
+        description="LLM presence penalty for response diversity (Gemini/OpenAI)",
+    )
+    llm_frequency_penalty: float = Field(
+        default=0.0, ge=-2.0, le=2.0,
+        description="LLM frequency penalty against repetition (Gemini/OpenAI)",
+    )
+
+    # Sprint 199: Chinese Platform Search (1688, Taobao, AliExpress)
+    enable_chinese_platform_search: bool = Field(
+        default=True,
+        description="Include Chinese platforms (1688, Taobao, AliExpress) in international search",
+    )
+
     # Sprint 198: Serper.dev for web/B2B search (replaces DuckDuckGo)
     enable_serper_web_search: bool = Field(default=True, description="Use Serper.dev for web/B2B search (requires SERPER_API_KEY, falls back to DuckDuckGo)")
 
@@ -807,6 +876,15 @@ class Settings(BaseSettings):
     enable_unified_skill_index: bool = Field(default=False, description="Enable unified skill index across all skill/tool systems")
     enable_skill_metrics: bool = Field(default=False, description="Track per-tool/skill execution metrics (latency, success, cost)")
     skill_metrics_flush_interval_seconds: int = Field(default=60, description="Seconds between DB flushes for skill metrics")
+
+    # Skill ↔ Tool Bridge (Sprint 205)
+    enable_skill_tool_bridge: bool = Field(default=False, description="Bridge tool execution to Living Agent skill advancement (DISCOVER→MASTER)")
+
+    # Narrative Context (Sprint 206)
+    enable_narrative_context: bool = Field(default=False, description="Inject Wiii's life narrative into system prompt (requires enable_living_agent)")
+
+    # Identity Core (Sprint 207)
+    enable_identity_core: bool = Field(default=False, description="Self-evolving identity layer — Wiii learns about itself from reflections (requires enable_living_agent)")
 
     # Intelligent Tool Selection (Sprint 192)
     enable_intelligent_tool_selection: bool = Field(default=False, description="Enable intelligent tool selection (4-step pipeline)")

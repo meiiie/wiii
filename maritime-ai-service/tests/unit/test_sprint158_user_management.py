@@ -315,6 +315,8 @@ class TestTokenAuthMethodFix:
             mock_settings.jwt_secret_key = "test-secret-key-minimum-length-32chars"
             mock_settings.jwt_algorithm = "HS256"
             mock_settings.jwt_expire_minutes = 30
+            mock_settings.jwt_audience = "wiii"  # Sprint 192: required for aud claim
+            mock_settings.enable_jti_denylist = False  # Sprint 192: JTI denylist check
             from app.auth.token_service import create_access_token, verify_access_token
             token = create_access_token("u1", auth_method="lms")
             payload = verify_access_token(token)

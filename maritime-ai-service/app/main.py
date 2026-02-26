@@ -264,9 +264,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # =========================================================================
     # LIVING AGENT HEARTBEAT (Sprint 170: Linh Hồn Sống)
+    # Sprint 188: Load persisted emotion state before heartbeat starts
     # =========================================================================
     _heartbeat = None
     if settings.enable_living_agent:
+        try:
+            # Sprint 188: Restore emotion state from DB (survives restart)
+            from app.engine.living_agent.emotion_engine import get_emotion_engine
+            _emotion_engine = get_emotion_engine()
+            loaded = await _emotion_engine.load_from_db_if_needed()
+            if loaded:
+                logger.info("[OK] Emotion state restored from DB: mood=%s", _emotion_engine.mood.value)
+            else:
+                logger.info("[OK] Emotion engine initialized with defaults")
+        except Exception as e:
+            logger.warning("[WARN] Emotion state restore failed: %s", e)
+
         try:
             from app.engine.living_agent.heartbeat import get_heartbeat_scheduler
             _heartbeat = get_heartbeat_scheduler()
@@ -321,6 +334,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.info("Living Agent heartbeat stopped")
         except Exception as e:
             logger.warning("Heartbeat shutdown failed: %s", e)
+
+    # Sprint 188: Persist emotion state before shutdown
+    if settings.enable_living_agent:
+        try:
+            from app.engine.living_agent.emotion_engine import get_emotion_engine
+            await get_emotion_engine().save_state_to_db()
+            logger.info("Emotion state persisted on shutdown")
+        except Exception as e:
+            logger.warning("Emotion persist on shutdown failed: %s", e)
 
     # Shut down MCP Client (Sprint 56)
     if settings.enable_mcp_client:
@@ -418,19 +440,33 @@ def create_application() -> FastAPI:
     # Add any custom origins from settings
     if settings.cors_origins and settings.cors_origins != ["*"]:
         cors_origins.extend(settings.cors_origins)
-    
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_origins,
+
+    # Sprint 175: Support regex-based CORS for wildcard subdomains
+    cors_kwargs: dict = dict(
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allow_headers=["*"],
         expose_headers=["*"],
     )
+    if settings.cors_origin_regex:
+        cors_kwargs["allow_origin_regex"] = settings.cors_origin_regex
+        # Keep explicit origins as fallback for dev URLs
+        cors_kwargs["allow_origins"] = cors_origins
+    else:
+        cors_kwargs["allow_origins"] = cors_origins
+
+    app.add_middleware(CORSMiddleware, **cors_kwargs)
 
     # Sprint 157: Session middleware for OAuth CSRF state (must be before auth routes)
+    # Sprint 194c (B5/B9): Validate secret key length for secure CSRF state
     if settings.enable_google_oauth:
         from starlette.middleware.sessions import SessionMiddleware
+        if len(settings.session_secret_key) < 32:
+            logger.warning(
+                "SECURITY: SessionMiddleware secret_key is only %d chars — "
+                "recommend at least 32 chars for secure OAuth CSRF state",
+                len(settings.session_secret_key),
+            )
         app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
 
     # Middleware stack (Starlette executes in REVERSE of add order)

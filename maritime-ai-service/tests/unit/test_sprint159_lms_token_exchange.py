@@ -56,9 +56,10 @@ class TestConfigIntegration:
     """Test config fields."""
 
     def test_feature_flag_default_false(self):
-        """enable_lms_token_exchange defaults to False."""
-        from app.core.config import settings
-        assert getattr(settings, "enable_lms_token_exchange", False) is False
+        """enable_lms_token_exchange defaults to False (without .env)."""
+        from app.core.config import Settings
+        s = Settings(google_api_key="test", api_key="test", _env_file=None)
+        assert s.enable_lms_token_exchange is False
 
     def test_max_age_has_range(self):
         """lms_token_exchange_max_age has ge=30, le=600."""

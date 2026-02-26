@@ -2,9 +2,9 @@
 
 > Master architecture document following **C4 Model + arc42** best practices.
 
-**Last Updated:** 2026-02-20
+**Last Updated:** 2026-02-26
 **Status:** ✅ Complete
-**Version:** 6.0 (Post-Sprint 161)
+**Version:** 7.0 (Post-Sprint 209 — Soul AGI Foundation v1.0, 310+ files, 9703 tests)
 
 
 ---
@@ -61,7 +61,7 @@ graph TB
 **Actors:**
 - **Wiii Desktop**: Tauri v2 + React 18 desktop app (11 Zustand stores, 1346 tests)
 - **LMS Backend**: Sends chat requests via REST + HMAC token exchange
-- **Neo4j**: Knowledge Graph for maritime regulations
+- **Neo4j**: Knowledge Graph for domain-specific knowledge
 - **PostgreSQL**: Vector embeddings, user memory, chat history, org data (12 migrations)
 - **MinIO**: PDF storage, image assets (S3-compatible)
 - **Gemini/OpenAI/Ollama**: Multi-provider LLM failover chain
@@ -184,22 +184,29 @@ graph LR
 ```mermaid
 graph LR
     subgraph "auth/"
-        GO[google_oauth.py<br/>Google OAuth2 PKCE]
-        TS[token_service.py<br/>JWT + Refresh Tokens]
+        GO[google_oauth.py<br/>Google OAuth2 PKCE S256]
+        TS[token_service.py<br/>JWT jti + family_id + Replay]
         US[user_service.py<br/>Identity Federation]
         UR[user_router.py<br/>User CRUD API]
         LTE[lms_token_exchange.py<br/>HMAC Token Exchange]
         LAR[lms_auth_router.py<br/>LMS Auth Endpoints]
+        AA[auth_audit.py<br/>Auth Event Logging]
+        OTP[otp_linking.py<br/>OTP DB-backed]
     end
 
     UR --> US
     UR --> TS
+    UR --> OTP
     LAR --> LTE
     LTE --> US
     LTE --> TS
     GO --> TS
+    GO --> AA
+    TS --> AA
+    LAR --> AA
 
     style US fill:#FF9800,color:white
+    style AA fill:#E91E63,color:white
 ```
 
 ### Integrations Layer Components
@@ -226,7 +233,7 @@ graph LR
 |--------|-----------|-----------|---------|
 | **`app/api/`** | HTTP endpoints, routing (18 routers) | `chat.py`, `chat_stream.py`, `admin.py`, `health.py`, `organizations.py`, `websocket.py`, `webhook.py` | FastAPI routers |
 | **`app/core/`** | Config, security, DB, middleware (15 files) | `config.py`, `security.py`, `database.py`, `middleware.py`, `org_context.py`, `org_filter.py`, `org_settings.py`, `constants.py`, `observability.py` | Settings, Auth, OrgContext |
-| **`app/auth/`** | Authentication & Identity Federation (6 files) | `google_oauth.py`, `token_service.py`, `user_service.py`, `user_router.py`, `lms_token_exchange.py`, `lms_auth_router.py` | OAuth, JWT, Federation |
+| **`app/auth/`** | Authentication & Identity Federation (8 files) | `google_oauth.py`, `token_service.py`, `user_service.py`, `user_router.py`, `lms_token_exchange.py`, `lms_auth_router.py`, `auth_audit.py`, `otp_linking.py` | OAuth, JWT, Federation, Audit |
 | **`app/services/`** | Business logic (REFACTORED) | `chat_service.py` (facade), `chat_orchestrator.py` (pipeline), `graph_streaming.py`, `stream_utils.py` | See Services below |
 | **`app/engine/`** | AI/ML components, agents (60+ files) | `unified_agent.py`, tools/, agentic_rag/, multi_agent/, search_platforms/, character/ | Agents, Tools, Search |
 | **`app/engine/search_platforms/`** | Product Search Platform Adapters | `base.py` (ABC), `registry.py` (singleton), `circuit_breaker.py`, `adapters/` (8 adapters), `oauth/` | SearchPlatformAdapter, SearchPlatformRegistry |
@@ -272,7 +279,7 @@ graph LR
 | **`agentic_rag/`** | Corrective RAG system (Composition Pattern) | `rag_agent.py`, `corrective_rag.py` (auto-composes RAGAgent), grader, verifier |
 | **`multi_agent/`** | LangGraph orchestration | `supervisor.py`, `graph.py`, `tutor_node.py`, `product_search_node.py` |
 | **`tools/`** | LangChain tools (RAG, Memory, Tutor, Product Search) | `rag_tools.py`, `memory_tools.py`, `tutor_tools.py`, `product_search_tools.py` |
-| **`semantic_memory/`** | Vector-based user memory | `core.py`, `extraction.py`, `context.py` |
+| **`semantic_memory/`** | Vector-based user memory + cross-platform sync | `core.py`, `extraction.py`, `context.py`, `cross_platform.py` |
 | **`search_platforms/`** | Product search plugin architecture (8 platform adapters) | `base.py` (ABC), `registry.py`, `circuit_breaker.py`, `adapters/`, `oauth/` |
 | **`character/`** | Character system (per-user isolated) | `blocks.py`, `experiences.py`, `reflection.py` |
 | **`tutor/`** | State machine tutoring | `tutor_agent.py` |
@@ -361,7 +368,7 @@ graph LR
 |-------|--------|-------|--------|--------|
 | API | `app/api/` | 18 | ✅ | 18 routers (chat, stream, admin, orgs, auth, users, webhook, ws) |
 | Core | `app/core/` | 15 | ✅ | +org_context, org_filter, org_settings, middleware, constants, observability |
-| Auth | `app/auth/` | 6 | ✅ | NEW: OAuth, JWT, Federation, LMS Token Exchange |
+| Auth | `app/auth/` | 8 | ✅ | OAuth, JWT, Federation, LMS Token Exchange, Auth Audit, OTP DB |
 | Services | `app/services/` | 20+ | ✅ | +graph_streaming, stream_utils, conversation_window, context_manager |
 | Engine | `app/engine/` | 60+ | ✅ | +search_platforms (8 adapters), character, llm_providers |
 | Integrations | `app/integrations/` | 3 | ✅ | NEW: LMS client, enrichment |
@@ -376,8 +383,8 @@ graph LR
 |--------|---------|-------|--------------|
 | `archive/` | Legacy/backup code | 10 | Old implementations |
 | `scripts/` | Dev utilities | 50+ | test_*.py, migrations, ingestion |
-| `tests/` | Automated tests (324 files, 6520+ tests) | 4 dirs | unit/, integration/, property/, e2e/ |
-| `alembic/` | DB migrations | 12 | Schema evolution (011: org_id, 010: auth_method) |
+| `tests/` | Automated tests (329+ files, 6731+ tests) | 4 dirs | unit/, integration/, property/, e2e/ |
+| `alembic/` | DB migrations | 15 | Schema evolution (011: org_id, 010: auth_method, 025-027: auth hardening) |
 | `docs/` | Documentation | 4 dirs | architecture/, api/, schemas/ |
 
 ---
@@ -641,7 +648,7 @@ graph TB
 
 ## 6. Cross-Cutting Concerns
 
-### Authentication (Dual: API Key + JWT)
+### Authentication (Triple: API Key + JWT + LMS HMAC)
 
 ```
 Path 1: API Key
@@ -651,15 +658,18 @@ Path 1: API Key
       ├── session_id: from X-Session-ID header
       └── organization_id: from X-Organization-ID header (optional)
 
-Path 2: Google OAuth + JWT
-  Google OAuth → auth/google_oauth.py → auth/token_service.py → JWT
+Path 2: Google OAuth + JWT (Sprint 176: PKCE S256 + jti + family_id)
+  Google OAuth (PKCE S256) → auth/google_oauth.py → auth/token_service.py → JWT (jti claim)
       └── Bearer token → core/security.py → AuthenticatedUser
+      └── Refresh: family_id tracking + replay detection → purge family on reuse
 
 Path 3: LMS Token Exchange (HMAC-signed)
   LMS Backend → POST /auth/lms/token (HMAC-SHA256) → auth/lms_token_exchange.py → JWT
+
+Audit: All auth events → auth/auth_audit.py → auth_events table (fire-and-forget)
 ```
 
-### Configuration (46 feature flags)
+### Configuration (53 feature flags)
 
 ```python
 # app/core/config.py (key flags — see CLAUDE.md for full list)
@@ -839,12 +849,12 @@ agentic_rag/
 
 | Metric | Count |
 |--------|-------|
-| Python source files | 254 |
-| Test files | 324 |
-| Unit tests | 6,520+ |
+| Python source files | 297+ |
+| Test files | 329+ |
+| Unit tests | 6,731+ |
 | API routers | 18 |
-| Feature flags | 46 |
-| Alembic migrations | 12 |
+| Feature flags | 57 |
+| Alembic migrations | 15 |
 | Repositories | 15 |
 | Domain plugins | 2 (maritime, traffic_law) |
 | Search platform adapters | 8 |

@@ -1,17 +1,66 @@
 # =============================================================================
 # WIII PRODUCTION DOCKER COMPOSE
 # Sprint 83: Production-ready deployment with resource limits and security
+# Sprint 165: Neo4j opt-in via profiles (enable_neo4j=False by default)
+# Sprint 175: Nginx reverse proxy + subdomain routing + SPA serving
+# Sprint 188: Soul AGI profile (ollama + cloudflared for autonomous deployment)
 #
 # Usage:
 #   docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml --profile neo4j up -d      # With Neo4j
+#   docker compose -f docker-compose.prod.yml --profile soul-agi up -d   # With Soul AGI (Ollama + Cloudflared)
+#   docker compose -f docker-compose.prod.yml --profile soul-agi --profile neo4j up -d  # Full stack
 #
-# Requirements:
+# Prerequisites:
 #   - .env.production file with ALL required secrets
 #   - GOOGLE_API_KEY, API_KEY, JWT_SECRET_KEY must be set
-#   - POSTGRES_PASSWORD, NEO4J_PASSWORD must be changed from defaults
+#   - POSTGRES_PASSWORD must be changed from defaults
+#   - SPA build: run wiii-desktop/scripts/build-web.sh before deploy
+#   - DNS: *.holilihu.online wildcard A record pointing to this server
+#   - Soul AGI: Set ENABLE_LIVING_AGENT=true, CF_TUNNEL_TOKEN for cloudflared
 # =============================================================================
 
 services:
+  # =============================================================================
+  # NGINX — Reverse Proxy + SPA Serving + Subdomain Routing (Sprint 175)
+  # =============================================================================
+  nginx:
+    image: nginx:1-alpine
+    container_name: wiii-nginx
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      # Uncomment for SSL termination:
+      # - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - wiii-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "256M"
+        reservations:
+          cpus: "0.1"
+          memory: "64M"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
   # =============================================================================
   # FASTAPI APP — Production (no hot-reload, Gunicorn workers)
   # =============================================================================
@@ -21,7 +70,7 @@ services:
       dockerfile: Dockerfile
     container_name: wiii-app
     ports:
-      - "${APP_PORT:-8000}:8000"
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
     env_file:
       - .env.production
     environment:
@@ -29,20 +78,19 @@ services:
       - DEBUG=false
       - LOG_LEVEL=INFO
       - LOG_FORMAT=json
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-wiii}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wiii_ai}
-      - NEO4J_URI=bolt://neo4j:7687
-      - NEO4J_USER=${NEO4J_USER:-neo4j}
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-wiii}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wiii_ai}
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-wiii}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       - MINIO_BUCKET=${MINIO_BUCKET:-wiii-docs}
       - MINIO_SECURE=false
       - VALKEY_URL=redis://valkey:6379/0
+      # Sprint 175: Subdomain org routing
+      - SUBDOMAIN_BASE_DOMAIN=${SUBDOMAIN_BASE_DOMAIN:-}
+      - CORS_ORIGIN_REGEX=${CORS_ORIGIN_REGEX:-}
+      - ENABLE_MULTI_TENANT=${ENABLE_MULTI_TENANT:-false}
     depends_on:
       postgres:
-        condition: service_healthy
-      neo4j:
         condition: service_healthy
       minio:
         condition: service_healthy
@@ -86,7 +134,7 @@ services:
   # POSTGRESQL — Production (resource limits, no exposed ports by default)
   # =============================================================================
   postgres:
-    image: pgvector/pgvector:pg15
+    image: pgvector/pgvector:pg17
     container_name: wiii-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-wiii}
@@ -99,6 +147,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-db:/docker-entrypoint-initdb.d:ro
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./backups:/backups
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    shm_size: 256m  # Shared memory for PG (default 64m is too small for shared_buffers=384MB)
     networks:
       - wiii-network
     restart: unless-stopped
@@ -109,12 +161,13 @@ services:
           memory: "2G"
         reservations:
           cpus: "0.25"
-          memory: "256M"
+          memory: "512M"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wiii} -d ${POSTGRES_DB:-wiii_ai}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
@@ -122,7 +175,9 @@ services:
         max-file: "3"
 
   # =============================================================================
-  # NEO4J — Production (no browser exposed externally)
+  # NEO4J — Optional Graph Database (opt-in via --profile neo4j)
+  # Sprint 165: Neo4j disabled by default (enable_neo4j=False)
+  # Start with: docker compose -f docker-compose.prod.yml --profile neo4j up -d
   # =============================================================================
   neo4j:
     image: neo4j:5-community
@@ -163,6 +218,8 @@ services:
       options:
         max-size: "20m"
         max-file: "3"
+    profiles:
+      - neo4j  # Opt-in: docker compose -f docker-compose.prod.yml --profile neo4j up -d
 
   # =============================================================================
   # MINIO — Production Object Storage
@@ -258,6 +315,73 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # =============================================================================
+  # OLLAMA — Local LLM for Soul AGI (opt-in via --profile soul-agi)
+  # Sprint 188: Zero-cost heartbeat/journal/briefing via qwen3:4b
+  # After first deploy: docker exec wiii-ollama ollama pull qwen3:4b
+  # =============================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: wiii-ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - wiii-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: "4G"
+        reservations:
+          cpus: "0.5"
+          memory: "1G"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+    profiles:
+      - soul-agi
+
+  # =============================================================================
+  # CLOUDFLARED — Cloudflare Tunnel for webhook ingress (opt-in via --profile soul-agi)
+  # Sprint 188: Stable webhook URL without public IP / port forwarding
+  # Requires: CF_TUNNEL_TOKEN from Cloudflare Zero Trust dashboard
+  # =============================================================================
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: wiii-cloudflared
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
+    networks:
+      - wiii-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: "128M"
+        reservations:
+          cpus: "0.05"
+          memory: "32M"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - soul-agi
+
 volumes:
   postgres_data:
     driver: local
@@ -268,6 +392,10 @@ volumes:
   minio_data:
     driver: local
   valkey_data:
+    driver: local
+  nginx_logs:
+    driver: local
+  ollama_data:
     driver: local
 
 networks:

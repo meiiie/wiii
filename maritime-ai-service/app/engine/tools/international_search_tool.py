@@ -1,9 +1,13 @@
 """
-International Search Tool — Sprint 196: "Thợ Săn Chuyên Nghiệp"
+International Search Tool — Sprint 196→199: "Cầu Nối Trung-Việt"
 
 Searches for products on international markets using Serper.dev (Sprint 198)
 + Jina Reader for page content extraction. Converts prices to VND.
 Falls back to DuckDuckGo if SERPER_API_KEY is not configured.
+
+Sprint 199: Multi-region search (US + China + AliExpress) with
+URL-based currency auto-detection, Chinese price patterns, and
+configurable region filtering.
 
 Gate: enable_international_search
 """
@@ -11,7 +15,8 @@ Gate: enable_international_search
 import json
 import logging
 import re
-from typing import Optional
+from typing import List, Optional
+from urllib.parse import urlparse
 
 import httpx
 from langchain_core.tools import StructuredTool
@@ -53,16 +58,127 @@ _SYMBOL_PATTERNS = [
     (re.compile(r'¥\s?([\d,.\s]+)'), "CNY"),           # ¥ (default to CNY)
     (re.compile(r'₩\s?([\d,.\s]+)'), "KRW"),           # ₩
     (re.compile(r'฿\s?([\d,.\s]+)'), "THB"),           # ฿
+    # Sprint 199: Chinese price patterns
+    (re.compile(r'([\d,.]+)\s*元'), "CNY"),             # 12.50元 (yuan suffix)
+    (re.compile(r'RMB\s?([\d,.]+)'), "CNY"),            # RMB 12.50
 ]
 
 # Sprint 198b: Code-based price regex (e.g. "USD 450.00", "AED 5,820")
+# Sprint 199: Added RMB code
 _CODE_PRICE_REGEX = re.compile(
-    r'(?:USD|EUR|GBP|CNY|JPY|KRW|SGD|THB|AED|CAD|AUD|TWD)\s?([\d,.\s]+)',
+    r'(?:USD|EUR|GBP|CNY|JPY|KRW|SGD|THB|AED|CAD|AUD|TWD|RMB)\s?([\d,.\s]+)',
     re.IGNORECASE,
 )
 
 # Backward compat: keep _DEFAULT_RATES as alias
 _DEFAULT_RATES = _EXCHANGE_RATES
+
+# =============================================================================
+# Sprint 199: Multi-Region Search Configuration
+# =============================================================================
+
+_SEARCH_REGIONS = [
+    {
+        "id": "global",
+        "label": "Global (US/EU)",
+        "gl": "us",
+        "hl": "en",
+        "default_currency": "USD",
+        "queries": [
+            "{product} price buy wholesale",
+            "{product} supplier price",
+        ],
+    },
+    {
+        "id": "china_1688",
+        "label": "1688.com (China B2B)",
+        "gl": "cn",
+        "hl": "zh",
+        "default_currency": "CNY",
+        "queries": ["site:1688.com {product}"],
+    },
+    {
+        "id": "china_taobao",
+        "label": "Taobao/Tmall",
+        "gl": "cn",
+        "hl": "zh",
+        "default_currency": "CNY",
+        "queries": ["site:taobao.com {product}", "site:tmall.com {product}"],
+    },
+    {
+        "id": "aliexpress",
+        "label": "AliExpress",
+        "gl": "us",
+        "hl": "en",
+        "default_currency": "USD",
+        "queries": ["site:aliexpress.com {product} price"],
+    },
+]
+
+# Sprint 199: URL-based currency auto-detection
+_DOMAIN_CURRENCY_MAP = {
+    "1688.com": "CNY",
+    "taobao.com": "CNY",
+    "tmall.com": "CNY",
+    "jd.com": "CNY",
+    "aliexpress.com": "USD",
+    "amazon.com": "USD",
+    "amazon.co.uk": "GBP",
+    "amazon.de": "EUR",
+    "amazon.co.jp": "JPY",
+    "ebay.com": "USD",
+    "rakuten.co.jp": "JPY",
+    "coupang.com": "KRW",
+}
+
+
+def _detect_currency_from_url(url: str) -> Optional[str]:
+    """Detect likely currency based on the URL's domain.
+
+    Sprint 199: Maps known e-commerce domains to their native currency.
+
+    Returns:
+        Currency code (e.g. "CNY") or None if domain not recognized.
+    """
+    if not url:
+        return None
+    try:
+        hostname = urlparse(url).hostname or ""
+        hostname = hostname.lower()
+        # Try exact match first, then suffix match for subdomains
+        for domain, currency in _DOMAIN_CURRENCY_MAP.items():
+            if hostname == domain or hostname.endswith("." + domain):
+                return currency
+    except Exception:
+        pass
+    return None
+
+
+def _get_active_regions(regions_filter: str = "") -> list:
+    """Get active search regions based on filter and config.
+
+    Args:
+        regions_filter: Comma-separated region IDs (e.g. "global,china_1688").
+                       Empty string = all regions based on config.
+
+    Returns:
+        List of region dicts from _SEARCH_REGIONS.
+    """
+    try:
+        from app.core.config import get_settings
+        settings = get_settings()
+        chinese_enabled = getattr(settings, 'enable_chinese_platform_search', True)
+    except Exception:
+        chinese_enabled = True
+
+    if regions_filter:
+        requested = {r.strip() for r in regions_filter.split(",") if r.strip()}
+        return [r for r in _SEARCH_REGIONS if r["id"] in requested]
+
+    if not chinese_enabled:
+        return [r for r in _SEARCH_REGIONS if r["id"] == "global"]
+
+    return list(_SEARCH_REGIONS)
 
 
 def _fetch_page_markdown(url: str) -> str:
@@ -205,7 +321,7 @@ def _extract_price_from_text(
                 if parsed:
                     return parsed
 
-    # 4. Code regex (e.g. "USD 450.00", "AED 5,820")
+    # 4. Code regex (e.g. "USD 450.00", "AED 5,820", "RMB 12.50")
     code_pattern = re.compile(
         rf'{re.escape(target)}\s?([\d,.\s]+)',
         re.IGNORECASE,
@@ -257,87 +373,195 @@ def _search_international_ddgs(queries: list) -> list:
     return all_results
 
 
+def _detect_result_currency(
+    url: str,
+    region: dict,
+    user_currency: str,
+) -> str:
+    """Determine the best currency to use for price extraction.
+
+    Sprint 199: 4-step fallback chain:
+    1. URL-based detection (e.g. 1688.com → CNY)
+    2. Region default currency (e.g. china_1688 → CNY)
+    3. User-specified currency
+    4. USD as ultimate fallback
+    """
+    # 1. URL-based auto-detection
+    url_currency = _detect_currency_from_url(url)
+    if url_currency:
+        return url_currency
+    # 2. Region default
+    region_currency = region.get("default_currency")
+    if region_currency:
+        return region_currency
+    # 3. User-specified
+    if user_currency:
+        return user_currency.upper()
+    # 4. Ultimate fallback
+    return "USD"
+
+
+def _extract_source_platform(url: str) -> str:
+    """Extract a human-readable platform name from URL.
+
+    Sprint 199: Used for source_platform field in results.
+    """
+    if not url:
+        return "unknown"
+    try:
+        hostname = urlparse(url).hostname or ""
+        hostname = hostname.lower()
+        # Known platform mappings
+        platform_map = {
+            "1688.com": "1688.com",
+            "taobao.com": "Taobao",
+            "tmall.com": "Tmall",
+            "aliexpress.com": "AliExpress",
+            "amazon.com": "Amazon US",
+            "amazon.co.uk": "Amazon UK",
+            "amazon.de": "Amazon DE",
+            "amazon.co.jp": "Amazon JP",
+            "ebay.com": "eBay",
+            "jd.com": "JD.com",
+            "rakuten.co.jp": "Rakuten",
+        }
+        for domain, name in platform_map.items():
+            if hostname == domain or hostname.endswith("." + domain):
+                return name
+        # Fallback: use domain without www
+        if hostname.startswith("www."):
+            hostname = hostname[4:]
+        return hostname
+    except Exception:
+        return "unknown"
+
+
+def _region_label(region: dict) -> str:
+    """Get a human-readable label for a search region."""
+    return region.get("label", region.get("id", "unknown"))
+
+
 def _search_international(
     product_name: str,
     currency: str = "USD",
     search_queries: Optional[list] = None,
+    regions: str = "",
 ) -> dict:
     """Search international markets for product pricing.
 
     Sprint 198: Uses Serper.dev with gl=us, hl=en for international pricing.
-    Falls back to DuckDuckGo if Serper is unavailable.
+    Sprint 199: Multi-region search (global + China + AliExpress).
+    Falls back to DuckDuckGo if Serper is unavailable (global region only).
 
     Args:
         product_name: Product name to search
-        currency: Primary currency to look for (USD, EUR, GBP)
-        search_queries: Optional pre-optimized queries from Query Planner (Sprint 197)
+        currency: Primary currency to look for (USD, EUR, GBP, CNY)
+        search_queries: Optional pre-optimized queries from Query Planner (Sprint 197).
+                       When provided, used for global region only.
+        regions: Optional comma-separated region filter (e.g. "global,china_1688")
 
     Returns:
-        Dict with results list, count, and exchange rate.
+        Dict with results list, count, exchange rate, and regions_searched.
     """
     from app.core.config import get_settings
     settings = get_settings()
     usd_vnd_rate = settings.usd_vnd_exchange_rate
 
-    # Sprint 197: Use planner-optimized queries if available
-    if search_queries:
-        queries = search_queries
-    else:
-        # Fallback: hardcoded queries (Sprint 196, quotes removed Sprint 198b for broader results)
-        queries = [
-            f'{product_name} price buy {currency}',
-            f'{product_name} wholesale supplier price',
-        ]
+    active_regions = _get_active_regions(regions)
 
-    all_results = []
-    seen_urls = set()
+    all_results: List[dict] = []
+    seen_urls: set = set()
+    regions_searched: List[str] = []
 
-    # Sprint 198: Try Serper first (gl=us for international pricing), fall back to DuckDuckGo
-    # Sprint 198b: include_price_metadata=True to get Serper price data
     from app.engine.tools.serper_web_search import is_serper_available, _serper_search
 
-    if is_serper_available():
-        for query in queries:
-            try:
-                results = _serper_search(
-                    query, max_results=_DUCKDUCKGO_MAX_RESULTS,
-                    gl="us", hl="en", include_price_metadata=True,
-                )
-                for r in results:
-                    url = r.get("href", "")
-                    if url and url not in seen_urls:
-                        seen_urls.add(url)
-                        all_results.append({
-                            "url": url,
-                            "title": r.get("title", ""),
-                            "snippet": r.get("body", ""),
-                            "extracted_price": r.get("extracted_price"),
-                            "price_range": r.get("price_range"),
-                        })
-            except Exception as e:
-                logger.warning("[INTL_SEARCH] Serper query failed: %s", e)
-                continue
-    else:
-        # DuckDuckGo fallback
-        all_results = _search_international_ddgs(queries)
+    serper_available = is_serper_available()
+
+    for region in active_regions:
+        region_id = region["id"]
+        regions_searched.append(region_id)
+
+        # Sprint 197: Use planner-optimized queries for global region if available
+        if region_id == "global" and search_queries:
+            queries = search_queries
+        else:
+            queries = [q.format(product=product_name) for q in region["queries"]]
+
+        if serper_available:
+            for query in queries:
+                try:
+                    results = _serper_search(
+                        query, max_results=_DUCKDUCKGO_MAX_RESULTS,
+                        gl=region["gl"], hl=region["hl"],
+                        include_price_metadata=True,
+                    )
+                    for r in results:
+                        url = r.get("href", "")
+                        if url and url not in seen_urls:
+                            seen_urls.add(url)
+                            all_results.append({
+                                "url": url,
+                                "title": r.get("title", ""),
+                                "snippet": r.get("body", ""),
+                                "extracted_price": r.get("extracted_price"),
+                                "price_range": r.get("price_range"),
+                                "_region": region,
+                            })
+                except Exception as e:
+                    logger.warning("[INTL_SEARCH] Serper query failed for %s: %s", region_id, e)
+                    continue
+        elif region_id == "global":
+            # DuckDuckGo fallback (only for global — doesn't support gl=cn)
+            ddgs_results = _search_international_ddgs(queries)
+            for r in ddgs_results:
+                r["_region"] = region
+            all_results.extend(ddgs_results)
 
     if not all_results:
         return {
             "results": [],
             "count": 0,
             "exchange_rate": usd_vnd_rate,
-            "query": queries[0],
+            "currency": currency,
+            "query": product_name,
+            "regions_searched": regions_searched,
         }
 
-    # Sprint 198b: Try Serper price metadata BEFORE Jina fetch
+    # Sprint 199: Fair quota per region — ensure Chinese results aren't eclipsed by global
+    if len(active_regions) > 1:
+        per_region = max(3, 12 // len(active_regions))
+        region_buckets: dict = {}
+        for result in all_results:
+            rid = result.get("_region", {}).get("id", "global")
+            region_buckets.setdefault(rid, []).append(result)
+        fair_results = []
+        for region_cfg in active_regions:
+            bucket = region_buckets.get(region_cfg["id"], [])
+            fair_results.extend(bucket[:per_region])
+        # Fill remaining slots from any region
+        seen_fair = {id(r) for r in fair_results}
+        for result in all_results:
+            if len(fair_results) >= 15:
+                break
+            if id(result) not in seen_fair:
+                fair_results.append(result)
+        candidate_results = fair_results
+    else:
+        candidate_results = all_results[:10]
+
+    # Sprint 199: Enrich results with multi-currency price extraction
     enriched_results = []
-    for result in all_results[:5]:  # top 5 for speed
+    for result in candidate_results:
         url = result["url"]
         snippet = result.get("snippet", "")
+        region = result.get("_region", active_regions[0] if active_regions else {"id": "global", "default_currency": "USD"})
+
+        # Sprint 199: Detect currency per result
+        result_currency = _detect_result_currency(url, region, currency)
 
         # Try Serper metadata first (no HTTP call needed)
         price_foreign = _extract_price_from_text(
-            snippet, currency,
+            snippet, result_currency,
             serper_price=result.get("extracted_price"),
             serper_price_range=result.get("price_range"),
         )
@@ -346,26 +570,37 @@ def _search_international(
         if price_foreign is None:
             markdown = _fetch_page_markdown(url)
             if markdown:
-                price_foreign = _extract_price_from_text(markdown, currency)
+                price_foreign = _extract_price_from_text(markdown, result_currency)
+
+        # Sprint 199: If still no price with detected currency, try USD fallback
+        if price_foreign is None and result_currency != "USD":
+            price_foreign = _extract_price_from_text(snippet, "USD")
+            if price_foreign:
+                result_currency = "USD"
 
         item = {
             "title": result["title"],
             "url": url,
             "snippet": snippet[:200],
             "price_foreign": None,
-            "price_currency": currency,
+            "price_currency": result_currency,
             "price_vnd": None,
+            "region": _region_label(region),
+            "source_platform": _extract_source_platform(url),
         }
 
         if price_foreign and price_foreign > 0:
             item["price_foreign"] = price_foreign
-            item["price_vnd"] = round(_convert_to_vnd(price_foreign, currency, usd_vnd_rate))
+            item["price_currency"] = result_currency
+            item["price_vnd"] = round(_convert_to_vnd(price_foreign, result_currency, usd_vnd_rate))
 
         enriched_results.append(item)
 
-    # Sort by VND price (items with price first)
+    # Stable partition: items WITH price first, WITHOUT price last.
+    # No price-direction sort — the LLM agent decides presentation
+    # order (cheapest/expensive/grouped) based on user's question.
     enriched_results.sort(
-        key=lambda x: x["price_vnd"] if x["price_vnd"] else float('inf')
+        key=lambda x: (0 if x["price_vnd"] else 1)
     )
 
     return {
@@ -373,7 +608,8 @@ def _search_international(
         "count": len(enriched_results),
         "exchange_rate": usd_vnd_rate,
         "currency": currency,
-        "query": queries[0],
+        "query": product_name,
+        "regions_searched": regions_searched,
     }
 
 
@@ -381,21 +617,26 @@ def tool_international_search_fn(
     product_name: str,
     currency: str = "USD",
     search_queries: str = "",
+    regions: str = "",
 ) -> str:
-    """Search international markets for product pricing and availability.
+    """Search international markets including Chinese platforms for product pricing.
 
     Finds global suppliers, distributors, and pricing for comparison
-    with Vietnamese domestic prices. Converts to VND automatically.
+    with Vietnamese domestic prices. Includes 1688.com, Taobao, Tmall,
+    AliExpress, Amazon, eBay. Converts CNY/USD/EUR to VND automatically.
 
     Args:
         product_name: Product name in English (e.g., "Zebra ZXP Series 7 printhead")
-        currency: Price currency to look for (USD, EUR, GBP). Default: USD
+        currency: Price currency to look for (USD, EUR, GBP, CNY). Default: USD
         search_queries: Optional JSON array of pre-optimized search queries from Query Planner.
                        Example: '["Zebra ZXP7 printhead price wholesale", "ZXP Series 7 supplier"]'
-                       If provided, uses these instead of auto-generated queries.
+                       If provided, uses these instead of auto-generated queries for global region.
+        regions: Optional comma-separated region IDs to search.
+                Choices: "global", "china_1688", "china_taobao", "aliexpress".
+                Empty = all regions (default).
 
     Returns:
-        JSON with international results including VND-converted prices.
+        JSON with international results including VND-converted prices and region info.
     """
     from app.core.config import get_settings
     settings = get_settings()
@@ -420,7 +661,11 @@ def tool_international_search_fn(
             logger.debug("[INTL_SEARCH] Invalid search_queries JSON, using default")
 
     try:
-        result = _search_international(product_name, currency, search_queries=planned_queries)
+        result = _search_international(
+            product_name, currency,
+            search_queries=planned_queries,
+            regions=regions,
+        )
         return json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.error("[INTL_SEARCH] Failed: %s", e)
@@ -436,8 +681,10 @@ def get_international_search_tool() -> StructuredTool:
         func=tool_international_search_fn,
         name="tool_international_search",
         description=(
-            "Tìm giá sản phẩm trên thị trường QUỐC TẾ (Mỹ, EU, Trung Quốc...) "
-            "và tự động chuyển đổi sang VNĐ. Dùng khi cần so sánh giá nội địa vs quốc tế, "
+            "Tìm giá trên thị trường QUỐC TẾ bao gồm NỀN TẢNG TRUNG QUỐC "
+            "(1688.com, Taobao, Tmall, AliExpress) và Mỹ/EU (Amazon, eBay). "
+            "Tự động chuyển đổi CNY/USD/EUR sang VNĐ. "
+            "Dùng khi cần so sánh giá nội địa vs quốc tế, "
             "hoặc tìm nguồn nhập khẩu cho sản phẩm chuyên dụng, linh kiện, thiết bị công nghiệp. "
             "Tham số search_queries (JSON array) cho phép truyền truy vấn tối ưu từ Query Planner."
         ),

@@ -115,6 +115,8 @@ export function PreviewPanel() {
 
 /** Expanded view of the selected preview */
 function ExpandedPreview({ item }: { item: PreviewItemData }) {
+  const isProduct = item.preview_type === "product";
+
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       {/* Large image */}
@@ -135,11 +137,23 @@ function ExpandedPreview({ item }: { item: PreviewItemData }) {
               [{item.citation_index}]
             </span>
           )}
+          {isProduct && item.metadata?.platform != null && (
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-surface-secondary text-text-tertiary uppercase tracking-wider">
+              {String(item.metadata.platform)}
+            </span>
+          )}
         </div>
         <h3 className="text-base font-semibold text-text leading-snug">
           {item.title}
         </h3>
       </div>
+
+      {/* Product-specific: prominent price */}
+      {isProduct && (item.metadata?.price != null || item.metadata?.extracted_price != null) && (
+        <div className="text-xl font-bold text-[var(--accent)]">
+          {String(item.metadata.extracted_price || item.metadata.price)}
+        </div>
+      )}
 
       {/* Snippet / description */}
       {item.snippet && (
@@ -148,8 +162,44 @@ function ExpandedPreview({ item }: { item: PreviewItemData }) {
         </div>
       )}
 
-      {/* Metadata */}
-      {item.metadata && Object.keys(item.metadata).length > 0 && (
+      {/* Product metadata grid */}
+      {isProduct && item.metadata && (
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          {item.metadata.seller != null && (
+            <div>
+              <span className="text-text-tertiary block text-xs">Người bán</span>
+              <span className="text-text font-medium">{String(item.metadata.seller)}</span>
+            </div>
+          )}
+          {item.metadata.rating != null && (
+            <div>
+              <span className="text-text-tertiary block text-xs">Đánh giá</span>
+              <span className="text-text font-medium">{String(item.metadata.rating)} / 5 ★</span>
+            </div>
+          )}
+          {item.metadata.sold_count != null && (
+            <div>
+              <span className="text-text-tertiary block text-xs">Đã bán</span>
+              <span className="text-text font-medium">{String(item.metadata.sold_count)}</span>
+            </div>
+          )}
+          {item.metadata.location != null && String(item.metadata.location) !== "" && (
+            <div>
+              <span className="text-text-tertiary block text-xs">Vị trí</span>
+              <span className="text-text font-medium">{String(item.metadata.location)}</span>
+            </div>
+          )}
+          {item.metadata.delivery != null && String(item.metadata.delivery) !== "" && (
+            <div className="col-span-2">
+              <span className="text-text-tertiary block text-xs">Giao hàng</span>
+              <span className="text-text font-medium">{String(item.metadata.delivery)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Non-product metadata (original generic display) */}
+      {!isProduct && item.metadata && Object.keys(item.metadata).length > 0 && (
         <div className="space-y-1.5">
           {item.metadata.price != null && (
             <div className="text-sm">
@@ -192,10 +242,11 @@ function ExpandedPreview({ item }: { item: PreviewItemData }) {
           href={item.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-sm text-[var(--accent)] hover:underline"
+          className={`inline-flex items-center gap-1.5 text-sm text-white
+            ${isProduct ? "bg-[var(--accent)] hover:bg-[var(--accent)]/90 px-4 py-2 rounded-lg font-medium" : "text-[var(--accent)] hover:underline"}`}
         >
           <ExternalLink size={14} />
-          Mở liên kết gốc
+          {isProduct ? "Mở trên sàn" : "Mở liên kết gốc"}
         </a>
       )}
     </div>

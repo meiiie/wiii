@@ -1,0 +1,115 @@
+# =============================================================================
+# Wiii Production — Caddy Auto-SSL + Reverse Proxy to Nginx
+# by The Wiii Lab (Hong Linh Linh Hung)
+#
+# Architecture: Caddy (SSL) → Nginx (routing + rate limiting + SPA) → App (API)
+#
+# Install:
+#   sudo cp Caddyfile /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# Caddy automatically:
+#   - Obtains Let's Encrypt SSL certificates
+#   - Renews certificates before expiry (30 days before)
+#   - Redirects HTTP → HTTPS
+#   - Handles OCSP stapling
+#   - Supports HTTP/3 (QUIC) by default
+#
+# IMPORTANT: Replace "holilihu.online" with your actual domain if different.
+# =============================================================================
+
+{
+    # ACME email — Let's Encrypt will notify before cert expiry
+    email admin@holilihu.online
+}
+
+# ─────────────────────────────────────────────────
+# Main domain — holilihu.online
+# ─────────────────────────────────────────────────
+holilihu.online {
+    reverse_proxy localhost:80 {
+        # Flush immediately for SSE streaming (critical!)
+        flush_interval -1
+
+        # Health checking upstream Nginx
+        health_uri /health
+        health_interval 30s
+        health_timeout 5s
+
+        # Timeouts for LLM streaming responses
+        transport http {
+            response_header_timeout 120s
+            read_timeout 300s
+            write_timeout 300s
+        }
+    }
+
+    # Security headers (HSTS — Caddy handles this, Nginx handles the rest)
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        -Server
+    }
+
+    # Request size limit (for PDF uploads)
+    request_body {
+        max_size 50MB
+    }
+
+    # Access logging (JSON format)
+    log {
+        output file /var/log/caddy/holilihu-access.log {
+            roll_size 100mb
+            roll_keep 5
+            roll_keep_for 168h
+        }
+        format json
+    }
+}
+
+# ─────────────────────────────────────────────────
+# Wildcard subdomains — *.holilihu.online
+# For multi-tenant org routing (e.g., lms-hanhai.holilihu.online)
+#
+# NOTE: Wildcard SSL requires DNS challenge.
+# Option A: Use Caddy with cloudflare DNS plugin (recommended)
+# Option B: Use Cloudflare proxy (orange cloud) — Cloudflare handles SSL
+#
+# If using Cloudflare proxy (orange cloud on DNS records):
+#   - Cloudflare terminates SSL, forwards to Caddy on port 80
+#   - Caddy still gets a cert for origin, Cloudflare trusts it
+#   - Set Cloudflare SSL mode to "Full (strict)"
+# ─────────────────────────────────────────────────
+
+# Uncomment when you need subdomain routing:
+# *.holilihu.online {
+#     # Wildcard cert via DNS challenge (requires caddy-dns plugin)
+#     tls {
+#         dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+#     }
+#
+#     reverse_proxy localhost:80 {
+#         flush_interval -1
+#         transport http {
+#             response_header_timeout 120s
+#             read_timeout 300s
+#             write_timeout 300s
+#         }
+#     }
+#
+#     header {
+#         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+#         -Server
+#     }
+#
+#     request_body {
+#         max_size 50MB
+#     }
+#
+#     log {
+#         output file /var/log/caddy/holilihu-wildcard.log {
+#             roll_size 100mb
+#             roll_keep 5
+#         }
+#         format json
+#     }
+# }

@@ -211,6 +211,16 @@ def _init_extended_tools():
         except Exception as e:
             logger.warning("Product search tools init failed: %s", e)
 
+    # Sprint 200: Visual Product Search (image → product identification)
+    if settings.enable_visual_product_search:
+        try:
+            from app.engine.tools.visual_product_search import get_visual_product_search_tool
+            _vps_tool = get_visual_product_search_tool()
+            registry.register(_vps_tool, ToolCategory.PRODUCT_SEARCH, ToolAccess.READ)
+            logger.info("Visual product search tool registered")
+        except Exception as e:
+            logger.warning("Visual product search tool init failed: %s", e)
+
     # Character Tools (Sprint 95: self-editing character state)
     if settings.enable_character_tools:
         try:
@@ -367,6 +377,9 @@ __all__ = [
 
     # Progress Report Tool (Sprint 148)
     "tool_report_progress",
+
+    # Sprint 196: B2B Sourcing Tools (config-gated, registered via product_search_tools)
+    # tool_dealer_search, tool_extract_contacts, tool_international_search
 
     # Convenience
     "get_all_tools",

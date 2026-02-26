@@ -139,5 +139,9 @@
       "Bash(__NEW_LINE_a59eb6607a073b40__ echo \"5. app/services/vision_processor.py\")",
       "Bash(__NEW_LINE_a59eb6607a073b40__ echo \"6. app/repositories/insight_repository.py\")"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "rivemcp"
+  ],
+  "enableAllProjectMcpServers": true
 }

@@ -71,18 +71,50 @@ def init_search_platforms() -> SearchPlatformRegistry:
     if "lazada" in enabled:
         registry.register(create_lazada_adapter())
 
-    # Facebook: use browser scraping when enabled (Sprint 152), else Serper
+    # Facebook: ChainedAdapter [Scrapling → Playwright → Serper] (Sprint 190)
+    # Backward compat: preserve old behavior (direct FacebookSearchAdapter) when scrapling disabled
     if "facebook_marketplace" in enabled or "facebook_search" in enabled:
-        if settings.enable_browser_scraping:
+        _use_scrapling = getattr(settings, "enable_scrapling", False) is True
+        _scrapling_fb = None
+
+        if _use_scrapling:
             try:
-                from app.engine.search_platforms.adapters.facebook_search import FacebookSearchAdapter
-                serper_fallback = create_facebook_marketplace_adapter()
-                registry.register(FacebookSearchAdapter(serper_fallback=serper_fallback))
+                from app.engine.search_platforms.adapters.scrapling_adapter import create_scrapling_facebook_adapter
+                _scrapling_fb = create_scrapling_facebook_adapter()
             except ImportError:
-                # Playwright or browser_base not available — use Serper
-                registry.register(create_facebook_marketplace_adapter())
+                logger.debug("Scrapling not available for Facebook — skipping")
+                _scrapling_fb = None
+
+        if _scrapling_fb is not None:
+            # Sprint 190: ChainedAdapter [Scrapling → Playwright → Serper]
+            serper_fb = create_facebook_marketplace_adapter()
+            _fb_chain = [_scrapling_fb]
+
+            if settings.enable_browser_scraping:
+                try:
+                    from app.engine.search_platforms.adapters.facebook_search import FacebookSearchAdapter
+                    _fb_chain.append(FacebookSearchAdapter(serper_fallback=serper_fb))
+                except ImportError:
+                    logger.debug("Playwright not available for Facebook — skipping")
+
+            _fb_chain.append(serper_fb)
+
+            from app.engine.search_platforms.chained_adapter import ChainedAdapter
+            cb = PerPlatformCircuitBreaker()
+            registry.register(ChainedAdapter(
+                "facebook_marketplace", "Facebook Marketplace", _fb_chain, cb,
+            ))
         else:
-            registry.register(create_facebook_marketplace_adapter())
+            # Pre-Sprint-190 behavior: direct adapter registration
+            if settings.enable_browser_scraping:
+                try:
+                    from app.engine.search_platforms.adapters.facebook_search import FacebookSearchAdapter
+                    serper_fallback = create_facebook_marketplace_adapter()
+                    registry.register(FacebookSearchAdapter(serper_fallback=serper_fallback))
+                except ImportError:
+                    registry.register(create_facebook_marketplace_adapter())
+            else:
+                registry.register(create_facebook_marketplace_adapter())
 
     if "instagram" in enabled:
         registry.register(create_instagram_adapter())
@@ -121,6 +153,30 @@ def init_search_platforms() -> SearchPlatformRegistry:
         else:
             registry.register(create_tiktok_shop_serper_adapter())
 
+    # --- Sprint 190: Crawl4AI general adapter for arbitrary Vietnamese dealer sites ---
+    if getattr(settings, "enable_crawl4ai", False) is True:
+        try:
+            from app.engine.search_platforms.adapters.crawl4ai_adapter import create_crawl4ai_generic_adapter
+            # Default target URLs for Vietnamese dealer/tech sites
+            crawl4ai_urls = [
+                "https://www.google.com/search?q={query}+site:vn",
+            ]
+            registry.register(create_crawl4ai_generic_adapter(
+                target_urls=crawl4ai_urls,
+                platform_id="crawl4ai_general",
+                display_name="Web Crawler (AI)",
+            ))
+        except ImportError:
+            logger.warning("crawl4ai adapter skipped — crawl4ai package not installed")
+
+    # --- Sprint 195: Jina Reader as lightweight fallback ---
+    if getattr(settings, "enable_jina_reader", False) is True:
+        try:
+            from app.engine.search_platforms.adapters.jina_reader_adapter import create_jina_reader_adapter
+            registry.register(create_jina_reader_adapter(priority=90))
+        except ImportError:
+            logger.debug("Jina Reader adapter skipped — httpx not installed")
+
     logger.info(
         "Search platforms initialized: %d adapters (%s)",
         len(registry),
@@ -138,4 +194,6 @@ __all__ = [
     "get_search_platform_registry",
     "PerPlatformCircuitBreaker",
     "init_search_platforms",
+    # Sprint 190
+    "ChainedAdapter",
 ]

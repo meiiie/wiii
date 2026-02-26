@@ -38,10 +38,14 @@ class SpringBootLMSAdapter(LMSConnectorAdapter):
     The Spring Boot LMS sends webhooks in our canonical LMSWebhookEvent format
     (since we control both codebases). The normalize_webhook method just parses
     and validates the payload directly.
+
+    Sprint 175: Configurable API path prefix via config.extra["api_prefix"].
+    Default: "api/v3/integration" for Maritime LMS.
     """
 
     def __init__(self, config: LMSConnectorConfig):
         self._config = config
+        self._api_prefix = config.extra.get("api_prefix", "api/v3/integration")
 
     def get_config(self) -> LMSConnectorConfig:
         return self._config
@@ -103,7 +107,7 @@ class SpringBootLMSAdapter(LMSConnectorAdapter):
 
     def get_student_profile(self, student_id: str) -> Optional[LMSStudentProfile]:
         sid = _validate_student_id(student_id)
-        data = self._get(f"api/students/{sid}")
+        data = self._get(f"{self._api_prefix}/students/{sid}/profile")
         if data is None:
             return None
         try:
@@ -114,7 +118,7 @@ class SpringBootLMSAdapter(LMSConnectorAdapter):
 
     def get_student_grades(self, student_id: str) -> List[LMSGrade]:
         sid = _validate_student_id(student_id)
-        data = self._get(f"api/students/{sid}/grades")
+        data = self._get(f"{self._api_prefix}/students/{sid}/grades")
         if data is None:
             return []
         try:
@@ -127,7 +131,7 @@ class SpringBootLMSAdapter(LMSConnectorAdapter):
         self, student_id: str
     ) -> List[LMSUpcomingAssignment]:
         sid = _validate_student_id(student_id)
-        data = self._get(f"api/students/{sid}/assignments/upcoming")
+        data = self._get(f"{self._api_prefix}/students/{sid}/assignments/upcoming")
         if data is None:
             return []
         try:
@@ -139,3 +143,32 @@ class SpringBootLMSAdapter(LMSConnectorAdapter):
         except Exception as e:
             logger.error("Failed to parse upcoming assignments: %s", e)
             return []
+
+    def get_student_enrollments(self, student_id: str) -> List[dict]:
+        """Fetch student course enrollments from LMS API."""
+        sid = _validate_student_id(student_id)
+        data = self._get(f"{self._api_prefix}/students/{sid}/enrollments")
+        if data is None:
+            return []
+        return data if isinstance(data, list) else []
+
+    def get_student_quiz_history(self, student_id: str) -> List[dict]:
+        """Fetch student quiz attempt history from LMS API."""
+        sid = _validate_student_id(student_id)
+        data = self._get(f"{self._api_prefix}/students/{sid}/quiz-history")
+        if data is None:
+            return []
+        return data if isinstance(data, list) else []
+
+    def get_course_students(self, course_id: str) -> List[dict]:
+        """Fetch student roster for a course (teacher/admin only)."""
+        cid = _validate_student_id(course_id)  # same validation pattern
+        data = self._get(f"{self._api_prefix}/courses/{cid}/students")
+        if data is None:
+            return []
+        return data if isinstance(data, list) else []
+
+    def get_course_stats(self, course_id: str) -> Optional[dict]:
+        """Fetch course statistics (teacher/admin only)."""
+        cid = _validate_student_id(course_id)
+        return self._get(f"{self._api_prefix}/courses/{cid}/stats")

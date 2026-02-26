@@ -1,10 +1,10 @@
 # Wiii - System Architecture
 
-**Version:** 7.2 (Post-Sprint 171b — Production Hardening)
-**Updated:** 2026-02-22
+**Version:** 8.0 (Post-Sprint 209 — Soul AGI Foundation v1.0 Complete)
+**Updated:** 2026-02-26
 **Product:** Wiii by The Wiii Lab
-**Pattern:** Multi-Domain Agentic RAG with Plugin Architecture, Product Search Platform, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization, Living Agent Autonomy
-**Codebase:** 286+ Python files, ~80,000 LOC, 60+ API endpoints, 7076+ backend + 1468 desktop tests
+**Pattern:** Soul AGI Platform — Multi-Domain Agentic RAG with Living Agent Autonomy, Three-Layer Identity (Soul Core + Identity Core + Context State), Skill-Tool Bridge, Narrative Layer, Natural Conversation, Plugin Architecture, Product Search, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization, Cross-Platform Identity, Spaced Repetition Skill Learning
+**Codebase:** 310+ Python files, ~90,000 LOC, 63+ API endpoints, 9703 backend + 1796 desktop tests
 
 ---
 
@@ -33,6 +33,11 @@
    - 4.17 [Multi-Tenant Data Isolation](#417-multi-tenant-data-isolation)
    - 4.18 [Org-Level Customization](#418-org-level-customization)
    - 4.19 [Living Agent System](#419-living-agent-system)
+   - 4.20 [Cross-Platform Identity & Dual Personality (Soul Wiii)](#420-cross-platform-identity--dual-personality-soul-wiii)
+   - 4.21 [Spaced Repetition Skill Learning](#421-spaced-repetition-skill-learning)
+   - 4.22 [Cross-Platform Memory Sync](#422-cross-platform-memory-sync)
+   - 4.23 [RAG Ingestion Pipeline](#423-rag-ingestion-pipeline)
+   - 4.24 [Advanced RAG Strategies](#424-advanced-rag-strategies)
 5. [Data Layer](#5-data-layer)
 6. [Security Architecture](#6-security-architecture)
 7. [Desktop Application](#7-desktop-application)
@@ -196,13 +201,15 @@ maritime-ai-service/                    # Backend (Python)
 │   │       ├── organizations.py        # Multi-tenant org CRUD + membership + settings
 │   │       └── context.py              # Context management (token budget, compaction)
 │   │
-│   ├── auth/                           # Authentication & Identity (Sprint 157-159)
-│   │   ├── google_oauth.py             # Google OAuth 2.0 flow + callback
-│   │   ├── token_service.py            # JWT creation, refresh, revocation
+│   ├── auth/                           # Authentication & Identity (Sprint 157-159, 176)
+│   │   ├── google_oauth.py             # Google OAuth 2.0 flow + callback (PKCE S256)
+│   │   ├── token_service.py            # JWT creation (jti), refresh (family_id), replay detection
 │   │   ├── user_service.py             # Identity federation (3-step: provider→email→create)
 │   │   ├── user_router.py              # /users/me, /users (admin), role/deactivate
 │   │   ├── lms_token_exchange.py       # HMAC-signed LMS→Wiii token exchange
-│   │   └── lms_auth_router.py          # /auth/lms/token, /auth/lms/health
+│   │   ├── lms_auth_router.py          # /auth/lms/token, /auth/lms/health
+│   │   ├── auth_audit.py               # Auth event logging (fire-and-forget, Sprint 176)
+│   │   └── otp_linking.py              # OTP link codes (DB-backed, Sprint 176)
 │   │
 │   ├── core/                           # Framework & Cross-cutting (15 files)
 │   │   ├── config.py                   # Pydantic Settings (120+ fields, 46 feature flags, validators)
@@ -1191,14 +1198,14 @@ flowchart TB
 
 ### 4.15 Authentication & Identity Federation
 
-Multi-method authentication with generalized identity federation (Sprints 157-158).
+Multi-method authentication with generalized identity federation (Sprints 157-158, hardened Sprint 176).
 
 ```mermaid
 flowchart TB
     subgraph Methods["Auth Methods"]
         APIKEY["API Key<br/>(X-API-Key header)"]
-        GOOGLE["Google OAuth 2.0<br/>(OIDC + Authlib)"]
-        JWT_M["JWT Bearer<br/>(Authorization header)"]
+        GOOGLE["Google OAuth 2.0<br/>(OIDC + Authlib + PKCE S256)"]
+        JWT_M["JWT Bearer<br/>(Authorization header, jti claim)"]
         LMS_M["LMS Token Exchange<br/>(HMAC-SHA256)"]
     end
 
@@ -1212,7 +1219,9 @@ flowchart TB
     subgraph Storage["User Storage"]
         USERS["users table"]
         IDENT["federated_identities table<br/>(provider, sub, email)"]
-        TOKENS["refresh_tokens table<br/>(auth_method column)"]
+        TOKENS["refresh_tokens table<br/>(auth_method, family_id)"]
+        OTP["otp_link_codes table<br/>(DB-backed OTP)"]
+        AUDIT["auth_events table<br/>(audit log)"]
     end
 
     Methods --> Federation --> Storage
@@ -1225,42 +1234,76 @@ flowchart TB
 - **Backward compatibility**: `find_or_create_by_google()` is thin wrapper around generic function
 - **Desktop**: Parse tokens from `#fragment` with `?query` fallback
 
+**Sprint 176 — Auth Hardening:**
+- **PKCE S256**: Explicit `code_challenge_method` in Google OAuth client_kwargs (OAuth 2.1 compliance)
+- **JWT `jti`**: Every access token gets a UUID `jti` claim for individual revocation tracking
+- **Refresh token `family_id`**: Groups tokens by login session — enables replay attack detection
+- **Replay detection**: Reuse of revoked token + active siblings → purge entire family + audit event
+- **Secure token storage**: Desktop tokens isolated in dedicated `wiii_auth_tokens` store + refresh mutex
+- **OTP database**: `otp_link_codes` table replaces in-memory dict (cluster-safe, persistent)
+- **Auth audit**: `auth_events` table — fire-and-forget logging of login, logout, refresh, revoke, replay, link/unlink events
+
 ---
 
 ### 4.16 LMS Integration
 
-Webhook-based integration with Learning Management Systems (Sprints 155, 159).
+Bidirectional integration with Learning Management Systems (Sprints 155, 159, 175).
 
 ```mermaid
 flowchart TB
-    subgraph Inbound["Inbound (LMS → Wiii)"]
-        WH["POST /webhook/lms<br/>Grade/enrollment events"]
-        WH --> ENRICH["LMS Enrichment<br/>Student context injection"]
-        ENRICH --> MEM["Semantic Memory<br/>Store learning context"]
+    subgraph Frontend["Angular 20 Frontend"]
+        FE["AI Chat + Token Service"]
     end
 
-    subgraph TokenExchange["Token Exchange (Sprint 159)"]
-        LMS["LMS Backend"] --> SIGN["HMAC-SHA256 sign"]
-        SIGN --> POST["POST /auth/lms/token"]
-        POST --> VERIFY["Verify signature<br/>+ timestamp replay check"]
-        VERIFY --> FED["find_or_create_by_provider('lms')"]
-        FED --> ORG["ensure_org_membership()"]
-        ORG --> JWT_PAIR["Return JWT pair"]
+    subgraph LMS["Spring Boot 3.2 LMS Backend"]
+        PROXY["WiiiChatAdapter<br/>(SSE proxy)"]
+        TOKEN["WiiiTokenExchangeAdapter<br/>(HMAC-signed)"]
+        WH_EMIT["WiiiWebhookEmitter<br/>(Async, HMAC-signed)"]
+        DATA_API["WiiiDataControllerV3<br/>(7 GET + 2 POST + 2 GET)"]
+        EVENT["WiiiEventBridge<br/>(Domain events)"]
     end
 
-    subgraph Outbound["Outbound (Wiii → LMS)"]
-        CLIENT["LMS API Client"]
-        CLIENT --> GRADE["Post grades"]
-        CLIENT --> PROGRESS["Report progress"]
+    subgraph Wiii["Wiii AI (FastAPI)"]
+        CHAT["/api/v1/chat/stream/v3"]
+        TOKEN_EP["/auth/lms/token"]
+        WH_EP["/lms/webhook/{id}"]
+        PULL["/lms/students/* + /lms/dashboard/*"]
+        PUSH["LMSPushService"]
+        TOOLS["5 LangChain Tools"]
+        ENRICH["LMSEnrichmentService"]
+        RISK["StudentRiskAnalyzer"]
     end
+
+    FE -->|"POST /api/v3/ai/*"| PROXY
+    FE -->|"POST /api/v3/ai/token"| TOKEN
+    PROXY -->|"SSE relay"| CHAT
+    TOKEN -->|"HMAC POST"| TOKEN_EP
+    EVENT --> WH_EMIT -->|"HMAC POST"| WH_EP
+    WH_EP --> ENRICH
+    TOOLS -->|"Bearer GET"| DATA_API
+    PUSH -->|"HMAC POST"| DATA_API
+    PULL --> RISK
 ```
 
-**Key Features:**
+**Architecture Pattern**: Hexagonal (Port + Adapter) on LMS side — `AiChatService` port with `WiiiChatAdapter` infrastructure adapter. Anti-corruption layer via `WiiiDataControllerV3`.
+
+**Key Features (Sprint 175):**
+- **5 data flows**: Frontend→LMS proxy, LMS→Wiii token, LMS→Wiii webhook, Wiii→LMS pull, Wiii→LMS push
 - **Token exchange**: HMAC-SHA256 signed backend-to-backend (RFC 8693 pattern)
 - **Secret resolution**: 3-level fallback (JSON connectors → LMSConnectorRegistry → flat secret)
-- **Replay protection**: Timestamp ± `lms_token_exchange_max_age` (default 300s)
+- **Replay protection**: Timestamp ± `lms_token_exchange_max_age` (default 300s), required in production
 - **Role mapping**: instructor/professor→teacher, admin/administrator→admin, default→student
-- **Feature flag**: `enable_lms_token_exchange=False`
+- **Data pull**: 7 REST endpoints (profile, grades, enrollments, assignments, quiz-history, course-students, course-stats)
+- **Data push**: 2 HMAC-signed POST (insights, alerts) with LMS-side DB persistence (V45 migration)
+- **Teacher dashboard**: 5 endpoints (overview, at-risk, grade-distribution, AI report, org overview)
+- **AI agent tools**: 5 LangChain tools bound to Direct/Tutor agents when `enable_lms_integration=True`
+- **Risk analyzer**: Rule-based 4-factor scoring (grade, trend, assignments, quizzes) — no LLM cost
+- **Circuit breaker**: Per-connector, threshold=5, recovery=120s
+- **Feature flags**: `enable_lms_integration=False`, `enable_lms_token_exchange=False`
+- **Rate limits**: 5-30 req/min per endpoint
+- **Security**: timing-safe HMAC, signature-before-parse, replay protection, role-based access
+
+> **Full documentation:** [`docs/integration/`](../integration/) — API contract, LMS team guide, deployment guide
 
 ---
 
@@ -1420,6 +1463,275 @@ Makes Wiii a continuously living agent with its own soul, emotions, skills, and 
 **Database:** Migration 014 — `wiii_skills`, `wiii_journal`, `wiii_browsing_log`, `wiii_emotional_snapshots`
 
 **Tests:** 99 backend + 14 desktop = 113
+
+### 4.20 Cross-Platform Identity & Dual Personality (Soul Wiii)
+
+**Sprint 174 — "Mot Wiii — Nhieu Nen Tang"**
+
+Enables Wiii to recognize the same user across multiple platforms and adapt its personality per channel — "Professional" mode for Web/Desktop, "Soul" mode for messaging (Messenger, Zalo).
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                Cross-Platform Identity & Dual Personality               │
+│                                                                         │
+│  ┌──────────────┐  ┌──────────────────┐  ┌──────────────────────────┐  │
+│  │   Messenger   │  │   Zalo OA        │  │   Web / Desktop          │  │
+│  │   Webhook     │  │   Webhook        │  │   REST API               │  │
+│  └──────┬────────┘  └──────┬───────────┘  └──────────┬───────────────┘  │
+│         │                  │                          │                  │
+│         ▼                  ▼                          ▼                  │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │                  IdentityResolver                                │   │
+│  │  resolve_user_id(channel_type, platform_sender_id)               │   │
+│  │    → find_or_create_by_provider() → canonical UUID               │   │
+│  │    → Fallback: "{channel}_{id}" when disabled or on error        │   │
+│  └──────────────────────────┬───────────────────────────────────────┘   │
+│                             │                                           │
+│                             ▼                                           │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │                  PersonalityMode                                 │   │
+│  │  resolve_personality_mode(channel_type)                          │   │
+│  │    Priority: explicit → channel_map → default → "professional"   │   │
+│  │    Messenger/Zalo → "soul" | Web/Desktop → "professional"       │   │
+│  └──────────────────────────┬───────────────────────────────────────┘   │
+│                             │                                           │
+│                             ▼                                           │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │              process_with_multi_agent()                          │   │
+│  │    user_id = canonical UUID (shared memory!)                     │   │
+│  │    context.personality_mode = "soul" | "professional"            │   │
+│  └──────────────────────────┬───────────────────────────────────────┘   │
+│                             │                                           │
+│                             ▼                                           │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │              build_system_prompt(personality_mode=...)            │   │
+│  │    "soul" → inject soul instructions + wiii_soul.yaml + emotion  │   │
+│  │    "professional" → existing behavior (no changes)               │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Components:**
+
+| Component | Module | Description |
+|-----------|--------|-------------|
+| IdentityResolver | `app/auth/identity_resolver.py` | Maps `(channel_type, sender_id)` → canonical UUID via `find_or_create_by_provider()` |
+| PersonalityMode | `app/engine/personality_mode.py` | Resolves personality mode per channel with 4-level priority chain |
+| Soul Instructions | `personality_mode.get_soul_mode_instructions()` | Casual tone prompt: empathy, brevity, emoji, natural conversation |
+| Zalo Webhook | `app/api/v1/zalo_webhook.py` | Handles Zalo OA incoming messages with MAC verification |
+| Prompt Enhancement | `app/prompts/prompt_loader.py` | Injects soul mode + `wiii_soul.yaml` into system prompt |
+
+**Key design decisions:**
+- **Memory sharing**: Memory keyed by `user_id` — canonical UUID auto-shares across platforms without any changes to the memory system
+- **Soul without Living Agent**: `wiii_soul.yaml` (identity, truths, boundaries) loads even when `enable_living_agent=False` — soul personality is core, not optional
+- **Security**: `email_verified=False` for messaging platforms — prevents auto-linking by unverified email
+- **No migration**: Reuses `user_identities` table (TEXT provider column accepts "messenger"/"zalo")
+- **Channel mapping**: JSON config `channel_personality_map` — editable without code changes
+
+**Feature gates:** `enable_cross_platform_identity=False`, `enable_zalo_webhook=False` (defaults)
+
+**Zalo OA API:** Reply via `https://openapi.zalo.me/v3.0/oa/message/cs` with `access_token` header
+
+**Tests:** 52 backend tests across 9 categories
+
+### 4.21 Spaced Repetition Skill Learning
+
+**Sprint 177 — "Học Thật — Nhớ Sâu" (Feature A)**
+
+Transforms Wiii's skill system from passive discovery into active learning with real content from browsing, SM-2 spaced repetition, quiz generation, and autonomous review scheduling.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                 Skill Learning Pipeline                          │
+│                                                                  │
+│  ┌──────────┐    ┌──────────────┐    ┌──────────────┐           │
+│  │  Social   │───▶│   Skill      │───▶│    Quiz      │           │
+│  │  Browser  │    │   Learner    │    │  Generator   │           │
+│  │ (browse)  │    │ (deep notes) │    │  (local LLM) │           │
+│  └──────────┘    └──────┬───────┘    └──────┬───────┘           │
+│                         │                    │                    │
+│                         ▼                    ▼                    │
+│  ┌──────────────────────────────────────────────────┐           │
+│  │              SM-2 Spaced Repetition               │           │
+│  │   Intervals: 1d → 3d → 7d → 14d → 30d            │           │
+│  │   Ease factor: EMA with configurable alpha        │           │
+│  │   Quality threshold: 0.6 for success              │           │
+│  └──────────────────────────────────────────────────┘           │
+│                         │                                        │
+│                         ▼                                        │
+│  ┌──────────────────────────────────────────────────┐           │
+│  │              Heartbeat Scheduler                   │           │
+│  │   REVIEW_SKILL action when skills due for review  │           │
+│  │   QUIZ_SKILL action for self-assessment           │           │
+│  └──────────────────────────────────────────────────┘           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Components:**
+
+| Component | Module | Description |
+|-----------|--------|-------------|
+| Skill Learner | `skill_learner.py` | Orchestrates browsing→learning→quiz→review pipeline, SM-2 algorithm |
+| Quiz Generator | `skill_learner.generate_quiz()` | Local LLM generates quiz from accumulated notes |
+| Quiz Evaluator | `skill_learner.evaluate_quiz()` | LLM grades answers, updates confidence via EMA |
+| Review Scheduler | `skill_learner.update_review_schedule()` | SM-2 intervals with ease factor (min 1.3) |
+
+**Key methods:**
+- `process_browsing_results()` — auto-discover skills from high-relevance browsing items (>0.6)
+- `learn_from_content()` — pass article content to local LLM for deep notes
+- `generate_quiz()` — create quiz questions from accumulated notes
+- `evaluate_quiz()` — grade answers, update confidence via EMA, update SM-2 schedule
+- `get_skills_due_for_review()` — reads `metadata["review_schedule"]["next_review_at"]`
+
+**Data storage:** All spaced repetition state in existing `wiii_skills.metadata` JSON field (no migration).
+
+**Feature gate:** `living_agent_enable_skill_learning=False` (default)
+
+**Config:** `living_agent_quiz_questions_per_session=3`, `living_agent_review_confidence_weight=0.3`
+
+**Tests:** 59 tests in `test_sprint177_skill_learning.py`
+
+### 4.22 Cross-Platform Memory Sync
+
+**Sprint 177 — "Học Thật — Nhớ Sâu" (Feature B)**
+
+Enables memory merge when OTP links a messaging identity to a canonical user, and injects cross-platform activity context into conversations.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                Cross-Platform Memory Sync                        │
+│                                                                  │
+│  ┌──────────┐    ┌──────────────┐    ┌──────────────┐           │
+│  │   OTP    │───▶│   Memory     │───▶│  Conflict    │           │
+│  │  Linking  │    │   Merge      │    │  Resolution  │           │
+│  │ (trigger) │    │ (UPDATE)     │    │ (importance) │           │
+│  └──────────┘    └──────────────┘    └──────────────┘           │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────┐           │
+│  │           Cross-Platform Context Injection         │           │
+│  │   input_processor.py → semantic_parts.append()    │           │
+│  │   "Trên Messenger: Bạn hỏi về COLREGs (2h trước)"│           │
+│  └──────────────────────────────────────────────────┘           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Components:**
+
+| Component | Module | Description |
+|-----------|--------|-------------|
+| CrossPlatformMemory | `cross_platform.py` | Singleton — memory merge, conflict resolution, activity tracking |
+| Memory Merge | `merge_memories()` | UPDATE `semantic_memories` rows from legacy→canonical user_id |
+| Conflict Resolution | `resolve_fact_conflict()` | Higher importance wins, tie-break by recency |
+| Context Summary | `get_cross_platform_summary()` | Vietnamese-formatted activity on OTHER platforms |
+| Channel Detection | `_detect_channel()` | Extracts channel from session_id prefix |
+
+**Integration points:**
+- `otp_linking.py`: triggers `merge_memories()` after `link_identity()` succeeds (non-blocking)
+- `input_processor.py`: injects cross-platform summary into `semantic_parts` before prompt assembly
+
+**Data storage:** Uses UPDATE on existing `semantic_memories` rows. Merge provenance in `metadata` JSON.
+
+**Feature gate:** `enable_cross_platform_memory=False` (default)
+
+**Config:** `cross_platform_context_max_items=3`
+
+**Tests:** 37 tests in `test_sprint177_cross_platform_memory.py`
+
+---
+
+### 4.23 RAG Ingestion Pipeline
+
+Full document ingestion flow from PDF upload to searchable knowledge chunks.
+
+```mermaid
+flowchart TB
+    subgraph API["API Layer"]
+        MULTI["POST /knowledge/ingest-multimodal<br/>PDF upload + organization_id"]
+        TEXT["POST /knowledge/ingest-text<br/>Raw text + organization_id"]
+    end
+
+    subgraph PDF["PDF Processing (PDFProcessor)"]
+        RASTER["PyMuPDF Rasterization<br/>150 DPI, page-by-page"]
+    end
+
+    subgraph VP["VisionProcessor (per page)"]
+        UPLOAD["Upload image → MinIO"]
+        HYBRID{"Hybrid Detection<br/>PageAnalyzer"}
+        DIRECT["Direct PyMuPDF<br/>Text Extraction (free)"]
+        VISION["Gemini Vision<br/>API Extraction"]
+        CHUNK["SemanticChunker<br/>Maritime-specific patterns"]
+        CONTEXT["Contextual RAG<br/>LLM enrichment"]
+        VISDESC["Visual Description<br/>Gemini Vision (Sprint 179)"]
+        EMBED["GeminiOptimizedEmbeddings<br/>768-dim vectors"]
+        STORE["store_chunk_in_database<br/>+ organization_id (Sprint 189)"]
+        KG["Entity Extraction<br/>→ Neo4j GraphRAG"]
+    end
+
+    MULTI --> RASTER --> VP
+    UPLOAD --> HYBRID
+    HYBRID -->|text-heavy| DIRECT
+    HYBRID -->|visual-heavy| VISION
+    DIRECT -->|too short| VISION
+    DIRECT --> CHUNK
+    VISION --> CHUNK
+    CHUNK --> CONTEXT --> VISDESC --> EMBED --> STORE
+    STORE --> KG
+
+    TEXT --> CHUNK
+
+    style STORE fill:#90EE90
+```
+
+**Org isolation (Sprint 189):**
+- API endpoints accept optional `organization_id` parameter
+- Threaded through service → VisionProcessor → SQL INSERT/UPDATE
+- Fallback: `get_effective_org_id()` from middleware ContextVar or config default
+- When `enable_multi_tenant=False`: uses `default_organization_id` ("default")
+- Existing data with NULL org_id handled by `allow_null=True` in query filters
+
+**Key files:**
+| File | Role |
+|------|------|
+| `app/api/v1/knowledge.py` | Ingestion API (multimodal + text) |
+| `app/services/multimodal_ingestion_service.py` | Orchestrator |
+| `app/services/vision_processor.py` | Page-level processing + storage |
+| `app/services/pdf_processor.py` | PDF → images |
+| `app/services/chunking_service.py` | Semantic chunking |
+| `app/repositories/dense_search_repository.py` | Chunk storage (has org_id since Sprint 160) |
+
+---
+
+### 4.24 Advanced RAG Strategies
+
+Multiple retrieval strategies added in Sprints 179-187:
+
+**HyDE (Hypothetical Document Embeddings) — Sprint 187:**
+- `app/engine/agentic_rag/hyde_generator.py`
+- Generates hypothetical answer before retrieval to improve embedding match
+- Feature gate: `enable_hyde=False`
+
+**Adaptive RAG Router — Sprint 187:**
+- `app/engine/agentic_rag/adaptive_rag.py`
+- 5 retrieval strategies: SIMPLE, DECOMPOSE, STEP_BACK, HyDE, MULTI_QUERY
+- Dynamically selects strategy based on query complexity
+- Feature gate: `enable_adaptive_rag=False`
+
+**Visual RAG — Sprint 179:**
+- `app/engine/agentic_rag/visual_rag.py`
+- Query-time visual context enrichment via Gemini Vision API
+- Integrates at Corrective RAG Step 4.5 (after retrieval, before generation)
+- Ingestion: `vision_processor.py` generates `visual_description` chunks for visual pages
+- Feature gate: `enable_visual_rag=False`
+
+**Graph RAG — Sprint 182:**
+- `app/engine/agentic_rag/graph_rag_retriever.py`
+- Entity extraction → Neo4j or PostgreSQL dual-mode knowledge graph
+- Enriches retrieval with entity relationships and context
+- Feature gate: `enable_graph_rag=False`
+
+**Citation accuracy (Sprint 189):**
+- `Citation` model now includes `content_type` field (text/table/heading/diagram_reference/formula)
+- Source deduplication by `(document_id, page_number)` — prevents duplicate page entries in sources
 
 ---
 
@@ -1619,8 +1931,11 @@ flowchart TB
 | **Input Validation** | Pydantic max 10,000 chars | `ChatRequest.message` |
 | **Error Messages** | Generic in HTTP responses | Details logged server-side |
 | **WebSocket** | Fail-closed auth (Sprint 65) | 4001/4003 close codes |
-| **Google OAuth** | Authlib + OIDC | email_verified guard on auto-link |
-| **JWT Tokens** | Access (15m) + Refresh (7d) | Refresh revocation, auth_method tracking |
+| **Google OAuth** | Authlib + OIDC + PKCE S256 | OAuth 2.1 compliance, email_verified guard |
+| **JWT Tokens** | Access (15m, `jti`) + Refresh (7d, `family_id`) | Per-token ID, replay detection, family purge |
+| **Auth Audit** | `auth_events` table | Fire-and-forget logging, feature-gated (`enable_auth_audit`) |
+| **OTP Storage** | Database (`otp_link_codes`) | Cluster-safe, auto-cleanup expired codes |
+| **Token Storage** | Dedicated `wiii_auth_tokens` store | Desktop: isolated from settings, refresh mutex |
 | **LMS Token Exchange** | HMAC-SHA256 signed | Replay protection (timestamp ± max_age) |
 | **Token Delivery** | URL fragment `#` (not `?`) | Fragments never sent to server |
 | **Identity Federation** | 3-step provider matching | provider→email→create (email_verified required) |
@@ -1936,8 +2251,8 @@ cd wiii-desktop && npx vitest run
 
 ---
 
-**Document Version:** 7.2
-**Last Updated:** 2026-02-22
-**Architecture Pattern:** Multi-Domain Agentic RAG with Plugin System, Product Search Platform, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization, Living Agent Autonomy
-**Total Components:** 286 Python files, 60+ endpoints, 120+ config fields (47 feature flags), 7076 backend + 1468 desktop tests
-**Sprints Covered:** 1–171b (Production Hardening)
+**Document Version:** 7.5
+**Last Updated:** 2026-02-23
+**Architecture Pattern:** Multi-Domain Agentic RAG with Plugin System, Product Search Platform, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization, Living Agent Autonomy, Spaced Repetition Skill Learning, Cross-Platform Memory Sync
+**Total Components:** 297+ Python files, 62+ endpoints, 125+ config fields (52 feature flags), 7259+ backend + 1488 desktop tests
+**Sprints Covered:** 1–177 (Skill Learning & Cross-Platform Memory)

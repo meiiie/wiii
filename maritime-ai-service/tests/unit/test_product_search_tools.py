@@ -109,7 +109,7 @@ class TestToolRegistry:
         assert ToolCategory.PRODUCT_SEARCH.value == "product_search"
 
     def test_init_product_search_tools(self, mock_settings):
-        """init_product_search_tools registers 5 tools."""
+        """init_product_search_tools registers tools (static fallback when registry init fails)."""
         from app.engine.tools.registry import get_tool_registry, ToolCategory
 
         # Save and restore registry state
@@ -117,17 +117,29 @@ class TestToolRegistry:
         old_tools = dict(registry._tools)
         old_cats = {k: list(v) for k, v in registry._categories.items()}
 
+        # Save and restore module-level _generated_tools
+        import app.engine.tools.product_search_tools as pst
+        old_gen = list(pst._generated_tools)
+
         try:
+            pst._generated_tools.clear()
+            # Disable Sprint 196 B2B tools so they don't inflate count
+            mock_settings.enable_dealer_search = False
+            mock_settings.enable_contact_extraction = False
+            mock_settings.enable_international_search = False
+
             with patch("app.core.config.get_settings", return_value=mock_settings):
                 from app.engine.tools.product_search_tools import init_product_search_tools
                 init_product_search_tools()
 
             ps_tools = registry.get_by_category(ToolCategory.PRODUCT_SEARCH)
-            # Should have at least 5 search tools (may also have excel tool if registered separately)
+            # init_search_platforms may fail in test env (no real adapters) →
+            # falls back to 7 static tools
             assert len(ps_tools) >= 5
         finally:
             registry._tools = old_tools
             registry._categories = old_cats
+            pst._generated_tools = old_gen
 
 
 # =============================================================================

@@ -51,6 +51,7 @@ class SearchSubgraphState(TypedDict, total=False):
     platforms_to_search: List[str]
     query_variants: List[str]
     search_round: int
+    _query_plan_text: Optional[str]  # Sprint 197: LLM Query Planner output
 
     # ── Subgraph-private: accumulation (operator.add reducers) ────────
     all_products: Annotated[List[Dict[str, Any]], operator.add]
@@ -61,6 +62,12 @@ class SearchSubgraphState(TypedDict, total=False):
     # ── Subgraph-private: aggregation (set by aggregate node) ─────────
     deduped_products: List[Dict[str, Any]]
     excel_path: Optional[str]
+
+    # ── Subgraph-private: curation (Sprint 202) ────────────────────────
+    curated_products: List[Dict[str, Any]]
+
+    # ── Subgraph-private: full product preservation (Sprint 202b) ──────
+    _all_search_products_json: str
 
     # ── Output (flows back to parent AgentState) ──────────────────────
     final_response: str

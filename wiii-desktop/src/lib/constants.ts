@@ -4,11 +4,15 @@ export const APP_VERSION = "0.1.0";
 /** App name */
 export const APP_NAME = "Wiii";
 
-/** Default server URL */
-export const DEFAULT_SERVER_URL = "http://localhost:8000";
+/** Default server URL — only fallback to localhost in dev mode */
+export const DEFAULT_SERVER_URL = (
+  typeof import.meta !== "undefined" && import.meta.env?.DEV
+    ? "http://localhost:8000"
+    : ""
+);
 
 /** Default user settings */
-export const DEFAULT_USER_ID = "desktop-user";
+// Sprint 194b: DEFAULT_USER_ID removed — anonymous UUID generated at runtime
 export const DEFAULT_USER_ROLE = "student" as const;
 export const DEFAULT_DISPLAY_NAME = "User";
 export const DEFAULT_DOMAIN = "maritime";

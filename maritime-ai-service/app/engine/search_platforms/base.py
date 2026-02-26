@@ -24,6 +24,9 @@ class BackendType(Enum):
     APIFY = "apify"                  # Apify scraping actors
     CUSTOM = "custom"                # Custom implementation
     BROWSER = "browser"              # Playwright headless browser + LLM extraction
+    # Sprint 190: Enhanced scraping backends
+    CRAWL4AI = "crawl4ai"            # Crawl4AI async crawler (general scraping + LLM extraction)
+    SCRAPLING = "scrapling"          # Scrapling stealth browser (anti-bot, TLS fingerprint)
 
 
 @dataclass
@@ -38,6 +41,10 @@ class PlatformConfig:
     enabled: bool = True
     tool_description_vi: str = ""               # Vietnamese tool docstring
     max_results_default: int = 20
+    # Sprint 190: Enhanced scraping config
+    retry_count: int = 2                        # Số lần retry khi fail
+    timeout_seconds: int = 30                   # Timeout per request (seconds)
+    priority: int = 0                           # Thứ tự ưu tiên trong ChainedAdapter (thấp = cao hơn)
 
 
 @dataclass
@@ -57,6 +64,9 @@ class ProductSearchResult:
     source: str = ""
     delivery: str = ""
     location: str = ""
+    # Sprint 196: Professional sourcing fields
+    product_type: Optional[str] = None   # "part", "machine", "accessory", "service", None
+    dealer_info: Optional[dict] = None   # {"phone": [], "zalo": [], "email": [], "address": str}
 
     def to_dict(self) -> dict:
         """Convert to dict, omitting None/empty values for compact JSON."""

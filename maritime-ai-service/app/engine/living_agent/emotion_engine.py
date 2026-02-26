@@ -226,6 +226,16 @@ class EmotionEngine:
             self._state.engagement,
         )
 
+        # Sprint 188: Persist emotion state after every event
+        # Fire-and-forget — failure must not block event processing
+        try:
+            import asyncio
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.save_state_to_db())
+        except RuntimeError:
+            # No running event loop (sync context) — skip persistence
+            pass
+
         return self.state
 
     def _apply_natural_recovery(self) -> None:
@@ -326,6 +336,23 @@ class EmotionEngine:
         }
         modifiers["mood_label"] = mood_labels.get(s.primary_mood, "bình thường")
 
+        # Sprint 188: Time-of-day tone variation
+        from datetime import timedelta
+        now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
+        hour = now_vn.hour
+        if hour < 7:
+            modifiers["tone"] = "nhẹ nhàng, ấm áp (sáng sớm)"
+        elif hour < 12:
+            modifiers["tone"] = "năng động, tích cực (buổi sáng)"
+        elif hour < 14:
+            modifiers["tone"] = "thư giãn, nhẹ nhàng (trưa)"
+        elif hour < 18:
+            modifiers["tone"] = "tập trung, hỗ trợ (chiều)"
+        elif hour < 21:
+            modifiers["tone"] = "thân thiện, thoải mái (tối)"
+        else:
+            modifiers["tone"] = "dịu dàng, yên bình (khuya)"
+
         return modifiers
 
     def compile_emotion_prompt(self) -> str:
@@ -356,6 +383,144 @@ class EmotionEngine:
     def to_dict(self) -> dict:
         """Serialize current state for DB storage."""
         return self._state.model_dump(mode="json")
+
+    # =========================================================================
+    # Persistent Emotion — Phase 1A: DB save/load (wired Sprint 188)
+    # =========================================================================
+
+    _db_loaded: bool = False
+
+    async def load_from_db_if_needed(self) -> bool:
+        """One-time emotion state restore from DB. Idempotent guard.
+
+        Returns True if state was loaded from DB, False otherwise.
+        """
+        if self._db_loaded:
+            return False
+        self._db_loaded = True
+        return await self.load_state_from_db()
+
+    async def save_state_to_db(self) -> None:
+        """Persist current emotional state to database.
+
+        Saves as the latest snapshot in wiii_emotional_snapshots with
+        a special trigger_event='persistent_state' for later retrieval.
+        """
+        try:
+            import json
+            from sqlalchemy import text
+            from app.core.database import get_shared_session_factory
+            from uuid import uuid4
+
+            state_json = json.dumps(self.to_dict(), ensure_ascii=False)
+            session_factory = get_shared_session_factory()
+            with session_factory() as session:
+                # Upsert: delete old persistent_state, insert new one
+                session.execute(
+                    text("DELETE FROM wiii_emotional_snapshots WHERE trigger_event = 'persistent_state'"),
+                )
+                session.execute(
+                    text("""
+                        INSERT INTO wiii_emotional_snapshots
+                        (id, primary_mood, energy_level, social_battery, engagement,
+                         trigger_event, state_json, snapshot_at)
+                        VALUES (:id, :mood, :energy, :social, :engagement,
+                                'persistent_state', :state_json, NOW())
+                    """),
+                    {
+                        "id": str(uuid4()),
+                        "mood": self._state.primary_mood.value,
+                        "energy": self._state.energy_level,
+                        "social": self._state.social_battery,
+                        "engagement": self._state.engagement,
+                        "state_json": state_json,
+                    },
+                )
+                session.commit()
+            logger.info("[EMOTION] State persisted to DB: mood=%s", self._state.primary_mood.value)
+        except Exception as e:
+            logger.warning("[EMOTION] Failed to persist state: %s", e)
+
+    async def load_state_from_db(self) -> bool:
+        """Load emotional state from database on startup.
+
+        Returns:
+            True if state was loaded, False if no saved state found.
+        """
+        try:
+            import json
+            from sqlalchemy import text
+            from app.core.database import get_shared_session_factory
+
+            session_factory = get_shared_session_factory()
+            with session_factory() as session:
+                row = session.execute(
+                    text("""
+                        SELECT state_json FROM wiii_emotional_snapshots
+                        WHERE trigger_event = 'persistent_state'
+                        ORDER BY snapshot_at DESC
+                        LIMIT 1
+                    """),
+                ).fetchone()
+
+                if row and row[0]:
+                    data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                    self.restore_from_dict(data)
+                    logger.info("[EMOTION] State loaded from DB: mood=%s", self._state.primary_mood.value)
+                    return True
+
+            logger.debug("[EMOTION] No saved state in DB, using defaults")
+            return False
+        except Exception as e:
+            logger.warning("[EMOTION] Failed to load state from DB: %s", e)
+            return False
+
+    # =========================================================================
+    # Circadian Rhythm — Phase 2B
+    # =========================================================================
+
+    def apply_circadian_modifier(self) -> None:
+        """Adjust energy baseline based on time of day (UTC+7).
+
+        Sprint 188: Increased blend from 10% to 40% so Wiii's energy
+        noticeably tracks natural rhythms (morning peak, post-lunch dip,
+        evening wind-down). Also sets mood hints per time-of-day.
+        """
+        from datetime import timedelta
+
+        now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
+        hour = now_vn.hour
+
+        circadian_energy = {
+            5: 0.40, 6: 0.60, 7: 0.80, 8: 0.90, 9: 0.95,
+            10: 0.90, 11: 0.85, 12: 0.70, 13: 0.65, 14: 0.75,
+            15: 0.85, 16: 0.80, 17: 0.75, 18: 0.70, 19: 0.65,
+            20: 0.60, 21: 0.50, 22: 0.40, 23: 0.20,
+        }
+
+        target = circadian_energy.get(hour)
+        if target is not None:
+            # Sprint 188: 40% blend (was 10%) — energy follows circadian curve
+            self._state.energy_level = _clamp(
+                self._state.energy_level * 0.6 + target * 0.4
+            )
+
+        # Sprint 188: Time-of-day mood hints (gentle, not overriding events)
+        circadian_mood = {
+            (5, 7): MoodType.CALM,        # Early morning — peaceful
+            (7, 10): MoodType.CURIOUS,     # Morning — alert and curious
+            (10, 12): MoodType.FOCUSED,    # Late morning — productive
+            (12, 14): MoodType.CALM,       # Post-lunch — relaxed
+            (14, 17): MoodType.FOCUSED,    # Afternoon — productive
+            (17, 20): MoodType.CURIOUS,    # Evening — exploratory
+            (20, 23): MoodType.REFLECTIVE, # Night — winding down
+        }
+        for (start, end), mood in circadian_mood.items():
+            if start <= hour < end:
+                # Only nudge if current mood is NEUTRAL (low-priority override)
+                if self._state.primary_mood == MoodType.NEUTRAL:
+                    self._state.primary_mood = mood
+                break
 
 
 # =============================================================================

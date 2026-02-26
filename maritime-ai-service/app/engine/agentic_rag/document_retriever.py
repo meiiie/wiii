@@ -132,7 +132,15 @@ class DocumentRetriever:
         **Validates: Requirements 8.4, 8.5, 2.1, 2.3**
         """
         citations = []
+        seen_pages = set()  # (document_id, page_number) dedup
         for r in results:
+            # Deduplicate by (document_id, page_number) — Sprint 189
+            if r.document_id:
+                dedup_key = (r.document_id, r.page_number)
+                if dedup_key in seen_pages:
+                    continue
+                seen_pages.add(dedup_key)
+
             # Format title with hierarchy
             enhanced_title = DocumentRetriever.format_title_with_hierarchy(r.title, r)
 
@@ -152,7 +160,8 @@ class DocumentRetriever:
                 image_url=r.image_url,
                 page_number=r.page_number,
                 document_id=r.document_id,
-                bounding_boxes=r.bounding_boxes
+                bounding_boxes=r.bounding_boxes,
+                content_type=r.content_type,
             ))
         return citations
 
@@ -263,6 +272,7 @@ class DocumentRetriever:
                 image_url=doc.get("image_url"),
                 page_number=doc.get("page_number"),
                 document_id=doc.get("document_id"),
-                bounding_boxes=doc.get("bounding_boxes")
+                bounding_boxes=doc.get("bounding_boxes"),
+                content_type=doc.get("content_type"),
             ))
         return citations

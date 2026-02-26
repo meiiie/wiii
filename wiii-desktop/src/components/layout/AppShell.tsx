@@ -2,6 +2,7 @@
  * AppShell — root layout: TitleBar + Sidebar + main + StatusBar.
  * Sprint 106: Disconnected banner above main content.
  * Sprint 107: SourcesPanel side panel.
+ * Sprint 192: View routing — chat, system-admin, org-admin, settings.
  */
 import { AnimatePresence, motion } from "motion/react";
 import { WifiOff, RefreshCw } from "lucide-react";
@@ -13,27 +14,30 @@ import { CharacterPanel } from "./CharacterPanel";
 import { SourcesPanel } from "./SourcesPanel";
 import { PreviewPanel } from "./PreviewPanel";
 import { ArtifactPanel } from "./ArtifactPanel";
+import { ChatView } from "@/components/chat/ChatView";
+import { SystemAdminView } from "@/components/admin/SystemAdminView";
+import { OrgAdminView } from "@/components/org-admin/OrgAdminView";
+import { SettingsView } from "@/components/settings/SettingsView";
 import { ToastContainer } from "@/components/common/Toast";
 import { useUIStore } from "@/stores/ui-store";
 import { useConnectionStore } from "@/stores/connection-store";
 import { slideDown } from "@/lib/animations";
 
-interface AppShellProps {
-  children: React.ReactNode;
-}
-
-export function AppShell({ children }: AppShellProps) {
-  const { sidebarOpen } = useUIStore();
+export function AppShell() {
+  const { sidebarOpen, activeView } = useUIStore();
   const { status, checkHealth } = useConnectionStore();
 
   const showDisconnected = status === "disconnected";
+
+  // Sprint 192b: Hide main sidebar entirely when not in chat view (Claude.ai pattern)
+  const isInChat = activeView === "chat";
 
   return (
     <div className="flex flex-col h-screen">
       <TitleBar />
       <div className="flex flex-1 overflow-hidden">
         <div
-          className={`shrink-0 sidebar-slide ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}
+          className={`shrink-0 sidebar-slide ${!isInChat ? "sidebar-hidden" : sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}
         >
           <Sidebar />
         </div>
@@ -63,14 +67,23 @@ export function AppShell({ children }: AppShellProps) {
               </motion.div>
             )}
           </AnimatePresence>
-          {children}
+          {/* Sprint 192: View routing */}
+          {activeView === "chat" && <ChatView />}
+          {activeView === "system-admin" && <SystemAdminView />}
+          {activeView === "org-admin" && <OrgAdminView />}
+          {activeView === "settings" && <SettingsView />}
         </main>
       </div>
-      <ContextPanel />
-      <CharacterPanel />
-      <SourcesPanel />
-      <PreviewPanel />
-      <ArtifactPanel />
+      {/* Side panels — chat-only */}
+      {activeView === "chat" && (
+        <>
+          <ContextPanel />
+          <CharacterPanel />
+          <SourcesPanel />
+          <PreviewPanel />
+          <ArtifactPanel />
+        </>
+      )}
       <StatusBar />
       <ToastContainer />
     </div>

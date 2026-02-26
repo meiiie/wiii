@@ -471,12 +471,6 @@ class TestConfigSettings:
         s = Settings(google_api_key="test")
         assert s.emotional_decay_rate == 0.15
 
-    def test_enable_personality_eval_default_false(self):
-        """enable_personality_eval should default to False."""
-        from app.core.config import Settings
-        s = Settings(google_api_key="test")
-        assert s.enable_personality_eval is False
-
     def test_identity_anchor_interval_custom(self):
         """Should accept custom anchor interval."""
         from app.core.config import Settings

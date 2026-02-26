@@ -1,6 +1,7 @@
 /**
  * Auth store — manages authentication state.
  * Sprint 157: Google OAuth login, JWT tokens, user profile.
+ * Sprint 176: Secure token storage + refresh mutex.
  *
  * Two auth modes:
  * 1. OAuth (Google login) — JWT tokens managed by this store
@@ -8,6 +9,11 @@
  */
 import { create } from "zustand";
 import { loadStore, saveStore } from "@/lib/storage";
+import {
+  storeTokens,
+  loadTokens,
+  clearTokens,
+} from "@/lib/secure-token-storage";
 
 export interface AuthUser {
   id: string;
@@ -38,7 +44,7 @@ interface AuthState {
     user: AuthUser,
   ) => Promise<void>;
   logout: () => Promise<void>;
-  setLegacyMode: () => void;
+  setLegacyMode: () => Promise<void>;
   refreshAccessToken: (serverUrl: string) => Promise<boolean>;
 
   // Helpers
@@ -48,6 +54,9 @@ interface AuthState {
 
 const AUTH_STORE_KEY = "auth_state";
 
+// Sprint 176: Mutex for concurrent refresh prevention
+let _refreshPromise: Promise<boolean> | null = null;
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   user: null,
@@ -56,22 +65,48 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   loadAuth: async () => {
     try {
+      // Sprint 176: Load tokens from dedicated secure store
+      const secureTokens = await loadTokens();
+
+      // Load user/authMode from regular store
       const saved = await loadStore<{
         user: AuthUser | null;
-        tokens: AuthTokens | null;
         authMode: "oauth" | "legacy";
+        tokens?: AuthTokens | null; // Legacy field — migration source
       } | null>(AUTH_STORE_KEY, "data", null);
 
-      if (saved?.tokens && saved?.user) {
-        // Check if refresh token exists (access token may have expired — that's OK)
+      // Sprint 176: Migration — if secure store is empty, check old location
+      let tokens: AuthTokens | null = null;
+      if (secureTokens) {
+        tokens = secureTokens;
+      } else if (saved?.tokens) {
+        // Migrate tokens from old location to secure store
+        tokens = saved.tokens;
+        try {
+          await storeTokens(
+            tokens.access_token,
+            tokens.refresh_token,
+            tokens.expires_at,
+          );
+          // Clear tokens from old location
+          await saveStore(AUTH_STORE_KEY, "data", {
+            user: saved.user,
+            authMode: saved.authMode,
+          });
+        } catch {
+          // Migration failed — use old tokens anyway
+        }
+      }
+
+      if (tokens && saved?.user) {
         set({
           isAuthenticated: true,
           user: saved.user,
-          tokens: saved.tokens,
+          tokens,
           authMode: saved.authMode || "oauth",
         });
       } else if (saved?.authMode === "legacy") {
-        set({ authMode: "legacy" });
+        set({ authMode: "legacy", isAuthenticated: true });
       }
     } catch (err) {
       console.warn("[Auth] Failed to load saved auth:", err);
@@ -92,11 +127,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       authMode: "oauth",
     });
 
-    // Persist
+    // Sprint 176: Store tokens in dedicated secure store
+    try {
+      await storeTokens(accessToken, refreshToken, tokens.expires_at);
+    } catch (err) {
+      console.warn("[Auth] Failed to save tokens:", err);
+    }
+
+    // Save user/authMode to regular store (no tokens)
     try {
       await saveStore(AUTH_STORE_KEY, "data", {
         user,
-        tokens,
         authMode: "oauth",
       });
     } catch (err) {
@@ -105,9 +146,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
-    const { tokens } = get();
+    const { tokens, authMode } = get();
 
-    // Try to revoke on server
+    // Try to revoke on server (OAuth mode only — legacy has no Bearer token)
     if (tokens?.access_token) {
       try {
         const { useSettingsStore } = await import("@/stores/settings-store");
@@ -123,6 +164,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     }
 
+    // Sprint 193: For legacy mode, clear API key from settings
+    if (authMode === "legacy") {
+      try {
+        const { useSettingsStore } = await import("@/stores/settings-store");
+        await useSettingsStore.getState().updateSettings({ api_key: "" });
+      } catch {
+        // ignore
+      }
+    }
+
     set({
       isAuthenticated: false,
       user: null,
@@ -130,59 +181,97 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       authMode: "oauth",
     });
 
+    // Sprint 176: Clear both stores
     try {
-      await saveStore(AUTH_STORE_KEY, "data", { user: null, tokens: null, authMode: "oauth" });
+      await clearTokens();
+    } catch {
+      // ignore
+    }
+    try {
+      await saveStore(AUTH_STORE_KEY, "data", {
+        user: null,
+        authMode: "oauth",
+      });
     } catch {
       // ignore
     }
   },
 
-  setLegacyMode: () => {
+  setLegacyMode: async () => {
     set({ authMode: "legacy", isAuthenticated: true });
+    try {
+      await saveStore(AUTH_STORE_KEY, "data", {
+        user: null,
+        authMode: "legacy",
+      });
+    } catch (err) {
+      console.warn("[Auth] Failed to save legacy mode:", err);
+    }
   },
 
   refreshAccessToken: async (serverUrl: string) => {
-    const { tokens, user } = get();
-    if (!tokens?.refresh_token) return false;
+    // Sprint 176: Mutex — if refresh already in-flight, reuse the promise
+    if (_refreshPromise) {
+      return _refreshPromise;
+    }
 
-    try {
-      const resp = await fetch(`${serverUrl}/api/v1/auth/token/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: tokens.refresh_token }),
-      });
+    const doRefresh = async (): Promise<boolean> => {
+      const { tokens, user } = get();
+      if (!tokens?.refresh_token) return false;
 
-      if (!resp.ok) {
-        // Refresh failed — log out
-        console.warn("[Auth] Refresh failed:", resp.status);
-        await get().logout();
+      try {
+        const resp = await fetch(`${serverUrl}/api/v1/auth/token/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+        });
+
+        if (!resp.ok) {
+          console.warn("[Auth] Refresh failed:", resp.status);
+          await get().logout();
+          return false;
+        }
+
+        const data = await resp.json();
+        const newTokens: AuthTokens = {
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+          expires_at: Date.now() + data.expires_in * 1000,
+        };
+
+        set({ tokens: newTokens });
+
+        // Sprint 176: Persist to secure store
+        try {
+          await storeTokens(
+            newTokens.access_token,
+            newTokens.refresh_token,
+            newTokens.expires_at,
+          );
+        } catch {
+          // ignore
+        }
+        try {
+          await saveStore(AUTH_STORE_KEY, "data", {
+            user,
+            authMode: "oauth",
+          });
+        } catch {
+          // ignore
+        }
+
+        return true;
+      } catch (err) {
+        console.warn("[Auth] Refresh error:", err);
         return false;
       }
+    };
 
-      const data = await resp.json();
-      const newTokens: AuthTokens = {
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-        expires_at: Date.now() + data.expires_in * 1000,
-      };
-
-      set({ tokens: newTokens });
-
-      // Persist
-      try {
-        await saveStore(AUTH_STORE_KEY, "data", {
-          user,
-          tokens: newTokens,
-          authMode: "oauth",
-        });
-      } catch {
-        // ignore
-      }
-
-      return true;
-    } catch (err) {
-      console.warn("[Auth] Refresh error:", err);
-      return false;
+    _refreshPromise = doRefresh();
+    try {
+      return await _refreshPromise;
+    } finally {
+      _refreshPromise = null;
     }
   },
 
@@ -201,3 +290,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return tokens.expires_at - Date.now() < 5 * 60 * 1000;
   },
 }));
+
+// Sprint 176: Export for testing
+export function _getRefreshPromise(): Promise<boolean> | null {
+  return _refreshPromise;
+}
+export function _resetRefreshPromise(): void {
+  _refreshPromise = null;
+}

@@ -11,12 +11,22 @@ Thread views track all user conversations for:
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
+
+# Sprint 194b (M1): Thread ID segment sanitizer — prevents injection via
+# composite thread IDs (org_{X}__user_{Y}__session_{Z}).
+_THREAD_SEGMENT_RE = re.compile(r"[^a-zA-Z0-9_\-.]")
+
+
+def _sanitize_thread_segment(segment: str, max_len: int = 128) -> str:
+    """Remove characters that could break thread ID format or enable injection."""
+    return _THREAD_SEGMENT_RE.sub("", segment)[:max_len]
 
 
 class ThreadRepository:
@@ -88,6 +98,15 @@ class ThreadRepository:
         self._ensure_initialized()
         if not self._session_factory:
             return None
+
+        # Sprint 194b (M1): Sanitize user-provided segments in thread_id
+        thread_id = _sanitize_thread_segment(thread_id, max_len=512)
+        user_id = _sanitize_thread_segment(user_id)
+
+        # Ensure org_id is never None (background tasks lack request context)
+        if organization_id is None:
+            from app.core.org_filter import get_effective_org_id
+            organization_id = get_effective_org_id()
 
         now = datetime.now(timezone.utc)
 

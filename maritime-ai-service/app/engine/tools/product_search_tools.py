@@ -636,6 +636,35 @@ def init_product_search_tools():
         logger.warning("Search platform registry init failed, using static tools: %s", e)
         _generated_tools.clear()
 
+    # Sprint 196: Register B2B sourcing tools (config-gated)
+    _sprint196_count = 0
+    if settings.enable_dealer_search:
+        try:
+            from app.engine.tools.dealer_search_tool import get_dealer_search_tool
+            _generated_tools.append(get_dealer_search_tool())
+            _sprint196_count += 1
+        except Exception as e:
+            logger.warning("Dealer search tool init failed: %s", e)
+
+    if settings.enable_contact_extraction:
+        try:
+            from app.engine.tools.contact_extraction_tool import get_contact_extraction_tool
+            _generated_tools.append(get_contact_extraction_tool())
+            _sprint196_count += 1
+        except Exception as e:
+            logger.warning("Contact extraction tool init failed: %s", e)
+
+    if settings.enable_international_search:
+        try:
+            from app.engine.tools.international_search_tool import get_international_search_tool
+            _generated_tools.append(get_international_search_tool())
+            _sprint196_count += 1
+        except Exception as e:
+            logger.warning("International search tool init failed: %s", e)
+
+    if _sprint196_count:
+        logger.info("Sprint 196: Registered %d B2B sourcing tools", _sprint196_count)
+
     # Register tools with the tool registry
     tool_registry = get_tool_registry()
     tools_to_register = _generated_tools if _generated_tools else _ALL_PRODUCT_SEARCH_TOOLS

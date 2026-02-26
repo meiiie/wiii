@@ -44,6 +44,7 @@ import type { AppSettings, UserRole, UserPreferences, UserIdentity, LearningStyl
 import { OrgSettingsTab } from "./OrgSettingsTab";
 import { LivingAgentPanel } from "@/components/living-agent/LivingAgentPanel";
 import { Building2, Heart } from "lucide-react";
+import { storeFacebookCookie, loadFacebookCookie } from "@/lib/secure-token-storage";
 
 type Tab = "connection" | "user" | "preferences" | "learning" | "memory" | "context" | "organization" | "living-agent";
 
@@ -99,11 +100,18 @@ export function SettingsPage() {
   }, [closeSettings]);
 
   // Local draft state for connection fields (commit on save)
+  // Sprint 194b (H5): facebook_cookie loaded from secure storage, not settings
   const [draft, setDraft] = useState({
     server_url: settings.server_url,
     api_key: settings.api_key,
-    facebook_cookie: settings.facebook_cookie || "",
+    facebook_cookie: "",
   });
+  // Load facebook cookie from secure storage on mount
+  useEffect(() => {
+    loadFacebookCookie().then((cookie) => {
+      if (cookie) setDraft((d) => ({ ...d, facebook_cookie: cookie }));
+    }).catch(() => { /* ignore */ });
+  }, []);
 
   const handleTestConnection = async () => {
     setTestStatus("testing");
@@ -136,10 +144,13 @@ export function SettingsPage() {
   };
 
   const handleSaveConnection = async () => {
+    // Sprint 194b (H5): Save facebook_cookie to secure storage, not settings
+    if (draft.facebook_cookie) {
+      try { await storeFacebookCookie(draft.facebook_cookie); } catch { /* ignore */ }
+    }
     await updateSettings({
       server_url: draft.server_url,
       api_key: draft.api_key,
-      facebook_cookie: draft.facebook_cookie,
     });
 
     // Re-init client with new settings
@@ -294,6 +305,8 @@ export function SettingsPage() {
           variant="danger"
           onConfirm={async () => {
             await resetSettings();
+            // Sprint 194b (H5): Clear facebook cookie from secure storage
+            try { const { clearFacebookCookie } = await import("@/lib/secure-token-storage"); await clearFacebookCookie(); } catch { /* ignore */ }
             setDraft({
               server_url: "http://localhost:8000",
               api_key: "local-dev-key",
@@ -311,7 +324,7 @@ export function SettingsPage() {
 }
 
 /* ===== Connection Tab ===== */
-interface ConnectionTabProps {
+export interface ConnectionTabProps {
   draft: { server_url: string; api_key: string; facebook_cookie: string };
   setDraft: (d: { server_url: string; api_key: string; facebook_cookie: string }) => void;
   testStatus: "idle" | "testing" | "success" | "error";
@@ -321,7 +334,7 @@ interface ConnectionTabProps {
   onSave: () => void;
 }
 
-function ConnectionTab({
+export function ConnectionTab({
   draft,
   setDraft,
   testStatus,
@@ -410,7 +423,7 @@ function ConnectionTab({
 }
 
 /* ===== User Tab (Sprint 158: OAuth-aware) ===== */
-interface UserTabProps {
+export interface UserTabProps {
   settings: AppSettings;
   onUpdate: <K extends keyof AppSettings>(
     key: K,
@@ -418,7 +431,7 @@ interface UserTabProps {
   ) => void;
 }
 
-function UserTab({ settings, onUpdate }: UserTabProps) {
+export function UserTab({ settings, onUpdate }: UserTabProps) {
   const { organizations, multiTenantEnabled, activeOrgId, setActiveOrg } = useOrgStore();
   const { getFilteredDomains, setOrgFilter } = useDomainStore();
   const { updateSettings } = useSettingsStore();
@@ -522,7 +535,7 @@ function UserTab({ settings, onUpdate }: UserTabProps) {
               type="text"
               value={settings.user_id}
               onChange={(e) => onUpdate("user_id", e.target.value)}
-              placeholder="desktop-user"
+              placeholder="user-id"
               className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
             />
           </FieldGroup>
@@ -623,21 +636,19 @@ function UserTab({ settings, onUpdate }: UserTabProps) {
         )}
       </FieldGroup>
 
-      {/* OAuth mode: Logout button */}
-      {isOAuth && (
-        <button
-          onClick={handleLogout}
-          className="w-full px-4 py-2 rounded-lg border border-red-300 dark:border-red-800 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-        >
-          Đăng xuất
-        </button>
-      )}
+      {/* Sprint 193: Logout button — visible for all auth modes */}
+      <button
+        onClick={handleLogout}
+        className="w-full px-4 py-2 rounded-lg border border-red-300 dark:border-red-800 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+      >
+        Đăng xuất
+      </button>
     </div>
   );
 }
 
 /* ===== Preferences Tab ===== */
-interface PreferencesTabProps {
+export interface PreferencesTabProps {
   settings: AppSettings;
   onUpdate: <K extends keyof AppSettings>(
     key: K,
@@ -645,7 +656,7 @@ interface PreferencesTabProps {
   ) => void;
 }
 
-function PreferencesTab({ settings, onUpdate }: PreferencesTabProps) {
+export function PreferencesTab({ settings, onUpdate }: PreferencesTabProps) {
   const themes: { value: "light" | "dark" | "system"; label: string }[] = [
     { value: "light", label: "Sáng" },
     { value: "dark", label: "Tối" },
@@ -764,7 +775,7 @@ function PreferencesTab({ settings, onUpdate }: PreferencesTabProps) {
 }
 
 /* ===== Learning Tab (Sprint 120) ===== */
-const LEARNING_STYLES: { value: LearningStyle; label: string; desc: string }[] = [
+export const LEARNING_STYLES: { value: LearningStyle; label: string; desc: string }[] = [
   { value: "mixed", label: "Tổng hợp", desc: "Kết hợp nhiều phương pháp" },
   { value: "visual", label: "Hình ảnh", desc: "Sơ đồ, biểu đồ, hình minh họa" },
   { value: "reading", label: "Đọc hiểu", desc: "Tài liệu, bài viết chi tiết" },
@@ -772,20 +783,20 @@ const LEARNING_STYLES: { value: LearningStyle; label: string; desc: string }[] =
   { value: "interactive", label: "Tương tác", desc: "Thực hành, mô phỏng" },
 ];
 
-const DIFFICULTY_LEVELS: { value: DifficultyLevel; label: string; desc: string }[] = [
+export const DIFFICULTY_LEVELS: { value: DifficultyLevel; label: string; desc: string }[] = [
   { value: "beginner", label: "Cơ bản", desc: "Mới bắt đầu tìm hiểu" },
   { value: "intermediate", label: "Trung bình", desc: "Có kiến thức nền tảng" },
   { value: "advanced", label: "Nâng cao", desc: "Hiểu sâu chuyên ngành" },
   { value: "expert", label: "Chuyên gia", desc: "Kinh nghiệm thực tế dày dặn" },
 ];
 
-const PRONOUN_STYLES: { value: PronounStyle; label: string; desc: string }[] = [
+export const PRONOUN_STYLES: { value: PronounStyle; label: string; desc: string }[] = [
   { value: "auto", label: "Tự động", desc: "Wiii sẽ tự điều chỉnh theo bạn" },
   { value: "casual", label: "Thân mật", desc: "Mình/cậu, tớ/bạn" },
   { value: "formal", label: "Trang trọng", desc: "Tôi/bạn, em/anh/chị" },
 ];
 
-function LearningTab() {
+export function LearningTab() {
   const { addToast } = useToastStore();
   const [prefs, setPrefs] = useState<UserPreferences | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -928,7 +939,7 @@ function LearningTab() {
 }
 
 /* ===== Memory Tab (Sprint 80, enhanced Sprint 105) ===== */
-function MemoryTab({ userId }: { userId: string }) {
+export function MemoryTab({ userId }: { userId: string }) {
   const { memories, isLoading, error, fetchMemories, deleteOne, clearAll } =
     useMemoryStore();
   const { addToast } = useToastStore();
@@ -1116,7 +1127,7 @@ function MemoryTab({ userId }: { userId: string }) {
 }
 
 /* ===== Context Tab (Sprint 105) ===== */
-function ContextTab() {
+export function ContextTab() {
   const { info, status, isLoading, error, fetchContextInfo, compact, clear } =
     useContextStore();
   const activeConv = useChatStore((s) => s.activeConversation());
@@ -1265,7 +1276,7 @@ function ContextTab() {
 }
 
 /* ===== Context Tab helpers ===== */
-function LayerBar({
+export function LayerBar({
   label,
   layer,
 }: {
@@ -1289,7 +1300,7 @@ function LayerBar({
   );
 }
 
-function StatCard({ label, value }: { label: string; value: number }) {
+export function StatCard({ label, value }: { label: string; value: number }) {
   return (
     <div className="p-2 rounded-lg bg-surface-secondary border border-border text-center">
       <div className="text-lg font-semibold text-text">{value}</div>
@@ -1299,7 +1310,7 @@ function StatCard({ label, value }: { label: string; value: number }) {
 }
 
 /* ===== Shared UI primitives ===== */
-function FieldGroup({
+export function FieldGroup({
   label,
   hint,
   children,
@@ -1321,7 +1332,7 @@ function FieldGroup({
   );
 }
 
-function ToggleField({
+export function ToggleField({
   label,
   description,
   checked,

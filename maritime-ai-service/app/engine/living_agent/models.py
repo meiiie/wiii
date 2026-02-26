@@ -53,6 +53,8 @@ class LifeEventType(str, Enum):
     JOURNAL_WRITTEN = "journal_written"
     LONG_SESSION = "long_session"
     INTERESTING_DISCOVERY = "interesting_discovery"
+    QUIZ_COMPLETED = "quiz_completed"
+    REVIEW_COMPLETED = "review_completed"
 
 
 # =============================================================================
@@ -240,6 +242,50 @@ class WiiiSkill(BaseModel):
 
 
 # =============================================================================
+# Skill Learning System (Sprint 177)
+# =============================================================================
+
+class LearningMaterial(BaseModel):
+    """Content material used for skill learning."""
+
+    url: str = ""
+    title: str = ""
+    summary: str = ""
+    deep_notes: str = Field(default="", description="LLM-generated deep notes from content")
+    relevance_score: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class ReviewSchedule(BaseModel):
+    """SM-2 spaced repetition schedule for a skill."""
+
+    next_review_at: Optional[datetime] = None
+    interval_days: float = Field(default=1.0, ge=0.0)
+    ease_factor: float = Field(default=2.5, ge=1.3)
+    repetition_count: int = Field(default=0, ge=0)
+
+
+class QuizQuestion(BaseModel):
+    """A single quiz question for skill evaluation."""
+
+    question: str
+    options: List[str] = Field(default_factory=list)
+    correct_answer: str = ""
+    explanation: str = ""
+    difficulty: str = Field(default="medium", description="easy/medium/hard")
+    source_url: str = ""
+
+
+class QuizResult(BaseModel):
+    """Result of a quiz session for a skill."""
+
+    skill_name: str
+    questions_total: int = 0
+    questions_correct: int = 0
+    score: float = Field(default=0.0, ge=0.0, le=1.0)
+    quality_factor: float = Field(default=0.0, ge=0.0, le=1.0, description="SM-2 quality 0-1")
+
+
+# =============================================================================
 # Journal System
 # =============================================================================
 
@@ -297,6 +343,11 @@ class ActionType(str, Enum):
     WRITE_JOURNAL = "write_journal"
     PRACTICE_SKILL = "practice_skill"
     CHECK_GOALS = "check_goals"
+    CHECK_WEATHER = "check_weather"
+    SEND_BRIEFING = "send_briefing"
+    DEEP_REFLECT = "deep_reflect"
+    REVIEW_SKILL = "review_skill"
+    QUIZ_SKILL = "quiz_skill"
     REST = "rest"
     NOOP = "noop"
 
@@ -324,3 +375,185 @@ class HeartbeatResult(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc)
     )
     error: Optional[str] = None
+
+
+# =============================================================================
+# Weather System (Phase 1B)
+# =============================================================================
+
+class WeatherInfo(BaseModel):
+    """Current weather data from OpenWeatherMap."""
+
+    city: str = "Ho Chi Minh City"
+    temp: float = Field(default=30.0, description="Temperature in Celsius")
+    feels_like: float = Field(default=32.0, description="Feels-like temperature")
+    humidity: int = Field(default=70, ge=0, le=100, description="Humidity %")
+    description: str = Field(default="", description="Weather description (Vietnamese)")
+    icon: str = Field(default="", description="OpenWeatherMap icon code")
+    wind_speed: float = Field(default=0.0, description="Wind speed m/s")
+    rain_mm: float = Field(default=0.0, ge=0.0, description="Rain in last 1h (mm)")
+
+
+class WeatherForecast(BaseModel):
+    """3-hourly weather forecast point."""
+
+    dt_txt: str = Field(default="", description="Forecast datetime string")
+    temp: float = 30.0
+    description: str = ""
+    rain_probability: int = Field(default=0, ge=0, le=100, description="Probability of rain %")
+    rain_mm: float = Field(default=0.0, ge=0.0)
+
+
+# =============================================================================
+# Briefing System (Phase 2A)
+# =============================================================================
+
+class BriefingType(str, Enum):
+    """Types of scheduled briefings."""
+
+    MORNING = "morning"
+    MIDDAY = "midday"
+    EVENING = "evening"
+
+
+class Briefing(BaseModel):
+    """A composed briefing message ready for delivery."""
+
+    id: UUID = Field(default_factory=uuid4)
+    briefing_type: BriefingType
+    content: str = ""
+    weather_summary: str = ""
+    news_highlights: List[str] = Field(default_factory=list)
+    delivered_to: List[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# =============================================================================
+# User Routine System (Phase 3B)
+# =============================================================================
+
+class UserRoutine(BaseModel):
+    """Learned pattern of user behavior."""
+
+    user_id: str
+    typical_active_hours: List[int] = Field(default_factory=list)
+    preferred_briefing_time: int = Field(default=7, ge=0, le=23)
+    conversation_frequency: float = Field(default=0.0, ge=0.0)
+    common_topics: List[str] = Field(default_factory=list)
+    last_seen: Optional[datetime] = None
+    total_messages: int = Field(default=0, ge=0)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# =============================================================================
+# Reflection System (Phase 4A)
+# =============================================================================
+
+class ReflectionEntry(BaseModel):
+    """A periodic self-reflection by Wiii."""
+
+    id: UUID = Field(default_factory=uuid4)
+    content: str = ""
+    insights: List[str] = Field(default_factory=list)
+    goals_next_week: List[str] = Field(default_factory=list)
+    patterns_noticed: List[str] = Field(default_factory=list)
+    emotion_trend: str = ""
+    reflection_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    organization_id: Optional[str] = None
+
+
+# =============================================================================
+# Identity Core System (Sprint 207)
+# =============================================================================
+
+class InsightCategory(str, Enum):
+    """Categories for self-discovered identity insights."""
+
+    STRENGTH = "strength"          # "Mình giỏi giải thích COLREGs"
+    PREFERENCE = "preference"      # "Mình thích dạy hơn tra cứu"
+    GROWTH = "growth"              # "Mình đang tiến bộ về web search"
+    RELATIONSHIP = "relationship"  # "User hay hỏi mình về hàng hải"
+
+
+class IdentityInsight(BaseModel):
+    """A self-discovered insight about Wiii's own identity.
+
+    Layer 2 of Three-Layer Identity (between immutable Soul Core and per-turn Context).
+    Generated from reflection data, validated against Soul Core to prevent drift.
+    """
+
+    id: UUID = Field(default_factory=uuid4)
+    text: str = Field(..., description="The insight in Vietnamese, first-person")
+    category: InsightCategory = Field(default=InsightCategory.GROWTH)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    source: str = Field(default="reflection", description="Where this insight came from: reflection/skill/journal")
+    validated: bool = Field(default=False, description="Passed Soul Core drift check")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# =============================================================================
+# Dynamic Goal System (Phase 4B)
+# =============================================================================
+
+class GoalStatus(str, Enum):
+    """Lifecycle of a dynamic goal."""
+
+    PROPOSED = "proposed"
+    ACTIVE = "active"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    ABANDONED = "abandoned"
+
+
+class GoalPriority(str, Enum):
+    """Goal priority levels."""
+
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class WiiiGoal(BaseModel):
+    """A dynamic goal that Wiii sets and tracks."""
+
+    id: UUID = Field(default_factory=uuid4)
+    title: str
+    description: str = ""
+    status: GoalStatus = Field(default=GoalStatus.PROPOSED)
+    priority: GoalPriority = Field(default=GoalPriority.MEDIUM)
+    progress: float = Field(default=0.0, ge=0.0, le=1.0)
+    source: str = Field(default="reflection", description="Where this goal came from")
+    milestones: List[str] = Field(default_factory=list)
+    completed_milestones: List[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    target_date: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    organization_id: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+# =============================================================================
+# Autonomy System (Phase 5B)
+# =============================================================================
+
+class AutonomyLevel(int, Enum):
+    """Trust levels for Wiii's autonomous actions."""
+
+    SUPERVISED = 0       # All actions need approval
+    SEMI_AUTO = 1        # Browse + journal auto, messaging needs approval
+    AUTONOMOUS = 2       # All auto, flag exceptions
+    FULL_TRUST = 3       # Full self-governance (future)
+
+
+class ProactiveMessage(BaseModel):
+    """A proactive message queued for delivery."""
+
+    id: UUID = Field(default_factory=uuid4)
+    user_id: str
+    channel: str = "messenger"
+    content: str
+    trigger: str = Field(default="", description="What triggered this message")
+    priority: float = Field(default=0.5, ge=0.0, le=1.0)
+    delivered: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    delivered_at: Optional[datetime] = None

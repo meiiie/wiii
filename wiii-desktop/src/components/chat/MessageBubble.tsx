@@ -70,6 +70,20 @@ export const MessageBubble = memo(function MessageBubble({
             <p className="text-[15px] leading-[1.7] font-sans text-text selectable">
               {message.content}
             </p>
+            {/* Sprint 179: Render user-attached images */}
+            {message.images && message.images.length > 0 && (
+              <div className="flex gap-2 flex-wrap mt-2">
+                {message.images.map((img, i) => (
+                  <img
+                    key={i}
+                    src={img.type === "base64" ? `data:${img.media_type};base64,${img.data}` : img.data}
+                    alt={`Ảnh ${i + 1}`}
+                    className="max-w-[200px] max-h-[200px] rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                    onClick={() => window.open(img.type === "base64" ? `data:${img.media_type};base64,${img.data}` : img.data)}
+                  />
+                ))}
+              </div>
+            )}
             {/* User message actions */}
             {onEditMessage && (
               <div className="absolute -left-10 top-1/2 -translate-y-1/2 opacity-0 group-hover/msg:opacity-100 transition-opacity">
