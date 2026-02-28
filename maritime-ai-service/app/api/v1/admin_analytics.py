@@ -11,19 +11,12 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from app.core.config import settings
+from app.core.admin_security import check_admin_module as _check_admin_module
 from app.api.deps import RequireAdmin
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/analytics", tags=["admin-analytics"])
-
-
-def _check_admin_module(request: Request):
-    if not getattr(settings, "enable_admin_module", False):
-        raise HTTPException(status_code=404, detail="Admin module not enabled")
-    from app.core.admin_security import check_admin_ip_allowlist
-    check_admin_ip_allowlist(request)
 
 
 async def _get_pool():
@@ -84,8 +77,8 @@ async def analytics_overview(
                 """,
                 *params,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[ADMIN] DAU query failed: %s", e)
 
         # Chat volume
         chat_rows = []
@@ -102,8 +95,8 @@ async def analytics_overview(
                 """,
                 *params,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[ADMIN] Chat volume query failed: %s", e)
 
         # Error rate from llm_usage_log
         error_rows = []
@@ -120,8 +113,8 @@ async def analytics_overview(
                 """,
                 *params,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[ADMIN] Error rate query failed: %s", e)
 
     return {
         "period_start": from_date or "30 days ago",
@@ -196,7 +189,8 @@ async def analytics_llm_usage(
                 """,
                 *params,
             )
-        except Exception:
+        except Exception as e:
+            logger.debug("[ADMIN] LLM totals query failed: %s", e)
             totals = {"total_tokens": 0, "total_cost": 0, "total_requests": 0}
 
         # Breakdown
@@ -230,8 +224,8 @@ async def analytics_llm_usage(
                 }
                 for r in breakdown_rows
             ]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[ADMIN] LLM breakdown query failed: %s", e)
 
         # Top models
         top_models = []
@@ -248,8 +242,8 @@ async def analytics_llm_usage(
                 {"model": r["model"], "tokens": r["tokens"] or 0, "requests": r["requests"]}
                 for r in model_rows
             ]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[ADMIN] Top models query failed: %s", e)
 
         # Top users
         top_users = []
@@ -266,8 +260,8 @@ async def analytics_llm_usage(
                 {"user_id": r["user_id"], "tokens": r["tokens"] or 0, "requests": r["requests"]}
                 for r in user_rows
             ]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[ADMIN] Top users query failed: %s", e)
 
     return {
         "total_tokens": totals["total_tokens"],
@@ -335,8 +329,8 @@ async def analytics_users(
                 """,
                 *params,
             ) or 0
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[ADMIN] Active users query failed: %s", e)
 
         # User growth curve
         growth = []
@@ -352,8 +346,8 @@ async def analytics_users(
                 *params[:len(conditions)],
             )
             growth = [{"date": str(r["date"]), "new_users": r["new_users"]} for r in growth_rows]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[ADMIN] User growth query failed: %s", e)
 
         # Role distribution
         role_dist = {}
@@ -362,8 +356,8 @@ async def analytics_users(
                 "SELECT role, COUNT(*) AS count FROM users GROUP BY role"
             )
             role_dist = {r["role"]: r["count"] for r in role_rows}
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[ADMIN] Role distribution query failed: %s", e)
 
         # Top active users
         top_active = []
@@ -383,8 +377,8 @@ async def analytics_users(
                 {"user_id": r["user_id"], "sessions": r["sessions"]}
                 for r in active_rows
             ]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[ADMIN] Top active users query failed: %s", e)
 
     return {
         "total_users": total_users,

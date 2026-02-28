@@ -36,6 +36,21 @@ jobs:
     needs: lint
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_USER: wiii
+          POSTGRES_PASSWORD: wiii_secret
+          POSTGRES_DB: wiii_ai
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U wiii"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     env:
       DATABASE_URL: postgresql+asyncpg://wiii:wiii_secret@localhost:5433/wiii_ai
       API_KEY: test-key

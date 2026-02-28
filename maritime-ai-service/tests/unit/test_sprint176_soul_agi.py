@@ -430,11 +430,12 @@ class TestReflector:
         assert r1 is r2
 
     def test_is_reflection_time_sunday(self):
+        """Sprint 210: Reflection is now daily 21-22h UTC+7 (not Sunday only)."""
         from app.engine.living_agent.reflector import Reflector
         r = Reflector()
-        # Sunday 20:00 UTC+7 = Sunday 13:00 UTC
+        # 21:00 UTC+7 = 14:00 UTC (any day)
         with patch("app.engine.living_agent.reflector.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2026, 3, 1, 13, 0, tzinfo=timezone.utc)  # Sunday
+            mock_dt.now.return_value = datetime(2026, 3, 1, 14, 0, tzinfo=timezone.utc)  # 21:00 VN
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             assert r.is_reflection_time() is True
 

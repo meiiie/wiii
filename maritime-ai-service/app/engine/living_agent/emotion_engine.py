@@ -20,8 +20,9 @@ Design:
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Dict, Optional
+import threading
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Optional, Set
 
 from app.engine.living_agent.models import (
     EmotionalState,
@@ -32,6 +33,81 @@ from app.engine.living_agent.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Sprint 210c: Relationship Tier System
+# =============================================================================
+
+# Tier constants
+TIER_CREATOR = 0   # Admin/creator — full mood impact, immediate
+TIER_KNOWN = 1     # Frequent users (50+ messages) — aggregate mood only
+TIER_OTHER = 2     # Everyone else — no mood impact
+
+
+def get_relationship_tier(user_id: str, user_role: str = "") -> int:
+    """Determine user's relationship tier with Wiii.
+
+    Tier 0 (CREATOR): role=admin or user_id in creator whitelist.
+    Tier 1 (KNOWN): total_messages >= threshold (cached, refreshed by heartbeat).
+    Tier 2 (OTHER): everyone else.
+
+    Called in chat hot path — must be fast (in-memory lookup only).
+    """
+    # Tier 0: Admin role or explicit creator whitelist
+    if user_role == "admin":
+        return TIER_CREATOR
+
+    try:
+        from app.core.config import get_settings
+        s = get_settings()
+        creator_ids = [x.strip() for x in (s.living_agent_creator_user_ids or "").split(",") if x.strip()]
+        if user_id in creator_ids:
+            return TIER_CREATOR
+    except Exception:
+        pass
+
+    # Tier 1: Known user (cached set, refreshed by heartbeat)
+    if user_id in _known_user_cache:
+        return TIER_KNOWN
+
+    return TIER_OTHER
+
+
+# In-memory cache of known user IDs (refreshed every heartbeat cycle)
+_known_user_cache: Set[str] = set()
+_known_cache_lock = threading.Lock()
+
+
+def refresh_known_user_cache() -> int:
+    """Refresh the known user cache from wiii_user_routines table.
+
+    Called by heartbeat every 30 min. Returns number of known users.
+    """
+    global _known_user_cache
+    try:
+        from sqlalchemy import text
+        from app.core.database import get_shared_session_factory
+        from app.core.config import get_settings
+
+        threshold = get_settings().living_agent_known_user_threshold
+
+        session_factory = get_shared_session_factory()
+        with session_factory() as session:
+            rows = session.execute(
+                text("SELECT user_id FROM wiii_user_routines WHERE total_messages >= :threshold"),
+                {"threshold": threshold},
+            ).fetchall()
+
+        new_cache = {row[0] for row in rows}
+        with _known_cache_lock:
+            _known_user_cache = new_cache
+
+        logger.debug("[EMOTION] Refreshed known user cache: %d users", len(new_cache))
+        return len(new_cache)
+    except Exception as e:
+        logger.debug("[EMOTION] Failed to refresh known user cache: %s", e)
+        return 0
 
 
 # =============================================================================
@@ -151,8 +227,31 @@ class EmotionEngine:
         modifiers = engine.get_behavior_modifiers()
     """
 
+    # Sprint 210b: Dampening constants — prevent mood ping-pong from concurrent students
+    MOOD_COOLDOWN_SECONDS = 30.0  # Min time between mood changes
+    SENTIMENT_THRESHOLD = 3       # Accumulated events before mood shifts
+
+    # Sprint 210c: Aggregate sentiment constants
+    KNOWN_SENTIMENT_SHIFT_THRESHOLD = 0.2  # Sentiment ratio shift to trigger mood nudge
+    KNOWN_MOOD_WEIGHT = 0.3               # Weight of Known user aggregate on mood
+    MIN_AGGREGATE_SAMPLE_SIZE = 10        # Min interactions before aggregate can nudge mood
+
     def __init__(self, initial_state: Optional[EmotionalState] = None):
         self._state = initial_state or EmotionalState()
+        # Sprint 210b: Mood dampening state
+        # Initialize to past so first event can trigger mood change immediately
+        self._last_mood_change: datetime = datetime.now(timezone.utc) - timedelta(seconds=self.MOOD_COOLDOWN_SECONDS + 1)
+        self._sentiment_positive: float = 0.0  # Accumulated positive intensity
+        self._sentiment_negative: float = 0.0  # Accumulated negative intensity
+        self._sentiment_count: int = 0          # Events since last mood change
+
+        # Sprint 210c: Interaction buffer for non-creator users (processed by heartbeat)
+        self._interaction_lock = threading.Lock()
+        self._interaction_buffer_positive: int = 0
+        self._interaction_buffer_negative: int = 0
+        self._interaction_buffer_neutral: int = 0
+        self._interaction_unique_users: Set[str] = set()
+        self._last_known_sentiment_ratio: float = 0.5  # Baseline: neutral
 
     @property
     def state(self) -> EmotionalState:
@@ -192,8 +291,39 @@ class EmotionEngine:
         target_mood = rules["mood"]
         intensity = rules["intensity"] * event.importance
 
-        if target_mood is not None and intensity >= 0.3:
-            self._state.primary_mood = target_mood
+        # Sprint 210b: Mood dampening — accumulate sentiment, only shift after cooldown
+        # This prevents mood ping-pong when 50 students chat simultaneously.
+        # Energy/social/engagement still update immediately (they're continuous, not discrete).
+        if target_mood is not None and intensity >= 0.2:
+            now = datetime.now(timezone.utc)
+            elapsed = (now - self._last_mood_change).total_seconds()
+
+            # Accumulate sentiment
+            if target_mood in (MoodType.HAPPY, MoodType.EXCITED, MoodType.PROUD):
+                self._sentiment_positive += intensity
+            elif target_mood in (MoodType.CONCERNED, MoodType.TIRED):
+                self._sentiment_negative += intensity
+            self._sentiment_count += 1
+
+            # Only change mood after cooldown AND enough events accumulated
+            if elapsed >= self.MOOD_COOLDOWN_SECONDS or self._sentiment_count >= self.SENTIMENT_THRESHOLD:
+                # Majority wins — pick mood based on accumulated sentiment
+                if self._sentiment_positive > self._sentiment_negative:
+                    self._state.primary_mood = target_mood if target_mood in (
+                        MoodType.HAPPY, MoodType.EXCITED, MoodType.PROUD,
+                    ) else MoodType.HAPPY
+                elif self._sentiment_negative > self._sentiment_positive:
+                    self._state.primary_mood = target_mood if target_mood in (
+                        MoodType.CONCERNED, MoodType.TIRED,
+                    ) else MoodType.CONCERNED
+                else:
+                    self._state.primary_mood = target_mood
+
+                # Reset accumulators
+                self._last_mood_change = now
+                self._sentiment_positive = 0.0
+                self._sentiment_negative = 0.0
+                self._sentiment_count = 0
 
         self._state.energy_level = _clamp(
             self._state.energy_level + rules["energy"] * event.importance
@@ -238,6 +368,114 @@ class EmotionEngine:
 
         return self.state
 
+    # =========================================================================
+    # Sprint 210c: Tier-aware interaction recording (for non-creator users)
+    # =========================================================================
+
+    def record_interaction(self, user_id: str, sentiment: str) -> None:
+        """Record a user interaction in the buffer (zero-cost, no DB).
+
+        Called from chat hot path for Tier 1 & 2 users.
+        Buffer is processed by heartbeat via process_aggregate().
+
+        Args:
+            user_id: The user who interacted.
+            sentiment: "positive", "negative", or "neutral".
+        """
+        with self._interaction_lock:
+            if sentiment == "positive":
+                self._interaction_buffer_positive += 1
+            elif sentiment == "negative":
+                self._interaction_buffer_negative += 1
+            else:
+                self._interaction_buffer_neutral += 1
+            self._interaction_unique_users.add(user_id)
+
+    def process_aggregate(self) -> Dict[str, float]:
+        """Process buffered interactions and apply aggregate emotion effects.
+
+        Called by heartbeat every 30 min. Handles:
+        1. Known user sentiment → mood nudge (if shift > threshold)
+        2. Unique users → social battery adjustment
+        3. Reset buffers
+
+        Returns:
+            Dict with processing stats.
+        """
+        with self._interaction_lock:
+            pos = self._interaction_buffer_positive
+            neg = self._interaction_buffer_negative
+            neu = self._interaction_buffer_neutral
+            unique = len(self._interaction_unique_users)
+            # Reset
+            self._interaction_buffer_positive = 0
+            self._interaction_buffer_negative = 0
+            self._interaction_buffer_neutral = 0
+            self._interaction_unique_users = set()
+
+        total = pos + neg + neu
+        stats = {
+            "total_interactions": float(total),
+            "unique_users": float(unique),
+            "positive_ratio": 0.5,
+            "mood_nudged": 0.0,
+        }
+
+        if total == 0:
+            return stats
+
+        # 1. Compute sentiment ratio
+        sentiment_ratio = pos / total if total > 0 else 0.5
+        stats["positive_ratio"] = sentiment_ratio
+
+        # 2. Check if sentiment shifted significantly from baseline
+        # Only nudge mood with enough data points (prevents 1 msg = mood shift)
+        shift = sentiment_ratio - self._last_known_sentiment_ratio
+        if total >= self.MIN_AGGREGATE_SAMPLE_SIZE and abs(shift) >= self.KNOWN_SENTIMENT_SHIFT_THRESHOLD:
+            # Nudge mood based on aggregate sentiment
+            old_mood = self._state.primary_mood
+            if shift > 0 and old_mood not in (MoodType.HAPPY, MoodType.EXCITED, MoodType.PROUD):
+                # Positive trend from students → gentle happy shift
+                self._state.primary_mood = MoodType.HAPPY
+                stats["mood_nudged"] = shift
+                logger.info(
+                    "[EMOTION] Aggregate sentiment shift +%.2f → mood nudged to HAPPY",
+                    shift,
+                )
+            elif shift < 0 and old_mood not in (MoodType.CONCERNED, MoodType.TIRED):
+                # Negative trend → gentle concern
+                self._state.primary_mood = MoodType.CONCERNED
+                stats["mood_nudged"] = shift
+                logger.info(
+                    "[EMOTION] Aggregate sentiment shift %.2f → mood nudged to CONCERNED",
+                    shift,
+                )
+
+        # Update baseline (EMA with alpha=0.3 for smoothing)
+        self._last_known_sentiment_ratio = (
+            0.7 * self._last_known_sentiment_ratio + 0.3 * sentiment_ratio
+        )
+
+        # 3. Social battery from unique users (session-based, not message-based)
+        # Cap at 500 unique users → max 0.5 drain
+        social_drain = min(unique / 500.0, 1.0) * 0.5
+        self._state.social_battery = _clamp(
+            self._state.social_battery - social_drain + 0.3  # +0.3 recovery per heartbeat
+        )
+
+        # 4. Engagement boost from interaction volume (people using Wiii = good)
+        engagement_boost = min(total / 1000.0, 0.1)  # Cap at +0.1
+        self._state.engagement = _clamp(
+            self._state.engagement + engagement_boost
+        )
+
+        logger.debug(
+            "[EMOTION] Aggregate: %d interactions, %d unique, ratio=%.2f, shift=%.2f",
+            total, unique, sentiment_ratio, shift,
+        )
+
+        return stats
+
     def _apply_natural_recovery(self) -> None:
         """Apply natural energy regeneration based on time since last update.
 
@@ -273,11 +511,11 @@ class EmotionEngine:
             self._state.engagement, engage_target, engage_rate * hours
         )
 
-        # Mood decay toward NEUTRAL/CURIOUS after extended inactivity
-        if hours > 2.0 and self._state.primary_mood not in (
+        # Sprint 210: Gradual fade toward NEUTRAL after 6h (was forced CURIOUS after 2h)
+        if hours > 6.0 and self._state.primary_mood not in (
             MoodType.CURIOUS, MoodType.NEUTRAL, MoodType.CALM
         ):
-            self._state.primary_mood = MoodType.CURIOUS
+            self._state.primary_mood = MoodType.NEUTRAL
 
     def take_snapshot(self) -> None:
         """Record current state as an hourly snapshot."""
@@ -337,7 +575,6 @@ class EmotionEngine:
         modifiers["mood_label"] = mood_labels.get(s.primary_mood, "bình thường")
 
         # Sprint 188: Time-of-day tone variation
-        from datetime import timedelta
         now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
         hour = now_vn.hour
         if hour < 7:
@@ -486,8 +723,6 @@ class EmotionEngine:
         noticeably tracks natural rhythms (morning peak, post-lunch dip,
         evening wind-down). Also sets mood hints per time-of-day.
         """
-        from datetime import timedelta
-
         now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
         hour = now_vn.hour
 

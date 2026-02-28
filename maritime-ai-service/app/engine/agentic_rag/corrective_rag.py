@@ -19,6 +19,7 @@ Features:
 """
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any, Tuple, AsyncGenerator
 
@@ -1029,7 +1030,7 @@ class CorrectiveRAG:
 
         except Exception as e:
             logger.error("[CRAG] Generation failed: %s", e)
-            return f"Lỗi khi tạo câu trả lời: {e}", documents, None
+            return "Xin lỗi, không thể tạo câu trả lời lúc này.", documents, None
     
     # =========================================================================
     # V3 SOTA: Full CRAG Pipeline + True Token Streaming
@@ -1059,7 +1060,6 @@ class CorrectiveRAG:
         
         **Feature: p3-v3-full-crag-streaming**
         """
-        import time
         # Note: get_reasoning_tracer and StepNames already imported at module level (line 37-39)
         
         context = context or {}
@@ -1100,7 +1100,7 @@ class CorrectiveRAG:
             }
         except Exception as e:
             logger.error("[CRAG-V3] Analysis failed: %s", e)
-            yield {"type": "error", "content": f"Lỗi phân tích: {e}"}
+            yield {"type": "error", "content": "Lỗi phân tích câu hỏi. Vui lòng thử lại."}
             yield {"type": "done", "content": ""}  # Sprint 189b: ensure done
             return
         
@@ -1231,7 +1231,7 @@ class CorrectiveRAG:
                 
         except Exception as e:
             logger.error("[CRAG-V3] Retrieval failed: %s", e)
-            yield {"type": "error", "content": f"Lỗi tìm kiếm: {e}"}
+            yield {"type": "error", "content": "Lỗi tìm kiếm tài liệu. Vui lòng thử lại."}
             yield {"type": "done", "content": ""}  # Sprint 189b: ensure done
             return
         
@@ -1279,7 +1279,7 @@ class CorrectiveRAG:
             
         except Exception as e:
             logger.error("[CRAG-V3] Grading failed: %s", e)
-            yield {"type": "thinking", "content": f"⚠️ Bỏ qua đánh giá: {e}", "step": "grading"}
+            yield {"type": "thinking", "content": "⚠️ Bỏ qua đánh giá chất lượng, tiếp tục tạo câu trả lời.", "step": "grading"}
             grading_result = None
             passed = True  # Continue without grading
         
@@ -1417,7 +1417,7 @@ class CorrectiveRAG:
             
         except Exception as e:
             logger.error("[CRAG-V3] Generation failed: %s", e)
-            _error_msg = f"Lỗi khi tạo câu trả lời: {e}"
+            _error_msg = "Xin lỗi, không thể tạo câu trả lời lúc này."
             yield {"type": "answer", "content": _error_msg}
             full_answer_parts.append(_error_msg)  # Sprint 189b: capture in result
 

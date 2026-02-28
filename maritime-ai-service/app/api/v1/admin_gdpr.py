@@ -11,19 +11,12 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app.core.config import settings
+from app.core.admin_security import check_admin_module as _check_admin_module
 from app.api.deps import RequireAdmin
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin-gdpr"])
-
-
-def _check_admin_module(request: Request):
-    if not getattr(settings, "enable_admin_module", False):
-        raise HTTPException(status_code=404, detail="Admin module not enabled")
-    from app.core.admin_security import check_admin_ip_allowlist
-    check_admin_ip_allowlist(request)
 
 
 async def _get_pool():
@@ -193,29 +186,31 @@ async def gdpr_forget(user_id: str, body: ForgetBody, request: Request, auth: Re
         if not user:
             raise HTTPException(status_code=404, detail=f"User {user_id} not found")
 
-        # 1. Anonymize profile
-        await conn.execute(
-            """
-            UPDATE users SET name = '[Deleted User]', email = NULL, avatar_url = NULL,
-                             is_active = false WHERE id = $1
-            """,
-            user_id,
-        )
+        # All deletions in a single transaction — partial deletion is worse than no deletion
+        async with conn.transaction():
+            # 1. Anonymize profile
+            await conn.execute(
+                """
+                UPDATE users SET name = '[Deleted User]', email = NULL, avatar_url = NULL,
+                                 is_active = false WHERE id = $1
+                """,
+                user_id,
+            )
 
-        # 2. Delete user identities
-        identities_deleted = await conn.execute(
-            "DELETE FROM user_identities WHERE user_id = $1", user_id
-        )
+            # 2. Delete user identities
+            identities_deleted = await conn.execute(
+                "DELETE FROM user_identities WHERE user_id = $1", user_id
+            )
 
-        # 3. Revoke refresh tokens
-        tokens_deleted = await conn.execute(
-            "DELETE FROM refresh_tokens WHERE user_id = $1", user_id
-        )
+            # 3. Revoke refresh tokens
+            tokens_deleted = await conn.execute(
+                "DELETE FROM refresh_tokens WHERE user_id = $1", user_id
+            )
 
-        # 4. Delete semantic memories
-        memories_deleted = await conn.execute(
-            "DELETE FROM semantic_memories WHERE user_id = $1", user_id
-        )
+            # 4. Delete semantic memories
+            memories_deleted = await conn.execute(
+                "DELETE FROM semantic_memories WHERE user_id = $1", user_id
+            )
 
     # 5. Log audit (does NOT delete audit logs — regulatory requirement)
     from app.services.admin_audit import log_admin_action, extract_audit_context

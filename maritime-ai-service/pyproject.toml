@@ -71,7 +71,7 @@ source = ["app"]
 omit = ["app/main.py", "*/migrations/*"]
 
 [tool.coverage.report]
-fail_under = 60
+fail_under = 70
 show_missing = true
 exclude_lines = [
     "pragma: no cover",

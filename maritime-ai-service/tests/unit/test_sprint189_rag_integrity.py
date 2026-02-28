@@ -896,9 +896,10 @@ class TestIngestionServiceOrgIdPropagation:
         service._pdf_processor = MagicMock()
         service._vision_processor = MagicMock()
 
-        # Mock PDF conversion
+        # Mock PDF page count + conversion
         mock_image = MagicMock()
         mock_image.close = MagicMock()
+        service._pdf_processor.get_pdf_page_count = MagicMock(return_value=1)
         service._pdf_processor.convert_pdf_to_images = MagicMock(
             return_value=([mock_image], 1)
         )

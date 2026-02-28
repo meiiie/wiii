@@ -367,7 +367,8 @@ class Neo4jKnowledgeRepository:
         name_vi: Optional[str] = None,
         description: str = "",
         document_id: Optional[str] = None,
-        chunk_id: Optional[str] = None
+        chunk_id: Optional[str] = None,
+        organization_id: Optional[str] = None,
     ) -> bool:
         """Create an Entity node extracted from a document."""
         if not self._available:
@@ -385,7 +386,8 @@ class Neo4jKnowledgeRepository:
                     e.description = $description,
                     e.created_at = datetime(),
                     e.document_id = $document_id,
-                    e.chunk_id = $chunk_id
+                    e.chunk_id = $chunk_id,
+                    e.organization_id = $organization_id
                 ON MATCH SET
                     e.updated_at = datetime(),
                     e.description = CASE WHEN size($description) > size(e.description)
@@ -400,7 +402,8 @@ class Neo4jKnowledgeRepository:
                     name_vi=name_vi,
                     description=description,
                     document_id=document_id,
-                    chunk_id=chunk_id
+                    chunk_id=chunk_id,
+                    organization_id=organization_id,
                 )
                 record = result.single()
                 logger.debug("Created/merged entity: %s (%s)", entity_id, entity_type)
@@ -415,7 +418,8 @@ class Neo4jKnowledgeRepository:
         source_id: str,
         target_id: str,
         relation_type: str,
-        description: str = ""
+        description: str = "",
+        organization_id: Optional[str] = None,
     ) -> bool:
         """
         Create a relation between two entities with validated relation type.
@@ -443,14 +447,16 @@ class Neo4jKnowledgeRepository:
                 MATCH (s:Entity {{id: $source_id}})
                 MATCH (t:Entity {{id: $target_id}})
                 MERGE (s)-[r:{relation_type}]->(t)
-                ON CREATE SET r.description = $description, r.created_at = datetime()
+                ON CREATE SET r.description = $description, r.created_at = datetime(),
+                              r.organization_id = $organization_id
                 RETURN type(r) as rel_type
                 """
                 result = session.run(
                     cypher,
                     source_id=source_id,
                     target_id=target_id,
-                    description=description
+                    description=description,
+                    organization_id=organization_id,
                 )
                 record = result.single()
                 if record:
@@ -462,19 +468,29 @@ class Neo4jKnowledgeRepository:
             logger.error("Failed to create relation %s->%s: %s", source_id, target_id, e)
             return False
 
-    async def get_entity_relations(self, entity_id: str) -> List[dict]:
-        """Get all relations for an entity."""
+    async def get_entity_relations(
+        self, entity_id: str, organization_id: Optional[str] = None
+    ) -> List[dict]:
+        """Get all relations for an entity, optionally filtered by org."""
         if not self._available:
             return []
 
         try:
             with self._driver.session() as session:
-                cypher = """
-                MATCH (e:Entity {id: $entity_id})-[r]->(t:Entity)
-                RETURN type(r) as relation_type, t.id as target_id,
-                       t.name as target_name, t.type as target_type
-                """
-                result = session.run(cypher, entity_id=entity_id)
+                if organization_id:
+                    cypher = """
+                    MATCH (e:Entity {id: $entity_id, organization_id: $organization_id})-[r]->(t:Entity)
+                    RETURN type(r) as relation_type, t.id as target_id,
+                           t.name as target_name, t.type as target_type
+                    """
+                    result = session.run(cypher, entity_id=entity_id, organization_id=organization_id)
+                else:
+                    cypher = """
+                    MATCH (e:Entity {id: $entity_id})-[r]->(t:Entity)
+                    RETURN type(r) as relation_type, t.id as target_id,
+                           t.name as target_name, t.type as target_type
+                    """
+                    result = session.run(cypher, entity_id=entity_id)
                 return [dict(record) for record in result]
 
         except Exception as e:
@@ -482,20 +498,30 @@ class Neo4jKnowledgeRepository:
             return []
 
     @neo4j_retry(max_attempts=2, backoff=1.0)
-    async def get_document_entities(self, document_id: str) -> List[dict]:
-        """Get all entities extracted from a document."""
+    async def get_document_entities(
+        self, document_id: str, organization_id: Optional[str] = None
+    ) -> List[dict]:
+        """Get all entities extracted from a document, optionally filtered by org."""
         if not self._available:
             logger.warning("Neo4j not available for get_document_entities(%s)", document_id)
             return []
 
         try:
             with self._driver.session() as session:
-                cypher = """
-                MATCH (e:Entity {document_id: $document_id})
-                RETURN e.id as id, e.name as name, e.name_vi as name_vi,
-                       e.type as type, e.description as description
-                """
-                result = session.run(cypher, document_id=document_id)
+                if organization_id:
+                    cypher = """
+                    MATCH (e:Entity {document_id: $document_id, organization_id: $organization_id})
+                    RETURN e.id as id, e.name as name, e.name_vi as name_vi,
+                           e.type as type, e.description as description
+                    """
+                    result = session.run(cypher, document_id=document_id, organization_id=organization_id)
+                else:
+                    cypher = """
+                    MATCH (e:Entity {document_id: $document_id})
+                    RETURN e.id as id, e.name as name, e.name_vi as name_vi,
+                           e.type as type, e.description as description
+                    """
+                    result = session.run(cypher, document_id=document_id)
                 return [dict(record) for record in result]
 
         except Exception as e:

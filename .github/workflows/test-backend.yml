@@ -54,11 +54,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run unit tests
+      - name: Run unit tests with coverage
         working-directory: maritime-ai-service
         run: |
           pytest tests/unit/ -p no:capture --tb=short -q --co -q 2>/dev/null | tail -1
-          pytest tests/unit/ -p no:capture --tb=short -q
+          pytest tests/unit/ -p no:capture --tb=short -q --cov=app --cov-report=html --cov-report=term --cov-fail-under=70
 
       - name: Upload test results
         if: always()

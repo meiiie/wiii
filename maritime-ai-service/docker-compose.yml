@@ -24,6 +24,7 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-wiii}:${POSTGRES_PASSWORD:-wiii_secret}@postgres:5432/${POSTGRES_DB:-wiii_ai}
       # MinIO (local S3 replacement)
       - MINIO_ENDPOINT=minio:9000
+      - MINIO_EXTERNAL_ENDPOINT=localhost:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-wiii}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-wiii_secret}
       - MINIO_BUCKET=${MINIO_BUCKET:-wiii-docs}

@@ -328,30 +328,26 @@ class TestPreferencesAPI:
 class TestSSEMetadataMood:
     """Tests for mood field in SSE metadata event."""
 
-    def test_create_metadata_event_accepts_mood(self):
+    @pytest.mark.asyncio
+    async def test_create_metadata_event_accepts_mood(self):
         """create_metadata_event accepts mood kwarg."""
-        import asyncio
         from app.engine.multi_agent.stream_utils import create_metadata_event
 
         mood_data = {"positivity": 0.5, "energy": 0.8, "mood": "excited"}
-        event = asyncio.run(
-            create_metadata_event(
-                processing_time=1.5,
-                confidence=0.9,
-                mood=mood_data,
-            )
+        event = await create_metadata_event(
+            processing_time=1.5,
+            confidence=0.9,
+            mood=mood_data,
         )
         assert event.content["mood"] == mood_data
         assert event.content["processing_time"] == 1.5
 
-    def test_create_metadata_event_without_mood(self):
+    @pytest.mark.asyncio
+    async def test_create_metadata_event_without_mood(self):
         """create_metadata_event works without mood."""
-        import asyncio
         from app.engine.multi_agent.stream_utils import create_metadata_event
 
-        event = asyncio.run(
-            create_metadata_event(processing_time=1.0, confidence=0.8)
-        )
+        event = await create_metadata_event(processing_time=1.0, confidence=0.8)
         assert "mood" not in event.content
 
 

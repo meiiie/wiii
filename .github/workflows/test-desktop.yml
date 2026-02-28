@@ -30,10 +30,18 @@ jobs:
         working-directory: wiii-desktop
         run: npm ci
 
-      - name: Run tests
+      - name: Run tests with coverage
         working-directory: wiii-desktop
-        run: npx vitest run
+        run: npx vitest run --coverage
 
       - name: Type check
         working-directory: wiii-desktop
         run: npx tsc --noEmit
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-coverage
+          path: wiii-desktop/coverage/
+          retention-days: 7

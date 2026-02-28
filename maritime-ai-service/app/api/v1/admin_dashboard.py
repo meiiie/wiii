@@ -12,19 +12,12 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.core.config import settings
+from app.core.admin_security import check_admin_module as _check_admin_module
 from app.api.deps import RequireAdmin
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-def _check_admin_module(request: Request):
-    """Dependency: verify admin module is enabled + IP allowlist."""
-    if not getattr(settings, "enable_admin_module", False):
-        raise HTTPException(status_code=404, detail="Admin module not enabled")
-    from app.core.admin_security import check_admin_ip_allowlist
-    check_admin_ip_allowlist(request)
 
 
 # =============================================================================
@@ -68,8 +61,8 @@ async def admin_dashboard(auth: RequireAdmin):
                 }
                 for r in org_rows
             ]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[ADMIN] Dashboard org query failed: %s", e)
 
         # Chat sessions 24h
         try:
@@ -77,7 +70,8 @@ async def admin_dashboard(auth: RequireAdmin):
                 "SELECT COUNT(DISTINCT session_id) FROM chat_sessions "
                 "WHERE created_at >= NOW() - INTERVAL '24 hours'"
             ) or 0
-        except Exception:
+        except Exception as e:
+            logger.debug("[ADMIN] Dashboard sessions query failed: %s", e)
             total_sessions_24h = 0
 
         # LLM usage 24h
@@ -92,8 +86,8 @@ async def admin_dashboard(auth: RequireAdmin):
             if row:
                 total_tokens_24h = row["tokens"]
                 estimated_cost_24h = float(row["cost"])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[ADMIN] Dashboard LLM usage query failed: %s", e)
 
         # Active feature flags
         flags_active = sum(
@@ -232,7 +226,8 @@ async def admin_feature_flags_read(
     try:
         from app.services.feature_flag_service import list_all_flags
         return await list_all_flags(org_id=org_id)
-    except Exception:
+    except Exception as e:
+        logger.debug("[ADMIN] Feature flag service unavailable, config-only fallback: %s", e)
         # Fallback: config-only flags if feature_flag_service unavailable
         flags = []
         for name in sorted(dir(settings)):

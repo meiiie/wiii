@@ -6,6 +6,7 @@ Evaluates response quality and provides feedback.
 **Integrated with agents/ framework for config and tracing.**
 """
 
+import json
 import logging
 from typing import Optional
 
@@ -177,7 +178,6 @@ class GraderAgentNode:
         result = text_content.strip()
 
         # Parse JSON
-        import json
         if result.startswith("```"):
             result = result.split("```")[1]
             if result.startswith("json"):

@@ -41,6 +41,7 @@ class AgentType(str, Enum):
     MEMORY = "memory_agent"
     DIRECT = "direct"
     PRODUCT_SEARCH = "product_search_agent"  # Sprint 148
+    COLLEAGUE = "colleague_agent"            # Sprint 215
 
 
 # =============================================================================
@@ -49,16 +50,19 @@ class AgentType(str, Enum):
 
 ROUTING_PROMPT_TEMPLATE = """Bạn là Supervisor Agent cho hệ thống {domain_name}.
 
+**User Role:** {user_role}
+
 ## Phân tích theo bước:
-1. Xác định intent: lookup (tra cứu) | learning (dạy/giải thích/quiz) | personal (cá nhân) | social (chào hỏi) | off_topic (không liên quan) | web_search (tìm kiếm web/tin tức/pháp luật) | product_search (tìm/so sánh sản phẩm/giá cả trên sàn TMĐT)
+1. Xác định intent: lookup (tra cứu) | learning (dạy/giải thích/quiz) | personal (cá nhân) | social (chào hỏi) | off_topic (không liên quan) | web_search (tìm kiếm web/tin tức/pháp luật) | product_search (tìm/so sánh sản phẩm/giá cả trên sàn TMĐT) | colleague_consult (hỏi Bro/đồng nghiệp về trading/crypto/rủi ro — CHỈ khi user_role=admin)
 2. Xác định domain: có THỰC SỰ liên quan {domain_name} hay không? (Lưu ý: "tàu" có thể là tàu hỏa, không phải tàu thủy)
-3. Chọn agent dựa trên intent + domain
+3. Chọn agent dựa trên intent + domain + user_role
 
 ## Agent Mapping:
 - RAG_AGENT: intent=lookup VÀ CÓ domain keyword RÕ RÀNG → tra cứu quy định, luật, mức phạt. {rag_description}
 - TUTOR_AGENT: intent=learning VÀ CÓ domain keyword → giải thích, quiz, ôn bài, dạy kiến thức. {tutor_description}
 - MEMORY_AGENT: intent=personal → lịch sử học, preferences, nhớ thông tin
 - PRODUCT_SEARCH_AGENT: intent=product_search → tìm kiếm sản phẩm, so sánh giá, mua hàng trên sàn TMĐT (Shopee, Lazada, TikTok Shop, Google Shopping, Facebook Marketplace)
+- COLLEAGUE_AGENT: intent=colleague_consult VÀ user_role=admin → hỏi ý kiến Bro về trading, crypto, rủi ro thị trường, liquidation
 - DIRECT: intent=social HOẶC intent=off_topic HOẶC intent=web_search → chào hỏi, cảm ơn, tạm biệt, câu NGOÀI chuyên môn, tìm kiếm web/tin tức/pháp luật
 
 ## Quy tắc QUAN TRỌNG:
@@ -97,6 +101,10 @@ ROUTING_PROMPT_TEMPLATE = """Bạn là Supervisor Agent cho hệ thống {domain
 - "So sánh giá máy khoan Bosch trên Shopee và Lazada" → intent=product_search, agent=PRODUCT_SEARCH_AGENT, confidence=0.95
 - "Mua ốp lưng iPhone 16 ở đâu rẻ nhất?" → intent=product_search, agent=PRODUCT_SEARCH_AGENT, confidence=0.90
 - "Tìm trên shopee áo khoác nam" → intent=product_search, agent=PRODUCT_SEARCH_AGENT, confidence=0.95
+- "Hỏi Bro về BTC" → intent=colleague_consult, agent=COLLEAGUE_AGENT, confidence=0.95 (CHỈ khi user_role=admin)
+- "Tình hình liquidation thế nào Bro?" → intent=colleague_consult, agent=COLLEAGUE_AGENT, confidence=0.95 (CHỈ khi user_role=admin)
+- "Bro ơi, thị trường crypto hôm nay sao?" → intent=colleague_consult, agent=COLLEAGUE_AGENT, confidence=0.95 (CHỈ khi user_role=admin)
+- "Bro đánh giá rủi ro thế nào?" → intent=colleague_consult, agent=COLLEAGUE_AGENT, confidence=0.90 (CHỈ khi user_role=admin)
 
 **Query:** {query}
 
@@ -248,7 +256,7 @@ class SupervisorAgent:
             state["routing_metadata"] = {
                 "intent": "unknown",
                 "confidence": 1.0,
-                "reasoning": f"rule-based fallback (LLM error: {type(e).__name__})",
+                "reasoning": "rule-based fallback (LLM routing unavailable)",
                 "method": "rule_based",
             }
             return result
@@ -276,6 +284,9 @@ class SupervisorAgent:
         else:
             context_str = str(context)[:500]
 
+        # Sprint 215: Extract user_role for colleague routing
+        user_role = (context or {}).get("user_role") or (context or {}).get("role") or "student"
+
         messages = [
             SystemMessage(content="You are a query router. Analyze the query step by step, classify intent, choose agent, and provide confidence."),
             HumanMessage(content=ROUTING_PROMPT_TEMPLATE.format(
@@ -284,6 +295,7 @@ class SupervisorAgent:
                 tutor_description=tutor_desc,
                 query=query,
                 context=context_str,
+                user_role=user_role,
             ))
         ]
 
@@ -295,6 +307,7 @@ class SupervisorAgent:
             "MEMORY_AGENT": AgentType.MEMORY.value,
             "DIRECT": AgentType.DIRECT.value,
             "PRODUCT_SEARCH_AGENT": AgentType.PRODUCT_SEARCH.value,
+            "COLLEAGUE_AGENT": AgentType.COLLEAGUE.value,
         }
 
         chosen_agent = agent_map.get(result.agent, AgentType.DIRECT.value)
@@ -326,6 +339,15 @@ class SupervisorAgent:
                 chosen_agent = AgentType.DIRECT.value
                 method = "structured+product_search_disabled"
 
+        # Sprint 215: Colleague agent gate — requires admin role + feature flags
+        if chosen_agent == AgentType.COLLEAGUE.value:
+            from app.core.config import settings as _settings
+            if not _settings.enable_cross_soul_query or user_role != "admin" or not _settings.enable_soul_bridge:
+                logger.info("[SUPERVISOR] Colleague query denied (role=%s, cross_soul=%s, bridge=%s), falling back to DIRECT",
+                             user_role, _settings.enable_cross_soul_query, _settings.enable_soul_bridge)
+                chosen_agent = AgentType.DIRECT.value
+                method = "structured+colleague_denied"
+
         # Sprint 80: Domain keyword validation — catch false positives like "tàu đói"
         pre_validation = chosen_agent
         chosen_agent = self._validate_domain_routing(query, chosen_agent, domain_config)
@@ -349,9 +371,23 @@ class SupervisorAgent:
         If LLM routes to RAG/TUTOR but query has NO domain keywords,
         override to DIRECT. This catches false positives like "tàu đói" being
         routed to maritime RAG because LLM sees "tàu".
+
+        Sprint 214: When org knowledge is enabled and org context exists,
+        skip keyword check — org KB may contain any topic.
         """
         if chosen_agent not in (AgentType.RAG.value, AgentType.TUTOR.value):
             return chosen_agent
+
+        # Sprint 214: Org knowledge bypass — org users may have non-domain docs
+        from app.core.config import settings as _settings
+        if _settings.enable_org_knowledge:
+            from app.core.org_context import get_current_org_id
+            if get_current_org_id():
+                logger.info(
+                    "[SUPERVISOR] Org knowledge bypass: keeping %s "
+                    "(org context present, org_knowledge enabled)", chosen_agent
+                )
+                return chosen_agent  # Trust LLM routing for org users
 
         domain_keywords = self._get_domain_keywords(domain_config)
         if not domain_keywords:

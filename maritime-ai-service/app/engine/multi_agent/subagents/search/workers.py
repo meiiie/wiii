@@ -123,7 +123,8 @@ def _get_event_queue(bus_id: Optional[str]):
     try:
         from app.engine.multi_agent.graph_streaming import _get_event_queue
         return _get_event_queue(bus_id)
-    except Exception:
+    except Exception as _e:
+        logger.debug("[WORKER] Event queue unavailable: %s", _e)
         return None
 
 
@@ -132,8 +133,8 @@ async def _push(queue, event: dict) -> None:
     if queue is not None:
         try:
             queue.put_nowait(event)
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("[WORKER] Event push failed: %s", _e)
 
 
 async def _push_thinking_deltas(queue, text: str, node: str = "product_search_agent") -> None:
@@ -152,7 +153,8 @@ def _get_available_platforms() -> List[str]:
 
         registry = get_search_platform_registry()
         return [a.get_config().id for a in registry.get_all_enabled()]
-    except Exception:
+    except Exception as _e:
+        logger.debug("[WORKER] Platform registry unavailable, using defaults: %s", _e)
         return ["google_shopping", "shopee", "lazada"]
 
 
@@ -308,8 +310,8 @@ async def platform_worker(state: Dict[str, Any]) -> dict:
             query_snippet=query[:100],
             error_message=error or "",
         )
-    except Exception:
-        pass  # Never block search worker for metrics
+    except Exception as _e:
+        logger.debug("[WORKER] Skill bridge recording failed: %s", _e)
 
     # Emit tool_result + acknowledgment
     result_summary = f"{len(products)} kết quả" if products else (error or "Không có kết quả")
@@ -328,8 +330,8 @@ async def platform_worker(state: Dict[str, Any]) -> dict:
         if getattr(_s201, "enable_product_image_enrichment", False) and products:
             from app.engine.search_platforms.image_enricher import enrich_product_images
             products = enrich_product_images(products, query, platform_id)
-    except Exception:
-        pass  # Non-critical — don't break search worker
+    except Exception as _e:
+        logger.debug("[WORKER] Image enrichment failed for %s: %s", platform_id, _e)
 
     # Sprint 201b: Extract rating/sold_count from snippets when missing
     for product in products:
@@ -382,8 +384,8 @@ async def platform_worker(state: Dict[str, Any]) -> dict:
                         },
                         "node": "product_search_agent",
                     })
-        except Exception:
-            pass  # Non-critical — don't break search worker
+        except Exception as _e:
+            logger.debug("[WORKER] Preview emission failed for %s: %s", platform_id, _e)
 
     return {
         "all_products": products,
@@ -508,7 +510,8 @@ async def curate_products(state: Dict[str, Any]) -> dict:
         curation_enabled = getattr(_s202, "enable_curated_product_cards", False)
         max_curated = getattr(_s202, "curated_product_max_cards", 8)
         llm_tier = getattr(_s202, "curated_product_llm_tier", "light")
-    except Exception:
+    except Exception as _e:
+        logger.debug("[CURATE] Config load failed, curation disabled: %s", _e)
         curation_enabled = False
         max_curated = 8
         llm_tier = "light"
@@ -689,8 +692,8 @@ async def synthesize_response(state: Dict[str, Any]) -> dict:
         deduped = state.get("deduped_products", [])
         if deduped:
             all_products_json = json.dumps(deduped[:100], ensure_ascii=False)[:50000]
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[SYNTHESIZE] Product JSON serialization failed: %s", _e)
 
     return {
         "final_response": final_response,

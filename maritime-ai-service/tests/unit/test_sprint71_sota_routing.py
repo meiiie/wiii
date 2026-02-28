@@ -452,6 +452,7 @@ class TestCoTRoutingPrompt:
             tutor_description="Dạy và giải thích kiến thức",
             query="quiz về COLREGs",
             context="{}",
+            user_role="student",
         )
         assert "quiz về COLREGs" in formatted
         assert "Hàng hải" in formatted
@@ -467,6 +468,7 @@ class TestCoTRoutingPrompt:
             tutor_description="Giải thích",
             query="test",
             context=truncated,
+            user_role="student",
         )
         # The truncated context (500 chars) is in the prompt, not the full context (1000+ chars)
         assert truncated in formatted
@@ -540,7 +542,7 @@ class TestRoutingMetadata:
 
         meta = state["routing_metadata"]
         assert meta["method"] == "rule_based"
-        assert "ValueError" in meta["reasoning"]
+        assert "LLM routing unavailable" in meta["reasoning"]
 
     @pytest.mark.asyncio
     async def test_process_sets_routing_metadata(self):

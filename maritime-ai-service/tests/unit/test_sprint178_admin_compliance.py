@@ -11,17 +11,17 @@ Patching strategy:
   - Auth: app.dependency_overrides[require_auth] = lambda: _ADMIN_USER
     FastAPI resolves dependencies at request time, so we override the function
     that is registered as Depends(require_auth) in _require_admin.
-  - Settings: patch `app.api.v1.admin_audit.settings` and
-              `app.api.v1.admin_gdpr.settings` at the module level where the
-              module-level `settings` object is referenced in _check_admin_module.
-  - IP allowlist: patch `app.core.admin_security.check_admin_ip_allowlist` to
-              a no-op so that the IP check never fires.
+  - Admin module gate: patch `app.core.admin_security.check_admin_module` to
+              skip the enable_admin_module check + IP allowlist in one shot.
+  - DB pool: patch `app.core.database.get_asyncpg_pool` (create=True) because
+             it is a lazy import inside function bodies.
   - DB pool: patch `app.core.database.get_asyncpg_pool` (create=True) because
              it is a lazy import inside function bodies.
   - audit service: patch `app.services.admin_audit.log_admin_action` for GDPR
              endpoints that fire-and-forget an audit event.
 """
 
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -59,8 +59,15 @@ def _mock_pool_and_conn():
 
     Returns (async_pool_fn, mock_conn) where async_pool_fn is an AsyncMock
     that, when awaited, returns a pool with a working acquire() context manager.
+    Includes transaction() mock for endpoints using conn.transaction().
     """
     mock_conn = AsyncMock()
+    # transaction() is a sync call returning an async context manager
+    tx_cm = MagicMock()
+    tx_cm.__aenter__ = AsyncMock(return_value=None)
+    tx_cm.__aexit__ = AsyncMock(return_value=False)
+    mock_conn.transaction = MagicMock(return_value=tx_cm)
+
     mock_pool = MagicMock()
     acm = AsyncMock()
     acm.__aenter__ = AsyncMock(return_value=mock_conn)
@@ -140,11 +147,17 @@ def student_app(base_app):
 # ---------------------------------------------------------------------------
 
 def _settings_patches():
-    """Return a tuple of patch context managers for admin settings + IP check."""
+    """Return a tuple of patch context managers for admin module gate.
+
+    After DRY refactor (ADMIN-4), all admin routers use check_admin_module
+    from admin_security.py. Patching that single function skips both the
+    enable_admin_module check and IP allowlist in one shot.
+    Tuple size stays at 3 so all ``p1, p2, p3 = _settings_patches()`` unpack.
+    """
     return (
-        patch("app.core.admin_security.check_admin_ip_allowlist", return_value=None),
-        patch("app.api.v1.admin_audit.settings", _make_settings_mock()),
-        patch("app.api.v1.admin_gdpr.settings", _make_settings_mock()),
+        patch("app.core.admin_security.check_admin_module", return_value=None),
+        nullcontext(),
+        nullcontext(),
     )
 
 

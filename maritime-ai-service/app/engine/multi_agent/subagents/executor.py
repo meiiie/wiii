@@ -70,7 +70,7 @@ async def execute_subagent(
             logger.warning("Subagent %s: %s", config.name, last_error)
 
         except Exception as exc:
-            last_error = f"{type(exc).__name__}: {exc}"
+            last_error = "Subagent processing error"
             logger.error(
                 "Subagent %s error (attempt %d): %s",
                 config.name,

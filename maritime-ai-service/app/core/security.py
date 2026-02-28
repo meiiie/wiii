@@ -7,12 +7,11 @@ Sprint 192: Org membership validation, API key role restriction, JWT audience.
 """
 import hmac
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Optional
 
 from fastapi import Header, HTTPException, Security, status
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
 from pydantic import BaseModel
 
 from app.core.config import settings
@@ -55,91 +54,34 @@ class AuthenticatedUser(BaseModel):
 # =============================================================================
 # JWT Token Functions
 # =============================================================================
-
-def create_access_token(
-    subject: str,
-    expires_delta: Optional[timedelta] = None,
-) -> str:
-    """
-    Create a JWT access token.
-    
-    Args:
-        subject: The subject (usually user_id)
-        expires_delta: Optional custom expiration time
-    
-    Returns:
-        Encoded JWT token string
-    """
-    now = datetime.now(timezone.utc)
-    expire = now + (expires_delta or timedelta(minutes=settings.jwt_expire_minutes))
-    
-    payload = {
-        "sub": subject,
-        "exp": expire,
-        "iat": now,
-        "type": "access",
-    }
-    
-    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
-
-
+# NOTE: Token creation is handled by app.auth.token_service.create_access_token()
+# which includes aud, jti, iss, email, name, role claims.
+# This module only provides verify_jwt_token() used by require_auth().
 
 def verify_jwt_token(token: str) -> TokenPayload:
     """
     Verify and decode a JWT token.
 
-    Sprint 192: Validates `aud` claim when present. Legacy tokens without
-    `aud` are accepted until they expire naturally (backward compat).
-    Also checks JTI denylist when enabled.
-
-    Args:
-        token: The JWT token string
-
-    Returns:
-        TokenPayload with decoded information
+    Uses token_service.decode_jwt_payload() for single-source decode logic
+    (aud validation, JTI denylist). Builds TokenPayload from raw claims
+    (preserving None defaults for missing fields like auth_method).
 
     Raises:
-        HTTPException: If token is invalid or expired
+        HTTPException: If token is invalid, expired, or revoked
     """
     try:
-        # Sprint 192: Try with audience validation first
-        audience = settings.jwt_audience
-        try:
-            payload = jwt.decode(
-                token,
-                settings.jwt_secret_key,
-                algorithms=[settings.jwt_algorithm],
-                audience=audience,
-            )
-        except JWTError:
-            # Backward compat: retry without audience for legacy tokens
-            payload = jwt.decode(
-                token,
-                settings.jwt_secret_key,
-                algorithms=[settings.jwt_algorithm],
-                options={"verify_aud": False},
-            )
-
-        token_payload = TokenPayload(**payload)
-
-        # Sprint 192: Check JTI denylist
-        if settings.enable_jti_denylist and token_payload.jti:
-            from app.auth.token_service import is_jti_denied
-            if is_jti_denied(token_payload.jti):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token has been revoked",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-        return token_payload
+        from app.auth.token_service import decode_jwt_payload
+        payload = decode_jwt_payload(token)
+        return TokenPayload(**payload)
     except HTTPException:
         raise
-    except JWTError as e:
+    except Exception as e:
         logger.warning("JWT verification failed: %s", e)
+        # Preserve specific revocation detail for JTI denylist
+        detail = "Token has been revoked" if "revoked" in str(e).lower() else "Invalid or expired token"
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+            detail=detail,
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -191,8 +133,8 @@ async def _validate_org_membership(user_id: str, org_id: str, role: str) -> bool
             )
             return row is not None
     except Exception as e:
-        logger.warning("Org membership check failed (fail-open): %s", e)
-        return True  # Fail-open: don't block on DB error
+        logger.warning("Org membership check failed (fail-closed): %s", e)
+        return False  # Fail-closed: block on DB error (consistent with OrgContextMiddleware)
 
 
 # =============================================================================

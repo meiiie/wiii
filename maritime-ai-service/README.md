@@ -7,7 +7,7 @@
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2-purple?style=flat-square)](https://langchain.com)
 [![Gemini](https://img.shields.io/badge/Gemini-2.5_Flash-4285F4?style=flat-square&logo=google&logoColor=white)](https://ai.google.dev)
 [![pgvector](https://img.shields.io/badge/pgvector-0.7-00E599?style=flat-square&logo=postgresql&logoColor=white)](https://github.com/pgvector/pgvector)
-[![Tests](https://img.shields.io/badge/tests-9703%20passed-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-9830%20passed-brightgreen?style=flat-square)](tests/)
 
 **Soul AGI Backend -- Multi-Domain Agentic RAG with Living Agent Autonomy**
 
@@ -52,7 +52,7 @@ uvicorn app.main:app --reload
 | **Advanced RAG** | 5 Strategies | Simple, Decompose, Step-Back, HyDE (hypothetical document embeddings), Multi-Query |
 | **Graph RAG** | Knowledge Graph | Entity extraction -> Neo4j/PostgreSQL dual-mode with temporal subgraphs |
 | **Visual RAG** | Vision Context | Query-time visual context enrichment via Gemini Vision |
-| **Living Agent** | Autonomous Soul | Heartbeat (30-min), 4D emotion engine, skill lifecycle, daily journal, social browsing, all via local LLM |
+| **Living Agent** | Autonomous Soul | Heartbeat (30-min), 4D emotion engine, SOTA LLM sentiment analysis, skill lifecycle, daily journal, social browsing, all via local LLM |
 | **Identity Core** | Three-Layer Identity | Immutable soul core + self-evolving identity (weekly reflection) + per-turn context state |
 | **Narrative Layer** | Life Story | NarrativeSynthesizer compiles 6 data sources into coherent autobiography for prompt context |
 | **Skill-Tool Bridge** | Feedback Loops | Tool execution -> skill advancement, mastered skills -> tool priority boost |
@@ -193,6 +193,10 @@ X-Session-ID: session-abc
 | `/api/v1/living-agent/skills` | GET | All skills with lifecycle status |
 | `/api/v1/living-agent/heartbeat` | GET | Heartbeat scheduler info |
 | `/api/v1/living-agent/heartbeat/trigger` | POST | Manually trigger heartbeat cycle |
+| `/api/v1/living-agent/goals` | GET | Active goals with progress and milestones |
+| `/api/v1/living-agent/reflections` | GET | Daily self-reflections with insights |
+| `/api/v1/living-agent/narrative` | GET | Compiled life story narrative |
+| `/api/v1/living-agent/identity` | GET | Self-evolving identity core state |
 
 ### Knowledge & Admin
 
@@ -281,20 +285,22 @@ X-Session-ID: session-abc
 ### Living Agent System
 
 ```
-app/engine/living_agent/ (19 modules, 6,784+ LOC)
+app/engine/living_agent/ (22 modules, 7,500+ LOC)
 +-- soul_loader.py          # YAML soul config (identity, truths, boundaries)
-+-- emotion_engine.py       # Rule-based 4D state (mood/energy/social/engagement)
-+-- heartbeat.py            # AsyncIO scheduler (30-min interval)
++-- emotion_engine.py       # 4D state (mood/energy/social/engagement), 3-tier relationship dampening
++-- sentiment_analyzer.py   # Sprint 210d: SOTA LLM sentiment via Gemini Flash structured output
++-- heartbeat.py            # AsyncIO scheduler (30-min interval, aggregate processing)
 +-- skill_builder.py        # DISCOVER -> LEARN -> PRACTICE -> EVALUATE -> MASTER
 +-- skill_learner.py        # SM-2 spaced repetition algorithm
 +-- journal.py              # Daily journal via local LLM
-+-- social_browser.py       # Serper + HackerNews API browsing
-+-- reflector.py            # Weekly self-reflection
-+-- goal_manager.py         # Goal tracking and progress
++-- social_browser.py       # Serper + HackerNews API browsing + insight extraction
++-- reflector.py            # Daily self-reflection (Sprint 210: was weekly)
++-- goal_manager.py         # Goal tracking, progress, soul-based seeding
 +-- autonomy_manager.py     # Graduated autonomy levels
 +-- proactive_messenger.py  # Context-aware outreach (anti-spam guardrails)
 +-- routine_tracker.py      # User activity patterns
 +-- narrative_synthesizer.py # Life story compilation from 6 sources
++-- identity_core.py        # Self-evolving identity Layer 2
 +-- channel_sender.py       # Multi-channel message delivery
 +-- briefing_composer.py    # Morning briefing generation
 +-- weather_service.py      # Weather context for briefings
@@ -372,7 +378,7 @@ pytest tests/property/ -v
 pytest tests/unit/ --cov=app --cov-report=html
 ```
 
-**Stats:** 9,703 unit tests across 350+ test files. All passing, 0 failures. (as of Deep Audit, Feb 26, 2026)
+**Stats:** 9,830 unit tests across 342 test files. All passing, 0 failures. (as of Sprint 210d, Feb 26, 2026)
 
 ---
 

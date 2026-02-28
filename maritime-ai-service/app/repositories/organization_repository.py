@@ -62,6 +62,7 @@ class OrganizationRepository:
 
         try:
             with self._session_factory() as session:
+                # ON CONFLICT: reactivate soft-deleted org with new data
                 session.execute(
                     text(
                         f"INSERT INTO {self.ORG_TABLE} "
@@ -69,7 +70,13 @@ class OrganizationRepository:
                         f"default_domain, settings, is_active, created_at, updated_at) "
                         f"VALUES (:id, :name, :display_name, :description, "
                         f":allowed_domains, :default_domain, CAST(:settings AS jsonb), "
-                        f"true, :now, :now)"
+                        f"true, :now, :now) "
+                        f"ON CONFLICT (id) DO UPDATE SET "
+                        f"name = :name, display_name = :display_name, "
+                        f"description = :description, allowed_domains = :allowed_domains, "
+                        f"default_domain = :default_domain, "
+                        f"settings = CAST(:settings AS jsonb), "
+                        f"is_active = true, updated_at = :now"
                     ),
                     {
                         "id": org.id,
@@ -341,7 +348,7 @@ class OrganizationRepository:
             return []
 
     def get_user_default_org(self, user_id: str) -> Optional[str]:
-        """Get the first organization a user belongs to (default)."""
+        """Get the first active organization a user belongs to (default)."""
         self._ensure_initialized()
         if not self._session_factory:
             return None
@@ -350,10 +357,11 @@ class OrganizationRepository:
             with self._session_factory() as session:
                 row = session.execute(
                     text(
-                        f"SELECT organization_id "
-                        f"FROM {self.MEMBERSHIP_TABLE} "
-                        f"WHERE user_id = :user_id "
-                        f"ORDER BY joined_at ASC LIMIT 1"
+                        f"SELECT uo.organization_id "
+                        f"FROM {self.MEMBERSHIP_TABLE} uo "
+                        f"JOIN {self.ORG_TABLE} o ON uo.organization_id = o.id "
+                        f"WHERE uo.user_id = :user_id AND o.is_active = true "
+                        f"ORDER BY uo.joined_at ASC LIMIT 1"
                     ),
                     {"user_id": user_id},
                 ).fetchone()
@@ -365,7 +373,7 @@ class OrganizationRepository:
             return None
 
     def is_user_in_org(self, user_id: str, org_id: str) -> bool:
-        """Check if a user is a member of an organization."""
+        """Check if a user is a member of an active organization."""
         self._ensure_initialized()
         if not self._session_factory:
             return False
@@ -374,8 +382,10 @@ class OrganizationRepository:
             with self._session_factory() as session:
                 row = session.execute(
                     text(
-                        f"SELECT 1 FROM {self.MEMBERSHIP_TABLE} "
-                        f"WHERE user_id = :user_id AND organization_id = :org_id"
+                        f"SELECT 1 FROM {self.MEMBERSHIP_TABLE} uo "
+                        f"JOIN {self.ORG_TABLE} o ON uo.organization_id = o.id "
+                        f"WHERE uo.user_id = :user_id AND uo.organization_id = :org_id "
+                        f"AND o.is_active = true"
                     ),
                     {"user_id": user_id, "org_id": org_id},
                 ).fetchone()

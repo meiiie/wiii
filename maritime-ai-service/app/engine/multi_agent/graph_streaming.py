@@ -31,7 +31,9 @@ Sprint 70: True Interleaved Thinking (Claude pattern)
 """
 
 import asyncio
+import json
 import logging
+import re
 import time
 import uuid
 from typing import Dict, Optional, AsyncGenerator
@@ -90,7 +92,6 @@ def _get_event_queue(bus_id: str) -> Optional[asyncio.Queue]:
 
 def _cleanup_stale_queues() -> int:
     """Sprint 83: Remove event queues older than MAX_AGE to prevent memory leak."""
-    import time
     now = time.time()
     stale = [
         bid for bid, created in _EVENT_QUEUE_CREATED.items()
@@ -202,6 +203,7 @@ _NODE_LABELS = {
     "memory_agent": "Truy xuất bộ nhớ",
     "direct": "Suy nghĩ câu trả lời",
     "product_search_agent": "Tìm kiếm sản phẩm",
+    "colleague_agent": "Hỏi ý kiến Bro",
     "parallel_dispatch": "Triển khai song song",
     "aggregator": "Tổng hợp báo cáo",
     # Sprint 164: Per-worker subagent labels (short names from parallel_dispatch)
@@ -569,7 +571,7 @@ async def process_with_multi_agent_streaming(
                 await merged_queue.put(("error", "Processing timeout exceeded"))
             except Exception as e:
                 logger.exception("[STREAM] Graph error: %s", e)
-                await merged_queue.put(("error", f"Graph error: {type(e).__name__}: {e}"))
+                await merged_queue.put(("error", "Graph processing error"))
             finally:
                 await merged_queue.put(("graph_done", None))
 
@@ -678,7 +680,8 @@ async def process_with_multi_agent_streaming(
                             if pl.get("type") == "answer_delta":
                                 answer_emitted = True
                             yield await _convert_bus_event(pl)
-                    except Exception:
+                    except Exception as _drain_err:
+                        logger.debug("[STREAM] Merged queue drain stopped: %s", _drain_err)
                         break
                 # Sprint 150 fix: Also drain event_queue directly.
                 # _forward_bus may not have forwarded all events before
@@ -693,7 +696,8 @@ async def process_with_multi_agent_streaming(
                         if evt.get("type") == "answer_delta":
                             answer_emitted = True
                         yield await _convert_bus_event(evt)
-                    except Exception:
+                    except Exception as _drain_err:
+                        logger.debug("[STREAM] Event queue drain stopped: %s", _drain_err)
                         break
                 break
             elif msg_type != "graph":
@@ -1155,11 +1159,10 @@ async def process_with_multi_agent_streaming(
                                 continue
                             _raw = tc.get("result", "")
                             try:
-                                import json as _json
                                 # Try JSON first (product search, structured results)
                                 _results = []
                                 try:
-                                    _parsed = _json.loads(_raw) if isinstance(_raw, str) else _raw
+                                    _parsed = json.loads(_raw) if isinstance(_raw, str) else _raw
                                     if isinstance(_parsed, dict):
                                         _results = _parsed.get("results", _parsed.get("organic", []))
                                     elif isinstance(_parsed, list):
@@ -1193,7 +1196,6 @@ async def process_with_multi_agent_streaming(
                                 else:
                                     # Text path — parse markdown-formatted results
                                     # Format: **Title** (date) [source]\nbody\nURL: href\n---\n
-                                    import re
                                     _blocks = re.split(r'\n---\n', str(_raw))
                                     for _bi, _block in enumerate(_blocks[:8]):
                                         _block = _block.strip()
@@ -1235,7 +1237,8 @@ async def process_with_multi_agent_streaming(
                                         )
                                         if _web_count >= _preview_max:
                                             break
-                            except Exception:
+                            except Exception as _pv_err:
+                                logger.debug("[STREAM] Web preview parse failed: %s", _pv_err)
                                 continue
 
                     # Direct response — token-stream it
@@ -1316,8 +1319,7 @@ async def process_with_multi_agent_streaming(
                                 continue
                             _raw = tc.get("result", "")
                             try:
-                                import json as _json
-                                _parsed = _json.loads(_raw) if isinstance(_raw, str) else _raw
+                                _parsed = json.loads(_raw) if isinstance(_raw, str) else _raw
                                 if not isinstance(_parsed, dict):
                                     continue
                                 _platform = _parsed.get("platform", "")
@@ -1344,7 +1346,8 @@ async def process_with_multi_agent_streaming(
                                             "platform": _platform,
                                         },
                                     )
-                            except Exception:
+                            except Exception as _pv_err:
+                                logger.debug("[STREAM] Product preview parse failed: %s", _pv_err)
                                 continue
 
                     # Product search response — token-stream it
@@ -1467,8 +1470,8 @@ async def process_with_multi_agent_streaming(
                               "energy": round(_es.energy, 3),
                               "mood": _es.mood.value,
                           }
-              except Exception:
-                  pass
+              except Exception as _mood_err:
+                  logger.debug("[STREAM] Emotional state retrieval failed: %s", _mood_err)
 
               yield await create_metadata_event(
                   reasoning_trace=reasoning_dict,
@@ -1499,7 +1502,7 @@ async def process_with_multi_agent_streaming(
 
         except Exception as e:
             logger.exception("[MULTI_AGENT_STREAM] Inner loop error: %s", e)
-            yield await create_error_event(f"Internal processing error: {type(e).__name__}")
+            yield await create_error_event("Internal processing error")
             # Sprint 153: Always emit done so frontend exits streaming state
             yield await create_done_event(time.time() - start_time)
         finally:
@@ -1518,7 +1521,7 @@ async def process_with_multi_agent_streaming(
 
     except Exception as e:
         logger.exception("[MULTI_AGENT_STREAM] Error: %s", e)
-        yield await create_error_event(f"Internal processing error: {type(e).__name__}")
+        yield await create_error_event("Internal processing error")
         # Sprint 153: Always emit done so frontend exits streaming state
         yield await create_done_event(time.time() - start_time)
         registry.end_request_trace(trace_id)

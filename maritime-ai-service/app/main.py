@@ -183,7 +183,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.warning("[WARN] UnifiedLLMClient initialization failed: %s", e)
 
-    # 1b. Validate embedding dimensions against config (SOTA 2026)
+    # 1c. Validate embedding dimensions against config (SOTA 2026)
     try:
         from app.core.constants import EXPECTED_EMBEDDING_DIMENSIONS
         if settings.embedding_dimensions != EXPECTED_EMBEDDING_DIMENSIONS:
@@ -295,6 +295,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning("[WARN] Living Agent heartbeat startup failed: %s", e)
 
     # =========================================================================
+    # SOUL BRIDGE (Sprint 213: Cầu Nối Linh Hồn)
+    # =========================================================================
+    _soul_bridge = None
+    if settings.enable_soul_bridge:
+        try:
+            from app.engine.soul_bridge import get_soul_bridge
+            _soul_bridge = get_soul_bridge()
+            await _soul_bridge.initialize(settings)
+            connect_results = await _soul_bridge.connect_to_peers()
+            connected = sum(1 for v in connect_results.values() if v)
+            logger.info(
+                "[OK] SoulBridge initialized: %d/%d peers connected",
+                connected, len(connect_results),
+            )
+        except Exception as e:
+            logger.warning("[WARN] SoulBridge startup failed: %s", e)
+
+    # =========================================================================
     # LMS CONNECTOR BOOTSTRAP (Sprint 155: Cầu Nối)
     # =========================================================================
     if settings.enable_lms_integration:
@@ -343,6 +361,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.info("Emotion state persisted on shutdown")
         except Exception as e:
             logger.warning("Emotion persist on shutdown failed: %s", e)
+
+    # Stop SoulBridge (Sprint 213)
+    if _soul_bridge:
+        try:
+            await _soul_bridge.shutdown()
+            logger.info("SoulBridge stopped")
+        except Exception as e:
+            logger.warning("SoulBridge shutdown failed: %s", e)
 
     # Shut down MCP Client (Sprint 56)
     if settings.enable_mcp_client:
@@ -431,9 +457,9 @@ def create_application() -> FastAPI:
         "http://127.0.0.1:1420",     # Tauri/Vite dev server
         "https://tauri.localhost",    # Tauri production webview
         "tauri://localhost",          # Tauri custom protocol
-        # Production domain — configure via CORS_ORIGINS env var
-        "https://*.vercel.app",       # Vercel deployments
-        "https://*.netlify.app",      # Netlify deployments
+        # Production: use CORS_ORIGINS env var for exact origins,
+        # or CORS_ORIGIN_REGEX for wildcard subdomain matching
+        # (CORSMiddleware does NOT support glob patterns in allow_origins)
     ]
 
     
@@ -445,8 +471,12 @@ def create_application() -> FastAPI:
     cors_kwargs: dict = dict(
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        allow_headers=["*"],
-        expose_headers=["*"],
+        allow_headers=[
+            "Authorization", "Content-Type", "X-API-Key",
+            "X-User-ID", "X-Role", "X-Session-ID", "X-Organization-ID",
+            "X-Request-ID",
+        ],
+        expose_headers=["X-Request-ID", "Retry-After"],
     )
     if settings.cors_origin_regex:
         cors_kwargs["allow_origin_regex"] = settings.cors_origin_regex
@@ -469,11 +499,13 @@ def create_application() -> FastAPI:
             )
         app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
 
-    # Middleware stack (Starlette executes in REVERSE of add order)
-    # So: add RequestID first, OrgContext second → executes OrgContext first, then RequestID outermost
+    # Middleware stack (Starlette executes in LIFO / reverse-add order)
+    # OrgContext added first → inner (runs second, binds organization_id to structlog)
+    # RequestID added second → outer (runs first, clears+binds request_id)
+    # This ensures RequestID.clear_contextvars() runs BEFORE OrgContext binds org_id
     from app.core.middleware import RequestIDMiddleware, OrgContextMiddleware
-    app.add_middleware(RequestIDMiddleware)
-    app.add_middleware(OrgContextMiddleware)  # Sprint 24: Multi-Tenant org context
+    app.add_middleware(OrgContextMiddleware)  # Sprint 24: Multi-Tenant org context (inner)
+    app.add_middleware(RequestIDMiddleware)   # Outermost — sets request_id first
 
     # Configure Rate Limiting
     app.state.limiter = limiter
@@ -489,6 +521,33 @@ def create_application() -> FastAPI:
     # Include API routers
     from app.api.v1 import router as api_v1_router
     app.include_router(api_v1_router, prefix=settings.api_v1_prefix)
+
+    # Sprint 213: Agent Card endpoint (/.well-known/agent.json) at app root
+    if settings.enable_soul_bridge:
+        @app.get("/.well-known/agent.json", tags=["SoulBridge"])
+        async def agent_card_endpoint():
+            """Serve Wiii's agent card for soul discovery (A2A-inspired)."""
+            try:
+                from app.engine.soul_bridge.agent_card import build_agent_card
+                soul_config = None
+                emotional_state = None
+                try:
+                    from app.engine.living_agent.soul_loader import get_soul
+                    soul_config = get_soul()
+                except Exception:
+                    pass
+                try:
+                    from app.engine.living_agent.emotion_engine import get_emotion_engine
+                    engine = get_emotion_engine()
+                    emotional_state = engine.to_dict()
+                except Exception:
+                    pass
+                base_url = f"http://localhost:{settings.port}"
+                card = build_agent_card(soul_config, emotional_state, base_url)
+                return card.to_dict()
+            except Exception as e:
+                logger.warning("Agent card generation failed: %s", e)
+                return {"error": "Agent card unavailable"}
 
     # MCP Server (Sprint 56: Mount after routers so endpoints are discoverable)
     if settings.enable_mcp_server:
@@ -568,7 +627,7 @@ async def general_exception_handler(
     Returns HTTP 500 with error details while maintaining service availability.
     Requirements: 1.4
     """
-    logger.exception(f"Unexpected error: {exc}")
+    logger.exception("Unexpected error: %s", exc)
     
     response = ErrorResponse(
         error="internal_error",

@@ -32,8 +32,19 @@ def _make_settings(**overrides):
     return SimpleNamespace(**defaults)
 
 
+def _make_auth(user_id="admin-user", role="admin", org_id=None):
+    """Create an AuthenticatedUser for testing (Sprint 217: require_auth migration)."""
+    from app.core.security import AuthenticatedUser
+    return AuthenticatedUser(
+        user_id=user_id,
+        auth_method="api_key",
+        role=role,
+        organization_id=org_id,
+    )
+
+
 def _make_request(user_id="admin-user", role="admin", org_id=None):
-    """Create a mock Request with auth headers."""
+    """Create a mock Request for rate limiter (still needed by endpoints)."""
     headers = {
         "x-user-id": user_id,
         "x-role": role,
@@ -68,6 +79,11 @@ def _make_pool():
     conn.fetchrow = AsyncMock(return_value=None)
     conn.fetch = AsyncMock(return_value=[])
     conn.fetchval = AsyncMock(return_value=0)
+    # Transaction support: conn.transaction() returns an async context manager
+    tx_cm = MagicMock()
+    tx_cm.__aenter__ = AsyncMock(return_value=None)
+    tx_cm.__aexit__ = AsyncMock(return_value=False)
+    conn.transaction = MagicMock(return_value=tx_cm)
     pool.acquire = MagicMock()
     pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
     pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -105,10 +121,10 @@ class TestOrgKnowledgeConfig:
         """Endpoints return 403 when enable_org_knowledge=False."""
         from app.api.v1.org_knowledge import _require_org_knowledge_admin
 
-        request = _make_request(role="admin")
+        auth = _make_auth(role="admin")
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings(enable_org_knowledge=False)):
             with pytest.raises(Exception) as exc_info:
-                await _require_org_knowledge_admin(request, "test-org")
+                await _require_org_knowledge_admin(auth, "test-org")
             assert "disabled" in str(exc_info.value.detail).lower()
 
     @pytest.mark.asyncio
@@ -116,10 +132,10 @@ class TestOrgKnowledgeConfig:
         """Endpoints return 403 when enable_multi_tenant=False."""
         from app.api.v1.org_knowledge import _require_org_knowledge_admin
 
-        request = _make_request(role="admin")
+        auth = _make_auth(role="admin")
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings(enable_multi_tenant=False)):
             with pytest.raises(Exception) as exc_info:
-                await _require_org_knowledge_admin(request, "test-org")
+                await _require_org_knowledge_admin(auth, "test-org")
             assert "multi-tenant" in str(exc_info.value.detail).lower()
 
     @pytest.mark.asyncio
@@ -127,9 +143,9 @@ class TestOrgKnowledgeConfig:
         """Platform admin passes triple gate when all flags enabled."""
         from app.api.v1.org_knowledge import _require_org_knowledge_admin
 
-        request = _make_request(role="admin", user_id="admin-1")
+        auth = _make_auth(role="admin", user_id="admin-1")
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings()):
-            user_id = await _require_org_knowledge_admin(request, "test-org")
+            user_id = await _require_org_knowledge_admin(auth, "test-org")
             assert user_id == "admin-1"
 
 
@@ -145,9 +161,9 @@ class TestOrgKnowledgeAuth:
         """Platform admin (role=admin) always passes auth."""
         from app.api.v1.org_knowledge import _require_org_knowledge_admin
 
-        request = _make_request(role="admin", user_id="platform-admin")
+        auth = _make_auth(role="admin", user_id="platform-admin")
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings()):
-            user_id = await _require_org_knowledge_admin(request, "any-org")
+            user_id = await _require_org_knowledge_admin(auth, "any-org")
             assert user_id == "platform-admin"
 
     @pytest.mark.asyncio
@@ -158,10 +174,10 @@ class TestOrgKnowledgeAuth:
         mock_repo = MagicMock()
         mock_repo.get_user_org_role = MagicMock(return_value="admin")
 
-        request = _make_request(role="student", user_id="org-admin-1")
+        auth = _make_auth(role="student", user_id="org-admin-1")
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings()):
             with patch("app.repositories.organization_repository.get_organization_repository", return_value=mock_repo):
-                user_id = await _require_org_knowledge_admin(request, "test-org")
+                user_id = await _require_org_knowledge_admin(auth, "test-org")
                 assert user_id == "org-admin-1"
 
     @pytest.mark.asyncio
@@ -172,10 +188,10 @@ class TestOrgKnowledgeAuth:
         mock_repo = MagicMock()
         mock_repo.get_user_org_role = MagicMock(return_value="owner")
 
-        request = _make_request(role="teacher", user_id="org-owner-1")
+        auth = _make_auth(role="teacher", user_id="org-owner-1")
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings()):
             with patch("app.repositories.organization_repository.get_organization_repository", return_value=mock_repo):
-                user_id = await _require_org_knowledge_admin(request, "test-org")
+                user_id = await _require_org_knowledge_admin(auth, "test-org")
                 assert user_id == "org-owner-1"
 
     @pytest.mark.asyncio
@@ -186,11 +202,11 @@ class TestOrgKnowledgeAuth:
         mock_repo = MagicMock()
         mock_repo.get_user_org_role = MagicMock(return_value="member")
 
-        request = _make_request(role="student", user_id="regular-user")
+        auth = _make_auth(role="student", user_id="regular-user")
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings()):
             with patch("app.repositories.organization_repository.get_organization_repository", return_value=mock_repo):
                 with pytest.raises(Exception) as exc_info:
-                    await _require_org_knowledge_admin(request, "test-org")
+                    await _require_org_knowledge_admin(auth, "test-org")
                 assert "admin" in str(exc_info.value.detail).lower()
 
     @pytest.mark.asyncio
@@ -201,11 +217,11 @@ class TestOrgKnowledgeAuth:
         mock_repo = MagicMock()
         mock_repo.get_user_org_role = MagicMock(return_value=None)
 
-        request = _make_request(role="student", user_id="outsider")
+        auth = _make_auth(role="student", user_id="outsider")
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings()):
             with patch("app.repositories.organization_repository.get_organization_repository", return_value=mock_repo):
                 with pytest.raises(Exception) as exc_info:
-                    await _require_org_knowledge_admin(request, "test-org")
+                    await _require_org_knowledge_admin(auth, "test-org")
                 assert "admin" in str(exc_info.value.detail).lower()
 
     @pytest.mark.asyncio
@@ -213,10 +229,10 @@ class TestOrgKnowledgeAuth:
         """Org admin is rejected when enable_org_admin=False."""
         from app.api.v1.org_knowledge import _require_org_knowledge_admin
 
-        request = _make_request(role="student", user_id="org-admin")
+        auth = _make_auth(role="student", user_id="org-admin")
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings(enable_org_admin=False)):
             with pytest.raises(Exception) as exc_info:
-                await _require_org_knowledge_admin(request, "test-org")
+                await _require_org_knowledge_admin(auth, "test-org")
             assert "admin" in str(exc_info.value.detail).lower()
 
 
@@ -239,7 +255,7 @@ class TestDocumentUpload:
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings()):
             with patch("app.api.v1.org_knowledge._get_pool", return_value=pool):
                 with pytest.raises(Exception) as exc_info:
-                    await upload_org_document(request, "test-org", file)
+                    await upload_org_document(request, "test-org", file, auth=_make_auth(role="admin"))
                 assert "PDF" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
@@ -254,7 +270,7 @@ class TestDocumentUpload:
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings()):
             with patch("app.api.v1.org_knowledge._get_pool", return_value=pool):
                 with pytest.raises(Exception) as exc_info:
-                    await upload_org_document(request, "test-org", file)
+                    await upload_org_document(request, "test-org", file, auth=_make_auth(role="admin"))
                 assert "pdf" in str(exc_info.value.detail).lower()
 
     @pytest.mark.asyncio
@@ -270,7 +286,7 @@ class TestDocumentUpload:
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings()):
             with patch("app.api.v1.org_knowledge._get_pool", return_value=pool):
                 with pytest.raises(Exception) as exc_info:
-                    await upload_org_document(request, "test-org", file)
+                    await upload_org_document(request, "test-org", file, auth=_make_auth(role="admin"))
                 assert "large" in str(exc_info.value.detail).lower() or "413" in str(exc_info.value.status_code)
 
     @pytest.mark.asyncio
@@ -279,6 +295,7 @@ class TestDocumentUpload:
         from app.api.v1.org_knowledge import upload_org_document
 
         request = _make_request(role="admin", user_id="admin-1")
+        auth = _make_auth(role="admin", user_id="admin-1")
         file = _make_upload_file()
         pool, conn = _make_pool()
 
@@ -287,6 +304,7 @@ class TestDocumentUpload:
             total_pages=5,
             successful_pages=5,
             failed_pages=0,
+            pages_processed=5,
             success_rate=100.0,
         )
         mock_service = MagicMock()
@@ -302,7 +320,7 @@ class TestDocumentUpload:
                         with patch("app.services.multimodal_ingestion_service.get_ingestion_service", return_value=mock_service):
                             with patch("app.api.v1.org_knowledge._get_document", new_callable=AsyncMock, return_value=doc_row):
                                 with patch("app.api.v1.org_knowledge._audit_log", new_callable=AsyncMock):
-                                    result = await upload_org_document(request, "test-org", file)
+                                    result = await upload_org_document(request, "test-org", file, auth=auth)
 
         assert result.status == "ready"
         assert result.organization_id == "test-org"
@@ -326,7 +344,7 @@ class TestDocumentUpload:
                     with patch("app.api.v1.org_knowledge._update_document_status", new_callable=AsyncMock) as mock_status:
                         with patch("app.services.multimodal_ingestion_service.get_ingestion_service", return_value=mock_service):
                             with pytest.raises(Exception) as exc_info:
-                                await upload_org_document(request, "test-org", file)
+                                await upload_org_document(request, "test-org", file, auth=_make_auth(role="admin"))
                             assert exc_info.value.status_code == 500
 
                     # Verify status was set to "failed"
@@ -345,7 +363,7 @@ class TestDocumentUpload:
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings()):
             with patch("app.api.v1.org_knowledge._get_pool", return_value=pool):
                 with pytest.raises(Exception):
-                    await upload_org_document(request, "test-org", file)
+                    await upload_org_document(request, "test-org", file, auth=_make_auth(role="admin"))
 
     @pytest.mark.asyncio
     async def test_custom_size_limit(self):
@@ -362,7 +380,7 @@ class TestDocumentUpload:
                     return_value=_make_settings(org_knowledge_max_file_size_mb=5)):
             with patch("app.api.v1.org_knowledge._get_pool", return_value=pool):
                 with pytest.raises(Exception) as exc_info:
-                    await upload_org_document(request, "test-org", file)
+                    await upload_org_document(request, "test-org", file, auth=_make_auth(role="admin"))
                 assert "large" in str(exc_info.value.detail).lower()
 
     @pytest.mark.asyncio
@@ -371,10 +389,11 @@ class TestDocumentUpload:
         from app.api.v1.org_knowledge import upload_org_document
 
         request = _make_request(role="admin")
+        auth = _make_auth(role="admin")
         file = _make_upload_file()
         pool, conn = _make_pool()
 
-        ingest_result = SimpleNamespace(total_pages=1, successful_pages=1, failed_pages=0, success_rate=100.0)
+        ingest_result = SimpleNamespace(total_pages=1, successful_pages=1, failed_pages=0, pages_processed=1, success_rate=100.0)
         mock_service = MagicMock()
         mock_service.ingest_pdf = AsyncMock(return_value=ingest_result)
 
@@ -393,7 +412,7 @@ class TestDocumentUpload:
                         with patch("app.services.multimodal_ingestion_service.get_ingestion_service", return_value=mock_service):
                             with patch("app.api.v1.org_knowledge._get_document", new_callable=AsyncMock, return_value=doc_row):
                                 with patch("app.api.v1.org_knowledge._audit_log", new_callable=AsyncMock):
-                                    await upload_org_document(request, "test-org", file)
+                                    await upload_org_document(request, "test-org", file, auth=auth)
 
         assert captured_doc_id is not None
         uuid.UUID(captured_doc_id)  # Validates it's a proper UUID
@@ -506,10 +525,10 @@ class TestDocumentList:
         mock_repo = MagicMock()
         mock_repo.is_user_in_org = MagicMock(return_value=True)
 
-        request = _make_request(role="student", user_id="member-1")
+        auth = _make_auth(role="student", user_id="member-1")
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings()):
             with patch("app.repositories.organization_repository.get_organization_repository", return_value=mock_repo):
-                user_id = await _require_org_member(request, "test-org")
+                user_id = await _require_org_member(auth, "test-org")
                 assert user_id == "member-1"
 
     @pytest.mark.asyncio
@@ -542,28 +561,29 @@ class TestDocumentDelete:
             with patch("app.api.v1.org_knowledge._get_pool", return_value=pool):
                 with patch("app.api.v1.org_knowledge._get_document", new_callable=AsyncMock, return_value=None):
                     with pytest.raises(Exception) as exc_info:
-                        await delete_org_document(request, "test-org", "non-existent")
+                        await delete_org_document(request, "test-org", "non-existent", auth=_make_auth(role="admin"))
                     assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
     async def test_delete_removes_embeddings(self):
-        """Delete removes embeddings from knowledge_embeddings table."""
+        """Delete removes embeddings and marks status in a single transaction."""
         from app.api.v1.org_knowledge import delete_org_document
 
         request = _make_request(role="admin")
         pool, conn = _make_pool()
         doc_row = _make_doc_row()
-        conn.fetchval = AsyncMock(return_value=10)
 
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings()):
             with patch("app.api.v1.org_knowledge._get_pool", return_value=pool):
                 with patch("app.api.v1.org_knowledge._get_document", new_callable=AsyncMock, return_value=doc_row):
-                    with patch("app.api.v1.org_knowledge._update_document_status", new_callable=AsyncMock):
-                        with patch("app.api.v1.org_knowledge._audit_log", new_callable=AsyncMock):
-                            await delete_org_document(request, "test-org", "doc-1")
+                    with patch("app.api.v1.org_knowledge._audit_log", new_callable=AsyncMock):
+                        await delete_org_document(request, "test-org", "doc-1", auth=_make_auth(role="admin"))
 
-        # Verify DELETE was called on the connection
-        assert conn.fetchval.called or conn.execute.called
+        # Verify both DELETE and UPDATE were called within the transaction
+        assert conn.execute.call_count >= 2
+        calls = [str(c) for c in conn.execute.call_args_list]
+        assert any("knowledge_embeddings" in c for c in calls)
+        assert any("organization_documents" in c for c in calls)
 
     @pytest.mark.asyncio
     async def test_delete_requires_admin(self):
@@ -574,33 +594,34 @@ class TestDocumentDelete:
         mock_repo.get_user_org_role = MagicMock(return_value="member")
 
         request = _make_request(role="student", user_id="regular-member")
+        auth = _make_auth(role="student", user_id="regular-member")
         pool, conn = _make_pool()
 
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings()):
             with patch("app.api.v1.org_knowledge._get_pool", return_value=pool):
                 with patch("app.repositories.organization_repository.get_organization_repository", return_value=mock_repo):
                     with pytest.raises(Exception) as exc_info:
-                        await delete_org_document(request, "test-org", "doc-1")
+                        await delete_org_document(request, "test-org", "doc-1", auth=auth)
                     assert exc_info.value.status_code == 403
 
     @pytest.mark.asyncio
     async def test_delete_marks_status_deleted(self):
-        """Delete marks document status as 'deleted'."""
+        """Delete marks document status as 'deleted' within the same transaction."""
         from app.api.v1.org_knowledge import delete_org_document
 
         request = _make_request(role="admin")
         pool, conn = _make_pool()
         doc_row = _make_doc_row()
-        conn.fetchval = AsyncMock(return_value=0)
 
         with patch("app.api.v1.org_knowledge.get_settings", return_value=_make_settings()):
             with patch("app.api.v1.org_knowledge._get_pool", return_value=pool):
                 with patch("app.api.v1.org_knowledge._get_document", new_callable=AsyncMock, return_value=doc_row):
-                    with patch("app.api.v1.org_knowledge._update_document_status", new_callable=AsyncMock) as mock_update:
-                        with patch("app.api.v1.org_knowledge._audit_log", new_callable=AsyncMock):
-                            await delete_org_document(request, "test-org", "doc-1")
+                    with patch("app.api.v1.org_knowledge._audit_log", new_callable=AsyncMock):
+                        await delete_org_document(request, "test-org", "doc-1", auth=_make_auth(role="admin"))
 
-        mock_update.assert_called_once_with(pool, "doc-1", "deleted")
+        # Verify UPDATE with status='deleted' was called
+        calls = [str(c) for c in conn.execute.call_args_list]
+        assert any("deleted" in c and "organization_documents" in c for c in calls)
 
 
 # ============================================================================

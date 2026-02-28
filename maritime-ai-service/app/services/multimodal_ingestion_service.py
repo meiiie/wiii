@@ -43,9 +43,10 @@ logger = logging.getLogger(__name__)
 class IngestionResult:
     """Result of PDF ingestion"""
     document_id: str
-    total_pages: int
+    total_pages: int           # Total pages in PDF
     successful_pages: int
     failed_pages: int
+    pages_processed: int = 0   # Actual pages attempted (may differ from total when max_pages is set)
     errors: List[str] = field(default_factory=list)
 
     # Hybrid Text/Vision Detection tracking (Feature: hybrid-text-vision)
@@ -56,9 +57,10 @@ class IngestionResult:
     @property
     def success_rate(self) -> float:
         """Calculate success rate percentage"""
-        if self.total_pages == 0:
+        target = self.pages_processed if self.pages_processed > 0 else self.total_pages
+        if target == 0:
             return 0.0
-        return (self.successful_pages / self.total_pages) * 100
+        return (self.successful_pages / target) * 100
 
     @property
     def api_savings_percent(self) -> float:
@@ -326,7 +328,8 @@ class MultimodalIngestionService:
         self,
         text: str,
         document_id: str,
-        page_number: int
+        page_number: int,
+        organization_id: Optional[str] = None,
     ):
         """
         Extract entities from page text and store in Neo4j.
@@ -336,7 +339,8 @@ class MultimodalIngestionService:
         return await self._vision_processor.extract_and_store_entities(
             text=text,
             document_id=document_id,
-            page_number=page_number
+            page_number=page_number,
+            organization_id=organization_id,
         )
 
     # ── Main Pipeline ──────────────────────────────────────────────────
@@ -393,24 +397,20 @@ class MultimodalIngestionService:
                 batch_start = resume_page
                 logger.info("Resuming from page %d", resume_page + 1)
 
-        # Convert ONLY the pages we need (optimized for batch processing)
+        # Get total page count first (cheap — no image conversion)
         try:
-            images, total_pages = self.convert_pdf_to_images(
-                pdf_path,
-                start_page=batch_start,
-                end_page=batch_end
-            )
+            total_pages = self.get_pdf_page_count(pdf_path)
         except Exception as e:
-            logger.error("Failed to convert PDF: %s", e)
+            logger.error("Failed to read PDF page count: %s", e)
             return IngestionResult(
                 document_id=document_id,
                 total_pages=0,
                 successful_pages=0,
                 failed_pages=0,
-                errors=[f"PDF conversion failed: {e}"]
+                errors=[f"PDF read failed: {e}"]
             )
 
-        # Finalize batch_end after knowing total_pages
+        # Finalize batch_end BEFORE converting images (saves memory)
         if batch_end is None:
             batch_end = total_pages
         else:
@@ -422,6 +422,23 @@ class MultimodalIngestionService:
             pages_to_process = min(max_pages, pages_to_process)
             batch_end = batch_start + pages_to_process
             logger.info("Limiting to %d pages (test mode)", pages_to_process)
+
+        # Convert ONLY the pages we need (optimized — respects max_pages)
+        try:
+            images, _ = self.convert_pdf_to_images(
+                pdf_path,
+                start_page=batch_start,
+                end_page=batch_end
+            )
+        except Exception as e:
+            logger.error("Failed to convert PDF: %s", e)
+            return IngestionResult(
+                document_id=document_id,
+                total_pages=total_pages,
+                successful_pages=0,
+                failed_pages=0,
+                errors=[f"PDF conversion failed: {e}"]
+            )
 
         successful_pages = 0
         failed_pages = 0
@@ -444,9 +461,9 @@ class MultimodalIngestionService:
                 logger.warning("Could not open PDF for hybrid detection: %s", e)
 
         # Process each page in the batch
-        # Note: images list now only contains pages from batch_start to batch_end
+        # images list contains pages from batch_start to batch_end
         # So enumerate index 0 = page batch_start, index 1 = page batch_start+1, etc.
-        for idx in range(len(images)):
+        for idx in range(pages_to_process):
             # Get image and immediately remove from list to free memory
             image = images[idx]
             images[idx] = None  # Free memory immediately
@@ -503,7 +520,6 @@ class MultimodalIngestionService:
                         image.close()
                     except Exception as e:
                         logger.debug("Failed to close image: %s", e)
-                        pass
                     del image
 
                 # Force garbage collection after each page to prevent memory buildup
@@ -523,6 +539,7 @@ class MultimodalIngestionService:
             total_pages=total_pages,
             successful_pages=successful_pages,
             failed_pages=failed_pages,
+            pages_processed=pages_to_process,
             errors=errors,
             vision_pages=vision_pages,
             direct_pages=direct_pages,

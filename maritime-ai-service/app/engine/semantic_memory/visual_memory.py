@@ -18,6 +18,7 @@ Data storage:
 Feature-gated by enable_visual_memory in config.
 """
 
+import base64 as b64module
 import hashlib
 import logging
 import time
@@ -161,7 +162,6 @@ class VisualMemoryManager:
     @staticmethod
     def compute_image_hash_from_base64(base64_data: str) -> str:
         """Compute SHA-256 hash from base64-encoded image data."""
-        import base64 as b64module
         try:
             raw = b64module.b64decode(base64_data)
             return hashlib.sha256(raw).hexdigest()
@@ -536,10 +536,8 @@ class VisualMemoryManager:
         return "\n".join(parts)
 
     def get_user_image_count(self, user_id: str) -> int:
-        """Get count of cached image hashes for a user (approximate)."""
-        return len([
-            h for h in self._description_cache
-        ])
+        """Get count of cached image hashes (approximate, cache-wide)."""
+        return len(self._description_cache)
 
     def clear_cache(self) -> None:
         """Clear the description cache."""

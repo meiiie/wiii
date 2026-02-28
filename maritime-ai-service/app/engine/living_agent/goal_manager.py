@@ -38,6 +38,52 @@ class GoalManager:
         goals = await manager.get_active_goals()
     """
 
+    async def seed_initial_goals(self, soul) -> int:
+        """Create initial goals from soul definition if none exist.
+
+        Sprint 210: Seeds goals from soul.interests.wants_to_learn so
+        Wiii starts with aspirations instead of 0 goals. Idempotent.
+
+        Args:
+            soul: Soul object with interests.wants_to_learn list.
+
+        Returns:
+            Number of goals seeded (0 if already has goals).
+        """
+        existing = await self.get_active_goals()
+        if existing:
+            return 0  # Already has goals
+
+        seeded = 0
+        wants_to_learn = getattr(getattr(soul, 'interests', None), 'wants_to_learn', None) or []
+        for topic in wants_to_learn[:3]:
+            try:
+                await self.create_goal(
+                    title=f"Học về: {topic}",
+                    description=f"Tìm hiểu và nắm vững kiến thức về {topic}",
+                    priority="medium",
+                    source="soul_seed",
+                )
+                seeded += 1
+            except Exception as e:
+                logger.debug("[GOALS] Failed to seed goal '%s': %s", topic, e)
+
+        # One meta-goal from soul identity
+        try:
+            await self.create_goal(
+                title="Giúp đỡ sinh viên hàng hải tốt hơn mỗi ngày",
+                description="Mục tiêu dài hạn: trở thành người bạn đồng hành đáng tin cậy cho sinh viên hàng hải Việt Nam",
+                priority="high",
+                source="soul_seed",
+            )
+            seeded += 1
+        except Exception as e:
+            logger.debug("[GOALS] Failed to seed meta-goal: %s", e)
+
+        if seeded:
+            logger.info("[GOALS] Seeded %d initial goals from soul definition", seeded)
+        return seeded
+
     async def create_goal(
         self,
         title: str,

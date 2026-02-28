@@ -215,7 +215,9 @@ class TestBuildSystemPromptDirect:
             is_follow_up=True,
         )
         assert "FOLLOW-UP" in prompt or "follow-up" in prompt.lower()
-        assert "TUYỆT ĐỐI KHÔNG" in prompt
+        # Sprint 203: Natural conversation uses positive framing ("Đi thẳng vào nội dung")
+        # Legacy path uses "TUYỆT ĐỐI KHÔNG". Either is valid depending on config.
+        assert "Đi thẳng vào nội dung" in prompt or "TUYỆT ĐỐI KHÔNG" in prompt
 
     def test_no_anti_greeting_on_first_message(self):
         """First messages should NOT have follow-up anti-greeting."""
@@ -417,7 +419,8 @@ class TestDirectNodeUsesPromptLoader:
         assert "đa lĩnh vực" in system_content
         assert "Wiii" in system_content
         assert "2024" in system_content
-        assert "GIỚI HẠN KIẾN THỨC" in system_content
+        # Sprint 203/204: "GIỚI HẠN KIẾN THỨC" renamed to "Ranh giới" (positive framing)
+        assert "Ranh giới" in system_content or "GIỚI HẠN KIẾN THỨC" in system_content
         assert "tool_web_search" in system_content
         assert "tool_current_datetime" in system_content
         # Must NOT have old "trả lời MỌI câu hỏi" contradiction

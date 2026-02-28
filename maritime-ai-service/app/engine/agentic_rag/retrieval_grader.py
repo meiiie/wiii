@@ -9,6 +9,7 @@ Features:
 - Feedback generation for query rewriting
 """
 
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
@@ -244,7 +245,6 @@ class RetrievalGrader:
         result = text_content.strip()
 
         # Parse JSON
-        import json
         if result.startswith("```"):
             result = result.split("```")[1]
             if result.startswith("json"):
@@ -536,8 +536,6 @@ class RetrievalGrader:
         documents: List[Dict[str, Any]]
     ) -> List[DocumentGrade]:
         """Parse batch grading JSON response."""
-        import json
-        
         # SOTA FIX: Handle Gemini 2.5 Flash content block format
         # When thinking_enabled=True, response may be list, not string
         from app.services.output_processor import extract_thinking_from_response

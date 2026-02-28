@@ -187,6 +187,26 @@ class HeartbeatScheduler:
             # Phase 2B: Apply circadian rhythm
             engine.apply_circadian_modifier()
 
+            # Sprint 210c: Refresh known user cache + process aggregate interactions
+            if getattr(settings, "enable_living_continuity", False):
+                try:
+                    from app.engine.living_agent.emotion_engine import refresh_known_user_cache
+                    refresh_known_user_cache()
+                except Exception as e:
+                    logger.debug("[HEARTBEAT] Known user cache refresh failed: %s", e)
+
+                try:
+                    agg_stats = engine.process_aggregate()
+                    if agg_stats.get("total_interactions", 0) > 0:
+                        logger.info(
+                            "[HEARTBEAT] Aggregate: %d interactions, %d unique users, ratio=%.2f",
+                            int(agg_stats["total_interactions"]),
+                            int(agg_stats["unique_users"]),
+                            agg_stats["positive_ratio"],
+                        )
+                except Exception as e:
+                    logger.debug("[HEARTBEAT] Aggregate processing failed: %s", e)
+
             # Signal wake-up
             engine.process_event(LifeEvent(
                 event_type=LifeEventType.HEARTBEAT_WAKE,
@@ -231,8 +251,8 @@ class HeartbeatScheduler:
                     try:
                         from app.engine.living_agent.autonomy_manager import get_autonomy_manager
                         get_autonomy_manager().record_success()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("[HEARTBEAT] Autonomy success recording failed: %s", e)
                 except Exception as e:
                     logger.warning(
                         "[HEARTBEAT] Action %s failed: %s",
@@ -247,6 +267,9 @@ class HeartbeatScheduler:
 
             # Phase 1A: Persist emotion to DB for restart resilience
             await engine.save_state_to_db()
+
+            # Sprint 213: Broadcast heartbeat status via SoulBridge
+            await self._broadcast_soul_bridge(engine, result)
 
             # Sprint 208: Daily autonomy graduation check
             await self._check_graduation_daily()
@@ -416,11 +439,22 @@ class HeartbeatScheduler:
         return candidates[:max_actions]
 
     async def _execute_action(self, action: HeartbeatAction, soul, engine) -> None:
-        """Execute a single heartbeat action.
+        """Execute a single heartbeat action with timeout protection.
 
+        Sprint 210: 60s timeout per action prevents Ollama CPU blocking.
         Each action type delegates to the appropriate subsystem.
         Extensible: add new action types by adding cases here.
         """
+        try:
+            async with asyncio.timeout(60):
+                await self._dispatch_action(action, soul, engine)
+        except asyncio.TimeoutError:
+            logger.warning("[HEARTBEAT] Action %s timed out (60s)", action.action_type.value)
+        except Exception as e:
+            logger.warning("[HEARTBEAT] Action %s error: %s", action.action_type.value, e)
+
+    async def _dispatch_action(self, action: HeartbeatAction, soul, engine) -> None:
+        """Dispatch action to the appropriate handler (internal, called with timeout)."""
         if action.action_type == ActionType.CHECK_GOALS:
             await self._action_check_goals(soul)
 
@@ -460,12 +494,32 @@ class HeartbeatScheduler:
             logger.debug("[HEARTBEAT] Resting — energy recovery in progress")
 
     async def _action_check_goals(self, soul) -> None:
-        """Check current goals and identify priorities."""
-        logger.debug(
-            "[HEARTBEAT] Checking goals: %d short-term, %d long-term",
-            len(soul.short_term_goals),
-            len(soul.long_term_goals),
-        )
+        """Check current goals and identify priorities.
+
+        Sprint 210: Seeds initial goals from soul definition on first call.
+        """
+        from app.engine.living_agent.goal_manager import get_goal_manager
+        manager = get_goal_manager()
+
+        # Seed if empty (idempotent, once per process lifetime)
+        if not hasattr(self, '_goals_seeded'):
+            try:
+                seeded = await manager.seed_initial_goals(soul)
+                if seeded:
+                    logger.info("[HEARTBEAT] Seeded %d initial goals from soul", seeded)
+            except Exception as e:
+                logger.debug("[HEARTBEAT] Goal seeding failed: %s", e)
+            self._goals_seeded = True
+
+        try:
+            goals = await manager.get_active_goals()
+            logger.debug("[HEARTBEAT] Active goals: %d", len(goals))
+        except Exception:
+            logger.debug(
+                "[HEARTBEAT] Checking goals: %d short-term, %d long-term",
+                len(soul.short_term_goals),
+                len(soul.long_term_goals),
+            )
 
     async def _action_browse(self, action, soul, engine) -> None:
         """Browse content based on interests. Delegates to social_browser."""
@@ -518,12 +572,29 @@ class HeartbeatScheduler:
             ))
 
     async def _action_reflect(self, engine) -> None:
-        """Trigger self-reflection using the existing reflection engine."""
-        engine.process_event(LifeEvent(
-            event_type=LifeEventType.REFLECTION_COMPLETED,
-            description="Periodic self-reflection during heartbeat",
-            importance=0.5,
-        ))
+        """Trigger self-reflection using the Reflector.
+
+        Sprint 210: Actually calls Reflector.reflect() instead of just firing event.
+        """
+        from app.engine.living_agent.reflector import get_reflector
+        reflector = get_reflector()
+        try:
+            entry = await reflector.reflect()
+            if entry:
+                engine.process_event(LifeEvent(
+                    event_type=LifeEventType.REFLECTION_COMPLETED,
+                    description=f"Reflection: {entry.content[:100]}",
+                    importance=0.6,
+                ))
+            else:
+                logger.debug("[HEARTBEAT] Reflection skipped (already reflected today or no data)")
+        except Exception as e:
+            logger.warning("[HEARTBEAT] Reflection failed: %s", e)
+            engine.process_event(LifeEvent(
+                event_type=LifeEventType.REFLECTION_COMPLETED,
+                description="Periodic self-reflection during heartbeat",
+                importance=0.5,
+            ))
 
     async def _action_journal(self, engine) -> None:
         """Write daily journal entry."""
@@ -677,9 +748,12 @@ class HeartbeatScheduler:
         return (5 <= hour < 7) or (11 <= hour < 13) or (17 <= hour < 19)
 
     def _is_reflection_time(self) -> bool:
-        """Check if it's time for weekly reflection (Sunday 20:00 UTC+7)."""
+        """Check if it's time for daily reflection (21:00-22:00 UTC+7).
+
+        Sprint 210: Changed from Sunday-only (1h/week) to daily.
+        """
         now_vn = datetime.now(timezone.utc) + _VN_OFFSET
-        return now_vn.weekday() == 6 and 20 <= now_vn.hour <= 21
+        return 21 <= now_vn.hour <= 22
 
     async def _save_emotional_snapshot(self, engine) -> None:
         """Persist current emotional state to database."""
@@ -873,9 +947,12 @@ class HeartbeatScheduler:
             return hour >= start or hour < end
 
     def _is_journal_time(self) -> bool:
-        """Check if it's the right time for daily journal (evening)."""
+        """Check if it's the right time for daily journal (morning or evening).
+
+        Sprint 210: Expanded from evening-only to morning+evening windows.
+        """
         now_vn = datetime.now(timezone.utc) + _VN_OFFSET
-        return 20 <= now_vn.hour <= 22
+        return (8 <= now_vn.hour <= 9) or (20 <= now_vn.hour <= 22)
 
     # =========================================================================
     # Sprint 208: Autonomy graduation daily check
@@ -902,6 +979,33 @@ class HeartbeatScheduler:
                 logger.info("[HEARTBEAT] Autonomy graduation proposed")
         except Exception as e:
             logger.debug("[HEARTBEAT] Graduation check failed: %s", e)
+
+    # =========================================================================
+    # Sprint 213: SoulBridge status broadcast
+    # =========================================================================
+
+    async def _broadcast_soul_bridge(self, engine, result: HeartbeatResult) -> None:
+        """Broadcast heartbeat status to connected peer souls via SoulBridge."""
+        try:
+            from app.core.config import settings
+            if not getattr(settings, "enable_soul_bridge", False):
+                return
+
+            from app.engine.soul_bridge import get_soul_bridge
+            bridge = get_soul_bridge()
+            if not bridge.is_initialized:
+                return
+
+            payload = {
+                "cycle": self._heartbeat_count,
+                "mood": engine.mood.value if hasattr(engine.mood, "value") else str(engine.mood),
+                "energy": engine.energy,
+                "actions_taken": len(result.actions_taken),
+                "duration_ms": result.duration_ms,
+            }
+            await bridge.broadcast_status(payload)
+        except Exception as e:
+            logger.debug("[HEARTBEAT] SoulBridge broadcast failed: %s", e)
 
     # =========================================================================
     # Sprint 171b: Messenger notification for discoveries

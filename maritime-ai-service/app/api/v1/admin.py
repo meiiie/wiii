@@ -14,6 +14,8 @@ Pattern: LangChain Enterprise Best Practices
 """
 
 import logging
+import os
+import tempfile
 from typing import Optional
 from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form, BackgroundTasks
@@ -165,9 +167,6 @@ async def upload_document(
     
     Use GET /admin/documents/{job_id} to check progress.
     """
-    import os
-    import tempfile
-    
     # Validate file type
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
@@ -223,7 +222,7 @@ async def upload_document(
 
 @router.get("/documents/{job_id}", response_model=DocumentStatus)
 @limiter.limit("60/minute")
-async def get_document_status(request: Request, job_id: str, auth: RequireAuth):  # LMS Integration
+async def get_document_status(request: Request, job_id: str, auth: RequireAdmin):  # LMS Integration
     """
     Check ingestion job status.
     
@@ -238,7 +237,7 @@ async def get_document_status(request: Request, job_id: str, auth: RequireAuth):
 
 @router.get("/documents", response_model=list)
 @limiter.limit("60/minute")
-async def list_documents(request: Request, auth: RequireAuth):  # LMS Integration
+async def list_documents(request: Request, auth: RequireAdmin):  # LMS Integration
     """
     List all documents in knowledge base.
     

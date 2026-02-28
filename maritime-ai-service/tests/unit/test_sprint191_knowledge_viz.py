@@ -120,8 +120,19 @@ def _make_settings(**overrides):
     return SimpleNamespace(**defaults)
 
 
+def _make_auth(user_id="user-1", role="student", org_id=None):
+    """Create an AuthenticatedUser for testing (Sprint 217: require_auth migration)."""
+    from app.core.security import AuthenticatedUser
+    return AuthenticatedUser(
+        user_id=user_id,
+        auth_method="api_key",
+        role=role,
+        organization_id=org_id,
+    )
+
+
 def _make_request(user_id="user-1", role="student", org_id=None):
-    """Create a mock Request with auth headers."""
+    """Create a mock Request for rate limiter (still needed by endpoints)."""
     headers = {
         "x-user-id": user_id,
         "x-role": role,
@@ -737,11 +748,11 @@ class TestAPI:
         """Endpoints return 403 when enable_knowledge_visualization=False."""
         from app.api.v1.knowledge_visualization import _require_org_member_viz
 
-        request = _make_request(role="student")
+        auth = _make_auth(role="student")
         with patch("app.api.v1.knowledge_visualization.get_settings",
                     return_value=_make_settings(enable_knowledge_visualization=False)):
             with pytest.raises(Exception) as exc_info:
-                await _require_org_member_viz(request, "org-1")
+                await _require_org_member_viz(auth, "org-1")
             assert exc_info.value.status_code == 403
             assert "disabled" in str(exc_info.value.detail).lower()
 
@@ -750,11 +761,11 @@ class TestAPI:
         """Endpoints return 403 when enable_multi_tenant=False."""
         from app.api.v1.knowledge_visualization import _require_org_member_viz
 
-        request = _make_request(role="student")
+        auth = _make_auth(role="student")
         with patch("app.api.v1.knowledge_visualization.get_settings",
                     return_value=_make_settings(enable_multi_tenant=False)):
             with pytest.raises(Exception) as exc_info:
-                await _require_org_member_viz(request, "org-1")
+                await _require_org_member_viz(auth, "org-1")
             assert exc_info.value.status_code == 403
             assert "multi-tenant" in str(exc_info.value.detail).lower()
 
@@ -763,10 +774,10 @@ class TestAPI:
         """Platform admin (role=admin) bypasses org membership check."""
         from app.api.v1.knowledge_visualization import _require_org_member_viz
 
-        request = _make_request(user_id="admin-1", role="admin")
+        auth = _make_auth(user_id="admin-1", role="admin")
         with patch("app.api.v1.knowledge_visualization.get_settings",
                     return_value=_make_settings()):
-            user_id = await _require_org_member_viz(request, "any-org")
+            user_id = await _require_org_member_viz(auth, "any-org")
             assert user_id == "admin-1"
 
     @pytest.mark.asyncio
@@ -777,13 +788,13 @@ class TestAPI:
         mock_repo = MagicMock()
         mock_repo.is_user_in_org = MagicMock(return_value=False)
 
-        request = _make_request(user_id="outsider", role="student")
+        auth = _make_auth(user_id="outsider", role="student")
         with patch("app.api.v1.knowledge_visualization.get_settings",
                     return_value=_make_settings()):
             with patch("app.repositories.organization_repository.get_organization_repository",
                        return_value=mock_repo):
                 with pytest.raises(Exception) as exc_info:
-                    await _require_org_member_viz(request, "private-org")
+                    await _require_org_member_viz(auth, "private-org")
                 assert exc_info.value.status_code == 403
                 assert "member" in str(exc_info.value.detail).lower()
 
@@ -795,12 +806,12 @@ class TestAPI:
         mock_repo = MagicMock()
         mock_repo.is_user_in_org = MagicMock(return_value=True)
 
-        request = _make_request(user_id="member-1", role="student")
+        auth = _make_auth(user_id="member-1", role="student")
         with patch("app.api.v1.knowledge_visualization.get_settings",
                     return_value=_make_settings()):
             with patch("app.repositories.organization_repository.get_organization_repository",
                        return_value=mock_repo):
-                user_id = await _require_org_member_viz(request, "my-org")
+                user_id = await _require_org_member_viz(auth, "my-org")
                 assert user_id == "member-1"
 
     @pytest.mark.asyncio
@@ -809,10 +820,11 @@ class TestAPI:
         from app.api.v1.knowledge_visualization import get_knowledge_scatter
 
         request = _make_request(user_id="admin-1", role="admin")
+        auth = _make_auth(user_id="admin-1", role="admin")
         with patch("app.api.v1.knowledge_visualization.get_settings",
                     return_value=_make_settings()):
             with pytest.raises(Exception) as exc_info:
-                await get_knowledge_scatter(request, "org-1", method="umap", dimensions=2, limit=500)
+                await get_knowledge_scatter(request, "org-1", method="umap", dimensions=2, limit=500, auth=auth)
             assert exc_info.value.status_code == 400
             assert "method" in str(exc_info.value.detail).lower()
 
@@ -822,10 +834,11 @@ class TestAPI:
         from app.api.v1.knowledge_visualization import get_knowledge_scatter
 
         request = _make_request(user_id="admin-1", role="admin")
+        auth = _make_auth(user_id="admin-1", role="admin")
         with patch("app.api.v1.knowledge_visualization.get_settings",
                     return_value=_make_settings()):
             with pytest.raises(Exception) as exc_info:
-                await get_knowledge_scatter(request, "org-1", method="pca", dimensions=4, limit=500)
+                await get_knowledge_scatter(request, "org-1", method="pca", dimensions=4, limit=500, auth=auth)
             assert exc_info.value.status_code == 400
             assert "dimensions" in str(exc_info.value.detail).lower()
 
@@ -835,10 +848,11 @@ class TestAPI:
         from app.api.v1.knowledge_visualization import get_knowledge_scatter
 
         request = _make_request(user_id="admin-1", role="admin")
+        auth = _make_auth(user_id="admin-1", role="admin")
         with patch("app.api.v1.knowledge_visualization.get_settings",
                     return_value=_make_settings()):
             with pytest.raises(Exception) as exc_info:
-                await get_knowledge_scatter(request, "org-1", method="pca", dimensions=2, limit=5)
+                await get_knowledge_scatter(request, "org-1", method="pca", dimensions=2, limit=5, auth=auth)
             assert exc_info.value.status_code == 400
             assert "limit" in str(exc_info.value.detail).lower()
 
@@ -848,10 +862,11 @@ class TestAPI:
         from app.api.v1.knowledge_visualization import get_knowledge_scatter
 
         request = _make_request(user_id="admin-1", role="admin")
+        auth = _make_auth(user_id="admin-1", role="admin")
         with patch("app.api.v1.knowledge_visualization.get_settings",
                     return_value=_make_settings()):
             with pytest.raises(Exception) as exc_info:
-                await get_knowledge_scatter(request, "org-1", method="pca", dimensions=2, limit=3000)
+                await get_knowledge_scatter(request, "org-1", method="pca", dimensions=2, limit=3000, auth=auth)
             assert exc_info.value.status_code == 400
 
     @pytest.mark.asyncio
@@ -860,10 +875,11 @@ class TestAPI:
         from app.api.v1.knowledge_visualization import get_knowledge_graph
 
         request = _make_request(user_id="admin-1", role="admin")
+        auth = _make_auth(user_id="admin-1", role="admin")
         with patch("app.api.v1.knowledge_visualization.get_settings",
                     return_value=_make_settings()):
             with pytest.raises(Exception) as exc_info:
-                await get_knowledge_graph(request, "org-1", max_nodes=2)
+                await get_knowledge_graph(request, "org-1", max_nodes=2, auth=auth)
             assert exc_info.value.status_code == 400
 
     @pytest.mark.asyncio
@@ -872,10 +888,11 @@ class TestAPI:
         from app.api.v1.knowledge_visualization import get_knowledge_graph
 
         request = _make_request(user_id="admin-1", role="admin")
+        auth = _make_auth(user_id="admin-1", role="admin")
         with patch("app.api.v1.knowledge_visualization.get_settings",
                     return_value=_make_settings()):
             with pytest.raises(Exception) as exc_info:
-                await get_knowledge_graph(request, "org-1", max_nodes=300)
+                await get_knowledge_graph(request, "org-1", max_nodes=300, auth=auth)
             assert exc_info.value.status_code == 400
 
     @pytest.mark.asyncio

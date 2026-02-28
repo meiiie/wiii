@@ -64,8 +64,65 @@ class Reflector:
 
     Usage:
         reflector = Reflector()
-        entry = await reflector.weekly_reflection()
+        entry = await reflector.reflect()        # Daily reflection (Sprint 210)
+        entry = await reflector.weekly_reflection()  # Weekly deep reflection
     """
+
+    async def reflect(
+        self,
+        organization_id: Optional[str] = None,
+    ) -> Optional[ReflectionEntry]:
+        """Perform a daily reflection (Sprint 210).
+
+        Gathers data from the past day and asks local LLM to reflect.
+        Idempotent: skips if reflection exists for today.
+
+        Returns:
+            ReflectionEntry or None if generation fails or already reflected today.
+        """
+        if await self._has_reflected_today(organization_id):
+            logger.debug("[REFLECT] Already reflected today")
+            return None
+
+        # Gather daily data (1 day lookback)
+        journal_summary = await self._get_journal_summary(1, organization_id)
+        emotion_summary = await self._get_emotion_summary(1)
+        browsing_summary = await self._get_browsing_summary(1)
+        skills_summary = await self._get_skills_summary()
+
+        from app.engine.living_agent.local_llm import get_local_llm
+        llm = get_local_llm()
+
+        prompt = _REFLECTION_PROMPT.format(
+            journal_summary=journal_summary or "Khong co nhat ky hom nay",
+            emotion_summary=emotion_summary or "Khong co du lieu cam xuc",
+            browsing_summary=browsing_summary or "Chua doc gi",
+            skills_summary=skills_summary or "Chua co ky nang moi",
+        )
+
+        content = await llm.generate(
+            prompt,
+            system="Ban la Wiii, dang tu suy ngam ve ngay hom nay mot cach chan that.",
+            temperature=0.7,
+            max_tokens=1024,
+        )
+
+        if not content:
+            logger.warning("[REFLECT] Failed to generate daily reflection")
+            return None
+
+        entry = ReflectionEntry(
+            content=content,
+            insights=_extract_section(content, "Dieu lam tot"),
+            goals_next_week=_extract_section(content, "Muc tieu tuan toi"),
+            patterns_noticed=_extract_section(content, "Nhan xet"),
+            emotion_trend=emotion_summary[:200] if emotion_summary else "",
+            organization_id=organization_id,
+        )
+
+        await self._save_reflection(entry)
+        logger.info("[REFLECT] Daily reflection completed")
+        return entry
 
     async def weekly_reflection(
         self,
@@ -127,9 +184,12 @@ class Reflector:
         return entry
 
     def is_reflection_time(self) -> bool:
-        """Check if it's the right time for weekly reflection (Sunday 20:00 UTC+7)."""
+        """Check if it's the right time for daily reflection (21:00-22:00 UTC+7).
+
+        Sprint 210: Changed from Sunday-only to daily.
+        """
         now_vn = datetime.now(timezone.utc) + _VN_OFFSET
-        return now_vn.weekday() == 6 and 20 <= now_vn.hour <= 21
+        return 21 <= now_vn.hour <= 22
 
     async def get_recent_reflections(
         self,
@@ -262,6 +322,28 @@ class Reflector:
         except Exception:
             return ""
 
+    async def _has_reflected_today(self, org_id: Optional[str]) -> bool:
+        """Check if a reflection already exists for today (Sprint 210)."""
+        try:
+            from sqlalchemy import text
+            from app.core.database import get_shared_session_factory
+
+            session_factory = get_shared_session_factory()
+            with session_factory() as session:
+                query = """
+                    SELECT COUNT(*) FROM wiii_reflections
+                    WHERE reflection_date >= date_trunc('day', CURRENT_DATE)
+                """
+                params = {}
+                if org_id:
+                    query += " AND organization_id = :org_id"
+                    params["org_id"] = org_id
+
+                row = session.execute(text(query), params).fetchone()
+                return (row[0] or 0) > 0
+        except Exception:
+            return False
+
     async def _has_reflected_this_week(self, org_id: Optional[str]) -> bool:
         """Check if a reflection already exists for this week."""
         try:
@@ -316,36 +398,12 @@ class Reflector:
 
 
 def _extract_section(content: str, heading: str) -> List[str]:
-    """Extract bullet items from a markdown section."""
-    items = []
-    in_section = False
-    heading_lower = heading.lower()
+    """Extract bullet items from a markdown section.
 
-    for line in content.split("\n"):
-        stripped = line.strip()
-        stripped_lower = stripped.lower()
-
-        is_heading = (
-            (stripped.startswith("###") or stripped.startswith("**"))
-            and heading_lower in stripped_lower
-        )
-        is_other_heading = (
-            not is_heading
-            and (stripped.startswith("###") or (stripped.startswith("**") and stripped.endswith("**")))
-        )
-
-        if is_heading:
-            in_section = True
-            continue
-        if in_section:
-            if is_other_heading:
-                break
-            if stripped.startswith("-"):
-                items.append(stripped.lstrip("- ").strip())
-            elif len(stripped) > 2 and stripped[0].isdigit() and stripped[1] in ".)":
-                items.append(stripped[2:].strip().lstrip(". "))
-
-    return items
+    Re-exported from journal.py for DRY.
+    """
+    from app.engine.living_agent.journal import _extract_section as _impl
+    return _impl(content, heading)
 
 
 # =============================================================================

@@ -23,44 +23,50 @@ def _app(captured_org, captured_domains=None):
     return app
 
 class TestFailClosed:
-    def test_db_error_clears_org(self):
+    """DB error during org lookup → 503 response (request never reaches handler)."""
+
+    def test_db_error_returns_503(self):
         from starlette.testclient import TestClient
         captured = []
         ms = MagicMock(); ms.enable_multi_tenant = True; ms.subdomain_base_domain = ""
         repo = MagicMock(); repo.get_organization.side_effect = RuntimeError("refused")
         with patch(_SP, ms):
             with patch(_RP, return_value=repo):
-                TestClient(_app(captured), raise_server_exceptions=False).get("/test", headers={"X-Organization-ID": "org-boom"})
-        assert captured[0] is None
+                resp = TestClient(_app(captured), raise_server_exceptions=False).get("/test", headers={"X-Organization-ID": "org-boom"})
+        assert resp.status_code == 503
+        assert len(captured) == 0  # Handler never reached
 
-    def test_timeout_clears_org(self):
+    def test_timeout_returns_503(self):
         from starlette.testclient import TestClient
         captured = []
         ms = MagicMock(); ms.enable_multi_tenant = True; ms.subdomain_base_domain = ""
         repo = MagicMock(); repo.get_organization.side_effect = TimeoutError("slow")
         with patch(_SP, ms):
             with patch(_RP, return_value=repo):
-                TestClient(_app(captured), raise_server_exceptions=False).get("/test", headers={"X-Organization-ID": "org-slow"})
-        assert captured[0] is None
+                resp = TestClient(_app(captured), raise_server_exceptions=False).get("/test", headers={"X-Organization-ID": "org-slow"})
+        assert resp.status_code == 503
+        assert len(captured) == 0
 
-    def test_import_error_clears_org(self):
+    def test_import_error_returns_503(self):
         from starlette.testclient import TestClient
         captured = []
         ms = MagicMock(); ms.enable_multi_tenant = True; ms.subdomain_base_domain = ""
         with patch(_SP, ms):
             with patch(_RP, side_effect=ImportError("missing")):
-                TestClient(_app(captured), raise_server_exceptions=False).get("/test", headers={"X-Organization-ID": "org-imp"})
-        assert captured[0] is None
+                resp = TestClient(_app(captured), raise_server_exceptions=False).get("/test", headers={"X-Organization-ID": "org-imp"})
+        assert resp.status_code == 503
+        assert len(captured) == 0
 
-    def test_db_error_domains_none(self):
+    def test_db_error_handler_not_reached(self):
         from starlette.testclient import TestClient
         co = []; cd = []
         ms = MagicMock(); ms.enable_multi_tenant = True; ms.subdomain_base_domain = ""
         repo = MagicMock(); repo.get_organization.side_effect = Exception("err")
         with patch(_SP, ms):
             with patch(_RP, return_value=repo):
-                TestClient(_app(co, cd), raise_server_exceptions=False).get("/test", headers={"X-Organization-ID": "org-x"})
-        assert co[0] is None and cd[0] is None
+                resp = TestClient(_app(co, cd), raise_server_exceptions=False).get("/test", headers={"X-Organization-ID": "org-x"})
+        assert resp.status_code == 503
+        assert len(co) == 0 and len(cd) == 0
 
 class TestSuccess:
     def test_sets_org_id(self):

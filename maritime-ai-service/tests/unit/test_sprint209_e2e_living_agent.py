@@ -319,6 +319,10 @@ class TestEmotionEngineE2E:
         )
 
         engine = EmotionEngine()
+        # Sprint 210b: Bypass mood dampening cooldown for test
+        from datetime import datetime, timezone
+        engine._last_mood_change = datetime(2020, 1, 1, tzinfo=timezone.utc)
+
         event = LifeEvent(
             event_type=LifeEventType.POSITIVE_FEEDBACK,
             description="User liked the answer",
@@ -488,6 +492,10 @@ class TestProactiveMessagingE2E:
 
         messenger = ProactiveMessenger()
         messenger._daily_counts["user123"] = 3  # At limit
+        # Must set reset date to today so _reset_daily_if_needed() doesn't clear counts
+        from datetime import timedelta as _td
+        now_vn = datetime.now(timezone.utc) + _td(hours=7)
+        messenger._daily_reset_date = now_vn.strftime("%Y-%m-%d")
 
         settings = _make_settings(
             living_agent_enable_proactive_messaging=True,
@@ -1184,12 +1192,16 @@ class TestModelsIntegrity:
     """Verify models used across modules are consistent."""
 
     def test_all_action_types_handled_in_heartbeat(self):
-        """Every ActionType has a handler or explicit skip in _execute_action."""
+        """Every ActionType has a handler or explicit skip in _dispatch_action.
+
+        Sprint 210: _execute_action now wraps _dispatch_action with timeout.
+        """
         import inspect
         from app.engine.living_agent.heartbeat import HeartbeatScheduler
         from app.engine.living_agent.models import ActionType
 
-        source = inspect.getsource(HeartbeatScheduler._execute_action)
+        # Sprint 210: Check _dispatch_action (actual handler), not _execute_action (timeout wrapper)
+        source = inspect.getsource(HeartbeatScheduler._dispatch_action)
         # NOOP: never dispatched. PRACTICE_SKILL: external-only action (not heartbeat).
         skip = {ActionType.NOOP, ActionType.PRACTICE_SKILL}
         for action in ActionType:
@@ -1197,7 +1209,7 @@ class TestModelsIntegrity:
                 continue
             # Check action type name appears in source
             assert action.value in source or action.name in source, \
-                f"ActionType.{action.name} not handled in _execute_action"
+                f"ActionType.{action.name} not handled in _dispatch_action"
 
     def test_heartbeat_result_fields(self):
         """HeartbeatResult has all required fields."""

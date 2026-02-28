@@ -43,9 +43,10 @@ async def _load_db_flags(org_id: Optional[str] = None) -> dict:
                     org_id,
                 )
             else:
+                # Load ALL flags (global + all org-specific) so cache is complete
                 rows = await conn.fetch(
                     "SELECT key, value, flag_type, description, owner, organization_id, expires_at "
-                    "FROM admin_feature_flags WHERE organization_id IS NULL"
+                    "FROM admin_feature_flags"
                 )
         result = {}
         now = datetime.now(timezone.utc)

@@ -13,11 +13,12 @@ import tempfile
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
 
 from app.core.config import get_settings
 from app.core.rate_limit import limiter
+from app.core.security import AuthenticatedUser, require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +57,11 @@ class OrgDocumentListResponse(BaseModel):
 # Auth Helpers
 # =============================================================================
 
-async def _require_org_knowledge_admin(request: Request, org_id: str) -> str:
+async def _require_org_knowledge_admin(auth: AuthenticatedUser, org_id: str) -> str:
     """
     Triple gate: feature flag + multi_tenant + org admin/owner or platform admin.
     Returns user_id on success.
+    Sprint 217: Uses require_auth dependency — no header trust.
     """
     settings = get_settings()
 
@@ -75,12 +77,9 @@ async def _require_org_knowledge_admin(request: Request, org_id: str) -> str:
             detail="Multi-tenant mode is required",
         )
 
-    user_id = request.headers.get("x-user-id", "anonymous")
-    role = request.headers.get("x-role", "student")
-
     # Platform admin bypass
-    if role == "admin":
-        return user_id
+    if auth.role == "admin":
+        return auth.user_id
 
     # Check org admin/owner
     if not settings.enable_org_admin:
@@ -91,18 +90,20 @@ async def _require_org_knowledge_admin(request: Request, org_id: str) -> str:
 
     from app.repositories.organization_repository import get_organization_repository
     repo = get_organization_repository()
-    org_role = repo.get_user_org_role(user_id, org_id)
+    org_role = repo.get_user_org_role(auth.user_id, org_id)
     if org_role not in ("admin", "owner"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Organization admin role required",
         )
 
-    return user_id
+    return auth.user_id
 
 
-async def _require_org_member(request: Request, org_id: str) -> str:
-    """Require org membership (any role) or platform admin. Returns user_id."""
+async def _require_org_member(auth: AuthenticatedUser, org_id: str) -> str:
+    """Require org membership (any role) or platform admin. Returns user_id.
+    Sprint 217: Uses require_auth dependency — no header trust.
+    """
     settings = get_settings()
 
     if not settings.enable_org_knowledge or not settings.enable_multi_tenant:
@@ -111,21 +112,18 @@ async def _require_org_member(request: Request, org_id: str) -> str:
             detail="Org knowledge management is disabled",
         )
 
-    user_id = request.headers.get("x-user-id", "anonymous")
-    role = request.headers.get("x-role", "student")
-
-    if role == "admin":
-        return user_id
+    if auth.role == "admin":
+        return auth.user_id
 
     from app.repositories.organization_repository import get_organization_repository
     repo = get_organization_repository()
-    if not repo.is_user_in_org(user_id, org_id):
+    if not repo.is_user_in_org(auth.user_id, org_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not a member of this organization",
         )
 
-    return user_id
+    return auth.user_id
 
 
 # =============================================================================
@@ -254,6 +252,7 @@ async def upload_org_document(
     request: Request,
     org_id: str,
     file: UploadFile = File(...),
+    auth: AuthenticatedUser = Depends(require_auth),
 ) -> OrgDocumentResponse:
     """
     Upload a PDF document to the organization's knowledge base.
@@ -264,7 +263,7 @@ async def upload_org_document(
     3. Track lifecycle in organization_documents table
     4. Audit log
     """
-    user_id = await _require_org_knowledge_admin(request, org_id)
+    user_id = await _require_org_knowledge_admin(auth, org_id)
     settings = get_settings()
 
     # Validate file type
@@ -315,9 +314,11 @@ async def upload_org_document(
         )
 
         # Update status → ready
+        # Use pages_processed (actual pages attempted) instead of total_pages
+        # When max_pages is set, total_pages is the full PDF but only a subset was processed
         await _update_document_status(
             pool, document_id, "ready",
-            page_count=result.total_pages,
+            page_count=result.pages_processed if result.pages_processed > 0 else result.total_pages,
             chunk_count=result.successful_pages,
         )
 
@@ -355,7 +356,7 @@ async def upload_org_document(
             filename=file.filename,
             file_size_bytes=len(content),
             status="ready",
-            page_count=result.total_pages,
+            page_count=result.pages_processed if result.pages_processed > 0 else result.total_pages,
             chunk_count=result.successful_pages,
             uploaded_by=user_id,
         )
@@ -383,9 +384,10 @@ async def list_org_documents(
     request: Request,
     org_id: str,
     doc_status: Optional[str] = None,
+    auth: AuthenticatedUser = Depends(require_auth),
 ) -> OrgDocumentListResponse:
     """List documents in the organization's knowledge base. Any org member can view."""
-    await _require_org_member(request, org_id)
+    await _require_org_member(auth, org_id)
 
     pool = await _get_pool()
     docs = await _list_documents(pool, org_id, status_filter=doc_status)
@@ -418,9 +420,10 @@ async def get_org_document(
     request: Request,
     org_id: str,
     doc_id: str,
+    auth: AuthenticatedUser = Depends(require_auth),
 ) -> OrgDocumentResponse:
     """Get details of a specific document. Any org member can view."""
-    await _require_org_member(request, org_id)
+    await _require_org_member(auth, org_id)
 
     pool = await _get_pool()
     doc = await _get_document(pool, doc_id, org_id)
@@ -452,12 +455,13 @@ async def delete_org_document(
     request: Request,
     org_id: str,
     doc_id: str,
+    auth: AuthenticatedUser = Depends(require_auth),
 ) -> None:
     """
     Soft-delete a document: remove embeddings from knowledge_embeddings,
     mark document as 'deleted' in tracking table.
     """
-    user_id = await _require_org_knowledge_admin(request, org_id)
+    user_id = await _require_org_knowledge_admin(auth, org_id)
 
     pool = await _get_pool()
 
@@ -469,16 +473,18 @@ async def delete_org_document(
             detail=f"Document '{doc_id}' not found in organization '{org_id}'",
         )
 
-    # Delete embeddings from knowledge_embeddings
+    # Delete embeddings + mark as deleted in a single transaction
     async with pool.acquire() as conn:
-        result = await conn.execute(
-            "DELETE FROM knowledge_embeddings WHERE document_id = $1 AND organization_id = $2",
-            doc_id, org_id,
-        )
-        logger.info("Deleted embeddings: %s (org=%s, doc=%s)", result, org_id, doc_id)
-
-    # Mark as deleted
-    await _update_document_status(pool, doc_id, "deleted")
+        async with conn.transaction():
+            result = await conn.execute(
+                "DELETE FROM knowledge_embeddings WHERE document_id = $1 AND organization_id = $2",
+                doc_id, org_id,
+            )
+            logger.info("Deleted embeddings: %s (org=%s, doc=%s)", result, org_id, doc_id)
+            await conn.execute(
+                "UPDATE organization_documents SET status = 'deleted', updated_at = NOW() WHERE document_id = $1",
+                doc_id,
+            )
 
     logger.info("Org knowledge deleted: org=%s doc=%s user=%s", org_id, doc_id, user_id)
 

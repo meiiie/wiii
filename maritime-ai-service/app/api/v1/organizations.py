@@ -453,4 +453,4 @@ async def get_org_permissions_endpoint(
         org_role = repo.get_user_org_role(auth.user_id, org_id)
 
     perms = get_org_permissions(org_id, auth.role, org_role=org_role)
-    return {"permissions": perms, "role": auth.role, "organization_id": org_id}
+    return {"permissions": perms, "role": auth.role, "organization_id": org_id, "org_role": org_role}

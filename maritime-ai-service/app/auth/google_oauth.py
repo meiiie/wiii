@@ -11,8 +11,11 @@ from typing import Optional
 from urllib.parse import urlencode, urlparse
 
 from authlib.integrations.starlette_client import OAuth
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel
+
+from app.core.security import AuthenticatedUser, require_auth
 
 from app.auth.token_service import create_token_pair, refresh_access_token, revoke_user_tokens
 from app.auth.user_service import find_or_create_by_google
@@ -38,9 +41,10 @@ oauth.register(
 def _get_redirect_uri(request: Request, desktop_port: Optional[int] = None) -> str:
     """Build the callback URL. Uses oauth_redirect_base_url if configured."""
     base = settings.oauth_redirect_base_url or str(request.base_url).rstrip("/")
+    prefix = settings.api_v1_prefix.rstrip("/")
     if desktop_port:
-        return f"{base}/auth/google/callback/desktop?port={desktop_port}"
-    return f"{base}/auth/google/callback"
+        return f"{base}{prefix}/auth/google/callback/desktop?port={desktop_port}"
+    return f"{base}{prefix}/auth/google/callback"
 
 
 # ---------------------------------------------------------------------------
@@ -121,11 +125,11 @@ async def google_callback(request: Request):
             )
         except Exception:
             pass
-        raise HTTPException(status_code=400, detail=f"OAuth failed: {e}")
+        raise HTTPException(status_code=400, detail="Xác thực Google thất bại. Vui lòng thử lại.")
 
     userinfo = token.get("userinfo")
     if not userinfo:
-        raise HTTPException(status_code=400, detail="Failed to get user info from Google")
+        raise HTTPException(status_code=400, detail="Không lấy được thông tin từ Google. Vui lòng thử lại.")
 
     google_sub = userinfo["sub"]
     email = userinfo.get("email", "")
@@ -134,7 +138,7 @@ async def google_callback(request: Request):
     email_verified = userinfo.get("email_verified", False)
 
     if not email:
-        raise HTTPException(status_code=400, detail="Google account has no email")
+        raise HTTPException(status_code=400, detail="Tài khoản Google không có email. Vui lòng dùng tài khoản khác.")
 
     # Find or create Wiii user (Sprint 160b: pass email_verified for auto-link security)
     user = await find_or_create_by_google(
@@ -250,19 +254,14 @@ async def google_callback(request: Request):
 # Token management
 # ---------------------------------------------------------------------------
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
 @router.post("/token/refresh")
-async def token_refresh(request: Request):
+async def token_refresh(body: RefreshTokenRequest):
     """Refresh an access token using a refresh token."""
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
-
-    refresh_token = body.get("refresh_token")
-    if not refresh_token:
-        raise HTTPException(status_code=400, detail="refresh_token is required")
-
-    result = await refresh_access_token(refresh_token)
+    result = await refresh_access_token(body.refresh_token)
     if not result:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
@@ -275,36 +274,34 @@ async def token_refresh(request: Request):
 
 
 @router.post("/logout")
-async def logout(request: Request):
+async def logout(
+    request: Request,
+    auth: AuthenticatedUser = Depends(require_auth),
+):
     """Revoke all refresh tokens for the authenticated user (logout everywhere).
 
     Sprint 192: Also denies the current access token's JTI so it cannot be
     reused for the remainder of its lifetime.
     """
-    # Simple token extraction from Authorization header
-    auth_header = request.headers.get("authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Bearer token required")
+    count = await revoke_user_tokens(auth.user_id)
 
-    token = auth_header.split(" ", 1)[1]
-    try:
-        from app.auth.token_service import verify_access_token
-        payload = verify_access_token(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    count = await revoke_user_tokens(payload.sub)
-
-    # Sprint 192: Deny current access token's JTI
-    if settings.enable_jti_denylist and payload.jti:
-        from app.auth.token_service import deny_jti
-        deny_jti(payload.jti)
+    # Sprint 192: Deny current access token's JTI (JWT auth only)
+    if settings.enable_jti_denylist and auth.auth_method != "api_key":
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            try:
+                from app.auth.token_service import verify_access_token, deny_jti
+                payload = verify_access_token(auth_header.split(" ", 1)[1])
+                if payload.jti:
+                    deny_jti(payload.jti)
+            except Exception:
+                pass  # JTI denial is best-effort
 
     # Sprint 176: Audit logout
     try:
         from app.auth.auth_audit import log_auth_event
         await log_auth_event(
-            "logout", user_id=payload.sub, provider="google",
+            "logout", user_id=auth.user_id, provider=auth.auth_method,
             ip_address=request.client.host if request.client else None,
             metadata={"revoked_count": count},
         )
@@ -315,19 +312,10 @@ async def logout(request: Request):
 
 
 @router.get("/me")
-async def get_current_user(request: Request):
+async def get_current_user(
+    auth: AuthenticatedUser = Depends(require_auth),
+):
     """Get the current authenticated user's profile."""
-    auth_header = request.headers.get("authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Bearer token required")
-
-    token = auth_header.split(" ", 1)[1]
-    try:
-        from app.auth.token_service import verify_access_token
-        payload = verify_access_token(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
     # Fetch full user from DB
     try:
         from app.core.database import get_asyncpg_pool
@@ -335,10 +323,12 @@ async def get_current_user(request: Request):
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT id, email, name, avatar_url, role, is_active, created_at FROM users WHERE id = $1",
-                payload.sub,
+                auth.user_id,
             )
             if not row:
                 raise HTTPException(status_code=404, detail="User not found")
+            if not row["is_active"]:
+                raise HTTPException(status_code=403, detail="Tài khoản đã bị vô hiệu hóa.")
             return JSONResponse({
                 "id": row["id"],
                 "email": row["email"],
@@ -351,10 +341,8 @@ async def get_current_user(request: Request):
     except HTTPException:
         raise
     except Exception:
-        # Fallback to token claims
+        # Fallback to auth claims
         return JSONResponse({
-            "id": payload.sub,
-            "email": payload.email,
-            "name": payload.name,
-            "role": payload.role,
+            "id": auth.user_id,
+            "role": auth.role,
         })

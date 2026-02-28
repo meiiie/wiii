@@ -378,6 +378,7 @@ async def ingest_text_document(
                 image_url="",
                 metadata=metadata,
                 organization_id=body.organization_id,
+                bounding_boxes=chunk.metadata.get("bounding_boxes") if chunk.metadata else None,
             )
             if success:
                 stored += 1

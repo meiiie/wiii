@@ -15,6 +15,7 @@ import logging
 from typing import List, Optional
 
 from app.core.config import settings
+from app.services.output_processor import extract_thinking_from_response
 from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
 from app.models.semantic_memory import (
     ConversationSummary,
@@ -570,7 +571,6 @@ Return ONLY valid JSON:"""
             response = await self._llm.ainvoke(prompt)
 
             # SOTA FIX: Handle Gemini 2.5 Flash content block format
-            from app.services.output_processor import extract_thinking_from_response
             text_content, _ = extract_thinking_from_response(response.content)
             content = text_content.strip()
 

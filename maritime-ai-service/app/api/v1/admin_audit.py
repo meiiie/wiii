@@ -10,19 +10,12 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from app.core.config import settings
+from app.core.admin_security import check_admin_module as _check_admin_module
 from app.api.deps import RequireAdmin
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin-audit"])
-
-
-def _check_admin_module(request: Request):
-    if not getattr(settings, "enable_admin_module", False):
-        raise HTTPException(status_code=404, detail="Admin module not enabled")
-    from app.core.admin_security import check_admin_ip_allowlist
-    check_admin_ip_allowlist(request)
 
 
 async def _get_pool():

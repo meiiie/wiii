@@ -209,7 +209,8 @@ class TestSecurityJWTAud:
 
     def test_verify_jwt_token_with_aud(self, mock_settings):
         from jose import jwt as jose_jwt
-        with patch("app.core.security.settings", mock_settings):
+        with patch("app.core.security.settings", mock_settings), \
+             patch("app.auth.token_service.settings", mock_settings):
             from app.core.security import verify_jwt_token
             payload = {
                 "sub": "user-sec",
@@ -224,7 +225,8 @@ class TestSecurityJWTAud:
 
     def test_verify_jwt_token_legacy_no_aud(self, mock_settings):
         from jose import jwt as jose_jwt
-        with patch("app.core.security.settings", mock_settings):
+        with patch("app.core.security.settings", mock_settings), \
+             patch("app.auth.token_service.settings", mock_settings):
             from app.core.security import verify_jwt_token
             payload = {
                 "sub": "legacy-sec",
@@ -241,7 +243,8 @@ class TestSecurityJWTAud:
         mock_settings.enable_jti_denylist = True
         from jose import jwt as jose_jwt
         from fastapi import HTTPException
-        with patch("app.core.security.settings", mock_settings):
+        with patch("app.core.security.settings", mock_settings), \
+             patch("app.auth.token_service.settings", mock_settings):
             from app.core.security import verify_jwt_token
             from app.auth.token_service import deny_jti, _clear_jti_denylist
             _clear_jti_denylist()
@@ -306,11 +309,12 @@ class TestOrgMembershipValidation:
                 assert result is False
 
     @pytest.mark.asyncio
-    async def test_db_error_failopen(self):
+    async def test_db_error_failclosed(self):
+        """DB error should fail-closed (block access), consistent with OrgContextMiddleware."""
         with patch("app.core.database.get_asyncpg_pool", AsyncMock(side_effect=Exception("DB down"))):
             from app.core.security import _validate_org_membership
             result = await _validate_org_membership("user-1", "org-1", "student")
-            assert result is True  # Fail-open
+            assert result is False  # Fail-closed
 
 
 class TestRequireAuthOrgCheck:
@@ -373,6 +377,7 @@ class TestRequireAuthOrgCheck:
         creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
         with patch("app.core.security.settings", mock_settings), \
+             patch("app.auth.token_service.settings", mock_settings), \
              patch("app.core.security._validate_org_membership", AsyncMock(return_value=False)):
             from app.core.security import require_auth
             with pytest.raises(HTTPException) as exc_info:
@@ -800,7 +805,8 @@ class TestBackwardCompat:
         token = jose_jwt.encode(payload, "test-secret-key", algorithm="HS256")
         creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
-        with patch("app.core.security.settings", mock_settings):
+        with patch("app.core.security.settings", mock_settings), \
+             patch("app.auth.token_service.settings", mock_settings):
             from app.core.security import require_auth
             user = await require_auth(
                 api_key=None, credentials=creds,
@@ -888,7 +894,8 @@ class TestCombinedScenarios:
         _clear_jti_denylist()
         deny_jti(jti, ttl_seconds=60)
 
-        with patch("app.core.security.settings", mock_settings):
+        with patch("app.core.security.settings", mock_settings), \
+             patch("app.auth.token_service.settings", mock_settings):
             from app.core.security import require_auth
             with pytest.raises(HTTPException) as exc_info:
                 await require_auth(

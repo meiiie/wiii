@@ -169,14 +169,18 @@ class JournalWriter:
         entry_date: date,
         organization_id: Optional[str] = None,
     ) -> Optional[JournalEntry]:
-        """Check if a journal entry exists for a given date."""
+        """Check if a journal entry exists for a given date and return it."""
         from sqlalchemy import text
         from app.core.database import get_shared_session_factory
 
         try:
             session_factory = get_shared_session_factory()
             with session_factory() as session:
-                query = "SELECT id FROM wiii_journal WHERE entry_date = :date"
+                query = """
+                    SELECT id, entry_date, content, mood_summary, energy_avg,
+                           notable_events, learnings, goals_next
+                    FROM wiii_journal WHERE entry_date = :date
+                """
                 params: dict = {"date": entry_date}
                 if organization_id:
                     query += " AND organization_id = :org_id"
@@ -184,7 +188,20 @@ class JournalWriter:
                 query += " LIMIT 1"
 
                 row = session.execute(text(query), params).fetchone()
-                return row[0] if row else None  # type: ignore[return-value]
+                if not row:
+                    return None
+                return JournalEntry(
+                    id=row[0],
+                    entry_date=row[1] if isinstance(row[1], datetime) else datetime.combine(
+                        row[1], datetime.min.time()
+                    ).replace(tzinfo=timezone.utc),
+                    content=row[2],
+                    mood_summary=row[3] or "",
+                    energy_avg=row[4] or 0.5,
+                    notable_events=json.loads(row[5]) if row[5] else [],
+                    learnings=json.loads(row[6]) if row[6] else [],
+                    goals_next=json.loads(row[7]) if row[7] else [],
+                )
         except Exception:
             return None
 
@@ -223,6 +240,8 @@ class JournalWriter:
 
 def _extract_section(content: str, heading: str) -> list:
     """Extract bullet items from a markdown section.
+
+    Shared utility — also used by reflector.py via import.
 
     Looks for a section starting with '### {heading}' or '**{heading}**'
     and collects lines starting with '-' or numbered lists until the next

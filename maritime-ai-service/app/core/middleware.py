@@ -18,7 +18,7 @@ import uuid
 import structlog
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 logger = logging.getLogger(__name__)
 
@@ -120,13 +120,17 @@ class OrgContextMiddleware(BaseHTTPMiddleware):
                     token_domains = current_org_allowed_domains.set(org.allowed_domains)
             except Exception as e:
                 logger.warning(
-                    "[MIDDLEWARE] Failed to load org for %s: %s — clearing org context (fail-closed)",
+                    "[MIDDLEWARE] Failed to load org for %s: %s — rejecting request (fail-closed)",
                     org_id, e,
                 )
-                # Fail-closed: clear the org_id since we can't verify domain restrictions
+                # Fail-closed: reject request since we can't verify org permissions
                 if token_org is not None:
                     current_org_id.reset(token_org)
                     token_org = None
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": "Không thể xác minh tổ chức. Vui lòng thử lại sau."},
+                )
 
         try:
             response: Response = await call_next(request)

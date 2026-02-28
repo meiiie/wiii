@@ -15,6 +15,7 @@ from typing import List, Optional
 
 from app.core.config import settings
 from app.engine.llm_pool import get_llm_light
+from app.services.output_processor import extract_thinking_from_response
 from app.models.semantic_memory import (
     ALLOWED_FACT_TYPES,
     FACT_TYPE_MAPPING,
@@ -193,8 +194,8 @@ class FactExtractor:
                 try:
                     from app.engine.semantic_memory.core_memory_block import get_core_memory_block
                     get_core_memory_block().invalidate(user_id)
-                except Exception:
-                    pass  # Non-critical
+                except Exception as _e:
+                    logger.debug("CoreMemoryBlock cache invalidation skipped: %s", _e)
 
                 logger.info("Extracted and stored %d facts for user %s", len(stored_facts), user_id)
             return stored_facts
@@ -239,7 +240,6 @@ class FactExtractor:
             response = await self._llm.ainvoke(prompt)
 
             # SOTA FIX: Handle Gemini 2.5 Flash content block format
-            from app.services.output_processor import extract_thinking_from_response
             text_content, _ = extract_thinking_from_response(response.content)
 
             # Parse JSON response
@@ -481,9 +481,7 @@ class FactExtractor:
         Sprint 73: Enhanced Mem0-style prompt with 15 categories and
         existing facts context to avoid re-extraction and detect changes.
         """
-        from app.core.config import settings as _settings
-
-        if _settings.enable_enhanced_extraction:
+        if settings.enable_enhanced_extraction:
             return self._build_enhanced_prompt(message, existing_facts)
 
         # Legacy 6-type prompt (fallback)

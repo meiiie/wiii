@@ -167,6 +167,7 @@ class TestGetChatHistory:
         mock_repo = MagicMock()
         mock_repo.get_user_history.return_value = ([], 0)
         mock_auth = MagicMock()
+        mock_auth.user_id = "user-1"  # Match path param for ownership check
 
         # Lazy import inside function body — patch at source module
         with patch("app.repositories.chat_history_repository.get_chat_history_repository", return_value=mock_repo):
@@ -182,6 +183,7 @@ class TestGetChatHistory:
         mock_repo = MagicMock()
         mock_repo.get_user_history.return_value = ([], 0)
         mock_auth = MagicMock()
+        mock_auth.user_id = "user-1"  # Match path param for ownership check
 
         with patch("app.repositories.chat_history_repository.get_chat_history_repository", return_value=mock_repo):
             result = await get_chat_history("user-1", auth=mock_auth, limit=-5, offset=0)
@@ -195,6 +197,7 @@ class TestGetChatHistory:
         mock_repo = MagicMock()
         mock_repo.get_user_history.return_value = ([], 0)
         mock_auth = MagicMock()
+        mock_auth.user_id = "user-1"  # Match path param for ownership check
 
         with patch("app.repositories.chat_history_repository.get_chat_history_repository", return_value=mock_repo):
             result = await get_chat_history("user-1", auth=mock_auth, limit=10, offset=-1)
@@ -214,6 +217,7 @@ class TestGetChatHistory:
         mock_repo = MagicMock()
         mock_repo.get_user_history.return_value = ([mock_msg], 1)
         mock_auth = MagicMock()
+        mock_auth.user_id = "user-1"  # Match path param for ownership check
 
         with patch("app.repositories.chat_history_repository.get_chat_history_repository", return_value=mock_repo):
             result = await get_chat_history("user-1", auth=mock_auth, limit=20, offset=0)

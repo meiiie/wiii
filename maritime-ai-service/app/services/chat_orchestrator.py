@@ -8,6 +8,8 @@ Orchestrates the complete chat processing pipeline.
 **Spec:** CHỈ THỊ KỸ THUẬT SỐ 25 - Project Restructure
 """
 
+import asyncio
+import json
 import logging
 from enum import Enum
 from typing import Callable, Optional
@@ -22,6 +24,96 @@ from .output_processor import OutputProcessor, ProcessingResult, get_output_proc
 from .background_tasks import BackgroundTaskRunner, get_background_runner
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Sprint 210d: Async LLM sentiment → emotion + episodic memory
+# =============================================================================
+
+async def _analyze_and_process_sentiment(
+    user_id: str,
+    user_role: str,
+    message: str,
+    response_text: str,
+    organization_id: str | None = None,
+) -> None:
+    """Fire-and-forget: LLM analyzes sentiment, feeds EmotionEngine + episodic memory.
+
+    Runs fully async AFTER response is delivered — zero user-facing latency.
+    """
+    try:
+        from app.engine.living_agent.sentiment_analyzer import get_sentiment_analyzer
+        from app.engine.living_agent.emotion_engine import (
+            get_emotion_engine, get_relationship_tier,
+            TIER_CREATOR, TIER_KNOWN,
+        )
+        from app.engine.living_agent.models import LifeEvent, LifeEventType
+
+        analyzer = get_sentiment_analyzer()
+        result = await analyzer.analyze(message, response_text, user_id)
+
+        engine = get_emotion_engine()
+        tier = get_relationship_tier(user_id, user_role)
+        event_type = getattr(LifeEventType, result.life_event_type, LifeEventType.USER_CONVERSATION)
+
+        # Sprint 210f: Tier-based emotion processing
+        # Creator: full impact | Known: moderate impact | Other: bucket only
+        if tier == TIER_CREATOR:
+            engine.process_event(LifeEvent(
+                event_type=event_type,
+                description=result.episode_summary or f"Creator {user_id}: {message[:100]}",
+                importance=result.importance,
+            ))
+        elif tier == TIER_KNOWN:
+            # Sprint 210f: Known users get real emotion events (reduced importance)
+            engine.process_event(LifeEvent(
+                event_type=event_type,
+                description=result.episode_summary or f"User {user_id}: {message[:100]}",
+                importance=result.importance * 0.6,
+            ))
+        else:
+            _sentiment_bucket = (
+                "positive" if result.user_sentiment in ("positive", "grateful", "excited") else
+                "negative" if result.user_sentiment in ("negative", "frustrated", "dismissive") else
+                "neutral"
+            )
+            engine.record_interaction(user_id, _sentiment_bucket)
+
+        # Sprint 210f: Episodic memory for ALL tiers (not just Creator)
+        # Creator: always | Known: importance >= 0.4 | Other: importance >= 0.5
+        _store_episode = (
+            tier == TIER_CREATOR
+            or (tier == TIER_KNOWN and result.importance >= 0.4)
+            or result.importance >= 0.5
+        )
+        if _store_episode:
+            try:
+                from uuid import uuid4
+                from sqlalchemy import text
+                from app.core.database import get_shared_session_factory
+
+                _episode = result.episode_summary or f"User {user_id}: {message[:200]}"
+                session_factory = get_shared_session_factory()
+                with session_factory() as db_session:
+                    db_session.execute(
+                        text("""
+                            INSERT INTO semantic_memories
+                            (id, user_id, content, memory_type, importance, metadata, created_at)
+                            VALUES (:id, :user_id, :content, 'episode', :importance, :metadata, NOW())
+                        """),
+                        {
+                            "id": str(uuid4()),
+                            "user_id": user_id,
+                            "content": _episode[:2000],
+                            "importance": result.importance,
+                            "metadata": json.dumps({"organization_id": organization_id or "", "sentiment": result.user_sentiment}, ensure_ascii=False),
+                        },
+                    )
+                    db_session.commit()
+            except Exception as ep_err:
+                logger.debug("[SENTIMENT] Episodic memory storage failed: %s", ep_err)
+    except Exception as e:
+        logger.debug("[SENTIMENT] Background analysis failed: %s", e)
 
 
 # =============================================================================
@@ -150,8 +242,6 @@ class ChatOrchestrator:
             or get_current_org_id()
             or settings.default_organization_id
         )
-        self._current_org_id = org_id
-
         domain_router = get_domain_router()
         org_allowed_domains = get_current_org_allowed_domains()
         domain_id = await domain_router.resolve(
@@ -161,11 +251,8 @@ class ChatOrchestrator:
         )
         logger.info("[DOMAIN] Resolved domain: %s (org: %s)", domain_id, org_id)
 
-        # Store domain_id for later stages
-        self._current_domain_id = domain_id
-
-        # Store thinking_effort for multi-agent processing (Sprint 66)
-        self._thinking_effort = getattr(request, 'thinking_effort', None)
+        # Sprint 66: thinking effort for multi-agent processing
+        thinking_effort = getattr(request, 'thinking_effort', None)
 
         # ================================================================
         # STAGE 1: SESSION MANAGEMENT
@@ -245,7 +332,7 @@ class ChatOrchestrator:
         
         # Option A: Multi-Agent System (SOTA 2025)
         if self._use_multi_agent:
-            result = await self._process_with_multi_agent(context, session)
+            result = await self._process_with_multi_agent(context, session, domain_id, thinking_effort)
 
         # Option B: Fallback to direct RAG mode
         else:
@@ -321,14 +408,25 @@ class ChatOrchestrator:
             if getattr(_rts, "living_agent_enable_routine_tracking", False):
                 from app.engine.living_agent.routine_tracker import get_routine_tracker
                 tracker = get_routine_tracker()
-                import asyncio
                 asyncio.ensure_future(tracker.record_interaction(
                     user_id=user_id,
                     channel="web",
-                    topic=self._current_domain_id or "",
+                    topic=domain_id or "",
                 ))
         except Exception:
             pass  # Never block chat pipeline for routine tracking
+
+        # Sprint 210d: SOTA LLM-based sentiment → emotion + episodic memory
+        # Runs fully async — zero latency impact on chat response.
+        if getattr(settings, "enable_living_continuity", False):
+            _response_text = result.message or "" if result else ""
+            asyncio.ensure_future(_analyze_and_process_sentiment(
+                user_id=user_id,
+                user_role=user_role,
+                message=message,
+                response_text=_response_text,
+                organization_id=org_id,
+            ))
 
         return response
     
@@ -439,7 +537,9 @@ class ChatOrchestrator:
     async def _process_with_multi_agent(
         self,
         context: ChatContext,
-        session: SessionContext
+        session: SessionContext,
+        domain_id: str | None = None,
+        thinking_effort: str | None = None,
     ) -> ProcessingResult:
         """
         Process with Multi-Agent System (LangGraph).
@@ -484,7 +584,7 @@ class ChatOrchestrator:
         }
 
         # Use domain_id from Stage 0 (falls back to config default)
-        domain_id = getattr(self, '_current_domain_id', None) or settings.default_domain
+        domain_id = domain_id or settings.default_domain
 
         result = await process_with_multi_agent(
             query=context.message,
@@ -492,7 +592,7 @@ class ChatOrchestrator:
             session_id=str(context.session_id),
             context=multi_agent_context,
             domain_id=domain_id,
-            thinking_effort=getattr(self, '_thinking_effort', None)
+            thinking_effort=thinking_effort
         )
         
         response_text = result.get("response", "")

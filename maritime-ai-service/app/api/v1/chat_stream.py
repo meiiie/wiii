@@ -205,6 +205,27 @@ async def chat_stream_v3(
                 except Exception as save_err:
                     logger.warning("[STREAM-V3] Failed to save user message: %s", save_err)
 
+            # STAGE 2.5: Domain & Org Resolution (CHAT-3/9: parity with sync path)
+            from app.domains.router import get_domain_router
+            from app.core.org_context import get_current_org_id, get_current_org_allowed_domains
+
+            _resolved_org_id = (
+                getattr(chat_request, 'organization_id', None)
+                or get_current_org_id()
+                or settings.default_organization_id
+            )
+            _resolved_domain_id = chat_request.domain_id
+            try:
+                _domain_router = get_domain_router()
+                _org_allowed_domains = get_current_org_allowed_domains()
+                _resolved_domain_id = await _domain_router.resolve(
+                    query=chat_request.message,
+                    explicit_domain_id=chat_request.domain_id,
+                    allowed_domains=_org_allowed_domains,
+                )
+            except Exception as _dr_err:
+                logger.warning("[STREAM-V3] Domain resolution failed, using request domain_id: %s", _dr_err)
+
             # STAGE 3: Build full context via InputProcessor (loads history, facts, memory)
             context = {}
             try:
@@ -244,6 +265,8 @@ async def chat_stream_v3(
                     "preview_max_count": chat_request.preview_max_count,
                     # Sprint 179: Multimodal Vision images
                     "images": [img.model_dump() for img in chat_context.images] if getattr(chat_context, 'images', None) else None,
+                    # Sprint 160: Multi-Tenant Data Isolation (parity with sync path)
+                    "organization_id": _resolved_org_id,
                 }
             except Exception as ctx_err:
                 logger.warning("[STREAM-V3] Full context build failed, using minimal: %s", ctx_err)
@@ -252,6 +275,7 @@ async def chat_stream_v3(
                     "user_role": chat_request.role.value,
                     "user_name": None,
                     "conversation_history": "",
+                    "organization_id": _resolved_org_id,
                 }
 
             # Store for post-stream message saving
@@ -265,7 +289,7 @@ async def chat_stream_v3(
                 user_id=chat_request.user_id,
                 session_id=effective_session_id_str,
                 context=context,
-                domain_id=chat_request.domain_id,
+                domain_id=_resolved_domain_id,
                 thinking_effort=getattr(chat_request, 'thinking_effort', None),
             ):
                 # Convert StreamEvent to SSE format
@@ -432,18 +456,53 @@ async def chat_stream_v3(
                 except Exception as save_err:
                     logger.warning("[STREAM-V3] Failed to save assistant message: %s", save_err)
 
-            # Sprint 170: Update Living Agent emotional state on conversation
-            if settings.enable_living_agent:
+            # Sprint 210e: Schedule background tasks (parity with sync path)
+            # Previously MISSING — semantic memory, fact extraction, summarization,
+            # profile stats, and character reflection were skipped in streaming.
+            if _v3_orchestrator._background_runner:
                 try:
-                    from app.engine.living_agent.emotion_engine import get_emotion_engine
-                    from app.engine.living_agent.models import LifeEvent, LifeEventType
-                    get_emotion_engine().process_event(LifeEvent(
-                        event_type=LifeEventType.USER_CONVERSATION,
-                        description=chat_request.message[:200],
-                        importance=0.5,
+                    _full_response = "".join(_accumulated_answer) if _accumulated_answer else ""
+                    _org_id = getattr(chat_request, 'organization_id', None) or ""
+                    _v3_orchestrator._background_runner.schedule_all(
+                        background_save=background_tasks.add_task,
+                        user_id=chat_request.user_id,
+                        session_id=_v3_session_id,
+                        message=chat_request.message,
+                        response=_full_response,
+                        skip_fact_extraction=False,  # Streaming doesn't track which agent ran
+                        org_id=_org_id,
+                    )
+                except Exception as _bg_err:
+                    logger.warning("[STREAM-V3] Background tasks scheduling failed: %s", _bg_err)
+
+            # Sprint 208: Record user interaction for routine learning (fire-and-forget)
+            try:
+                from app.core.config import get_settings as _rt_settings
+                _rts = _rt_settings()
+                if getattr(_rts, "living_agent_enable_routine_tracking", False):
+                    from app.engine.living_agent.routine_tracker import get_routine_tracker
+                    _tracker = get_routine_tracker()
+                    asyncio.ensure_future(_tracker.record_interaction(
+                        user_id=chat_request.user_id,
+                        channel="web",
+                        topic=getattr(chat_request, 'domain_id', None) or "",
                     ))
-                except Exception:
-                    pass  # Non-blocking: never affect user chat
+            except Exception:
+                pass  # Never block chat pipeline for routine tracking
+
+            # Sprint 210d: SOTA LLM-based sentiment → emotion + episodic memory
+            # Runs fully async — zero latency impact on streaming.
+            if getattr(settings, 'enable_living_continuity', False):
+                from app.services.chat_orchestrator import _analyze_and_process_sentiment
+                _full_answer = "".join(_accumulated_answer) if _accumulated_answer else ""
+                _user_role = context.get("user_role", "")
+                asyncio.ensure_future(_analyze_and_process_sentiment(
+                    user_id=chat_request.user_id,
+                    user_role=_user_role,
+                    message=chat_request.message,
+                    response_text=_full_answer,
+                    organization_id=getattr(chat_request, 'organization_id', None),
+                ))
 
             # Final processing time log
             processing_time = time.time() - start_time
@@ -454,7 +513,7 @@ async def chat_stream_v3(
             tb = traceback.format_exc()
             logger.error("[STREAM-V3] Error: %s\n%s", e, tb)
             yield format_sse("error", {
-                "message": f"Internal processing error: {type(e).__name__}",
+                "message": "Internal processing error",
                 "type": "internal_error"
             })
             # Sprint 189b: Always emit "done" so frontend exits streaming state

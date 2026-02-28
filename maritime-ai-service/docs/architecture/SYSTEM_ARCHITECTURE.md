@@ -1,10 +1,10 @@
 # Wiii - System Architecture
 
-**Version:** 8.0 (Post-Sprint 209 — Soul AGI Foundation v1.0 Complete)
+**Version:** 8.1 (Post-Sprint 210d — Living Continuity + SOTA LLM Sentiment)
 **Updated:** 2026-02-26
 **Product:** Wiii by The Wiii Lab
-**Pattern:** Soul AGI Platform — Multi-Domain Agentic RAG with Living Agent Autonomy, Three-Layer Identity (Soul Core + Identity Core + Context State), Skill-Tool Bridge, Narrative Layer, Natural Conversation, Plugin Architecture, Product Search, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization, Cross-Platform Identity, Spaced Repetition Skill Learning
-**Codebase:** 310+ Python files, ~90,000 LOC, 63+ API endpoints, 9703 backend + 1796 desktop tests
+**Pattern:** Soul AGI Platform — Multi-Domain Agentic RAG with Living Agent Autonomy, Three-Layer Identity (Soul Core + Identity Core + Context State), Skill-Tool Bridge, Narrative Layer, Natural Conversation, SOTA LLM Sentiment Analysis, Plugin Architecture, Product Search, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization, Cross-Platform Identity, Spaced Repetition Skill Learning
+**Codebase:** 349 Python files, ~95,000 LOC, 63+ API endpoints, 9830 backend + 1841 desktop tests
 
 ---
 
@@ -1403,9 +1403,9 @@ flowchart TB
 
 ### 4.19 Living Agent System
 
-**Sprint 170 — "Linh Hồn Sống"**
+**Sprint 170 — "Linh Hồn Sống" | Enhanced: Sprints 177-210d**
 
-Makes Wiii a continuously living agent with its own soul, emotions, skills, and daily activities — inspired by OpenClaw autonomous agent architecture.
+Makes Wiii a continuously living agent with its own soul, emotions, skills, and daily activities — inspired by OpenClaw autonomous agent architecture. Sprint 210 ("Sống Thật") fixed 8 root-cause bugs that kept the system dormant. Sprint 210c added 3-tier relationship dampening for scale protection. Sprint 210d replaced keyword sentiment with SOTA LLM-based analysis (Gemini Flash structured output).
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -1418,10 +1418,10 @@ Makes Wiii a continuously living agent with its own soul, emotions, skills, and 
 │  └─────┬─────┘  └──────┬───────┘  └──────┬───────┘             │
 │        │               │                 │                      │
 │        ▼               ▼                 ▼                      │
-│  ┌─────────────────────────────────────────────┐               │
-│  │           build_system_prompt()              │               │
-│  │    (Soul + Emotion prompt injection)         │               │
-│  └─────────────────────────────────────────────┘               │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │           build_system_prompt()                             ││
+│  │    (Soul + Emotion + Narrative prompt injection)            ││
+│  └─────────────────────────────────────────────────────────────┘│
 │                                                                 │
 │  ┌──────────┐  ┌──────────────┐  ┌──────────────┐             │
 │  │  Local   │  │   Skill      │  │   Social     │             │
@@ -1430,10 +1430,20 @@ Makes Wiii a continuously living agent with its own soul, emotions, skills, and 
 │  └─────┬─────┘  └──────┬───────┘  └──────┬───────┘             │
 │        │               │                 │                      │
 │        ▼               ▼                 ▼                      │
-│  ┌─────────────────────────────────────────────┐               │
-│  │              Journal Writer                  │               │
-│  │   (Daily entries via local LLM reflection)   │               │
-│  └─────────────────────────────────────────────┘               │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │       Journal + Reflector + Goal Manager + Identity Core   ││
+│  │   (Daily entries, reflections, goal seeding, self-evolve)  ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                 │
+│  Sprint 210: Chat → Living Feedback Loop                        │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  ChatOrchestrator / ChatStream                             ││
+│  │    → Tier detection (Creator/Known/Other)                  ││
+│  │    → Creator: immediate LifeEvent → EmotionEngine          ││
+│  │    → Known/Other: record_interaction() → buffer            ││
+│  │    → Heartbeat: process_aggregate() → mood nudge           ││
+│  │    → Episodic memory (Creator + high-importance Known)     ││
+│  └─────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1442,27 +1452,43 @@ Makes Wiii a continuously living agent with its own soul, emotions, skills, and 
 | Component | Module | Description |
 |-----------|--------|-------------|
 | Soul Loader | `soul_loader.py` | Loads YAML soul config (`wiii_soul.yaml`), compiles identity/truths/boundaries into system prompt |
-| Emotion Engine | `emotion_engine.py` | Rule-based 4D state (mood, energy, social_battery, engagement), 13 event types, natural recovery |
-| Heartbeat Scheduler | `heartbeat.py` | AsyncIO background task, 30-min interval, active hours 08:00-23:00 UTC+7 |
+| Emotion Engine | `emotion_engine.py` | Rule-based 4D state (mood, energy, social_battery, engagement), 13 event types, natural recovery. Sprint 210: mood reset fix (6h→NEUTRAL not 2h→CURIOUS), lowered threshold. Sprint 210c: 3-tier relationship dampening, aggregate buffering, MIN_AGGREGATE_SAMPLE_SIZE=10. Sprint 210d: init cooldown fix (first event always processable) |
+| Sentiment Analyzer | `sentiment_analyzer.py` | Sprint 210d: SOTA LLM sentiment via Gemini Flash `with_structured_output()`. SentimentResult: user_sentiment, intensity, life_event_type, importance, episode_summary. 8s timeout + keyword fallback chain. Fire-and-forget via `asyncio.ensure_future()` — zero user latency |
+| Heartbeat Scheduler | `heartbeat.py` | AsyncIO background task, 30-min interval, active hours 08:00-23:00 UTC+7. Sprint 210: expanded journal window (morning+evening), daily reflection, goal seeding, 60s LLM timeout. Sprint 210c: refresh_known_user_cache + process_aggregate each cycle |
 | Local LLM | `local_llm.py` | Ollama `qwen3:8b` via httpx async — zero-cost 24/7 inference |
 | Skill Builder | `skill_builder.py` | DISCOVER → LEARN → PRACTICE → EVALUATE → MASTER lifecycle |
 | Journal Writer | `journal.py` | Daily structured entries via local LLM (mood_summary, learnings, goals_next) |
-| Social Browser | `social_browser.py` | Serper API + HackerNews API, keyword/LLM relevance scoring |
+| Social Browser | `social_browser.py` | Serper API + HackerNews API, keyword/LLM relevance scoring. Sprint 210: insight extraction for relevance ≥ 0.6 |
+| Reflector | `reflector.py` | Sprint 210: daily reflection (was weekly Sunday 20-21h only) |
+| Goal Manager | `goal_manager.py` | Sprint 210: seed_initial_goals() from wiii_soul.yaml interests |
+| Identity Core | `identity_core.py` | Sprint 207: self-evolving Layer 2 — insights from reflections |
+| Narrative Synthesizer | `narrative_synthesizer.py` | Sprint 206: compiles life story from journal+reflection+goals+emotion |
 
-**Feature gate:** `enable_living_agent=False` (default)
+**3-Tier Relationship Model (Sprint 210c):**
+
+| Tier | Who | Behavior | Rationale |
+|------|-----|----------|-----------|
+| TIER_CREATOR (0) | `living_agent_creator_user_ids` list | Immediate LifeEvent → mood changes instantly | Creator's feedback matters most |
+| TIER_KNOWN (1) | Users with 50+ messages in DB | Buffered → aggregate at heartbeat | Regular users contribute to overall sentiment |
+| TIER_OTHER (2) | Everyone else | Ignored (no mood impact) | Prevents strangers from affecting Wiii's emotions |
+
+**Scale protection:** MIN_AGGREGATE_SAMPLE_SIZE = 10 interactions required before aggregate can nudge mood. Prevents 1 negative message from shifting mood to CONCERNED.
+
+**Feature gates:** `enable_living_agent=False`, `enable_living_continuity=False` (default)
 
 **Integration points:**
 - `main.py` lifespan: heartbeat start/stop
-- `prompt_loader.py`: soul + emotion prompt injection in `build_system_prompt()`
-- `chat_stream.py`: USER_CONVERSATION emotion event after each response
+- `prompt_loader.py`: soul + emotion + narrative prompt injection in `build_system_prompt()`
+- `chat_orchestrator.py`: Sprint 210/210c/210d — tier-aware emotion feedback + episodic memory after each response. 210d: LLM sentiment analysis via `asyncio.ensure_future()` (fire-and-forget)
+- `chat_stream.py`: Sprint 210/210c/210d — same tier-aware logic + LLM sentiment for streaming path
 
-**API:** 6 endpoints at `/api/v1/living-agent/` (status, emotional-state, journal, skills, heartbeat, trigger)
+**API:** 20 endpoints at `/api/v1/living-agent/` (status, emotional-state, journal, skills, heartbeat, trigger, goals, reflections, narrative, identity, etc.)
 
-**Desktop:** `LivingAgentPanel` in Settings "Linh hồn" tab — MoodIndicator, SkillTree, JournalView, HeartbeatStatus
+**Desktop:** `LivingAgentPanel` in Settings "Linh hồn" tab — 5-tab dashboard (Tổng quan, Kỹ năng, Mục tiêu, Nhật ký, Suy ngẫm). Components: MoodIndicator (10 moods with MOOD_CONFIG), SkillTree, GoalsView (priority/progress/milestones), JournalView (notable_events rendering), ReflectionsView (expandable insights/patterns), HeartbeatStatus
 
 **Database:** Migration 014 — `wiii_skills`, `wiii_journal`, `wiii_browsing_log`, `wiii_emotional_snapshots`
 
-**Tests:** 99 backend + 14 desktop = 113
+**Tests:** 400+ backend + 14 desktop (Sprint 210: 50 tests, Sprint 210c: 41 tests, Sprint 210d: 24 tests)
 
 ### 4.20 Cross-Platform Identity & Dual Personality (Soul Wiii)
 

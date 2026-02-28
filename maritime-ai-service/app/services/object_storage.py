@@ -89,6 +89,14 @@ class ObjectStorageClient:
         self.bucket = bucket or settings.minio_bucket or self.BUCKET_NAME
         self.secure = secure if secure is not None else settings.minio_secure
 
+        # External endpoint for browser-facing presigned URLs
+        # In Docker: internal=minio:9000, external=localhost:9000
+        raw_external = settings.minio_external_endpoint or ""
+        self.external_endpoint = (
+            raw_external.replace("https://", "").replace("http://", "").rstrip("/")
+            if raw_external else ""
+        )
+
         # Legacy compat — some tests/callers check .url and .key
         self.url = raw_endpoint
         self.key = self.access_key
@@ -207,11 +215,10 @@ class ObjectStorageClient:
                     timeout=self.UPLOAD_TIMEOUT,
                 )
 
-                # Generate presigned URL (1h expiry)
-                try:
-                    public_url = self.get_signed_url(path, expires_in=3600)
-                except Exception:
-                    public_url = self.get_public_url(path)
+                # Use stable public URL (no expiry) for DB storage.
+                # Presigned URLs expire after 1h — unsuitable for permanent storage.
+                # MinIO bucket has public-read policy (mc anonymous set download).
+                public_url = self.get_public_url(path)
 
                 logger.info("Uploaded image to %s, URL: %s", path, public_url)
 
@@ -290,7 +297,14 @@ class ObjectStorageClient:
             Public URL string (constructed from endpoint + bucket + path)
         """
         scheme = "https" if self.secure else "http"
-        return f"{scheme}://{self.endpoint}/{self.bucket}/{path}"
+        host = self.external_endpoint or self.endpoint
+        return f"{scheme}://{host}/{self.bucket}/{path}"
+
+    def _rewrite_url_for_browser(self, url: str) -> str:
+        """Rewrite internal Docker hostname to external endpoint for browser access."""
+        if self.external_endpoint and self.endpoint != self.external_endpoint:
+            return url.replace(self.endpoint, self.external_endpoint, 1)
+        return url
 
     def get_signed_url(self, path: str, expires_in: int = 3600) -> str:
         """
@@ -309,7 +323,7 @@ class ObjectStorageClient:
                 path,
                 expires=timedelta(seconds=expires_in),
             )
-            return url
+            return self._rewrite_url_for_browser(url)
         except Exception as e:
             logger.warning("Presigned URL failed, falling back to public: %s", e)
             return self.get_public_url(path)

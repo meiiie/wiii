@@ -433,10 +433,9 @@ class TestBuildSystemPromptIntegration:
         """THÔNG TIN NGƯỜI DÙNG section with name."""
         assert "Minh" in student_prompt
 
-    def test_has_variation_section(self, student_prompt):
-        """HƯỚNG DẪN ĐA DẠNG HÓA section for follow-up."""
-        assert "HƯỚNG DẪN ĐA DẠNG HÓA" in student_prompt
-        assert "FOLLOW-UP" in student_prompt
+    def test_has_personality_section(self, student_prompt):
+        """Prompt includes personality traits (replaces old ĐA DẠNG HÓA section)."""
+        assert "TÍNH CÁCH" in student_prompt or "Phong cách" in student_prompt
 
     def test_user_name_template_replaced_in_directives(self, student_prompt):
         """{{user_name}} should be replaced with 'Minh' in directives."""

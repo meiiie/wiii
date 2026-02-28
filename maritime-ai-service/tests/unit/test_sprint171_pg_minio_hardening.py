@@ -306,6 +306,7 @@ class TestPresignedUrls:
         client.bucket = "test"
         client.secure = False
         client.endpoint = "test.co:9000"
+        client.external_endpoint = ""
 
         mock_minio = MagicMock()
         mock_minio.presigned_get_object.return_value = "http://test.co:9000/test/test/path.jpg?X-Amz-Signature=abc"
@@ -324,6 +325,7 @@ class TestPresignedUrls:
         client.bucket = "test"
         client.secure = False
         client.endpoint = "test.co:9000"
+        client.external_endpoint = ""
 
         mock_minio = MagicMock()
         mock_minio.presigned_get_object.side_effect = Exception("SDK error")
@@ -394,15 +396,16 @@ class TestAutovacuumMigration:
 # ============================================================================
 
 class TestUploadSafety:
-    """Verify upload uses signed URLs by default."""
+    """Verify upload uses stable public URLs (not expiring presigned URLs)."""
 
-    def test_upload_image_prefers_signed_url(self):
-        """upload_image tries get_signed_url before get_public_url."""
+    def test_upload_image_uses_public_url(self):
+        """upload_image uses get_public_url (stable, no expiry) for DB storage."""
         import inspect
         from app.services.object_storage import ObjectStorageClient
         source = inspect.getsource(ObjectStorageClient.upload_image)
-        # signed URL call should appear before public URL
-        signed_pos = source.find("get_signed_url")
-        public_pos = source.find("get_public_url")
-        assert signed_pos != -1, "upload_image should call get_signed_url"
-        assert signed_pos < public_pos, "get_signed_url should be tried first"
+        # Design decision: presigned URLs expire after 1h — unsuitable for
+        # permanent DB storage. upload_image uses stable public URLs instead.
+        assert "get_public_url" in source, "upload_image should call get_public_url"
+        assert "get_signed_url" not in source, (
+            "upload_image should NOT use get_signed_url — presigned URLs expire"
+        )

@@ -517,17 +517,25 @@ async def liveness():
 async def readiness():
     """
     Kubernetes readiness probe.
-    
+
     Checks if critical services (PostgreSQL) are available.
     Returns 503 if not ready to accept traffic.
     """
+    from fastapi.responses import JSONResponse
+
     try:
         chat_repo = get_chat_history_repository()
-        
+
         if chat_repo.is_available():
             return {"status": "ready"}
         else:
-            return {"status": "not_ready", "reason": "Database unavailable"}
+            return JSONResponse(
+                status_code=503,
+                content={"status": "not_ready", "reason": "Database unavailable"},
+            )
     except Exception as e:
         logger.warning("Readiness check failed: %s", e)
-        return {"status": "not_ready", "reason": "Service check failed"}
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "reason": "Service check failed"},
+        )

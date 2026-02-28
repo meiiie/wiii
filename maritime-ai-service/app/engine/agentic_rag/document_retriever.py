@@ -187,7 +187,7 @@ class DocumentRetriever:
             List of EvidenceImage objects
         """
         import asyncpg
-        from app.core.config import settings
+        from app.repositories.dense_search_repository import get_dense_search_repository
         # Import EvidenceImage from rag_agent (no circular dependency since
         # rag_agent imports DocumentRetriever, but EvidenceImage is a standalone dataclass)
         from app.engine.agentic_rag.rag_agent import EvidenceImage
@@ -196,9 +196,10 @@ class DocumentRetriever:
         seen_urls = set()
 
         try:
-            conn = await asyncpg.connect(settings.asyncpg_url)
-            try:
-                # Query for image URLs - use id::text since schema uses UUID id not node_id
+            repo = get_dense_search_repository()
+            pool = await repo._get_pool()
+
+            async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
                     SELECT id::text as node_id, image_url, page_number, document_id
@@ -227,8 +228,6 @@ class DocumentRetriever:
                     # Limit to max_images
                     if len(evidence_images) >= max_images:
                         break
-            finally:
-                await conn.close()
 
         except Exception as e:
             logger.warning("Failed to collect evidence images: %s", e)

@@ -9,6 +9,7 @@ Requirements: 2.1, 2.5, 6.1, 6.2, 6.3
 **SINGLETON PATTERN**: Only ONE instance to avoid exceeding connection limits.
 """
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import List, Optional
@@ -112,8 +113,11 @@ class DenseSearchRepository:
                 idle_timeout = getattr(settings, "postgres_idle_in_transaction_timeout_ms", 60000)
 
                 async def _init_conn(conn):
-                    await conn.execute(f"SET statement_timeout = {int(stmt_timeout)}")
-                    await conn.execute(f"SET idle_in_transaction_session_timeout = {int(idle_timeout)}")
+                    # int() cast prevents SQL injection; values are config-only, never user input
+                    safe_stmt = max(1000, min(int(stmt_timeout), 300000))
+                    safe_idle = max(1000, min(int(idle_timeout), 300000))
+                    await conn.execute(f"SET statement_timeout = {safe_stmt}")
+                    await conn.execute(f"SET idle_in_transaction_session_timeout = {safe_idle}")
 
                 self._pool = await asyncpg.create_pool(
                     db_url,
@@ -254,7 +258,6 @@ class DenseSearchRepository:
                     # Parse section hierarchy from metadata
                     metadata = row.get("metadata") or {}
                     if isinstance(metadata, str):
-                        import json
                         try:
                             metadata = json.loads(metadata)
                         except Exception as e:
@@ -466,6 +469,7 @@ class DenseSearchRepository:
         image_url: str = "",
         metadata: dict = None,
         organization_id: Optional[str] = None,
+        bounding_boxes: Optional[list] = None,
     ) -> bool:
         """
         Store a semantic chunk with full metadata.
@@ -504,8 +508,8 @@ class DenseSearchRepository:
             embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
 
             # Convert metadata to JSON
-            import json
             metadata_json = json.dumps(metadata) if metadata else '{}'
+            bounding_boxes_json = json.dumps(bounding_boxes, ensure_ascii=False) if bounding_boxes else None
 
             # Sprint 170c: Resolve effective org_id
             from app.core.org_filter import get_effective_org_id
@@ -518,9 +522,9 @@ class DenseSearchRepository:
                         INSERT INTO knowledge_embeddings (
                             node_id, content, embedding, document_id, page_number,
                             chunk_index, content_type, confidence_score, image_url, metadata,
-                            organization_id
+                            organization_id, bounding_boxes
                         )
-                        VALUES ($1, $2, $3::vector, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
+                        VALUES ($1, $2, $3::vector, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12::jsonb)
                         ON CONFLICT (node_id)
                         DO UPDATE SET
                             content = EXCLUDED.content,
@@ -533,6 +537,7 @@ class DenseSearchRepository:
                             image_url = EXCLUDED.image_url,
                             metadata = EXCLUDED.metadata,
                             organization_id = COALESCE(EXCLUDED.organization_id, knowledge_embeddings.organization_id),
+                            bounding_boxes = EXCLUDED.bounding_boxes,
                             updated_at = NOW()
                         """,
                         node_id,
@@ -546,15 +551,17 @@ class DenseSearchRepository:
                         image_url,
                         metadata_json,
                         eff_org_id,
+                        bounding_boxes_json,
                     )
                 else:
                     await conn.execute(
                         """
                         INSERT INTO knowledge_embeddings (
                             node_id, content, embedding, document_id, page_number,
-                            chunk_index, content_type, confidence_score, image_url, metadata
+                            chunk_index, content_type, confidence_score, image_url, metadata,
+                            bounding_boxes
                         )
-                        VALUES ($1, $2, $3::vector, $4, $5, $6, $7, $8, $9, $10::jsonb)
+                        VALUES ($1, $2, $3::vector, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb)
                         ON CONFLICT (node_id)
                         DO UPDATE SET
                             content = EXCLUDED.content,
@@ -566,6 +573,7 @@ class DenseSearchRepository:
                             confidence_score = EXCLUDED.confidence_score,
                             image_url = EXCLUDED.image_url,
                             metadata = EXCLUDED.metadata,
+                            bounding_boxes = EXCLUDED.bounding_boxes,
                             updated_at = NOW()
                         """,
                         node_id,
@@ -578,6 +586,7 @@ class DenseSearchRepository:
                         confidence_score,
                         image_url,
                         metadata_json,
+                        bounding_boxes_json,
                     )
 
                 logger.debug(

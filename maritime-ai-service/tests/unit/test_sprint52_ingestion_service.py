@@ -290,16 +290,18 @@ class TestIngestPdf:
     @pytest.mark.asyncio
     async def test_pdf_conversion_error(self):
         service = self._make_service()
+        service.get_pdf_page_count = MagicMock(return_value=5)
         service.convert_pdf_to_images = MagicMock(side_effect=Exception("PDF error"))
 
         result = await service.ingest_pdf("/bad/path.pdf", "doc1", resume=False)
-        assert result.total_pages == 0
+        assert result.total_pages == 5
         assert len(result.errors) == 1
         assert "PDF conversion failed" in result.errors[0]
 
     @pytest.mark.asyncio
     async def test_empty_pdf(self):
         service = self._make_service()
+        service.get_pdf_page_count = MagicMock(return_value=0)
         service.convert_pdf_to_images = MagicMock(return_value=([], 0))
 
         result = await service.ingest_pdf("/empty.pdf", "doc1", resume=False)
@@ -310,6 +312,7 @@ class TestIngestPdf:
     async def test_success_single_page(self):
         service = self._make_service()
         mock_image = MagicMock()
+        service.get_pdf_page_count = MagicMock(return_value=1)
         service.convert_pdf_to_images = MagicMock(return_value=([mock_image], 1))
 
         from app.services.multimodal_ingestion_service import PageResult
@@ -330,6 +333,7 @@ class TestIngestPdf:
     async def test_page_processing_error(self):
         service = self._make_service()
         mock_image = MagicMock()
+        service.get_pdf_page_count = MagicMock(return_value=1)
         service.convert_pdf_to_images = MagicMock(return_value=([mock_image], 1))
         service._process_page = AsyncMock(side_effect=Exception("Vision API error"))
         service._clear_progress = MagicMock()
@@ -341,10 +345,10 @@ class TestIngestPdf:
     @pytest.mark.asyncio
     async def test_max_pages_limit(self):
         service = self._make_service()
-        # convert_pdf_to_images is called with start_page/end_page before max_pages
-        # is applied. The loop iterates len(images), so provide only 2 images to
-        # simulate the limited conversion matching max_pages=2.
+        # get_pdf_page_count reports 5 pages total, but max_pages=2 limits processing
+        # convert_pdf_to_images is called with batch_end=2 so it only returns 2 images
         images = [MagicMock() for _ in range(2)]
+        service.get_pdf_page_count = MagicMock(return_value=5)
         service.convert_pdf_to_images = MagicMock(return_value=(images, 5))
 
         from app.services.multimodal_ingestion_service import PageResult
@@ -361,6 +365,7 @@ class TestIngestPdf:
     async def test_direct_extraction_tracking(self):
         service = self._make_service()
         mock_image = MagicMock()
+        service.get_pdf_page_count = MagicMock(return_value=1)
         service.convert_pdf_to_images = MagicMock(return_value=([mock_image], 1))
 
         from app.services.multimodal_ingestion_service import PageResult

@@ -160,7 +160,7 @@ class TestBuildFactExtractionPromptDispatch:
         """When enable_enhanced_extraction=False, uses legacy prompt."""
         fe = _make_extractor()
 
-        with patch("app.core.config.settings") as mock_settings:
+        with patch("app.engine.semantic_memory.extraction.settings") as mock_settings:
             mock_settings.enable_enhanced_extraction = False
             prompt = fe._build_fact_extraction_prompt("Toi la Minh")
 

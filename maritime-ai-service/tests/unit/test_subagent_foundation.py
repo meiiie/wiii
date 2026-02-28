@@ -420,7 +420,7 @@ class TestExecuteSubagent:
         config = SubagentConfig(name="bad", max_retries=0)
         result = await execute_subagent(bad_func, config, {})
         assert result.status == SubagentStatus.ERROR
-        assert "ValueError" in (result.error_message or "")
+        assert result.error_message == "Subagent processing error"
 
     @pytest.mark.asyncio
     async def test_retry_on_error(self):
@@ -447,7 +447,7 @@ class TestExecuteSubagent:
         config = SubagentConfig(name="fail", max_retries=2)
         result = await execute_subagent(always_fail, config, {})
         assert result.status == SubagentStatus.ERROR
-        assert "permanent" in (result.error_message or "")
+        assert result.error_message == "Subagent processing error"
 
     @pytest.mark.asyncio
     async def test_fallback_raise_error(self):

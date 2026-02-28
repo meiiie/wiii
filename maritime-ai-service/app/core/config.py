@@ -237,6 +237,7 @@ class Settings(BaseSettings):
 
     # Object Storage (MinIO / S3-compatible)
     minio_endpoint: Optional[str] = Field(default=None, description="MinIO endpoint (host:port, no scheme)")
+    minio_external_endpoint: Optional[str] = Field(default=None, description="MinIO endpoint for browser-facing presigned URLs (defaults to minio_endpoint)")
     minio_access_key: Optional[str] = Field(default=None, description="MinIO access key")
     minio_secret_key: Optional[str] = Field(default=None, description="MinIO secret key")
     minio_bucket: str = Field(default="wiii-docs", description="Storage bucket for document images")
@@ -698,6 +699,13 @@ class Settings(BaseSettings):
     living_agent_autonomy_level: int = Field(default=0, ge=0, le=3, description="Current autonomy level (0=supervised, 3=full trust)")
     living_agent_enable_autonomy_graduation: bool = Field(default=False, description="Enable automatic trust level graduation")
 
+    # Sprint 210: Living Continuity — conversations feed into Living Agent emotion/memory/episodes
+    enable_living_continuity: bool = Field(default=False, description="Chat conversations feed into Living Agent emotion/memory/episodes (requires enable_living_agent)")
+
+    # Sprint 210c: Relationship Tiers — emotion impact weighted by user closeness
+    living_agent_creator_user_ids: str = Field(default="", description="Comma-separated user IDs treated as Tier 0 (creator). Plus anyone with role=admin")
+    living_agent_known_user_threshold: int = Field(default=50, ge=5, le=1000, description="Minimum total_messages to qualify as Tier 1 (known user)")
+
     # Sprint 177: Real Skill Learning via Browsing
     living_agent_enable_skill_learning: bool = Field(default=False, description="Enable browsing→skill learning pipeline with SM-2 spaced repetition")
     living_agent_quiz_questions_per_session: int = Field(default=3, ge=1, le=10, description="Number of quiz questions per practice session")
@@ -885,6 +893,19 @@ class Settings(BaseSettings):
 
     # Identity Core (Sprint 207)
     enable_identity_core: bool = Field(default=False, description="Self-evolving identity layer — Wiii learns about itself from reflections (requires enable_living_agent)")
+
+    # SoulBridge (Sprint 213)
+    enable_soul_bridge: bool = Field(default=False, description="Enable cross-service soul-to-soul communication bridge (WebSocket + HTTP)")
+    soul_bridge_peers: str = Field(default="", description="Comma-separated peer entries: 'peer_id=url' or 'url' (e.g., 'bro=http://localhost:8001')")
+    soul_bridge_heartbeat_interval: int = Field(default=30, ge=5, description="SoulBridge peer heartbeat ping interval in seconds")
+    soul_bridge_reconnect_max: int = Field(default=60, ge=5, description="Max reconnect backoff delay in seconds")
+    soul_bridge_ws_path: str = Field(default="/api/v1/soul-bridge/ws", description="WebSocket path on peer service")
+    soul_bridge_bridge_events: str = Field(default="ESCALATION,STATUS_UPDATE,MOOD_CHANGE,DISCOVERY,DAILY_REPORT,CONSULTATION,CONSULTATION_REPLY", description="Comma-separated event types to forward across bridge")
+
+    # Cross-Soul Query Routing (Sprint 215)
+    enable_cross_soul_query: bool = Field(default=False, description="Enable cross-soul consultation routing — admin asks Wiii, Wiii asks Bro")
+    cross_soul_query_timeout: float = Field(default=15.0, ge=1.0, le=60.0, description="Timeout in seconds for cross-soul query response")
+    cross_soul_query_peer_id: str = Field(default="bro", description="Default peer soul ID for cross-soul consultation")
 
     # Intelligent Tool Selection (Sprint 192)
     enable_intelligent_tool_selection: bool = Field(default=False, description="Enable intelligent tool selection (4-step pipeline)")

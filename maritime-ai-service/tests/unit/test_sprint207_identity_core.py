@@ -424,11 +424,11 @@ class TestConfigGating:
 
     @patch("app.core.config.get_settings")
     def test_flag_exists_in_config(self, mock_gs):
-        """Verify enable_identity_core flag exists."""
+        """Verify enable_identity_core flag exists with default=False."""
         from app.core.config import Settings
-        s = Settings()
-        assert hasattr(s, "enable_identity_core")
-        assert s.enable_identity_core is False
+        assert "enable_identity_core" in Settings.model_fields
+        # Check code default (not .env override)
+        assert Settings.model_fields["enable_identity_core"].default is False
 
     @patch("app.core.config.get_settings")
     def test_hot_path_gated(self, mock_gs):

@@ -11,11 +11,12 @@ Triple gate: enable_knowledge_visualization + enable_multi_tenant + org membersh
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 from app.core.rate_limit import limiter
+from app.core.security import AuthenticatedUser, require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +36,10 @@ class RagFlowRequest(BaseModel):
 # Auth Helper
 # =============================================================================
 
-async def _require_org_member_viz(request: Request, org_id: str) -> str:
-    """Triple gate: feature flag + multi_tenant + org membership."""
+async def _require_org_member_viz(auth: AuthenticatedUser, org_id: str) -> str:
+    """Triple gate: feature flag + multi_tenant + org membership.
+    Sprint 217: Uses require_auth dependency — no header trust.
+    """
     settings = get_settings()
 
     if not settings.enable_knowledge_visualization:
@@ -51,23 +54,20 @@ async def _require_org_member_viz(request: Request, org_id: str) -> str:
             detail="Multi-tenant mode is required",
         )
 
-    user_id = request.headers.get("x-user-id", "anonymous")
-    role = request.headers.get("x-role", "student")
-
     # Platform admin bypass
-    if role == "admin":
-        return user_id
+    if auth.role == "admin":
+        return auth.user_id
 
     # Check org membership
     from app.repositories.organization_repository import get_organization_repository
     repo = get_organization_repository()
-    if not repo.is_user_in_org(user_id, org_id):
+    if not repo.is_user_in_org(auth.user_id, org_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not a member of this organization",
         )
 
-    return user_id
+    return auth.user_id
 
 
 # =============================================================================
@@ -82,9 +82,10 @@ async def get_knowledge_scatter(
     method: str = "pca",
     dimensions: int = 2,
     limit: int = 500,
+    auth: AuthenticatedUser = Depends(require_auth),
 ):
     """Compute PCA or t-SNE scatter from org knowledge embeddings."""
-    await _require_org_member_viz(request, org_id)
+    await _require_org_member_viz(auth, org_id)
 
     # Validate params
     if method not in ("pca", "tsne"):
@@ -114,9 +115,10 @@ async def get_knowledge_graph(
     request: Request,
     org_id: str,
     max_nodes: int = 50,
+    auth: AuthenticatedUser = Depends(require_auth),
 ):
     """Build knowledge graph from org documents and chunks."""
-    await _require_org_member_viz(request, org_id)
+    await _require_org_member_viz(auth, org_id)
 
     if max_nodes < 5 or max_nodes > 200:
         raise HTTPException(
@@ -135,9 +137,10 @@ async def simulate_rag_flow_endpoint(
     request: Request,
     org_id: str,
     body: RagFlowRequest,
+    auth: AuthenticatedUser = Depends(require_auth),
 ):
     """Simulate RAG retrieval pipeline for a query."""
-    await _require_org_member_viz(request, org_id)
+    await _require_org_member_viz(auth, org_id)
 
     from app.services.knowledge_visualization_service import simulate_rag_flow
     result = await simulate_rag_flow(org_id, query=body.query, top_k=body.top_k)

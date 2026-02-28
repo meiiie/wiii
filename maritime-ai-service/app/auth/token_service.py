@@ -126,11 +126,12 @@ def create_refresh_token() -> str:
     return secrets.token_urlsafe(64)
 
 
-def verify_access_token(token: str) -> AccessTokenPayload:
-    """Verify and decode an access token. Raises JWTError on failure.
+def decode_jwt_payload(token: str) -> dict:
+    """Decode and validate a JWT token, returning the raw claims dict.
 
-    Sprint 192: Validates `aud` claim with backward compat for legacy tokens.
-    Checks JTI denylist when enabled.
+    Single-source decode logic: audience fallback + JTI denylist check.
+    Raises JWTError on failure. Used by both verify_access_token() and
+    security.verify_jwt_token().
     """
     from jose import JWTError as _JWTError
 
@@ -151,14 +152,19 @@ def verify_access_token(token: str) -> AccessTokenPayload:
             options={"verify_aud": False},
         )
 
-    result = AccessTokenPayload(**payload)
-
     # Sprint 192: Check JTI denylist
-    if settings.enable_jti_denylist and result.jti:
-        if is_jti_denied(result.jti):
+    jti = payload.get("jti")
+    if settings.enable_jti_denylist and jti:
+        if is_jti_denied(jti):
             raise _JWTError("Token has been revoked (jti denied)")
 
-    return result
+    return payload
+
+
+def verify_access_token(token: str) -> AccessTokenPayload:
+    """Verify and decode an access token. Raises JWTError on failure."""
+    payload = decode_jwt_payload(token)
+    return AccessTokenPayload(**payload)
 
 
 async def create_token_pair(

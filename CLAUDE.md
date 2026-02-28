@@ -58,7 +58,7 @@ To work as a different agent:
 
 ## Project Overview
 
-**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright+Crawl4AI+Scrapling), Google OAuth + LMS integration, multi-tenant data isolation, org-level customization, two-tier admin (system + org), Living Agent autonomy system (Soul AGI — all coding phases complete), spaced repetition skill learning, cross-platform memory sync, unified skill architecture, and MCP tool exposure. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. 320+ Python files, 63+ API endpoints, 72 feature flags, 9703 backend tests (0 failures), 1796 desktop tests. Connection pool: min=10, max=50 (Sprint 173).
+**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright+Crawl4AI+Scrapling), Google OAuth + LMS integration, multi-tenant data isolation, org-level customization, two-tier admin (system + org), Living Agent autonomy system (Soul AGI — all coding phases complete), spaced repetition skill learning, cross-platform memory sync, unified skill architecture, and MCP tool exposure. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. 354 Python files, 70+ API endpoints, 81 feature flags, 9937 backend tests (344 files), 1841 desktop tests (67 files). Connection pool: min=10, max=50 (Sprint 173).
 
 ### Domain Plugin System (Feb 2026)
 - **Plugin architecture**: `app/domains/*/domain.yaml` — add new domains by creating a folder + YAML config
@@ -278,16 +278,20 @@ app/domains/
 - **Permissions**: `"action:resource"` strings. **Persona overlay**: Org-specific prompt via PromptLoader
 - **API**: `GET/PATCH /organizations/{id}/settings`, `GET /organizations/{id}/permissions`
 
-### Living Agent System (Sprint 170, enhanced Sprints 177-209)
-- **Feature-gated**: `enable_living_agent=False` — 21 modules in `app/engine/living_agent/` (7,500+ LOC)
+### Living Agent System (Sprint 170, enhanced Sprints 177-210d)
+- **Feature-gated**: `enable_living_agent=False`, `enable_living_continuity=False` — 22 modules in `app/engine/living_agent/` (8,500+ LOC)
 - **Core**: Soul (`wiii_soul.yaml`), 4D emotion (mood/energy/social/engagement), 30-min heartbeat, Ollama `qwen3:8b`
 - **Skills**: DISCOVER→LEARN→PRACTICE→EVALUATE→MASTER lifecycle + SM-2 spaced repetition (Sprint 177)
-- **Modules**: soul_loader, emotion_engine, heartbeat, skill_builder, skill_learner, journal, social_browser, reflector, goal_manager, autonomy_manager, proactive_messenger, briefing_composer, routine_tracker, weather_service, channel_sender, local_llm, safety, models, identity_core, narrative_synthesizer
+- **Modules**: soul_loader, emotion_engine, heartbeat, skill_builder, skill_learner, journal, social_browser, reflector, goal_manager, autonomy_manager, proactive_messenger, briefing_composer, routine_tracker, weather_service, channel_sender, local_llm, safety, models, identity_core, narrative_synthesizer, sentiment_analyzer
 - **Persistent Emotion** (Sprint 188): save/load from DB, circadian rhythm (40% blend energy curve), survives restarts
 - **Module Wiring** (Sprint 208): RoutineTracker→ChatOrchestrator, ProactiveMessenger→Heartbeat, AutonomyManager→Heartbeat
-- **API**: 20 endpoints at `/api/v1/living-agent/`. **Desktop**: `LivingAgentPanel` (3-tab dashboard)
+- **Living Continuity** (Sprint 210): Chat→Emotion feedback, episodic memory, daily reflection, journal morning+evening, insight extraction from browsing, goal seeding from soul, LLM 60s timeout
+- **Emotional Dampening** (Sprint 210b): Mood cooldown (30s) + sentiment accumulator (3-event threshold) prevents mood ping-pong from concurrent users
+- **Relationship Tiers** (Sprint 210c): 3-tier psychology model — CREATOR (admin, immediate mood) → KNOWN (50+ msgs, aggregate-only) → OTHER (no mood impact). In-memory buffering, heartbeat aggregate processing. Min 10 samples before aggregate nudge. Scales to 10K+ users
+- **SOTA LLM Sentiment** (Sprint 210d): Gemini Flash structured output replaces keyword matching. Fire-and-forget async (zero latency). Fallback: structured → raw JSON → default neutral. Understands Vietnamese without diacritics, sarcasm, context. Episode summaries in Vietnamese first-person from Wiii's perspective
+- **API**: 19 endpoints at `/api/v1/living-agent/`. **Desktop**: `LivingAgentPanel` (5-tab dashboard: Tổng quan, Kỹ năng, Mục tiêu, Nhật ký, Suy ngẫm)
 - **Docker**: `docker-compose.soul-agi.yml` — full stack with Ollama + Cloudflare Tunnel for VPS
-- **Status**: All coding phases complete (1A-5B + SOTA 204-209). Remaining: webhook testing (Phase 0), VPS deployment (Phase 6)
+- **Status**: All coding phases complete (1A-5B + SOTA 204-210d). Live tested. Remaining: VPS deployment (Phase 6)
 
 ### Natural Conversation System (Sprint 203, SOTA 2026)
 - **Feature-gated**: `enable_natural_conversation=False` — phase-aware natural conversation
@@ -296,7 +300,7 @@ app/domains/
 - **Changes**: Canned greeting bypass, positive phase framing, greeting strip bypass, phase-aware fallback, natural synthesis prompt
 - **Diversity**: `llm_presence_penalty` + `llm_frequency_penalty` for response variation
 
-### Soul AGI Two-Path Architecture (Sprints 204-209 — ALL CODING COMPLETE)
+### Soul AGI Two-Path Architecture (Sprints 204-210d — LIVE TESTED)
 - **Audit report**: `.claude/reports/SOUL-AGI-AUDIT-2026-02-25.md`
 - **SOTA reference**: `memory/soul-agi-architecture.md` — OpenClaw, Letta, Nomi, Voyager, MECoT patterns
 - **Three-Layer Identity**: Soul Core (immutable) → Identity Core (self-evolving, Sprint 207) → Context State (per-turn)
@@ -306,6 +310,22 @@ app/domains/
 - **Identity Core** (Sprint 207): Self-evolving Layer 2 — insights from reflections, drift prevention via Soul Core validation. Gate: `enable_identity_core`
 - **Module Wiring** (Sprint 208): All Living Agent modules wired into pipeline (RoutineTracker, ProactiveMessenger, AutonomyManager)
 - **E2E Tests** (Sprint 209): 74 integration tests across 15 groups validating full pipeline
+- **Living Continuity** (Sprint 210): 8 bug fixes — chat→emotion feedback, mood reset (6h→NEUTRAL), daily reflection, expanded journal, insight extraction, goal seeding, episodic memory, LLM timeout
+- **Relationship Psychology** (Sprint 210b/c): Construal Level Theory + Dunbar's Number — 3-tier model (CREATOR/KNOWN/OTHER), dampening, aggregate processing, 10K-scale safe
+
+### Soul-to-Soul Communication Bridge (Sprint 213)
+- **Feature-gated**: `enable_soul_bridge=False` — real-time cross-service soul communication
+- **3-Layer Architecture**: Agent Cards (A2A-inspired identity at `/.well-known/agent.json`) + SoulBridge (WebSocket + HTTP transport) + EventBus integration
+- **Package**: `app/engine/soul_bridge/` — 5 modules: models, agent_card, transport, bridge, __init__
+- **Models**: `AgentCard` (soul identity), `SoulBridgeMessage` (envelope), `PeerConnection` (transport), `SoulBridge` (core)
+- **Transport**: WebSocket primary + HTTP POST fallback. Exponential backoff reconnect (1s→2s→4s→...→max). Priority-based retry (CRITICAL 1s/30x, HIGH 5s/10x, NORMAL 30s/3x, LOW no retry)
+- **Anti-Echo**: Events with `source: "bridge:<peer>"` never re-forwarded. Prevents infinite loops
+- **Dedup Cache**: UUID-based, 5-min TTL, background cleanup every 60s
+- **Bridge-worthy events**: ESCALATION, STATUS_UPDATE, MOOD_CHANGE, DISCOVERY, DAILY_REPORT (configurable)
+- **Heartbeat integration**: `HeartbeatScheduler._broadcast_soul_bridge()` sends status after each cycle
+- **Bro side**: `E:\Sach\DuAn\bro-subsoul\core\soul_bridge.py` — lightweight client connecting TO Wiii
+- **API**: 7 endpoints at `/api/v1/soul-bridge/` (status, peers, card, events, ws, connect, disconnect) + `/.well-known/agent.json`
+- **Tests**: 77 Wiii tests + 30 Bro tests, 0 failures
 
 ### Cross-Platform Identity & Soul Wiii (Sprint 174, enhanced Sprint 177)
 - **Feature-gated**: `enable_cross_platform_identity=False` — canonical identity + dual personality (Professional vs Soul)
@@ -333,7 +353,7 @@ app/domains/
 │   │   ├── stores/            # 13 Zustand stores (auth, org, chat, avatar, settings, living-agent, admin, ...)
 │   │   ├── hooks/             # useSSEStream, useAutoScroll, useKeyboardShortcuts
 │   │   ├── lib/               # 28 utilities (avatar, org-branding, storage, theme, embed-auth)
-│   │   └── __tests__/         # 62 test files, 1796 Vitest tests
+│   │   └── __tests__/         # 67 test files, 1841 Vitest tests
 │   └── src-tauri/             # Rust backend (Tauri plugins, splash screen)
 │
 └── maritime-ai-service/       # Main backend (297+ Python files)
@@ -344,7 +364,7 @@ app/domains/
     │   ├── channels/          # Multi-channel gateway (WebSocket, Telegram)
     │   ├── domains/           # Domain plugins (maritime/, traffic_law/, _template/)
     │   ├── mcp/               # MCP server (fastapi-mcp), client (MCPToolManager), adapter, tool_server
-    │   ├── engine/            # Core AI: agentic_rag/, multi_agent/ (9 agents), tools/, search_platforms/, llm_providers/, character/, semantic_memory/, living_agent/, skills/
+    │   ├── engine/            # Core AI: agentic_rag/, multi_agent/ (9 agents), tools/, search_platforms/, llm_providers/, character/, semantic_memory/, living_agent/, skills/, soul_bridge/
     │   ├── integrations/      # LMS integration (webhook, enrichment, API client)
     │   ├── services/          # Business logic: chat_orchestrator, graph_streaming, session_manager
     │   ├── repositories/      # 16 data access repos (all org-aware since Sprint 160)
@@ -352,7 +372,7 @@ app/domains/
     │   └── models/            # Pydantic schemas (schemas.py, organization.py + OrgSettings)
     ├── alembic/               # 34 database migrations
     ├── scripts/               # Test and ingestion scripts
-    ├── tests/                 # 350+ test files, 9703 unit tests (Deep Audit: 0 failures, all clean)
+    ├── tests/                 # 342+ test files, 9830 unit tests (Sprint 210d: 0 failures, all clean)
     └── docs/architecture/     # SYSTEM_ARCHITECTURE.md (v7.0), SYSTEM_FLOW.md, FOLDER_MAP.md
 ```
 
@@ -400,8 +420,11 @@ enable_character_tools: bool = True     # Character introspection/update (per-us
 enable_character_reflection: bool = True # Stanford Generative Agents reflection
 enable_soul_emotion: bool = False      # Soul emotion engine for avatar
 
-# Living Agent (Sprint 170)
+# Living Agent (Sprint 170, enhanced 210c)
 enable_living_agent: bool = False     # Autonomous soul, emotion, heartbeat, skills, journal
+enable_living_continuity: bool = False # Chat→emotion feedback + episodic memory + tier system (Sprint 210)
+living_agent_creator_user_ids: str = "" # Comma-separated Tier 0 creator IDs (Sprint 210c)
+living_agent_known_user_threshold: int = 50 # Min messages for Tier 1 known user (Sprint 210c)
 
 # Skill Learning, Cross-Platform, Memory (Sprints 174, 177)
 living_agent_enable_skill_learning: bool = False  # SM-2 spaced repetition
@@ -422,6 +445,14 @@ tool_selection_max_candidates: int = 15  # Max tools per query
 enable_skill_tool_bridge: bool = False  # Skill↔Tool bridge: tool execution → skill advancement (Sprint 205)
 enable_narrative_context: bool = False  # Inject Wiii's life narrative into system prompt (Sprint 206)
 enable_identity_core: bool = False  # Self-evolving identity — Wiii learns about itself from reflections (Sprint 207)
+
+# Soul Bridge (Sprint 213)
+enable_soul_bridge: bool = False     # Soul-to-soul communication (WebSocket + HTTP)
+soul_bridge_peers: str = ""          # Comma-separated peer URLs
+soul_bridge_heartbeat_interval: int = 30  # Peer heartbeat ping interval (seconds)
+soul_bridge_reconnect_max: int = 60  # Max reconnect delay (seconds)
+soul_bridge_ws_path: str = "/api/v1/soul-bridge/ws"  # WebSocket path
+soul_bridge_bridge_events: str = "ESCALATION,STATUS_UPDATE,MOOD_CHANGE,DISCOVERY,DAILY_REPORT"
 
 # MCP, Channels, Extensions
 enable_mcp_server: bool = False       # Expose tools via MCP at /mcp
@@ -559,6 +590,18 @@ GET  /api/v1/living-agent/heartbeat        # Heartbeat scheduler info
 POST /api/v1/living-agent/heartbeat/trigger # Manually trigger heartbeat cycle
 ```
 
+### Soul Bridge API (Sprint 213)
+```
+GET  /api/v1/soul-bridge/status              # Bridge status + peer connection states
+GET  /api/v1/soul-bridge/peers               # List connected peers with agent cards
+GET  /api/v1/soul-bridge/peers/{peer_id}/card  # Specific peer's agent card
+POST /api/v1/soul-bridge/events              # HTTP fallback for receiving events
+POST /api/v1/soul-bridge/connect             # Manual peer connection
+POST /api/v1/soul-bridge/disconnect          # Manual peer disconnect
+WS   /api/v1/soul-bridge/ws                  # WebSocket real-time connection
+GET  /.well-known/agent.json                 # Soul identity card (A2A-inspired)
+```
+
 ---
 
 ## Prompt System
@@ -635,7 +678,7 @@ npx vitest run       # Run 1796 tests
 
 ### Key Components
 - `AppShell` (layout), `ChatView` (chat), `SettingsPage` (4 tabs), `ThinkingBlock`, `StreamingIndicator`
-- `LivingAgentPanel` (3-tab dashboard), `OrgManagerPanel` (4-tab org admin), `AdminPanel` (7-tab system admin)
+- `LivingAgentPanel` (5-tab dashboard: overview, skills, goals, journal, reflections), `OrgManagerPanel` (4-tab org admin), `AdminPanel` (7-tab system admin)
 
 ### Conversation Persistence (Sprint 15)
 - **Immediate persist**: create/delete/rename/finalize. **Debounced** (2s): addUserMessage
@@ -651,7 +694,7 @@ pytest -m integration                   # Tests requiring real services
 pytest tests/property/ -v               # Property-based tests (Hypothesis)
 ```
 
-**Current: Backend 9703 unit tests (350+ files), Desktop 1796 Vitest tests (62 files) — all passed, 0 failures** (as of Deep Audit 2026-02-26)
+**Current: Backend 9830 unit tests (342 files), Desktop 1841 Vitest tests (67 files)** (as of Sprint 210d, 2026-02-26)
 
 ### Backend Test Commands
 ```bash

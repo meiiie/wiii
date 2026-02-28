@@ -223,7 +223,7 @@ async def chat_completion(
             }
         )
     except Exception as e:
-        logger.exception(f"Unexpected error processing chat request: {e}")
+        logger.exception("Unexpected error processing chat request: %s", e)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -379,6 +379,16 @@ async def get_chat_history(
     Returns:
         GetHistoryResponse with messages and pagination info
     """
+    # CHAT-1: Ownership check — non-admin can only access own history
+    if auth.role != "admin" and auth.user_id != user_id:
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={
+                "error": "permission_denied",
+                "message": "Bạn chỉ có thể xem lịch sử của chính mình.",
+            }
+        )
+
     try:
         # Validate limit
         if limit > 100:
@@ -416,7 +426,7 @@ async def get_chat_history(
         )
         
     except Exception as e:
-        logger.exception(f"Error retrieving chat history: {e}")
+        logger.exception("Error retrieving chat history: %s", e)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -491,18 +501,18 @@ async def delete_chat_history(
         
         logger.info(
             "Deleted %d chat messages for user %s by %s (%s)",
-            deleted_count, user_id, request.requesting_user_id, request.role
+            deleted_count, user_id, auth.user_id, auth.role
         )
-        
+
         return DeleteHistoryResponse(
             status="deleted",
             user_id=user_id,
             messages_deleted=deleted_count,
-            deleted_by=request.requesting_user_id
+            deleted_by=auth.user_id
         )
         
     except Exception as e:
-        logger.exception(f"Error deleting chat history: {e}")
+        logger.exception("Error deleting chat history: %s", e)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -683,9 +693,35 @@ async def get_context_info(
             recent = chat_history.get_recent_messages(session_id, user_id=user_id)
             history_list = [{"role": m.role, "content": m.content} for m in recent]
 
+        # Sprint 210g: Fetch system_prompt + core_memory for accurate layer display
+        _system_prompt = ""
+        _core_memory = ""
+        try:
+            from app.prompts.prompt_loader import PromptLoader
+            loader = PromptLoader()
+            _system_prompt = loader.build_system_prompt(
+                role=auth.role or "student",
+            )
+        except Exception:
+            pass
+        try:
+            from app.engine.semantic_memory.core_memory_block import get_core_memory_block
+            from app.engine.semantic_memory import get_semantic_memory_engine
+            core_block = get_core_memory_block()
+            sem_engine = get_semantic_memory_engine()
+            if sem_engine.is_available():
+                _core_memory = await core_block.get_block(
+                    user_id=user_id,
+                    semantic_memory=sem_engine,
+                )
+        except Exception:
+            pass
+
         info = compactor.get_context_info(
             session_id=session_id,
             history_list=history_list,
+            system_prompt=_system_prompt,
+            core_memory=_core_memory or "",
             user_id=user_id,
         )
 

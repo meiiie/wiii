@@ -77,6 +77,7 @@ _register_optional_router("enable_living_agent", "app.api.v1.living_agent.router
 _register_optional_router("enable_messenger_webhook", "app.api.v1.messenger_webhook.router", "Messenger Webhook")
 _register_optional_router("enable_zalo_webhook", "app.api.v1.zalo_webhook.router", "Zalo Webhook")
 _register_optional_router("enable_org_knowledge", "app.api.v1.org_knowledge.router", "Org Knowledge")
+_register_optional_router("enable_soul_bridge", "app.api.v1.soul_bridge.router", "Soul Bridge")
 _register_optional_router("enable_knowledge_visualization", "app.api.v1.knowledge_visualization.router", "Knowledge Visualization")
 
 # Sprint 155: LMS Integration (multiple routers)

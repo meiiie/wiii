@@ -10,8 +10,10 @@ Pattern: Supervisor with specialized worker agents
 **CHỈ THỊ SỐ 30: Universal ReasoningTrace for ALL paths**
 """
 
+import asyncio
 import logging
 import re
+import uuid
 from typing import Dict, Optional, Literal
 
 
@@ -60,7 +62,6 @@ def _get_or_create_tracer(state: AgentState) -> ReasoningTracer:
     if trace_id and trace_id in _TRACERS:
         return _TRACERS[trace_id]
     # Create new tracer and assign a unique trace_id
-    import uuid
     tracer = get_reasoning_tracer()
     trace_id = str(uuid.uuid4())
     _TRACERS[trace_id] = tracer
@@ -119,6 +120,7 @@ async def supervisor_node(state: AgentState) -> AgentState:
                 "web_search": "high",
                 "off_topic": "medium",
                 "product_search": "high",
+                "colleague_consult": "medium",
             }
             result_state["thinking_effort"] = _effort_map.get(_intent, "medium")
 
@@ -185,6 +187,30 @@ async def memory_node(state: AgentState) -> AgentState:
         # Propagate trace_id (tracer lives in _TRACERS dict)
         result_state["_trace_id"] = state.get("_trace_id")
 
+        return result_state
+
+
+async def colleague_agent_node(state: AgentState) -> AgentState:
+    """
+    Colleague agent node — cross-soul consultation via SoulBridge (Sprint 215).
+
+    Routes admin questions to peer soul (Bro) and returns the response.
+    Skips grader (like product_search — external data, not knowledge retrieval).
+    """
+    registry = get_agent_registry()
+    tracer = _get_or_create_tracer(state)
+    tracer.start_step("COLLEAGUE_CONSULT", "Hỏi ý kiến Bro")
+
+    with registry.tracer.span("colleague_agent", "process"):
+        from app.engine.multi_agent.agents.colleague_node import colleague_agent_process
+        result_state = await colleague_agent_process(state)
+
+        tracer.end_step(
+            result="Nhận phản hồi từ Bro",
+            confidence=0.85,
+            details={"peer": "bro"},
+        )
+        result_state["_trace_id"] = state.get("_trace_id")
         return result_state
 
 
@@ -606,15 +632,15 @@ def _collect_direct_tools(query: str):
         if settings.enable_character_tools:
             from app.engine.character.character_tools import get_character_tools
             _direct_tools = get_character_tools()
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[DIRECT] Character tools unavailable: %s", _e)
 
     try:
         if settings.enable_code_execution:
             from app.engine.tools.code_execution_tools import get_code_execution_tools
             _direct_tools.extend(get_code_execution_tools())
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[DIRECT] Code execution tools unavailable: %s", _e)
 
     try:
         from app.engine.tools.utility_tools import tool_current_datetime
@@ -627,23 +653,30 @@ def _collect_direct_tools(query: str):
             tool_web_search, tool_search_news,
             tool_search_legal, tool_search_maritime,
         ]
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[DIRECT] Utility/web search tools unavailable: %s", _e)
+
+    # Sprint 214: Knowledge search for org KB (Direct can search internal docs)
+    try:
+        from app.engine.tools.rag_tools import tool_knowledge_search
+        _direct_tools.append(tool_knowledge_search)
+    except Exception as _e:
+        logger.debug("[DIRECT] Knowledge search tool unavailable: %s", _e)
 
     # Sprint 175: LMS tools (role-aware)
     try:
         if settings.enable_lms_integration:
             from app.engine.tools.lms_tools import get_all_lms_tools
             _direct_tools.extend(get_all_lms_tools(role="student"))
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[DIRECT] LMS tools unavailable: %s", _e)
 
     # Sprint 179: Chart/diagram generation tools (feature-gated)
     try:
         from app.engine.tools.chart_tools import get_chart_tools
         _direct_tools.extend(get_chart_tools())
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[DIRECT] Chart tools unavailable: %s", _e)
 
     force_tools = bool(_direct_tools) and (
         _needs_web_search(query) or _needs_datetime(query)
@@ -750,7 +783,6 @@ async def _execute_direct_tool_rounds(
         tuple: (AIMessage, messages, tool_call_events) — final response, messages, and
                structured tool events for downstream preview emission (Sprint 166).
     """
-    import asyncio
     from langchain_core.messages import ToolMessage as _TM
 
     tool_call_events: list[dict] = []
@@ -980,9 +1012,9 @@ async def direct_response_node(state: AgentState) -> AgentState:
             logger.warning("[DIRECT] LLM generation failed: %s", e)
             response = _get_phase_fallback(state) if getattr(settings, "enable_natural_conversation", False) is True else "Xin chào! Tôi có thể giúp gì cho bạn?"
             tracer.end_step(
-                result=f"Fallback (error): {str(e)[:50]}",
+                result="Fallback (LLM generation error)",
                 confidence=0.5,
-                details={"response_type": "fallback", "error": str(e)[:100]}
+                details={"response_type": "fallback"}
             )
 
     state["final_response"] = response
@@ -994,10 +1026,15 @@ async def direct_response_node(state: AgentState) -> AgentState:
     intent = routing_meta.get("intent", "") if routing_meta else ""
     # Sprint 203: "greeting" should NOT show domain notice (unconditional bugfix)
     if intent in ("off_topic", "general"):
-        state["domain_notice"] = (
-            f"Nội dung này nằm ngoài chuyên môn {domain_name_vi}. "
-            f"Để được hỗ trợ chính xác hơn, hãy hỏi về {domain_name_vi} nhé!"
-        )
+        # Sprint 214: Suppress notice when org has knowledge enabled — org KB may cover any topic
+        from app.core.config import settings as _settings
+        from app.core.org_context import get_current_org_id as _get_org_id
+        _suppress = _settings.enable_org_knowledge and bool(_get_org_id())
+        if not _suppress:
+            state["domain_notice"] = (
+                f"Nội dung này nằm ngoài chuyên môn {domain_name_vi}. "
+                f"Để được hỗ trợ chính xác hơn, hãy hỏi về {domain_name_vi} nhé!"
+            )
 
     logger.info("[DIRECT] Response prepared, tracer passed to synthesizer")
 
@@ -1090,7 +1127,7 @@ async def _run_rag_subagent(state: dict, **kwargs) -> "SubagentResult":
         })
         return SubagentResult(
             status=SubagentStatus.ERROR,
-            error_message=str(e),
+            error_message="RAG subagent processing error",
         )
 
 
@@ -1153,7 +1190,7 @@ async def _run_tutor_subagent(state: dict, **kwargs) -> "SubagentResult":
         })
         return SubagentResult(
             status=SubagentStatus.ERROR,
-            error_message=str(e),
+            error_message="Tutor subagent processing error",
         )
 
 
@@ -1194,7 +1231,7 @@ async def _run_search_subagent(state: dict, **kwargs) -> "SubagentResult":
         })
         return SubagentResult(
             status=SubagentStatus.ERROR,
-            error_message=str(e),
+            error_message="Search subagent processing error",
         )
 
 
@@ -1312,6 +1349,7 @@ def route_decision(state: AgentState) -> str:
     valid_routes = {
         "rag_agent", "tutor_agent", "memory_agent",
         "direct", "product_search_agent", "parallel_dispatch",
+        "colleague_agent",
     }
 
     if next_agent in valid_routes:
@@ -1531,6 +1569,11 @@ def build_multi_agent_graph(checkpointer=None):
     workflow.add_node("direct", direct_response_node)
     workflow.add_node("grader", grader_node)
     workflow.add_node("synthesizer", synthesizer_node)
+    # Sprint 215: Colleague agent (cross-soul consultation, feature-gated)
+    if settings.enable_cross_soul_query and settings.enable_soul_bridge:
+        workflow.add_node("colleague_agent", colleague_agent_node)
+        logger.info("Colleague agent node added (cross-soul query enabled)")
+
     # Sprint 148/163: Product search agent (feature-gated at supervisor level)
     if settings.enable_product_search:
         if settings.enable_subagent_architecture:
@@ -1571,6 +1614,9 @@ def build_multi_agent_graph(checkpointer=None):
     }
     if settings.enable_product_search:
         _routing_map["product_search_agent"] = "product_search_agent"
+    # Sprint 215: Colleague agent route
+    if settings.enable_cross_soul_query and settings.enable_soul_bridge:
+        _routing_map["colleague_agent"] = "colleague_agent"
     # Sprint 163 Phase 4: parallel dispatch route
     if settings.enable_subagent_architecture:
         _routing_map["parallel_dispatch"] = "parallel_dispatch"
@@ -1603,6 +1649,10 @@ def build_multi_agent_graph(checkpointer=None):
     # Sprint 148: Product search → Synthesizer (skip grader — comparison data, not knowledge)
     if settings.enable_product_search:
         workflow.add_edge("product_search_agent", "synthesizer")
+
+    # Sprint 215: Colleague → Synthesizer (skip grader — external consultation, not knowledge)
+    if settings.enable_cross_soul_query and settings.enable_soul_bridge:
+        workflow.add_edge("colleague_agent", "synthesizer")
 
     # Sprint 163 Phase 4: parallel_dispatch → aggregator → conditional
     if settings.enable_subagent_architecture:
@@ -1798,7 +1848,6 @@ async def process_with_multi_agent(
             if thread_data:
                 count = thread_data.get("message_count", 0)
                 if count in _SUMMARY_MILESTONES:
-                    import asyncio
                     asyncio.create_task(_generate_session_summary_bg(_tid, user_id))
         except Exception as e:
             logger.warning("Thread upsert failed: %s", e)
@@ -1814,7 +1863,6 @@ async def process_with_multi_agent(
         try:
             _calls = getattr(tracker, "calls", None)
             if _calls:
-                import asyncio
                 from app.services.llm_usage_logger import log_llm_usage_batch
                 asyncio.ensure_future(log_llm_usage_batch(
                     request_id=session_id or "",

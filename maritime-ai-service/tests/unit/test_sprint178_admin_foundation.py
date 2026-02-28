@@ -259,18 +259,18 @@ class TestAdminDashboard:
 
     @pytest.mark.asyncio
     async def test_feature_gated_check_admin_module(self):
-        """_check_admin_module raises 404 when enable_admin_module=False."""
+        """check_admin_module raises 404 when enable_admin_module=False."""
         from fastapi import HTTPException
 
         mock_request = MagicMock()
         mock_request.client.host = "127.0.0.1"
 
-        with patch("app.api.v1.admin_dashboard.settings") as mock_settings:
+        with patch("app.core.config.settings") as mock_settings:
             mock_settings.enable_admin_module = False
 
-            from app.api.v1.admin_dashboard import _check_admin_module
+            from app.core.admin_security import check_admin_module
             with pytest.raises(HTTPException) as exc_info:
-                _check_admin_module(mock_request)
+                check_admin_module(mock_request)
 
         assert exc_info.value.status_code == 404
 
@@ -598,18 +598,18 @@ class TestFeatureFlagRead:
 
     @pytest.mark.asyncio
     async def test_feature_gated_via_check_admin_module(self):
-        """_check_admin_module raises 404 when enable_admin_module=False."""
+        """check_admin_module raises 404 when enable_admin_module=False."""
         from fastapi import HTTPException
 
         mock_request = MagicMock()
         mock_request.client.host = "127.0.0.1"
 
-        with patch("app.api.v1.admin_dashboard.settings") as mock_settings:
+        with patch("app.core.config.settings") as mock_settings:
             mock_settings.enable_admin_module = False
 
-            from app.api.v1.admin_dashboard import _check_admin_module
+            from app.core.admin_security import check_admin_module
             with pytest.raises(HTTPException) as exc_info:
-                _check_admin_module(mock_request)
+                check_admin_module(mock_request)
 
         assert exc_info.value.status_code == 404
 

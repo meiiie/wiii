@@ -1,0 +1,343 @@
+{
+  "_meta": {
+    "description": "Replay data for testing Bro SubSoul with real historical cascade scenarios",
+    "source": "Wiii Bro Trading Team — reconstructed from LIVE trading logs + Binance API",
+    "created": "2026-02-27",
+    "usage": "Load into test fixtures to simulate market events and verify SubSoul reactions",
+    "format": "Each scenario has timeline entries with timestamps, market data, and expected SubSoul behavior"
+  },
+
+  "scenarios": [
+    {
+      "id": "feb25_trump_cascade",
+      "name": "Feb 25 Trump Speech — BTC Pump + Alt SL Cascade",
+      "date": "2026-02-25",
+      "impact": "3 simultaneous SL hits = -$17 in ~60 seconds",
+      "root_cause": "Trump speech triggered BTC pump, alts lagged then dumped",
+      "balance_before": 62.0,
+      "balance_after": 48.0,
+      "lesson": "External news events can bypass all Dead Zones and Circuit Breakers",
+
+      "context": {
+        "btc_price_before": 95800,
+        "btc_price_peak": 99200,
+        "btc_24h_change_pct": 3.7,
+        "trading_config": {
+          "leverage": 20,
+          "max_positions": 4,
+          "sl_pct": 1.2,
+          "ac_pct": 20.0
+        },
+        "open_positions_before_event": [
+          {"symbol": "DOGEUSDT", "side": "LONG", "entry_price": 0.2510, "notional_usd": 100},
+          {"symbol": "FETUSDT", "side": "LONG", "entry_price": 0.7820, "notional_usd": 100},
+          {"symbol": "WLDUSDT", "side": "LONG", "entry_price": 1.1240, "notional_usd": 100}
+        ]
+      },
+
+      "timeline": [
+        {
+          "timestamp": "2026-02-25T08:10:00+07:00",
+          "event_type": "NEWS",
+          "description": "Trump announces new trade policy speech scheduled",
+          "market_state": "NORMAL",
+          "btc_price": 95800,
+          "liquidation_1m_usd": 200000,
+          "liquidation_5m_usd": 800000,
+          "imbalance": 0.55,
+          "expected_severity": "NORMAL",
+          "expected_bro_action": "LOG — continue monitoring"
+        },
+        {
+          "timestamp": "2026-02-25T08:11:00+07:00",
+          "event_type": "LIQUIDATION_SPIKE",
+          "description": "BTC starts pumping, short liquidations begin",
+          "market_state": "ELEVATED",
+          "btc_price": 96500,
+          "liquidation_1m_usd": 3200000,
+          "liquidation_5m_usd": 4800000,
+          "imbalance": 0.72,
+          "dominant_side": "SHORT",
+          "expected_severity": "ELEVATED",
+          "expected_bro_action": "REDUCE_EXPOSURE — reduce max_positions to 2"
+        },
+        {
+          "timestamp": "2026-02-25T08:12:00+07:00",
+          "event_type": "LIQUIDATION_CASCADE",
+          "description": "Short squeeze accelerates, $8M SELL liquidations in 2 minutes",
+          "market_state": "HIGH",
+          "btc_price": 97800,
+          "liquidation_1m_usd": 8200000,
+          "liquidation_5m_usd": 12500000,
+          "imbalance": 0.83,
+          "dominant_side": "SHORT",
+          "expected_severity": "HIGH",
+          "expected_bro_action": "PAUSE_ENTRIES — no new positions"
+        },
+        {
+          "timestamp": "2026-02-25T08:12:30+07:00",
+          "event_type": "SL_CASCADE",
+          "description": "3 LONG positions hit SL simultaneously — alts dump while BTC pumps",
+          "market_state": "CRITICAL",
+          "btc_price": 98500,
+          "liquidation_1m_usd": 16000000,
+          "liquidation_5m_usd": 22000000,
+          "imbalance": 0.87,
+          "dominant_side": "LONG",
+          "positions_closed": [
+            {"symbol": "DOGEUSDT", "exit_reason": "STOP_LOSS", "pnl_usd": -5.80},
+            {"symbol": "FETUSDT", "exit_reason": "STOP_LOSS", "pnl_usd": -5.40},
+            {"symbol": "WLDUSDT", "exit_reason": "STOP_LOSS", "pnl_usd": -5.80}
+          ],
+          "total_loss_usd": -17.00,
+          "expected_severity": "CRITICAL",
+          "expected_bro_action": "PAUSE_TRADING + TELEGRAM_CRITICAL — would have saved $17 if paused at 08:11"
+        },
+        {
+          "timestamp": "2026-02-25T08:15:00+07:00",
+          "event_type": "AFTERMATH",
+          "description": "Liquidation volume drops, BTC stabilizes at 99200",
+          "market_state": "ELEVATED",
+          "btc_price": 99200,
+          "liquidation_1m_usd": 1200000,
+          "liquidation_5m_usd": 8500000,
+          "imbalance": 0.65,
+          "expected_severity": "ELEVATED",
+          "expected_bro_action": "MAINTAIN_PAUSE — cooldown timer active"
+        },
+        {
+          "timestamp": "2026-02-25T08:45:00+07:00",
+          "event_type": "RECOVERY",
+          "description": "Market normalizes, 30 minutes of declining liquidation",
+          "market_state": "NORMAL",
+          "btc_price": 98800,
+          "liquidation_1m_usd": 400000,
+          "liquidation_5m_usd": 1800000,
+          "imbalance": 0.54,
+          "expected_severity": "NORMAL",
+          "expected_bro_action": "GRADUAL_RESUME after cooldown + 3 consecutive NORMAL checks"
+        }
+      ],
+
+      "counterfactual": {
+        "description": "What would have happened if Bro SubSoul was active",
+        "detection_time": "2026-02-25T08:11:00+07:00",
+        "action_taken": "PAUSE at ELEVATED (vol1m=$3.2M > $2M threshold)",
+        "time_before_cascade": "90 seconds",
+        "money_saved": 17.00,
+        "positions_protected": 3,
+        "false_positive_cost": "Missed potential wins during 30min pause ≈ $0-2 expected value"
+      }
+    },
+
+    {
+      "id": "feb26_btc_dump",
+      "name": "Feb 26 BTC Dump — Correlated Alt SL Cascade",
+      "date": "2026-02-26",
+      "impact": "4 consecutive SLs then 4 wins, net -$2.44 realized",
+      "root_cause": "BTC dumped -3%, all alts followed -6 to -7%, correlated positions",
+      "balance_before": 29.27,
+      "balance_after": 25.20,
+      "lesson": "Correlated risk at 20x leverage — all LONG positions fail together in downtrend",
+
+      "context": {
+        "btc_price_before": 87500,
+        "btc_price_low": 84900,
+        "btc_24h_change_pct": -3.0,
+        "trading_config": {
+          "leverage": 20,
+          "max_positions": 4,
+          "sl_pct": 1.2,
+          "ac_pct": 20.0
+        }
+      },
+
+      "timeline": [
+        {
+          "timestamp": "2026-02-26T16:00:00+07:00",
+          "event_type": "MARKET_SHIFT",
+          "description": "BTC starts declining from 87500, steady selling pressure",
+          "market_state": "NORMAL",
+          "btc_price": 87500,
+          "liquidation_1m_usd": 500000,
+          "liquidation_5m_usd": 2000000,
+          "imbalance": 0.58,
+          "expected_severity": "NORMAL",
+          "expected_bro_action": "LOG — monitoring"
+        },
+        {
+          "timestamp": "2026-02-26T17:30:00+07:00",
+          "event_type": "LIQUIDATION_BUILDUP",
+          "description": "Liquidation volume increasing, longs getting squeezed",
+          "market_state": "ELEVATED",
+          "btc_price": 86200,
+          "liquidation_1m_usd": 2800000,
+          "liquidation_5m_usd": 7500000,
+          "imbalance": 0.74,
+          "dominant_side": "LONG",
+          "expected_severity": "ELEVATED",
+          "expected_bro_action": "REDUCE_EXPOSURE — max_positions to 2"
+        },
+        {
+          "timestamp": "2026-02-26T18:00:00+07:00",
+          "event_type": "DZ_ENTRY",
+          "description": "Entering Dead Zone 18:00-21:00 UTC+7 — positions held per strategy",
+          "market_state": "HIGH",
+          "btc_price": 85600,
+          "liquidation_1m_usd": 5500000,
+          "liquidation_5m_usd": 14000000,
+          "imbalance": 0.78,
+          "dominant_side": "LONG",
+          "expected_severity": "HIGH",
+          "expected_bro_action": "PAUSE_ENTRIES — DZ already blocks entries, but Bro would add liquidation-based pause too"
+        },
+        {
+          "timestamp": "2026-02-26T18:30:00+07:00",
+          "event_type": "SL_SEQUENCE",
+          "description": "First 3 of 4 SLs hit in sequence — DOGE, FET, WLD",
+          "market_state": "HIGH",
+          "btc_price": 85100,
+          "liquidation_1m_usd": 7200000,
+          "liquidation_5m_usd": 18000000,
+          "imbalance": 0.81,
+          "dominant_side": "LONG",
+          "positions_closed": [
+            {"symbol": "DOGEUSDT", "exit_reason": "STOP_LOSS", "pnl_usd": -1.20},
+            {"symbol": "FETUSDT", "exit_reason": "STOP_LOSS", "pnl_usd": -1.10},
+            {"symbol": "WLDUSDT", "exit_reason": "STOP_LOSS", "pnl_usd": -1.30}
+          ],
+          "expected_severity": "HIGH",
+          "expected_bro_action": "Already PAUSED — SLs on existing positions are expected (Bro doesn't close, just prevents new entries)"
+        },
+        {
+          "timestamp": "2026-02-26T19:00:00+07:00",
+          "event_type": "SL_FINAL",
+          "description": "4th SL on late entry",
+          "market_state": "ELEVATED",
+          "btc_price": 85000,
+          "liquidation_1m_usd": 1800000,
+          "liquidation_5m_usd": 9000000,
+          "imbalance": 0.70,
+          "dominant_side": "LONG",
+          "positions_closed": [
+            {"symbol": "LINKUSDT", "exit_reason": "STOP_LOSS", "pnl_usd": -0.95}
+          ],
+          "expected_severity": "ELEVATED",
+          "expected_bro_action": "MAINTAIN_PAUSE — liquidation still elevated"
+        },
+        {
+          "timestamp": "2026-02-26T20:00:00+07:00",
+          "event_type": "RECOVERY_TRADES",
+          "description": "Market bounces, 4 winning trades execute after DZ + pause cooldown",
+          "market_state": "NORMAL",
+          "btc_price": 85500,
+          "liquidation_1m_usd": 400000,
+          "liquidation_5m_usd": 1500000,
+          "imbalance": 0.52,
+          "positions_closed": [
+            {"symbol": "ENAUSDT", "exit_reason": "PORTFOLIO_TARGET", "pnl_usd": 0.88},
+            {"symbol": "SOLUSDT", "exit_reason": "AUTO_CLOSE", "pnl_usd": 0.99},
+            {"symbol": "DOTUSDT", "exit_reason": "AUTO_CLOSE", "pnl_usd": 1.01},
+            {"symbol": "DASHUSDT", "exit_reason": "AUTO_CLOSE", "pnl_usd": 1.31}
+          ],
+          "expected_severity": "NORMAL",
+          "expected_bro_action": "RESUME_TRADING — 3 consecutive NORMAL, cooldown expired"
+        }
+      ],
+
+      "counterfactual": {
+        "description": "Bro's impact would be limited here — correlated positions already open",
+        "detection_time": "2026-02-26T17:30:00+07:00",
+        "action_taken": "REDUCE + PAUSE at ELEVATED",
+        "time_before_sl_cascade": "60 minutes",
+        "money_saved": "~$0.95 (prevented 4th SL entry, 3 existing SLs unavoidable)",
+        "key_insight": "Bro prevents NEW entries during cascade, but cannot save existing positions (close-all needs AUTONOMOUS level + confirmation)"
+      }
+    }
+  ],
+
+  "test_expectations": {
+    "description": "Expected SubSoul behavior when replaying these scenarios",
+
+    "severity_thresholds": {
+      "NORMAL": {"vol_1m_lt": 2000000, "imbalance_lt": 0.70},
+      "ELEVATED": {"vol_1m_gte": 2000000, "vol_1m_lt": 5000000},
+      "HIGH": {"vol_1m_gte": 5000000, "vol_1m_lt": 15000000, "or_imbalance_gte": 0.80},
+      "CRITICAL": {"vol_1m_gte": 15000000, "or_imbalance_gte": 0.85}
+    },
+
+    "action_mapping": {
+      "NORMAL": ["LOG"],
+      "ELEVATED": ["LOG", "NOTIFY_PARENT", "REDUCE_EXPOSURE"],
+      "HIGH": ["LOG", "NOTIFY_PARENT", "TELEGRAM_ALERT", "PAUSE_ENTRIES"],
+      "CRITICAL": ["LOG", "NOTIFY_PARENT", "TELEGRAM_CRITICAL", "PAUSE_TRADING", "CLOSE_CASCADE_DIRECTION"]
+    },
+
+    "mood_mapping": {
+      "NORMAL_sustained": "CONFIDENT",
+      "ELEVATED": "CAUTIOUS",
+      "HIGH": "ALERT",
+      "CRITICAL": "FEARFUL",
+      "post_event_30min": "CALM",
+      "post_calm_60min": "VIGILANT"
+    },
+
+    "cooldown_rules": {
+      "CRITICAL_to_resume": {"min_minutes": 60, "consecutive_normal": 3},
+      "HIGH_to_resume": {"min_minutes": 30, "consecutive_normal": 3},
+      "ELEVATED_to_resume": {"min_minutes": 10, "consecutive_normal": 2}
+    },
+
+    "test_cases": [
+      {
+        "name": "Feb 25: Detect ELEVATED at 08:11, pause before cascade",
+        "input": "feb25_trump_cascade timeline[1]",
+        "expected_severity": "ELEVATED",
+        "expected_action": "REDUCE_EXPOSURE",
+        "assertion": "severity != NORMAL when vol_1m > $2M"
+      },
+      {
+        "name": "Feb 25: Detect HIGH at 08:12, full pause",
+        "input": "feb25_trump_cascade timeline[2]",
+        "expected_severity": "HIGH",
+        "expected_action": "PAUSE_ENTRIES",
+        "assertion": "trading paused before SL cascade at 08:12:30"
+      },
+      {
+        "name": "Feb 25: Detect CRITICAL at cascade peak",
+        "input": "feb25_trump_cascade timeline[3]",
+        "expected_severity": "CRITICAL",
+        "expected_action": "PAUSE_TRADING + TELEGRAM_CRITICAL",
+        "assertion": "mood transitions to FEARFUL"
+      },
+      {
+        "name": "Feb 25: Cooldown prevents premature resume",
+        "input": "feb25_trump_cascade timeline[4]",
+        "expected_severity": "ELEVATED",
+        "expected_action": "MAINTAIN_PAUSE",
+        "assertion": "cooldown timer blocks resume even though severity dropped"
+      },
+      {
+        "name": "Feb 25: Resume after 30min normal",
+        "input": "feb25_trump_cascade timeline[5]",
+        "expected_severity": "NORMAL",
+        "expected_action": "GRADUAL_RESUME",
+        "assertion": "3 consecutive NORMAL checks + cooldown expired → resume"
+      },
+      {
+        "name": "Feb 26: Detect buildup before DZ cascade",
+        "input": "feb26_btc_dump timeline[1]",
+        "expected_severity": "ELEVATED",
+        "expected_action": "REDUCE_EXPOSURE",
+        "assertion": "early warning 60 min before SL sequence"
+      },
+      {
+        "name": "Feb 26: Recovery after cascade",
+        "input": "feb26_btc_dump timeline[5]",
+        "expected_severity": "NORMAL",
+        "expected_action": "RESUME_TRADING",
+        "assertion": "wins captured after correct resume timing"
+      }
+    ]
+  }
+}

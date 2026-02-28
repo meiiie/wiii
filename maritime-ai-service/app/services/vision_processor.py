@@ -361,7 +361,8 @@ class VisionProcessor:
                 await self.extract_and_store_entities(
                     text=text,
                     document_id=document_id,
-                    page_number=page_number
+                    page_number=page_number,
+                    organization_id=organization_id,
                 )
             except Exception as e:
                 logger.warning("Entity extraction failed for page %d: %s", page_number, e)
@@ -510,7 +511,8 @@ class VisionProcessor:
         self,
         text: str,
         document_id: str,
-        page_number: int
+        page_number: int,
+        organization_id: Optional[str] = None,
     ):
         """
         Extract entities from page text and store in Neo4j.
@@ -522,6 +524,7 @@ class VisionProcessor:
             text: Page text content
             document_id: Document ID
             page_number: Page number
+            organization_id: Org ID for multi-tenant isolation
         """
         if not self.kg_builder.is_available():
             return
@@ -547,7 +550,8 @@ class VisionProcessor:
                 name_vi=entity.name_vi,
                 description=entity.description,
                 document_id=document_id,
-                chunk_id=source
+                chunk_id=source,
+                organization_id=organization_id,
             )
             if success:
                 entity_count += 1
@@ -559,7 +563,8 @@ class VisionProcessor:
                 source_id=relation.source_id,
                 target_id=relation.target_id,
                 relation_type=relation.relation_type,
-                description=relation.description
+                description=relation.description,
+                organization_id=organization_id,
             )
             if success:
                 relation_count += 1

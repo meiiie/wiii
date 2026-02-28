@@ -160,6 +160,15 @@ class SocialBrowser:
             except Exception as e:
                 logger.debug("[BROWSER] Skill learning pipeline failed: %s", e)
 
+        # Sprint 210: Extract insights from high-relevance items
+        if getattr(settings, 'enable_living_continuity', False):
+            try:
+                saved = await self._extract_and_save_insights(results)
+                if saved:
+                    logger.info("[BROWSER] Saved %d insights from browsing", saved)
+            except Exception as e:
+                logger.debug("[BROWSER] Insight extraction failed: %s", e)
+
         logger.info(
             "[BROWSER] Browsed %d items for topic '%s' (query: %s)",
             len(results), topic, query,
@@ -252,8 +261,8 @@ class SocialBrowser:
 
             if topic_scores:
                 return max(topic_scores, key=topic_scores.get)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[BROWSER] Topic scoring from goals failed: %s", e)
         return None
 
     def _get_topic_from_skills(self) -> Optional[str]:
@@ -563,6 +572,60 @@ class SocialBrowser:
             item.relevance_score = min(1.0, matches / max(len(interest_keywords), 1))
 
         return items
+
+    async def _extract_and_save_insights(self, items: List[BrowsingItem]) -> int:
+        """Save high-relevance browsing items as insights in semantic_memories.
+
+        Sprint 210: Fixes 989 pages browsed, 0 insights saved.
+        """
+        from uuid import uuid4
+
+        saved = 0
+        for item in items:
+            if item.relevance_score >= 0.6 and item.title.strip():
+                try:
+                    from sqlalchemy import text
+                    from app.core.database import get_shared_session_factory
+
+                    content = f"[Discovery] {item.title}: {item.summary[:300]}"
+                    session_factory = get_shared_session_factory()
+                    with session_factory() as session:
+                        session.execute(
+                            text("""
+                                INSERT INTO semantic_memories
+                                (id, user_id, content, memory_type, importance, metadata, created_at)
+                                VALUES (:id, '__wiii__', :content, 'insight', :importance, '{}', NOW())
+                            """),
+                            {
+                                "id": str(uuid4()),
+                                "content": content[:2000],
+                                "importance": item.relevance_score,
+                            },
+                        )
+                        session.commit()
+
+                    # Mark as insight in browsing log
+                    self._mark_as_insight(str(item.id))
+                    saved += 1
+                except Exception as e:
+                    logger.debug("[BROWSER] Failed to save insight for item: %s", e)
+        return saved
+
+    def _mark_as_insight(self, item_id: str) -> None:
+        """Mark a browsing log entry as saved_as_insight=true."""
+        try:
+            from sqlalchemy import text
+            from app.core.database import get_shared_session_factory
+
+            session_factory = get_shared_session_factory()
+            with session_factory() as session:
+                session.execute(
+                    text("UPDATE wiii_browsing_log SET saved_as_insight = true WHERE id = :id"),
+                    {"id": item_id},
+                )
+                session.commit()
+        except Exception as e:
+            logger.debug("[BROWSER] Failed to mark insight: %s", e)
 
     def _save_browsing_log(self, items: List[BrowsingItem]) -> None:
         """Save browsing items to the database log."""

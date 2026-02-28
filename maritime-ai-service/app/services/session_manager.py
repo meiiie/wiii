@@ -104,17 +104,20 @@ class SessionManager:
     **Pattern:** Singleton Service
     """
     
+    # Max entries before oldest are evicted (prevents unbounded growth)
+    MAX_CACHED_SESSIONS = 10_000
+
     def __init__(self, chat_history: Optional[ChatHistoryRepository] = None):
         """
         Initialize SessionManager.
-        
+
         Args:
             chat_history: ChatHistoryRepository instance (optional, uses singleton if not provided)
         """
         self._chat_history = chat_history or get_chat_history_repository()
         self._sessions: Dict[str, UUID] = {}  # user_id -> session_id
         self._session_states: Dict[str, SessionState] = {}  # session_id -> SessionState
-        
+
         logger.info("SessionManager initialized")
     
     def get_or_create_session(
@@ -175,6 +178,9 @@ class SessionManager:
         
         # Fallback to in-memory session
         if user_id not in self._sessions:
+            if len(self._sessions) >= self.MAX_CACHED_SESSIONS:
+                oldest_key = next(iter(self._sessions))
+                del self._sessions[oldest_key]
             self._sessions[user_id] = uuid4()
         return self._sessions[user_id]
     
@@ -182,6 +188,10 @@ class SessionManager:
         """Get or create session state for anti-repetition tracking."""
         session_key = str(session_id)
         if session_key not in self._session_states:
+            # Evict oldest entries if cache is full
+            if len(self._session_states) >= self.MAX_CACHED_SESSIONS:
+                oldest_key = next(iter(self._session_states))
+                del self._session_states[oldest_key]
             self._session_states[session_key] = SessionState(session_id=session_id)
         return self._session_states[session_key]
     

@@ -346,10 +346,10 @@ class CrossPlatformMemory:
         if not dt:
             return ""
 
+        # Always compare in UTC to avoid timezone offset errors
         if dt.tzinfo is None:
-            now = datetime.now()
-        else:
-            now = datetime.now(timezone.utc)
+            dt = dt.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
 
         diff = now - dt
         minutes = int(diff.total_seconds() / 60)

@@ -478,7 +478,8 @@ class TestRAGFallbackDomainConstraint:
         assert len(captured_messages) == 2
         system_content = captured_messages[0].content
         assert "Hàng hải" in system_content
-        assert "CHỈ trả lời" in system_content or "KHÔNG liên quan" in system_content
+        # Sprint 203/204: Positive framing — domain boundary uses guidance, not prohibition
+        assert "hướng dẫn lại" in system_content or "Chuyên ngành" in system_content
 
     @pytest.mark.asyncio
     async def test_fallback_uses_default_domain_when_not_in_context(self):

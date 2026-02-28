@@ -25,7 +25,10 @@ def _patched_read_file(self, file_name, encoding="utf-8"):
                     if "=" in line and not line.strip().startswith("#")
                 ]
             }
-    except Exception:
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "Failed to parse config file %s: %s — using empty dict", file_name, e
+        )
         return {}
 
 starlette.config.Config._read_file = _patched_read_file
@@ -62,8 +65,7 @@ def get_client_identifier(request: Request) -> str:
 # Determine storage backend: Valkey/Redis for production, memory for dev
 def _get_rate_limit_storage_uri() -> str:
     """Use Valkey/Redis in production, in-memory for development."""
-    env = getattr(settings, "environment", "development")
-    if env == "production" and settings.valkey_url:
+    if settings.environment == "production" and settings.valkey_url:
         logger.info("Rate limiter using Valkey backend: %s", settings.valkey_url)
         return settings.valkey_url
     return "memory://"

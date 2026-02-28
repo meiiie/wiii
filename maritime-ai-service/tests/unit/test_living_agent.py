@@ -292,7 +292,9 @@ class TestEmotionEngine:
     def test_process_positive_feedback(self):
         from app.engine.living_agent.emotion_engine import EmotionEngine
         from app.engine.living_agent.models import LifeEvent, LifeEventType, MoodType
+        from datetime import datetime, timezone
         engine = EmotionEngine()
+        engine._last_mood_change = datetime(2020, 1, 1, tzinfo=timezone.utc)  # Sprint 210b: bypass cooldown
         event = LifeEvent(
             event_type=LifeEventType.POSITIVE_FEEDBACK,
             description="User said thank you",
@@ -305,7 +307,9 @@ class TestEmotionEngine:
     def test_process_negative_feedback(self):
         from app.engine.living_agent.emotion_engine import EmotionEngine
         from app.engine.living_agent.models import LifeEvent, LifeEventType, MoodType
+        from datetime import datetime, timezone
         engine = EmotionEngine()
+        engine._last_mood_change = datetime(2020, 1, 1, tzinfo=timezone.utc)  # Sprint 210b: bypass cooldown
         event = LifeEvent(
             event_type=LifeEventType.NEGATIVE_FEEDBACK,
             importance=0.7,
@@ -316,7 +320,9 @@ class TestEmotionEngine:
     def test_process_learned_something(self):
         from app.engine.living_agent.emotion_engine import EmotionEngine
         from app.engine.living_agent.models import LifeEvent, LifeEventType, MoodType
+        from datetime import datetime, timezone
         engine = EmotionEngine()
+        engine._last_mood_change = datetime(2020, 1, 1, tzinfo=timezone.utc)  # Sprint 210b: bypass cooldown
         event = LifeEvent(
             event_type=LifeEventType.LEARNED_SOMETHING,
             importance=0.8,
@@ -328,7 +334,9 @@ class TestEmotionEngine:
     def test_process_long_session_drains_energy(self):
         from app.engine.living_agent.emotion_engine import EmotionEngine
         from app.engine.living_agent.models import LifeEvent, LifeEventType, EmotionalState
+        from datetime import datetime, timezone
         engine = EmotionEngine(EmotionalState(energy_level=0.5))
+        engine._last_mood_change = datetime(2020, 1, 1, tzinfo=timezone.utc)  # Sprint 210b: bypass cooldown
         event = LifeEvent(
             event_type=LifeEventType.LONG_SESSION,
             importance=0.8,
@@ -339,7 +347,9 @@ class TestEmotionEngine:
     def test_process_skill_mastered(self):
         from app.engine.living_agent.emotion_engine import EmotionEngine
         from app.engine.living_agent.models import LifeEvent, LifeEventType, MoodType
+        from datetime import datetime, timezone
         engine = EmotionEngine()
+        engine._last_mood_change = datetime(2020, 1, 1, tzinfo=timezone.utc)  # Sprint 210b: bypass cooldown
         event = LifeEvent(
             event_type=LifeEventType.SKILL_MASTERED,
             importance=0.9,

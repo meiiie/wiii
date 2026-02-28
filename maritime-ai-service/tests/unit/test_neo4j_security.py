@@ -140,22 +140,22 @@ class TestCypherInjectionPrevention:
             # Other exceptions (Neo4j not available, etc.) are acceptable for this test
             pass
 
-    def test_validation_is_case_sensitive(self):
+    @pytest.mark.asyncio
+    async def test_validation_is_case_sensitive(self):
         """Verify validation is case-sensitive (security best practice)."""
         repo = Neo4jKnowledgeRepository()
 
         # Lowercase should fail
         with pytest.raises(ValueError, match="Invalid relation type"):
-            # Use sync wrapper for test simplicity
-            import asyncio
-            asyncio.run(repo.create_entity_relation(
+            await repo.create_entity_relation(
                 source_id="test",
                 target_id="test",
                 relation_type="references",  # lowercase
                 description="test"
-            ))
+            )
 
-    def test_no_partial_matches(self):
+    @pytest.mark.asyncio
+    async def test_no_partial_matches(self):
         """Verify partial string matches are rejected."""
         repo = Neo4jKnowledgeRepository()
 
@@ -169,13 +169,12 @@ class TestCypherInjectionPrevention:
 
         for partial in partial_matches:
             with pytest.raises(ValueError, match="Invalid relation type"):
-                import asyncio
-                asyncio.run(repo.create_entity_relation(
+                await repo.create_entity_relation(
                     source_id="test",
                     target_id="test",
                     relation_type=partial,
                     description="test"
-                ))
+                )
 
     @pytest.mark.asyncio
     async def test_validation_happens_before_neo4j_query(self):

@@ -481,8 +481,8 @@ class TestFormatTimeAgo:
     def test_naive_datetime(self):
         from app.engine.semantic_memory.cross_platform import CrossPlatformMemory
         merger = CrossPlatformMemory()
-        # Naive datetime (no timezone)
-        dt = datetime.now() - timedelta(hours=1)
+        # Naive datetime treated as UTC (MEM-6 fix)
+        dt = datetime.utcnow() - timedelta(hours=1)
         result = merger._format_time_ago(dt)
         assert "1h trước" == result
 

@@ -23,6 +23,7 @@ class MemoryType(str, Enum):
     USER_FACT = "user_fact"  # Extracted user information
     INSIGHT = "insight"      # Behavioral insight (v0.5)
     IMAGE_MEMORY = "image_memory"  # Sprint 186: Visual/image memory
+    EPISODE = "episode"      # Sprint 210: Life event from conversation
 
 
 class InsightCategory(str, Enum):

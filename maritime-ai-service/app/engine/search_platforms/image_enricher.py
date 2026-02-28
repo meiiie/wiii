@@ -303,8 +303,8 @@ def enrich_product_images(
     try:
         from app.core.config import get_settings
         min_similarity = get_settings().image_enrichment_min_similarity
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[IMAGE_ENRICHER] Config load failed, using default min_similarity: %s", _e)
 
     count = _match_images_to_products(products, images, min_similarity=min_similarity)
     if count > 0:

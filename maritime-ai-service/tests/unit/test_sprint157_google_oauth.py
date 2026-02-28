@@ -266,14 +266,16 @@ class TestRequireAuthUpgrade:
         if not settings.api_key:
             pytest.skip("No API key configured")
 
-        user = await require_auth(
-            api_key=settings.api_key,
-            credentials=None,
-            x_user_id="lms-student",
-            x_role="student",
-            x_session_id="sess-123",
-            x_org_id="lms-hang-hai",
-        )
+        # Mock org membership check — this test is about API key auth, not org validation
+        with patch("app.core.security._validate_org_membership", AsyncMock(return_value=True)):
+            user = await require_auth(
+                api_key=settings.api_key,
+                credentials=None,
+                x_user_id="lms-student",
+                x_role="student",
+                x_session_id="sess-123",
+                x_org_id="lms-hang-hai",
+            )
         assert user.user_id == "lms-student"
         assert user.auth_method == "api_key"
         assert user.organization_id == "lms-hang-hai"

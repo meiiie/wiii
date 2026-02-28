@@ -520,11 +520,11 @@ class TestOrgContextMiddlewareFailClosed:
                 mock_get_repo.return_value = mock_repo
 
                 client = TestClient(app, raise_server_exceptions=False)
-                client.get("/test", headers={"X-Organization-ID": "org-boom"})
+                resp = client.get("/test", headers={"X-Organization-ID": "org-boom"})
 
-        # Fail-closed: org context was cleared on DB error
-        assert len(captured) == 1
-        assert captured[0] is None
+        # Fail-closed: 503 returned, handler never reached
+        assert resp.status_code == 503
+        assert len(captured) == 0
 
     def test_successful_org_lookup_sets_context(self):
         """Successful DB lookup → current_org_id is set to org_id during request."""

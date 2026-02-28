@@ -98,8 +98,8 @@ def clear_retrieved_sources():
 # =============================================================================
 
 @tool(description="""
-Tra cứu kiến thức từ cơ sở dữ liệu chuyên ngành.
-CHỈ gọi khi user hỏi về kiến thức chuyên môn cần tra cứu.
+Tra cứu kiến thức từ cơ sở dữ liệu nội bộ (tài liệu đã tải lên, tri thức tổ chức, kiến thức chuyên ngành).
+Gọi khi user hỏi về nội dung tài liệu, kiến thức đã nạp, hoặc thông tin chuyên môn.
 """)
 async def tool_knowledge_search(query: str) -> str:
     """Search domain knowledge base.
@@ -120,7 +120,11 @@ async def tool_knowledge_search(query: str) -> str:
         logger.info("[TOOL] Knowledge Search (CRAG): %s", query)
 
         crag = get_corrective_rag(_rag_agent)
-        crag_result = await crag.process(query, context={})
+        # Sprint 214: Pass org_id for org-scoped knowledge retrieval
+        from app.core.org_context import get_current_org_id
+        _org_id = get_current_org_id()
+        _ctx = {"organization_id": _org_id} if _org_id else {}
+        crag_result = await crag.process(query, context=_ctx)
 
         result = crag_result.answer
 

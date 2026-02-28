@@ -172,5 +172,5 @@ class ChainedAdapter(SearchPlatformAdapter):
             )
             mgr = get_scraping_strategy_manager()
             mgr.update_metrics(self._platform_id, backend, success, latency_ms)
-        except Exception:
-            pass  # Best-effort — don't break search flow
+        except Exception as _e:
+            logger.debug("[CHAINED] Strategy metrics update failed: %s", _e)
