@@ -58,7 +58,7 @@ To work as a different agent:
 
 ## Project Overview
 
-**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright+Crawl4AI+Scrapling), Google OAuth + LMS integration, multi-tenant data isolation, org-level customization, two-tier admin (system + org), Living Agent autonomy system (Soul AGI — all coding phases complete), spaced repetition skill learning, cross-platform memory sync, unified skill architecture, and MCP tool exposure. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. 354 Python files, 70+ API endpoints, 81 feature flags, 9937 backend tests (344 files), 1841 desktop tests (67 files). Connection pool: min=10, max=50 (Sprint 173).
+**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright+Crawl4AI+Scrapling), Google OAuth + LMS integration, multi-tenant data isolation, org-level customization, two-tier admin (system + org), Living Agent autonomy system (Soul AGI — all coding phases complete), spaced repetition skill learning, cross-platform memory sync, unified skill architecture, and MCP tool exposure. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. 354 Python files, 70+ API endpoints, 81 feature flags, 10017 backend tests, 1863 desktop tests. Connection pool: min=10, max=50 (Sprint 173).
 
 ### Domain Plugin System (Feb 2026)
 - **Plugin architecture**: `app/domains/*/domain.yaml` — add new domains by creating a folder + YAML config
@@ -270,7 +270,7 @@ app/domains/
 - **Desktop**: OAuth-aware LoginScreen, auth-store, secure token storage (Sprint 176), refresh mutex
 
 ### Multi-Tenant Data Isolation (Sprint 160)
-- **App-level filtering**: `org_filter.py` — all 15 repos org-aware (NULL-aware for shared KB)
+- **App-level filtering**: `org_filter.py` — all 14 repos org-aware (NULL-aware for shared KB)
 - **Pipeline threading**: ChatContext → AgentState → repos → search → cache. Key = `"{org_id}:{user_id}"`
 
 ### Org-Level Customization (Sprint 161)
@@ -367,7 +367,7 @@ app/domains/
     │   ├── engine/            # Core AI: agentic_rag/, multi_agent/ (9 agents), tools/, search_platforms/, llm_providers/, character/, semantic_memory/, living_agent/, skills/, soul_bridge/
     │   ├── integrations/      # LMS integration (webhook, enrichment, API client)
     │   ├── services/          # Business logic: chat_orchestrator, graph_streaming, session_manager
-    │   ├── repositories/      # 16 data access repos (all org-aware since Sprint 160)
+    │   ├── repositories/      # 15 data access repos (all org-aware since Sprint 160)
     │   ├── prompts/           # YAML persona configs + persona overlay + soul config
     │   └── models/            # Pydantic schemas (schemas.py, organization.py + OrgSettings)
     ├── alembic/               # 34 database migrations
@@ -694,7 +694,7 @@ pytest -m integration                   # Tests requiring real services
 pytest tests/property/ -v               # Property-based tests (Hypothesis)
 ```
 
-**Current: Backend 9830 unit tests (342 files), Desktop 1841 Vitest tests (67 files)** (as of Sprint 210d, 2026-02-26)
+**Current: Backend 10017 unit tests, Desktop 1863 Vitest tests** (as of Sprint 219b, 2026-02-28)
 
 ### Backend Test Commands
 ```bash
