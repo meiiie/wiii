@@ -13,5 +13,21 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: [],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html", "json-summary"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/__tests__/**",
+        "src/**/*.test.{ts,tsx}",
+        "src/vite-env.d.ts",
+      ],
+      thresholds: {
+        statements: 50,
+        branches: 40,
+        functions: 50,
+        lines: 50,
+      },
+    },
   },
 });

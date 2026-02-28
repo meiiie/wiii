@@ -58,7 +58,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
     } catch (err) {
       set({
         isLoading: false,
-        error: err instanceof Error ? err.message : "Failed to fetch context info",
+        error: err instanceof Error ? err.message : "Không thể tải thông tin ngữ cảnh",
       });
     }
   },
@@ -73,7 +73,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
     } catch (err) {
       set({
         isLoading: false,
-        error: err instanceof Error ? err.message : "Failed to compact",
+        error: err instanceof Error ? err.message : "Không thể tóm tắt",
       });
     }
   },
@@ -91,7 +91,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
     } catch (err) {
       set({
         isLoading: false,
-        error: err instanceof Error ? err.message : "Failed to clear context",
+        error: err instanceof Error ? err.message : "Không thể xóa ngữ cảnh",
       });
     }
   },

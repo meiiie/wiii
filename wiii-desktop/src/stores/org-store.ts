@@ -64,6 +64,9 @@ interface OrgState {
   orgSettings: OrgSettings | null;
   permissions: string[];
 
+  // Sprint 215: Org membership role (member | admin | owner)
+  orgRole: string | null;
+
   // Sprint 181: Admin context — two-tier admin
   adminContext: AdminContext | null;
 
@@ -93,6 +96,7 @@ export const useOrgStore = create<OrgState>((set, get) => ({
   subdomainOrgId: null,
   orgSettings: null,
   permissions: [],
+  orgRole: null,
   adminContext: null,
 
   detectSubdomainOrg: () => {
@@ -160,7 +164,7 @@ export const useOrgStore = create<OrgState>((set, get) => ({
       get().fetchOrgSettings(orgId);
     } else {
       // Personal workspace — reset to platform defaults
-      set({ orgSettings: null, permissions: [] });
+      set({ orgSettings: null, permissions: [], orgRole: null });
       resetBranding();
     }
   },
@@ -176,8 +180,10 @@ export const useOrgStore = create<OrgState>((set, get) => ({
         settings.status === "fulfilled" ? settings.value : null;
       const permissions =
         permsResp.status === "fulfilled" ? permsResp.value.permissions : [];
+      const orgRole =
+        permsResp.status === "fulfilled" ? permsResp.value.org_role ?? null : null;
 
-      set({ orgSettings, permissions });
+      set({ orgSettings, permissions, orgRole });
 
       // Apply branding to CSS custom properties
       if (orgSettings?.branding) {
@@ -187,7 +193,7 @@ export const useOrgStore = create<OrgState>((set, get) => ({
       }
     } catch (err) {
       console.warn("[OrgStore] Failed to fetch org settings:", err);
-      set({ orgSettings: null, permissions: [] });
+      set({ orgSettings: null, permissions: [], orgRole: null });
       resetBranding();
     }
   },

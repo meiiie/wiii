@@ -179,7 +179,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     // Sprint 192: API key from settings (secure store loaded at init)
     if (settings.api_key) headers["X-API-Key"] = settings.api_key;
     headers["X-User-ID"] = settings.user_id;
-    // Sprint 194b (C4): Restrict role to student/teacher — prevent admin escalation
+    // Sprint 194b (C4): Legacy mode — restrict to student/teacher only.
+    // Admin role must come via OAuth JWT, not spoofable X-Role header.
     const safeRole = ["student", "teacher"].includes(settings.user_role)
       ? settings.user_role
       : "student";

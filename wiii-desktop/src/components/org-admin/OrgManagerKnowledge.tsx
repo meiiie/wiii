@@ -6,7 +6,7 @@
  *
  * Uses org-admin-store for state management (consistent with Members/Settings tabs).
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileUp, Trash2, FileText, RefreshCw, AlertCircle, CheckCircle2, Loader2, Upload } from "lucide-react";
 import { useOrgAdminStore } from "@/stores/org-admin-store";
 import type { OrgDocument } from "@/api/types";
@@ -70,9 +70,12 @@ export function OrgManagerKnowledge({ orgId }: { orgId: string }) {
   } = useOrgAdminStore();
 
   const [uploading, setUploading] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState<File | null>(null);
+  const [uploadStage, setUploadStage] = useState<"sending" | "processing">("sending");
   const [deleteTarget, setDeleteTarget] = useState<OrgDocument | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const stageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Fetch document list on mount
@@ -94,22 +97,30 @@ export function OrgManagerKnowledge({ orgId }: { orgId: string }) {
     };
   }, [documents, orgId, fetchDocuments]);
 
-  // Handle file upload
+  // Handle file upload — Sprint 213: two-stage progress indicator
   const handleUpload = async (file: File) => {
     if (!file.name.toLowerCase().endsWith(".pdf")) {
       showToast("error", "Chỉ chấp nhận file PDF");
       return;
     }
     if (file.size > 50 * 1024 * 1024) {
-      showToast("error", "File quá lớn (tối đa 50MB)");
+      showToast("error", `File quá lớn (${formatFileSize(file.size)}). Tối đa 50MB.`);
       return;
     }
 
     setUploading(true);
+    setUploadingFile(file);
+    setUploadStage("sending");
+    stageTimerRef.current = setTimeout(() => setUploadStage("processing"), 1500);
     try {
       await uploadDocument(orgId, file);
     } finally {
       setUploading(false);
+      setUploadingFile(null);
+      if (stageTimerRef.current) {
+        clearTimeout(stageTimerRef.current);
+        stageTimerRef.current = null;
+      }
     }
   };
 
@@ -167,10 +178,27 @@ export function OrgManagerKnowledge({ orgId }: { orgId: string }) {
           className="hidden"
           aria-hidden="true"
         />
-        {uploading ? (
-          <div className="flex flex-col items-center gap-2">
+        {uploading && uploadingFile ? (
+          <div className="flex flex-col items-center gap-3">
             <Loader2 size={32} className="text-[var(--accent)] animate-spin" />
-            <p className="text-sm text-text-secondary">Đang tải lên và xử lý...</p>
+            <p className="text-sm font-medium text-text truncate max-w-[90%]" title={uploadingFile.name}>
+              {uploadingFile.name}
+            </p>
+            <p className="text-xs text-text-tertiary">{formatFileSize(uploadingFile.size)}</p>
+            <p className="text-sm text-text-secondary">
+              {uploadStage === "sending"
+                ? "Đang gửi file lên máy chủ..."
+                : "Đang phân tích và tạo embedding..."}
+            </p>
+            {/* 2-step dot indicator */}
+            <div className="flex items-center gap-1 text-xs text-text-tertiary">
+              <span className={`w-2 h-2 rounded-full ${uploadStage === "sending" ? "bg-[var(--accent)]" : "bg-[var(--accent)]"}`} />
+              <span className={`w-6 h-0.5 ${uploadStage === "processing" ? "bg-[var(--accent)]" : "bg-border"}`} />
+              <span className={`w-2 h-2 rounded-full ${uploadStage === "processing" ? "bg-[var(--accent)]" : "bg-border"}`} />
+              <span className="ml-2">
+                {uploadStage === "sending" ? "Tải lên" : "Xử lý"}
+              </span>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-2">
@@ -212,7 +240,7 @@ export function OrgManagerKnowledge({ orgId }: { orgId: string }) {
             return (
               <div
                 key={doc.document_id}
-                className="flex items-center gap-3 p-3 rounded-xl border border-border bg-surface hover:bg-surface-secondary transition-colors"
+                className="relative overflow-hidden flex items-center gap-3 p-3 rounded-xl border border-border bg-surface hover:bg-surface-secondary transition-colors"
               >
                 <FileUp size={18} className="text-text-tertiary flex-shrink-0" />
                 <div className="flex-1 min-w-0">
@@ -222,6 +250,9 @@ export function OrgManagerKnowledge({ orgId }: { orgId: string }) {
                   <div className="flex items-center gap-3 text-xs text-text-tertiary mt-0.5">
                     <span>{formatFileSize(doc.file_size_bytes)}</span>
                     {doc.page_count !== null && <span>{doc.page_count} trang</span>}
+                    {doc.chunk_count !== null && doc.chunk_count > 0 && (
+                      <span>{doc.chunk_count} phân đoạn</span>
+                    )}
                     <span>{formatDate(doc.created_at)}</span>
                   </div>
                   {doc.error_message && (
@@ -241,6 +272,12 @@ export function OrgManagerKnowledge({ orgId }: { orgId: string }) {
                 >
                   <Trash2 size={14} />
                 </button>
+                {/* Sprint 213: Indeterminate progress bar for uploading/processing docs */}
+                {(doc.status === "uploading" || doc.status === "processing") && (
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-border">
+                    <div className="h-full w-1/3 bg-[var(--accent)] animate-progress-bar rounded-full" />
+                  </div>
+                )}
               </div>
             );
           })}

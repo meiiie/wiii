@@ -49,7 +49,7 @@ export function HeartbeatStatus({ heartbeat }: HeartbeatStatusProps) {
             />
           </motion.div>
           <span className="text-sm font-medium text-[var(--text-primary)]">
-            Heartbeat
+            Nhịp tim
           </span>
         </div>
         <span
@@ -61,25 +61,25 @@ export function HeartbeatStatus({ heartbeat }: HeartbeatStatusProps) {
             color: heartbeat.is_running ? "#10b981" : "#9ca3af",
           }}
         >
-          {heartbeat.is_running ? "Active" : "Stopped"}
+          {heartbeat.is_running ? "Đang chạy" : "Dừng"}
         </span>
       </div>
 
       <div className="grid grid-cols-2 gap-2 text-xs mb-3">
         <div>
-          <div className="text-[var(--text-tertiary)]">Cycles</div>
+          <div className="text-[var(--text-tertiary)]">Chu kỳ</div>
           <div className="text-[var(--text-primary)] font-medium">
             {heartbeat.heartbeat_count}
           </div>
         </div>
         <div>
-          <div className="text-[var(--text-tertiary)]">Interval</div>
+          <div className="text-[var(--text-tertiary)]">Khoảng cách</div>
           <div className="text-[var(--text-primary)] font-medium">
             {Math.round(heartbeat.interval_seconds / 60)}min
           </div>
         </div>
         <div className="col-span-2">
-          <div className="text-[var(--text-tertiary)]">Active hours</div>
+          <div className="text-[var(--text-tertiary)]">Giờ hoạt động</div>
           <div className="text-[var(--text-primary)] font-medium">
             {heartbeat.active_hours}
           </div>
@@ -101,7 +101,7 @@ export function HeartbeatStatus({ heartbeat }: HeartbeatStatusProps) {
         ) : (
           <Play className="w-3 h-3" />
         )}
-        {triggering ? "Running..." : "Trigger Heartbeat"}
+        {triggering ? "Đang chạy..." : "Kích hoạt nhịp tim"}
       </button>
     </div>
   );

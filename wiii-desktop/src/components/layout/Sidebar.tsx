@@ -323,7 +323,7 @@ export function Sidebar() {
               <User size={16} className="shrink-0 text-text-tertiary" />
             )}
             <span className="flex-1 text-sm text-text-secondary truncate">
-              {displayUserName || "User"}
+              {displayUserName || "Người dùng"}
             </span>
             <button
               onClick={handleLogout}

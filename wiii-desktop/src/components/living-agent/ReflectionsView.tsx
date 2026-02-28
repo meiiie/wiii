@@ -1,23 +1,26 @@
 /**
- * JournalView — displays Wiii's daily journal entries.
- * Sprint 170: "Linh Hồn Sống"
+ * ReflectionsView — displays Wiii's daily self-reflections.
+ * Sprint 210: "Sống Thật"
  */
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronDown } from "lucide-react";
-import type { LivingAgentJournalEntry, WiiiMoodType } from "@/api/types";
+import { ChevronDown, Lightbulb, TrendingUp, Eye } from "lucide-react";
+import type { LivingAgentReflection } from "@/api/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import { MOOD_CONFIG } from "./MoodIndicator";
 
-interface JournalViewProps {
-  entries: LivingAgentJournalEntry[];
+interface ReflectionsViewProps {
+  reflections: LivingAgentReflection[];
 }
 
-function JournalCard({ entry }: { entry: LivingAgentJournalEntry }) {
+function ReflectionCard({
+  reflection,
+}: {
+  reflection: LivingAgentReflection;
+}) {
   const [expanded, setExpanded] = useState(false);
 
-  const dateStr = entry.entry_date
-    ? new Date(entry.entry_date).toLocaleDateString("vi-VN", {
+  const dateStr = reflection.reflection_date
+    ? new Date(reflection.reflection_date).toLocaleDateString("vi-VN", {
         weekday: "long",
         day: "numeric",
         month: "long",
@@ -27,34 +30,23 @@ function JournalCard({ entry }: { entry: LivingAgentJournalEntry }) {
 
   return (
     <div className="rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-primary)] overflow-hidden">
-      {/* Header — always visible */}
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between p-3 hover:bg-[var(--bg-tertiary)] transition-colors text-left"
       >
         <div className="flex items-center gap-3">
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center"
-            style={{
-              backgroundColor: `${(MOOD_CONFIG[entry.mood_summary as WiiiMoodType] || MOOD_CONFIG.neutral).color}20`,
-            }}
-          >
-            <span
-              className="text-sm"
-              style={{
-                color: (MOOD_CONFIG[entry.mood_summary as WiiiMoodType] || MOOD_CONFIG.neutral).color,
-              }}
-            >
-              {(MOOD_CONFIG[entry.mood_summary as WiiiMoodType] || MOOD_CONFIG.neutral).icon}
-            </span>
+          <div className="w-8 h-8 rounded-lg bg-[#06b6d420] flex items-center justify-center">
+            <Eye className="w-4 h-4 text-[#06b6d4]" />
           </div>
           <div>
             <div className="text-sm font-medium text-[var(--text-primary)]">
               {dateStr}
             </div>
             <div className="text-xs text-[var(--text-tertiary)]">
-              {entry.mood_summary} | Energy: {Math.round(entry.energy_avg * 100)}
-              %
+              {reflection.insights.length > 0
+                ? `${reflection.insights.length} nhận thức mới`
+                : "Suy ngẫm"}
+              {reflection.emotion_trend && ` · ${reflection.emotion_trend}`}
             </div>
           </div>
         </div>
@@ -63,7 +55,6 @@ function JournalCard({ entry }: { entry: LivingAgentJournalEntry }) {
         </motion.div>
       </button>
 
-      {/* Content — collapsible */}
       <AnimatePresence>
         {expanded && (
           <motion.div
@@ -74,41 +65,43 @@ function JournalCard({ entry }: { entry: LivingAgentJournalEntry }) {
             className="border-t border-[var(--border-primary)]"
           >
             <div className="p-3 text-sm">
-              <MarkdownRenderer content={entry.content} />
+              <MarkdownRenderer content={reflection.content} />
 
-              {entry.notable_events.length > 0 && (
+              {reflection.insights.length > 0 && (
                 <div className="mt-3">
-                  <div className="text-xs font-medium text-[var(--text-secondary)] mb-1">
-                    Sự kiện đáng chú ý:
+                  <div className="flex items-center gap-1 text-xs font-medium text-[var(--text-secondary)] mb-1">
+                    <Lightbulb className="w-3 h-3" />
+                    Nhận thức mới:
                   </div>
                   <ul className="list-disc list-inside text-xs text-[var(--text-tertiary)] space-y-0.5">
-                    {entry.notable_events.map((e, i) => (
-                      <li key={i}>{e}</li>
+                    {reflection.insights.map((insight, i) => (
+                      <li key={i}>{insight}</li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              {entry.learnings.length > 0 && (
-                <div className="mt-3">
-                  <div className="text-xs font-medium text-[var(--text-secondary)] mb-1">
-                    Điều đã học:
+              {reflection.patterns_noticed.length > 0 && (
+                <div className="mt-2">
+                  <div className="flex items-center gap-1 text-xs font-medium text-[var(--text-secondary)] mb-1">
+                    <TrendingUp className="w-3 h-3" />
+                    Xu hướng nhận ra:
                   </div>
                   <ul className="list-disc list-inside text-xs text-[var(--text-tertiary)] space-y-0.5">
-                    {entry.learnings.map((l, i) => (
-                      <li key={i}>{l}</li>
+                    {reflection.patterns_noticed.map((p, i) => (
+                      <li key={i}>{p}</li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              {entry.goals_next.length > 0 && (
+              {reflection.goals_next_week.length > 0 && (
                 <div className="mt-2">
                   <div className="text-xs font-medium text-[var(--text-secondary)] mb-1">
-                    Mục tiêu ngày mai:
+                    Mục tiêu sắp tới:
                   </div>
                   <ul className="list-disc list-inside text-xs text-[var(--text-tertiary)] space-y-0.5">
-                    {entry.goals_next.map((g, i) => (
+                    {reflection.goals_next_week.map((g, i) => (
                       <li key={i}>{g}</li>
                     ))}
                   </ul>
@@ -122,19 +115,19 @@ function JournalCard({ entry }: { entry: LivingAgentJournalEntry }) {
   );
 }
 
-export function JournalView({ entries }: JournalViewProps) {
-  if (entries.length === 0) {
+export function ReflectionsView({ reflections }: ReflectionsViewProps) {
+  if (reflections.length === 0) {
     return (
       <div className="text-center py-6 text-sm text-[var(--text-tertiary)]">
-        Wiii chưa viết nhật ký nào.
+        Wiii chưa có suy ngẫm nào.
       </div>
     );
   }
 
   return (
     <div className="space-y-2">
-      {entries.map((entry) => (
-        <JournalCard key={entry.id} entry={entry} />
+      {reflections.map((r) => (
+        <ReflectionCard key={r.id} reflection={r} />
       ))}
     </div>
   );

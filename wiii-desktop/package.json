@@ -55,6 +55,7 @@
     "@types/react-plotly.js": "^2.6.4",
     "@types/uuid": "^9.0.0",
     "@vitejs/plugin-react": "^4.2.0",
+    "@vitest/coverage-v8": "^4.0.18",
     "autoprefixer": "^10.4.0",
     "cross-env": "^7.0.3",
     "jsdom": "^24.0.0",

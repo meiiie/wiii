@@ -10,20 +10,20 @@ interface MoodIndicatorProps {
   compact?: boolean;
 }
 
-const MOOD_CONFIG: Record<
+export const MOOD_CONFIG: Record<
   WiiiMoodType,
   { color: string; label: string; icon: string }
 > = {
-  curious: { color: "#6366f1", label: "To mo", icon: "?" },
-  happy: { color: "#f59e0b", label: "Vui ve", icon: "^^" },
-  excited: { color: "#ef4444", label: "Phan khich", icon: "!!" },
-  focused: { color: "#3b82f6", label: "Tap trung", icon: ">>" },
-  calm: { color: "#10b981", label: "Binh yen", icon: "~" },
-  tired: { color: "#9ca3af", label: "Hoi met", icon: ".." },
-  concerned: { color: "#8b5cf6", label: "Lo lang", icon: "??" },
-  reflective: { color: "#06b6d4", label: "Tram tu", icon: "..." },
-  proud: { color: "#f97316", label: "Tu hao", icon: "*" },
-  neutral: { color: "#6b7280", label: "Binh thuong", icon: "-" },
+  curious: { color: "#6366f1", label: "Tò mò", icon: "?" },
+  happy: { color: "#f59e0b", label: "Vui vẻ", icon: "^^" },
+  excited: { color: "#ef4444", label: "Phấn khích", icon: "!!" },
+  focused: { color: "#3b82f6", label: "Tập trung", icon: ">>" },
+  calm: { color: "#10b981", label: "Bình yên", icon: "~" },
+  tired: { color: "#9ca3af", label: "Hơi mệt", icon: ".." },
+  concerned: { color: "#8b5cf6", label: "Lo lắng", icon: "??" },
+  reflective: { color: "#06b6d4", label: "Trầm tư", icon: "..." },
+  proud: { color: "#f97316", label: "Tự hào", icon: "*" },
+  neutral: { color: "#6b7280", label: "Bình thường", icon: "-" },
 };
 
 function EnergyBar({ value, label }: { value: number; label: string }) {
@@ -98,9 +98,9 @@ export function MoodIndicator({ state, compact = false }: MoodIndicatorProps) {
 
       {/* Energy bars */}
       <div className="space-y-1.5">
-        <EnergyBar value={state.energy_level} label="Energy" />
-        <EnergyBar value={state.social_battery} label="Social" />
-        <EnergyBar value={state.engagement} label="Focus" />
+        <EnergyBar value={state.energy_level} label="Năng lượng" />
+        <EnergyBar value={state.social_battery} label="Xã hội" />
+        <EnergyBar value={state.engagement} label="Tập trung" />
       </div>
     </div>
   );

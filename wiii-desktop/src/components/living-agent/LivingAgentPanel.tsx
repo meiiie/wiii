@@ -7,19 +7,23 @@
  */
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Brain, BookOpen, Zap, Heart, RefreshCw } from "lucide-react";
+import { Brain, BookOpen, Zap, Heart, RefreshCw, Target, Eye } from "lucide-react";
 import { useLivingAgentStore } from "@/stores/living-agent-store";
 import { MoodIndicator } from "./MoodIndicator";
 import { SkillTree } from "./SkillTree";
 import { JournalView } from "./JournalView";
 import { HeartbeatStatus } from "./HeartbeatStatus";
+import { GoalsView } from "./GoalsView";
+import { ReflectionsView } from "./ReflectionsView";
 
-type Tab = "overview" | "skills" | "journal";
+type Tab = "overview" | "skills" | "goals" | "journal" | "reflections";
 
 const TABS: { id: Tab; label: string; icon: typeof Brain }[] = [
-  { id: "overview", label: "Tong quan", icon: Heart },
-  { id: "skills", label: "Ky nang", icon: Zap },
-  { id: "journal", label: "Nhat ky", icon: BookOpen },
+  { id: "overview", label: "Tổng quan", icon: Heart },
+  { id: "skills", label: "Kỹ năng", icon: Zap },
+  { id: "goals", label: "Mục tiêu", icon: Target },
+  { id: "journal", label: "Nhật ký", icon: BookOpen },
+  { id: "reflections", label: "Suy ngẫm", icon: Eye },
 ];
 
 export function LivingAgentPanel() {
@@ -30,11 +34,16 @@ export function LivingAgentPanel() {
     emotionalState,
     heartbeat,
     skills,
+    goals,
+    reflections,
     journalEntries,
     loading,
     fetchStatus,
+    fetchEmotionalState,
     fetchSkills,
     fetchJournal,
+    fetchGoals,
+    fetchReflections,
   } = useLivingAgentStore();
 
   // Fetch on mount
@@ -42,28 +51,41 @@ export function LivingAgentPanel() {
     fetchStatus();
   }, [fetchStatus]);
 
+  // Auto-refresh emotional state every 30s while panel is open
+  useEffect(() => {
+    if (!enabled) return;
+    const interval = setInterval(() => {
+      fetchEmotionalState();
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [enabled, fetchEmotionalState]);
+
   // Fetch tab-specific data
   useEffect(() => {
     if (!enabled) return;
     if (activeTab === "skills") fetchSkills();
+    if (activeTab === "goals") fetchGoals();
     if (activeTab === "journal") fetchJournal();
-  }, [activeTab, enabled, fetchSkills, fetchJournal]);
+    if (activeTab === "reflections") fetchReflections();
+  }, [activeTab, enabled, fetchSkills, fetchGoals, fetchJournal, fetchReflections]);
 
   const handleRefresh = useCallback(() => {
     fetchStatus();
     if (activeTab === "skills") fetchSkills();
+    if (activeTab === "goals") fetchGoals();
     if (activeTab === "journal") fetchJournal();
-  }, [activeTab, fetchStatus, fetchSkills, fetchJournal]);
+    if (activeTab === "reflections") fetchReflections();
+  }, [activeTab, fetchStatus, fetchSkills, fetchGoals, fetchJournal, fetchReflections]);
 
   if (!enabled) {
     return (
       <div className="p-6 text-center">
         <Brain className="w-12 h-12 mx-auto mb-3 text-[var(--text-tertiary)]" />
         <div className="text-sm text-[var(--text-secondary)] mb-1">
-          Living Agent chua duoc bat
+          Tính năng này sẽ sớm ra mắt
         </div>
         <div className="text-xs text-[var(--text-tertiary)]">
-          Dat ENABLE_LIVING_AGENT=true de bat tinh nang nay.
+          Wiii đang hoàn thiện khả năng tự học và phát triển. Hãy quay lại sau nhé!
         </div>
       </div>
     );
@@ -82,7 +104,7 @@ export function LivingAgentPanel() {
           </motion.div>
           <div>
             <div className="text-sm font-medium text-[var(--text-primary)]">
-              {soulName || "Wiii"} — Linh Hon Song
+              {soulName || "Wiii"} — Linh Hồn Sống
             </div>
             {emotionalState && (
               <MoodIndicator state={emotionalState} compact />
@@ -93,7 +115,7 @@ export function LivingAgentPanel() {
           onClick={handleRefresh}
           disabled={loading}
           className="p-1.5 rounded-md hover:bg-[var(--bg-tertiary)] transition-colors"
-          title="Refresh"
+          title="Làm mới"
         >
           <RefreshCw
             className={`w-4 h-4 text-[var(--text-tertiary)] ${loading ? "animate-spin" : ""}`}
@@ -139,7 +161,7 @@ export function LivingAgentPanel() {
               {emotionalState && (
                 <div>
                   <div className="text-xs font-medium text-[var(--text-secondary)] mb-2 uppercase tracking-wider">
-                    Cam xuc
+                    Cảm xúc
                   </div>
                   <MoodIndicator state={emotionalState} />
                 </div>
@@ -149,7 +171,7 @@ export function LivingAgentPanel() {
               {heartbeat && (
                 <div>
                   <div className="text-xs font-medium text-[var(--text-secondary)] mb-2 uppercase tracking-wider">
-                    Nhip tim
+                    Nhịp tim
                   </div>
                   <HeartbeatStatus heartbeat={heartbeat} />
                 </div>
@@ -168,6 +190,17 @@ export function LivingAgentPanel() {
             </motion.div>
           )}
 
+          {activeTab === "goals" && (
+            <motion.div
+              key="goals"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+            >
+              <GoalsView goals={goals} />
+            </motion.div>
+          )}
+
           {activeTab === "journal" && (
             <motion.div
               key="journal"
@@ -176,6 +209,17 @@ export function LivingAgentPanel() {
               exit={{ opacity: 0, y: -8 }}
             >
               <JournalView entries={journalEntries} />
+            </motion.div>
+          )}
+
+          {activeTab === "reflections" && (
+            <motion.div
+              key="reflections"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+            >
+              <ReflectionsView reflections={reflections} />
             </motion.div>
           )}
         </AnimatePresence>

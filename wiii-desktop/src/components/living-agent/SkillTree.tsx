@@ -13,12 +13,12 @@ const STATUS_CONFIG: Record<
   SkillStatus,
   { color: string; label: string; progress: number }
 > = {
-  discovered: { color: "#9ca3af", label: "Discovered", progress: 0.1 },
-  learning: { color: "#6366f1", label: "Learning", progress: 0.3 },
-  practicing: { color: "#3b82f6", label: "Practicing", progress: 0.55 },
-  evaluating: { color: "#f59e0b", label: "Evaluating", progress: 0.75 },
-  mastered: { color: "#10b981", label: "Mastered", progress: 1.0 },
-  archived: { color: "#6b7280", label: "Archived", progress: 1.0 },
+  discovered: { color: "#9ca3af", label: "Phát hiện", progress: 0.1 },
+  learning: { color: "#6366f1", label: "Đang học", progress: 0.3 },
+  practicing: { color: "#3b82f6", label: "Luyện tập", progress: 0.55 },
+  evaluating: { color: "#f59e0b", label: "Đánh giá", progress: 0.75 },
+  mastered: { color: "#10b981", label: "Thông thạo", progress: 1.0 },
+  archived: { color: "#6b7280", label: "Lưu trữ", progress: 1.0 },
 };
 
 function SkillCard({ skill }: { skill: LivingAgentSkill }) {
@@ -56,8 +56,8 @@ function SkillCard({ skill }: { skill: LivingAgentSkill }) {
         <span>{skill.domain}</span>
         <span>
           {skill.usage_count > 0
-            ? `${skill.usage_count}x used`
-            : "Not used yet"}
+            ? `Dùng ${skill.usage_count} lần`
+            : "Chưa sử dụng"}
         </span>
       </div>
     </div>
@@ -68,7 +68,7 @@ export function SkillTree({ skills }: SkillTreeProps) {
   if (skills.length === 0) {
     return (
       <div className="text-center py-6 text-sm text-[var(--text-tertiary)]">
-        Wiii chua hoc ky nang nao.
+        Wiii chưa học kỹ năng nào.
       </div>
     );
   }
@@ -84,7 +84,7 @@ export function SkillTree({ skills }: SkillTreeProps) {
       {active.length > 0 && (
         <div>
           <div className="text-xs font-medium text-[var(--text-secondary)] mb-2 uppercase tracking-wider">
-            Dang hoc ({active.length})
+            Đang học ({active.length})
           </div>
           <div className="space-y-2">
             {active.map((skill) => (
@@ -97,7 +97,7 @@ export function SkillTree({ skills }: SkillTreeProps) {
       {mastered.length > 0 && (
         <div>
           <div className="text-xs font-medium text-[var(--text-secondary)] mb-2 uppercase tracking-wider">
-            Da thong thao ({mastered.length})
+            Đã thông thạo ({mastered.length})
           </div>
           <div className="space-y-2">
             {mastered.map((skill) => (

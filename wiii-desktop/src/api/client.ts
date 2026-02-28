@@ -83,6 +83,20 @@ export class WiiiClient {
     return this.headerResolver ? this.headerResolver() : this.headers;
   }
 
+  /** Sprint 213: Extract detailed error message from backend response body */
+  private async _throwApiError(response: Response): Promise<never> {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      if (body?.detail) {
+        detail = typeof body.detail === "string"
+          ? body.detail
+          : JSON.stringify(body.detail);
+      }
+    } catch { /* Body not JSON — keep statusText */ }
+    throw new Error(detail);
+  }
+
   /** GET request */
   async get<T>(
     path: string,
@@ -112,7 +126,7 @@ export class WiiiClient {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      await this._throwApiError(response);
     }
 
     return (await response.json()) as T;
@@ -147,7 +161,7 @@ export class WiiiClient {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      await this._throwApiError(response);
     }
 
     return (await response.json()) as T;
@@ -182,7 +196,7 @@ export class WiiiClient {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      await this._throwApiError(response);
     }
 
     return (await response.json()) as T;
@@ -222,7 +236,7 @@ export class WiiiClient {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      await this._throwApiError(response);
     }
 
     return (await response.json()) as T;
@@ -248,7 +262,7 @@ export class WiiiClient {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      await this._throwApiError(response);
     }
 
     return (await response.json()) as T;
@@ -282,7 +296,7 @@ export class WiiiClient {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      await this._throwApiError(response);
     }
 
     return (await response.json()) as T;
@@ -316,7 +330,7 @@ export class WiiiClient {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      await this._throwApiError(response);
     }
 
     return (await response.json()) as T;
@@ -348,7 +362,7 @@ export class WiiiClient {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      await this._throwApiError(response);
     }
 
     return (await response.json()) as T;
@@ -396,7 +410,7 @@ export class WiiiClient {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      await this._throwApiError(response);
     }
 
     if (!response.body) {

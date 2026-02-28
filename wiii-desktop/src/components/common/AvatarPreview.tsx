@@ -44,20 +44,20 @@ const ALL_MOODS: MoodType[] = [
 ];
 
 const STATE_LABELS: Record<AvatarState, string> = {
-  idle: "Idle — mim cuoi nhe",
-  listening: "Listening — mat mo to",
-  thinking: "Thinking — nhiu may",
-  speaking: "Speaking — mieng chuyen dong",
-  complete: "Complete — cuoi rang ro",
-  error: "Error — cau may",
+  idle: "Chờ — mỉm cười nhẹ",
+  listening: "Lắng nghe — mắt mở to",
+  thinking: "Suy nghĩ — nhíu mày",
+  speaking: "Nói — miệng chuyển động",
+  complete: "Hoàn thành — cười rạng rỡ",
+  error: "Lỗi — cau mày",
 };
 
 const MOOD_LABELS: Record<MoodType, { emoji: string; desc: string }> = {
-  neutral: { emoji: ":|", desc: "Binh thuong" },
-  excited: { emoji: ":D", desc: "Hung khoi, nhanh, lap lanh" },
-  warm: { emoji: ":)", desc: "Am ap, diu dang, blush" },
-  concerned: { emoji: ":(", desc: "Lo lang, chan may nhiu" },
-  gentle: { emoji: "-_-", desc: "Nhe nhang, cham rai" },
+  neutral: { emoji: ":|", desc: "Bình thường" },
+  excited: { emoji: ":D", desc: "Hưng khởi, nhanh, lấp lánh" },
+  warm: { emoji: ":)", desc: "Ấm áp, dịu dàng, ửng hồng" },
+  concerned: { emoji: ":(", desc: "Lo lắng, chân mày nhíu" },
+  gentle: { emoji: "-_-", desc: "Nhẹ nhàng, chậm rãi" },
 };
 
 /** Preset soul emotion expressions for quick testing */

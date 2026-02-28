@@ -10,6 +10,8 @@ import type {
   LivingAgentSkill,
   LivingAgentHeartbeat,
   HeartbeatTriggerResult,
+  LivingAgentGoal,
+  LivingAgentReflection,
 } from "./types";
 import { getClient } from "./client";
 
@@ -62,4 +64,20 @@ export async function getHeartbeatInfo(): Promise<LivingAgentHeartbeat> {
 export async function triggerHeartbeat(): Promise<HeartbeatTriggerResult> {
   const client = getClient();
   return client.post<HeartbeatTriggerResult>(`${PREFIX}/heartbeat/trigger`, {});
+}
+
+/** Sprint 210: Get goals */
+export async function getGoals(): Promise<LivingAgentGoal[]> {
+  const client = getClient();
+  return client.get<LivingAgentGoal[]>(`${PREFIX}/goals`);
+}
+
+/** Sprint 210: Get reflections */
+export async function getReflections(
+  days: number = 14
+): Promise<LivingAgentReflection[]> {
+  const client = getClient();
+  return client.get<LivingAgentReflection[]>(
+    `${PREFIX}/reflections?days=${days}`
+  );
 }

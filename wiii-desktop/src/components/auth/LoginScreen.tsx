@@ -65,7 +65,7 @@ export function LoginScreen() {
       try {
         const oauth = await loadOAuth();
         const callbackUrl = await new Promise<string>((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error("OAuth timeout (60s)")), 60000);
+          const timeout = setTimeout(() => reject(new Error("Hết thời gian chờ Google phản hồi. Vui lòng thử lại.")), 60000);
           oauth.onUrl((url: string) => {
             clearTimeout(timeout);
             resolve(url);
@@ -87,7 +87,7 @@ export function LoginScreen() {
         const avatarUrl = params.get("avatar_url") || "";
 
         if (!accessToken || !refreshToken) {
-          throw new Error("Missing tokens in callback");
+          throw new Error("Không nhận được thông tin đăng nhập từ Google. Vui lòng thử lại.");
         }
 
         // Sprint 192: Parse role from backend instead of hardcoding
@@ -198,16 +198,16 @@ export function LoginScreen() {
             onClick={() => setShowDevMode(true)}
             className="text-xs text-text-tertiary hover:text-text-secondary transition-colors"
           >
-            Developer Mode (API Key)
+            Chế độ nhà phát triển
           </button>
         ) : (
           <div className="w-full flex flex-col gap-3">
             <p className="text-xs text-text-tertiary text-center">
-              Dành cho nhà phát triển — nhập API Key thủ công
+              Dành cho nhà phát triển — nhập Khóa API thủ công
             </p>
             <input
               type="password"
-              placeholder="API Key"
+              placeholder="Khóa API"
               value={settings.api_key}
               onChange={(e) => updateSettings({ api_key: e.target.value })}
               className="w-full h-9 px-3 rounded-lg bg-surface-secondary border border-border text-sm text-text placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
@@ -217,7 +217,7 @@ export function LoginScreen() {
               disabled={!settings.api_key}
               className="w-full h-9 rounded-lg bg-surface-tertiary text-sm text-text-secondary hover:bg-surface-secondary transition-colors disabled:opacity-50"
             >
-              Tiếp tục với API Key
+              Tiếp tục với Khóa API
             </button>
           </div>
         )}

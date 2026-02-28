@@ -10,6 +10,8 @@ import type {
   LivingAgentJournalEntry,
   LivingAgentSkill,
   LivingAgentHeartbeat,
+  LivingAgentGoal,
+  LivingAgentReflection,
 } from "@/api/types";
 import {
   getLivingAgentStatus,
@@ -17,6 +19,8 @@ import {
   getJournalEntries,
   getSkills,
   triggerHeartbeat,
+  getGoals,
+  getReflections,
 } from "@/api/living-agent";
 
 interface LivingAgentState {
@@ -27,6 +31,8 @@ interface LivingAgentState {
   heartbeat: LivingAgentHeartbeat | null;
   journalEntries: LivingAgentJournalEntry[];
   skills: LivingAgentSkill[];
+  goals: LivingAgentGoal[];
+  reflections: LivingAgentReflection[];
   loading: boolean;
   error: string | null;
   lastFetched: number | null;
@@ -36,6 +42,8 @@ interface LivingAgentState {
   fetchEmotionalState: () => Promise<void>;
   fetchJournal: (days?: number) => Promise<void>;
   fetchSkills: (params?: { status?: string; domain?: string }) => Promise<void>;
+  fetchGoals: () => Promise<void>;
+  fetchReflections: (days?: number) => Promise<void>;
   triggerHeartbeat: () => Promise<boolean>;
   reset: () => void;
 }
@@ -47,6 +55,8 @@ const INITIAL_STATE = {
   heartbeat: null,
   journalEntries: [],
   skills: [],
+  goals: [],
+  reflections: [],
   loading: false,
   error: null,
   lastFetched: null,
@@ -97,6 +107,24 @@ export const useLivingAgentStore = create<LivingAgentState>((set, get) => ({
       set({ skills });
     } catch (e) {
       console.warn("[living-agent] Failed to fetch skills:", e);
+    }
+  },
+
+  fetchGoals: async () => {
+    try {
+      const goals = await getGoals();
+      set({ goals });
+    } catch (e) {
+      console.warn("[living-agent] Failed to fetch goals:", e);
+    }
+  },
+
+  fetchReflections: async (days = 14) => {
+    try {
+      const reflections = await getReflections(days);
+      set({ reflections });
+    } catch (e) {
+      console.warn("[living-agent] Failed to fetch reflections:", e);
     }
   },
 

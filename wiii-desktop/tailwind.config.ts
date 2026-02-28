@@ -39,6 +39,7 @@ const config: Config = {
         "pulse-dot": "pulse-dot 1.4s ease-in-out infinite",
         "fade-in": "fade-in 0.2s ease-out",
         "slide-in": "slide-in 0.25s ease-out",
+        "progress-bar": "progress-bar 1.5s ease-in-out infinite",
       },
       keyframes: {
         "pulse-dot": {
@@ -52,6 +53,10 @@ const config: Config = {
         "slide-in": {
           from: { opacity: "0", transform: "translateY(4px)" },
           to: { opacity: "1", transform: "translateY(0)" },
+        },
+        "progress-bar": {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(400%)" },
         },
       },
     },

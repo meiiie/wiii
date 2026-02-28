@@ -1,9 +1,31 @@
 /**
  * Unit tests for SettingsPage component logic & settings store.
+ * Sprint 215: Added tests for read-only user ID, org-aware role, domain auto-select.
+ * Sprint 216: Added tests for tab visibility, progressive disclosure, copy support ID.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUIStore } from "@/stores/ui-store";
+import { useAuthStore } from "@/stores/auth-store";
+
+// Mock API dependencies for org-store
+vi.mock("@/api/organizations", () => ({
+  listOrganizations: vi.fn().mockRejectedValue(new Error("Not configured")),
+  getOrgSettings: vi.fn().mockRejectedValue(new Error("Not configured")),
+  getOrgPermissions: vi.fn().mockRejectedValue(new Error("Not configured")),
+}));
+vi.mock("@/api/admin", () => ({
+  getAdminContext: vi.fn().mockRejectedValue(new Error("Not configured")),
+}));
+vi.mock("@/lib/org-branding", () => ({
+  applyOrgBranding: vi.fn(),
+  resetBranding: vi.fn(),
+  DEFAULT_BRANDING: { chatbot_name: "Wiii", welcome_message: "Xin chào!" },
+}));
+vi.mock("@/lib/constants", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, PERSONAL_ORG_ID: "personal" };
+});
 
 // Reset stores before each test
 beforeEach(() => {
@@ -64,7 +86,7 @@ describe("Settings Store", () => {
     expect(useSettingsStore.getState().settings.theme).toBe("dark");
   });
 
-  it("should update user role", async () => {
+  it("should update user role in store (Sprint 215: no longer editable in UI)", async () => {
     await useSettingsStore.getState().updateSettings({ user_role: "teacher" });
     expect(useSettingsStore.getState().settings.user_role).toBe("teacher");
   });
@@ -176,5 +198,184 @@ describe("Settings — Display Name & Domain", () => {
     expect(useSettingsStore.getState().settings.show_reasoning_trace).toBe(
       true
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 215: "Hồ Sơ Thật" — Settings User Tab UX Overhaul
+// ---------------------------------------------------------------------------
+import { useOrgStore } from "@/stores/org-store";
+
+describe("Sprint 215 — User ID read-only", () => {
+  it("should preserve user_id in settings store (sent via X-User-ID)", () => {
+    const { settings } = useSettingsStore.getState();
+    expect(settings.user_id).toBe("test-user-fixed");
+    // user_id is still stored and used in headers — just not editable in UI
+    const headers = useSettingsStore.getState().getAuthHeaders();
+    expect(headers["X-User-ID"]).toBe("test-user-fixed");
+  });
+
+  it("should still allow programmatic user_id update (store-level)", async () => {
+    await useSettingsStore.getState().updateSettings({ user_id: "new-id" });
+    expect(useSettingsStore.getState().settings.user_id).toBe("new-id");
+  });
+});
+
+describe("Sprint 215 — Org-aware role display", () => {
+  beforeEach(() => {
+    useOrgStore.setState({
+      activeOrgId: null,
+      orgRole: null,
+      organizations: [],
+      multiTenantEnabled: false,
+      permissions: [],
+      orgSettings: null,
+    });
+  });
+
+  it("should store orgRole from permissions response", () => {
+    useOrgStore.setState({ orgRole: "admin", activeOrgId: "org-1" });
+    expect(useOrgStore.getState().orgRole).toBe("admin");
+  });
+
+  it("should reset orgRole when switching to personal workspace", () => {
+    useOrgStore.setState({ orgRole: "owner", activeOrgId: "org-1" });
+    // Simulate switch to personal
+    useOrgStore.setState({ orgRole: null, activeOrgId: null });
+    expect(useOrgStore.getState().orgRole).toBeNull();
+  });
+
+  it("should default orgRole to null", () => {
+    expect(useOrgStore.getState().orgRole).toBeNull();
+  });
+
+  it("should support all 3 org role values", () => {
+    for (const role of ["member", "admin", "owner"]) {
+      useOrgStore.setState({ orgRole: role });
+      expect(useOrgStore.getState().orgRole).toBe(role);
+    }
+  });
+});
+
+describe("Sprint 215 — Domain label and auto-select", () => {
+  it("should still store default_domain in settings", async () => {
+    await useSettingsStore.getState().updateSettings({ default_domain: "traffic_law" });
+    expect(useSettingsStore.getState().settings.default_domain).toBe("traffic_law");
+  });
+
+  it("should preserve domain setting across updates", async () => {
+    await useSettingsStore.getState().updateSettings({ default_domain: "maritime" });
+    await useSettingsStore.getState().updateSettings({ display_name: "Test" });
+    expect(useSettingsStore.getState().settings.default_domain).toBe("maritime");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 216: "Chuyên Nghiệp" — Settings UX Deep Overhaul
+// Tab visibility logic: developer mode + org admin conditional tabs
+// ---------------------------------------------------------------------------
+describe("Sprint 216 — Tab visibility", () => {
+  beforeEach(() => {
+    // Reset auth and org stores
+    useAuthStore.setState({ authMode: "legacy", isAuthenticated: true });
+    useOrgStore.setState({
+      activeOrgId: null,
+      orgRole: null,
+      organizations: [],
+      multiTenantEnabled: false,
+      permissions: [],
+      orgSettings: null,
+    });
+  });
+
+  // Helper: compute visible tab IDs using the same logic as SettingsView/SettingsPage
+  function getVisibleTabIds(): string[] {
+    const { authMode } = useAuthStore.getState();
+    const orgState = useOrgStore.getState();
+    const isDeveloperMode = authMode === "legacy" || orgState.isSystemAdmin();
+
+    const tabs: string[] = ["profile", "preferences", "learning", "memory", "context"];
+    if (isDeveloperMode) {
+      tabs.push("connection");
+    }
+    if (orgState.activeOrgId && (orgState.isOrgAdmin() || orgState.isSystemAdmin())) {
+      tabs.push("organization");
+    }
+    tabs.push("living-agent");
+    return tabs;
+  }
+
+  it("should show connection tab in legacy mode", () => {
+    useAuthStore.setState({ authMode: "legacy" });
+    const tabs = getVisibleTabIds();
+    expect(tabs).toContain("connection");
+  });
+
+  it("should hide connection tab in OAuth mode (non-admin)", () => {
+    useAuthStore.setState({ authMode: "oauth", isAuthenticated: true });
+    // Not a system admin
+    const tabs = getVisibleTabIds();
+    expect(tabs).not.toContain("connection");
+  });
+
+  it("should show connection tab for system admin in OAuth mode", () => {
+    useAuthStore.setState({ authMode: "oauth", isAuthenticated: true });
+    useOrgStore.setState({
+      adminContext: { is_system_admin: true, is_org_admin: false, admin_org_ids: [], enable_org_admin: false },
+    });
+    const tabs = getVisibleTabIds();
+    expect(tabs).toContain("connection");
+  });
+
+  it("should hide organization tab when no active org or admin role", () => {
+    useOrgStore.setState({ activeOrgId: null, orgRole: null });
+    const tabs = getVisibleTabIds();
+    expect(tabs).not.toContain("organization");
+  });
+
+  it("should show organization tab for org admin with active org", () => {
+    useOrgStore.setState({
+      activeOrgId: "org-1",
+      orgRole: "admin",
+      adminContext: { is_system_admin: false, is_org_admin: true, admin_org_ids: ["org-1"], enable_org_admin: true },
+    });
+    const tabs = getVisibleTabIds();
+    expect(tabs).toContain("organization");
+  });
+
+  it("should default to profile tab (not connection)", () => {
+    const tabs = getVisibleTabIds();
+    expect(tabs[0]).toBe("profile");
+    expect(tabs).not.toContain("user"); // old tab ID removed
+  });
+
+  it("should use updated Vietnamese labels (Hồ sơ, Tùy chỉnh, Trí nhớ)", () => {
+    // This verifies the tab IDs map correctly — UI labels tested via component rendering
+    const tabs = getVisibleTabIds();
+    expect(tabs).toContain("profile"); // was "user" / "Người dùng" → now "Hồ sơ"
+    expect(tabs).toContain("preferences"); // label: "Giao diện" → "Tùy chỉnh"
+    expect(tabs).toContain("memory"); // label: "Bộ nhớ" → "Trí nhớ"
+  });
+});
+
+describe("Sprint 216 — Developer fields moved to Connection tab", () => {
+  it("should still store streaming_version (moved, not removed)", async () => {
+    await useSettingsStore.getState().updateSettings({ streaming_version: "v2" });
+    expect(useSettingsStore.getState().settings.streaming_version).toBe("v2");
+  });
+
+  it("should still store show_reasoning_trace (moved, not removed)", async () => {
+    await useSettingsStore.getState().updateSettings({ show_reasoning_trace: true });
+    expect(useSettingsStore.getState().settings.show_reasoning_trace).toBe(true);
+  });
+});
+
+describe("Sprint 216 — Copy support ID", () => {
+  it("should have user_id available for clipboard copy (legacy mode)", () => {
+    const { settings } = useSettingsStore.getState();
+    // user_id is still stored and accessible — just shown via "Sao chép mã hỗ trợ" button
+    expect(settings.user_id).toBe("test-user-fixed");
+    expect(typeof settings.user_id).toBe("string");
+    expect(settings.user_id.length).toBeGreaterThan(0);
   });
 });

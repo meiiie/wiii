@@ -74,6 +74,7 @@ export default function App() {
       window.history.replaceState(null, "", window.location.pathname);
     }).catch((err) => {
       console.error("[OAuth] Login failed:", err);
+      addToast("error", "Đăng nhập thất bại. Vui lòng thử lại.");
       // Clear hash even on failure to prevent stale token in URL
       window.history.replaceState(null, "", window.location.pathname);
     });
@@ -94,6 +95,9 @@ export default function App() {
 
   // When settings are loaded, initialize client and start health polling
   useEffect(() => {
+    // Guard: wait for settings to load from storage before making API calls
+    // Without this, the first render fires with empty api_key → 401 race condition
+    if (!settingsLoaded) return;
     if (settings.server_url) {
       // Sprint 192: Initialize HTTP client with dynamic header resolver
       // Headers are resolved at request time from getAuthHeaders() — always fresh
@@ -140,7 +144,7 @@ export default function App() {
     return () => {
       stopPolling();
     };
-  }, [settings.server_url, settings.api_key, settings.user_id, settings.user_role, startPolling, stopPolling, fetchDomains, fetchOrganizations, setActiveOrg, setOrgFilter, setOnReconnect, addToast, detectSubdomainOrg, fetchAdminContext, refreshAccessToken]);
+  }, [settingsLoaded, settings.server_url, settings.api_key, settings.user_id, settings.user_role, startPolling, stopPolling, fetchDomains, fetchOrganizations, setActiveOrg, setOrgFilter, setOnReconnect, addToast, detectSubdomainOrg, fetchAdminContext, refreshAccessToken]);
 
   // Start context polling when active conversation changes (handles mid-session creation)
   const activeConv = useChatStore((s) => s.activeConversation());

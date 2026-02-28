@@ -11,7 +11,7 @@ import { getClient } from "./client";
 /** List organizations for the current user */
 export async function listMyOrganizations(): Promise<OrganizationSummary[]> {
   const client = getClient();
-  return client.get<OrganizationSummary[]>("/api/v1/users/me/organizations");
+  return client.get<OrganizationSummary[]>("/api/v1/organizations/users/me/organizations");
 }
 
 /** List all organizations (admin) */

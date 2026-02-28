@@ -1,10 +1,11 @@
 /**
  * SettingsView — Sprint 192: Full-page settings.
+ * Sprint 216: Progressive disclosure — dynamic tab visibility, label renames.
  *
  * Replaces SettingsPage modal. Reuses all existing tab sub-components
  * from SettingsPage inside the FullPageView layout.
  */
-import { useState, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Server,
   User,
@@ -20,6 +21,8 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useConnectionStore } from "@/stores/connection-store";
 import { useToastStore } from "@/stores/toast-store";
+import { useAuthStore } from "@/stores/auth-store";
+import { useOrgStore } from "@/stores/org-store";
 import { FullPageView } from "@/components/layout/FullPageView";
 import type { FullPageTab } from "@/components/layout/FullPageView";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
@@ -38,25 +41,45 @@ import { setTheme } from "@/lib/theme";
 import { storeFacebookCookie, loadFacebookCookie } from "@/lib/secure-token-storage";
 import type { AppSettings } from "@/api/types";
 
-type SettingsTab = "connection" | "user" | "preferences" | "learning" | "memory" | "context" | "organization" | "living-agent";
-
-const TABS: (FullPageTab & { id: SettingsTab })[] = [
-  { id: "connection", label: "Kết nối", icon: <Server size={16} /> },
-  { id: "user", label: "Người dùng", icon: <User size={16} /> },
-  { id: "preferences", label: "Giao diện", icon: <Palette size={16} /> },
-  { id: "learning", label: "Học tập", icon: <GraduationCap size={16} /> },
-  { id: "memory", label: "Bộ nhớ", icon: <Brain size={16} /> },
-  { id: "context", label: "Ngữ cảnh", icon: <Database size={16} /> },
-  { id: "organization", label: "Tổ chức", icon: <Building2 size={16} /> },
-  { id: "living-agent", label: "Linh hồn", icon: <Heart size={16} /> },
-];
+type SettingsTab = "connection" | "profile" | "preferences" | "learning" | "memory" | "context" | "organization" | "living-agent";
 
 export function SettingsView() {
   const { settings, updateSettings, resetSettings } = useSettingsStore();
   const { navigateToChat } = useUIStore();
   const { checkHealth } = useConnectionStore();
   const { addToast } = useToastStore();
-  const [activeTab, setActiveTab] = useState<SettingsTab>("connection");
+  const { authMode } = useAuthStore();
+  const { activeOrgId, isSystemAdmin, isOrgAdmin } = useOrgStore();
+
+  // Sprint 216: Progressive disclosure — hide developer/admin tabs from regular users
+  const isDeveloperMode = authMode === "legacy" || isSystemAdmin();
+
+  const visibleTabs = useMemo(() => {
+    const tabs: (FullPageTab & { id: SettingsTab })[] = [
+      { id: "profile", label: "Hồ sơ", icon: <User size={16} /> },
+      { id: "preferences", label: "Tùy chỉnh", icon: <Palette size={16} /> },
+      { id: "learning", label: "Học tập", icon: <GraduationCap size={16} /> },
+      { id: "memory", label: "Trí nhớ", icon: <Brain size={16} /> },
+      { id: "context", label: "Ngữ cảnh", icon: <Database size={16} /> },
+    ];
+    if (isDeveloperMode) {
+      tabs.push({ id: "connection", label: "Kết nối", icon: <Server size={16} /> });
+    }
+    if (activeOrgId && (isOrgAdmin() || isSystemAdmin())) {
+      tabs.push({ id: "organization", label: "Tổ chức", icon: <Building2 size={16} /> });
+    }
+    tabs.push({ id: "living-agent", label: "Linh hồn", icon: <Heart size={16} /> });
+    return tabs;
+  }, [isDeveloperMode, activeOrgId]);
+
+  const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
+
+  // Sprint 216: If current tab becomes hidden, fallback to profile
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.id === activeTab)) {
+      setActiveTab("profile");
+    }
+  }, [visibleTabs, activeTab]);
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState("");
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -134,7 +157,7 @@ export function SettingsView() {
       <FullPageView
         title="Cài đặt"
         icon={<Settings size={20} />}
-        tabs={TABS}
+        tabs={visibleTabs}
         activeTab={activeTab}
         onTabChange={(id) => setActiveTab(id as SettingsTab)}
         onClose={navigateToChat}
@@ -156,9 +179,11 @@ export function SettingsView() {
             connStatus={useConnectionStore.getState().status}
             onTest={handleTestConnection}
             onSave={handleSaveConnection}
+            settings={settings}
+            onUpdate={handleUpdateField}
           />
         )}
-        {activeTab === "user" && (
+        {activeTab === "profile" && (
           <UserTab settings={settings} onUpdate={handleUpdateField} />
         )}
         {activeTab === "preferences" && (

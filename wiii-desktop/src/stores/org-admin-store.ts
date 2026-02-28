@@ -181,8 +181,13 @@ export const useOrgAdminStore = create<OrgAdminState>((set, get) => ({
 
   uploadDocument: async (orgId, file) => {
     try {
-      await apiUploadOrgDocument(orgId, file);
-      get().showToast("success", `Đã tải lên: ${file.name}`);
+      const result = await apiUploadOrgDocument(orgId, file);
+      const parts: string[] = [`Đã tải lên: ${file.name}`];
+      if (result.page_count != null && result.page_count > 0)
+        parts.push(`${result.page_count} trang`);
+      if (result.chunk_count != null && result.chunk_count > 0)
+        parts.push(`${result.chunk_count} phân đoạn`);
+      get().showToast("success", parts.join(" — "));
       await get().fetchDocuments(orgId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Lỗi tải lên file";
@@ -205,7 +210,8 @@ export const useOrgAdminStore = create<OrgAdminState>((set, get) => ({
   showToast: (type, message) => {
     const prev = get()._toastTimer;
     if (prev) clearTimeout(prev);
-    const timer = setTimeout(() => set({ toast: null, _toastTimer: undefined }), 3000);
+    const duration = type === "error" ? 6000 : 3000;
+    const timer = setTimeout(() => set({ toast: null, _toastTimer: undefined }), duration);
     set({ toast: { type, message }, _toastTimer: timer });
   },
 }));

@@ -484,6 +484,7 @@ export interface OrgPermissionsResponse {
   permissions: string[];
   role: string;
   organization_id: string;
+  org_role?: string | null;  // Sprint 215: member | admin | owner
 }
 
 // ===== Health =====
@@ -778,6 +779,38 @@ export interface HeartbeatTriggerResult {
   actions_taken: number;
   duration_ms: number;
   error: string | null;
+}
+
+// ===== Sprint 210: Goals & Reflections Types =====
+
+/** Goal status */
+export type GoalStatus = "proposed" | "active" | "completed" | "abandoned";
+
+/** A dynamic goal */
+export interface LivingAgentGoal {
+  id: string;
+  title: string;
+  description: string;
+  status: GoalStatus;
+  priority: string;
+  progress: number;
+  source: string;
+  milestones: string[];
+  completed_milestones: string[];
+  created_at: string | null;
+  target_date: string | null;
+  completed_at: string | null;
+}
+
+/** A reflection entry */
+export interface LivingAgentReflection {
+  id: string;
+  content: string;
+  insights: string[];
+  goals_next_week: string[];
+  patterns_noticed: string[];
+  emotion_trend: string;
+  reflection_date: string | null;
 }
 
 // ===== Sprint 179: Admin Panel Types =====

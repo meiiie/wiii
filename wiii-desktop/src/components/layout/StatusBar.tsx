@@ -85,13 +85,13 @@ export function StatusBar() {
         <motion.button
           onClick={togglePanel}
           className={`flex items-center gap-1.5 hover:opacity-80 transition-opacity ${CONTEXT_BADGE_COLORS[status]}`}
-          title="Context window info"
+          title="Thông tin ngữ cảnh"
           animate={shouldPulse ? { opacity: [0.7, 1, 0.7] } : { opacity: 1 }}
           transition={shouldPulse ? { duration: 2, repeat: Infinity, ease: "easeInOut" } : undefined}
         >
           <Database size={12} />
           <span>{utilization}%</span>
-          {msgCount !== null && <span>| {msgCount} msgs</span>}
+          {msgCount !== null && <span>| {msgCount} tin</span>}
         </motion.button>
       )}
     </div>

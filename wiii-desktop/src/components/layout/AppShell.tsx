@@ -68,18 +68,28 @@ export function AppShell() {
             )}
           </AnimatePresence>
           {/* Sprint 192: View routing */}
-          {activeView === "chat" && <ChatView />}
-          {activeView === "system-admin" && <SystemAdminView />}
-          {activeView === "org-admin" && <OrgAdminView />}
-          {activeView === "settings" && <SettingsView />}
+          {/* Sprint 211: SourcesPanel push-aside — chat compresses when panel opens (Claude.ai/ChatGPT pattern) */}
+          {activeView === "chat" ? (
+            <div className="flex-1 flex overflow-hidden min-h-0">
+              <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                <ChatView />
+              </div>
+              <SourcesPanel />
+            </div>
+          ) : (
+            <>
+              {activeView === "system-admin" && <SystemAdminView />}
+              {activeView === "org-admin" && <OrgAdminView />}
+              {activeView === "settings" && <SettingsView />}
+            </>
+          )}
         </main>
       </div>
-      {/* Side panels — chat-only */}
+      {/* Side panels — chat-only (fixed overlays for non-push-aside panels) */}
       {activeView === "chat" && (
         <>
           <ContextPanel />
           <CharacterPanel />
-          <SourcesPanel />
           <PreviewPanel />
           <ArtifactPanel />
         </>

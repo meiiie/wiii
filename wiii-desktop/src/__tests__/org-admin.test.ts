@@ -419,7 +419,11 @@ describe("org-admin-store actions", () => {
     vi.advanceTimersByTime(2000);
     expect(useOrgAdminStore.getState().toast).toEqual({ type: "error", message: "Second" });
 
-    // After 3000ms from second toast, it clears
+    // Sprint 213: Error toasts last 6000ms (not 3000ms) — still visible at 5000ms
+    vi.advanceTimersByTime(3000);
+    expect(useOrgAdminStore.getState().toast).toEqual({ type: "error", message: "Second" });
+
+    // After 6000ms from second toast, it clears
     vi.advanceTimersByTime(1000);
     expect(useOrgAdminStore.getState().toast).toBeNull();
 

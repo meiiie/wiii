@@ -40,13 +40,13 @@ import { useAuthStore } from "@/stores/auth-store";
 import { getOrgDisplayName } from "@/lib/org-config";
 import { PERSONAL_ORG_ID } from "@/lib/constants";
 import { fetchIdentities, unlinkIdentity } from "@/api/users";
-import type { AppSettings, UserRole, UserPreferences, UserIdentity, LearningStyle, DifficultyLevel, PronounStyle } from "@/api/types";
+import type { AppSettings, UserPreferences, UserIdentity, LearningStyle, DifficultyLevel, PronounStyle } from "@/api/types";
 import { OrgSettingsTab } from "./OrgSettingsTab";
 import { LivingAgentPanel } from "@/components/living-agent/LivingAgentPanel";
 import { Building2, Heart } from "lucide-react";
 import { storeFacebookCookie, loadFacebookCookie } from "@/lib/secure-token-storage";
 
-type Tab = "connection" | "user" | "preferences" | "learning" | "memory" | "context" | "organization" | "living-agent";
+type Tab = "connection" | "profile" | "preferences" | "learning" | "memory" | "context" | "organization" | "living-agent";
 
 export function SettingsPage() {
   const { settings, updateSettings, resetSettings } = useSettingsStore();
@@ -54,7 +54,9 @@ export function SettingsPage() {
   const { checkHealth, status: connStatus } = useConnectionStore();
 
   const { addToast } = useToastStore();
-  const [activeTab, setActiveTab] = useState<Tab>("connection");
+  const { authMode } = useAuthStore();
+  const { activeOrgId, isSystemAdmin, isOrgAdmin } = useOrgStore();
+  const [activeTab, setActiveTab] = useState<Tab>("profile");
   const [testStatus, setTestStatus] = useState<
     "idle" | "testing" | "success" | "error"
   >("idle");
@@ -188,16 +190,25 @@ export function SettingsPage() {
     addToast("success", "Wiii nhớ rồi!");
   };
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: "connection", label: "Kết nối", icon: <Server size={16} /> },
-    { id: "user", label: "Người dùng", icon: <User size={16} /> },
-    { id: "preferences", label: "Giao diện", icon: <Palette size={16} /> },
-    { id: "learning", label: "Học tập", icon: <GraduationCap size={16} /> },
-    { id: "memory", label: "Bộ nhớ", icon: <Brain size={16} /> },
-    { id: "context", label: "Ngữ cảnh", icon: <Database size={16} /> },
-    { id: "organization", label: "Tổ chức", icon: <Building2 size={16} /> },
-    { id: "living-agent", label: "Linh hồn", icon: <Heart size={16} /> },
-  ];
+  // Sprint 216: Progressive disclosure — dynamic tab visibility
+  const isDeveloperMode = authMode === "legacy" || isSystemAdmin();
+  const tabs = useMemo(() => {
+    const result: { id: Tab; label: string; icon: React.ReactNode }[] = [
+      { id: "profile", label: "Hồ sơ", icon: <User size={16} /> },
+      { id: "preferences", label: "Tùy chỉnh", icon: <Palette size={16} /> },
+      { id: "learning", label: "Học tập", icon: <GraduationCap size={16} /> },
+      { id: "memory", label: "Trí nhớ", icon: <Brain size={16} /> },
+      { id: "context", label: "Ngữ cảnh", icon: <Database size={16} /> },
+    ];
+    if (isDeveloperMode) {
+      result.push({ id: "connection", label: "Kết nối", icon: <Server size={16} /> });
+    }
+    if (activeOrgId && (isOrgAdmin() || isSystemAdmin())) {
+      result.push({ id: "organization", label: "Tổ chức", icon: <Building2 size={16} /> });
+    }
+    result.push({ id: "living-agent", label: "Linh hồn", icon: <Heart size={16} /> });
+    return result;
+  }, [isDeveloperMode, activeOrgId]);
 
   return (
     <div
@@ -250,10 +261,12 @@ export function SettingsPage() {
               connStatus={connStatus}
               onTest={handleTestConnection}
               onSave={handleSaveConnection}
+              settings={settings}
+              onUpdate={handleUpdateField}
             />
           )}
 
-          {activeTab === "user" && (
+          {activeTab === "profile" && (
             <UserTab settings={settings} onUpdate={handleUpdateField} />
           )}
 
@@ -332,6 +345,9 @@ export interface ConnectionTabProps {
   connStatus: string;
   onTest: () => void;
   onSave: () => void;
+  // Sprint 216: Developer fields moved from Preferences tab
+  settings?: AppSettings;
+  onUpdate?: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
 }
 
 export function ConnectionTab({
@@ -341,6 +357,8 @@ export function ConnectionTab({
   testMessage,
   onTest,
   onSave,
+  settings,
+  onUpdate,
 }: ConnectionTabProps) {
   return (
     <div className="space-y-4">
@@ -418,6 +436,46 @@ export function ConnectionTab({
           {testMessage}
         </div>
       )}
+
+      {/* Sprint 216: Developer tools moved from Preferences tab */}
+      {settings && onUpdate && (
+        <div className="mt-6 pt-4 border-t border-border">
+          <div className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-3">
+            Công cụ nhà phát triển
+          </div>
+
+          <FieldGroup label="Streaming version">
+            <div className="flex gap-2">
+              {([
+                { value: "v3" as const, label: "V3 (SSE)" },
+                { value: "v2" as const, label: "V2" },
+                { value: "v1" as const, label: "V1" },
+              ]).map((v) => (
+                <button
+                  key={v.value}
+                  onClick={() => onUpdate("streaming_version", v.value)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    settings.streaming_version === v.value
+                      ? "bg-[var(--accent)] text-white"
+                      : "border border-border hover:bg-surface-tertiary text-text-secondary"
+                  }`}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          </FieldGroup>
+
+          <div className="mt-3">
+            <ToggleField
+              label="Hiển thị reasoning trace"
+              description="Xem chi tiết các bước xử lý"
+              checked={settings.show_reasoning_trace}
+              onChange={(v) => onUpdate("show_reasoning_trace", v)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -432,7 +490,7 @@ export interface UserTabProps {
 }
 
 export function UserTab({ settings, onUpdate }: UserTabProps) {
-  const { organizations, multiTenantEnabled, activeOrgId, setActiveOrg } = useOrgStore();
+  const { organizations, multiTenantEnabled, activeOrgId, setActiveOrg, orgRole } = useOrgStore();
   const { getFilteredDomains, setOrgFilter } = useDomainStore();
   const { updateSettings } = useSettingsStore();
   const { isAuthenticated, user, authMode, logout } = useAuthStore();
@@ -474,11 +532,18 @@ export function UserTab({ settings, onUpdate }: UserTabProps) {
     addToast("success", "Đã đăng xuất");
   };
 
-  const roles: { value: UserRole; label: string }[] = [
-    { value: "student", label: "Sinh viên" },
-    { value: "teacher", label: "Giảng viên" },
-    { value: "admin", label: "Quản trị viên" },
-  ];
+  // Sprint 215: Compute contextual role label
+  const displayRole = (() => {
+    if (activeOrgId && orgRole) {
+      // In org context → show org membership role
+      const orgRoleLabels: Record<string, string> = { owner: "Chủ sở hữu", admin: "Quản trị viên", member: "Thành viên" };
+      return orgRoleLabels[orgRole] || "Thành viên";
+    }
+    // No org → show global role
+    const globalRole = isOAuth && user ? user.role : settings.user_role;
+    const globalRoleLabels: Record<string, string> = { admin: "Quản trị viên", teacher: "Giảng viên", student: "Người dùng" };
+    return globalRoleLabels[globalRole] || "Người dùng";
+  })();
 
   const handleOrgChange = (orgId: string) => {
     const newOrgId = orgId === PERSONAL_ORG_ID ? null : orgId;
@@ -496,7 +561,7 @@ export function UserTab({ settings, onUpdate }: UserTabProps) {
 
   return (
     <div className="space-y-4">
-      {/* OAuth mode: show profile from server */}
+      {/* Sprint 216: OAuth profile card with copy support ID + role badge */}
       {isOAuth && user && (
         <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-secondary border border-border">
           {user.avatar_url ? (
@@ -509,9 +574,40 @@ export function UserTab({ settings, onUpdate }: UserTabProps) {
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-text truncate">{user.name || "Chưa đặt tên"}</div>
             <div className="text-xs text-text-tertiary truncate">{user.email}</div>
+            <button
+              onClick={() => { navigator.clipboard.writeText(user.id); addToast("success", "Đã sao chép mã hỗ trợ"); }}
+              className="text-[10px] text-text-tertiary hover:text-text-secondary transition-colors"
+              title="Sao chép mã hỗ trợ"
+            >
+              Sao chép mã hỗ trợ
+            </button>
           </div>
           <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[var(--accent-light)] text-[var(--accent)]">
-            {user.role === "admin" ? "Quản trị" : user.role === "teacher" ? "Giảng viên" : "Sinh viên"}
+            {displayRole}
+          </span>
+        </div>
+      )}
+
+      {/* Sprint 216: Legacy profile card (consistent with OAuth) */}
+      {!isOAuth && (
+        <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-secondary border border-border">
+          <div className="w-10 h-10 rounded-full bg-[var(--accent-light)] flex items-center justify-center text-[var(--accent)] font-bold text-sm">
+            {(settings.display_name || "?")[0].toUpperCase()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-text truncate">
+              {settings.display_name || "Người dùng"}
+            </div>
+            <button
+              onClick={() => { navigator.clipboard.writeText(settings.user_id); addToast("success", "Đã sao chép mã hỗ trợ"); }}
+              className="text-[10px] text-text-tertiary hover:text-text-secondary transition-colors"
+              title="Sao chép mã hỗ trợ"
+            >
+              Sao chép mã hỗ trợ
+            </button>
+          </div>
+          <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[var(--accent-light)] text-[var(--accent)]">
+            {displayRole}
           </span>
         </div>
       )}
@@ -526,39 +622,6 @@ export function UserTab({ settings, onUpdate }: UserTabProps) {
           className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
         />
       </FieldGroup>
-
-      {/* Legacy mode only: User ID + Role */}
-      {!isOAuth && (
-        <>
-          <FieldGroup label="User ID">
-            <input
-              type="text"
-              value={settings.user_id}
-              onChange={(e) => onUpdate("user_id", e.target.value)}
-              placeholder="user-id"
-              className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-            />
-          </FieldGroup>
-
-          <FieldGroup label="Vai trò">
-            <div className="flex gap-2">
-              {roles.map((r) => (
-                <button
-                  key={r.value}
-                  onClick={() => onUpdate("user_role", r.value)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    settings.user_role === r.value
-                      ? "bg-[var(--accent)] text-white"
-                      : "border border-border hover:bg-surface-tertiary text-text-secondary"
-                  }`}
-                >
-                  {r.label}
-                </button>
-              ))}
-            </div>
-          </FieldGroup>
-        </>
-      )}
 
       {/* OAuth mode: Linked accounts section */}
       {isOAuth && (
@@ -611,9 +674,14 @@ export function UserTab({ settings, onUpdate }: UserTabProps) {
         </FieldGroup>
       )}
 
-      {/* Domain default — now shows only org-filtered domains */}
-      <FieldGroup label="Domain mặc định">
-        {filteredDomains.length > 0 ? (
+      {/* Sprint 215: Domain → "Lĩnh vực kiến thức" + auto-select when single */}
+      <FieldGroup label="Lĩnh vực kiến thức" hint="Wiii sẽ ưu tiên tra cứu lĩnh vực này">
+        {filteredDomains.length === 1 ? (
+          <div className="w-full px-3 py-2 rounded-lg border border-border bg-surface-tertiary text-text text-sm">
+            {filteredDomains[0].name_vi || filteredDomains[0].name}
+            <span className="block text-xs text-text-tertiary mt-0.5">Tự động — chỉ có 1 lĩnh vực khả dụng</span>
+          </div>
+        ) : filteredDomains.length > 1 ? (
           <select
             value={settings.default_domain}
             onChange={(e) => onUpdate("default_domain", e.target.value)}
@@ -626,13 +694,9 @@ export function UserTab({ settings, onUpdate }: UserTabProps) {
             ))}
           </select>
         ) : (
-          <input
-            type="text"
-            value={settings.default_domain}
-            onChange={(e) => onUpdate("default_domain", e.target.value)}
-            placeholder="maritime"
-            className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-          />
+          <div className="w-full px-3 py-2 rounded-lg border border-border bg-surface-tertiary text-text-tertiary text-sm">
+            Chưa có lĩnh vực
+          </div>
         )}
       </FieldGroup>
 
@@ -663,15 +727,6 @@ export function PreferencesTab({ settings, onUpdate }: PreferencesTabProps) {
     { value: "system", label: "Hệ thống" },
   ];
 
-  const streamingVersions: {
-    value: "v1" | "v2" | "v3";
-    label: string;
-  }[] = [
-    { value: "v3", label: "V3 (SSE)" },
-    { value: "v2", label: "V2" },
-    { value: "v1", label: "V1" },
-  ];
-
   return (
     <div className="space-y-4">
       <FieldGroup label="Giao diện">
@@ -687,24 +742,6 @@ export function PreferencesTab({ settings, onUpdate }: PreferencesTabProps) {
               }`}
             >
               {t.label}
-            </button>
-          ))}
-        </div>
-      </FieldGroup>
-
-      <FieldGroup label="Streaming version">
-        <div className="flex gap-2">
-          {streamingVersions.map((v) => (
-            <button
-              key={v.value}
-              onClick={() => onUpdate("streaming_version", v.value)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                settings.streaming_version === v.value
-                  ? "bg-[var(--accent)] text-white"
-                  : "border border-border hover:bg-surface-tertiary text-text-secondary"
-              }`}
-            >
-              {v.label}
             </button>
           ))}
         </div>
@@ -747,13 +784,6 @@ export function PreferencesTab({ settings, onUpdate }: PreferencesTabProps) {
           </div>
         </FieldGroup>
       )}
-
-      <ToggleField
-        label="Hiển thị reasoning trace"
-        description="Xem chi tiết các bước xử lý"
-        checked={settings.show_reasoning_trace}
-        onChange={(v) => onUpdate("show_reasoning_trace", v)}
-      />
 
       {/* Sprint 166: Preview Cards Toggle */}
       <ToggleField
@@ -1213,11 +1243,11 @@ export function ContextTab() {
 
       {/* Layer breakdown */}
       <div className="space-y-2">
-        <div className="text-xs font-medium text-text-secondary">Token layers</div>
+        <div className="text-xs font-medium text-text-secondary">Phân bổ bộ nhớ</div>
         {info.layers && (
           <div className="space-y-1.5">
-            <LayerBar label="System Prompt" layer={info.layers.system_prompt} />
-            <LayerBar label="Core Memory" layer={info.layers.core_memory} />
+            <LayerBar label="Cấu hình hệ thống" layer={info.layers.system_prompt} />
+            <LayerBar label="Kiến thức về bạn" layer={info.layers.core_memory} />
             <LayerBar label="Tóm tắt" layer={info.layers.summary} />
             <LayerBar label="Tin nhắn" layer={info.layers.recent_messages} />
           </div>
@@ -1257,15 +1287,15 @@ export function ContextTab() {
           disabled={isLoading || !sessionId}
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-red-300 dark:border-red-800 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-50"
         >
-          Xóa context
+          Xóa ngữ cảnh
         </button>
       </div>
 
       <ConfirmDialog
         open={showClearConfirm}
-        title="Xóa context hội thoại?"
+        title="Xóa ngữ cảnh hội thoại?"
         message="Tất cả lịch sử hội thoại và tóm tắt sẽ bị xóa. Bạn không thể hoàn tác."
-        confirmLabel="Xóa context"
+        confirmLabel="Xóa ngữ cảnh"
         cancelLabel="Hủy"
         variant="danger"
         onConfirm={handleClear}

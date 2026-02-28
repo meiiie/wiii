@@ -51,7 +51,7 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
     } catch (err) {
       set({
         isLoading: false,
-        error: err instanceof Error ? err.message : "Failed to fetch memories",
+        error: err instanceof Error ? err.message : "Không thể tải bộ nhớ",
       });
     }
   },
@@ -65,7 +65,7 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
       }));
     } catch (err) {
       set({
-        error: err instanceof Error ? err.message : "Failed to delete memory",
+        error: err instanceof Error ? err.message : "Không thể xóa bộ nhớ",
       });
     }
   },
@@ -82,7 +82,7 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
     } catch (err) {
       set({
         isLoading: false,
-        error: err instanceof Error ? err.message : "Failed to clear memories",
+        error: err instanceof Error ? err.message : "Không thể xóa tất cả bộ nhớ",
       });
       // Refresh to get actual state
       await get().fetchMemories(userId);
