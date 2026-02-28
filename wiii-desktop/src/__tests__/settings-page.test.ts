@@ -2,6 +2,8 @@
  * Unit tests for SettingsPage component logic & settings store.
  * Sprint 215: Added tests for read-only user ID, org-aware role, domain auto-select.
  * Sprint 216: Added tests for tab visibility, progressive disclosure, copy support ID.
+ * Sprint 219: Removed Learning tab, Memory category groups.
+ * Sprint 219b: Removed pronoun_style from Preferences (auto-detected, not manual).
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -294,7 +296,7 @@ describe("Sprint 216 — Tab visibility", () => {
     const orgState = useOrgStore.getState();
     const isDeveloperMode = authMode === "legacy" || orgState.isSystemAdmin();
 
-    const tabs: string[] = ["profile", "preferences", "learning", "memory", "context"];
+    const tabs: string[] = ["profile", "preferences", "memory", "context"];
     if (isDeveloperMode) {
       tabs.push("connection");
     }
@@ -377,5 +379,83 @@ describe("Sprint 216 — Copy support ID", () => {
     expect(settings.user_id).toBe("test-user-fixed");
     expect(typeof settings.user_id).toBe("string");
     expect(settings.user_id.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 219: "Học Tự Nhiên" — Adaptive Preference Learning
+// Removed Learning tab, pronoun moved to Preferences, Memory category groups
+// ---------------------------------------------------------------------------
+import { MEMORY_CATEGORIES } from "@/components/settings/SettingsPage";
+import { FACT_TYPE_LABELS } from "@/stores/memory-store";
+
+describe("Sprint 219 — Learning tab removed", () => {
+  it("should NOT include learning tab in visible tabs", () => {
+    useAuthStore.setState({ authMode: "legacy", isAuthenticated: true });
+    const { authMode } = useAuthStore.getState();
+    const orgState = useOrgStore.getState();
+    const isDeveloperMode = authMode === "legacy" || orgState.isSystemAdmin();
+    const tabs: string[] = ["profile", "preferences", "memory", "context"];
+    if (isDeveloperMode) tabs.push("connection");
+    tabs.push("living-agent");
+
+    expect(tabs).not.toContain("learning");
+    expect(tabs).toContain("preferences");
+    expect(tabs).toContain("memory");
+  });
+
+  it("should have profile as first tab (unchanged)", () => {
+    const tabs = ["profile", "preferences", "memory", "context"];
+    expect(tabs[0]).toBe("profile");
+  });
+});
+
+describe("Sprint 219 — Memory category grouping", () => {
+  it("should export MEMORY_CATEGORIES constant", () => {
+    expect(MEMORY_CATEGORIES).toBeDefined();
+    expect(Array.isArray(MEMORY_CATEGORIES)).toBe(true);
+  });
+
+  it("should have 3 categories", () => {
+    expect(MEMORY_CATEGORIES).toHaveLength(3);
+  });
+
+  it("should have identity category with correct types", () => {
+    const identity = MEMORY_CATEGORIES.find((c) => c.id === "identity");
+    expect(identity).toBeDefined();
+    expect(identity!.label).toBe("Bản thân");
+    expect(identity!.types).toContain("name");
+    expect(identity!.types).toContain("age");
+    expect(identity!.types).toContain("role");
+  });
+
+  it("should have learning category with correct types", () => {
+    const learning = MEMORY_CATEGORIES.find((c) => c.id === "learning");
+    expect(learning).toBeDefined();
+    expect(learning!.label).toBe("Học tập");
+    expect(learning!.types).toContain("learning_style");
+    expect(learning!.types).toContain("strength");
+    expect(learning!.types).toContain("weakness");
+    expect(learning!.types).toContain("goal");
+  });
+
+  it("should have personal category with correct types", () => {
+    const personal = MEMORY_CATEGORIES.find((c) => c.id === "personal");
+    expect(personal).toBeDefined();
+    expect(personal!.label).toBe("Sở thích");
+    expect(personal!.types).toContain("hobby");
+    expect(personal!.types).toContain("interest");
+    expect(personal!.types).toContain("preference");
+  });
+
+  it("should cover all FACT_TYPE_LABELS types in categories", () => {
+    const allCategorizedTypes = MEMORY_CATEGORIES.flatMap((c) => c.types);
+    const knownTypes = Object.keys(FACT_TYPE_LABELS);
+    // Most types should be categorized (pronoun_style is excluded from memory display)
+    const uncategorized = knownTypes.filter(
+      (t) => !allCategorizedTypes.includes(t) && t !== "pronoun_style"
+    );
+    // At most 1-2 types uncategorized (they fall into "Khác" group)
+    expect(uncategorized.length).toBeLessThanOrEqual(2);
   });
 });

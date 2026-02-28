@@ -12,12 +12,13 @@ import {
   Palette,
   Brain,
   Database,
-  GraduationCap,
   CheckCircle,
   AlertCircle,
   Loader2,
   Trash2,
   Search,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -33,20 +34,19 @@ import { staggerContainer, staggerItem } from "@/lib/animations";
 import { formatTokens } from "@/lib/format";
 import { initClient } from "@/api/client";
 import { setTheme } from "@/lib/theme";
-import { fetchPreferences, updatePreferences } from "@/api/preferences";
 import { useOrgStore } from "@/stores/org-store";
 import { useDomainStore } from "@/stores/domain-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { getOrgDisplayName } from "@/lib/org-config";
 import { PERSONAL_ORG_ID } from "@/lib/constants";
 import { fetchIdentities, unlinkIdentity } from "@/api/users";
-import type { AppSettings, UserPreferences, UserIdentity, LearningStyle, DifficultyLevel, PronounStyle } from "@/api/types";
+import type { AppSettings, UserIdentity } from "@/api/types";
 import { OrgSettingsTab } from "./OrgSettingsTab";
 import { LivingAgentPanel } from "@/components/living-agent/LivingAgentPanel";
 import { Building2, Heart } from "lucide-react";
 import { storeFacebookCookie, loadFacebookCookie } from "@/lib/secure-token-storage";
 
-type Tab = "connection" | "profile" | "preferences" | "learning" | "memory" | "context" | "organization" | "living-agent";
+type Tab = "connection" | "profile" | "preferences" | "memory" | "context" | "organization" | "living-agent";
 
 export function SettingsPage() {
   const { settings, updateSettings, resetSettings } = useSettingsStore();
@@ -196,7 +196,6 @@ export function SettingsPage() {
     const result: { id: Tab; label: string; icon: React.ReactNode }[] = [
       { id: "profile", label: "Hồ sơ", icon: <User size={16} /> },
       { id: "preferences", label: "Tùy chỉnh", icon: <Palette size={16} /> },
-      { id: "learning", label: "Học tập", icon: <GraduationCap size={16} /> },
       { id: "memory", label: "Trí nhớ", icon: <Brain size={16} /> },
       { id: "context", label: "Ngữ cảnh", icon: <Database size={16} /> },
     ];
@@ -272,10 +271,6 @@ export function SettingsPage() {
 
           {activeTab === "preferences" && (
             <PreferencesTab settings={settings} onUpdate={handleUpdateField} />
-          )}
-
-          {activeTab === "learning" && (
-            <LearningTab />
           )}
 
           {activeTab === "memory" && (
@@ -491,7 +486,8 @@ export interface UserTabProps {
 
 export function UserTab({ settings, onUpdate }: UserTabProps) {
   const { organizations, multiTenantEnabled, activeOrgId, setActiveOrg, orgRole } = useOrgStore();
-  const { getFilteredDomains, setOrgFilter } = useDomainStore();
+  // Sprint 218: Subscribe to `domains` so component re-renders after fetchDomains() completes
+  const { domains: _domainList, getFilteredDomains, setOrgFilter } = useDomainStore();
   const { updateSettings } = useSettingsStore();
   const { isAuthenticated, user, authMode, logout } = useAuthStore();
   const { addToast } = useToastStore();
@@ -800,175 +796,20 @@ export function PreferencesTab({ settings, onUpdate }: PreferencesTabProps) {
         checked={settings.show_artifacts !== false}
         onChange={(v) => onUpdate("show_artifacts", v)}
       />
+
     </div>
   );
 }
 
-/* ===== Learning Tab (Sprint 120) ===== */
-export const LEARNING_STYLES: { value: LearningStyle; label: string; desc: string }[] = [
-  { value: "mixed", label: "Tổng hợp", desc: "Kết hợp nhiều phương pháp" },
-  { value: "visual", label: "Hình ảnh", desc: "Sơ đồ, biểu đồ, hình minh họa" },
-  { value: "reading", label: "Đọc hiểu", desc: "Tài liệu, bài viết chi tiết" },
-  { value: "quiz", label: "Trắc nghiệm", desc: "Hỏi đáp, kiểm tra kiến thức" },
-  { value: "interactive", label: "Tương tác", desc: "Thực hành, mô phỏng" },
+/* ===== Memory Tab (Sprint 80, enhanced Sprint 105, Sprint 219: category grouping) ===== */
+
+/** Sprint 219: Category groups for organized memory display */
+export const MEMORY_CATEGORIES: { id: string; label: string; types: string[] }[] = [
+  { id: "identity", label: "Bản thân", types: ["name", "age", "location", "hometown", "organization", "role"] },
+  { id: "learning", label: "Học tập", types: ["learning_style", "level", "strength", "weakness", "goal"] },
+  { id: "personal", label: "Sở thích", types: ["hobby", "interest", "preference", "emotion", "recent_topic"] },
 ];
 
-export const DIFFICULTY_LEVELS: { value: DifficultyLevel; label: string; desc: string }[] = [
-  { value: "beginner", label: "Cơ bản", desc: "Mới bắt đầu tìm hiểu" },
-  { value: "intermediate", label: "Trung bình", desc: "Có kiến thức nền tảng" },
-  { value: "advanced", label: "Nâng cao", desc: "Hiểu sâu chuyên ngành" },
-  { value: "expert", label: "Chuyên gia", desc: "Kinh nghiệm thực tế dày dặn" },
-];
-
-export const PRONOUN_STYLES: { value: PronounStyle; label: string; desc: string }[] = [
-  { value: "auto", label: "Tự động", desc: "Wiii sẽ tự điều chỉnh theo bạn" },
-  { value: "casual", label: "Thân mật", desc: "Mình/cậu, tớ/bạn" },
-  { value: "formal", label: "Trang trọng", desc: "Tôi/bạn, em/anh/chị" },
-];
-
-export function LearningTab() {
-  const { addToast } = useToastStore();
-  const [prefs, setPrefs] = useState<UserPreferences | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  // Fetch on mount
-  useEffect(() => {
-    let cancelled = false;
-    setIsLoading(true);
-    setError(null);
-    fetchPreferences()
-      .then((data) => {
-        if (!cancelled) setPrefs(data);
-      })
-      .catch(() => {
-        if (!cancelled) setError("Không thể tải cài đặt học tập");
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, []);
-
-  const handleUpdate = async (field: string, value: string) => {
-    if (!prefs) return;
-    setSaving(true);
-    try {
-      const updated = await updatePreferences({ [field]: value });
-      setPrefs(updated);
-      addToast("success", "Wiii nhớ rồi!");
-    } catch {
-      addToast("error", "Không thể lưu. Thử lại nhé!");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-8">
-        <Loader2 size={20} className="animate-spin text-text-tertiary" />
-      </div>
-    );
-  }
-
-  if (error || !prefs) {
-    return (
-      <div className="text-center py-8">
-        <div className="text-xs text-text-tertiary mb-2">
-          {error || "Không thể tải cài đặt"}
-        </div>
-        <button
-          onClick={() => window.location.reload()}
-          className="text-xs text-[var(--accent)] hover:underline"
-        >
-          Thử lại
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-5">
-      <div>
-        <div className="text-sm font-medium text-text">Phong cách học tập</div>
-        <div className="text-xs text-text-tertiary">
-          Wiii sẽ điều chỉnh cách trả lời phù hợp với bạn
-        </div>
-      </div>
-
-      <FieldGroup label="Phương pháp học" hint="Bạn thích học theo cách nào?">
-        <div className="space-y-1.5">
-          {LEARNING_STYLES.map((s) => (
-            <button
-              key={s.value}
-              onClick={() => handleUpdate("learning_style", s.value)}
-              disabled={saving}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                prefs.learning_style === s.value
-                  ? "bg-[var(--accent-light)] border border-[var(--accent)] text-text"
-                  : "border border-border hover:bg-surface-tertiary text-text-secondary"
-              }`}
-            >
-              <span className="font-medium">{s.label}</span>
-              <span className="text-xs text-text-tertiary ml-2">{s.desc}</span>
-            </button>
-          ))}
-        </div>
-      </FieldGroup>
-
-      <FieldGroup label="Mức độ" hint="Trình độ hiện tại của bạn">
-        <div className="grid grid-cols-2 gap-1.5">
-          {DIFFICULTY_LEVELS.map((d) => (
-            <button
-              key={d.value}
-              onClick={() => handleUpdate("difficulty", d.value)}
-              disabled={saving}
-              className={`text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                prefs.difficulty === d.value
-                  ? "bg-[var(--accent-light)] border border-[var(--accent)] text-text"
-                  : "border border-border hover:bg-surface-tertiary text-text-secondary"
-              }`}
-            >
-              <div className="font-medium">{d.label}</div>
-              <div className="text-[10px] text-text-tertiary">{d.desc}</div>
-            </button>
-          ))}
-        </div>
-      </FieldGroup>
-
-      <FieldGroup label="Cách xưng hô" hint="Wiii nói chuyện với bạn thế nào?">
-        <div className="flex gap-2">
-          {PRONOUN_STYLES.map((p) => (
-            <button
-              key={p.value}
-              onClick={() => handleUpdate("pronoun_style", p.value)}
-              disabled={saving}
-              className={`flex-1 text-center px-3 py-2 rounded-lg text-sm transition-colors ${
-                prefs.pronoun_style === p.value
-                  ? "bg-[var(--accent)] text-white"
-                  : "border border-border hover:bg-surface-tertiary text-text-secondary"
-              }`}
-              title={p.desc}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </FieldGroup>
-
-      {saving && (
-        <div className="flex items-center gap-2 text-xs text-text-tertiary">
-          <Loader2 size={12} className="animate-spin" />
-          Đang lưu...
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ===== Memory Tab (Sprint 80, enhanced Sprint 105) ===== */
 export function MemoryTab({ userId }: { userId: string }) {
   const { memories, isLoading, error, fetchMemories, deleteOne, clearAll } =
     useMemoryStore();
@@ -976,6 +817,7 @@ export function MemoryTab({ userId }: { userId: string }) {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string | null>(null);
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
 
   // Fetch on mount
   const [loaded, setLoaded] = useState(false);
@@ -1010,6 +852,27 @@ export function MemoryTab({ userId }: { userId: string }) {
     return result;
   }, [memories, filterType, searchQuery]);
 
+  // Sprint 219: Group filtered memories by category
+  const groupedMemories = useMemo(() => {
+    const categorizedTypes = new Set(MEMORY_CATEGORIES.flatMap((c) => c.types));
+    const groups: { id: string; label: string; items: typeof filteredMemories }[] = [];
+
+    for (const cat of MEMORY_CATEGORIES) {
+      const items = filteredMemories.filter((m) => cat.types.includes(m.type));
+      if (items.length > 0) {
+        groups.push({ id: cat.id, label: cat.label, items });
+      }
+    }
+
+    // Uncategorized items
+    const uncategorized = filteredMemories.filter((m) => !categorizedTypes.has(m.type));
+    if (uncategorized.length > 0) {
+      groups.push({ id: "other", label: "Khác", items: uncategorized });
+    }
+
+    return groups;
+  }, [filteredMemories]);
+
   const handleClearAll = async () => {
     await clearAll(userId);
     setShowClearConfirm(false);
@@ -1019,6 +882,13 @@ export function MemoryTab({ userId }: { userId: string }) {
   const handleDeleteOne = async (memoryId: string) => {
     await deleteOne(userId, memoryId);
     addToast("success", "Wiii đã quên điều này");
+  };
+
+  const toggleCategory = (categoryId: string) => {
+    setCollapsedCategories((prev) => ({
+      ...prev,
+      [categoryId]: !prev[categoryId],
+    }));
   };
 
   const uniqueTypes = Object.keys(typeCounts).sort();
@@ -1116,41 +986,68 @@ export function MemoryTab({ userId }: { userId: string }) {
           Không tìm thấy kết quả.
         </div>
       ) : (
-        <motion.div
-          variants={staggerContainer}
-          initial="hidden"
-          animate="visible"
-          className="space-y-1.5"
-        >
-          {filteredMemories.map((mem) => (
-            <motion.div
-              key={mem.id}
-              variants={staggerItem}
-              className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-surface-secondary group"
-            >
-              <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent-light)] text-[var(--accent)]">
-                {FACT_TYPE_LABELS[mem.type] || mem.type}
-              </span>
-              <span className="flex-1 text-sm text-text truncate">
-                {mem.value}
-              </span>
-              <span className="shrink-0 text-[10px] text-text-tertiary">
-                {new Date(mem.created_at).toLocaleDateString("vi-VN", {
-                  day: "numeric",
-                  month: "numeric",
-                })}
-              </span>
+        <div className="space-y-3">
+          {groupedMemories.map((group) => (
+            <div key={group.id} className="rounded-lg border border-border overflow-hidden">
+              {/* Category header — collapsible */}
               <button
-                onClick={() => handleDeleteOne(mem.id)}
-                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 transition-all"
-                title="Xóa"
-                aria-label="Xóa thông tin này"
+                onClick={() => toggleCategory(group.id)}
+                className="flex items-center justify-between w-full px-3 py-2 bg-surface-secondary hover:bg-surface-tertiary transition-colors"
               >
-                <Trash2 size={12} />
+                <div className="flex items-center gap-2">
+                  {collapsedCategories[group.id] ? (
+                    <ChevronRight size={14} className="text-text-tertiary" />
+                  ) : (
+                    <ChevronDown size={14} className="text-text-tertiary" />
+                  )}
+                  <span className="text-sm font-medium text-text">{group.label}</span>
+                </div>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--accent-light)] text-[var(--accent)]">
+                  {group.items.length}
+                </span>
               </button>
-            </motion.div>
+
+              {/* Category items */}
+              {!collapsedCategories[group.id] && (
+                <motion.div
+                  variants={staggerContainer}
+                  initial="hidden"
+                  animate="visible"
+                  className="divide-y divide-border"
+                >
+                  {group.items.map((mem) => (
+                    <motion.div
+                      key={mem.id}
+                      variants={staggerItem}
+                      className="flex items-center gap-3 px-3 py-2 group"
+                    >
+                      <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent-light)] text-[var(--accent)]">
+                        {FACT_TYPE_LABELS[mem.type] || mem.type}
+                      </span>
+                      <span className="flex-1 text-sm text-text truncate">
+                        {mem.value}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-text-tertiary">
+                        {new Date(mem.created_at).toLocaleDateString("vi-VN", {
+                          day: "numeric",
+                          month: "numeric",
+                        })}
+                      </span>
+                      <button
+                        onClick={() => handleDeleteOne(mem.id)}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 transition-all"
+                        title="Xóa"
+                        aria-label="Xóa thông tin này"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </motion.div>
+                  ))}
+                </motion.div>
+              )}
+            </div>
           ))}
-        </motion.div>
+        </div>
       )}
     </div>
   );

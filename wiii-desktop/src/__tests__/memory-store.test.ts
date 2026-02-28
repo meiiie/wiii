@@ -9,6 +9,7 @@ import { useMemoryStore, FACT_TYPE_LABELS } from "@/stores/memory-store";
 vi.mock("@/api/memories", () => ({
   fetchMemories: vi.fn(),
   deleteMemory: vi.fn(),
+  clearMemories: vi.fn(),
 }));
 
 import * as memoriesApi from "@/api/memories";
@@ -91,18 +92,22 @@ describe("Memory Store — Delete", () => {
 });
 
 describe("Memory Store — Clear All", () => {
-  it("should clear all memories", async () => {
+  it("should clear all memories via bulk endpoint", async () => {
     useMemoryStore.setState({ memories: mockMemories });
-    vi.mocked(memoriesApi.deleteMemory).mockResolvedValue({
+    vi.mocked(memoriesApi.clearMemories).mockResolvedValue({
       success: true,
-      message: "Deleted",
+      deleted_count: 3,
+      message: "Deleted 3 memories",
     });
 
     await useMemoryStore.getState().clearAll("user-1");
 
     const state = useMemoryStore.getState();
     expect(state.memories).toEqual([]);
-    expect(memoriesApi.deleteMemory).toHaveBeenCalledTimes(3);
+    expect(memoriesApi.clearMemories).toHaveBeenCalledTimes(1);
+    expect(memoriesApi.clearMemories).toHaveBeenCalledWith("user-1");
+    // Should NOT call deleteMemory individually
+    expect(memoriesApi.deleteMemory).not.toHaveBeenCalled();
   });
 });
 

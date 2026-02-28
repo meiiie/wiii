@@ -206,73 +206,7 @@ class TestInsightOrgFilter:
 
 
 # ============================================================================
-# Group 3: Preferences repo org filtering (3 tests)
-# ============================================================================
-
-class TestPreferencesOrgFilter:
-    """Test org filtering on user_preferences_repository methods."""
-
-    def _make_repo(self):
-        from app.repositories.user_preferences_repository import UserPreferencesRepository
-        repo = UserPreferencesRepository()
-        factory, session = _mock_session_factory()
-        repo._session_factory = factory
-        repo._initialized = True
-        return repo, session
-
-    def test_get_preferences_org_filter(self):
-        with _patch_settings(enable_multi_tenant=True):
-            with patch("app.core.org_context.current_org_id") as mock_cv:
-                mock_cv.get.return_value = "org-p"
-                repo, session = self._make_repo()
-                session.execute.return_value.fetchone.return_value = None
-                repo.get_preferences("u1")
-
-                sql_text = str(session.execute.call_args[0][0])
-                assert "organization_id = :org_id" in sql_text
-
-    def test_upsert_row_org_filter_update(self):
-        """_upsert_row UPDATE path should include org filter."""
-        with _patch_settings(enable_multi_tenant=True):
-            with patch("app.core.org_context.current_org_id") as mock_cv:
-                mock_cv.get.return_value = "org-p"
-                repo, session = self._make_repo()
-                factory = repo._session_factory
-                inner = factory.return_value.__enter__.return_value
-
-                # First call = EXISTS check → True
-                inner.execute.return_value.fetchone.return_value = (1,)
-                now = datetime.now(timezone.utc)
-                repo._upsert_row(inner, "u1", {"difficulty": "advanced"}, now)
-
-                # Verify UPDATE includes org filter
-                # Second execute call is the UPDATE
-                update_call = inner.execute.call_args_list[1]
-                sql_text = str(update_call[0][0])
-                assert "organization_id = :org_id" in sql_text
-
-    def test_upsert_extra_pref_org_filter(self):
-        """_upsert_extra_pref INSERT path should include organization_id."""
-        with _patch_settings(enable_multi_tenant=True):
-            with patch("app.core.org_context.current_org_id") as mock_cv:
-                mock_cv.get.return_value = "org-p"
-                repo, session = self._make_repo()
-                factory = repo._session_factory
-                inner = factory.return_value.__enter__.return_value
-
-                # EXISTS check → None (no row)
-                inner.execute.return_value.fetchone.return_value = None
-                now = datetime.now(timezone.utc)
-                repo._upsert_extra_pref(inner, "u1", "custom_key", "val", now)
-
-                # Verify INSERT includes organization_id
-                insert_call = inner.execute.call_args_list[1]
-                sql_text = str(insert_call[0][0])
-                assert "organization_id" in sql_text
-
-
-# ============================================================================
-# Group 4: Learning profile repo org filtering (3 tests)
+# Group 3: Learning profile repo org filtering (3 tests)
 # ============================================================================
 
 class TestLearningProfileOrgFilter:

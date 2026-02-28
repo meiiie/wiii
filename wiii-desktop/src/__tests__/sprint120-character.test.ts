@@ -1,5 +1,6 @@
 /**
- * Sprint 120 tests — Character store, mood, preferences, UI wiring.
+ * Sprint 120 tests — Character store, mood, UI wiring.
+ * Sprint 219b: Removed preferences API tests (dead code — auto-detected).
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useCharacterStore, BLOCK_LABELS, MOOD_LABELS, MOOD_COLORS, MOOD_EMOJI } from "@/stores/character-store";
@@ -11,13 +12,7 @@ vi.mock("@/api/character", () => ({
   fetchCharacterState: vi.fn(),
 }));
 
-vi.mock("@/api/preferences", () => ({
-  fetchPreferences: vi.fn(),
-  updatePreferences: vi.fn(),
-}));
-
 import * as characterApi from "@/api/character";
-import * as preferencesApi from "@/api/preferences";
 
 const mockBlocks: CharacterBlockInfo[] = [
   { label: "learned_lessons", content: "Người dùng thích ví dụ thực tế", char_limit: 2000, usage_percent: 45 },
@@ -216,53 +211,6 @@ describe("UI Store — Character Panel", () => {
     expect(useUIStore.getState().characterPanelOpen).toBe(true);
     useUIStore.getState().toggleCharacterPanel();
     expect(useUIStore.getState().characterPanelOpen).toBe(false);
-  });
-});
-
-// ===== Preferences API =====
-describe("Preferences API", () => {
-  const mockPrefs = {
-    preferred_domain: "maritime",
-    language: "vi",
-    pronoun_style: "auto" as const,
-    learning_style: "mixed" as const,
-    difficulty: "intermediate" as const,
-    timezone: "Asia/Ho_Chi_Minh",
-  };
-
-  it("should fetch preferences", async () => {
-    vi.mocked(preferencesApi.fetchPreferences).mockResolvedValue(mockPrefs);
-
-    const result = await preferencesApi.fetchPreferences();
-    expect(result).toEqual(mockPrefs);
-    expect(preferencesApi.fetchPreferences).toHaveBeenCalledTimes(1);
-  });
-
-  it("should update preferences with partial data", async () => {
-    const updated = { ...mockPrefs, learning_style: "quiz" as const };
-    vi.mocked(preferencesApi.updatePreferences).mockResolvedValue(updated);
-
-    const result = await preferencesApi.updatePreferences({ learning_style: "quiz" });
-    expect(result.learning_style).toBe("quiz");
-    expect(preferencesApi.updatePreferences).toHaveBeenCalledWith({ learning_style: "quiz" });
-  });
-
-  it("should handle fetch preferences error", async () => {
-    vi.mocked(preferencesApi.fetchPreferences).mockRejectedValue(
-      new Error("Unauthorized")
-    );
-
-    await expect(preferencesApi.fetchPreferences()).rejects.toThrow("Unauthorized");
-  });
-
-  it("should handle update preferences error", async () => {
-    vi.mocked(preferencesApi.updatePreferences).mockRejectedValue(
-      new Error("Validation error")
-    );
-
-    await expect(
-      preferencesApi.updatePreferences({ difficulty: "expert" })
-    ).rejects.toThrow("Validation error");
   });
 });
 

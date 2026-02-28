@@ -1,9 +1,10 @@
 /**
  * Memory management API — Sprint 80.
- * Wraps GET /memories/{user_id}, DELETE /memories/{user_id}/{memory_id}.
+ * Wraps GET /memories/{user_id}, DELETE /memories/{user_id}/{memory_id},
+ * DELETE /memories/{user_id} (bulk clear).
  */
 import { getClient } from "./client";
-import type { MemoryListResponse, DeleteMemoryResponse } from "./types";
+import type { MemoryListResponse, DeleteMemoryResponse, ClearMemoriesResponse } from "./types";
 
 /** Fetch all memories for a user. */
 export async function fetchMemories(
@@ -19,5 +20,14 @@ export async function deleteMemory(
 ): Promise<DeleteMemoryResponse> {
   return getClient().delete<DeleteMemoryResponse>(
     `/api/v1/memories/${userId}/${memoryId}`
+  );
+}
+
+/** Clear ALL memories for a user (bulk delete). */
+export async function clearMemories(
+  userId: string
+): Promise<ClearMemoriesResponse> {
+  return getClient().delete<ClearMemoriesResponse>(
+    `/api/v1/memories/${userId}`
   );
 }

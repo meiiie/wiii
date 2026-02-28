@@ -159,15 +159,6 @@ def _init_extended_tools():
         except Exception as e:
             logger.warning("Code execution tools init failed: %s", e)
 
-    # User Preference Tools (Sprint 17: always available)
-    try:
-        from app.engine.tools.preference_tools import get_preference_tools
-        for tool_fn in get_preference_tools():
-            registry.register(tool_fn, ToolCategory.MEMORY, ToolAccess.WRITE)
-        logger.info("User preference tools registered")
-    except Exception as e:
-        logger.warning("Preference tools init failed: %s", e)
-
     # Skill Management Tools (self-extending agent)
     # Sprint 26: Restricted to admin — creating/modifying skills is privileged
     if settings.enable_skill_creation:

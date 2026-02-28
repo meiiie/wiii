@@ -559,6 +559,12 @@ export interface DeleteMemoryResponse {
   message: string;
 }
 
+export interface ClearMemoriesResponse {
+  success: boolean;
+  deleted_count: number;
+  message: string;
+}
+
 // ===== Character State (Sprint 120) =====
 export interface CharacterBlockInfo {
   label: string;
@@ -574,29 +580,6 @@ export interface CharacterStateResponse {
 
 // ===== Mood / Emotional State (Sprint 120) =====
 export type MoodType = "excited" | "warm" | "concerned" | "gentle" | "neutral";
-
-// ===== User Preferences (Sprint 120) =====
-export type LearningStyle = "quiz" | "visual" | "reading" | "mixed" | "interactive";
-export type DifficultyLevel = "beginner" | "intermediate" | "advanced" | "expert";
-export type PronounStyle = "auto" | "formal" | "casual";
-
-export interface UserPreferences {
-  preferred_domain: string;
-  language: string;
-  pronoun_style: PronounStyle;
-  learning_style: LearningStyle;
-  difficulty: DifficultyLevel;
-  timezone: string;
-}
-
-export interface UserPreferencesUpdate {
-  preferred_domain?: string;
-  language?: string;
-  pronoun_style?: PronounStyle;
-  learning_style?: LearningStyle;
-  difficulty?: DifficultyLevel;
-  timezone?: string;
-}
 
 // ===== User Profile (Sprint 158) =====
 export interface UserProfile {

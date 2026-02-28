@@ -3,7 +3,7 @@
  * Sprint 80: ChatGPT-style memory management (view/delete facts).
  */
 import { create } from "zustand";
-import { fetchMemories, deleteMemory } from "@/api/memories";
+import { fetchMemories, deleteMemory, clearMemories } from "@/api/memories";
 import type { MemoryItem } from "@/api/types";
 
 /** Vietnamese labels for fact types (Sprint 73: 15 FactTypes). */
@@ -71,13 +71,9 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
   },
 
   clearAll: async (userId: string) => {
-    const { memories } = get();
     set({ isLoading: true, error: null });
     try {
-      // Delete all memories one by one (backend has no bulk delete)
-      await Promise.all(
-        memories.map((m) => deleteMemory(userId, m.id))
-      );
+      await clearMemories(userId);
       set({ memories: [], isLoading: false });
     } catch (err) {
       set({

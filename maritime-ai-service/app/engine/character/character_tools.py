@@ -30,7 +30,7 @@ from app.engine.character.models import (
 logger = logging.getLogger(__name__)
 
 # Sprint 124: ContextVar for per-request user isolation
-# Same pattern as memory_tools._memory_tool_state and preference_tools._preference_user_id
+# Same pattern as memory_tools._memory_tool_state
 _character_user_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     '_character_user_id', default=None
 )
