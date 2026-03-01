@@ -5,7 +5,7 @@
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Plus, Trash2, Settings, MessageSquare, Search, Pin, PinOff, Pencil, Shield, Building2, LogOut, User } from "lucide-react";
+import { Plus, Trash2, Settings, MessageSquare, Search, Pin, PinOff, Pencil, Shield, Building2, LogOut, User, Network } from "lucide-react";
 import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useDomainStore } from "@/stores/domain-store";
@@ -39,7 +39,7 @@ export function Sidebar() {
     pinConversation,
     unpinConversation,
   } = useChatStore();
-  const { sidebarOpen, activeView, openSettings, openAdminPanel, openOrgManagerPanel, navigateToChat } = useUIStore();
+  const { sidebarOpen, activeView, openSettings, openAdminPanel, openOrgManagerPanel, openSoulBridge, navigateToChat } = useUIStore();
   const { isSystemAdmin, isOrgAdmin, adminContext } = useOrgStore();
   const { activeDomainId } = useDomainStore();
   const { activeOrgId } = useOrgStore();
@@ -200,6 +200,16 @@ export function Sidebar() {
           </button>
         )}
 
+        {/* Sprint 216: Soul Bridge */}
+        <button
+          onClick={openSoulBridge}
+          className={iconBtnClass(activeView === "soul-bridge")}
+          title="Mạng Linh Hồn"
+          aria-label="Mở mạng linh hồn"
+        >
+          <Network size={18} />
+        </button>
+
         {/* Settings */}
         <button
           onClick={openSettings}
@@ -315,7 +325,7 @@ export function Sidebar() {
             {user?.avatar_url ? (
               <img
                 src={user.avatar_url}
-                alt=""
+                alt={displayUserName || "Avatar"}
                 className="w-6 h-6 rounded-full shrink-0"
                 referrerPolicy="no-referrer"
               />
@@ -357,6 +367,15 @@ export function Sidebar() {
             Quản lý tổ chức
           </button>
         )}
+        {/* Sprint 216: Soul Bridge */}
+        <button
+          onClick={openSoulBridge}
+          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-tertiary transition-colors"
+          aria-label="Mở mạng linh hồn"
+        >
+          <Network size={14} />
+          Mạng Linh Hồn
+        </button>
         <button
           onClick={openSettings}
           className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-tertiary transition-colors"

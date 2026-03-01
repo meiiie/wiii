@@ -36,9 +36,9 @@ type SoulBridgeTab = "overview" | "events" | "config";
 // ── Constants ──
 
 const TABS: (FullPageTab & { id: SoulBridgeTab })[] = [
-  { id: "overview", label: "Tong quan", icon: <Network size={16} /> },
-  { id: "events", label: "Su kien", icon: <Activity size={16} /> },
-  { id: "config", label: "Cau hinh", icon: <Settings2 size={16} /> },
+  { id: "overview", label: "Tổng quan", icon: <Network size={16} /> },
+  { id: "events", label: "Sự kiện", icon: <Activity size={16} /> },
+  { id: "config", label: "Cấu hình", icon: <Settings2 size={16} /> },
 ];
 
 const REFRESH_INTERVAL_MS = 30_000;
@@ -103,13 +103,13 @@ export function SoulBridgePanel() {
         hover:bg-surface-tertiary hover:text-text transition-colors disabled:opacity-50"
     >
       <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-      Lam moi
+      Làm mới
     </button>
   );
 
   return (
     <FullPageView
-      title="Mang Linh Hon"
+      title="Mạng Linh Hồn"
       subtitle={
         bridgeStatus
           ? `${bridgeStatus.peer_count} peer${bridgeStatus.peer_count !== 1 ? "s" : ""}`
@@ -199,12 +199,12 @@ function OverviewTab({
           </motion.div>
           <div>
             <h3 className="text-sm font-semibold text-text">
-              Trang thai cau noi
+              Trạng thái cầu nối
             </h3>
             <p className="text-xs text-text-tertiary">
               {bridgeStatus?.initialized
-                ? "Dang hoat dong"
-                : "Chua khoi tao"}
+                ? "Đang hoạt động"
+                : "Chưa khởi tạo"}
             </p>
           </div>
         </div>
@@ -217,7 +217,7 @@ function OverviewTab({
             </p>
           </div>
           <div>
-            <span className="text-text-tertiary">So peer</span>
+            <span className="text-text-tertiary">Số peer</span>
             <p className="text-text font-medium mt-0.5">
               {bridgeStatus?.peer_count ?? 0}
             </p>
@@ -228,17 +228,17 @@ function OverviewTab({
       {/* Peer cards grid */}
       <div>
         <h3 className="text-xs font-medium text-text-secondary mb-3 uppercase tracking-wider">
-          Cac peer ket noi
+          Các peer kết nối
         </h3>
 
         {peerIds.length === 0 && !loading && (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <WifiOff className="w-10 h-10 text-text-tertiary mb-3" />
             <p className="text-sm text-text-secondary">
-              Chua co peer nao ket noi
+              Chưa có peer nào kết nối
             </p>
             <p className="text-xs text-text-tertiary mt-1">
-              Cau hinh soul_bridge_peers de ket noi voi cac SubSoul khac
+              Cấu hình soul_bridge_peers để kết nối với các SubSoul khác
             </p>
           </div>
         )}
@@ -318,7 +318,7 @@ function EventsTab({
             {peerDetails[effectivePeerId].card!.name}
           </span>
           <span className="text-xs text-text-tertiary">
-            ({peerDetails[effectivePeerId].event_count} su kien)
+            ({peerDetails[effectivePeerId].event_count} sự kiện)
           </span>
         </div>
       )}
@@ -341,12 +341,12 @@ function ConfigTab({
       {/* Soul ID */}
       <div>
         <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wider">
-          Danh tinh linh hon
+          Danh tính linh hồn
         </h3>
         <div className="p-3 rounded-lg bg-surface-secondary border border-border">
           <div className="text-xs text-text-tertiary mb-1">Soul ID</div>
           <div className="text-sm text-text font-mono">
-            {bridgeStatus?.soul_id ?? "Chua cau hinh"}
+            {bridgeStatus?.soul_id ?? "Chưa cấu hình"}
           </div>
         </div>
       </div>
@@ -354,11 +354,11 @@ function ConfigTab({
       {/* Bridge events */}
       <div>
         <h3 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wider">
-          Su kien duoc cau hinh
+          Sự kiện được cấu hình
         </h3>
         {(bridgeStatus?.bridge_events ?? []).length === 0 ? (
           <p className="text-xs text-text-tertiary">
-            Khong co su kien nao duoc cau hinh
+            Không có sự kiện nào được cấu hình
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
@@ -377,9 +377,9 @@ function ConfigTab({
       {/* Info note */}
       <div className="p-3 rounded-lg border border-border bg-[var(--accent)]/5 text-xs text-text-secondary">
         <p>
-          Cau hinh cau noi linh hon duoc quan ly qua{" "}
+          Cấu hình cầu nối linh hồn được quản lý qua{" "}
           <code className="text-[var(--accent)] font-mono">soul_bridge_*</code>{" "}
-          trong file .env. Thay doi can khoi dong lai server.
+          trong file .env. Thay đổi cần khởi động lại server.
         </p>
       </div>
     </div>

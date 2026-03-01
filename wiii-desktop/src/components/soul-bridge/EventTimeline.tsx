@@ -15,10 +15,10 @@ function timeAgo(isoTimestamp: string): string {
   const seconds = Math.floor(
     (Date.now() - new Date(isoTimestamp).getTime()) / 1000,
   );
-  if (seconds < 60) return "vua xong";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} phut truoc`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} gio truoc`;
-  return `${Math.floor(seconds / 86400)} ngay truoc`;
+  if (seconds < 60) return "vừa xong";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} phút trước`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} giờ trước`;
+  return `${Math.floor(seconds / 86400)} ngày trước`;
 }
 
 const EVENT_COLORS: Record<string, string> = {
@@ -61,9 +61,9 @@ export function EventTimeline({ events }: EventTimelineProps) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <Clock className="w-10 h-10 text-text-tertiary mb-3" />
-        <p className="text-sm text-text-secondary">Chua co su kien nao</p>
+        <p className="text-sm text-text-secondary">Chưa có sự kiện nào</p>
         <p className="text-xs text-text-tertiary mt-1">
-          Cac su kien tu peer se hien thi tai day
+          Các sự kiện từ peer sẽ hiển thị tại đây
         </p>
       </div>
     );
@@ -116,7 +116,7 @@ export function EventTimeline({ events }: EventTimelineProps) {
                 <div className="flex items-center gap-2 text-[10px] text-text-tertiary mb-1.5">
                   {event.priority && (
                     <span>
-                      Uu tien:{" "}
+                      Ưu tiên:{" "}
                       <span className="text-text-secondary">
                         {event.priority}
                       </span>
@@ -124,7 +124,7 @@ export function EventTimeline({ events }: EventTimelineProps) {
                   )}
                   {event.source_soul && (
                     <span>
-                      Tu:{" "}
+                      Từ:{" "}
                       <span className="text-text-secondary">
                         {event.source_soul}
                       </span>

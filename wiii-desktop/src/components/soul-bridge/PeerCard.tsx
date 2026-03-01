@@ -26,7 +26,7 @@ function connectionStyle(
       return {
         color: "#22c55e",
         bg: "rgba(34,197,94,0.1)",
-        label: "Da ket noi",
+        label: "Đã kết nối",
         icon: Wifi,
       };
     case "CONNECTING":
@@ -34,7 +34,7 @@ function connectionStyle(
       return {
         color: "#f59e0b",
         bg: "rgba(245,158,11,0.1)",
-        label: state === "CONNECTING" ? "Dang ket noi" : "Dang ket noi lai",
+        label: state === "CONNECTING" ? "Đang kết nối" : "Đang kết nối lại",
         icon: Wifi,
       };
     case "DISCONNECTED":
@@ -42,7 +42,7 @@ function connectionStyle(
       return {
         color: "#ef4444",
         bg: "rgba(239,68,68,0.1)",
-        label: "Mat ket noi",
+        label: "Mất kết nối",
         icon: WifiOff,
       };
   }
@@ -61,7 +61,7 @@ function statusSummary(
     items.push({ label: "Mood", value: String(latest.mood) });
   }
   if (latest.status !== undefined) {
-    items.push({ label: "Trang thai", value: String(latest.status) });
+    items.push({ label: "Trạng thái", value: String(latest.status) });
   }
   if (latest.uptime !== undefined) {
     items.push({ label: "Uptime", value: String(latest.uptime) });
@@ -170,7 +170,7 @@ export function PeerCard({ peerId, peer, detail, onClick }: PeerCardProps) {
       <div className="flex items-center gap-1.5 text-xs text-text-tertiary pt-1.5 border-t border-border">
         <Activity size={12} />
         <span>
-          {eventCount} su kien
+          {eventCount} sự kiện
         </span>
       </div>
     </motion.button>

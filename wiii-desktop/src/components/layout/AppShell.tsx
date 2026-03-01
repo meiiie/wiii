@@ -18,6 +18,7 @@ import { ChatView } from "@/components/chat/ChatView";
 import { SystemAdminView } from "@/components/admin/SystemAdminView";
 import { OrgAdminView } from "@/components/org-admin/OrgAdminView";
 import { SettingsView } from "@/components/settings/SettingsView";
+import { SoulBridgePanel } from "@/components/soul-bridge/SoulBridgePanel";
 import { ToastContainer } from "@/components/common/Toast";
 import { useUIStore } from "@/stores/ui-store";
 import { useConnectionStore } from "@/stores/connection-store";
@@ -81,6 +82,7 @@ export function AppShell() {
               {activeView === "system-admin" && <SystemAdminView />}
               {activeView === "org-admin" && <OrgAdminView />}
               {activeView === "settings" && <SettingsView />}
+              {activeView === "soul-bridge" && <SoulBridgePanel />}
             </>
           )}
         </main>
