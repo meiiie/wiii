@@ -69,6 +69,9 @@ class SoulBridge:
         # Sprint 215: Request-response support
         self._response_tracker = ResponseTracker()
         self._consultation_handler: Optional[Callable[..., Coroutine]] = None
+        # Sprint 216: Per-peer event ring buffer for SoulBridgePanel
+        self._peer_events: Dict[str, List[Dict[str, Any]]] = {}
+        self._max_events_per_peer = 200
 
     @property
     def is_initialized(self) -> bool:
@@ -323,6 +326,9 @@ class SoulBridge:
             asyncio.ensure_future(self._handle_consultation(message))
             return  # Don't re-emit consultation requests on EventBus
 
+        # Sprint 216: Store in per-peer ring buffer before re-emit
+        self._store_event(message.source_soul, message)
+
         # Re-emit on local EventBus with bridge source tag
         try:
             from app.engine.subsoul.protocol import get_event_bus, SubSoulEvent, EventType, EventPriority
@@ -478,6 +484,41 @@ class SoulBridge:
                 await conn.send(reply)
             except Exception as e:
                 logger.warning("[SOUL_BRIDGE] Failed to send consultation reply: %s", e)
+
+    # =========================================================================
+    # Per-Peer Event Ring Buffer (Sprint 216)
+    # =========================================================================
+
+    def _store_event(self, peer_id: str, msg: SoulBridgeMessage) -> None:
+        """Store event in per-peer ring buffer."""
+        import uuid as _uuid
+        from datetime import datetime
+
+        if peer_id not in self._peer_events:
+            self._peer_events[peer_id] = []
+
+        event = {
+            "id": str(getattr(msg, "id", None) or _uuid.uuid4()),
+            "event_type": msg.event_type,
+            "payload": msg.payload or {},
+            "priority": msg.priority.value if hasattr(msg.priority, "value") else str(msg.priority),
+            "timestamp": msg.timestamp.isoformat() if hasattr(msg, "timestamp") and msg.timestamp else datetime.utcnow().isoformat(),
+            "source_soul": msg.source_soul,
+        }
+        self._peer_events[peer_id].append(event)
+
+        # FIFO eviction
+        if len(self._peer_events[peer_id]) > self._max_events_per_peer:
+            self._peer_events[peer_id] = self._peer_events[peer_id][-self._max_events_per_peer:]
+
+    def get_peer_events(
+        self, peer_id: str, event_type: Optional[str] = None, limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """Get recent events for a peer, optionally filtered by type."""
+        events = self._peer_events.get(peer_id, [])
+        if event_type:
+            events = [e for e in events if e["event_type"] == event_type]
+        return events[-limit:]
 
     # =========================================================================
     # Peer Management

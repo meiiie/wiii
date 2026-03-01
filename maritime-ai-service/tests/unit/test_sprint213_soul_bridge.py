@@ -1247,3 +1247,95 @@ class TestBridgeEventFlow:
         await bridge._on_local_event(emitted)
         # conn.send should NOT be called (anti-echo blocks it)
         mock_conn.send.assert_not_called()
+
+
+# ===========================================================================
+# TestEventBuffer (Sprint 216)
+# ===========================================================================
+
+
+class TestEventBuffer:
+    """Test per-peer event ring buffer (Sprint 216)."""
+
+    @pytest.mark.asyncio
+    async def test_event_stored(self):
+        """_store_event adds to buffer."""
+        from app.engine.soul_bridge.bridge import SoulBridge
+        from app.engine.soul_bridge.models import SoulBridgeMessage
+
+        bridge = SoulBridge.__new__(SoulBridge)
+        bridge._peer_events = {}
+        bridge._max_events_per_peer = 100
+
+        msg = SoulBridgeMessage(
+            source_soul="bro",
+            target_soul="wiii",
+            event_type="STATUS_UPDATE",
+            payload={"risk_score": 22.7},
+        )
+        bridge._store_event("bro", msg)
+
+        assert "bro" in bridge._peer_events
+        assert len(bridge._peer_events["bro"]) == 1
+        assert bridge._peer_events["bro"][0]["event_type"] == "STATUS_UPDATE"
+        assert bridge._peer_events["bro"][0]["payload"]["risk_score"] == 22.7
+
+    @pytest.mark.asyncio
+    async def test_buffer_fifo_eviction(self):
+        """Buffer evicts oldest when exceeding max size."""
+        from app.engine.soul_bridge.bridge import SoulBridge
+        from app.engine.soul_bridge.models import SoulBridgeMessage
+
+        bridge = SoulBridge.__new__(SoulBridge)
+        bridge._peer_events = {}
+        bridge._max_events_per_peer = 5
+
+        for i in range(10):
+            msg = SoulBridgeMessage(
+                source_soul="bro",
+                target_soul="wiii",
+                event_type="STATUS_UPDATE",
+                payload={"seq": i},
+            )
+            bridge._store_event("bro", msg)
+
+        assert len(bridge._peer_events["bro"]) == 5
+        assert bridge._peer_events["bro"][0]["payload"]["seq"] == 5
+        assert bridge._peer_events["bro"][-1]["payload"]["seq"] == 9
+
+    def test_get_peer_events_empty(self):
+        """get_peer_events returns empty for unknown peer."""
+        from app.engine.soul_bridge.bridge import SoulBridge
+
+        bridge = SoulBridge.__new__(SoulBridge)
+        bridge._peer_events = {}
+        assert bridge.get_peer_events("unknown") == []
+
+    def test_get_peer_events_with_limit(self):
+        """get_peer_events respects limit."""
+        from app.engine.soul_bridge.bridge import SoulBridge
+
+        bridge = SoulBridge.__new__(SoulBridge)
+        bridge._peer_events = {"bro": [
+            {"event_type": "STATUS_UPDATE", "payload": {"seq": i}, "timestamp": f"2026-03-01T00:0{i}:00"}
+            for i in range(5)
+        ]}
+
+        result = bridge.get_peer_events("bro", limit=3)
+        assert len(result) == 3
+        assert result[0]["payload"]["seq"] == 2  # Last 3 items
+
+    def test_get_peer_events_filter_type(self):
+        """get_peer_events filters by event_type."""
+        from app.engine.soul_bridge.bridge import SoulBridge
+
+        bridge = SoulBridge.__new__(SoulBridge)
+        bridge._peer_events = {"bro": [
+            {"event_type": "STATUS_UPDATE", "payload": {}, "timestamp": "t1"},
+            {"event_type": "ESCALATION", "payload": {}, "timestamp": "t2"},
+            {"event_type": "STATUS_UPDATE", "payload": {}, "timestamp": "t3"},
+        ]}
+
+        result = bridge.get_peer_events("bro", event_type="ESCALATION")
+        assert len(result) == 1
+        assert result[0]["event_type"] == "ESCALATION"
