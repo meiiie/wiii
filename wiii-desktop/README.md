@@ -6,11 +6,11 @@
 ![React 18](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-06B6D4?logo=tailwindcss&logoColor=white)
-![Vitest](https://img.shields.io/badge/Vitest-1841_tests-6E9F18?logo=vitest&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-1857_tests-6E9F18?logo=vitest&logoColor=white)
 
 **Cross-platform desktop client for the Wiii Soul AGI Platform.**
 
-*by The Wiii Lab -- February 2026*
+*by The Wiii Lab -- March 2026*
 
 </div>
 
@@ -22,6 +22,7 @@
 - **Rich Thinking Display** -- Thinking blocks, reasoning timeline, multi-phase thinking chain, action text
 - **Living Avatar** -- Emotion-driven avatar with Rive integration, manga indicators, micro-reactions, mood themes
 - **Living Agent Dashboard** -- 5-tab dashboard (Overview, Skills, Goals, Journal, Reflections) with 4D mood indicator, heartbeat monitor, goal tracking, reflections viewer
+- **Soul Bridge Monitor** -- 3-tab dashboard (Overview, Events, Config) for monitoring connected SubSouls via Soul Bridge with 30s auto-refresh, peer cards, event timeline
 - **Product Card Carousel** -- Real-time SSE preview cards, horizontal snap-scroll, LLM-curated results
 - **Google OAuth Authentication** -- Desktop deep link flow with JWT refresh tokens, PKCE S256
 - **Multi-Organization Workspace** -- Workspace switcher with org-level branding, permissions, feature gating
@@ -47,9 +48,9 @@
 | TypeScript | 5.x | Type safety |
 | Vite | 5.x | Build tool and dev server |
 | Tailwind CSS | 3.4 | Utility-first styling |
-| Zustand | 4.5 | State management (13 stores) |
+| Zustand | 4.5 | State management (15 stores) |
 | Immer | 11.x | Immutable state updates |
-| Vitest | 1.6 | Testing framework (1841 tests) |
+| Vitest | 1.6 | Testing framework (1857 tests) |
 | Lucide React | 0.400 | Icon library |
 | Motion | 12.x | Animation library |
 | React Markdown | 9.x | Markdown rendering with GFM and syntax highlighting |
@@ -73,10 +74,10 @@
 ```
 wiii-desktop/
 +-- src/
-|   +-- api/                     # 16 API modules
+|   +-- api/                     # 17 API modules
 |   |   +-- client.ts            # HTTP client (Tauri plugin-http / fetch fallback)
 |   |   +-- sse.ts               # SSE parser for /chat/stream/v3
-|   |   +-- chat.ts, organizations.ts, users.ts, admin.ts, living-agent.ts, ...
+|   |   +-- chat.ts, organizations.ts, users.ts, admin.ts, living-agent.ts, soul-bridge.ts, ...
 |   |   +-- types.ts             # Shared API types
 |   |
 |   +-- components/
@@ -96,11 +97,13 @@ wiii-desktop/
 |   |   +-- living-agent/        # Living Agent dashboard (7 components)
 |   |   |   +-- LivingAgentPanel.tsx, MoodIndicator.tsx, SkillTree.tsx
 |   |   |   +-- JournalView.tsx, HeartbeatStatus.tsx, GoalsView.tsx, ReflectionsView.tsx
+|   |   +-- soul-bridge/         # Soul Bridge monitor (3 components)
+|   |   |   +-- SoulBridgePanel.tsx, PeerCard.tsx, EventTimeline.tsx
 |   |   +-- common/              # Shared components (12+)
 |   |       +-- MarkdownRenderer.tsx, MermaidDiagram.tsx, PermissionGate.tsx
 |   |       +-- CommandPalette.tsx, ErrorBoundary.tsx, ...
 |   |
-|   +-- stores/                  # 13 Zustand stores
+|   +-- stores/                  # 15 Zustand stores
 |   |   +-- settings-store.ts    # Server URL, API key, theme, user preferences
 |   |   +-- chat-store.ts        # Conversations, messages, streaming state (largest)
 |   |   +-- auth-store.ts        # JWT tokens, OAuth flow, login state
@@ -120,7 +123,7 @@ wiii-desktop/
 |   |   +-- embed-auth.ts, embed-bridge.ts, secure-token-storage.ts
 |   |   +-- org-branding.ts, storage.ts, stream-buffer.ts, theme.ts, ...
 |   |
-|   +-- __tests__/               # 67 test files, 1841 Vitest tests
+|   +-- __tests__/               # 67 test files, 1857 Vitest tests
 |   +-- EmbedApp.tsx             # Standalone embed build
 |
 +-- src-tauri/                   # Rust backend
@@ -178,7 +181,7 @@ The installer is output to `src-tauri/target/release/bundle/nsis/`.
 ### Run Tests
 
 ```bash
-npx vitest run          # All 1841 tests
+npx vitest run          # All 1857 tests
 npx vitest run --ui     # Interactive test UI
 npx vitest run --coverage  # With coverage report
 ```
@@ -189,7 +192,7 @@ npx vitest run --coverage  # With coverage report
 
 ### State Management
 
-13 Zustand stores manage application state, with Tauri plugin-store providing persistent storage:
+15 Zustand stores manage application state, with Tauri plugin-store providing persistent storage:
 
 | Store | Key Responsibilities |
 |---|---|
@@ -266,14 +269,14 @@ Living, expressive character powered by a multi-layer animation engine:
 ## Testing
 
 ```bash
-npx vitest run                              # All 1841 tests
+npx vitest run                              # All 1857 tests
 npx vitest run src/__tests__/chat-store*    # Specific test file
 npx vitest run src/__tests__/admin*         # Admin panel tests
 npx vitest run --coverage                   # With coverage report
 npx vitest run --ui                         # Interactive browser UI
 ```
 
-**1841 tests** across **67 test files** -- all passing (as of Feb 26, 2026).
+**1857 tests** across **67 test files** -- all passing (as of Mar 1, 2026).
 
 Test coverage areas:
 - Store logic (chat, auth, org, settings, context, memory, avatar, living-agent, admin, org-admin)

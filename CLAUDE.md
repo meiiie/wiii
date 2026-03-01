@@ -58,7 +58,7 @@ To work as a different agent:
 
 ## Project Overview
 
-**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright+Crawl4AI+Scrapling), Google OAuth + LMS integration, multi-tenant data isolation, org-level customization, two-tier admin (system + org), Living Agent autonomy system (Soul AGI — all coding phases complete), spaced repetition skill learning, cross-platform memory sync, unified skill architecture, and MCP tool exposure. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. 354 Python files, 70+ API endpoints, 81 feature flags, 10017 backend tests, 1863 desktop tests. Connection pool: min=10, max=50 (Sprint 173).
+**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright+Crawl4AI+Scrapling), Google OAuth + LMS integration (production-connected), multi-tenant data isolation, org-level customization, two-tier admin (system + org), Living Agent autonomy system (Soul AGI — all coding phases complete), spaced repetition skill learning, cross-platform memory sync, unified skill architecture, and MCP tool exposure. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. 378 Python files, 70+ API endpoints, 81 feature flags, 10059 backend tests, 1857 desktop tests. Connection pool: min=10, max=50 (Sprint 173).
 
 ### Domain Plugin System (Feb 2026)
 - **Plugin architecture**: `app/domains/*/domain.yaml` — add new domains by creating a folder + YAML config
@@ -68,17 +68,11 @@ To work as a different agent:
 - **Config**: `settings.active_domains`, `settings.default_domain`
 
 ### Multi-Organization Architecture (Sprint 24, enhanced Sprint 181)
-- **Feature-gated**: `enable_multi_tenant=False` by default — zero behavioral change for single-tenant
-- **Organization model**: `organizations` table + `user_organizations` (many-to-many)
-- **Per-request isolation**: `app/core/org_context.py` ContextVar (`current_org_id`, `current_org_allowed_domains`)
-- **Middleware**: `OrgContextMiddleware` extracts `X-Organization-ID` header, loads allowed_domains from DB
-- **Domain filtering**: Orgs restrict which domain plugins users can access via `allowed_domains`
-- **Thread isolation**: Org-prefixed thread IDs (`org_{org_id}__user_{uid}__session_{sid}`)
-- **Admin API**: Full CRUD at `/api/v1/organizations` + membership management
-- **Two-tier admin** (Sprint 181): `enable_org_admin=False` — system admin (platform) vs org admin/owner (scoped)
-- **Org admin**: Can manage members (add/remove), update branding. Cannot escalate, cannot change features/AI config
-- **Permission helper**: `_require_org_admin_or_platform_admin()` returns caller level for downstream checks
-- **Admin context**: `GET /users/me/admin-context` — desktop uses to show Shield (system) or Building2 (org) icon
+- **Feature-gated**: `enable_multi_tenant=False` — zero behavioral change for single-tenant
+- **Model**: `organizations` + `user_organizations` (M2M). ContextVar isolation (`org_context.py`)
+- **Middleware**: `OrgContextMiddleware` extracts `X-Organization-ID`, loads `allowed_domains`, fail-closed
+- **Thread isolation**: Org-prefixed IDs (`org_{org_id}__user_{uid}__session_{sid}`)
+- **Two-tier admin** (Sprint 181): `enable_org_admin=False` — system admin vs org admin (scoped to members/branding)
 
 ### Unified Provider Layer (Sprint 55)
 - **Feature-gated**: `enable_unified_client=False` by default
@@ -228,15 +222,11 @@ app/domains/
 - **LLM Pool** (3-tier singleton): DEEP/MODERATE/LIGHT. Failover: `["google", "openai", "ollama"]`
 - Access: `from app.engine.llm_pool import get_llm_deep` or `UnifiedLLMClient.get_client("google")`
 
-### Product Search Platform (Sprints 148-151, enhanced Sprints 190, 200-201b)
-- **Feature flag**: `enable_product_search=False` — 7 tools, 5 platforms
+### Product Search Platform (Sprints 148-151, 190, 200-201b)
 - **Package**: `app/engine/search_platforms/` — `SearchPlatformAdapter` ABC + `SearchPlatformRegistry` singleton
-- **Adapters**: SerperShopping, SerperSite, WebSosanh, Facebook (Playwright), TikTok, Apify, AllWeb, Crawl4AI, Scrapling, ScrapeGraph
-- **ChainedAdapter** (Sprint 190): Multi-backend priority with per-platform circuit breaker + **ScrapingStrategyManager** (EMA metrics)
-- **Deep search** (Sprint 150): Pagination + page scraper + 15-iteration LLM search loop
-- **Image Enrichment** (Sprint 201/201b): `image_enricher.py` — Google-cached thumbnails via Serper /images. Gate: `enable_product_image_enrichment=False`
-  - Sprint 201b: Skip tiktok_shop, category mismatch rejection, min_similarity raised to 0.4, Instagram key fix
-- **Card Data Quality** (Sprint 201b): Rating/sold_count regex extraction from Serper snippets in `workers.py`
+- **10 adapters**: SerperShopping, SerperSite, WebSosanh, Facebook, TikTok, Apify, AllWeb, Crawl4AI, Scrapling, ScrapeGraph
+- **ChainedAdapter** (Sprint 190): Multi-backend priority + circuit breaker + ScrapingStrategyManager (EMA)
+- **Image Enrichment** (Sprint 201): Google-cached thumbnails. Sprint 201b: min_similarity=0.4, category rejection
 
 ### Browser Scraping (Sprints 152-154)
 - **Feature flag**: `enable_browser_scraping=False` — Playwright worker thread, Facebook cookie login, GraphQL interception
@@ -250,24 +240,14 @@ app/domains/
 - **SkillToolBridge** (Sprint 205): 3-loop feedback (Tool→Metrics, Tool→SkillBuilder, Skill→ToolSelector mastery boost)
 - **Feature gates**: `enable_unified_skill_index`, `enable_skill_metrics`, `enable_intelligent_tool_selection`, `enable_mcp_tool_server`, `enable_skill_tool_bridge` (all `False`)
 
-### Authentication & Identity (Sprints 157-159, 176, 194c)
-- **Google OAuth**: Authlib + OIDC, `app/auth/google_oauth.py`, redirect to desktop via URL fragment
-- **PKCE** (Sprint 176): Explicit `code_challenge_method: S256` — OAuth 2.1 compliance
-- **JWT**: Access (15m) + Refresh (7d), `app/auth/token_service.py`
-- **JWT `jti` claim** (Sprint 176): UUID per token for individual revocation tracking
-- **Refresh token `family_id`** (Sprint 176): Groups tokens by login session, replay attack detection
-- **Identity federation**: `find_or_create_by_provider()` — 3-step: provider→email→create
-- **LMS Token Exchange** (Sprint 159): HMAC-SHA256 signed backend-to-backend, replay protection
-- **User Management** (Sprint 158): CRUD, role management, identity linking/unlinking
-- **OTP store** (Sprint 176): Database-backed (`otp_link_codes` table), cluster-safe
-- **OTP exponential backoff** (Sprint 194c): `delay = min(2^(attempts-1), 60)` seconds between failed attempts, probabilistic cleanup (10%)
-- **Auth audit** (Sprint 176): `auth_events` table — login, logout, refresh, revoke, replay, link/unlink events
-- **WebSocket first-message auth** (Sprint 194c): API key via first JSON message (not query param), 10s timeout, production role downgrade
-- **Admin-context `require_auth`** (Sprint 194c): `/users/me/admin-context` uses `Depends(require_auth)` — no X-User-ID/X-Role trust
-- **OrgContextMiddleware fail-closed** (Sprint 194c): DB error clears org context (ContextVar reset)
-- **Session secret validation** (Sprint 194c): `session_secret_key >= 32 chars` warning in config + main.py
-- **Embed config validation** (Sprint 194c): org/domain regex, server URL origin normalization, HTTPS-only parent origin fallback
-- **Desktop**: OAuth-aware LoginScreen, auth-store, secure token storage (Sprint 176), refresh mutex
+### Authentication & Identity (Sprints 157-159, 176, 194c, 220)
+- **Google OAuth**: Authlib + OIDC (`app/auth/google_oauth.py`), PKCE S256, redirect to desktop
+- **JWT**: Access (15m) + Refresh (7d) via `token_service.py`. `jti` per-token revocation, `family_id` replay detection
+- **Identity federation**: `find_or_create_by_provider()` — 3-step: (1) exact provider+sub match → (2) verified email link → (3) create new. Table: `user_identities` with unique `(provider, provider_sub, provider_issuer)`. Supports N:1 mapping (multiple identities → one user). Email auto-link blocked when `email_verified=False` (security gate)
+- **LMS Token Exchange** (Sprint 159): HMAC-SHA256 backend-to-backend, replay protection (timestamp ±300s). LMS sends `lms_user_id` + `connector_id` → Wiii auto-creates/finds user via identity federation → returns JWT pair. Role mapping: instructor→teacher, student→student, admin→admin
+- **LMS Production Connection** (Sprint 220): Context injection into AI prompt, insight push to teacher dashboard, cache invalidation on webhooks. E2E verified 6/6 tests passing
+- **Hardened** (Sprint 176/194c): OTP database + exponential backoff, auth audit log, WebSocket first-message auth, admin-context `require_auth()`, middleware fail-closed
+- **Desktop**: OAuth LoginScreen, auth-store, secure token storage, refresh mutex
 
 ### Multi-Tenant Data Isolation (Sprint 160)
 - **App-level filtering**: `org_filter.py` — all 14 repos org-aware (NULL-aware for shared KB)
@@ -281,17 +261,10 @@ app/domains/
 ### Living Agent System (Sprint 170, enhanced Sprints 177-210d)
 - **Feature-gated**: `enable_living_agent=False`, `enable_living_continuity=False` — 22 modules in `app/engine/living_agent/` (8,500+ LOC)
 - **Core**: Soul (`wiii_soul.yaml`), 4D emotion (mood/energy/social/engagement), 30-min heartbeat, Ollama `qwen3:8b`
-- **Skills**: DISCOVER→LEARN→PRACTICE→EVALUATE→MASTER lifecycle + SM-2 spaced repetition (Sprint 177)
-- **Modules**: soul_loader, emotion_engine, heartbeat, skill_builder, skill_learner, journal, social_browser, reflector, goal_manager, autonomy_manager, proactive_messenger, briefing_composer, routine_tracker, weather_service, channel_sender, local_llm, safety, models, identity_core, narrative_synthesizer, sentiment_analyzer
-- **Persistent Emotion** (Sprint 188): save/load from DB, circadian rhythm (40% blend energy curve), survives restarts
-- **Module Wiring** (Sprint 208): RoutineTracker→ChatOrchestrator, ProactiveMessenger→Heartbeat, AutonomyManager→Heartbeat
-- **Living Continuity** (Sprint 210): Chat→Emotion feedback, episodic memory, daily reflection, journal morning+evening, insight extraction from browsing, goal seeding from soul, LLM 60s timeout
-- **Emotional Dampening** (Sprint 210b): Mood cooldown (30s) + sentiment accumulator (3-event threshold) prevents mood ping-pong from concurrent users
-- **Relationship Tiers** (Sprint 210c): 3-tier psychology model — CREATOR (admin, immediate mood) → KNOWN (50+ msgs, aggregate-only) → OTHER (no mood impact). In-memory buffering, heartbeat aggregate processing. Min 10 samples before aggregate nudge. Scales to 10K+ users
-- **SOTA LLM Sentiment** (Sprint 210d): Gemini Flash structured output replaces keyword matching. Fire-and-forget async (zero latency). Fallback: structured → raw JSON → default neutral. Understands Vietnamese without diacritics, sarcasm, context. Episode summaries in Vietnamese first-person from Wiii's perspective
-- **API**: 19 endpoints at `/api/v1/living-agent/`. **Desktop**: `LivingAgentPanel` (5-tab dashboard: Tổng quan, Kỹ năng, Mục tiêu, Nhật ký, Suy ngẫm)
-- **Docker**: `docker-compose.soul-agi.yml` — full stack with Ollama + Cloudflare Tunnel for VPS
-- **Status**: All coding phases complete (1A-5B + SOTA 204-210d). Live tested. Remaining: VPS deployment (Phase 6)
+- **Skills**: DISCOVER→LEARN→PRACTICE→EVALUATE→MASTER lifecycle + SM-2 spaced repetition
+- **Key features**: Persistent emotion (DB + circadian), module wiring (208), living continuity (210), emotional dampening (210b), 3-tier relationship psychology (CREATOR/KNOWN/OTHER, 210c), LLM sentiment (Gemini Flash, 210d)
+- **API**: 19 endpoints at `/api/v1/living-agent/`. Desktop: `LivingAgentPanel` (5-tab dashboard)
+- **Status**: All coding phases complete. Remaining: VPS deployment
 
 ### Natural Conversation System (Sprint 203, SOTA 2026)
 - **Feature-gated**: `enable_natural_conversation=False` — phase-aware natural conversation
@@ -301,31 +274,25 @@ app/domains/
 - **Diversity**: `llm_presence_penalty` + `llm_frequency_penalty` for response variation
 
 ### Soul AGI Two-Path Architecture (Sprints 204-210d — LIVE TESTED)
-- **Audit report**: `.claude/reports/SOUL-AGI-AUDIT-2026-02-25.md`
-- **SOTA reference**: `memory/soul-agi-architecture.md` — OpenClaw, Letta, Nomi, Voyager, MECoT patterns
-- **Three-Layer Identity**: Soul Core (immutable) → Identity Core (self-evolving, Sprint 207) → Context State (per-turn)
-- **Two Paths**: Work (multi-agent RAG/tools) ↔ Life (heartbeat autonomy/browsing/learning) — shared Emotion, Memory, Skill Library
-- **Skill↔Tool Bridge** (Sprint 205): 3 feedback loops — Tool→Metrics, Tool→SkillBuilder, Skill→ToolSelector mastery boost. Gate: `enable_skill_tool_bridge`
-- **Narrative Layer** (Sprint 206): NarrativeSynthesizer compiles journal+reflection+goals+emotion into coherent life story. Gate: `enable_narrative_context`
-- **Identity Core** (Sprint 207): Self-evolving Layer 2 — insights from reflections, drift prevention via Soul Core validation. Gate: `enable_identity_core`
-- **Module Wiring** (Sprint 208): All Living Agent modules wired into pipeline (RoutineTracker, ProactiveMessenger, AutonomyManager)
-- **E2E Tests** (Sprint 209): 74 integration tests across 15 groups validating full pipeline
-- **Living Continuity** (Sprint 210): 8 bug fixes — chat→emotion feedback, mood reset (6h→NEUTRAL), daily reflection, expanded journal, insight extraction, goal seeding, episodic memory, LLM timeout
-- **Relationship Psychology** (Sprint 210b/c): Construal Level Theory + Dunbar's Number — 3-tier model (CREATOR/KNOWN/OTHER), dampening, aggregate processing, 10K-scale safe
+- **Docs**: `.claude/reports/SOUL-AGI-AUDIT-2026-02-25.md`, `memory/soul-agi-architecture.md`
+- **Three-Layer Identity**: Soul Core (immutable) → Identity Core (self-evolving) → Context State (per-turn)
+- **Two Paths**: Work (multi-agent RAG/tools) ↔ Life (heartbeat autonomy/browsing/learning)
+- **Key modules**: SkillToolBridge (Sprint 205), NarrativeSynthesizer (206), IdentityCore (207), Module Wiring (208), E2E Tests (209), Living Continuity (210), Relationship Psychology (210b/c)
+- **Gates**: `enable_skill_tool_bridge`, `enable_narrative_context`, `enable_identity_core`
 
 ### Soul-to-Soul Communication Bridge (Sprint 213)
-- **Feature-gated**: `enable_soul_bridge=False` — real-time cross-service soul communication
-- **3-Layer Architecture**: Agent Cards (A2A-inspired identity at `/.well-known/agent.json`) + SoulBridge (WebSocket + HTTP transport) + EventBus integration
-- **Package**: `app/engine/soul_bridge/` — 5 modules: models, agent_card, transport, bridge, __init__
-- **Models**: `AgentCard` (soul identity), `SoulBridgeMessage` (envelope), `PeerConnection` (transport), `SoulBridge` (core)
-- **Transport**: WebSocket primary + HTTP POST fallback. Exponential backoff reconnect (1s→2s→4s→...→max). Priority-based retry (CRITICAL 1s/30x, HIGH 5s/10x, NORMAL 30s/3x, LOW no retry)
-- **Anti-Echo**: Events with `source: "bridge:<peer>"` never re-forwarded. Prevents infinite loops
-- **Dedup Cache**: UUID-based, 5-min TTL, background cleanup every 60s
-- **Bridge-worthy events**: ESCALATION, STATUS_UPDATE, MOOD_CHANGE, DISCOVERY, DAILY_REPORT (configurable)
-- **Heartbeat integration**: `HeartbeatScheduler._broadcast_soul_bridge()` sends status after each cycle
-- **Bro side**: `E:\Sach\DuAn\bro-subsoul\core\soul_bridge.py` — lightweight client connecting TO Wiii
-- **API**: 7 endpoints at `/api/v1/soul-bridge/` (status, peers, card, events, ws, connect, disconnect) + `/.well-known/agent.json`
-- **Tests**: 77 Wiii tests + 30 Bro tests, 0 failures
+- **Feature-gated**: `enable_soul_bridge=False` — WebSocket + HTTP transport, EventBus integration
+- **Package**: `app/engine/soul_bridge/` — 5 modules. Agent Cards at `/.well-known/agent.json`
+- **Transport**: WebSocket primary + HTTP fallback. Anti-echo, dedup cache (5-min TTL), priority-based retry
+- **Bro side**: `E:\Sach\DuAn\bro-subsoul\core\soul_bridge.py`. Tests: 77 Wiii + 30 Bro
+
+### LMS Production Connection (Sprint 220)
+- **Feature-gated**: `enable_lms_integration=False`, `enable_lms_token_exchange=False`
+- **Context injection**: `LMSContextLoader` fetches grades/assignments from LMS, injects into AI system prompt (5-min cache)
+- **Insight push**: `LMSInsightGenerator` analyzes conversations post-response, pushes pedagogical insights to LMS teacher dashboard (fire-and-forget)
+- **Cache invalidation**: Webhook events invalidate student context cache → next chat sees fresh LMS data
+- **Tool registration**: 5 LMS tools auto-registered when gate enabled (grades, assignments, progress, class overview, at-risk)
+- **Java side**: `WiiiWebhookEmitter` + `WiiiEventBridge` (quiz/enrollment/assignment domain events → HMAC-signed webhooks)
 
 ### Cross-Platform Identity & Soul Wiii (Sprint 174, enhanced Sprint 177)
 - **Feature-gated**: `enable_cross_platform_identity=False` — canonical identity + dual personality (Professional vs Soul)
@@ -348,12 +315,12 @@ app/domains/
 │
 ├── wiii-desktop/              # Desktop app (Tauri v2 + React 18)
 │   ├── src/
-│   │   ├── api/               # 16 API modules (HTTP, SSE, auth, orgs, users, living-agent)
-│   │   ├── components/        # auth/, chat/, layout/, living-agent/, settings/, common/, welcome/, admin/, org-admin/
-│   │   ├── stores/            # 13 Zustand stores (auth, org, chat, avatar, settings, living-agent, admin, ...)
+│   │   ├── api/               # 17 API modules (HTTP, SSE, auth, orgs, users, living-agent, soul-bridge)
+│   │   ├── components/        # auth/, chat/, layout/, living-agent/, settings/, common/, welcome/, admin/, org-admin/, soul-bridge/
+│   │   ├── stores/            # 15 Zustand stores (auth, org, chat, avatar, settings, living-agent, admin, toast, ...)
 │   │   ├── hooks/             # useSSEStream, useAutoScroll, useKeyboardShortcuts
 │   │   ├── lib/               # 28 utilities (avatar, org-branding, storage, theme, embed-auth)
-│   │   └── __tests__/         # 67 test files, 1841 Vitest tests
+│   │   └── __tests__/         # 69 test files, 1857 Vitest tests
 │   └── src-tauri/             # Rust backend (Tauri plugins, splash screen)
 │
 └── maritime-ai-service/       # Main backend (297+ Python files)
@@ -365,14 +332,14 @@ app/domains/
     │   ├── domains/           # Domain plugins (maritime/, traffic_law/, _template/)
     │   ├── mcp/               # MCP server (fastapi-mcp), client (MCPToolManager), adapter, tool_server
     │   ├── engine/            # Core AI: agentic_rag/, multi_agent/ (9 agents), tools/, search_platforms/, llm_providers/, character/, semantic_memory/, living_agent/, skills/, soul_bridge/
-    │   ├── integrations/      # LMS integration (webhook, enrichment, API client)
+    │   ├── integrations/      # LMS integration (webhook, enrichment, API client, context loader, insight generator)
     │   ├── services/          # Business logic: chat_orchestrator, graph_streaming, session_manager
     │   ├── repositories/      # 15 data access repos (all org-aware since Sprint 160)
     │   ├── prompts/           # YAML persona configs + persona overlay + soul config
     │   └── models/            # Pydantic schemas (schemas.py, organization.py + OrgSettings)
     ├── alembic/               # 34 database migrations
     ├── scripts/               # Test and ingestion scripts
-    ├── tests/                 # 342+ test files, 9830 unit tests (Sprint 210d: 0 failures, all clean)
+    ├── tests/                 # 403 test files, 10059 unit tests (Sprint 220: 0 failures, all clean)
     └── docs/architecture/     # SYSTEM_ARCHITECTURE.md (v7.0), SYSTEM_FLOW.md, FOLDER_MAP.md
 ```
 
@@ -380,89 +347,34 @@ app/domains/
 
 ## Key Configuration
 
-70+ feature flags in `app/core/config.py` (key flags listed):
+81 feature flags in `app/core/config.py`. Key flags (all `False` unless noted):
 ```python
-# Core
-use_multi_agent: bool = True           # Multi-Agent graph (LangGraph)
-enable_corrective_rag: bool = True     # Self-correction loop
-enable_structured_outputs: bool = True  # Constrained decoding
-deep_reasoning_enabled: bool = True    # <thinking> tags
+# Core (all True)
+use_multi_agent, enable_corrective_rag, enable_structured_outputs, deep_reasoning_enabled
+enable_llm_failover = True; enable_unified_client = False
 
-# LLM Providers
-enable_llm_failover: bool = True       # Multi-provider failover chain
-enable_unified_client: bool = False   # AsyncOpenAI SDK
+# Product Search — enable_product_search, enable_browser_scraping, enable_tiktok_native_api
+#   enable_crawl4ai, enable_scrapling, enable_scrapegraph, enable_thinking_chain
+#   enable_product_preview_cards = True, enable_visual_product_search, enable_product_image_enrichment
 
-# Product Search (Sprints 148-151, 190, 200-201b)
-enable_product_search: bool = False    # Product search agent (7 tools, 5 platforms)
-enable_browser_scraping: bool = False  # Playwright browser automation
-enable_tiktok_native_api: bool = False # TikTok Research API
-enable_thinking_chain: bool = False    # Multi-phase thinking chain
-enable_crawl4ai: bool = False          # Crawl4AI scraping backend (Sprint 190)
-enable_scrapling: bool = False         # Scrapling scraping backend (Sprint 190)
-enable_scrapegraph: bool = False       # ScrapeGraph scraping backend (Sprint 190)
-enable_product_preview_cards: bool = True  # SSE preview cards in UI (Sprint 200)
-enable_visual_product_search: bool = False # Vision LLM product ID (Sprint 200)
-enable_product_image_enrichment: bool = False # Google-cached thumbnails (Sprint 201)
-image_enrichment_min_similarity: float = 0.4  # Jaccard threshold (Sprint 201b: raised from 0.25)
+# Auth — enable_google_oauth, enable_lms_token_exchange, enable_auth_audit = True
+# Multi-Tenant — enable_multi_tenant, enable_org_admin
+# Character — enable_character_tools = True, enable_character_reflection = True, enable_soul_emotion
 
-# Authentication (Sprints 157-159, 176)
-enable_google_oauth: bool = False      # Google OAuth 2.0 login
-enable_lms_token_exchange: bool = False # LMS HMAC token exchange
-enable_auth_audit: bool = True         # Auth event logging (Sprint 176)
+# Living Agent — enable_living_agent, enable_living_continuity
+#   living_agent_creator_user_ids, living_agent_known_user_threshold = 50
+#   living_agent_enable_skill_learning
 
-# Multi-Tenant (Sprints 24, 160-161, 181)
-enable_multi_tenant: bool = False      # Organization support + data isolation
-# When enabled: org_id filtering on all 15 repos, org settings cascade
-enable_org_admin: bool = False         # Two-tier admin: system admin + org admin (Sprint 181)
+# Cross-Platform — enable_cross_platform_identity, enable_cross_platform_memory
+# Natural Conversation — enable_natural_conversation, llm_presence_penalty, llm_frequency_penalty
 
-# Character System (Sprint 97, per-user Sprint 124)
-enable_character_tools: bool = True     # Character introspection/update (per-user)
-enable_character_reflection: bool = True # Stanford Generative Agents reflection
-enable_soul_emotion: bool = False      # Soul emotion engine for avatar
+# Unified Skills — enable_unified_skill_index, enable_skill_metrics
+#   enable_intelligent_tool_selection, enable_skill_tool_bridge
+#   enable_narrative_context, enable_identity_core
 
-# Living Agent (Sprint 170, enhanced 210c)
-enable_living_agent: bool = False     # Autonomous soul, emotion, heartbeat, skills, journal
-enable_living_continuity: bool = False # Chat→emotion feedback + episodic memory + tier system (Sprint 210)
-living_agent_creator_user_ids: str = "" # Comma-separated Tier 0 creator IDs (Sprint 210c)
-living_agent_known_user_threshold: int = 50 # Min messages for Tier 1 known user (Sprint 210c)
-
-# Skill Learning, Cross-Platform, Memory (Sprints 174, 177)
-living_agent_enable_skill_learning: bool = False  # SM-2 spaced repetition
-enable_cross_platform_identity: bool = False  # Canonical identity across platforms
-enable_cross_platform_memory: bool = False   # Memory merge on OTP link
-
-# Natural Conversation (Sprint 203, SOTA 2026)
-enable_natural_conversation: bool = False  # Phase-aware natural conversation (no canned greetings)
-llm_presence_penalty: float = 0.0    # LLM presence penalty for diversity
-llm_frequency_penalty: float = 0.0   # LLM frequency penalty against repetition
-
-# Unified Skill Architecture (Sprints 191-194, 205)
-enable_unified_skill_index: bool = False  # Cross-system skill discovery
-enable_skill_metrics: bool = False    # Tool execution metrics tracking
-enable_intelligent_tool_selection: bool = False  # 4-step tool selection pipeline
-tool_selection_strategy: str = "hybrid"  # all/category/semantic/metrics/hybrid
-tool_selection_max_candidates: int = 15  # Max tools per query
-enable_skill_tool_bridge: bool = False  # Skill↔Tool bridge: tool execution → skill advancement (Sprint 205)
-enable_narrative_context: bool = False  # Inject Wiii's life narrative into system prompt (Sprint 206)
-enable_identity_core: bool = False  # Self-evolving identity — Wiii learns about itself from reflections (Sprint 207)
-
-# Soul Bridge (Sprint 213)
-enable_soul_bridge: bool = False     # Soul-to-soul communication (WebSocket + HTTP)
-soul_bridge_peers: str = ""          # Comma-separated peer URLs
-soul_bridge_heartbeat_interval: int = 30  # Peer heartbeat ping interval (seconds)
-soul_bridge_reconnect_max: int = 60  # Max reconnect delay (seconds)
-soul_bridge_ws_path: str = "/api/v1/soul-bridge/ws"  # WebSocket path
-soul_bridge_bridge_events: str = "ESCALATION,STATUS_UPDATE,MOOD_CHANGE,DISCOVERY,DAILY_REPORT"
-
-# MCP, Channels, Extensions
-enable_mcp_server: bool = False       # Expose tools via MCP at /mcp
-enable_mcp_client: bool = False       # Connect to external MCP servers
-enable_mcp_tool_server: bool = False  # Expose individual tools as MCP definitions (Sprint 194)
-mcp_auto_register_external: bool = False  # Auto-register MCP tools into ToolRegistry
-enable_websocket: bool = False        # WebSocket endpoint
-enable_telegram: bool = False         # Telegram webhook
-enable_scheduler: bool = False        # Proactive task execution
-enable_agentic_loop: bool = False     # Generalized ReAct loop
+# Soul Bridge — enable_soul_bridge, soul_bridge_peers, soul_bridge_bridge_events
+# MCP — enable_mcp_server, enable_mcp_client, enable_mcp_tool_server
+# Channels — enable_websocket, enable_telegram, enable_scheduler, enable_agentic_loop
 ```
 
 ---
@@ -516,91 +428,13 @@ Optional domain/org routing:
 
 ---
 
-## Domain Plugin Development
+## API Endpoints & Domain Plugins
 
-### Creating a New Domain
-```bash
-# 1. Copy template
-cp -r app/domains/_template app/domains/my_domain
-# 2. Edit domain.yaml with keywords, descriptions
-# 3. Write prompts in prompts/agents/
-# 4. Add to config: active_domains=["maritime","my_domain"]
-# 5. Restart — auto-discovered
-```
+**Full API reference:** `.claude/knowledge/api-reference.md`
 
-### Domain Admin API
-```
-GET /api/v1/admin/domains          # List all registered domains
-GET /api/v1/admin/domains/{id}     # Get domain details
-GET /api/v1/admin/domains/{id}/skills  # List domain skills
-```
+Key groups: Domain Admin (3), Organizations (13), Auth (6), Users (7), Context (3), Living Agent (6), Soul Bridge (8), Chat/Stream, Memories, Insights, Knowledge
 
-### Organization Admin API (Sprint 24, enhanced Sprints 161, 181)
-```
-GET    /api/v1/organizations              # List orgs (admin: all, user: own)
-GET    /api/v1/organizations/{org_id}     # Get org details
-POST   /api/v1/organizations              # Create org (admin only)
-PATCH  /api/v1/organizations/{org_id}     # Update org (admin only)
-DELETE /api/v1/organizations/{org_id}     # Soft-delete org (admin only)
-POST   /api/v1/organizations/{org_id}/members        # Add member (admin or org admin)
-DELETE /api/v1/organizations/{org_id}/members/{uid}   # Remove member (admin or org admin)
-GET    /api/v1/organizations/{org_id}/members         # List members (admin or org admin)
-GET    /api/v1/users/me/organizations     # List current user's orgs
-GET    /api/v1/organizations/{org_id}/settings        # Org settings (Sprint 161)
-PATCH  /api/v1/organizations/{org_id}/settings        # Update org settings (org admin: branding only)
-GET    /api/v1/organizations/{org_id}/permissions     # User permissions for org (incl. org_role)
-GET    /api/v1/users/me/admin-context     # Admin capabilities (Sprint 181)
-```
-
-### Authentication API (Sprints 157-159)
-```
-GET  /api/v1/auth/google/login        # Initiate Google OAuth
-GET  /api/v1/auth/google/callback     # OAuth callback → JWT pair
-POST /api/v1/auth/token/refresh       # JWT refresh
-POST /api/v1/auth/lms/token           # LMS token exchange (HMAC-signed)
-POST /api/v1/auth/lms/token/refresh   # LMS token refresh
-GET  /api/v1/auth/lms/health          # LMS connector health
-```
-
-### User Management API (Sprint 158)
-```
-GET   /api/v1/users/me                # Current user profile
-PATCH /api/v1/users/me                # Update profile
-GET   /api/v1/users/me/identities     # Linked accounts (federated)
-DELETE /api/v1/users/me/identities/{id} # Unlink identity
-GET   /api/v1/users                   # Admin: list all users
-PATCH /api/v1/users/{id}/role         # Admin: change user role
-POST  /api/v1/users/{id}/deactivate   # Admin: deactivate user
-```
-
-### Context Management API (Sprint 78)
-```
-GET  /api/v1/chat/context/info     # Token budget, utilization, message count
-POST /api/v1/chat/context/compact  # Trigger conversation compaction (summarize old messages)
-POST /api/v1/chat/context/clear    # Clear conversation context for session
-```
-
-### Living Agent API (Sprint 170)
-```
-GET  /api/v1/living-agent/status           # Full status (soul, mood, heartbeat, counts)
-GET  /api/v1/living-agent/emotional-state  # Current 4D emotional state
-GET  /api/v1/living-agent/journal          # Recent journal entries
-GET  /api/v1/living-agent/skills           # All skills with lifecycle status
-GET  /api/v1/living-agent/heartbeat        # Heartbeat scheduler info
-POST /api/v1/living-agent/heartbeat/trigger # Manually trigger heartbeat cycle
-```
-
-### Soul Bridge API (Sprint 213)
-```
-GET  /api/v1/soul-bridge/status              # Bridge status + peer connection states
-GET  /api/v1/soul-bridge/peers               # List connected peers with agent cards
-GET  /api/v1/soul-bridge/peers/{peer_id}/card  # Specific peer's agent card
-POST /api/v1/soul-bridge/events              # HTTP fallback for receiving events
-POST /api/v1/soul-bridge/connect             # Manual peer connection
-POST /api/v1/soul-bridge/disconnect          # Manual peer disconnect
-WS   /api/v1/soul-bridge/ws                  # WebSocket real-time connection
-GET  /.well-known/agent.json                 # Soul identity card (A2A-inspired)
-```
+New domain: `cp -r app/domains/_template app/domains/my_domain` → edit `domain.yaml` → add to `active_domains` → restart
 
 ---
 
@@ -616,43 +450,15 @@ YAML-based personas in `app/prompts/agents/` + domain overlays in `app/domains/*
 
 ## Infrastructure (SOTA 2026)
 
-### Structured Logging
-- `app/core/logging_config.py` — structlog JSON (production) / console (dev)
-- Configured at startup via `setup_logging()`, replaces `logging.basicConfig`
-- All stdlib loggers emit structured output automatically
-
-### Request-ID Middleware
-- `app/core/middleware.py` — `RequestIDMiddleware`
-- Generates `X-Request-ID` if caller doesn't provide one
-- Binds to structlog context vars for automatic log correlation
-- Returns ID in response headers
-
-### Organization Context Middleware (Sprint 24)
-- `OrgContextMiddleware`: extracts `X-Organization-ID`, sets ContextVar, loads `allowed_domains`. Fail-closed on DB error (Sprint 194c)
-
-### Observability
-- OpenTelemetry (`observability.py`), exception hierarchy (`WiiiException`), centralized constants
+- **Logging**: structlog JSON (prod) / console (dev) via `setup_logging()`. Request-ID middleware for log correlation
+- **Middleware**: `OrgContextMiddleware` — extracts `X-Organization-ID`, fail-closed on DB error (Sprint 194c)
+- **Observability**: OpenTelemetry, `WiiiException` hierarchy, centralized constants
 
 ### Security
-- API key comparison uses `hmac.compare_digest` (timing-safe)
-- Production mode rejects requests when no API key is configured
-- Ownership checks on `/insights/{user_id}` and `/memories/{user_id}` (non-admin users can only access own data)
-- Chat history deletion uses `auth.role` (verified) instead of `request.role` (untrusted)
-- Input validation: `ChatRequest.message` max 10,000 chars (Pydantic)
-- Rate limiting via slowapi with role-based tiers
-- Config validators: JWT expiration (1–43200 min), port (1–65535), rate limits (positive), scheduler bounds
-- **PKCE S256** (Sprint 176): OAuth 2.1 explicit code_challenge_method
-- **JWT `jti`** (Sprint 176): Unique token ID (UUID) for per-token revocation
-- **Refresh token families** (Sprint 176): `family_id` + replay attack detection (purge entire family)
-- **Secure token storage** (Sprint 176): Desktop tokens in dedicated store, separated from settings
-- **OTP database** (Sprint 176): Cluster-safe OTP codes in `otp_link_codes` table
-- **OTP exponential backoff** (Sprint 194c): `min(2^(n-1), 60)` cooldown + probabilistic cleanup (10% of generate calls)
-- **Auth audit log** (Sprint 176): `auth_events` table — fire-and-forget event logging for all auth actions
-- **WebSocket first-message auth** (Sprint 194c): No API key in query params (log-safe), first JSON `{"type":"auth","api_key":"..."}` within 10s
-- **Admin-context hardened** (Sprint 194c): Uses `require_auth()` Depends — no header trust in production
-- **Middleware fail-closed** (Sprint 194c): `OrgContextMiddleware` clears org context on DB error instead of proceeding with partial state
-- **Embed input validation** (Sprint 194c): org/domain format-validated, server URL normalized to origin, HTTPS-only parent origin fallback
-- **Session secret validation** (Sprint 194c): Warning when `session_secret_key < 32 chars` (OAuth CSRF state integrity)
+- Timing-safe API key (`hmac.compare_digest`), ownership checks on `/insights/` and `/memories/`
+- Input validation: `ChatRequest.message` max 10k chars. Rate limiting via slowapi (role-based tiers)
+- **Auth hardening** (Sprint 176): PKCE S256, JWT `jti` (per-token revocation), refresh token `family_id` (replay detection), OTP database (cluster-safe), auth audit log (`auth_events` table)
+- **Sprint 194c**: WebSocket first-message auth (10s timeout), admin-context `require_auth()`, middleware fail-closed, OTP exponential backoff, embed input validation, session secret >= 32 chars
 
 ---
 
@@ -670,7 +476,7 @@ npx vitest run       # Run 1796 tests
 ```
 
 ### Architecture
-- **State**: 13 Zustand stores (settings, chat, auth, org, org-admin, connection, domain, ui, avatar, character, context, living-agent, memory)
+- **State**: 15 Zustand stores (settings, chat, auth, org, org-admin, connection, domain, ui, avatar, character, context, living-agent, memory, toast, soul-bridge)
 - **Persistence**: `settings-store.ts` + `chat-store.ts` use `@tauri-apps/plugin-store` (localStorage fallback)
 - **HTTP**: `@tauri-apps/plugin-http` bypasses CORS; adaptive fallback to browser fetch
 - **Streaming**: SSE parser for `/chat/stream/v3` endpoint
@@ -679,6 +485,7 @@ npx vitest run       # Run 1796 tests
 ### Key Components
 - `AppShell` (layout), `ChatView` (chat), `SettingsPage` (4 tabs), `ThinkingBlock`, `StreamingIndicator`
 - `LivingAgentPanel` (5-tab dashboard: overview, skills, goals, journal, reflections), `OrgManagerPanel` (4-tab org admin), `AdminPanel` (7-tab system admin)
+- `SoulBridgePanel` (3-tab dashboard: overview/events/config — monitors connected SubSouls via Soul Bridge, 30s auto-refresh)
 
 ### Conversation Persistence (Sprint 15)
 - **Immediate persist**: create/delete/rename/finalize. **Debounced** (2s): addUserMessage
@@ -694,7 +501,7 @@ pytest -m integration                   # Tests requiring real services
 pytest tests/property/ -v               # Property-based tests (Hypothesis)
 ```
 
-**Current: Backend 10017 unit tests, Desktop 1863 Vitest tests** (as of Sprint 219b, 2026-02-28)
+**Current: Backend 10059 unit tests, Desktop 1857 Vitest tests** (as of Sprint 220, 2026-03-01)
 
 ### Backend Test Commands
 ```bash
