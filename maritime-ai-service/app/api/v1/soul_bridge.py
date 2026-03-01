@@ -2,15 +2,18 @@
 SoulBridge API — Monitoring, control, and WebSocket endpoints for soul-to-soul communication.
 
 Sprint 213: "Cầu Nối Linh Hồn"
+Sprint 216: Peer events + detail endpoints for SoulBridgePanel
 
 Endpoints:
-    GET  /api/v1/soul-bridge/status         — Bridge status + peer connection states
-    GET  /api/v1/soul-bridge/peers          — List connected peers with agent cards
-    GET  /api/v1/soul-bridge/peers/{id}/card — Fetch specific peer's agent card
-    POST /api/v1/soul-bridge/events         — HTTP fallback for receiving events
-    WS   /api/v1/soul-bridge/ws             — WebSocket for real-time connection
-    POST /api/v1/soul-bridge/connect        — Manually trigger connection to a peer
-    POST /api/v1/soul-bridge/disconnect     — Disconnect from a peer
+    GET  /api/v1/soul-bridge/status                 — Bridge status + peer connection states
+    GET  /api/v1/soul-bridge/peers                  — List connected peers with agent cards
+    GET  /api/v1/soul-bridge/peers/{id}/card        — Fetch specific peer's agent card
+    GET  /api/v1/soul-bridge/peers/{id}/events      — Recent events from a specific peer
+    GET  /api/v1/soul-bridge/peers/{id}/detail      — Full peer detail (card + state + events)
+    POST /api/v1/soul-bridge/events                 — HTTP fallback for receiving events
+    WS   /api/v1/soul-bridge/ws                     — WebSocket for real-time connection
+    POST /api/v1/soul-bridge/connect                — Manually trigger connection to a peer
+    POST /api/v1/soul-bridge/disconnect             — Disconnect from a peer
 """
 
 from __future__ import annotations
@@ -94,6 +97,57 @@ async def get_peer_card(
     if not card:
         raise HTTPException(status_code=404, detail=f"No agent card cached for peer '{peer_id}'")
     return card.to_dict()
+
+
+@router.get("/peers/{peer_id}/events")
+async def get_peer_events(
+    peer_id: str,
+    limit: int = 50,
+    event_type: str | None = None,
+) -> Dict[str, Any]:
+    """Recent events from a specific peer (from Soul Bridge ring buffer)."""
+    bridge = _get_bridge()
+    events = bridge.get_peer_events(peer_id, event_type=event_type, limit=limit)
+    return {"peer_id": peer_id, "events": events, "count": len(events)}
+
+
+@router.get("/peers/{peer_id}/detail")
+async def get_peer_detail(peer_id: str) -> Dict[str, Any]:
+    """Detailed peer status: agent card + connection state + recent events."""
+    bridge = _get_bridge()
+
+    if peer_id not in bridge._peers:
+        raise HTTPException(status_code=404, detail=f"Peer '{peer_id}' not found")
+
+    conn = bridge._peers[peer_id]
+    card = bridge.get_peer_card(peer_id)
+    card_dict = None
+    if card:
+        card_dict = {
+            "name": getattr(card, "name", ""),
+            "description": getattr(card, "description", ""),
+            "capabilities": getattr(card, "capabilities", []),
+            "supported_events": getattr(card, "supported_events", []),
+            "soul_id": getattr(card, "soul_id", peer_id),
+        }
+
+    recent = bridge.get_peer_events(peer_id, limit=20)
+
+    # Extract latest status from most recent STATUS_UPDATE
+    latest_status = None
+    for evt in reversed(recent):
+        if evt.get("event_type") == "STATUS_UPDATE":
+            latest_status = evt.get("payload")
+            break
+
+    return {
+        "peer_id": peer_id,
+        "state": conn.state.value if hasattr(conn.state, "value") else str(conn.state),
+        "card": card_dict,
+        "latest_status": latest_status,
+        "recent_events": recent,
+        "event_count": len(recent),
+    }
 
 
 class EventPayload(BaseModel):
