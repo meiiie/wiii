@@ -28,6 +28,7 @@ import { useContextStore } from "@/stores/context-store";
 import { useDomainStore } from "@/stores/domain-store";
 import { useOrgStore } from "@/stores/org-store";
 import { useChatStore } from "@/stores/chat-store";
+import { usePageContextStore } from "@/stores/page-context-store";
 import { initClient } from "@/api/client";
 import { parseEmbedConfig, validateEmbedConfig, getAuthMode } from "@/lib/embed-auth";
 import { sendReadySignal, sendError, setParentOrigin } from "@/lib/embed-bridge";
@@ -81,6 +82,11 @@ export default function EmbedApp() {
 
     // Store config globally for storage.ts namespace
     (window as any).__WIII_EMBED_CONFIG__ = config;
+
+    // Sprint 220c: Widget mode — set data attribute for CSS overrides
+    if (config.mode === "widget" || config.hide_welcome) {
+      document.documentElement.setAttribute("data-embed-mode", "widget");
+    }
   }, []);
 
   // Step 2: Initialize stores when config is parsed
@@ -113,6 +119,10 @@ export default function EmbedApp() {
         if (authMode === "jwt" && config.token) {
           // Decode JWT to extract user info (basic payload extraction)
           const user = decodeJwtUser(config.token);
+          // Set user_id in settings so useSSEStream sends correct user_id in chat body
+          if (user.id) {
+            await updateSettings({ user_id: user.id });
+          }
           await loginWithTokens(
             config.token,
             config.refresh_token || "",
@@ -125,6 +135,17 @@ export default function EmbedApp() {
 
         // 2c. Load persisted conversations
         await loadConversations();
+
+        // Sprint 220c: Session resumption — match by session_id from embed config
+        if (config.session_id) {
+          const chatState = useChatStore.getState();
+          const match = chatState.conversations.find(
+            (c) => c.session_id === config.session_id,
+          );
+          if (match) {
+            chatState.setActiveConversation(match.id);
+          }
+        }
 
         // 2d. Initialize HTTP client
         const headers: Record<string, string> = {};
@@ -179,6 +200,48 @@ export default function EmbedApp() {
       stopPolling();
     };
   }, [embedConfig]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Listen for parent PostMessages (clear-chat, page-context, etc.)
+  useEffect(() => {
+    if (!isReady) return;
+
+    const handler = (event: MessageEvent) => {
+      const msgType = event.data?.type;
+      if (!msgType || typeof msgType !== 'string' || !msgType.startsWith('wiii:')) return;
+
+      if (msgType === 'wiii:clear-chat') {
+        // Create new conversation — old one stays in history
+        const chatState = useChatStore.getState();
+        const domain = useDomainStore.getState().activeDomainId || embedConfig?.domain;
+        const org = embedConfig?.org;
+        chatState.createConversation(domain, org);
+
+        // Reply to parent
+        if (event.source && event.origin) {
+          (event.source as Window).postMessage(
+            { type: 'wiii:chat-cleared' },
+            event.origin
+          );
+        }
+      } else if (msgType === 'wiii:page-context') {
+        // Sprint 221: Page-Aware AI Context
+        const payload = event.data.payload || event.data;
+        const { student_state, available_actions, type: _type, ...pageCtx } = payload;
+        if (pageCtx.page_type) {
+          usePageContextStore.getState().setPageContext(pageCtx);
+          if (student_state) {
+            usePageContextStore.getState().setStudentState(student_state);
+          }
+          if (available_actions) {
+            usePageContextStore.getState().setAvailableActions(available_actions);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [isReady, embedConfig]);
 
   // Context polling for active conversation
   const activeConv = useChatStore((s) => s.activeConversation());

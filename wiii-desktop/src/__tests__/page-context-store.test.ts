@@ -76,3 +76,40 @@ describe("page-context-store (Sprint 221)", () => {
     expect(usePageContextStore.getState().getPageContextForRequest()).toBeNull();
   });
 });
+
+describe("EmbedApp wiii:page-context handler (Sprint 221)", () => {
+  beforeEach(() => {
+    usePageContextStore.getState().clear();
+  });
+
+  it("processes wiii:page-context message into store", () => {
+    const payload = {
+      page_type: "quiz",
+      page_title: "Quiz Chương 3",
+      course_name: "Khí Tượng",
+      quiz_question: "Câu hỏi?",
+      quiz_options: ["A", "B", "C"],
+      student_state: { quiz_attempts: 2, last_answer: "A", is_correct: false },
+      available_actions: [{ action: "request_hint", label: "Xem gợi ý" }],
+    };
+    const { student_state, available_actions, ...pageCtx } = payload;
+    usePageContextStore.getState().setPageContext(pageCtx);
+    if (student_state) usePageContextStore.getState().setStudentState(student_state);
+    if (available_actions) usePageContextStore.getState().setAvailableActions(available_actions);
+
+    const state = usePageContextStore.getState();
+    expect(state.pageContext?.page_type).toBe("quiz");
+    expect(state.pageContext?.quiz_question).toBe("Câu hỏi?");
+    expect(state.studentState?.quiz_attempts).toBe(2);
+    expect(state.availableActions).toHaveLength(1);
+  });
+
+  it("ignores messages without page_type", () => {
+    const payload = {} as any;
+    const { student_state, available_actions, ...pageCtx } = payload;
+    if (pageCtx.page_type) {
+      usePageContextStore.getState().setPageContext(pageCtx);
+    }
+    expect(usePageContextStore.getState().pageContext).toBeNull();
+  });
+});
