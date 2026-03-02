@@ -212,12 +212,13 @@ class TutorAgentNode:
             # Sprint 220c: Resolved LMS external identity
             lms_external_id=context.get("lms_external_id"),
             lms_connector_id=context.get("lms_connector_id"),
-            # Sprint 221: Page-Aware Context
-            page_context=context.get("page_context"),
-            student_state=context.get("student_state"),
-            available_actions=context.get("available_actions"),
         )
-        
+
+        # Sprint 222: Append graph-level host context (replaces per-agent injection)
+        _host_prompt = context.get("host_context_prompt", "")
+        if _host_prompt:
+            base_prompt = base_prompt + "\n\n" + _host_prompt
+
         # Build context string for query
         # Sprint 77: Exclude history fields — they're now in LangChain messages
         _exclude_keys = {
@@ -330,6 +331,10 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
             skill_context = state.get("skill_context")
             if skill_context:
                 merged_context["skill_context"] = skill_context
+            # Sprint 222: Thread graph-level host context
+            _host_ctx = state.get("host_context_prompt", "")
+            if _host_ctx:
+                merged_context["host_context_prompt"] = _host_ctx
             # Sprint 148: Pass thinking_effort to context for prompt injection
             if thinking_effort:
                 merged_context["thinking_effort"] = thinking_effort

@@ -44,6 +44,7 @@ class AnswerGenerator:
         user_name: Optional[str] = None,
         is_follow_up: bool = False,
         organization_id: Optional[str] = None,
+        host_context_prompt: str = "",
     ) -> Tuple[str, Optional[str]]:
         """
         Generate response using LLM to synthesize retrieved knowledge.
@@ -116,6 +117,10 @@ class AnswerGenerator:
         # Combine: base (from YAML) + thinking + role rules
         system_prompt = f"{base_prompt}\n\n{thinking_instruction}\n{role_rules}"
 
+        # Sprint 222: Graph-level host context
+        if host_context_prompt:
+            system_prompt = system_prompt + "\n\n" + host_context_prompt
+
         # Build user prompt with history and entity context
         user_prompt = _build_user_prompt(
             context, question, conversation_history, entity_context
@@ -174,6 +179,7 @@ class AnswerGenerator:
         user_name: Optional[str] = None,
         is_follow_up: bool = False,
         organization_id: Optional[str] = None,
+        host_context_prompt: str = "",
     ):
         """
         SOTA Streaming Generation - yields tokens as they arrive from LLM.
@@ -236,6 +242,10 @@ class AnswerGenerator:
             role_rules = _get_streaming_other_rules()
 
         system_prompt = f"{base_prompt}\n\n{thinking_instruction}\n{role_rules}"
+
+        # Sprint 222: Graph-level host context
+        if host_context_prompt:
+            system_prompt = system_prompt + "\n\n" + host_context_prompt
 
         history_section = ""
         if conversation_history:

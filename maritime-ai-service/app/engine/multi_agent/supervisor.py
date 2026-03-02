@@ -498,11 +498,15 @@ class SupervisorAgent:
                 logger.debug("Natural conversation config unavailable: %s", e)
                 _synth_prompt = SYNTHESIS_PROMPT
 
+            # Sprint 222: Include host context in synthesis
+            _host_prompt = state.get("host_context_prompt", "")
+            _host_suffix = f"\n\nHost Context:\n{_host_prompt}" if _host_prompt else ""
+
             messages = [
                 HumanMessage(content=_synth_prompt.format(
                     query=state.get("query", ""),
                     outputs=output_text
-                ))
+                ) + _host_suffix)
             ]
 
             response = await self._llm.ainvoke(messages)

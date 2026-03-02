@@ -59,6 +59,11 @@ class RAGAgentNode:
             **state.get("context", {})
         }
 
+        # Sprint 222: Thread graph-level host context into RAG pipeline
+        _host_ctx = state.get("host_context_prompt", "")
+        if _host_ctx:
+            context["host_context_prompt"] = _host_ctx
+
         # Sprint 144: Progressive streaming via event bus
         bus_id = state.get("_event_bus_id")
         event_queue = None

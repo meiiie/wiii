@@ -316,6 +316,27 @@ class MemoryAgentNode:
             if changes_summary:
                 context_parts.append(f"Thay đổi: {changes_summary}")
 
+            # Sprint 220c: Inject LMS context if available (from resolve_lms_identity)
+            ctx = state.get("context", {})
+            _lms_ext_id = ctx.get("lms_external_id")
+            _lms_conn_id = ctx.get("lms_connector_id")
+            if _lms_ext_id and _lms_conn_id:
+                try:
+                    from app.core.config import settings as _cfg
+                    if getattr(_cfg, "enable_lms_integration", False):
+                        from app.integrations.lms.context_loader import get_lms_context_loader
+                        _loader = get_lms_context_loader()
+                        _lms_ctx = _loader.load_student_context(_lms_ext_id, connector_id=_lms_conn_id)
+                        if _lms_ctx:
+                            context_parts.append(_loader.format_for_prompt(_lms_ctx))
+                except Exception:
+                    pass  # Non-critical: LMS data is supplementary
+
+            # Sprint 222: Graph-level host context (replaces per-agent injection)
+            _host_prompt = state.get("host_context_prompt", "")
+            if _host_prompt:
+                context_parts.append(_host_prompt)
+
             context_block = "\n\n".join(context_parts) if context_parts else "Chưa có thông tin nào về user."
 
             messages = [SystemMessage(content=_build_memory_response_prompt())]
