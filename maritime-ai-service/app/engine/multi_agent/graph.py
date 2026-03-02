@@ -1731,6 +1731,56 @@ async def _generate_session_summary_bg(thread_id: str, user_id: str) -> None:
         logger.debug("Background session summary failed: %s", e)
 
 
+def _inject_host_context(state: dict) -> str:
+    """Graph-level host context injection (Sprint 222).
+
+    Converts page_context (Sprint 221 legacy) or host_context (Sprint 222)
+    into a formatted prompt block. Called ONCE -- stored in state['host_context_prompt']
+    so ALL agents include it automatically.
+
+    Priority: host_context (new) > page_context (legacy).
+    Returns empty string if no context available or on any error.
+    """
+    ctx = state.get("context", {})
+    if not isinstance(ctx, dict):
+        return ""
+
+    # Priority 1: New host_context schema (Sprint 222+)
+    raw_host = ctx.get("host_context")
+    if raw_host:
+        try:
+            from app.engine.context.host_context import HostContext
+            from app.engine.context.adapters import get_host_adapter
+
+            host_ctx = HostContext(**raw_host) if isinstance(raw_host, dict) else raw_host
+            adapter = get_host_adapter(host_ctx.host_type)
+            return adapter.format_context_for_prompt(host_ctx)
+        except Exception as e:
+            logger.warning("[GRAPH] host_context format failed: %s", e)
+
+    # Priority 2: Legacy page_context (Sprint 221 backward compat)
+    page_ctx = ctx.get("page_context")
+    if page_ctx:
+        try:
+            from app.engine.context.host_context import from_legacy_page_context
+            from app.engine.context.adapters import get_host_adapter
+
+            page_dict = page_ctx if isinstance(page_ctx, dict) else (
+                page_ctx.model_dump(exclude_none=True) if hasattr(page_ctx, "model_dump") else dict(page_ctx)
+            )
+            host_ctx = from_legacy_page_context(
+                page_dict,
+                student_state=ctx.get("student_state"),
+                available_actions=ctx.get("available_actions"),
+            )
+            adapter = get_host_adapter(host_ctx.host_type)
+            return adapter.format_context_for_prompt(host_ctx)
+        except Exception as e:
+            logger.warning("[GRAPH] Legacy page_context format failed: %s", e)
+
+    return ""
+
+
 async def process_with_multi_agent(
     query: str,
     user_id: str,
@@ -1803,7 +1853,12 @@ async def process_with_multi_agent(
         "routing_metadata": None,  # Sprint 103: Initialize for API exposure
         "organization_id": (context or {}).get("organization_id"),  # Sprint 160
     }
-    
+
+    # Sprint 222: Graph-level host context injection -- ALL agents get this
+    _host_prompt = _inject_host_context(initial_state)
+    if _host_prompt:
+        initial_state["host_context_prompt"] = _host_prompt
+
     # Run graph with composite thread_id for per-user isolation (Sprint 16)
     # Sprint 170c: Include org_id for cross-org thread isolation
     invoke_config = {}
