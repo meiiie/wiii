@@ -72,6 +72,11 @@ class ChatContext:
     # Sprint 179: Multimodal Vision
     images: Optional[list] = None  # List[ImageInput] from ChatRequest
 
+    # Sprint 221: Page-Aware Context
+    page_context: Optional[Any] = None   # PageContext from user_context
+    student_state: Optional[Any] = None  # StudentPageState from user_context
+    available_actions: Optional[list] = None  # Available page actions
+
     # Analysis Context
     conversation_analysis: Any = None  # ConversationContext
 
@@ -239,7 +244,11 @@ class InputProcessor:
             lms_user_name=user_context.display_name if user_context else None,
             lms_module_id=user_context.current_module_id if user_context else None,
             lms_course_name=user_context.current_course_name if user_context else None,
-            lms_language=user_context.language if user_context else "vi"
+            lms_language=user_context.language if user_context else "vi",
+            # Sprint 221: Page-Aware Context — pass through from user_context
+            page_context=user_context.page_context if user_context else None,
+            student_state=user_context.student_state if user_context else None,
+            available_actions=user_context.available_actions if user_context else None,
         )
         
         # Prioritize LMS user name

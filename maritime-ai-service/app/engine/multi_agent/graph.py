@@ -736,6 +736,13 @@ def _build_direct_system_messages(state: AgentState, query: str, domain_name_vi:
         user_id=state.get("user_id", "__global__"),
         personality_mode=ctx.get("personality_mode"),
         conversation_phase=ctx.get("conversation_phase"),  # Sprint 203
+        # Sprint 220c: Resolved LMS external identity
+        lms_external_id=ctx.get("lms_external_id"),
+        lms_connector_id=ctx.get("lms_connector_id"),
+        # Sprint 221: Page-Aware Context
+        page_context=ctx.get("page_context"),
+        student_state=ctx.get("student_state"),
+        available_actions=ctx.get("available_actions"),
     )
 
     messages = [SystemMessage(content=system_prompt)]

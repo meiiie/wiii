@@ -428,6 +428,20 @@ class ChatOrchestrator:
                 organization_id=org_id,
             ))
 
+        # Sprint 220: Fire-and-forget LMS insight push
+        # Analyzes conversation for pedagogical insights, pushes to LMS teacher dashboard.
+        if getattr(settings, "enable_lms_integration", False):
+            try:
+                from app.integrations.lms.insight_generator import analyze_and_push_insights
+                _resp_text = result.message or "" if result else ""
+                asyncio.ensure_future(analyze_and_push_insights(
+                    user_id=user_id,
+                    message=message,
+                    response=_resp_text,
+                ))
+            except Exception:
+                pass  # Never block chat pipeline for LMS insights
+
         return response
     
     def _load_pronoun_style_from_facts(
@@ -550,6 +564,18 @@ class ChatOrchestrator:
         
         from app.engine.multi_agent.graph import process_with_multi_agent
         
+        # Sprint 220c: Resolve LMS identity (Wiii UUID → external lms_user_id + connector)
+        _lms_ext_id, _lms_conn_id = None, None
+        try:
+            if settings.enable_lms_integration:
+                from app.auth.external_identity import resolve_lms_identity
+                _lms_ext_id, _lms_conn_id = await resolve_lms_identity(
+                    context.user_id,
+                    getattr(context, 'organization_id', None),
+                )
+        except Exception as _lms_err:
+            logger.debug("[ORCH] LMS identity resolve failed: %s", _lms_err)
+
         # Build context for multi-agent
         multi_agent_context = {
             "user_name": context.user_name,
@@ -581,6 +607,13 @@ class ChatOrchestrator:
             "organization_id": getattr(context, 'organization_id', None),
             # Sprint 179: Multimodal Vision images
             "images": [img.model_dump() if hasattr(img, 'model_dump') else img for img in context.images] if getattr(context, 'images', None) else None,
+            # Sprint 220c: Resolved LMS external identity
+            "lms_external_id": _lms_ext_id,
+            "lms_connector_id": _lms_conn_id,
+            # Sprint 221: Page-Aware Context from LMS PostMessage
+            "page_context": getattr(context, 'page_context', None),
+            "student_state": getattr(context, 'student_state', None),
+            "available_actions": getattr(context, 'available_actions', None),
         }
 
         # Use domain_id from Stage 0 (falls back to config default)

@@ -209,6 +209,13 @@ class TutorAgentNode:
             user_id=context.get("user_id", "__global__"),
             # Sprint 174: Personality mode (soul vs professional)
             personality_mode=context.get("personality_mode"),
+            # Sprint 220c: Resolved LMS external identity
+            lms_external_id=context.get("lms_external_id"),
+            lms_connector_id=context.get("lms_connector_id"),
+            # Sprint 221: Page-Aware Context
+            page_context=context.get("page_context"),
+            student_state=context.get("student_state"),
+            available_actions=context.get("available_actions"),
         )
         
         # Build context string for query

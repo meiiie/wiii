@@ -144,3 +144,22 @@ class TestPageContextPromptFormatting:
         result = format_page_context_for_prompt(ctx, student_state=None, available_actions=actions)
         assert "Bài tiếp theo" in result
         assert "Xem gợi ý" in result
+
+
+class TestChatContextPageAware:
+    """Sprint 221: ChatContext carries page context."""
+
+    def test_chat_context_has_page_fields(self):
+        from app.services.input_processor import ChatContext
+        from app.models.schemas import UserRole
+        from uuid import uuid4
+        ctx = ChatContext(
+            user_id="u1",
+            session_id=uuid4(),
+            message="Giải thích bài này",
+            user_role=UserRole.STUDENT,
+        )
+        # New fields default to None
+        assert ctx.page_context is None
+        assert ctx.student_state is None
+        assert ctx.available_actions is None
