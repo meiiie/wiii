@@ -18,3 +18,27 @@ def test_agent_state_has_host_context_field():
     assert "host_context" in annotations, (
         "AgentState missing host_context field"
     )
+
+
+# ── Sprint 222 Task 4: Feature gate tests ──────────────────────────
+
+
+def test_config_has_enable_host_context_flag():
+    """Feature gate must exist and default to False."""
+    from app.core.config import Settings
+    default = Settings.model_fields["enable_host_context"].default
+    assert default is False
+
+
+def test_config_has_enable_host_actions_flag():
+    """Action gate must exist and default to False."""
+    from app.core.config import Settings
+    default = Settings.model_fields["enable_host_actions"].default
+    assert default is False
+
+
+def test_config_has_enable_host_skills_flag():
+    """Skills gate must exist and default to False."""
+    from app.core.config import Settings
+    default = Settings.model_fields["enable_host_skills"].default
+    assert default is False

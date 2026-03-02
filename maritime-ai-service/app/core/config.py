@@ -262,6 +262,11 @@ class Settings(BaseSettings):
         description='JSON list of LMS connectors: [{"id":"maritime-lms","backend_type":"spring_boot","base_url":"...","webhook_secret":"..."}]'
     )
 
+    # Sprint 222: Universal Host Context Engine
+    enable_host_context: bool = False       # Master gate for v2 host context
+    enable_host_actions: bool = False       # Bidirectional host actions
+    enable_host_skills: bool = False        # Dynamic YAML skill loading
+
     @property
     def postgres_url(self) -> str:
         """
@@ -705,6 +710,9 @@ class Settings(BaseSettings):
     # Sprint 210c: Relationship Tiers — emotion impact weighted by user closeness
     living_agent_creator_user_ids: str = Field(default="", description="Comma-separated user IDs treated as Tier 0 (creator). Plus anyone with role=admin")
     living_agent_known_user_threshold: int = Field(default=50, ge=5, le=1000, description="Minimum total_messages to qualify as Tier 1 (known user)")
+
+    # Sprint 219: Adaptive Preference Learning — auto-infer learning preferences from conversation
+    enable_adaptive_preferences: bool = Field(default=False, description="Enable behavioral inference rules in FactExtractor to auto-learn user preferences from conversation patterns")
 
     # Sprint 177: Real Skill Learning via Browsing
     living_agent_enable_skill_learning: bool = Field(default=False, description="Enable browsing→skill learning pipeline with SM-2 spaced repetition")
