@@ -122,6 +122,11 @@ class UserContext(BaseModel):
         default=None, description="Các hành động có sẵn trên trang (Sprint 221)"
     )
 
+    # Sprint 222: Universal Host Context
+    host_context: Optional[dict] = Field(
+        default=None, description="Generic host context (Sprint 222 — replaces page_context)"
+    )
+
     model_config = {
         "json_schema_extra": {
             "examples": [

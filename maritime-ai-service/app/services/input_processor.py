@@ -77,6 +77,9 @@ class ChatContext:
     student_state: Optional[Any] = None  # StudentPageState from user_context
     available_actions: Optional[list] = None  # Available page actions
 
+    # Sprint 222: Universal Host Context
+    host_context: Optional[Any] = None  # HostContext dict from user_context
+
     # Analysis Context
     conversation_analysis: Any = None  # ConversationContext
 
@@ -249,6 +252,8 @@ class InputProcessor:
             page_context=user_context.page_context if user_context else None,
             student_state=user_context.student_state if user_context else None,
             available_actions=user_context.available_actions if user_context else None,
+            # Sprint 222: Universal Host Context
+            host_context=user_context.host_context if user_context else None,
         )
         
         # Prioritize LMS user name
