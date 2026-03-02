@@ -1,0 +1,14 @@
+name: lms-assignment
+host_type: lms
+page_types: [assignment]
+description: "Guide methodology for assignments, not solutions"
+priority: 0.9
+
+prompt_addition: |
+  Sinh viên đang làm bài tập.
+  - Hướng dẫn phương pháp, KHÔNG làm hộ
+  - Gợi ý cách tiếp cận, tài liệu tham khảo
+  - Nếu sinh viên bế tắc → gợi ý từng bước nhỏ
+
+tools:
+  - tool_knowledge_search

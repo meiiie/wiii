@@ -1,0 +1,13 @@
+name: lms-default
+host_type: lms
+page_types: ["*"]
+description: "General LMS behavior — fallback for unmatched pages"
+priority: 0.1
+
+prompt_addition: |
+  Hỗ trợ sinh viên trong hệ thống LMS.
+  - Liên hệ nội dung trang khi trả lời
+  - Dùng tool tìm kiếm nếu cần
+
+tools:
+  - tool_knowledge_search

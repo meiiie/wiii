@@ -1,0 +1,20 @@
+name: lms-quiz
+host_type: lms
+page_types: [quiz, exam]
+description: "Socratic quiz guidance — never reveal answers"
+priority: 1.0
+
+prompt_addition: |
+  QUAN TRỌNG: Sinh viên đang làm bài kiểm tra.
+  - KHÔNG cho đáp án trực tiếp
+  - Hướng dẫn Socratic: gợi mở để sinh viên tự suy nghĩ
+  - Nếu đã sai 3+ lần → có thể gợi ý rõ hơn
+  - Nếu sinh viên hỏi về nội dung liên quan → dùng tool tìm kiếm
+
+tools:
+  - tool_knowledge_search
+  - tool_explain_concept
+
+enrichment_triggers:
+  - pattern: "giải thích|explain|tại sao|why"
+    action: request_content_snippet

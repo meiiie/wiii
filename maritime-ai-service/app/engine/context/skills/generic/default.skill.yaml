@@ -1,0 +1,8 @@
+name: generic-default
+host_type: generic
+page_types: ["*"]
+description: "Universal fallback for unknown host types"
+priority: 0.0
+
+prompt_addition: |
+  Liên hệ nội dung trang khi trả lời.

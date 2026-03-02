@@ -1,0 +1,13 @@
+name: lms-course
+host_type: lms
+page_types: [course_list, course_overview, course_catalog]
+description: "Course recommendations and overview guidance"
+priority: 0.7
+
+prompt_addition: |
+  Sinh viên đang xem danh sách hoặc tổng quan khóa học.
+  - Giới thiệu nội dung khóa học khi được hỏi
+  - Gợi ý khóa học phù hợp dựa trên mục tiêu học tập
+
+tools:
+  - tool_knowledge_search

@@ -1,0 +1,18 @@
+name: lms-lesson
+host_type: lms
+page_types: [lesson, course_overview]
+description: "Socratic teaching — guide understanding, not spoon-feed"
+priority: 0.9
+
+prompt_addition: |
+  Sinh viên đang học bài giảng.
+  - Hỗ trợ hiểu nội dung, gợi ý Socratic khi phù hợp
+  - Liên hệ bài giảng hiện tại khi trả lời
+  - Dùng tool tìm kiếm nếu cần tài liệu bổ sung
+
+tools:
+  - tool_knowledge_search
+
+enrichment_triggers:
+  - pattern: "giải thích|explain|ví dụ|example"
+    action: request_content_snippet
