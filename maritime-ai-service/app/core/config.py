@@ -267,6 +267,13 @@ class Settings(BaseSettings):
     enable_host_actions: bool = False       # Bidirectional host actions
     enable_host_skills: bool = False        # Dynamic YAML skill loading
 
+    # Sprint 222b Phase 7: Standalone Browser Agent (Playwright MCP)
+    enable_browser_agent: bool = False
+    browser_agent_mcp_command: str = "npx"
+    browser_agent_mcp_args: list = ["@playwright/mcp", "--headless"]
+    browser_agent_timeout: int = 120  # seconds per browser session
+    browser_agent_max_sessions_per_hour: int = 10
+
     @property
     def postgres_url(self) -> str:
         """
