@@ -494,6 +494,12 @@ async def process_with_multi_agent_streaming(
             "_event_bus_id": bus_id,
         }
 
+        # Sprint 222: Graph-level host context injection (sync/stream parity)
+        from app.engine.multi_agent.graph import _inject_host_context
+        _host_prompt = _inject_host_context(initial_state)
+        if _host_prompt:
+            initial_state["host_context_prompt"] = _host_prompt
+
         final_state = None
         answer_emitted = False
         partial_answer_emitted = False

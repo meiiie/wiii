@@ -167,3 +167,13 @@ def test_inject_host_context_generic_host_type():
     assert "<host_context" in result
     assert "Customer Details" in result
     assert 'type="crm"' in result
+
+
+def test_streaming_path_has_host_context_injection():
+    """graph_streaming.py must call _inject_host_context or equivalent."""
+    import inspect
+    from app.engine.multi_agent import graph_streaming
+    source = inspect.getsource(graph_streaming)
+    assert "host_context_prompt" in source or "_inject_host_context" in source, (
+        "Streaming path must inject host context (sync/stream parity)"
+    )
