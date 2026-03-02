@@ -41,6 +41,7 @@ class StreamEventType:
     BROWSER_SCREENSHOT = "browser_screenshot"  # Sprint 153: Playwright screenshot
     PREVIEW = "preview"                          # Sprint 166: Rich preview cards
     ARTIFACT = "artifact"                        # Sprint 167: Interactive artifacts (code, HTML, data)
+    HOST_ACTION = "host_action"                    # Sprint 222b: Bidirectional host action request
 
 
 # =============================================================================
@@ -418,6 +419,28 @@ async def create_preview_event(
             "image_url": image_url,
             "citation_index": citation_index,
             "metadata": metadata or {},
+        },
+        node=node,
+    )
+
+
+async def create_host_action_event(
+    request_id: str,
+    action: str,
+    params: dict,
+    node: Optional[str] = None,
+) -> StreamEvent:
+    """Sprint 222b: Create a host action request event.
+
+    Emitted when AI agent wants the host application to perform an action.
+    Frontend receives this SSE event and forwards via PostMessage to host.
+    """
+    return StreamEvent(
+        type=StreamEventType.HOST_ACTION,
+        content={
+            "id": request_id,
+            "action": action,
+            "params": params,
         },
         node=node,
     )
