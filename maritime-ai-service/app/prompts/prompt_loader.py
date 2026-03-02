@@ -141,6 +141,94 @@ def get_pronoun_instruction(pronoun_style: Optional[Dict[str, str]]) -> str:
     return instruction
 
 
+def format_page_context_for_prompt(
+    page_context,
+    student_state=None,
+    available_actions=None,
+) -> str:
+    """Format page context for system prompt injection (Sprint 221).
+
+    Returns Vietnamese-language context block or empty string if no context.
+    """
+    if not page_context:
+        return ""
+
+    _PAGE_LABELS = {
+        "dashboard": "Trang chủ",
+        "lesson": "Bài giảng",
+        "quiz": "Bài kiểm tra",
+        "assignment": "Bài tập",
+        "resource": "Tài liệu",
+        "forum": "Diễn đàn",
+        "grades": "Bảng điểm",
+        "settings": "Cài đặt",
+    }
+
+    parts = ["--- NGỮ CẢNH TRANG HIỆN TẠI ---"]
+
+    page_label = _PAGE_LABELS.get(page_context.page_type or "", page_context.page_type or "Trang")
+    title_part = f' — "{page_context.page_title}"' if page_context.page_title else ""
+    chapter_part = f" ({page_context.chapter_name})" if page_context.chapter_name else ""
+    parts.append(f"📍 Trang: {page_label}{title_part}{chapter_part}")
+
+    if page_context.course_name:
+        parts.append(f"📚 Môn: {page_context.course_name}")
+
+    if page_context.content_type:
+        _CONTENT_LABELS = {
+            "theory": "Lý thuyết", "exercise": "Bài tập", "video": "Video",
+            "pdf": "Tài liệu PDF", "discussion": "Thảo luận",
+        }
+        parts.append(f"📝 Loại: {_CONTENT_LABELS.get(page_context.content_type, page_context.content_type)}")
+
+    if page_context.content_snippet:
+        parts.append(f'\nNội dung đang xem:\n"{page_context.content_snippet}"')
+
+    if page_context.quiz_question:
+        parts.append(f'\nCâu hỏi đang làm:\n"{page_context.quiz_question}"')
+        if page_context.quiz_options:
+            for i, opt in enumerate(page_context.quiz_options):
+                label = chr(65 + i)
+                parts.append(f"  {label}) {opt}")
+
+    if student_state:
+        state_lines = []
+        if student_state.time_on_page_ms is not None:
+            minutes = student_state.time_on_page_ms // 60000
+            if minutes > 0:
+                state_lines.append(f"⏱️ Thời gian trên trang: {minutes} phút")
+        if student_state.scroll_percent is not None:
+            state_lines.append(f"📖 Đã đọc: {student_state.scroll_percent:.0f}%")
+        if student_state.quiz_attempts is not None:
+            state_lines.append(f"Lần thử: {student_state.quiz_attempts}")
+            if student_state.last_answer:
+                correctness = "Đúng" if student_state.is_correct else "Sai"
+                state_lines.append(f'Đáp án trước: "{student_state.last_answer}" → {correctness}')
+        if student_state.progress_percent is not None:
+            state_lines.append(f"📊 Tiến độ: {student_state.progress_percent:.0f}%")
+        if state_lines:
+            parts.append("\nTrạng thái:\n- " + "\n- ".join(state_lines))
+
+    if available_actions:
+        action_labels = [a.get("label", a.get("action", "")) for a in available_actions]
+        if action_labels:
+            parts.append("\nHành động có sẵn: " + ", ".join(action_labels))
+
+    if page_context.page_type == "quiz":
+        parts.append(
+            "\n⚠️ QUAN TRỌNG: KHÔNG cho đáp án trực tiếp."
+            "\nHướng dẫn Socratic: gợi mở để sinh viên suy nghĩ."
+            "\nNếu đã sai 3+ lần → có thể gợi ý rõ hơn."
+        )
+    else:
+        parts.append(
+            "\n⚠️ Sinh viên đang xem nội dung này — khi hỏi, hãy liên hệ trực tiếp."
+            "\nGợi ý Socratic (hỏi gợi mở), không cho đáp án trực tiếp."
+        )
+
+    return "\n".join(parts)
+
+
 class PromptLoader:
     """
     Load and manage persona configurations from YAML files.
@@ -767,6 +855,44 @@ class PromptLoader:
                 "chỉ đề cập khi user hỏi, và LUÔN hedge: 'Theo thông tin trước đó...'"
             )
         
+        # ============================================================
+        # Sprint 220: LMS CONTEXT — Student learning data injection
+        # Fetches enrollments, grades, assignments from LMS.
+        # Feature-gated: enable_lms_integration=True required.
+        # ============================================================
+        # Sprint 220c: Use resolved LMS identity (external ID + connector)
+        # Falls back to user_id for backward compat (pre-220c callers)
+        _lms_lookup_id = kwargs.get("lms_external_id") or kwargs.get("user_id")
+        _lms_connector = kwargs.get("lms_connector_id")
+        if _lms_lookup_id:
+            try:
+                from app.core.config import settings as _lms_settings
+                if getattr(_lms_settings, "enable_lms_integration", False):
+                    from app.integrations.lms.context_loader import get_lms_context_loader
+                    _lms_loader = get_lms_context_loader()
+                    _lms_ctx = _lms_loader.load_student_context(
+                        _lms_lookup_id, connector_id=_lms_connector,
+                    )
+                    if _lms_ctx:
+                        sections.append("\n" + _lms_loader.format_for_prompt(_lms_ctx))
+            except Exception as _lms_err:
+                logger.debug("[LMS] Failed to load context in prompt: %s", _lms_err)
+
+        # ============================================================
+        # Sprint 221: PAGE-AWARE CONTEXT — What page student is viewing
+        # Injected from user_context.page_context (sent by LMS via PostMessage)
+        # ============================================================
+        _page_ctx = kwargs.get("page_context")
+        _student_state = kwargs.get("student_state")
+        _available_actions = kwargs.get("available_actions")
+        if _page_ctx:
+            _page_prompt = format_page_context_for_prompt(
+                _page_ctx, student_state=_student_state,
+                available_actions=_available_actions,
+            )
+            if _page_prompt:
+                sections.append("\n" + _page_prompt)
+
         # ============================================================
         # CONVERSATION SUMMARY (from MemorySummarizer)
         # ============================================================
