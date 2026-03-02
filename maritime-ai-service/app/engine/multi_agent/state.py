@@ -107,6 +107,10 @@ class AgentState(TypedDict, total=False):
     # Sprint 203: Conversation phase for natural behavior (OpenClaw heartbeat-inspired)
     conversation_phase: Optional[str]  # "opening" | "engaged" | "deep" | "closing"
 
+    # Sprint 222: Universal Host Context Engine
+    host_context: Optional[Dict[str, Any]]  # Raw HostContext from request
+    host_context_prompt: Optional[str]  # Formatted prompt block (graph-level injection)
+
     # Sprint 163 Phase 4: Parallel dispatch + aggregator
     subagent_reports: Optional[List[Dict[str, Any]]]  # List[SubagentReport.model_dump()]
     _aggregator_action: Optional[str]  # "synthesize"|"use_best"|"re_route"|"escalate"
