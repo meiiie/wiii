@@ -12,6 +12,7 @@ import { useOrgStore } from "@/stores/org-store";
 import { useContextStore } from "@/stores/context-store";
 import { useCharacterStore } from "@/stores/character-store";
 import { usePageContextStore } from "@/stores/page-context-store";
+import { useHostContextStore } from "@/stores/host-context-store";
 import { StreamBuffer } from "@/lib/stream-buffer";
 import type { SSEEventHandler } from "@/api/sse";
 import type { AggregationSummary, ArtifactType, ChatResponseMetadata, ImageInput, MoodType, PreviewType } from "@/api/types";
@@ -344,6 +345,19 @@ export function useSSEStream() {
           artifact_type: data.content.artifact_type as ArtifactType,
         }, data.node);
       },
+      onHostAction: (data) => {
+        // Sprint 222b: AI agent requested a host action
+        const { id, action, params } = data.content || {};
+        if (id && action) {
+          useHostContextStore.getState().requestAction(action, params || {})
+            .then((result) => {
+              console.log(`[SSE] Host action ${id} resolved:`, result);
+            })
+            .catch((err) => {
+              console.warn(`[SSE] Host action ${id} failed:`, err.message);
+            });
+        }
+      },
     };
 
     // Sprint 121b: Include session_id from active conversation for history continuity
@@ -354,8 +368,38 @@ export function useSSEStream() {
     // Sprint 156: Include org ID when not personal workspace
     const orgId = useOrgStore.getState().activeOrgId;
 
-    // Sprint 221: Merge page context from LMS PostMessage into user_context
+    // Sprint 222: Use host-context-store (generic, replaces Sprint 221 page-context-store)
+    const hostCtx = useHostContextStore.getState().getContextForRequest();
+    // Sprint 221 backward compat: also read old page-context-store as fallback
     const pageData = usePageContextStore.getState().getPageContextForRequest();
+
+    // Build user_context: prefer host-context-store, fallback to page-context-store
+    const buildUserContext = () => {
+      if (hostCtx) {
+        return {
+          display_name: settings.display_name || settings.user_id,
+          role: settings.user_role,
+          host_context: hostCtx,
+          // Sprint 221 backward compat — keep flat fields for backend
+          page_context: {
+            page_type: hostCtx.page.type,
+            page_title: hostCtx.page.title,
+            ...(hostCtx.page.metadata || {}),
+            content_snippet: hostCtx.content?.snippet,
+          },
+          student_state: hostCtx.user_state || undefined,
+          available_actions: hostCtx.available_actions || undefined,
+        };
+      }
+      if (pageData) {
+        return {
+          display_name: settings.display_name || settings.user_id,
+          role: settings.user_role,
+          ...pageData,
+        };
+      }
+      return undefined;
+    };
 
     const request = {
       user_id: settings.user_id,
@@ -366,12 +410,8 @@ export function useSSEStream() {
       organization_id: orgId && orgId !== "personal" ? orgId : undefined,
       // Sprint 179: Include images for multimodal vision
       images: images && images.length > 0 ? images : undefined,
-      // Sprint 221: Page-aware context from LMS
-      user_context: pageData ? {
-        display_name: settings.display_name || settings.user_id,
-        role: settings.user_role,
-        ...pageData,
-      } : undefined,
+      // Sprint 222: Host-aware context (with Sprint 221 backward compat)
+      user_context: buildUserContext(),
     };
 
     // Sprint 194b (H5): Facebook cookie now in secure storage, not settings

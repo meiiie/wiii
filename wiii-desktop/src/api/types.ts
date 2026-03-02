@@ -91,12 +91,6 @@ export interface ChatResponseData {
   }>;
 }
 
-export interface ChatResponse {
-  status: "success" | "error";
-  data: ChatResponseData;
-  metadata: ChatResponseMetadata;
-}
-
 // ===== SSE Events (v3 streaming) =====
 export interface SSEThinkingEvent {
   content: string;
@@ -127,10 +121,6 @@ export interface SSEMetadataEvent {
     mood: MoodType;
   } | null;
   [key: string]: unknown;
-}
-
-export interface SSEDoneEvent {
-  status: "complete";
 }
 
 export interface SSEErrorEvent {
@@ -394,6 +384,16 @@ export interface PreviewBlockData {
 /** Sprint 166: SSE preview event */
 export interface SSEPreviewEvent {
   content: PreviewItemData;
+  node?: string;
+}
+
+/** Sprint 222b: SSE host_action event — AI requests an action from the host app */
+export interface SSEHostActionEvent {
+  content: {
+    id: string;
+    action: string;
+    params?: Record<string, unknown>;
+  };
   node?: string;
 }
 

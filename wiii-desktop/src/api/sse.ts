@@ -26,6 +26,7 @@ import type {
   SSEBrowserScreenshotEvent,
   SSEPreviewEvent,
   SSEArtifactEvent,
+  SSEHostActionEvent,
 } from "./types";
 
 export interface SSEEventHandler {
@@ -52,6 +53,8 @@ export interface SSEEventHandler {
   onPreview?: (data: SSEPreviewEvent) => void;
   /** Sprint 167: Interactive artifact */
   onArtifact?: (data: SSEArtifactEvent) => void;
+  /** Sprint 222b: Host action request from AI agent */
+  onHostAction?: (data: SSEHostActionEvent) => void;
 }
 
 /**
@@ -218,6 +221,9 @@ function dispatchEvent(
       break;
     case "artifact":
       handlers.onArtifact?.(data as SSEArtifactEvent);
+      break;
+    case "host_action":
+      handlers.onHostAction?.(data as SSEHostActionEvent);
       break;
     default:
       console.warn(`[SSE] Unknown event type: ${eventType}`);

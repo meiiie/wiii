@@ -29,6 +29,7 @@ import { useDomainStore } from "@/stores/domain-store";
 import { useOrgStore } from "@/stores/org-store";
 import { useChatStore } from "@/stores/chat-store";
 import { usePageContextStore } from "@/stores/page-context-store";
+import { useHostContextStore } from "@/stores/host-context-store";
 import { initClient } from "@/api/client";
 import { parseEmbedConfig, validateEmbedConfig, getAuthMode } from "@/lib/embed-auth";
 import { sendReadySignal, sendError, setParentOrigin } from "@/lib/embed-bridge";
@@ -227,6 +228,15 @@ export default function EmbedApp() {
         // Sprint 221: Page-Aware AI Context
         const payload = event.data.payload || event.data;
         const { student_state, available_actions, type: _type, ...pageCtx } = payload;
+
+        // Sprint 222: Also update host-context-store (backward compat bridge)
+        useHostContextStore.getState().setLegacyPageContext(
+          pageCtx,
+          student_state,
+          available_actions,
+        );
+
+        // Keep old page-context-store update for backward compat
         if (pageCtx.page_type) {
           usePageContextStore.getState().setPageContext(pageCtx);
           if (student_state) {
@@ -235,6 +245,18 @@ export default function EmbedApp() {
           if (available_actions) {
             usePageContextStore.getState().setAvailableActions(available_actions);
           }
+        }
+      } else if (msgType === 'wiii:capabilities') {
+        // Sprint 222: Host capabilities declaration
+        useHostContextStore.getState().setCapabilities(event.data.payload);
+      } else if (msgType === 'wiii:context') {
+        // Sprint 222: Generic host context update
+        useHostContextStore.getState().updateContext(event.data.payload);
+      } else if (msgType === 'wiii:action-response') {
+        // Sprint 222b: Host responded to action request
+        const { id, result } = event.data;
+        if (id && result) {
+          useHostContextStore.getState().resolveAction(id, result);
         }
       }
     };
