@@ -614,6 +614,8 @@ class ChatOrchestrator:
             "page_context": getattr(context, 'page_context', None),
             "student_state": getattr(context, 'student_state', None),
             "available_actions": getattr(context, 'available_actions', None),
+            # Sprint 222: Universal Host Context
+            "host_context": getattr(context, "host_context", None),
         }
 
         # Use domain_id from Stage 0 (falls back to config default)

@@ -158,3 +158,21 @@ def test_chat_context_has_host_context_field():
     import dataclasses
     field_names = [f.name for f in dataclasses.fields(ChatContext)]
     assert "host_context" in field_names
+
+
+# --- Task 13: Pipeline threading ---
+
+def test_orchestrator_threads_host_context():
+    """chat_orchestrator.py must include host_context in context dict."""
+    import inspect
+    from app.services import chat_orchestrator
+    source = inspect.getsource(chat_orchestrator)
+    assert "host_context" in source, "chat_orchestrator must thread host_context"
+
+
+def test_chat_stream_threads_host_context():
+    """chat_stream.py must include host_context in context dict."""
+    import inspect
+    from app.api.v1 import chat_stream
+    source = inspect.getsource(chat_stream)
+    assert "host_context" in source, "chat_stream must thread host_context"

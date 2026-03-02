@@ -271,6 +271,8 @@ async def chat_stream_v3(
                     "page_context": getattr(chat_context, 'page_context', None),
                     "student_state": getattr(chat_context, 'student_state', None),
                     "available_actions": getattr(chat_context, 'available_actions', None),
+                    # Sprint 222: Universal Host Context
+                    "host_context": getattr(chat_context, "host_context", None),
                 }
 
                 # Sprint 220c: Resolve LMS identity (parity with sync path)
