@@ -1,9 +1,11 @@
 # Hướng Dẫn Tích Hợp Wiii AI — Dành Cho Đội LMS
 
-> **Version:** 2.0.0
-> **Last Updated:** 2026-02-23
+> **Version:** 4.0.0
+> **Last Updated:** 2026-03-03
+> **Sprint:** 221 "Mắt Thần" — Page-Aware AI Context (E2E Verified)
 > **For:** Đội LMS (Backend Spring Boot + Frontend Angular)
 > **Reference:** [`WIII_LMS_INTEGRATION.md`](./WIII_LMS_INTEGRATION.md) (full technical spec)
+> **Production LMS Domain:** `https://holilihu.online`
 
 ---
 
@@ -81,12 +83,14 @@ Auth: `Authorization: Bearer {service_token}` (Wiii gửi, LMS verify bằng `Wi
 
 ```json
 {
-  "id": "SV12345",
-  "name": "Nguyễn Văn A",
-  "email": "sv12345@vimaru.edu.vn",
-  "class_name": "ĐKTB K62A",
-  "program": "Điều khiển tàu biển",
-  "enrolled_courses": ["NHH101", "NHH201"]
+  "id": "0bad5ba8-fdbd-4abf-9cfc-e7b852335512",
+  "name": "nguyenvanan",
+  "full_name": "Nguyễn Văn An",
+  "email": "nguyenvanan@sv.maritime.edu",
+  "role": "STUDENT",
+  "class_name": null,
+  "program": null,
+  "enrolled_courses": ["Chữa Cháy Nâng Cao và Cứu Hộ", "Hệ Thống Dẫn Đường Điện Tử ECDIS và Radar/ARPA", "Khí Tượng Hải Dương và Điều Động Tàu"]
 }
 ```
 
@@ -95,25 +99,29 @@ Auth: `Authorization: Bearer {service_token}` (Wiii gửi, LMS verify bằng `Wi
 ```json
 [
   {
-    "course_id": "NHH101",
-    "course_name": "Điều khiển tàu biển 1",
+    "course_id": "a8bf31c7-2d39-...",
+    "course_name": "Khí Tượng Hải Dương và Điều Động Tàu",
+    "class_name": "Lop KT-2026A",
     "grade": 7.5,
-    "max_grade": 10.0,
-    "date": "2026-02-20"
+    "max_grade": 100.0,
+    "date": "2026-02-20T..."
   }
 ]
 ```
+
+> **Sprint 220c**: `course_name` phải từ `courses.title` (tên môn), `class_name` từ `learning_classes.name` (tên lớp). SQL cần JOIN qua `courses c ON lc.course_id = c.id`.
 
 #### Upcoming Assignments Response
 
 ```json
 [
   {
-    "assignment_id": "asgn-001",
-    "assignment_name": "Bài tập SOLAS Chapter III",
-    "course_id": "NHH101",
-    "course_name": "Điều khiển tàu biển 1",
-    "due_date": "2026-03-01T23:59:00Z"
+    "assignment_id": "027a976f-...",
+    "assignment_name": "Bai tap tong hop ECDIS-Radar",
+    "course_id": "f127c080-...",
+    "course_name": "Hệ Thống Dẫn Đường Điện Tử ECDIS và Radar/ARPA",
+    "class_name": "Lop ECDIS-2026A",
+    "due_date": "2026-03-27 19:00:54.275517+00"
   }
 ]
 ```
@@ -265,17 +273,47 @@ private String sign(String payload) {
 
 ---
 
-## 5. Token Exchange Từ Góc LMS
+## 5. Token Exchange & Đồng Bộ User
+
+### 5.1 Cách Wiii Tạo/Tìm User (Identity Federation)
+
+Wiii và LMS là **2 hệ thống riêng biệt**, mỗi bên có bảng `users` riêng. Đội LMS **không cần** tạo user bên Wiii trước. Khi token exchange được gọi, Wiii tự động tạo hoặc tìm user:
+
+```
+Lần đầu sinh viên SV12345 dùng AI chat:
+┌─────────────────────────────────────────────────────────────┐
+│ Step 1: Tìm (lms, SV12345, maritime-lms) trong DB          │
+│         → Chưa có → tiếp Step 2                            │
+│                                                             │
+│ Step 2: Tìm user theo email sv12345@vimaru.edu.vn           │
+│         → Chưa có → tiếp Step 3                            │
+│                                                             │
+│ Step 3: Tạo user MỚI (UUID: 550e8400-...)                  │
+│         + Lưu liên kết: (lms, SV12345, maritime-lms)        │
+│         → Trả về UUID + JWT                                │
+└─────────────────────────────────────────────────────────────┘
+
+Lần 2+ (cùng sinh viên):
+┌─────────────────────────────────────────────────────────────┐
+│ Step 1: Tìm (lms, SV12345, maritime-lms) trong DB          │
+│         → TÌM THẤY → Trả về user cũ ngay (nhanh)          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Quy tắc quan trọng:**
+- `lms_user_id` + `connector_id` = unique key → luôn trả về cùng Wiii user cho cùng sinh viên
+- Email trùng giữa 2 sinh viên → **không bị gộp** (LMS email chưa verified, Wiii bảo vệ bằng `email_verified=False`)
+- Wiii UUID được trả về trong response `user.id` — LMS có thể cache nếu cần
+
+### 5.2 Token Exchange Step-by-step
 
 Khi frontend Angular cần gọi Wiii AI, LMS backend exchange token cho user.
-
-### Step-by-step
 
 1. Angular gọi `POST /api/v3/ai/token` (với session cookie)
 2. LMS backend build JSON: `{connector_id, lms_user_id, email, name, role, timestamp}`
 3. LMS sign body bằng HMAC-SHA256 (`wiii.webhook.secret`)
 4. LMS gọi Wiii: `POST /auth/lms/token` với header `X-LMS-Signature`
-5. Wiii verify → tạo JWT → trả về `{access_token, refresh_token, expires_in, user}`
+5. Wiii verify HMAC → tìm/tạo user (xem 5.1) → tạo JWT → trả về `{access_token, refresh_token, expires_in, user}`
 6. LMS cache token (14 phút, auto-refresh)
 7. LMS trả `access_token` cho Angular
 
@@ -287,40 +325,47 @@ public WiiiTokenResponse exchangeToken(String userId, String email,
                                         String name, String role) {
     long timestamp = Instant.now().getEpochSecond();
 
+    // Sprint 220c SSOT: KHÔNG gửi organization_id — Wiii tự resolve từ connector_id
     Map<String, Object> body = Map.of(
         "connector_id", connectorId,
         "lms_user_id", userId,
         "email", email,
         "name", name,
         "role", mapRole(role),
-        "organization_id", "maritime-lms",
         "timestamp", timestamp
     );
 
     String jsonBody = objectMapper.writeValueAsString(body);
     String signature = sign(jsonBody);
 
-    HttpHeaders headers = new HttpHeaders();
-    headers.setContentType(MediaType.APPLICATION_JSON);
-    headers.set("X-LMS-Signature", signature);
+    // QUAN TRỌNG: Phải dùng HTTP/1.1 (Uvicorn không hỗ trợ h2c cleartext)
+    HttpRequest request = HttpRequest.newBuilder()
+        .uri(URI.create(wiiiBaseUrl + "/auth/lms/token"))
+        .version(HttpClient.Version.HTTP_1_1)
+        .header("Content-Type", "application/json")
+        .header("X-LMS-Signature", signature)
+        .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+        .build();
 
-    ResponseEntity<WiiiTokenResponse> response = restTemplate.postForEntity(
-        wiiiBaseUrl + "/auth/lms/token",
-        new HttpEntity<>(jsonBody, headers),
-        WiiiTokenResponse.class
-    );
+    HttpResponse<String> response = httpClient.send(request,
+        HttpResponse.BodyHandlers.ofString());
 
-    return response.getBody();
+    return objectMapper.readValue(response.body(), WiiiTokenResponse.class);
 }
 
 private String mapRole(String lmsRole) {
-    return switch (lmsRole.toLowerCase()) {
+    return switch (lmsRole.toUpperCase()) {
         case "ROLE_TEACHER", "ROLE_INSTRUCTOR" -> "teacher";
         case "ROLE_ADMIN" -> "admin";
         default -> "student";
     };
 }
 ```
+
+> **Sprint 220c Thay Đổi Quan Trọng:**
+> - LMS **KHÔNG gửi `organization_id`** trong request nữa — Wiii là SSOT, tự resolve từ `connector_id`
+> - Phải dùng `HttpClient.Version.HTTP_1_1` — Uvicorn không hỗ trợ HTTP/2 cleartext (h2c)
+> - Wiii response sẽ chứa `organization_id` đã resolve — Angular đọc từ response
 
 ### Angular Token Service
 
@@ -439,6 +484,9 @@ curl -N -X POST http://localhost:8000/api/v1/chat/stream/v3 \
 | SSE stream bị ngắt | Timeout proxy | Tăng timeout LMS proxy (khuyến nghị 60s cho SSE) |
 | Circuit breaker mở | 5 lỗi liên tiếp từ LMS API | Kiểm tra LMS backend health, chờ 120s recovery |
 | Token exchange trả 500 | DB hoặc user service lỗi | Kiểm tra Wiii logs, PostgreSQL connection |
+| Data Pull trả 500 | SQL schema mismatch trong `WiiiDataControllerV3.java` | Xác minh column names: `enrollments.class_id` (KHÔNG phải `learning_class_id`), `qa.submitted_at`/`qa.started_at` (KHÔNG phải `end_time`/`start_time`). Quiz→Course join: `quiz_attempts→quizzes→lessons→chapters→courses` |
+| HMAC valid nhưng Wiii reject 401 | `dict(request.headers)` Starlette lowercase keys | Wiii đã fix case-insensitive lookup (Sprint 220). Nếu custom header, luôn so sánh `.lower()` |
+| Docker containers không kết nối được | 2 service trên Docker network khác nhau | `docker network connect <target_network> <container_name>` để bridge |
 
 ---
 
@@ -450,4 +498,209 @@ curl -N -X POST http://localhost:8000/api/v1/chat/stream/v3 \
 
 ---
 
-*Guide cho đội LMS — Sprint 175 "Cắm Phích Cắm"*
+---
+
+## 8. Iframe Embed (Sprint 220b/220c)
+
+Từ Sprint 220b, LMS **nhúng trực tiếp Wiii** qua iframe thay vì proxy qua Spring Boot.
+
+### 8.1 Angular Iframe URL
+
+```typescript
+// Angular chat component — tạo iframe URL
+const wiiiEmbedUrl = `${wiiiBaseUrl}/embed#token=${accessToken}&refresh_token=${refreshToken}&org=${orgId}&domain=maritime&session_id=${sessionId}`;
+```
+
+> **Lưu ý**: Token truyền qua URL **hash** (`#`) — KHÔNG phải query string (`?`). Hash không gửi lên server, an toàn hơn.
+
+### 8.2 CSP Frame-Ancestors
+
+Wiii server trả header CSP cho phép iframe từ LMS domain:
+```
+Content-Security-Policy: frame-ancestors 'self' https://holilihu.online
+```
+
+Nếu production domain thay đổi, cần update `EMBED_ALLOWED_ORIGINS` trong Wiii `.env`.
+
+### 8.3 E2E Verification Status (Sprint 220c)
+
+| Endpoint | Status | Verified |
+|----------|--------|----------|
+| `/students/{id}/profile` | 200 OK | full_name, email, enrolled_courses |
+| `/students/{id}/enrollments` | 200 OK | course_name + class_name đúng |
+| `/students/{id}/grades` | 200 OK | course_name từ courses.title |
+| `/students/{id}/assignments/upcoming` | 200 OK | 8 bài tập, due_date + class_name |
+| `/students/{id}/quiz-history` | 200 OK | score, max_score, status |
+
+---
+
+## 9. Page-Aware AI Context (Sprint 221: "Mắt Thần")
+
+### Wiii AI giờ hiểu sinh viên đang xem trang nào
+
+Khi LMS gửi page context, Wiii tự động điều chỉnh:
+- **Trang bài giảng**: AI tham chiếu nội dung bài học, dạy theo phương pháp Socratic
+- **Trang quiz**: AI gợi ý nhưng **KHÔNG BAO GIỜ** cho đáp án trực tiếp
+- **Dashboard**: AI gợi ý bước tiếp theo dựa trên tiến độ
+
+### 9.1 Yêu cầu: `WiiiContextService` (Angular)
+
+Tạo service mới, emit page context đến Wiii iframe trên mỗi route change.
+
+```typescript
+// src/app/shared/services/wiii-context.service.ts
+import { Injectable } from '@angular/core';
+import { Router, NavigationEnd } from '@angular/router';
+import { filter } from 'rxjs/operators';
+
+@Injectable({ providedIn: 'root' })
+export class WiiiContextService {
+  private wiiiOrigin = 'https://holilihu.online';  // Prod
+  // Dev: 'http://localhost:8000'
+
+  constructor(private router: Router) {
+    this.router.events.pipe(
+      filter(e => e instanceof NavigationEnd)
+    ).subscribe((e: NavigationEnd) => {
+      this.emitPageContext(e.urlAfterRedirects);
+    });
+  }
+
+  private emitPageContext(url: string): void {
+    const context = this.buildContextFromRoute(url);
+    const iframe = document.querySelector('iframe[src*="/embed"]') as HTMLIFrameElement;
+    if (iframe?.contentWindow) {
+      iframe.contentWindow.postMessage(
+        { type: 'wiii:page-context', payload: context },
+        this.wiiiOrigin
+      );
+    }
+  }
+
+  private buildContextFromRoute(url: string): Record<string, any> {
+    const parts = url.split('/').filter(Boolean);
+    const context: Record<string, any> = {};
+
+    if (url.includes('/lessons/')) {
+      context.page_type = 'lesson';
+      context.course_id = this.extractParam(parts, 'courses');
+      context.lesson_id = this.extractParam(parts, 'lessons');
+    } else if (url.includes('/quizzes/') || url.includes('/quiz/')) {
+      context.page_type = 'quiz';
+      context.course_id = this.extractParam(parts, 'courses');
+    } else if (url.includes('/assignments/')) {
+      context.page_type = 'assignment';
+    } else if (url.includes('/dashboard')) {
+      context.page_type = 'dashboard';
+    } else if (url.includes('/grades')) {
+      context.page_type = 'grades';
+    } else {
+      context.page_type = 'resource';
+    }
+    return context;
+  }
+
+  private extractParam(parts: string[], key: string): string | undefined {
+    const idx = parts.indexOf(key);
+    return idx >= 0 && idx + 1 < parts.length ? parts[idx + 1] : undefined;
+  }
+}
+```
+
+### 9.2 Schema PostMessage: `wiii:page-context`
+
+```typescript
+// LMS → Wiii iframe
+{
+  type: "wiii:page-context",
+  payload: {
+    // Level 1: Page Location (bắt buộc)
+    page_type: "lesson" | "quiz" | "assignment" | "dashboard" | "grades" | "resource",
+    page_title?: string,           // "Áp suất khí quyển — Chương 3"
+    course_id?: string,
+    course_name?: string,          // "Khí Tượng Hải Dương"
+    lesson_id?: string,
+    chapter_name?: string,
+
+    // Level 2: Content (nếu có)
+    content_snippet?: string,      // max 2000 ký tự nội dung đang hiển thị
+    content_type?: "theory" | "exercise" | "video" | "pdf" | "discussion",
+    quiz_question?: string,        // câu hỏi đang làm
+    quiz_options?: string[],       // ["A) ...", "B) ...", ...]
+
+    // Level 3: Student State (Sprint 222)
+    student_state?: {
+      time_on_page_ms?: number,    // milliseconds
+      scroll_percent?: number,     // 0-100
+      quiz_attempts?: number,
+      last_answer?: string,
+      is_correct?: boolean,
+    },
+
+    // Level 3: Available Actions (Sprint 222)
+    available_actions?: Array<{
+      action: string,              // "navigate" | "request_hint" | "show_solution"
+      label: string,               // Vietnamese UI label
+      target?: string,             // URL or resource ID
+    }>,
+  }
+}
+```
+
+### 9.3 Mức độ tích hợp
+
+| Phase | Gửi gì | Effort | Wiii behavior |
+|-------|---------|--------|---------------|
+| **Phase 1** (Sprint 221) | `page_type` + `page_title` + `course_name` | ~1 ngày | AI biết trang đang xem, tham chiếu nội dung |
+| **Phase 2** (Sprint 222) | + `content_snippet` + `quiz_question` + `student_state` | ~2 ngày | AI dạy Socratic, phát hiện sinh viên "bí" |
+| **Phase 3** (Sprint 223+) | + `available_actions` + server-side content | ~3 ngày | AI gợi ý hành động (next lesson, hint, submit) |
+
+**Phase 1 là đủ để Wiii hoạt động page-aware.** Phase 2-3 làm sau.
+
+### 9.4 Cách inject: Thêm vào `AppComponent` hoặc module chính
+
+```typescript
+// app.component.ts (hoặc bất kỳ module root nào)
+import { WiiiContextService } from './shared/services/wiii-context.service';
+
+@Component({ ... })
+export class AppComponent {
+  constructor(private wiiiContext: WiiiContextService) {
+    // Service auto-subscribes to router events
+  }
+}
+```
+
+### 9.5 Thêm page_title và content_snippet (nâng cao)
+
+Để gửi title và nội dung:
+
+```typescript
+// Trong component bài giảng
+emitLessonContext(lesson: any): void {
+  const iframe = document.querySelector('iframe[src*="/embed"]') as HTMLIFrameElement;
+  if (iframe?.contentWindow) {
+    iframe.contentWindow.postMessage({
+      type: 'wiii:page-context',
+      payload: {
+        page_type: 'lesson',
+        page_title: lesson.title,
+        course_name: lesson.course?.title,
+        chapter_name: lesson.chapter?.title,
+        content_snippet: document.querySelector('.lesson-content')?.textContent?.slice(0, 2000),
+        content_type: 'theory',
+      }
+    }, 'https://holilihu.online');
+  }
+}
+```
+
+### 9.6 E2E Verification (Sprint 221)
+
+Đã verified với curl:
+- Lesson page context: AI tham chiếu "Áp suất khí quyển" và "1013.25 hPa" trực tiếp
+- Quiz page context: AI dùng Socratic method, KHÔNG cho đáp án trực tiếp
+
+---
+
+*Guide cho đội LMS — Sprint 221 "Mắt Thần" (Page-Aware AI Context)*
