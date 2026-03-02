@@ -61,6 +61,14 @@ interface LegacyPageContext {
   assignment_description?: string;
 }
 
+// ── Action Support (Sprint 222b Phase 5) ──
+
+export interface ActionResult {
+  success: boolean;
+  data?: Record<string, unknown>;
+  error?: string;
+}
+
 // ── Store ──
 
 interface HostContextState {
@@ -75,6 +83,15 @@ interface HostContextState {
   ) => void;
   clear: () => void;
   getContextForRequest: () => HostContext | null;
+
+  // Sprint 222b Phase 5: Bidirectional Actions
+  pendingActions: Map<string, {
+    resolve: (result: ActionResult) => void;
+    reject: (error: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  }>;
+  requestAction: (action: string, params: Record<string, unknown>) => Promise<ActionResult>;
+  resolveAction: (requestId: string, result: ActionResult) => void;
 }
 
 function truncateSnippet(ctx: HostContext): HostContext {
@@ -143,7 +160,53 @@ export const useHostContextStore = create<HostContextState>((set, get) => ({
     set({ currentContext: truncateSnippet(hostCtx) });
   },
 
-  clear: () => set({ capabilities: null, currentContext: null }),
+  clear: () => {
+    // Clear pending action timeouts
+    const pending = get().pendingActions;
+    for (const entry of pending.values()) {
+      clearTimeout(entry.timeout);
+    }
+    set({ capabilities: null, currentContext: null, pendingActions: new Map() });
+  },
 
   getContextForRequest: () => get().currentContext,
+
+  pendingActions: new Map(),
+
+  requestAction: (action, params) => {
+    return new Promise<ActionResult>((resolve, reject) => {
+      const requestId = `req-${Math.random().toString(36).slice(2, 14)}`;
+      const timeout = setTimeout(() => {
+        const pending = get().pendingActions;
+        pending.delete(requestId);
+        set({ pendingActions: new Map(pending) });
+        reject(new Error(`Action timeout: ${action} (${requestId})`));
+      }, 30000);
+
+      const pending = get().pendingActions;
+      pending.set(requestId, { resolve, reject, timeout });
+      set({ pendingActions: new Map(pending) });
+
+      // Send PostMessage to host
+      if (window.parent !== window) {
+        window.parent.postMessage({
+          type: "wiii:action-request",
+          id: requestId,
+          action,
+          params,
+        }, "*");
+      }
+    });
+  },
+
+  resolveAction: (requestId, result) => {
+    const pending = get().pendingActions;
+    const entry = pending.get(requestId);
+    if (entry) {
+      clearTimeout(entry.timeout);
+      pending.delete(requestId);
+      set({ pendingActions: new Map(pending) });
+      entry.resolve(result);
+    }
+  },
 }));
