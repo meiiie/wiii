@@ -49,10 +49,45 @@ class UserRole(str, Enum):
     ADMIN = "admin"
 
 
+class PageContext(BaseModel):
+    """Page-level context from LMS frontend (Sprint 221: Page-Aware AI)."""
+    page_type: Optional[str] = Field(
+        default=None,
+        description="dashboard | lesson | quiz | assignment | resource | forum | grades | settings"
+    )
+    page_title: Optional[str] = Field(default=None, description="Tiêu đề trang hiện tại")
+    course_id: Optional[str] = Field(default=None, description="UUID khóa học")
+    course_name: Optional[str] = Field(default=None, description="Tên khóa học")
+    lesson_id: Optional[str] = Field(default=None, description="UUID bài học")
+    lesson_name: Optional[str] = Field(default=None, description="Tên bài học")
+    chapter_name: Optional[str] = Field(default=None, description="Tên chương")
+    content_snippet: Optional[str] = Field(
+        default=None, max_length=2000,
+        description="Nội dung đang xem (max 2000 ký tự)"
+    )
+    content_type: Optional[str] = Field(
+        default=None,
+        description="theory | exercise | video | pdf | discussion"
+    )
+    quiz_question: Optional[str] = Field(default=None, description="Câu hỏi đang làm")
+    quiz_options: Optional[list[str]] = Field(default=None, description="Các đáp án")
+    assignment_description: Optional[str] = Field(default=None, description="Mô tả bài tập")
+
+
+class StudentPageState(BaseModel):
+    """Student interaction state on current page (Sprint 221)."""
+    time_on_page_ms: Optional[int] = Field(default=None, description="Thời gian trên trang (ms)")
+    scroll_percent: Optional[float] = Field(default=None, description="Tỷ lệ cuộn trang (0-100)")
+    quiz_attempts: Optional[int] = Field(default=None, description="Số lần thử câu hỏi")
+    last_answer: Optional[str] = Field(default=None, description="Đáp án cuối cùng")
+    is_correct: Optional[bool] = Field(default=None, description="Đáp án đúng/sai")
+    progress_percent: Optional[float] = Field(default=None, description="Tiến độ (%)")
+
+
 class UserContext(BaseModel):
     """
     User context from LMS for personalization.
-    
+
     Spec: AI_LMS_INTEGRATION_PROPOSAL.md
     Pattern: Contextual RAG
     Feature: ai-lms-integration-v2
@@ -75,7 +110,18 @@ class UserContext(BaseModel):
     
     # Localization
     language: str = Field(default="vi", description="Language preference: vi | en")
-    
+
+    # Sprint 221: Page-Aware Context
+    page_context: Optional[PageContext] = Field(
+        default=None, description="Ngữ cảnh trang hiện tại từ LMS (Sprint 221)"
+    )
+    student_state: Optional[StudentPageState] = Field(
+        default=None, description="Trạng thái tương tác trên trang (Sprint 221)"
+    )
+    available_actions: Optional[list[dict]] = Field(
+        default=None, description="Các hành động có sẵn trên trang (Sprint 221)"
+    )
+
     model_config = {
         "json_schema_extra": {
             "examples": [
