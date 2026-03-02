@@ -267,7 +267,24 @@ async def chat_stream_v3(
                     "images": [img.model_dump() for img in chat_context.images] if getattr(chat_context, 'images', None) else None,
                     # Sprint 160: Multi-Tenant Data Isolation (parity with sync path)
                     "organization_id": _resolved_org_id,
+                    # Sprint 221: Page-Aware Context (parity with sync path)
+                    "page_context": getattr(chat_context, 'page_context', None),
+                    "student_state": getattr(chat_context, 'student_state', None),
+                    "available_actions": getattr(chat_context, 'available_actions', None),
                 }
+
+                # Sprint 220c: Resolve LMS identity (parity with sync path)
+                try:
+                    from app.core.config import settings as _cfg
+                    if getattr(_cfg, "enable_lms_integration", False):
+                        from app.auth.external_identity import resolve_lms_identity
+                        _lms_ext_id, _lms_conn_id = await resolve_lms_identity(
+                            chat_request.user_id, _resolved_org_id,
+                        )
+                        context["lms_external_id"] = _lms_ext_id
+                        context["lms_connector_id"] = _lms_conn_id
+                except Exception as _lms_err:
+                    logger.debug("[STREAM-V3] LMS identity resolve failed: %s", _lms_err)
             except Exception as ctx_err:
                 logger.warning("[STREAM-V3] Full context build failed, using minimal: %s", ctx_err)
                 context = {
