@@ -739,11 +739,12 @@ def _build_direct_system_messages(state: AgentState, query: str, domain_name_vi:
         # Sprint 220c: Resolved LMS external identity
         lms_external_id=ctx.get("lms_external_id"),
         lms_connector_id=ctx.get("lms_connector_id"),
-        # Sprint 221: Page-Aware Context
-        page_context=ctx.get("page_context"),
-        student_state=ctx.get("student_state"),
-        available_actions=ctx.get("available_actions"),
     )
+
+    # Sprint 222: Append graph-level host context (replaces per-agent injection)
+    _host_prompt = state.get("host_context_prompt", "")
+    if _host_prompt:
+        system_prompt = system_prompt + "\n\n" + _host_prompt
 
     messages = [SystemMessage(content=system_prompt)]
     lc_messages = ctx.get("langchain_messages", [])
@@ -1754,7 +1755,24 @@ def _inject_host_context(state: dict) -> str:
 
             host_ctx = HostContext(**raw_host) if isinstance(raw_host, dict) else raw_host
             adapter = get_host_adapter(host_ctx.host_type)
-            return adapter.format_context_for_prompt(host_ctx)
+            formatted = adapter.format_context_for_prompt(host_ctx)
+
+            # Phase 6: Append skill prompt if enabled
+            try:
+                from app.core.config import get_settings
+                _settings = get_settings()
+                if getattr(_settings, "enable_host_skills", False):
+                    from app.engine.context.skill_loader import get_skill_loader
+                    page_type = host_ctx.page.get("type", "unknown") if isinstance(host_ctx.page, dict) else "unknown"
+                    loader = get_skill_loader()
+                    skills = loader.load_skills(host_ctx.host_type, page_type)
+                    skill_prompt = loader.get_prompt_addition(skills)
+                    if skill_prompt:
+                        formatted = formatted + "\n\n" + skill_prompt
+            except Exception as e:
+                logger.warning("[GRAPH] Skill loading failed (non-fatal): %s", e)
+
+            return formatted
         except Exception as e:
             logger.warning("[GRAPH] host_context format failed: %s", e)
 
@@ -1774,7 +1792,24 @@ def _inject_host_context(state: dict) -> str:
                 available_actions=ctx.get("available_actions"),
             )
             adapter = get_host_adapter(host_ctx.host_type)
-            return adapter.format_context_for_prompt(host_ctx)
+            formatted = adapter.format_context_for_prompt(host_ctx)
+
+            # Phase 6: Append skill prompt if enabled (same as Priority 1)
+            try:
+                from app.core.config import get_settings
+                _settings = get_settings()
+                if getattr(_settings, "enable_host_skills", False):
+                    from app.engine.context.skill_loader import get_skill_loader
+                    page_type = host_ctx.page.get("type", "unknown") if isinstance(host_ctx.page, dict) else "unknown"
+                    loader = get_skill_loader()
+                    skills = loader.load_skills(host_ctx.host_type, page_type)
+                    skill_prompt = loader.get_prompt_addition(skills)
+                    if skill_prompt:
+                        formatted = formatted + "\n\n" + skill_prompt
+            except Exception as e:
+                logger.warning("[GRAPH] Skill loading failed (non-fatal): %s", e)
+
+            return formatted
         except Exception as e:
             logger.warning("[GRAPH] Legacy page_context format failed: %s", e)
 
