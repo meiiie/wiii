@@ -113,3 +113,34 @@ describe("EmbedApp wiii:page-context handler (Sprint 221)", () => {
     expect(usePageContextStore.getState().pageContext).toBeNull();
   });
 });
+
+describe("useSSEStream page context merge (Sprint 221)", () => {
+  beforeEach(() => {
+    usePageContextStore.getState().clear();
+  });
+
+  it("getPageContextForRequest merges into user_context shape", () => {
+    usePageContextStore.getState().setPageContext({
+      page_type: "lesson",
+      page_title: "Bài 1",
+      course_name: "Môn A",
+      content_snippet: "Nội dung bài học...",
+    });
+    usePageContextStore.getState().setStudentState({
+      time_on_page_ms: 60000,
+      scroll_percent: 30,
+    });
+
+    const pageData = usePageContextStore.getState().getPageContextForRequest();
+    expect(pageData).not.toBeNull();
+
+    // Simulate what useSSEStream does
+    const userContext = {
+      display_name: "Minh",
+      role: "student",
+      ...pageData,
+    };
+    expect(userContext.page_context.page_type).toBe("lesson");
+    expect(userContext.student_state.time_on_page_ms).toBe(60000);
+  });
+});

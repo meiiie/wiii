@@ -11,6 +11,7 @@ import { useDomainStore } from "@/stores/domain-store";
 import { useOrgStore } from "@/stores/org-store";
 import { useContextStore } from "@/stores/context-store";
 import { useCharacterStore } from "@/stores/character-store";
+import { usePageContextStore } from "@/stores/page-context-store";
 import { StreamBuffer } from "@/lib/stream-buffer";
 import type { SSEEventHandler } from "@/api/sse";
 import type { AggregationSummary, ArtifactType, ChatResponseMetadata, ImageInput, MoodType, PreviewType } from "@/api/types";
@@ -87,7 +88,9 @@ export function useSSEStream() {
     // Ensure we have an active conversation
     let conversationId = chatStore.activeConversationId;
     if (!conversationId) {
-      conversationId = chatStore.createConversation(domainId);
+      // Sprint 220c: Pass embed session_id for session resumption
+      const embedSessionId = (window as any).__WIII_EMBED_CONFIG__?.session_id;
+      conversationId = chatStore.createConversation(domainId, undefined, embedSessionId);
     }
 
     // Add user message (Sprint 179: with optional images)
@@ -350,6 +353,10 @@ export function useSSEStream() {
 
     // Sprint 156: Include org ID when not personal workspace
     const orgId = useOrgStore.getState().activeOrgId;
+
+    // Sprint 221: Merge page context from LMS PostMessage into user_context
+    const pageData = usePageContextStore.getState().getPageContextForRequest();
+
     const request = {
       user_id: settings.user_id,
       message: content,
@@ -359,6 +366,12 @@ export function useSSEStream() {
       organization_id: orgId && orgId !== "personal" ? orgId : undefined,
       // Sprint 179: Include images for multimodal vision
       images: images && images.length > 0 ? images : undefined,
+      // Sprint 221: Page-aware context from LMS
+      user_context: pageData ? {
+        display_name: settings.display_name || settings.user_id,
+        role: settings.user_role,
+        ...pageData,
+      } : undefined,
     };
 
     // Sprint 194b (H5): Facebook cookie now in secure storage, not settings
