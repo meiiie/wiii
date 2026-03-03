@@ -41,7 +41,7 @@ _LMS_ROLE_MAP = {
 
 def map_lms_role(lms_role: Optional[str]) -> str:
     """Map an LMS role string to a Wiii role. Unknown roles default to 'student'."""
-    if not lms_role:
+    if not lms_role or not isinstance(lms_role, str):
         return "student"
     return _LMS_ROLE_MAP.get(lms_role.lower().strip(), "student")
 
@@ -154,6 +154,50 @@ def validate_request_timestamp(timestamp: Optional[int]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Connector → Organization resolution
+# ---------------------------------------------------------------------------
+
+def _resolve_connector_org(connector_id: Optional[str]) -> Optional[str]:
+    """Resolve the Wiii organization_id for a connector.
+
+    Fallback chain:
+    1. Connector config's organization_id field (explicit mapping)
+    2. Connector id itself (convention: connector id = org id)
+
+    This eliminates hardcoding on the LMS side — Wiii is SSOT for org mapping.
+    """
+    if not connector_id:
+        return None
+
+    # 1. Check connector config for explicit organization_id
+    try:
+        connectors = json.loads(settings.lms_connectors or "[]")
+        for c in connectors:
+            if c.get("id") == connector_id:
+                org = c.get("organization_id")
+                if org:
+                    return org
+                break  # Found connector but no org configured — fall through
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # 2. Registry fallback (adapter instance may have org configured)
+    try:
+        from app.integrations.lms.registry import get_lms_connector_registry
+        registry = get_lms_connector_registry()
+        adapter = registry.get(connector_id)
+        if adapter:
+            config = adapter.get_config()
+            if config.organization_id:
+                return config.organization_id
+    except Exception:
+        pass
+
+    # 3. Convention: connector id IS the org id
+    return connector_id
+
+
+# ---------------------------------------------------------------------------
 # Token exchange
 # ---------------------------------------------------------------------------
 
@@ -180,6 +224,9 @@ async def exchange_lms_token(
     wiii_role = map_lms_role(role)
 
     # Find or create user
+    # email_verified=True: LMS backend is a trusted source (HMAC-signed request),
+    # and the email comes from the LMS's own authenticated user database.
+    # This allows identity federation to auto-link to existing Wiii accounts by email.
     user = await find_or_create_by_provider(
         provider="lms",
         provider_sub=lms_user_id,
@@ -187,12 +234,14 @@ async def exchange_lms_token(
         email=email,
         name=name,
         role=wiii_role,
+        email_verified=True,
     )
     assert user is not None  # auto_create=True (default)
 
-    # Ensure org membership if specified
-    if organization_id:
-        await _ensure_org_membership(user["id"], organization_id)
+    # Resolve org: explicit request → connector config → connector id (convention)
+    resolved_org = organization_id or _resolve_connector_org(connector_id)
+    if resolved_org:
+        await _ensure_org_membership(user["id"], resolved_org)
 
     # Create token pair
     token_pair = await create_token_pair(
@@ -214,6 +263,7 @@ async def exchange_lms_token(
             "name": user.get("name"),
             "role": user.get("role", wiii_role),
         },
+        "organization_id": resolved_org,
     }
 
 
