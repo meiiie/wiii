@@ -27,7 +27,7 @@
 # Main domain — holilihu.online
 # ─────────────────────────────────────────────────
 holilihu.online {
-    reverse_proxy localhost:80 {
+    reverse_proxy localhost:8080 {
         # Flush immediately for SSE streaming (critical!)
         flush_interval -1
 
@@ -71,7 +71,7 @@ holilihu.online {
 # Full SPA + API reverse proxy (same Nginx backend)
 # ─────────────────────────────────────────────────
 wiii.holilihu.online {
-    reverse_proxy localhost:80 {
+    reverse_proxy localhost:8080 {
         flush_interval -1
 
         health_uri /health
@@ -125,7 +125,7 @@ wiii.holilihu.online {
 #         dns cloudflare {env.CLOUDFLARE_API_TOKEN}
 #     }
 #
-#     reverse_proxy localhost:80 {
+#     reverse_proxy localhost:8080 {
 #         flush_interval -1
 #         transport http {
 #             response_header_timeout 120s
