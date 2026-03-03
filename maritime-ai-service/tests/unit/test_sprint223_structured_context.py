@@ -145,3 +145,115 @@ class TestStructuredPageData:
         )
         result = format_structured_data_for_prompt(ctx)
         assert "0" in result
+
+
+from app.engine.context.adapters.lms import LMSHostAdapter
+
+
+class TestLMSAdapterStructuredData:
+    """Test LMSHostAdapter formats structured data in XML."""
+
+    def test_grades_structured_in_xml(self):
+        adapter = LMSHostAdapter()
+        ctx = HostContext(
+            host_type="lms",
+            page={"type": "grades", "title": "Bảng điểm"},
+            content={
+                "structured": {
+                    "_type": "grades",
+                    "courses": [
+                        {"code": "NAV-201", "name": "ECDIS", "progress": 70, "status": "active"},
+                    ],
+                    "summary": {"total": 1, "completed": 0, "avg_progress": 70},
+                }
+            },
+        )
+        from unittest.mock import patch, MagicMock
+        mock_settings = MagicMock()
+        mock_settings.enable_rich_page_context = True
+        with patch("app.core.config.get_settings", return_value=mock_settings):
+            result = adapter.format_context_for_prompt(ctx)
+            assert "<data>" in result
+            assert "NAV-201" in result
+            assert "ECDIS" in result
+            assert "70" in result
+
+    def test_assignment_structured_in_xml(self):
+        adapter = LMSHostAdapter()
+        ctx = HostContext(
+            host_type="lms",
+            page={"type": "assignment_list", "title": "Bài tập"},
+            content={
+                "structured": {
+                    "_type": "assignment_list",
+                    "assignments": [
+                        {"name": "ECDIS-Radar", "course_name": "ECDIS", "due_date": "2026-03-28", "status": "NOT_STARTED"},
+                    ],
+                    "summary": {"total": 1, "pending": 1, "overdue": 0},
+                }
+            },
+        )
+        from unittest.mock import patch, MagicMock
+        mock_settings = MagicMock()
+        mock_settings.enable_rich_page_context = True
+        with patch("app.core.config.get_settings", return_value=mock_settings):
+            result = adapter.format_context_for_prompt(ctx)
+            assert "<data>" in result
+            assert "ECDIS-Radar" in result
+
+    def test_no_structured_data_still_works(self):
+        """Backward compat: no structured data -> original behavior."""
+        adapter = LMSHostAdapter()
+        ctx = HostContext(
+            host_type="lms",
+            page={"type": "grades", "title": "Bảng điểm"},
+            content={"snippet": "Some content"},
+        )
+        result = adapter.format_context_for_prompt(ctx)
+        assert "host_context" in result
+        assert "Some content" in result
+        assert "<data>" not in result
+
+    def test_structured_plus_snippet_both_present(self):
+        """Both structured and snippet -> structured takes priority for <data> tag."""
+        adapter = LMSHostAdapter()
+        ctx = HostContext(
+            host_type="lms",
+            page={"type": "grades", "title": "Bảng điểm"},
+            content={
+                "snippet": "Old snippet",
+                "structured": {
+                    "_type": "grades",
+                    "courses": [{"code": "X", "name": "Y", "progress": 50, "status": "active"}],
+                    "summary": {"total": 1, "completed": 0, "avg_progress": 50},
+                },
+            },
+        )
+        from unittest.mock import patch, MagicMock
+        mock_settings = MagicMock()
+        mock_settings.enable_rich_page_context = True
+        with patch("app.core.config.get_settings", return_value=mock_settings):
+            result = adapter.format_context_for_prompt(ctx)
+            assert "<data>" in result
+            assert "Y" in result
+
+    def test_feature_gate_off_skips_structured(self):
+        """When enable_rich_page_context=False, structured data ignored."""
+        adapter = LMSHostAdapter()
+        ctx = HostContext(
+            host_type="lms",
+            page={"type": "grades", "title": "Bảng điểm"},
+            content={
+                "structured": {
+                    "_type": "grades",
+                    "courses": [{"code": "X", "name": "Y", "progress": 50, "status": "active"}],
+                    "summary": {"total": 1, "completed": 0, "avg_progress": 50},
+                },
+            },
+        )
+        from unittest.mock import patch, MagicMock
+        mock_settings = MagicMock()
+        mock_settings.enable_rich_page_context = False
+        with patch("app.core.config.get_settings", return_value=mock_settings):
+            result = adapter.format_context_for_prompt(ctx)
+            assert "<data>" not in result

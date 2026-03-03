@@ -267,6 +267,12 @@ class Settings(BaseSettings):
     enable_host_actions: bool = False       # Bidirectional host actions
     enable_host_skills: bool = False        # Dynamic YAML skill loading
 
+    # Sprint 223: Hybrid Visual Context Engine
+    enable_rich_page_context: bool = False  # Path A: structured data in host_context
+    enable_visual_page_capture: bool = False  # Path B: on-demand screenshot + Vision
+    visual_capture_timeout: float = 10.0  # Screenshot capture timeout (seconds)
+    visual_capture_max_size: int = 1048576  # Max screenshot size (1MB)
+
     # Sprint 222b Phase 7: Standalone Browser Agent (Playwright MCP)
     enable_browser_agent: bool = False
     browser_agent_mcp_command: str = "npx"

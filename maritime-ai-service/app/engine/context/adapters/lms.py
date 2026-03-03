@@ -107,6 +107,17 @@ class LMSHostAdapter(HostAdapter):
                 "</instruction>"
             )
 
+        # Sprint 223: Rich structured data (Path A)
+        try:
+            from app.core.config import get_settings
+            if getattr(get_settings(), "enable_rich_page_context", False):
+                from app.engine.context.host_context import format_structured_data_for_prompt
+                structured_text = format_structured_data_for_prompt(ctx)
+                if structured_text:
+                    parts.append(f"  <data>\n{structured_text}\n  </data>")
+        except Exception:
+            pass
+
         parts.append("</host_context>")
         return "\n".join(parts)
 
