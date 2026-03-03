@@ -199,7 +199,7 @@ async def verify_magic_link(token: str):
         # ---- Look up token ----
         row = await conn.fetchrow(
             """
-            SELECT id, email, ws_session_id, expires_at, used_at
+            SELECT email, ws_session_id, expires_at, used_at
             FROM magic_link_tokens
             WHERE token_hash = $1
             """,
@@ -217,8 +217,8 @@ async def verify_magic_link(token: str):
 
         # ---- Mark as used ----
         await conn.execute(
-            "UPDATE magic_link_tokens SET used_at = NOW() WHERE id = $1",
-            row["id"],
+            "UPDATE magic_link_tokens SET used_at = NOW() WHERE token_hash = $1",
+            token_hash,
         )
 
     # ---- Find or create user ----
