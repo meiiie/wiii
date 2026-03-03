@@ -213,6 +213,16 @@ class Settings(BaseSettings):
     enable_lms_token_exchange: bool = Field(default=False, description="Enable LMS backend → Wiii JWT token exchange")
     lms_token_exchange_max_age: int = Field(default=300, ge=30, le=600, description="Max request age for replay protection (seconds)")
 
+    # Magic Link Email Auth (Sprint 224)
+    enable_magic_link_auth: bool = Field(default=False, description="Enable Magic Link email authentication")
+    resend_api_key: str = Field(default="", description="Resend API key for sending magic link emails")
+    magic_link_base_url: str = Field(default="http://localhost:8000", description="Base URL for magic link verification endpoint")
+    magic_link_expires_seconds: int = Field(default=600, ge=60, le=3600, description="Magic link token expiry (default 10 min)")
+    magic_link_from_email: str = Field(default="Wiii <noreply@wiii.app>", description="Sender email for magic links")
+    magic_link_ws_timeout_seconds: int = Field(default=900, ge=60, le=3600, description="WebSocket session timeout (default 15 min)")
+    magic_link_resend_cooldown_seconds: int = Field(default=45, ge=15, le=120, description="Cooldown between resend attempts")
+    magic_link_max_per_hour: int = Field(default=5, ge=1, le=20, description="Max magic links per email per hour")
+
     # Rate Limiting
     rate_limit_requests: int = Field(default=100, description="Max requests per window")
     rate_limit_window_seconds: int = Field(default=60, description="Rate limit window in seconds")
