@@ -1,11 +1,12 @@
 /**
- * LoginScreen — Google OAuth login for Wiii Desktop.
+ * LoginScreen — Google OAuth + Magic Link email login for Wiii Desktop.
  * Sprint 157: "Đăng Nhập"
+ * Sprint 224: Magic link email login flow (secondary option)
  *
- * Shows a centered login card with Google OAuth button.
- * Also provides a "Developer mode" toggle for legacy API key auth.
+ * Shows a centered login card with Google OAuth button (primary),
+ * email magic link login (secondary), and developer mode toggle.
  */
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useAuthStore } from "@/stores/auth-store";
 import type { AuthUser } from "@/stores/auth-store";
@@ -24,6 +25,13 @@ export function LoginScreen() {
   const { settings, updateSettings } = useSettingsStore();
   const { loginWithTokens, setLegacyMode } = useAuthStore();
 
+  // Sprint 224: Magic link email login state
+  const [emailValue, setEmailValue] = useState("");
+  const [emailState, setEmailState] = useState<"idle" | "waiting">("idle");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const wsRef = useRef<WebSocket | null>(null);
+
   // Sprint 193: Detect Tauri vs browser environment
   const isTauri = !!(window as any).__TAURI_INTERNALS__;
 
@@ -32,10 +40,24 @@ export function LoginScreen() {
     setIsLoading(true);
 
     try {
+      // Security: validate server URL scheme before redirect
+      try {
+        const serverUrl = new URL(settings.server_url);
+        if (!["http:", "https:"].includes(serverUrl.protocol)) {
+          throw new Error("URL server không hợp lệ");
+        }
+      } catch {
+        setError("URL server không hợp lệ. Vui lòng kiểm tra Cài đặt → Kết nối.");
+        setIsLoading(false);
+        return;
+      }
+
       // Sprint 193: Web browser flow — redirect with hash-based token delivery
+      // Security: use URL constructor to prevent query parameter injection
       if (!isTauri) {
-        const redirectUri = encodeURIComponent(window.location.origin);
-        window.location.href = `${settings.server_url}/api/v1/auth/google/login?redirect_uri=${redirectUri}`;
+        const loginUrlObj = new URL("/api/v1/auth/google/login", settings.server_url);
+        loginUrlObj.searchParams.set("redirect_uri", window.location.origin);
+        window.location.href = loginUrlObj.toString();
         return; // Page will navigate away — no finally needed
       }
 
@@ -50,7 +72,9 @@ export function LoginScreen() {
       }
 
       // Open system browser to backend OAuth login
-      const loginUrl = `${settings.server_url}/api/v1/auth/google/login?port=${port}`;
+      const loginUrlObj = new URL("/api/v1/auth/google/login", settings.server_url);
+      loginUrlObj.searchParams.set("port", String(port));
+      const loginUrl = loginUrlObj.toString();
 
       try {
         const { open } = await import("@tauri-apps/plugin-shell");
@@ -128,6 +152,108 @@ export function LoginScreen() {
     await setLegacyMode();
   };
 
+  // Sprint 224: Magic link email login handler
+  const handleEmailLogin = async () => {
+    setError(null);
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${settings.server_url}/api/v1/auth/magic-link/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailValue.trim().toLowerCase() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.detail || "Không thể gửi magic link");
+      }
+      const data = await res.json();
+      setSessionId(data.session_id);
+      setEmailState("waiting");
+      setResendCooldown(45);
+
+      // Close any existing WebSocket before opening a new one
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+
+      // Connect WebSocket to listen for auth completion
+      const wsUrl =
+        settings.server_url.replace(/^http/, "ws") +
+        `/api/v1/auth/magic-link/ws/${data.session_id}`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onmessage = async (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "auth_success") {
+            const user: AuthUser = {
+              id: msg.user.id,
+              email: msg.user.email,
+              name: msg.user.name || "",
+              avatar_url: "",
+              role: msg.user.role || "student",
+            };
+            await loginWithTokens(
+              msg.access_token,
+              msg.refresh_token,
+              msg.expires_in,
+              user,
+            );
+            await updateSettings({
+              user_id: msg.user.id,
+              display_name: msg.user.name || msg.user.email,
+            });
+          } else if (msg.type === "timeout") {
+            setError("Phiên đăng nhập đã hết hạn. Vui lòng thử lại.");
+            setEmailState("idle");
+          }
+        } catch (e) {
+          console.error("WS message parse error:", e);
+        }
+      };
+
+      ws.onerror = () => {
+        setError("Mất kết nối. Vui lòng thử lại.");
+        setEmailState("idle");
+      };
+
+      ws.onclose = () => {
+        // Session ended (either success or timeout)
+      };
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Đăng nhập thất bại");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Sprint 224: Resend cooldown timer
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+
+  // Sprint 224: Cleanup WebSocket on unmount
+  useEffect(() => {
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, []);
+
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-surface">
       <div className="w-full max-w-sm mx-auto flex flex-col items-center gap-6 px-6">
@@ -151,10 +277,10 @@ export function LoginScreen() {
         <button
           onClick={handleGoogleLogin}
           disabled={isLoading}
-          className="w-full flex items-center justify-center gap-3 h-11 px-6 rounded-lg bg-white border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors disabled:opacity-50 shadow-sm"
+          className="w-full flex items-center justify-center gap-3 h-11 px-6 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-600 transition-colors disabled:opacity-50 shadow-sm"
         >
           {isLoading ? (
-            <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-gray-300 dark:border-gray-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin" />
           ) : (
             <svg width="20" height="20" viewBox="0 0 24 24">
               <path
@@ -188,7 +314,77 @@ export function LoginScreen() {
         {/* Divider */}
         <div className="w-full flex items-center gap-3">
           <div className="flex-1 h-px bg-border" />
-          <span className="text-[11px] text-text-tertiary">hoặc</span>
+          <span className="text-[11px] text-text-tertiary">hoặc đăng nhập bằng email</span>
+          <div className="flex-1 h-px bg-border" />
+        </div>
+
+        {/* Sprint 224: Magic link email login */}
+        {emailState === "idle" ? (
+          <div className="w-full flex flex-col gap-2">
+            <label className="text-xs text-text-tertiary">Email</label>
+            <input
+              type="email"
+              placeholder="you@example.com"
+              value={emailValue}
+              onChange={(e) => setEmailValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && emailValue.includes("@")) {
+                  handleEmailLogin();
+                }
+              }}
+              className="w-full h-9 px-3 rounded-lg bg-surface-secondary border border-border text-sm text-text placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+            />
+            <button
+              onClick={handleEmailLogin}
+              disabled={isLoading || !emailValue.includes("@")}
+              className="w-full h-9 rounded-lg bg-[var(--accent)] text-sm text-white font-medium hover:opacity-90 active:opacity-80 transition-opacity disabled:opacity-50"
+            >
+              {isLoading ? "Đang gửi..." : "Tiếp tục"}
+            </button>
+          </div>
+        ) : (
+          <div className="w-full flex flex-col items-center gap-3 py-2">
+            <div className="text-2xl">✉️</div>
+            <p className="text-sm font-medium text-text text-center">
+              Kiểm tra email của bạn
+            </p>
+            <p className="text-xs text-text-tertiary text-center">
+              Chúng tôi đã gửi link đăng nhập đến{" "}
+              <span className="font-medium text-text-secondary">
+                {emailValue.trim().toLowerCase()}
+              </span>
+            </p>
+            <div className="flex items-center gap-3 mt-1">
+              <button
+                onClick={handleEmailLogin}
+                disabled={resendCooldown > 0 || isLoading}
+                className="text-xs text-[var(--accent)] hover:opacity-80 transition-opacity disabled:opacity-50"
+              >
+                {resendCooldown > 0
+                  ? `Gửi lại (${resendCooldown}s)`
+                  : "Gửi lại"}
+              </button>
+              <span className="text-text-tertiary">·</span>
+              <button
+                onClick={() => {
+                  setEmailState("idle");
+                  setSessionId(null);
+                  setError(null);
+                  if (wsRef.current) {
+                    wsRef.current.close();
+                    wsRef.current = null;
+                  }
+                }}
+                className="text-xs text-text-tertiary hover:text-text-secondary transition-colors"
+              >
+                ← Quay lại
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Divider before dev mode */}
+        <div className="w-full flex items-center gap-3">
           <div className="flex-1 h-px bg-border" />
         </div>
 
@@ -196,7 +392,7 @@ export function LoginScreen() {
         {!showDevMode ? (
           <button
             onClick={() => setShowDevMode(true)}
-            className="text-xs text-text-tertiary hover:text-text-secondary transition-colors"
+            className="text-[10px] text-text-tertiary hover:text-text-secondary transition-colors"
           >
             Chế độ nhà phát triển
           </button>
