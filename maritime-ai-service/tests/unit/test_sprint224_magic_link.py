@@ -171,3 +171,203 @@ class TestSessionManager:
         from app.auth.magic_link_service import MagicLinkSessionManager
         mgr = MagicLinkSessionManager()
         assert mgr.active_count == 0
+
+
+# ===================================================================
+# Router tests (Sprint 224 Task 3)
+# ===================================================================
+
+
+class TestMagicLinkRequest:
+    """POST /auth/magic/request -- send magic link email."""
+
+    @pytest.mark.asyncio
+    async def test_create_magic_link_sends_email(self):
+        """Core logic creates token and sends email."""
+        from app.auth.magic_link_router import _create_magic_link
+
+        mock_conn = AsyncMock()
+        mock_conn.fetchval = AsyncMock(return_value=0)  # rate limit check
+        mock_conn.execute = AsyncMock()
+
+        with patch("app.auth.magic_link_router.send_magic_link_email", new_callable=AsyncMock, return_value=True) as mock_send, \
+             patch("app.auth.magic_link_router.settings") as mock_settings:
+            mock_settings.magic_link_expires_seconds = 600
+            mock_settings.magic_link_base_url = "http://localhost:8000"
+            mock_settings.magic_link_max_per_hour = 5
+            mock_settings.api_v1_prefix = "/api/v1"
+
+            result = await _create_magic_link("test@example.com", mock_conn)
+            assert "session_id" in result
+            assert len(result["session_id"]) > 20
+            assert result["expires_in"] == 600
+            assert "message" in result
+            mock_send.assert_called_once()
+            mock_conn.execute.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_magic_link_rate_limited(self):
+        """Rate limit rejects when too many requests."""
+        from app.auth.magic_link_router import _create_magic_link
+
+        mock_conn = AsyncMock()
+        mock_conn.fetchval = AsyncMock(return_value=10)  # over limit
+
+        with patch("app.auth.magic_link_router.settings") as mock_settings, \
+             pytest.raises(Exception) as exc_info:
+            mock_settings.magic_link_max_per_hour = 5
+            await _create_magic_link("test@example.com", mock_conn)
+        assert "429" in str(exc_info.value.status_code) or "Too many" in str(exc_info.value.detail)
+
+    @pytest.mark.asyncio
+    async def test_create_magic_link_email_failure(self):
+        """Email send failure raises 500."""
+        from app.auth.magic_link_router import _create_magic_link
+
+        mock_conn = AsyncMock()
+        mock_conn.fetchval = AsyncMock(return_value=0)
+        mock_conn.execute = AsyncMock()
+
+        with patch("app.auth.magic_link_router.send_magic_link_email", new_callable=AsyncMock, return_value=False), \
+             patch("app.auth.magic_link_router.settings") as mock_settings, \
+             pytest.raises(Exception) as exc_info:
+            mock_settings.magic_link_expires_seconds = 600
+            mock_settings.magic_link_base_url = "http://localhost:8000"
+            mock_settings.magic_link_max_per_hour = 5
+            mock_settings.api_v1_prefix = "/api/v1"
+            await _create_magic_link("test@example.com", mock_conn)
+        assert exc_info.value.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_create_magic_link_stores_token_hash_not_raw(self):
+        """DB receives hashed token, not the raw token."""
+        from app.auth.magic_link_router import _create_magic_link
+
+        mock_conn = AsyncMock()
+        mock_conn.fetchval = AsyncMock(return_value=0)
+        mock_conn.execute = AsyncMock()
+
+        with patch("app.auth.magic_link_router.send_magic_link_email", new_callable=AsyncMock, return_value=True), \
+             patch("app.auth.magic_link_router.settings") as mock_settings:
+            mock_settings.magic_link_expires_seconds = 600
+            mock_settings.magic_link_base_url = "http://localhost:8000"
+            mock_settings.magic_link_max_per_hour = 5
+            mock_settings.api_v1_prefix = "/api/v1"
+
+            await _create_magic_link("test@example.com", mock_conn)
+
+            # Verify the INSERT call
+            call_args = mock_conn.execute.call_args
+            insert_sql = call_args[0][0]
+            assert "INSERT INTO magic_link_tokens" in insert_sql
+            # token_hash is the first positional param ($1)
+            stored_hash = call_args[0][1]
+            assert len(stored_hash) == 64  # SHA256 hex digest
+
+    @pytest.mark.asyncio
+    async def test_create_magic_link_at_rate_limit_boundary(self):
+        """Exactly at max_per_hour should still be rejected."""
+        from app.auth.magic_link_router import _create_magic_link
+
+        mock_conn = AsyncMock()
+        mock_conn.fetchval = AsyncMock(return_value=5)  # exactly at limit
+
+        with patch("app.auth.magic_link_router.settings") as mock_settings, \
+             pytest.raises(Exception) as exc_info:
+            mock_settings.magic_link_max_per_hour = 5
+            await _create_magic_link("test@example.com", mock_conn)
+        assert exc_info.value.status_code == 429
+
+
+class TestMagicLinkVerify:
+    """GET /auth/magic/verify/{token} -- verify token + create JWT."""
+
+    def test_hash_token_consistent(self):
+        from app.auth.magic_link_service import hash_token
+        assert hash_token("abc") == hash_token("abc")
+        assert hash_token("abc") != hash_token("def")
+
+    def test_hash_token_is_sha256(self):
+        from app.auth.magic_link_service import hash_token
+        expected = hashlib.sha256(b"test_token").hexdigest()
+        assert hash_token("test_token") == expected
+
+
+class TestMagicLinkHTMLPages:
+    """HTML response pages."""
+
+    def test_success_page_ws_pushed(self):
+        from app.auth.magic_link_router import _success_page
+        response = _success_page(True)
+        assert response.status_code == 200
+        assert "thành công" in response.body.decode().lower()
+
+    def test_success_page_ws_not_pushed(self):
+        from app.auth.magic_link_router import _success_page
+        response = _success_page(False)
+        assert response.status_code == 200
+        body = response.body.decode().lower()
+        assert "xác minh" in body or "thử lại" in body
+
+    def test_error_page(self):
+        from app.auth.magic_link_router import _error_page
+        response = _error_page("Token hết hạn")
+        assert response.status_code == 400
+        assert "Token hết hạn" in response.body.decode()
+
+    def test_error_page_contains_wiii_branding(self):
+        from app.auth.magic_link_router import _error_page
+        response = _error_page("Test error")
+        body = response.body.decode()
+        assert "The Wiii Lab" in body
+
+    def test_success_page_contains_wiii_branding(self):
+        from app.auth.magic_link_router import _success_page
+        response = _success_page(True)
+        body = response.body.decode()
+        assert "The Wiii Lab" in body
+
+
+# ===================================================================
+# Router structure tests (Sprint 224 Task 3 — endpoint registration)
+# ===================================================================
+
+
+class TestMagicLinkRouter:
+    """Router endpoint registration and model tests."""
+
+    def test_magic_link_request_model_validates_email(self):
+        """MagicLinkRequest requires email with min_length=5."""
+        import pydantic
+        from app.auth.magic_link_router import MagicLinkRequest
+
+        req = MagicLinkRequest(email="a@b.co")
+        assert req.email == "a@b.co"
+
+        with pytest.raises(pydantic.ValidationError):
+            MagicLinkRequest(email="ab")  # too short
+
+    def test_magic_link_response_model(self):
+        from app.auth.magic_link_router import MagicLinkResponse
+        resp = MagicLinkResponse(message="sent", session_id="abc123", expires_in=600)
+        assert resp.session_id == "abc123"
+        assert resp.expires_in == 600
+
+    def test_router_prefix(self):
+        from app.auth.magic_link_router import router
+        assert router.prefix == "/auth/magic-link"
+
+    def test_router_has_request_endpoint(self):
+        from app.auth.magic_link_router import router
+        paths = [r.path for r in router.routes]
+        assert any("request" in p for p in paths)
+
+    def test_router_has_verify_endpoint(self):
+        from app.auth.magic_link_router import router
+        paths = [r.path for r in router.routes]
+        assert any("verify" in p and "token" in p for p in paths)
+
+    def test_router_has_websocket_endpoint(self):
+        from app.auth.magic_link_router import router
+        paths = [r.path for r in router.routes]
+        assert any("/ws/" in p for p in paths)

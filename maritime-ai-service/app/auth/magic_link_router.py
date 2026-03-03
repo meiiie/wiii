@@ -1,0 +1,328 @@
+"""
+Sprint 224: Magic Link Email Auth Router.
+
+Endpoints:
+  POST /auth/magic-link/request         -- Send magic link to email
+  GET  /auth/magic-link/verify/{token}  -- Verify magic link + push JWT via WS
+  WS   /auth/magic-link/ws/{session_id} -- WebSocket waiting for verification
+"""
+import asyncio
+import logging
+import secrets
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+from app.auth.email_service import send_magic_link_email
+from app.auth.magic_link_service import (
+    generate_magic_token,
+    get_session_manager,
+    hash_token,
+    is_token_expired,
+    is_token_used,
+    validate_email,
+)
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+limiter = Limiter(key_func=get_remote_address)
+
+router = APIRouter(prefix="/auth/magic-link", tags=["auth-magic-link"])
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
+
+class MagicLinkRequest(BaseModel):
+    email: str = Field(..., min_length=5, max_length=320)
+
+
+class MagicLinkResponse(BaseModel):
+    session_id: str
+    message: str
+    expires_in: int
+
+
+# ---------------------------------------------------------------------------
+# HTML page helpers
+# ---------------------------------------------------------------------------
+
+def _success_page(ws_pushed: bool) -> HTMLResponse:
+    """Return Vietnamese success HTML page."""
+    if ws_pushed:
+        body = """
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Wiii - Xác minh thành công</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 60px 20px; text-align: center; color: #1a1a1a;">
+  <h1 style="font-size: 28px; color: #E8713A;">Xác minh thành công!</h1>
+  <p style="font-size: 16px; line-height: 1.6;">Bạn đã đăng nhập thành công. Bạn có thể đóng tab này và quay lại ứng dụng Wiii.</p>
+  <p style="font-size: 14px; color: #666; margin-top: 24px;">by The Wiii Lab</p>
+</body></html>
+"""
+    else:
+        body = """
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Wiii - Xác minh thành công</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 60px 20px; text-align: center; color: #1a1a1a;">
+  <h1 style="font-size: 28px; color: #E8713A;">Xác minh thành công!</h1>
+  <p style="font-size: 16px; line-height: 1.6;">Email đã được xác minh. Vui lòng quay lại ứng dụng Wiii và thử lại đăng nhập.</p>
+  <p style="font-size: 14px; color: #999; margin-top: 16px;">(Phiên WebSocket đã hết hạn. Hãy thử lại từ đầu.)</p>
+  <p style="font-size: 14px; color: #666; margin-top: 24px;">by The Wiii Lab</p>
+</body></html>
+"""
+    return HTMLResponse(content=body.strip(), status_code=200)
+
+
+def _error_page(message: str) -> HTMLResponse:
+    """Return Vietnamese error HTML page with 400 status."""
+    body = f"""
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Wiii - Lỗi xác minh</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 60px 20px; text-align: center; color: #1a1a1a;">
+  <h1 style="font-size: 28px; color: #dc3545;">Lỗi xác minh</h1>
+  <p style="font-size: 16px; line-height: 1.6; color: #333;">{message}</p>
+  <p style="font-size: 14px; color: #666; margin-top: 24px;">by The Wiii Lab</p>
+</body></html>
+"""
+    return HTMLResponse(content=body.strip(), status_code=400)
+
+
+# ---------------------------------------------------------------------------
+# Core logic -- extracted for testability
+# ---------------------------------------------------------------------------
+
+async def _create_magic_link(email: str, conn) -> dict:
+    """Create a magic link token, store in DB, and send email.
+
+    Args:
+        email: Validated email address.
+        conn: asyncpg connection (passed in for testability).
+
+    Returns:
+        dict with session_id, message, expires_in.
+
+    Raises:
+        HTTPException: on rate limit, email send failure, etc.
+    """
+    # ---- Rate-limit check (per-email, last hour) ----
+    count = await conn.fetchval(
+        """
+        SELECT COUNT(*) FROM magic_link_tokens
+        WHERE email = $1 AND created_at > NOW() - INTERVAL '1 hour'
+        """,
+        email,
+    )
+    if count >= settings.magic_link_max_per_hour:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many magic link requests. Vui lòng thử lại sau.",
+        )
+
+    # ---- Generate token + session ----
+    raw_token, token_hash = generate_magic_token()
+    session_id = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=settings.magic_link_expires_seconds)
+
+    # ---- Store in DB ----
+    await conn.execute(
+        """
+        INSERT INTO magic_link_tokens (token_hash, email, ws_session_id, expires_at, created_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        """,
+        token_hash, email, session_id, expires_at,
+    )
+
+    # ---- Build verify URL and send email ----
+    base_url = settings.magic_link_base_url.rstrip("/")
+    prefix = settings.api_v1_prefix.rstrip("/")
+    verify_url = f"{base_url}{prefix}/auth/magic-link/verify/{raw_token}"
+
+    sent = await send_magic_link_email(email, verify_url)
+    if not sent:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to send magic link email. Vui lòng thử lại.",
+        )
+
+    logger.info("Magic link created for %s (session=%s)", email, session_id)
+
+    return {
+        "session_id": session_id,
+        "message": "Magic link đã được gửi đến email của bạn.",
+        "expires_in": settings.magic_link_expires_seconds,
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/magic-link/request -- send magic link email
+# ---------------------------------------------------------------------------
+
+@router.post("/request", response_model=MagicLinkResponse)
+@limiter.limit("5/minute")
+async def request_magic_link(body: MagicLinkRequest, request: Request):
+    """Send a magic link email for passwordless authentication."""
+    from app.core.database import get_asyncpg_pool
+
+    email = body.email.strip().lower()
+
+    if not validate_email(email):
+        raise HTTPException(status_code=422, detail="Invalid email format.")
+
+    pool = await get_asyncpg_pool()
+    async with pool.acquire() as conn:
+        result = await _create_magic_link(email, conn)
+
+    return JSONResponse(content=result)
+
+
+# ---------------------------------------------------------------------------
+# GET /auth/magic-link/verify/{token} -- verify token, issue JWT
+# ---------------------------------------------------------------------------
+
+@router.get("/verify/{token}")
+async def verify_magic_link(token: str):
+    """Verify a magic link token, create user/JWT, and push via WebSocket."""
+    from app.auth.token_service import create_token_pair
+    from app.auth.user_service import find_or_create_by_provider
+    from app.core.database import get_asyncpg_pool
+
+    token_hash = hash_token(token)
+
+    pool = await get_asyncpg_pool()
+    async with pool.acquire() as conn:
+        # ---- Look up token ----
+        row = await conn.fetchrow(
+            """
+            SELECT id, email, ws_session_id, expires_at, used_at
+            FROM magic_link_tokens
+            WHERE token_hash = $1
+            """,
+            token_hash,
+        )
+
+        if not row:
+            return _error_page("Link không hợp lệ hoặc đã hết hạn.")
+
+        if is_token_used(row["used_at"]):
+            return _error_page("Link này đã được sử dụng.")
+
+        if is_token_expired(row["expires_at"]):
+            return _error_page("Link đã hết hạn. Vui lòng yêu cầu link mới.")
+
+        # ---- Mark as used ----
+        await conn.execute(
+            "UPDATE magic_link_tokens SET used_at = NOW() WHERE id = $1",
+            row["id"],
+        )
+
+    # ---- Find or create user ----
+    email = row["email"]
+    user = await find_or_create_by_provider(
+        provider="magic_link",
+        provider_sub=email,
+        email=email,
+        email_verified=True,
+        auto_create=True,
+    )
+
+    if not user:
+        return _error_page("Không thể tạo tài khoản.")
+
+    # ---- Create JWT pair ----
+    token_pair = await create_token_pair(
+        user_id=user["id"],
+        email=user.get("email"),
+        name=user.get("name"),
+        role=user.get("role", "student"),
+        auth_method="magic_link",
+    )
+
+    # ---- Push tokens via WebSocket ----
+    session_id = row["ws_session_id"]
+    payload = {
+        "type": "auth_success",
+        "access_token": token_pair.access_token,
+        "refresh_token": token_pair.refresh_token,
+        "token_type": token_pair.token_type,
+        "expires_in": token_pair.expires_in,
+        "user": {
+            "id": user["id"],
+            "email": user.get("email"),
+            "name": user.get("name"),
+            "role": user.get("role", "student"),
+        },
+    }
+
+    mgr = get_session_manager()
+    ws_pushed = await mgr.push_tokens(session_id, payload)
+
+    if not ws_pushed:
+        logger.warning("WS session %s not found -- user may have closed the app", session_id)
+
+    # ---- Audit log ----
+    try:
+        from app.auth.auth_audit import log_auth_event
+        await log_auth_event(
+            "login", user_id=user["id"], provider="magic_link",
+            metadata={"email": email},
+        )
+    except Exception:
+        pass
+
+    logger.info(
+        "Magic link verified for %s (ws_pushed=%s, user=%s)",
+        email, ws_pushed, user["id"],
+    )
+
+    return _success_page(ws_pushed)
+
+
+# ---------------------------------------------------------------------------
+# WS /auth/magic-link/ws/{session_id} -- wait for token delivery
+# ---------------------------------------------------------------------------
+
+@router.websocket("/ws/{session_id}")
+async def magic_link_websocket(websocket: WebSocket, session_id: str):
+    """WebSocket endpoint -- client waits here for magic link verification."""
+    mgr = get_session_manager()
+    await mgr.register(session_id, websocket)
+
+    timeout = settings.magic_link_ws_timeout_seconds
+
+    try:
+        # Keep alive: wait for messages or timeout
+        # The push_tokens() call will send data and close the socket
+        await asyncio.wait_for(
+            _ws_keepalive(websocket),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        logger.info("Magic link WS session timed out: %s", session_id)
+        try:
+            await websocket.send_json({"type": "timeout", "message": "Session expired"})
+            await websocket.close()
+        except Exception:
+            pass
+    except WebSocketDisconnect:
+        logger.info("Magic link WS client disconnected: %s", session_id)
+    except Exception as e:
+        logger.error("Magic link WS error for session %s: %s", session_id, e)
+    finally:
+        mgr.remove(session_id)
+
+
+async def _ws_keepalive(websocket: WebSocket):
+    """Keep WebSocket alive by receiving messages until close."""
+    while True:
+        try:
+            await websocket.receive_text()
+        except WebSocketDisconnect:
+            break
+        except Exception:
+            break
