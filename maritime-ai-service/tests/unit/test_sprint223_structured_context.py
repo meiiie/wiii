@@ -257,3 +257,70 @@ class TestLMSAdapterStructuredData:
         with patch("app.core.config.get_settings", return_value=mock_settings):
             result = adapter.format_context_for_prompt(ctx)
             assert "<data>" not in result
+
+
+class TestGraphInjectionStructured:
+    """Test that _inject_host_context uses structured data."""
+
+    def test_structured_data_appears_in_prompt(self):
+        """When host_context has structured data, it appears in the injected prompt."""
+        from unittest.mock import patch, MagicMock
+
+        adapter = LMSHostAdapter()
+        ctx = HostContext(
+            host_type="lms",
+            page={"type": "grades", "title": "Bảng điểm"},
+            content={
+                "structured": {
+                    "_type": "grades",
+                    "courses": [{"code": "NAV-201", "name": "ECDIS", "progress": 70, "status": "active"}],
+                    "summary": {"total": 1, "completed": 0, "avg_progress": 70},
+                }
+            },
+        )
+        mock_settings = MagicMock()
+        mock_settings.enable_rich_page_context = True
+        with patch("app.core.config.get_settings", return_value=mock_settings):
+            result = adapter.format_context_for_prompt(ctx)
+            assert "NAV-201" in result
+            assert "<data>" in result
+
+    def test_structured_data_not_in_prompt_when_gate_off(self):
+        """When enable_rich_page_context=False, no <data> in prompt."""
+        from unittest.mock import patch, MagicMock
+
+        adapter = LMSHostAdapter()
+        ctx = HostContext(
+            host_type="lms",
+            page={"type": "grades", "title": "Bảng điểm"},
+            content={
+                "structured": {
+                    "_type": "grades",
+                    "courses": [{"code": "NAV-201", "name": "ECDIS", "progress": 70, "status": "active"}],
+                    "summary": {"total": 1, "completed": 0, "avg_progress": 70},
+                }
+            },
+        )
+        mock_settings = MagicMock()
+        mock_settings.enable_rich_page_context = False
+        with patch("app.core.config.get_settings", return_value=mock_settings):
+            result = adapter.format_context_for_prompt(ctx)
+            assert "<data>" not in result
+
+    def test_all_formatters_produce_output(self):
+        """Each structured data type produces non-empty formatted output."""
+        test_cases = [
+            {"_type": "grades", "courses": [{"code": "X", "name": "Y", "progress": 1, "status": "active"}], "summary": {"total": 1, "completed": 0, "avg_progress": 1}},
+            {"_type": "assignment_list", "assignments": [{"name": "A", "course_name": "B", "due_date": "2026-01-01", "status": "NOT_STARTED"}], "summary": {"total": 1, "pending": 1, "overdue": 0}},
+            {"_type": "lesson", "course_name": "C", "chapter_name": "D", "lesson_title": "E", "content_text": "text", "media_types": [], "progress": 50},
+            {"_type": "quiz", "quiz_title": "Q", "question_number": 1, "total_questions": 5, "question_text": "?", "options": ["a", "b"], "attempts_used": 0},
+            {"_type": "course_overview", "course_name": "F", "course_code": "G", "instructor": "H", "chapters": [], "total_progress": 80},
+        ]
+        for data in test_cases:
+            ctx = HostContext(
+                host_type="lms",
+                page={"type": data["_type"]},
+                content={"structured": data},
+            )
+            result = format_structured_data_for_prompt(ctx)
+            assert len(result) > 0, f"Empty output for _type={data['_type']}"
