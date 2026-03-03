@@ -13,7 +13,7 @@ Architecture:
     Provider + model resolved from config at call time:
         visual_product_search_provider: "google" | "openai"
         visual_product_search_model:    (empty=provider default)
-            Google: gemini-2.5-pro (default), gemini-2.5-flash,
+            Google: gemini-3.1-flash-lite-preview (default),
                     gemini-3-flash-preview, gemini-3-pro-preview,
                     gemini-3.1-pro-preview
             OpenAI: gpt-4o (default), gpt-4o-mini
@@ -169,13 +169,13 @@ def get_vision_provider(provider_name: str) -> VisionProvider:
 # ============================================================================
 
 _DEFAULT_MODELS: Dict[str, str] = {
-    "google": "gemini-2.5-pro",
+    "google": "gemini-3.1-flash-lite-preview",
     "openai": "gpt-4o",
 }
 
 # All supported Google models (for reference):
-# Stable:  gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite
-# Preview: gemini-3-flash-preview, gemini-3-pro-preview, gemini-3.1-pro-preview
+# Gemini 3.1: gemini-3.1-flash-lite-preview, gemini-3.1-pro-preview, gemini-3.1-flash-image-preview
+# Gemini 3.0: gemini-3-flash-preview, gemini-3-pro-preview
 
 
 # ============================================================================
@@ -244,7 +244,7 @@ def _identify_product_from_image(
         provider_name = getattr(settings, "visual_product_search_provider", "google")
         model_name = getattr(settings, "visual_product_search_model", None)
         if not model_name:
-            model_name = _DEFAULT_MODELS.get(provider_name, "gemini-2.5-flash")
+            model_name = _DEFAULT_MODELS.get(provider_name, "gemini-3.1-flash-lite-preview")
 
         # Build prompt
         prompt = _IDENTIFY_PROMPT

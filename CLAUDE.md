@@ -58,7 +58,7 @@ To work as a different agent:
 
 ## Project Overview
 
-**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright+Crawl4AI+Scrapling), Google OAuth + LMS integration (production-connected), multi-tenant data isolation, org-level customization, two-tier admin (system + org), Living Agent autonomy system (Soul AGI — all coding phases complete), spaced repetition skill learning, cross-platform memory sync, unified skill architecture, and MCP tool exposure. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. 378 Python files, 70+ API endpoints, 81 feature flags, 10059 backend tests, 1857 desktop tests. Connection pool: min=10, max=50 (Sprint 173).
+**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright+Crawl4AI+Scrapling), Google OAuth + LMS integration (production-connected), multi-tenant data isolation, org-level customization, two-tier admin (system + org), Living Agent autonomy system (Soul AGI — all coding phases complete), spaced repetition skill learning, cross-platform memory sync, unified skill architecture, MCP tool exposure, Universal Context Engine (7-phase: host-agnostic context, bidirectional actions, YAML skills, browser agent), and cross-platform conversation sync. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. 385+ Python files, 70+ API endpoints, 88 feature flags, 10250+ backend tests, 1905 desktop tests. Connection pool: min=10, max=50 (Sprint 173).
 
 ### Domain Plugin System (Feb 2026)
 - **Plugin architecture**: `app/domains/*/domain.yaml` — add new domains by creating a folder + YAML config
@@ -194,6 +194,7 @@ app/domains/
 ### Virtual Agent-per-User (Sprints 16-20)
 - **Thread System**: Composite IDs (`user_{uid}__session_{sid}` or `org_{org}__user_{uid}__session_{sid}`), per-user LangGraph checkpoints
 - **Session Manager**: lifecycle, anti-repetition, pronoun tracking, auto-summarize
+- **Cross-Platform Conversation Sync** (Sprint 225): `thread_views` populated after every chat via `upsert_thread()`. Frontend `syncFromServer()` merges server thread list with local conversations on login. `GET /threads/{id}/messages` for lazy loading. Metadata event includes `thread_id` for local→server mapping
 
 ### Corrective RAG Pipeline
 1. **SemanticCache check** (0.99 similarity threshold)
@@ -219,6 +220,7 @@ app/domains/
 - **Sync/streaming parity**: `thinking_content`, `was_rewritten`, `node_id`, `routing_metadata` matched between `process()` and `process_streaming()`
 
 ### LLM Provider Architecture (Sprints 55, 59)
+- **Default model**: `gemini-3.1-flash-lite-preview` (Gemini 3.1 Flash-Lite, released 2026-03-03). Configurable via `GOOGLE_MODEL` env var
 - **LLM Pool** (3-tier singleton): DEEP/MODERATE/LIGHT. Failover: `["google", "openai", "ollama"]`
 - Access: `from app.engine.llm_pool import get_llm_deep` or `UnifiedLLMClient.get_client("google")`
 
@@ -294,6 +296,22 @@ app/domains/
 - **Tool registration**: 5 LMS tools auto-registered when gate enabled (grades, assignments, progress, class overview, at-risk)
 - **Java side**: `WiiiWebhookEmitter` + `WiiiEventBridge` (quiz/enrollment/assignment domain events → HMAC-signed webhooks)
 
+### Page-Aware AI Context (Sprint 221)
+- **Feature-gated**: PostMessage bridge — LMS Angular pushes page context to Wiii iframe
+- **Schema**: `PageContext` (page_type, title, course, content_snippet max 2000, quiz fields) + `StudentPageState` (time, scroll, attempts)
+- **Prompt injection**: `format_page_context_for_prompt()` — Vietnamese context block with Socratic guardrails (quiz pages: never reveal answer)
+- **Frontend**: `page-context-store.ts` (Zustand), `EmbedApp.tsx` (PostMessage handler), `useSSEStream.ts` (user_context merge)
+- **LMS side**: `WiiiContextService` (Angular) — guide in `docs/integration/LMS_TEAM_GUIDE.md` Section 9
+
+### Universal Context Engine (Sprint 222 + 222b — 7 Phases COMPLETE)
+- **Feature-gated**: `enable_host_context=False`, `enable_host_actions=False`, `enable_host_skills=False`, `enable_browser_agent=False`
+- **Package**: `app/engine/context/` — host_context.py, adapters/, skill_loader.py, action_bridge.py, action_tools.py, browser_agent.py, skills/
+- **Phase 1-2 (Models + Adapters)**: `HostContext` + `HostCapabilities` Pydantic models, `HostAdapter` ABC with LMS + Generic adapters
+- **Phase 3-4 (Graph + Frontend)**: `_inject_host_context()` in graph.py converts context ONCE → ALL agents read `state["host_context_prompt"]`. Frontend: `host-context-store.ts` (Zustand), EmbedApp PostMessage handlers
+- **Phase 5 (Bidirectional Actions)**: `HostActionBridge` validates + emits action requests with role-based filtering. `generate_host_action_tools()` creates LangChain tools from `HostCapabilities.tools[]`. SSE `host_action` event → PostMessage `wiii:action-request/response` flow with 30s timeout
+- **Phase 6 (Dynamic YAML Skills)**: `ContextSkillLoader` loads page-type-specific YAML skills with 3-level fallback (exact → host default → generic). 6 skill files (lms/quiz, lesson, assignment, course, default + generic/default). Appends skill prompts to host context in graph
+- **Phase 7 (Browser Agent)**: Playwright MCP config for standalone Wiii desktop. SSRF URL validation (blocks private IPs, localhost, file://). `BrowserSessionLimiter` per-user rate limiting (sliding 1-hour window)
+
 ### Cross-Platform Identity & Soul Wiii (Sprint 174, enhanced Sprint 177)
 - **Feature-gated**: `enable_cross_platform_identity=False` — canonical identity + dual personality (Professional vs Soul)
 - **IdentityResolver**: Maps `(channel, sender_id)` → canonical UUID. **PersonalityMode**: explicit → channel_map → default → "professional"
@@ -315,12 +333,12 @@ app/domains/
 │
 ├── wiii-desktop/              # Desktop app (Tauri v2 + React 18)
 │   ├── src/
-│   │   ├── api/               # 17 API modules (HTTP, SSE, auth, orgs, users, living-agent, soul-bridge)
+│   │   ├── api/               # 18 API modules (HTTP, SSE, auth, orgs, users, living-agent, soul-bridge, threads)
 │   │   ├── components/        # auth/, chat/, layout/, living-agent/, settings/, common/, welcome/, admin/, org-admin/, soul-bridge/
 │   │   ├── stores/            # 15 Zustand stores (auth, org, chat, avatar, settings, living-agent, admin, toast, ...)
 │   │   ├── hooks/             # useSSEStream, useAutoScroll, useKeyboardShortcuts
 │   │   ├── lib/               # 28 utilities (avatar, org-branding, storage, theme, embed-auth)
-│   │   └── __tests__/         # 69 test files, 1857 Vitest tests
+│   │   └── __tests__/         # 72 test files, 1905 Vitest tests
 │   └── src-tauri/             # Rust backend (Tauri plugins, splash screen)
 │
 └── maritime-ai-service/       # Main backend (297+ Python files)
@@ -331,7 +349,7 @@ app/domains/
     │   ├── channels/          # Multi-channel gateway (WebSocket, Telegram)
     │   ├── domains/           # Domain plugins (maritime/, traffic_law/, _template/)
     │   ├── mcp/               # MCP server (fastapi-mcp), client (MCPToolManager), adapter, tool_server
-    │   ├── engine/            # Core AI: agentic_rag/, multi_agent/ (9 agents), tools/, search_platforms/, llm_providers/, character/, semantic_memory/, living_agent/, skills/, soul_bridge/
+    │   ├── engine/            # Core AI: agentic_rag/, multi_agent/ (9 agents), tools/, search_platforms/, llm_providers/, character/, semantic_memory/, living_agent/, skills/, soul_bridge/, context/
     │   ├── integrations/      # LMS integration (webhook, enrichment, API client, context loader, insight generator)
     │   ├── services/          # Business logic: chat_orchestrator, graph_streaming, session_manager
     │   ├── repositories/      # 15 data access repos (all org-aware since Sprint 160)
@@ -339,15 +357,15 @@ app/domains/
     │   └── models/            # Pydantic schemas (schemas.py, organization.py + OrgSettings)
     ├── alembic/               # 34 database migrations
     ├── scripts/               # Test and ingestion scripts
-    ├── tests/                 # 403 test files, 10059 unit tests (Sprint 220: 0 failures, all clean)
-    └── docs/architecture/     # SYSTEM_ARCHITECTURE.md (v7.0), SYSTEM_FLOW.md, FOLDER_MAP.md
+    ├── tests/                 # 411+ test files, 10250+ unit tests (Sprint 225: +25 conversation sync)
+    └── docs/architecture/     # SYSTEM_ARCHITECTURE.md (v8.4), SYSTEM_FLOW.md, FOLDER_MAP.md
 ```
 
 ---
 
 ## Key Configuration
 
-81 feature flags in `app/core/config.py`. Key flags (all `False` unless noted):
+88 feature flags in `app/core/config.py`. Key flags (all `False` unless noted):
 ```python
 # Core (all True)
 use_multi_agent, enable_corrective_rag, enable_structured_outputs, deep_reasoning_enabled
@@ -371,6 +389,9 @@ enable_llm_failover = True; enable_unified_client = False
 # Unified Skills — enable_unified_skill_index, enable_skill_metrics
 #   enable_intelligent_tool_selection, enable_skill_tool_bridge
 #   enable_narrative_context, enable_identity_core
+
+# Universal Context Engine — enable_host_context, enable_host_actions, enable_host_skills
+#   enable_browser_agent, browser_agent_mcp_command/args/timeout/max_sessions_per_hour
 
 # Soul Bridge — enable_soul_bridge, soul_bridge_peers, soul_bridge_bridge_events
 # MCP — enable_mcp_server, enable_mcp_client, enable_mcp_tool_server
@@ -487,9 +508,10 @@ npx vitest run       # Run 1796 tests
 - `LivingAgentPanel` (5-tab dashboard: overview, skills, goals, journal, reflections), `OrgManagerPanel` (4-tab org admin), `AdminPanel` (7-tab system admin)
 - `SoulBridgePanel` (3-tab dashboard: overview/events/config — monitors connected SubSouls via Soul Bridge, 30s auto-refresh)
 
-### Conversation Persistence (Sprint 15)
+### Conversation Persistence (Sprint 15, enhanced Sprint 225)
 - **Immediate persist**: create/delete/rename/finalize. **Debounced** (2s): addUserMessage
 - **Storage**: `conversations.json` via `loadStore`/`saveStore` from `lib/storage.ts`
+- **Cross-platform sync** (Sprint 225): `syncFromServer()` on login fetches server thread list, merges with local conversations. `loadServerMessages()` lazy-loads message history. Delete/rename fire-and-forget to server. API: `src/api/threads.ts`
 
 ---
 
@@ -501,7 +523,7 @@ pytest -m integration                   # Tests requiring real services
 pytest tests/property/ -v               # Property-based tests (Hypothesis)
 ```
 
-**Current: Backend 10059 unit tests, Desktop 1857 Vitest tests** (as of Sprint 220, 2026-03-01)
+**Current: Backend 10250+ unit tests, Desktop 1905 Vitest tests** (as of Sprint 225, 2026-03-04)
 
 ### Backend Test Commands
 ```bash

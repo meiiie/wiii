@@ -42,7 +42,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; }
 APP_DIR="/opt/wiii"
 SERVICE_DIR="${APP_DIR}/maritime-ai-service"
 COMPOSE_FILE="docker-compose.prod.yml"
-DOMAIN="${WIII_DOMAIN:-holilihu.online}"
+DOMAIN="${DOMAIN:-wiii.holilihu.online}"
 
 echo ""
 echo "============================================="

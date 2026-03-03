@@ -67,6 +67,44 @@ holilihu.online {
 }
 
 # ─────────────────────────────────────────────────
+# Wiii Web App — wiii.holilihu.online
+# Full SPA + API reverse proxy (same Nginx backend)
+# ─────────────────────────────────────────────────
+wiii.holilihu.online {
+    reverse_proxy localhost:80 {
+        flush_interval -1
+
+        health_uri /health
+        health_interval 30s
+        health_timeout 5s
+
+        transport http {
+            response_header_timeout 120s
+            read_timeout 300s
+            write_timeout 300s
+        }
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        -Server
+    }
+
+    request_body {
+        max_size 50MB
+    }
+
+    log {
+        output file /var/log/caddy/wiii-access.log {
+            roll_size 100mb
+            roll_keep 5
+            roll_keep_for 168h
+        }
+        format json
+    }
+}
+
+# ─────────────────────────────────────────────────
 # Wildcard subdomains — *.holilihu.online
 # For multi-tenant org routing (e.g., lms-hanhai.holilihu.online)
 #

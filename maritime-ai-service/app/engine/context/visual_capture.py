@@ -49,7 +49,7 @@ async def _call_gemini_vision(image_b64: str) -> str:
 
         response = await asyncio.to_thread(
             client.models.generate_content,
-            model="gemini-2.0-flash",
+            model=settings.google_model,
             contents=[
                 {
                     "parts": [

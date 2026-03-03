@@ -44,13 +44,24 @@ fi
 
 echo "Build complete: $(du -sh dist | cut -f1) total"
 
-# 3. Copy to nginx/html/ (unless --skip-copy)
+# 3. Build embed widget (for LMS iframe)
+echo "Building embed widget..."
+npm run build:embed
+
+if [ ! -d "dist-embed" ]; then
+    echo "WARNING: Embed build failed — dist-embed/ not found"
+else
+    echo "Embed build complete: $(du -sh dist-embed | cut -f1) total"
+fi
+
+# 4. Copy to nginx/html/ (unless --skip-copy)
 if [[ "${1:-}" != "--skip-copy" ]]; then
-    echo "Copying to $NGINX_HTML..."
+    echo "Copying SPA to $NGINX_HTML..."
     mkdir -p "$NGINX_HTML"
-    rm -rf "$NGINX_HTML"/*
+    # Preserve embed directory, clear the rest
+    rm -rf "$NGINX_HTML"/assets "$NGINX_HTML"/index.html "$NGINX_HTML"/vite.svg 2>/dev/null || true
     cp -r dist/* "$NGINX_HTML/"
-    echo "Deployed to nginx/html/ ($(ls "$NGINX_HTML" | wc -l) files)"
+    echo "Deployed to nginx/html/ ($(ls "$NGINX_HTML" | wc -l) items)"
 else
     echo "Skipping copy (--skip-copy)"
 fi

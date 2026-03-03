@@ -29,12 +29,14 @@ services:
     container_name: wiii-nginx
     ports:
       - "${NGINX_HTTP_PORT:-80}:80"
-      # Uncomment for SSL termination:
-      # - "${NGINX_HTTPS_PORT:-443}:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./nginx/html:/usr/share/nginx/html:ro
+      - ../wiii-desktop/dist-embed:/usr/share/nginx/html/embed:ro
       - nginx_logs:/var/log/nginx
+    environment:
+      - EMBED_ALLOWED_ORIGINS=${EMBED_ALLOWED_ORIGINS:-https://holilihu.online}
+      - DOMAIN=${DOMAIN:-wiii.holilihu.online}
     depends_on:
       app:
         condition: service_healthy
@@ -96,6 +98,8 @@ services:
         condition: service_healthy
       valkey:
         condition: service_healthy
+    volumes:
+      - ../wiii-desktop/dist-embed:/app-embed:ro
     command: >
       gunicorn app.main:app
       --bind 0.0.0.0:8000

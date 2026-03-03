@@ -1,0 +1,286 @@
+# =============================================================================
+# Wiii Nginx — Production Reverse Proxy + SPA Serving + Rate Limiting
+# Sprint 175: holilihu.online — hardened for 10K+ users
+#
+# Architecture: Caddy (SSL) → Nginx (routing + security) → App (API :8000)
+#
+# Features:
+#   - Wildcard subdomain → X-Organization-ID header injection
+#   - Per-endpoint rate limiting (auth/chat/api)
+#   - SSE streaming: buffering off, gzip off, 300s timeout
+#   - SPA serving with cache-busting for index.html
+#   - Security headers (HSTS via Caddy, XSS/CSRF/clickjack here)
+#   - Attack path blocking (.env, .git, wp-admin, etc.)
+#   - JSON structured access logs
+#
+# DNS prerequisite: *.holilihu.online → this server (wildcard A record)
+# =============================================================================
+
+# ─────────────────────────────────────────────────
+# Rate Limiting Zones
+# ─────────────────────────────────────────────────
+# Auth endpoints: strict (5 req/sec, small burst)
+limit_req_zone $binary_remote_addr zone=auth:10m rate=5r/s;
+
+# Chat/streaming: moderate (10 req/sec per user)
+limit_req_zone $binary_remote_addr zone=chat:10m rate=10r/s;
+
+# General API: generous (30 req/sec per user)
+limit_req_zone $binary_remote_addr zone=api:10m rate=30r/s;
+
+# Connection limiting
+limit_conn_zone $binary_remote_addr zone=connlimit:10m;
+
+# ─────────────────────────────────────────────────
+# Upstream: FastAPI App
+# ─────────────────────────────────────────────────
+upstream wiii_api {
+    server app:8000;
+    keepalive 32;
+}
+
+# ─────────────────────────────────────────────────
+# JSON Log Format (for structured log analysis)
+# ─────────────────────────────────────────────────
+log_format json_combined escape=json
+    '{"time":"$time_iso8601",'
+    '"remote_addr":"$remote_addr",'
+    '"request":"$request",'
+    '"status":$status,'
+    '"body_bytes_sent":$body_bytes_sent,'
+    '"request_time":$request_time,'
+    '"upstream_response_time":"$upstream_response_time",'
+    '"http_user_agent":"$http_user_agent",'
+    '"http_referer":"$http_referer",'
+    '"request_id":"$http_x_request_id",'
+    '"subdomain":"$subdomain"}';
+
+# ─────────────────────────────────────────────────
+# Main Server Block
+# ─────────────────────────────────────────────────
+server {
+    listen 80;
+    server_name ~^(?<subdomain>[^.]+)\.holilihu\.online$ holilihu.online;
+
+    # Default: no subdomain (root domain)
+    set $subdomain_header "";
+    if ($subdomain != "") {
+        set $subdomain_header $subdomain;
+    }
+
+    # Root for SPA static files
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # ─────────────────────────────────────────────
+    # Gzip compression (NOT for SSE — handled per-location)
+    # ─────────────────────────────────────────────
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_min_length 256;
+    gzip_types
+        text/plain
+        text/css
+        text/javascript
+        application/javascript
+        application/json
+        application/xml
+        image/svg+xml
+        font/woff2;
+
+    # ─────────────────────────────────────────────
+    # Security headers
+    # ─────────────────────────────────────────────
+    # Sprint 176: CSP frame-ancestors replaces X-Frame-Options for embed iframe support
+    # EMBED_ALLOWED_ORIGINS is substituted by envsubst at container start
+    add_header Content-Security-Policy "frame-ancestors 'self' ${EMBED_ALLOWED_ORIGINS}" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
+    # ─────────────────────────────────────────────
+    # Access logging (JSON structured)
+    # ─────────────────────────────────────────────
+    access_log /var/log/nginx/access.log json_combined buffer=32k flush=5s;
+    error_log /var/log/nginx/error.log warn;
+
+    # ─────────────────────────────────────────────
+    # Block common attack paths (return 444 = close connection)
+    # ─────────────────────────────────────────────
+    location ~* ^/(\.env|\.git|\.svn|wp-admin|wp-login|phpMyAdmin|actuator|cgi-bin|\.well-known/security\.txt) {
+        access_log off;
+        return 444;
+    }
+
+    # ─────────────────────────────────────────────
+    # Nginx health check (Docker healthcheck hits this)
+    # ─────────────────────────────────────────────
+    location = /health {
+        access_log off;
+        return 200 '{"status":"ok","service":"nginx"}';
+        add_header Content-Type application/json;
+    }
+
+    # ─────────────────────────────────────────────
+    # Auth endpoints — strict rate limit
+    # ─────────────────────────────────────────────
+    location /api/v1/auth/ {
+        limit_req zone=auth burst=10 nodelay;
+        limit_conn connlimit 5;
+
+        proxy_pass http://wiii_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Organization-ID $subdomain_header;
+        proxy_set_header Connection "";
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+    }
+
+    # ─────────────────────────────────────────────
+    # Chat streaming — SSE-specific config
+    # CRITICAL: buffering off, gzip off, long timeout
+    # ─────────────────────────────────────────────
+    location ~ ^/api/v1/chat/stream {
+        limit_req zone=chat burst=20 nodelay;
+
+        proxy_pass http://wiii_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Organization-ID $subdomain_header;
+        proxy_set_header Connection "";
+
+        # SSE: disable ALL buffering
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        chunked_transfer_encoding on;
+
+        # CRITICAL: gzip off for SSE (breaks streaming)
+        gzip off;
+
+        # SSE cache prevention
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header X-Accel-Buffering "no" always;
+    }
+
+    # ─────────────────────────────────────────────
+    # Webhook endpoints — no rate limit (Facebook/Zalo verify needs instant response)
+    # ─────────────────────────────────────────────
+    location ~ ^/api/v1/(messenger|zalo)/webhook {
+        proxy_pass http://wiii_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 60s;  # Sprint 188: Increased for async processing
+        proxy_send_timeout 60s;
+        client_max_body_size 1m;  # Sprint 188: Webhook payload limit
+    }
+
+    # ─────────────────────────────────────────────
+    # General API proxy
+    # ─────────────────────────────────────────────
+    location /api/ {
+        limit_req zone=api burst=50 nodelay;
+
+        proxy_pass http://wiii_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Organization-ID $subdomain_header;
+        proxy_set_header Connection "";
+
+        # WebSocket support
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+    }
+
+    # ─────────────────────────────────────────────
+    # OpenAPI docs proxy (no rate limit, dev-friendly)
+    # ─────────────────────────────────────────────
+    location /docs {
+        proxy_pass http://wiii_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    location /redoc {
+        proxy_pass http://wiii_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    location /openapi.json {
+        proxy_pass http://wiii_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    # ─────────────────────────────────────────────
+    # Static assets — cache aggressively (Vite hashed filenames)
+    # ─────────────────────────────────────────────
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # ─────────────────────────────────────────────
+    # Embed: Wiii Chat iframe (Sprint 176)
+    # ─────────────────────────────────────────────
+    location /embed {
+        alias /usr/share/nginx/html/embed;
+        try_files $uri $uri/ /embed/embed.html;
+
+        # Don't cache embed.html (ensures new deployments are picked up)
+        location = /embed/embed.html {
+            expires -1;
+            add_header Cache-Control "no-store, no-cache, must-revalidate";
+        }
+    }
+
+    location /embed/assets/ {
+        alias /usr/share/nginx/html/embed/assets/;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # ─────────────────────────────────────────────
+    # SPA fallback — React Router (all other routes → index.html)
+    # ─────────────────────────────────────────────
+    location / {
+        try_files $uri $uri/ /index.html;
+
+        # Don't cache index.html (ensures new deployments are picked up)
+        location = /index.html {
+            expires -1;
+            add_header Cache-Control "no-store, no-cache, must-revalidate";
+        }
+    }
+
+    # ─────────────────────────────────────────────
+    # Request size limit (PDF uploads)
+    # ─────────────────────────────────────────────
+    client_max_body_size 50m;
+}

@@ -40,7 +40,7 @@ class LLMConfig(BaseModel):
     failover_chain: list[str] = ["google", "openai", "ollama"]
     enable_failover: bool = True
     google_api_key: Optional[str] = None
-    google_model: str = "gemini-3-flash-preview"
+    google_model: str = "gemini-3.1-flash-lite-preview"
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
     ollama_base_url: Optional[str] = "http://localhost:11434"
@@ -366,7 +366,7 @@ class Settings(BaseSettings):
 
     # LLM Settings - Google Gemini (primary)
     google_api_key: Optional[str] = Field(default=None, description="Google Gemini API key")
-    google_model: str = Field(default="gemini-3-flash-preview", description="Google Gemini model (3.0 Flash = 3× faster)")
+    google_model: str = Field(default="gemini-3.1-flash-lite-preview", description="Google Gemini model (3.1 Flash-Lite = fastest, cheapest Gemini 3)")
     llm_provider: str = Field(default="google", description="LLM provider: google, openai, openrouter")
 
     # LLM Settings - Ollama (local/self-hosted)
