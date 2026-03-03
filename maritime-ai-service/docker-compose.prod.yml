@@ -32,7 +32,7 @@ services:
     volumes:
       - ./nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./nginx/html:/usr/share/nginx/html:ro
-      - ../wiii-desktop/dist-embed:/usr/share/nginx/html/embed:ro
+      - ../wiii-desktop/dist-embed:/usr/share/nginx/embed:ro
       - nginx_logs:/var/log/nginx
     environment:
       - EMBED_ALLOWED_ORIGINS=${EMBED_ALLOWED_ORIGINS:-https://holilihu.online}
