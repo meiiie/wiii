@@ -223,6 +223,11 @@ class Settings(BaseSettings):
     magic_link_resend_cooldown_seconds: int = Field(default=45, ge=15, le=120, description="Cooldown between resend attempts")
     magic_link_max_per_hour: int = Field(default=5, ge=1, le=20, description="Max magic links per email per hour")
 
+    # Sentry — Error Tracking (Production Hardening)
+    sentry_dsn: str = Field(default="", description="Sentry DSN — empty disables Sentry")
+    sentry_environment: str = Field(default="development", description="Sentry environment tag")
+    sentry_traces_sample_rate: float = Field(default=0.2, ge=0.0, le=1.0, description="Sentry performance sampling rate")
+
     # Rate Limiting
     rate_limit_requests: int = Field(default=100, description="Max requests per window")
     rate_limit_window_seconds: int = Field(default=60, description="Rate limit window in seconds")
@@ -244,7 +249,6 @@ class Settings(BaseSettings):
     # PostgreSQL Safety (Sprint 171: CIS Benchmark 5.4)
     postgres_statement_timeout_ms: int = Field(default=30000, ge=1000, le=300000, description="Query timeout in ms (default 30s)")
     postgres_idle_in_transaction_timeout_ms: int = Field(default=60000, ge=10000, le=600000, description="Idle transaction timeout in ms (default 60s)")
-
     postgres_connect_timeout_seconds: int = Field(default=5, ge=1, le=60, description="Connection timeout in seconds for PostgreSQL clients")
 
     # Object Storage (MinIO / S3-compatible)
@@ -1227,6 +1231,21 @@ class Settings(BaseSettings):
                     "SECURITY WARNING: cors_origins=['*'] in production. "
                     "Set CORS_ORIGINS to specific allowed origins."
                 )
+            # Production: Block short API key
+            if self.api_key and len(self.api_key) < 16:
+                raise ValueError(
+                    "SECURITY: api_key must be at least 16 characters in production. "
+                    "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                )
+            # Production: Warn if magic link enabled without Resend key
+            if (
+                self.enable_magic_link_auth
+                and not self.resend_api_key
+            ):
+                _config_logger.warning(
+                    "SECURITY: enable_magic_link_auth=True but RESEND_API_KEY is empty — "
+                    "magic link emails will fail silently"
+                )
         return self
 
     @model_validator(mode="after")
@@ -1284,22 +1303,39 @@ class Settings(BaseSettings):
                 _config_logger.warning(
                     "enable_auto_group_discovery=True but 'facebook_group' not in product_search_platforms"
                 )
+        # Production Hardening: Session secret validation (unconditional in production)
+        _BLOCKED_SECRETS = {
+            "change-session-secret-in-production",
+            "secret", "changeme", "your-secret-here",
+            "supersecret",
+        }
+        if self.session_secret_key.lower() in _BLOCKED_SECRETS and self.environment == "production":
+            raise ValueError(
+                "SECURITY: session_secret_key must not be a default value in production. "
+                "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+            )
+        if len(self.session_secret_key) < 32 and self.environment == "production":
+            raise ValueError(
+                f"SECURITY: session_secret_key must be at least 32 characters in production "
+                f"(got {len(self.session_secret_key)}). "
+                "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+            )
+        if len(set(self.session_secret_key)) < 10 and self.environment == "production":
+            raise ValueError(
+                "SECURITY: session_secret_key has low entropy (too few unique characters). "
+                "Use a cryptographically random value."
+            )
+        # Non-production: warn only
+        if len(self.session_secret_key) < 32 and self.environment != "production":
+            _config_logger.warning(
+                "SECURITY: session_secret_key is %d chars — should be at least 32 for secure OAuth CSRF state",
+                len(self.session_secret_key),
+            )
         # Sprint 157: Google OAuth validation
         if self.enable_google_oauth:
             if not self.google_oauth_client_id or not self.google_oauth_client_secret:
                 _config_logger.warning(
                     "enable_google_oauth=True but google_oauth_client_id/secret not set — OAuth will not work"
-                )
-            if self.session_secret_key == "change-session-secret-in-production" and self.environment == "production":
-                raise ValueError(
-                    "SECURITY: session_secret_key must be changed from default in production. "
-                    "Set SESSION_SECRET_KEY environment variable."
-                )
-            # Sprint 194c (B5/B9): Validate session secret length for secure CSRF state
-            if len(self.session_secret_key) < 32:
-                _config_logger.warning(
-                    "SECURITY: session_secret_key is %d chars — should be at least 32 for secure OAuth CSRF state",
-                    len(self.session_secret_key),
                 )
         # Sprint 155: LMS integration without webhook secret
         if self.enable_lms_integration and not self.lms_webhook_secret:
