@@ -245,6 +245,8 @@ class Settings(BaseSettings):
     postgres_statement_timeout_ms: int = Field(default=30000, ge=1000, le=300000, description="Query timeout in ms (default 30s)")
     postgres_idle_in_transaction_timeout_ms: int = Field(default=60000, ge=10000, le=600000, description="Idle transaction timeout in ms (default 60s)")
 
+    postgres_connect_timeout_seconds: int = Field(default=5, ge=1, le=60, description="Connection timeout in seconds for PostgreSQL clients")
+
     # Object Storage (MinIO / S3-compatible)
     minio_endpoint: Optional[str] = Field(default=None, description="MinIO endpoint (host:port, no scheme)")
     minio_external_endpoint: Optional[str] = Field(default=None, description="MinIO endpoint for browser-facing presigned URLs (defaults to minio_endpoint)")
@@ -304,10 +306,12 @@ class Settings(BaseSettings):
                 url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
             elif url.startswith("postgres://"):
                 url = url.replace("postgres://", "postgresql+asyncpg://", 1)
-            return url
+            return self._append_connect_timeout(url)
 
         # Fallback to local Docker settings
-        return f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        return self._append_connect_timeout(
+            f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
 
     @property
     def asyncpg_url(self) -> str:
@@ -323,8 +327,10 @@ class Settings(BaseSettings):
             url = self.database_url
             url = url.replace("postgresql+asyncpg://", "postgresql://")
             url = url.replace("postgres://", "postgresql://")
-            return url
-        return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            return self._append_connect_timeout(url)
+        return self._append_connect_timeout(
+            f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
 
     @property
     def postgres_url_sync(self) -> str:
@@ -343,9 +349,19 @@ class Settings(BaseSettings):
             # Convert ssl=require to sslmode=require for psycopg3
             if "ssl=require" in url:
                 url = url.replace("ssl=require", "sslmode=require")
+            return self._append_connect_timeout(url)
+
+        return self._append_connect_timeout(
+            f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+
+    def _append_connect_timeout(self, url: str) -> str:
+        """Add connect_timeout when missing so local misconfigurations fail fast."""
+        if "connect_timeout=" in url:
             return url
 
-        return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        separator = "&" if "?" in url else "?"
+        return f"{url}{separator}connect_timeout={self.postgres_connect_timeout_seconds}"
 
     # Database - Neo4j (Local Docker)
     neo4j_uri: str = Field(default="bolt://localhost:7687", description="Neo4j connection URI (local or Aura)")

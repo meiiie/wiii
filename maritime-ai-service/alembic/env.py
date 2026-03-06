@@ -33,6 +33,15 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 # Get database URL from environment or config
+def _append_connect_timeout(url: str) -> str:
+    """Ensure Alembic fails fast when the local PostgreSQL endpoint is unreachable."""
+    if "connect_timeout=" in url:
+        return url
+
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}connect_timeout=5"
+
+
 def get_url():
     """
     Get database URL from environment variables.
@@ -53,7 +62,7 @@ def get_url():
         # Convert ssl=require to sslmode=require for psycopg
         if "ssl=require" in url:
             url = url.replace("ssl=require", "sslmode=require")
-        return url
+        return _append_connect_timeout(url)
     
     # Fallback to individual env vars (local Docker)
     host = os.getenv("POSTGRES_HOST", "localhost")
@@ -63,7 +72,9 @@ def get_url():
     db = os.getenv("POSTGRES_DB", "wiii_ai")
     
     # Use psycopg3 driver (sync) for alembic
-    return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{db}"
+    return _append_connect_timeout(
+        f"postgresql+psycopg://{user}:{password}@{host}:{port}/{db}"
+    )
 
 
 def run_migrations_offline() -> None:
