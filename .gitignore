@@ -85,3 +85,9 @@ maritime-ai-service/=*
 # === Large data files ===
 maritime-ai-service/data/*.pdf
 maritime-ai-service/data/*.csv
+
+# === Documentation screenshots ===
+docs/assets/screenshots/tmp/
+
+# === Generated embed bundle ===
+wiii-desktop/dist-embed/

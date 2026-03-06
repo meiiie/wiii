@@ -15,7 +15,7 @@
 #   - .env.production file with ALL required secrets
 #   - GOOGLE_API_KEY, API_KEY, JWT_SECRET_KEY must be set
 #   - POSTGRES_PASSWORD must be changed from defaults
-#   - SPA build: run wiii-desktop/scripts/build-web.sh before deploy
+#   - WIII_APP_IMAGE and WIII_NGINX_IMAGE must point to published production images
 #   - DNS: *.holilihu.online wildcard A record pointing to this server
 #   - Soul AGI: Set ENABLE_LIVING_AGENT=true, CF_TUNNEL_TOKEN for cloudflared
 # =============================================================================
@@ -25,14 +25,11 @@ services:
   # NGINX — Reverse Proxy + SPA Serving + Subdomain Routing (Sprint 175)
   # =============================================================================
   nginx:
-    image: nginx:1-alpine
+    image: ${WIII_NGINX_IMAGE:-ghcr.io/meiiie/lms-ai-nginx:main}
     container_name: wiii-nginx
     ports:
       - "${NGINX_HTTP_PORT:-8080}:80"
     volumes:
-      - ./nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
-      - ./nginx/html:/usr/share/nginx/html:ro
-      - ../wiii-desktop/dist-embed:/usr/share/nginx/embed:ro
       - nginx_logs:/var/log/nginx
     environment:
       - EMBED_ALLOWED_ORIGINS=${EMBED_ALLOWED_ORIGINS:-https://holilihu.online}
@@ -52,7 +49,7 @@ services:
           cpus: "0.1"
           memory: "64M"
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -67,9 +64,7 @@ services:
   # FASTAPI APP — Production (no hot-reload, Gunicorn workers)
   # =============================================================================
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${WIII_APP_IMAGE:-ghcr.io/meiiie/lms-ai-app:main}
     container_name: wiii-app
     ports:
       - "127.0.0.1:${APP_PORT:-8000}:8000"
@@ -98,8 +93,6 @@ services:
         condition: service_healthy
       valkey:
         condition: service_healthy
-    volumes:
-      - ../wiii-desktop/dist-embed:/app-embed:ro
     command: >
       gunicorn app.main:app
       --bind 0.0.0.0:8000
@@ -177,6 +170,42 @@ services:
       options:
         max-size: "20m"
         max-file: "3"
+
+  # ─────────────────────────────────────────────────
+  # PostgreSQL Backup (Production Hardening)
+  # Daily pg_dump, 30-day local retention
+  # ─────────────────────────────────────────────────
+  pg-backup:
+    image: postgres:16-alpine
+    entrypoint: /bin/sh
+    command: >
+      -c "while true; do
+        echo \"[$$(date)] Starting backup...\";
+        PGPASSWORD=$${POSTGRES_PASSWORD} pg_dump
+          -h postgres -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+          --format=custom --compress=6 --no-owner
+          > /backups/wiii_ai_$$(date +%Y%m%d_%H%M%S).dump;
+        echo \"[$$(date)] Cleaning old backups (>30 days)...\";
+        find /backups -name '*.dump' -mtime +30 -delete;
+        echo \"[$$(date)] Backup complete. Sleeping 24h.\";
+        sleep 86400;
+      done"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wiii}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-wiii_ai}
+    volumes:
+      - backup-data:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - wiii-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   # =============================================================================
   # NEO4J — Optional Graph Database (opt-in via --profile neo4j)
@@ -400,6 +429,8 @@ volumes:
   nginx_logs:
     driver: local
   ollama_data:
+    driver: local
+  backup-data:
     driver: local
 
 networks:

@@ -131,9 +131,21 @@ wiii-desktop/
 |   +-- capabilities/            # Tauri v2 capability permissions
 |   +-- tauri.conf.json          # Tauri configuration
 |
-+-- scripts/                     # Build scripts (embed build)
++-- docs/                        # Desktop-local design and asset specs
++-- scripts/                     # Utility scripts (embed build, screenshots)
 +-- vite.config.ts, tailwind.config.js, tsconfig.json
 ```
+
+### Local Conventions
+
+- Keep desktop-specific documentation in `wiii-desktop/docs/`.
+- Keep one-off screenshot automation in `wiii-desktop/scripts/screenshots/`.
+- Temporary screenshot output should go to `../docs/assets/screenshots/tmp/`, not the app root.
+- Treat `dist-embed/` as generated embed output for `/embed/`.
+- Refresh `dist-embed/` only via `npm run build:embed` or `./scripts/build-web.sh`; never hand-edit hashed assets.
+- `dist-embed/` is gitignored and not part of the production deployment contract.
+- Production deployment uses CI-built images that already contain embed assets.
+- Keep `dist-embed/` only as a local verification artifact.
 
 ---
 
@@ -177,6 +189,22 @@ npx tauri build
 ```
 
 The installer is output to `src-tauri/target/release/bundle/nsis/`.
+
+### Build the Embed Bundle
+
+Builds the standalone iframe app served at `/embed/`:
+
+```bash
+npm run build:embed
+```
+
+For web deployment workflows, use:
+
+```bash
+./scripts/build-web.sh
+```
+
+That script builds both `dist/` and `dist-embed/`. It copies only `dist/` into `maritime-ai-service/nginx/html/`; production uses CI-built images that already contain `/embed/` assets.
 
 ### Run Tests
 

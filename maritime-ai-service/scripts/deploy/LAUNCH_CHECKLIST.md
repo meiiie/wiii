@@ -51,6 +51,8 @@
 - [ ] `deploy.sh` ran successfully
 - [ ] Health check: `curl http://localhost:8000/api/v1/health/live` → `{"status":"alive"}`
 - [ ] Nginx health: `curl http://localhost:80/health` → `{"status":"ok"}`
+- [ ] Embed entry point works: `curl -I http://localhost:8080/embed/` returns `200`
+- [ ] Smoke test passes: `API_KEY=... bash scripts/deploy/smoke-test.sh https://<domain>`
 
 ---
 

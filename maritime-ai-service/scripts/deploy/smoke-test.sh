@@ -1,0 +1,85 @@
+#!/bin/bash
+# smoke-test.sh
+# Post-deployment verification for wiii.holilihu.online
+#
+# Usage:
+#   bash smoke-test.sh [BASE_URL]
+#   API_KEY=your-key bash smoke-test.sh https://wiii.holilihu.online
+
+set -euo pipefail
+
+BASE_URL="${1:-https://wiii.holilihu.online}"
+API_KEY="${API_KEY:-}"
+PASS=0
+FAIL=0
+
+check() {
+    local name="$1"
+    local result="$2"
+    if [ "$result" = "true" ]; then
+        echo "  [PASS] $name"
+        PASS=$((PASS + 1))
+    else
+        echo "  [FAIL] $name"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+echo "=== Wiii Smoke Test: ${BASE_URL} ==="
+echo ""
+
+# 1. Health Checks
+echo "1. Health Checks"
+HTTP=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/v1/health" 2>/dev/null || echo "000")
+check "Shallow health (GET /health)" "$([ "$HTTP" = "200" ] && echo true || echo false)"
+
+HTTP=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/v1/health/live" 2>/dev/null || echo "000")
+check "Liveness probe (GET /health/live)" "$([ "$HTTP" = "200" ] && echo true || echo false)"
+
+HTTP=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/v1/health/db" 2>/dev/null || echo "000")
+check "Deep health — DB (GET /health/db)" "$([ "$HTTP" = "200" ] && echo true || echo false)"
+
+# 2. Security Headers
+echo ""
+echo "2. Security Headers"
+HEADERS=$(curl -s -D - -o /dev/null "${BASE_URL}/api/v1/health" 2>/dev/null)
+check "X-Request-ID present" "$(echo "$HEADERS" | grep -qi "x-request-id" && echo true || echo false)"
+
+EMBED_HEADERS=$(curl -s -D - -o /dev/null "${BASE_URL}/embed/" 2>/dev/null)
+check "CSP frame-ancestors on /embed" "$(echo "$EMBED_HEADERS" | grep -qi "frame-ancestors" && echo true || echo false)"
+
+# 3. Pages Load
+echo ""
+echo "3. Page Loading"
+HTTP=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/embed/" 2>/dev/null || echo "000")
+check "Embed page loads (GET /embed/)" "$([ "$HTTP" = "200" ] && echo true || echo false)"
+
+EMBED_HTML=$(curl -s "${BASE_URL}/embed/" 2>/dev/null || true)
+check "Embed HTML includes built asset references" "$(echo "$EMBED_HTML" | grep -Eq '/assets/|<script[^>]+type="module"' && echo true || echo false)"
+
+HTTP=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/" 2>/dev/null || echo "000")
+check "SPA loads (GET /)" "$([ "$HTTP" = "200" ] && echo true || echo false)"
+
+# 4. API Endpoints
+echo ""
+echo "4. API Endpoints"
+if [ -n "$API_KEY" ]; then
+    HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+        -X POST "${BASE_URL}/api/v1/chat" \
+        -H "Content-Type: application/json" \
+        -H "X-API-Key: ${API_KEY}" \
+        -H "X-User-ID: smoke-test" \
+        -H "X-Session-ID: smoke-test-session" \
+        -d '{"user_id": "smoke-test", "message": "test", "role": "student", "session_id": "smoke-test-session", "domain_id": "maritime"}' \
+        --max-time 30 \
+        2>/dev/null || echo "000")
+    check "Chat API (POST /chat)" "$([ "$HTTP" = "200" ] && echo true || echo false)"
+else
+    echo "  [SKIP] Chat API — set API_KEY to test"
+fi
+
+# Summary
+echo ""
+echo "=== Results: ${PASS} passed, ${FAIL} failed ==="
+[ "$FAIL" -eq 0 ] && echo "All checks passed!" || echo "Some checks failed — investigate above."
+exit "$FAIL"

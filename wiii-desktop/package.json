@@ -11,7 +11,7 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "dev:embed": "cross-env BUILD_TARGET=embed vite",
-    "build:embed": "cross-env BUILD_TARGET=embed tsc && cross-env BUILD_TARGET=embed vite build",
+    "build:embed": "cross-env BUILD_TARGET=embed vite build && node -e \"require('fs').copyFileSync('dist-embed/embed.html','dist-embed/index.html')\"",
     "preview:embed": "cross-env BUILD_TARGET=embed vite preview --port 1421"
   },
   "dependencies": {
@@ -55,7 +55,7 @@
     "@types/react-plotly.js": "^2.6.4",
     "@types/uuid": "^9.0.0",
     "@vitejs/plugin-react": "^4.2.0",
-    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/coverage-v8": "^1.6.0",
     "autoprefixer": "^10.4.0",
     "cross-env": "^7.0.3",
     "jsdom": "^24.0.0",

@@ -8,12 +8,18 @@
 # fallback, and HTTP uses adaptive fetch when Tauri plugin is unavailable.
 #
 # Usage:
-#   ./scripts/build-web.sh                # Build + copy to nginx/html/
-#   ./scripts/build-web.sh --skip-copy    # Build only (dist/)
+#   ./scripts/build-web.sh                # Build dist/ + dist-embed/, copy dist/ to nginx/html/
+#   ./scripts/build-web.sh --skip-copy    # Build only (dist/ + dist-embed/)
 #
 # Output:
-#   wiii-desktop/dist/          → Vite SPA build
-#   maritime-ai-service/nginx/html/ → Copy for Docker Nginx serving
+#   wiii-desktop/dist/                → Vite SPA build
+#   wiii-desktop/dist-embed/          → Embed bundle served at /embed/
+#   maritime-ai-service/nginx/html/   → Copy of dist/ for Docker Nginx serving
+#
+# Note:
+#   dist-embed/ is not copied into nginx/html/. Production images now build and
+#   bake embed assets during Docker image creation. The local dist-embed/ output
+#   remains useful only for local verification.
 # =============================================================================
 set -euo pipefail
 
@@ -63,7 +69,7 @@ if [[ "${1:-}" != "--skip-copy" ]]; then
     cp -r dist/* "$NGINX_HTML/"
     echo "Deployed to nginx/html/ ($(ls "$NGINX_HTML" | wc -l) items)"
 else
-    echo "Skipping copy (--skip-copy)"
+    echo "Skipping dist/ copy (--skip-copy); dist-embed/ is still built in place"
 fi
 
 echo "=== Done ==="

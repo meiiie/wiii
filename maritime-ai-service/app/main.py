@@ -48,6 +48,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app.core.observability import init_telemetry
     init_telemetry(service_name=settings.app_name.lower())
 
+    # Sentry — Error Tracking (Production Hardening)
+    from app.core.sentry_config import init_sentry
+    init_sentry(
+        dsn=settings.sentry_dsn,
+        environment=settings.sentry_environment,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+    )
+
     # LangSmith tracing (Sprint 144b: LangChain/LangGraph observability)
     # Must be called BEFORE LLM Pool init so env vars are set when providers load
     if settings.enable_langsmith:
@@ -147,6 +155,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.info("alembic.ini not found — skipping migrations")
     except Exception as e:
         logger.warning("Database migration failed: %s (service will continue)", e)
+
+    # =========================================================================
+    # LMS CONNECTOR BOOTSTRAP (Sprint 220c: Moved early in lifespan)
+    # Must run before pre-warming to ensure registry is populated for prompts.
+    # =========================================================================
+    if settings.enable_lms_integration:
+        try:
+            from app.integrations.lms.loader import bootstrap_lms_connectors
+            _lms_count = bootstrap_lms_connectors(settings)
+            print(f"[OK] LMS integration: {_lms_count} connector(s) registered", flush=True)
+        except Exception as e:
+            print(f"[WARN] LMS connector bootstrap failed: {e}", flush=True)
+    else:
+        print("[SKIP] LMS integration disabled", flush=True)
 
     # =========================================================================
     # PRE-WARMING AI COMPONENTS (SOTA Memory Optimization - Dec 2025)
@@ -312,18 +334,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.warning("[WARN] SoulBridge startup failed: %s", e)
 
-    # =========================================================================
-    # LMS CONNECTOR BOOTSTRAP (Sprint 155: Cầu Nối)
-    # =========================================================================
-    if settings.enable_lms_integration:
-        try:
-            from app.integrations.lms.loader import bootstrap_lms_connectors
-            lms_count = bootstrap_lms_connectors(settings)
-            logger.info("[OK] LMS integration: %d connector(s) registered", lms_count)
-        except Exception as e:
-            logger.warning("[WARN] LMS connector bootstrap failed: %s", e)
-
-    logger.info("[START] %s started successfully", settings.app_name)
+    print(f"[START] {settings.app_name} started successfully", flush=True)
 
     yield
     
@@ -503,8 +514,9 @@ def create_application() -> FastAPI:
     # OrgContext added first → inner (runs second, binds organization_id to structlog)
     # RequestID added second → outer (runs first, clears+binds request_id)
     # This ensures RequestID.clear_contextvars() runs BEFORE OrgContext binds org_id
-    from app.core.middleware import RequestIDMiddleware, OrgContextMiddleware
-    app.add_middleware(OrgContextMiddleware)  # Sprint 24: Multi-Tenant org context (inner)
+    from app.core.middleware import RequestIDMiddleware, OrgContextMiddleware, EmbedCSPMiddleware
+    app.add_middleware(EmbedCSPMiddleware)    # Sprint 220b: CSP frame-ancestors for /embed (innermost)
+    app.add_middleware(OrgContextMiddleware)  # Sprint 24: Multi-Tenant org context
     app.add_middleware(RequestIDMiddleware)   # Outermost — sets request_id first
 
     # Configure Rate Limiting
@@ -556,6 +568,27 @@ def create_application() -> FastAPI:
             setup_mcp_server(app)
         except Exception as e:
             logger.warning("MCP Server mount failed: %s", e)
+
+    # Sprint 220b: Mount Wiii embed static files for iframe integration
+    # Serves dist-embed/ at /embed — LMS iframes this URL
+    # Production images expose /app-embed; local development can fall back to ../wiii-desktop/dist-embed
+    try:
+        from pathlib import Path
+        from starlette.staticfiles import StaticFiles
+
+        # Prefer the baked production image path, then fall back to local dev output.
+        embed_candidates = [
+            Path("/app-embed"),
+            Path(__file__).parent.parent.parent / "wiii-desktop" / "dist-embed",  # Local dev
+        ]
+        embed_dir = next((p for p in embed_candidates if p.exists() and (p / "embed.html").exists()), None)
+        if embed_dir:
+            app.mount("/embed", StaticFiles(directory=str(embed_dir), html=True), name="embed")
+            logger.info("[OK] Embed static files mounted at /embed from %s", embed_dir)
+        else:
+            logger.debug("Embed static files not found (build with: cd wiii-desktop && npm run build:embed)")
+    except Exception as e:
+        logger.warning("Embed static mount failed: %s", e)
 
     return app
 

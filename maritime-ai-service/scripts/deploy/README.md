@@ -151,7 +151,68 @@ chmod +x maritime-ai-service/scripts/deploy/deploy.sh
 ./maritime-ai-service/scripts/deploy/deploy.sh
 ```
 
-First deploy takes ~5 minutes (building Docker image). Subsequent deploys ~1-2 minutes.
+If your GHCR packages are private, authenticate the host before the first image-based deploy:
+
+```bash
+echo <github_pat_with_read_packages> | docker login ghcr.io -u <github_username> --password-stdin
+```
+
+Image-based deploy time now depends mostly on image pull size and container restart time rather than on-source Docker builds on the host.
+
+### 4.5 Image-Based Deploy Path
+
+The `/embed/` iframe is now baked into published production images.
+
+Current production behavior:
+
+- the app image contains embed assets at `/app-embed`
+- the nginx image contains embed assets at `/usr/share/nginx/embed`
+- CI builds `wiii-desktop/dist-embed/` before the image build, and the image build copies that artifact directly
+- deploy no longer depends on `wiii-desktop/dist-embed/` being present in the server checkout
+- deploy pulls prebuilt tagged images instead of building them on the host
+
+Operational consequence:
+
+- when an embed-related change is deployed, the target image tag must already exist in GHCR
+- the deploy script verifies `/embed/` after rollout
+
+Set image tags in `.env.production`:
+
+```bash
+WIII_APP_IMAGE=ghcr.io/meiiie/lms-ai-app:main
+WIII_NGINX_IMAGE=ghcr.io/meiiie/lms-ai-nginx:main
+```
+
+To deploy a pinned revision, use matching `sha-...` tags for both images.
+
+Local development can still use:
+
+```bash
+cd /opt/wiii/wiii-desktop
+npm install
+npm run build:embed
+```
+
+That remains useful for local verification, but it is no longer a production deploy prerequisite.
+
+### 4.6 Current State: `dist-embed/` No Longer Drives Production Deploys
+
+The old model expected a checked-in embed bundle because both the app and nginx containers mounted it directly.
+
+That is no longer required in production. The remaining cleanup step is to commit the already-prepared git untracking change for `wiii-desktop/dist-embed/` once the team is satisfied with staging or production stability.
+
+Current target state:
+
+- CI builds and publishes production images
+- production images include the embed assets directly
+- deploy pulls immutable images instead of depending on a local frontend working tree
+- rollback uses image tags or digests, not rebuilt assets on the server
+
+Design note:
+
+- `docs/plans/2026-03-06-dist-embed-deploy-redesign.md`
+
+Local `npm run build:embed` remains useful for developer verification, but it is no longer part of the production deployment contract.
 
 ---
 
@@ -205,25 +266,32 @@ A    *.holilihu.online    →  <GCP_STATIC_IP>    TTL: 300
 ## Step 7: Verify
 
 ```bash
+# Recommended: run the smoke test script against the deployed host
+API_KEY=your-api-key bash scripts/deploy/smoke-test.sh https://holilihu.online
+
+# Manual spot checks if needed:
+
 # 1. Health check
 curl https://holilihu.online/api/v1/health/live
-# Expected: {"status": "ok"}
 
-# 2. API docs
+# 2. Embed entry point
+curl -I https://holilihu.online/embed/
+
+# 3. API docs
 # Open in browser: https://holilihu.online/docs
 
-# 3. Test chat endpoint
+# 4. Test chat endpoint
 curl -X POST https://holilihu.online/api/v1/chat \
   -H "X-API-Key: your-api-key" \
   -H "X-User-ID: test-user" \
   -H "X-Session-ID: test-session" \
   -H "Content-Type: application/json" \
-  -d '{"message": "Xin chào!"}'
+  -d '{"user_id": "test-user", "message": "Xin chào!", "role": "student", "session_id": "test-session"}'
 
-# 4. Facebook webhook verification
+# 5. Facebook webhook verification
 # Facebook Developer Dashboard → Messenger → Test Callback
 
-# 5. Zalo webhook verification
+# 6. Zalo webhook verification
 # Zalo OA Admin → Webhook → Test Connection
 ```
 

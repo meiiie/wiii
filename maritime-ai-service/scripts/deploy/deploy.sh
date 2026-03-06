@@ -10,7 +10,7 @@
 #
 # What this does:
 #   1. Pulls latest code from git
-#   2. Builds Docker images
+#   2. Pulls production images by tag
 #   3. Starts databases, waits for health
 #   4. Runs Alembic migrations
 #   5. Starts App, waits for health
@@ -67,6 +67,16 @@ if [ ! -f "$SERVICE_DIR/.env.production" ]; then
     exit 1
 fi
 
+if ! grep -q "^WIII_APP_IMAGE=" "$SERVICE_DIR/.env.production"; then
+    error "Missing WIII_APP_IMAGE in .env.production"
+    exit 1
+fi
+
+if ! grep -q "^WIII_NGINX_IMAGE=" "$SERVICE_DIR/.env.production"; then
+    error "Missing WIII_NGINX_IMAGE in .env.production"
+    exit 1
+fi
+
 # Check for CHANGE_ME placeholder values
 if grep -q "CHANGE_ME" "$SERVICE_DIR/.env.production"; then
     warn "Found CHANGE_ME placeholders in .env.production!"
@@ -89,11 +99,11 @@ cd "$APP_DIR"
 git pull origin main
 
 # ─────────────────────────────────────────────────
-# Step 2: Build Docker images
+# Step 2: Pull Docker images
 # ─────────────────────────────────────────────────
-info "Step 2/7: Building Docker images..."
+info "Step 2/7: Pulling Docker images..."
 cd "$SERVICE_DIR"
-docker compose -f "$COMPOSE_FILE" build app
+docker compose -f "$COMPOSE_FILE" pull app nginx
 
 # ─────────────────────────────────────────────────
 # Step 3: Start database services first
@@ -164,6 +174,12 @@ if curl -sf "http://localhost:8000/api/v1/health/live" > /dev/null 2>&1; then
     info "Health check passed! (localhost:8000)"
 else
     warn "Direct health check failed — app may still be starting"
+fi
+
+if curl -sf "http://localhost:${NGINX_HTTP_PORT:-8080}/embed/" > /dev/null 2>&1; then
+    info "Embed health check passed! (/embed/)"
+else
+    warn "Embed health check failed — check nginx logs if this was an embed-related deploy"
 fi
 
 # ─────────────────────────────────────────────────

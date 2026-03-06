@@ -45,3 +45,37 @@ jobs:
           name: desktop-coverage
           path: wiii-desktop/coverage/
           retention-days: 7
+
+  build-embed:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: wiii-desktop/package-lock.json
+
+      - name: Install dependencies
+        working-directory: wiii-desktop
+        run: npm ci
+
+      - name: Build embed bundle
+        working-directory: wiii-desktop
+        run: npm run build:embed
+
+      - name: Validate embed output
+        shell: bash
+        run: |
+          test -f wiii-desktop/dist-embed/embed.html
+          test -f wiii-desktop/dist-embed/index.html
+
+      - name: Upload embed artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-embed-dist
+          path: wiii-desktop/dist-embed/
+          retention-days: 7
