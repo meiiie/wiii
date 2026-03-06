@@ -282,15 +282,23 @@ class PromptLoader:
             "memory_agent": "agents/memory.yaml",
             "direct_agent": "agents/direct.yaml",  # Sprint 100
         }
+
+        from app.core.config import settings as app_settings
+        detailed_startup_logs = app_settings.environment != "development"
         
         # Log prompts directory for debugging deployment issues
-        logger.info("PromptLoader: Looking for YAML files in %s", self._prompts_dir)
-        logger.info("PromptLoader: Directory exists: %s", self._prompts_dir.exists())
+        if detailed_startup_logs:
+            logger.debug("PromptLoader: Looking for YAML files in %s", self._prompts_dir)
+            logger.debug("PromptLoader: Directory exists: %s", self._prompts_dir.exists())
         
         if self._prompts_dir.exists():
             try:
                 files_in_dir = list(self._prompts_dir.glob("**/*.yaml"))
-                logger.info("PromptLoader: Found YAML files: %s", [str(f.relative_to(self._prompts_dir)) for f in files_in_dir])
+                if detailed_startup_logs:
+                    logger.debug(
+                        "PromptLoader: Found YAML files: %s",
+                        [str(f.relative_to(self._prompts_dir)) for f in files_in_dir],
+                    )
             except Exception as e:
                 logger.warning("PromptLoader: Could not list directory: %s", e)
         
@@ -306,7 +314,12 @@ class PromptLoader:
                 try:
                     with open(filepath, "r", encoding="utf-8") as f:
                         self._personas[role] = yaml.safe_load(f)
-                    logger.info("[OK] Loaded persona for role '%s' from %s", role, filename)
+                    if detailed_startup_logs:
+                        logger.debug(
+                            "Loaded persona for role '%s' from %s",
+                            role,
+                            filename,
+                        )
                     loaded_count += 1
                 except Exception as e:
                     logger.error("[FAIL] Failed to load %s: %s", filename, e)
@@ -328,7 +341,12 @@ class PromptLoader:
                         agent_config = self._merge_with_base(agent_config, shared_config)
                     
                     self._personas[agent_id] = agent_config
-                    logger.info("[OK] Loaded agent persona '%s' from %s", agent_id, filename)
+                    if detailed_startup_logs:
+                        logger.debug(
+                            "Loaded agent persona '%s' from %s",
+                            agent_id,
+                            filename,
+                        )
                     loaded_count += 1
                 except Exception as e:
                     logger.error("[FAIL] Failed to load %s: %s", filename, e)
@@ -371,11 +389,12 @@ class PromptLoader:
                                 self._personas[lr] = domain_config
 
                         loaded_count += 1
-                        logger.info("  Domain overlay loaded: %s", yaml_file.name)
+                        if detailed_startup_logs:
+                            logger.info("  Domain overlay loaded: %s", yaml_file.name)
                     except Exception as e:
                         logger.warning("  Failed to load domain overlay %s: %s", yaml_file, e)
 
-        logger.info("PromptLoader: Loaded %d persona files", loaded_count)
+        logger.info("PromptLoader loaded %d persona files", loaded_count)
     
     def _load_identity(self) -> Dict[str, Any]:
         """Load Wiii character identity (single source of truth).

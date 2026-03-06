@@ -94,6 +94,11 @@ class PeerConnection:
         hostname = (urlparse(self.config.peer_url).hostname or "").lower()
         return hostname in {"localhost", "127.0.0.1", "host.docker.internal"}
 
+    def _warn_or_info(self, message: str, *args: object) -> None:
+        """Keep expected local-dev peer failures informative without warning noise."""
+        log_method = logger.info if self._should_soften_connect_warning() else logger.warning
+        log_method(message, *args)
+
     async def connect(self, schedule_reconnect: bool = True) -> bool:
         """Establish WebSocket connection to peer.
 
@@ -288,7 +293,11 @@ class PeerConnection:
                 # Check for dead peer (3 missed pongs)
                 elapsed = time.monotonic() - self._last_pong
                 if elapsed > interval * 3:
-                    logger.warning("[SOUL_BRIDGE] Peer '%s' appears dead (no pong for %.0fs)", self.peer_id, elapsed)
+                    self._warn_or_info(
+                        "[SOUL_BRIDGE] Peer '%s' appears dead (no pong for %.0fs)",
+                        self.peer_id,
+                        elapsed,
+                    )
                     self._state = ConnectionState.RECONNECTING
                     self._ensure_reconnect_loop()
                     break
@@ -303,7 +312,8 @@ class PeerConnection:
             delay = min(2 ** self._reconnect_count * self.config.reconnect_interval, max_delay)
             self._reconnect_count += 1
 
-            logger.info(
+            log_method = logger.debug if self._should_soften_connect_warning() else logger.info
+            log_method(
                 "[SOUL_BRIDGE] Reconnecting to '%s' in %ds (attempt %d/%d)",
                 self.peer_id, delay, self._reconnect_count, max_attempts,
             )
@@ -328,5 +338,8 @@ class PeerConnection:
                 return
 
         if self._reconnect_count >= max_attempts:
-            logger.warning("[SOUL_BRIDGE] Max reconnect attempts reached for '%s'", self.peer_id)
+            self._warn_or_info(
+                "[SOUL_BRIDGE] Max reconnect attempts reached for '%s'",
+                self.peer_id,
+            )
             self._state = ConnectionState.DISCONNECTED
