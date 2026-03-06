@@ -1,66 +1,25 @@
-# 📐 Architecture Documentation
+# Architecture Documentation
 
-**Version:** 3.0 (SOTA 2025 - Dec 2025)  
-**Status:** Production Ready after Phase 2.4a Optimizations
+This folder contains the primary architecture references for the backend service.
 
-This folder contains detailed architecture documentation for Wiii Service.
+## Reading Order
 
----
+| Document | Role | Notes |
+|----------|------|-------|
+| [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) | **Start here** | Most complete and current architecture overview, subsystem map, and deployment context |
+| [SYSTEM_FLOW.md](SYSTEM_FLOW.md) | Request and streaming flow | Detailed lifecycle diagrams for chat, middleware, orchestration, and SSE |
+| [FOLDER_MAP.md](FOLDER_MAP.md) | Codebase map | Useful when locating implementation areas in the backend |
+| [contextual-rag.md](contextual-rag.md) | Strategy note | Retrieval and context-enrichment design detail |
+| [tool-registry.md](tool-registry.md) | Pattern note | Tool registration and dispatch conventions |
 
-## 📋 Contents
+## Recommended Usage
 
-| Document | Description | Last Updated |
-|----------|-------------|--------------|
-| [SYSTEM_FLOW.md](SYSTEM_FLOW.md) | **⭐ START HERE** - Complete system flow with Mermaid diagrams | 2025-12-20 |
-| [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) | High-level architecture & component deep dive | 2025-12-14 |
-| [FOLDER_MAP.md](FOLDER_MAP.md) | Complete folder structure mapping | 2025-12-14 |
-| [contextual-rag.md](contextual-rag.md) | Anthropic-style Context Enrichment | 2025-12-10 |
-| [tool-registry.md](tool-registry.md) | Tool Registry Pattern | 2025-12-10 |
+- Start with [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) for the current system shape.
+- Use [SYSTEM_FLOW.md](SYSTEM_FLOW.md) when you need sequence-level request or streaming behavior.
+- Use [FOLDER_MAP.md](FOLDER_MAP.md) when translating the docs into implementation files.
 
----
+## Related Docs
 
-## 🚀 Quick Start
-
-**For Developers:** Start with [SYSTEM_FLOW.md](SYSTEM_FLOW.md) - Contains 6 interactive Mermaid diagrams:
-
-1. **High-Level Architecture** - System layers overview
-2. **Request Processing Flow** - Complete request lifecycle
-3. **Corrective RAG Pipeline** - SOTA 2025 with Phase 2.4a optimizations
-4. **Multi-Agent Graph** - LangGraph state machine
-5. **Memory Flow** - Personalization & pronoun handling
-6. **Tiered Grading** - Early exit optimization
-
----
-
-## 🏗️ Architecture Highlights
-
-### Core Patterns
-- **Multi-Agent System** - LangGraph Supervisor with specialized agents
-- **Corrective RAG** - Self-correction with confidence-based iteration
-- **Tiered Grading** - Early exit saves 19s (Phase 2.4a)
-- **Semantic Cache** - 2hr TTL, 0.1ms lookup
-
-### Performance (Dec 2025)
-| Metric | Cold Path | Warm Cache |
-|--------|-----------|------------|
-| RAG Query | 85-90s | 45s |
-| Simple Chat | 4-5s | 4-5s |
-| Memory Query | 6-8s | 6-8s |
-
----
-
-## 🔗 Quick Links
-
-- [Main README](../../README.md)
-- [CHANGELOG](../../CHANGELOG.md)
-- [API Documentation](../api/)
-
----
-
-## 📁 Related Folders
-
-| Folder | Purpose |
-|--------|---------|
-| `app/engine/` | Core AI logic (UnifiedAgent, CRAG, Multi-Agent) |
-| `app/services/` | Business logic orchestration |
-| `app/prompts/` | YAML prompt configurations |
+- [../../README.md](../../README.md): repository overview
+- [../integration/WIII_LMS_INTEGRATION.md](../integration/WIII_LMS_INTEGRATION.md): LMS architecture and contract
+- [../../scripts/deploy/README.md](../../scripts/deploy/README.md): deployment runbook

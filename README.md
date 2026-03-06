@@ -1,48 +1,37 @@
 # Wiii
 
-Wiii is a monorepo for an AI platform that combines a FastAPI backend, a Tauri desktop client, retrieval and memory pipelines, multi-tenant organization support, LMS integrations, and an embed application served at `/embed/`.
+Wiii is a monorepo for an AI platform that combines a FastAPI backend, a Tauri desktop client, iframe/embed delivery, multi-agent orchestration, retrieval and memory pipelines, LMS integrations, and multi-tenant organization support.
 
-This repository is structured for active product engineering rather than as a minimal example. This README focuses on the things engineers usually need first: repository shape, local startup, current deployment model, and where to find subsystem documentation.
+This repository is optimized for ongoing product engineering, not as a minimal sample. Start here for the repository shape, the current deployment model, the main architecture documents, and the fastest local entry points.
 
-## Repository Overview
+## Monorepo Layout
 
-- `maritime-ai-service/`: backend services, APIs, orchestration, integrations, data access, deployment
-- `wiii-desktop/`: Tauri desktop app, frontend code, embed app, frontend scripts
-- `docs/`: committed plans, design notes, and documentation assets
+- `maritime-ai-service/`: FastAPI backend, orchestration, integrations, data access, deployment assets, tests
+- `wiii-desktop/`: Tauri desktop app, React frontend, embed app, frontend scripts, desktop-local docs
+- `docs/`: repository-level documentation, plans, diagrams, screenshots, and doc indexes
 - `Documents/`: supporting reference material and vendor research
-- `tools/`: one-off utilities, fixtures, and local helpers kept out of the root
+- `tools/`: utilities, fixtures, and one-off helpers
 - `.claude/`: agent workflows, reports, and internal project knowledge
 
-## Core Areas
+## Architecture At A Glance
 
-- FastAPI service layer with organization-aware middleware and integrations
-- Multi-agent orchestration, retrieval, memory, and tool execution flows
-- Tauri desktop client built with React, TypeScript, Zustand, and Vite
-- LMS and webhook integration paths
-- Embed application for iframe-based host integrations
-- Production deployment via Docker Compose, Nginx, and host-level TLS termination
+Primary runtime flow:
 
-## Project Layout
+1. Client request enters the backend through REST, SSE, WebSocket, or LMS/embed integration.
+2. Middleware applies request correlation, organization context, auth, and rate limiting.
+3. `ChatOrchestrator` resolves session state, domain context, and request normalization.
+4. The LangGraph-based multi-agent pipeline routes work to RAG, tutor, memory, direct-response, or search/tooling paths.
+5. Retrieval, tools, LMS data, semantic memory, and optional browser or MCP integrations contribute context.
+6. The response is synthesized back to JSON or SSE V3 events for the desktop app and embed clients.
 
-```text
-.
-├── maritime-ai-service/
-│   ├── app/
-│   ├── docs/
-│   ├── scripts/
-│   └── tests/
-├── wiii-desktop/
-│   ├── src/
-│   ├── src-tauri/
-│   ├── docs/
-│   ├── scripts/
-│   └── dist-embed/
-├── docs/
-│   ├── plans/
-│   └── assets/
-├── Documents/
-└── tools/
-```
+Core subsystems:
+
+- FastAPI API layer with organization-aware middleware and auth
+- LangGraph multi-agent orchestration with RAG, tutor, memory, and direct-response paths
+- Retrieval stack built on PostgreSQL, pgvector, sparse search, and optional Neo4j graph context
+- LMS bridge with HMAC token exchange, webhook ingestion, and dashboard/data pull tools
+- Tauri desktop client with Zustand state, SSE V3 streaming, full-page admin surfaces, and embed mode
+- Production delivery via immutable app and nginx images published to GHCR
 
 ## Quick Start
 
@@ -54,7 +43,7 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
-docker compose up -d postgres neo4j minio
+docker compose up -d postgres neo4j minio valkey
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
@@ -74,16 +63,25 @@ cd wiii-desktop
 npx tauri dev
 ```
 
-## Build and Test
+### Embed Bundle For Local Verification
 
-### Backend tests
+```bash
+cd wiii-desktop
+npm run build:embed
+```
+
+`wiii-desktop/dist-embed/` is now generated, gitignored output. It remains useful for local verification, but it is no longer part of the production deployment contract.
+
+## Build And Test
+
+### Backend
 
 ```bash
 cd maritime-ai-service
 set PYTHONIOENCODING=utf-8 && pytest tests/unit/ -p no:capture --tb=short -q
 ```
 
-### Desktop tests
+### Desktop
 
 ```bash
 cd wiii-desktop
@@ -91,47 +89,50 @@ npx vitest run
 npx tsc --noEmit
 ```
 
-### Embed bundle
+## Deployment Model
 
-```bash
-cd wiii-desktop
-npm run build:embed
-```
+Production now uses CI-built immutable images for both the backend app and nginx layer.
 
-## Deployment Status
+Current deployment flow:
 
-Production deployment no longer needs `wiii-desktop/dist-embed/` to exist in the checked-out server repository.
+1. Push to `main` triggers `.github/workflows/build-production-images.yml`.
+2. CI builds `wiii-desktop/dist-embed/` as a build artifact.
+3. CI builds and publishes:
+   - `ghcr.io/meiiie/lms-ai-app:*`
+   - `ghcr.io/meiiie/lms-ai-nginx:*`
+4. The app image serves embed assets from `/app-embed`.
+5. The nginx image serves embed assets from `/usr/share/nginx/embed`.
+6. Production deploy pulls tagged images instead of rebuilding frontend assets on the host.
 
-The current production path uses CI-built immutable images that already contain embed assets.
+Operational consequence:
 
-The remaining operational step is to validate the image-based path on a staging or production-like host and then commit the already-prepared `dist-embed` untracking change as the new baseline.
+- production no longer depends on `wiii-desktop/dist-embed/` being committed or present in the server checkout
+- rollback is image-tag based rather than “rebuild on host” based
+- `/embed/` verification belongs in post-deploy smoke testing
 
-Design document:
+Design note:
 
 - `docs/plans/2026-03-06-dist-embed-deploy-redesign.md`
 
 ## Documentation Map
 
-- Backend setup and service details: `maritime-ai-service/README.md`
-- Desktop architecture and local conventions: `wiii-desktop/README.md`
-- Repository docs conventions: `docs/README.md`
-- Production deployment runbook: `maritime-ai-service/scripts/deploy/README.md`
-- Plans and implementation notes: `docs/plans/`
+Repository-level entry points:
+
+- `docs/README.md`: documentation layout and top-level doc map
+- `maritime-ai-service/docs/architecture/SYSTEM_ARCHITECTURE.md`: authoritative architecture overview and component deep dive
+- `maritime-ai-service/docs/architecture/SYSTEM_FLOW.md`: detailed technical request and streaming flow
+- `maritime-ai-service/docs/integration/WIII_LMS_INTEGRATION.md`: LMS contract and integration architecture
+- `maritime-ai-service/scripts/deploy/README.md`: production deployment runbook
+- `maritime-ai-service/README.md`: backend technical entry point
+- `wiii-desktop/README.md`: desktop technical entry point
 
 ## Repository Conventions
 
-- Keep durable documentation in `docs/`, not at the repository root.
-- Keep screenshots and other documentation assets in `docs/assets/`.
-- Keep temporary screenshots in `docs/assets/screenshots/tmp/`.
-- Keep supporting reference material in `Documents/`.
-- Keep one-off utilities in `tools/` or project-local `scripts/` folders.
+- Keep durable, shared documentation in `docs/`, not at the repository root.
+- Keep screenshots and documentation assets under `docs/assets/`.
+- Keep desktop-only docs under `wiii-desktop/docs/`.
+- Keep generated build outputs out of git unless they are intentional release artifacts.
 - Do not hand-edit hashed files inside build output directories.
-
-## Current Cleanup Assessment
-
-The repository root is substantially cleaner than before, but the working tree is not globally clean.
-
-There are still many active changes across backend, desktop, deployment, and generated assets. In practice that means the structure is cleaner, but this repository is not yet at a clean `git status` baseline. Further cleanup should stay separate from unrelated feature work.
 
 ## License
 

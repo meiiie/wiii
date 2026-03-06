@@ -199,7 +199,7 @@ That remains useful for local verification, but it is no longer a production dep
 
 The old model expected a checked-in embed bundle because both the app and nginx containers mounted it directly.
 
-That is no longer required in production. The remaining cleanup step is to commit the already-prepared git untracking change for `wiii-desktop/dist-embed/` once the team is satisfied with staging or production stability.
+That is no longer required in production. `wiii-desktop/dist-embed/` has already been removed from git tracking and is now treated as generated local output.
 
 Current target state:
 
@@ -207,6 +207,12 @@ Current target state:
 - production images include the embed assets directly
 - deploy pulls immutable images instead of depending on a local frontend working tree
 - rollback uses image tags or digests, not rebuilt assets on the server
+
+Validation completed so far:
+
+- the `Build Production Images` GitHub Actions workflow runs on push to `main`
+- GHCR `main` tags resolve for both app and nginx images
+- local production-like deployment validation passed, including `/embed/` smoke checks
 
 Design note:
 

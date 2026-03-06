@@ -2,7 +2,7 @@
 
 ## Summary
 
-This document describes how to remove `wiii-desktop/dist-embed/` from version control without breaking the current `/embed/` runtime.
+This document describes the redesign used to remove `wiii-desktop/dist-embed/` from version control without breaking the `/embed/` runtime.
 
 The recommended direction is:
 
@@ -20,16 +20,19 @@ Implemented in this repository revision:
 - production image workflow now builds `dist-embed/` in CI and publishes the app and nginx images from that prebuilt artifact
 - production deploy no longer requires `wiii-desktop/dist-embed/` in the checked-out server repository
 - production deploy now pulls images by tag instead of building them on the host
+- `wiii-desktop/dist-embed/` has been removed from git tracking and added to `.gitignore`
+- local production-like validation passed, including `/embed/` and chat smoke tests
+- GitHub Actions image publish succeeded for commit `fcca634`
+- GHCR `main` tags resolve for both production images
 
 Still intentionally deferred:
 
-- committing the prepared removal of `wiii-desktop/dist-embed/` from git tracking after environment validation
-- switching every local workflow away from the checked-in artifact
-- proving rollback and smoke-test behavior in a real staging or production-like environment
+- proving rollback and smoke-test behavior on a real staging or production host
+- switching every local workflow away from local `dist-embed` generation where that still adds value for developer verification
 
 ## Current State
 
-Today the system depends on `wiii-desktop/dist-embed/` being present in the repository checkout.
+Production no longer depends on `wiii-desktop/dist-embed/` being present in the repository checkout.
 
 Current consumers:
 
@@ -38,7 +41,9 @@ Current consumers:
 - production images copy a CI-built `dist-embed/` bundle into `/app-embed` and `/usr/share/nginx/embed`.
 - `maritime-ai-service/nginx/nginx.conf` and template serve `/embed` from the image-contained directory in production.
 
-This gives predictable local behavior, but it has four problems:
+Local development still keeps a generated `dist-embed/` flow because it gives predictable developer behavior without affecting production packaging.
+
+The old tracked-artifact model had four main problems:
 
 1. Deployments depend on a mutable working tree artifact.
 2. Git history gets noisy because every rebuild rotates hashed asset names.
@@ -229,6 +234,8 @@ After migration:
 - remove tracked copies from git
 - update README and deploy docs
 
+Status: complete in repository history as of commit `fcca634`.
+
 ## Validation Checklist
 
 - CI can build the embed bundle from a clean checkout.
@@ -244,6 +251,14 @@ After migration:
 3. Update compose and deploy logic.
 4. Verify `/embed/` smoke tests in staging or a disposable VM.
 5. Untrack `dist-embed/`.
+
+Completed execution in this repository:
+
+1. CI embed build and image publish workflow added.
+2. App and nginx production images now package embed assets directly.
+3. Deploy logic and smoke tests were updated.
+4. `dist-embed/` was untracked and gitignored.
+5. Push to `main` produced a successful image-publish workflow run.
 
 ## Short Decision
 
