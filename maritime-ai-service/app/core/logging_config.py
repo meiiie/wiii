@@ -66,3 +66,12 @@ def setup_logging(*, json_output: bool = False, log_level: str = "INFO") -> None
     # Silence noisy third-party loggers
     for noisy in ("httpcore", "httpx", "urllib3", "asyncio"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+
+    # Local dev: keep MCP dependency chatter out of startup logs.
+    if not json_output:
+        for noisy in (
+            "fastapi_mcp.server",
+            "mcp.server.lowlevel.server",
+            "mcp.server.lowlevel.experimental",
+        ):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
