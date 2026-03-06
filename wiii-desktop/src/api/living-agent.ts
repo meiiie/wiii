@@ -8,7 +8,6 @@ import type {
   LivingAgentEmotionalState,
   LivingAgentJournalEntry,
   LivingAgentSkill,
-  LivingAgentHeartbeat,
   HeartbeatTriggerResult,
   LivingAgentGoal,
   LivingAgentReflection,
@@ -52,12 +51,6 @@ export async function getSkills(params?: {
   return client.get<LivingAgentSkill[]>(
     `${PREFIX}/skills${qs ? `?${qs}` : ""}`
   );
-}
-
-/** Get heartbeat scheduler info */
-export async function getHeartbeatInfo(): Promise<LivingAgentHeartbeat> {
-  const client = getClient();
-  return client.get<LivingAgentHeartbeat>(`${PREFIX}/heartbeat`);
 }
 
 /** Manually trigger a heartbeat cycle */

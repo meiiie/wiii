@@ -40,7 +40,7 @@ export function Sidebar() {
     unpinConversation,
   } = useChatStore();
   const { sidebarOpen, activeView, openSettings, openAdminPanel, openOrgManagerPanel, openSoulBridge, navigateToChat } = useUIStore();
-  const { isSystemAdmin, isOrgAdmin, adminContext } = useOrgStore();
+  const { isSystemAdmin, isOrgAdmin } = useOrgStore();
   const { activeDomainId } = useDomainStore();
   const { activeOrgId } = useOrgStore();
   const { addToast } = useToastStore();

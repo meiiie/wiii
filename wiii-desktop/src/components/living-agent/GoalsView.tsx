@@ -89,11 +89,11 @@ function GoalCard({ goal }: { goal: LivingAgentGoal }) {
       {/* Milestones */}
       {goal.milestones.length > 0 && (
         <div className="space-y-0.5">
-          {goal.milestones.map((milestone, i) => {
+          {goal.milestones.map((milestone) => {
             const done = goal.completed_milestones.includes(milestone);
             return (
               <div
-                key={i}
+                key={milestone}
                 className="flex items-center gap-1.5 text-[10px]"
               >
                 <div

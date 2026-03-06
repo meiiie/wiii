@@ -20,8 +20,7 @@ import type {
 // ResizeObserver polyfill — PreviewGroup uses it for scroll state tracking
 if (typeof globalThis.ResizeObserver === "undefined") {
   (globalThis as any).ResizeObserver = class ResizeObserver {
-    private cb: ResizeObserverCallback;
-    constructor(cb: ResizeObserverCallback) { this.cb = cb; }
+    constructor(_cb: ResizeObserverCallback) {}
     observe() {}
     unobserve() {}
     disconnect() {}

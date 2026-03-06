@@ -4,7 +4,7 @@
  * Tests for the magic link email login flow added to LoginScreen.
  * Covers: module import, email validation, WebSocket URL construction.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 
 describe("Sprint 224: Magic Link Frontend", () => {
   it("LoginScreen module can be imported", async () => {

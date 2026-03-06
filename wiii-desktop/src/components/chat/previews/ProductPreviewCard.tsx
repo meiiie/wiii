@@ -104,8 +104,12 @@ export function ProductPreviewCard({ item, onClick }: Props) {
   const rating = item.metadata?.rating as number | undefined;
   const seller = item.metadata?.seller as string | undefined;
   const platform = item.metadata?.platform as string | undefined;
-  const soldCount = item.metadata?.sold_count;
+  const soldCountRaw = item.metadata?.sold_count;
   const delivery = item.metadata?.delivery as string | undefined;
+  const soldCount =
+    typeof soldCountRaw === "string" || typeof soldCountRaw === "number"
+      ? soldCountRaw
+      : null;
 
   const displayPrice = formatVND(extractedPrice) || formatVND(price);
   const platformLabel = platform ? PLATFORM_LABELS[platform] || platform : undefined;
@@ -158,7 +162,7 @@ export function ProductPreviewCard({ item, onClick }: Props) {
               Đã bán {soldCount}
             </span>
           )}
-          {seller && !soldCount && (
+          {seller && soldCount == null && (
             <span className="text-[11px] text-[var(--text-tertiary,#999)] truncate max-w-[120px]">
               {seller}
             </span>

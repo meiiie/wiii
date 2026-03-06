@@ -67,9 +67,9 @@ describe("page-context-store (Sprint 221)", () => {
     usePageContextStore.getState().setAvailableActions([{ action: "navigate", label: "Tiếp" }]);
     const req = usePageContextStore.getState().getPageContextForRequest();
     expect(req).not.toBeNull();
-    expect(req!.page_context.page_type).toBe("lesson");
-    expect(req!.student_state.scroll_percent).toBe(50);
-    expect(req!.available_actions).toHaveLength(1);
+    expect(req?.page_context.page_type).toBe("lesson");
+    expect(req?.student_state?.scroll_percent).toBe(50);
+    expect(req?.available_actions).toHaveLength(1);
   });
 
   it("getPageContextForRequest() returns null when no context", () => {
@@ -133,6 +133,9 @@ describe("useSSEStream page context merge (Sprint 221)", () => {
 
     const pageData = usePageContextStore.getState().getPageContextForRequest();
     expect(pageData).not.toBeNull();
+    if (!pageData) {
+      throw new Error("Expected page context data");
+    }
 
     // Simulate what useSSEStream does
     const userContext = {
@@ -140,7 +143,7 @@ describe("useSSEStream page context merge (Sprint 221)", () => {
       role: "student",
       ...pageData,
     };
-    expect(userContext.page_context.page_type).toBe("lesson");
-    expect(userContext.student_state.time_on_page_ms).toBe(60000);
+    expect(userContext.page_context?.page_type).toBe("lesson");
+    expect(userContext.student_state?.time_on_page_ms).toBe(60000);
   });
 });

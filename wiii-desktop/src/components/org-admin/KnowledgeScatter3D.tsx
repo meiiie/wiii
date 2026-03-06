@@ -5,6 +5,7 @@
  * Lazy-loaded to avoid bundle bloat.
  */
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import type { ComponentType } from "react";
 import { Loader2, AlertCircle } from "lucide-react";
 import { getKnowledgeScatter } from "@/api/admin";
 import type { ScatterResponse, ScatterDocument, ScatterPoint } from "@/api/types";
@@ -17,7 +18,7 @@ const Plot = lazy(async () => {
   ]);
   const Plotly = plotlyMod.default || plotlyMod;
   const createPlotlyComponent = factoryMod.default || factoryMod;
-  const PlotComponent = createPlotlyComponent(Plotly);
+  const PlotComponent = createPlotlyComponent(Plotly) as ComponentType<any>;
   return { default: PlotComponent };
 });
 

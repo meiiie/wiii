@@ -28,7 +28,6 @@ export function LoginScreen() {
   // Sprint 224: Magic link email login state
   const [emailValue, setEmailValue] = useState("");
   const [emailState, setEmailState] = useState<"idle" | "waiting">("idle");
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -167,7 +166,6 @@ export function LoginScreen() {
         throw new Error(data?.detail || "Không thể gửi magic link");
       }
       const data = await res.json();
-      setSessionId(data.session_id);
       setEmailState("waiting");
       setResendCooldown(45);
 
@@ -368,7 +366,6 @@ export function LoginScreen() {
               <button
                 onClick={() => {
                   setEmailState("idle");
-                  setSessionId(null);
                   setError(null);
                   if (wsRef.current) {
                     wsRef.current.close();
