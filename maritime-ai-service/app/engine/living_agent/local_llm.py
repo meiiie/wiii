@@ -53,6 +53,7 @@ class LocalLLMClient:
         self._base_url = (base_url or settings.ollama_base_url or _DEFAULT_BASE_URL).rstrip("/")
         self._timeout = timeout
         self._available: Optional[bool] = None
+        self._unavailable_logged = False
 
     @property
     def model(self) -> str:
@@ -98,6 +99,17 @@ class LocalLLMClient:
         Returns:
             Generated text, or empty string if unavailable.
         """
+        if self._available is not True:
+            available = await self.is_available()
+            if not available:
+                if not self._unavailable_logged:
+                    logger.info(
+                        "[LOCAL_LLM] Ollama unavailable at %s; skipping local model requests",
+                        self._base_url,
+                    )
+                    self._unavailable_logged = True
+                return ""
+
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
@@ -225,15 +237,20 @@ class LocalLLMClient:
                 )
                 resp.raise_for_status()
                 data = resp.json()
+                self._available = True
+                self._unavailable_logged = False
                 return data.get("message", {}).get("content", "")
 
         except httpx.TimeoutException:
+            self._available = False
             logger.warning("[LOCAL_LLM] Request timed out (%.0fs)", self._timeout)
             return ""
         except httpx.HTTPStatusError as e:
+            self._available = False
             logger.warning("[LOCAL_LLM] HTTP error: %s", e.response.status_code)
             return ""
         except Exception as e:
+            self._available = False
             logger.warning("[LOCAL_LLM] Request failed: %s", e)
             return ""
 

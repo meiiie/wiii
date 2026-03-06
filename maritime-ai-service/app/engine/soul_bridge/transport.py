@@ -21,8 +21,10 @@ import asyncio
 import json
 import logging
 import time
+from urllib.parse import urlparse
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
+from app.core.config import settings
 from app.engine.soul_bridge.models import (
     BridgeConfig,
     ConnectionState,
@@ -76,7 +78,23 @@ class PeerConnection:
         """Register a handler for incoming messages."""
         self._handlers.append(handler)
 
-    async def connect(self) -> bool:
+    def _ensure_reconnect_loop(self) -> None:
+        """Start a single reconnect loop if one is not already running."""
+        if self._shutdown_event.is_set():
+            return
+        if self._reconnect_task and not self._reconnect_task.done():
+            return
+        self._reconnect_task = asyncio.create_task(self._reconnect_loop())
+
+    def _should_soften_connect_warning(self) -> bool:
+        """Reduce noise for expected local-dev peer failures."""
+        if settings.environment != "development":
+            return False
+
+        hostname = (urlparse(self.config.peer_url).hostname or "").lower()
+        return hostname in {"localhost", "127.0.0.1", "host.docker.internal"}
+
+    async def connect(self, schedule_reconnect: bool = True) -> bool:
         """Establish WebSocket connection to peer.
 
         Returns:
@@ -119,11 +137,14 @@ class PeerConnection:
             self._state = ConnectionState.DISCONNECTED
             return False
         except Exception as e:
-            logger.warning("[SOUL_BRIDGE] Connect to peer '%s' failed: %s", self.peer_id, e)
+            if schedule_reconnect:
+                log_method = logger.info if self._should_soften_connect_warning() else logger.warning
+                log_method("[SOUL_BRIDGE] Connect to peer '%s' failed: %s", self.peer_id, e)
+            else:
+                logger.debug("[SOUL_BRIDGE] Reconnect to peer '%s' failed: %s", self.peer_id, e)
             self._state = ConnectionState.DISCONNECTED
-            # Start reconnect loop
-            if not self._shutdown_event.is_set():
-                self._reconnect_task = asyncio.create_task(self._reconnect_loop())
+            if schedule_reconnect:
+                self._ensure_reconnect_loop()
             return False
 
     async def disconnect(self) -> None:
@@ -246,7 +267,7 @@ class PeerConnection:
         # Connection lost — trigger reconnect
         if not self._shutdown_event.is_set():
             self._state = ConnectionState.RECONNECTING
-            self._reconnect_task = asyncio.create_task(self._reconnect_loop())
+            self._ensure_reconnect_loop()
 
     async def _heartbeat_loop(self) -> None:
         """Background task: periodic ping to detect dead peers."""
@@ -269,6 +290,7 @@ class PeerConnection:
                 if elapsed > interval * 3:
                     logger.warning("[SOUL_BRIDGE] Peer '%s' appears dead (no pong for %.0fs)", self.peer_id, elapsed)
                     self._state = ConnectionState.RECONNECTING
+                    self._ensure_reconnect_loop()
                     break
 
     async def _reconnect_loop(self) -> None:
@@ -301,7 +323,7 @@ class PeerConnection:
                 self._ws = None
 
             # Attempt reconnect
-            connected = await self.connect()
+            connected = await self.connect(schedule_reconnect=False)
             if connected:
                 return
 

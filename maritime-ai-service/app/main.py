@@ -79,6 +79,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         neo4j_repo = Neo4jKnowledgeRepository()
         if neo4j_repo.is_available():
             logger.info("[OK] Neo4j connection: Available")
+        elif not settings.enable_neo4j and settings.environment == "development":
+            logger.info("[SKIP] Neo4j connection: Disabled in local development")
         else:
             logger.warning("[WARN] Neo4j connection: Unavailable (service will continue)")
     except Exception as e:

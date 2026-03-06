@@ -59,10 +59,16 @@ async def get_checkpointer():
         return _checkpointer
 
     except ImportError:
-        logger.warning(
-            "langgraph-checkpoint-postgres not installed — "
-            "graph will run without persistence"
-        )
+        if settings.environment == "development":
+            logger.info(
+                "langgraph-checkpoint-postgres not installed in local development — "
+                "graph will run without persistence"
+            )
+        else:
+            logger.warning(
+                "langgraph-checkpoint-postgres not installed — "
+                "graph will run without persistence"
+            )
         _initialized = True
         _checkpointer = None
         return None

@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Union
 from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, inspect, select
 
 from app.core.config import settings
 from app.models.database import ChatMessageModel, ChatSessionModel
@@ -94,7 +94,10 @@ class ChatHistoryRepository:
         """Initialize database connection using SHARED engine."""
         try:
             # Use SHARED engine to minimize connections
-            from app.core.database import get_shared_engine, get_shared_session_factory
+            from app.core.database import (
+                get_shared_engine,
+                get_shared_session_factory,
+            )
             
             self._engine = get_shared_engine()
             self._session_factory = get_shared_session_factory()
@@ -102,17 +105,19 @@ class ChatHistoryRepository:
             # Test connection and check schema
             with self._session_factory() as session:
                 session.execute(select(1))
-                
-                # Check if new schema exists (CHỈ THỊ SỐ 04)
-                try:
-                    from sqlalchemy import text
-                    session.execute(text("SELECT 1 FROM chat_history LIMIT 1"))
-                    self._use_new_schema = True
-                    logger.info("Using CHỈ THỊ SỐ 04 schema (chat_history table)")
-                except Exception as e:
-                    logger.debug("New schema check failed: %s", e)
-                    self._use_new_schema = False
-                    logger.info("Using legacy schema (chat_sessions + chat_messages)")
+
+                # Avoid noisy SQL errors on legacy DBs while probing schema.
+                self._use_new_schema = inspect(self._engine).has_table(
+                    "chat_history"
+                )
+                if self._use_new_schema:
+                    logger.info(
+                        "Using CHỈ THỊ SỐ 04 schema (chat_history table)"
+                    )
+                else:
+                    logger.info(
+                        "Using legacy schema (chat_sessions + chat_messages)"
+                    )
             
             self._available = True
             logger.info("Chat history repository using SHARED database engine")
