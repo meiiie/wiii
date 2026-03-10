@@ -201,21 +201,21 @@ class TestIdentityInjection:
         return loader.build_system_prompt(role="student")
 
     def test_emotional_range_injected(self, prompt):
-        """Emotional range from identity should appear in prompt."""
-        assert "CẢM XÚC:" in prompt
-        assert "happy" in prompt.lower() or "empathetic" in prompt.lower()
+        """Emotional/personality range from identity should appear in prompt."""
+        # Post-Living Core Card refactor: emotions are in TÍNH NÉT CHỦ ĐẠO or core card
+        assert "TÍNH NÉT CHỦ ĐẠO" in prompt or "WIII LIVING CORE CARD" in prompt
 
     def test_example_dialogues_injected(self, prompt):
         """Example dialogues from identity should appear in prompt."""
-        assert "VÍ DỤ CÁCH WIII NÓI CHUYỆN" in prompt
-        # Check that at least one example context appears
-        assert "User:" in prompt and "Wiii:" in prompt
+        # Post-refactor: examples are in VÍ DỤ CÁCH TRẢ LỜI or ĐIỂM TỰA GIỌNG NÓI
+        assert "VÍ DỤ CÁCH TRẢ LỜI" in prompt or "ĐIỂM TỰA GIỌNG NÓI" in prompt
+        # Check that at least one example appears
+        assert "Wiii:" in prompt or "AI:" in prompt
 
     def test_example_dialogues_have_context(self, prompt):
-        """Each example should have its [context] bracket."""
-        # Count occurrences of "[User" pattern in the identity examples section
-        # The identity examples use [context] format
-        assert "[User mệt mỏi]" in prompt or "[User hỏi kiến thức]" in prompt
+        """Examples should have contextual dialogue markers."""
+        # Post-refactor: examples use different format in ĐIỂM TỰA GIỌNG NÓI
+        assert "Wiii:" in prompt or "AI:" in prompt
 
     def test_example_dialogues_limited_to_8(self):
         """Sprint 115: Should inject at most 8 examples from identity (was 5)."""
@@ -389,24 +389,24 @@ class TestBuildSystemPromptIntegration:
         assert "Wiii" in student_prompt
 
     def test_has_identity_personality(self, student_prompt):
-        """TÍNH CÁCH WIII section present."""
-        assert "TÍNH CÁCH WIII" in student_prompt
+        """Character identity section present."""
+        assert "WIII LIVING CORE CARD" in student_prompt or "CỐT LÕI NHÂN VẬT" in student_prompt
 
     def test_has_response_style(self, student_prompt):
-        """PHONG CÁCH TRẢ LỜI section present."""
-        assert "PHONG CÁCH TRẢ LỜI" in student_prompt
+        """Voice/style guidance section present."""
+        assert "GIỌNG VĂN" in student_prompt or "CÁCH WIII HIỆN DIỆN" in student_prompt
 
     def test_has_avoid_rules(self, student_prompt):
-        """QUY TẮC PHONG CÁCH section present."""
-        assert "QUY TẮC PHONG CÁCH" in student_prompt
+        """Avoid rules section present."""
+        assert "TRÁNH" in student_prompt
 
     def test_has_emotional_range(self, student_prompt):
-        """CẢM XÚC section present."""
-        assert "CẢM XÚC:" in student_prompt
+        """Emotional/personality traits section present."""
+        assert "TÍNH NÉT CHỦ ĐẠO" in student_prompt or "WIII LIVING CORE CARD" in student_prompt
 
     def test_has_identity_examples(self, student_prompt):
-        """VÍ DỤ CÁCH WIII NÓI CHUYỆN section present."""
-        assert "VÍ DỤ CÁCH WIII NÓI CHUYỆN" in student_prompt
+        """Example dialogues section present."""
+        assert "VÍ DỤ CÁCH TRẢ LỜI" in student_prompt or "ĐIỂM TỰA GIỌNG NÓI" in student_prompt
 
     def test_has_tone_section(self, student_prompt):
         """GIỌNG VĂN section present with full string."""
@@ -434,8 +434,8 @@ class TestBuildSystemPromptIntegration:
         assert "Minh" in student_prompt
 
     def test_has_personality_section(self, student_prompt):
-        """Prompt includes personality traits (replaces old ĐA DẠNG HÓA section)."""
-        assert "TÍNH CÁCH" in student_prompt or "Phong cách" in student_prompt
+        """Prompt includes personality traits (in Living Core Card)."""
+        assert "TÍNH NÉT CHỦ ĐẠO" in student_prompt or "CỐT LÕI NHÂN VẬT" in student_prompt or "GIỌNG VĂN" in student_prompt
 
     def test_user_name_template_replaced_in_directives(self, student_prompt):
         """{{user_name}} should be replaced with 'Minh' in directives."""

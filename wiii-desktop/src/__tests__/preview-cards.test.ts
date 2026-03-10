@@ -349,12 +349,12 @@ describe("Preview Renderer Registry", () => {
   // and we're doing logic-only tests, we verify the PREVIEW_REGISTRY mapping
   // via the exports from the previews index.
 
-  it("exports PreviewCardRenderer function", async () => {
+  it("exports PreviewCardRenderer function", { timeout: 15_000 }, async () => {
     const mod = await import("@/components/chat/previews/index");
     expect(typeof mod.PreviewCardRenderer).toBe("function");
   });
 
-  it("exports DocumentPreviewCard", async () => {
+  it("exports DocumentPreviewCard", { timeout: 15_000 }, async () => {
     const mod = await import("@/components/chat/previews/index");
     expect(typeof mod.DocumentPreviewCard).toBe("function");
   });

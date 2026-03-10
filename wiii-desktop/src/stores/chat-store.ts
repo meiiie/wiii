@@ -204,10 +204,9 @@ function closeLastThinkingBlockDraft(blocks: ContentBlock[]): void {
 }
 
 function extractSuggestedQuestions(metadata?: ChatResponseMetadata): string[] | undefined {
-  const metaAny = metadata as unknown as Record<string, unknown> | undefined;
   const rawSQ =
-    metaAny?.suggested_questions
-    ?? (metaAny?.data as Record<string, unknown> | undefined)?.suggested_questions;
+    metadata?.suggested_questions
+    ?? (metadata?.data as Record<string, unknown> | undefined)?.suggested_questions;
   return Array.isArray(rawSQ) ? rawSQ as string[] : undefined;
 }
 
@@ -229,9 +228,8 @@ function buildDegradedAssistantContent(state: Pick<
 }
 
 function mergeStreamMetadataIntoMessage(message: Message, metadata: ChatResponseMetadata): void {
-  const metaAny = metadata as unknown as Record<string, unknown> | undefined;
   message.reasoning_trace = metadata.reasoning_trace;
-  message.metadata = metaAny;
+  message.metadata = metadata;
   message.suggested_questions = extractSuggestedQuestions(metadata);
 }
 
@@ -1055,8 +1053,7 @@ export const useChatStore = create<ChatState>()(
           conv.session_id = metadata.session_id;
         }
 
-        const metaAny = metadata as unknown as Record<string, unknown>;
-        const backendThreadId = typeof metaAny?.thread_id === "string" ? metaAny.thread_id : undefined;
+        const backendThreadId = typeof metadata?.thread_id === "string" ? metadata.thread_id : undefined;
         if (backendThreadId && !conv.thread_id) {
           conv.thread_id = backendThreadId;
         }
@@ -1086,7 +1083,6 @@ export const useChatStore = create<ChatState>()(
       if (!isStreaming || !activeConversationId) return;
 
       const effectiveMetadata = metadata ?? pendingStreamMetadata ?? undefined;
-      const metaAny = effectiveMetadata as unknown as Record<string, unknown> | undefined;
       const suggestedQuestions = extractSuggestedQuestions(effectiveMetadata);
 
       // Close any remaining open thinking blocks (immutable copy for message)
@@ -1119,12 +1115,12 @@ export const useChatStore = create<ChatState>()(
         domain_notice: streamingDomainNotice || undefined,
         previews: streamingPreviews.length > 0 ? [...streamingPreviews] : undefined,
         artifacts: streamingArtifacts.length > 0 ? [...streamingArtifacts] : undefined,
-        metadata: metaAny,
+        metadata: effectiveMetadata,
       };
 
       const backendSessionId = effectiveMetadata?.session_id;
       // Sprint 225: Save thread_id for cross-platform sync
-      const backendThreadId = (metaAny?.thread_id as string) || undefined;
+      const backendThreadId = typeof effectiveMetadata?.thread_id === "string" ? effectiveMetadata.thread_id : undefined;
 
       set((state) => {
         resetStreamingDraft(state);

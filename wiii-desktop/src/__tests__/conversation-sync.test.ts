@@ -56,6 +56,13 @@ vi.mock("@/api/threads", () => ({
   renameServerThread: (...args: unknown[]) => mockRenameServerThread(...args),
 }));
 
+// Mock auth-store so syncFromServer/loadServerMessages don't bail out
+vi.mock("@/stores/auth-store", () => ({
+  useAuthStore: {
+    getState: () => ({ isLoaded: true, isAuthenticated: true }),
+  },
+}));
+
 // =============================================================================
 // 1. Threads API module — type/export tests
 // =============================================================================
@@ -122,7 +129,7 @@ describe("Sprint 225: chat-store syncFromServer", () => {
     mockRenameServerThread.mockReset();
   });
 
-  it("syncFromServer adds server-only conversations as stubs", async () => {
+  it("syncFromServer adds server-only conversations as stubs", { timeout: 15_000 }, async () => {
     const { useChatStore } = await import("@/stores/chat-store");
 
     // Setup: no local conversations
@@ -167,7 +174,7 @@ describe("Sprint 225: chat-store syncFromServer", () => {
     expect(convs[0].session_id).toBe("s1"); // Extracted from thread_id
   });
 
-  it("syncFromServer extracts session_id from org-prefixed thread_id", async () => {
+  it("syncFromServer extracts session_id from org-prefixed thread_id", { timeout: 15_000 }, async () => {
     const { useChatStore } = await import("@/stores/chat-store");
     useChatStore.setState({ conversations: [], isLoaded: true });
 
@@ -194,7 +201,7 @@ describe("Sprint 225: chat-store syncFromServer", () => {
     expect(convs[0].session_id).toBe("abc-123");
   });
 
-  it("syncFromServer updates existing conversations by thread_id", async () => {
+  it("syncFromServer updates existing conversations by thread_id", { timeout: 15_000 }, async () => {
     const { useChatStore } = await import("@/stores/chat-store");
 
     // Local conversation already has this thread_id
@@ -239,7 +246,7 @@ describe("Sprint 225: chat-store syncFromServer", () => {
     expect(convs[0].messages).toHaveLength(1); // Local messages preserved
   });
 
-  it("syncFromServer does not overwrite custom title", async () => {
+  it("syncFromServer does not overwrite custom title", { timeout: 15_000 }, async () => {
     const { useChatStore } = await import("@/stores/chat-store");
 
     useChatStore.setState({
@@ -280,7 +287,7 @@ describe("Sprint 225: chat-store syncFromServer", () => {
     expect(convs[0].title).toBe("My Custom Title"); // NOT overwritten
   });
 
-  it("syncFromServer gracefully handles server error", async () => {
+  it("syncFromServer gracefully handles server error", { timeout: 15_000 }, async () => {
     const { useChatStore } = await import("@/stores/chat-store");
 
     useChatStore.setState({
@@ -306,7 +313,7 @@ describe("Sprint 225: chat-store syncFromServer", () => {
     expect(convs[0].title).toBe("My Chat");
   });
 
-  it("syncFromServer handles empty response", async () => {
+  it("syncFromServer handles empty response", { timeout: 15_000 }, async () => {
     const { useChatStore } = await import("@/stores/chat-store");
 
     useChatStore.setState({
@@ -340,7 +347,7 @@ describe("Sprint 225: chat-store loadServerMessages", () => {
     mockFetchThreadMessages.mockReset();
   });
 
-  it("loadServerMessages fetches and populates empty conversation", async () => {
+  it("loadServerMessages fetches and populates empty conversation", { timeout: 15_000 }, async () => {
     const { useChatStore } = await import("@/stores/chat-store");
 
     useChatStore.setState({

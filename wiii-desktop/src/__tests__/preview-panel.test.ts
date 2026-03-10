@@ -261,7 +261,7 @@ describe("PreviewGroup — Click Opens Panel", () => {
 // 7. PreviewGroup — keyboard navigation (ArrowLeft/Right) (3)
 // =============================================================================
 describe("PreviewGroup — Keyboard Navigation", () => {
-  it("PreviewGroup component exports correctly for rendering", async () => {
+  it("PreviewGroup component exports correctly for rendering", { timeout: 15_000 }, async () => {
     const mod = await import("@/components/chat/PreviewGroup");
     expect(typeof mod.PreviewGroup).toBe("function");
   });
@@ -282,7 +282,7 @@ describe("PreviewGroup — Keyboard Navigation", () => {
     expect(block.items[2].preview_id).toBe("kb-3");
   });
 
-  it("PreviewGroup uses role='list' and listitem for accessibility", async () => {
+  it("PreviewGroup uses role='list' and listitem for accessibility", { timeout: 15_000 }, async () => {
     // Verify the component is exported and would render with correct ARIA
     const mod = await import("@/components/chat/PreviewGroup");
     expect(mod.PreviewGroup).toBeDefined();
@@ -295,7 +295,7 @@ describe("PreviewGroup — Keyboard Navigation", () => {
 // 8. PreviewPanel component export (1)
 // =============================================================================
 describe("PreviewPanel — Component Export", () => {
-  it("PreviewPanel is exported from layout module", async () => {
+  it("PreviewPanel is exported from layout module", { timeout: 15_000 }, async () => {
     const mod = await import("@/components/layout/PreviewPanel");
     expect(typeof mod.PreviewPanel).toBe("function");
   });

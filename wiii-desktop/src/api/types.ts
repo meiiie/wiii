@@ -79,6 +79,10 @@ export interface ChatResponseMetadata {
   confidence_score?: number;
   document_ids_used?: string[];
   query_type?: string;
+  suggested_questions?: string[];
+  data?: Record<string, unknown>;
+  /** Allow runtime-extended fields from server */
+  [key: string]: unknown;
 }
 
 export interface ChatResponseData {

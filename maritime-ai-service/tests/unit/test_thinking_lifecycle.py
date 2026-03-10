@@ -49,7 +49,10 @@ from unittest.mock import AsyncMock as _AsyncMock
 if not _had_graph:
     _mock_graph = types.ModuleType(_graph_key)
     _mock_graph.get_multi_agent_graph_async = _AsyncMock()
-    _mock_graph._build_domain_config = MagicMock()
+    _mock_graph._build_domain_config = MagicMock(return_value={})
+    _mock_graph._build_turn_local_state_defaults = MagicMock(return_value={})
+    _mock_graph.open_multi_agent_graph = _AsyncMock()
+    _mock_graph._inject_host_context = MagicMock(return_value=None)
     _mock_graph._TRACERS = {}
     _mock_graph._cleanup_tracer = MagicMock()
     sys.modules[_graph_key] = _mock_graph
@@ -194,6 +197,41 @@ def _make_mock_graph(node_updates):
     return mock_graph
 
 
+class _MockGraphCM:
+    """Async context manager that returns a mock graph."""
+    def __init__(self, graph):
+        self._graph = graph
+
+    async def __aenter__(self):
+        return self._graph
+
+    async def __aexit__(self, *args):
+        pass
+
+
+def _make_narrator_result(node: str):
+    """Create a mock ReasoningRenderResult with predictable labels per node."""
+    labels = {
+        "supervisor": "Phân tích câu hỏi",
+        "rag_agent": "Tra cứu tri thức",
+        "tutor_agent": "Soạn bài giảng",
+        "memory_agent": "Truy xuất bộ nhớ",
+        "direct": "Suy nghĩ câu trả lời",
+        "grader": "Kiểm tra chất lượng",
+        "synthesizer": "Tổng hợp câu trả lời",
+        "product_search_agent": "Tìm kiếm sản phẩm",
+        "code_studio_agent": "Code Studio",
+    }
+    result = MagicMock()
+    result.label = labels.get(node, node)
+    result.summary = f"Mock summary for {node}"
+    result.action_text = ""
+    result.delta_chunks = [f"Thinking about {node}..."]
+    result.phase = "route"
+    result.style_tags = []
+    return result
+
+
 async def _collect_events(node_updates):
     """Helper to collect all stream events from a graph run."""
     mock_graph = _make_mock_graph(node_updates)
@@ -201,12 +239,26 @@ async def _collect_events(node_updates):
     mock_registry.start_request_trace.return_value = "trace-1"
     mock_registry.end_request_trace.return_value = {"span_count": 0}
 
-    with patch("app.engine.multi_agent.graph_streaming.get_multi_agent_graph_async",
-               return_value=mock_graph), \
+    # Mock reasoning narrator to return predictable labels
+    mock_narrator = MagicMock()
+
+    async def _mock_render(req):
+        return _make_narrator_result(req.node)
+
+    mock_narrator.render = _mock_render
+
+    with patch("app.engine.multi_agent.graph_streaming.open_multi_agent_graph",
+               new=lambda: _MockGraphCM(mock_graph)), \
          patch("app.engine.multi_agent.graph_streaming.get_agent_registry",
                return_value=mock_registry), \
          patch("app.engine.multi_agent.graph_streaming._build_domain_config",
                return_value={}), \
+         patch("app.engine.multi_agent.graph_streaming._build_turn_local_state_defaults",
+               return_value={}), \
+         patch("app.engine.multi_agent.graph._inject_host_context",
+               return_value=None), \
+         patch("app.engine.multi_agent.graph_streaming.get_reasoning_narrator",
+               return_value=mock_narrator), \
          patch("app.engine.multi_agent.graph_streaming.settings"):
 
         events = []
@@ -379,8 +431,8 @@ class TestGraphStreamingLifecycle:
         assert tutor_starts[0].content == "Soạn bài giảng"
 
     @pytest.mark.asyncio
-    async def test_tutor_agent_no_thinking_no_lifecycle(self):
-        """Tutor agent should NOT emit thinking lifecycle when no thinking content."""
+    async def test_tutor_agent_no_thinking_still_emits_lifecycle(self):
+        """Tutor agent emits thinking lifecycle even without thinking content (narrative layer)."""
         events = await _collect_events([
             {"supervisor": {"next_agent": "tutor_agent"}},
             {"tutor_agent": {}},
@@ -391,8 +443,9 @@ class TestGraphStreamingLifecycle:
                         if e.type == "thinking_start" and e.node == "tutor_agent"]
         tutor_ends = [e for e in events
                       if e.type == "thinking_end" and e.node == "tutor_agent"]
-        assert len(tutor_starts) == 0
-        assert len(tutor_ends) == 0
+        # Post-narrative-reasoning: tutor always emits thinking lifecycle
+        assert len(tutor_starts) == 1
+        assert len(tutor_ends) == 1
 
     @pytest.mark.asyncio
     async def test_rag_tool_calls_outside_thinking_block(self):

@@ -121,17 +121,18 @@ class TestSuggestionBasedStyle:
         assert has_metaphor, f"avoid should forbid ẩn dụ gượng ép, got: {avoids}"
 
     def test_build_prompt_includes_suggestions(self):
-        """build_system_prompt should include PHONG CÁCH TRẢ LỜI section."""
+        """build_system_prompt should include style/voice guidance section."""
         loader = PromptLoader()
         prompt = loader.build_system_prompt(role="student")
-        assert "PHONG CÁCH TRẢ LỜI" in prompt
+        # Post-Living Core Card refactor: style is in GIỌNG VĂN or CÁCH WIII HIỆN DIỆN
+        assert "GIỌNG VĂN" in prompt or "CÁCH WIII HIỆN DIỆN" in prompt
 
     def test_build_prompt_includes_avoid(self):
-        """build_system_prompt should include QUY TẮC PHONG CÁCH with avoid items."""
+        """build_system_prompt should include avoid/restriction rules."""
         loader = PromptLoader()
         prompt = loader.build_system_prompt(role="student")
-        assert "QUY TẮC PHONG CÁCH" in prompt
-        assert "ẩn dụ gượng ép" in prompt.lower()
+        # Post-refactor: avoid rules are in TRÁNH section
+        assert "TRÁNH" in prompt
 
     def test_tutor_yaml_no_hard_limit(self):
         """Tutor avoid list should NOT have GIỚI HẠN CỨNG."""

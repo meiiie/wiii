@@ -258,7 +258,7 @@ function MessageActions({
     try {
       await navigator.clipboard.writeText(message.content);
       setCopied(true);
-      addToast("success", "Da sao chep tin nhan!");
+      addToast("success", "Đã sao chép tin nhắn!");
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Ignore clipboard failures in insecure contexts.

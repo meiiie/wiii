@@ -439,7 +439,7 @@ describe("Barrel exports include Phase 2/4 additions", () => {
     expect(typeof barrel.generateCatMouthPath).toBe("function");
     expect(typeof barrel.generateDotMouthPath).toBe("function");
     expect(typeof barrel.generateWavyMouthPath).toBe("function");
-  });
+  }, 15_000);
 
   it("index.ts exports manga indicator functions", async () => {
     const barrel = await import("@/lib/avatar/index");

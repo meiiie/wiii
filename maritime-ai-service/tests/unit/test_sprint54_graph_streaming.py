@@ -56,7 +56,10 @@ if not _had_cs:
 if not _had_graph:
     _mock_graph = types.ModuleType(_graph_key)
     _mock_graph.get_multi_agent_graph_async = AsyncMock()
-    _mock_graph._build_domain_config = MagicMock()
+    _mock_graph._build_domain_config = MagicMock(return_value={})
+    _mock_graph._build_turn_local_state_defaults = MagicMock(return_value={})
+    _mock_graph.open_multi_agent_graph = AsyncMock()
+    _mock_graph._inject_host_context = MagicMock(return_value=None)
     _mock_graph._TRACERS = {}
     _mock_graph._cleanup_tracer = MagicMock()
     sys.modules[_graph_key] = _mock_graph
@@ -286,15 +289,58 @@ class TestProcessWithMultiAgentStreaming:
 
     def _get_patches(self, mock_graph):
         """Return common patches for streaming tests."""
+
+        class _MockGraphCM:
+            async def __aenter__(self_cm):
+                return mock_graph
+            async def __aexit__(self_cm, *args):
+                pass
+
+        # Mock reasoning narrator for deterministic labels
+        _labels = {
+            "supervisor": "Phân tích câu hỏi",
+            "rag_agent": "Tra cứu tri thức",
+            "tutor_agent": "Soạn bài giảng",
+            "memory_agent": "Truy xuất bộ nhớ",
+            "direct": "Suy nghĩ câu trả lời",
+            "grader": "Kiểm tra chất lượng",
+            "synthesizer": "Tổng hợp câu trả lời",
+        }
+        mock_narrator = MagicMock()
+
+        async def _mock_render(req):
+            result = MagicMock()
+            result.label = _labels.get(req.node, req.node)
+            result.summary = f"Mock summary for {req.node}"
+            result.action_text = ""
+            result.delta_chunks = [f"Thinking..."]
+            result.phase = "route"
+            result.style_tags = []
+            return result
+
+        mock_narrator.render = _mock_render
+
         return {
             "graph": patch(
-                "app.engine.multi_agent.graph_streaming.get_multi_agent_graph_async",
-                new_callable=AsyncMock, return_value=mock_graph
+                "app.engine.multi_agent.graph_streaming.open_multi_agent_graph",
+                new=lambda: _MockGraphCM(),
             ),
             "registry": patch("app.engine.multi_agent.graph_streaming.get_agent_registry"),
             "domain_config": patch(
                 "app.engine.multi_agent.graph_streaming._build_domain_config",
                 return_value={}
+            ),
+            "turn_defaults": patch(
+                "app.engine.multi_agent.graph_streaming._build_turn_local_state_defaults",
+                return_value={}
+            ),
+            "host_context": patch(
+                "app.engine.multi_agent.graph._inject_host_context",
+                return_value=None
+            ),
+            "narrator": patch(
+                "app.engine.multi_agent.graph_streaming.get_reasoning_narrator",
+                return_value=mock_narrator
             ),
             "settings": patch("app.engine.multi_agent.graph_streaming.settings"),
         }
@@ -320,7 +366,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q?", "u1", "s1"):
@@ -350,7 +398,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1"):
@@ -368,7 +418,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Hi", "u1"):
@@ -388,7 +440,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1"):
@@ -408,7 +462,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1"):
@@ -426,7 +482,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1"):
@@ -447,7 +505,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1"):
@@ -470,7 +530,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1"):
@@ -480,16 +542,26 @@ class TestProcessWithMultiAgentStreaming:
 
     @pytest.mark.asyncio
     async def test_error_in_graph_init_propagates(self):
-        """Exception before try block propagates as raw exception."""
-        with patch("app.engine.multi_agent.graph_streaming.get_multi_agent_graph_async",
-                    new_callable=AsyncMock, side_effect=Exception("Graph init error")):
+        """Exception in open_multi_agent_graph yields error event."""
+
+        def _exploding_open():
+            raise Exception("Graph init error")
+
+        with patch("app.engine.multi_agent.graph_streaming.open_multi_agent_graph",
+                    new=_exploding_open):
             with patch("app.engine.multi_agent.graph_streaming.get_agent_registry") as mock_reg:
                 self._setup_registry(mock_reg)
-                with patch("app.engine.multi_agent.graph_streaming.settings") as mock_settings:
+                with patch("app.engine.multi_agent.graph_streaming._build_turn_local_state_defaults",
+                           return_value={}), \
+                     patch("app.engine.multi_agent.graph._inject_host_context",
+                           return_value=None), \
+                     patch("app.engine.multi_agent.graph_streaming.get_reasoning_narrator"), \
+                     patch("app.engine.multi_agent.graph_streaming.settings") as mock_settings:
                     self._setup_settings(mock_settings)
-                    with pytest.raises(Exception, match="Graph init error"):
-                        async for event in process_with_multi_agent_streaming("Q", "u1"):
-                            pass
+                    events = []
+                    async for event in process_with_multi_agent_streaming("Q", "u1"):
+                        events.append(event)
+                    assert any(e.type == "error" for e in events)
 
     @pytest.mark.asyncio
     async def test_error_in_graph_stream_yields_error(self):
@@ -504,7 +576,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1", "s1"):
@@ -522,7 +596,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1"):
@@ -543,7 +619,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1"):
@@ -563,7 +641,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1"):
@@ -581,7 +661,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1", ""):
@@ -604,7 +686,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1"):
@@ -628,7 +712,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1"):
@@ -646,7 +732,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1"):
@@ -665,7 +753,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "", "session-only"):
@@ -684,7 +774,9 @@ class TestProcessWithMultiAgentStreaming:
 
         events = []
         with patches["graph"], patches["registry"] as mock_reg, \
-             patches["domain_config"], patches["settings"] as mock_settings:
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
             self._setup_registry(mock_reg)
             self._setup_settings(mock_settings)
             async for event in process_with_multi_agent_streaming("Q", "u1"):

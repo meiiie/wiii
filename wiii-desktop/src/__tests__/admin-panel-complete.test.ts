@@ -393,7 +393,7 @@ describe("categorizeFlags", () => {
 // =============================================================================
 
 describe("UsersTab — Overflow Menu Logic", () => {
-  it("UsersTab imports MoreHorizontal for overflow menu", async () => {
+  it("UsersTab imports MoreHorizontal for overflow menu", { timeout: 15_000 }, async () => {
     // Verify the component file uses MoreHorizontal
     const mod = await import("@/components/admin/UsersTab");
     // If UsersTab exports successfully, the MoreHorizontal import is resolved

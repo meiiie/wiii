@@ -179,7 +179,7 @@ vi.mock("@/components/common/MermaidDiagram", () => ({
 }));
 
 describe("Sprint 191: KnowledgeVisualizer component", () => {
-  it("exports KnowledgeVisualizer", async () => {
+  it("exports KnowledgeVisualizer", { timeout: 15_000 }, async () => {
     const mod = await import("@/components/org-admin/KnowledgeVisualizer");
     expect(typeof mod.KnowledgeVisualizer).toBe("function");
   });

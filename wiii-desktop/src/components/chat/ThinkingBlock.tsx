@@ -244,7 +244,7 @@ export function ThinkingBlock({
   const hasContent = !!(content || (toolCalls && toolCalls.length > 0));
   const isComplete = !isStreaming;
   const phaseHeader = getPhaseHeader(phase);
-  const defaultTitle = isStreaming ? "Dang suy luan" : "Qua trinh xu ly";
+  const defaultTitle = isStreaming ? "Tự Vấn" : "Tự Vấn";
   const summaryText = summary?.trim() || "";
   const titleSeed = customLabel?.trim() || "";
   const contentForDisplay = content

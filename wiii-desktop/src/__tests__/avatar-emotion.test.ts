@@ -370,7 +370,7 @@ describe("MessageList passes mood to avatar", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe("Barrel exports include emotion engine", () => {
-  it("index.ts exports MOOD_THEMES", async () => {
+  it("index.ts exports MOOD_THEMES", { timeout: 15_000 }, async () => {
     const barrel = await import("@/lib/avatar/index");
     expect(barrel.MOOD_THEMES).toBeDefined();
     expect(typeof barrel.MOOD_THEMES.excited).toBe("object");

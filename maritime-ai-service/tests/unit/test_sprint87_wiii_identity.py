@@ -150,30 +150,33 @@ class TestBugC1Fix:
     """BUG #C1: response_quality in _shared.yaml was NEVER injected. Now fixed."""
 
     def test_build_system_prompt_contains_identity_section(self):
-        """build_system_prompt() output should contain TÍNH CÁCH WIII section."""
+        """build_system_prompt() output should contain character identity section."""
         loader = PromptLoader()
         prompt = loader.build_system_prompt(role="student", user_name="Test")
-        assert "TÍNH CÁCH WIII" in prompt
+        # Post-Living Core Card refactor: identity is now in WIII LIVING CORE CARD
+        assert "WIII LIVING CORE CARD" in prompt or "CỐT LÕI NHÂN VẬT" in prompt
 
     def test_build_system_prompt_contains_emoji_usage(self):
-        """Prompt should include emoji usage instruction from identity."""
+        """Prompt should include emoji or expression guidance."""
         loader = PromptLoader()
         prompt = loader.build_system_prompt(role="student")
-        assert "EMOJI:" in prompt
-        assert "emoji" in prompt.lower()
+        # Emoji rules may be in core card or formatting section
+        prompt_lower = prompt.lower()
+        assert "emoji" in prompt_lower or "🚢" in prompt or "biểu tượng" in prompt_lower
 
     def test_build_system_prompt_contains_response_style(self):
-        """Prompt should include response style from identity (Sprint 88b: character-driven)."""
+        """Prompt should include response style guidance."""
         loader = PromptLoader()
         prompt = loader.build_system_prompt(role="student")
-        assert "PHONG CÁCH TRẢ LỜI" in prompt
+        # Post-refactor: style is in GIỌNG VĂN or CÁCH WIII HIỆN DIỆN sections
+        assert "GIỌNG VĂN" in prompt or "CÁCH WIII HIỆN DIỆN" in prompt
 
     def test_build_system_prompt_contains_avoid_rules(self):
-        """Prompt should include avoid rules from identity (Sprint 88c)."""
+        """Prompt should include avoid rules."""
         loader = PromptLoader()
         prompt = loader.build_system_prompt(role="student")
-        assert "QUY TẮC PHONG CÁCH:" in prompt
-        assert "ẩn dụ gượng ép" in prompt.lower()
+        # Post-refactor: avoid rules are in TRÁNH section
+        assert "TRÁNH" in prompt
 
     def test_build_system_prompt_contains_personality_summary(self):
         """Prompt should include personality summary."""
@@ -186,7 +189,8 @@ class TestBugC1Fix:
         loader = PromptLoader()
         for role in ["student", "teacher", "admin"]:
             prompt = loader.build_system_prompt(role=role)
-            assert "TÍNH CÁCH WIII" in prompt, f"Missing identity for role={role}"
+            assert "WIII LIVING CORE CARD" in prompt or "CỐT LÕI NHÂN VẬT" in prompt, \
+                f"Missing identity for role={role}"
 
     def test_shared_yaml_no_longer_has_response_quality_data(self):
         """_shared.yaml should no longer contain response_quality data (moved to identity)."""

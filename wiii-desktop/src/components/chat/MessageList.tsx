@@ -152,6 +152,10 @@ export function MessageList({
                   isStreaming
                 />
 
+                {streamingContent && !visibleStreamingBlocks.length && (
+                  <span className="inline-block w-1.5 h-3.5 bg-accent-orange animate-pulse rounded-sm ml-0.5" />
+                )}
+
                 {streamingStartTime && (
                   <StreamingTimer startTime={streamingStartTime} />
                 )}
@@ -165,7 +169,7 @@ export function MessageList({
                     onClick={onCancel}
                     className="mt-2 px-3 py-1 rounded-lg border border-border text-xs text-text-secondary hover:bg-surface-tertiary transition-colors"
                   >
-                    Dung Wiii
+                    ■ Dừng Wiii
                   </button>
                 )}
               </div>
