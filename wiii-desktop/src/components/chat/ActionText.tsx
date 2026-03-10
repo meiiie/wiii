@@ -5,25 +5,12 @@
  */
 import { ArrowRight } from "lucide-react";
 import { motion } from "motion/react";
+import { NODE_LABELS } from "@/lib/reasoning-labels";
 
 interface ActionTextProps {
   content: string;
   node?: string;
 }
-
-const NODE_LABELS: Record<string, string> = {
-  supervisor: "Dieu huong",
-  direct: "Truc tiep",
-  rag: "Tra cuu",
-  rag_agent: "Tra cuu",
-  tutor: "Giai thich",
-  tutor_agent: "Giai thich",
-  search: "Doi chieu",
-  product_search_agent: "Doi chieu",
-  synthesizer: "Tong hop",
-  aggregator: "Hop nhat",
-  parallel_dispatch: "Song song",
-};
 
 function normalizeNode(node?: string) {
   return (node || "").toLowerCase().replace(/\s+/g, "_");

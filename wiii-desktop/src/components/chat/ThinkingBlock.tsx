@@ -5,6 +5,7 @@ import type { ToolCallInfo } from "@/api/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 
 import type { ThinkingLevel } from "@/api/types";
+import { TOOL_LABELS, PHASE_LABELS } from "@/lib/reasoning-labels";
 
 interface ThinkingBlockProps {
   content: string;
@@ -19,15 +20,6 @@ interface ThinkingBlockProps {
   continuation?: boolean;
 }
 
-const PHASE_HEADERS: Record<string, string> = {
-  attune: "Bat nhip",
-  clarify: "Lam ro",
-  ground: "Kiem du lieu",
-  verify: "Kiem cheo",
-  counterpoint: "Phan bien",
-  decision: "Chon huong",
-  synthesis: "Chot lai",
-};
 
 const PREVIEW_SKIP_PATTERNS = [
   /^toi can:?$/i,
@@ -147,7 +139,7 @@ function chooseCollapsedPreview(options: {
 }
 
 function getPhaseHeader(phase?: string) {
-  return phase ? PHASE_HEADERS[phase] : undefined;
+  return phase ? PHASE_LABELS[phase] : undefined;
 }
 
 function normalizeForDisplay(value?: string) {
@@ -493,7 +485,7 @@ export function InlineToolCard({
 
   const parsed = hasResult ? parseToolResult(toolCall.name, toolCall.result!) : null;
   const isRichResult = parsed && parsed.title;
-  const toolLabel = _TOOL_LABELS[toolCall.name] || toolCall.name;
+  const toolLabel = TOOL_LABELS[toolCall.name] || toolCall.name;
 
   return (
     <div>
@@ -573,20 +565,6 @@ export function InlineToolCard({
     </div>
   );
 }
-
-const _TOOL_LABELS: Record<string, string> = {
-  tool_knowledge_search: "Tra cuu kien thuc",
-  tool_maritime_search: "Tra cuu hang hai",
-  tool_web_search: "Tim kiem web",
-  tool_search_news: "Tim tin tuc",
-  tool_search_legal: "Tra cuu phap luat",
-  tool_search_maritime: "Tim kiem hang hai",
-  tool_current_datetime: "Thoi gian hien tai",
-  tool_calculator: "May tinh",
-  tool_think: "Suy nghi",
-  tool_save_user_info: "Luu thong tin",
-  tool_get_user_info: "Truy xuat thong tin",
-};
 
 function truncateResult(result: string): string {
   if (result.length <= 300) return result;

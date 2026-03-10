@@ -45,16 +45,6 @@ function Read-Events {
     return $items
 }
 
-function Get-EventSortKey {
-    param([object]$Event)
-
-    try {
-        return [DateTimeOffset]::Parse([string]$Event.ts)
-    } catch {
-        return [DateTimeOffset]::MinValue
-    }
-}
-
 function Get-LatestWaveState {
     param([object[]]$Events)
 
@@ -70,7 +60,7 @@ function Get-LatestWaveState {
 
     $rows = @()
     foreach ($wave in ($byWave.Keys | Sort-Object)) {
-        $latest = $byWave[$wave] | Sort-Object @{ Expression = { Get-EventSortKey $_ } }, @{ Expression = { $_._seq } } | Select-Object -Last 1
+        $latest = $byWave[$wave] | Sort-Object @{ Expression = { $_._seq } } | Select-Object -Last 1
         $rows += [pscustomobject]@{
             Wave = $wave
             Status = [string]$latest.status

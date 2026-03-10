@@ -10,24 +10,11 @@ import {
   Wrench,
 } from "lucide-react";
 import type { ToolExecutionBlockData } from "@/api/types";
+import { TOOL_LABELS } from "@/lib/reasoning-labels";
 
 interface ToolExecutionStripProps {
   block: ToolExecutionBlockData;
 }
-
-const TOOL_LABELS: Record<string, string> = {
-  tool_knowledge_search: "Tra cuu kien thuc",
-  tool_maritime_search: "Tra cuu hang hai",
-  tool_web_search: "Tra web",
-  tool_search_news: "Tra tin tuc",
-  tool_search_legal: "Tra phap ly",
-  tool_search_maritime: "Tra web hang hai",
-  tool_browser_snapshot_url: "Mo trang va chup nhanh",
-  tool_execute_python: "Chay Python",
-  tool_generate_html_file: "Tao HTML",
-  tool_generate_excel_file: "Tao Excel",
-  tool_generate_word_document: "Tao Word",
-};
 
 const ABSOLUTE_PATH_PATTERN = /(?:[A-Za-z]:)?(?:[\\/][^\\/\s"'`]+)+/g;
 const MARKDOWN_FENCE_PATTERN = /```[\s\S]*?```/g;
