@@ -11,6 +11,7 @@ Pattern: Supervisor with specialized worker agents
 """
 
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 import re
 import uuid
@@ -20,12 +21,19 @@ from typing import Dict, Optional, Literal
 from langgraph.graph import StateGraph, END
 
 from app.core.config import settings
+from app.engine.tools.invocation import get_tool_by_name, invoke_tool_with_runtime
+from app.engine.tools.runtime_context import (
+    build_tool_runtime_context,
+    filter_tools_for_role,
+)
 from app.engine.multi_agent.state import AgentState
 from app.engine.multi_agent.supervisor import get_supervisor_agent
 from app.engine.multi_agent.agents.rag_node import get_rag_agent_node
 from app.engine.multi_agent.agents.tutor_node import get_tutor_agent_node
 from app.engine.multi_agent.agents.memory_agent import get_memory_agent_node
 from app.engine.multi_agent.agents.grader_agent import get_grader_agent_node
+from app.engine.reasoning import ReasoningRenderRequest, get_reasoning_narrator
+from app.engine.reasoning.reasoning_narrator import build_tool_context_summary
 
 # Agent Registry integration
 from app.engine.agents import get_agent_registry
@@ -73,6 +81,102 @@ def _cleanup_tracer(trace_id: Optional[str]) -> None:
     """Remove tracer from module-level storage after graph completes."""
     if trace_id and trace_id in _TRACERS:
         del _TRACERS[trace_id]
+
+
+def _build_turn_local_state_defaults(context: Optional[dict] = None) -> dict:
+    """Reset request-local fields that must never bleed across checkpointed turns."""
+    ctx = context or {}
+    return {
+        "rag_output": "",
+        "tutor_output": "",
+        "memory_output": "",
+        "tools_used": [],
+        "reasoning_trace": None,
+        "thinking_content": None,
+        "thinking": None,
+        "_trace_id": None,
+        "guardian_passed": None,
+        "skill_context": None,
+        "capability_context": None,
+        "tool_call_events": [],
+        "_answer_streamed_via_bus": False,
+        "domain_notice": None,
+        "evidence_images": [],
+        "conversation_phase": ctx.get("conversation_phase"),
+        "host_context": ctx.get("host_context"),
+        "subagent_reports": [],
+        "_aggregator_action": None,
+        "_aggregator_reasoning": None,
+        "_reroute_count": 0,
+        "_parallel_targets": [],
+    }
+
+
+def _build_recent_conversation_context(state: AgentState) -> str:
+    """Build a compact conversation context for narrator prompts."""
+    ctx = state.get("context", {}) or {}
+    parts: list[str] = []
+    summary = str(ctx.get("conversation_summary", "") or "").strip()
+    if summary:
+        parts.append(summary)
+
+    lc_messages = ctx.get("langchain_messages", []) or []
+    if lc_messages:
+        recent: list[str] = []
+        for msg in lc_messages[-4:]:
+            role = getattr(msg, "type", "")
+            content = getattr(msg, "content", "")
+            if isinstance(msg, dict):
+                role = msg.get("role", role)
+                content = msg.get("content", content)
+            if not content:
+                continue
+            speaker = "User" if role in ("human", "user") else "Wiii"
+            recent.append(f"{speaker}: {str(content)[:220]}")
+        if recent:
+            parts.append("\n".join(recent))
+
+    return "\n\n".join(part for part in parts if part)
+
+
+async def _render_reasoning(
+    *,
+    state: AgentState,
+    node: str,
+    phase: str,
+    intent: str = "",
+    cue: str = "",
+    next_action: str = "",
+    tool_names: Optional[list[str]] = None,
+    result: object = None,
+    observations: Optional[list[str]] = None,
+    confidence: float = 0.0,
+    visibility_mode: str = "rich",
+    style_tags: Optional[list[str]] = None,
+) -> "ReasoningRenderResult":
+    """Render narrator-driven visible reasoning from semantic state."""
+    ctx = state.get("context", {}) or {}
+    request = ReasoningRenderRequest(
+        node=node,
+        phase=phase,
+        intent=intent or str((state.get("routing_metadata") or {}).get("intent", "")),
+        cue=cue,
+        user_goal=state.get("query", ""),
+        conversation_context=_build_recent_conversation_context(state),
+        memory_context=str(state.get("memory_output") or ""),
+        capability_context=str(state.get("capability_context") or ""),
+        tool_context=build_tool_context_summary(tool_names, result=result),
+        confidence=confidence,
+        next_action=next_action,
+        visibility_mode=visibility_mode,
+        organization_id=state.get("organization_id") or ctx.get("organization_id"),
+        user_id=state.get("user_id", "__global__"),
+        personality_mode=ctx.get("personality_mode"),
+        mood_hint=ctx.get("mood_hint"),
+        observations=[item for item in (observations or []) if item],
+        style_tags=style_tags or [],
+    )
+    return await get_reasoning_narrator().render(request)
 
 
 # =============================================================================
@@ -459,6 +563,38 @@ _LEGAL_INTENT_KEYWORDS: list[str] = [
     "nghi quyet", "quyet dinh so", "van ban quy pham",
 ]
 
+_ANALYSIS_INTENT_KEYWORDS: list[str] = [
+    "python",
+    "code python",
+    "chay python",
+    "chay code",
+    "viet code",
+    "doan code",
+    "sandbox",
+    "ve bieu do",
+    "bieu do",
+    "chart",
+    "plot",
+    "matplotlib",
+    "pandas",
+    "xlsx",
+    "excel bang python",
+]
+
+_CODE_STUDIO_INTENT_KEYWORDS: list[str] = [
+    *_ANALYSIS_INTENT_KEYWORDS,
+    "html",
+    "css",
+    "javascript",
+    "typescript",
+    "react",
+    "landing page",
+    "website",
+    "web app",
+    "microsite",
+    "tao file html",
+]
+
 
 def _needs_news_search(query: str) -> bool:
     """Detect if query needs news search (Sprint 102)."""
@@ -470,6 +606,18 @@ def _needs_legal_search(query: str) -> bool:
     """Detect if query needs legal search (Sprint 102)."""
     normalized = _normalize_for_intent(query)
     return any(kw in normalized for kw in _LEGAL_INTENT_KEYWORDS)
+
+
+def _needs_analysis_tool(query: str) -> bool:
+    """Detect requests that should prefer Python/code execution tooling."""
+    normalized = _normalize_for_intent(query)
+    return any(kw in normalized for kw in _ANALYSIS_INTENT_KEYWORDS)
+
+
+def _needs_code_studio(query: str) -> bool:
+    """Detect requests that belong to the code studio capability lane."""
+    normalized = _normalize_for_intent(query)
+    return any(kw in normalized for kw in _CODE_STUDIO_INTENT_KEYWORDS)
 
 
 # Sprint 175: LMS intent detection keywords
@@ -493,7 +641,11 @@ def _needs_lms_query(query: str) -> bool:
     return any(kw in normalized for kw in _LMS_INTENT_KEYWORDS)
 
 
-def _build_direct_tools_context(settings_obj, domain_name_vi: str) -> str:
+def _build_direct_tools_context(
+    settings_obj,
+    domain_name_vi: str,
+    user_role: str = "student",
+) -> str:
     """Build tools context string for direct node from settings + knowledge limits.
 
     Sprint 100: Extracted from direct_response_node f-string soup.
@@ -557,11 +709,9 @@ def _build_direct_tools_context(settings_obj, domain_name_vi: str) -> str:
         "- tool_search_maritime: Tìm kiếm HÀNG HẢI quốc tế. "
         "Dùng khi hỏi về IMO, quy định quốc tế, shipping news, DNV, Cục Hàng hải."
     )
-    if settings_obj.enable_code_execution:
-        tool_hints.append(
-            "- tool_execute_python: Chạy code Python trong sandbox. "
-            "Dùng khi user yêu cầu tính toán, viết code, hoặc xử lý dữ liệu."
-        )
+    # WAVE-001: code/chart/document/browser tool hints removed from direct.
+    # These capabilities are handled by code_studio_agent.
+    # Direct now focuses on: conversation, web search, knowledge, character, LMS.
 
     parts = []
     parts.append("## CÔNG CỤ CÓ SẴN:\n" + "\n".join(tool_hints))
@@ -617,7 +767,72 @@ def _build_direct_tools_context(settings_obj, domain_name_vi: str) -> str:
     return "\n".join(parts)
 
 
-def _collect_direct_tools(query: str):
+def _build_code_studio_tools_context(
+    settings_obj,
+    user_role: str = "student",
+) -> str:
+    """Build focused tool guidance for the code studio capability.
+
+    WAVE-002: added explicit chart tool priority — execute_python produces real PNG artifacts;
+    Mermaid tools are for diagrams/structures when sandbox is unavailable.
+    """
+    has_execute_python = getattr(settings_obj, "enable_code_execution", False) and user_role == "admin"
+
+    tool_hints = []
+
+    if has_execute_python:
+        tool_hints.append(
+            "- tool_execute_python: Chay Python trong sandbox de tinh toan, phan tich, tao bieu do, va sinh artifact that. "
+            "Khi lam chart/plot/visualization, UU TIEN dung tool nay voi matplotlib/seaborn de luu ra file PNG that. "
+            "Day la cong cu chinh cho moi yeu cau 've bieu do', 'plot', 'chart data'."
+        )
+
+    tool_hints += [
+        "- tool_generate_html_file: Tao file HTML hoan chinh khi user can landing page, microsite, email template, web preview, hoac bat ky artifact HTML nao.",
+        "- tool_generate_excel_file: Tao file Excel (.xlsx) tu du lieu bang khi user can spreadsheet hoac bang tong hop de tai xuong.",
+        "- tool_generate_word_document: Tao file Word (.docx) tu noi dung co cau truc khi user can memo, report, proposal, hoac handout.",
+    ]
+
+    if has_execute_python:
+        tool_hints.append(
+            "- tool_generate_mermaid / tool_generate_chart: Du phong cho bieu do khi sandbox khong kha dung. "
+            "Chi dung khi khong the chay tool_execute_python. Output la Mermaid syntax (SVG), khong phai PNG that."
+        )
+    else:
+        tool_hints.append(
+            "- tool_generate_mermaid / tool_generate_chart: Tao so do, bieu do cau truc (flowchart, sequence, pie chart) "
+            "bang Mermaid syntax. FE se render thanh SVG."
+        )
+
+    if (
+        user_role == "admin"
+        and getattr(settings_obj, "enable_browser_agent", False)
+        and getattr(settings_obj, "enable_privileged_sandbox", False)
+        and getattr(settings_obj, "sandbox_provider", "") == "opensandbox"
+        and getattr(settings_obj, "sandbox_allow_browser_workloads", False)
+    ):
+        tool_hints.append(
+            "- tool_browser_snapshot_url: Mo trang web trong browser sandbox de xem render that, chup snapshot, va xac minh artifact front-end.",
+        )
+
+    priority_rules = [
+        "## NGUYEN TAC UU TIEN:",
+        "- Uu tien tao output THAT (file, PNG, HTML, artifact) thay vi chi mo ta bang loi.",
+        "- Voi yeu cau 've bieu do / chart / plot': " + (
+            "goi tool_execute_python truoc, luu PNG, tra artifact that cho user."
+            if has_execute_python else
+            "goi tool_generate_mermaid hoac tool_generate_chart de FE render SVG."
+        ),
+        "- Voi yeu cau 'tao trang web / HTML / landing page': luon goi tool_generate_html_file.",
+        "- Voi yeu cau 'tao file Excel / spreadsheet': luon goi tool_generate_excel_file.",
+        "- Voi yeu cau 'tao file Word / bao cao / report': luon goi tool_generate_word_document.",
+        "- Khi sandbox gap loi ket noi, noi ro gioi han va KHONG gia vo da chay code.",
+    ]
+
+    return "\n".join(["## CODE STUDIO TOOLKIT:", *tool_hints, "", *priority_rules])
+
+
+def _collect_direct_tools(query: str, user_role: str = "student"):
     """Collect tools for direct response node and determine forced calling.
 
     Sprint 154: Extracted from direct_response_node.
@@ -635,12 +850,9 @@ def _collect_direct_tools(query: str):
     except Exception as _e:
         logger.debug("[DIRECT] Character tools unavailable: %s", _e)
 
-    try:
-        if settings.enable_code_execution:
-            from app.engine.tools.code_execution_tools import get_code_execution_tools
-            _direct_tools.extend(get_code_execution_tools())
-    except Exception as _e:
-        logger.debug("[DIRECT] Code execution tools unavailable: %s", _e)
+    # WAVE-001: code_execution, browser_sandbox removed from direct.
+    # These capabilities now live exclusively in code_studio_agent.
+    # Boundary enforced at tool-binding level (LLM-first, not keyword).
 
     try:
         from app.engine.tools.utility_tools import tool_current_datetime
@@ -671,12 +883,10 @@ def _collect_direct_tools(query: str):
     except Exception as _e:
         logger.debug("[DIRECT] LMS tools unavailable: %s", _e)
 
-    # Sprint 179: Chart/diagram generation tools (feature-gated)
-    try:
-        from app.engine.tools.chart_tools import get_chart_tools
-        _direct_tools.extend(get_chart_tools())
-    except Exception as _e:
-        logger.debug("[DIRECT] Chart tools unavailable: %s", _e)
+    # WAVE-001: chart_tools, output_generation_tools removed from direct.
+    # Document/chart/file generation now exclusively in code_studio_agent.
+
+    _direct_tools = filter_tools_for_role(_direct_tools, user_role)
 
     force_tools = bool(_direct_tools) and (
         _needs_web_search(query) or _needs_datetime(query)
@@ -684,6 +894,142 @@ def _collect_direct_tools(query: str):
         or _needs_lms_query(query)
     )
     return _direct_tools, force_tools
+
+
+def _collect_code_studio_tools(query: str, user_role: str = "student"):
+    """Collect tools for the code studio capability lane."""
+    _tools = []
+
+    try:
+        if settings.enable_code_execution and user_role == "admin":
+            from app.engine.tools.code_execution_tools import get_code_execution_tools
+
+            _tools.extend(get_code_execution_tools())
+    except Exception as _e:
+        logger.debug("[CODE_STUDIO] Code execution tools unavailable: %s", _e)
+
+    try:
+        from app.engine.tools.chart_tools import get_chart_tools
+
+        _tools.extend(get_chart_tools())
+    except Exception as _e:
+        logger.debug("[CODE_STUDIO] Chart tools unavailable: %s", _e)
+
+    try:
+        from app.engine.tools.output_generation_tools import get_output_generation_tools
+
+        _tools.extend(get_output_generation_tools())
+    except Exception as _e:
+        logger.debug("[CODE_STUDIO] Output generation tools unavailable: %s", _e)
+
+    try:
+        if (
+            user_role == "admin"
+            and settings.enable_browser_agent
+            and settings.enable_privileged_sandbox
+            and settings.sandbox_provider == "opensandbox"
+            and settings.sandbox_allow_browser_workloads
+        ):
+            from app.engine.tools.browser_sandbox_tools import get_browser_sandbox_tools
+
+            _tools.extend(get_browser_sandbox_tools())
+    except Exception as _e:
+        logger.debug("[CODE_STUDIO] Browser sandbox tools unavailable: %s", _e)
+
+    _tools = filter_tools_for_role(_tools, user_role)
+    force_tools = bool(_tools)
+    return _tools, force_tools
+
+
+def _needs_browser_snapshot(query: str) -> bool:
+    """Detect requests that should prefer the browser sandbox over plain web search."""
+    lowered = query.lower()
+    normalized = _normalize_for_intent(query)
+    has_url = "http://" in lowered or "https://" in lowered or "www." in lowered
+    screenshot_signal = any(
+        signal in normalized
+        for signal in (
+            "anh chup man hinh",
+            "chup man hinh",
+            "screenshot",
+            "browser sandbox",
+            "duyet web",
+            "xem trang",
+            "mo trang",
+            "open page",
+        )
+    )
+    inspect_signal = has_url and any(
+        signal in normalized
+        for signal in (
+            "mo",
+            "open",
+            "ghe qua",
+            "vao",
+            "noi gi",
+            "hien thi gi",
+            "render",
+            "trang do",
+        )
+    )
+    return screenshot_signal or inspect_signal
+
+
+def _direct_required_tool_names(query: str, user_role: str = "student") -> list[str]:
+    """Return must-have direct tools inferred from the current query."""
+    required: list[str] = []
+    normalized = _normalize_for_intent(query)
+
+    if _needs_datetime(query):
+        required.append("tool_current_datetime")
+    if _needs_news_search(query):
+        required.append("tool_search_news")
+    if _needs_legal_search(query):
+        required.append("tool_search_legal")
+    if _needs_web_search(query):
+        if any(
+            signal in normalized
+            for signal in ("imo", "shipping", "maritime", "hang hai", "vinamarine", "cuc hang hai")
+        ):
+            required.append("tool_search_maritime")
+        else:
+            required.append("tool_web_search")
+    if _needs_lms_query(query):
+        required.append("tool_knowledge_search")
+    # WAVE-001: browser_snapshot and execute_python removed from direct.
+    # These capabilities now live exclusively in code_studio_agent.
+
+    return required
+
+
+def _code_studio_required_tool_names(query: str, user_role: str = "student") -> list[str]:
+    """Return must-have tools inferred for the code studio capability."""
+    normalized = _normalize_for_intent(query)
+    required: list[str] = []
+
+    if any(token in normalized for token in ("html", "landing page", "website", "web app", "microsite")):
+        required.append("tool_generate_html_file")
+
+    if any(token in normalized for token in ("excel", "xlsx", "spreadsheet")):
+        required.append("tool_generate_excel_file")
+
+    if any(token in normalized for token in ("word", "docx", "report", "memo", "proposal")):
+        required.append("tool_generate_word_document")
+
+    if user_role == "admin" and settings.enable_code_execution and _needs_analysis_tool(query):
+        required.append("tool_execute_python")
+
+    if (
+        user_role == "admin"
+        and settings.enable_browser_agent
+        and settings.enable_privileged_sandbox
+        and settings.sandbox_provider == "opensandbox"
+        and settings.sandbox_allow_browser_workloads
+        and _needs_browser_snapshot(query)
+    ):
+        required.append("tool_browser_snapshot_url")
+
+    return required
 
 
 def _bind_direct_tools(llm, tools: list, force: bool):
@@ -708,8 +1054,15 @@ def _bind_direct_tools(llm, tools: list, force: bool):
     return llm_with_tools, llm_auto
 
 
-def _build_direct_system_messages(state: AgentState, query: str, domain_name_vi: str):
-    """Build system prompt and message list for direct response.
+def _build_direct_system_messages(
+    state: AgentState,
+    query: str,
+    domain_name_vi: str,
+    *,
+    role_name: str = "direct_agent",
+    tools_context_override: Optional[str] = None,
+):
+    """Build system prompt and message list for direct-style nodes.
 
     Sprint 154: Extracted from direct_response_node.
 
@@ -721,9 +1074,13 @@ def _build_direct_system_messages(state: AgentState, query: str, domain_name_vi:
 
     ctx = state.get("context", {})
     loader = get_prompt_loader()
-    tools_ctx = _build_direct_tools_context(settings, domain_name_vi)
+    tools_ctx = tools_context_override or _build_direct_tools_context(
+        settings,
+        domain_name_vi,
+        ctx.get("user_role", "student"),
+    )
     system_prompt = loader.build_system_prompt(
-        role="direct_agent",
+        role=role_name,
         user_name=ctx.get("user_name"),
         is_follow_up=ctx.get("is_follow_up", False),
         pronoun_style=ctx.get("pronoun_style"),
@@ -745,6 +1102,11 @@ def _build_direct_system_messages(state: AgentState, query: str, domain_name_vi:
     _host_prompt = state.get("host_context_prompt", "")
     if _host_prompt:
         system_prompt = system_prompt + "\n\n" + _host_prompt
+    _capability_prompt = state.get("capability_context", "")
+    if _capability_prompt:
+        system_prompt = system_prompt + "\n\n## Capability Handbook\n" + _capability_prompt
+    if role_name == "code_studio_agent":
+        system_prompt = system_prompt + "\n\n" + _build_code_studio_delivery_contract(query)
 
     messages = [SystemMessage(content=system_prompt)]
     lc_messages = ctx.get("langchain_messages", [])
@@ -780,7 +1142,10 @@ def _build_direct_system_messages(state: AgentState, query: str, domain_name_vi:
 
 async def _execute_direct_tool_rounds(
     llm_with_tools, llm_auto, messages: list, tools: list, push_event,
+    runtime_context_base=None,
     max_rounds: int = 3,
+    query: str = "",
+    state: Optional[AgentState] = None,
 ):
     """Execute multi-round tool calling loop for direct response.
 
@@ -794,15 +1159,73 @@ async def _execute_direct_tool_rounds(
     from langchain_core.messages import ToolMessage as _TM
 
     tool_call_events: list[dict] = []
+    state = state or {}
+
+    _opening_cue = _infer_direct_reasoning_cue(query, state, [])
+    _opening_beat = await _render_reasoning(
+        state=state,
+        node="direct",
+        phase="attune",
+        cue=_opening_cue,
+        next_action="Bắt nhịp rồi quyết định có cần kiểm thêm gì không.",
+        style_tags=["direct", "opening"],
+    )
+    await push_event({
+        "type": "thinking_start",
+        "content": _opening_beat.label,
+        "node": "direct",
+        "summary": _opening_beat.summary,
+        "details": {"phase": _opening_beat.phase},
+    })
+    await push_event({
+        "type": "thinking_delta",
+        "content": _opening_beat.summary,
+        "node": "direct",
+    })
 
     llm_response = await llm_with_tools.ainvoke(messages)
     _tc = getattr(llm_response, 'tool_calls', [])
     logger.warning("[DIRECT] LLM response: tool_calls=%d, content_len=%d",
                    len(_tc) if _tc else 0, len(str(llm_response.content)))
+    await push_event({
+        "type": "thinking_end",
+        "content": "",
+        "node": "direct",
+    })
 
     for _tool_round in range(max_rounds):
         if not (tools and hasattr(llm_response, 'tool_calls') and llm_response.tool_calls):
             break
+        _round_tool_names = [
+            str(tc.get("name", "unknown"))
+            for tc in llm_response.tool_calls
+            if tc.get("name")
+        ]
+        _round_cue = _infer_direct_reasoning_cue(query, state, _round_tool_names)
+        _round_phase = "verify" if _tool_round > 0 else "ground"
+        _round_beat = await _render_reasoning(
+            state=state,
+            node="direct",
+            phase=_round_phase,
+            cue=_round_cue,
+            tool_names=_round_tool_names,
+            next_action="Mở các công cụ cần thiết rồi gạn lại điều đáng tin nhất.",
+            observations=[f"Sắp gọi {len(_round_tool_names)} công cụ trong vòng này."],
+            style_tags=["direct", "tooling"],
+        )
+        await push_event({
+            "type": "thinking_start",
+            "content": _round_beat.label,
+            "node": "direct",
+            "summary": _round_beat.summary,
+            "details": {"phase": _round_beat.phase},
+        })
+        if _round_beat.summary:
+            await push_event({
+                "type": "thinking_delta",
+                "content": _round_beat.summary,
+                "node": "direct",
+            })
         messages.append(llm_response)
         for tc in llm_response.tool_calls:
             _tc_id = tc.get("id", f"tc_{_tool_round}")
@@ -816,42 +1239,135 @@ async def _execute_direct_tool_rounds(
                 "type": "call", "name": _tc_name,
                 "args": tc.get("args", {}), "id": _tc_id,
             })
-            matched = next((t for t in tools if t.name == _tc_name), None)
-            _tool_start = asyncio.get_event_loop().time()
-            _tool_success = False
-            _tool_error = ""
+            matched = get_tool_by_name(tools, str(_tc_name).strip())
             try:
-                result = await asyncio.to_thread(matched.invoke, tc["args"]) if matched else "Unknown tool"
-                _tool_success = result is not None and result != "Unknown tool"
+                if matched:
+                    result = await invoke_tool_with_runtime(
+                        matched,
+                        tc["args"],
+                        tool_name=_tc_name,
+                        runtime_context_base=runtime_context_base,
+                        tool_call_id=_tc_id,
+                        query_snippet=str(tc.get("args", {}).get("query", ""))[:100],
+                        prefer_async=False,
+                        run_sync_in_thread=True,
+                    )
+                else:
+                    result = "Unknown tool"
             except Exception as _te:
                 logger.warning("[DIRECT] Tool %s failed: %s", _tc_name, _te)
                 result = "Tool unavailable"
-                _tool_error = str(_te)[:200]
             # Sprint 205: Record tool usage for Skill↔Tool bridge
-            try:
-                from app.engine.skills.skill_tool_bridge import record_tool_usage
-                _latency = int((asyncio.get_event_loop().time() - _tool_start) * 1000)
-                record_tool_usage(
-                    tool_name=_tc_name,
-                    success=_tool_success,
-                    latency_ms=_latency,
-                    query_snippet=str(tc.get("args", {}).get("query", ""))[:100],
-                    error_message=_tool_error,
-                )
-            except Exception:
-                pass  # Never block tool execution for metrics
             await push_event({
                 "type": "tool_result",
                 "content": {"name": _tc_name, "result": str(result)[:500], "id": _tc_id},
                 "node": "direct",
             })
+            _reflection = await _build_direct_tool_reflection(state, _tc_name, result)
+            if _reflection:
+                await push_event({
+                    "type": "thinking_delta",
+                    "content": f"\n\n{_reflection}",
+                    "node": "direct",
+                })
             # Sprint 166: Store full result for preview extraction
             tool_call_events.append({
                 "type": "result", "name": _tc_name,
                 "result": str(result), "id": _tc_id,
             })
             messages.append(_TM(content=str(result), tool_call_id=_tc_id))
+        await push_event({
+            "type": "thinking_end",
+            "content": "",
+            "node": "direct",
+        })
         llm_response = await llm_auto.ainvoke(messages)
+        if tools and hasattr(llm_response, 'tool_calls') and llm_response.tool_calls:
+            _transition = await _render_reasoning(
+                state=state,
+                node="direct",
+                phase="act",
+                cue=_round_cue,
+                tool_names=_round_tool_names,
+                next_action="Kiểm chéo thêm một lượt rồi mới chốt.",
+                observations=["Đã có dữ liệu mới nhưng vẫn cần gạn thêm."],
+                style_tags=["direct", "transition"],
+            )
+            await push_event({
+                "type": "action_text",
+                "content": _transition.action_text or _transition.summary,
+                "node": "direct",
+            })
+
+    _synthesis_cue = _infer_direct_reasoning_cue(
+        query,
+        state,
+        [
+            str(event.get("name", ""))
+            for event in tool_call_events
+            if event.get("type") == "call"
+        ],
+    )
+    _synthesis_beat = await _render_reasoning(
+        state=state,
+        node="direct",
+        phase="synthesize",
+        cue=_synthesis_cue,
+        tool_names=[
+            str(event.get("name", ""))
+            for event in tool_call_events
+            if event.get("type") == "call"
+        ],
+        next_action="Khâu dữ liệu lại thành một câu trả lời đủ chắc và đủ gần.",
+        style_tags=["direct", "synthesis"],
+    )
+
+    if tool_call_events:
+        await push_event({
+            "type": "action_text",
+            "content": _synthesis_beat.action_text or _synthesis_beat.summary,
+            "node": "direct",
+        })
+        await push_event({
+            "type": "thinking_start",
+            "content": _synthesis_beat.label,
+            "node": "direct",
+            "summary": _synthesis_beat.summary,
+            "details": {"phase": _synthesis_beat.phase},
+        })
+        await push_event({
+            "type": "thinking_delta",
+            "content": _synthesis_beat.summary,
+            "node": "direct",
+        })
+        await push_event({
+            "type": "thinking_end",
+            "content": "",
+            "node": "direct",
+        })
+    else:
+        await push_event({
+            "type": "action_text",
+            "content": _synthesis_beat.action_text or _synthesis_beat.summary,
+            "node": "direct",
+        })
+        await push_event({
+            "type": "thinking_start",
+            "content": _synthesis_beat.label,
+            "node": "direct",
+            "summary": _synthesis_beat.summary,
+            "details": {"phase": _synthesis_beat.phase},
+        })
+        await push_event({
+            "type": "thinking_delta",
+            "content": _synthesis_beat.summary,
+            "node": "direct",
+        })
+        await push_event({
+            "type": "thinking_end",
+            "content": "",
+            "node": "direct",
+        })
 
     return llm_response, messages, tool_call_events
 
@@ -876,6 +1392,826 @@ def _extract_direct_response(llm_response, messages: list):
     tools_used = [{"name": n} for n in sorted(tools_used_names)] if tools_used_names else []
 
     return response, thinking_content, tools_used
+
+
+_DIRECT_TIME_TOOLS = {"tool_current_datetime"}
+_DIRECT_NEWS_TOOLS = {"tool_search_news"}
+_DIRECT_LEGAL_TOOLS = {"tool_search_legal"}
+_DIRECT_WEB_TOOLS = {
+    "tool_web_search",
+    "tool_search_maritime",
+    "tool_knowledge_search",
+}
+_DIRECT_MEMORY_TOOLS = {"tool_character_read", "tool_character_note"}
+_DIRECT_BROWSER_TOOLS = {"tool_browser_snapshot_url"}
+_DIRECT_ANALYSIS_PREFIXES = ("tool_execute_python", "tool_chart_", "tool_plot_")
+_DIRECT_LMS_PREFIX = "tool_lms_"
+_CODE_STUDIO_ACTION_JSON_RE = re.compile(
+    r"""
+    \{
+        \s*"action"\s*:\s*"[^"]+"
+        (?:
+            \s*,\s*"action_input"\s*:\s*
+            (?:
+                "(?:\\.|[^"])*"
+                |
+                \{.*?\}
+                |
+                \[.*?\]
+                |
+                [^}\n]+
+            )
+        )?
+        (?:
+            \s*,\s*"thought"\s*:\s*"(?:\\.|[^"])*"
+        )?
+        \s*
+    \}
+    """,
+    re.DOTALL | re.VERBOSE,
+)
+_CODE_STUDIO_SANDBOX_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(sandbox:[^)]+\)", re.IGNORECASE)
+_CODE_STUDIO_SANDBOX_LINK_RE = re.compile(r"\[[^\]]+\]\(sandbox:[^)]+\)", re.IGNORECASE)
+_CODE_STUDIO_SANDBOX_PATH_RE = re.compile(r"(?:sandbox:[^\s)]+|/(?:mnt/data|workspace)/[^\s)]+)")
+
+
+def _direct_tool_names(items: list[dict] | None) -> list[str]:
+    """Extract distinct tool names from tool usage payloads."""
+    names: list[str] = []
+    seen: set[str] = set()
+    for item in items or []:
+        name = ""
+        if isinstance(item, dict):
+            name = str(item.get("name", "")).strip()
+        elif item:
+            name = str(item).strip()
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    return names
+
+
+_DOCUMENT_STUDIO_TOOLS = frozenset({
+    "tool_generate_html_file",
+    "tool_generate_excel_file",
+    "tool_generate_word_document",
+})
+_DOCUMENT_STUDIO_EXTENSIONS = frozenset({".html", ".htm", ".xlsx", ".docx"})
+
+
+def _extract_code_studio_artifact_names(tool_call_events: list[dict] | None) -> list[str]:
+    """Extract artifact filenames from tool result events.
+
+    Supports two result formats:
+    - tool_execute_python: "Artifacts:\\n- chart.png (image/png) -> /path..."
+    - output_generation_tools: JSON {"filename": "report.docx", "format": "docx", ...}
+
+    WAVE-003: added JSON parsing for docx/xlsx/html tool results.
+    """
+    import json as _json
+
+    names: list[str] = []
+    seen: set[str] = set()
+
+    for event in tool_call_events or []:
+        if not isinstance(event, dict) or event.get("type") != "result":
+            continue
+
+        result = str(event.get("result", ""))
+        tool_name = str(event.get("name", "")).strip()
+
+        # Path 1: JSON result from output_generation_tools
+        if tool_name in _DOCUMENT_STUDIO_TOOLS and result.strip().startswith("{"):
+            try:
+                parsed = _json.loads(result)
+                filename = str(parsed.get("filename", "")).strip()
+                if filename and any(filename.lower().endswith(ext) for ext in _DOCUMENT_STUDIO_EXTENSIONS):
+                    if filename not in seen:
+                        seen.add(filename)
+                        names.append(filename)
+                    continue
+            except Exception:
+                pass  # fall through to line-based parsing
+
+        # Path 2: tool_execute_python "Artifacts:\n- file.png ..." format
+        for line in result.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("- "):
+                continue
+            candidate = stripped[2:].split(" (", 1)[0].strip()
+            if candidate and candidate not in seen:
+                seen.add(candidate)
+                names.append(candidate)
+
+    return names
+
+
+def _is_document_studio_tool_error(tool_name: str, result: object) -> bool:
+    """Detect failed document studio tool calls (JSON error response).
+
+    WAVE-003: terminal failure detection for output_generation_tools.
+    """
+    import json as _json
+
+    if str(tool_name).strip() not in _DOCUMENT_STUDIO_TOOLS:
+        return False
+    result_str = str(result or "").strip()
+    if not result_str.startswith("{"):
+        return False
+    try:
+        parsed = _json.loads(result_str)
+        return "error" in parsed
+    except Exception:
+        return False
+
+
+def _build_code_studio_synthesis_observations(tool_call_events: list[dict] | None) -> list[str]:
+    """Build synthesis observations from tool call results.
+
+    WAVE-003: document studio tools (xlsx/docx/html) now produce human-readable observations
+    instead of raw JSON first-lines. Artifact names are populated for all three tool families.
+    """
+    import json as _json
+
+    observations: list[str] = []
+    artifact_names = _extract_code_studio_artifact_names(tool_call_events)
+    if artifact_names:
+        observations.append(
+            "Da tao artifact co the mo ra ngay: " + ", ".join(artifact_names[:3])
+        )
+
+    for event in tool_call_events or []:
+        if not isinstance(event, dict) or event.get("type") != "result":
+            continue
+        tool_name = str(event.get("name", "")).strip()
+        result_text = str(event.get("result", "")).strip()
+        if not result_text:
+            continue
+
+        # Path A: tool_execute_python "Artifacts:" format
+        if "Artifacts:" in result_text:
+            if tool_name:
+                observations.append(f"{tool_name} vua tra ve dau ra huu hinh.")
+            continue
+
+        # Path B: output_generation_tools JSON format (WAVE-003)
+        if tool_name in _DOCUMENT_STUDIO_TOOLS and result_text.startswith("{"):
+            try:
+                parsed = _json.loads(result_text)
+                if "error" not in parsed:
+                    filename = parsed.get("filename", "")
+                    fmt = parsed.get("format", tool_name)
+                    if filename:
+                        observations.append(
+                            f"Da tao file {fmt.upper()} that: `{filename}` — san sang tai xuong hoac mo ngay."
+                        )
+                else:
+                    observations.append(
+                        f"{tool_name} gap loi: {str(parsed['error'])[:120]}"
+                    )
+                continue
+            except Exception:
+                pass  # fall through to generic first_line
+
+        # Path C: generic first_line (other tools)
+        first_line = next(
+            (line.strip() for line in result_text.splitlines() if line.strip()),
+            "",
+        )
+        if first_line and not first_line.startswith("{"):
+            prefix = f"{tool_name}: " if tool_name else ""
+            observations.append(f"{prefix}{first_line[:180]}")
+
+        if len(observations) >= 4:
+            break
+
+    return observations[:4]
+
+
+def _build_code_studio_delivery_contract(query: str) -> str:
+    """Role-local answer contract for delivery-first technical responses.
+
+    WAVE-002: added html/landing-page specific delivery line.
+    """
+    normalized = _normalize_for_intent(query)
+    is_chart_request = any(
+        token in normalized for token in ("bieu do", "chart", "plot", "matplotlib", "seaborn", "png", "svg")
+    )
+    is_html_request = any(
+        token in normalized for token in ("html", "landing page", "website", "web app", "microsite", "trang web")
+    )
+
+    lines = [
+        "## CODE STUDIO DELIVERY CONTRACT:",
+        "- Voi tac vu ky thuat, mo dau answer bang ket qua da tao hoac da xac nhan. Khong mo dau bang loi chao, tu gioi thieu, hay small talk.",
+        "- Khi vua tao artifact, neu ro ten file, loai san pham, va dieu nguoi dung co the mo ra ngay luc nay.",
+        "- Neu yeu cau chua du du lieu cu the, tao mot demo trung tinh phu hop voi task va noi ro do la demo. Khong bien no thanh lore ca nhan cua Wiii.",
+        "- Khong dua nhan vat phu, thu cung ao, catchphrase, hay chi tiet de thuong khong lien quan vao output ky thuat neu user khong yeu cau.",
+        "- Uu tien 3 phan theo thu tu: da tao gi, no dung de lam gi, nguoi dung co the lam gi tiep theo.",
+    ]
+    if is_chart_request:
+        lines.append(
+            "- Voi yeu cau bieu do/chart mo ho, uu tien tao mot chart demo trung tinh va giao lai file PNG that (neu co sandbox), hoac Mermaid SVG khi khong co sandbox."
+        )
+    if is_html_request:
+        lines.append(
+            "- Voi yeu cau landing page/HTML, tao file HTML that va mo ta ro nhung gi nguoi dung co the xem/mo ngay."
+        )
+    return "\n".join(lines)
+
+
+_CODE_STUDIO_CHATTER_TOKENS = (
+    "rat vui duoc gap",
+    "minh la wiii",
+    "toi la wiii",
+    "bong",
+    "meo ao",
+    "meo meo",
+    "catchphrase",
+)
+
+
+def _is_code_studio_chatter_paragraph(paragraph: str) -> bool:
+    """Detect social/persona chatter that should not lead a technical delivery."""
+    normalized = _normalize_for_intent(paragraph)
+    if not normalized:
+        return False
+    if any(token in normalized for token in _CODE_STUDIO_CHATTER_TOKENS):
+        return True
+    if normalized.startswith(("chao ", "xin chao", "hello ", "hi ", "alo ")):
+        return True
+    return False
+
+
+def _strip_code_studio_chatter(cleaned: str) -> str:
+    """Remove greeting/lore paragraphs when better technical paragraphs exist."""
+    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", cleaned) if part.strip()]
+    if not paragraphs:
+        return cleaned
+
+    filtered = [part for part in paragraphs if not _is_code_studio_chatter_paragraph(part)]
+    if filtered and len(filtered) < len(paragraphs):
+        return "\n\n".join(filtered).strip()
+    return cleaned
+
+
+def _ensure_code_studio_delivery_lede(cleaned: str, tool_call_events: list[dict] | None = None) -> str:
+    """Ensure the answer starts from the artifact/result, not from social filler."""
+    artifact_names = _extract_code_studio_artifact_names(tool_call_events)
+    if not artifact_names:
+        return cleaned
+
+    first_paragraph = next((part.strip() for part in re.split(r"\n\s*\n", cleaned) if part.strip()), "")
+    normalized_first = _normalize_for_intent(first_paragraph)
+    normalized_artifact = _normalize_for_intent(artifact_names[0])
+    if any(
+        token in normalized_first
+        for token in ("da tao", "da hoan thanh", "da xac nhan", "artifact", normalized_artifact)
+    ):
+        return cleaned
+
+    lede = f"Minh da tao xong `{artifact_names[0]}` va gan kem artifact ngay ben duoi."
+    return f"{lede}\n\n{cleaned}".strip()
+
+
+def _sanitize_code_studio_response(
+    response: str,
+    tool_call_events: list[dict] | None = None,
+) -> str:
+    cleaned = response or ""
+    had_raw_payload = False
+
+    for pattern in (
+        _CODE_STUDIO_ACTION_JSON_RE,
+        _CODE_STUDIO_SANDBOX_IMAGE_RE,
+        _CODE_STUDIO_SANDBOX_LINK_RE,
+        _CODE_STUDIO_SANDBOX_PATH_RE,
+    ):
+        updated = pattern.sub("", cleaned)
+        if updated != cleaned:
+            had_raw_payload = True
+            cleaned = updated
+
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    cleaned = _strip_code_studio_chatter(cleaned)
+    cleaned = _ensure_code_studio_delivery_lede(cleaned, tool_call_events)
+
+    if had_raw_payload:
+        artifact_names = _extract_code_studio_artifact_names(tool_call_events)
+        note = (
+            f"File `{artifact_names[0]}` da duoc tao va gan kem trong artifact ngay ben duoi."
+            if artifact_names
+            else "Artifact ky thuat da duoc tao va gan kem ngay ben duoi."
+        )
+        if note not in cleaned:
+            cleaned = f"{cleaned}\n\n{note}".strip()
+
+    return cleaned
+
+
+def _is_terminal_code_studio_tool_error(tool_name: str, result: object) -> bool:
+    """Detect tool failures that should stop the code-studio loop immediately.
+
+    WAVE-003: also catches document studio JSON error responses (xlsx/docx/html).
+    """
+    normalized_name = str(tool_name or "").strip().lower()
+
+    # Sandbox tools: text-based failure messages
+    if normalized_name in {"tool_execute_python", "tool_browser_snapshot_url"}:
+        normalized_result = _normalize_for_intent(str(result or ""))
+        if not normalized_result:
+            return False
+        if "tool unavailable" in normalized_result:
+            return True
+        return (
+            "opensandbox execution failed" in normalized_result
+            and "network connectivity error" in normalized_result
+        )
+
+    # Document studio tools: JSON error response
+    if normalized_name in _DOCUMENT_STUDIO_TOOLS:
+        return _is_document_studio_tool_error(normalized_name, result)
+
+    return False
+
+
+def _build_code_studio_terminal_failure_response(
+    query: str,
+    tool_call_events: list[dict] | None = None,
+) -> str:
+    """Create a short, delivery-first answer when sandbox execution is terminally unavailable."""
+    artifact_names = _extract_code_studio_artifact_names(tool_call_events)
+    normalized = _normalize_for_intent(query)
+    is_chart_request = any(
+        token in normalized for token in ("bieu do", "chart", "plot", "png", "matplotlib", "seaborn")
+    )
+
+    if artifact_names:
+        return (
+            f"Minh da bat dau chuan bi `{artifact_names[0]}`, nhung sandbox dang gap loi ket noi nen chua the "
+            "hoan tat artifact nay o turn hien tai. Khi kenh thuc thi on dinh tro lai, minh co the chay lai va "
+            "gui ket qua ngay."
+        )
+
+    if is_chart_request:
+        return (
+            "Minh chua the tao file PNG that luc nay vi sandbox dang gap loi ket noi. "
+            "Khi kenh thuc thi on dinh tro lai, minh co the chay lai va gui cho cau artifact bieu do ngay."
+        )
+
+    return (
+        "Minh da den buoc thuc thi, nhung sandbox dang gap loi ket noi nen chua the tao ket qua that ngay luc nay. "
+        "Khi kenh nay on dinh tro lai, minh co the chay lai va giao artifact hoan chinh cho cau."
+    )
+
+
+def _has_prefixed_tool(tool_names: list[str], prefixes: tuple[str, ...]) -> bool:
+    """Check whether any tool starts with one of the provided prefixes."""
+    return any(name.startswith(prefix) for name in tool_names for prefix in prefixes)
+
+
+def _uses_lms_tool(tool_names: list[str]) -> bool:
+    """Check whether direct reasoning involved LMS tools."""
+    return any(name.startswith(_DIRECT_LMS_PREFIX) for name in tool_names)
+
+
+def _infer_direct_reasoning_cue(
+    query: str,
+    state: AgentState,
+    tool_names: list[str] | None = None,
+) -> str:
+    """Map the current direct path into a stable reasoning cue."""
+    tool_names = tool_names or []
+    tool_set = set(tool_names)
+    routing_meta = state.get("routing_metadata") or {}
+    intent = str(routing_meta.get("intent", "")).strip().lower()
+    context = state.get("context") or {}
+
+    categories = 0
+    categories += int(bool(tool_set & _DIRECT_TIME_TOOLS))
+    categories += int(bool(tool_set & _DIRECT_NEWS_TOOLS))
+    categories += int(bool(tool_set & _DIRECT_LEGAL_TOOLS))
+    categories += int(bool(tool_set & _DIRECT_WEB_TOOLS))
+    categories += int(_uses_lms_tool(tool_names))
+    categories += int(bool(tool_set & _DIRECT_MEMORY_TOOLS))
+    categories += int(bool(tool_set & _DIRECT_BROWSER_TOOLS))
+    categories += int(_has_prefixed_tool(tool_names, _DIRECT_ANALYSIS_PREFIXES))
+    if categories > 1:
+        return "multi_source"
+
+    if context.get("images"):
+        return "visual"
+    if "tool_current_datetime" in tool_set or _needs_datetime(query):
+        return "datetime"
+    if tool_set & _DIRECT_NEWS_TOOLS or _needs_news_search(query):
+        return "news"
+    if tool_set & _DIRECT_LEGAL_TOOLS or _needs_legal_search(query):
+        return "legal"
+    if tool_set & _DIRECT_WEB_TOOLS or _needs_web_search(query):
+        return "web"
+    if _uses_lms_tool(tool_names) or _needs_lms_query(query):
+        return "lms"
+    if tool_set & _DIRECT_MEMORY_TOOLS:
+        return "memory"
+    if tool_set & _DIRECT_BROWSER_TOOLS:
+        return "browser"
+    if _has_prefixed_tool(tool_names, _DIRECT_ANALYSIS_PREFIXES):
+        return "analysis"
+    if intent == "personal":
+        return "personal"
+    if intent == "social":
+        return "social"
+    if intent == "off_topic":
+        return "off_topic"
+    return "general"
+
+
+def _infer_code_studio_reasoning_cue(
+    query: str,
+    tool_names: list[str] | None = None,
+) -> str:
+    """Map code-studio requests into stable reasoning cues."""
+    tool_names = tool_names or []
+    normalized = _normalize_for_intent(query)
+    tool_set = set(tool_names)
+
+    if "tool_browser_snapshot_url" in tool_set or _needs_browser_snapshot(query):
+        return "browser"
+    if "tool_generate_html_file" in tool_set or any(
+        token in normalized for token in ("html", "landing page", "website", "web app", "microsite")
+    ):
+        return "html"
+    if "tool_generate_excel_file" in tool_set or any(
+        token in normalized for token in ("excel", "xlsx", "spreadsheet")
+    ):
+        return "spreadsheet"
+    if "tool_generate_word_document" in tool_set or any(
+        token in normalized for token in ("word", "docx", "memo", "proposal", "report")
+    ):
+        return "document"
+    if "tool_execute_python" in tool_set or _needs_analysis_tool(query):
+        if any(token in normalized for token in ("bieu do", "chart", "plot", "matplotlib", "seaborn", "png", "svg")):
+            return "chart"
+        return "python"
+    return "build"
+
+
+def _infer_reasoning_cue(
+    node_name: str,
+    query: str,
+    state: AgentState,
+    tool_names: list[str] | None = None,
+) -> str:
+    """Resolve reasoning cue per capability node."""
+    if node_name == "code_studio_agent":
+        return _infer_code_studio_reasoning_cue(query, tool_names)
+    return _infer_direct_reasoning_cue(query, state, tool_names)
+
+
+def _node_style_prefix(node_name: str) -> str:
+    """Map graph node name to narrator style prefix."""
+    if node_name == "code_studio_agent":
+        return "code-studio"
+    return node_name
+
+
+async def _build_direct_reasoning_summary(
+    query: str,
+    state: AgentState,
+    tool_names: list[str] | None = None,
+) -> str:
+    """Build safe, human-readable direct reasoning without exposing raw CoT."""
+    cue = _infer_direct_reasoning_cue(query, state, tool_names)
+    opening = await _render_reasoning(
+        state=state,
+        node="direct",
+        phase="attune",
+        cue=cue,
+        tool_names=tool_names,
+        style_tags=["direct", "summary"],
+    )
+    closing = await _render_reasoning(
+        state=state,
+        node="direct",
+        phase="synthesize",
+        cue=cue,
+        tool_names=tool_names,
+        style_tags=["direct", "summary"],
+    )
+    if closing.summary and closing.summary != opening.summary:
+        return f"{opening.summary}\n\n{closing.summary}"
+    return opening.summary
+
+
+async def _build_direct_round_label(state: AgentState, tool_names: list[str], round_index: int) -> str:
+    """Choose a compact label for a direct reasoning block."""
+    cue = _infer_direct_reasoning_cue("", {}, tool_names)
+    beat = await _render_reasoning(
+        state=state,
+        node="direct",
+        phase="verify" if round_index > 0 else "ground",
+        cue=cue,
+        tool_names=tool_names,
+    )
+    return beat.label
+
+
+async def _build_direct_tool_reflection(
+    state: AgentState,
+    tool_name: str,
+    result: object,
+) -> str:
+    """Summarize what a direct tool result means for the ongoing answer."""
+    reflection = await _render_reasoning(
+        state=state,
+        node="direct",
+        phase="act",
+        cue=_infer_direct_reasoning_cue(state.get("query", ""), state, [tool_name]),
+        tool_names=[tool_name],
+        result=result,
+        next_action="Lồng kết quả vừa có vào câu trả lời đang hình thành.",
+        style_tags=["direct", "tool_reflection"],
+    )
+    return reflection.summary
+
+
+async def _build_direct_synthesis_summary(
+    query: str,
+    state: AgentState,
+    tool_names: list[str] | None = None,
+) -> str:
+    """Summarize the final consolidation step for direct responses."""
+    cue = _infer_direct_reasoning_cue(query, state, tool_names)
+    beat = await _render_reasoning(
+        state=state,
+        node="direct",
+        phase="synthesize",
+        cue=cue,
+        tool_names=tool_names,
+        style_tags=["direct", "summary"],
+    )
+    return beat.summary
+
+
+async def _build_code_studio_reasoning_summary(
+    query: str,
+    state: AgentState,
+    tool_names: list[str] | None = None,
+) -> str:
+    """Build safe code-studio reasoning summary for UI display."""
+    cue = _infer_code_studio_reasoning_cue(query, tool_names)
+    opening = await _render_reasoning(
+        state=state,
+        node="code_studio_agent",
+        phase="attune",
+        cue=cue,
+        tool_names=tool_names,
+        style_tags=["code-studio", "summary"],
+    )
+    closing = await _render_reasoning(
+        state=state,
+        node="code_studio_agent",
+        phase="synthesize",
+        cue=cue,
+        tool_names=tool_names,
+        style_tags=["code-studio", "summary"],
+    )
+    if closing.summary and closing.summary.strip() and closing.summary != opening.summary:
+        return closing.summary
+    return opening.summary
+
+
+def _normalize_reasoning_text(value: str) -> str:
+    return " ".join((value or "").lower().split())
+
+
+def _code_studio_delta_chunks(beat) -> list[str]:
+    summary_norm = _normalize_reasoning_text(getattr(beat, "summary", ""))
+    chunks: list[str] = []
+    for chunk in getattr(beat, "delta_chunks", []) or []:
+        if not chunk:
+            continue
+        chunk_norm = _normalize_reasoning_text(chunk)
+        if summary_norm and (chunk_norm == summary_norm or chunk_norm in summary_norm or summary_norm in chunk_norm):
+            continue
+        if chunks and _normalize_reasoning_text(chunks[-1]) == chunk_norm:
+            continue
+        chunks.append(chunk)
+    return chunks
+
+
+async def _build_code_studio_tool_reflection(
+    state: AgentState,
+    tool_name: str,
+    result: object,
+) -> str:
+    """Summarize what a code-studio tool result means for the current build."""
+    reflection = await _render_reasoning(
+        state=state,
+        node="code_studio_agent",
+        phase="act",
+        cue=_infer_code_studio_reasoning_cue(state.get("query", ""), [tool_name]),
+        tool_names=[tool_name],
+        result=result,
+        next_action="Lua ket qua moi vao dau ra ky thuat dang duoc che tac.",
+        style_tags=["code-studio", "tool_reflection"],
+    )
+    return reflection.summary
+
+
+async def _execute_code_studio_tool_rounds(
+    llm_with_tools,
+    llm_auto,
+    messages: list,
+    tools: list,
+    push_event,
+    runtime_context_base=None,
+    max_rounds: int = 3,
+    query: str = "",
+    state: Optional[AgentState] = None,
+):
+    """Execute multi-round tool calling loop for the code studio capability."""
+    from langchain_core.messages import AIMessage as _AM, ToolMessage as _TM
+
+    tool_call_events: list[dict] = []
+    state = state or {}
+
+    llm_response = await llm_with_tools.ainvoke(messages)
+
+    for _tool_round in range(max_rounds):
+        if not (tools and hasattr(llm_response, "tool_calls") and llm_response.tool_calls):
+            break
+
+        _round_tool_names = [
+            str(tc.get("name", "unknown"))
+            for tc in llm_response.tool_calls
+            if tc.get("name")
+        ]
+        _round_cue = _infer_code_studio_reasoning_cue(query, _round_tool_names)
+        _round_phase = "verify" if _tool_round > 0 else "ground"
+        _round_beat = await _render_reasoning(
+            state=state,
+            node="code_studio_agent",
+            phase=_round_phase,
+            cue=_round_cue,
+            tool_names=_round_tool_names,
+            next_action="Mo cong cu can thiet roi xac minh output co the dung that.",
+            observations=[f"Sap goi {len(_round_tool_names)} cong cu trong vong nay."],
+            style_tags=["code-studio", "tooling"],
+        )
+        await push_event({
+            "type": "thinking_start",
+            "content": _round_beat.label,
+            "node": "code_studio_agent",
+            "summary": _round_beat.summary,
+            "details": {"phase": _round_beat.phase},
+        })
+        for _chunk in _code_studio_delta_chunks(_round_beat):
+            await push_event({
+                "type": "thinking_delta",
+                "content": _chunk,
+                "node": "code_studio_agent",
+            })
+        if _round_beat.action_text:
+            await push_event({
+                "type": "action_text",
+                "content": _round_beat.action_text,
+                "node": "code_studio_agent",
+            })
+
+        messages.append(llm_response)
+        _terminal_failure_detected = False
+        for tc in llm_response.tool_calls:
+            _tc_id = tc.get("id", f"tc_{_tool_round}")
+            _tc_name = tc.get("name", "unknown")
+            await push_event({
+                "type": "tool_call",
+                "content": {"name": _tc_name, "args": tc.get("args", {}), "id": _tc_id},
+                "node": "code_studio_agent",
+            })
+            tool_call_events.append({
+                "type": "call",
+                "name": _tc_name,
+                "args": tc.get("args", {}),
+                "id": _tc_id,
+            })
+            matched = get_tool_by_name(tools, str(_tc_name).strip())
+            try:
+                if matched:
+                    result = await invoke_tool_with_runtime(
+                        matched,
+                        tc["args"],
+                        tool_name=_tc_name,
+                        runtime_context_base=runtime_context_base,
+                        tool_call_id=_tc_id,
+                        query_snippet=str(tc.get("args", {}).get("query", ""))[:100],
+                        prefer_async=False,
+                        run_sync_in_thread=True,
+                    )
+                else:
+                    result = "Unknown tool"
+            except Exception as _te:
+                logger.warning("[CODE_STUDIO] Tool %s failed: %s", _tc_name, _te)
+                result = "Tool unavailable"
+
+            await push_event({
+                "type": "tool_result",
+                "content": {"name": _tc_name, "result": str(result)[:500], "id": _tc_id},
+                "node": "code_studio_agent",
+            })
+            _reflection = await _build_code_studio_tool_reflection(state, _tc_name, result)
+            if _reflection:
+                await push_event({
+                    "type": "thinking_delta",
+                    "content": f"\n\n{_reflection}",
+                    "node": "code_studio_agent",
+                })
+            tool_call_events.append({
+                "type": "result",
+                "name": _tc_name,
+                "result": str(result),
+                "id": _tc_id,
+            })
+            messages.append(_TM(content=str(result), tool_call_id=_tc_id))
+            if _is_terminal_code_studio_tool_error(_tc_name, result):
+                _terminal_failure_detected = True
+
+        await push_event({
+            "type": "thinking_end",
+            "content": "",
+            "node": "code_studio_agent",
+        })
+        if _terminal_failure_detected:
+            llm_response = _AM(
+                content=_build_code_studio_terminal_failure_response(query, tool_call_events)
+            )
+            break
+        llm_response = await llm_auto.ainvoke(messages)
+        if tools and hasattr(llm_response, "tool_calls") and llm_response.tool_calls:
+            _transition = await _render_reasoning(
+                state=state,
+                node="code_studio_agent",
+                phase="act",
+                cue=_round_cue,
+                tool_names=_round_tool_names,
+                next_action="Rut gon thanh mot buoc thuc hien tiep theo roi moi chot.",
+                observations=["Da co them ket qua moi va dang can khau lai."],
+                style_tags=["code-studio", "transition"],
+            )
+            await push_event({
+                "type": "action_text",
+                "content": _transition.action_text or _transition.summary,
+                "node": "code_studio_agent",
+            })
+
+    _synthesis_cue = _infer_code_studio_reasoning_cue(
+        query,
+        [
+            str(event.get("name", ""))
+            for event in tool_call_events
+            if event.get("type") == "call"
+        ],
+    )
+    _synthesis_observations = _build_code_studio_synthesis_observations(tool_call_events)
+    _synthesis_beat = await _render_reasoning(
+        state=state,
+        node="code_studio_agent",
+        phase="synthesize",
+        cue=_synthesis_cue,
+        tool_names=[
+            str(event.get("name", ""))
+            for event in tool_call_events
+            if event.get("type") == "call"
+        ],
+        next_action="Noi ro da tao xong san pham nao, no dung de lam gi, va nguoi dung co the mo artifact ay ngay luc nay.",
+        observations=_synthesis_observations,
+        style_tags=["code-studio", "synthesis"],
+    )
+    await push_event({
+        "type": "thinking_start",
+        "content": _synthesis_beat.label,
+        "node": "code_studio_agent",
+        "summary": _synthesis_beat.summary,
+        "details": {"phase": _synthesis_beat.phase},
+    })
+    for _chunk in _code_studio_delta_chunks(_synthesis_beat):
+        await push_event({
+            "type": "thinking_delta",
+            "content": _chunk,
+            "node": "code_studio_agent",
+        })
+    await push_event({
+        "type": "thinking_end",
+        "content": "",
+        "node": "code_studio_agent",
+    })
+
+    return llm_response, messages, tool_call_events
+
+
+def _should_surface_direct_thinking(thinking: str) -> bool:
+    """Direct chat should not expose raw chain-of-thought in the user UI."""
+    return False
 
 
 def _get_phase_fallback(state: AgentState) -> str:
@@ -955,6 +2291,7 @@ async def direct_response_node(state: AgentState) -> AgentState:
         try:
             from app.engine.multi_agent.agent_config import AgentConfigRegistry
 
+            _ctx = state.get("context", {})
             thinking_effort = state.get("thinking_effort")
             llm = AgentConfigRegistry.get_llm("direct", effort_override=thinking_effort)
 
@@ -970,7 +2307,32 @@ async def direct_response_node(state: AgentState) -> AgentState:
 
             if llm:
                 # Phase 1: Collect tools and determine forcing
-                tools, force_tools = _collect_direct_tools(query)
+                tools, force_tools = _collect_direct_tools(
+                    query,
+                    _ctx.get("user_role", "student"),
+                )
+                try:
+                    from app.engine.skills.skill_recommender import select_runtime_tools
+
+                    selected_tools = select_runtime_tools(
+                        tools,
+                        query=query,
+                        intent=(state.get("routing_metadata") or {}).get("intent"),
+                        user_role=_ctx.get("user_role", "student"),
+                        max_tools=min(len(tools), 7),
+                        must_include=_direct_required_tool_names(
+                            query,
+                            _ctx.get("user_role", "student"),
+                        ),
+                    )
+                    if selected_tools:
+                        tools = selected_tools
+                        logger.info(
+                            "[DIRECT] Runtime-selected tools: %s",
+                            [getattr(tool, "name", getattr(tool, "__name__", "unknown")) for tool in tools],
+                        )
+                except Exception as _selection_err:
+                    logger.debug("[DIRECT] Runtime tool selection skipped: %s", _selection_err)
                 logger.warning("[DIRECT] tools=%d, force=%s, web=%s, dt=%s, query='%s'",
                             len(tools), force_tools,
                             _needs_web_search(query), _needs_datetime(query),
@@ -984,10 +2346,27 @@ async def direct_response_node(state: AgentState) -> AgentState:
 
                 # Phase 3: Build messages
                 messages = _build_direct_system_messages(state, query, domain_name_vi)
+                runtime_context_base = build_tool_runtime_context(
+                    event_bus_id=_bus_id,
+                    request_id=_bus_id or state.get("session_id"),
+                    session_id=state.get("session_id"),
+                    organization_id=state.get("organization_id"),
+                    user_id=state.get("user_id"),
+                    user_role=_ctx.get("user_role", "student"),
+                    node="direct",
+                    source="agentic_loop",
+                )
 
                 # Phase 4: Multi-round tool execution
                 llm_response, messages, _tc_events = await _execute_direct_tool_rounds(
-                    llm_with_tools, llm_auto, messages, tools, _push_event,
+                    llm_with_tools,
+                    llm_auto,
+                    messages,
+                    tools,
+                    _push_event,
+                    runtime_context_base=runtime_context_base,
+                    query=query,
+                    state=state,
                 )
 
                 # Sprint 166: Store tool_call_events for preview extraction
@@ -997,7 +2376,15 @@ async def direct_response_node(state: AgentState) -> AgentState:
                 # Phase 5: Extract response
                 response, thinking_content, tools_used = _extract_direct_response(llm_response, messages)
 
-                if thinking_content:
+                _safe_direct_thinking = await _build_direct_reasoning_summary(
+                    query,
+                    state,
+                    _direct_tool_names(tools_used),
+                )
+                if _safe_direct_thinking:
+                    state["thinking_content"] = _safe_direct_thinking
+
+                if _should_surface_direct_thinking(thinking_content):
                     state["thinking"] = thinking_content
                 if tools_used:
                     state["tools_used"] = tools_used
@@ -1025,15 +2412,23 @@ async def direct_response_node(state: AgentState) -> AgentState:
                 details={"response_type": "fallback"}
             )
 
+    if not state.get("thinking_content"):
+        state["thinking_content"] = await _build_direct_reasoning_summary(
+            query,
+            state,
+            _direct_tool_names(state.get("tools_used", [])),
+        )
+
     state["final_response"] = response
     state["agent_outputs"] = {"direct": response}
     state["current_agent"] = "direct"
 
-    # Sprint 80b: Set domain notice if supervisor detected off-topic/general intent
+    # Sprint 80b: Keep notice only for legacy "general" fallback mode.
+    # LLM-first DIRECT answers for off-topic/meta chat are valid behavior for Wiii
+    # and should not be framed as out-of-domain failures.
     routing_meta = state.get("routing_metadata", {})
     intent = routing_meta.get("intent", "") if routing_meta else ""
-    # Sprint 203: "greeting" should NOT show domain notice (unconditional bugfix)
-    if intent in ("off_topic", "general"):
+    if intent == "general":
         # Sprint 214: Suppress notice when org has knowledge enabled — org KB may cover any topic
         from app.core.config import settings as _settings
         from app.core.org_context import get_current_org_id as _get_org_id
@@ -1045,6 +2440,167 @@ async def direct_response_node(state: AgentState) -> AgentState:
             )
 
     logger.info("[DIRECT] Response prepared, tracer passed to synthesizer")
+
+    return state
+
+
+async def code_studio_node(state: AgentState) -> AgentState:
+    """Capability subagent for Python, chart, HTML, and file-generation tasks."""
+    query = state.get("query", "")
+
+    _event_queue = None
+    _bus_id = state.get("_event_bus_id")
+    if _bus_id:
+        from app.engine.multi_agent.graph_streaming import _get_event_queue
+        _event_queue = _get_event_queue(_bus_id)
+
+    async def _push_event(event: dict):
+        if _event_queue:
+            try:
+                _event_queue.put_nowait(event)
+            except Exception:
+                pass
+
+    tracer = _get_or_create_tracer(state)
+    tracer.start_step(StepNames.DIRECT_RESPONSE, "Che tac dau ra ky thuat")
+
+    domain_config = state.get("domain_config", {})
+    domain_name_vi = domain_config.get("name_vi", "")
+    if not domain_name_vi:
+        domain_id = state.get("domain_id", settings.default_domain)
+        domain_name_vi = {
+            "maritime": "Hang hai",
+            "traffic_law": "Luat Giao thong",
+        }.get(domain_id, domain_id)
+
+    try:
+        from app.engine.multi_agent.agent_config import AgentConfigRegistry
+
+        _ctx = state.get("context", {})
+        thinking_effort = state.get("thinking_effort")
+        llm = AgentConfigRegistry.get_llm("code_studio_agent", effort_override=thinking_effort)
+
+        if llm and getattr(settings, "enable_natural_conversation", False) is True:
+            _pp = getattr(settings, "llm_presence_penalty", 0.0)
+            _fp = getattr(settings, "llm_frequency_penalty", 0.0)
+            if _pp or _fp:
+                try:
+                    llm = llm.bind(presence_penalty=_pp, frequency_penalty=_fp)
+                except Exception:
+                    pass
+
+        if llm:
+            tools, force_tools = _collect_code_studio_tools(query, _ctx.get("user_role", "student"))
+            try:
+                from app.engine.skills.skill_recommender import select_runtime_tools
+
+                selected_tools = select_runtime_tools(
+                    tools,
+                    query=query,
+                    intent=(state.get("routing_metadata") or {}).get("intent"),
+                    user_role=_ctx.get("user_role", "student"),
+                    max_tools=min(len(tools), 8),
+                    must_include=_code_studio_required_tool_names(
+                        query,
+                        _ctx.get("user_role", "student"),
+                    ),
+                )
+                if selected_tools:
+                    tools = selected_tools
+                    logger.info(
+                        "[CODE_STUDIO] Runtime-selected tools: %s",
+                        [getattr(tool, "name", getattr(tool, "__name__", "unknown")) for tool in tools],
+                    )
+            except Exception as _selection_err:
+                logger.debug("[CODE_STUDIO] Runtime tool selection skipped: %s", _selection_err)
+
+            llm_with_tools, llm_auto = _bind_direct_tools(llm, tools, force_tools)
+            messages = _build_direct_system_messages(
+                state,
+                query,
+                domain_name_vi,
+                role_name="code_studio_agent",
+                tools_context_override=_build_code_studio_tools_context(
+                    settings,
+                    _ctx.get("user_role", "student"),
+                ),
+            )
+            runtime_context_base = build_tool_runtime_context(
+                event_bus_id=_bus_id,
+                request_id=_bus_id or state.get("session_id"),
+                session_id=state.get("session_id"),
+                organization_id=state.get("organization_id"),
+                user_id=state.get("user_id"),
+                user_role=_ctx.get("user_role", "student"),
+                node="code_studio_agent",
+                source="agentic_loop",
+            )
+
+            llm_response, messages, _tc_events = await _execute_code_studio_tool_rounds(
+                llm_with_tools,
+                llm_auto,
+                messages,
+                tools,
+                _push_event,
+                runtime_context_base=runtime_context_base,
+                query=query,
+                state=state,
+            )
+
+            if _tc_events:
+                state["tool_call_events"] = _tc_events
+
+            response, thinking_content, tools_used = _extract_direct_response(llm_response, messages)
+            response = _sanitize_code_studio_response(response, _tc_events)
+
+            _safe_thinking = await _build_code_studio_reasoning_summary(
+                query,
+                state,
+                _direct_tool_names(tools_used),
+            )
+            if _safe_thinking:
+                state["thinking_content"] = _safe_thinking
+
+            if tools_used:
+                state["tools_used"] = tools_used
+
+            tracer.end_step(
+                result=f"Code studio response: {len(response)} chars",
+                confidence=0.88,
+                details={
+                    "response_type": "capability_generated",
+                    "tools_bound": len(tools),
+                    "force_tools": force_tools,
+                },
+            )
+        else:
+            response = "Mình chưa khởi động được Code Studio lúc này. Bạn thử lại sau nhé."
+            tracer.end_step(
+                result="Fallback (code studio unavailable)",
+                confidence=0.5,
+                details={"response_type": "fallback"},
+            )
+    except Exception as e:
+        logger.warning("[CODE_STUDIO] Generation failed: %s", e)
+        response = "Mình gặp trục trặc khi mở Code Studio. Bạn thử lại giúp mình nhé."
+        tracer.end_step(
+            result="Fallback (code studio error)",
+            confidence=0.5,
+            details={"response_type": "fallback"},
+        )
+
+    if not state.get("thinking_content"):
+        state["thinking_content"] = await _build_code_studio_reasoning_summary(
+            query,
+            state,
+            _direct_tool_names(state.get("tools_used", [])),
+        )
+
+    state["final_response"] = response
+    state["agent_outputs"] = {"code_studio_agent": response}
+    state["current_agent"] = "code_studio_agent"
+
+    logger.info("[CODE_STUDIO] Response prepared, tracer passed to synthesizer")
 
     return state
 
@@ -1072,11 +2628,26 @@ def _emit_subagent_event(state: dict, event: dict) -> None:
 async def _run_rag_subagent(state: dict, **kwargs) -> "SubagentResult":
     """Adapter: run existing RAG agent and wrap output as SubagentResult."""
     from app.engine.multi_agent.subagents.result import SubagentResult, SubagentStatus
+    rag_opening = await _render_reasoning(
+        state=state,
+        node="rag_agent",
+        phase="retrieve",
+        cue="parallel_dispatch",
+        next_action="Lục lại kho tri thức rồi gạn nguồn đỡ câu hỏi nhất.",
+        style_tags=["rag", "parallel_dispatch"],
+    )
 
     # Sprint 164: Emit thinking lifecycle events for desktop UX
     _emit_subagent_event(state, {
         "type": "thinking_start",
-        "content": "Tra cứu tri thức",
+        "content": rag_opening.label,
+        "node": "rag",
+        "summary": rag_opening.summary,
+        "details": {"phase": rag_opening.phase},
+    })
+    _emit_subagent_event(state, {
+        "type": "thinking_delta",
+        "content": rag_opening.summary,
         "node": "rag",
     })
     _emit_subagent_event(state, {
@@ -1142,16 +2713,31 @@ async def _run_rag_subagent(state: dict, **kwargs) -> "SubagentResult":
 async def _run_tutor_subagent(state: dict, **kwargs) -> "SubagentResult":
     """Adapter: run existing Tutor agent and wrap output as SubagentResult."""
     from app.engine.multi_agent.subagents.result import SubagentResult, SubagentStatus
+    tutor_opening = await _render_reasoning(
+        state=state,
+        node="tutor_agent",
+        phase="attune",
+        cue="parallel_dispatch",
+        next_action="Bắt nhịp điều người dùng đang vướng rồi soạn lại đường giải thích.",
+        style_tags=["tutor", "parallel_dispatch"],
+    )
 
     # Sprint 164: Emit thinking lifecycle events for desktop UX
     _emit_subagent_event(state, {
         "type": "thinking_start",
-        "content": "Soạn bài giảng",
+        "content": tutor_opening.label,
+        "node": "tutor",
+        "summary": tutor_opening.summary,
+        "details": {"phase": tutor_opening.phase},
+    })
+    _emit_subagent_event(state, {
+        "type": "thinking_delta",
+        "content": tutor_opening.summary,
         "node": "tutor",
     })
     _emit_subagent_event(state, {
         "type": "status",
-        "content": "Phân tích câu hỏi và chuẩn bị nội dung...",
+        "content": "Đang chuẩn bị phần giải thích...",
         "node": "tutor",
     })
 
@@ -1161,7 +2747,7 @@ async def _run_tutor_subagent(state: dict, **kwargs) -> "SubagentResult":
 
         _emit_subagent_event(state, {
             "type": "status",
-            "content": "Soạn nội dung giảng dạy...",
+            "content": "Đang viết lại lời giải...",
             "node": "tutor",
         })
 
@@ -1205,11 +2791,26 @@ async def _run_tutor_subagent(state: dict, **kwargs) -> "SubagentResult":
 async def _run_search_subagent(state: dict, **kwargs) -> "SubagentResult":
     """Adapter: run product search and wrap output as SubagentResult."""
     from app.engine.multi_agent.subagents.result import SubagentResult, SubagentStatus
+    search_opening = await _render_reasoning(
+        state=state,
+        node="product_search_agent",
+        phase="retrieve",
+        cue="parallel_dispatch",
+        next_action="Mở nhiều nguồn giá song song rồi gạn lại mặt bằng đáng tin.",
+        style_tags=["product_search", "parallel_dispatch"],
+    )
 
     # Sprint 164: Emit thinking lifecycle events for desktop UX
     _emit_subagent_event(state, {
         "type": "thinking_start",
-        "content": "Tìm kiếm sản phẩm",
+        "content": search_opening.label,
+        "node": "search",
+        "summary": search_opening.summary,
+        "details": {"phase": search_opening.phase},
+    })
+    _emit_subagent_event(state, {
+        "type": "thinking_delta",
+        "content": search_opening.summary,
         "node": "search",
     })
 
@@ -1356,7 +2957,7 @@ def route_decision(state: AgentState) -> str:
 
     valid_routes = {
         "rag_agent", "tutor_agent", "memory_agent",
-        "direct", "product_search_agent", "parallel_dispatch",
+        "direct", "code_studio_agent", "product_search_agent", "parallel_dispatch",
         "colleague_agent",
     }
 
@@ -1575,6 +3176,7 @@ def build_multi_agent_graph(checkpointer=None):
     workflow.add_node("tutor_agent", tutor_node)
     workflow.add_node("memory_agent", memory_node)
     workflow.add_node("direct", direct_response_node)
+    workflow.add_node("code_studio_agent", code_studio_node)
     workflow.add_node("grader", grader_node)
     workflow.add_node("synthesizer", synthesizer_node)
     # Sprint 215: Colleague agent (cross-soul consultation, feature-gated)
@@ -1619,6 +3221,7 @@ def build_multi_agent_graph(checkpointer=None):
         "tutor_agent": "tutor_agent",
         "memory_agent": "memory_agent",
         "direct": "direct",
+        "code_studio_agent": "code_studio_agent",
     }
     if settings.enable_product_search:
         _routing_map["product_search_agent"] = "product_search_agent"
@@ -1653,6 +3256,7 @@ def build_multi_agent_graph(checkpointer=None):
     
     # Direct → Synthesizer (skip grader)
     workflow.add_edge("direct", "synthesizer")
+    workflow.add_edge("code_studio_agent", "synthesizer")
 
     # Sprint 148: Product search → Synthesizer (skip grader — comparison data, not knowledge)
     if settings.enable_product_search:
@@ -1696,30 +3300,34 @@ def build_multi_agent_graph(checkpointer=None):
 # Singleton
 # =============================================================================
 
-_graph = None
+_sync_graph = None
 
 
 def get_multi_agent_graph():
     """Get or create Multi-Agent Graph singleton (sync, no checkpointer)."""
-    global _graph
-    if _graph is None:
-        _graph = build_multi_agent_graph()
-    return _graph
+    global _sync_graph
+    if _sync_graph is None:
+        _sync_graph = build_multi_agent_graph()
+    return _sync_graph
+
+
+@asynccontextmanager
+async def open_multi_agent_graph():
+    """Build a request-scoped graph with its own checkpointer connection."""
+    from app.engine.multi_agent.checkpointer import open_checkpointer
+
+    async with open_checkpointer() as checkpointer:
+        yield build_multi_agent_graph(checkpointer=checkpointer)
 
 
 async def get_multi_agent_graph_async():
     """
-    Get or create Multi-Agent Graph singleton with checkpointer.
+    Backward-compatible async accessor.
 
-    SOTA 2026: Async initialization enables PostgreSQL-backed
-    LangGraph checkpointing for multi-turn conversation persistence.
+    Prefer ``open_multi_agent_graph()`` for request handling so each request
+    gets an isolated checkpointer connection.
     """
-    global _graph
-    if _graph is None:
-        from app.engine.multi_agent.checkpointer import get_checkpointer
-        checkpointer = await get_checkpointer()
-        _graph = build_multi_agent_graph(checkpointer=checkpointer)
-    return _graph
+    return build_multi_agent_graph()
 
 
 async def _generate_session_summary_bg(thread_id: str, user_id: str) -> None:
@@ -1839,7 +3447,6 @@ async def process_with_multi_agent(
         Dict with final_response, sources, trace info, etc.
     """
     domain_id = domain_id or settings.default_domain
-    graph = await get_multi_agent_graph_async()
     registry = get_agent_registry()
 
     # Start token tracking for this request (SOTA 2026)
@@ -1887,6 +3494,7 @@ async def process_with_multi_agent(
         "thinking_effort": thinking_effort,
         "routing_metadata": None,  # Sprint 103: Initialize for API exposure
         "organization_id": (context or {}).get("organization_id"),  # Sprint 160
+        **_build_turn_local_state_defaults(context),
     }
 
     # Sprint 222: Graph-level host context injection -- ALL agents get this
@@ -1921,7 +3529,8 @@ async def process_with_multi_agent(
     # Sprint 153: try/finally to prevent _TRACERS memory leak on exceptions
     _trace_id_for_cleanup = initial_state.get("_trace_id")
     try:
-        result = await graph.ainvoke(initial_state, config=invoke_config)
+        async with open_multi_agent_graph() as graph:
+            result = await graph.ainvoke(initial_state, config=invoke_config)
         _trace_id_for_cleanup = result.get("_trace_id", _trace_id_for_cleanup)
     finally:
         # Sprint 139+153: Always clean up tracer from module-level storage
@@ -2010,5 +3619,3 @@ def __getattr__(name):
         from app.engine.multi_agent.graph_streaming import process_with_multi_agent_streaming
         return process_with_multi_agent_streaming
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-

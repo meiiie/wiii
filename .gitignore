@@ -77,6 +77,17 @@ test_*.txt
 # === pip install artifacts ===
 maritime-ai-service/=*
 
+# === Local dev session files ===
+2026-03-*.md
+ollama-benchmark-*.json
+wiii-1420.err
+wiii-1420.out
+test-results/
+Documents/
+maritime-ai-service/.tmp-workspace/
+maritime-ai-service/.env.soul-agi
+wiii-desktop/scripts/screenshots/
+
 # === Claude Code artifacts ===
 .claude/plans/
 .claude/reports/

@@ -28,10 +28,20 @@ from enum import Enum
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.resilience import retry_on_transient
+from app.engine.character.character_card import (
+    build_supervisor_card_prompt,
+    build_synthesis_card_prompt,
+)
 from app.engine.multi_agent.agent_config import AgentConfigRegistry
 from app.engine.multi_agent.state import AgentState
 
 logger = logging.getLogger(__name__)
+
+
+def _store_capability_context(state: AgentState, capability_context: str) -> None:
+    """Keep handbook guidance separate from domain skill content."""
+    if capability_context:
+        state["capability_context"] = capability_context
 
 
 class AgentType(str, Enum):
@@ -40,6 +50,7 @@ class AgentType(str, Enum):
     TUTOR = "tutor_agent"
     MEMORY = "memory_agent"
     DIRECT = "direct"
+    CODE_STUDIO = "code_studio_agent"
     PRODUCT_SEARCH = "product_search_agent"  # Sprint 148
     COLLEAGUE = "colleague_agent"            # Sprint 215
 
@@ -61,9 +72,10 @@ ROUTING_PROMPT_TEMPLATE = """Bạn là Supervisor Agent cho hệ thống {domain
 - RAG_AGENT: intent=lookup VÀ CÓ domain keyword RÕ RÀNG → tra cứu quy định, luật, mức phạt. {rag_description}
 - TUTOR_AGENT: intent=learning VÀ CÓ domain keyword → giải thích, quiz, ôn bài, dạy kiến thức. {tutor_description}
 - MEMORY_AGENT: intent=personal → lịch sử học, preferences, nhớ thông tin
+- CODE_STUDIO_AGENT: intent=code_execution → viết/chạy code, tạo biểu đồ/chart, tạo file (HTML/Excel/Word/PDF), chụp trang web, xử lý dữ liệu, tạo artifact kỹ thuật
 - PRODUCT_SEARCH_AGENT: intent=product_search → tìm kiếm sản phẩm, so sánh giá, mua hàng trên sàn TMĐT (Shopee, Lazada, TikTok Shop, Google Shopping, Facebook Marketplace)
 - COLLEAGUE_AGENT: intent=colleague_consult VÀ user_role=admin → hỏi ý kiến Bro về trading, crypto, rủi ro thị trường, liquidation
-- DIRECT: intent=social HOẶC intent=off_topic HOẶC intent=web_search → chào hỏi, cảm ơn, tạm biệt, câu NGOÀI chuyên môn, tìm kiếm web/tin tức/pháp luật
+- DIRECT: intent=social HOẶC intent=off_topic HOẶC intent=web_search → chào hỏi, cảm ơn, tạm biệt, câu NGOÀI chuyên môn, tìm kiếm web/tin tức/pháp luật. DIRECT KHÔNG tạo file, KHÔNG chạy code, KHÔNG vẽ biểu đồ — những việc đó thuộc CODE_STUDIO_AGENT
 
 ## Quy tắc QUAN TRỌNG:
 - "quiz/giải thích/dạy/ôn bài" + domain keyword → TUTOR_AGENT (NOT RAG_AGENT)
@@ -105,6 +117,12 @@ ROUTING_PROMPT_TEMPLATE = """Bạn là Supervisor Agent cho hệ thống {domain
 - "Tình hình liquidation thế nào Bro?" → intent=colleague_consult, agent=COLLEAGUE_AGENT, confidence=0.95 (CHỈ khi user_role=admin)
 - "Bro ơi, thị trường crypto hôm nay sao?" → intent=colleague_consult, agent=COLLEAGUE_AGENT, confidence=0.95 (CHỈ khi user_role=admin)
 - "Bro đánh giá rủi ro thế nào?" → intent=colleague_consult, agent=COLLEAGUE_AGENT, confidence=0.90 (CHỈ khi user_role=admin)
+- "Viết code Python tính diện tích tam giác" → intent=code_execution, agent=CODE_STUDIO_AGENT, confidence=0.95
+- "Tạo biểu đồ so sánh doanh thu" → intent=code_execution, agent=CODE_STUDIO_AGENT, confidence=0.95
+- "Xuất file Excel danh sách" → intent=code_execution, agent=CODE_STUDIO_AGENT, confidence=0.95
+- "Tạo báo cáo Word" → intent=code_execution, agent=CODE_STUDIO_AGENT, confidence=0.90
+- "Chụp trang web https://example.com" → intent=code_execution, agent=CODE_STUDIO_AGENT, confidence=0.95
+- "Vẽ chart thống kê" → intent=code_execution, agent=CODE_STUDIO_AGENT, confidence=0.95
 
 **Query:** {query}
 
@@ -164,6 +182,14 @@ PERSONAL_KEYWORDS = [
     "tuổi tôi", "tuổi mình", "nghề của tôi",
 ]
 
+CODE_STUDIO_KEYWORDS = [
+    "python", "code", "viet code", "chay code", "chay python",
+    "javascript", "js", "typescript", "ts", "html", "css", "react",
+    "landing page", "website", "web app", "microsite",
+    "bieu do", "chart", "plot", "matplotlib", "pandas", "seaborn",
+    "png", "svg", "canvas", "artifact", "sandbox",
+]
+
 
 # Sprint 103: LEARNING_KEYWORDS, LOOKUP_KEYWORDS, WEB_KEYWORDS deleted.
 # LLM structured routing (_route_structured) handles all nuanced decisions.
@@ -183,6 +209,17 @@ _MIXED_INTENT_PAIRS = [
     ("cho biết", "hướng dẫn"),
     ("thông tin", "phân tích"),
 ]
+
+
+def _normalize_router_text(text: str) -> str:
+    """Normalize routing text for capability guardrails."""
+    return " ".join((text or "").lower().split())
+
+
+def _needs_code_studio(query: str) -> bool:
+    """Detect requests that should route to the code studio capability."""
+    normalized = _normalize_router_text(query)
+    return any(kw in normalized for kw in CODE_STUDIO_KEYWORDS)
 
 
 class SupervisorAgent:
@@ -284,10 +321,15 @@ class SupervisorAgent:
         else:
             context_str = str(context)[:500]
 
+        capability_context = state.get("capability_context", "")
+        if capability_context:
+            context_str = f"{context_str}\n\n{capability_context}"
+
         # Sprint 215: Extract user_role for colleague routing
         user_role = (context or {}).get("user_role") or (context or {}).get("role") or "student"
 
         messages = [
+            SystemMessage(content=build_supervisor_card_prompt()),
             SystemMessage(content="You are a query router. Analyze the query step by step, classify intent, choose agent, and provide confidence."),
             HumanMessage(content=ROUTING_PROMPT_TEMPLATE.format(
                 domain_name=domain_name,
@@ -306,6 +348,7 @@ class SupervisorAgent:
             "TUTOR_AGENT": AgentType.TUTOR.value,
             "MEMORY_AGENT": AgentType.MEMORY.value,
             "DIRECT": AgentType.DIRECT.value,
+            "CODE_STUDIO_AGENT": AgentType.CODE_STUDIO.value,
             "PRODUCT_SEARCH_AGENT": AgentType.PRODUCT_SEARCH.value,
             "COLLEAGUE_AGENT": AgentType.COLLEAGUE.value,
         }
@@ -330,6 +373,16 @@ class SupervisorAgent:
             logger.info("[SUPERVISOR] Intent override (%s): %s → direct", result.intent, chosen_agent)
             chosen_agent = AgentType.DIRECT.value
             method = "structured+intent_override"
+
+        if result.intent == "code_execution" and chosen_agent != AgentType.CODE_STUDIO.value:
+            logger.info("[SUPERVISOR] Intent override (%s): %s -> code_studio_agent", result.intent, chosen_agent)
+            chosen_agent = AgentType.CODE_STUDIO.value
+            method = "structured+intent_override"
+
+        if _needs_code_studio(query) and chosen_agent == AgentType.DIRECT.value:
+            logger.info("[SUPERVISOR] Capability override: direct -> code_studio_agent")
+            chosen_agent = AgentType.CODE_STUDIO.value
+            method = "structured+capability_override"
 
         # Sprint 148: Product search feature gate — fallback to DIRECT if disabled
         if chosen_agent == AgentType.PRODUCT_SEARCH.value:
@@ -427,6 +480,9 @@ class SupervisorAgent:
         if any(kw in query_lower for kw in PERSONAL_KEYWORDS):
             return AgentType.MEMORY.value
 
+        if _needs_code_studio(query):
+            return AgentType.CODE_STUDIO.value
+
         # 3. Domain keyword → RAG
         domain_keywords = self._get_domain_keywords(domain_config)
         if any(kw in query_lower for kw in domain_keywords):
@@ -503,6 +559,7 @@ class SupervisorAgent:
             _host_suffix = f"\n\nHost Context:\n{_host_prompt}" if _host_prompt else ""
 
             messages = [
+                SystemMessage(content=build_synthesis_card_prompt()),
                 HumanMessage(content=_synth_prompt.format(
                     query=state.get("query", ""),
                     outputs=output_text
@@ -573,20 +630,57 @@ class SupervisorAgent:
             except Exception as e:
                 logger.debug("Skill activation skipped: %s", e)
 
+        if query:
+            try:
+                from app.engine.skills.skill_handbook import get_skill_handbook
+
+                capability_context = get_skill_handbook().summarize_for_query(query, max_entries=3)
+                if capability_context:
+                    _store_capability_context(state, capability_context)
+            except Exception as e:
+                logger.debug("Capability handbook summary skipped: %s", e)
+
         # Route to appropriate agent (also sets routing_metadata in state)
         next_agent = await self.route(state)
+
+        try:
+            from app.engine.skills.skill_handbook import get_skill_handbook
+
+            routed_intent = (state.get("routing_metadata") or {}).get("intent")
+            capability_context = get_skill_handbook().summarize_for_query(
+                query,
+                intent=routed_intent,
+                max_entries=3,
+            )
+            if capability_context:
+                _store_capability_context(state, capability_context)
+        except Exception as e:
+            logger.debug("Post-routing capability handbook summary skipped: %s", e)
 
         # Sprint 163 Phase 4: Parallel dispatch for complex queries
         try:
             from app.core.config import settings as _settings
             if (
                 _settings.enable_subagent_architecture
-                and next_agent in (AgentType.RAG.value, AgentType.TUTOR.value)
+                and next_agent in (
+                    AgentType.RAG.value,
+                    AgentType.TUTOR.value,
+                    AgentType.PRODUCT_SEARCH.value,
+                )
                 and self._is_complex_query(query, state.get("routing_metadata") or {})
             ):
-                logger.info("[SUPERVISOR] Complex query detected → parallel_dispatch")
-                next_agent = "parallel_dispatch"
-                state["_parallel_targets"] = ["rag", "tutor"]
+                from app.engine.multi_agent.orchestration_planner import plan_parallel_targets
+
+                planned_targets = plan_parallel_targets(
+                    query,
+                    next_agent,
+                    intent=(state.get("routing_metadata") or {}).get("intent"),
+                    max_targets=2,
+                )
+                if len(planned_targets) > 1:
+                    logger.info("[SUPERVISOR] Complex query detected → parallel_dispatch %s", planned_targets)
+                    next_agent = "parallel_dispatch"
+                    state["_parallel_targets"] = planned_targets
         except Exception as e:
             logger.debug("Parallel dispatch check failed: %s", e)
 
