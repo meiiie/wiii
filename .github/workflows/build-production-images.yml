@@ -27,10 +27,11 @@ jobs:
           cache: npm
           cache-dependency-path: wiii-desktop/package-lock.json
 
-      - name: Build embed bundle
+      - name: Build web + embed bundles
         working-directory: wiii-desktop
         run: |
           npm ci
+          npm run build:web
           npm run build:embed
 
       - name: Set lowercase owner

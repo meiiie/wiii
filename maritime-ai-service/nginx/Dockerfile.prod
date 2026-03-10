@@ -1,5 +1,5 @@
 FROM nginx:1-alpine
 
 COPY maritime-ai-service/nginx/nginx.conf.template /etc/nginx/templates/default.conf.template
-COPY maritime-ai-service/nginx/html/ /usr/share/nginx/html/
+COPY wiii-desktop/dist-web/ /usr/share/nginx/html/
 COPY wiii-desktop/dist-embed/ /usr/share/nginx/embed/
