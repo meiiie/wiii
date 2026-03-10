@@ -10,7 +10,7 @@ import uuid
 
 load_dotenv()
 
-BASE_URL = "https://maritime-ai-chatbot.onrender.com"
+BASE_URL = "https://wiii.holilihu.online"
 API_KEY = os.getenv("API_KEY", "dev-secret-key")
 
 HEADERS = {

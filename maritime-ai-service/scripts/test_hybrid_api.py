@@ -8,7 +8,7 @@ Usage:
     python scripts/test_hybrid_api.py
     
 Requirements:
-    - Server deployed at RENDER_URL
+    - Server deployed at PRODUCTION_URL
     - PDF file in data/ directory
 """
 import os
@@ -17,9 +17,9 @@ import requests
 from pathlib import Path
 
 # Configuration
-RENDER_URL = os.getenv("RENDER_URL", "https://maritime-ai-chatbot.onrender.com")
-API_ENDPOINT = f"{RENDER_URL}/api/v1/knowledge/ingest-multimodal"
-HEALTH_ENDPOINT = f"{RENDER_URL}/api/v1/health"  # Shallow health check (no DB)
+PRODUCTION_URL = os.getenv("PRODUCTION_URL", "https://wiii.holilihu.online")
+API_ENDPOINT = f"{PRODUCTION_URL}/api/v1/knowledge/ingest-multimodal"
+HEALTH_ENDPOINT = f"{PRODUCTION_URL}/api/v1/health"  # Shallow health check (no DB)
 
 # Test PDF - use VanBanGoc for text-heavy content (should have high savings)
 TEST_PDF = "data/VanBanGoc_95.2015.QH13.P1.pdf"

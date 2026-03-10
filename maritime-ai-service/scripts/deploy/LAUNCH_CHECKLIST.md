@@ -98,20 +98,20 @@
   ```bash
   curl -X POST https://holilihu.online/api/v1/chat \
     -H "X-API-Key: <your-key>" \
-    -H "X-User-ID: test" \
     -H "X-Session-ID: test" \
     -H "Content-Type: application/json" \
-    -d '{"message": "Xin chao!"}'
+    -d '{"user_id": "api-client", "message": "Xin chao!", "role": "student", "session_id": "test"}'
   ```
 - [ ] Streaming works (SSE):
   ```bash
   curl -N https://holilihu.online/api/v1/chat/stream/v3 \
     -H "X-API-Key: <your-key>" \
-    -H "X-User-ID: test" \
     -H "X-Session-ID: test" \
     -H "Content-Type: application/json" \
-    -d '{"message": "COLREG la gi?"}'
+    -d '{"user_id": "api-client", "message": "COLREG la gi?", "role": "student", "session_id": "test"}'
   ```
+
+- [ ] API-key smoke tests avoid `X-User-ID`; real end-user identity uses JWT or LMS service token
 - [ ] Landing page loads: `https://holilihu.online/`
 - [ ] Status dashboard: `./scripts/deploy/status.sh`
 

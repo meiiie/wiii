@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 # Configuration
-API_URL = "https://maritime-ai-chatbot.onrender.com"
+API_URL = "https://wiii.holilihu.online"
 API_KEY = "secret_key_cho_team_lms"
 PDF_PATH = "data/VanBanGoc_95.2015.QH13.P1.pdf"
 DOCUMENT_ID = "luat_hang_hai_2015"

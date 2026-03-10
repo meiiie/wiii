@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 API_KEY = os.getenv('API_KEY', '')
-BASE_URL = "https://maritime-ai-chatbot.onrender.com"
+BASE_URL = "https://wiii.holilihu.online"
 
 # Dùng cùng user_id và session_id để test memory
 USER_ID = "test-memory-user-456"

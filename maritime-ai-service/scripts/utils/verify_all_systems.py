@@ -21,7 +21,7 @@ def log_result(component: str, status: bool, detail: str = ""):
 
 
 async def test_1_env_files():
-    """Test 1: Kiểm tra .env và .env.render có đúng URL không."""
+    """Test 1: Kiểm tra .env và .env.production có đúng URL không."""
     print("\n" + "="*60)
     print("TEST 1: Environment Files")
     print("="*60)
@@ -40,18 +40,18 @@ async def test_1_env_files():
     else:
         log_result(".env", False, "File not found")
     
-    # Check .env.render
-    render_path = ".env.render"
-    if os.path.exists(render_path):
-        with open(render_path, 'r', encoding='utf-8', errors='ignore') as f:
+    # Check .env.production (canonical deploy env)
+    production_path = os.getenv("WIII_PRODUCTION_ENV_FILE", ".env.production")
+    if os.path.exists(production_path):
+        with open(production_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
         
         if "neon.tech" in content or "ep-quiet-bush" in content:
-            log_result(".env.render DATABASE_URL", True, "Neon Pooler ✓")
+            log_result(f"{production_path} DATABASE_URL", True, "Neon Pooler ✓")
         else:
-            log_result(".env.render DATABASE_URL", False, "Wrong URL format (expected Neon)")
+            log_result(f"{production_path} DATABASE_URL", False, "Wrong URL format (expected Neon)")
     else:
-        log_result(".env.render", False, "File not found")
+        log_result(production_path, False, "File not found")
 
 
 async def test_2_neon_connection():

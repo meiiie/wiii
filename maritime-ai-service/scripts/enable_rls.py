@@ -18,8 +18,6 @@ from sqlalchemy import create_engine, text, inspect
 ORG_SCOPED_TABLES = [
     "semantic_memories",
     "chat_history",
-    "chat_sessions",
-    "chat_messages",
     "learning_profile",
     "scheduled_tasks",
     "wiii_emotional_snapshots",

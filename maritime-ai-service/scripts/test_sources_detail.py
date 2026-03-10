@@ -9,14 +9,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-RENDER_URL = os.getenv("RENDER_URL", "https://maritime-ai-chatbot.onrender.com")
+PRODUCTION_URL = os.getenv("PRODUCTION_URL", "https://wiii.holilihu.online")
 API_KEY = os.getenv("API_KEY", "")
 
 def test_sources_detail():
     """Test sources detail with image_url"""
     print("="*60)
     print("SOURCES & EVIDENCE IMAGES DETAIL TEST")
-    print(f"Server: {RENDER_URL}")
+    print(f"Server: {PRODUCTION_URL}")
     print("="*60)
     
     headers = {"X-API-Key": API_KEY} if API_KEY else {}
@@ -30,7 +30,7 @@ def test_sources_detail():
     print(f"\n📤 Query: {payload['message']}")
     
     response = requests.post(
-        f"{RENDER_URL}/api/v1/chat/",
+        f"{PRODUCTION_URL}/api/v1/chat/",
         json=payload,
         headers=headers,
         timeout=120

@@ -1,32 +1,43 @@
 # =============================================================================
-# Wiii Production — Caddy Auto-SSL + Reverse Proxy to Nginx
+# Wiii Production — Caddy Reverse Proxy (behind Cloudflare)
 # by The Wiii Lab (Hong Linh Linh Hung)
 #
-# Architecture: Caddy (SSL) → Nginx (routing + rate limiting + SPA) → App (API)
+# Architecture: Cloudflare (SSL) → Caddy (reverse proxy :80) → Nginx (:8080)
 #
 # Install:
 #   sudo cp Caddyfile /etc/caddy/Caddyfile
 #   sudo systemctl reload caddy
 #
-# Caddy automatically:
-#   - Obtains Let's Encrypt SSL certificates
-#   - Renews certificates before expiry (30 days before)
-#   - Redirects HTTP → HTTPS
-#   - Handles OCSP stapling
-#   - Supports HTTP/3 (QUIC) by default
+# Cloudflare proxy (orange cloud) handles:
+#   - SSL/TLS termination (Full mode — Cloudflare trusts Caddy's self-signed)
+#   - HTTP/3 (QUIC)
+#   - DDoS protection
+#   - CDN caching
 #
-# IMPORTANT: Replace "holilihu.online" with your actual domain if different.
+# Caddy handles:
+#   - HTTP reverse proxy to Nginx
+#   - Auto TLS for direct access (self-signed if ACME fails behind CF)
+#   - Request routing + headers
+#
+# This server ONLY serves wiii.holilihu.online
+# holilihu.online points to a different server (LMS)
 # =============================================================================
 
 {
-    # ACME email — Let's Encrypt will notify before cert expiry
+    # ACME email for cert notifications
     email admin@holilihu.online
 }
 
 # ─────────────────────────────────────────────────
-# Main domain — holilihu.online
+# Wiii Web App — wiii.holilihu.online
+# Full SPA + API reverse proxy
+#
+# Cloudflare terminates TLS → forwards HTTP to port 80
+# Caddy will attempt Let's Encrypt but falls back to
+# self-signed if ACME challenges are intercepted by CF.
+# Either way, Cloudflare "Full" SSL mode works.
 # ─────────────────────────────────────────────────
-holilihu.online {
+wiii.holilihu.online {
     reverse_proxy localhost:8080 {
         # Flush immediately for SSE streaming (critical!)
         flush_interval -1
@@ -44,7 +55,7 @@ holilihu.online {
         }
     }
 
-    # Security headers (HSTS — Caddy handles this, Nginx handles the rest)
+    # Security headers
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         -Server
@@ -57,44 +68,6 @@ holilihu.online {
 
     # Access logging (JSON format)
     log {
-        output file /var/log/caddy/holilihu-access.log {
-            roll_size 100mb
-            roll_keep 5
-            roll_keep_for 168h
-        }
-        format json
-    }
-}
-
-# ─────────────────────────────────────────────────
-# Wiii Web App — wiii.holilihu.online
-# Full SPA + API reverse proxy (same Nginx backend)
-# ─────────────────────────────────────────────────
-wiii.holilihu.online {
-    reverse_proxy localhost:8080 {
-        flush_interval -1
-
-        health_uri /health
-        health_interval 30s
-        health_timeout 5s
-
-        transport http {
-            response_header_timeout 120s
-            read_timeout 300s
-            write_timeout 300s
-        }
-    }
-
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        -Server
-    }
-
-    request_body {
-        max_size 50MB
-    }
-
-    log {
         output file /var/log/caddy/wiii-access.log {
             roll_size 100mb
             roll_keep 5
@@ -106,21 +79,12 @@ wiii.holilihu.online {
 
 # ─────────────────────────────────────────────────
 # Wildcard subdomains — *.holilihu.online
-# For multi-tenant org routing (e.g., lms-hanhai.holilihu.online)
-#
-# NOTE: Wildcard SSL requires DNS challenge.
-# Option A: Use Caddy with cloudflare DNS plugin (recommended)
-# Option B: Use Cloudflare proxy (orange cloud) — Cloudflare handles SSL
-#
-# If using Cloudflare proxy (orange cloud on DNS records):
-#   - Cloudflare terminates SSL, forwards to Caddy on port 80
-#   - Caddy still gets a cert for origin, Cloudflare trusts it
-#   - Set Cloudflare SSL mode to "Full (strict)"
+# For future multi-tenant org routing
+# Requires: Caddy with caddy-dns/cloudflare plugin for wildcard certs
 # ─────────────────────────────────────────────────
 
 # Uncomment when you need subdomain routing:
 # *.holilihu.online {
-#     # Wildcard cert via DNS challenge (requires caddy-dns plugin)
 #     tls {
 #         dns cloudflare {env.CLOUDFLARE_API_TOKEN}
 #     }

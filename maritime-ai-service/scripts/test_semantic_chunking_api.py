@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 # Configuration
-API_URL = "https://maritime-ai-chatbot.onrender.com"
+API_URL = "https://wiii.holilihu.online"
 API_KEY = "secret_key_cho_team_lms"
 TIMEOUT = 120.0  # 2 minutes for LLM responses
 

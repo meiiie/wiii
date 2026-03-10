@@ -10,7 +10,7 @@
 #
 # What this does:
 #   1. Checks API health endpoint
-#   2. Checks all Docker containers are healthy
+#   2. Checks required Docker services are running and no containers are unhealthy
 #   3. Checks disk usage (alert if >85%)
 #   4. Checks available memory (alert if <256MB)
 #   5. Sends Discord/Telegram alert on failure (with deduplication)
@@ -24,6 +24,7 @@ DOMAIN="${WIII_DOMAIN:-holilihu.online}"
 COMPOSE_FILE="/opt/wiii/maritime-ai-service/docker-compose.prod.yml"
 ALERT_FILE="/tmp/wiii_alert_sent"
 LOG_FILE="/var/log/wiii-health.log"
+REQUIRED_SERVICES=(postgres minio valkey app nginx pg-backup)
 
 # Alert webhook (set in environment or .env)
 # Discord: DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
@@ -64,11 +65,34 @@ check_nginx() {
 
 check_containers() {
     local unhealthy
+    local running_services
+    local missing_services=""
+    local service
+
+    running_services=$(docker compose -f "$COMPOSE_FILE" ps --services --status running 2>/dev/null || echo "")
+    for service in "${REQUIRED_SERVICES[@]}"; do
+        if ! printf '%s\n' "$running_services" | grep -qx "$service"; then
+            missing_services="${missing_services}${service} "
+        fi
+    done
+
     unhealthy=$(docker ps --filter "health=unhealthy" --format "{{.Names}}" 2>/dev/null || echo "")
+
+    if [ -n "$missing_services" ] && [ -n "$unhealthy" ]; then
+        echo "Missing required services: ${missing_services%% }. Unhealthy containers: ${unhealthy}"
+        return 1
+    fi
+
+    if [ -n "$missing_services" ]; then
+        echo "Missing required services: ${missing_services%% }"
+        return 1
+    fi
+
     if [ -n "$unhealthy" ]; then
         echo "Unhealthy containers: ${unhealthy}"
         return 1
     fi
+
     return 0
 }
 

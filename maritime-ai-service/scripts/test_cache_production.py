@@ -19,7 +19,7 @@ import httpx
 # CONFIGURATION
 # ============================================================================
 
-BASE_URL = "https://maritime-ai-chatbot.onrender.com"
+BASE_URL = "https://wiii.holilihu.online"
 API_PREFIX = "/api/v1"
 API_KEY = "secret_key_cho_team_lms"
 

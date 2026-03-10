@@ -64,13 +64,14 @@ check "SPA loads (GET /)" "$([ "$HTTP" = "200" ] && echo true || echo false)"
 echo ""
 echo "4. API Endpoints"
 if [ -n "$API_KEY" ]; then
+    # Production API key auth is a service-client path.
+    # Do not send X-User-ID here; auth resolves to api-client.
     HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
         -X POST "${BASE_URL}/api/v1/chat" \
         -H "Content-Type: application/json" \
         -H "X-API-Key: ${API_KEY}" \
-        -H "X-User-ID: smoke-test" \
         -H "X-Session-ID: smoke-test-session" \
-        -d '{"user_id": "smoke-test", "message": "test", "role": "student", "session_id": "smoke-test-session", "domain_id": "maritime"}' \
+        -d '{"user_id": "api-client", "message": "test", "role": "student", "session_id": "smoke-test-session", "domain_id": "maritime"}' \
         --max-time 30 \
         2>/dev/null || echo "000")
     check "Chat API (POST /chat)" "$([ "$HTTP" = "200" ] && echo true || echo false)"

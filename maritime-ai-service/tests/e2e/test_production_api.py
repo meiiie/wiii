@@ -10,7 +10,7 @@ import time
 from datetime import datetime
 
 # Production URL
-BASE_URL = "https://maritime-ai-chatbot.onrender.com"
+BASE_URL = "https://wiii.holilihu.online"
 API_KEY = "secret_key_cho_team_lms"  # From .env.render
 
 def test_health():

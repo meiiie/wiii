@@ -15,7 +15,7 @@ import time
 import json
 
 # Production API
-API_URL = "https://maritime-ai-chatbot.onrender.com/api/v1/chat"
+API_URL = "https://wiii.holilihu.online/api/v1/chat"
 API_KEY = "lms_secret_key_2024"
 
 HEADERS = {
@@ -282,7 +282,7 @@ def test_config_values():
     
     # Check health endpoint for config info
     try:
-        health_url = "https://maritime-ai-chatbot.onrender.com/api/v1/health"
+        health_url = "https://wiii.holilihu.online/api/v1/health"
         response = requests.get(health_url, headers=HEADERS, timeout=10)
         
         if response.status_code == 200:
@@ -304,7 +304,7 @@ def main():
     print("=" * 70)
     print("DEEP REASONING & MEMORY ISOLATION PRODUCTION TEST")
     print("CHỈ THỊ SỐ 21 & 22")
-    print("API: https://maritime-ai-chatbot.onrender.com")
+    print("API: https://wiii.holilihu.online")
     print("=" * 70)
     
     results = []

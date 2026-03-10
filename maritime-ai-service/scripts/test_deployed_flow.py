@@ -19,7 +19,7 @@ import time
 from datetime import datetime
 
 # Configuration
-BASE_URL = "https://maritime-ai-chatbot.onrender.com"  # Render URL
+BASE_URL = "https://wiii.holilihu.online"  # GCP production URL
 API_KEY = "secret_key_cho_team_lms"  # Production API key
 TEST_USER_ID = f"test_flow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 

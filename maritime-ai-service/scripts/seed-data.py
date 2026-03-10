@@ -179,61 +179,46 @@ async def seed_postgres():
             result = await session.execute(text("SELECT 1"))
             print("✅ Connected to PostgreSQL")
             
-            # Create test chat sessions
+            # Create test chat history
             for user in TEST_USERS:
                 session_id = str(uuid4())
                 created_at = datetime.now() - timedelta(days=1)
-                
-                # Insert chat session
-                await session.execute(
-                    text("""
-                        INSERT INTO chat_sessions (id, user_id, created_at, updated_at)
-                        VALUES (:id, :user_id, :created_at, :updated_at)
-                        ON CONFLICT (id) DO NOTHING
-                    """),
-                    {
-                        "id": session_id,
-                        "user_id": user["user_id"],
-                        "created_at": created_at,
-                        "updated_at": created_at
-                    }
-                )
-                
-                # Insert chat messages
+
+                # Insert chat messages directly into the canonical chat_history table
                 for i, chat in enumerate(SAMPLE_CHAT_HISTORY):
                     msg_time = created_at + timedelta(minutes=i*5)
-                    
+
                     # User message
                     await session.execute(
                         text("""
-                            INSERT INTO chat_messages 
-                            (id, session_id, role, content, created_at, sequence)
-                            VALUES (:id, :session_id, 'user', :content, :created_at, :sequence)
+                            INSERT INTO chat_history
+                            (id, user_id, session_id, role, content, created_at)
+                            VALUES (:id, :user_id, :session_id, 'user', :content, :created_at)
                             ON CONFLICT DO NOTHING
                         """),
                         {
                             "id": str(uuid4()),
+                            "user_id": user["user_id"],
                             "session_id": session_id,
                             "content": chat["user_message"],
                             "created_at": msg_time,
-                            "sequence": i * 2
                         }
                     )
-                    
+
                     # AI response
                     await session.execute(
                         text("""
-                            INSERT INTO chat_messages 
-                            (id, session_id, role, content, created_at, sequence)
-                            VALUES (:id, :session_id, 'assistant', :content, :created_at, :sequence)
+                            INSERT INTO chat_history
+                            (id, user_id, session_id, role, content, created_at)
+                            VALUES (:id, :user_id, :session_id, 'assistant', :content, :created_at)
                             ON CONFLICT DO NOTHING
                         """),
                         {
                             "id": str(uuid4()),
+                            "user_id": user["user_id"],
                             "session_id": session_id,
                             "content": chat["ai_response"],
                             "created_at": msg_time + timedelta(seconds=30),
-                            "sequence": i * 2 + 1
                         }
                     )
             

@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import httpx
 
-API_URL = "https://maritime-ai-chatbot.onrender.com"
+API_URL = "https://wiii.holilihu.online"
 API_KEY = "secret_key_cho_team_lms"
 
 r = httpx.post(

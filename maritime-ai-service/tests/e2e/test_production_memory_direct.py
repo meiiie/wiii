@@ -5,12 +5,28 @@ Kết nối trực tiếp đến Neon database để kiểm tra
 import asyncio
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Load production env
 from dotenv import load_dotenv
-load_dotenv('.env.render')  # Use production env
+
+
+def _resolve_production_env_file() -> str:
+    """Prefer generic production env naming over legacy provider-specific files."""
+    candidates = [
+        os.getenv("WIII_PRODUCTION_ENV_FILE"),
+        ".env.production",
+        ".env.render",  # legacy fallback only
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return candidate
+    return ".env.production"
+
+
+load_dotenv(_resolve_production_env_file())
 
 async def test_production_database():
     """Test direct connection to production database"""

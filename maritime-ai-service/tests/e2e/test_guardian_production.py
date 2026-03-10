@@ -10,7 +10,7 @@ import requests
 import time
 
 # Production API
-API_URL = "https://maritime-ai-chatbot.onrender.com/api/v1/chat"
+API_URL = "https://wiii.holilihu.online/api/v1/chat"
 API_KEY = "lms_secret_key_2024"
 
 HEADERS = {
@@ -68,7 +68,7 @@ def test_chat(message: str, expected_blocked: bool = False, description: str = "
 def main():
     print("=" * 70)
     print("GUARDIAN AGENT PRODUCTION TEST")
-    print("API: https://maritime-ai-chatbot.onrender.com")
+    print("API: https://wiii.holilihu.online")
     print("=" * 70)
     
     results = []

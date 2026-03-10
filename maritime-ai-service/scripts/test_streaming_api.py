@@ -10,7 +10,7 @@ import httpx
 import sys
 
 # Configuration
-BASE_URL = "https://maritime-ai-chatbot.onrender.com"
+BASE_URL = "https://wiii.holilihu.online"
 # BASE_URL = "http://localhost:8000"  # For local testing
 API_KEY = "maritime-lms-prod-2024"
 

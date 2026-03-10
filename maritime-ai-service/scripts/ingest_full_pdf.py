@@ -20,7 +20,7 @@ import argparse
 import requests
 
 # Configuration
-RENDER_URL = os.getenv("RENDER_URL", "https://maritime-ai-chatbot.onrender.com")
+PRODUCTION_URL = os.getenv("PRODUCTION_URL", "https://wiii.holilihu.online")
 LOCAL_URL = "http://localhost:8000"
 
 # PDF to ingest
@@ -36,7 +36,7 @@ BATCH_DELAY = 5
 
 def get_api_urls(use_local: bool = False):
     """Get API URLs based on environment"""
-    base_url = LOCAL_URL if use_local else RENDER_URL
+    base_url = LOCAL_URL if use_local else PRODUCTION_URL
     return {
         'ingest': f"{base_url}/api/v1/knowledge/ingest-multimodal",
         'health': f"{base_url}/api/v1/health",

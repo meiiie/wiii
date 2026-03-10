@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuration
-RENDER_URL = os.getenv("RENDER_URL", "https://maritime-ai-chatbot.onrender.com")
+PRODUCTION_URL = os.getenv("PRODUCTION_URL", "https://wiii.holilihu.online")
 LOCAL_URL = "http://localhost:8000"
 API_KEY = os.getenv("API_KEY", "")  # Get API key from .env
 
@@ -53,7 +53,7 @@ TEST_CASES = [
 
 def get_base_url(use_local: bool = False) -> str:
     """Get base URL based on environment"""
-    return LOCAL_URL if use_local else RENDER_URL
+    return LOCAL_URL if use_local else PRODUCTION_URL
 
 
 def check_health(base_url: str) -> dict:
@@ -318,7 +318,7 @@ def main():
     parser.add_argument('--save', action='store_true', help='Save results to file')
     args = parser.parse_args()
     
-    base_url = LOCAL_URL if args.local else RENDER_URL
+    base_url = LOCAL_URL if args.local else PRODUCTION_URL
     
     results = run_tests(base_url, verbose=args.verbose or True)
     

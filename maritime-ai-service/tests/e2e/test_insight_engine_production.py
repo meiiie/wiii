@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Production API
-PRODUCTION_URL = "https://maritime-ai-chatbot.onrender.com"
+PRODUCTION_URL = "https://wiii.holilihu.online"
 API_KEY = os.getenv("LMS_API_KEY", "lms_secret_key_2024")
 
 # Test user - unique để không conflict

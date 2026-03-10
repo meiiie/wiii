@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-RENDER_URL = os.getenv("RENDER_URL", "https://maritime-ai-chatbot.onrender.com")
+PRODUCTION_URL = os.getenv("PRODUCTION_URL", "https://wiii.holilihu.online")
 API_KEY = os.getenv("API_KEY", "")
 
 def send_message(message: str, user_id: str, session_id: str) -> dict:
@@ -29,7 +29,7 @@ def send_message(message: str, user_id: str, session_id: str) -> dict:
     }
     
     response = requests.post(
-        f"{RENDER_URL}/api/v1/chat/",
+        f"{PRODUCTION_URL}/api/v1/chat/",
         json=payload,
         headers=headers,
         timeout=120
@@ -144,7 +144,7 @@ def test_cross_session_memory():
 def main():
     print("="*70)
     print("MARITIME AI TUTOR - NAME MEMORY TEST")
-    print(f"Server: {RENDER_URL}")
+    print(f"Server: {PRODUCTION_URL}")
     print(f"Time: {datetime.now().isoformat()}")
     print("="*70)
     

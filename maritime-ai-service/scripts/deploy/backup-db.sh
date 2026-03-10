@@ -65,16 +65,30 @@ if [ "$FILESIZE" -lt 1000 ]; then
 fi
 
 # Verify backup integrity (pg_restore --list should work)
-docker compose -f "$COMPOSE_FILE" exec -T postgres \
-    pg_restore --list < "$BACKUP_FILE" > /dev/null 2>&1
-
-if [ $? -ne 0 ]; then
+if ! docker compose -f "$COMPOSE_FILE" exec -T postgres \
+    pg_restore --list < "$BACKUP_FILE" > /dev/null 2>&1; then
     log "ERROR: Backup integrity check failed!"
     exit 1
 fi
 
 FILESIZE_HUMAN=$(numfmt --to=iec "$FILESIZE" 2>/dev/null || echo "${FILESIZE} bytes")
 log "Backup created: ${BACKUP_FILE} (${FILESIZE_HUMAN})"
+
+# ─────────────────────────────────────────────────
+# Step 2b: Upload to GCS (optional — if gsutil available)
+# ─────────────────────────────────────────────────
+if command -v gsutil &> /dev/null; then
+    GCS_BUCKET="${GCS_BACKUP_BUCKET:-}"
+    if [ -n "$GCS_BUCKET" ]; then
+        log "Uploading to ${GCS_BUCKET}..."
+        gsutil -q cp "$BACKUP_FILE" "${GCS_BUCKET}/daily/$(basename $BACKUP_FILE)"
+        if [ $? -eq 0 ]; then
+            log "Upload complete: ${GCS_BUCKET}/daily/$(basename $BACKUP_FILE)"
+        else
+            log "WARNING: GCS upload failed — backup still saved locally"
+        fi
+    fi
+fi
 
 # ─────────────────────────────────────────────────
 # Step 3: Clean old backups

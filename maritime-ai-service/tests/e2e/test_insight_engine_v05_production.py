@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime
 
 # Production API
-BASE_URL = "https://maritime-ai-chatbot.onrender.com"
+BASE_URL = "https://wiii.holilihu.online"
 API_KEY = "lms_secret_key_2024"
 
 HEADERS = {

@@ -22,7 +22,7 @@ from datetime import datetime
 import requests
 
 # API Configuration
-RENDER_URL = "https://maritime-ai-chatbot.onrender.com"
+PRODUCTION_URL = "https://wiii.holilihu.online"
 LOCAL_URL = "http://localhost:8000"
 API_KEY = "secret_key_cho_team_lms"  # Production API key
 
@@ -34,7 +34,7 @@ HEADERS = {
 
 
 def get_base_url(use_local: bool = False) -> str:
-    return LOCAL_URL if use_local else RENDER_URL
+    return LOCAL_URL if use_local else PRODUCTION_URL
 
 
 def print_header(title: str):

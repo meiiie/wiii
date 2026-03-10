@@ -289,10 +289,12 @@ curl -I https://holilihu.online/embed/
 # 4. Test chat endpoint
 curl -X POST https://holilihu.online/api/v1/chat \
   -H "X-API-Key: your-api-key" \
-  -H "X-User-ID: test-user" \
   -H "X-Session-ID: test-session" \
   -H "Content-Type: application/json" \
-  -d '{"user_id": "test-user", "message": "Xin chào!", "role": "student", "session_id": "test-session"}'
+  -d '{"user_id": "api-client", "message": "Xin chào!", "role": "student", "session_id": "test-session"}'
+
+# Note: production API-key auth is service-client auth and ignores X-User-ID.
+# Use JWT or LMS service token when you need real end-user identity.
 
 # 5. Facebook webhook verification
 # Facebook Developer Dashboard → Messenger → Test Callback
