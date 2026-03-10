@@ -21,23 +21,25 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Tool name → Living Agent skill domain mapping
-_TOOL_SKILL_MAP = {
-    "tool_knowledge_search": "knowledge_retrieval",
-    "tool_maritime_search": "maritime_navigation",
-    "tool_search_maritime": "maritime_navigation",
-    "tool_web_search": "web_research",
-    "tool_search_news": "news_analysis",
-    "tool_search_legal": "legal_research",
-    "tool_calculator": "calculation",
-    "tool_current_datetime": None,  # Utility, no skill association
-    "tool_think": None,  # Internal reasoning, no skill
-    "tool_report_progress": None,  # Internal, no skill
-    "tool_character_note": None,  # Character tracking, no skill
-}
-
 # Track which skills have already been registered as tools (avoid duplicate registration)
 _registered_mastered: set[str] = set()
+
+
+def _build_legacy_tool_skill_map() -> dict[str, str | None]:
+    """Backward-compatible view for older tests and call sites."""
+    try:
+        from app.engine.skills.capability_registry import get_capability_registry
+
+        mapping: dict[str, str | None] = {}
+        for capability in get_capability_registry().all():
+            mapping[capability.tool_name] = capability.skill_domain
+        return mapping
+    except Exception:
+        return {}
+
+
+# Backward-compatible alias while the registry becomes the source of truth.
+_TOOL_SKILL_MAP = _build_legacy_tool_skill_map()
 
 
 def record_tool_usage(
@@ -107,7 +109,10 @@ def _bridge_to_skill_builder(tool_name: str, success: bool) -> None:
         if not getattr(settings, "enable_living_agent", False):
             return
 
-        skill_domain = _TOOL_SKILL_MAP.get(tool_name)
+        from app.engine.skills.capability_registry import get_capability_registry
+
+        capability = get_capability_registry().get(tool_name)
+        skill_domain = capability.skill_domain if capability else None
         if skill_domain is None:
             return  # No skill association for this tool
 
@@ -175,6 +180,17 @@ def _register_mastered_skill(skill_domain: str, tool_name: str, skill) -> None:
 
 def _infer_domain(tool_name: str) -> str:
     """Infer domain from tool name."""
+    try:
+        from app.engine.skills.capability_registry import get_capability_registry
+
+        capability = get_capability_registry().get(tool_name)
+        if capability and capability.capability_path:
+            root = capability.capability_path[0]
+            if root == "knowledge" and len(capability.capability_path) > 2:
+                return capability.capability_path[2]
+            return root
+    except Exception:
+        pass
     if "maritime" in tool_name:
         return "maritime"
     if "legal" in tool_name:
@@ -198,7 +214,9 @@ def get_mastery_score(tool_name: str) -> float:
         if not getattr(settings, "enable_living_agent", False):
             return 0.0
 
-        skill_domain = _TOOL_SKILL_MAP.get(tool_name)
+        from app.engine.skills.capability_registry import get_capability_registry
+
+        skill_domain = get_capability_registry().get_skill_domain(tool_name)
         if skill_domain is None:
             return 0.0
 
@@ -231,11 +249,12 @@ def get_mastered_tools() -> list[str]:
         mastered = builder.get_all_skills(status=SkillStatus.MASTERED)
         mastered_domains = {s.skill_name for s in mastered}
 
-        # Reverse-map: skill domain → tool names
-        tools = []
-        for tool_name, domain in _TOOL_SKILL_MAP.items():
-            if domain in mastered_domains:
-                tools.append(tool_name)
+        from app.engine.skills.capability_registry import get_capability_registry
+
+        registry = get_capability_registry()
+        tools: list[str] = []
+        for domain in mastered_domains:
+            tools.extend(registry.reverse_lookup(domain))
         return tools
     except Exception:
         return []

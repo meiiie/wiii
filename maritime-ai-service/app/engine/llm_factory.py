@@ -26,6 +26,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.core.config import settings
+from app.engine.llm_provider_registry import create_provider, get_supported_provider_names
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,8 @@ def create_llm(
         temperature: LLM temperature (0.0-2.0)
         include_thoughts: Include thought summaries in response (default from config)
         model: Override model name (default from config)
-        provider: Explicit provider name ('google', 'openai', 'ollama'). Default: Gemini.
+        provider: Explicit provider name ('google', 'openai', 'openrouter', 'ollama').
+            Defaults to the configured runtime provider.
 
     Returns:
         BaseChatModel instance (Gemini, OpenAI, or Ollama)
@@ -119,22 +121,19 @@ def create_llm(
     if include_thoughts is None:
         include_thoughts = settings.include_thought_summaries
 
-    # --- Explicit provider selection (Sprint 11) ---
-    if provider and provider != "google":
+    configured_provider = provider or getattr(settings, "llm_provider", "google")
+    if not isinstance(configured_provider, str) or not configured_provider.strip():
+        effective_provider = "google"
+    else:
+        effective_provider = configured_provider.strip().lower()
+
+    # --- Explicit/configured provider selection (Sprint 11) ---
+    if effective_provider != "google":
         try:
-            from app.engine.llm_providers import GeminiProvider, OpenAIProvider, OllamaProvider
-            provider_map = {
-                "google": GeminiProvider,
-                "openai": OpenAIProvider,
-                "ollama": OllamaProvider,
-            }
-            provider_cls = provider_map.get(provider)
-            if provider_cls is None:
-                raise ValueError(f"Unknown provider: {provider}. Must be one of {list(provider_map.keys())}")
-            p = provider_cls()
+            p = create_provider(effective_provider)
             logger.info(
                 "[LLM_FACTORY] Creating LLM via %s: tier=%s, budget=%d, include_thoughts=%s",
-                provider, tier.value, thinking_budget, include_thoughts
+                effective_provider, tier.value, thinking_budget, include_thoughts
             )
             return p.create_instance(
                 tier=tier.value,
@@ -142,8 +141,15 @@ def create_llm(
                 include_thoughts=include_thoughts,
                 temperature=temperature,
             )
+        except ValueError:
+            raise ValueError(
+                f"Unknown provider: {effective_provider}. Must be one of {list(get_supported_provider_names())}"
+            ) from None
         except ImportError:
-            logger.warning("[LLM_FACTORY] Provider %s not available, falling back to Gemini", provider)
+            logger.warning(
+                "[LLM_FACTORY] Provider %s not available, falling back to Gemini",
+                effective_provider,
+            )
 
     # --- Default: Google Gemini ---
     model_name = model or settings.google_model

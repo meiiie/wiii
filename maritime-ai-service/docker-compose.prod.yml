@@ -173,13 +173,27 @@ services:
 
   # ─────────────────────────────────────────────────
   # PostgreSQL Backup (Production Hardening)
-  # Daily pg_dump, 30-day local retention
+  # Daily pg_dump at 20:00 UTC (3 AM UTC+7), 30-day local retention
   # ─────────────────────────────────────────────────
   pg-backup:
     image: postgres:16-alpine
     entrypoint: /bin/sh
     command: >
       -c "while true; do
+        NOW_HOUR=$$(date -u +%H | sed 's/^0*//');
+        NOW_MINUTE=$$(date -u +%M | sed 's/^0*//');
+        NOW_SECOND=$$(date -u +%S | sed 's/^0*//');
+        [ -n \"$$NOW_HOUR\" ] || NOW_HOUR=0;
+        [ -n \"$$NOW_MINUTE\" ] || NOW_MINUTE=0;
+        [ -n \"$$NOW_SECOND\" ] || NOW_SECOND=0;
+        NOW_TOTAL=$$((NOW_HOUR * 3600 + NOW_MINUTE * 60 + NOW_SECOND));
+        TARGET_TOTAL=$$((20 * 3600));
+        SLEEP_FOR=$$((TARGET_TOTAL - NOW_TOTAL));
+        if [ $$SLEEP_FOR -le 0 ]; then
+          SLEEP_FOR=$$((SLEEP_FOR + 86400));
+        fi;
+        echo \"[$$(date)] Next backup in $$SLEEP_FOR seconds\";
+        sleep $$SLEEP_FOR;
         echo \"[$$(date)] Starting backup...\";
         PGPASSWORD=$${POSTGRES_PASSWORD} pg_dump
           -h postgres -U $${POSTGRES_USER} -d $${POSTGRES_DB}
@@ -187,15 +201,14 @@ services:
           > /backups/wiii_ai_$$(date +%Y%m%d_%H%M%S).dump;
         echo \"[$$(date)] Cleaning old backups (>30 days)...\";
         find /backups -name '*.dump' -mtime +30 -delete;
-        echo \"[$$(date)] Backup complete. Sleeping 24h.\";
-        sleep 86400;
+        echo \"[$$(date)] Backup complete.\";
       done"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-wiii}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-wiii_ai}
     volumes:
-      - backup-data:/backups
+      - ./backups:/backups
     depends_on:
       postgres:
         condition: service_healthy
@@ -350,8 +363,8 @@ services:
 
   # =============================================================================
   # OLLAMA — Local LLM for Soul AGI (opt-in via --profile soul-agi)
-  # Sprint 188: Zero-cost heartbeat/journal/briefing via qwen3:4b
-  # After first deploy: docker exec wiii-ollama ollama pull qwen3:4b
+  # Sprint 188: Zero-cost heartbeat/journal/briefing via explicit Qwen3 instruct tag
+  # After first deploy: docker exec wiii-ollama ollama pull qwen3:4b-instruct-2507-q4_K_M
   # =============================================================================
   ollama:
     image: ollama/ollama:latest
@@ -429,8 +442,6 @@ volumes:
   nginx_logs:
     driver: local
   ollama_data:
-    driver: local
-  backup-data:
     driver: local
 
 networks:

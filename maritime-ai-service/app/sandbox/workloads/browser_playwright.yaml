@@ -1,0 +1,17 @@
+id: browser_playwright
+display_name: Browser Automation
+description: Execute browser automation commands inside the privileged sandbox.
+workload_kind: browser
+runtime_template: opensandbox/playwright:latest
+network_mode: egress
+timeout_seconds: 180
+working_directory: /opt/wiii-browser
+approval_scope: browser_automation
+execution_backend: opensandbox
+tool_names:
+  - tool_browser_snapshot_url
+capabilities:
+  - browser
+  - screenshots
+metadata:
+  risk_level: high

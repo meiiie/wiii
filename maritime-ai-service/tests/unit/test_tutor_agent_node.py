@@ -439,6 +439,17 @@ class TestBuildSystemPrompt:
 
         assert "COLREGs Overview" in prompt
 
+    def test_prompt_includes_capability_context(self, mock_llm):
+        node = _make_tutor(llm=mock_llm, llm_with_tools=mock_llm)
+
+        with patch(DOMAIN_REGISTRY_PATCH, side_effect=Exception("no registry")):
+            prompt = node._build_system_prompt(
+                {"user_name": "Minh", "capability_context": "Capability handbook phù hợp lúc này:\n- tool_knowledge_search"},
+                "query",
+            )
+
+        assert "Capability handbook phù hợp lúc này" in prompt
+
     def test_prompt_uses_domain_tool_instruction(self, mock_llm):
         node = _make_tutor(llm=mock_llm, llm_with_tools=mock_llm)
 

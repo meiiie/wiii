@@ -543,69 +543,28 @@ Khi LMS gửi page context, Wiii tự động điều chỉnh:
 - **Trang quiz**: AI gợi ý nhưng **KHÔNG BAO GIỜ** cho đáp án trực tiếp
 - **Dashboard**: AI gợi ý bước tiếp theo dựa trên tiến độ
 
-### 9.1 Yêu cầu: `WiiiContextService` (Angular)
+### 9.1 `WiiiContextService` — ĐÃ TRIỂN KHAI
 
-Tạo service mới, emit page context đến Wiii iframe trên mỗi route change.
+Service đã được implement và auto-wire vào `ChatPanelComponent`. **Không cần thêm code thủ công.**
 
-```typescript
-// src/app/shared/services/wiii-context.service.ts
-import { Injectable } from '@angular/core';
-import { Router, NavigationEnd } from '@angular/router';
-import { filter } from 'rxjs/operators';
+**File:** `features/ai-chat/infrastructure/api/wiii-context.service.ts`
 
-@Injectable({ providedIn: 'root' })
-export class WiiiContextService {
-  private wiiiOrigin = 'https://holilihu.online';  // Prod
-  // Dev: 'http://localhost:8000'
+**Hoạt động tự động:**
+1. Service subscribe Router `NavigationEnd` → extract `page_type`, `course_id`, `lesson_id` từ URL
+2. `ChatPanelComponent` dùng `effect()` kết nối iframe → WiiiContextService
+3. Mỗi khi route thay đổi, PostMessage `wiii:page-context` tự động gửi đến iframe
 
-  constructor(private router: Router) {
-    this.router.events.pipe(
-      filter(e => e instanceof NavigationEnd)
-    ).subscribe((e: NavigationEnd) => {
-      this.emitPageContext(e.urlAfterRedirects);
-    });
-  }
-
-  private emitPageContext(url: string): void {
-    const context = this.buildContextFromRoute(url);
-    const iframe = document.querySelector('iframe[src*="/embed"]') as HTMLIFrameElement;
-    if (iframe?.contentWindow) {
-      iframe.contentWindow.postMessage(
-        { type: 'wiii:page-context', payload: context },
-        this.wiiiOrigin
-      );
-    }
-  }
-
-  private buildContextFromRoute(url: string): Record<string, any> {
-    const parts = url.split('/').filter(Boolean);
-    const context: Record<string, any> = {};
-
-    if (url.includes('/lessons/')) {
-      context.page_type = 'lesson';
-      context.course_id = this.extractParam(parts, 'courses');
-      context.lesson_id = this.extractParam(parts, 'lessons');
-    } else if (url.includes('/quizzes/') || url.includes('/quiz/')) {
-      context.page_type = 'quiz';
-      context.course_id = this.extractParam(parts, 'courses');
-    } else if (url.includes('/assignments/')) {
-      context.page_type = 'assignment';
-    } else if (url.includes('/dashboard')) {
-      context.page_type = 'dashboard';
-    } else if (url.includes('/grades')) {
-      context.page_type = 'grades';
-    } else {
-      context.page_type = 'resource';
-    }
-    return context;
-  }
-
-  private extractParam(parts: string[], key: string): string | undefined {
-    const idx = parts.indexOf(key);
-    return idx >= 0 && idx + 1 < parts.length ? parts[idx + 1] : undefined;
-  }
-}
-```
+**Route patterns đã hỗ trợ:**
+| URL Pattern | `page_type` |
+|-------------|-------------|
+| `/student/learn/course/:id/lesson/:id` | `lesson` |
+| `/student/learn/course/:id` | `course_overview` |
+| `/student/quiz/take/:id` | `quiz` |
+| `/student/course/:id` | `course_detail` |
+| `/student/assignments/:id/work` | `assignment` |
+| `/student/dashboard` | `dashboard` |
+| `/student/grades` | `grades` |
+| `/student/my-courses` | `course_list` |
 
 ### 9.2 Schema PostMessage: `wiii:page-context`
 
@@ -657,40 +616,33 @@ export class WiiiContextService {
 
 **Phase 1 là đủ để Wiii hoạt động page-aware.** Phase 2-3 làm sau.
 
-### 9.4 Cách inject: Thêm vào `AppComponent` hoặc module chính
+### 9.4 Auto-wiring — KHÔNG CẦN CODE THỦ CÔNG
+
+Service `providedIn: 'root'`, tự inject vào `ChatPanelComponent` qua Angular DI.
+`ChatPanelComponent` dùng `effect()` watch `viewChild` iframe → gọi `connectIframe()` khi iframe load xong.
+
+**Không cần sửa `AppComponent` hay bất kỳ module nào.**
+
+### 9.5 Phase 2: Enrichment API (cho page components)
+
+Để gửi thêm dữ liệu (tên khóa học, nội dung bài giảng...) từ page component:
 
 ```typescript
-// app.component.ts (hoặc bất kỳ module root nào)
-import { WiiiContextService } from './shared/services/wiii-context.service';
+// Trong CourseLearningComponent
+import { WiiiContextService } from '../../ai-chat/infrastructure/api/wiii-context.service';
 
 @Component({ ... })
-export class AppComponent {
-  constructor(private wiiiContext: WiiiContextService) {
-    // Service auto-subscribes to router events
-  }
-}
-```
+export class CourseLearningComponent {
+  private contextService = inject(WiiiContextService);
 
-### 9.5 Thêm page_title và content_snippet (nâng cao)
-
-Để gửi title và nội dung:
-
-```typescript
-// Trong component bài giảng
-emitLessonContext(lesson: any): void {
-  const iframe = document.querySelector('iframe[src*="/embed"]') as HTMLIFrameElement;
-  if (iframe?.contentWindow) {
-    iframe.contentWindow.postMessage({
-      type: 'wiii:page-context',
-      payload: {
-        page_type: 'lesson',
-        page_title: lesson.title,
-        course_name: lesson.course?.title,
-        chapter_name: lesson.chapter?.title,
-        content_snippet: document.querySelector('.lesson-content')?.textContent?.slice(0, 2000),
-        content_type: 'theory',
-      }
-    }, 'https://holilihu.online');
+  onLessonLoaded(lesson: Lesson): void {
+    this.contextService.enrichContext({
+      course_name: lesson.course?.title,    // "Khí Tượng Hải Dương"
+      lesson_name: lesson.title,            // "Áp suất khí quyển"
+      chapter_name: lesson.chapter?.title,  // "Chương 3"
+      content_snippet: this.getVisibleContent()?.slice(0, 2000),
+      content_type: 'theory',
+    });
   }
 }
 ```

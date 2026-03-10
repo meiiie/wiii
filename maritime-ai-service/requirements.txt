@@ -13,6 +13,9 @@ itsdangerous>=2.1.0
 # Magic Link Email Auth (Sprint 224)
 resend>=2.0.0
 
+# Error Tracking (Production Hardening)
+sentry-sdk[fastapi]>=2.0.0,<3.0.0
+
 # Database
 sqlalchemy>=2.0.27,<3.0.0
 asyncpg>=0.30.0,<1.0.0
@@ -46,6 +49,8 @@ openai~=2.9.0
 mcp~=1.26.0
 fastapi-mcp~=0.4.0
 langchain-mcp-adapters>=0.1.0,<1.0.0
+opensandbox>=0.1.5,<0.2.0
+opensandbox-code-interpreter>=0.1.1,<0.2.0
 
 # Google GenAI SDK (UNIFIED - CHỈ THỊ 26 + Semantic Memory)
 # SDK mới thống nhất cho Gemini API - hỗ trợ cả embeddings và vision
@@ -94,6 +99,8 @@ structlog>=24.1.0
 
 # Excel Report Generation (Sprint 148: Product Search)
 xlsxwriter>=3.2.0
+openpyxl>=3.1.0
+python-docx>=1.1.0
 
 # HTML Parsing (Sprint 150: Product Page Scraper)
 beautifulsoup4>=4.12.0

@@ -170,10 +170,10 @@ class RoutineTracker:
                 if row:
                     return UserRoutine(
                         user_id=row[0],
-                        typical_active_hours=json.loads(row[1]) if row[1] else [],
+                        typical_active_hours=row[1] if isinstance(row[1], list) else [],
                         preferred_briefing_time=row[2] or 7,
                         conversation_frequency=float(row[3]) if row[3] else 0.0,
-                        common_topics=json.loads(row[4]) if row[4] else [],
+                        common_topics=row[4] if isinstance(row[4], list) else [],
                         last_seen=row[5],
                         total_messages=row[6] or 0,
                         updated_at=row[7] or datetime.now(timezone.utc),

@@ -45,18 +45,19 @@ class StreamEventType:
 
 
 # =============================================================================
-# NODE NAME MAPPINGS (User-friendly descriptions)
+# NODE NAME MAPPINGS (transport-level fallbacks only)
 # =============================================================================
 
 NODE_DESCRIPTIONS = {
-    "supervisor": "🎯 Wiii đang phân tích câu hỏi của bạn...",
-    "rag_agent": "📚 Wiii tra cứu kiến thức chuyên ngành...",
-    "tutor_agent": "👨‍🏫 Wiii soạn bài giảng cho bạn...",
-    "memory_agent": "🧠 Wiii nhớ lại những gì bạn chia sẻ...",
-    "direct": "💬 Wiii đang suy nghĩ câu trả lời...",
-    "grader": "✅ Wiii kiểm tra lại độ chính xác...",
-    "synthesizer": "📝 Wiii tổng hợp và hoàn thiện...",
-    "product_search_agent": "🛒 Wiii đang tìm kiếm sản phẩm trên nhiều sàn...",
+    "supervisor": "Đang canh lại hướng xử lý...",
+    "rag_agent": "Đang tiếp tục tra cứu...",
+    "tutor_agent": "Đang tiếp tục giải thích...",
+    "memory_agent": "Đang gọi lại ngữ cảnh...",
+    "direct": "Đang tiếp tục trả lời...",
+    "grader": "Đang rà soát độ chắc chắn...",
+    "synthesizer": "Đang khâu lại phản hồi...",
+    "product_search_agent": "Đang tiếp tục đối chiếu...",
+    "code_studio_agent": "Dang che tac dau ra ky thuat...",
 }
 
 NODE_STEPS = {
@@ -67,7 +68,8 @@ NODE_STEPS = {
     "memory_agent": "memory_lookup",
     "direct": "direct_response",
     "grader": "quality_check",
-    "synthesizer": "synthesis"
+    "synthesizer": "synthesis",
+    "code_studio_agent": "code_studio",
 }
 
 
@@ -204,20 +206,21 @@ async def create_thinking_start_event(
     node: str,
     block_id: Optional[str] = None,
     summary: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
 ) -> StreamEvent:
     """Create a thinking_start event to open a new thinking block."""
-    details: Optional[Dict[str, Any]] = None
+    merged_details: Optional[Dict[str, Any]] = dict(details or {}) if details else None
     if block_id or summary:
-        details = {}
+        merged_details = dict(merged_details or {})
         if block_id:
-            details["block_id"] = block_id
+            merged_details["block_id"] = block_id
         if summary:
-            details["summary"] = summary
+            merged_details["summary"] = summary
     return StreamEvent(
         type=StreamEventType.THINKING_START,
         content=label,
         node=node,
-        details=details,
+        details=merged_details,
     )
 
 
@@ -312,11 +315,7 @@ async def create_action_text_event(
     content: str,
     node: Optional[str] = None,
 ) -> StreamEvent:
-    """Sprint 147: Create an action_text event — bold narrative between thinking blocks.
-
-    Inspired by Claude's bold contextual text between thinking blocks, e.g.:
-    "Để tìm kiếm đầy đủ, Wiii sẽ tra cứu kiến thức chuyên ngành..."
-    """
+    """Create an action_text event as a narrative bridge between reasoning beats."""
     return StreamEvent(
         type=StreamEventType.ACTION_TEXT,
         content=content,
@@ -329,6 +328,7 @@ async def create_browser_screenshot_event(
     image_base64: str,
     label: str,
     node: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> StreamEvent:
     """Sprint 153: Create a browser screenshot event for visual transparency."""
     return StreamEvent(
@@ -337,6 +337,7 @@ async def create_browser_screenshot_event(
             "url": url,
             "image": image_base64,
             "label": label,
+            "metadata": metadata or {},
         },
         node=node,
     )
@@ -444,5 +445,3 @@ async def create_host_action_event(
         },
         node=node,
     )
-
-

@@ -33,17 +33,26 @@ class TestAsyncpgUrl:
     def test_converts_asyncpg_format(self):
         """postgresql+asyncpg:// should become postgresql://."""
         s = _make_settings(database_url="postgresql+asyncpg://user:pass@host:5432/db")
-        assert s.asyncpg_url == "postgresql://user:pass@host:5432/db"
+        assert (
+            s.asyncpg_url
+            == "postgresql://user:pass@host:5432/db?connect_timeout=5"
+        )
 
     def test_converts_postgres_shorthand(self):
         """postgres:// should become postgresql://."""
         s = _make_settings(database_url="postgres://user:pass@host:5432/db")
-        assert s.asyncpg_url == "postgresql://user:pass@host:5432/db"
+        assert (
+            s.asyncpg_url
+            == "postgresql://user:pass@host:5432/db?connect_timeout=5"
+        )
 
     def test_plain_postgresql_unchanged(self):
         """postgresql:// should remain unchanged."""
         s = _make_settings(database_url="postgresql://user:pass@host:5432/db")
-        assert s.asyncpg_url == "postgresql://user:pass@host:5432/db"
+        assert (
+            s.asyncpg_url
+            == "postgresql://user:pass@host:5432/db?connect_timeout=5"
+        )
 
     def test_fallback_to_components(self):
         """When no DATABASE_URL, should build from host/port/user/pass/db."""
@@ -55,7 +64,10 @@ class TestAsyncpgUrl:
             postgres_port=5433,
             postgres_db="wiii_ai",
         )
-        assert s.asyncpg_url == "postgresql://wiii:secret@localhost:5433/wiii_ai"
+        assert (
+            s.asyncpg_url
+            == "postgresql://wiii:secret@localhost:5433/wiii_ai?connect_timeout=5"
+        )
 
     def test_default_fallback(self):
         """Default settings should produce valid asyncpg URL."""
@@ -63,6 +75,7 @@ class TestAsyncpgUrl:
         url = s.asyncpg_url
         assert url.startswith("postgresql://")
         assert "postgresql+asyncpg" not in url
+        assert "connect_timeout=5" in url
 
 
 # =============================================================================

@@ -337,7 +337,8 @@ class TestChatHistoryRepoOrgIsolation:
         repo._engine = MagicMock()
         repo._session_factory = MagicMock()
         repo._available = True
-        repo._use_new_schema = use_new_schema
+        repo._has_chat_history = True
+        repo.ensure_tables = MagicMock()
         repo.WINDOW_SIZE = 50
         return repo
 

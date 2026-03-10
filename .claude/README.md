@@ -75,6 +75,7 @@ Agents communicate through:
 - **Task files** in `.claude/tasks/`
 - **Reports** in `.claude/reports/`
 - **Knowledge** in `.claude/knowledge/`
+- **Wave mailbox** in `.claude/coord/` for architect ↔ Claude Code team handoff
 
 ### Task File Format
 

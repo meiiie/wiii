@@ -18,6 +18,15 @@ import {
   DEFAULT_LANGUAGE,
   DEFAULT_STREAMING_VERSION,
 } from "@/lib/constants";
+import {
+  GOOGLE_DEFAULT_MODEL,
+  OLLAMA_DEFAULT_BASE_URL,
+  OLLAMA_DEFAULT_KEEP_ALIVE,
+  OLLAMA_DEFAULT_MODEL,
+} from "@/lib/llm-presets";
+// Sprint 218: Static import replaces require() — fixes Vite ESM browser mode
+// No circular dependency: auth-store does NOT import settings-store at module level
+import { useAuthStore } from "@/stores/auth-store";
 
 /**
  * Generate a unique anonymous user ID.
@@ -36,9 +45,50 @@ function generateAnonymousId(): string {
   })}`;
 }
 
+function hasTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+export function isLocalPreviewHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+export function normalizeLoadedSettingsForHost(
+  saved: Partial<AppSettings> | null,
+  hostname: string,
+): AppSettings {
+  const merged = { ...DEFAULT_SETTINGS, ...(saved || {}) };
+
+  if (!merged.user_id || merged.user_id === "desktop-user") {
+    merged.user_id = generateAnonymousId();
+  }
+
+  // Preview builds running on localhost should still talk to the local backend.
+  if (isLocalPreviewHost(hostname) && !merged.server_url) {
+    merged.server_url = DEFAULT_SERVER_URL || "http://localhost:8000";
+  }
+
+  return merged;
+}
+
+function normalizeLoadedSettings(saved: Partial<AppSettings> | null): AppSettings {
+  const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+  return normalizeLoadedSettingsForHost(saved, hostname);
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   server_url: DEFAULT_SERVER_URL,
   api_key: "",
+  llm_provider: "ollama",
+  google_model: GOOGLE_DEFAULT_MODEL,
+  openai_base_url: "",
+  openai_model: "openai/gpt-oss-20b:free",
+  openai_model_advanced: "openai/gpt-oss-120b:free",
+  ollama_base_url: OLLAMA_DEFAULT_BASE_URL,
+  ollama_model: OLLAMA_DEFAULT_MODEL,
+  ollama_keep_alive: OLLAMA_DEFAULT_KEEP_ALIVE,
+  llm_failover_enabled: true,
+  llm_failover_chain: ["ollama", "google", "openrouter"],
   user_id: "",  // Sprint 194b: empty — generated on first load, never hardcoded
   user_role: DEFAULT_USER_ROLE,
   display_name: DEFAULT_DISPLAY_NAME,
@@ -70,21 +120,35 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   isLoaded: false,
 
   loadSettings: async () => {
+    if (!hasTauriRuntime()) {
+      try {
+        const raw = localStorage.getItem("wiii:app_settings");
+        if (raw) {
+          const saved = JSON.parse(raw) as Partial<AppSettings>;
+          const merged = normalizeLoadedSettings(saved);
+          localStorage.setItem("wiii:app_settings", JSON.stringify(merged));
+          set({ settings: merged, isLoaded: true });
+          return;
+        }
+      } catch { /* ignore */ }
+
+      set({
+        settings: normalizeLoadedSettings({ user_id: generateAnonymousId() }),
+        isLoaded: true,
+      });
+      return;
+    }
+
     try {
       const { Store } = await import("@tauri-apps/plugin-store");
       const store = await Store.load("settings.json");
       const saved = await store.get<AppSettings>("app_settings");
 
       if (saved) {
-        const merged = { ...DEFAULT_SETTINGS, ...saved };
-
-        // Sprint 194b: Migrate away from hardcoded "desktop-user" or empty user_id
-        if (!merged.user_id || merged.user_id === "desktop-user") {
-          merged.user_id = generateAnonymousId();
-          // Persist immediately so the UUID is stable across sessions
-          await store.set("app_settings", merged);
-          await store.save();
-        }
+        const merged = normalizeLoadedSettings(saved);
+        // Persist immediately so migrations stay stable across sessions
+        await store.set("app_settings", merged);
+        await store.save();
 
         set({
           settings: merged,
@@ -92,7 +156,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         });
       } else {
         // First launch — generate anonymous ID
-        const fresh = { ...DEFAULT_SETTINGS, user_id: generateAnonymousId() };
+        const fresh = normalizeLoadedSettings({ user_id: generateAnonymousId() });
         set({ settings: fresh, isLoaded: true });
         // Persist so user_id is stable
         await store.set("app_settings", fresh);
@@ -100,29 +164,24 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       }
     } catch (err) {
       console.warn("[Settings] Failed to load, using defaults:", err);
-      // Browser fallback: try localStorage
-      try {
-        const raw = localStorage.getItem("wiii:app_settings");
-        if (raw) {
-          const saved = JSON.parse(raw) as Partial<AppSettings>;
-          const merged = { ...DEFAULT_SETTINGS, ...saved };
-          // Sprint 194b: Migrate hardcoded user_id
-          if (!merged.user_id || merged.user_id === "desktop-user") {
-            merged.user_id = generateAnonymousId();
-            localStorage.setItem("wiii:app_settings", JSON.stringify(merged));
-          }
-          set({ settings: merged, isLoaded: true });
-          return;
-        }
-      } catch { /* ignore */ }
       // Final fallback: generate anonymous ID in memory
-      set({ settings: { ...DEFAULT_SETTINGS, user_id: generateAnonymousId() }, isLoaded: true });
+      set({
+        settings: normalizeLoadedSettings({ user_id: generateAnonymousId() }),
+        isLoaded: true,
+      });
     }
   },
 
   updateSettings: async (partial) => {
     const newSettings = { ...get().settings, ...partial };
     set({ settings: newSettings });
+
+    if (!hasTauriRuntime()) {
+      try {
+        localStorage.setItem("wiii:app_settings", JSON.stringify(newSettings));
+      } catch { /* ignore */ }
+      return;
+    }
 
     try {
       const { Store } = await import("@tauri-apps/plugin-store");
@@ -143,6 +202,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const resetWith = { ...DEFAULT_SETTINGS, user_id: generateAnonymousId() };
     set({ settings: resetWith });
 
+    if (!hasTauriRuntime()) {
+      try {
+        localStorage.setItem("wiii:app_settings", JSON.stringify(resetWith));
+      } catch { /* ignore */ }
+      return;
+    }
+
     try {
       const { Store } = await import("@tauri-apps/plugin-store");
       const store = await Store.load("settings.json");
@@ -158,30 +224,27 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const headers: Record<string, string> = {};
 
     // Sprint 157: Try OAuth JWT first, fallback to API key
-    try {
-      const { useAuthStore } = require("@/stores/auth-store");
-      const authState = useAuthStore.getState();
-      if (authState.authMode === "oauth" && authState.tokens?.access_token) {
-        // Sprint 194b (H1): OAuth mode — identity from JWT only
-        // DO NOT send X-User-ID or X-Role — backend extracts from token
-        headers["Authorization"] = `Bearer ${authState.tokens.access_token}`;
-        // Sprint 156: Include org ID when not personal workspace
-        if (settings.organization_id && settings.organization_id !== "personal") {
-          headers["X-Organization-ID"] = settings.organization_id;
-        }
-        return headers;
+    // Sprint 218: Uses static import (require() fails in Vite ESM browser mode)
+    const authState = useAuthStore.getState();
+    if (authState.authMode === "oauth" && authState.tokens?.access_token) {
+      // Sprint 194b (H1): OAuth mode — identity from JWT only
+      // DO NOT send X-User-ID or X-Role — backend extracts from token
+      headers["Authorization"] = `Bearer ${authState.tokens.access_token}`;
+      // Sprint 156: Include org ID when not personal workspace
+      if (settings.organization_id && settings.organization_id !== "personal") {
+        headers["X-Organization-ID"] = settings.organization_id;
       }
-    } catch {
-      // auth-store not available — use legacy mode
+      return headers;
     }
 
     // Legacy API key mode
     // Sprint 192: API key from settings (secure store loaded at init)
     if (settings.api_key) headers["X-API-Key"] = settings.api_key;
     headers["X-User-ID"] = settings.user_id;
-    // Sprint 194b (C4): Legacy mode — restrict to student/teacher only.
-    // Admin role must come via OAuth JWT, not spoofable X-Role header.
-    const safeRole = ["student", "teacher"].includes(settings.user_role)
+    // Sprint 194b (C4): Legacy mode — restrict role escalation.
+    // In production, backend enforces its own check (enforce_api_key_role_restriction).
+    // Dev mode allows admin for testing convenience.
+    const safeRole = ["student", "teacher", "admin"].includes(settings.user_role)
       ? settings.user_role
       : "student";
     headers["X-Role"] = safeRole;

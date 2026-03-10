@@ -19,6 +19,8 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, Tool
 
 from app.core.config import settings
 from app.engine.multi_agent.agent_config import AgentConfigRegistry
+from app.engine.reasoning import ReasoningRenderRequest, get_reasoning_narrator
+from app.engine.reasoning.reasoning_narrator import build_tool_context_summary
 from app.services.output_processor import extract_thinking_from_response
 from app.engine.multi_agent.state import AgentState
 from app.engine.agents import TUTOR_AGENT_CONFIG
@@ -34,6 +36,11 @@ from app.engine.tools.utility_tools import tool_calculator, tool_current_datetim
 from app.engine.tools.web_search_tools import tool_web_search
 from app.engine.tools.think_tool import tool_think
 from app.engine.tools.progress_tool import tool_report_progress
+from app.engine.tools.invocation import get_tool_by_name, invoke_tool_with_runtime
+from app.engine.tools.runtime_context import (
+    build_tool_runtime_context,
+    filter_tools_for_role,
+)
 # SOTA 2025: PromptLoader for YAML-driven persona (CrewAI pattern)
 from app.prompts.prompt_loader import get_prompt_loader
 
@@ -64,17 +71,6 @@ TOOL_INSTRUCTION_DEFAULT = """
 # Legacy alias
 TOOL_INSTRUCTION = TOOL_INSTRUCTION_DEFAULT
 
-# Sprint 146b: Post-tool acknowledgment templates (Vietnamese)
-_TOOL_ACK = {
-    "tool_knowledge_search": "Wiii tìm được kết quả rồi! Đang phân tích nội dung...",
-    "tool_maritime_search": "Đã tìm được tài liệu hàng hải! Đang phân tích...",
-    "tool_web_search": "Tìm được thông tin trên web! Đang tổng hợp...",
-    "tool_calculator": "Đã tính xong rồi!",
-    "tool_current_datetime": "Đã kiểm tra thời gian!",
-}
-
-
-# Sprint 148: Max phase transitions per request (prevent LLM spam)
 _MAX_PHASE_TRANSITIONS = 4
 
 # Sprint 148: Multi-phase thinking instruction (appended when thinking_effort >= high)
@@ -105,6 +101,96 @@ def _iteration_label(iteration: int, tools_used: list) -> str:
     if tools_used:
         return "Soạn câu trả lời"
     return f"Suy nghĩ (lần {iteration + 1})"
+
+
+def _infer_tutor_loop_phase(
+    *,
+    iteration: int = 0,
+    tools_used: Optional[List[Dict[str, Any]]] = None,
+    phase_label: str = "",
+) -> str:
+    """Infer the tutor beat phase from the current loop state."""
+    label = (phase_label or "").strip().lower()
+    if any(keyword in label for keyword in ("tra cứu", "tài liệu", "nguồn", "search")):
+        return "retrieve"
+    if any(keyword in label for keyword in ("phân tích", "kiểm", "đối chiếu", "so lại")):
+        return "verify"
+    if any(keyword in label for keyword in ("soạn", "giải thích", "trả lời", "tổng hợp")):
+        return "synthesize"
+    if tools_used:
+        return "explain"
+    if iteration <= 0:
+        return "attune"
+    return "verify"
+
+
+async def _iteration_beat(
+    *,
+    query: str,
+    context: dict,
+    iteration: int,
+    tools_used: list,
+    phase_label: str = "",
+):
+    """Build a tutor reasoning beat for the current loop phase."""
+    phase = _infer_tutor_loop_phase(
+        iteration=iteration,
+        tools_used=tools_used,
+        phase_label=phase_label,
+    )
+    return await get_reasoning_narrator().render(
+        ReasoningRenderRequest(
+            node="tutor_agent",
+            phase=phase,
+            cue=(phase_label or "general"),
+            user_goal=query,
+            conversation_context=str(context.get("conversation_summary", "")),
+            capability_context=str(context.get("capability_context", "")),
+            next_action="Tiếp tục giảng giải theo nhịp người dùng đang cần.",
+            observations=[
+                f"iteration={iteration}",
+                f"tools_used={len(tools_used)}",
+                phase_label,
+            ],
+            user_id=str(context.get("user_id", "__global__")),
+            organization_id=context.get("organization_id"),
+            personality_mode=context.get("personality_mode"),
+            mood_hint=context.get("mood_hint"),
+            visibility_mode="rich",
+            style_tags=["tutor", phase],
+        )
+    )
+
+
+async def _tool_acknowledgment(
+    *,
+    query: str,
+    context: dict,
+    tool_name: str,
+    result: object,
+    phase_label: str = "",
+) -> str:
+    """Narrate what a tool result means for the ongoing tutor flow."""
+    narration = await get_reasoning_narrator().render(
+        ReasoningRenderRequest(
+            node="tutor_agent",
+            phase="act",
+            cue=phase_label or tool_name,
+            user_goal=query,
+            conversation_context=str(context.get("conversation_summary", "")),
+            capability_context=str(context.get("capability_context", "")),
+            tool_context=build_tool_context_summary([tool_name], result=result),
+            next_action="Lồng kết quả vừa có vào mạch giải thích đang đi tiếp.",
+            observations=[f"tool={tool_name}", str(result)[:260]],
+            user_id=str(context.get("user_id", "__global__")),
+            organization_id=context.get("organization_id"),
+            personality_mode=context.get("personality_mode"),
+            mood_hint=context.get("mood_hint"),
+            visibility_mode="rich",
+            style_tags=["tutor", "tool_reflection"],
+        )
+    )
+    return narration.summary
 
 
 class TutorAgentNode:
@@ -153,6 +239,34 @@ class TutorAgentNode:
                 logger.info("[TUTOR_AGENT] Chart tools enabled: %d tools", len(chart_tools))
         except Exception as e:
             logger.debug("[TUTOR_AGENT] Chart tools not available: %s", e)
+
+        try:
+            from app.engine.tools.output_generation_tools import get_output_generation_tools
+
+            output_tools = get_output_generation_tools()
+            if output_tools:
+                self._tools.extend(output_tools)
+                logger.info("[TUTOR_AGENT] Output generation tools enabled: %d tools", len(output_tools))
+        except Exception as e:
+            logger.debug("[TUTOR_AGENT] Output generation tools not available: %s", e)
+
+        try:
+            from app.core.config import settings as _settings
+
+            if (
+                _settings.enable_browser_agent
+                and _settings.enable_privileged_sandbox
+                and _settings.sandbox_provider == "opensandbox"
+                and _settings.sandbox_allow_browser_workloads
+            ):
+                from app.engine.tools.browser_sandbox_tools import get_browser_sandbox_tools
+
+                browser_tools = get_browser_sandbox_tools()
+                if browser_tools:
+                    self._tools.extend(browser_tools)
+                    logger.info("[TUTOR_AGENT] Browser sandbox tools enabled: %d tools", len(browser_tools))
+        except Exception as e:
+            logger.debug("[TUTOR_AGENT] Browser sandbox tools not available: %s", e)
 
         self._init_llm()
         logger.info("TutorAgentNode initialized with YAML persona, tools: %d", len(self._tools))
@@ -250,6 +364,14 @@ class TutorAgentNode:
 {skill_context}
 """
 
+        capability_section = ""
+        capability_context = context.get("capability_context")
+        if capability_context:
+            capability_section = f"""
+## Capability Handbook:
+{capability_context}
+"""
+
         # Sprint 122 (Bug F4): Removed core_memory_block injection.
         # User facts now ONLY via build_system_prompt() → "THÔNG TIN NGƯỜI DÙNG".
         core_memory_section = ""
@@ -267,11 +389,25 @@ KHI NAO GHI: User chia se thong tin moi, giai thich thanh cong, nhan feedback.
 KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
 """
 
+        browser_tool_section = ""
+        if (
+            user_role == "admin"
+            and getattr(settings, "enable_browser_agent", False)
+            and getattr(settings, "enable_privileged_sandbox", False)
+            and getattr(settings, "sandbox_provider", "") == "opensandbox"
+            and getattr(settings, "sandbox_allow_browser_workloads", False)
+        ):
+            browser_tool_section = """
+## CONG CU BROWSER SANDBOX:
+- tool_browser_snapshot_url(url): Mo mot URL cong khai trong browser sandbox va chup snapshot.
+  Dung khi can xac minh giao dien, trang thai trang web, bang bieu, hoac noi dung hien thi ma web search khong du.
+"""
+
         # Append tool instruction, skill context, core memory, and user context
         full_prompt = f"""{base_prompt}
 
 {tool_instruction}
-{character_tool_section}{skill_section}{core_memory_section}
+{character_tool_section}{browser_tool_section}{skill_section}{capability_section}{core_memory_section}
 ## Ngữ cảnh học viên:
 {context_str}
 
@@ -313,10 +449,9 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
         try:
             # Sprint 66: Per-request thinking effort override
             thinking_effort = state.get("thinking_effort")
+            llm_for_request = self._llm
             if thinking_effort:
-                llm = AgentConfigRegistry.get_llm("tutor_agent", effort_override=thinking_effort)
-                self._llm = llm
-                self._llm_with_tools = llm.bind_tools(self._tools)
+                llm_for_request = AgentConfigRegistry.get_llm("tutor_agent", effort_override=thinking_effort)
                 logger.info("[TUTOR_AGENT] Thinking effort override: %s", thinking_effort)
 
             # Sprint 69: Get event bus queue for intra-node streaming
@@ -331,6 +466,9 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
             skill_context = state.get("skill_context")
             if skill_context:
                 merged_context["skill_context"] = skill_context
+            capability_context = state.get("capability_context")
+            if capability_context:
+                merged_context["capability_context"] = capability_context
             # Sprint 222: Thread graph-level host context
             _host_ctx = state.get("host_context_prompt", "")
             if _host_ctx:
@@ -339,11 +477,59 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
             if thinking_effort:
                 merged_context["thinking_effort"] = thinking_effort
 
+            active_tools = filter_tools_for_role(
+                self._tools,
+                merged_context.get("user_role", "student"),
+            )
+            try:
+                from app.engine.skills.skill_recommender import select_runtime_tools
+
+                selected_tools = select_runtime_tools(
+                    active_tools,
+                    query=query,
+                    intent=(state.get("routing_metadata") or {}).get("intent") or "learning",
+                    user_role=merged_context.get("user_role", "student"),
+                    max_tools=min(len(active_tools), 6),
+                    must_include=[
+                        "tool_knowledge_search",
+                        "tool_think",
+                        "tool_report_progress",
+                    ],
+                )
+                if selected_tools:
+                    active_tools = selected_tools
+                    logger.info(
+                        "[TUTOR_AGENT] Runtime-selected tools: %s",
+                        [getattr(tool, "name", getattr(tool, "__name__", "unknown")) for tool in active_tools],
+                    )
+            except Exception as selection_err:
+                logger.debug("[TUTOR_AGENT] Runtime tool selection skipped: %s", selection_err)
+            llm_with_tools_for_request = None
+            if llm_for_request:
+                llm_with_tools_for_request = (
+                    llm_for_request.bind_tools(active_tools)
+                    if active_tools
+                    else llm_for_request
+                )
+            runtime_context_base = build_tool_runtime_context(
+                event_bus_id=bus_id,
+                request_id=bus_id or state.get("session_id"),
+                session_id=state.get("session_id"),
+                organization_id=state.get("organization_id"),
+                user_id=state.get("user_id"),
+                user_role=merged_context.get("user_role", "student"),
+                node="tutor_agent",
+                source="agentic_loop",
+            )
+
             # Execute ReAct loop - now returns thinking + bus streaming flag
             response, sources, tools_used, thinking, answer_streamed = await self._react_loop(
                 query=query,
                 context=merged_context,
                 event_queue=event_queue,
+                tools=active_tools,
+                llm_with_tools=llm_with_tools_for_request,
+                runtime_context_base=runtime_context_base,
             )
 
             # Sprint 74: Signal to graph_streaming whether answer was already streamed via bus
@@ -388,6 +574,9 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
         query: str,
         context: dict,
         event_queue=None,
+        tools=None,
+        llm_with_tools=None,
+        runtime_context_base=None,
     ) -> tuple[str, List[Dict[str, Any]], List[Dict[str, Any]], Optional[str], bool]:
         """
         Execute ReAct loop: Think → Act → Observe.
@@ -407,8 +596,12 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
         Returns:
             Tuple of (response, sources, tools_used, thinking, answer_streamed_via_bus)
         """
-        if not self._llm_with_tools:
+        llm_with_tools = llm_with_tools or self._llm_with_tools
+
+        if not llm_with_tools:
             return self._fallback_response(query), [], [], None, False
+
+        tools = tools or self._tools
         
         # Clear previous sources (also clears thinking)
         clear_retrieved_sources()
@@ -532,17 +725,25 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
             # Sprint 70: Stream LLM tokens for true interleaved thinking
             if event_queue is not None:
                 # Sprint 146b: Context-aware label
-                _label = _iteration_label(iteration, tools_used)
+                _beat = await _iteration_beat(
+                    query=query,
+                    context=context,
+                    iteration=iteration,
+                    tools_used=tools_used,
+                )
                 # Emit thinking_start for this iteration
                 await _push({
                     "type": "thinking_start",
-                    "content": _label,
+                    "content": _beat.label,
                     "node": "tutor_agent",
-                    "summary": _label,
+                    "summary": _beat.summary,
+                    "details": {"phase": _beat.phase},
                 })
+                if _beat.summary:
+                    await _push_thinking_deltas(f"{_beat.summary}\n\n")
                 response = None
                 chunk_count = 0
-                async for chunk in self._llm_with_tools.astream(messages):
+                async for chunk in llm_with_tools.astream(messages):
                     chunk_count += 1
                     if response is None:
                         response = chunk
@@ -559,7 +760,7 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                     response = _AIMsg(content="")
                 # Sprint 146b: DO NOT emit thinking_end here — keep block open for tool execution
             else:
-                response = await self._llm_with_tools.ainvoke(messages)
+                response = await llm_with_tools.ainvoke(messages)
 
             # Check if LLM wants to call tools
             if not response.tool_calls:
@@ -598,7 +799,14 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                     try:
                         # Execute the tool
                         search_query = tool_args.get("query", query)
-                        result = await tool_knowledge_search.ainvoke({"query": search_query})
+                        result = await invoke_tool_with_runtime(
+                            tool_knowledge_search,
+                            {"query": search_query},
+                            tool_name=tool_name,
+                            runtime_context_base=runtime_context_base,
+                            tool_call_id=tool_id,
+                            query_snippet=search_query,
+                        )
 
                         tools_used.append({
                             "name": tool_name,
@@ -619,7 +827,12 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                         })
 
                         # Sprint 146b: Post-tool acknowledgment
-                        _ack = _TOOL_ACK.get(tool_name, f"Đã nhận kết quả từ {tool_name}.")
+                        _ack = await _tool_acknowledgment(
+                            query=query,
+                            context=context,
+                            tool_name=tool_name,
+                            result=result,
+                        )
                         await _push_thinking_deltas(f"\n\n{_ack}")
 
                         # OBSERVE: Add result to conversation
@@ -630,13 +843,6 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                         ))
 
                         logger.info("[TUTOR_AGENT] Tool result length: %d", len(str(result)))
-
-                        # Sprint 205: Record tool usage for Skill↔Tool bridge
-                        try:
-                            from app.engine.skills.skill_tool_bridge import record_tool_usage
-                            record_tool_usage(tool_name, success=True, query_snippet=search_query[:100])
-                        except Exception:
-                            pass
 
                         # ============================================================
                         # SOTA 2025 Phase 2: Confidence-Based Early Termination
@@ -660,27 +866,40 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                             content=f"Error: {str(e)}",
                             tool_call_id=tool_id
                         ))
-                        # Sprint 205: Record failed knowledge tool usage
-                        try:
-                            from app.engine.skills.skill_tool_bridge import record_tool_usage
-                            record_tool_usage(tool_name, success=False, error_message=str(e)[:200])
-                        except Exception:
-                            pass
-
                 elif tool_name in ("tool_calculator", "tool_current_datetime", "tool_web_search"):
                     try:
                         # Execute utility/web tools
                         if tool_name == "tool_calculator":
                             tool_input = tool_args.get("expression", "")
-                            result = await tool_calculator.ainvoke(tool_input)
+                            result = await invoke_tool_with_runtime(
+                                tool_calculator,
+                                tool_input,
+                                tool_name=tool_name,
+                                runtime_context_base=runtime_context_base,
+                                tool_call_id=tool_id,
+                                query_snippet=tool_input,
+                            )
                             desc = f"Tính toán: {tool_input[:60]}"
                         elif tool_name == "tool_current_datetime":
                             tool_input = tool_args.get("dummy", "")
-                            result = await tool_current_datetime.ainvoke(tool_input)
+                            result = await invoke_tool_with_runtime(
+                                tool_current_datetime,
+                                tool_input,
+                                tool_name=tool_name,
+                                runtime_context_base=runtime_context_base,
+                                tool_call_id=tool_id,
+                            )
                             desc = "Xem ngày giờ hiện tại"
                         else:  # tool_web_search
                             tool_input = tool_args.get("query", query)
-                            result = await tool_web_search.ainvoke(tool_input)
+                            result = await invoke_tool_with_runtime(
+                                tool_web_search,
+                                tool_input,
+                                tool_name=tool_name,
+                                runtime_context_base=runtime_context_base,
+                                tool_call_id=tool_id,
+                                query_snippet=tool_input,
+                            )
                             desc = f"Tìm web: {tool_input[:60]}"
 
                         tools_used.append({
@@ -702,7 +921,12 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                         })
 
                         # Sprint 146b: Post-tool acknowledgment
-                        _ack = _TOOL_ACK.get(tool_name, f"Đã nhận kết quả từ {tool_name}.")
+                        _ack = await _tool_acknowledgment(
+                            query=query,
+                            context=context,
+                            tool_name=tool_name,
+                            result=result,
+                        )
                         await _push_thinking_deltas(f"\n\n{_ack}")
 
                         messages.append(AIMessage(content="", tool_calls=[tool_call]))
@@ -713,13 +937,6 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
 
                         logger.info("[TUTOR_AGENT] %s result length: %d", tool_name, len(str(result)))
 
-                        # Sprint 205: Record tool usage for Skill↔Tool bridge
-                        try:
-                            from app.engine.skills.skill_tool_bridge import record_tool_usage
-                            record_tool_usage(tool_name, success=True, query_snippet=str(tool_input)[:100])
-                        except Exception:
-                            pass
-
                     except Exception as e:
                         logger.error("[TUTOR_AGENT] %s error: %s", tool_name, e)
                         messages.append(AIMessage(content="", tool_calls=[tool_call]))
@@ -727,12 +944,6 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                             content=f"Error: {str(e)}",
                             tool_call_id=tool_id
                         ))
-                        # Sprint 205: Record failed tool usage
-                        try:
-                            from app.engine.skills.skill_tool_bridge import record_tool_usage
-                            record_tool_usage(tool_name, success=False, error_message=str(e)[:200])
-                        except Exception:
-                            pass
 
                 elif tool_name == "tool_think":
                     # Sprint 148: Think tool → emit thought as thinking_delta, no tool card
@@ -749,6 +960,13 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                 elif tool_name == "tool_report_progress":
                     # Sprint 148: Phase transition — close block → action_text → open new block
                     progress_msg = tool_args.get("message", "")
+                    next_beat = await _iteration_beat(
+                        query=query,
+                        context=context,
+                        iteration=iteration,
+                        tools_used=tools_used,
+                        phase_label=tool_args.get("phase_label", ""),
+                    )
                     next_label = tool_args.get("phase_label", "") or "Tiếp tục phân tích"
 
                     # Rate-limit: max _MAX_PHASE_TRANSITIONS per request
@@ -762,10 +980,13 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                             # 3. Open new thinking block with next phase label
                             await _push({
                                 "type": "thinking_start",
-                                "content": next_label,
+                                "content": next_beat.label,
                                 "node": "tutor_agent",
-                                "summary": next_label,
+                                "summary": next_beat.summary,
+                                "details": {"phase": next_beat.phase},
                             })
+                            if next_beat.summary:
+                                await _push_thinking_deltas(f"{next_beat.summary}\n\n")
                         _phase_transition_count += 1
                         _last_tool_was_progress = True
                     else:
@@ -781,12 +1002,16 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                 elif tool_name in ("tool_character_note", "tool_character_read"):
                     try:
                         # Sprint 95: Find matching character tool
-                        char_tool = next(
-                            (t for t in self._tools if getattr(t, 'name', '') == tool_name),
-                            None,
-                        )
+                        char_tool = get_tool_by_name(tools, tool_name)
                         if char_tool:
-                            result = char_tool.invoke(tool_args)
+                            result = await invoke_tool_with_runtime(
+                                char_tool,
+                                tool_args,
+                                tool_name=tool_name,
+                                runtime_context_base=runtime_context_base,
+                                tool_call_id=tool_id,
+                                run_sync_in_thread=True,
+                            )
                             desc = f"Character: {tool_name.replace('tool_character_', '')}"
                         else:
                             result = f"Tool {tool_name} not available"
@@ -810,7 +1035,12 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                         })
 
                         # Sprint 146b: Post-tool acknowledgment
-                        _ack = _TOOL_ACK.get(tool_name, f"Đã nhận kết quả từ {tool_name}.")
+                        _ack = await _tool_acknowledgment(
+                            query=query,
+                            context=context,
+                            tool_name=tool_name,
+                            result=result,
+                        )
                         await _push_thinking_deltas(f"\n\n{_ack}")
 
                         messages.append(AIMessage(content="", tool_calls=[tool_call]))
@@ -821,15 +1051,61 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
 
                         logger.info("[TUTOR_AGENT] Character tool %s done", tool_name)
 
-                        # Sprint 205: Record character tool usage
-                        try:
-                            from app.engine.skills.skill_tool_bridge import record_tool_usage
-                            record_tool_usage(tool_name, success=True)
-                        except Exception:
-                            pass
-
                     except Exception as e:
                         logger.error("[TUTOR_AGENT] Character tool %s error: %s", tool_name, e)
+                        messages.append(AIMessage(content="", tool_calls=[tool_call]))
+                        messages.append(ToolMessage(
+                            content=f"Error: {str(e)}",
+                            tool_call_id=tool_id,
+                        ))
+
+                else:
+                    try:
+                        matched_tool = get_tool_by_name(tools, tool_name)
+                        if matched_tool is None:
+                            raise ValueError(f"Tool {tool_name} not available")
+
+                        result = await invoke_tool_with_runtime(
+                            matched_tool,
+                            tool_args,
+                            tool_name=tool_name,
+                            runtime_context_base=runtime_context_base,
+                            tool_call_id=tool_id,
+                            run_sync_in_thread=True,
+                        )
+
+                        tools_used.append({
+                            "name": tool_name,
+                            "args": tool_args,
+                            "description": f"Tool: {tool_name}",
+                            "iteration": iteration + 1,
+                        })
+
+                        await _push({
+                            "type": "tool_result",
+                            "content": {
+                                "name": tool_name,
+                                "result": str(result)[:500],
+                                "id": tool_id,
+                            },
+                            "node": "tutor_agent",
+                        })
+
+                        _ack = await _tool_acknowledgment(
+                            query=query,
+                            context=context,
+                            tool_name=tool_name,
+                            result=result,
+                        )
+                        await _push_thinking_deltas(f"\n\n{_ack}")
+
+                        messages.append(AIMessage(content="", tool_calls=[tool_call]))
+                        messages.append(ToolMessage(
+                            content=str(result),
+                            tool_call_id=tool_id,
+                        ))
+                    except Exception as e:
+                        logger.error("[TUTOR_AGENT] Generic tool %s error: %s", tool_name, e)
                         messages.append(AIMessage(content="", tool_calls=[tool_call]))
                         messages.append(ToolMessage(
                             content=f"Error: {str(e)}",

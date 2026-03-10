@@ -88,7 +88,19 @@ class SpringBootLMSAdapter(LMSConnectorAdapter):
             )
             resp.raise_for_status()
             _circuit_breaker.record_success(breaker_key)
-            return resp.json()
+            body = resp.json()
+            # Sprint 220c: Unwrap Spring Boot response envelope
+            # API returns {"success": true, "data": ...} wrapper
+            if isinstance(body, dict) and "success" in body:
+                if not body["success"]:
+                    logger.debug(
+                        "LMS API returned success=false [%s]: %s",
+                        self._config.id, body.get("message", ""),
+                    )
+                    return None
+                if "data" in body:
+                    return body["data"]
+            return body
         except httpx.TimeoutException:
             logger.warning("LMS API timeout [%s]: %s", self._config.id, path)
             _circuit_breaker.record_failure(breaker_key)

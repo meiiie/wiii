@@ -859,15 +859,15 @@ class TestLMSConnectorAdapter:
         assert adapter.verify_signature(body, {"X-LMS-Signature": sig}) is True
         assert adapter.verify_signature(body, {"X-LMS-Signature": "sha256=wrong"}) is False
 
-    def test_adapter_verify_signature_no_secret_passes(self):
-        """No secret configured = skip verification (returns True)."""
+    def test_adapter_verify_signature_no_secret_rejects(self):
+        """No secret configured = fail-closed (returns False)."""
         config = LMSConnectorConfig(
             id="test", display_name="Test",
             backend_type=LMSBackendType.SPRING_BOOT,
             webhook_secret=None,
         )
         adapter = SpringBootLMSAdapter(config)
-        assert adapter.verify_signature(b"any", {}) is True
+        assert adapter.verify_signature(b"any", {}) is False
 
     def test_adapter_verify_signature_missing_header_fails(self):
         config = LMSConnectorConfig(

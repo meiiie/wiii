@@ -26,10 +26,11 @@ EXPECTED_BROWSER_TOOLS = [
 ]
 
 
-def get_browser_mcp_config() -> Optional[dict[str, Any]]:
+def get_browser_mcp_config(settings: Optional[Any] = None) -> Optional[dict[str, Any]]:
     """Return MCP server config for Playwright, or None if disabled."""
-    from app.core.config import get_settings
-    settings = get_settings()
+    if settings is None:
+        from app.core.config import get_settings
+        settings = get_settings()
     if not settings.enable_browser_agent:
         return None
     return {

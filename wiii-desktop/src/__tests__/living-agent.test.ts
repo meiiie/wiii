@@ -290,7 +290,6 @@ describe("Living Agent API Module", () => {
     expect(typeof api.getEmotionalState).toBe("function");
     expect(typeof api.getJournalEntries).toBe("function");
     expect(typeof api.getSkills).toBe("function");
-    expect(typeof api.getHeartbeatInfo).toBe("function");
     expect(typeof api.triggerHeartbeat).toBe("function");
   });
 });

@@ -25,11 +25,31 @@ import logging
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 # ── Canonical patch targets (lazy imports live here) ────────────────────────
 _POOL_PATCH = "app.core.database.get_asyncpg_pool"
 _SETTINGS_PATCH = "app.core.config.settings"
+
+
+def _set_ws_receive_sequence(ws, *items):
+    ws.receive_text = AsyncMock(side_effect=list(items))
+
+
+def _sync_get(app, path="/test", headers=None, raise_server_exceptions=True):
+    async def _request():
+        transport = httpx.ASGITransport(
+            app=app,
+            raise_app_exceptions=raise_server_exceptions,
+        )
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
+            return await client.get(path, headers=headers)
+
+    return asyncio.run(_request())
 
 
 # ============================================================================
@@ -276,8 +296,8 @@ class TestWebSocketFirstMessageAuth:
         ws.accept = AsyncMock()
         ws.close = AsyncMock()
 
-        with patch("app.api.v1.websocket.asyncio.wait_for", side_effect=asyncio.TimeoutError()):
-            await websocket_chat(ws, session_id="test-sess")
+        _set_ws_receive_sequence(ws, asyncio.TimeoutError())
+        await websocket_chat(ws, session_id="test-sess")
 
         ws.close.assert_awaited_once_with(
             code=4001, reason="Auth timeout — send auth message within 10s"
@@ -294,8 +314,8 @@ class TestWebSocketFirstMessageAuth:
 
         wrong_msg = json.dumps({"type": "message", "content": "hello"})
 
-        with patch("app.api.v1.websocket.asyncio.wait_for", return_value=wrong_msg):
-            await websocket_chat(ws, session_id="test-sess")
+        _set_ws_receive_sequence(ws, wrong_msg)
+        await websocket_chat(ws, session_id="test-sess")
 
         ws.close.assert_awaited_once_with(
             code=4001, reason="First message must be type='auth'"
@@ -316,9 +336,9 @@ class TestWebSocketFirstMessageAuth:
         mock_settings.api_key = "correct-key"
         mock_settings.environment = "development"
 
-        with patch("app.api.v1.websocket.asyncio.wait_for", return_value=auth_msg):
-            with patch(_SETTINGS_PATCH, mock_settings):
-                await websocket_chat(ws, session_id="test-sess")
+        _set_ws_receive_sequence(ws, auth_msg)
+        with patch(_SETTINGS_PATCH, mock_settings):
+            await websocket_chat(ws, session_id="test-sess")
 
         ws.close.assert_awaited_once_with(code=4001, reason="Invalid API key")
 
@@ -337,9 +357,9 @@ class TestWebSocketFirstMessageAuth:
         mock_settings.api_key = None  # Not configured
         mock_settings.environment = "production"
 
-        with patch("app.api.v1.websocket.asyncio.wait_for", return_value=auth_msg):
-            with patch(_SETTINGS_PATCH, mock_settings):
-                await websocket_chat(ws, session_id="test-sess")
+        _set_ws_receive_sequence(ws, auth_msg)
+        with patch(_SETTINGS_PATCH, mock_settings):
+            await websocket_chat(ws, session_id="test-sess")
 
         # In production with no api_key, must reject
         ws.close.assert_awaited_once()
@@ -368,18 +388,9 @@ class TestWebSocketFirstMessageAuth:
         mock_settings.api_key = "correct-key"
         mock_settings.environment = "development"
 
-        # After auth, receive_text() in the loop → raise disconnect to exit
-        async def receive_text():
-            raise WebSocketDisconnect()
-
-        ws.receive_text = receive_text
-
-        async def mock_wait_for(coro, timeout):
-            return auth_msg
-
-        with patch("app.api.v1.websocket.asyncio.wait_for", mock_wait_for):
-            with patch(_SETTINGS_PATCH, mock_settings):
-                await websocket_chat(ws, session_id="test-sess")
+        _set_ws_receive_sequence(ws, auth_msg, WebSocketDisconnect())
+        with patch(_SETTINGS_PATCH, mock_settings):
+            await websocket_chat(ws, session_id="test-sess")
 
         ws.send_json.assert_awaited_once_with({"type": "auth_ok"})
 
@@ -392,8 +403,8 @@ class TestWebSocketFirstMessageAuth:
         ws.accept = AsyncMock()
         ws.close = AsyncMock()
 
-        with patch("app.api.v1.websocket.asyncio.wait_for", return_value="not-json{{{"):
-            await websocket_chat(ws, session_id="test-sess")
+        _set_ws_receive_sequence(ws, "not-json{{{")
+        await websocket_chat(ws, session_id="test-sess")
 
         ws.close.assert_awaited_once()
         close_code = ws.close.call_args[1].get("code") or ws.close.call_args[0][0]
@@ -422,17 +433,9 @@ class TestWebSocketFirstMessageAuth:
         mock_settings.api_key = "correct-key"
         mock_settings.environment = "production"
 
-        async def receive_text():
-            raise WebSocketDisconnect()
-
-        ws.receive_text = receive_text
-
-        async def mock_wait_for(coro, timeout):
-            return auth_msg
-
-        with patch("app.api.v1.websocket.asyncio.wait_for", mock_wait_for):
-            with patch(_SETTINGS_PATCH, mock_settings):
-                await websocket_chat(ws, session_id="test-sess-prod")
+        _set_ws_receive_sequence(ws, auth_msg, WebSocketDisconnect())
+        with patch(_SETTINGS_PATCH, mock_settings):
+            await websocket_chat(ws, session_id="test-sess-prod")
 
         # auth_ok was sent (connection accepted, role was silently downgraded)
         ws.send_json.assert_awaited_once_with({"type": "auth_ok"})
@@ -459,17 +462,9 @@ class TestWebSocketFirstMessageAuth:
         mock_settings.api_key = None  # No key in dev
         mock_settings.environment = "development"
 
-        async def receive_text():
-            raise WebSocketDisconnect()
-
-        ws.receive_text = receive_text
-
-        async def mock_wait_for(coro, timeout):
-            return auth_msg
-
-        with patch("app.api.v1.websocket.asyncio.wait_for", mock_wait_for):
-            with patch(_SETTINGS_PATCH, mock_settings):
-                await websocket_chat(ws, session_id="dev-sess")
+        _set_ws_receive_sequence(ws, auth_msg, WebSocketDisconnect())
+        with patch(_SETTINGS_PATCH, mock_settings):
+            await websocket_chat(ws, session_id="dev-sess")
 
         ws.send_json.assert_awaited_once_with({"type": "auth_ok"})
 
@@ -502,8 +497,6 @@ class TestOrgContextMiddlewareFailClosed:
 
     def test_db_error_clears_org_context(self):
         """DB error during org lookup → current_org_id reset to None (fail-closed)."""
-        from starlette.testclient import TestClient
-
         captured = []
         app = self._build_app_with_endpoint(captured)
 
@@ -519,8 +512,11 @@ class TestOrgContextMiddlewareFailClosed:
                 mock_repo.get_organization.side_effect = RuntimeError("Connection refused")
                 mock_get_repo.return_value = mock_repo
 
-                client = TestClient(app, raise_server_exceptions=False)
-                resp = client.get("/test", headers={"X-Organization-ID": "org-boom"})
+                resp = _sync_get(
+                    app,
+                    headers={"X-Organization-ID": "org-boom"},
+                    raise_server_exceptions=False,
+                )
 
         # Fail-closed: 503 returned, handler never reached
         assert resp.status_code == 503
@@ -528,8 +524,6 @@ class TestOrgContextMiddlewareFailClosed:
 
     def test_successful_org_lookup_sets_context(self):
         """Successful DB lookup → current_org_id is set to org_id during request."""
-        from starlette.testclient import TestClient
-
         captured = []
         app = self._build_app_with_endpoint(captured)
 
@@ -548,16 +542,13 @@ class TestOrgContextMiddlewareFailClosed:
                 mock_repo.get_organization.return_value = mock_org
                 mock_get_repo.return_value = mock_repo
 
-                client = TestClient(app)
-                client.get("/test", headers={"X-Organization-ID": "org-good"})
+                _sync_get(app, headers={"X-Organization-ID": "org-good"})
 
         assert len(captured) == 1
         assert captured[0] == "org-good"
 
     def test_no_org_header_no_op(self):
         """No X-Organization-ID header → org context remains None."""
-        from starlette.testclient import TestClient
-
         captured = []
         app = self._build_app_with_endpoint(captured)
 
@@ -566,16 +557,13 @@ class TestOrgContextMiddlewareFailClosed:
         mock_settings.subdomain_base_domain = ""
 
         with patch(_SETTINGS_PATCH, mock_settings):
-            client = TestClient(app)
-            client.get("/test")
+            _sync_get(app)
 
         assert len(captured) == 1
         assert captured[0] is None
 
     def test_multi_tenant_disabled_is_noop(self):
         """enable_multi_tenant=False → middleware is pass-through, no DB calls."""
-        from starlette.testclient import TestClient
-
         repo_calls = []
         captured = []
         app = self._build_app_with_endpoint(captured)
@@ -593,14 +581,12 @@ class TestOrgContextMiddlewareFailClosed:
                     return MagicMock()
                 mock_get_repo.side_effect = record_and_return
 
-                client = TestClient(app)
-                client.get("/test", headers={"X-Organization-ID": "org-x"})
+                _sync_get(app, headers={"X-Organization-ID": "org-x"})
 
         assert len(repo_calls) == 0
 
     def test_org_context_reset_after_request(self):
         """After request, current_org_id is reset to None (ContextVar cleanup)."""
-        from starlette.testclient import TestClient
         from app.core.org_context import current_org_id
 
         # Verify clean state before test
@@ -624,8 +610,7 @@ class TestOrgContextMiddlewareFailClosed:
                 mock_repo.get_organization.return_value = mock_org
                 mock_get_repo.return_value = mock_repo
 
-                client = TestClient(app)
-                client.get("/test", headers={"X-Organization-ID": "org-cleanup"})
+                _sync_get(app, headers={"X-Organization-ID": "org-cleanup"})
 
         # After request, ContextVar should be back to default
         assert current_org_id.get() is None

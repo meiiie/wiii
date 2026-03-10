@@ -135,11 +135,11 @@ class TestStreamEvent:
 
 class TestNodeMappings:
     def test_node_descriptions_has_all_nodes(self):
-        expected = {"supervisor", "rag_agent", "tutor_agent", "memory_agent", "direct", "grader", "synthesizer", "product_search_agent"}
+        expected = {"supervisor", "rag_agent", "tutor_agent", "memory_agent", "direct", "code_studio_agent", "grader", "synthesizer", "product_search_agent"}
         assert set(NODE_DESCRIPTIONS.keys()) == expected
 
     def test_node_steps_has_all_nodes(self):
-        expected = {"supervisor", "rag_agent", "tutor_agent", "memory_agent", "direct", "grader", "synthesizer", "product_search_agent"}
+        expected = {"supervisor", "rag_agent", "tutor_agent", "memory_agent", "direct", "code_studio_agent", "grader", "synthesizer", "product_search_agent"}
         assert set(NODE_STEPS.keys()) == expected
 
     def test_node_descriptions_are_strings(self):

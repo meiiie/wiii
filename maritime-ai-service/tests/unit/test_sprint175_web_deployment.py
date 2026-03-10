@@ -436,7 +436,8 @@ class TestFileStructure:
             content = f.read()
         assert "nginx:" in content
         assert "wiii-nginx" in content
-        assert "nginx.conf" in content
+        assert "WIII_NGINX_IMAGE" in content
+        assert "EMBED_ALLOWED_ORIGINS" in content
 
     def test_docker_compose_prod_has_subdomain_env(self):
         import os

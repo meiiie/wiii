@@ -27,6 +27,7 @@ from app.engine.skills.skill_recommender import (
     SelectionStrategy,
     ToolRecommendation,
     get_intelligent_tool_selector,
+    select_runtime_tools,
     _INTENT_TO_CATEGORIES,
     _KEYWORD_CATEGORIES,
 )
@@ -72,6 +73,12 @@ def _make_mock_registry(tool_defs=None):
         mock_reg._tools[name] = info
 
     return mock_reg
+
+
+def _make_runtime_tool(name):
+    tool = MagicMock()
+    tool.name = name
+    return tool
 
 
 # ============================================================================
@@ -255,6 +262,49 @@ class TestStrategyAll:
         mock_get_reg.return_value = mock_reg
         recs = selector.select_tools(query="test", strategy=SelectionStrategy.ALL)
         assert recs == []
+
+
+class TestRuntimeToolSelection:
+    """Test mapping ranked tool names back to runtime tool objects."""
+
+    @patch("app.engine.tools.registry.get_tool_registry")
+    def test_runtime_selection_orders_and_keeps_must_include(self, mock_get_reg, mock_registry):
+        mock_get_reg.return_value = mock_registry
+        runtime_tools = [
+            _make_runtime_tool("tool_search_shopee"),
+            _make_runtime_tool("tool_search_lazada"),
+            _make_runtime_tool("tool_current_datetime"),
+            _make_runtime_tool("tool_custom_unregistered"),
+        ]
+
+        selected = select_runtime_tools(
+            runtime_tools,
+            query="mua sản phẩm trên Shopee giá rẻ",
+            intent="product_search",
+            user_role="student",
+            max_tools=2,
+            must_include=["tool_current_datetime"],
+            enabled=True,
+        )
+
+        names = [tool.name for tool in selected]
+        assert names[0] == "tool_search_shopee"
+        assert "tool_current_datetime" in names
+        assert "tool_custom_unregistered" in names
+
+    def test_runtime_selection_disabled_returns_original_tools(self):
+        runtime_tools = [
+            _make_runtime_tool("tool_search_shopee"),
+            _make_runtime_tool("tool_current_datetime"),
+        ]
+
+        selected = select_runtime_tools(
+            runtime_tools,
+            query="test",
+            enabled=False,
+        )
+
+        assert selected == runtime_tools
 
 
 # ============================================================================

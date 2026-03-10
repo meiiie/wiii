@@ -35,9 +35,6 @@ import {
   gdprForgetUser,
   getAdminOrgDetail,
   getAdminOrgMembers,
-  getFeatureFlagsForOrg,
-  getOrgAnalyticsOverview,
-  getOrgLlmUsage,
   deactivateUser as apiDeactivateUser,
   reactivateUser as apiReactivateUser,
   changeUserRole as apiChangeUserRole,
@@ -147,6 +144,7 @@ interface AdminState {
 }
 
 const PAGE_SIZE = 20;
+let _toastTimer: ReturnType<typeof setTimeout> | null = null;
 
 function dateRangeToFrom(range: DateRange): string | undefined {
   if (range === "all") return undefined;
@@ -267,10 +265,11 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     set({ error: null });
     try {
       await deleteFeatureFlagOverride(key);
-      // Refresh flags list
       await get().fetchFeatureFlags();
+      get().showToast(`Đã xoá override cho ${key}`, "success");
     } catch (e) {
       set({ error: String(e) });
+      get().showToast(String(e), "error");
     }
   },
 
@@ -314,7 +313,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   fetchOrgFeatureFlags: async (orgId) => {
     set({ loading: true, error: null });
     try {
-      const flags = await getFeatureFlagsForOrg(orgId);
+      const flags = await getFeatureFlags(orgId);
       set({ orgFeatureFlags: flags, loading: false });
     } catch (e) {
       set({ loading: false, error: String(e) });
@@ -330,8 +329,10 @@ export const useAdminStore = create<AdminState>((set, get) => ({
           f.key === key ? updated : f
         ),
       }));
+      get().showToast(`Đã cập nhật flag ${key}`, "success");
     } catch (e) {
       set({ error: String(e) });
+      get().showToast(String(e), "error");
     }
   },
 
@@ -340,15 +341,18 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     try {
       await deleteFeatureFlagOverride(key, orgId);
       await get().fetchOrgFeatureFlags(orgId);
+      get().showToast(`Đã xoá override cho ${key}`, "success");
     } catch (e) {
       set({ error: String(e) });
+      get().showToast(String(e), "error");
     }
   },
 
   fetchOrgAnalytics: async (orgId) => {
     set({ error: null });
     try {
-      const data = await getOrgAnalyticsOverview(orgId, {
+      const data = await getAnalyticsOverview({
+        org_id: orgId,
         from: dateRangeToFrom(get().analyticsDateRange),
       });
       set({ orgAnalytics: data });
@@ -360,7 +364,8 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   fetchOrgLlmUsage: async (orgId) => {
     set({ error: null });
     try {
-      const data = await getOrgLlmUsage(orgId, {
+      const data = await getLlmUsageAnalytics({
+        org_id: orgId,
         from: dateRangeToFrom(get().analyticsDateRange),
       });
       set({ orgLlmUsage: data });
@@ -379,6 +384,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
       set({ analyticsOverview: data, loading: false });
     } catch (e) {
       set({ loading: false, error: String(e) });
+      get().showToast("Không thể tải tổng quan phân tích", "error");
     }
   },
 
@@ -390,6 +396,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
       set({ llmUsage: data });
     } catch (e) {
       set({ error: String(e) });
+      get().showToast("Không thể tải dữ liệu LLM", "error");
     }
   },
 
@@ -401,6 +408,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
       set({ userAnalytics: data });
     } catch (e) {
       set({ error: String(e) });
+      get().showToast("Không thể tải phân tích người dùng", "error");
     }
   },
 
@@ -435,8 +443,10 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     try {
       const result = await gdprExportUser(userId);
       set({ gdprExportResult: result, loading: false });
+      get().showToast("Xuất dữ liệu thành công", "success");
     } catch (e) {
       set({ loading: false, error: String(e) });
+      get().showToast("Không thể xuất dữ liệu GDPR", "error");
     }
   },
 
@@ -445,17 +455,21 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     try {
       const result = await gdprForgetUser(userId);
       set({ gdprForgetResult: result, loading: false });
+      get().showToast("Đã xoá dữ liệu người dùng", "success");
     } catch (e) {
       set({ loading: false, error: String(e) });
+      get().showToast("Không thể xoá dữ liệu GDPR", "error");
     }
   },
 
   // --- Sprint 180: Toast + user/org member actions ---
 
   showToast: (message, type) => {
+    if (_toastTimer) clearTimeout(_toastTimer);
     set({ toast: { message, type } });
-    setTimeout(() => {
+    _toastTimer = setTimeout(() => {
       set({ toast: null });
+      _toastTimer = null;
     }, 3000);
   },
 

@@ -56,7 +56,8 @@ export function WelcomeScreen({ onSendMessage, onCancel }: WelcomeScreenProps) {
 
   const handleSuggestion = (question: string) => {
     if (!activeConversationId) {
-      createConversation(activeDomainId, activeOrgId || undefined);
+      const embedCfg = (window as any).__WIII_EMBED_CONFIG__;
+      createConversation(activeDomainId, activeOrgId || undefined, embedCfg?.session_id);
     }
     onSendMessage(question);
   };

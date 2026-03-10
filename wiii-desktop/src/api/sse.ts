@@ -55,6 +55,8 @@ export interface SSEEventHandler {
   onArtifact?: (data: SSEArtifactEvent) => void;
   /** Sprint 222b: Host action request from AI agent */
   onHostAction?: (data: SSEHostActionEvent) => void;
+  /** Transport keepalive comment such as ": keepalive" */
+  onKeepAlive?: () => void;
 }
 
 /**
@@ -69,6 +71,10 @@ export interface SSEEventHandler {
 export interface SSEStreamResult {
   /** Last event ID received (for reconnection via Last-Event-ID header). */
   lastEventId: string | null;
+  /** Whether the stream emitted an explicit done event. */
+  sawDone: boolean;
+  /** Event types dispatched in order, for lightweight dev tracing. */
+  eventOrder: string[];
 }
 
 export async function parseSSEStream(
@@ -80,6 +86,37 @@ export async function parseSSEStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let lastEventId: string | null = null;
+  let sawDone = false;
+  const eventOrder: string[] = [];
+
+  const parseBufferedEvents = (flushTail: boolean = false) => {
+    buffer = normalizeChunk(buffer);
+
+    while (true) {
+      const separatorIndex = buffer.indexOf("\n\n");
+      if (separatorIndex === -1) break;
+
+      const eventStr = buffer.slice(0, separatorIndex);
+      buffer = buffer.slice(separatorIndex + 2);
+      if (!eventStr.trim()) continue;
+
+      if (dispatchEventString(eventStr, handlers, eventOrder, (id) => {
+        lastEventId = id;
+      })) {
+        sawDone = true;
+      }
+    }
+
+    if (flushTail && buffer.trim()) {
+      const trailingEvent = buffer;
+      buffer = "";
+      if (dispatchEventString(trailingEvent, handlers, eventOrder, (id) => {
+        lastEventId = id;
+      })) {
+        sawDone = true;
+      }
+    }
+  };
 
   try {
     while (true) {
@@ -88,52 +125,65 @@ export async function parseSSEStream(
       const { done, value } = await reader.read();
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-
-      // SSE events are separated by double newlines
-      const events = buffer.split("\n\n");
-      // Keep the last (possibly incomplete) chunk in the buffer
-      buffer = events.pop() || "";
-
-      for (const eventStr of events) {
-        if (!eventStr.trim()) continue;
-
-        const lines = eventStr.trim().split("\n");
-        let eventType = "";
-        let dataLines: string[] = [];
-
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith("data: ")) {
-            dataLines.push(line.slice(6));
-          } else if (line.startsWith("data:")) {
-            dataLines.push(line.slice(5));
-          } else if (line.startsWith("id: ")) {
-            lastEventId = line.slice(4).trim();
-          } else if (line.startsWith("id:")) {
-            lastEventId = line.slice(3).trim();
-          }
-        }
-
-        if (!eventType || dataLines.length === 0) continue;
-
-        const dataStr = dataLines.join("\n");
-
-        try {
-          const parsed = JSON.parse(dataStr);
-          dispatchEvent(eventType, parsed, handlers);
-        } catch {
-          // If JSON parsing fails, try to handle as plain text
-          console.warn(`[SSE] Failed to parse JSON for event "${eventType}":`, dataStr);
-        }
-      }
+      buffer += normalizeChunk(decoder.decode(value, { stream: true }));
+      parseBufferedEvents();
     }
   } finally {
+    buffer += normalizeChunk(decoder.decode());
+    parseBufferedEvents(true);
     reader.releaseLock();
   }
 
-  return { lastEventId };
+  return { lastEventId, sawDone, eventOrder };
+}
+
+function normalizeChunk(chunk: string): string {
+  return chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function dispatchEventString(
+  eventStr: string,
+  handlers: SSEEventHandler,
+  eventOrder: string[],
+  setLastEventId: (value: string) => void,
+): boolean {
+  const lines = eventStr.trim().split("\n");
+  if (lines.length > 0 && lines.every((line) => line.trim().startsWith(":"))) {
+    eventOrder.push("keepalive");
+    handlers.onKeepAlive?.();
+    return false;
+  }
+
+  let eventType = "";
+  const dataLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith("event: ")) {
+      eventType = line.slice(7).trim();
+    } else if (line.startsWith("data: ")) {
+      dataLines.push(line.slice(6));
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5));
+    } else if (line.startsWith("id: ")) {
+      setLastEventId(line.slice(4).trim());
+    } else if (line.startsWith("id:")) {
+      setLastEventId(line.slice(3).trim());
+    }
+  }
+
+  if (!eventType || dataLines.length === 0) return false;
+
+  const dataStr = dataLines.join("\n");
+
+  try {
+    const parsed = JSON.parse(dataStr);
+    eventOrder.push(eventType);
+    dispatchEvent(eventType, parsed, handlers);
+    return eventType === "done";
+  } catch {
+    console.warn(`[SSE] Failed to parse JSON for event "${eventType}":`, dataStr);
+    return false;
+  }
 }
 
 function dispatchEvent(

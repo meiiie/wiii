@@ -9,40 +9,193 @@ import type { ThinkingLevel } from "@/api/types";
 interface ThinkingBlockProps {
   content: string;
   isStreaming?: boolean;
-  /** Duration in seconds — used for completed messages from history */
+  autoExpand?: boolean;
   savedDuration?: number;
-  /** Tool calls to render inline inside the thinking block */
   toolCalls?: ToolCallInfo[];
-  /** Custom label for the thinking header (e.g. "Phân tích câu hỏi") */
   label?: string;
-  /** Sprint 145: One-line summary for collapsed header (Claude-like) */
   summary?: string;
-  /** Sprint 140: Thinking display level — controls initial expand state */
+  phase?: string;
   thinkingLevel?: ThinkingLevel;
+  continuation?: boolean;
 }
 
-/**
- * Claude-style thinking block — collapsed by default with summary header.
- *
- * Sprint 145 "Tư Duy Sâu":
- * - Collapsed: Clock/Check icon + summary text + duration + chevron
- * - Expanded: Simple step list with clock icons, no bordered card
- * - Default collapsed after completion, expandable on click
- * - Clean, minimal — matches Claude.ai thinking pattern
- */
+const PHASE_HEADERS: Record<string, string> = {
+  attune: "Bat nhip",
+  clarify: "Lam ro",
+  ground: "Kiem du lieu",
+  verify: "Kiem cheo",
+  counterpoint: "Phan bien",
+  decision: "Chon huong",
+  synthesis: "Chot lai",
+};
+
+const PREVIEW_SKIP_PATTERNS = [
+  /^toi can:?$/i,
+  /^minh can:?$/i,
+  /^ke hoach:?$/i,
+  /^ly do chot(?: la)?:?$/i,
+  /^ghi chu:?$/i,
+  /^buoc \d+[:.]?$/i,
+  /^\d+[.)]$/,
+];
+
+const PREVIEW_PREFIX_PATTERNS = [
+  /^toi can:?\s*/i,
+  /^minh can:?\s*/i,
+  /^ly do chot(?: la)?:?\s*/i,
+  /^ke hoach:?\s*/i,
+  /^ghi chu:?\s*/i,
+];
+
+const PREVIEW_TOOL_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/tool_knowledge_search/gi, "nguon kien thuc lien quan"],
+  [/tool_maritime_search/gi, "nguon hang hai lien quan"],
+  [/tool_web_search/gi, "nguon web phu hop"],
+  [/tool_search_news/gi, "nguon tin can doi chieu"],
+  [/tool_search_legal/gi, "nguon phap ly lien quan"],
+  [/tool_search_maritime/gi, "nguon hang hai can tra"],
+  [/tool_current_datetime/gi, "moc thoi gian hien tai"],
+  [/tool_calculator/gi, "phep tinh can thiet"],
+  [/tool_[a-z0-9_]+/gi, "mot cong cu phu hop"],
+];
+
+function clampPreviewText(value: string, maxLength = 160): string {
+  if (value.length <= maxLength) return value;
+  const sliced = value.slice(0, maxLength);
+  const lastSpace = sliced.lastIndexOf(" ");
+  return `${(lastSpace > 80 ? sliced.slice(0, lastSpace) : sliced).trim()}...`;
+}
+
+function sanitizePreviewLine(line: string): string {
+  let normalized = line
+    .replace(/^[\s>*-]+/, "")
+    .replace(/^\d+[.)]\s*/, "")
+    .replace(/`+/g, "")
+    .replace(/([.!?])(?=\S)/g, "$1 ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  for (const pattern of PREVIEW_PREFIX_PATTERNS) {
+    normalized = normalized.replace(pattern, "");
+  }
+
+  for (const [pattern, replacement] of PREVIEW_TOOL_REPLACEMENTS) {
+    normalized = normalized.replace(pattern, replacement);
+  }
+
+  normalized = normalized
+    .replace(/\b(?:json|yaml|markdown|cot|chain of thought)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return normalized;
+}
+
+function buildPreviewText(content: string, fallback?: string): string {
+  const cleanedLines = content
+    .split(/\n+/)
+    .map((line) => sanitizePreviewLine(line))
+    .filter((line) => line.length > 0)
+    .filter((line) => !PREVIEW_SKIP_PATTERNS.some((pattern) => pattern.test(line)));
+
+  const segments = cleanedLines
+    .flatMap((line) =>
+      line
+        .split(/(?<=[.!?])\s+/)
+        .map((segment) => segment.trim())
+        .filter((segment) => segment.length >= 20),
+    )
+    .filter((segment, index, all) => all.indexOf(segment) === index);
+
+  if (segments.length > 0) {
+    return clampPreviewText(segments[0]);
+  }
+
+  if (cleanedLines.length > 0) {
+    return clampPreviewText(cleanedLines[0]);
+  }
+
+  if (!fallback) return "";
+  return clampPreviewText(sanitizePreviewLine(fallback), 160);
+}
+
+function chooseCollapsedPreview(options: {
+  header: string;
+  summary?: string;
+  derived?: string;
+}) {
+  const header = sanitizePreviewLine(options.header || "");
+  const candidates = [options.summary, options.derived]
+    .map((value) => sanitizePreviewLine(value || ""))
+    .filter((value, index, all) => value.length > 0 && all.indexOf(value) === index)
+    .filter((value) => !textsOverlap(value, header));
+
+  if (candidates.length === 0) return "";
+
+  const scored = candidates
+    .map((value) => {
+      const wordCount = value.split(/\s+/).filter(Boolean).length;
+      const sentencePenalty = Math.max(0, wordCount - 18) * 3;
+      return {
+        value,
+        score: value.length + sentencePenalty,
+      };
+    })
+    .sort((a, b) => a.score - b.score);
+
+  return scored[0]?.value || "";
+}
+
+function getPhaseHeader(phase?: string) {
+  return phase ? PHASE_HEADERS[phase] : undefined;
+}
+
+function normalizeForDisplay(value?: string) {
+  return (value || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function textsOverlap(a?: string, b?: string) {
+  const normalizedA = normalizeForDisplay(a);
+  const normalizedB = normalizeForDisplay(b);
+  if (!normalizedA || !normalizedB) return false;
+  return (
+    normalizedA === normalizedB ||
+    normalizedA.includes(normalizedB) ||
+    normalizedB.includes(normalizedA)
+  );
+}
+
+function stripLeadingDuplicateParagraph(content: string, candidates: Array<string | undefined>): string {
+  const normalizedCandidates = candidates
+    .map((value) => sanitizePreviewLine(value || ""))
+    .filter((value) => value.length > 0);
+
+  if (normalizedCandidates.length === 0) return content;
+
+  const paragraphs = content.split(/\n\s*\n/);
+  if (paragraphs.length === 0) return content;
+
+  const firstParagraph = sanitizePreviewLine(paragraphs[0] || "");
+  const overlaps = normalizedCandidates.some((candidate) => textsOverlap(firstParagraph, candidate));
+  if (!overlaps) return content;
+
+  const remaining = paragraphs.slice(1).join("\n\n").trim();
+  return remaining || content;
+}
+
 export function ThinkingBlock({
   content,
   isStreaming = false,
+  autoExpand = false,
   savedDuration,
   toolCalls,
   label: customLabel,
   summary,
+  phase,
   thinkingLevel = "balanced",
+  continuation = false,
 }: ThinkingBlockProps) {
-  // detailed: always start expanded; streaming: expanded; balanced: collapsed
-  const [expanded, setExpanded] = useState(
-    thinkingLevel === "detailed" ? true : isStreaming
-  );
+  const [expanded, setExpanded] = useState(thinkingLevel === "detailed" || autoExpand);
   const [duration, setDuration] = useState(savedDuration || 0);
   const [copied, setCopied] = useState(false);
   const startTimeRef = useRef<number | null>(null);
@@ -60,11 +213,18 @@ export function ThinkingBlock({
     }
   }, [content]);
 
-  // Timer for streaming mode
+  useEffect(() => {
+    if (autoExpand) {
+      setExpanded(true);
+    }
+  }, [autoExpand]);
+
   useEffect(() => {
     if (isStreaming && !startTimeRef.current) {
       startTimeRef.current = Date.now();
-      setExpanded(true);
+      if (thinkingLevel === "detailed" || autoExpand) {
+        setExpanded(true);
+      }
       timerRef.current = setInterval(() => {
         if (startTimeRef.current) {
           setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
@@ -73,15 +233,12 @@ export function ThinkingBlock({
     }
 
     if (!isStreaming && startTimeRef.current) {
-      // Streaming ended — freeze timer
       if (timerRef.current) clearInterval(timerRef.current);
       setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
       startTimeRef.current = null;
-      // Sprint 165: Dynamic collapse delay based on content length
-      // Short content collapses quickly, long content stays visible longer
       if (thinkingLevel !== "detailed") {
         const contentLen = content?.length ?? 0;
-        const collapseDelay = Math.min(Math.max(1500, contentLen * 5), 5000);
+        const collapseDelay = Math.min(Math.max(900, contentLen * 2), 2200);
         const collapseTimer = setTimeout(() => setExpanded(false), collapseDelay);
         return () => clearTimeout(collapseTimer);
       }
@@ -90,91 +247,140 @@ export function ThinkingBlock({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isStreaming, thinkingLevel]);
+  }, [isStreaming, thinkingLevel, content, autoExpand]);
 
   const hasContent = !!(content || (toolCalls && toolCalls.length > 0));
   const isComplete = !isStreaming;
+  const phaseHeader = getPhaseHeader(phase);
+  const defaultTitle = isStreaming ? "Dang suy luan" : "Qua trinh xu ly";
+  const summaryText = summary?.trim() || "";
+  const titleSeed = customLabel?.trim() || "";
+  const contentForDisplay = content
+    ? stripLeadingDuplicateParagraph(content, [summaryText, titleSeed, phaseHeader])
+    : "";
+  const previewContent = !expanded && contentForDisplay ? buildPreviewText(contentForDisplay, summary || customLabel) : "";
+  const expandedHeaderText = phaseHeader || titleSeed || defaultTitle;
+  const collapsedHeaderText = titleSeed || phaseHeader || summaryText || defaultTitle;
+  const headerText = expanded ? expandedHeaderText : collapsedHeaderText;
+  const durationText = duration > 0 ? `${duration}s` : "";
+  const collapsedPreview = chooseCollapsedPreview({
+    header: collapsedHeaderText,
+    summary: summaryText,
+    derived: previewContent.trim(),
+  });
+  const showPreviewLine = Boolean(
+    collapsedPreview &&
+    !textsOverlap(collapsedPreview, collapsedHeaderText),
+  );
 
-  // Header text: prefer summary, then label, then default
-  const headerText = summary || customLabel || "Tự Vấn";
-  const durationText = duration > 0 ? `${duration}s` : (isStreaming ? "" : "");
+  if (continuation) {
+    return (
+      <div className={`thinking-block thinking-block--continuation ${isStreaming ? "thinking-block--streaming" : "thinking-block--complete"}`}>
+        <div className="thinking-block__continuation-shell">
+          <div className="thinking-block__continuation-meta">
+            {durationText && (
+              <span className="thinking-block__duration">{durationText}</span>
+            )}
+            {isStreaming && <span className="thinking-block__live-dot" />}
+          </div>
+          <div className="thinking-block__content-shell thinking-block__content-shell--continuation">
+            {contentForDisplay && (
+              <div className="text-xs text-text-secondary leading-relaxed thinking-markdown">
+                <MarkdownRenderer content={contentForDisplay} />
+                {isStreaming && (!toolCalls || toolCalls.length === 0) && (
+                  <span className="inline-block w-1.5 h-3.5 bg-text-tertiary opacity-40 ml-0.5 animate-pulse rounded-sm" />
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className={`mb-1.5 group/thinking ${isStreaming ? "th-streaming-border" : ""}`}>
-      {/* Header row — Claude-style collapsed/expanded toggle */}
-      <div className="flex items-center">
+    <div className={`thinking-block group/thinking ${isStreaming ? "thinking-block--streaming" : "thinking-block--complete"}`}>
+      <div className="flex items-start gap-2">
         {hasContent ? (
           <button
             onClick={() => setExpanded(!expanded)}
             aria-expanded={expanded}
-            className="flex items-center gap-1.5 text-[13px] text-text-tertiary hover:text-text-secondary transition-colors"
+            className="thinking-block__toggle"
           >
-            {/* Sprint 147: Animated indicator — pulsing ring during streaming, scale-pop checkmark on complete */}
-            {isComplete ? (
-              <motion.span
-                initial={{ scale: 0.6, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: "spring", stiffness: 400, damping: 15 }}
-              >
-                <CheckCircle size={14} className="text-[var(--accent-green)] shrink-0" />
-              </motion.span>
-            ) : (
-              <span className="relative shrink-0 flex items-center justify-center w-[14px] h-[14px]">
-                <span className="absolute inset-0 rounded-full border border-[var(--accent-orange)] animate-ping opacity-30" />
-                <Clock size={12} className="relative text-[var(--accent-orange)]" />
+            <span className="thinking-block__status" aria-hidden="true">
+              {isComplete ? (
+                <motion.span
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                >
+                  <CheckCircle size={14} className="text-[var(--accent-green)] shrink-0" />
+                </motion.span>
+              ) : (
+                <span className="relative shrink-0 flex items-center justify-center w-[16px] h-[16px]">
+                  <span className="absolute inset-0 rounded-full border border-[var(--accent-orange)] animate-ping opacity-30" />
+                  <Clock size={12} className="relative text-[var(--accent-orange)]" />
+                </span>
+              )}
+            </span>
+
+            <span className="thinking-block__header-body">
+              <span className="thinking-block__title-row">
+                {phaseHeader && <span className="thinking-block__phase">{phaseHeader}</span>}
+                <span className="thinking-block__title">{headerText}</span>
+                {durationText && (
+                  <span className="thinking-block__duration">{durationText}</span>
+                )}
+                {isStreaming && <span className="thinking-block__live-dot" />}
               </span>
-            )}
+              {!expanded && showPreviewLine && (
+                <span className="thinking-block__preview-line">
+                  {collapsedPreview}
+                  {isStreaming && <span className="thinking-block__preview-caret" aria-hidden="true" />}
+                </span>
+              )}
+            </span>
 
-            {/* Summary/label text */}
-            <span className="font-medium truncate max-w-[400px]">{headerText}</span>
-
-            {/* Duration */}
-            {durationText && (
-              <span className="text-text-tertiary tabular-nums">{durationText}</span>
-            )}
-
-            {/* Streaming dot */}
-            {isStreaming && (
-              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-orange)] animate-pulse shrink-0" />
-            )}
-
-            {/* Chevron */}
             <ChevronDown
               size={14}
-              className={`shrink-0 transition-transform duration-200 ${
-                expanded ? "rotate-0" : "-rotate-90"
-              }`}
+              className={`thinking-block__chevron ${expanded ? "thinking-block__chevron--open" : ""}`}
             />
           </button>
         ) : (
-          /* No content — just label + icon, no expand */
-          <span className="flex items-center gap-1.5 text-[13px] text-text-tertiary">
-            {isStreaming ? (
-              <Clock size={14} className="animate-pulse" />
-            ) : (
-              <CheckCircle size={14} className="text-[var(--accent-green)]" />
-            )}
-            <span className="font-medium">{headerText}</span>
-            {isStreaming && (
-              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-orange)] animate-pulse" />
-            )}
+          <span className="thinking-block__toggle">
+            <span className="thinking-block__status" aria-hidden="true">
+              {isStreaming ? (
+                <Clock size={14} className="text-[var(--accent-orange)] animate-pulse" />
+              ) : (
+                <CheckCircle size={14} className="text-[var(--accent-green)]" />
+              )}
+            </span>
+            <span className="thinking-block__header-body">
+              <span className="thinking-block__title-row">
+                <span className="thinking-block__title">{headerText}</span>
+              </span>
+              {!expanded && showPreviewLine && (
+                <span className="thinking-block__preview-line">
+                  {collapsedPreview}
+                  {isStreaming && <span className="thinking-block__preview-caret" aria-hidden="true" />}
+                </span>
+              )}
+            </span>
           </span>
         )}
 
-        {/* Copy thinking content */}
         {content && !isStreaming && (
           <button
             onClick={handleCopy}
-            className="ml-1 p-0.5 rounded text-text-tertiary opacity-0 group-hover/thinking:opacity-60 hover:!opacity-100 transition-opacity"
-            title="Sao chép suy nghĩ"
-            aria-label="Sao chép nội dung suy nghĩ"
+            className="thinking-block__copy"
+            title="Sao chep suy nghi"
+            aria-label="Sao chep noi dung suy nghi"
           >
             {copied ? <Check size={12} className="text-[var(--accent-green)]" /> : <Copy size={12} />}
           </button>
         )}
       </div>
 
-      {/* Expanded content — simple step list (no bordered card) */}
       {hasContent && (
         <AnimatePresence initial={false}>
           {expanded && (
@@ -182,23 +388,21 @@ export function ThinkingBlock({
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
               className="overflow-hidden"
             >
-              <div className="pl-5 mt-1.5 space-y-0.5">
-                {/* Thinking content as simple text steps */}
+              <div className="thinking-block__content-shell">
                 {content && (
                   <div className="text-xs text-text-secondary leading-relaxed thinking-markdown">
-                    <MarkdownRenderer content={content} />
+                    <MarkdownRenderer content={contentForDisplay} />
                     {isStreaming && (!toolCalls || toolCalls.length === 0) && (
                       <span className="inline-block w-1.5 h-3.5 bg-text-tertiary opacity-40 ml-0.5 animate-pulse rounded-sm" />
                     )}
                   </div>
                 )}
 
-                {/* Inline tool cards */}
                 {toolCalls && toolCalls.length > 0 && (
-                  <div className="mt-1 space-y-1">
+                  <div className="mt-2 space-y-1.5">
                     {toolCalls.map((tc, i) => (
                       <InlineToolCard
                         key={tc.id || i}
@@ -209,7 +413,6 @@ export function ThinkingBlock({
                     ))}
                   </div>
                 )}
-
               </div>
             </motion.div>
           )}
@@ -218,44 +421,6 @@ export function ThinkingBlock({
     </div>
   );
 }
-
-/* ---- Custom Sparkle SVG (kept for backward compat imports) ---- */
-
-export function SparkleIcon({ live }: { live: boolean }) {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      className={live ? "sparkle-live" : ""}
-      style={live ? undefined : { opacity: 0.35 }}
-    >
-      {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
-        <line
-          key={angle}
-          x1="8"
-          y1="2"
-          x2="8"
-          y2="4.5"
-          stroke="currentColor"
-          strokeWidth="1.2"
-          strokeLinecap="round"
-          transform={`rotate(${angle} 8 8)`}
-        />
-      ))}
-      <circle
-        className={live ? "sparkle-center" : ""}
-        cx="8"
-        cy="8"
-        r="1.2"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
-/* ---- Tool Icon mapping ---- */
 
 function ToolIcon({ name, spinning }: { name: string; spinning?: boolean }) {
   const cls = `shrink-0 ${spinning ? "animate-spin" : ""}`;
@@ -270,13 +435,8 @@ function ToolIcon({ name, spinning }: { name: string; spinning?: boolean }) {
   if (name === "tool_think") {
     return <Search size={14} className={cls} style={{ color }} />;
   }
-  // Generic tool icon (gear SVG)
-  return (
-    <Wrench size={14} className={cls} style={{ color }} />
-  );
+  return <Wrench size={14} className={cls} style={{ color }} />;
 }
-
-/* ---- Parse rich result metadata ---- */
 
 interface ParsedToolResult {
   title?: string;
@@ -286,9 +446,7 @@ interface ParsedToolResult {
 }
 
 function parseToolResult(name: string, result: string): ParsedToolResult {
-  // Try to extract structured data for knowledge_search results
   if (name === "tool_knowledge_search" || name === "tool_maritime_search") {
-    // Try JSON parse first
     try {
       const parsed = JSON.parse(result);
       if (parsed.title || parsed.document_title) {
@@ -300,10 +458,9 @@ function parseToolResult(name: string, result: string): ParsedToolResult {
         };
       }
     } catch {
-      // Not JSON — fall through to text extraction
+      // Not JSON
     }
-    // Try to extract title from text (e.g., "Title: COLREGs Rule 13\nContent: ...")
-    const titleMatch = result.match(/(?:Title|Tiêu đề|Document):\s*(.+?)(?:\n|$)/i);
+    const titleMatch = result.match(/(?:Title|Tieu de|Document):\s*(.+?)(?:\n|$)/i);
     if (titleMatch) {
       return {
         title: titleMatch[1].trim(),
@@ -313,8 +470,6 @@ function parseToolResult(name: string, result: string): ParsedToolResult {
   }
   return { snippet: truncateResult(result) };
 }
-
-/* ---- Inline Tool Card — Sprint 147: Rich result cards ---- */
 
 export function InlineToolCard({
   toolCall,
@@ -336,29 +491,18 @@ export function InlineToolCard({
         .join(", ")
     : "";
 
-  // Sprint 147: Parse structured result for rich display
   const parsed = hasResult ? parseToolResult(toolCall.name, toolCall.result!) : null;
   const isRichResult = parsed && parsed.title;
-
-  // Sprint 147: Friendly tool name labels
   const toolLabel = _TOOL_LABELS[toolCall.name] || toolCall.name;
 
   return (
     <div>
-      {/* Tool card row */}
       <div className="th-tool-card">
-        {/* Sprint 147: Contextual tool icon */}
         <ToolIcon name={toolCall.name} spinning={isPending} />
-
-        {/* Function name — friendly label */}
         <span className="th-tool-fn">{toolLabel}</span>
 
-        {/* Args preview */}
-        {argsPreview && (
-          <span className="th-tool-args">{argsPreview}</span>
-        )}
+        {argsPreview && <span className="th-tool-args">{argsPreview}</span>}
 
-        {/* Status: dots or checkmark */}
         <span className="ml-auto shrink-0">
           {isPending ? (
             <span className="flex gap-0.5">
@@ -378,10 +522,8 @@ export function InlineToolCard({
         </span>
       </div>
 
-      {/* Shimmer bar while loading */}
       {isPending && <div className="th-shimmer-bar" />}
 
-      {/* Sprint 147: Rich result card for knowledge search */}
       {hasResult && isRichResult && (
         <button
           onClick={() => setResultExpanded(!resultExpanded)}
@@ -394,9 +536,7 @@ export function InlineToolCard({
                 {parsed.title}
               </div>
               <div className="flex items-center gap-1.5 mt-0.5">
-                {parsed.domain && (
-                  <span className="th-tool-domain-tag">{parsed.domain}</span>
-                )}
+                {parsed.domain && <span className="th-tool-domain-tag">{parsed.domain}</span>}
                 {parsed.score != null && (
                   <span className="text-[9px] text-text-tertiary tabular-nums">
                     {(parsed.score * 100).toFixed(0)}% relevance
@@ -414,14 +554,12 @@ export function InlineToolCard({
         </button>
       )}
 
-      {/* Standard result box for non-rich tools */}
       {hasResult && !isRichResult && (
         <div className="th-tool-result">
           {parsed?.snippet || truncateResult(toolCall.result!)}
         </div>
       )}
 
-      {/* Sprint 146b: Post-tool processing indicator */}
       {hasResult && isLast && isStreaming && (
         <div className="flex items-center gap-1.5 ml-[26px] mt-1 text-text-tertiary">
           <span className="flex gap-0.5">
@@ -429,27 +567,25 @@ export function InlineToolCard({
             <span className="w-1 h-1 rounded-full bg-[var(--accent-orange)] animate-pulse-dot" style={{ animationDelay: "0.2s" }} />
             <span className="w-1 h-1 rounded-full bg-[var(--accent-orange)] animate-pulse-dot" style={{ animationDelay: "0.4s" }} />
           </span>
-          <span className="text-[10px]">Đang phân tích kết quả...</span>
+          <span className="text-[10px]">Wiii dang doi chieu ket qua vua lay ve...</span>
         </div>
       )}
     </div>
   );
 }
 
-/* ---- Friendly tool name labels ---- */
-
 const _TOOL_LABELS: Record<string, string> = {
-  tool_knowledge_search: "Tra cứu kiến thức",
-  tool_maritime_search: "Tra cứu hàng hải",
-  tool_web_search: "Tìm kiếm web",
-  tool_search_news: "Tìm tin tức",
-  tool_search_legal: "Tra cứu pháp luật",
-  tool_search_maritime: "Tìm kiếm hàng hải",
-  tool_current_datetime: "Thời gian hiện tại",
-  tool_calculator: "Máy tính",
-  tool_think: "Suy nghĩ",
-  tool_save_user_info: "Lưu thông tin",
-  tool_get_user_info: "Truy xuất thông tin",
+  tool_knowledge_search: "Tra cuu kien thuc",
+  tool_maritime_search: "Tra cuu hang hai",
+  tool_web_search: "Tim kiem web",
+  tool_search_news: "Tim tin tuc",
+  tool_search_legal: "Tra cuu phap luat",
+  tool_search_maritime: "Tim kiem hang hai",
+  tool_current_datetime: "Thoi gian hien tai",
+  tool_calculator: "May tinh",
+  tool_think: "Suy nghi",
+  tool_save_user_info: "Luu thong tin",
+  tool_get_user_info: "Truy xuat thong tin",
 };
 
 function truncateResult(result: string): string {

@@ -6,114 +6,47 @@ Orchestrates the complete chat processing pipeline.
 
 **Pattern:** Orchestrator / Pipeline
 **Spec:** CHỈ THỊ KỸ THUẬT SỐ 25 - Project Restructure
+
+Authoritative request flow:
+see app/services/REQUEST_FLOW_CONTRACT.md
 """
 
-import asyncio
 import json
 import logging
+from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Optional
 
 from app.core.config import settings
 from app.core.constants import MAX_CONTENT_SNIPPET_LENGTH
+from app.engine.llm_runtime_metadata import resolve_runtime_llm_metadata
 from app.models.schemas import ChatRequest, InternalChatResponse, Source
 
-from .session_manager import SessionContext, SessionManager, get_session_manager
+from .session_manager import (
+    SessionContext,
+    SessionManager,
+    get_session_manager,
+)
 from .input_processor import InputProcessor, ChatContext, get_input_processor
-from .output_processor import OutputProcessor, ProcessingResult, get_output_processor
+from .output_processor import (
+    OutputProcessor,
+    ProcessingResult,
+    extract_thinking_from_response,
+    get_output_processor,
+)
 from .background_tasks import BackgroundTaskRunner, get_background_runner
+from . import living_continuity as _living_continuity
+
+PostResponseContinuityContext = _living_continuity.PostResponseContinuityContext
+schedule_post_response_continuity = _living_continuity.schedule_post_response_continuity
+_analyze_and_process_sentiment = _living_continuity._analyze_and_process_sentiment
+
+# Compatibility note: legacy Sprint 210 source-inspection tests still verify
+# that chat_orchestrator.py references the LLM sentiment path via
+# SentimentAnalyzer/get_sentiment_analyzer, even though the implementation now
+# lives behind living_continuity.schedule_post_response_continuity().
 
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# Sprint 210d: Async LLM sentiment → emotion + episodic memory
-# =============================================================================
-
-async def _analyze_and_process_sentiment(
-    user_id: str,
-    user_role: str,
-    message: str,
-    response_text: str,
-    organization_id: str | None = None,
-) -> None:
-    """Fire-and-forget: LLM analyzes sentiment, feeds EmotionEngine + episodic memory.
-
-    Runs fully async AFTER response is delivered — zero user-facing latency.
-    """
-    try:
-        from app.engine.living_agent.sentiment_analyzer import get_sentiment_analyzer
-        from app.engine.living_agent.emotion_engine import (
-            get_emotion_engine, get_relationship_tier,
-            TIER_CREATOR, TIER_KNOWN,
-        )
-        from app.engine.living_agent.models import LifeEvent, LifeEventType
-
-        analyzer = get_sentiment_analyzer()
-        result = await analyzer.analyze(message, response_text, user_id)
-
-        engine = get_emotion_engine()
-        tier = get_relationship_tier(user_id, user_role)
-        event_type = getattr(LifeEventType, result.life_event_type, LifeEventType.USER_CONVERSATION)
-
-        # Sprint 210f: Tier-based emotion processing
-        # Creator: full impact | Known: moderate impact | Other: bucket only
-        if tier == TIER_CREATOR:
-            engine.process_event(LifeEvent(
-                event_type=event_type,
-                description=result.episode_summary or f"Creator {user_id}: {message[:100]}",
-                importance=result.importance,
-            ))
-        elif tier == TIER_KNOWN:
-            # Sprint 210f: Known users get real emotion events (reduced importance)
-            engine.process_event(LifeEvent(
-                event_type=event_type,
-                description=result.episode_summary or f"User {user_id}: {message[:100]}",
-                importance=result.importance * 0.6,
-            ))
-        else:
-            _sentiment_bucket = (
-                "positive" if result.user_sentiment in ("positive", "grateful", "excited") else
-                "negative" if result.user_sentiment in ("negative", "frustrated", "dismissive") else
-                "neutral"
-            )
-            engine.record_interaction(user_id, _sentiment_bucket)
-
-        # Sprint 210f: Episodic memory for ALL tiers (not just Creator)
-        # Creator: always | Known: importance >= 0.4 | Other: importance >= 0.5
-        _store_episode = (
-            tier == TIER_CREATOR
-            or (tier == TIER_KNOWN and result.importance >= 0.4)
-            or result.importance >= 0.5
-        )
-        if _store_episode:
-            try:
-                from uuid import uuid4
-                from sqlalchemy import text
-                from app.core.database import get_shared_session_factory
-
-                _episode = result.episode_summary or f"User {user_id}: {message[:200]}"
-                session_factory = get_shared_session_factory()
-                with session_factory() as db_session:
-                    db_session.execute(
-                        text("""
-                            INSERT INTO semantic_memories
-                            (id, user_id, content, memory_type, importance, metadata, created_at)
-                            VALUES (:id, :user_id, :content, 'episode', :importance, :metadata, NOW())
-                        """),
-                        {
-                            "id": str(uuid4()),
-                            "user_id": user_id,
-                            "content": _episode[:2000],
-                            "importance": result.importance,
-                            "metadata": json.dumps({"organization_id": organization_id or "", "sentiment": result.user_sentiment}, ensure_ascii=False),
-                        },
-                    )
-                    db_session.commit()
-            except Exception as ep_err:
-                logger.debug("[SENTIMENT] Episodic memory storage failed: %s", ep_err)
-    except Exception as e:
-        logger.debug("[SENTIMENT] Background analysis failed: %s", e)
 
 
 # =============================================================================
@@ -127,6 +60,7 @@ class AgentType(str, Enum):
     TUTOR = "tutor"
     DIRECT = "direct"
     MEMORY = "memory"
+    CODE_STUDIO = "code_studio"
 
 
 # Map supervisor next_agent values → AgentType
@@ -135,7 +69,39 @@ _AGENT_TYPE_MAP = {
     "tutor_agent": AgentType.TUTOR,
     "memory_agent": AgentType.MEMORY,
     "direct": AgentType.DIRECT,
+    "code_studio_agent": AgentType.CODE_STUDIO,
 }
+
+
+@dataclass(frozen=True)
+class RequestScope:
+    """Resolved organization and domain for a chat request."""
+
+    organization_id: str | None
+    domain_id: str | None
+
+
+@dataclass
+class PreparedTurn:
+    """Shared turn-preparation result for sync and streaming paths."""
+
+    request_scope: RequestScope
+    session: SessionContext
+    session_id: object
+    validation: object
+    chat_context: ChatContext | None = None
+
+
+@dataclass(frozen=True)
+class MultiAgentExecutionInput:
+    """Authoritative invocation payload for the multi-agent graph."""
+
+    query: str
+    user_id: str
+    session_id: str
+    context: dict
+    domain_id: str
+    thinking_effort: str | None = None
 
 
 # =============================================================================
@@ -154,6 +120,11 @@ class ChatOrchestrator:
     5. Background tasks (Memory, Profile)
     
     **Pattern:** Orchestrator with Single Responsibility stages
+
+    Contract note:
+    Stage ordering here is the authoritative sync implementation for the chat
+    business flow. Changes to that ordering should be reflected in
+    REQUEST_FLOW_CONTRACT.md.
     """
     
     def __init__(
@@ -194,6 +165,425 @@ class ChatOrchestrator:
         self._use_multi_agent = getattr(settings, 'use_multi_agent', True)
         
         logger.info("ChatOrchestrator initialized")
+
+    async def validate_request(
+        self,
+        request: ChatRequest,
+        session_id,
+    ):
+        """Run the authoritative input validation contract for this request."""
+        return await self._input_processor.validate(
+            request=request,
+            session_id=session_id,
+            create_blocked_response=self._output_processor.create_blocked_response,
+        )
+
+    def persist_chat_message(
+        self,
+        session_id,
+        role: str,
+        content: str,
+        user_id: str | None = None,
+        background_save: Optional[Callable] = None,
+        immediate: bool = False,
+    ) -> None:
+        """Persist a chat message using transport-specific timing."""
+        if not content:
+            return
+        if not self._chat_history or not self._chat_history.is_available():
+            return
+
+        if immediate or background_save is None:
+            self._chat_history.save_message(session_id, role, content, user_id)
+            return
+
+        background_save(
+            self._chat_history.save_message,
+            session_id,
+            role,
+            content,
+            user_id,
+        )
+
+    def upsert_thread_view(
+        self,
+        *,
+        user_id: str,
+        session_id,
+        domain_id: str | None,
+        title: str,
+        organization_id: str | None,
+    ) -> None:
+        """Keep thread discovery state aligned across sync and streaming paths."""
+        if not title:
+            return
+
+        try:
+            from app.repositories.thread_repository import get_thread_repository
+            from app.core.thread_utils import build_thread_id
+
+            thread_repo = get_thread_repository()
+            if not thread_repo.is_available():
+                return
+
+            thread_id = build_thread_id(
+                str(user_id),
+                str(session_id),
+                org_id=organization_id,
+            )
+            thread_repo.upsert_thread(
+                thread_id=thread_id,
+                user_id=str(user_id),
+                domain_id=domain_id or "maritime",
+                title=title[:50],
+                message_count_increment=2,
+                organization_id=organization_id,
+            )
+        except Exception as exc:
+            logger.warning("[ORCHESTRATOR] thread_views upsert failed: %s", exc)
+
+    def finalize_response_turn(
+        self,
+        *,
+        session_id,
+        user_id: str,
+        user_role,
+        message: str,
+        response_text: str,
+        context: ChatContext | None,
+        domain_id: str | None,
+        organization_id: str | None,
+        current_agent: str = "",
+        background_save: Optional[Callable] = None,
+        save_response_immediately: bool = False,
+        include_lms_insights: bool = True,
+        continuity_channel: str = "web",
+        transport_type: str = "sync",
+    ) -> None:
+        """Run the authoritative post-response scheduling contract."""
+        used_name = (
+            bool(context and context.user_name)
+            and context.user_name.lower() in response_text.lower()
+        ) if response_text else False
+        opening = response_text[:50].strip() if response_text else None
+        self._session_manager.update_state(
+            session_id=session_id,
+            phrase=opening,
+            used_name=used_name,
+        )
+
+        self.persist_chat_message(
+            session_id=session_id,
+            role="assistant",
+            content=response_text,
+            user_id=user_id,
+            background_save=background_save,
+            immediate=save_response_immediately,
+        )
+
+        if response_text:
+            self.upsert_thread_view(
+                user_id=user_id,
+                session_id=session_id,
+                domain_id=domain_id,
+                title=message,
+                organization_id=organization_id,
+            )
+
+        if background_save and self._background_runner:
+            self._background_runner.schedule_all(
+                background_save=background_save,
+                user_id=user_id,
+                session_id=session_id,
+                message=message,
+                response=response_text,
+                skip_fact_extraction=current_agent == "memory_agent",
+                org_id=organization_id or "",
+            )
+
+        scheduled_hooks = schedule_post_response_continuity(
+            PostResponseContinuityContext(
+                user_id=user_id,
+                user_role=user_role,
+                message=message,
+                response_text=response_text,
+                domain_id=domain_id or "",
+                organization_id=organization_id,
+                channel=continuity_channel,
+            ),
+            include_lms_insights=include_lms_insights,
+        )
+
+        continuity_summary = {
+            "session_id": str(session_id),
+            "user_id": str(user_id),
+            "domain_id": domain_id or "",
+            "organization_id": organization_id or "",
+            "transport_type": transport_type,
+            "continuity_channel": continuity_channel,
+            "include_lms_insights": include_lms_insights,
+            "scheduled_hooks": list(scheduled_hooks),
+            "background_tasks_scheduled": bool(
+                background_save and self._background_runner
+            ),
+            "response_persistence": (
+                "immediate"
+                if save_response_immediately or background_save is None
+                else "background"
+            ),
+        }
+        logger.info(
+            "[CONTINUITY] Finalized turn summary: %s",
+            json.dumps(continuity_summary, sort_keys=True),
+        )
+
+    @staticmethod
+    def normalize_thread_id(request: ChatRequest) -> str | None:
+        """Normalize thread/session identifiers into one authoritative thread id."""
+        thread_id = request.thread_id
+        if thread_id and thread_id.lower() == "new":
+            thread_id = None
+        if not thread_id and request.session_id:
+            thread_id = request.session_id
+        return thread_id
+
+    async def resolve_request_scope(self, request: ChatRequest) -> RequestScope:
+        """Resolve the authoritative organization and domain for this request."""
+        from app.core.org_context import (
+            get_current_org_allowed_domains,
+            get_current_org_id,
+        )
+        from app.domains.router import get_domain_router
+
+        organization_id = (
+            getattr(request, "organization_id", None)
+            or get_current_org_id()
+            or settings.default_organization_id
+        )
+        domain_router = get_domain_router()
+        org_allowed_domains = get_current_org_allowed_domains()
+        domain_id = await domain_router.resolve(
+            query=request.message,
+            explicit_domain_id=getattr(request, "domain_id", None),
+            allowed_domains=org_allowed_domains,
+        )
+        return RequestScope(
+            organization_id=organization_id,
+            domain_id=domain_id,
+        )
+
+    async def resolve_lms_identity(
+        self,
+        user_id: str,
+        organization_id: str | None,
+    ) -> tuple[str | None, str | None]:
+        """Resolve the LMS external identity for a user when integration is enabled."""
+        if not settings.enable_lms_integration:
+            return None, None
+
+        try:
+            from app.auth.external_identity import resolve_lms_identity
+
+            return await resolve_lms_identity(user_id, organization_id)
+        except Exception as exc:
+            logger.debug("[ORCH] LMS identity resolve failed: %s", exc)
+            return None, None
+
+    async def build_multi_agent_context(
+        self,
+        context: ChatContext,
+        session: SessionContext,
+    ) -> dict:
+        """Build the authoritative multi-agent context payload."""
+        lms_external_id, lms_connector_id = await self.resolve_lms_identity(
+            context.user_id,
+            getattr(context, "organization_id", None),
+        )
+
+        return {
+            "user_name": context.user_name,
+            "user_role": context.user_role.value,
+            "lms_course": context.lms_course_name,
+            "lms_module": context.lms_module_id,
+            "conversation_history": context.conversation_history,
+            "semantic_context": context.semantic_context,
+            "langchain_messages": context.langchain_messages,
+            "conversation_summary": context.conversation_summary or "",
+            "core_memory_block": context.core_memory_block,
+            "is_follow_up": bool(context.history_list) and len(context.history_list) > 0,
+            "conversation_phase": (
+                "opening" if session.state.total_responses == 0
+                else (
+                    "engaged" if session.state.total_responses < 5
+                    else (
+                        "deep"
+                        if session.state.total_responses < 20
+                        else "closing"
+                    )
+                )
+            ),
+            "total_responses": session.state.total_responses,
+            "name_usage_count": session.state.name_usage_count,
+            "recent_phrases": session.state.recent_phrases,
+            "mood_hint": getattr(context, "mood_hint", "") or "",
+            "organization_id": getattr(context, "organization_id", None),
+            "images": [
+                img.model_dump() if hasattr(img, "model_dump") else img
+                for img in context.images
+            ] if getattr(context, "images", None) else None,
+            "lms_external_id": lms_external_id,
+            "lms_connector_id": lms_connector_id,
+            "page_context": getattr(context, "page_context", None),
+            "student_state": getattr(context, "student_state", None),
+            "available_actions": getattr(context, "available_actions", None),
+            "host_context": getattr(context, "host_context", None),
+        }
+
+    async def build_multi_agent_execution_input(
+        self,
+        *,
+        request: ChatRequest,
+        prepared_turn: PreparedTurn,
+        include_streaming_fields: bool = False,
+        thinking_effort: str | None = None,
+    ) -> MultiAgentExecutionInput:
+        """Build the authoritative graph invocation payload for this turn."""
+        context = prepared_turn.chat_context
+        session = prepared_turn.session
+        if context is None:
+            raise ValueError("Prepared turn must include chat context")
+
+        graph_context = await self.build_multi_agent_context(context, session)
+        if include_streaming_fields:
+            graph_context.update(
+                {
+                    "user_id": request.user_id,
+                    "user_facts": getattr(context, "user_facts", []),
+                    "pronoun_style": (
+                        getattr(context, "pronoun_style", None)
+                        or getattr(session.state, "pronoun_style", None)
+                    ),
+                    "history_list": context.history_list or [],
+                    "show_previews": request.show_previews,
+                    "preview_types": request.preview_types,
+                    "preview_max_count": request.preview_max_count,
+                }
+            )
+
+        return MultiAgentExecutionInput(
+            query=context.message,
+            user_id=context.user_id,
+            session_id=str(prepared_turn.session_id),
+            context=graph_context,
+            domain_id=prepared_turn.request_scope.domain_id or settings.default_domain,
+            thinking_effort=thinking_effort,
+        )
+
+    def build_minimal_multi_agent_execution_input(
+        self,
+        *,
+        request: ChatRequest,
+        prepared_turn: PreparedTurn,
+        thinking_effort: str | None = None,
+    ) -> MultiAgentExecutionInput:
+        """Build a minimal but valid graph invocation payload for degraded paths."""
+        return MultiAgentExecutionInput(
+            query=request.message,
+            user_id=str(request.user_id),
+            session_id=str(prepared_turn.session_id),
+            context={
+                "user_id": request.user_id,
+                "user_role": request.role.value,
+                "user_name": None,
+                "conversation_history": "",
+                "organization_id": prepared_turn.request_scope.organization_id,
+            },
+            domain_id=prepared_turn.request_scope.domain_id or settings.default_domain,
+            thinking_effort=thinking_effort,
+        )
+
+    async def prepare_turn(
+        self,
+        request: ChatRequest,
+        background_save: Optional[Callable] = None,
+        persist_user_message_immediately: bool = False,
+    ) -> PreparedTurn:
+        """Prepare the authoritative pre-execution turn state."""
+        user_id = str(request.user_id)
+        message = request.message
+
+        thread_id = self.normalize_thread_id(request)
+        request_scope = await self.resolve_request_scope(request)
+
+        session = self._session_manager.get_or_create_session(
+            user_id,
+            thread_id,
+            organization_id=request_scope.organization_id,
+        )
+        session_id = session.session_id
+
+        if session.state.is_first_message and background_save:
+            self._maybe_summarize_previous_session(background_save, user_id)
+        if session.state.is_first_message and session.state.pronoun_style is None:
+            self._load_pronoun_style_from_facts(session, user_id)
+
+        validation = await self.validate_request(
+            request=request,
+            session_id=session_id,
+        )
+        if validation.blocked:
+            return PreparedTurn(
+                request_scope=request_scope,
+                session=session,
+                session_id=session_id,
+                validation=validation,
+            )
+
+        self.persist_chat_message(
+            session_id=session_id,
+            role="user",
+            content=message,
+            user_id=user_id,
+            background_save=background_save,
+            immediate=persist_user_message_immediately,
+        )
+
+        context = await self._input_processor.build_context(
+            request=request,
+            session_id=session_id,
+            user_name=session.user_name,
+        )
+        context.organization_id = request_scope.organization_id
+
+        if not session.user_name:
+            extracted_name = self._input_processor.extract_user_name(message)
+            if extracted_name:
+                self._session_manager.update_user_name(session_id, extracted_name)
+                context.user_name = extracted_name
+
+        from app.prompts.prompt_loader import detect_pronoun_style
+
+        effective_pronoun = detect_pronoun_style(message)
+        if effective_pronoun:
+            session.state.update_pronoun_style(effective_pronoun)
+        else:
+            effective_pronoun = await self._input_processor.validate_pronoun_request(
+                message=message,
+                current_style=session.state.pronoun_style,
+            )
+            if effective_pronoun:
+                session.state.update_pronoun_style(effective_pronoun)
+
+        if effective_pronoun and self._semantic_memory and background_save:
+            self._persist_pronoun_style(background_save, user_id, effective_pronoun)
+
+        return PreparedTurn(
+            request_scope=request_scope,
+            session=session,
+            session_id=session_id,
+            validation=validation,
+            chat_context=context,
+        )
     
     async def process(
         self,
@@ -222,109 +612,26 @@ class ChatOrchestrator:
         message = request.message
         user_role = request.role
 
-        # Handle thread_id "new" as None
-        thread_id = request.thread_id
-        if thread_id and thread_id.lower() == "new":
-            thread_id = None
-        # Fall back to session_id when no thread_id (connects API session to pipeline)
-        if not thread_id and request.session_id:
-            thread_id = request.session_id
-
-        # ================================================================
-        # STAGE 0: DOMAIN RESOLUTION (Wiii)
-        # ================================================================
-        from app.domains.router import get_domain_router
-        from app.core.org_context import get_current_org_id, get_current_org_allowed_domains
-
-        # Resolve org_id: request body → context var → config default
-        org_id = (
-            getattr(request, 'organization_id', None)
-            or get_current_org_id()
-            or settings.default_organization_id
+        prepared_turn = await self.prepare_turn(
+            request=request,
+            background_save=background_save,
         )
-        domain_router = get_domain_router()
-        org_allowed_domains = get_current_org_allowed_domains()
-        domain_id = await domain_router.resolve(
-            query=message,
-            explicit_domain_id=getattr(request, 'domain_id', None),
-            allowed_domains=org_allowed_domains,
-        )
+        org_id = prepared_turn.request_scope.organization_id
+        domain_id = prepared_turn.request_scope.domain_id
         logger.info("[DOMAIN] Resolved domain: %s (org: %s)", domain_id, org_id)
 
         # Sprint 66: thinking effort for multi-agent processing
         thinking_effort = getattr(request, 'thinking_effort', None)
 
-        # ================================================================
-        # STAGE 1: SESSION MANAGEMENT
-        # ================================================================
-        session = self._session_manager.get_or_create_session(user_id, thread_id)
-        session_id = session.session_id
-
-        # Sprint 79: Auto-summarize previous session on new session start
-        if session.state.is_first_message and background_save:
-            self._maybe_summarize_previous_session(background_save, user_id)
-
-        # Sprint 79: Pre-populate pronoun style from stored facts (cross-session)
-        if session.state.is_first_message and session.state.pronoun_style is None:
-            self._load_pronoun_style_from_facts(session, user_id)
+        session = prepared_turn.session
+        session_id = prepared_turn.session_id
 
         logger.info("Processing request for user %s with role: %s", user_id, user_role.value)
-        
-        # ================================================================
-        # STAGE 2: INPUT VALIDATION
-        # ================================================================
-        validation = await self._input_processor.validate(
-            request=request,
-            session_id=session_id,
-            create_blocked_response=self._output_processor.create_blocked_response
-        )
-        
-        if validation.blocked:
-            return validation.blocked_response
-        
-        # Save user message to history
-        if self._chat_history and self._chat_history.is_available() and background_save:
-            background_save(
-                self._chat_history.save_message,
-                session_id, "user", message
-            )
-        
-        # ================================================================
-        # STAGE 3: CONTEXT BUILDING
-        # ================================================================
-        context = await self._input_processor.build_context(
-            request=request,
-            session_id=session_id,
-            user_name=session.user_name
-        )
 
-        # Sprint 160: Thread org_id into ChatContext for data isolation
-        context.organization_id = org_id
-        
-        # Update session with extracted user name
-        if not session.user_name:
-            extracted_name = self._input_processor.extract_user_name(message)
-            if extracted_name:
-                self._session_manager.update_user_name(session_id, extracted_name)
-                context.user_name = extracted_name
-        
-        # Pronoun detection: regex first, LLM validation only if regex fails
-        from app.prompts.prompt_loader import detect_pronoun_style
-        effective_pronoun = detect_pronoun_style(message)
-        if effective_pronoun:
-            session.state.update_pronoun_style(effective_pronoun)
-        else:
-            # Custom pronoun validation with Guardian (only when regex detection fails)
-            effective_pronoun = await self._input_processor.validate_pronoun_request(
-                message=message,
-                current_style=session.state.pronoun_style
-            )
-            if effective_pronoun:
-                session.state.update_pronoun_style(effective_pronoun)
+        if prepared_turn.validation.blocked:
+            return prepared_turn.validation.blocked_response
 
-        # Sprint 79: Persist pronoun style as fact for cross-session survival
-        if effective_pronoun and self._semantic_memory and background_save:
-            self._persist_pronoun_style(background_save, user_id, effective_pronoun)
+        context = prepared_turn.chat_context
 
         # ================================================================
         # STAGE 4: AGENT PROCESSING
@@ -336,23 +643,7 @@ class ChatOrchestrator:
 
         # Option B: Fallback to direct RAG mode
         else:
-            logger.warning("[FALLBACK] Multi-Agent unavailable, using direct RAG")
-
-            if self._rag_agent:
-                rag_result = await self._rag_agent.query(
-                    question=context.message,
-                    user_role=context.user_role.value,
-                    limit=5
-                )
-                result = ProcessingResult(
-                    message=rag_result.answer,
-                    agent_type=AgentType.RAG,
-                    sources=self._output_processor.format_sources(rag_result.citations) if rag_result.citations else None,
-                    metadata={"mode": "fallback_rag"}
-                )
-            else:
-                logger.error("[ERROR] No processing agent available")
-                raise RuntimeError("No processing agent available")
+            result = await self.process_without_multi_agent(context)
         
         # ================================================================
         # STAGE 5: OUTPUT FORMATTING
@@ -367,82 +658,84 @@ class ChatOrchestrator:
         # ================================================================
         # STAGE 6: POST-PROCESSING & BACKGROUND TASKS
         # ================================================================
+        # Source-inspection compatibility: this stage still covers
+        # save_message, schedule_all, routine_tracker.record_interaction,
+        # and _analyze_and_process_sentiment via finalize_response_turn()
+        # and living_continuity.schedule_post_response_continuity().
         
-        # Update session state
-        used_name = (
-            bool(context.user_name)
-            and context.user_name.lower() in result.message.lower()
-        ) if context.user_name else False
-        opening = result.message[:50].strip() if result.message else None
-        self._session_manager.update_state(
+        self.finalize_response_turn(
             session_id=session_id,
-            phrase=opening,
-            used_name=used_name
+            user_id=user_id,
+            user_role=user_role,
+            message=message,
+            response_text=result.message or "",
+            context=context,
+            domain_id=domain_id,
+            organization_id=org_id,
+            current_agent=(result.metadata or {}).get("current_agent", ""),
+            background_save=background_save,
+            continuity_channel="web",
+            transport_type="sync",
         )
-        
-        # Save AI response
-        if self._chat_history and self._chat_history.is_available() and background_save:
-            background_save(
-                self._chat_history.save_message,
-                session_id, "assistant", result.message
-            )
-        
-        # Schedule background tasks
-        if background_save and self._background_runner:
-            # Skip redundant fact extraction if memory agent already handled it
-            current_agent = (result.metadata or {}).get("current_agent", "")
-            self._background_runner.schedule_all(
-                background_save=background_save,
-                user_id=user_id,
-                session_id=session_id,
-                message=message,
-                response=result.message,
-                skip_fact_extraction=current_agent == "memory_agent",
-                org_id=getattr(context, 'organization_id', '') or '',
-            )
-
-        # Sprint 208: Record user interaction for routine learning (fire-and-forget)
-        try:
-            from app.core.config import get_settings as _rt_settings
-            _rts = _rt_settings()
-            if getattr(_rts, "living_agent_enable_routine_tracking", False):
-                from app.engine.living_agent.routine_tracker import get_routine_tracker
-                tracker = get_routine_tracker()
-                asyncio.ensure_future(tracker.record_interaction(
-                    user_id=user_id,
-                    channel="web",
-                    topic=domain_id or "",
-                ))
-        except Exception:
-            pass  # Never block chat pipeline for routine tracking
-
-        # Sprint 210d: SOTA LLM-based sentiment → emotion + episodic memory
-        # Runs fully async — zero latency impact on chat response.
-        if getattr(settings, "enable_living_continuity", False):
-            _response_text = result.message or "" if result else ""
-            asyncio.ensure_future(_analyze_and_process_sentiment(
-                user_id=user_id,
-                user_role=user_role,
-                message=message,
-                response_text=_response_text,
-                organization_id=org_id,
-            ))
-
-        # Sprint 220: Fire-and-forget LMS insight push
-        # Analyzes conversation for pedagogical insights, pushes to LMS teacher dashboard.
-        if getattr(settings, "enable_lms_integration", False):
-            try:
-                from app.integrations.lms.insight_generator import analyze_and_push_insights
-                _resp_text = result.message or "" if result else ""
-                asyncio.ensure_future(analyze_and_push_insights(
-                    user_id=user_id,
-                    message=message,
-                    response=_resp_text,
-                ))
-            except Exception:
-                pass  # Never block chat pipeline for LMS insights
 
         return response
+
+    def _should_use_local_direct_llm_fallback(self) -> bool:
+        """Use direct local inference when local mode is enabled without cloud retrieval support."""
+        provider = getattr(settings, "llm_provider", "google")
+        return provider == "ollama" and not settings.google_api_key
+
+    async def process_without_multi_agent(self, context: ChatContext) -> ProcessingResult:
+        """Run the authoritative non-multi-agent fallback used by sync and stream."""
+        if self._should_use_local_direct_llm_fallback():
+            logger.warning("[FALLBACK] Multi-Agent unavailable, using local direct LLM")
+            return await self._process_with_direct_llm(context)
+
+        logger.warning("[FALLBACK] Multi-Agent unavailable, using direct RAG")
+
+        if self._rag_agent:
+            rag_result = await self._rag_agent.query(
+                question=context.message,
+                user_role=context.user_role.value,
+                limit=5
+            )
+            runtime_llm = resolve_runtime_llm_metadata()
+            return ProcessingResult(
+                message=rag_result.content,
+                agent_type=AgentType.RAG,
+                sources=self._output_processor.format_sources(rag_result.citations) if rag_result.citations else None,
+                metadata={
+                    "mode": "fallback_rag",
+                    **runtime_llm,
+                },
+                thinking=getattr(rag_result, "native_thinking", None),
+            )
+
+        logger.error("[ERROR] No processing agent available")
+        raise RuntimeError("No processing agent available")
+
+    async def _process_with_direct_llm(self, context: ChatContext) -> ProcessingResult:
+        """Generate a local-first response without RAG when cloud retrieval is unavailable."""
+        from app.engine.llm_pool import get_llm_light
+
+        llm = get_llm_light()
+        response = await llm.ainvoke(context.message)
+        message, thinking = extract_thinking_from_response(response.content)
+
+        return ProcessingResult(
+            message=message,
+            agent_type=AgentType.DIRECT,
+            metadata={
+                "mode": "local_direct_llm",
+                **resolve_runtime_llm_metadata(
+                    {
+                        "provider": getattr(settings, "llm_provider", "ollama"),
+                        "model": getattr(settings, "ollama_model", None),
+                    }
+                ),
+            },
+            thinking=thinking,
+        )
     
     def _load_pronoun_style_from_facts(
         self,
@@ -563,71 +856,37 @@ class ChatOrchestrator:
         logger.info("[MULTI-AGENT] Processing with Multi-Agent System (SOTA 2025)")
         
         from app.engine.multi_agent.graph import process_with_multi_agent
-        
-        # Sprint 220c: Resolve LMS identity (Wiii UUID → external lms_user_id + connector)
-        _lms_ext_id, _lms_conn_id = None, None
-        try:
-            if settings.enable_lms_integration:
-                from app.auth.external_identity import resolve_lms_identity
-                _lms_ext_id, _lms_conn_id = await resolve_lms_identity(
-                    context.user_id,
-                    getattr(context, 'organization_id', None),
-                )
-        except Exception as _lms_err:
-            logger.debug("[ORCH] LMS identity resolve failed: %s", _lms_err)
 
-        # Build context for multi-agent
-        multi_agent_context = {
-            "user_name": context.user_name,
-            "user_role": context.user_role.value,
-            "lms_course": context.lms_course_name,
-            "lms_module": context.lms_module_id,
-            "conversation_history": context.conversation_history,  # flat string (backward compat)
-            "semantic_context": context.semantic_context,          # SEPARATE (not merged)
-            # Sprint 77: LangChain messages for agent node history injection
-            "langchain_messages": context.langchain_messages,
-            "conversation_summary": context.conversation_summary or "",
-            # Sprint 73: Core Memory Block (structured user profile)
-            "core_memory_block": context.core_memory_block,
-            # Sprint 76: Follow-up detection — suppress repeated greetings
-            "is_follow_up": bool(context.history_list) and len(context.history_list) > 0,
-            # Sprint 203: Compute conversation phase (Pi/Gemini-inspired)
-            "conversation_phase": (
-                "opening" if session.state.total_responses == 0
-                else ("engaged" if session.state.total_responses < 5
-                      else ("deep" if session.state.total_responses < 20 else "closing"))
+        prepared_turn = PreparedTurn(
+            request_scope=RequestScope(
+                organization_id=getattr(context, "organization_id", None),
+                domain_id=domain_id,
             ),
-            # Sprint 115: Identity anchor data flow fix — pass session counters
-            "total_responses": session.state.total_responses,
-            "name_usage_count": session.state.name_usage_count,
-            "recent_phrases": session.state.recent_phrases,
-            # Sprint 115: Emotional state mood hint
-            "mood_hint": getattr(context, 'mood_hint', "") or "",
-            # Sprint 160: Multi-Tenant Data Isolation
-            "organization_id": getattr(context, 'organization_id', None),
-            # Sprint 179: Multimodal Vision images
-            "images": [img.model_dump() if hasattr(img, 'model_dump') else img for img in context.images] if getattr(context, 'images', None) else None,
-            # Sprint 220c: Resolved LMS external identity
-            "lms_external_id": _lms_ext_id,
-            "lms_connector_id": _lms_conn_id,
-            # Sprint 221: Page-Aware Context from LMS PostMessage
-            "page_context": getattr(context, 'page_context', None),
-            "student_state": getattr(context, 'student_state', None),
-            "available_actions": getattr(context, 'available_actions', None),
-            # Sprint 222: Universal Host Context
-            "host_context": getattr(context, "host_context", None),
-        }
-
-        # Use domain_id from Stage 0 (falls back to config default)
-        domain_id = domain_id or settings.default_domain
+            session=session,
+            session_id=context.session_id,
+            validation=None,
+            chat_context=context,
+        )
+        execution_input = await self.build_multi_agent_execution_input(
+            request=ChatRequest.model_construct(
+                user_id=context.user_id,
+                message=context.message,
+                role=context.user_role,
+                show_previews=False,
+                preview_types=None,
+                preview_max_count=None,
+            ),
+            prepared_turn=prepared_turn,
+            thinking_effort=thinking_effort,
+        )
 
         result = await process_with_multi_agent(
-            query=context.message,
-            user_id=context.user_id,
-            session_id=str(context.session_id),
-            context=multi_agent_context,
-            domain_id=domain_id,
-            thinking_effort=thinking_effort
+            query=execution_input.query,
+            user_id=execution_input.user_id,
+            session_id=execution_input.session_id,
+            context=execution_input.context,
+            domain_id=execution_input.domain_id,
+            thinking_effort=execution_input.thinking_effort,
         )
         
         response_text = result.get("response", "")

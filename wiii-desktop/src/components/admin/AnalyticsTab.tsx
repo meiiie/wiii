@@ -2,7 +2,7 @@
  * Analytics tab — charts and metrics via recharts.
  * Sprint 179: "Quản Trị Toàn Diện"
  */
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import {
   LineChart,
   Line,
@@ -25,15 +25,14 @@ const DATE_RANGES: { value: DateRange; label: string }[] = [
 ];
 
 function useThemeColors() {
-  return useMemo(() => {
-    if (typeof window === "undefined") return { accent: "#6366f1", text: "#374151", grid: "#e5e7eb" };
-    const style = getComputedStyle(document.documentElement);
-    return {
-      accent: style.getPropertyValue("--accent").trim() || "#6366f1",
-      text: style.getPropertyValue("--text-secondary").trim() || "#374151",
-      grid: style.getPropertyValue("--border").trim() || "#e5e7eb",
-    };
-  }, []);
+  // Re-read CSS vars on every render so chart colors update on theme toggle
+  if (typeof window === "undefined") return { accent: "#6366f1", text: "#374151", grid: "#e5e7eb" };
+  const style = getComputedStyle(document.documentElement);
+  return {
+    accent: style.getPropertyValue("--accent").trim() || "#6366f1",
+    text: style.getPropertyValue("--text-secondary").trim() || "#374151",
+    grid: style.getPropertyValue("--border").trim() || "#e5e7eb",
+  };
 }
 
 export function AnalyticsTab() {

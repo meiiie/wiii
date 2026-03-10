@@ -22,6 +22,7 @@ export function CharacterPanel() {
   const {
     blocks,
     totalBlocks,
+    card,
     isLoading,
     error,
     mood,
@@ -119,6 +120,56 @@ export function CharacterPanel() {
           {/* Error */}
           {error && (
             <div className="text-xs text-red-500 mb-2">{error}</div>
+          )}
+
+          {/* Character card */}
+          {card && (
+            <div className="mb-3 rounded-xl border border-border bg-surface-secondary/40 p-3">
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
+                  {card.card_name}
+                </div>
+                <div className="text-[10px] uppercase tracking-[0.14em] text-text-tertiary">
+                  {card.card_kind.replace(/_/g, " ")} · v{card.contract_version}
+                </div>
+              </div>
+              {card.summary && (
+                <p className="mb-2 text-xs leading-relaxed text-text">{card.summary}</p>
+              )}
+              {card.origin && (
+                <p className="mb-2 text-[11px] leading-relaxed text-text-secondary line-clamp-3">
+                  {card.origin}
+                </p>
+              )}
+              {card.core_truths.length > 0 && (
+                <div className="mb-2">
+                  <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.16em] text-text-tertiary">
+                    Cốt lõi
+                  </div>
+                  <div className="space-y-1">
+                    {card.core_truths.slice(0, 3).map((truth) => (
+                      <p key={truth} className="text-[11px] leading-relaxed text-text-secondary">
+                        • {truth}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {card.reasoning_style.length > 0 && (
+                <div>
+                  <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.16em] text-text-tertiary">
+                    Hồn suy luận
+                  </div>
+                  <div className="space-y-1">
+                    {card.reasoning_style.slice(0, 3).map((item) => (
+                      <p key={item} className="text-[11px] leading-relaxed text-text-secondary">
+                        • {item}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Character blocks */}

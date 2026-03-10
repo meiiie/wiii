@@ -14,12 +14,27 @@ services:
       - .:/app
       # Persist virtual environment
       - /app/.venv
+      # Sprint 220b: Mount Wiii embed build for iframe serving at /embed
+      - ../wiii-desktop/dist-embed:/app-embed:ro
     env_file:
       - .env
     environment:
       - ENVIRONMENT=development
       - DEBUG=true
       - LOG_LEVEL=DEBUG
+      - WATCHFILES_FORCE_POLLING=true
+      - WATCHFILES_POLL_DELAY_MS=750
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - LLM_FAILOVER_CHAIN=${LLM_FAILOVER_CHAIN:-["ollama","google","openrouter"]}
+      - ENABLE_CODE_EXECUTION=${ENABLE_CODE_EXECUTION:-false}
+      - ENABLE_PRIVILEGED_SANDBOX=${ENABLE_PRIVILEGED_SANDBOX:-false}
+      - SANDBOX_PROVIDER=${SANDBOX_PROVIDER:-disabled}
+      - SANDBOX_ALLOW_BROWSER_WORKLOADS=${SANDBOX_ALLOW_BROWSER_WORKLOADS:-false}
+      - OPENSANDBOX_BASE_URL=${OPENSANDBOX_BASE_URL:-}
+      - OPENSANDBOX_API_KEY=${OPENSANDBOX_API_KEY:-}
+      - OPENSANDBOX_CODE_TEMPLATE=${OPENSANDBOX_CODE_TEMPLATE:-opensandbox/code-interpreter:v1.0.1}
+      - OPENSANDBOX_BROWSER_TEMPLATE=${OPENSANDBOX_BROWSER_TEMPLATE:-opensandbox/playwright:latest}
+      - OPENSANDBOX_NETWORK_MODE=${OPENSANDBOX_NETWORK_MODE:-egress}
       # Database URLs pointing to Docker services (override .env for container networking)
       - DATABASE_URL=postgresql://${POSTGRES_USER:-wiii}:${POSTGRES_PASSWORD:-wiii_secret}@postgres:5432/${POSTGRES_DB:-wiii_ai}
       # MinIO (local S3 replacement)
@@ -29,8 +44,11 @@ services:
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-wiii_secret}
       - MINIO_BUCKET=${MINIO_BUCKET:-wiii-docs}
       - MINIO_SECURE=false
-      # Ollama: use Docker service when --profile ollama, else host machine
+      # Current local-dev default: backend Docker container -> native host Ollama.
+      # If you opt into the Docker Ollama profile below, override to http://ollama:11434.
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:4b-instruct-2507-q4_K_M}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -41,7 +59,7 @@ services:
       # minio:
       #   condition: service_healthy
     # Override CMD for hot-reload
-    command: ["sh", "-c", "pip install -e . 2>/dev/null || true && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --log-level debug"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/app", "--log-level", "debug"]
     networks:
       - wiii-network
     healthcheck:
@@ -167,8 +185,9 @@ services:
       - tasks  # Only start with: docker-compose --profile tasks up
 
   # =============================================================================
-  # OLLAMA - Local LLM for Living Agent (journal, skills, reflection)
-  # Start with: docker compose --profile ollama up
+  # OLLAMA - Optional containerized Ollama profile
+  # Current verified local-dev path uses native host Ollama instead.
+  # Start with: docker compose --profile ollama up -d ollama ollama-pull-qwen
   # =============================================================================
   ollama:
     image: ollama/ollama:latest
@@ -194,6 +213,60 @@ services:
       start_period: 10s
     profiles:
       - ollama  # Opt-in: docker compose --profile ollama up
+
+  ollama-pull-qwen:
+    image: ollama/ollama:latest
+    container_name: wiii-ollama-pull-qwen
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b-instruct-2507-q4_K_M}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - ollama pull "$${OLLAMA_MODEL}"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - wiii-network
+    restart: "no"
+    profiles:
+      - ollama
+
+  # =============================================================================
+  # OPENSANDBOX SERVER - Optional isolated code/browser sandbox control plane
+  # Local/dev only. For GCP production, prefer a dedicated sandbox service/cluster.
+  # Start with:
+  #   $env:ENABLE_PRIVILEGED_SANDBOX='true'
+  #   $env:ENABLE_CODE_EXECUTION='true'
+  #   $env:SANDBOX_PROVIDER='opensandbox'
+  #   $env:OPENSANDBOX_BASE_URL='http://opensandbox:8080'
+  #   docker compose --profile sandbox up -d opensandbox app
+  # =============================================================================
+  opensandbox:
+    image: python:3.11-slim
+    container_name: wiii-opensandbox
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./opensandbox.server.toml:/etc/opensandbox/config.toml:ro
+    command: >
+      sh -c "pip install --no-cache-dir opensandbox-server==0.1.5 &&
+      opensandbox-server --config /etc/opensandbox/config.toml"
+    networks:
+      - wiii-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health').read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    profiles:
+      - sandbox
 
 volumes:
   postgres_data:

@@ -4,9 +4,15 @@ export const APP_VERSION = "0.1.0";
 /** App name */
 export const APP_NAME = "Wiii";
 
-/** Default server URL — only fallback to localhost in dev mode */
+function isLocalBrowserHost(): boolean {
+  if (typeof window === "undefined") return false;
+  const { hostname } = window.location;
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+/** Default server URL — prefer localhost when running locally, even in preview builds */
 export const DEFAULT_SERVER_URL = (
-  typeof import.meta !== "undefined" && import.meta.env?.DEV
+  (typeof import.meta !== "undefined" && import.meta.env?.DEV) || isLocalBrowserHost()
     ? "http://localhost:8000"
     : ""
 );

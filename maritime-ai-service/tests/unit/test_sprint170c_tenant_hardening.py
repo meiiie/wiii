@@ -307,23 +307,27 @@ class TestFactRepositoryOrgFiltering:
 class TestChatHistoryOrgFiltering:
     """Tests for Sprint 170c org filtering in chat_history_repository.py."""
 
-    def _make_repo(self, use_new_schema=True):
-        """Create a ChatHistoryRepository with mocked DB."""
+    def _make_repo(self):
+        """Create a chat_history-only repository with mocked DB."""
         with patch("app.repositories.chat_history_repository.settings") as mock_s:
             mock_s.context_window_size = 50
-            with patch("app.repositories.chat_history_repository.ChatHistoryRepository._init_connection"):
+            with patch(
+                "app.repositories.chat_history_repository.ChatHistoryRepository._init_connection"
+            ):
                 from app.repositories.chat_history_repository import ChatHistoryRepository
+
                 repo = ChatHistoryRepository.__new__(ChatHistoryRepository)
                 repo._engine = MagicMock()
-                repo._session_factory = None  # Set per test
+                repo._session_factory = None
                 repo._available = True
-                repo._use_new_schema = use_new_schema
+                repo._has_chat_history = True
                 repo.WINDOW_SIZE = 50
+                repo.ensure_tables = MagicMock()
                 return repo
 
     def test_get_user_history_new_schema_filters_by_org(self):
         """get_user_history (new schema) applies org_where_clause."""
-        repo = self._make_repo(use_new_schema=True)
+        repo = self._make_repo()
 
         # Mock session
         mock_count_result = MagicMock()
@@ -349,39 +353,34 @@ class TestChatHistoryOrgFiltering:
         assert "organization_id" in count_sql
         assert "organization_id" in query_sql
 
-    def test_get_or_create_session_notes_org_context(self):
-        """get_or_create_session handles org context."""
-        repo = self._make_repo(use_new_schema=False)
+    def test_get_or_create_session_filters_by_org(self):
+        """get_or_create_session reads chat_history within the active org."""
+        repo = self._make_repo()
 
         mock_session = MagicMock()
-        mock_session.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
-        new_model = MagicMock()
-        new_model.session_id = uuid4()
-        new_model.user_id = "user1"
-        new_model.user_name = None
-        new_model.created_at = MagicMock()
+        created_at = MagicMock()
+        mock_session.execute.return_value.fetchone.return_value = (str(uuid4()), created_at)
         mock_session.__enter__ = MagicMock(return_value=mock_session)
         mock_session.__exit__ = MagicMock(return_value=False)
         repo._session_factory = MagicMock(return_value=mock_session)
 
         with _patch_settings(enable_multi_tenant=True, default_org="org-K"), \
-             _patch_org_context("org-K"), \
-             patch("app.repositories.chat_history_repository.ChatSessionModel") as MockModel:
-            MockModel.return_value = new_model
+             _patch_org_context("org-K"):
             result = repo.get_or_create_session("user1")
 
-        # Should not crash — org context is imported but ChatSessionModel ORM path
-        # doesn't use org_where_clause (org isolation via thread ID convention)
-        assert result is not None or result is None  # Just verify no crash
+        assert result is not None
+        call_args = mock_session.execute.call_args
+        assert "organization_id" in str(call_args[0][0])
+        assert call_args[0][1]["org_id"] == "org-K"
 
     def test_update_user_name_handles_org_context(self):
-        """update_user_name imports org_filter without crashing."""
-        repo = self._make_repo(use_new_schema=False)
+        """update_user_name applies org filtering on chat_history."""
+        repo = self._make_repo()
 
-        mock_session_obj = MagicMock()
-        mock_session_obj.user_name = "old_name"
         mock_session = MagicMock()
-        mock_session.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=mock_session_obj))
+        result_mock = MagicMock()
+        result_mock.rowcount = 1
+        mock_session.execute.return_value = result_mock
         mock_session.__enter__ = MagicMock(return_value=mock_session)
         mock_session.__exit__ = MagicMock(return_value=False)
         repo._session_factory = MagicMock(return_value=mock_session)
@@ -391,10 +390,13 @@ class TestChatHistoryOrgFiltering:
             result = repo.update_user_name(uuid4(), "new_name")
 
         assert result is True
+        call_args = mock_session.execute.call_args
+        assert "organization_id" in str(call_args[0][0])
+        assert call_args[0][1]["org_id"] == "org-L"
 
     def test_get_user_name_handles_org_context(self):
-        """get_user_name imports org_filter without crashing."""
-        repo = self._make_repo(use_new_schema=False)
+        """get_user_name applies org filtering on chat_history."""
+        repo = self._make_repo()
 
         mock_session = MagicMock()
         mock_session.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value="Test User"))
@@ -407,6 +409,9 @@ class TestChatHistoryOrgFiltering:
             result = repo.get_user_name(uuid4())
 
         assert result == "Test User"
+        call_args = mock_session.execute.call_args
+        assert "organization_id" in str(call_args[0][0])
+        assert call_args[0][1]["org_id"] == "org-M"
 
 
 # ============================================================================

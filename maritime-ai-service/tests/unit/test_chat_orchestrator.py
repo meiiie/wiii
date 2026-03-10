@@ -9,6 +9,8 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 from enum import Enum
 
+from app.engine.agentic_rag.rag_agent import RAGResponse
+from app.models.knowledge_graph import Citation
 from app.services.chat_orchestrator import ChatOrchestrator, AgentType
 from app.services.output_processor import ProcessingResult
 
@@ -90,6 +92,54 @@ class TestFallbackBehavior:
         # the domain router and all stages, but we verify the init state.
         assert orchestrator._rag_agent is None
         assert orchestrator._multi_agent_graph is None
+
+    @pytest.mark.asyncio
+    @patch("app.services.chat_orchestrator.get_session_manager")
+    @patch("app.services.chat_orchestrator.get_input_processor")
+    @patch("app.services.chat_orchestrator.get_output_processor")
+    @patch("app.services.chat_orchestrator.get_background_runner")
+    async def test_process_without_multi_agent_uses_rag_content(
+        self, mock_bg, mock_out, mock_inp, mock_sess
+    ):
+        """Fallback RAG should read RAGResponse.content, not a legacy answer field."""
+        citation = Citation(
+            node_id="node-13",
+            title="COLREG Rule 13",
+            source="IMO",
+            relevance_score=0.9,
+        )
+        mock_output = MagicMock()
+        mock_output.format_sources.return_value = [{"title": "COLREG Rule 13"}]
+        mock_out.return_value = mock_output
+
+        rag_agent = MagicMock()
+        rag_agent.query = AsyncMock(
+            return_value=RAGResponse(
+                content="Rule 13 applies to overtaking.",
+                citations=[citation],
+                native_thinking="Checked overtaking criteria.",
+            )
+        )
+
+        orchestrator = ChatOrchestrator(rag_agent=rag_agent)
+
+        with patch.object(
+            orchestrator,
+            "_should_use_local_direct_llm_fallback",
+            return_value=False,
+        ):
+            result = await orchestrator.process_without_multi_agent(
+                MagicMock(
+                    message="Explain Rule 13",
+                    user_role=MagicMock(value="student"),
+                )
+            )
+
+        assert result.message == "Rule 13 applies to overtaking."
+        assert result.agent_type == AgentType.RAG
+        assert result.metadata == {"mode": "fallback_rag"}
+        assert result.thinking == "Checked overtaking criteria."
+        mock_output.format_sources.assert_called_once_with([citation])
 
 
 class TestProcessingResult:

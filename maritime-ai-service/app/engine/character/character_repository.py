@@ -97,7 +97,7 @@ class CharacterRepository:
                         content=row.content,
                         char_limit=row.char_limit,
                         version=row.version,
-                        metadata=row.metadata or {},
+                        metadata=row.metadata if isinstance(row.metadata, dict) else {},
                         created_at=row.created_at,
                         updated_at=row.updated_at,
                     )
@@ -147,7 +147,7 @@ class CharacterRepository:
                     content=row.content,
                     char_limit=row.char_limit,
                     version=row.version,
-                    metadata=row.metadata or {},
+                    metadata=row.metadata if isinstance(row.metadata, dict) else {},
                     created_at=row.created_at,
                     updated_at=row.updated_at,
                 )
@@ -210,7 +210,7 @@ class CharacterRepository:
                         content=row.content,
                         char_limit=row.char_limit,
                         version=row.version,
-                        metadata=row.metadata or {},
+                        metadata=row.metadata if isinstance(row.metadata, dict) else {},
                         created_at=row.created_at,
                         updated_at=row.updated_at,
                     )
@@ -305,7 +305,7 @@ class CharacterRepository:
                         content=row.content,
                         char_limit=row.char_limit,
                         version=row.version,
-                        metadata=row.metadata or {},
+                        metadata=row.metadata if isinstance(row.metadata, dict) else {},
                         created_at=row.created_at,
                         updated_at=row.updated_at,
                     )
@@ -367,7 +367,7 @@ class CharacterRepository:
                         content=row.content,
                         importance=row.importance,
                         user_id=row.user_id,
-                        metadata=row.metadata or {},
+                        metadata=row.metadata if isinstance(row.metadata, dict) else {},
                         created_at=row.created_at,
                     )
         except Exception as e:
@@ -432,7 +432,7 @@ class CharacterRepository:
                         content=row.content,
                         importance=row.importance,
                         user_id=row.user_id,
-                        metadata=row.metadata or {},
+                        metadata=row.metadata if isinstance(row.metadata, dict) else {},
                         created_at=row.created_at,
                     )
                     for row in rows

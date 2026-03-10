@@ -16,6 +16,8 @@ import type {
   AdminOrgMember,
   AnalyticsOverview,
   LlmUsageAnalytics,
+  LlmRuntimeConfig,
+  LlmRuntimeUpdateBody,
   UserAnalytics,
   AdminAuditLogsResponse,
   AdminAuthEventsResponse,
@@ -81,31 +83,6 @@ export async function getAdminOrgMembers(orgId: string): Promise<AdminOrgMember[
   return client.get<AdminOrgMember[]>(`/api/v1/organizations/${orgId}/members`);
 }
 
-/** Get feature flags for a specific org (3-layer cascade) */
-export async function getFeatureFlagsForOrg(orgId: string): Promise<AdminFeatureFlag[]> {
-  return getFeatureFlags(orgId);
-}
-
-/** Get org-scoped analytics overview */
-export async function getOrgAnalyticsOverview(orgId: string, params?: { from?: string; to?: string }): Promise<AnalyticsOverview> {
-  const client = getClient();
-  const query = new URLSearchParams();
-  query.set("org_id", orgId);
-  if (params?.from) query.set("from", params.from);
-  if (params?.to) query.set("to", params.to);
-  return client.get<AnalyticsOverview>(`${PREFIX}/analytics/overview?${query.toString()}`);
-}
-
-/** Get org-scoped LLM usage */
-export async function getOrgLlmUsage(orgId: string, params?: { from?: string; to?: string }): Promise<LlmUsageAnalytics> {
-  const client = getClient();
-  const query = new URLSearchParams();
-  query.set("org_id", orgId);
-  if (params?.from) query.set("from", params.from);
-  if (params?.to) query.set("to", params.to);
-  return client.get<LlmUsageAnalytics>(`${PREFIX}/analytics/llm-usage?${query.toString()}`);
-}
-
 /** Toggle a feature flag */
 export async function toggleFeatureFlag(
   key: string,
@@ -163,6 +140,18 @@ export async function getLlmUsageAnalytics(params?: {
   return client.get<LlmUsageAnalytics>(
     `${PREFIX}/analytics/llm-usage${qs ? `?${qs}` : ""}`
   );
+}
+
+export async function getLlmRuntimeConfig(): Promise<LlmRuntimeConfig> {
+  const client = getClient();
+  return client.get<LlmRuntimeConfig>(`${PREFIX}/llm-runtime`);
+}
+
+export async function updateLlmRuntimeConfig(
+  body: LlmRuntimeUpdateBody
+): Promise<LlmRuntimeConfig> {
+  const client = getClient();
+  return client.patch<LlmRuntimeConfig>(`${PREFIX}/llm-runtime`, body);
 }
 
 /** Get user analytics */

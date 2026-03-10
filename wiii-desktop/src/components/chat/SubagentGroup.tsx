@@ -2,7 +2,7 @@
  * SubagentGroup — visual container for parallel dispatch + aggregation.
  * Sprint 164: Shows worker lanes with nested ThinkingBlocks + AggregationCard.
  */
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronDown, GitBranch, CheckCircle, Loader2 } from "lucide-react";
 import type {
@@ -54,6 +54,19 @@ export function SubagentGroup({
     ? ((group.endTime - group.startTime) / 1000).toFixed(1)
     : null;
 
+  // Pre-compute blocks by worker to avoid O(n²) filtering in render
+  const blocksByWorker = useMemo(() => {
+    const map = new Map<string, ThinkingBlockData[]>();
+    for (const b of childBlocks) {
+      if (b.workerNode) {
+        const arr = map.get(b.workerNode);
+        if (arr) arr.push(b);
+        else map.set(b.workerNode, [b]);
+      }
+    }
+    return map;
+  }, [childBlocks]);
+
   return (
     <div className="my-2 rounded-lg border border-border/60 bg-surface-secondary/30 overflow-hidden">
       {/* Header */}
@@ -93,11 +106,9 @@ export function SubagentGroup({
             className="overflow-hidden"
           >
             <div className="px-3 pb-2.5 space-y-1.5">
-              {/* Worker lanes */}
+              {/* Worker lanes — pre-computed map avoids O(n²) */}
               {group.workers.map((worker) => {
-                const workerBlocks = childBlocks.filter(
-                  (b) => b.workerNode === worker.agentName,
-                );
+                const workerBlocks = blocksByWorker.get(worker.agentName) ?? [];
                 const workerElapsed =
                   worker.endTime && worker.startTime
                     ? ((worker.endTime - worker.startTime) / 1000).toFixed(1)
@@ -144,6 +155,7 @@ export function SubagentGroup({
                           toolCalls={tb.toolCalls}
                           label={tb.label}
                           summary={tb.summary || tb.label}
+                          phase={tb.phase}
                           isStreaming={!tb.endTime && isStreaming}
                           savedDuration={
                             tb.startTime && tb.endTime

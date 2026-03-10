@@ -30,7 +30,15 @@ from langchain_core.messages import (
     ToolMessage,
 )
 
+from app.engine.character.character_card import build_wiii_runtime_prompt
 from app.engine.multi_agent.state import AgentState
+from app.engine.reasoning import ReasoningRenderRequest, get_reasoning_narrator
+from app.engine.reasoning.reasoning_narrator import build_tool_context_summary
+from app.engine.tools.invocation import invoke_tool_with_runtime
+from app.engine.tools.runtime_context import (
+    build_tool_runtime_context,
+    filter_tools_for_role,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,29 +49,6 @@ _MAX_ITERATIONS_DEFAULT = 15
 _CHUNK_SIZE = 40
 _CHUNK_DELAY = 0.008  # 8ms
 
-# Post-tool acknowledgment templates
-_TOOL_ACK = {
-    "tool_search_google_shopping": "Tìm được từ Google Shopping! Đang phân tích...",
-    "tool_search_shopee": "Đã tìm trên Shopee! Đang xem kết quả...",
-    "tool_search_tiktok_shop": "Đã tìm trên TikTok Shop! Đang so sánh...",
-    "tool_search_lazada": "Đã tìm trên Lazada! Đang tổng hợp...",
-    "tool_search_facebook_marketplace": "Đã tìm trên Facebook Marketplace!",
-    "tool_search_facebook_search": "Đã tìm trên Facebook! Đang phân tích kết quả...",
-    "tool_search_facebook_group": "Đã tìm trong nhóm Facebook! Đang phân tích bài đăng...",
-    "tool_search_facebook_groups_auto": "Đang quét các nhóm Facebook phổ biến — nguồn hàng tốt nhất!",
-    "tool_search_all_web": "Đã quét web cửa hàng nhỏ! Đang xem giá...",
-    "tool_search_websosanh": "Đang so sánh giá trên 94+ cửa hàng Việt Nam qua WebSosanh!",
-    "tool_search_instagram_shopping": "Đã tìm trên Instagram!",
-    "tool_generate_product_report": "Báo cáo Excel đã được tạo!",
-    "tool_fetch_product_detail": "Đã truy cập trang sản phẩm! Đang đọc giá...",
-    # Sprint 196: B2B sourcing tool acknowledgments
-    "tool_dealer_search": "Đang tìm đại lý và nhà phân phối! Trích xuất thông tin liên hệ...",
-    "tool_extract_contacts": "Đang trích xuất SĐT, Zalo, email từ trang web...",
-    "tool_international_search": "Đang tìm giá quốc tế (1688, Taobao, AliExpress, Amazon)! Chuyển đổi sang VNĐ...",
-    # Sprint 200: Visual product search
-    "tool_identify_product_from_image": "Đang nhận diện sản phẩm từ ảnh bằng AI Vision...",
-}
-
 # Sprint 200: Tool names that produce product search results
 _PRODUCT_RESULT_TOOLS = {
     "tool_search_google_shopping", "tool_search_shopee", "tool_search_tiktok_shop",
@@ -73,6 +58,65 @@ _PRODUCT_RESULT_TOOLS = {
     "tool_search_facebook_groups_auto",
     "tool_international_search", "tool_dealer_search",
 }
+
+_PLAN_PLATFORM_TO_TOOL = {
+    "google_shopping": "tool_search_google_shopping",
+    "shopee": "tool_search_shopee",
+    "lazada": "tool_search_lazada",
+    "tiktok_shop": "tool_search_tiktok_shop",
+    "facebook": "tool_search_facebook_search",
+    "websosanh": "tool_search_websosanh",
+    "all_web": "tool_search_all_web",
+    "dealer": "tool_dealer_search",
+    "international": "tool_international_search",
+}
+
+
+def _product_search_required_tools(query: str, context: Optional[dict], query_plan=None) -> list[str]:
+    """Choose must-have product-search tools from query intent + planner output."""
+    normalized_query = (query or "").lower()
+    required = {
+        "tool_fetch_product_detail",
+        "tool_generate_product_report",
+    }
+
+    if (context or {}).get("images"):
+        required.add("tool_identify_product_from_image")
+
+    plan_intent = getattr(getattr(query_plan, "intent", None), "value", "") or str(getattr(query_plan, "intent", "") or "")
+    plan_strategy = getattr(getattr(query_plan, "search_strategy", None), "value", "") or str(getattr(query_plan, "search_strategy", "") or "")
+
+    if (
+        plan_intent == "PRICE_COMPARISON"
+        or plan_strategy == "COMPARISON_FIRST"
+        or any(keyword in normalized_query for keyword in ("rẻ", "re nhat", "cheap", "cheapest", "so sánh", "compare", "top"))
+    ):
+        required.update({
+            "tool_search_websosanh",
+            "tool_search_google_shopping",
+            "tool_search_all_web",
+        })
+
+    if (
+        plan_intent in {"B2B_SOURCING", "INTERNATIONAL", "CHINESE_SOURCING"}
+        or plan_strategy in {"B2B_FIRST", "CHINA_FIRST"}
+        or any(
+            keyword in normalized_query
+            for keyword in ("đại lý", "nha phan phoi", "giá sỉ", "1688", "taobao", "aliexpress", "nguồn hàng", "import")
+        )
+    ):
+        required.update({
+            "tool_dealer_search",
+            "tool_international_search",
+            "tool_search_all_web",
+        })
+
+    for sub_query in getattr(query_plan, "sub_queries", []) or []:
+        tool_name = _PLAN_PLATFORM_TO_TOOL.get(str(getattr(sub_query, "platform", "")).strip().lower())
+        if tool_name:
+            required.add(tool_name)
+
+    return list(required)
 
 
 def _emit_product_previews(
@@ -275,6 +319,53 @@ def _iteration_label(iteration: int, tools_used: list) -> str:
     return f"Tìm kiếm bổ sung (vòng {iteration + 1})"
 
 
+def _iteration_phase(iteration: int, tools_used: list) -> str:
+    """Map product-search loop state to a narrator phase."""
+    if iteration == 0:
+        return "attune"
+    if iteration <= 2:
+        return "retrieve"
+    if iteration <= 8:
+        return "verify"
+    if tools_used:
+        return "synthesize"
+    return "verify"
+
+
+async def _render_product_search_narration(
+    *,
+    state: AgentState,
+    context: dict,
+    phase: str,
+    cue: str,
+    next_action: str,
+    observations: Optional[List[str]] = None,
+    tool_names: Optional[List[str]] = None,
+    result: object = None,
+):
+    """Render narrator-backed visible reasoning for legacy product search flow."""
+    return await get_reasoning_narrator().render(
+        ReasoningRenderRequest(
+            node="product_search_agent",
+            phase=phase,
+            cue=cue,
+            intent="product_search",
+            user_goal=state.get("query", ""),
+            conversation_context=str(context.get("conversation_summary", "")),
+            capability_context=str(state.get("capability_context", "")),
+            tool_context=build_tool_context_summary(tool_names, result=result),
+            next_action=next_action,
+            observations=[item for item in (observations or []) if item],
+            user_id=str(state.get("user_id", "__global__")),
+            organization_id=state.get("organization_id"),
+            personality_mode=context.get("personality_mode"),
+            mood_hint=context.get("mood_hint"),
+            visibility_mode="rich",
+            style_tags=["product_search", phase],
+        )
+    )
+
+
 class ProductSearchAgentNode:
     """Agent node for multi-platform product search via ReAct loop."""
 
@@ -346,14 +437,26 @@ class ProductSearchAgentNode:
 
         # Sprint 200: Pass images for visual product search
         images = state.get("images") or (context.get("images") if context else None)
+        runtime_context_base = build_tool_runtime_context(
+            event_bus_id=bus_id,
+            request_id=bus_id or state.get("session_id"),
+            session_id=state.get("session_id"),
+            organization_id=state.get("organization_id"),
+            user_id=state.get("user_id"),
+            user_role=(context or {}).get("user_role", "student"),
+            node="product_search_agent",
+            source="agentic_loop",
+        )
 
         # Run ReAct loop
         response, tools_used, thinking, answer_streamed = await self._react_loop(
             query=query,
             context=context,
+            state=state,
             event_queue=event_queue,
             thinking_effort=state.get("thinking_effort"),
             images=images,
+            runtime_context_base=runtime_context_base,
         )
 
         if answer_streamed:
@@ -374,9 +477,11 @@ class ProductSearchAgentNode:
         self,
         query: str,
         context: dict,
+        state: Optional[AgentState] = None,
         event_queue=None,
         thinking_effort: str = None,
         images: list = None,
+        runtime_context_base=None,
     ) -> Tuple[str, List[Dict], Optional[str], bool]:
         """
         ReAct loop for product search.
@@ -387,16 +492,14 @@ class ProductSearchAgentNode:
         if not self._llm:
             return "Xin lỗi, hệ thống tìm kiếm sản phẩm chưa sẵn sàng.", [], None, False
 
-        # Rebuild LLM if effort override
+        # Start from the full role-filtered tool pool; planner-aware selection
+        # narrows it later once we understand the query better.
+        active_tools = filter_tools_for_role(
+            self._tools,
+            (context or {}).get("user_role", "student"),
+        )
         llm_to_use = self._llm_with_tools
-        if thinking_effort and self._llm:
-            try:
-                from app.engine.multi_agent.agent_config import AgentConfigRegistry
-                llm_override = AgentConfigRegistry.get_llm("product_search", effort_override=thinking_effort)
-                if llm_override and self._tools:
-                    llm_to_use = llm_override.bind_tools(self._tools)
-            except Exception:
-                pass
+        state = state or {}
 
         # Event push helpers
         async def _push(evt):
@@ -420,27 +523,86 @@ class ProductSearchAgentNode:
                 if i + _CHUNK_SIZE < len(text):
                     await asyncio.sleep(_CHUNK_DELAY)
 
-        # Build system prompt (Sprint 150: append deep search strategy)
-        system_prompt = _SYSTEM_PROMPT + _DEEP_SEARCH_PROMPT
+        async def _emit_narration(narration, *, include_start: bool = True):
+            if event_queue is None or narration is None:
+                return
+            if include_start:
+                await _push(
+                    {
+                        "type": "thinking_start",
+                        "content": narration.label,
+                        "node": "product_search_agent",
+                        "summary": narration.summary,
+                        "details": {
+                            "phase": narration.phase,
+                            "style_tags": narration.style_tags,
+                        },
+                    }
+                )
+            chunks = narration.delta_chunks or ([narration.summary] if narration.summary else [])
+            for chunk in chunks:
+                await _push_thinking_deltas(chunk)
+
+        # Build system prompt from the shared Wiii card + product-search contract.
+        system_sections = [
+            build_wiii_runtime_prompt(
+                user_id=state.get("user_id", "__global__"),
+                organization_id=state.get("organization_id"),
+                mood_hint=context.get("mood_hint"),
+                personality_mode=context.get("personality_mode"),
+            ),
+            _SYSTEM_PROMPT,
+            _DEEP_SEARCH_PROMPT,
+        ]
+
+        skill_context = state.get("skill_context")
+        if skill_context:
+            system_sections.append("## Skill Context\n" + str(skill_context))
+
+        capability_context = state.get("capability_context")
+        if capability_context:
+            system_sections.append("## Capability Handbook\n" + str(capability_context))
+
+        host_context_prompt = state.get("host_context_prompt", "")
+        if host_context_prompt:
+            system_sections.append(str(host_context_prompt))
+
+        system_prompt = "\n\n".join(section for section in system_sections if section)
 
         # Sprint 197: LLM Query Planner pre-step
+        _query_plan = None
         try:
             from app.core.config import get_settings as _gs197
             if _gs197().enable_query_planner:
                 from app.engine.tools.query_planner import plan_search_queries, format_plan_for_prompt
-                await _push({
-                    "type": "thinking_start",
-                    "content": "Lập kế hoạch tìm kiếm thông minh",
-                    "node": "product_search_agent",
-                    "summary": f"Phân tích: {query[:50]}",
-                })
                 _query_plan = await plan_search_queries(query, context)
+                if event_queue is not None:
+                    _plan_narration = await _render_product_search_narration(
+                        state=state,
+                        context=context,
+                        phase="route",
+                        cue="query_planner",
+                        next_action="Bẻ yêu cầu thành vài lối dò gọn trước khi bung tìm kiếm thật.",
+                        observations=[query],
+                    )
+                    narrated_thinking.append(_plan_narration.summary)
+                    await _emit_narration(_plan_narration)
                 if _query_plan:
                     system_prompt += "\n\n" + format_plan_for_prompt(_query_plan)
-                    await _push_thinking_deltas(
-                        f"\nĐã lập kế hoạch: {_query_plan.intent.value}, "
-                        f"{len(_query_plan.sub_queries)} truy vấn tối ưu"
-                    )
+                    if event_queue is not None:
+                        _plan_detail = await _render_product_search_narration(
+                            state=state,
+                            context=context,
+                            phase="route",
+                            cue=_query_plan.intent.value,
+                            next_action="Giữ lại đúng vài hướng dò giúp so giá sát nhu cầu hơn.",
+                            observations=[
+                                f"intent={_query_plan.intent.value}",
+                                f"sub_queries={len(_query_plan.sub_queries)}",
+                            ],
+                        )
+                        narrated_thinking.append(_plan_detail.summary)
+                        await _emit_narration(_plan_detail, include_start=False)
                     logger.info(
                         "[PRODUCT_SEARCH] Query plan: intent=%s, strategy=%s, %d sub_queries",
                         _query_plan.intent.value,
@@ -451,6 +613,36 @@ class ProductSearchAgentNode:
                     await _push({"type": "thinking_end", "content": "", "node": "product_search_agent"})
         except Exception as _plan_err:
             logger.debug("[PRODUCT_SEARCH] Query planner skipped: %s", _plan_err)
+
+        try:
+            from app.engine.skills.skill_recommender import select_runtime_tools
+
+            selected_tools = select_runtime_tools(
+                active_tools,
+                query=query,
+                intent="product_search",
+                user_role=(context or {}).get("user_role", "student"),
+                max_tools=min(len(active_tools), 10),
+                must_include=_product_search_required_tools(query, context, _query_plan),
+            )
+            if selected_tools:
+                active_tools = selected_tools
+                logger.info(
+                    "[PRODUCT_SEARCH] Runtime-selected tools: %s",
+                    [getattr(tool, "name", getattr(tool, "__name__", "unknown")) for tool in active_tools],
+                )
+        except Exception as selection_err:
+            logger.debug("[PRODUCT_SEARCH] Runtime tool selection skipped: %s", selection_err)
+
+        llm_to_use = self._llm.bind_tools(active_tools) if self._llm and active_tools else self._llm_with_tools
+        if thinking_effort and self._llm:
+            try:
+                from app.engine.multi_agent.agent_config import AgentConfigRegistry
+                llm_override = AgentConfigRegistry.get_llm("product_search", effort_override=thinking_effort)
+                if llm_override and active_tools:
+                    llm_to_use = llm_override.bind_tools(active_tools)
+            except Exception:
+                pass
 
         # Sprint 200: Image routing — instruct agent to use visual search first
         if images and len(images) > 0:
@@ -493,6 +685,7 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
 
         tools_used = []
         all_thinking = []
+        narrated_thinking = []
         final_response = ""
         answer_streamed = False
         response = None
@@ -528,12 +721,20 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
             # Emit thinking_start
             if event_queue is not None:
                 _label = _iteration_label(iteration, tools_used)
-                await _push({
-                    "type": "thinking_start",
-                    "content": _label,
-                    "node": "product_search_agent",
-                    "summary": f"Tìm kiếm sản phẩm: {query[:50]}",
-                })
+                _iteration_narration = await _render_product_search_narration(
+                    state=state,
+                    context=context,
+                    phase=_iteration_phase(iteration, tools_used),
+                    cue=_label,
+                    next_action="Dò tiếp nguồn giá, rồi tự gạn xem nơi nào đáng giữ lại.",
+                    observations=[
+                        f"iteration={iteration}",
+                        f"tools_used={len(tools_used)}",
+                        _label,
+                    ],
+                )
+                narrated_thinking.append(_iteration_narration.summary)
+                await _emit_narration(_iteration_narration)
 
             # LLM inference (streaming if event queue available)
             if event_queue is not None:
@@ -595,10 +796,18 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
                 })
 
                 # Execute tool
-                matched = next((t for t in self._tools if t.name == tool_name), None)
+                matched = next((t for t in active_tools if t.name == tool_name), None)
                 try:
                     if matched:
-                        result = await asyncio.to_thread(matched.invoke, tool_args)
+                        result = await invoke_tool_with_runtime(
+                            matched,
+                            tool_args,
+                            tool_name=tool_name,
+                            runtime_context_base=runtime_context_base,
+                            tool_call_id=tool_id,
+                            prefer_async=False,
+                            run_sync_in_thread=True,
+                        )
                     else:
                         result = json.dumps({"error": f"Unknown tool: {tool_name}"}, ensure_ascii=False)
                 except Exception as e:
@@ -629,13 +838,24 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
                     except Exception:
                         pass
 
-                # Post-tool acknowledgment
-                _ack = _TOOL_ACK.get(tool_name, f"Đã nhận kết quả từ {tool_name}.")
-                await _push_thinking_deltas(f"\n\n{_ack}")
-
                 # Add to message history (OBSERVE step)
                 # Sprint 153: Truncate tool results to prevent context window overflow
                 result_str = str(result)[:5000]
+                _ack_narration = await _render_product_search_narration(
+                    state=state,
+                    context=context,
+                    phase="act",
+                    cue=tool_name,
+                    tool_names=[tool_name],
+                    result=result_str[:500],
+                    next_action="Lồng kết quả vừa có vào mặt bằng giá chung rồi quyết định có dò tiếp hay không.",
+                    observations=[
+                        f"iteration={iteration}",
+                        f"tool={tool_name}",
+                    ],
+                )
+                narrated_thinking.append(_ack_narration.summary)
+                await _emit_narration(_ack_narration, include_start=False)
                 messages.append(AIMessage(content="", tool_calls=[tool_call]))
                 messages.append(ToolMessage(content=result_str, tool_call_id=tool_id))
 
@@ -674,11 +894,19 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
         # If no final response yet (loop exhausted), do final generation
         if not final_response and response is not None:
             if event_queue is not None:
-                await _push({
-                    "type": "thinking_start",
-                    "content": "Tổng hợp kết quả cuối cùng",
-                    "node": "product_search_agent",
-                })
+                _final_narration = await _render_product_search_narration(
+                    state=state,
+                    context=context,
+                    phase="synthesize",
+                    cue="final_response",
+                    next_action="Xếp lại các nguồn theo giá, độ tin cậy, rồi chốt lựa chọn đáng mua nhất.",
+                    observations=[
+                        f"tools_used={len(tools_used)}",
+                        f"accumulated_products={len(_accumulated_products)}",
+                    ],
+                )
+                narrated_thinking.append(_final_narration.summary)
+                await _emit_narration(_final_narration)
 
             # Use base LLM (no tools) for final synthesis
             if event_queue is not None:
@@ -776,7 +1004,8 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
             except Exception as _cur_exc:
                 logger.warning("[PRODUCT_SEARCH] Post-loop curation failed: %s", _cur_exc)
 
-        combined_thinking = "\n\n".join(all_thinking) if all_thinking else None
+        combined_parts = [part for part in narrated_thinking + all_thinking if part]
+        combined_thinking = "\n\n".join(combined_parts) if combined_parts else None
         return final_response, tools_used, combined_thinking, answer_streamed
 
     @staticmethod

@@ -24,6 +24,8 @@ export default defineConfig({
   },
   // Env variables starting with TAURI_ are accessible in the client code
   envPrefix: ["VITE_", "TAURI_"],
+  // Sprint 220b: Embed assets must use /embed/ base path (served via FastAPI StaticFiles)
+  base: isEmbed ? "/embed/" : undefined,
   build: {
     outDir: isEmbed ? "dist-embed" : "dist",
     // Embed: modern browsers only; Tauri: Chromium/WebKit

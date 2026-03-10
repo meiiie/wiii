@@ -10,12 +10,36 @@ import { useState, useEffect, useRef } from "react";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useAuthStore } from "@/stores/auth-store";
 import type { AuthUser } from "@/stores/auth-store";
+import type { AppSettings } from "@/api/types";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
+import { DEFAULT_SERVER_URL } from "@/lib/constants";
 
 // Dynamic import that bypasses Vite static analysis (plugin may not be installed)
 const _oauthMod = "@fabianlars/tauri-plugin-oauth";
 function loadOAuth(): Promise<{ start: (opts: { ports: number[] }) => Promise<number>; onUrl: (cb: (url: string) => void) => void; cancel: (port: number) => Promise<void> }> {
   return import(/* @vite-ignore */ _oauthMod) as Promise<any>;
+}
+
+export function resolveDevModeSettingsPatch(
+  settings: Pick<AppSettings, "server_url" | "api_key" | "user_role">,
+  hostname: string,
+): Partial<AppSettings> {
+  const isLocalBrowser = hostname === "localhost" || hostname === "127.0.0.1";
+  const patch: Partial<AppSettings> = {};
+
+  if (!settings.server_url && isLocalBrowser) {
+    patch.server_url = DEFAULT_SERVER_URL || "http://localhost:8000";
+  }
+
+  if (
+    isLocalBrowser &&
+    settings.api_key === "local-dev-key" &&
+    (!settings.user_role || settings.user_role === "student")
+  ) {
+    patch.user_role = "admin";
+  }
+
+  return patch;
 }
 
 export function LoginScreen() {
@@ -147,6 +171,13 @@ export function LoginScreen() {
       }
     } catch {
       // Non-critical — API key stays in settings only
+    }
+    const localDevPatch = resolveDevModeSettingsPatch(
+      settings,
+      typeof window !== "undefined" ? window.location.hostname : "",
+    );
+    if (Object.keys(localDevPatch).length > 0) {
+      await updateSettings(localDevPatch);
     }
     await setLegacyMode();
   };

@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.prompts.prompt_loader import PromptLoader
 
 from app.core.config import settings
+from app.engine.openrouter_routing import build_openrouter_extra_body
 from app.engine.llm_pool import get_llm_moderate
 
 # Lazy import for optional LLM providers
@@ -238,6 +239,13 @@ class RAGAgent:
             else:
                 logger.info("RAG using OpenAI: %s", settings.openai_model)
 
+            openrouter_extra_body = build_openrouter_extra_body(
+                settings,
+                primary_model=settings.openai_model,
+            )
+            if openrouter_extra_body:
+                llm_kwargs["extra_body"] = openrouter_extra_body
+
             return ChatOpenAI(**llm_kwargs)
         except Exception as e:
             logger.error("Failed to initialize LLM for RAG: %s", e)
@@ -386,6 +394,9 @@ class RAGAgent:
         user_name: Optional[str] = None,
         is_follow_up: bool = False,
         entity_context: str = "",
+        host_context_prompt: str = "",  # Sprint 222
+        skill_context: str = "",
+        capability_context: str = "",
     ) -> RAGResponse:
         """
         Generate response from pre-retrieved documents (no re-retrieval).
@@ -424,7 +435,10 @@ class RAGAgent:
             user_role=user_role,
             entity_context=entity_context,
             user_name=user_name,
-            is_follow_up=is_follow_up
+            is_follow_up=is_follow_up,
+            host_context_prompt=host_context_prompt,  # Sprint 222
+            skill_context=skill_context,
+            capability_context=capability_context,
         )
 
         # Convert documents to citations
@@ -604,7 +618,10 @@ class RAGAgent:
         user_role: str = "student",
         entity_context: str = "",  # Feature: document-kg
         user_name: Optional[str] = None,
-        is_follow_up: bool = False
+        is_follow_up: bool = False,
+        host_context_prompt: str = "",  # Sprint 222
+        skill_context: str = "",
+        capability_context: str = "",
     ) -> Tuple[str, Optional[str]]:
         """
         Generate response using LLM to synthesize retrieved knowledge.
@@ -634,7 +651,10 @@ class RAGAgent:
             user_role=user_role,
             entity_context=entity_context,
             user_name=user_name,
-            is_follow_up=is_follow_up
+            is_follow_up=is_follow_up,
+            host_context_prompt=host_context_prompt,  # Sprint 222
+            skill_context=skill_context,
+            capability_context=capability_context,
         )
 
     def _create_fallback_response(self, question: str) -> RAGResponse:
@@ -697,7 +717,10 @@ class RAGAgent:
         nodes: List[KnowledgeNode],
         conversation_history: str = "",
         user_role: str = "student",
-        entity_context: str = ""
+        entity_context: str = "",
+        host_context_prompt: str = "",  # Sprint 222
+        skill_context: str = "",
+        capability_context: str = "",
     ):
         """
         SOTA Streaming Generation - yields tokens as they arrive from LLM.
@@ -719,7 +742,10 @@ class RAGAgent:
             nodes=nodes,
             conversation_history=conversation_history,
             user_role=user_role,
-            entity_context=entity_context
+            entity_context=entity_context,
+            host_context_prompt=host_context_prompt,  # Sprint 222
+            skill_context=skill_context,
+            capability_context=capability_context,
         ):
             yield chunk
 

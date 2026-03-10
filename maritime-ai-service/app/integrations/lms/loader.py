@@ -59,6 +59,7 @@ def _parse_connector_configs(settings) -> List[LMSConnectorConfig]:
                 signature_header=item.get("signature_header", "X-LMS-Signature"),
                 auth_type=item.get("auth_type", "bearer_token"),
                 enabled=item.get("enabled", True),
+                organization_id=item.get("organization_id"),
                 extra=item.get("extra", {}),
             ))
         return configs

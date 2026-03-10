@@ -85,7 +85,7 @@ beforeEach(() => {
 
   useUIStore.setState({
     sidebarOpen: true,
-    settingsOpen: false,
+    activeView: "chat",
     sourcesPanelOpen: false,
     selectedSourceIndex: null,
     commandPaletteOpen: false,

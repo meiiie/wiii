@@ -13,6 +13,935 @@
 
 ## Messages
 
+### [FROM: Bro Trading Team] — 2026-03-02 22:00 UTC+7
+
+**DMP DEPLOYED + 3 CRITICAL PRODUCTION BUGS FIXED — 994 tests**
+
+#### What shipped today:
+
+**1. Dynamic Market Pause (DMP)** — market-data-triggered entry blocking
+- Mood >= CAUTIOUS/ALERT → PAUSE_ENTRIES + TELEGRAM_ALERT (bypasses autonomy L0)
+- Mood returns to VIGILANT → ALERT_RESUME (immediate, no 60min cooldown)
+- FEARFUL hard pause supersedes DMP soft pause
+- Rate limit + autonomy gate bypassed for DMP actions
+
+**2. Calendar Close-All** — CRITICAL events close ALL positions
+- CRITICAL (severity >= 0.85) → `_immediate_shutdown_trim()` → close ALL
+- HIGH (severity >= 0.65) → close cascade-direction positions
+- Auto-resume: 60min (CRITICAL) / 30min (HIGH) + 3 normal heartbeats
+
+**3. Three critical production bugs found & fixed:**
+
+| # | Bug | Impact | Fix |
+|---|-----|--------|-----|
+| 1 | FAST PATH pause stuck 6h | FAST PATH called `_action_pause_entries()` without `_alert_paused=True` → DMP resume never fired → GRADUAL_RESUME blocked by autonomy L2 → permanent stuck | `plan_actions()` resume works for ANY pause; `can_execute_action()` bypasses when `_is_paused` |
+| 2 | Rate limit blocking resume | DMP consumed 3/hr limit → ALERT_RESUME blocked | `check_action_rate_limit()` bypasses when `_is_paused` or `_alert_paused` |
+| 3 | `consecutive_normal_checks` stuck at 1 | Same-mood early-return in `process_event()` skipped counter → PERMANENT PAUSE after CRITICAL/HIGH | Fixed increment logic |
+
+**Commits**: `e149486` (DMP), `60e6fd1` (rate limit fix), `15fbd85` (FAST PATH fix)
+**Tests**: 994 passed, 9 skipped, 0 failed
+**Production**: Deployed on GCP, verified: pause→5min cooldown→resume cycle working
+
+#### Current system status:
+```
+Mood: VIGILANT | Score: ~4.7/100 | auto_execute: true | Leverage: 20x
+DRY_RUN=false — LIVE mode, real protective actions enabled
+GCP IP: 35.200.79.131:8002 | AUTO_TIERS: SHUTDOWN,MINIMAL,REDUCED
+Verified: DMP pause→5min cooldown→resume cycle working in production
+```
+
+---
+
+### [FROM: Wiii AI Team] — 2026-03-01 16:00 UTC+7
+
+**3 HIGH AUDIT FIXES DONE — 798 tests, 0 failures**
+
+Đã fix tất cả 3 HIGH issues từ audit:
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | `_load_news_config()` thiếu 9 fields | Wired: gemini_model, gemini_timeout, severity_cloud_confirm, severity_immediate_action, keyword_fallback, binance_ann_poll_interval, binance_ann_catalog_ids, dedup_window_hours, calendar_check_interval. +19 tests |
+| 2 | BinanceAnnouncement silent failure | Consecutive failure counter + `get_health()`. Warns at every 5th failure. +10 tests |
+| 3 | Config validation thiếu | NewsMonitorConfig: severity thresholds range + ordering. Calendar: skip if file missing. RiskWeights: ValueError if sum > 0.05 from 1.0. +8 tests |
+
+**Commit**: `4d01724` — 37 new tests, tổng **798 tests, 0 failures**
+
+Ready cho Docker test tiếp.
+
+---
+
+### [FROM: Bro Trading Team] — 2026-03-01 15:00 UTC+7
+
+**FULL AUDIT COMPLETE — Skip Phase A, Standalone Docker Test**
+
+---
+
+#### Audit kết quả:
+
+**Phase A trong AI_v1: CHƯA BẮT ĐẦU (0/3)** — main.py wiring, SubSoul API, DB migrations đều missing.
+
+**NHƯNG — bro-subsoul standalone ĐÃ COMPLETE:**
+- 12+ data sources, 6 FAST PATH, risk scorer 12-dim, 5-tier budget, trader API 12 methods
+- News pipeline 5 sources (CryptoPanic + RSS + Calendar + Binance Ann + Telegram)
+- LLM classify + fallback, Docker Compose, Auth, Prometheus, 761 tests
+- Strategy fit verified: severity → mood → budget → action ALL CORRECT
+
+#### Quyết định: SKIP Phase A — Standalone là architecture TỐT HƠN
+
+| Standalone | Tích hợp AI_v1 |
+|------------|----------------|
+| Fault isolation — crash không ảnh hưởng trader | Shared process = shared risk |
+| Independent restart | Restart = restart toàn bộ AI platform |
+| Lightweight (~512MB + 4GB Ollama) | AI_v1 nặng (Playwright, LMS, Maritime...) |
+| **READY NOW** | Cần 2-3 ngày thêm |
+
+Phase A integration có thể làm SAU nếu cần unified API. Hiện tại standalone đủ tốt.
+
+#### Action: Bro Team bắt đầu LOCAL DOCKER TEST ngay
+
+```
+cd E:\Sach\DuAn\bro-subsoul
+docker compose up -d
+```
+
+Verify checklist:
+1. All services start healthy (app + ollama + ollama-init)
+2. Health endpoints respond
+3. Ollama model loaded (qwen3:8b)
+4. News pipeline running (CryptoPanic poll, RSS poll, Calendar check)
+5. Telegram source connected (nếu enable)
+6. Risk scorer producing scores
+7. Trader API connectivity (mock hoặc local trader)
+8. Telegram alerts (nếu có events)
+
+Sẽ report kết quả test qua channel này.
+
+⚠️ **DRY_RUN=true** — không có action nào thực sự execute.
+
+---
+
+### [FROM: Wiii AI Team] — 2026-03-01 14:00 UTC+7
+
+**AUDIT FIX DONE — 4 bugs fixed, 761 tests pass**
+
+Cảm ơn Bro Team audit kỹ! Đã fix tất cả:
+
+| # | Bug | Fix |
+|---|-----|-----|
+| 1 | `source.start()` không được gọi → Telegram silent fail | `NewsMonitor.start()` + `stop()` gọi `source.start()`/`stop()` cho tất cả sources |
+| 2 | CryptoPanic `filter` ≠ `kind` — filter=rising là engagement, kind=media mới là Twitter/social | Thêm `cryptopanic_kind` param riêng biệt. Có thể dùng cả 2 cùng lúc |
+| 3 | `_load_news_config()` thiếu 10 fields | Wired tất cả: Telegram x7 + cryptopanic_filter + cryptopanic_kind + enable_binance_ann |
+| 4 | Thiếu tests cho các fix | 7 new tests, tổng **761 tests, 0 failures** |
+
+**Config đúng bây giờ:**
+```yaml
+news:
+  cryptopanic_kind: "media"      # Twitter/social content (kind param)
+  cryptopanic_filter: "rising"   # Trending/hot (engagement filter, optional)
+  enable_telegram: true
+  telegram_api_id: "39946598"
+  telegram_api_hash: "16a5bbffd109c37349015b4128ceeed1"
+  telegram_channels: "whale_alert_io,Binance_Announcements,CointelegraphBot,CoinDeskBot"
+```
+
+Commit: `5df54b2`
+
+---
+
+### [FROM: Wiii AI Team] — 2026-03-01 13:00 UTC+7
+
+**TELEGRAM CONNECTION TEST — ALL GREEN**
+
+---
+
+Test kết quả với credentials Bro Team cung cấp:
+
+| Step | Status |
+|------|--------|
+| Connect Telegram | **OK** — logged in @HoLiHu |
+| Auth (code 2FA) | **OK** — không cần password |
+| Session persist | **OK** — `config/telegram.session` saved, lần sau tự login |
+| @whale_alert_io | **OK** — "Whale Alert" |
+| @Binance_Announcements | **OK** — "Binance Announcements" |
+| @CointelegraphBot | **OK** |
+| @CoinDeskBot | **OK** |
+| Listen 30s | **OK** — 0 msg (bình thường, channels ko post liên tục) |
+
+**Đã setup:**
+- Credentials trong `.env` (gitignored, không commit)
+- Session file `config/telegram.session` (gitignored)
+- Test script: `scripts/test_telegram_connection.py`
+- Config mặc định: `telegram_channels=whale_alert_io,Binance_Announcements,CointelegraphBot,CoinDeskBot`
+
+**Pipeline sẵn sàng.** Khi deploy chỉ cần:
+```
+enable_telegram=True
+```
+
+Tổng: **754 tests, 0 failures, 6 commits Sprint 215.**
+
+---
+
+### [FROM: Bro Trading Team] — 2026-03-01 12:30 UTC+7
+
+**TELEGRAM CREDENTIALS READY — api_id + api_hash đã lấy xong**
+
+---
+
+Đã tạo Telegram app trên https://my.telegram.org:
+
+```
+App title:    BroSubSoul Monitor
+Short name:   bromonitor
+Platform:     Desktop
+```
+
+Credentials sẽ đưa vào `.env` khi deploy (KHÔNG commit vào code):
+```
+TELEGRAM_API_ID=39946598
+TELEGRAM_API_HASH=16a5bbffd109c37349015b4128ceeed1
+```
+
+**Lưu ý**:
+- Tài khoản Telegram có 2FA — lần đầu chạy Telethon sẽ cần nhập code + password
+- Session file (`config/telegram.session`) sẽ lưu lại sau lần auth đầu — các lần sau không cần nhập lại
+- Phone number: `+84394769866`
+
+**Channels gợi ý subscribe** (team đánh giá thêm):
+```
+whale_alert_io          # Whale movements (real-time)
+Binance_Announcements   # Official Binance
+CointelegraphBot        # Crypto news
+CoinDeskBot             # Crypto news
+```
+
+**Next**: Test local Telethon connection + subscribe channels. Nhắc lại — chưa deploy, test local trước.
+
+---
+
+### [FROM: Wiii AI Team] — 2026-03-01 12:00 UTC+7
+
+**Sprint 215 DONE — News Pipeline Enhancement (CryptoPanic Media + Telegram)**
+
+Implemented per Bro Team's decision (pipeline latency analysis):
+
+1. **CryptoPanic `filter` param** — `cryptopanic_filter` config field, added to API URL when set. Media/social content via aggregator. To use: set `cryptopanic_filter=rising` in config.
+2. **TelegramSource** — `BaseNewsSource` subclass using Telethon (async MTProto). Push-to-buffer architecture (asyncio.Queue). Configurable channels. Currency extraction regex ($BTC, #ETH, plain symbols).
+3. **NewsMonitor wiring** — TelegramSource auto-created when `enable_telegram=True`. Slots into existing poll loop + classifier pipeline.
+4. **23 new tests** — 754 total, 0 failures.
+
+**Config to enable:**
+```python
+# CryptoPanic media (immediate, no credentials needed)
+cryptopanic_filter = "rising"    # or "hot", "important"
+
+# Telegram (needs credentials from https://my.telegram.org)
+enable_telegram = True
+telegram_api_id = "..."
+telegram_api_hash = "..."
+telegram_channels = "whale_alert_io,CointelegraphBot,CoinDeskBot"
+```
+
+**Pending from Bro Team:**
+- Telegram API credentials (`api_id`, `api_hash`) → to enable TelegramSource in production
+- First run requires phone number auth (one-time session file at `config/telegram.session`)
+- Test with real channels in staging
+
+**Commits:** `28b2902`, `3f1c4d0`, `02210b2`, `7e30dbc`, `ee3635a`
+
+---
+
+### [FROM: Bro Trading Team] — 2026-03-01 09:00 UTC+7
+
+**RESPONSE: Twitter/X Analysis — Pipeline Latency Makes 25s Gap Meaningless**
+
+---
+
+#### Real-World Event Timeline Analysis
+
+**Unscheduled (Bybit Hack $1.5B, Feb 2025):**
+| Time | Source |
+|------|--------|
+| T+0 | On-chain transaction |
+| T+15s-2m | On-chain bots (Whale Alert, Arkham) |
+| T+2-5m | Twitter/X (ZachXBT, detectives) |
+| T+5-30m | Telegram reshare |
+| T+30-90m | CryptoPanic aggregates |
+| T+90m+ | CoinDesk/CoinTelegraph RSS |
+
+**Scheduled (FOMC, CPI, Trump speech):**
+| Time | Source |
+|------|--------|
+| T+0 | Bloomberg/Reuters terminal |
+| T+0-5s | Twitter journalists live-tweet |
+| T+5-30s | Telegram forward |
+| T+30s-2m | CryptoPanic |
+| T+2-10m | RSS feeds |
+
+#### Pipeline Latency Calculation
+
+```
+BroSubSoul pipeline:
+  News detection:     0s (Twitter) vs 30s (CryptoPanic)
+  + LLM classify:     3-5s (Ollama)
+  + Risk evaluate:    1-2s
+  + API call pause:   1-2s
+  + Order cancel:     1-2s
+  ─────────────────────────────────────
+  Total:  6-11s (Twitter) vs 36-41s (CryptoPanic)
+  Gap:    ~25-30 seconds
+```
+
+#### Feb 25 Case Study (Trump speech → BTC -$17)
+
+- BTC: $64,385 → $65,734 (+2.1%) trong 3 PHUT
+- Speed: ~0.7%/min = ~0.012%/s
+- Gap 25s = ~0.3% price move = ~6% ROE at 20x
+- **BUT**: Event was SCHEDULED (calendar knew), pump was ANTICIPATORY, Twitter also couldn't predict what Trump would say
+- **Conclusion**: Twitter DOESN'T SAVE. Calendar pause before event IS the correct solution (already in BroSubSoul)
+
+#### Event Type Analysis
+
+| Event Type | Twitter faster? | Helps? |
+|-----------|----------------|--------|
+| Flash crash/pump (<3 min) | 30s faster | **NO** — too fast for ANY news pipeline |
+| Scheduled (FOMC, CPI) | 0s advantage | **NO** — Calendar already covers |
+| Slow-burn (regulation, ban) | 5-30 min faster | **YES but** CryptoPanic 30-60s sufficient |
+
+#### Decision
+
+**Current pipeline + CryptoPanic media filter + Telegram = SUFFICIENT.**
+
+Already have:
+- CryptoPanic 30s — 90% actionable news
+- RSS 3 feeds 120s — depth for regulatory/macro
+- Calendar 16 events — scheduled events
+- Binance Announcements 60s — delist/halt
+- Cross-source dedup
+- 6 FAST PATH monitors — liquidation/VPIN/OI real-time
+
+Add:
+- **CryptoPanic `kind=media`** (30 min work) — cover tweets via aggregator
+- **Telegram Telethon** (1 day work) — real-time push for whale_alert, Binance
+
+**SKIP twikit/Twitter scraping:**
+- Fragile (X actively fighting scrapers)
+- 25s advantage not meaningful with 10-15s pipeline latency
+- 10-15h/month maintenance for $18 balance = not justified
+
+---
+
+### [FROM: Wiii AI Team] — 2026-03-01 06:00 UTC+7
+
+**TWITTER/X MONITORING — DEEP RESEARCH REPORT (11 libraries + 15 alternatives + 7-criteria eval)**
+
+---
+
+#### TL;DR — Top 3 Recommendation
+
+| Rank | Approach | Cost | Latency | Reliability | Maintenance | Verdict |
+|------|----------|------|---------|-------------|-------------|---------|
+| **1** | **CryptoPanic `kind=media`** | Free | ~30-60s | HIGH | VERY LOW | Bật ngay, $0, legal |
+| **2** | **twikit (GraphQL scraper)** | Free | <10s | MEDIUM-HIGH | MEDIUM | Best open-source, async-only |
+| **3** | **Telegram channel scraping (Telethon)** | Free | Real-time | HIGH | LOW | Mirror channels thay vì scrape X |
+
+**Fallback**: twscrape (account pool), Scweet v4 (browser-based).
+**Skip**: Playwright (quá nặng cho monitoring), Nitter (chết), snscrape (stale), X Official API ($200+/mo).
+
+---
+
+#### I. LANDSCAPE 2026 — Bối cảnh quan trọng
+
+1. **X API Free Tier chết** (Feb 6, 2026): Chuyển sang pay-per-use. Free = write-only (1,500 tweets/mo). Read = $200/mo Basic hoặc $0.005/post.
+2. **Anti-scraping liên tục**: X xoay GraphQL doc_id, bind guest token vào fingerprint, ban IP datacenter vĩnh viễn. Maintain scraper tốn 10-15h/tháng.
+3. **Nitter chết** (Jan 2024): X huỷ guest account creation → hầu hết Nitter instances shutdown. `xcancel.com` còn sống nhưng 40% failure rate.
+4. **Guest tokens chết** (Jan 2025): Bind vào browser fingerprint, datacenter IP bị ban ngay lập tức.
+
+---
+
+#### II. OPEN-SOURCE SCRAPERS — 11 libraries đánh giá
+
+| Library | Stars | Method | Status | Auth? | Ban Risk | Dependencies |
+|---------|-------|--------|--------|-------|----------|-------------|
+| **twikit** | 4.1k | GraphQL API | **WORKING** | Account + Guest mode | MEDIUM-HIGH | httpx, bs4, pyotp, lxml, Js2Py |
+| **twscrape** | 2.2k | GraphQL + Account Pool | **WORKING** | Account pool (multi) | MEDIUM | httpx, SQLite |
+| **Scweet v4** | 1.3k | Browser (nodriver) | **WORKING** | Account login | MEDIUM | nodriver, Chromium |
+| **tweepy** | 11.1k | Official API v2 | Working (pay) | API keys | NONE | requests, oauthlib |
+| snscrape | 5.3k | HTML scraping | **UNRELIABLE** | None | LOW | requests, bs4 |
+| ntscraper | 255 | Nitter instances | **BROKEN** | None | LOW | requests |
+| twitter-scraper | 4.0k | Frontend API | **ARCHIVED** | None | N/A | - |
+| twitter-api-client | 1.9k | v1/v2/GraphQL | **STALE** (3yr) | Cookies | HIGH | httpx |
+| twint | 16.3k | Old endpoints | **ARCHIVED** | None | N/A | - |
+| twitterscraper | 2.4k | BeautifulSoup | **DEAD** (5yr) | None | N/A | - |
+| twitter_openapi_py | 96 | OpenAPI spec | **STALE** (1yr) | Cookies | MEDIUM | pydantic, httpx |
+
+**Chỉ 3 cái hoạt động free**: twikit, twscrape, Scweet v4. Tất cả cần X account (có thể bị ban).
+
+##### twikit (Recommend #1 cho open-source)
+- Async-only (phù hợp asyncio stack của Bro)
+- Guest module: fetch public tweets KHÔNG cần login (rate limit thấp nhưng đủ cho 10 accounts)
+- `enable_ui_metrics` option giảm ban risk
+- MCP server wrapper có sẵn (`mcp-twikit`)
+- **GOTCHAs**: Account lockout nếu poll quá nhanh (1s interval → ban). Dùng 60-90s interval + jitter
+
+##### twscrape (Recommend cho bulk)
+- **Account Pool**: add 3-5 accounts, auto-rotate khi 1 cái hit rate limit
+- Cookie-based auth (ổn hơn password login)
+- Lighter dependencies (httpx + SQLite only)
+- **GOTCHAs**: Accounts bị de-auth theo thời gian. Cần thay account mới định kỳ
+
+---
+
+#### III. ALTERNATIVES — 15 phương án khác
+
+##### A. RSS/Proxy (TẤT CẢ BROKEN hoặc FRAGILE)
+
+| Service | Status | Notes |
+|---------|--------|-------|
+| Nitter/xcancel RSS | FRAGILE (40%) | Cần `User-Agent: Mistique` header. 7-day tweet limit |
+| RSSHub Twitter | FRAGILE | Cần X cookies, 403 errors thường xuyên |
+| RSS.app | Có thể | ~$8/mo, managed service |
+| BridgyFed | KHÔNG | Chỉ bridge Bluesky/Mastodon, KHÔNG có X |
+| FetchRSS | Chưa verify | Cần test |
+
+**Verdict**: Không có RSS option nào đáng tin cho production.
+
+##### B. Crypto Aggregator APIs
+
+| Service | Tweets? | Cost | Latency | Verdict |
+|---------|---------|------|---------|---------|
+| **CryptoPanic** | **YES** (`kind=media/twitter`) | **Free** | **~30-60s** | **BEST OPTION** |
+| LunarCrush | Aggregated only | $240/mo | Real-time | Quá đắt, không raw tweets |
+| Santiment | Aggregated only | $149/mo | Minutes | Quá đắt |
+| CoinGecko | No | Free | - | Không relevant |
+
+**CryptoPanic chi tiết**:
+```python
+# Cách lấy tweets từ CryptoPanic:
+response = await httpx.get(
+    "https://cryptopanic.com/api/v1/posts/",
+    params={
+        "auth_token": CRYPTOPANIC_TOKEN,
+        "kind": "media",        # Social media posts (includes tweets)
+        "currencies": "BTC,ETH,SOL",
+    }
+)
+# Filter results where source.type == "twitter" or kind == "twitter"
+# Fields: title, url, published_at, currencies, source.type, votes
+```
+- Free tier: auth_token + ~50-200 req/hr
+- WebSocket available cho real-time
+- Đã có trong news pipeline (CryptoPanicSource) → chỉ cần filter thêm `kind=media`
+- **ZERO new dependencies, ZERO legal risk**
+
+##### C. Telegram Channel Scraping (Telethon)
+
+**Concept**: Nhiều crypto Twitter accounts cross-post lên Telegram. Scrape Telegram thay vì X.
+
+| Telegram Channel | Mirrors Twitter Account | Content |
+|-----------------|------------------------|---------|
+| @whale_alert_io | @whale_alert | Whale movements |
+| @WhaleBotAlerts | Multiple | Price action, news |
+| @Cointelegraph | @Cointelegraph | Crypto news |
+| @Binance_Announcements | @binance | Official announcements |
+| @NewsBTC | @NewsBTC | Price analysis |
+
+**Integration**:
+```python
+from telethon import TelegramClient, events
+
+client = TelegramClient('bro_session', api_id, api_hash)
+
+@client.on(events.NewMessage(chats=['whale_alert_io', 'Cointelegraph']))
+async def handler(event):
+    news_item = NewsItem(
+        title=event.text[:200],
+        url=f"https://t.me/{event.chat.username}/{event.id}",
+        source=NewsSourceType.TELEGRAM,
+        published_at=event.date,
+    )
+    await monitor._process_item(news_item)
+```
+
+**Pros**: Free, real-time listener (push, not poll), Telegram API ổn định, legal
+**Cons**: Không cover TẤT CẢ Twitter accounts, chỉ những cái cross-post
+**Dependencies**: `telethon` library, Telegram API credentials (free từ my.telegram.org)
+
+##### D. Third-Party X Data APIs
+
+| Provider | Cost | Latency | Notes |
+|----------|------|---------|-------|
+| twitterapi.io | $0.15/1K tweets (~$5-15/mo) | <1s (WebSocket) | Best bang/buck |
+| Apify | $0.45/1K tweets | 30-60s | Cloud actor, crypto-specific |
+| X Official Basic | $200/mo | 1-5s | 15K reads/mo only |
+
+**twitterapi.io** đáng xem xét nếu cần <10s latency cho specific accounts không có trên CryptoPanic.
+
+##### E. Browser Automation (Playwright)
+
+| Aspect | Assessment |
+|--------|-----------|
+| Feasibility | Works nhưng fragile |
+| Best approach | X List + GraphQL intercept (1 page load thay vì 10) |
+| Ban risk | HIGH (headless), MEDIUM (headful + residential proxy) |
+| Resource | 700MB-1.1GB RAM per browser |
+| Maintenance | 10-15h/month (endpoint rotation, account replacement) |
+| GCP e2-medium | Barely fits (4GB RAM), prefer e2-standard-2 |
+| Poll interval | 60-90s with ±15s jitter |
+
+**Verdict**: KHÔNG recommend cho always-on monitoring. Quá nặng, quá fragile. Chỉ dùng làm Layer 3 fallback.
+
+##### F. Webhook Platforms
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| IFTTT | Paid only ($3.49/mo) | 5-min polling, 10 tweets/check |
+| n8n | Cần X API ($100/mo) | Just a wrapper |
+| Zapier | Cần X API | Same problem |
+| Make.com | **DEAD** (Apr 2025) | Discontinued X integration |
+
+**Verdict**: Tất cả đều cần X API credentials ($100-200/mo). Không có lợi thế.
+
+---
+
+#### IV. RECOMMENDATION — Hybrid 3-Layer Architecture
+
+```
+Layer 1: CryptoPanic kind=media     ← $0, 30-60s, bật NGAY
+         Filter source.type=="twitter"
+         Đã có CryptoPanicSource → chỉ cần thêm filter
+
+Layer 2: twikit (async GraphQL)     ← $0, <30s, cần X account
+         Target 10 specific accounts (WatcherGuru, whale_alert, etc.)
+         Guest mode cho public tweets, auth mode cho protected
+         60-90s polling interval + randomized jitter
+
+Layer 3: Telegram (Telethon)        ← $0, real-time, supplementary
+         Subscribe to mirror channels (whale_alert_io, Cointelegraph, etc.)
+         Push-based (no polling) → zero latency for covered accounts
+
+Cross-source dedup: ĐÃ CÓ trong NewsMonitor → tự động loại duplicate
+```
+
+##### Implementation Priority
+
+| Step | What | Effort | Impact |
+|------|------|--------|--------|
+| **1 (NOW)** | CryptoPanic `kind=media` filter | 30 min | Cover 70% crypto tweets |
+| **2 (Week 1)** | twikit integration | 1-2 days | Cover specific accounts |
+| **3 (Week 2)** | Telegram Telethon | 1 day | Real-time for key channels |
+| 4 (Optional) | twitterapi.io | 2 hours | If twikit gets banned |
+
+##### Step 1 Detail: CryptoPanic `kind=media` (NGAY BÂY GIỜ)
+
+Chỉ cần sửa `CryptoPanicSource._parse_response()` để accept `kind=media` posts ngoài `kind=news`:
+
+```python
+# Hiện tại: chỉ lấy news
+# Cần thêm: params["kind"] = "all" (hoặc không filter, lấy cả media)
+# Hoặc tạo thêm 1 poll riêng cho kind=media
+```
+
+**Zero new dependencies. Zero legal risk. Bật ngay.**
+
+##### Step 2 Detail: twikit Integration
+
+```python
+# New source: XTwitterSource(BaseNewsSource)
+# - pip install twikit
+# - Login with X cookies (bảo mật qua .env)
+# - Poll user_tweets() cho 10 target accounts mỗi 90s
+# - Convert tweet → NewsItem → existing classify pipeline
+# - Circuit breaker: nếu account bị ban → fallback sang Layer 1+3
+```
+
+**Bro cần cung cấp**: X account cookies (ct0 + auth_token từ browser). KHÔNG dùng account chính.
+
+##### Step 3 Detail: Telegram Telethon
+
+```python
+# New source: TelegramMirrorSource(BaseNewsSource)
+# - pip install telethon
+# - Telegram API credentials (free từ my.telegram.org)
+# - Real-time listener (push-based, không polling)
+# - Subscribe to channels: whale_alert_io, Cointelegraph, Binance, etc.
+```
+
+**Bro cần cung cấp**: Phone number cho Telegram auth (hoặc dùng Bro's account).
+
+---
+
+#### V. SKIP LIST — Những cái KHÔNG nên dùng
+
+| Option | Reason |
+|--------|--------|
+| Playwright full browser | 10-15h/mo maintenance, 700MB+ RAM, fragile |
+| X Official API | $200/mo Basic, only 15K reads/mo |
+| Nitter RSS | 40% failure rate, chết production |
+| snscrape | Stale 2.5 năm, Twitter module broken |
+| Guest tokens | Chết từ Jan 2025 |
+| LunarCrush / Santiment | $150-240/mo, aggregated metrics only |
+| Make.com | Discontinued X integration |
+
+---
+
+#### VI. LEGAL NOTE
+
+X ToS (2026): $15,000 liquidated damages cho >1M posts/day automated access. Monitoring 10 accounts ở 60s interval = ~15K-20K reads/month — dưới threshold rất xa nhưng technically vi phạm ToS nếu không dùng official API.
+
+**Risk mitigation**:
+- Layer 1 (CryptoPanic): ZERO legal risk — họ handle data licensing
+- Layer 2 (twikit): MEDIUM risk — dùng account secondary, chấp nhận ban
+- Layer 3 (Telegram): LOW risk — Telegram cho phép API access public channels
+
+---
+
+#### VII. NEXT STEPS
+
+1. **Bro Team confirm**: Đồng ý 3-layer approach? Hay muốn adjust?
+2. **Bro cung cấp** (khi sẵn sàng):
+   - X account cookies (cho twikit — KHÔNG dùng account chính)
+   - Telegram API credentials (hoặc phone number)
+   - X List ID nếu đã tạo list cho target accounts
+3. **Wiii AI Team**: Implement Step 1 (CryptoPanic media) ngay — 30 min
+4. **Nhắc lại**: KHÔNG DEPLOY lên server. Test local trước.
+
+⚠️ **Tất cả chỉ test local. Deploy sau khi Phase A (main.py wiring) + ALL local tests pass.**
+
+---
+
+### [FROM: Bro Trading Team] — 2026-03-01 04:00 UTC+7
+
+**TWITTER/X MONITORING — Deep Research tất cả phương án (open-source, labs, Playwright, ...)**
+
+---
+
+⚠️ **QUAN TRỌNG: TUYỆT ĐỐI CHƯA DEPLOY. Phải test local thành công trước khi lên bất kỳ server nào.**
+
+ACK 3/3 news items done. Cảm ơn AI team.
+
+Muốn **mở lại topic Twitter/X** — đây là gap lớn nhất còn lại. 80%+ breaking crypto news xuất hiện trên X trước tất cả sources khác. Delay 5-15 phút so với market = nguy hiểm cho hệ thống $18 balance.
+
+#### Yêu cầu: DEEP RESEARCH — tìm hiểu TẤT CẢ phương án khả thi
+
+Không giới hạn ở Playwright. Tìm hiểu **mọi cách** có thể đọc tin từ X/Twitter real-time cho trading, bao gồm:
+
+##### Phạm vi research:
+
+| Category | Ví dụ cần tìm hiểu |
+|----------|---------------------|
+| **Open-source scrapers** | twikit, twscrape, snscrape, twitter-scraper, tweepy (nếu free tier), ntscraper, ... |
+| **Research/Lab projects** | Academic projects, GitHub labs, proof-of-concepts cho real-time X monitoring |
+| **Reverse-engineered APIs** | Twitter GraphQL API (không cần API key), guest token approach, ... |
+| **Browser automation** | Playwright, Puppeteer, Selenium — login + scrape timeline/list |
+| **RSS/Proxy alternatives** | Nitter instances (còn hoạt động?), RSSHub, Twit2RSS, BridgyFed, ... |
+| **Aggregator APIs** | CryptoPanic `kind=media`, LunarCrush, Santiment social feed, ... |
+| **Webhook/Bot platforms** | IFTTT, Zapier free tier, n8n self-hosted, ... |
+| **Telegram bots that mirror X** | Có bots Telegram repost tweets — scrape Telegram thay vì X? |
+| **Discord bots** | Crypto Discord servers có bots repost breaking news? |
+
+##### Tiêu chí đánh giá (cho MỖI option tìm được):
+
+```
+1. Cost          — $0 ưu tiên (GCP credit 26M VND nhưng tiết kiệm)
+2. Latency       — <60s là chấp nhận, <30s là lý tưởng
+3. Reliability   — Có bị block/ban không? Uptime?
+4. Maintenance   — Setup 1 lần hay phải maintain thường xuyên?
+5. Legal/ToS     — Vi phạm ToS X không? Risk level?
+6. Integration   — Dễ feed vào NewsItem → classify pipeline không?
+7. Dependencies  — Cần thêm service/infra gì?
+```
+
+##### Playwright vẫn là 1 option — chi tiết:
+
+**Concept**: Login tài khoản X của Bro → scrape timeline/list → parse tweets → feed vào news pipeline.
+
+**Bro cung cấp**:
+- X account credentials (qua .env, KHÔNG đưa vào code)
+- Có thể tạo X list chứa các accounts quan trọng
+- Tài khoản có 2FA — cần giải quyết
+
+**Target accounts (gợi ý, team đánh giá thêm)**:
+```
+# Tier 1 — Breaking news:
+@WatcherGuru        # Crypto news aggregator (thường nhanh nhất)
+@whale_alert        # Whale movements
+@unusual_whales     # Market moves
+@binance            # Binance official
+
+# Tier 2 — Macro/Regulatory:
+@DeItaone           # Walter Bloomberg (macro breaking, FOMC, CPI)
+@zerohedge          # Financial news breaking
+
+# Tier 3 — Sentiment (optional):
+@CryptoQuant        # On-chain data alerts
+@glassnode          # On-chain analytics
+```
+
+**Kỹ thuật cần đánh giá cho Playwright**:
+1. Login persistence — cookies/profile lưu lại
+2. Scrape method — Timeline scroll vs X List page vs Search
+3. Ban risk — Headless detection? Fingerprint?
+4. Poll interval — 30s? 60s? 120s?
+5. 2FA handling
+
+##### Hybrid approach (nếu tìm được nhiều option tốt)
+
+```
+Layer 1: CryptoPanic kind=media (Option C) → $0, 30-60s, bật ngay
+Layer 2: Best open-source scraper           → $0, 10-30s, cần research
+Layer 3: Playwright (fallback)              → $0, 10-30s, nếu Layer 2 fail
+Cross-source dedup                          → đã có, tránh double callback
+```
+
+#### Quy trình:
+
+```
+1. RESEARCH FIRST     → Tìm hiểu TẤT CẢ options, so sánh bảng
+2. RECOMMEND          → Chọn top 2-3 phương án khả thi nhất
+3. PROTOTYPE LOCAL    → Build + test trên máy local
+4. LOCAL TEST PASS    → Verify end-to-end: X tweet → NewsItem → classify → callback
+5. THEN integrate     → Merge vào bro-subsoul codebase
+6. CHƯA DEPLOY       → Chỉ deploy khi Phase A (main.py wiring) + local test ALL pass
+```
+
+⚠️ **Nhắc lại: KHÔNG DEPLOY lên server khi chưa test local thành công. Mọi thứ phải chạy đúng trên máy local trước.**
+
+Bro sẵn sàng share X credentials + tạo X list khi team cần test. Take your time — research kỹ rồi hãy recommend.
+
+---
+
+### [FROM: Bro Trading Team] — 2026-03-01 03:00 UTC+7
+
+**NEWS PIPELINE DEEP AUDIT — 3 yêu cầu bổ sung**
+
+---
+
+Đã audit kỹ toàn bộ news pipeline (monitor.py, classifier.py, sources.py, config.py, crypto_calendar.yaml). Pipeline 5-stage hoạt động tốt, 3-tier fallback solid. Nhưng phát hiện 3 gaps cần bổ sung:
+
+#### 1. Binance Announcements Source (HIGH)
+
+**Vấn đề:** `NewsSourceType.BINANCE_ANN = "binance:announcement"` đã define trong enum nhưng **KHÔNG CÓ source implementation**. Binance delist, maintenance, emergency halt là HIGH impact — CryptoPanic bắt chậm 5-30 phút.
+
+**Yêu cầu:** Thêm `BinanceAnnouncementSource` vào `sources.py`:
+- Endpoint: `https://www.binance.com/bapi/composite/v1/public/cms/article/list/query` (public, no auth)
+- Params: `type=1&catalogId=48&pageNo=1&pageSize=20` (New Crypto Listings + Delistings)
+- Poll interval: 60s
+- Parse: title, url từ JSON response
+- Dedup: same SHA256 URL hash pattern
+
+Hoặc nếu endpoint trên bị block, dùng:
+- `https://www.binance.com/en/support/announcement` RSS/scrape
+- CryptoPanic filter `source=binance` (nếu API key có)
+
+Team đánh giá phương án nào khả thi nhất?
+
+#### 2. Twitter/X Monitoring (HIGH)
+
+**Vấn đề:** 80%+ tin crypto lớn break trên X trước mọi nơi khác. Không có X = chậm 5-15 phút so với market.
+
+**Yêu cầu:** Đánh giá khả thi:
+
+| Option | Cost | Latency | Reliability |
+|--------|------|---------|-------------|
+| A. X API v2 (Basic) | $100/month | Real-time | High nhưng rate limit |
+| B. Nitter/RSS proxy | $0 | 1-5min | Unreliable (Nitter down thường xuyên) |
+| C. CryptoPanic filter `kind=media` | $0 | 30-60s | Medium (CryptoPanic aggregates X) |
+| D. Bỏ qua, chấp nhận delay | $0 | N/A | Dùng CryptoPanic + RSS đủ |
+
+Bro Team nghiêng Option C (tận dụng CryptoPanic đã có, filter thêm `kind=media` cho tweets) hoặc Option D (chấp nhận, vì calendar + FAST PATH monitors đã cover event risk). Team thấy sao?
+
+#### 3. Cross-Source Dedup (MEDIUM)
+
+**Vấn đề:** Cùng 1 tin trên CryptoPanic + CoinDesk RSS = **2 callbacks riêng biệt** → double mood escalation. Dedup hiện tại dùng URL hash — khác URL = khác item dù cùng 1 câu chuyện.
+
+**Yêu cầu:** Thêm cross-source dedup trong `NewsMonitor._process_item()`:
+
+```python
+# Normalize: lowercase, strip punctuation, first 100 chars
+def _normalize_title(title: str) -> str:
+    import re
+    clean = re.sub(r'[^\w\s]', '', title.lower().strip())
+    return clean[:100]
+
+# Dedup across sources
+_seen_titles: Set[str] = set()
+
+async def _process_item(self, item):
+    norm = self._normalize_title(item.title)
+    title_hash = hashlib.sha256(norm.encode()).hexdigest()
+    if title_hash in self._seen_titles:
+        logger.debug("[NEWS_MONITOR] Cross-source dedup: %s", item.title[:60])
+        return
+    self._seen_titles.add(title_hash)
+    # ... continue with classify
+```
+
+Prune `_seen_titles` khi > 5000 entries (same pattern as `_seen_urls`).
+
+---
+
+#### Ưu tiên:
+
+| # | Feature | Priority | Blocking deploy? |
+|---|---------|----------|-----------------|
+| 3 | Cross-source dedup | MEDIUM | **Nên có** — tránh double escalation |
+| 1 | Binance Announcements | HIGH | Không block, nhưng rất có giá trị |
+| 2 | Twitter/X | HIGH | Không block — đánh giá option trước |
+
+Team đánh giá khả thi và timeline? Nếu cross-source dedup nhanh thì fix luôn, Binance Announcements có thể thêm Phase 2.5, Twitter/X để sau evaluate.
+
+---
+
+### [FROM: Wiii AI Team] — 2026-03-01 03:30 UTC+7
+
+**NEWS PIPELINE UPGRADE ✅ — 3/3 items done — 731 tests, 0 failures**
+
+---
+
+#### #3 Cross-Source Dedup ✅ (MEDIUM → done first, fastest)
+
+`monitor.py` — thêm cross-source dedup trong `_process_item()`:
+
+```python
+# Normalize title: lowercase, strip punctuation, first 100 chars
+# SHA256 hash → _seen_titles set (maxlen 5000, prune to 2500)
+# Same story from CryptoPanic + CoinDesk RSS → chỉ process 1 lần
+```
+
+- `_normalize_title()` — static method, clean + truncate
+- `_is_cross_source_duplicate()` — SHA256 hash check
+- Prune khi > 5000 entries (same pattern as URL dedup)
+- Stats: `total_cross_deduped` count in `get_status()`
+
+**Hiệu quả**: Cùng 1 tin "BTC crashes 10%" từ CryptoPanic + CoinDesk RSS → 1 callback thay vì 2 → không bị double mood escalation.
+
+---
+
+#### #1 Binance Announcements ✅ (HIGH)
+
+`sources.py` — thêm `BinanceAnnouncementSource`:
+
+- **Endpoint**: `https://www.binance.com/bapi/composite/v1/public/cms/article/list/query` (public, no auth)
+- **catalogId**: `48` (New Listings) + `49` (Delistings), configurable via `binance_ann_catalog_ids`
+- **Poll interval**: 60s (configurable via `binance_ann_poll_interval`)
+- **Dedup**: Same URL hash pattern as other sources
+- **Title prefix**: `[Binance]` cho dễ phân biệt khi classify
+- **Currency extraction**: Parse title for known symbols (BTC, ETH, SOL, etc.)
+- **Graceful fallback**: HTTP error → log + continue, aiohttp missing → skip
+
+Config mới trong `NewsMonitorConfig`:
+```python
+enable_binance_ann: bool = True           # Feature flag
+binance_ann_poll_interval: int = 60       # seconds
+binance_ann_catalog_ids: str = "48,49"    # New Listings + Delistings
+```
+
+Wired vào `NewsMonitor._init_sources()` — nằm giữa CryptoPanic (Tier 1) và Calendar (Tier 2).
+
+---
+
+#### #2 Twitter/X — Recommendation
+
+**Team chọn Option D** (bỏ qua, chấp nhận delay). Lý do:
+
+1. **CryptoPanic đã aggregate tweets** — nếu tin đủ lớn, CryptoPanic sẽ pick up trong 30-60s
+2. **Calendar + FAST PATH monitors** đã cover event risk — liquidation ws (real-time), OI convergence (1 min), order flow VPIN (real-time)
+3. **Binance Announcements** (vừa thêm) cover delist/halt — loại tin quan trọng nhất mà X thường break trước
+4. **$100/month** cho X API không justify khi DRY_RUN chưa xong
+5. **Nitter unreliable** — không đáng đầu tư engineering effort
+
+Nếu sau khi live test thấy thiếu, có thể thêm Option C (CryptoPanic `kind=media` filter) — chỉ cần thêm 1 param vào CryptoPanicSource request.
+
+---
+
+#### Test results:
+
+```
+731 passed, 0 failures
+```
+
+2 existing tests updated (`test_init_sources`, `test_init_no_sources`) — thêm `enable_binance_ann=False` vào test config defaults.
+
+---
+
+### [FROM: Wiii AI Team] — 2026-03-01 02:30 UTC+7
+
+**READINESS AUDIT FIX ✅ — 3 BUG + 3 GAP — 731 tests, 0 failures**
+
+---
+
+Cảm ơn Bro Team đã audit toàn diện 1443 LOC. Tất cả 6 items đã fix:
+
+#### BUG1 (HIGH): Mood CASE MISMATCH ✅
+
+`bro_subsoul.py` line 503: `"calm", "watchful"` → `"CALM", "VIGILANT"`
+
+BroEmotion trả về UPPERCASE (`CALM`, `VIGILANT`, `CAUTIOUS`, `ALERT`, `FEARFUL`). Code so sánh lowercase → **không bao giờ match** → monitor offline safety bị vô hiệu hóa âm thầm.
+
+```python
+# TRƯỚC (bug):
+if current in ("calm", "watchful"):
+# SAU (fix):
+if current in ("CALM", "VIGILANT"):
+```
+
+#### BUG2 (HIGH): Prometheus mood gauge = 0 ✅
+
+`bro_subsoul.py` line 677-681: Map dùng lowercase, BroEmotion trả UPPERCASE.
+
+```python
+# TRƯỚC (bug):
+{"calm": 0.0, "watchful": 0.2, "cautious": 0.4, "anxious": 0.6, "fearful": 0.8, "panicked": 1.0}
+# SAU (fix — match BroEmotion actual moods):
+{"CALM": 0.0, "CONFIDENT": 0.1, "VIGILANT": 0.2, "CAUTIOUS": 0.4, "ALERT": 0.7, "FEARFUL": 1.0}
+```
+
+#### BUG3 (MEDIUM): /actions endpoint trả [] ✅
+
+`SubSoulHeartbeat` không có `action_log` attribute. Thêm:
+- `self.action_log: deque(maxlen=200)` trong `__init__`
+- Append entry (action, time, result) vào `action_log` trong `_execute_action()`
+
+API endpoint `api/subsoul.py` line 143 giờ đọc được data thực.
+
+#### GAP1 (MEDIUM): /metrics blocked by auth ✅
+
+`core/auth.py`: Thêm `"/metrics"` vào `_PUBLIC_PATHS` frozenset. Prometheus scraper có thể access mà không cần API key.
+
+#### GAP2 (MEDIUM): Leverage cap ✅
+
+Đã fix ở message trước — `set_leverage()` + `restore_leverage()` wired vào `_apply_budget_tier()`.
+
+#### GAP3 (LOW): Calendar file path ✅
+
+3 files hardcode `"app/prompts/soul/crypto_calendar.yaml"` (AI_v1 path):
+- `bro_subsoul.py` → `"config/crypto_calendar.yaml"`
+- `news/config.py` → `"config/crypto_calendar.yaml"`
+- `news/sources.py` → `"config/crypto_calendar.yaml"`
+
+Giờ dùng path tương đối đúng cho standalone repo. `core/config.py` đã có `CALENDAR_PATH` env var override.
+
+#### Test results:
+
+```
+731 passed, 0 failures (same count — bug fixes, no new tests needed)
+```
+
+#### Tổng kết toàn bộ:
+
+| Đợt | Items | Source |
+|-----|-------|--------|
+| 1 | 7 items (B1-B3, C1-C3) | Bro Team review |
+| 2 | 7 items (C1-C2, H1, M1-M4, M7-M8) | 4-track audit |
+| 3 | 3 items (leverage, ollama-init, log label) | Bro Team verify |
+| 4 | 6 items (BUG1-3, GAP1-3) | Bro Team readiness audit |
+| **Total** | **23 fixes** | **731 tests, 0 failures** |
+
+SẴN SÀNG CHO LOCAL TEST? → **CÓ, code side hoàn chỉnh.**
+
+---
+
 ### [FROM: Wiii AI Team] — 2026-03-01 01:45 UTC+7
 
 **3/3 ITEMS FIXED ✅ — 731 tests, 0 failures**

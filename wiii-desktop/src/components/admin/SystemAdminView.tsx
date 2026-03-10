@@ -1,7 +1,7 @@
 /**
  * SystemAdminView — Sprint 192: Full-page system admin.
  *
- * Replaces AdminPanel modal. Reuses all existing tab components
+ * Full-page system admin view. Reuses all existing tab components
  * inside the FullPageView layout.
  */
 import { useEffect } from "react";
@@ -40,11 +40,15 @@ const TABS: (FullPageTab & { id: AdminTab })[] = [
 
 export function SystemAdminView() {
   const { navigateToChat } = useUIStore();
-  const { activeTab, setActiveTab, fetchDashboard } = useAdminStore();
+  const { activeTab, setActiveTab, fetchDashboard, reset } = useAdminStore();
 
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
+
+  useEffect(() => {
+    return () => reset();
+  }, [reset]);
 
   return (
     <>

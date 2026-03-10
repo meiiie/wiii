@@ -595,8 +595,33 @@ VÍ DỤ:
   "bạn nhớ tên tôi không?" → [] (câu hỏi, KHÔNG trích xuất gì)
 
 Nếu không có thông tin mới, trả về: []
+{self._build_adaptive_preference_block()}
 Return ONLY valid JSON:"""
     
+    def _build_adaptive_preference_block(self) -> str:
+        """
+        Sprint 219: Build behavioral inference rules block for adaptive preference learning.
+
+        When enable_adaptive_preferences=True, adds rules that instruct the LLM to infer
+        learning preferences from conversation behavior patterns (not just explicit statements).
+        """
+        if not settings.enable_adaptive_preferences:
+            return ""
+
+        return """
+SUY LUẬN HÀNH VI (tự động nhận biết từ cách user tương tác):
+- Nếu user hay xin ví dụ/tương tự → fact_type="learning_style", value="trực quan/ví dụ minh họa"
+- Nếu user yêu cầu từng bước → fact_type="learning_style", value="có cấu trúc/tuần tự"
+- Nếu user hỏi "tại sao" sâu → fact_type="learning_style", value="khái niệm/chuyên sâu"
+- Nếu user gặp khó khăn với chủ đề → fact_type="weakness", value="{chủ đề}"
+- Nếu user trả lời nhanh/đúng về chủ đề → fact_type="strength", value="{chủ đề}"
+- Nếu user thích câu trả lời ngắn gọn → fact_type="preference", value="trả lời ngắn gọn"
+- Nếu user thích giải thích chi tiết → fact_type="preference", value="giải thích chi tiết"
+- Nếu user hay hỏi lại/nhờ giải thích lại → fact_type="preference", value="cần giải thích nhiều lần"
+- Nếu user thích so sánh/đối chiếu → fact_type="learning_style", value="so sánh/đối chiếu"
+Lưu ý: Chỉ suy luận khi HÀNH VI RÕ RÀNG trong tin nhắn, confidence 0.5-0.7 cho suy luận hành vi.
+"""
+
     def _parse_fact_extraction_response(
         self,
         response: str,

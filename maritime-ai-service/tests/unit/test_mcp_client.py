@@ -8,6 +8,7 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 
 from app.mcp.client import MCPToolManager, MCPServerConfig
+from app.engine.tools.registry import ToolAccess, ToolCategory
 
 
 @pytest.fixture(autouse=True)
@@ -160,6 +161,16 @@ class TestMCPToolManagerParseConfigs:
         configs = MCPToolManager.parse_configs(json_str)
         assert len(configs) == 2
 
+    def test_parse_ignores_unknown_keys(self):
+        json_str = (
+            '[{"name": "test", "transport": "http", '
+            '"url": "http://localhost/mcp", "unexpected": "ignored"}]'
+        )
+        configs = MCPToolManager.parse_configs(json_str)
+        assert len(configs) == 1
+        assert configs[0].name == "test"
+        assert not hasattr(configs[0], "unexpected")
+
     def test_parse_invalid_json(self):
         assert MCPToolManager.parse_configs("invalid") == []
 
@@ -168,3 +179,85 @@ class TestMCPToolManagerParseConfigs:
 
     def test_parse_non_dict_items_skipped(self):
         assert MCPToolManager.parse_configs('["string"]') == []
+
+
+class TestMCPToolManagerRegistrationPolicy:
+    @patch("app.engine.tools.registry.get_tool_registry")
+    @patch("app.core.config.get_settings")
+    def test_browser_tools_register_as_privileged_writes(
+        self,
+        mock_get_settings,
+        mock_get_reg,
+    ):
+        settings = MagicMock()
+        settings.mcp_auto_register_external = True
+        mock_get_settings.return_value = settings
+
+        registry = MagicMock()
+        registry.get_info.return_value = None
+        mock_get_reg.return_value = registry
+
+        browser_tool = MagicMock()
+        browser_tool.name = "browser_navigate"
+        browser_tool.description = "Navigate browser"
+
+        MCPToolManager._initialized = True
+        MCPToolManager._tools = [browser_tool]
+
+        count = MCPToolManager.register_discovered_tools()
+
+        assert count == 1
+        kwargs = registry.register.call_args.kwargs
+        assert kwargs["category"] == ToolCategory.MCP
+        assert kwargs["access"] == ToolAccess.WRITE
+        assert kwargs["roles"] == ["admin"]
+
+
+class TestMCPToolManagerRuntimeConfigResolution:
+    def test_resolve_configs_merges_browser_helper(self):
+        settings = MagicMock()
+        settings.mcp_server_configs = '[{"name": "remote", "transport": "http", "url": "http://localhost/mcp"}]'
+
+        with patch(
+            "app.engine.context.browser_agent.get_browser_mcp_config",
+            return_value={
+                "name": "playwright",
+                "transport": "stdio",
+                "command": "npx",
+                "args": ["@playwright/mcp", "--headless"],
+            },
+        ):
+            configs = MCPToolManager.resolve_configs(settings)
+
+        assert [config.name for config in configs] == ["remote", "playwright"]
+
+    def test_resolve_configs_keeps_explicit_config_on_name_collision(self):
+        settings = MagicMock()
+        settings.mcp_server_configs = (
+            '[{"name": "playwright", "transport": "http", "url": "http://remote/mcp"}]'
+        )
+
+        with patch(
+            "app.engine.context.browser_agent.get_browser_mcp_config",
+            return_value={
+                "name": "playwright",
+                "transport": "stdio",
+                "command": "npx",
+                "args": ["@playwright/mcp", "--headless"],
+            },
+        ):
+            configs = MCPToolManager.resolve_configs(settings)
+
+        assert len(configs) == 1
+        assert configs[0].transport == "http"
+
+    def test_merge_configs_deduplicates_by_name(self):
+        merged = MCPToolManager.merge_configs(
+            [MCPServerConfig(name="one", transport="http", url="http://a")],
+            [
+                MCPServerConfig(name="one", transport="stdio", command="npx"),
+                MCPServerConfig(name="two", transport="stdio", command="npx"),
+            ],
+        )
+
+        assert [config.name for config in merged] == ["one", "two"]

@@ -22,6 +22,8 @@ export function CodePreviewCard({ item, onClick }: Props) {
     navigator.clipboard.writeText(code).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      // Clipboard API may fail in non-secure contexts or iframes
     });
   };
 

@@ -62,7 +62,7 @@ beforeEach(() => {
 
   useUIStore.setState({
     sidebarOpen: true,
-    settingsOpen: false,
+    activeView: "chat",
     sourcesPanelOpen: false,
     selectedSourceIndex: null,
     commandPaletteOpen: false,
@@ -439,7 +439,7 @@ describe("UI Store — Preview Panel State", () => {
     const state = useUIStore.getState();
     expect(state.previewPanelOpen).toBe(false);
     expect(state.selectedPreviewId).toBeNull();
-    expect(state.settingsOpen).toBe(false);
+    expect(state.activeView).toBe("chat");
     expect(state.commandPaletteOpen).toBe(false);
     expect(state.sourcesPanelOpen).toBe(false);
     expect(state.characterPanelOpen).toBe(false);

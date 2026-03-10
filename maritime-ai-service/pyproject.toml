@@ -31,12 +31,17 @@ dependencies = [
     "langchain>=0.1.0",
     "langgraph>=0.0.20",
     "langchain-openai>=0.0.5",
+    "opensandbox>=0.1.5,<0.2.0",
+    "opensandbox-code-interpreter>=0.1.1,<0.2.0",
     "neo4j>=5.15.0",
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
     "httpx>=0.26.0",
     "python-multipart>=0.0.6",
     "slowapi>=0.1.9",
+    "xlsxwriter>=3.2.0",
+    "openpyxl>=3.1.0",
+    "python-docx>=1.1.0",
 ]
 
 [project.optional-dependencies]
@@ -50,6 +55,10 @@ dev = [
     "mypy>=1.8.0",
     "pre-commit>=3.6.0",
 ]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["tests*", "data*", "docker*", "nginx*", "alembic*", "backups*", "postgres*"]
 
 
 [tool.pytest.ini_options]

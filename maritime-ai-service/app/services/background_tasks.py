@@ -149,7 +149,7 @@ class BackgroundTaskRunner:
             else:
                 background_save(
                     self._chat_history.save_message,
-                    session_id, role, content
+                    session_id, role, content, user_id
                 )
     
     # =========================================================================

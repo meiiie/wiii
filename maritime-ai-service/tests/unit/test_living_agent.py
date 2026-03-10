@@ -813,7 +813,7 @@ class TestConfigFlags:
         assert s.living_agent_heartbeat_interval == 1800
         assert s.living_agent_active_hours_start == 8
         assert s.living_agent_active_hours_end == 23
-        assert s.living_agent_local_model == "qwen3:8b"
+        assert s.living_agent_local_model == "qwen3:4b-instruct-2507-q4_K_M"
         assert s.living_agent_max_browse_items == 10
         assert s.living_agent_require_human_approval is True
         assert s.living_agent_max_actions_per_heartbeat == 3

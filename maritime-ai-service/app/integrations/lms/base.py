@@ -48,6 +48,7 @@ class LMSConnectorConfig:
     signature_header: str = "X-LMS-Signature"   # Header carrying webhook signature
     auth_type: str = "bearer_token"             # bearer_token | basic | oauth2
     enabled: bool = True
+    organization_id: Optional[str] = None       # Wiii org ID for this connector (fallback: connector id)
     extra: Dict[str, str] = field(default_factory=dict)  # Platform-specific config
 
     def __repr__(self) -> str:
@@ -101,8 +102,18 @@ class LMSConnectorAdapter(ABC):
         """
         config = self.get_config()
         if not config.webhook_secret:
-            return True  # No secret configured = skip verification
-        signature = headers.get(config.signature_header, "")
+            logger.warning(
+                "Webhook received for connector %s but no webhook_secret configured — rejecting",
+                config.id,
+            )
+            return False  # No secret = reject (fail-closed)
+        # Case-insensitive header lookup (ASGI sends lowercase, callers may use any case)
+        sig_header_lower = config.signature_header.lower()
+        signature = ""
+        for k, v in headers.items():
+            if k.lower() == sig_header_lower:
+                signature = v
+                break
         if not signature:
             return False
         return verify_hmac_sha256(payload_bytes, signature, config.webhook_secret)

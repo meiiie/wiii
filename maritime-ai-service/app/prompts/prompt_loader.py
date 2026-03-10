@@ -281,6 +281,7 @@ class PromptLoader:
             "rag_agent": "agents/rag.yaml",
             "memory_agent": "agents/memory.yaml",
             "direct_agent": "agents/direct.yaml",  # Sprint 100
+            "code_studio_agent": "agents/code_studio.yaml",
         }
 
         from app.core.config import settings as app_settings
@@ -607,11 +608,28 @@ class PromptLoader:
                 sections.append(persona['description'])
         
         # ============================================================
-        # WIII IDENTITY — Character Voice & Response Rules (Sprint 87)
-        # BUG #C1 FIX: These rules are now actually injected into prompt
+        # WIII CHARACTER CARD — unified runtime contract
+        # Inspired by AIRI-style "character card as architecture":
+        # identity + soul + living state + current mood are compiled into
+        # one contract block so Wiii keeps the same self across all flows.
         # ============================================================
         identity = self._identity.get("identity", {})
-        if identity:
+        runtime_card_prompt = ""
+        try:
+            from app.engine.character.character_card import build_wiii_runtime_prompt
+
+            runtime_card_prompt = build_wiii_runtime_prompt(
+                user_id=kwargs.get("user_id", "__global__"),
+                organization_id=kwargs.get("organization_id"),
+                mood_hint=mood_hint,
+                personality_mode=personality_mode,
+            )
+        except Exception:
+            runtime_card_prompt = ""
+
+        if runtime_card_prompt:
+            sections.append(f"\n{runtime_card_prompt}")
+        elif identity:
             personality = identity.get("personality", {})
             voice = identity.get("voice", {})
 
@@ -1184,17 +1202,18 @@ class PromptLoader:
         # Dynamic state that Wiii self-edits over time.
         # Only injected if there's actual content (no noise).
         # ============================================================
-        try:
-            from app.engine.character.character_state import get_character_state_manager
-            # Sprint 124: Per-user character blocks via kwargs
-            _char_user_id = kwargs.get("user_id", "__global__")
-            living_state = get_character_state_manager().compile_living_state(
-                user_id=_char_user_id
-            )
-            if living_state:
-                sections.append(f"\n{living_state}")
-        except Exception:
-            pass  # DB not available — skip silently
+        if not runtime_card_prompt:
+            try:
+                from app.engine.character.character_state import get_character_state_manager
+                # Sprint 124: Per-user character blocks via kwargs
+                _char_user_id = kwargs.get("user_id", "__global__")
+                living_state = get_character_state_manager().compile_living_state(
+                    user_id=_char_user_id
+                )
+                if living_state:
+                    sections.append(f"\n{living_state}")
+            except Exception:
+                pass  # DB not available — skip silently
 
         # ============================================================
         # Sprint 170: LIVING AGENT — Soul + Emotion injection
@@ -1202,23 +1221,24 @@ class PromptLoader:
         # is enabled. These override static identity for a "living" Wiii.
         # Feature-gated: enable_living_agent=False by default.
         # ============================================================
-        try:
-            from app.core.config import settings as _la_settings
-            if getattr(_la_settings, "enable_living_agent", False):
-                from app.engine.living_agent.soul_loader import compile_soul_prompt
-                from app.engine.living_agent.emotion_engine import get_emotion_engine
+        if not runtime_card_prompt:
+            try:
+                from app.core.config import settings as _la_settings
+                if getattr(_la_settings, "enable_living_agent", False):
+                    from app.engine.living_agent.soul_loader import compile_soul_prompt
+                    from app.engine.living_agent.emotion_engine import get_emotion_engine
 
-                # Soul prompt: identity, truths, boundaries, interests
-                soul_prompt = compile_soul_prompt()
-                if soul_prompt:
-                    sections.append(f"\n{soul_prompt}")
+                    # Soul prompt: identity, truths, boundaries, interests
+                    soul_prompt = compile_soul_prompt()
+                    if soul_prompt:
+                        sections.append(f"\n{soul_prompt}")
 
-                # Emotion prompt: current mood, energy, behavior modifiers
-                emotion_prompt = get_emotion_engine().compile_emotion_prompt()
-                if emotion_prompt:
-                    sections.append(f"\n{emotion_prompt}")
-        except Exception:
-            pass  # Living agent not available — skip silently
+                    # Emotion prompt: current mood, energy, behavior modifiers
+                    emotion_prompt = get_emotion_engine().compile_emotion_prompt()
+                    if emotion_prompt:
+                        sections.append(f"\n{emotion_prompt}")
+            except Exception:
+                pass  # Living agent not available — skip silently
 
         # ============================================================
         # Sprint 92+115: Identity anchor re-injection for long conversations

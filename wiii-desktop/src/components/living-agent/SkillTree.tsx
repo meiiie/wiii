@@ -42,7 +42,14 @@ function SkillCard({ skill }: { skill: LivingAgentSkill }) {
       </div>
 
       {/* Progress bar */}
-      <div className="h-1 bg-[var(--bg-tertiary)] rounded-full overflow-hidden mb-2">
+      <div
+        className="h-1 bg-[var(--bg-tertiary)] rounded-full overflow-hidden mb-2"
+        role="progressbar"
+        aria-valuenow={Math.round(skill.confidence * 100)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`${skill.skill_name}: ${Math.round(skill.confidence * 100)}%`}
+      >
         <motion.div
           className="h-full rounded-full"
           style={{ backgroundColor: config.color }}

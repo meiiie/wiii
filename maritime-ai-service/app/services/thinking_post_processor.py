@@ -60,6 +60,12 @@ class ThinkingPostProcessor:
         r'<thinking>(.*?)</thinking>',
         re.DOTALL | re.IGNORECASE
     )
+
+    VIETNAMESE_CHAR_PATTERN = re.compile(
+        r"[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩị"
+        r"òóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]",
+        re.IGNORECASE,
+    )
     
     def process(self, content: Any) -> Tuple[str, Optional[str]]:
         """
@@ -180,6 +186,15 @@ class ThinkingPostProcessor:
         # FALLBACK: Use Gemini native thinking (may be English)
         if native_thinking_parts:
             native_thinking = '\n'.join(native_thinking_parts)
+            if not self._should_surface_native_thinking(native_thinking):
+                logger.info(
+                    "[THINKING] Suppressed native Gemini reasoning for user-facing UX"
+                )
+                return ThinkingResult(
+                    text=combined_text,
+                    thinking=None,
+                    source='none'
+                )
             return ThinkingResult(
                 text=combined_text,
                 thinking=native_thinking,
@@ -188,6 +203,12 @@ class ThinkingPostProcessor:
         
         # No thinking found
         return ThinkingResult(text=combined_text, thinking=None, source='none')
+
+    def _should_surface_native_thinking(self, thinking: str) -> bool:
+        """Only surface native reasoning when it matches Wiii's Vietnamese UX."""
+        if not thinking or len(thinking) < 20:
+            return False
+        return bool(self.VIETNAMESE_CHAR_PATTERN.search(thinking))
 
 
 # =============================================================================

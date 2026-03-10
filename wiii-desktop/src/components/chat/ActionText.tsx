@@ -1,6 +1,7 @@
 /**
- * ActionText — styled narrative text between thinking blocks.
- * Sprint 149: Replaces bare <p> with accent-bordered container + arrow icon.
+ * ActionText - a light bridge between reasoning steps.
+ *
+ * It should never overpower either the thinking rail or the final answer.
  */
 import { ArrowRight } from "lucide-react";
 import { motion } from "motion/react";
@@ -10,7 +11,27 @@ interface ActionTextProps {
   node?: string;
 }
 
-export function ActionText({ content }: ActionTextProps) {
+const NODE_LABELS: Record<string, string> = {
+  supervisor: "Dieu huong",
+  direct: "Truc tiep",
+  rag: "Tra cuu",
+  rag_agent: "Tra cuu",
+  tutor: "Giai thich",
+  tutor_agent: "Giai thich",
+  search: "Doi chieu",
+  product_search_agent: "Doi chieu",
+  synthesizer: "Tong hop",
+  aggregator: "Hop nhat",
+  parallel_dispatch: "Song song",
+};
+
+function normalizeNode(node?: string) {
+  return (node || "").toLowerCase().replace(/\s+/g, "_");
+}
+
+export function ActionText({ content, node }: ActionTextProps) {
+  const label = NODE_LABELS[normalizeNode(node)] || "Chuyen buoc";
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 4 }}
@@ -18,10 +39,23 @@ export function ActionText({ content }: ActionTextProps) {
       transition={{ duration: 0.2, ease: "easeOut" }}
       className="action-text-block"
     >
-      <ArrowRight size={14} className="shrink-0 mt-0.5" style={{ color: "var(--accent-orange)" }} />
-      <p className="text-sm font-semibold text-text-primary/85 leading-relaxed">
-        {content}
-      </p>
+      <div className="action-text-block__rail" aria-hidden="true">
+        <ArrowRight
+          size={12}
+          className="action-text-block__icon shrink-0"
+          style={{ color: "var(--accent-orange)" }}
+        />
+      </div>
+
+      <div className="action-text-block__body">
+        <div className="action-text-block__label">
+          <span className="action-text-block__label-dot" aria-hidden="true" />
+          <span>{label}</span>
+        </div>
+        <p className="action-text-block__text">
+          {content}
+        </p>
+      </div>
     </motion.div>
   );
 }

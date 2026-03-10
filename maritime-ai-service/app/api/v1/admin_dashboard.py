@@ -67,7 +67,7 @@ async def admin_dashboard(auth: RequireAdmin):
         # Chat sessions 24h
         try:
             total_sessions_24h = await conn.fetchval(
-                "SELECT COUNT(DISTINCT session_id) FROM chat_sessions "
+                "SELECT COUNT(DISTINCT session_id) FROM chat_history "
                 "WHERE created_at >= NOW() - INTERVAL '24 hours'"
             ) or 0
         except Exception as e:

@@ -206,10 +206,14 @@ describe("appendThinkingDelta action", () => {
     store.appendThinkingDelta("reasoning...");
 
     const state = useChatStore.getState();
-    expect(state.streamingBlocks).toHaveLength(1);
-    if (state.streamingBlocks[0].type === "thinking") {
-      expect(state.streamingBlocks[0].toolCalls).toHaveLength(1);
-      expect(state.streamingBlocks[0].content).toBe("reasoning...");
+    expect(state.streamingBlocks).toHaveLength(2);
+    const thinkingBlock = state.streamingBlocks.find((block) => block.type === "thinking");
+    const toolStrip = state.streamingBlocks.find((block) => block.type === "tool_execution");
+    expect(thinkingBlock?.type).toBe("thinking");
+    expect(toolStrip?.type).toBe("tool_execution");
+    if (thinkingBlock?.type === "thinking") {
+      expect(thinkingBlock.toolCalls).toHaveLength(0);
+      expect(thinkingBlock.content).toBe("reasoning...");
     }
   });
 
@@ -231,6 +235,90 @@ describe("appendThinkingDelta action", () => {
     const state = useChatStore.getState();
     if (state.streamingBlocks[0].type === "thinking") {
       expect(state.streamingBlocks[0].label).toBe("routing");
+    }
+  });
+
+  it("reuses the previous step label instead of leaking raw node names after tool execution", () => {
+    const store = useChatStore.getState();
+    store.openThinkingBlock("Chuan bi cong cu ve bieu do", "Tom tat", "code_studio_agent", "ground", {
+      stepId: "step-1",
+    });
+    store.closeThinkingBlock();
+    store.appendToolCall({
+      id: "tool-1",
+      name: "tool_execute_python",
+      args: {},
+      node: "code_studio_agent",
+    }, {
+      stepId: "step-1",
+    });
+    store.updateToolCallResult("tool-1", "ok", {
+      stepId: "step-1",
+    });
+
+    store.appendThinkingDelta("Minh vua xem lai ket qua sau khi chay code.", "code_studio_agent", {
+      stepId: "step-1",
+    });
+
+    const state = useChatStore.getState();
+    const thinkingBlocks = state.streamingBlocks.filter((block) => block.type === "thinking");
+    expect(thinkingBlocks).toHaveLength(1);
+    if (thinkingBlocks[0]?.type === "thinking") {
+      expect(thinkingBlocks[0].label).toBe("Chuan bi cong cu ve bieu do");
+      expect(thinkingBlocks[0].summary).toBe("Tom tat");
+      expect(thinkingBlocks[0].phase).toBe("ground");
+      expect(thinkingBlocks[0].content).toContain("Minh vua xem lai ket qua sau khi chay code.");
+    }
+  });
+
+  it("keeps post-artifact reflection in the same thinking step", () => {
+    const store = useChatStore.getState();
+    store.openThinkingBlock("Chuan bi cong cu ve bieu do", "Tom tat", "code_studio_agent", "ground", {
+      stepId: "step-1",
+    });
+
+    store.addArtifact({
+      artifact_id: "artifact-1",
+      artifact_type: "chart",
+      title: "demo.png",
+      content: "base64-data",
+      metadata: {},
+    }, "code_studio_agent", {
+      stepId: "step-1",
+    });
+
+    store.appendThinkingDelta("Minh vua xem lai file anh sau khi ve xong.", "code_studio_agent", {
+      stepId: "step-1",
+    });
+
+    const state = useChatStore.getState();
+    const thinkingBlocks = state.streamingBlocks.filter((block) => block.type === "thinking");
+    expect(thinkingBlocks).toHaveLength(1);
+    if (thinkingBlocks[0]?.type === "thinking") {
+      expect(thinkingBlocks[0].content).toContain("Minh vua xem lai file anh sau khi ve xong.");
+    }
+  });
+
+  it("merges late deltas for a completed step instead of creating a duplicate block", () => {
+    const store = useChatStore.getState();
+    store.openThinkingBlock("Ban giao hinh anh", "Tom tat", "code_studio_agent", "ground", {
+      stepId: "step-2",
+    });
+    store.appendThinkingDelta("Minh dang chuan bi du lieu. ", "code_studio_agent", {
+      stepId: "step-2",
+    });
+    store.closeThinkingBlock();
+    store.appendThinkingDelta("Minh vua xac nhan file anh da tao xong.", "code_studio_agent", {
+      stepId: "step-2",
+    });
+
+    const state = useChatStore.getState();
+    const thinkingBlocks = state.streamingBlocks.filter((block) => block.type === "thinking");
+    expect(thinkingBlocks).toHaveLength(1);
+    if (thinkingBlocks[0]?.type === "thinking") {
+      expect(thinkingBlocks[0].content).toContain("Minh dang chuan bi du lieu.");
+      expect(thinkingBlocks[0].content).toContain("Minh vua xac nhan file anh da tao xong.");
+      expect(thinkingBlocks[0].stepId).toBe("step-2");
     }
   });
 });

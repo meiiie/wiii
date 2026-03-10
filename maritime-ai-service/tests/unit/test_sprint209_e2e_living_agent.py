@@ -1168,19 +1168,19 @@ class TestOrchestratorRoutineWiring:
         assert "routine_tracker" in source.lower() or "get_routine_tracker" in source
 
     def test_routine_tracking_flag_checked(self):
-        """Wiring code checks living_agent_enable_routine_tracking flag."""
+        """Routine scheduling checks living_agent_enable_routine_tracking."""
         import inspect
-        from app.services.chat_orchestrator import ChatOrchestrator
+        from app.services import routine_post_response
 
-        source = inspect.getsource(ChatOrchestrator)
-        assert "enable_routine_tracking" in source
+        source = inspect.getsource(routine_post_response)
+        assert "living_agent_enable_routine_tracking" in source
 
     def test_routine_tracking_is_fire_and_forget(self):
-        """RoutineTracker call uses fire-and-forget (ensure_future or create_task)."""
+        """RoutineTracker scheduling remains fire-and-forget at continuity seam."""
         import inspect
-        from app.services.chat_orchestrator import ChatOrchestrator
+        from app.services import routine_post_response
 
-        source = inspect.getsource(ChatOrchestrator)
+        source = inspect.getsource(routine_post_response)
         assert "ensure_future" in source or "create_task" in source
 
 

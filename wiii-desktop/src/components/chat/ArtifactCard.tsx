@@ -1,14 +1,31 @@
 /**
- * ArtifactCard — compact inline card in chat message.
- * Sprint 167: "Không Gian Sáng Tạo"
+ * ArtifactCard - compact inline card in chat message.
  *
- * Shows: icon + title + type badge + language badge + code preview (6 lines).
- * Click → opens ArtifactPanel side panel.
+ * Artifacts should feel like first-class outputs, not raw blobs in a transcript.
+ * The card surfaces what was created, what kind of artifact it is, and the
+ * primary actions: inspect and download.
  */
-import { memo, useCallback } from "react";
-import { Code2, Globe, Table2, BarChart3, FileText, FileSpreadsheet, Maximize2 } from "lucide-react";
+import { memo, useCallback, type KeyboardEvent, type MouseEvent } from "react";
+import {
+  BarChart3,
+  Code2,
+  Download,
+  ExternalLink,
+  FileSpreadsheet,
+  FileText,
+  Globe,
+  Table2,
+} from "lucide-react";
 import type { ArtifactData, ArtifactType } from "@/api/types";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useUIStore } from "@/stores/ui-store";
+import { ArtifactRenderer } from "./artifacts";
+import {
+  artifactHasBinaryFile,
+  artifactPreviewSnippet,
+  describeArtifactFile,
+  resolveArtifactFileUrl,
+} from "@/lib/artifact-file";
 
 interface ArtifactCardProps {
   artifact: ArtifactData;
@@ -28,76 +45,124 @@ const ARTIFACT_LABELS: Record<ArtifactType, string> = {
   code: "Code",
   html: "HTML",
   react: "React",
-  table: "Bảng dữ liệu",
-  chart: "Biểu đồ",
-  document: "Tài liệu",
+  table: "Bang du lieu",
+  chart: "Bieu do",
+  document: "Tai lieu",
   excel: "Excel",
+};
+
+const ARTIFACT_CTA_LABELS: Record<ArtifactType, string> = {
+  code: "Mo chi tiet",
+  html: "Mo ban xem",
+  react: "Mo ban xem",
+  table: "Mo bang",
+  chart: "Mo bieu do",
+  document: "Mo tai lieu",
+  excel: "Mo bang tinh",
 };
 
 const MAX_PREVIEW_LINES = 6;
 
 export const ArtifactCard = memo(function ArtifactCard({ artifact }: ArtifactCardProps) {
   const openArtifact = useUIStore((s) => s.openArtifact);
+  const serverUrl = useSettingsStore((s) => s.settings.server_url);
   const Icon = ARTIFACT_ICONS[artifact.artifact_type] || Code2;
   const label = ARTIFACT_LABELS[artifact.artifact_type] || artifact.artifact_type;
+  const ctaLabel = ARTIFACT_CTA_LABELS[artifact.artifact_type] || "Mo chi tiet";
+  const resolvedFileUrl = resolveArtifactFileUrl(artifact, serverUrl);
+  const downloadable = artifactHasBinaryFile(artifact);
+  const previewText = artifactPreviewSnippet(artifact, 220);
+  const lines = previewText.split("\n");
+  const previewLines = lines.slice(0, MAX_PREVIEW_LINES);
+  const hasMore = lines.length > MAX_PREVIEW_LINES;
+  const useRichPreview = artifact.artifact_type !== "code" && artifact.artifact_type !== "react";
 
-  const handleClick = useCallback(() => {
+  const excelMeta = artifact.artifact_type === "excel"
+    ? `${artifact.metadata?.row_count ?? "?"} hang x ${artifact.metadata?.column_count ?? "?"} cot`
+    : null;
+  const subMeta = excelMeta || describeArtifactFile(artifact);
+
+  const handleOpen = useCallback(() => {
     openArtifact(artifact.artifact_id);
   }, [openArtifact, artifact.artifact_id]);
 
-  // L-1: Split once, reuse
-  const lines = artifact.content.split("\n");
-  const previewLines = lines.slice(0, MAX_PREVIEW_LINES);
-  const hasMore = lines.length > MAX_PREVIEW_LINES;
+  const handleKeyDown = useCallback((event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      handleOpen();
+    }
+  }, [handleOpen]);
+
+  const handleDownloadClick = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
+    event.stopPropagation();
+  }, []);
 
   return (
-    <button
-      onClick={handleClick}
-      className="w-full text-left my-2 rounded-lg border border-border bg-surface-secondary hover:bg-surface-tertiary transition-colors cursor-pointer group/artifact overflow-hidden"
-      aria-label={`Mở artifact: ${artifact.title}`}
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={handleOpen}
+      onKeyDown={handleKeyDown}
+      className="artifact-card-shell group/artifact"
+      aria-label={`Mo artifact: ${artifact.title}`}
     >
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/50">
-        <Icon size={16} className="text-[var(--accent)] shrink-0" />
-        <span className="text-sm font-medium text-text truncate flex-1">
-          {artifact.title}
-        </span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] font-medium shrink-0">
-          {label}
-        </span>
-        {artifact.language && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-tertiary text-text-secondary font-mono shrink-0">
-            {artifact.language}
+      <div className="artifact-card-shell__header">
+        <div className="artifact-card-shell__icon">
+          <Icon size={16} className="text-[var(--accent)] shrink-0" />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="artifact-card-shell__eyebrow">
+            <span className="artifact-card-shell__type">{label}</span>
+            {artifact.language && <span className="artifact-card-shell__language">{artifact.language}</span>}
+          </div>
+          <div className="artifact-card-shell__title">{artifact.title}</div>
+          {subMeta && <div className="artifact-card-shell__meta">{subMeta}</div>}
+        </div>
+
+        <div className="artifact-card-shell__actions">
+          <span className="artifact-card-shell__open">
+            <ExternalLink size={13} />
+            {ctaLabel}
           </span>
-        )}
-        <Maximize2
-          size={14}
-          className="text-text-tertiary opacity-0 group-hover/artifact:opacity-100 transition-opacity shrink-0"
-        />
+
+          {downloadable && resolvedFileUrl && (
+            <a
+              href={resolvedFileUrl}
+              target="_blank"
+              rel="noreferrer"
+              onClick={handleDownloadClick}
+              className="artifact-card-shell__download"
+              title="Tai file"
+              aria-label={`Tai file ${artifact.title}`}
+            >
+              <Download size={13} />
+              Tai file
+            </a>
+          )}
+        </div>
       </div>
 
-      {/* Code preview */}
-      {artifact.content && (
-        <div className="px-3 py-2 overflow-hidden">
-          <pre className="text-xs font-mono text-text-secondary leading-relaxed overflow-hidden">
+      {useRichPreview ? (
+        <div className="artifact-card-shell__preview pointer-events-none">
+          <ArtifactRenderer artifact={artifact} mode="card" />
+        </div>
+      ) : previewText ? (
+        <div className="artifact-card-shell__preview artifact-card-shell__preview--code">
+          <pre className="text-xs font-mono text-text-secondary leading-relaxed overflow-hidden whitespace-pre-wrap">
             <code>
               {previewLines.join("\n")}
               {hasMore && "\n..."}
             </code>
           </pre>
         </div>
-      )}
+      ) : null}
 
-      {/* Execution status indicator — L-3: ARIA role="status" */}
       {artifact.metadata?.execution_status && (
         <div
-          className="px-3 py-1.5 border-t border-border/50 flex items-center gap-1.5"
+          className="artifact-card-shell__status"
           role="status"
-          aria-label={`Trạng thái: ${
-            artifact.metadata.execution_status === "success" ? "Đã chạy thành công" :
-            artifact.metadata.execution_status === "error" ? "Lỗi thực thi" :
-            artifact.metadata.execution_status === "running" ? "Đang chạy" : "Chưa chạy"
-          }`}
+          aria-label={`Trang thai: ${artifact.metadata.execution_status}`}
         >
           <span
             className={`w-1.5 h-1.5 rounded-full ${
@@ -111,13 +176,13 @@ export const ArtifactCard = memo(function ArtifactCard({ artifact }: ArtifactCar
             }`}
           />
           <span className="text-[10px] text-text-tertiary">
-            {artifact.metadata.execution_status === "success" && "Đã chạy thành công"}
-            {artifact.metadata.execution_status === "error" && "Lỗi thực thi"}
-            {artifact.metadata.execution_status === "running" && "Đang chạy..."}
-            {artifact.metadata.execution_status === "pending" && "Chưa chạy"}
+            {artifact.metadata.execution_status === "success" && "Da chay thanh cong"}
+            {artifact.metadata.execution_status === "error" && "Loi thuc thi"}
+            {artifact.metadata.execution_status === "running" && "Dang chay..."}
+            {artifact.metadata.execution_status === "pending" && "Chua chay"}
           </span>
         </div>
       )}
-    </button>
+    </article>
   );
 });

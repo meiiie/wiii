@@ -31,11 +31,11 @@ class RoutingDecision(BaseModel):
         default="",
         description="Brief chain-of-thought reasoning for the routing decision (Vietnamese)"
     )
-    intent: Literal["lookup", "learning", "personal", "social", "off_topic", "web_search", "product_search", "colleague_consult"] = Field(
+    intent: Literal["lookup", "learning", "personal", "social", "off_topic", "web_search", "product_search", "colleague_consult", "code_execution"] = Field(
         default="lookup",
         description="Query intent: lookup=tra cứu, learning=học/giải thích/quiz, personal=ngữ cảnh cá nhân, social=chào hỏi/cảm ơn, off_topic=không liên quan domain, web_search=tìm kiếm web/tin tức/pháp luật, product_search=tìm kiếm/so sánh sản phẩm/giá cả trên sàn TMĐT, colleague_consult=hỏi ý kiến Bro/đồng nghiệp về trading/crypto/rủi ro (chỉ admin)"
     )
-    agent: Literal["RAG_AGENT", "TUTOR_AGENT", "MEMORY_AGENT", "DIRECT", "PRODUCT_SEARCH_AGENT", "COLLEAGUE_AGENT"] = Field(
+    agent: Literal["RAG_AGENT", "TUTOR_AGENT", "MEMORY_AGENT", "DIRECT", "PRODUCT_SEARCH_AGENT", "COLLEAGUE_AGENT", "CODE_STUDIO_AGENT"] = Field(
         description="The agent to route the query to"
     )
     confidence: float = Field(

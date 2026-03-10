@@ -1,10 +1,12 @@
 # Wiii AI x LMS Integration — API Contract & Architecture
 
-> **Version:** 2.0.0
-> **Last Updated:** 2026-02-23
-> **Sprint:** 175 "Cắm Phích Cắm"
+> **Version:** 3.2.0
+> **Last Updated:** 2026-03-03
+> **Sprint:** 220c "Cắm Phích SSOT" — All Endpoints Verified, Architecture Audited
 > **For:** Cả hai đội (Wiii AI Team + LMS Team)
-> **Status:** Phase 1-4 Complete, Phase 5 (Production Hardening) Planned
+> **Status:** Phase 1-5 Complete — Production Ready
+> **Production LMS:** `https://holilihu.online`
+> **CSP:** `frame-ancestors 'self' https://holilihu.online` (set in `EMBED_ALLOWED_ORIGINS`)
 
 ---
 
@@ -208,6 +210,45 @@ Content-Type: application/json
 ```
 
 **Response**: Same format as token exchange (new access + refresh tokens).
+
+#### Identity Federation — Cách Wiii đồng bộ User
+
+Wiii và LMS là **2 hệ thống tách biệt**, mỗi bên có bảng `users` riêng. Wiii **không import** user từ LMS. Thay vào đó, user được tạo/liên kết tự động qua token exchange.
+
+**Bảng mapping**: `user_identities`
+```sql
+-- Unique index: (provider, provider_sub, provider_issuer)
+-- Ví dụ: ("lms", "student_42", "maritime-lms") → Wiii user UUID
+```
+
+**Thuật toán 3 bước** (`find_or_create_by_provider()`):
+
+```
+Step 1: Tìm trong user_identities theo (lms, lms_user_id, connector_id)
+        → Tìm thấy? → Trả về user cũ (không tạo mới)
+
+Step 2: Tìm trong users theo email
+        → Tìm thấy + email_verified=True? → Link identity mới vào user cũ
+        → (LMS: email_verified=False → bỏ qua bước này — bảo mật)
+
+Step 3: Tạo user mới + insert user_identities record
+        → Trả về user mới với UUID do Wiii generate
+```
+
+**Lần đầu**: Step 1 miss → Step 2 miss → Step 3 tạo mới → LMS nhận UUID.
+**Lần sau**: Step 1 match → trả về ngay (nhanh, không tạo mới).
+
+**Multi-identity (N:1)**: Một Wiii user có thể có nhiều identity:
+```
+(lms,       "SV12345",    "maritime-lms")  → user 550e8400-...
+(google,    "google_sub", NULL)            → user 550e8400-... (nếu link Google)
+```
+
+**Org membership**: Nếu request có `organization_id`, Wiii tự động thêm user vào org (`user_organizations` table, `ON CONFLICT DO NOTHING`).
+
+**Bảo mật**: `email_verified=False` cho LMS (LMS không cryptographically verify email) → chặn account hijacking qua email trùng.
+
+> **Lưu ý cho đội LMS**: Đội LMS **không cần** tạo user bên Wiii trước. Chỉ cần gọi token exchange, Wiii tự tạo. `lms_user_id` + `connector_id` là cặp unique key — luôn trả về cùng Wiii user cho cùng sinh viên.
 
 #### Health Check
 
@@ -423,6 +464,11 @@ restTemplate.postForEntity(
 );
 ```
 
+> **Sprint 220 E2E Fix**: Wiii's `verify_signature()` now uses **case-insensitive** header lookup.
+> Starlette/ASGI `dict(request.headers)` produces lowercase keys (`x-lms-signature`),
+> so plain dict `.get("X-LMS-Signature")` would fail. The fix is a loop comparing `.lower()`.
+> LMS side can send any case — Wiii will match correctly.
+
 ---
 
 ### 2.5 Wiii → LMS Data Pull (7 GET endpoints)
@@ -448,32 +494,35 @@ restTemplate.postForEntity(
 ```json
 {
   "id": "SV12345",
-  "name": "Nguyễn Văn A",
-  "email": "sv12345@vimaru.edu.vn",
+  "name": "nguyenvanan",
+  "full_name": "Nguyễn Văn An",
+  "email": "nguyenvanan@sv.maritime.edu",
   "class_name": "ĐKTB K62A",
   "program": "Điều khiển tàu biển",
-  "enrolled_courses": ["NHH101", "NHH201"]
+  "enrolled_courses": ["Khí Tượng Hải Dương và Điều Động Tàu", "Chữa Cháy Nâng Cao"]
 }
 ```
 
-**LMSGrade**:
+**LMSGrade** (Sprint 220c: added `class_name`):
 ```json
 {
   "course_id": "NHH101",
-  "course_name": "Điều khiển tàu biển 1",
+  "course_name": "Khí Tượng Hải Dương và Điều Động Tàu",
+  "class_name": "Lop KT-2026A",
   "grade": 7.5,
   "max_grade": 10.0,
   "date": "2026-02-20"
 }
 ```
 
-**LMSUpcomingAssignment**:
+**LMSUpcomingAssignment** (Sprint 220c: added `class_name`, `due_date` nullable):
 ```json
 {
   "assignment_id": "asgn-001",
   "assignment_name": "Bài tập SOLAS Chapter III",
   "course_id": "NHH101",
-  "course_name": "Điều khiển tàu biển 1",
+  "course_name": "Khí Tượng Hải Dương và Điều Động Tàu",
+  "class_name": "Lop KT-2026A",
   "due_date": "2026-03-01T23:59:00Z"
 }
 ```
@@ -488,6 +537,15 @@ restTemplate.postForEntity(
   "at_risk_count": 5
 }
 ```
+
+#### LMS Database Schema Notes (Sprint 220 E2E)
+
+> **CRITICAL for LMS team**: The following column/join mappings were verified during E2E testing:
+>
+> - `enrollments.class_id` (NOT `learning_class_id`) → `learning_classes.id`
+> - Quiz→Course: `quiz_attempts` → `quizzes` (quiz_id) → `lessons` (lesson_id) → `chapters` (chapter_id) → `courses` (course_id)
+> - `quiz_attempts.submitted_at` / `started_at` (NOT `end_time` / `start_time`)
+> - Student profile: Use `queryForList` + empty check (NOT `queryForMap` which throws on empty)
 
 #### Circuit Breaker
 
@@ -946,15 +1004,46 @@ CREATE INDEX idx_ai_alerts_type ON ai_alerts(alert_type);
 
 ### Current Gaps
 
-| # | Gap | Priority | Target |
+| # | Gap | Priority | Status |
 |---|-----|----------|--------|
 | 1 | LMS JUnit tests for integration layer | Medium | LMS team |
-| 2 | End-to-end integration test (both systems) | High | Both teams |
-| 3 | LMS domain event wiring (`StudentEnrolledEvent`, `AssignmentSubmittedEvent`) | Medium | LMS team |
+| 2 | ~~End-to-end integration test (both systems)~~ | ~~High~~ | ✅ Sprint 220: `scripts/test_lms_integration.py` |
+| 3 | ~~LMS domain event wiring (`StudentEnrolledEvent`, `AssignmentSubmittedEvent`)~~ | ~~Medium~~ | ✅ Already in `WiiiEventBridge.java` |
 | 4 | Angular SSE direct connection (bypass proxy) | Low | Future sprint |
 | 5 | CORS production domain configuration | High | DevOps |
 
-### Phase 5: Production Hardening (Planned)
+### Sprint 220: Production Connection (Completed)
+
+| Item | Description | Owner | Status |
+|------|-------------|-------|--------|
+| LMS context in AI prompt | Student grades/assignments injected into system prompt | Wiii | ✅ `context_loader.py` |
+| LMS tool registration | 5 LMS tools auto-registered when gate enabled | Wiii | ✅ `tools/__init__.py` |
+| Insight push to teachers | Post-conversation analysis → LMS teacher dashboard | Wiii | ✅ `insight_generator.py` |
+| Cache invalidation | Webhook events clear stale context cache | Wiii | ✅ `webhook_handler.py` |
+| E2E test script | Token exchange + data pull + webhook + chat | Both | ✅ `test_lms_integration.py` |
+| HMAC header case fix | Starlette lowercase headers → case-insensitive lookup | Wiii | ✅ `base.py` |
+| LMS SQL schema fixes | 4 SQL fixes in `WiiiDataControllerV3.java` (column names, join paths) | LMS | ✅ Verified in E2E |
+
+#### E2E Test Results (Sprint 220)
+
+All 6 tests passing with both services running (Docker):
+
+| # | Test | Result | Notes |
+|---|------|--------|-------|
+| 1 | Wiii Health | ✅ PASS | `maritime-lms` connector registered |
+| 2 | LMS Health | ✅ PASS | LMS data endpoints accessible |
+| 3 | Token Exchange | ✅ PASS | HMAC-signed → JWT returned |
+| 4 | Data Pull | ✅ PASS | 4 endpoints return correct data (after SQL fixes) |
+| 5 | Webhook | ✅ PASS | `grade_saved` event → 2 UserFacts created |
+| 6 | Context Chat | ✅ PASS | AI mentions enrolled courses + grades |
+
+**Bugs found and fixed during E2E**:
+1. **HMAC header case** (Wiii): `dict(request.headers)` lowercase vs uppercase `X-LMS-Signature` → case-insensitive loop
+2. **SQL column names** (LMS): `learning_class_id` → `class_id`, `end_time` → `submitted_at`, `start_time` → `started_at`
+3. **Quiz→Course join** (LMS): `quizzes.course_id` doesn't exist → join through `lessons→chapters→courses`
+4. **Empty result handling** (LMS): `queryForMap` throws on no rows → `queryForList` + empty check
+
+### Phase 6: Production Hardening (Planned)
 
 | Item | Description | Owner |
 |------|-------------|-------|
@@ -967,5 +1056,5 @@ CREATE INDEX idx_ai_alerts_type ON ai_alerts(alert_type);
 
 ---
 
-*Document generated by Wiii AI LEADER Agent — Sprint 175*
+*Document generated by Wiii AI LEADER Agent — Sprint 175, updated Sprint 220*
 *For questions: contact the respective team leads*

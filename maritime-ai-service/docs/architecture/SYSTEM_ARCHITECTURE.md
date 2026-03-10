@@ -1,10 +1,10 @@
 # Wiii - System Architecture
 
-**Version:** 8.1 (Post-Sprint 210d — Living Continuity + SOTA LLM Sentiment)
-**Updated:** 2026-02-26
+**Version:** 8.4 (Post-Sprint 225 — Cross-Platform Conversation Sync)
+**Updated:** 2026-03-04
 **Product:** Wiii by The Wiii Lab
-**Pattern:** Soul AGI Platform — Multi-Domain Agentic RAG with Living Agent Autonomy, Three-Layer Identity (Soul Core + Identity Core + Context State), Skill-Tool Bridge, Narrative Layer, Natural Conversation, SOTA LLM Sentiment Analysis, Plugin Architecture, Product Search, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization, Cross-Platform Identity, Spaced Repetition Skill Learning
-**Codebase:** 349 Python files, ~95,000 LOC, 63+ API endpoints, 9830 backend + 1841 desktop tests
+**Pattern:** Soul AGI Platform — Multi-Domain Agentic RAG with Living Agent Autonomy, Three-Layer Identity (Soul Core + Identity Core + Context State), Skill-Tool Bridge, Narrative Layer, Natural Conversation, SOTA LLM Sentiment Analysis, Plugin Architecture, Product Search, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization, Cross-Platform Identity, Spaced Repetition Skill Learning, LMS Production Integration, Universal Context Engine (7-Phase), Cross-Platform Conversation Sync
+**Codebase:** 385+ Python files, ~99,000 LOC, 70+ API endpoints, 10250+ backend + 1905 desktop tests
 
 ---
 
@@ -38,6 +38,8 @@
    - 4.22 [Cross-Platform Memory Sync](#422-cross-platform-memory-sync)
    - 4.23 [RAG Ingestion Pipeline](#423-rag-ingestion-pipeline)
    - 4.24 [Advanced RAG Strategies](#424-advanced-rag-strategies)
+   - 4.25 [Universal Context Engine](#425-universal-context-engine)
+   - 4.26 [Cross-Platform Conversation Sync](#426-cross-platform-conversation-sync)
 5. [Data Layer](#5-data-layer)
 6. [Security Architecture](#6-security-architecture)
 7. [Desktop Application](#7-desktop-application)
@@ -73,7 +75,7 @@ graph TB
     end
 
     subgraph "Orchestration Layer"
-        ORCH["ChatOrchestrator<br/>6-stage pipeline"]
+        ORCH["ChatOrchestrator<br/>7-stage request contract"]
         INPUT["InputProcessor"]
         OUTPUT["OutputProcessor"]
         SESSION["SessionManager"]
@@ -334,7 +336,7 @@ maritime-ai-service/                    # Backend (Python)
 │   │       └── evaluator.py            # Faithfulness/Relevancy scoring
 │   │
 │   ├── services/                       # Business Logic Layer
-│   │   ├── chat_orchestrator.py        # 6-stage pipeline (main entry)
+│   │   ├── chat_orchestrator.py        # request orchestration + finalization seam
 │   │   ├── chat_service.py             # Facade for backward compat
 │   │   ├── input_processor.py          # Validation + parallel context
 │   │   ├── output_processor.py         # Formatting + fact extraction
@@ -547,7 +549,7 @@ flowchart LR
 
 ### 4.2 Chat Processing Pipeline
 
-The `ChatOrchestrator` implements a 6-stage pipeline for every chat request.
+The `ChatOrchestrator` implements the authoritative 7-stage request contract for every chat request.
 
 ```mermaid
 flowchart TB
@@ -591,7 +593,7 @@ flowchart TB
 
     S5 --> S6
 
-    subgraph S6["Stage 6: Background Tasks (async)"]
+    subgraph S6["Stage 6: Post-Response Scheduling (async)"]
         BG["FastAPI BackgroundTasks"]
         BG --> FACTS["Extract user facts"]
         BG --> INS["Generate insights"]
@@ -600,7 +602,17 @@ flowchart TB
         BG --> SCACHE["Cache in SemanticCache"]
     end
 
-    S6 --> RESP["InternalChatResponse"]
+    S6 --> S7
+
+    subgraph S7["Stage 7: Continuity Update"]
+        CONT["living_continuity.schedule_post_response_continuity()"]
+        CONT --> ROUT["Routine tracking"]
+        CONT --> SENT["Living sentiment + emotion"]
+        CONT --> EPIS["Episodic memory write"]
+        CONT --> LMSI["Optional LMS insight push"]
+    end
+
+    S7 --> RESP["InternalChatResponse"]
 ```
 
 **Key Design Decisions:**
@@ -876,7 +888,7 @@ flowchart TB
         HIST & FACTS & INS & PRON & SUMM --> PROMPT["Dynamic system prompt"]
     end
 
-    subgraph Background["Background (Stage 6)"]
+    subgraph Background["Post-response scheduling and continuity (Stages 6-7)"]
         RESP["Agent response"] --> FE["FactExtractor"]
         RESP --> IE["InsightExtractor"]
         RESP --> SS["SessionSummarizer"]
@@ -1759,6 +1771,130 @@ Multiple retrieval strategies added in Sprints 179-187:
 - `Citation` model now includes `content_type` field (text/table/heading/diagram_reference/formula)
 - Source deduplication by `(document_id, page_number)` — prevents duplicate page entries in sources
 
+### 4.25 Universal Context Engine
+
+Host-agnostic context injection system enabling Wiii to understand and interact with ANY host application (LMS, ecommerce, CRM, trading, etc.) — Sprint 222 + 222b, 7 phases.
+
+```mermaid
+flowchart TB
+    subgraph Host["Host App (LMS, CRM, etc.)"]
+        PM_OUT["PostMessage<br/>wiii:context"]
+        PM_IN["PostMessage<br/>wiii:action-response"]
+    end
+
+    subgraph Frontend["Wiii Frontend (Embed/Desktop)"]
+        STORE["host-context-store<br/>(Zustand)"]
+        SSE_H["SSE Handler<br/>host_action events"]
+    end
+
+    subgraph Backend["Wiii Backend"]
+        GRAPH["_inject_host_context()<br/>(graph.py)"]
+        ADAPTER["HostAdapter<br/>LMS | Generic"]
+        SKILLS["ContextSkillLoader<br/>YAML skills"]
+        BRIDGE["HostActionBridge<br/>+ action_tools"]
+        STREAM["stream_utils<br/>HOST_ACTION event"]
+        BROWSER["BrowserAgent<br/>Playwright MCP"]
+    end
+
+    PM_OUT --> STORE --> GRAPH
+    GRAPH --> ADAPTER --> SKILLS
+    BRIDGE --> STREAM --> SSE_H --> PM_IN --> Host
+    BROWSER -.->|"Desktop only"| GRAPH
+```
+
+**7 Phases:**
+
+| Phase | What | Gate |
+|-------|------|------|
+| 1. Models | `HostContext` + `HostCapabilities` Pydantic models | `enable_host_context` |
+| 2. Adapters | `HostAdapter` ABC → LMS + Generic implementations | `enable_host_context` |
+| 3. Graph | `_inject_host_context()` — converts ONCE, ALL agents read `state["host_context_prompt"]` | `enable_host_context` |
+| 4. Frontend | `host-context-store.ts`, PostMessage handlers, `useSSEStream` merge | `enable_host_context` |
+| 5. Actions | Bidirectional host actions: AI→SSE→PostMessage→host→response. Role-based filtering | `enable_host_actions` |
+| 6. Skills | YAML skills per page type. 3-level fallback (exact → host default → generic) | `enable_host_skills` |
+| 7. Browser | Playwright MCP for standalone desktop. SSRF validation, per-user rate limiting | `enable_browser_agent` |
+
+**Package structure:**
+```
+app/engine/context/
+├── __init__.py
+├── host_context.py          # HostContext + HostCapabilities models
+├── skill_loader.py          # ContextSkillLoader (YAML, fallback chain, caching)
+├── action_bridge.py         # HostActionBridge (role validation, request tracking)
+├── action_tools.py          # Dynamic LangChain tool generation from host capabilities
+├── browser_agent.py         # Playwright MCP config, SSRF validation, rate limiter
+├── adapters/
+│   ├── base.py              # HostAdapter ABC
+│   ├── lms.py               # LMS-specific context formatting
+│   └── generic.py           # Generic fallback adapter
+└── skills/
+    ├── lms/
+    │   ├── quiz.skill.yaml      # Socratic quiz (NEVER reveal answers)
+    │   ├── lesson.skill.yaml    # Teaching guidance
+    │   ├── assignment.skill.yaml # Methodology guidance
+    │   ├── course.skill.yaml    # Course recommendations
+    │   └── default.skill.yaml   # LMS fallback
+    └── generic/
+        └── default.skill.yaml  # Universal fallback
+```
+
+**Feature flags:** `enable_host_context=False`, `enable_host_actions=False`, `enable_host_skills=False`, `enable_browser_agent=False`, `browser_agent_mcp_command`, `browser_agent_mcp_args`, `browser_agent_timeout=120`, `browser_agent_max_sessions_per_hour=10`
+
+### 4.26 Cross-Platform Conversation Sync
+
+Enables same user to see the same conversation list across all clients (LMS embed, Wiii desktop, Wiii web) — Sprint 225.
+
+```
+┌─────────────────┐   ┌──────────────────┐   ┌─────────────────┐
+│   LMS Embed     │   │  Wiii Desktop    │   │   Wiii Web      │
+│  (iframe)       │   │  (Tauri)         │   │  (browser)      │
+└───────┬─────────┘   └────────┬─────────┘   └───────┬─────────┘
+        │                      │                      │
+        │   Identity Federation (same email → same user_id)
+        │                      │                      │
+        ▼                      ▼                      ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    Wiii Backend                               │
+│                                                              │
+│  chat_stream.py / chat_orchestrator.py                       │
+│       │  After AI response saved:                            │
+│       │  upsert_thread(thread_id, user_id, title, +2)        │
+│       ▼                                                      │
+│  ┌──────────────┐    ┌─────────────────┐                     │
+│  │ thread_views  │    │  chat_history    │                    │
+│  │ (conv index)  │    │  (messages)      │                    │
+│  └──────────────┘    └─────────────────┘                     │
+│       │                      │                               │
+│  GET /threads          GET /threads/{id}/messages             │
+│       │                      │                               │
+└───────┼──────────────────────┼───────────────────────────────┘
+        ▼                      ▼
+   Conversation List     Lazy Message Loading
+   (on login sync)       (on conversation open)
+```
+
+**How it works:**
+
+1. **Backend population**: After every AI response (streaming + sync paths), `upsert_thread()` creates/updates a row in `thread_views` with composite `thread_id`, user_id, title, message_count, org_id
+2. **Thread ID as bridge**: Composite IDs (`user_{uid}__session_{sid}` or `org_{oid}__user_{uid}__session_{sid}`) link thread index to message history
+3. **Metadata event**: `graph_streaming.py` includes `thread_id` in the metadata SSE event so frontend can map local → server conversations
+4. **Frontend sync**: `syncFromServer()` in chat-store fetches thread list on login, merges with local conversations (additive — never replaces local messages)
+5. **Lazy loading**: `loadServerMessages()` fetches messages only when user opens a conversation with no local messages
+6. **Graceful degradation**: If server sync fails, local conversations still work. Delete/rename propagated fire-and-forget
+
+**Key files:**
+
+| File | Change |
+|------|--------|
+| `app/api/v1/chat_stream.py` | `upsert_thread()` after AI response save |
+| `app/services/chat_orchestrator.py` | `upsert_thread()` in sync path |
+| `app/engine/multi_agent/graph_streaming.py` | `thread_id` in metadata event |
+| `app/api/v1/threads.py` | `GET /threads/{thread_id}/messages` endpoint |
+| `wiii-desktop/src/api/threads.ts` | Thread API client (fetchThreads, fetchThreadMessages, delete, rename) |
+| `wiii-desktop/src/stores/chat-store.ts` | `syncFromServer()`, `loadServerMessages()`, thread_id tracking |
+
+**Tests:** 25 backend + 23 desktop tests
+
 ---
 
 ## 5. Data Layer
@@ -1798,8 +1934,13 @@ erDiagram
         uuid id PK
         text thread_id "composite: user__session"
         text user_id
+        text domain_id
         text title
+        int message_count "incremented per chat"
+        text organization_id "org-aware"
+        timestamp last_message_at
         timestamp created_at
+        timestamp updated_at
     }
 
     scheduled_tasks {
@@ -2277,8 +2418,8 @@ cd wiii-desktop && npx vitest run
 
 ---
 
-**Document Version:** 7.5
-**Last Updated:** 2026-02-23
-**Architecture Pattern:** Multi-Domain Agentic RAG with Plugin System, Product Search Platform, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization, Living Agent Autonomy, Spaced Repetition Skill Learning, Cross-Platform Memory Sync
-**Total Components:** 297+ Python files, 62+ endpoints, 125+ config fields (52 feature flags), 7259+ backend + 1488 desktop tests
-**Sprints Covered:** 1–177 (Skill Learning & Cross-Platform Memory)
+**Document Version:** 8.4
+**Last Updated:** 2026-03-04
+**Architecture Pattern:** Multi-Domain Agentic RAG with Plugin System, Product Search Platform, Browser Scraping, Authentication & Identity Federation, Multi-Tenant Data Isolation, Org-Level Customization, Living Agent Autonomy, Spaced Repetition Skill Learning, Cross-Platform Memory Sync, LMS Production Integration, Universal Context Engine, Cross-Platform Conversation Sync
+**Total Components:** 385+ Python files, 70+ endpoints, 170+ config fields (88 feature flags), 10250+ backend + 1905 desktop tests
+**Sprints Covered:** 1–225 (Cross-Platform Conversation Sync)

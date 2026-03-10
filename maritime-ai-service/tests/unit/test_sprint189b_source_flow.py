@@ -327,7 +327,10 @@ class TestEvidenceImagesCollection:
             "app.engine.agentic_rag.document_retriever.DocumentRetriever.collect_evidence_images",
             new_callable=AsyncMock,
             return_value=fake_images,
-        ) as mock_collect:
+        ) as mock_collect, \
+             patch(
+            "app.engine.gemini_embedding.get_embeddings"
+        ) as mock_get_embeddings:
             mock_tracer = MagicMock()
             mock_tracer.start_step = MagicMock()
             mock_tracer.end_step = MagicMock()
@@ -335,10 +338,15 @@ class TestEvidenceImagesCollection:
             mock_tracer.build_trace = MagicMock(return_value=None)
             mock_tracer_fn.return_value = mock_tracer
 
+            mock_embeddings = MagicMock()
+            mock_embeddings.aembed_query = AsyncMock(return_value=[0.1, 0.2, 0.3])
+            mock_get_embeddings.return_value = mock_embeddings
+
             mock_settings.rag_enable_reflection = False
             mock_settings.enable_visual_rag = False
             mock_settings.enable_graph_rag = False
             mock_settings.enable_adaptive_rag = False
+            mock_settings.enable_hyde = False
             mock_settings.rag_confidence_medium = 0.6
             mock_settings.rag_model_version = "test-model"
 

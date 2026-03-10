@@ -287,7 +287,7 @@ class LearningProfileRepository:
         org_filter = org_where_clause(eff_org_id)
 
         try:
-            user_id_param = self._convert_user_id(user_id)
+            user_id_param = str(self._convert_user_id(user_id))
             params: dict = {"user_id": user_id_param}
             if eff_org_id is not None:
                 params["org_id"] = eff_org_id
@@ -351,7 +351,7 @@ class LearningProfileRepository:
         eff_org_id = get_effective_org_id()
 
         try:
-            user_id_param = self._convert_user_id(user_id)
+            user_id_param = str(self._convert_user_id(user_id))
             insert_cols = "user_id, attributes"
             insert_vals = ":user_id, :attributes"
             params: dict = {
@@ -414,7 +414,7 @@ class LearningProfileRepository:
         org_filter = org_where_clause(eff_org_id)
 
         try:
-            user_id_param = self._convert_user_id(user_id)
+            user_id_param = str(self._convert_user_id(user_id))
             params: dict = {
                 "user_id": user_id_param,
                 "weak_areas": json.dumps(weak_areas),
@@ -458,7 +458,7 @@ class LearningProfileRepository:
         org_filter = org_where_clause(eff_org_id)
 
         try:
-            user_id_param = self._convert_user_id(user_id)
+            user_id_param = str(self._convert_user_id(user_id))
             params: dict = {
                 "user_id": user_id_param,
                 "strong_areas": json.dumps(strong_areas),
@@ -503,7 +503,7 @@ class LearningProfileRepository:
 
         try:
             await self.get_or_create(user_id)
-            user_id_param = self._convert_user_id(user_id)
+            user_id_param = str(self._convert_user_id(user_id))
             params: dict = {"user_id": user_id_param, "messages": messages}
             if eff_org_id is not None:
                 params["org_id"] = eff_org_id

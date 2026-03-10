@@ -20,12 +20,17 @@ The Services layer follows **Clean Architecture** principles with specialized pr
 ```
 app/services/
 ├── chat_service.py              # 🎯 FACADE - Main entry point (310 lines)
-├── chat_orchestrator.py         # 🔄 PIPELINE - 6-stage processing
+├── REQUEST_FLOW_CONTRACT.md     # 🧭 Authoritative request flow and mutation contract
+├── chat_orchestrator.py         # 🔄 PIPELINE - authoritative request orchestration
 ├── session_manager.py           # 📦 Session & state management
 ├── input_processor.py           # 🛡️ Validation, Guardian, context
 ├── output_processor.py          # 📤 Response formatting
 ├── thinking_post_processor.py   # 🧠 Centralized thinking extraction (CHỈ THỊ SỐ 29 v8)
 ├── background_tasks.py          # ⏳ Async task runner
+├── living_continuity.py         # 🔗 Core-to-Living post-response contract
+├── routine_post_response.py     # 🔁 Routine-tracking post-response helper
+├── sentiment_post_response.py   # 💓 Living sentiment post-response helper
+├── lms_post_response.py         # 🎓 LMS post-response helper
 ├── chat_context_builder.py      # Context assembly
 ├── chat_response_builder.py     # Response assembly
 ├── multimodal_ingestion_service.py  # PDF ingestion pipeline
@@ -41,6 +46,11 @@ app/services/
 ---
 
 ## Architecture
+
+Authoritative request contract:
+
+- `REQUEST_FLOW_CONTRACT.md` is the source of truth for the chat request path
+- update it whenever stage ordering, mutation rights, or post-response hooks change
 
 ### Pipeline Flow (ChatOrchestrator)
 
@@ -78,8 +88,15 @@ app/services/
 │   └────────┬────────┘                                            │
 │            ▼                                                      │
 │   ┌─────────────────┐                                            │
-│   │ STAGE 6: ASYNC  │  BackgroundTaskRunner.schedule_all()       │
-│   │   Tasks         │  → Memory, Profile, Summarization          │
+│   │ STAGE 6: POST-  │  BackgroundTaskRunner.schedule_all()       │
+│   │   RESPONSE      │  + living_continuity.schedule_post_...     │
+│   │   Scheduling    │  → Background + continuity hooks           │
+│   └────────┬────────┘                                            │
+│            ▼                                                      │
+│   ┌─────────────────┐                                            │
+│   │ STAGE 7:        │  living_continuity worker paths            │
+│   │   CONTINUITY    │  → sentiment, routine, episodic memory,    │
+│   │   UPDATE        │    optional LMS insight execution          │
 │   └────────┬────────┘                                            │
 │            ▼                                                      │
 │   InternalChatResponse                                            │
@@ -114,7 +131,12 @@ class ChatService:
 
 **File:** `chat_orchestrator.py` (~320 lines)  
 **Pattern:** Pipeline / Orchestrator  
-**Purpose:** Coordinates the 6-stage processing pipeline
+**Purpose:** Coordinates the authoritative request pipeline and finalization seam
+
+Contract note:
+
+- the authoritative stage contract lives in `REQUEST_FLOW_CONTRACT.md`
+- post-response continuity scheduling now shares one contract with the streaming path
 
 ```python
 class ChatOrchestrator:
@@ -124,7 +146,8 @@ class ChatOrchestrator:
         # Stage 3: Context
         # Stage 4: Agent
         # Stage 5: Output
-        # Stage 6: Background
+        # Stage 6: Post-response scheduling
+        # Stage 7: Continuity update (via shared contract)
 ```
 
 ---
@@ -181,6 +204,23 @@ class ChatOrchestrator:
 - Extract behavioral insights
 - Update learning profile
 - Memory summarization
+
+### Living Continuity Contract
+
+**File:** `living_continuity.py`
+**Purpose:** Centralized scheduling boundary for post-response continuity work
+
+**Hooks Managed:**
+- routine tracking
+- sentiment and emotion continuity
+- episodic memory write
+- optional LMS insight push
+
+**Supporting helpers:** `routine_post_response.py`, `sentiment_post_response.py`, `lms_post_response.py`
+- isolates routine-tracking scheduling from the broader Living continuity contract
+- isolates Living sentiment scheduling from the broader Living continuity contract while preserving the existing sentiment-analysis compatibility symbol
+- isolates LMS insight scheduling from the broader Living continuity contract
+- lets Core/Living orchestration depend on narrow post-response adapters instead of integration details
 
 ---
 
@@ -241,7 +281,7 @@ response = await chat_service.process_message(request)
 |---------|--------|----------------|
 | Clean Architecture | ✅ | Separated concerns into processors |
 | Facade Pattern | ✅ | ChatService as thin entry point |
-| Pipeline Pattern | ✅ | 6-stage ChatOrchestrator |
+| Pipeline Pattern | ✅ | 7-stage request contract |
 | Dependency Injection | ✅ | init_*() functions |
 | Singleton Services | ✅ | get_*() functions |
 

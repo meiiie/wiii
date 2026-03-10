@@ -243,6 +243,15 @@ class TestGetStats:
         assert stats["instance_count"] == 0
         assert stats["active_provider"] is None
 
+    def test_stats_init_providers_when_pool_is_empty(self):
+        """Stats should still expose registered providers after a runtime reset."""
+        with patch.object(LLMPool, "_init_providers") as mock_init:
+            stats = LLMPool.get_stats()
+
+        mock_init.assert_called_once()
+        assert stats["initialized"] is False
+        assert stats["active_provider"] is None
+
     @patch("app.engine.llm_pool.settings")
     def test_stats_with_circuit_breaker(self, mock_settings):
         """Stats include circuit breaker info when available."""
@@ -396,6 +405,7 @@ class TestLLMFactoryProvider:
     @patch("app.engine.llm_factory.settings")
     def test_create_llm_default_is_gemini(self, mock_settings):
         """create_llm() without provider creates Gemini by default."""
+        mock_settings.llm_provider = "google"
         mock_settings.thinking_enabled = False
         mock_settings.include_thought_summaries = False
         mock_settings.google_model = "gemini-3-flash-preview"

@@ -28,7 +28,7 @@ export default function App() {
   }
 
   const { loadSettings, settings, updateSettings, isLoaded: settingsLoaded } = useSettingsStore();
-  const { loadAuth, loginWithTokens, isAuthenticated, authMode, isTokenExpiringSoon, refreshAccessToken } = useAuthStore();
+  const { loadAuth, loginWithTokens, isAuthenticated, isLoaded: authLoaded, authMode, isTokenExpiringSoon, refreshAccessToken } = useAuthStore();
   const { startPolling, stopPolling, setOnReconnect } = useConnectionStore();
   const { startPolling: startContextPolling, stopPolling: stopContextPolling } =
     useContextStore();
@@ -63,13 +63,16 @@ export default function App() {
     const orgId = params.get("organization_id") || "";
 
     // Login immediately, then persist settings + clear hash
-    loginWithTokens(accessToken, refreshToken, expiresIn, user).then(() => {
+    loginWithTokens(accessToken, refreshToken, expiresIn, user).then(async () => {
       updateSettings({
         user_id: user.id,
         display_name: user.name || user.email,
         user_role: (user.role as "student" | "teacher" | "admin") || "student",
         ...(orgId ? { organization_id: orgId } : {}),
       });
+      // Sprint 218: Switch chat store to new user's conversations
+      const { useChatStore } = await import("@/stores/chat-store");
+      await useChatStore.getState().switchUser(user.id);
       // Clear hash AFTER login succeeds to prevent token leakage in browser history
       window.history.replaceState(null, "", window.location.pathname);
     }).catch((err) => {
@@ -93,11 +96,12 @@ export default function App() {
     init();
   }, [loadSettings, loadAuth, loadConversations]);
 
-  // When settings are loaded, initialize client and start health polling
+  // When settings AND auth are loaded, initialize client and start health polling
   useEffect(() => {
-    // Guard: wait for settings to load from storage before making API calls
-    // Without this, the first render fires with empty api_key → 401 race condition
-    if (!settingsLoaded) return;
+    // Sprint 218: Guard on BOTH settingsLoaded AND authLoaded to prevent race condition
+    // Without authLoaded, API calls fire before OAuth tokens are available → 401
+    if (!settingsLoaded || !authLoaded) return;
+    if (!isAuthenticated) return;
     if (settings.server_url) {
       // Sprint 192: Initialize HTTP client with dynamic header resolver
       // Headers are resolved at request time from getAuthHeaders() — always fresh
@@ -144,7 +148,7 @@ export default function App() {
     return () => {
       stopPolling();
     };
-  }, [settingsLoaded, settings.server_url, settings.api_key, settings.user_id, settings.user_role, startPolling, stopPolling, fetchDomains, fetchOrganizations, setActiveOrg, setOrgFilter, setOnReconnect, addToast, detectSubdomainOrg, fetchAdminContext, refreshAccessToken]);
+  }, [settingsLoaded, authLoaded, isAuthenticated, settings.server_url, settings.api_key, settings.user_id, settings.user_role, startPolling, stopPolling, fetchDomains, fetchOrganizations, setActiveOrg, setOrgFilter, setOnReconnect, addToast, detectSubdomainOrg, fetchAdminContext, refreshAccessToken]);
 
   // Start context polling when active conversation changes (handles mid-session creation)
   const activeConv = useChatStore((s) => s.activeConversation());
@@ -170,7 +174,7 @@ export default function App() {
   }, [authMode, isAuthenticated, isTokenExpiringSoon, refreshAccessToken, settings.server_url]);
 
   // Loading screen while stores initialize
-  if (!settingsLoaded || !chatsLoaded) {
+  if (!settingsLoaded || !authLoaded || !chatsLoaded) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-surface">
         <div className="flex flex-col items-center gap-4">

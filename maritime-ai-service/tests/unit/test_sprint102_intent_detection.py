@@ -25,6 +25,7 @@ if not _had_cs:
 from app.engine.multi_agent.graph import (
     _needs_web_search, _needs_datetime,
     _needs_news_search, _needs_legal_search,
+    _needs_analysis_tool,
 )
 
 if not _had_cs:
@@ -141,6 +142,22 @@ class TestForceToolsIncludesNewIntents:
             or _needs_news_search(query) or _needs_legal_search(query)
         )
         assert force is True
+
+
+class TestNeedsAnalysisTool:
+    """Test code-execution / analysis intent detection."""
+
+    def test_detects_python_chart_request(self):
+        from app.engine.multi_agent.graph import _needs_analysis_tool
+        assert _needs_analysis_tool("Ban co the chay Python de ve bieu do demo khong?") is True
+
+    def test_detects_matplotlib_signal(self):
+        from app.engine.multi_agent.graph import _needs_analysis_tool
+        assert _needs_analysis_tool("viet code matplotlib de plot du lieu") is True
+
+    def test_rejects_regular_chat(self):
+        from app.engine.multi_agent.graph import _needs_analysis_tool
+        assert _needs_analysis_tool("xin chao Wiii") is False
 
     def test_news_query_forces_tools(self):
         from app.engine.multi_agent.graph import (

@@ -1,19 +1,21 @@
 """
-MCP Client — Connects to external MCP servers and loads tools.
+MCP Client â€” Connects to external MCP servers and loads tools.
 
 Sprint 56: Uses langchain-mcp-adapters for LangGraph-compatible tool loading.
 Supports stdio, HTTP (Streamable HTTP), and SSE transports.
 
-Sprint 193: Added register_discovered_tools() — bridges MCP external tools
+Sprint 193: Added register_discovered_tools() â€” bridges MCP external tools
 into ToolRegistry for unified tool management.
-
-Feature-gated: enable_mcp_client=False, mcp_auto_register_external=False.
 """
+
+from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Dict, List, Optional
+
+from app.mcp.policy import infer_external_tool_registration
 
 logger = logging.getLogger(__name__)
 
@@ -54,13 +56,13 @@ class MCPToolManager:
             configs: List of MCP server configurations to connect to.
         """
         if not configs:
-            logger.info("No MCP server configs provided — skipping initialization")
+            logger.info("No MCP server configs provided â€” skipping initialization")
             cls._initialized = True
             return
 
         enabled_configs = [c for c in configs if c.enabled]
         if not enabled_configs:
-            logger.info("All MCP servers disabled — skipping initialization")
+            logger.info("All MCP servers disabled â€” skipping initialization")
             cls._initialized = True
             return
 
@@ -68,7 +70,7 @@ class MCPToolManager:
             from langchain_mcp_adapters.client import MultiServerMCPClient
         except ImportError:
             logger.warning(
-                "langchain-mcp-adapters not installed — MCP Client unavailable. "
+                "langchain-mcp-adapters not installed â€” MCP Client unavailable. "
                 "Install with: pip install langchain-mcp-adapters>=0.1.0"
             )
             cls._initialized = True
@@ -81,7 +83,7 @@ class MCPToolManager:
             if config.transport == "stdio":
                 if not config.command:
                     logger.warning(
-                        "MCP server '%s' missing command — skipped",
+                        "MCP server '%s' missing command â€” skipped",
                         config.name,
                     )
                     continue
@@ -91,7 +93,7 @@ class MCPToolManager:
             elif config.transport in ("http", "sse"):
                 if not config.url:
                     logger.warning(
-                        "MCP server '%s' missing URL — skipped",
+                        "MCP server '%s' missing URL â€” skipped",
                         config.name,
                     )
                     continue
@@ -102,7 +104,7 @@ class MCPToolManager:
             server_dict[config.name] = server_entry
 
         if not server_dict:
-            logger.info("No valid MCP server configs — skipping")
+            logger.info("No valid MCP server configs â€” skipping")
             cls._initialized = True
             return
 
@@ -114,7 +116,8 @@ class MCPToolManager:
             logger.info(
                 "[OK] MCP Client initialized: %d tools "
                 "from %d server(s)",
-                len(cls._tools), len(server_dict),
+                len(cls._tools),
+                len(server_dict),
             )
         except Exception as e:
             logger.warning("MCP Client initialization failed: %s", e)
@@ -159,22 +162,17 @@ class MCPToolManager:
     @classmethod
     def register_discovered_tools(cls) -> int:
         """
-        Sprint 193: Bridge MCP external tools into ToolRegistry.
+        Bridge discovered external MCP tools into ToolRegistry.
 
-        Reads loaded MCP tools from get_tools() and registers each
-        into ToolRegistry with category=MCP, so they appear alongside
-        built-in tools in the unified tool system.
-
-        Feature-gated: mcp_auto_register_external=False (default).
-
-        Returns:
-            Number of tools registered.
+        Browser automation tools are classified as privileged writes so they do
+        not silently enter the system as generic read-only tools.
         """
         if not cls._initialized or not cls._tools:
             return 0
 
         try:
             from app.core.config import get_settings
+
             settings = get_settings()
             if not getattr(settings, "mcp_auto_register_external", False) is True:
                 return 0
@@ -182,15 +180,12 @@ class MCPToolManager:
             return 0
 
         try:
-            from app.engine.tools.registry import (
-                get_tool_registry,
-                ToolCategory,
-                ToolAccess,
-            )
+            from app.engine.tools.registry import get_tool_registry
+
             registry = get_tool_registry()
         except ImportError:
             logger.warning(
-                "ToolRegistry not available — cannot register MCP tools"
+                "ToolRegistry not available â€” cannot register MCP tools"
             )
             return 0
 
@@ -201,31 +196,32 @@ class MCPToolManager:
                 if not name:
                     continue
 
-                # Skip if already registered (avoid overwriting built-in tools)
+                category, access, roles = infer_external_tool_registration(name)
+
                 if registry.get_info(name) is not None:
                     logger.debug(
-                        "MCP tool '%s' already in registry — skipped", name
+                        "MCP tool '%s' already in registry â€” skipped",
+                        name,
                     )
                     continue
 
                 registry.register(
                     tool=tool,
-                    category=ToolCategory.MCP,
-                    access=ToolAccess.READ,
+                    category=category,
+                    access=access,
                     description=getattr(tool, "description", "") or "",
-                    roles=["student", "teacher", "admin"],
+                    roles=roles,
                 )
                 count += 1
             except Exception as e:
                 logger.warning(
                     "Failed to register MCP tool '%s': %s",
-                    getattr(tool, "name", "?"), e,
+                    getattr(tool, "name", "?"),
+                    e,
                 )
 
         if count:
-            logger.info(
-                "[OK] Registered %d MCP tools into ToolRegistry", count
-            )
+            logger.info("[OK] Registered %d MCP tools into ToolRegistry", count)
         return count
 
     @classmethod
@@ -233,21 +229,64 @@ class MCPToolManager:
         """
         Parse MCP server configs from JSON string (settings.mcp_server_configs).
 
-        Args:
-            json_str: JSON array of server config objects.
-
-        Returns:
-            List of MCPServerConfig instances.
+        Unknown keys are ignored so runtime helper metadata can coexist with the
+        persisted config shape without breaking parsing.
         """
         try:
             raw = json.loads(json_str)
             if not isinstance(raw, list):
                 return []
             configs = []
+            allowed_fields = {field.name for field in fields(MCPServerConfig)}
             for item in raw:
                 if isinstance(item, dict):
-                    configs.append(MCPServerConfig(**item))
+                    filtered = {
+                        key: value
+                        for key, value in item.items()
+                        if key in allowed_fields
+                    }
+                    configs.append(MCPServerConfig(**filtered))
             return configs
         except (json.JSONDecodeError, TypeError) as e:
             logger.warning("Failed to parse MCP server configs: %s", e)
             return []
+
+    @classmethod
+    def resolve_configs(cls, settings) -> List[MCPServerConfig]:
+        """Build the effective MCP config set from settings and runtime helpers."""
+        configs = cls.parse_configs(settings.mcp_server_configs)
+
+        try:
+            from app.engine.context.browser_agent import get_browser_mcp_config
+
+            browser_config = get_browser_mcp_config(settings)
+            if browser_config is not None:
+                configs = cls.merge_configs(
+                    configs,
+                    [MCPServerConfig(**browser_config)],
+                )
+        except Exception as e:
+            logger.warning("Failed to resolve browser MCP config: %s", e)
+
+        return configs
+
+    @staticmethod
+    def merge_configs(
+        primary: List[MCPServerConfig],
+        secondary: List[MCPServerConfig],
+    ) -> List[MCPServerConfig]:
+        """Merge two config lists, preserving the first occurrence by name."""
+        merged: List[MCPServerConfig] = []
+        seen: set[str] = set()
+
+        for config in [*primary, *secondary]:
+            if config.name in seen:
+                logger.debug(
+                    "Skipping duplicate MCP server config '%s'",
+                    config.name,
+                )
+                continue
+            merged.append(config)
+            seen.add(config.name)
+
+        return merged

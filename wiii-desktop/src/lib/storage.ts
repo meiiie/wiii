@@ -15,7 +15,7 @@ function getEmbedPrefix(): string {
   const config = (window as any).__WIII_EMBED_CONFIG__;
   if (!config) return "";
   const org = config.org || "default";
-  const user = config.user_id || config.token ? "jwt" : "anon";
+  const user = config.user_id || (config.token ? "jwt" : "anon");
   return `embed:${org}:${user}:`;
 }
 

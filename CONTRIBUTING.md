@@ -72,11 +72,11 @@ test(rag): add corrective RAG edge cases
 2. **Write tests** for any new functionality
 3. **Run the test suite** and ensure all tests pass:
    ```bash
-   # Backend (must pass 5537+ tests)
+   # Backend (must pass 10059+ tests)
    cd maritime-ai-service
    pytest tests/unit/ -v -p no:capture --tb=short
 
-   # Desktop (must pass 479+ tests)
+   # Desktop (must pass 1860+ tests)
    cd wiii-desktop
    npx vitest run
    ```
@@ -114,8 +114,8 @@ test(rag): add corrective RAG edge cases
 ## Testing Requirements
 
 - All PRs must include tests for new functionality
-- Backend test count must not decrease (currently 5537+)
-- Desktop test count must not decrease (currently 479+)
+- Backend test count must not decrease (currently 10059+)
+- Desktop test count must not decrease (currently 1860+)
 - Windows compatibility: use `-p no:capture` and `PYTHONIOENCODING=utf-8`
 
 ## Architecture Guidelines

@@ -285,7 +285,7 @@ class TestAdminDashboard:
             return 5
 
         mock_conn.fetchval.side_effect = selective_fetchval
-        mock_conn.fetchrow.side_effect = Exception("relation 'chat_sessions' does not exist")
+        mock_conn.fetchrow.side_effect = Exception("relation 'llm_usage_log' does not exist")
 
         with patch("app.api.v1.admin_dashboard.settings") as mock_settings, \
              patch(_POOL_PATCH, create=True, new=async_pool_fn):

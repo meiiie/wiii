@@ -35,7 +35,7 @@ flowchart TB
     end
 
     subgraph Core["Orchestration Layer"]
-        ORCH["ChatOrchestrator<br/>6-stage pipeline"]
+        ORCH["ChatOrchestrator<br/>7-stage request contract"]
         INPUT["InputProcessor<br/>validate + context"]
         OUTPUT["OutputProcessor<br/>format + facts"]
         SESSION["SessionManager<br/>lifecycle + pronoun"]
@@ -227,7 +227,7 @@ sequenceDiagram
 
 ---
 
-## 4. ChatOrchestrator Pipeline (6 Stages)
+## 4. ChatOrchestrator Pipeline (7 Stages)
 
 ```mermaid
 sequenceDiagram
@@ -289,7 +289,7 @@ sequenceDiagram
     end
 
     rect rgb(255, 235, 235)
-        Note over O,BG: STAGE 6: Background Tasks (async)
+        Note over O,BG: STAGE 6: Post-Response Scheduling (async)
         O->>BG: schedule_background_tasks()
         par Async (non-blocking)
             BG->>BG: Extract user facts from conversation
@@ -298,6 +298,13 @@ sequenceDiagram
             BG->>BG: Update learning profile
             BG->>BG: Cache response in SemanticCache
         end
+
+    rect rgb(245, 240, 255)
+        Note over O,G: STAGE 7: Continuity Update
+        O->>G: schedule_post_response_continuity()
+        Note right of G: routine tracking, Living sentiment,
+        Note right of G: episodic memory, optional LMS insight push
+    end
     end
 
     O-->>API: InternalChatResponse
@@ -1082,7 +1089,7 @@ sequenceDiagram
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| ChatOrchestrator | Active | 6-stage pipeline, org_id threading |
+| ChatOrchestrator | Active | 7-stage request contract, org_id threading |
 | InputProcessor | Active | Parallel memory/history retrieval |
 | DomainRouter | Active | 5-priority with org-aware filtering |
 | Supervisor | Active | **LLM-first routing** (Sprint 103): `RoutingDecision` structured output, keyword guardrails as fallback |
@@ -1141,7 +1148,7 @@ sequenceDiagram
 | **Core** | `app/core/middleware.py` | RequestID + OrgContext middleware |
 | **Core** | `app/core/org_context.py` | Multi-tenant ContextVars |
 | **Core** | `app/core/database.py` | PostgreSQL + Neo4j connections |
-| **Service** | `app/services/chat_orchestrator.py` | 6-stage pipeline |
+| **Service** | `app/services/chat_orchestrator.py` | 7-stage request contract |
 | **Service** | `app/services/input_processor.py` | Context building |
 | **Service** | `app/services/output_processor.py` | Response formatting |
 | **Service** | `app/services/session_manager.py` | Session lifecycle |

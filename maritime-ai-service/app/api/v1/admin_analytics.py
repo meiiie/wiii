@@ -64,13 +64,13 @@ async def analytics_overview(
     where = "WHERE " + " AND ".join(conditions_base)
 
     async with pool.acquire() as conn:
-        # Daily active users (from chat_sessions)
+        # Daily active users (from chat_history)
         dau_rows = []
         try:
             dau_rows = await conn.fetch(
                 f"""
                 SELECT DATE(created_at) AS date, COUNT(DISTINCT user_id) AS count
-                FROM chat_sessions
+                FROM chat_history
                 {where} {org_cond}
                 GROUP BY DATE(created_at)
                 ORDER BY date
@@ -88,7 +88,7 @@ async def analytics_overview(
                 SELECT DATE(created_at) AS date,
                        COUNT(*) AS messages,
                        COUNT(DISTINCT session_id) AS sessions
-                FROM chat_sessions
+                FROM chat_history
                 {where} {org_cond}
                 GROUP BY DATE(created_at)
                 ORDER BY date
@@ -319,12 +319,12 @@ async def analytics_users(
             *params[:len(conditions)],
         ) or 0
 
-        # Active users in period (from chat_sessions)
+        # Active users in period (from chat_history)
         active_users = 0
         try:
             active_users = await conn.fetchval(
                 f"""
-                SELECT COUNT(DISTINCT user_id) FROM chat_sessions
+                SELECT COUNT(DISTINCT user_id) FROM chat_history
                 {where} {org_cond}
                 """,
                 *params,
@@ -364,8 +364,8 @@ async def analytics_users(
         try:
             active_rows = await conn.fetch(
                 f"""
-                SELECT user_id, COUNT(*) AS sessions
-                FROM chat_sessions
+                SELECT user_id, COUNT(DISTINCT session_id) AS sessions
+                FROM chat_history
                 {where} {org_cond}
                 GROUP BY user_id
                 ORDER BY sessions DESC

@@ -211,3 +211,102 @@ async def rename_thread(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"status": "error", "message": "Failed to rename thread"},
         )
+
+
+# =============================================================================
+# Sprint 225: Message History Endpoint for Cross-Platform Sync
+# =============================================================================
+
+
+class ThreadMessageView(BaseModel):
+    """A single message in a thread."""
+    id: str
+    role: str
+    content: str
+    created_at: Optional[str] = None
+
+
+class ThreadMessagesResponse(BaseModel):
+    """Response for listing thread messages."""
+    status: str = "success"
+    messages: list[ThreadMessageView] = Field(default_factory=list)
+    total: int = 0
+
+
+@router.get(
+    "/threads/{thread_id}/messages",
+    response_model=ThreadMessagesResponse,
+    summary="Get thread message history",
+    description="Get paginated message history for a conversation thread.",
+)
+@limiter.limit("60/minute")
+async def get_thread_messages(
+    request: Request,
+    thread_id: str,
+    auth: RequireAuth,
+    limit: int = Query(default=100, ge=1, le=500, description="Max messages to return"),
+    offset: int = Query(default=0, ge=0, description="Pagination offset"),
+):
+    """Get messages for a thread with ownership check."""
+    try:
+        from app.repositories.thread_repository import get_thread_repository
+        repo = get_thread_repository()
+
+        # Ownership check: user must own the thread (admin bypasses)
+        thread = repo.get_thread(thread_id=thread_id, user_id=auth.user_id)
+        if not thread:
+            if auth.role == "admin":
+                thread = repo.get_thread(thread_id=thread_id)
+            if not thread:
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content={"status": "error", "message": "Thread not found"},
+                )
+
+        # Extract session_id from composite thread_id
+        from app.core.thread_utils import parse_thread_id
+        try:
+            _, session_id = parse_thread_id(thread_id)
+        except ValueError:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"status": "error", "message": "Invalid thread_id format"},
+            )
+
+        # Query chat_history via ChatHistoryRepository
+        from app.repositories.chat_history_repository import (
+            get_chat_history_repository,
+            _normalize_session_id,
+        )
+        chat_repo = get_chat_history_repository()
+        if not chat_repo.is_available():
+            return ThreadMessagesResponse(messages=[], total=0)
+
+        # Normalize session_id to UUID for DB query
+        norm_session_id = _normalize_session_id(session_id)
+
+        # Query exact thread page and true total via session-scoped history.
+        messages, total = chat_repo.get_session_history(
+            session_id=norm_session_id,
+            limit=limit,
+            offset=offset,
+        )
+
+        return ThreadMessagesResponse(
+            messages=[
+                ThreadMessageView(
+                    id=str(m.id),
+                    role=m.role,
+                    content=m.content,
+                    created_at=m.created_at.isoformat() if m.created_at else None,
+                )
+                for m in messages
+            ],
+            total=total,
+        )
+    except Exception as e:
+        logger.error("Failed to get thread messages: %s", e)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"status": "error", "message": "Failed to get thread messages"},
+        )

@@ -4,32 +4,55 @@ Requirements: 1.1, 1.2, 1.4
 Spec: CHỈ THỊ KỸ THUẬT SỐ 03, SỐ 04
 
 POST /api/v1/chat - Main chat endpoint for LMS integration
+
+Authoritative request flow:
+see app/services/REQUEST_FLOW_CONTRACT.md
 """
 import logging
-import time
 
-from fastapi import APIRouter, BackgroundTasks, Request, status
+from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 
 from app.api.deps import RequireAuth
-from app.core.config import settings
-from app.core.constants import CONFIDENCE_BASE, CONFIDENCE_MAX, CONFIDENCE_PER_SOURCE
-from app.core.exceptions import WiiiException
+from app.api.v1 import (
+    chat_completion_endpoint_support as _chat_completion_support,
+)
+from app.api.v1 import chat_context_endpoint_support as _chat_context_support
+from app.api.v1 import chat_endpoint_presenter as _chat_endpoint_presenter
+from app.api.v1 import chat_history_endpoint_support as _chat_history_support
 from app.core.rate_limit import limiter
+from app.engine.llm_runtime_metadata import resolve_runtime_llm_metadata
 from app.models.schemas import (
     ChatRequest,
     ChatResponse,
-    ChatResponseData,
-    ChatResponseMetadata,
-    SourceInfo,
     ErrorResponse,
     DeleteHistoryRequest,
     DeleteHistoryResponse,
     GetHistoryResponse,
-    HistoryMessage,
-    HistoryPagination,
-    ToolUsageInfo,  # CHỈ THỊ SỐ 27: API Transparency
 )
+from app.services import chat_response_presenter as _chat_response_presenter
+
+
+# Compatibility re-exports kept for tests that still import these helpers
+# directly from app.api.v1.chat.
+build_chat_response = _chat_response_presenter.build_chat_response
+_classify_query_type = _chat_response_presenter.classify_query_type
+_generate_suggested_questions = _chat_response_presenter.generate_suggested_questions
+_get_tool_description = _chat_response_presenter.get_tool_description
+
+__all__ = [
+    "router",
+    "chat_completion",
+    "get_chat_history",
+    "delete_chat_history",
+    "compact_context",
+    "clear_context",
+    "get_context_info",
+    "build_chat_response",
+    "_classify_query_type",
+    "_generate_suggested_questions",
+    "_get_tool_description",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -76,268 +99,42 @@ async def chat_completion(
     
     Returns:
         ChatResponse with status, data (answer, sources, suggested_questions), metadata
-    """
-    start_time = time.time()
-    
-    logger.info(
-        "Chat request from user %s (role: %s, auth: %s): %s...",
-        chat_request.user_id, chat_request.role.value, auth.auth_method,
-        chat_request.message[:50]
-    )
-    
-    try:
-        # Process through integrated ChatService with role-based prompting
-        # Use BackgroundTasks to save chat history without blocking response
-        # Spec: CHỈ THỊ KỸ THUẬT SỐ 04
-        from app.services.chat_service import get_chat_service
-        
-        chat_service = get_chat_service()
-        internal_response = await chat_service.process_message(
-            chat_request,
-            background_save=background_tasks.add_task
-        )
-        
-        processing_time = time.time() - start_time
-        
-        # Convert sources to LMS format (CHỈ THỊ 26: include image_url)
-        sources = []
-        if internal_response.sources:
-            for src in internal_response.sources:
-                sources.append(SourceInfo(
-                    title=src.title,
-                    content=src.content_snippet or "",
-                    image_url=getattr(src, 'image_url', None),
-                    # Feature: source-highlight-citation v0.9.8
-                    page_number=getattr(src, 'page_number', None),
-                    document_id=getattr(src, 'document_id', None),
-                    bounding_boxes=getattr(src, 'bounding_boxes', None)
-                ))
-        
-        # Generate suggested questions based on context
-        suggested_questions = _generate_suggested_questions(
-            chat_request.message, 
-            internal_response.message
-        )
-        
-        # CHỈ THỊ SỐ 27: Extract tools_used from internal response metadata
-        tools_used = []
-        if internal_response.metadata and internal_response.metadata.get("tools_used"):
-            for tool in internal_response.metadata["tools_used"]:
-                tools_used.append(ToolUsageInfo(
-                    name=tool.get("name", "unknown"),
-                    description=_get_tool_description(tool)
-                ))
-        
-        # LMS Integration: Extract analytics metadata
-        topics_accessed = None
-        document_ids_used = None
-        confidence_score = None
-        query_type = None
-        
-        if sources:
-            # Extract topics from source titles
-            topics_accessed = [src.title for src in sources if src.title]
-            # Extract document IDs
-            document_ids_used = list(set(
-                src.document_id for src in sources if src.document_id
-            ))
-            # Confidence based on sources found (simple heuristic)
-            confidence_score = min(CONFIDENCE_BASE + len(sources) * CONFIDENCE_PER_SOURCE, CONFIDENCE_MAX)
-        
-        # Classify query type (simple rule-based)
-        query_type = _classify_query_type(chat_request.message)
-        
-        # Build LMS-compatible response
-        # Extract session_id from internal response metadata
-        session_id = None
-        if internal_response.metadata:
-            session_id = internal_response.metadata.get("session_id")
-        
-        # CHỈ THỊ SỐ 28: Extract reasoning_trace from internal response (SOTA)
-        reasoning_trace = None
-        if internal_response.metadata and internal_response.metadata.get("reasoning_trace"):
-            reasoning_trace = internal_response.metadata["reasoning_trace"]
-            logger.info("[REASONING_TRACE] Included %d steps in response", reasoning_trace.total_steps)
-        
-        # CHỈ THỊ SỐ 28: Extract thinking_content for LMS frontend display (Claude/OpenAI style)
-        thinking_content = None
-        thinking = None  # CHỈ THỊ SỐ 29: Natural Vietnamese thinking
-        if internal_response.metadata:
-            # Legacy: thinking_content (structured summary)
-            if internal_response.metadata.get("thinking_content"):
-                thinking_content = internal_response.metadata["thinking_content"]
-            # CHỈ THỊ SỐ 29: thinking (natural Vietnamese)
-            if internal_response.metadata.get("thinking"):
-                thinking = internal_response.metadata["thinking"]
-                logger.info("[THINKING] Included %d chars natural thinking", len(thinking))
-        
-        # Sprint 80b: Extract domain notice from internal response
-        domain_notice = None
-        if internal_response.metadata:
-            domain_notice = internal_response.metadata.get("domain_notice")
 
-        response = ChatResponse(
-            status="success",
-            data=ChatResponseData(
-                answer=internal_response.message,
-                sources=sources,
-                suggested_questions=suggested_questions,
-                domain_notice=domain_notice,
-            ),
-            metadata=ChatResponseMetadata(
-                processing_time=round(processing_time, 3),
-                model=settings.rag_model_version,
-                agent_type=internal_response.agent_type,
-                session_id=session_id,  # FIX: Add session_id for thread continuity
-                tools_used=tools_used,  # CHỈ THỊ SỐ 27: API Transparency
-                # CHỈ THỊ SỐ 28: SOTA Reasoning Trace + Thinking Content
-                reasoning_trace=reasoning_trace,
-                thinking_content=thinking_content,  # Structured summary (legacy)
-                thinking=thinking,  # CHỈ THỊ SỐ 29: Natural Vietnamese thinking
-                # Sprint 103: Routing metadata for debugging
-                routing_metadata=internal_response.metadata.get("routing_metadata") if internal_response.metadata else None,
-                # LMS Integration: Analytics fields
-                topics_accessed=topics_accessed,
-                confidence_score=round(confidence_score, 2) if confidence_score else None,
-                document_ids_used=document_ids_used,
-                query_type=query_type
+    Contract note:
+        This endpoint is transport-only. The authoritative business flow from
+        session normalization through continuity scheduling is documented in
+        app/services/REQUEST_FLOW_CONTRACT.md.
+    """
+    start_time, request_id = _chat_completion_support.begin_chat_completion_request(
+        logger=logger,
+        request=request,
+        chat_request=chat_request,
+        auth_method=auth.auth_method,
+    )
+
+    try:
+        internal_response = await (
+            _chat_completion_support.process_chat_completion_request(
+                chat_request=chat_request,
+                background_save=background_tasks.add_task,
             )
         )
-        
-        logger.info(
-            "Chat response generated in %.3fs (agent: %s)",
-            processing_time, internal_response.agent_type.value
+
+        return _chat_endpoint_presenter.build_chat_completion_success_response(
+            logger=logger,
+            chat_request=chat_request,
+            internal_response=internal_response,
+            start_time=start_time,
+            model_name=resolve_runtime_llm_metadata(
+                internal_response.metadata or {}
+            )["model"],
         )
-        
-        return response
-        
-    except WiiiException as e:
-        logger.error("Chat service error [%s]: %s", e.error_code, e.message)
-        return JSONResponse(
-            status_code=e.http_status,
-            content={
-                "status": "error",
-                "error_code": e.error_code,
-                "message": e.message,
-                "request_id": request.headers.get("X-Request-ID"),
-            }
+    except Exception as error:
+        return _chat_endpoint_presenter.build_chat_completion_error_response(
+            logger=logger,
+            error=error,
+            request_id=request_id,
         )
-    except Exception as e:
-        logger.exception("Unexpected error processing chat request: %s", e)
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={
-                "status": "error",
-                "error_code": "INTERNAL_ERROR",
-                "message": "An unexpected error occurred",
-                "request_id": request.headers.get("X-Request-ID"),
-            }
-        )
-
-
-def _get_tool_description(tool: dict) -> str:
-    """
-    Generate human-readable description for a tool usage.
-    
-    CHỈ THỊ SỐ 27: API Transparency
-    **Feature: api-transparency-thinking**
-    **Validates: Requirements 1.3**
-    """
-    name = tool.get("name", "unknown")
-    args = tool.get("args", {})
-    result = tool.get("result", "")
-    
-    if name in ("tool_knowledge_search", "tool_maritime_search"):
-        query = args.get("query", "")
-        return f"Tra cứu: {query}" if query else "Tra cứu kiến thức"
-    elif name == "tool_save_user_info":
-        key = args.get("key", "")
-        value = args.get("value", "")
-        return f"Lưu thông tin: {key}={value}" if key else "Lưu thông tin người dùng"
-    elif name == "tool_get_user_info":
-        key = args.get("key", "all")
-        return f"Lấy thông tin: {key}"
-    else:
-        return result[:100] if result else f"Gọi tool: {name}"
-
-
-def _classify_query_type(message: str) -> str:
-    """
-    Classify query type for LMS analytics.
-    
-    LMS Integration: Track learning patterns via query classification.
-    
-    Returns:
-        - factual: Questions about specific facts, definitions, articles
-        - conceptual: Questions about understanding concepts
-        - procedural: Questions about processes, how-to, steps
-    """
-    message_lower = message.lower()
-    
-    # Procedural keywords
-    procedural_keywords = [
-        "làm thế nào", "như thế nào", "cách", "thủ tục", "quy trình",
-        "bước", "how to", "steps", "process", "procedure"
-    ]
-    
-    # Factual keywords
-    factual_keywords = [
-        "điều", "khoản", "quy định", "là gì", "what is", "định nghĩa",
-        "nghĩa là", "rule", "article", "regulation"
-    ]
-    
-    # Check procedural first (more specific)
-    for kw in procedural_keywords:
-        if kw in message_lower:
-            return "procedural"
-    
-    # Check factual
-    for kw in factual_keywords:
-        if kw in message_lower:
-            return "factual"
-    
-    # Default to conceptual (understanding-based questions)
-    return "conceptual"
-
-
-def _generate_suggested_questions(user_message: str, ai_response: str) -> list[str]:
-    """
-    Generate 3 suggested follow-up questions based on context.
-
-    Logic:
-    1. Detect topic from AI response content
-    2. Return context-appropriate suggestions
-    3. If no specific topic detected, return generic helpful suggestions
-    """
-    user_lower = user_message.lower()
-    response_lower = ai_response.lower()
-
-    # Generic follow-up suggestions based on conversation context
-    if any(kw in response_lower for kw in ['quy tắc', 'rule', 'điều', 'quy định']):
-        return [
-            "Khi nào áp dụng quy tắc này?",
-            "Có ngoại lệ nào không?",
-            "Bạn có thể giải thích chi tiết hơn không?"
-        ]
-    elif any(kw in response_lower for kw in ['an toàn', 'safety', 'thiết bị']):
-        return [
-            "Yêu cầu cụ thể là gì?",
-            "Quy trình kiểm tra như thế nào?",
-            "Có tiêu chuẩn nào liên quan không?"
-        ]
-    elif any(kw in user_lower for kw in ['học', 'tìm hiểu', 'giải thích', 'dạy']):
-        return [
-            "Bạn muốn tìm hiểu thêm về chủ đề nào?",
-            "Bạn cần giải thích chi tiết hơn không?",
-            "Bạn muốn làm bài tập thực hành không?"
-        ]
-    else:
-        # Generic helpful suggestions
-        return [
-            "Bạn muốn tìm hiểu thêm về chủ đề nào?",
-            "Bạn có câu hỏi nào khác không?",
-            "Tôi có thể giúp gì thêm cho bạn?"
-        ]
 
 
 @router.get(
@@ -379,60 +176,27 @@ async def get_chat_history(
     Returns:
         GetHistoryResponse with messages and pagination info
     """
-    # CHAT-1: Ownership check — non-admin can only access own history
-    if auth.role != "admin" and auth.user_id != user_id:
-        return JSONResponse(
-            status_code=status.HTTP_403_FORBIDDEN,
-            content={
-                "error": "permission_denied",
-                "message": "Bạn chỉ có thể xem lịch sử của chính mình.",
-            }
-        )
+    permission_error = _chat_history_support.ensure_chat_history_access_allowed(
+        auth=auth,
+        user_id=user_id,
+    )
+    if permission_error is not None:
+        return permission_error
 
     try:
-        # Validate limit
-        if limit > 100:
-            limit = 100
-        if limit < 1:
-            limit = 20
-        if offset < 0:
-            offset = 0
-        
-        # Get history from repository
-        from app.repositories.chat_history_repository import get_chat_history_repository
-        
-        chat_history_repo = get_chat_history_repository()
-        messages, total = chat_history_repo.get_user_history(user_id, limit, offset)
-        
-        # Convert to response format
-        history_messages = [
-            HistoryMessage(
-                role=msg.role,
-                content=msg.content,
-                timestamp=msg.created_at
-            )
-            for msg in messages
-        ]
-        
-        logger.info("Retrieved %d messages for user %s (total: %d)", len(history_messages), user_id, total)
-        
-        return GetHistoryResponse(
-            data=history_messages,
-            pagination=HistoryPagination(
-                total=total,
-                limit=limit,
-                offset=offset
-            )
+        return _chat_history_support.process_get_chat_history_request(
+            logger=logger,
+            user_id=user_id,
+            limit=limit,
+            offset=offset,
         )
-        
-    except Exception as e:
-        logger.exception("Error retrieving chat history: %s", e)
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={
-                "error": "internal_error",
-                "message": "Failed to retrieve chat history"
-            }
+
+    except Exception as error:
+        return _chat_history_support.build_chat_history_operation_error_response(
+            logger=logger,
+            operation_label="retrieving chat history",
+            error=error,
+            message="Failed to retrieve chat history",
         )
 
 
@@ -470,55 +234,26 @@ async def delete_chat_history(
         DeleteHistoryResponse with status and count of deleted messages
     """
     try:
-        # Check permissions using authenticated role (not request body)
-        if auth.role == "admin":
-            # Admin can delete any user's history
-            pass
-        elif auth.role in ["student", "teacher"]:
-            # Users can only delete their own history
-            if auth.user_id != user_id:
-                return JSONResponse(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    content={
-                        "error": "permission_denied",
-                        "message": "Permission denied. Users can only delete their own chat history."
-                    }
-                )
-        else:
-            return JSONResponse(
-                status_code=status.HTTP_403_FORBIDDEN,
-                content={
-                    "error": "invalid_role",
-                    "message": "Permission denied. Invalid role."
-                }
-            )
-        
-        # Delete from chat history repository
-        from app.repositories.chat_history_repository import get_chat_history_repository
-        
-        chat_history_repo = get_chat_history_repository()
-        deleted_count = chat_history_repo.delete_user_history(user_id)
-        
-        logger.info(
-            "Deleted %d chat messages for user %s by %s (%s)",
-            deleted_count, user_id, auth.user_id, auth.role
+        permission_error = _chat_history_support.ensure_delete_chat_history_allowed(
+            auth=auth,
+            user_id=user_id,
+        )
+        if permission_error is not None:
+            return permission_error
+
+        return _chat_history_support.process_delete_chat_history_request(
+            logger=logger,
+            user_id=user_id,
+            deleted_by=auth.user_id,
+            role=auth.role,
         )
 
-        return DeleteHistoryResponse(
-            status="deleted",
-            user_id=user_id,
-            messages_deleted=deleted_count,
-            deleted_by=auth.user_id
-        )
-        
-    except Exception as e:
-        logger.exception("Error deleting chat history: %s", e)
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={
-                "error": "internal_error",
-                "message": "Failed to delete chat history"
-            }
+    except Exception as error:
+        return _chat_history_support.build_chat_history_operation_error_response(
+            logger=logger,
+            operation_label="deleting chat history",
+            error=error,
+            message="Failed to delete chat history",
         )
 
 
@@ -549,46 +284,31 @@ async def compact_context(
 ) -> JSONResponse:
     """Compact conversation context — summarize older turns."""
     user_id = auth.user_id
-    session_id = request.headers.get("X-Session-ID", "")
-
-    if not session_id:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "missing_session", "message": "X-Session-ID header required"},
-        )
+    session_id, missing_session_response = (
+        _chat_context_support.resolve_context_session_request(request=request)
+    )
+    if missing_session_response is not None:
+        return missing_session_response
 
     try:
-        from app.engine.context_manager import get_compactor
-        from app.repositories.chat_history_repository import get_chat_history_repository
-
-        compactor = get_compactor()
-        chat_history = get_chat_history_repository()
-
-        # Load history (pass user_id for new schema fallback)
-        history_list = []
-        if chat_history.is_available():
-            recent = chat_history.get_recent_messages(session_id, user_id=user_id)
-            history_list = [{"role": m.role, "content": m.content} for m in recent]
-
-        # Force compact
-        summary = await compactor.force_compact(session_id, history_list, user_id=user_id)
-
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "status": "compacted",
-                "session_id": session_id,
-                "summary_length": len(summary),
-                "messages_summarized": max(0, len(history_list) - 4),
-                "message": "Hội thoại đã được tóm tắt thành công.",
-            },
+        summary, history_list = await _chat_context_support.compact_context_session(
+            session_id=session_id,
+            user_id=user_id,
         )
 
-    except Exception as e:
-        logger.exception("Error compacting context: %s", e)
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"error": "compact_failed", "message": "Failed to compact context"},
+        return _chat_context_support.build_context_compacted_response(
+            session_id=session_id,
+            summary=summary,
+            history_list=history_list,
+        )
+
+    except Exception as error:
+        return _chat_context_support.build_context_operation_error_response(
+            logger=logger,
+            operation_label="compacting context",
+            error=error,
+            error_code="compact_failed",
+            message="Failed to compact context",
         )
 
 
@@ -613,41 +333,29 @@ async def clear_context(
 ) -> JSONResponse:
     """Clear conversation context — start fresh (preserves user facts)."""
     user_id = auth.user_id  # Sprint 79: needed for DB cleanup
-    session_id = request.headers.get("X-Session-ID", "")
-
-    if not session_id:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "missing_session", "message": "X-Session-ID header required"},
-        )
+    session_id, missing_session_response = (
+        _chat_context_support.resolve_context_session_request(request=request)
+    )
+    if missing_session_response is not None:
+        return missing_session_response
 
     try:
-        from app.engine.context_manager import get_compactor
-        from app.engine.memory_summarizer import get_memory_summarizer
-
-        compactor = get_compactor()
-        summarizer = get_memory_summarizer()
-
-        # Clear running summary
-        compactor.clear_session(session_id, user_id=user_id)
-
-        # Clear memory summarizer state
-        summarizer.clear_session(session_id)
-
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "status": "cleared",
-                "session_id": session_id,
-                "message": "Context đã được xóa. Bắt đầu cuộc trò chuyện mới.",
-            },
+        _chat_context_support.clear_context_session(
+            session_id=session_id,
+            user_id=user_id,
         )
 
-    except Exception as e:
-        logger.exception("Error clearing context: %s", e)
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"error": "clear_failed", "message": "Failed to clear context"},
+        return _chat_context_support.build_context_cleared_response(
+            session_id=session_id,
+        )
+
+    except Exception as error:
+        return _chat_context_support.build_context_operation_error_response(
+            logger=logger,
+            operation_label="clearing context",
+            error=error,
+            error_code="clear_failed",
+            message="Failed to clear context",
         )
 
 
@@ -672,26 +380,17 @@ async def get_context_info(
 ) -> JSONResponse:
     """Get context usage info for introspection."""
     user_id = auth.user_id
-    session_id = request.headers.get("X-Session-ID", "")
-
-    if not session_id:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "missing_session", "message": "X-Session-ID header required"},
-        )
+    session_id, missing_session_response = (
+        _chat_context_support.resolve_context_session_request(request=request)
+    )
+    if missing_session_response is not None:
+        return missing_session_response
 
     try:
-        from app.engine.context_manager import get_compactor
-        from app.repositories.chat_history_repository import get_chat_history_repository
-
-        compactor = get_compactor()
-        chat_history = get_chat_history_repository()
-
-        # Load history (pass user_id for new schema fallback)
-        history_list = []
-        if chat_history.is_available():
-            recent = chat_history.get_recent_messages(session_id, user_id=user_id)
-            history_list = [{"role": m.role, "content": m.content} for m in recent]
+        compactor, history_list = _chat_context_support.load_context_info_inputs(
+            session_id=session_id,
+            user_id=user_id,
+        )
 
         # Sprint 210g: Fetch system_prompt + core_memory for accurate layer display
         _system_prompt = ""
@@ -725,11 +424,13 @@ async def get_context_info(
             user_id=user_id,
         )
 
-        return JSONResponse(status_code=status.HTTP_200_OK, content=info)
+        return _chat_context_support.build_context_info_response(info=info)
 
-    except Exception as e:
-        logger.exception("Error getting context info: %s", e)
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"error": "info_failed", "message": "Failed to get context info"},
+    except Exception as error:
+        return _chat_context_support.build_context_operation_error_response(
+            logger=logger,
+            operation_label="getting context info",
+            error=error,
+            error_code="info_failed",
+            message="Failed to get context info",
         )

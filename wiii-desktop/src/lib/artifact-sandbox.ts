@@ -99,15 +99,6 @@ export function createSandboxUrl(html: string): string {
 }
 
 /**
- * Send a structured message to a sandboxed iframe.
- */
-export function sendToSandbox(iframe: HTMLIFrameElement, msg: ArtifactMessage): void {
-  if (iframe.contentWindow) {
-    iframe.contentWindow.postMessage(msg, "*");
-  }
-}
-
-/**
  * Listen for messages from sandboxed iframes.
  * Returns a cleanup function to remove the listener.
  *

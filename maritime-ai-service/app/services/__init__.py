@@ -8,6 +8,7 @@ Sprint 140: Lazy imports to break circular dependency chain
 __all__ = [
     "ChatService",
     "get_chat_service",
+    "reset_chat_service",
     "ChatResponseBuilder",
     "FormattedResponse",
     "get_chat_response_builder",
@@ -16,6 +17,7 @@ __all__ = [
 _ATTR_MAP = {
     "ChatService": ("app.services.chat_service", "ChatService"),
     "get_chat_service": ("app.services.chat_service", "get_chat_service"),
+    "reset_chat_service": ("app.services.chat_service", "reset_chat_service"),
     "ChatResponseBuilder": ("app.services.chat_response_builder", "ChatResponseBuilder"),
     "FormattedResponse": ("app.services.chat_response_builder", "FormattedResponse"),
     "get_chat_response_builder": ("app.services.chat_response_builder", "get_chat_response_builder"),

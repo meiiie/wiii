@@ -1,8 +1,8 @@
 """
-Ollama Provider — Local/Self-Hosted LLM backend for Wiii.
+Ollama Provider — Local, self-hosted, or Ollama Cloud backend for Wiii.
 
-Provides fallback to locally-running models via Ollama.
-No API key required — just needs Ollama running at ollama_base_url.
+Supports both unauthenticated local hosts and direct authenticated access to
+Ollama Cloud via https://ollama.com/api.
 
 Sprint 59: Enhanced with thinking mode support for Qwen3/DeepSeek-R1.
 """
@@ -29,11 +29,32 @@ except Exception:
 DEFAULT_THINKING_MODELS = ["qwen3", "deepseek-r1", "qwq"]
 
 
+def _normalize_ollama_host(base_url: str | None) -> str | None:
+    """Normalize Ollama host URLs for client libraries.
+
+    The official HTTP examples use `https://ollama.com/api`, but the Python
+    client used by langchain-ollama expects the host root and appends `/api`
+    internally. Accept both forms here to keep runtime config forgiving.
+    """
+    if not isinstance(base_url, str):
+        return base_url
+
+    normalized = base_url.strip()
+    if not normalized:
+        return normalized
+
+    if normalized.endswith("/api"):
+        return normalized[:-4]
+    return normalized
+
+
 def _model_supports_thinking(model_name: str) -> bool:
     """Check if an Ollama model supports thinking mode (think=True).
 
     Models like Qwen3, DeepSeek-R1, and QwQ support structured
     thinking via the `think` parameter in Ollama's OpenAI-compat API.
+    Qwen's newer instruct-specific tags should not be treated as
+    thinking-capable by default.
 
     Args:
         model_name: Full model name (e.g., "qwen3:8b", "deepseek-r1:14b")
@@ -44,8 +65,11 @@ def _model_supports_thinking(model_name: str) -> bool:
     thinking_models: List[str] = getattr(
         settings, "ollama_thinking_models", DEFAULT_THINKING_MODELS
     )
-    # Check if model_name starts with any thinking model prefix
     model_lower = model_name.lower()
+    if model_lower.startswith("qwen3") and "-instruct" in model_lower:
+        return False
+
+    # Check if model_name starts with any thinking model prefix
     return any(model_lower.startswith(prefix) for prefix in thinking_models)
 
 
@@ -53,7 +77,8 @@ class OllamaProvider(LLMProvider):
     """
     Ollama provider via langchain-ollama.
 
-    Runs locally — no API key needed, just Ollama daemon at base_url.
+    Works with local Ollama hosts and with Ollama Cloud when `ollama_api_key`
+    is configured.
     Sprint 59: Supports thinking mode for compatible models.
     """
 
@@ -87,11 +112,31 @@ class OllamaProvider(LLMProvider):
                 "Install with: pip install langchain-ollama"
             )
 
-        model = getattr(settings, "ollama_model", "qwen3:8b")
-        base_url = getattr(settings, "ollama_base_url", "http://localhost:11434")
+        model = getattr(settings, "ollama_model", "qwen3:4b-instruct-2507-q4_K_M")
+        base_url = _normalize_ollama_host(
+            getattr(settings, "ollama_base_url", "http://localhost:11434")
+        )
+        api_key = getattr(settings, "ollama_api_key", None)
+        keep_alive = getattr(settings, "ollama_keep_alive", None)
+        if not isinstance(api_key, str):
+            api_key = None
+        else:
+            api_key = api_key.strip() or None
+        if not isinstance(keep_alive, str):
+            keep_alive = None
+        elif not keep_alive.strip():
+            keep_alive = None
+        else:
+            keep_alive = keep_alive.strip()
 
         # Build extra kwargs for thinking-capable models
         ollama_kwargs = {}
+        if keep_alive:
+            ollama_kwargs["keep_alive"] = keep_alive
+        if api_key:
+            ollama_kwargs["client_kwargs"] = {
+                "headers": {"Authorization": f"Bearer {api_key}"}
+            }
         thinks = thinking_budget > 0 or include_thoughts
         if _model_supports_thinking(model) and thinks:
             # Pass think=True via extra_body for Qwen3/DeepSeek-R1
@@ -105,8 +150,13 @@ class OllamaProvider(LLMProvider):
             **ollama_kwargs,
         )
         logger.info(
-            "[OLLAMA] Created %s instance (model=%s, base_url=%s, thinking=%s)",
-            tier.upper(), model, base_url, bool(ollama_kwargs)
+            "[OLLAMA] Created %s instance (model=%s, base_url=%s, thinking=%s, keep_alive=%s, auth=%s)",
+            tier.upper(),
+            model,
+            base_url,
+            bool("extra_body" in ollama_kwargs),
+            keep_alive,
+            bool(api_key),
         )
         return llm
 

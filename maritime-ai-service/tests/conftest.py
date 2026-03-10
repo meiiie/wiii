@@ -74,6 +74,17 @@ def mock_settings():
     s.google_model = "gemini-3-flash-preview"
     s.openai_api_key = None
     s.openai_model = "gpt-4o-mini"
+    s.openai_model_advanced = "gpt-4o"
+    s.openai_base_url = None
+    s.openrouter_model_fallbacks = []
+    s.openrouter_provider_order = []
+    s.openrouter_allowed_providers = []
+    s.openrouter_ignored_providers = []
+    s.openrouter_allow_fallbacks = None
+    s.openrouter_require_parameters = None
+    s.openrouter_data_collection = None
+    s.openrouter_zdr = None
+    s.openrouter_provider_sort = None
     s.ollama_model = "qwen3:8b"
     s.ollama_base_url = "http://localhost:11434"
     s.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]

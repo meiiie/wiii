@@ -156,3 +156,18 @@ class TestSingleton:
             assert result is mock_service
         finally:
             module._chat_service = original
+
+    def test_reset_chat_service_clears_singleton(self):
+        """reset_chat_service clears the cached singleton for runtime reloads."""
+        import app.services.chat_service as module
+        original = module._chat_service
+
+        module._chat_service = MagicMock()
+        try:
+            from app.services.chat_service import reset_chat_service
+
+            reset_chat_service()
+
+            assert module._chat_service is None
+        finally:
+            module._chat_service = original

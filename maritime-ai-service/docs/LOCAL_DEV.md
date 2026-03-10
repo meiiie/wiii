@@ -1,432 +1,260 @@
-# Wiii - Local Development Guide
+# Local Development Guide
 
-> 🏠 **Phát triển Local** | ☁️ **Deploy trên Render**
+This guide reflects the local runtime that was actually verified on
+March 7, 2026.
 
-Hướng dẫn này giúp bạn thiết lập môi trường phát triển local cho Wiii, thay thế việc phát triển trực tiếp trên Render Cloud.
+## Current Recommended Local Stack
 
----
+- backend: Docker container `wiii-app`
+- database: Docker `postgres`
+- object storage: Docker `minio`
+- local model runtime: native host Ollama
+- backend -> Ollama path: `http://host.docker.internal:11434`
+- verified local model: `qwen3:4b-instruct-2507-q4_K_M`
+- verified keep-alive: `30m`
 
-## 🎯 Lợi Ích của Local Development
+Important:
 
-| Feature | Render Cloud | Local Dev | Lợi Ích |
-|---------|-------------|-----------|---------|
-| **Hot Reload** | ❌ Cần redeploy | ✅ Tự động | Code thay đổi → Test ngay lập tức |
-| **Debug** | ❌ Print logs | ✅ VS Code debugger | Attach debugger, breakpoints |
-| **Test Speed** | ⏱️ 2-5 phút | ⚡ 2-5 giây | Nhanh hơn **60-150x** |
-| **Offline** | ❌ Cần internet | ✅ Không cần | Phát triển mọi lúc, mọi nơi |
-| **Cost** | $7-25/tháng | $0 | **Miễn phí** |
+- Docker Ollama still exists in `docker-compose.yml`, but it is now an opt-in
+  profile, not the primary local path
+- the currently verified fast local UI path used `USE_MULTI_AGENT=false`
+- full multi-agent graph mode is a separate performance question
+- `use_multi_agent` can now be inspected and changed through
+  `GET/PATCH /api/v1/admin/llm-runtime` and the desktop Settings UI
+- that runtime toggle changes the live backend process only; if you want the
+  same mode after restart, keep `.env` or deployment config aligned
 
----
+## Quick Start
 
-## 📋 Yêu Cầu Hệ Thống
+### 1. Copy the environment file
 
-### Bắt Buộc
-- **Docker Desktop** >= 4.0 ([Download](https://www.docker.com/products/docker-desktop))
-- **Python** >= 3.11 ([Download](https://www.python.org/downloads/))
-- **Git**
-
-### Khuyến Nghị
-- **VS Code** với extensions:
-  - Python (Microsoft)
-  - Docker (Microsoft)
-  - Thunder Client (API testing)
-- **RAM**: 8GB+ (16GB recommended)
-- **Disk**: 10GB+ free space
-
----
-
-## 🚀 Quick Start (5 phút)
-
-### Bước 1: Clone Repository
-
-```bash
-git clone <your-repo-url>
-cd AI_v1/maritime-ai-service
+```powershell
+cd maritime-ai-service
+Copy-Item .env.example .env
 ```
 
-### Bước 2: Tạo Virtual Environment
+### 2. Choose your model strategy
 
-```bash
-# Windows
-python -m venv .venv
-.venv\Scripts\activate
+Recommended product path:
 
-# Linux/Mac
-python -m venv .venv
-source .venv/bin/activate
+- `LLM_PROVIDER=openrouter`
+- `LLM_FAILOVER_CHAIN=["openrouter","ollama","google"]`
+
+Current verified local-first fallback path:
+
+```env
+LLM_PROVIDER=ollama
+LLM_FAILOVER_CHAIN=["ollama","google","openrouter"]
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+OLLAMA_MODEL=qwen3:4b-instruct-2507-q4_K_M
+OLLAMA_KEEP_ALIVE=30m
+USE_MULTI_AGENT=false
 ```
 
-### Bước 3: Cài Đặt Dependencies
+If backend runs outside Docker, replace:
 
-```bash
-pip install -r requirements.txt
+```env
+OLLAMA_BASE_URL=http://localhost:11434
 ```
 
-### Bước 4: Cấu Hình Môi Trường
+If you intentionally use the Docker Ollama profile, replace:
 
-```bash
-# Copy file cấu hình local
-copy .env.local .env
-
-# Hoặc trên Linux/Mac
-cp .env.local .env
+```env
+OLLAMA_BASE_URL=http://ollama:11434
 ```
 
-**Chỉnh sửa `.env` và thêm API keys:**
+## 3. Start the local infrastructure
 
-```bash
-# Lấy API key từ Google AI Studio: https://aistudio.google.com/app/apikey
-GOOGLE_API_KEY=your-google-api-key-here
+Start the standard local services:
 
-# Optional: OpenRouter cho fallback
-OPENAI_API_KEY=your-openrouter-key-here
+```powershell
+docker compose up -d postgres minio minio-init app
 ```
 
-### Bước 5: Khởi Động
+Optional services:
 
-```bash
-# Windows PowerShell
-.\scripts\start-local.ps1
+- `valkey` for task/cache flows
+- `ollama` only if you want the containerized Ollama profile
 
-# Linux/Mac
-chmod +x scripts/start-local.sh
-./scripts/start-local.sh
+Start those only when needed:
+
+```powershell
+docker compose --profile tasks up -d valkey
+docker compose --profile ollama up -d ollama ollama-pull-qwen
 ```
 
-**Hoặc dùng VS Code:**
-- Nhấn `Ctrl+Shift+P` → "Tasks: Run Task" → "Setup Local Environment"
+## 4. Apply migrations
 
-### Bước 6: Truy Cập
-
-| Service | URL |
-|---------|-----|
-| **API Server** | http://localhost:8000 |
-| **API Docs (Swagger)** | http://localhost:8000/docs |
-| **Health Check** | http://localhost:8000/health |
-| **Neo4j Browser** | http://localhost:7474 |
-| **MinIO Console** | http://localhost:9001 |
-| **pgAdmin** | http://localhost:5050 |
-
----
-
-## 🏗️ Kiến Trúc Local Stack
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Local Development Stack                   │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
-│  │   FastAPI    │    │   VS Code    │    │   Browser    │  │
-│  │   (App)      │◄──►│  (Debugger)  │    │  (Testing)   │  │
-│  │   :8000      │    │              │    │              │  │
-│  └──────┬───────┘    └──────────────┘    └──────────────┘  │
-│         │                                                    │
-│  ┌──────┴────────────────────────────────────────────────┐  │
-│  │              Docker Compose Network                    │  │
-│  ├──────────────┬──────────────┬──────────────┬──────────┤  │
-│  │  PostgreSQL  │    Neo4j     │   ChromaDB   │  Redis   │  │
-│  │    :5433     │   :7474      │    :8001     │  :6379   │  │
-│  │  (User Data) │ (Knowledge   │  (Vectors)   │ (Cache)  │  │
-│  │              │    Graph)    │              │          │  │
-│  └──────────────┴──────────────┴──────────────┴──────────┘  │
-│                                                              │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │                      MinIO                             │  │
-│  │              (Local S3 Storage)                        │  │
-│  │                    :9000/:9001                         │  │
-│  └────────────────────────────────────────────────────────┘  │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+```powershell
+docker compose exec app alembic upgrade head
 ```
 
----
+Notes:
 
-## 🛠️ Chi Tiết Cấu Hình
+- local schema drift on March 7, 2026 involved `wiii_character_blocks` and
+  `wiii_experiences`
+- LangGraph checkpoint tables are now created automatically by the repaired
+  checkpointer path, but keeping the database at migration head is still the
+  correct baseline
 
-### Docker Services
+## 5. Verify the backend
 
-| Service | Port | Purpose |
-|---------|------|---------|
-| `app` | 8000 | FastAPI application (hot-reload) |
-| `postgres` | 5433 | PostgreSQL database |
-| `neo4j` | 7474, 7687 | Knowledge graph |
-| `chroma` | 8001 | Vector embeddings |
-| `redis` | 6379 | Cache & sessions |
-| `minio` | 9000, 9001 | Object storage (S3-compatible) |
-| `pgadmin` | 5050 | PostgreSQL admin UI (optional) |
-
-### Environment Variables
-
-File `.env.local` đã được cấu hình sẵn cho local development:
-
-```bash
-# Database URLs trỏ đến localhost
-DATABASE_URL=postgresql+asyncpg://wiii:wiii_secret@localhost:5433/wiii_ai
-NEO4J_URI=bolt://localhost:7687
-REDIS_URL=redis://localhost:6379/0
-
-# MinIO Object Storage
-MINIO_ENDPOINT=localhost:9000
-STORAGE_URL=http://localhost:9000
-
-# Development flags
-DEBUG=true
-LOG_LEVEL=DEBUG
-USE_MULTI_AGENT=true
+```powershell
+Invoke-RestMethod http://localhost:8000/api/v1/health
+Invoke-RestMethod http://localhost:8000/api/v1/health/ollama
+ollama ps
 ```
 
----
+Expected local Ollama state for the verified path:
 
-## 🔧 Debugging với VS Code
+- `base_url` points to `http://host.docker.internal:11434`
+- the active model is `qwen3:4b-instruct-2507-q4_K_M`
+- after a request, `ollama ps` shows roughly `29-30 minutes` remaining
 
-### 1. Cấu Hình Launch
+## 6. Verify the chat path
 
-File `.vscode/launch.json` đã được tạo sẵn. Các configuration có sẵn:
+Sync API check:
 
-- **Python: FastAPI (Local)** - Chạy với hot-reload
-- **Python: FastAPI (No Reload)** - Chạy không reload (debug ổn định hơn)
-- **Python: Current File** - Debug file hiện tại
-- **Python: Seed Data** - Chạy seed script
-
-### 2. Cách Debug
-
-1. Đặt breakpoint trong code (F9)
-2. Chọn configuration trong Debug panel (Ctrl+Shift+D)
-3. Nhấn F5 để bắt đầu debug
-4. Gọi API từ Thunder Client hoặc browser
-5. Code sẽ pause tại breakpoint
-
-### 3. Debug Multi-Agent System
-
-Thêm breakpoint vào các file:
-- `app/engine/multi_agent/graph.py` - Xem routing decisions
-- `app/engine/multi_agent/agents/tutor_node.py` - Debug tutor agent
-- `app/engine/multi_agent/agents/rag_node.py` - Debug RAG agent
-
----
-
-## 🧪 Testing
-
-### Unit Tests
-
-```bash
-# Chạy tất cả tests
-pytest
-
-# Chạy với coverage
-pytest --cov=app --cov-report=html
-
-# Chạy test cụ thể
-pytest tests/test_chat.py -v
+```powershell
+$headers = @{
+  "X-API-Key" = "local-dev-key"
+  "X-Session-ID" = "local-dev-sync"
+  "X-User-ID" = "local-dev-user"
+  "X-Role" = "student"
+  "Content-Type" = "application/json"
+}
+$body = @{
+  message = "Tra loi rat ngan de xac nhan sync path"
+  user_id = "local-dev-user"
+  role = "student"
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/v1/chat -Headers $headers -Body $body
 ```
 
-### API Testing
+## 7. Verify the real UI path
 
-Sử dụng Thunder Client trong VS Code hoặc curl:
+Start the frontend:
 
-```bash
-# Health check
-curl http://localhost:8000/health
-
-# Chat API
-curl -X POST http://localhost:8000/api/v1/chat \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: local-dev-key" \
-  -d '{
-    "user_id": "test-student-001",
-    "message": "Quy tắc 15 là gì?",
-    "role": "student"
-  }'
+```powershell
+cd ..\wiii-desktop
+npm install
+npm run dev -- --host 127.0.0.1 --port 1420
 ```
 
----
+Then:
 
-## 🔄 Workflow Phát Triển
+1. Open `http://127.0.0.1:1420`
+2. Enter developer mode
+3. Use API key `local-dev-key`
+4. Send a short prompt
 
-### 1. Khởi Động Mới
+For the verified degraded local path, the backend logs should show:
 
-```bash
-# Start tất cả services
-./scripts/start-local.sh
+- `[STREAM-V3] Multi-Agent disabled, using sync fallback path`
+- `[FALLBACK] Multi-Agent unavailable, using local direct LLM`
 
-# Hoặc từng phần:
-docker-compose up -d postgres neo4j chroma redis minio
-python -m alembic upgrade head
-python scripts/seed-data.py
-uvicorn app.main:app --reload
-```
+## Local Runtime Modes
 
-### 2. Code → Test Loop
+### Mode A: Recommended product mode
 
-```
-1. Sửa code trong VS Code
-2. Tự động reload (hot-reload)
-3. Test API trong Thunder Client
-4. Nếu có lỗi → Debug (F5)
-5. Lặp lại
-```
+Use when evaluating product UX:
 
-### 3. Dừng và Dọn Dẹp
+- `LLM_PROVIDER=openrouter`
+- `LLM_FAILOVER_CHAIN=["openrouter","ollama","google"]`
+- keep Ollama available as fallback/offline mode
 
-```bash
-# Dừng tất cả services
-docker-compose down
+### Mode B: Verified local degraded mode
 
-# Dừng và xóa data
-docker-compose down -v
+Use when validating local/offline fallback:
 
-# Chỉ dừng app, giữ database
-docker-compose stop app
-```
+- `LLM_PROVIDER=ollama`
+- `OLLAMA_BASE_URL=http://host.docker.internal:11434`
+- `OLLAMA_MODEL=qwen3:4b-instruct-2507-q4_K_M`
+- `OLLAMA_KEEP_ALIVE=30m`
+- `USE_MULTI_AGENT=false`
 
----
+This mode is the one that produced the browser-verified
+`~9.3s` first-assistant latency on March 7, 2026.
 
-## 📊 Quản Lý Data
+### Mode C: Docker Ollama profile
 
-### Backup Database
+Use only if you intentionally want the model runtime inside Docker:
 
-```bash
-# PostgreSQL backup
-docker exec wiii-postgres pg_dump -U wiii wiii_ai > backup.sql
+- start `docker compose --profile ollama up -d ollama ollama-pull-qwen`
+- switch `OLLAMA_BASE_URL` to `http://ollama:11434`
 
-# Restore
-docker exec -i wiii-postgres psql -U wiii wiii_ai < backup.sql
-```
+Do not assume this matches the currently verified local setup.
 
-### Reset Data
+### Mode D: Ollama Cloud direct API
 
-```bash
-# Xóa tất cả và tạo lại
-docker-compose down -v
-docker-compose up -d
-python -m alembic upgrade head
-python scripts/seed-data.py
-```
+Use when you want hosted Ollama inference without a local GPU runtime:
 
-### Xem Data trong Database
+- `LLM_PROVIDER=ollama`
+- `OLLAMA_BASE_URL=https://ollama.com`
+- `OLLAMA_API_KEY=...`
+- choose a cloud-served model such as `gpt-oss:20b`
 
-**PostgreSQL:**
-```bash
-# CLI
-docker exec -it wiii-postgres psql -U wiii -d wiii_ai
+Important:
 
-# Hoặc dùng pgAdmin: http://localhost:5050
-# Login: admin@wiii.local / admin
-```
+- Ollama's raw HTTP examples often show `https://ollama.com/api`
+- in this repo, the `langchain-ollama` client expects the host root and appends
+  `/api` internally
+- the backend now normalizes either form, but `https://ollama.com` is the
+  clearest value to store in runtime config and docs
 
-**Neo4j:**
-- Truy cập: http://localhost:7474
-- Login: neo4j / neo4j_secret
+## Troubleshooting
 
-**MinIO:**
-- Console: http://localhost:9001
-- Login: wiii / wiii_secret
+### `Graph processing error`
 
----
+Check local database drift first, not Ollama wiring.
 
-## 🐛 Troubleshooting
+Known missing tables from the March 7, 2026 retest:
 
-### Lỗi Thường Gặp
+- `checkpoints`
+- `checkpoint_blobs`
+- `checkpoint_writes`
+- `checkpoint_migrations`
+- `wiii_character_blocks`
+- `wiii_experiences`
 
-#### 1. Port đã được sử dụng
+Reference:
 
-```bash
-# Kiểm tra port nào đang dùng
-netstat -ano | findstr :8000
+- `../../2026-03-07-ui-runtime-retest.md`
+- `../../2026-03-07-local-llm-handoff.md`
 
-# Thay đổi port trong docker-compose.yml
-ports:
-  - "8001:8000"  # Thay vì 8000:8000
-```
+### UI is much slower than sync chat
 
-#### 2. Database connection failed
+Check whether the runtime path matches the mode you think you are testing.
 
-```bash
-# Kiểm tra service có chạy không
-docker-compose ps
+The earlier `60-67s` result happened because:
 
-# Xem logs
-docker-compose logs postgres
+- sync chat respected `USE_MULTI_AGENT=false`
+- streaming UI still forced the graph path
 
-# Khởi động lại
-docker-compose restart postgres
-```
+That parity bug has already been fixed.
 
-#### 3. Hot-reload không hoạt động
+### Ollama is reachable but feels slow
 
-```bash
-# Kiểm tra volume mount
-docker-compose exec app ls -la /app
+Check:
 
-# Restart app service
-docker-compose restart app
-```
+- model tag is explicit instruct, not generic `qwen3:4b`
+- `OLLAMA_KEEP_ALIVE=30m`
+- the model is still warm in `ollama ps`
 
-#### 4. Permission denied (Linux/Mac)
+## Files To Read First
 
-```bash
-chmod +x scripts/start-local.sh
-```
+- `../../2026-03-07-continuation-checkpoint.md`
+- `../../2026-03-07-local-llm-handoff.md`
+- `../../2026-03-07-ui-runtime-retest.md`
+- `../../2026-03-07-model-strategy-recommendation.md`
+- `../../2026-03-07-ollama-rollout-checklist.md`
 
-#### 5. Module not found
+## Current Bottom Line
 
-```bash
-# Cài lại dependencies
-pip install -r requirements.txt
+The local host-native Ollama path is working.
 
-# Kiểm tra PYTHONPATH
-echo $PYTHONPATH  # Linux/Mac
-$env:PYTHONPATH   # Windows PowerShell
-```
+The repo should now be treated as:
 
----
-
-## 🚀 Deploy lên Render (Production)
-
-Khi code đã hoạt động tốt local, deploy lên Render:
-
-```bash
-# Commit và push
-git add .
-git commit -m "Feature: xxx"
-git push origin main
-
-# Render sẽ tự động deploy
-```
-
-**Lưu ý:** Render sử dụng:
-- Neon PostgreSQL (thay vì local Postgres)
-- Neo4j Aura (thay vì local Neo4j)
-- Object Storage (MinIO)
-
----
-
-## 📚 Tài Liệu Tham Khảo
-
-- [FastAPI Documentation](https://fastapi.tiangolo.com/)
-- [Docker Compose Reference](https://docs.docker.com/compose/)
-- [LangGraph Concepts](https://langchain-ai.github.io/langgraph/concepts/)
-- [Neo4j Cypher Manual](https://neo4j.com/docs/cypher-manual/)
-
----
-
-## 🤝 Đóng Góp
-
-1. Tạo branch mới: `git checkout -b feature/xxx`
-2. Code và test local
-3. Tạo PR với mô tả rõ ràng
-
----
-
-## 📝 Changelog
-
-| Date | Change |
-|------|--------|
-| 2026-01-29 | Tạo local development environment |
-| | Thêm docker-compose với full stack |
-| | Thêm hot-reload và debug config |
-
----
-
-**Happy Coding! 🚢⚓**
+- host-native Ollama is the default local path
+- Docker Ollama is opt-in
+- OpenRouter remains the safer primary path for user-facing latency

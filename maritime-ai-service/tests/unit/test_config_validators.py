@@ -106,7 +106,12 @@ class TestEnvironmentValidator:
         assert s.environment == "staging"
 
     def test_production(self):
-        s = Settings(environment="production")
+        s = Settings(
+            environment="production",
+            api_key="a" * 32,
+            session_secret_key="a]b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+            google_api_key="test",
+        )
         assert s.environment == "production"
 
     def test_invalid_rejected(self):
@@ -142,15 +147,24 @@ class TestPostgresUrl:
             postgres_port=5433,
             postgres_db="wiii_ai",
         )
-        assert "postgresql+asyncpg://wiii:secret@localhost:5433/wiii_ai" == s.postgres_url
+        assert (
+            "postgresql+asyncpg://wiii:secret@localhost:5433/"
+            "wiii_ai?connect_timeout=5"
+        ) == s.postgres_url
 
     def test_cloud_url_override(self):
         s = Settings(database_url="postgresql://user:pass@host/db")
-        assert s.postgres_url == "postgresql+asyncpg://user:pass@host/db"
+        assert (
+            s.postgres_url
+            == "postgresql+asyncpg://user:pass@host/db?connect_timeout=5"
+        )
 
     def test_postgres_prefix_conversion(self):
         s = Settings(database_url="postgres://user:pass@host/db")
-        assert s.postgres_url == "postgresql+asyncpg://user:pass@host/db"
+        assert (
+            s.postgres_url
+            == "postgresql+asyncpg://user:pass@host/db?connect_timeout=5"
+        )
 
     def test_sync_url_construction(self):
         s = Settings(
@@ -161,9 +175,13 @@ class TestPostgresUrl:
             postgres_port=5433,
             postgres_db="wiii_ai",
         )
-        assert "postgresql://wiii:secret@localhost:5433/wiii_ai" == s.postgres_url_sync
+        assert (
+            "postgresql://wiii:secret@localhost:5433/"
+            "wiii_ai?connect_timeout=5"
+        ) == s.postgres_url_sync
 
     def test_sync_url_ssl_conversion(self):
         s = Settings(database_url="postgres://user:pass@host/db?ssl=require")
         assert "sslmode=require" in s.postgres_url_sync
         assert "ssl=require" not in s.postgres_url_sync
+        assert "connect_timeout=5" in s.postgres_url_sync

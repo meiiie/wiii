@@ -19,6 +19,7 @@ from typing import Dict, Optional
 from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
+from app.engine.llm_provider_registry import create_provider, is_supported_provider
 
 try:
     from app.core.resilience import get_circuit_breaker
@@ -72,6 +73,24 @@ class LLMPool:
     _providers: Dict[str, "LLMProvider"] = {}
 
     @classmethod
+    def _get_provider_chain(cls) -> list[str]:
+        """Return the effective provider order with the selected provider first."""
+        configured = list(
+            getattr(settings, "llm_failover_chain", ["google", "openai", "ollama"])
+        )
+        preferred = getattr(settings, "llm_provider", "google")
+
+        chain: list[str] = []
+        if preferred:
+            chain.append(preferred)
+
+        for provider_name in configured:
+            if provider_name not in chain:
+                chain.append(provider_name)
+
+        return chain
+
+    @classmethod
     def _resolve_tier(cls, tier) -> str:
         """Resolve ThinkingTier enum or string to string value."""
         if isinstance(tier, ThinkingTier):
@@ -89,22 +108,16 @@ class LLMPool:
         if cls._providers:
             return
 
-        from app.engine.llm_providers import GeminiProvider, OpenAIProvider, OllamaProvider
-
-        provider_map = {
-            "google": GeminiProvider,
-            "openai": OpenAIProvider,
-            "ollama": OllamaProvider,
-        }
-
-        chain = getattr(settings, "llm_failover_chain", ["google", "openai", "ollama"])
+        chain = cls._get_provider_chain()
         for name in chain:
-            if name in provider_map:
-                try:
-                    cls._providers[name] = provider_map[name]()
-                    logger.debug("[LLM_POOL] Registered provider: %s", name)
-                except Exception as e:
-                    logger.warning("[LLM_POOL] Failed to register provider %s: %s", name, e)
+            if not is_supported_provider(name):
+                logger.debug("[LLM_POOL] Skipping unsupported provider in chain: %s", name)
+                continue
+            try:
+                cls._providers[name] = create_provider(name)
+                logger.debug("[LLM_POOL] Registered provider: %s", name)
+            except Exception as e:
+                logger.warning("[LLM_POOL] Failed to register provider %s: %s", name, e)
 
         logger.info(
             "[LLM_POOL] Provider chain: %s (failover=%s)",
@@ -159,8 +172,12 @@ class LLMPool:
         include_thoughts = tier_key in [ThinkingTier.DEEP.value, ThinkingTier.MODERATE.value]
 
         # --- Multi-Provider Failover ---
-        if settings.enable_llm_failover and cls._providers:
-            chain = getattr(settings, "llm_failover_chain", ["google", "openai", "ollama"])
+        should_use_provider_chain = cls._providers and (
+            settings.enable_llm_failover or settings.llm_provider != "google"
+        )
+
+        if should_use_provider_chain:
+            chain = cls._get_provider_chain()
             errors = []
 
             for provider_name in chain:
@@ -302,13 +319,19 @@ class LLMPool:
     @classmethod
     def get_stats(cls) -> dict:
         """Get pool statistics for monitoring."""
+        if not cls._providers:
+            try:
+                cls._init_providers()
+            except Exception as e:
+                logger.debug("[LLM_POOL] get_stats() could not init providers: %s", e)
+
         stats = {
             "initialized": cls._initialized,
             "instance_count": len(cls._pool),
             "tiers": list(cls._pool.keys()),
             "active_provider": cls._active_provider,
             "failover_enabled": settings.enable_llm_failover,
-            "provider_chain": getattr(settings, "llm_failover_chain", []),
+            "provider_chain": cls._get_provider_chain(),
             "providers_registered": list(cls._providers.keys()),
         }
         # Include per-provider circuit breaker stats

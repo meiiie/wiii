@@ -123,7 +123,8 @@ class SessionManager:
     def get_or_create_session(
         self, 
         user_id: str, 
-        thread_id: Optional[str] = None
+        thread_id: Optional[str] = None,
+        organization_id: Optional[str] = None,
     ) -> SessionContext:
         """
         Get or create a session for user.
@@ -142,7 +143,11 @@ class SessionManager:
         Returns:
             SessionContext with session info and state
         """
-        session_id = self._resolve_session_id(user_id, thread_id)
+        session_id = self._resolve_session_id(
+            user_id,
+            thread_id,
+            organization_id=organization_id,
+        )
         state = self._get_or_create_state(session_id)
         user_name = self._get_user_name(session_id)
         
@@ -154,35 +159,51 @@ class SessionManager:
             user_name=user_name
         )
     
-    def _resolve_session_id(self, user_id: str, thread_id: Optional[str]) -> UUID:
+    @staticmethod
+    def _cache_key(user_id: str, organization_id: Optional[str] = None) -> str:
+        """Build an org-aware in-memory cache key for session reuse."""
+        normalized_org_id = str(organization_id or "default").strip() or "default"
+        return f"{normalized_org_id}::{user_id}"
+
+    def _resolve_session_id(
+        self,
+        user_id: str,
+        thread_id: Optional[str],
+        organization_id: Optional[str] = None,
+    ) -> UUID:
         """Resolve session_id from user_id and optional thread_id."""
+        cache_key = self._cache_key(user_id, organization_id)
+
         # v2.1: If thread_id provided, use it as session_id
         if thread_id:
             try:
                 session_uuid = UUID(thread_id)
-                self._sessions[user_id] = session_uuid
+                self._sessions[cache_key] = session_uuid
                 return session_uuid
             except ValueError:
                 # Non-UUID thread_id — normalize to deterministic UUID
                 from app.repositories.chat_history_repository import _normalize_session_id
                 session_uuid = _normalize_session_id(thread_id)
-                self._sessions[user_id] = session_uuid
+                self._sessions[cache_key] = session_uuid
                 return session_uuid
         
         # Try to get from chat history (persistent)
         if self._chat_history.is_available():
-            chat_session = self._chat_history.get_or_create_session(user_id)
+            chat_session = self._chat_history.get_or_create_session(
+                user_id,
+                organization_id=organization_id,
+            )
             if chat_session:
-                self._sessions[user_id] = chat_session.session_id
+                self._sessions[cache_key] = chat_session.session_id
                 return chat_session.session_id
         
         # Fallback to in-memory session
-        if user_id not in self._sessions:
+        if cache_key not in self._sessions:
             if len(self._sessions) >= self.MAX_CACHED_SESSIONS:
                 oldest_key = next(iter(self._sessions))
                 del self._sessions[oldest_key]
-            self._sessions[user_id] = uuid4()
-        return self._sessions[user_id]
+            self._sessions[cache_key] = uuid4()
+        return self._sessions[cache_key]
     
     def _get_or_create_state(self, session_id: UUID) -> SessionState:
         """Get or create session state for anti-repetition tracking."""

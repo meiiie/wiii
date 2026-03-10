@@ -31,7 +31,7 @@ import type {
 // Reset stores before each test
 beforeEach(() => {
   useAdminStore.getState().reset();
-  useUIStore.setState({ adminPanelOpen: false });
+  useUIStore.setState({ activeView: "chat" });
 });
 
 // =============================================================================
@@ -589,45 +589,39 @@ describe("Admin Store", () => {
 });
 
 // =============================================================================
-// 4. UI STORE TESTS — adminPanelOpen, open/close, closeAll
+// 4. UI STORE TESTS — activeView, open/close, closeAll
 // =============================================================================
 
 describe("UI Store — Admin Panel", () => {
-  it("adminPanelOpen defaults to false", () => {
-    expect(useUIStore.getState().adminPanelOpen).toBe(false);
+  it("activeView defaults to chat", () => {
+    expect(useUIStore.getState().activeView).toBe("chat");
   });
 
-  it("openAdminPanel opens panel and closes settings + command palette", () => {
-    useUIStore.setState({ settingsOpen: true, commandPaletteOpen: true });
+  it("openAdminPanel sets activeView and closes command palette", () => {
+    useUIStore.setState({ commandPaletteOpen: true });
     useUIStore.getState().openAdminPanel();
 
     const state = useUIStore.getState();
-    expect(state.adminPanelOpen).toBe(true);
-    expect(state.settingsOpen).toBe(false);
+    expect(state.activeView).toBe("system-admin");
     expect(state.commandPaletteOpen).toBe(false);
   });
 
-  it("closeAdminPanel closes only admin panel", () => {
-    useUIStore.setState({ adminPanelOpen: true, settingsOpen: true });
+  it("closeAdminPanel returns to chat", () => {
+    useUIStore.getState().openAdminPanel();
     useUIStore.getState().closeAdminPanel();
-
-    const state = useUIStore.getState();
-    expect(state.adminPanelOpen).toBe(false);
-    expect(state.settingsOpen).toBe(true);
+    expect(useUIStore.getState().activeView).toBe("chat");
   });
 
-  it("closeAll closes admin panel along with everything else", () => {
+  it("closeAll resets activeView and closes everything", () => {
     useUIStore.setState({
-      settingsOpen: true,
       commandPaletteOpen: true,
-      adminPanelOpen: true,
       sourcesPanelOpen: true,
     });
+    useUIStore.getState().openAdminPanel();
     useUIStore.getState().closeAll();
 
     const state = useUIStore.getState();
-    expect(state.adminPanelOpen).toBe(false);
-    expect(state.settingsOpen).toBe(false);
+    expect(state.activeView).toBe("chat");
     expect(state.commandPaletteOpen).toBe(false);
     expect(state.sourcesPanelOpen).toBe(false);
   });

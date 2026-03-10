@@ -106,7 +106,7 @@ export const useOrgAdminStore = create<OrgAdminState>((set, get) => ({
       const detail = await getAdminOrgDetail(orgId);
       set({ orgDetail: detail });
     } catch {
-      // Graceful fallback
+      get().showToast("error", "Không thể tải thông tin tổ chức");
     } finally {
       set((s) => ({ detailLoading: false, loading: s.membersLoading }));
     }
@@ -118,7 +118,7 @@ export const useOrgAdminStore = create<OrgAdminState>((set, get) => ({
       const members = await getAdminOrgMembers(orgId);
       set({ members });
     } catch {
-      // Graceful fallback
+      get().showToast("error", "Không thể tải danh sách thành viên");
     } finally {
       set((s) => ({ membersLoading: false, loading: s.detailLoading }));
     }
@@ -173,7 +173,7 @@ export const useOrgAdminStore = create<OrgAdminState>((set, get) => ({
       const resp = await listOrgDocuments(orgId);
       set({ documents: resp.documents, documentsTotal: resp.total });
     } catch {
-      // Graceful fallback
+      get().showToast("error", "Không thể tải danh sách tài liệu");
     } finally {
       set({ documentsLoading: false });
     }

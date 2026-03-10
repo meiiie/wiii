@@ -10,6 +10,7 @@ Output: ~/.wiii/workspace/reports/product_report_{timestamp}.xlsx
 
 import json
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -27,12 +28,25 @@ logger = logging.getLogger(__name__)
 
 def _get_reports_dir() -> Path:
     """Get the reports directory, creating it if needed."""
-    from app.core.config import get_settings
-    settings = get_settings()
-    workspace = Path(settings.workspace_root).expanduser()
+    workspace_root = os.getenv("WORKSPACE_ROOT") or "~/.wiii/workspace"
+    workspace = Path(workspace_root).expanduser()
     reports_dir = workspace / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     return reports_dir
+
+
+def _advanced_excel_report_enabled() -> bool:
+    """Resolve the advanced report flag without hard-failing on local env issues."""
+    env_value = os.getenv("ENABLE_ADVANCED_EXCEL_REPORT")
+    if env_value is not None:
+        return env_value.strip().lower() in {"1", "true", "yes", "on"}
+
+    try:
+        from app.core.config import settings
+
+        return bool(getattr(settings, "enable_advanced_excel_report", False))
+    except Exception:
+        return False
 
 
 @tool
@@ -62,9 +76,7 @@ def tool_generate_product_report(products_json: str, title: str = "Báo cáo so 
         return json.dumps({"error": "No products to report"}, ensure_ascii=False)
 
     # Sprint 196: Check if advanced mode is enabled
-    from app.core.config import get_settings
-    settings = get_settings()
-    if settings.enable_advanced_excel_report:
+    if _advanced_excel_report_enabled():
         return _generate_advanced_report(products, title)
     else:
         return _generate_legacy_report(products, title)

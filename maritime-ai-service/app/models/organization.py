@@ -48,6 +48,7 @@ class OrgAIConfig(BaseModel):
     temperature_override: Optional[float] = None
     max_response_length: Optional[int] = None
     default_domain: Optional[str] = None  # Org-level domain override
+    external_connector_id: Optional[str] = None  # Sprint 220c: LMS/external connector
 
 
 class OrgPermissions(BaseModel):

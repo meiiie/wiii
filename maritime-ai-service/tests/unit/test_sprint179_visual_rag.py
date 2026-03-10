@@ -627,6 +627,9 @@ class TestFeatureGateIntegration:
         mock_settings.rag_confidence_high = 0.8
         mock_settings.enable_answer_verification = False
         mock_settings.semantic_cache_enabled = False
+        mock_settings.enable_hyde = False
+        mock_settings.enable_adaptive_rag = False
+        mock_settings.enable_graph_rag = False
 
         mock_rag = MagicMock()
         mock_hybrid = MagicMock()
@@ -676,6 +679,9 @@ class TestFeatureGateIntegration:
             mock_tracer_inst.build_trace.return_value = None
             mock_tracer_inst.build_thinking_summary.return_value = None
 
+            mock_embeddings = MagicMock()
+            mock_embeddings.aembed_query = AsyncMock(return_value=[0.1, 0.2, 0.3])
+
             # Setup RAG generation
             mock_gen_response = MagicMock()
             mock_gen_response.content = "Answer about Rule 15"
@@ -687,7 +693,10 @@ class TestFeatureGateIntegration:
             # Visual RAG should NOT be called
             with patch(
                 "app.engine.agentic_rag.visual_rag.enrich_documents_with_visual_context"
-            ) as mock_enrich:
+            ) as mock_enrich, patch(
+                "app.engine.gemini_embedding.get_embeddings",
+                return_value=mock_embeddings,
+            ):
                 result = await crag.process("Rule 15 là gì?", {})
                 mock_enrich.assert_not_called()
 

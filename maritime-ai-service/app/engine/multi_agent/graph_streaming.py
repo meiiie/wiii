@@ -39,12 +39,16 @@ import uuid
 from typing import Dict, Optional, AsyncGenerator
 
 from app.core.config import settings
+from app.engine.llm_runtime_metadata import resolve_runtime_llm_metadata
 from app.core.constants import MAX_CONTENT_SNIPPET_LENGTH, PREVIEW_MAX_PER_MESSAGE, PREVIEW_SNIPPET_MAX_LENGTH
 from app.engine.multi_agent.state import AgentState
 from app.engine.multi_agent.graph import (
-    get_multi_agent_graph_async,
     _build_domain_config,
+    _build_turn_local_state_defaults,
+    open_multi_agent_graph,
 )
+from app.engine.reasoning import ReasoningRenderRequest, get_reasoning_narrator
+from app.engine.reasoning.reasoning_narrator import build_tool_context_summary
 from app.engine.agents import get_agent_registry
 
 from app.engine.multi_agent.stream_utils import (
@@ -135,10 +139,14 @@ async def _convert_bus_event(event: dict) -> StreamEvent:
         # Sprint 74: Answer tokens streamed in real-time from tutor final generation
         return await create_answer_event(event.get("content", ""))
     elif etype == "thinking_start":
+        _details = dict(event.get("details") or {})
+        if event.get("summary") and "summary" not in _details:
+            _details["summary"] = event.get("summary")
         return await create_thinking_start_event(
             label=str(event.get("content", "")),
             node=node or "",
             summary=event.get("summary"),
+            details=_details or None,
         )
     elif etype == "thinking_end":
         return await create_thinking_end_event(
@@ -158,6 +166,7 @@ async def _convert_bus_event(event: dict) -> StreamEvent:
             image_base64=str(_sc.get("image", "")),
             label=str(_sc.get("label", "")),
             node=node,
+            metadata=_sc.get("metadata"),
         )
     elif etype == "preview":
         # Sprint 166: Rich preview card
@@ -210,56 +219,101 @@ _NODE_LABELS = {
     "rag": "Tra cứu tri thức",
     "tutor": "Soạn bài giảng",
     "search": "Tìm kiếm sản phẩm",
+    "code_studio_agent": "Code Studio",
 }
 
-# Sprint 147: Bold narrative text emitted after Supervisor routing
-# Provides Claude-like contextual narrative between thinking blocks
-_INTENT_ACTION_TEXT = {
-    "lookup": "Wiii sẽ tìm kiếm tài liệu liên quan trong cơ sở tri thức...",
-    "learning": "Để giải thích rõ ràng, Wiii sẽ tra cứu kiến thức chuyên ngành và soạn bài giảng...",
-    "web_search": "Wiii cần tìm thông tin mới nhất trên web để trả lời chính xác...",
-    "personal": "Wiii nhớ lại những gì biết về bạn...",
-    "social": "Wiii sẽ trò chuyện cùng bạn...",
-    "off_topic": "Wiii sẽ suy nghĩ và trả lời câu hỏi chung...",
-    "product_search": "Wiii sẽ tìm kiếm sản phẩm trên nhiều sàn thương mại điện tử...",
-}
+def _normalize_tool_names(tools_used: object) -> list[str]:
+    names: list[str] = []
+    if not isinstance(tools_used, list):
+        return names
+    for item in tools_used:
+        if isinstance(item, dict):
+            candidate = str(
+                item.get("name")
+                or item.get("tool_name")
+                or item.get("tool")
+                or ""
+            ).strip()
+        else:
+            candidate = str(item).strip()
+        if candidate and candidate not in names:
+            names.append(candidate)
+    return names
 
-def _generate_thinking_summary(node_output: dict, query: str) -> str:
-    """Generate Claude-style one-line summary for the thinking block header.
 
-    Sprint 145: Creates a concise Vietnamese summary from the routing decision,
-    used as the collapsed header text in the Claude-like thinking UI.
-    """
-    intent = ""
-    if isinstance(node_output.get("routing_metadata"), dict):
-        intent = node_output["routing_metadata"].get("intent", "")
-    next_agent = node_output.get("next_agent", "")
+def _collapse_narration(narration) -> str:
+    chunks = [chunk.strip() for chunk in (narration.delta_chunks or []) if chunk and chunk.strip()]
+    if chunks:
+        return "\n".join(chunks)
+    return narration.summary
 
-    _summaries = {
-        "lookup": f"Tra cứu kiến thức về: {query[:50]}",
-        "learning": f"Phân tích và giảng dạy: {query[:50]}",
-        "social": "Trò chuyện cùng người dùng",
-        "personal": "Truy xuất bộ nhớ cá nhân",
-        "web_search": f"Tìm kiếm web: {query[:50]}",
-        "off_topic": f"Trả lời câu hỏi chung: {query[:50]}",
-        "product_search": f"Tìm kiếm sản phẩm: {query[:50]}",
-    }
 
-    if intent and intent in _summaries:
-        return _summaries[intent]
+async def _render_fallback_narration(
+    *,
+    node: str,
+    phase: str,
+    query: str,
+    user_id: str,
+    context: Optional[dict],
+    initial_state: AgentState,
+    node_output: dict,
+    cue: str = "",
+    intent: str = "",
+    next_action: str = "",
+    observations: Optional[list[str]] = None,
+    style_tags: Optional[list[str]] = None,
+    confidence: float = 0.0,
+    evidence_strength: float = 0.0,
+):
+    tool_names = _normalize_tool_names(node_output.get("tools_used", []))
+    response_hint = (
+        node_output.get("final_response")
+        or node_output.get("tutor_output")
+        or node_output.get("memory_output")
+        or ""
+    )
+    safe_observations = [item for item in (observations or []) if item]
+    if tool_names:
+        safe_observations.append(
+            f"Đã đi qua {len(tool_names)} lớp công cụ liên quan."
+        )
+    sources = node_output.get("sources", [])
+    if isinstance(sources, list) and sources:
+        safe_observations.append(
+            f"Đang giữ lại {len(sources)} nguồn hoặc mảnh chứng cứ liên quan."
+        )
 
-    # Fallback based on next_agent
-    _agent_summaries = {
-        "rag_agent": f"Tra cứu kiến thức: {query[:50]}",
-        "tutor_agent": f"Soạn bài giảng: {query[:50]}",
-        "memory_agent": "Truy xuất bộ nhớ cá nhân",
-        "direct": f"Suy nghĩ câu trả lời: {query[:50]}",
-        "product_search_agent": f"Tìm kiếm sản phẩm: {query[:50]}",
-    }
-    if next_agent and next_agent in _agent_summaries:
-        return _agent_summaries[next_agent]
-
-    return f"Phân tích câu hỏi: {query[:60]}"
+    return await get_reasoning_narrator().render(
+        ReasoningRenderRequest(
+            node=node,
+            phase=phase,
+            intent=intent,
+            cue=cue,
+            user_goal=query,
+            conversation_context=str((context or {}).get("conversation_summary", "")),
+            memory_context=str(
+                node_output.get("memory_context")
+                or initial_state.get("memory_context")
+                or ""
+            ),
+            capability_context=str(
+                node_output.get("capability_context")
+                or initial_state.get("capability_context")
+                or ""
+            ),
+            tool_context=build_tool_context_summary(tool_names, response_hint or None),
+            confidence=float(confidence or 0.0),
+            evidence_strength=float(evidence_strength or 0.0),
+            next_action=next_action,
+            observations=safe_observations,
+            user_id=user_id,
+            organization_id=(context or {}).get("organization_id"),
+            personality_mode=(context or {}).get("personality_mode"),
+            mood_hint=(context or {}).get("mood_hint"),
+            visibility_mode="rich",
+            style_tags=style_tags or [],
+        )
+    )
 
 
 def _is_likely_english(text: str) -> bool:
@@ -430,7 +484,6 @@ async def process_with_multi_agent_streaming(
     session_id = str(session_id) if session_id else ""
     domain_id = domain_id or settings.default_domain
     start_time = time.time()
-    graph = await get_multi_agent_graph_async()
     registry = get_agent_registry()
 
     # Start trace
@@ -439,10 +492,15 @@ async def process_with_multi_agent_streaming(
 
     # Sprint 153: Initialize before outer try to prevent NameError in finally
     bus_id = None
+    graph_cm = None
+    graph = None
+    final_state = None
 
     try:
+        graph_cm = open_multi_agent_graph()
+        graph = await graph_cm.__aenter__()
         # Yield initial status
-        yield await create_status_event("🚀 Bắt đầu xử lý câu hỏi...", None)
+        yield await create_status_event("Đang bắt đầu lượt xử lý...", None)
 
         # Build domain config for streaming
         domain_config = _build_domain_config(domain_id)
@@ -492,6 +550,7 @@ async def process_with_multi_agent_streaming(
             "routing_metadata": None,  # Sprint 189b-R5: parity with sync (graph.py:1643)
             "organization_id": (context or {}).get("organization_id"),  # Sprint 170c
             "_event_bus_id": bus_id,
+            **_build_turn_local_state_defaults(context),
         }
 
         # Sprint 222: Graph-level host context injection (sync/stream parity)
@@ -500,7 +559,6 @@ async def process_with_multi_agent_streaming(
         if _host_prompt:
             initial_state["host_context_prompt"] = _host_prompt
 
-        final_state = None
         answer_emitted = False
         partial_answer_emitted = False
         rag_answer_text = ""
@@ -718,65 +776,58 @@ async def process_with_multi_agent_streaming(
                 # ---- SUPERVISOR NODE ----
                 if node_name == "supervisor":
                     next_agent = node_output.get("next_agent", "")
-
-                    # Sprint 145: Generate summary for Claude-like collapsed header
-                    _summary = _generate_thinking_summary(node_output, query)
+                    _routing_meta = node_output.get("routing_metadata", {})
+                    _intent = _routing_meta.get("intent", "") if isinstance(_routing_meta, dict) else ""
+                    _confidence = _routing_meta.get("confidence", 0.0) if isinstance(_routing_meta, dict) else 0.0
+                    _reasoning = _routing_meta.get("reasoning", "") if isinstance(_routing_meta, dict) else ""
+                    _supervisor_narration = await get_reasoning_narrator().render(
+                        ReasoningRenderRequest(
+                            node="supervisor",
+                            phase="route",
+                            intent=_intent,
+                            cue=next_agent,
+                            user_goal=query,
+                            conversation_context=str((context or {}).get("conversation_summary", "")),
+                            capability_context=str(
+                                node_output.get("capability_context")
+                                or initial_state.get("capability_context")
+                                or ""
+                            ),
+                            confidence=float(_confidence or 0.0),
+                            next_action=f"Chuyển sang {next_agent}" if next_agent else "",
+                            observations=[
+                                _reasoning,
+                                _extract_thinking_content(node_output),
+                            ],
+                            user_id=user_id,
+                            organization_id=(context or {}).get("organization_id"),
+                            personality_mode=(context or {}).get("personality_mode"),
+                            mood_hint=(context or {}).get("mood_hint"),
+                            visibility_mode="rich",
+                            style_tags=["routing", "visible_reasoning"],
+                        )
+                    )
 
                     yield await create_status_event(
-                        NODE_DESCRIPTIONS.get("supervisor", "🎯 Phân tích câu hỏi"),
+                        NODE_DESCRIPTIONS.get("supervisor", "Đang canh lại hướng xử lý..."),
                         "supervisor",
                     )
 
                     # Thinking lifecycle: open → content → close
                     yield await create_thinking_start_event(
-                        _NODE_LABELS.get("supervisor", "Phan tich cau hoi"),
+                        _supervisor_narration.label,
                         "supervisor",
-                        summary=_summary,
+                        summary=_supervisor_narration.summary,
+                        details={
+                            "phase": _supervisor_narration.phase,
+                            "style_tags": _supervisor_narration.style_tags,
+                        },
                     )
 
-                    # Sprint 145: Prioritize native thinking first, then structured metadata
-                    _routing_parts = []
+                    _routing_parts = list(_supervisor_narration.delta_chunks or [])
+                    if not _routing_parts:
+                        _routing_parts.append(_supervisor_narration.summary)
 
-                    # 1. Native LLM thinking (preferred — actual model reasoning)
-                    thinking_content = _extract_thinking_content(node_output)
-                    if thinking_content and "supervisor" not in _bus_streamed_nodes:
-                        _routing_parts.append(thinking_content)
-
-                    # 2. Structured routing metadata (append below native thinking)
-                    _routing_meta = node_output.get("routing_metadata", {})
-                    if isinstance(_routing_meta, dict):
-                        _intent = _routing_meta.get("intent", "")
-                        _confidence = _routing_meta.get("confidence", 0)
-                        _reasoning = _routing_meta.get("reasoning", "")
-                        _method = _routing_meta.get("method", "")
-
-                        _intent_labels = {
-                            "lookup": "Tra cứu kiến thức",
-                            "learning": "Học tập/Giải thích",
-                            "personal": "Cá nhân/Bộ nhớ",
-                            "social": "Giao tiếp xã hội",
-                            "off_topic": "Ngoài chuyên ngành",
-                            "web_search": "Tìm kiếm web",
-                        }
-                        if _intent:
-                            _routing_parts.append(
-                                f"Ý định: {_intent_labels.get(_intent, _intent)}"
-                            )
-                        if _reasoning and _reasoning not in ("rule-based (no LLM)",):
-                            _routing_parts.append(f"Phân tích: {_reasoning}")
-                        if _confidence:
-                            _routing_parts.append(
-                                f"Độ tin cậy: {_confidence:.0%}"
-                            )
-                        if _method and _method != "structured":
-                            _routing_parts.append(f"Phương pháp: {_method}")
-
-                    # 3. Routing destination
-                    if next_agent:
-                        route_label = _NODE_LABELS.get(next_agent, next_agent)
-                        _routing_parts.append(f"→ Chuyển đến: {route_label}")
-
-                    # Emit combined thinking
                     if _routing_parts:
                         yield await create_thinking_delta_event(
                             "\n".join(_routing_parts),
@@ -785,9 +836,9 @@ async def process_with_multi_agent_streaming(
 
                     # Also emit status for pipeline indicator
                     if next_agent:
-                        desc = NODE_DESCRIPTIONS.get(next_agent, next_agent)
+                        desc = _NODE_LABELS.get(next_agent, next_agent)
                         yield await create_status_event(
-                            f"→ {desc}",
+                            f"Chuyển sang {desc}",
                             "supervisor",
                         )
 
@@ -796,10 +847,7 @@ async def process_with_multi_agent_streaming(
                         duration_ms=int((time.time() - node_start) * 1000),
                     )
 
-                    # Sprint 147: Emit bold action text after supervisor routing
-                    _routing_meta = node_output.get("routing_metadata", {})
-                    _intent = _routing_meta.get("intent", "") if isinstance(_routing_meta, dict) else ""
-                    _action_text = _INTENT_ACTION_TEXT.get(_intent)
+                    _action_text = _supervisor_narration.action_text
                     if _action_text:
                         yield await create_action_text_event(
                             _action_text,
@@ -809,7 +857,7 @@ async def process_with_multi_agent_streaming(
                 # ---- RAG AGENT NODE ----
                 elif node_name == "rag_agent":
                     yield await create_status_event(
-                        NODE_DESCRIPTIONS.get("rag_agent", "📚 Tra cứu tri thức"),
+                        NODE_DESCRIPTIONS.get("rag_agent", "Đang tiếp tục tra cứu..."),
                         "rag_agent",
                     )
 
@@ -846,12 +894,12 @@ async def process_with_multi_agent_streaming(
                             for t in tools_used
                         ]
                         yield await create_status_event(
-                            f"📚 Đã tra cứu: {', '.join(tool_names)}",
+                            f"Đã tra cứu: {', '.join(tool_names)}",
                             "rag_agent",
                         )
                     if sources:
                         yield await create_status_event(
-                            f"📄 Tìm thấy {len(sources)} nguồn tham khảo",
+                            f"Tìm thấy {len(sources)} nguồn tham khảo",
                             "rag_agent",
                         )
 
@@ -881,13 +929,33 @@ async def process_with_multi_agent_streaming(
                     # Sprint 70: Skip bulk thinking if bus already streamed deltas
                     # Sprint 141b: Use thinking_delta (not thinking) so content appears in streamingBlocks
                     thinking_content = _extract_thinking_content(node_output)
-                    if thinking_content and "rag_agent" not in _bus_streamed_nodes:
+                    if "rag_agent" not in _bus_streamed_nodes:
+                        _rag_narration = None
+                        if not thinking_content:
+                            _rag_narration = await _render_fallback_narration(
+                                node="rag_agent",
+                                phase="retrieve",
+                                query=query,
+                                user_id=user_id,
+                                context=context,
+                                initial_state=initial_state,
+                                node_output=node_output,
+                                cue="retrieval",
+                                next_action="Giữ lại những đoạn thật sự đáng bám rồi ghép chúng thành câu trả lời grounded.",
+                                observations=[
+                                    node_output.get("grader_feedback", ""),
+                                ],
+                                style_tags=["grounded", "retrieval"],
+                                confidence=float(node_output.get("grader_score") or 0.0),
+                            )
                         yield await create_thinking_start_event(
                             _NODE_LABELS.get("rag_agent", "Tra cứu tri thức"),
                             "rag_agent",
+                            summary=_rag_narration.summary if _rag_narration else None,
+                            details={"phase": "retrieve"} if _rag_narration else None,
                         )
                         yield await create_thinking_delta_event(
-                            thinking_content,
+                            thinking_content or _collapse_narration(_rag_narration),
                             "rag_agent",
                         )
                         yield await create_thinking_end_event(
@@ -926,7 +994,7 @@ async def process_with_multi_agent_streaming(
                 # ---- TUTOR AGENT NODE ----
                 elif node_name == "tutor_agent":
                     yield await create_status_event(
-                        NODE_DESCRIPTIONS.get("tutor_agent", "👨‍🏫 Tạo bài giảng"),
+                        NODE_DESCRIPTIONS.get("tutor_agent", "Đang tiếp tục giải thích..."),
                         "tutor_agent",
                     )
 
@@ -955,7 +1023,7 @@ async def process_with_multi_agent_streaming(
                     tools_used = node_output.get("tools_used", [])
                     if tools_used:
                         yield await create_status_event(
-                            f"👨‍🏫 Đã phân tích từ {len(tools_used)} nguồn",
+                            f"Đã đối chiếu {len(tools_used)} nguồn",
                             "tutor_agent",
                         )
 
@@ -970,13 +1038,32 @@ async def process_with_multi_agent_streaming(
                         "tutor_agent" in _bus_streamed_nodes
                         or node_output.get("_answer_streamed_via_bus", False)
                     )
-                    if thinking_content and not _tutor_already_streamed:
+                    if not _tutor_already_streamed:
+                        _tutor_narration = None
+                        if not thinking_content:
+                            _tutor_narration = await _render_fallback_narration(
+                                node="tutor_agent",
+                                phase="synthesize",
+                                query=query,
+                                user_id=user_id,
+                                context=context,
+                                initial_state=initial_state,
+                                node_output=node_output,
+                                cue="teaching",
+                                next_action="Viết lại phần cốt lõi theo nhịp dễ theo dõi hơn.",
+                                observations=[
+                                    node_output.get("tutor_output", ""),
+                                ],
+                                style_tags=["teaching", "warm"],
+                            )
                         yield await create_thinking_start_event(
                             _NODE_LABELS.get("tutor_agent", "Giảng dạy"),
                             "tutor_agent",
+                            summary=_tutor_narration.summary if _tutor_narration else None,
+                            details={"phase": "synthesize"} if _tutor_narration else None,
                         )
                         yield await create_thinking_delta_event(
-                            thinking_content,
+                            thinking_content or _collapse_narration(_tutor_narration),
                             "tutor_agent",
                         )
                         yield await create_thinking_end_event(
@@ -1032,20 +1119,20 @@ async def process_with_multi_agent_streaming(
 
                     if score > 0:
                         status_icon = "✅" if score >= 6 else "⚠️"
-                        _status_msg = f"{status_icon} Chất lượng: {score:.1f}/10"
+                        _status_msg = f"{status_icon} Độ chắc hiện tại: {score:.1f}/10"
                         if feedback and len(feedback) > 10:
                             _status_msg += f" — {feedback[:80]}"
                         yield await create_status_event(_status_msg, "grader")
                     else:
                         yield await create_status_event(
-                            "✅ Đánh giá chất lượng câu trả lời...",
+                            "Đang rà soát độ chắc chắn...",
                             "grader",
                         )
 
                 # ---- SYNTHESIZER NODE (FINAL) ----
                 elif node_name == "synthesizer":
                     yield await create_status_event(
-                        NODE_DESCRIPTIONS.get("synthesizer", "📝 Tổng hợp câu trả lời"),
+                        NODE_DESCRIPTIONS.get("synthesizer", "Đang khâu lại phản hồi..."),
                         "synthesizer",
                     )
 
@@ -1070,27 +1157,45 @@ async def process_with_multi_agent_streaming(
                 # ---- MEMORY NODE (Sprint 72: stream response) ----
                 elif node_name == "memory_agent":
                     yield await create_status_event(
-                        NODE_DESCRIPTIONS.get("memory_agent", "🧠 Truy xuất bộ nhớ"),
-                        "memory_agent",
-                    )
-                    yield await create_thinking_start_event(
-                        _NODE_LABELS.get("memory_agent", "Truy xuat bo nho"),
+                        NODE_DESCRIPTIONS.get("memory_agent", "Đang gọi lại ngữ cảnh..."),
                         "memory_agent",
                     )
 
                     # Sprint 72: Emit thinking content if available
                     # Sprint 141b: Use thinking_delta (not thinking) so content appears in streamingBlocks
                     thinking_content = _extract_thinking_content(node_output)
-                    if thinking_content and "memory_agent" not in _bus_streamed_nodes:
+                    if "memory_agent" not in _bus_streamed_nodes:
+                        _memory_narration = None
+                        if not thinking_content:
+                            _memory_narration = await _render_fallback_narration(
+                                node="memory_agent",
+                                phase="retrieve",
+                                query=query,
+                                user_id=user_id,
+                                context=context,
+                                initial_state=initial_state,
+                                node_output=node_output,
+                                cue="memory",
+                                next_action="Giữ lại những gì còn ích cho lượt trả lời này rồi nối lại với hiện tại.",
+                                observations=[
+                                    node_output.get("memory_output", ""),
+                                ],
+                                style_tags=["memory", "continuity"],
+                            )
+                        yield await create_thinking_start_event(
+                            _NODE_LABELS.get("memory_agent", "Truy xuat bo nho"),
+                            "memory_agent",
+                            summary=_memory_narration.summary if _memory_narration else None,
+                            details={"phase": "retrieve"} if _memory_narration else None,
+                        )
                         yield await create_thinking_delta_event(
-                            thinking_content,
+                            thinking_content or _collapse_narration(_memory_narration),
                             "memory_agent",
                         )
-
-                    yield await create_thinking_end_event(
-                        "memory_agent",
-                        duration_ms=int((time.time() - node_start) * 1000),
-                    )
+                        yield await create_thinking_end_event(
+                            "memory_agent",
+                            duration_ms=int((time.time() - node_start) * 1000),
+                        )
 
                     # Sprint 72: Stream memory response as answer
                     memory_response = node_output.get("memory_output", "")
@@ -1112,46 +1217,56 @@ async def process_with_multi_agent_streaming(
                 # ---- DIRECT NODE ----
                 elif node_name == "direct":
                     yield await create_status_event(
-                        NODE_DESCRIPTIONS.get("direct", "💬 Wiii đang suy nghĩ câu trả lời..."),
+                        NODE_DESCRIPTIONS.get("direct", "Đang tiếp tục trả lời..."),
                         "direct",
                     )
 
-                    # Thinking lifecycle: open
-                    yield await create_thinking_start_event(
-                        _NODE_LABELS.get("direct", "Trả lời trực tiếp"),
-                        "direct",
-                    )
+                    _direct_already_streamed = "direct" in _bus_streamed_nodes
+                    if not _direct_already_streamed:
+                        # Sprint 145: Prioritize native thinking FIRST, then narrator fallback
+                        thinking_content = _extract_thinking_content(node_output)
+                        _direct_narration = None
+                        if not thinking_content:
+                            _direct_narration = await _render_fallback_narration(
+                                node="direct",
+                                phase="synthesize",
+                                query=query,
+                                user_id=user_id,
+                                context=context,
+                                initial_state=initial_state,
+                                node_output=node_output,
+                                cue=node_output.get("current_mode", "") or "direct",
+                                next_action="Chốt cách đáp gần và đúng nhịp rồi trả lời thẳng cho người dùng.",
+                                observations=[
+                                    node_output.get("domain_notice", ""),
+                                ],
+                                style_tags=["direct", "adaptive"],
+                            )
 
-                    # Sprint 145: Prioritize native thinking FIRST, then fallback
-                    thinking_content = _extract_thinking_content(node_output)
-                    if thinking_content and "direct" not in _bus_streamed_nodes:
-                        yield await create_thinking_delta_event(
-                            thinking_content,
+                        # Thinking lifecycle: open
+                        yield await create_thinking_start_event(
+                            _NODE_LABELS.get("direct", "Trả lời trực tiếp"),
                             "direct",
+                            summary=_direct_narration.summary if _direct_narration else None,
+                            details={"phase": "synthesize"} if _direct_narration else None,
                         )
-                    elif "direct" not in _bus_streamed_nodes:
-                        # No native thinking — provide context from tools_used
-                        _tools_used = node_output.get("tools_used", [])
-                        if _tools_used:
-                            _direct_parts = [f"Đã sử dụng {len(_tools_used)} công cụ:"]
-                            for _t in _tools_used[:5]:
-                                _tname = _t if isinstance(_t, str) else str(_t)
-                                _direct_parts.append(f"  • {_tname}")
+
+                        if thinking_content:
                             yield await create_thinking_delta_event(
-                                "\n".join(_direct_parts),
+                                thinking_content,
                                 "direct",
                             )
                         else:
                             yield await create_thinking_delta_event(
-                                "Trả lời trực tiếp từ kiến thức chung của LLM",
+                                _collapse_narration(_direct_narration),
                                 "direct",
                             )
 
-                    # Thinking lifecycle: close
-                    yield await create_thinking_end_event(
-                        "direct",
-                        duration_ms=int((time.time() - node_start) * 1000),
-                    )
+                        # Thinking lifecycle: close
+                        yield await create_thinking_end_event(
+                            "direct",
+                            duration_ms=int((time.time() - node_start) * 1000),
+                        )
 
                     # Sprint 166: Emit web preview cards from direct node tool results
                     _direct_tc_events = node_output.get("tool_call_events", [])
@@ -1270,43 +1385,106 @@ async def process_with_multi_agent_streaming(
                     if domain_notice:
                         yield await create_domain_notice_event(domain_notice)
 
+                # ---- CODE STUDIO NODE ----
+                elif node_name == "code_studio_agent":
+                    yield await create_status_event(
+                        NODE_DESCRIPTIONS.get("code_studio_agent", "Dang che tac dau ra ky thuat..."),
+                        "code_studio_agent",
+                    )
+
+                    _code_already_streamed = "code_studio_agent" in _bus_streamed_nodes
+                    if not _code_already_streamed:
+                        thinking_content = _extract_thinking_content(node_output)
+                        _code_narration = None
+                        if not thinking_content:
+                            _code_narration = await _render_fallback_narration(
+                                node="code_studio_agent",
+                                phase="synthesize",
+                                query=query,
+                                user_id=user_id,
+                                context=context,
+                                initial_state=initial_state,
+                                node_output=node_output,
+                                cue="build",
+                                next_action="Chot cach thuc hien phu hop nhat roi gui answer kem output that.",
+                                observations=[],
+                                style_tags=["code-studio", "adaptive"],
+                            )
+
+                        yield await create_thinking_start_event(
+                            _NODE_LABELS.get("code_studio_agent", "Code Studio"),
+                            "code_studio_agent",
+                            summary=_code_narration.summary if _code_narration else None,
+                            details={"phase": "synthesize"} if _code_narration else None,
+                        )
+                        yield await create_thinking_delta_event(
+                            thinking_content or _collapse_narration(_code_narration),
+                            "code_studio_agent",
+                        )
+                        yield await create_thinking_end_event(
+                            "code_studio_agent",
+                            duration_ms=int((time.time() - node_start) * 1000),
+                        )
+
+                    # Keep Code Studio as the maker lane only.
+                    # Let the synthesizer emit the final polished answer so
+                    # /chat and /chat/stream/v3 stay aligned.
+                    if "code_studio_agent" in _bus_answer_nodes:
+                        answer_emitted = True
+                    final_state = node_output
+
                 # ---- PRODUCT SEARCH NODE (Sprint 148) ----
                 elif node_name == "product_search_agent":
                     yield await create_status_event(
-                        NODE_DESCRIPTIONS.get("product_search_agent", "🛒 Wiii đang tìm kiếm sản phẩm..."),
+                        NODE_DESCRIPTIONS.get("product_search_agent", "Đang tiếp tục đối chiếu..."),
                         "product_search_agent",
                     )
 
-                    # Thinking lifecycle: open
-                    yield await create_thinking_start_event(
-                        _NODE_LABELS.get("product_search_agent", "Tìm kiếm sản phẩm"),
-                        "product_search_agent",
-                    )
+                    _product_already_streamed = "product_search_agent" in _bus_streamed_nodes
+                    if not _product_already_streamed:
+                        # Emit native thinking if not already streamed via bus
+                        thinking_content = _extract_thinking_content(node_output)
+                        _product_narration = None
+                        if not thinking_content:
+                            _product_narration = await _render_fallback_narration(
+                                node="product_search_agent",
+                                phase="retrieve",
+                                query=query,
+                                user_id=user_id,
+                                context=context,
+                                initial_state=initial_state,
+                                node_output=node_output,
+                                cue="comparison",
+                                next_action="Giữ lại mặt bằng giá đáng tin rồi chuyển sang bước so và chốt.",
+                                observations=[
+                                    node_output.get("search_summary", ""),
+                                ],
+                                style_tags=["product-search", "comparative"],
+                            )
 
-                    # Emit native thinking if not already streamed via bus
-                    thinking_content = _extract_thinking_content(node_output)
-                    if thinking_content and "product_search_agent" not in _bus_streamed_nodes:
-                        yield await create_thinking_delta_event(
-                            thinking_content,
+                        # Thinking lifecycle: open
+                        yield await create_thinking_start_event(
+                            _NODE_LABELS.get("product_search_agent", "Tìm kiếm sản phẩm"),
                             "product_search_agent",
+                            summary=_product_narration.summary if _product_narration else None,
+                            details={"phase": "retrieve"} if _product_narration else None,
                         )
-                    elif "product_search_agent" not in _bus_streamed_nodes:
-                        _tools_used = node_output.get("tools_used", [])
-                        if _tools_used:
-                            _parts = [f"Đã tìm trên {len(_tools_used)} nền tảng:"]
-                            for _t in _tools_used[:6]:
-                                _tname = _t.get("name", "") if isinstance(_t, dict) else str(_t)
-                                _parts.append(f"  • {_tname}")
+                        if thinking_content:
                             yield await create_thinking_delta_event(
-                                "\n".join(_parts),
+                                thinking_content,
+                                "product_search_agent",
+                            )
+                        else:
+                            yield await create_thinking_delta_event(
+                                _collapse_narration(_product_narration),
                                 "product_search_agent",
                             )
 
-                    # Thinking lifecycle: close
-                    yield await create_thinking_end_event(
-                        "product_search_agent",
-                        duration_ms=int((time.time() - node_start) * 1000),
-                    )
+                        # Thinking lifecycle: close
+                        yield await create_thinking_end_event(
+                            "product_search_agent",
+                            duration_ms=int((time.time() - node_start) * 1000),
+                        )
 
                     # Sprint 166→200: Emit product preview cards from tool_call_events
                     # Sprint 200: Skip post-hoc emission if real-time emission is active
@@ -1479,11 +1657,29 @@ async def process_with_multi_agent_streaming(
               except Exception as _mood_err:
                   logger.debug("[STREAM] Emotional state retrieval failed: %s", _mood_err)
 
+              # Sprint 225: Build thread_id for cross-platform sync
+              _meta_thread_id = ""
+              try:
+                  from app.core.thread_utils import build_thread_id as _build_tid
+                  _meta_user_id = (context or {}).get("user_id", "")
+                  _meta_session_id = final_state.get("session_id", session_id)
+                  _meta_org_id = (context or {}).get("organization_id")
+                  if _meta_user_id and _meta_session_id:
+                      _meta_thread_id = _build_tid(
+                          str(_meta_user_id), str(_meta_session_id),
+                          org_id=_meta_org_id,
+                      )
+              except Exception:
+                  pass
+
+              runtime_llm = resolve_runtime_llm_metadata(final_state)
+
               yield await create_metadata_event(
                   reasoning_trace=reasoning_dict,
                   processing_time=processing_time,
                   confidence=final_state.get("grader_score", 0) / 10,
-                  model=f"{settings.rag_model_version}-streaming",
+                  model=runtime_llm["model"],
+                  provider=runtime_llm["provider"],
                   doc_count=len(sources),
                   thinking=final_state.get("thinking"),
                   thinking_content=final_state.get("thinking_content"),  # Sprint 189b-R5
@@ -1493,6 +1689,8 @@ async def process_with_multi_agent_streaming(
                   session_id=final_state.get("session_id", session_id),
                   # Sprint 189b: Evidence images for document thumbnails
                   evidence_images=final_state.get("evidence_images", []),
+                  # Sprint 225: Thread ID for cross-platform conversation sync
+                  thread_id=_meta_thread_id,
               )
 
           # Done signal
@@ -1532,6 +1730,11 @@ async def process_with_multi_agent_streaming(
         yield await create_done_event(time.time() - start_time)
         registry.end_request_trace(trace_id)
     finally:
+        if graph_cm is not None:
+            try:
+                await graph_cm.__aexit__(None, None, None)
+            except Exception as exc:
+                logger.debug("[MULTI_AGENT_STREAM] Graph context close failed: %s", exc)
         # Sprint 139: Clean up tracer from module-level storage
         if final_state:
             from app.engine.multi_agent.graph import _cleanup_tracer

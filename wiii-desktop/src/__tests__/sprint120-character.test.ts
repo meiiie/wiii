@@ -33,7 +33,7 @@ beforeEach(() => {
     moodEnabled: false,
   });
   useUIStore.setState({
-    settingsOpen: false,
+    activeView: "chat",
     sidebarOpen: true,
     inputFocused: false,
     characterPanelOpen: false,

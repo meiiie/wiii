@@ -45,6 +45,8 @@ class AnswerGenerator:
         is_follow_up: bool = False,
         organization_id: Optional[str] = None,
         host_context_prompt: str = "",
+        skill_context: str = "",
+        capability_context: str = "",
     ) -> Tuple[str, Optional[str]]:
         """
         Generate response using LLM to synthesize retrieved knowledge.
@@ -120,6 +122,10 @@ class AnswerGenerator:
         # Sprint 222: Graph-level host context
         if host_context_prompt:
             system_prompt = system_prompt + "\n\n" + host_context_prompt
+        if skill_context:
+            system_prompt = system_prompt + "\n\n## Skill Context\n" + skill_context
+        if capability_context:
+            system_prompt = system_prompt + "\n\n## Capability Handbook\n" + capability_context
 
         # Build user prompt with history and entity context
         user_prompt = _build_user_prompt(
@@ -180,6 +186,8 @@ class AnswerGenerator:
         is_follow_up: bool = False,
         organization_id: Optional[str] = None,
         host_context_prompt: str = "",
+        skill_context: str = "",
+        capability_context: str = "",
     ):
         """
         SOTA Streaming Generation - yields tokens as they arrive from LLM.
@@ -246,6 +254,10 @@ class AnswerGenerator:
         # Sprint 222: Graph-level host context
         if host_context_prompt:
             system_prompt = system_prompt + "\n\n" + host_context_prompt
+        if skill_context:
+            system_prompt = system_prompt + "\n\n## Skill Context\n" + skill_context
+        if capability_context:
+            system_prompt = system_prompt + "\n\n## Capability Handbook\n" + capability_context
 
         history_section = ""
         if conversation_history:

@@ -48,6 +48,9 @@ export async function clearTokens(): Promise<void> {
 // Sprint 192: Secure API Key Storage
 // =============================================================================
 const API_KEY_KEY = "api_key";
+const GEMINI_API_KEY_KEY = "gemini_api_key";
+const OPENROUTER_API_KEY_KEY = "openrouter_api_key";
+const OLLAMA_API_KEY_KEY = "ollama_api_key";
 
 export async function storeApiKey(apiKey: string): Promise<void> {
   await saveStore(TOKEN_STORE_NAME, API_KEY_KEY, apiKey);
@@ -60,6 +63,42 @@ export async function loadApiKey(): Promise<string | null> {
 
 export async function clearApiKey(): Promise<void> {
   await deleteStore(TOKEN_STORE_NAME, API_KEY_KEY);
+}
+
+export async function storeGeminiApiKey(apiKey: string): Promise<void> {
+  await saveStore(TOKEN_STORE_NAME, GEMINI_API_KEY_KEY, apiKey);
+}
+
+export async function loadGeminiApiKey(): Promise<string | null> {
+  return loadStore<string | null>(TOKEN_STORE_NAME, GEMINI_API_KEY_KEY, null);
+}
+
+export async function clearGeminiApiKey(): Promise<void> {
+  await deleteStore(TOKEN_STORE_NAME, GEMINI_API_KEY_KEY);
+}
+
+export async function storeOpenRouterApiKey(apiKey: string): Promise<void> {
+  await saveStore(TOKEN_STORE_NAME, OPENROUTER_API_KEY_KEY, apiKey);
+}
+
+export async function loadOpenRouterApiKey(): Promise<string | null> {
+  return loadStore<string | null>(TOKEN_STORE_NAME, OPENROUTER_API_KEY_KEY, null);
+}
+
+export async function clearOpenRouterApiKey(): Promise<void> {
+  await deleteStore(TOKEN_STORE_NAME, OPENROUTER_API_KEY_KEY);
+}
+
+export async function storeOllamaApiKey(apiKey: string): Promise<void> {
+  await saveStore(TOKEN_STORE_NAME, OLLAMA_API_KEY_KEY, apiKey);
+}
+
+export async function loadOllamaApiKey(): Promise<string | null> {
+  return loadStore<string | null>(TOKEN_STORE_NAME, OLLAMA_API_KEY_KEY, null);
+}
+
+export async function clearOllamaApiKey(): Promise<void> {
+  await deleteStore(TOKEN_STORE_NAME, OLLAMA_API_KEY_KEY);
 }
 
 // =============================================================================

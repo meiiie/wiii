@@ -24,6 +24,7 @@ from app.services.output_processor import (
     get_output_processor,
     init_output_processor,
 )
+from app.models.knowledge_graph import Citation
 from app.models.schemas import InternalChatResponse, Source, UserRole, AgentType
 
 
@@ -199,11 +200,31 @@ class TestMergeSamePageSources:
     def test_delegates_to_response_builder(self, mock_response_builder):
         """Uses response_builder when available."""
         processor = OutputProcessor(response_builder=mock_response_builder)
-        sources = [{"document_id": "doc1", "page_number": 1}]
+        sources = [
+            Citation(
+                node_id="n1",
+                title="Doc 1",
+                source="IMO",
+                relevance_score=0.8,
+                document_id="doc1",
+                page_number=1,
+            )
+        ]
 
         processor.merge_same_page_sources(sources)
 
-        mock_response_builder.merge_same_page_sources.assert_called_once_with(sources)
+        mock_response_builder.merge_same_page_sources.assert_called_once_with(
+            [
+                {
+                    "node_id": "n1",
+                    "title": "Doc 1",
+                    "source": "IMO",
+                    "relevance_score": 0.8,
+                    "document_id": "doc1",
+                    "page_number": 1,
+                }
+            ]
+        )
 
 
 # =============================================================================
@@ -268,6 +289,27 @@ class TestFormatSources:
         # Should be merged into 1 source
         assert len(result) == 1
         assert len(result[0].bounding_boxes) == 2
+
+    def test_accepts_pydantic_citation_models(self):
+        """Citation models from RAG are normalized before formatting."""
+        processor = OutputProcessor()
+        raw = [
+            Citation(
+                node_id="n1",
+                title="COLREG Rule 13",
+                source="IMO",
+                relevance_score=0.95,
+                page_number=7,
+                document_id="doc-13",
+            )
+        ]
+
+        result = processor.format_sources(raw)
+
+        assert len(result) == 1
+        assert result[0].node_id == "n1"
+        assert result[0].title == "COLREG Rule 13"
+        assert result[0].page_number == 7
 
 
 # =============================================================================

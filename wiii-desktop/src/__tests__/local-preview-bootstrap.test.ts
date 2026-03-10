@@ -1,0 +1,50 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import { normalizeLoadedSettingsForHost } from "@/stores/settings-store";
+import { resolveDevModeSettingsPatch } from "@/components/auth/LoginScreen";
+
+describe("local preview bootstrap", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("hydrates blank server_url to localhost backend on local preview", () => {
+    const normalized = normalizeLoadedSettingsForHost(
+      {
+        server_url: "",
+        api_key: "local-dev-key",
+        user_role: "student",
+        user_id: "test-user",
+      },
+      "127.0.0.1",
+    );
+
+    expect(normalized.server_url).toBe("http://localhost:8000");
+  });
+
+  it("promotes local-dev-key developer mode to admin on localhost", () => {
+    const patch = resolveDevModeSettingsPatch(
+      {
+        server_url: "",
+        api_key: "local-dev-key",
+        user_role: "student",
+      },
+      "127.0.0.1",
+    );
+
+    expect(patch.server_url).toBe("http://localhost:8000");
+    expect(patch.user_role).toBe("admin");
+  });
+
+  it("does not override explicit non-local settings", () => {
+    const patch = resolveDevModeSettingsPatch(
+      {
+        server_url: "https://api.example.com",
+        api_key: "prod-key",
+        user_role: "teacher",
+      },
+      "wiii.app",
+    );
+
+    expect(patch).toEqual({});
+  });
+});

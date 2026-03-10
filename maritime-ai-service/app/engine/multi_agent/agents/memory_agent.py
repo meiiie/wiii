@@ -24,6 +24,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.engine.multi_agent.state import AgentState
 from app.engine.agents import MEMORY_AGENT_CONFIG
+from app.engine.reasoning import ReasoningRenderRequest, get_reasoning_narrator
 from app.engine.semantic_memory.memory_updater import MemoryUpdater, MemoryAction
 
 logger = logging.getLogger(__name__)
@@ -126,29 +127,93 @@ class MemoryAgentNode:
 
         try:
             # Phase 1: RETRIEVE existing facts
-            await _push({"type": "thinking_start", "content": "Tìm kiếm bộ nhớ", "node": "memory_agent"})
+            _retrieve_narration = await get_reasoning_narrator().render(
+                ReasoningRenderRequest(
+                    node="memory_agent",
+                    phase="retrieve",
+                    user_goal=query,
+                    conversation_context=str((state.get("context") or {}).get("conversation_summary", "")),
+                    next_action="Lục lại những mảnh ngữ cảnh riêng có thể đỡ câu trả lời này.",
+                    user_id=user_id or "__global__",
+                    organization_id=state.get("organization_id"),
+                    personality_mode=(state.get("context") or {}).get("personality_mode"),
+                    mood_hint=(state.get("context") or {}).get("mood_hint"),
+                    visibility_mode="rich",
+                    style_tags=["memory", "retrieve"],
+                )
+            )
+            await _push({"type": "thinking_start", "content": _retrieve_narration.label, "node": "memory_agent", "summary": _retrieve_narration.summary, "details": {"phase": _retrieve_narration.phase}})
+            if _retrieve_narration.summary:
+                await _push({"type": "thinking_delta", "content": _retrieve_narration.summary, "node": "memory_agent"})
             existing_facts_list = await self._retrieve_facts(user_id)
             existing_facts_dict = {f["type"]: f["content"] for f in existing_facts_list}
             if existing_facts_list:
+                _existing_narration = await get_reasoning_narrator().render(
+                    ReasoningRenderRequest(
+                        node="memory_agent",
+                        phase="verify",
+                        user_goal=query,
+                        memory_context="\n".join(f"{f['type']}: {f['content']}" for f in existing_facts_list[:6]),
+                        next_action="Xem mảnh nào còn đáng giữ và mảnh nào cần nối vào câu hỏi lúc này.",
+                        observations=[f"existing_facts={len(existing_facts_list)}"],
+                        user_id=user_id or "__global__",
+                        organization_id=state.get("organization_id"),
+                        personality_mode=(state.get("context") or {}).get("personality_mode"),
+                        mood_hint=(state.get("context") or {}).get("mood_hint"),
+                        visibility_mode="rich",
+                        style_tags=["memory", "verify"],
+                    )
+                )
                 await _push({
                     "type": "thinking_delta",
-                    "content": f"Đã tìm thấy {len(existing_facts_list)} thông tin về bạn.\n",
+                    "content": _existing_narration.summary,
                     "node": "memory_agent",
                 })
 
             # Phase 2: EXTRACT new facts (with existing facts context)
+            _extract_narration = await get_reasoning_narrator().render(
+                ReasoningRenderRequest(
+                    node="memory_agent",
+                    phase="verify",
+                    user_goal=query,
+                    memory_context="\n".join(f"{f['type']}: {f['content']}" for f in existing_facts_list[:6]),
+                    next_action="Soi xem trong tin nhắn này có điều gì mới thật sự đáng giữ lại.",
+                    user_id=user_id or "__global__",
+                    organization_id=state.get("organization_id"),
+                    personality_mode=(state.get("context") or {}).get("personality_mode"),
+                    mood_hint=(state.get("context") or {}).get("mood_hint"),
+                    visibility_mode="rich",
+                    style_tags=["memory", "extract"],
+                )
+            )
             await _push({
                 "type": "thinking_delta",
-                "content": "Phân tích thông tin mới từ tin nhắn...\n",
+                "content": _extract_narration.summary,
                 "node": "memory_agent",
             })
             new_facts = await self._extract_and_store_facts(
                 user_id, query, existing_facts_dict,
             )
             if new_facts:
+                _new_fact_narration = await get_reasoning_narrator().render(
+                    ReasoningRenderRequest(
+                        node="memory_agent",
+                        phase="verify",
+                        user_goal=query,
+                        memory_context="\n".join(new_facts[:6]),
+                        next_action="Gạn lại xem chi tiết mới nào nên được giữ thật lâu hơn.",
+                        observations=[f"new_facts={len(new_facts)}"],
+                        user_id=user_id or "__global__",
+                        organization_id=state.get("organization_id"),
+                        personality_mode=(state.get("context") or {}).get("personality_mode"),
+                        mood_hint=(state.get("context") or {}).get("mood_hint"),
+                        visibility_mode="rich",
+                        style_tags=["memory", "new_facts"],
+                    )
+                )
                 await _push({
                     "type": "thinking_delta",
-                    "content": f"Trích xuất {len(new_facts)} thông tin mới.\n",
+                    "content": _new_fact_narration.summary,
                     "node": "memory_agent",
                 })
 
@@ -181,7 +246,24 @@ class MemoryAgentNode:
             await _push({"type": "thinking_end", "content": "", "node": "memory_agent"})
 
             # Phase 4: RESPOND with LLM using all context + changes
-            await _push({"type": "thinking_start", "content": "Soạn câu trả lời", "node": "memory_agent"})
+            _synthesis_narration = await get_reasoning_narrator().render(
+                ReasoningRenderRequest(
+                    node="memory_agent",
+                    phase="synthesize",
+                    user_goal=query,
+                    memory_context=changes_summary,
+                    next_action="Khâu điều cũ và điều mới thành một câu trả lời gần người dùng.",
+                    user_id=user_id or "__global__",
+                    organization_id=state.get("organization_id"),
+                    personality_mode=(state.get("context") or {}).get("personality_mode"),
+                    mood_hint=(state.get("context") or {}).get("mood_hint"),
+                    visibility_mode="rich",
+                    style_tags=["memory", "synthesis"],
+                )
+            )
+            await _push({"type": "thinking_start", "content": _synthesis_narration.label, "node": "memory_agent", "summary": _synthesis_narration.summary, "details": {"phase": _synthesis_narration.phase}})
+            if _synthesis_narration.summary:
+                await _push({"type": "thinking_delta", "content": _synthesis_narration.summary, "node": "memory_agent"})
             response = await self._generate_response(
                 llm, query, existing_facts_list, new_facts, changes_summary, state,
             )

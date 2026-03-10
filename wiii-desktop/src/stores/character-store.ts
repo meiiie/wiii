@@ -6,6 +6,7 @@ import { create } from "zustand";
 import { fetchCharacterState } from "@/api/character";
 import type {
   CharacterBlockInfo,
+  CharacterCardInfo,
   MoodType,
 } from "@/api/types";
 
@@ -54,6 +55,7 @@ export interface SoulEmotionData {
 interface CharacterState {
   blocks: CharacterBlockInfo[];
   totalBlocks: number;
+  card: CharacterCardInfo | null;
   isLoading: boolean;
   error: string | null;
 
@@ -73,11 +75,13 @@ interface CharacterState {
   setMoodEnabled: (enabled: boolean) => void;
   setSoulEmotion: (emotion: SoulEmotionData) => void;
   clearSoulEmotion: () => void;
+  reset: () => void;
 }
 
 export const useCharacterStore = create<CharacterState>((set) => ({
   blocks: [],
   totalBlocks: 0,
+  card: null,
   isLoading: false,
   error: null,
   mood: "neutral",
@@ -94,6 +98,7 @@ export const useCharacterStore = create<CharacterState>((set) => ({
       set({
         blocks: res.blocks ?? [],
         totalBlocks: res.total_blocks ?? 0,
+        card: res.card ?? null,
         isLoading: false,
       });
     } catch (err) {
@@ -131,4 +136,19 @@ export const useCharacterStore = create<CharacterState>((set) => ({
 
   clearSoulEmotion: () =>
     set({ soulEmotion: null, soulEmotionTimestamp: 0 }),
+
+  reset: () =>
+    set({
+      blocks: [],
+      totalBlocks: 0,
+      card: null,
+      isLoading: false,
+      error: null,
+      mood: "neutral",
+      positivity: 0,
+      energy: 0.5,
+      moodEnabled: false,
+      soulEmotion: null,
+      soulEmotionTimestamp: 0,
+    }),
 }));

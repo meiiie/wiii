@@ -663,6 +663,32 @@ class TestGraphPersonalityModeThreading:
             call_kwargs = mock_loader.build_system_prompt.call_args[1]
             assert call_kwargs["personality_mode"] is None
 
+    def test_build_direct_system_messages_appends_code_studio_delivery_contract(self):
+        """code_studio_agent should receive a delivery-first contract after the base prompt."""
+        from app.engine.multi_agent.graph import _build_direct_system_messages
+
+        mock_state = {
+            "context": {"user_name": "Test"},
+            "user_id": "user-1",
+        }
+
+        with patch("app.prompts.prompt_loader.get_prompt_loader") as mock_get_loader, \
+             patch("app.engine.multi_agent.graph._build_direct_tools_context", return_value=""):
+            mock_loader = MagicMock()
+            mock_loader.build_system_prompt.return_value = "System prompt"
+            mock_get_loader.return_value = mock_loader
+
+            messages = _build_direct_system_messages(
+                mock_state,
+                "Ve mot bieu do bang Python",
+                "Maritime",
+                role_name="code_studio_agent",
+            )
+
+            system_message = messages[0]
+            assert "CODE STUDIO DELIVERY CONTRACT" in system_message.content
+            assert "khong mo dau bang loi chao" in system_message.content.lower()
+
 
 # =============================================================================
 # 8. ROUTER REGISTRATION TESTS

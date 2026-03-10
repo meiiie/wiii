@@ -131,3 +131,90 @@ class TestCORSProduction:
         fields = Settings.model_fields
         assert "cors_origins" in fields
         assert "cors_origin_regex" in fields
+
+
+class TestProductionSmokeTestDocs:
+    """Verify deploy smoke-test examples match the hardened auth boundary."""
+
+    def test_smoke_test_script_avoids_x_user_id_header(self):
+        """Production API-key smoke test should not rely on X-User-ID."""
+        import pathlib
+
+        script = pathlib.Path("scripts/deploy/smoke-test.sh").read_text()
+        assert '"user_id": "api-client"' in script
+        assert '-H "X-User-ID:' not in script
+
+    def test_launch_checklist_examples_match_api_key_contract(self):
+        """Launch checklist should document service-client auth for API key examples."""
+        import pathlib
+
+        checklist = pathlib.Path("scripts/deploy/LAUNCH_CHECKLIST.md").read_text()
+        assert '"user_id": "api-client"' in checklist
+        assert "JWT or LMS service token" in checklist
+
+
+class TestProductionBackupScheduling:
+    """Verify backup automation docs/config match the intended schedule."""
+
+    def test_pg_backup_service_targets_20_utc(self):
+        """Containerized pg-backup should wait for the daily 20:00 UTC window."""
+        import pathlib
+
+        compose = pathlib.Path("docker-compose.prod.yml").read_text()
+        assert "pg-backup:" in compose
+        assert "TARGET_TOTAL=$$((20 * 3600))" in compose
+        assert "sleep $$SLEEP_FOR" in compose
+
+    def test_backup_cron_script_still_targets_same_window(self):
+        """Host cron helper should match the same backup window."""
+        import pathlib
+
+        script = pathlib.Path("scripts/deploy/setup-backup-cron.sh").read_text()
+        assert 'CRON_SCHEDULE="0 20 * * *"' in script
+
+    def test_pg_backup_writes_to_host_visible_backup_dir(self):
+        """Automatic backups should land in the same host-visible dir as ops scripts."""
+        import pathlib
+
+        compose = pathlib.Path("docker-compose.prod.yml").read_text()
+        assert '      - ./backups:/backups' in compose
+        assert 'backup-data:/backups' not in compose
+
+
+class TestProductionOperationalScripts:
+    """Verify deploy-time operational scripts fail closed on prod issues."""
+
+    def test_health_check_verifies_required_services_are_running(self):
+        """Health check should catch crashed services, not only unhealthy ones."""
+        import pathlib
+
+        script = pathlib.Path("scripts/deploy/health-check.sh").read_text()
+        assert (
+            'REQUIRED_SERVICES=(postgres minio valkey app nginx pg-backup)'
+            in script
+        )
+        assert (
+            'docker compose -f "$COMPOSE_FILE" ps --services --status running'
+            in script
+        )
+        assert 'Missing required services:' in script
+
+    def test_ingest_script_uses_explicit_live_health_endpoint(self):
+        """Ingestion preflight should probe the canonical liveness endpoint."""
+        import pathlib
+
+        script = pathlib.Path("scripts/deploy/ingest-production.sh").read_text()
+        assert (
+            'HEALTH_URL="http://localhost:8000/api/v1/health/live"'
+            in script
+        )
+        assert '${API_URL}/../health' not in script
+
+    def test_knowledge_ingestion_doc_includes_liveness_preflight(self):
+        """Knowledge ingestion checklist should document the same preflight."""
+        import pathlib
+
+        doc = pathlib.Path(
+            "docs/deploy/KNOWLEDGE_INGESTION.md"
+        ).read_text(encoding="utf-8")
+        assert 'curl localhost:8000/api/v1/health/live' in doc

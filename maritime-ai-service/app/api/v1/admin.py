@@ -18,11 +18,26 @@ import os
 import tempfile
 from typing import Optional
 from uuid import uuid4
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form, BackgroundTasks
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from pydantic import BaseModel, Field
 
 from app.api.deps import RequireAuth, RequireAdmin
+from app.core.config import settings
 from app.core.rate_limit import limiter
+from app.engine.llm_provider_registry import is_supported_provider
+from app.engine.llm_runtime_profiles import (
+    get_runtime_provider_preset,
+    is_known_default_provider_chain,
+    should_apply_openrouter_defaults,
+)
 from app.services.multimodal_ingestion_service import get_ingestion_service
 from app.repositories.user_graph_repository import get_user_graph_repository
 from app.domains.registry import get_domain_registry
@@ -30,7 +45,6 @@ from app.domains.registry import get_domain_registry
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
-
 
 # =============================================================================
 # Schemas
@@ -65,6 +79,202 @@ class DocumentInfo(BaseModel):
     status: str
 
 
+class LlmRuntimeConfigResponse(BaseModel):
+    provider: str
+    use_multi_agent: bool
+    google_model: str
+    openai_base_url: Optional[str] = None
+    openai_model: str
+    openai_model_advanced: str
+    openrouter_model_fallbacks: list[str] = Field(default_factory=list)
+    openrouter_provider_order: list[str] = Field(default_factory=list)
+    openrouter_allowed_providers: list[str] = Field(default_factory=list)
+    openrouter_ignored_providers: list[str] = Field(default_factory=list)
+    openrouter_allow_fallbacks: Optional[bool] = None
+    openrouter_require_parameters: Optional[bool] = None
+    openrouter_data_collection: Optional[str] = None
+    openrouter_zdr: Optional[bool] = None
+    openrouter_provider_sort: Optional[str] = None
+    ollama_base_url: Optional[str] = None
+    ollama_model: str
+    ollama_keep_alive: Optional[str] = None
+    google_api_key_configured: bool
+    openai_api_key_configured: bool
+    ollama_api_key_configured: bool
+    enable_llm_failover: bool
+    llm_failover_chain: list[str]
+    active_provider: Optional[str] = None
+    providers_registered: list[str] = Field(default_factory=list)
+
+
+class LlmRuntimeConfigUpdate(BaseModel):
+    provider: Optional[str] = Field(
+        default=None,
+        description="google | openai | openrouter | ollama",
+    )
+    use_multi_agent: Optional[bool] = None
+    google_api_key: Optional[str] = Field(
+        default=None,
+        description="Google Gemini API key",
+    )
+    clear_google_api_key: bool = False
+    google_model: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+    )
+    openai_api_key: Optional[str] = Field(
+        default=None,
+        description="OpenAI/OpenRouter API key",
+    )
+    clear_openai_api_key: bool = False
+    openai_base_url: Optional[str] = None
+    openai_model: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+    )
+    openai_model_advanced: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+    )
+    openrouter_model_fallbacks: Optional[list[str]] = None
+    openrouter_provider_order: Optional[list[str]] = None
+    openrouter_allowed_providers: Optional[list[str]] = None
+    openrouter_ignored_providers: Optional[list[str]] = None
+    openrouter_allow_fallbacks: Optional[bool] = None
+    openrouter_require_parameters: Optional[bool] = None
+    openrouter_data_collection: Optional[str] = None
+    openrouter_zdr: Optional[bool] = None
+    openrouter_provider_sort: Optional[str] = None
+    ollama_api_key: Optional[str] = Field(
+        default=None,
+        description="Ollama Cloud API key",
+    )
+    clear_ollama_api_key: bool = False
+    ollama_base_url: Optional[str] = None
+    ollama_model: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+    )
+    ollama_keep_alive: Optional[str] = None
+    enable_llm_failover: Optional[bool] = None
+    llm_failover_chain: Optional[list[str]] = None
+
+
+def _can_manage_llm_runtime(auth) -> bool:
+    if auth.role == "admin":
+        return True
+    return (
+        settings.environment != "production"
+        and auth.auth_method == "api_key"
+    )
+
+
+def _normalize_provider_name(provider: Optional[str]) -> Optional[str]:
+    if provider is None:
+        return None
+    normalized = provider.strip().lower()
+    if not is_supported_provider(normalized):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported provider: {provider}",
+        )
+    return normalized
+
+
+def _normalize_chain(chain: Optional[list[str]]) -> Optional[list[str]]:
+    if chain is None:
+        return None
+    normalized: list[str] = []
+    for item in chain:
+        provider = _normalize_provider_name(item)
+        if provider and provider not in normalized:
+            normalized.append(provider)
+    if not normalized:
+        raise HTTPException(
+            status_code=422,
+            detail="llm_failover_chain cannot be empty",
+        )
+    return normalized
+
+
+def _normalize_string_list(values: Optional[list[str]]) -> Optional[list[str]]:
+    if values is None:
+        return None
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        value = item.strip()
+        if not value or value in seen:
+            continue
+        normalized.append(value)
+        seen.add(value)
+    return normalized
+
+
+def _normalize_optional_choice(
+    value: Optional[str],
+    *,
+    allowed: set[str],
+    field_name: str,
+) -> Optional[str]:
+    if value is None:
+        return None
+
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+    if normalized not in allowed:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{field_name} must be one of {sorted(allowed)}",
+        )
+    return normalized
+
+
+def _serialize_llm_runtime() -> LlmRuntimeConfigResponse:
+    from app.engine.llm_pool import LLMPool
+
+    stats = LLMPool.get_stats()
+    provider = settings.llm_provider
+    keep_alive = getattr(settings, "ollama_keep_alive", None)
+    if not isinstance(keep_alive, str):
+        keep_alive = None
+    else:
+        keep_alive = keep_alive.strip() or None
+    return LlmRuntimeConfigResponse(
+        provider=provider,
+        use_multi_agent=getattr(settings, "use_multi_agent", True),
+        google_model=settings.google_model,
+        openai_base_url=settings.openai_base_url,
+        openai_model=settings.openai_model,
+        openai_model_advanced=settings.openai_model_advanced,
+        openrouter_model_fallbacks=list(getattr(settings, "openrouter_model_fallbacks", [])),
+        openrouter_provider_order=list(getattr(settings, "openrouter_provider_order", [])),
+        openrouter_allowed_providers=list(getattr(settings, "openrouter_allowed_providers", [])),
+        openrouter_ignored_providers=list(getattr(settings, "openrouter_ignored_providers", [])),
+        openrouter_allow_fallbacks=getattr(settings, "openrouter_allow_fallbacks", None),
+        openrouter_require_parameters=getattr(settings, "openrouter_require_parameters", None),
+        openrouter_data_collection=getattr(settings, "openrouter_data_collection", None),
+        openrouter_zdr=getattr(settings, "openrouter_zdr", None),
+        openrouter_provider_sort=getattr(settings, "openrouter_provider_sort", None),
+        ollama_base_url=settings.ollama_base_url,
+        ollama_model=settings.ollama_model,
+        ollama_keep_alive=keep_alive,
+        google_api_key_configured=bool(settings.google_api_key),
+        openai_api_key_configured=bool(settings.openai_api_key),
+        ollama_api_key_configured=bool(getattr(settings, "ollama_api_key", None)),
+        enable_llm_failover=settings.enable_llm_failover,
+        llm_failover_chain=list(getattr(settings, "llm_failover_chain", [])),
+        active_provider=stats.get("active_provider"),
+        providers_registered=list(stats.get("providers_registered", [])),
+    )
+
+
 # =============================================================================
 # In-memory job tracking (replace with DB in production)
 # =============================================================================
@@ -84,6 +294,155 @@ def _cleanup_old_jobs():
     # Remove oldest completed jobs first
     for jid in completed[:len(_ingestion_jobs) - _MAX_TRACKED_JOBS]:
         del _ingestion_jobs[jid]
+
+
+@router.get("/llm-runtime", response_model=LlmRuntimeConfigResponse)
+async def get_llm_runtime_config(auth: RequireAuth):
+    if not _can_manage_llm_runtime(auth):
+        raise HTTPException(
+            status_code=403,
+            detail="Admin or local developer access required.",
+        )
+    return _serialize_llm_runtime()
+
+
+@router.patch("/llm-runtime", response_model=LlmRuntimeConfigResponse)
+async def update_llm_runtime_config(
+    body: LlmRuntimeConfigUpdate,
+    auth: RequireAuth,
+):
+    if not _can_manage_llm_runtime(auth):
+        raise HTTPException(
+            status_code=403,
+            detail="Admin or local developer access required.",
+        )
+
+    provider = (
+        _normalize_provider_name(body.provider)
+        if body.provider is not None
+        else None
+    )
+    chain = _normalize_chain(body.llm_failover_chain)
+    openrouter_model_fallbacks = _normalize_string_list(body.openrouter_model_fallbacks)
+    openrouter_provider_order = _normalize_string_list(body.openrouter_provider_order)
+    openrouter_allowed_providers = _normalize_string_list(body.openrouter_allowed_providers)
+    openrouter_ignored_providers = _normalize_string_list(body.openrouter_ignored_providers)
+    openrouter_data_collection = _normalize_optional_choice(
+        body.openrouter_data_collection,
+        allowed={"allow", "deny"},
+        field_name="openrouter_data_collection",
+    )
+    openrouter_provider_sort = _normalize_optional_choice(
+        body.openrouter_provider_sort,
+        allowed={"price", "latency", "throughput"},
+        field_name="openrouter_provider_sort",
+    )
+
+    if provider is not None:
+        settings.llm_provider = provider
+        preset = get_runtime_provider_preset(provider)
+        if provider == "google":
+            if body.google_model is None and not settings.google_model:
+                settings.google_model = preset.google_model or settings.google_model
+        if provider == "openrouter":
+            if not body.openai_base_url and not settings.openai_base_url:
+                settings.openai_base_url = preset.openai_base_url
+            if (
+                body.openai_model is None
+                and should_apply_openrouter_defaults(settings.openai_model)
+            ):
+                settings.openai_model = preset.openai_model or settings.openai_model
+            if (
+                body.openai_model_advanced is None
+                and should_apply_openrouter_defaults(settings.openai_model_advanced)
+            ):
+                settings.openai_model_advanced = (
+                    preset.openai_model_advanced or settings.openai_model_advanced
+                )
+        if provider == "ollama":
+            if not body.ollama_base_url and not settings.ollama_base_url:
+                settings.ollama_base_url = preset.ollama_base_url
+            if body.ollama_model is None and not settings.ollama_model:
+                settings.ollama_model = preset.ollama_model or settings.ollama_model
+            if body.ollama_keep_alive is None and not getattr(settings, "ollama_keep_alive", None):
+                settings.ollama_keep_alive = preset.ollama_keep_alive
+        if chain is None and is_known_default_provider_chain(
+            getattr(settings, "llm_failover_chain", None)
+        ):
+            settings.llm_failover_chain = list(preset.failover_chain)
+
+    if body.use_multi_agent is not None:
+        settings.use_multi_agent = body.use_multi_agent
+
+    if body.google_api_key is not None:
+        settings.google_api_key = body.google_api_key.strip() or None
+    elif body.clear_google_api_key:
+        settings.google_api_key = None
+
+    if body.google_model is not None:
+        settings.google_model = body.google_model.strip()
+
+    if body.openai_api_key is not None:
+        settings.openai_api_key = body.openai_api_key.strip() or None
+    elif body.clear_openai_api_key:
+        settings.openai_api_key = None
+
+    if body.ollama_api_key is not None:
+        settings.ollama_api_key = body.ollama_api_key.strip() or None
+    elif body.clear_ollama_api_key:
+        settings.ollama_api_key = None
+
+    if body.openai_base_url is not None:
+        settings.openai_base_url = body.openai_base_url.strip() or None
+    if body.openai_model is not None:
+        settings.openai_model = body.openai_model.strip()
+    if body.openai_model_advanced is not None:
+        settings.openai_model_advanced = body.openai_model_advanced.strip()
+    if openrouter_model_fallbacks is not None:
+        settings.openrouter_model_fallbacks = openrouter_model_fallbacks
+    if openrouter_provider_order is not None:
+        settings.openrouter_provider_order = openrouter_provider_order
+    if openrouter_allowed_providers is not None:
+        settings.openrouter_allowed_providers = openrouter_allowed_providers
+    if openrouter_ignored_providers is not None:
+        settings.openrouter_ignored_providers = openrouter_ignored_providers
+    if body.openrouter_allow_fallbacks is not None:
+        settings.openrouter_allow_fallbacks = body.openrouter_allow_fallbacks
+    if body.openrouter_require_parameters is not None:
+        settings.openrouter_require_parameters = body.openrouter_require_parameters
+    if body.openrouter_data_collection is not None:
+        settings.openrouter_data_collection = openrouter_data_collection
+    if body.openrouter_zdr is not None:
+        settings.openrouter_zdr = body.openrouter_zdr
+    if body.openrouter_provider_sort is not None:
+        settings.openrouter_provider_sort = openrouter_provider_sort
+    if body.ollama_base_url is not None:
+        settings.ollama_base_url = body.ollama_base_url.strip() or None
+    if body.ollama_model is not None:
+        settings.ollama_model = body.ollama_model.strip()
+    if body.ollama_keep_alive is not None:
+        settings.ollama_keep_alive = body.ollama_keep_alive.strip() or None
+    if body.enable_llm_failover is not None:
+        settings.enable_llm_failover = body.enable_llm_failover
+    if chain is not None:
+        settings.llm_failover_chain = chain
+    settings.refresh_nested_views()
+
+    from app.engine.llm_pool import LLMPool
+    from app.services.chat_service import reset_chat_service
+
+    LLMPool.reset()
+    reset_chat_service()
+    logger.info(
+        "[ADMIN] Updated LLM runtime config: provider=%s "
+        "multi_agent=%s failover=%s chain=%s base_url=%s",
+        settings.llm_provider,
+        getattr(settings, "use_multi_agent", True),
+        settings.enable_llm_failover,
+        settings.llm_failover_chain,
+        settings.openai_base_url,
+    )
+    return _serialize_llm_runtime()
 
 
 # =============================================================================

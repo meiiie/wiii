@@ -336,6 +336,37 @@ class TestLocalLLMThinkParam:
             assert payload["options"]["num_predict"] == 10
 
     @pytest.mark.asyncio
+    async def test_generate_qwen3_instruct_forces_think_false(self):
+        """Explicit Qwen3 instruct tags should not receive think=True."""
+        from app.engine.living_agent.local_llm import LocalLLMClient
+
+        client = LocalLLMClient(
+            model="qwen3:4b-instruct-2507-q4_K_M",
+            base_url="http://localhost:11434",
+        )
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "message": {"content": "Generated text"}
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_http = AsyncMock()
+        mock_http.post.return_value = mock_response
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_http):
+            result = await client.generate("Hello")
+
+            assert result == "Generated text"
+            payload = mock_http.post.call_args.kwargs["json"]
+            assert payload["think"] is False
+            assert payload["options"]["num_predict"] == 2048
+
+
+    @pytest.mark.asyncio
     async def test_rate_relevance_uses_think_false(self):
         """rate_relevance() should use think=False for speed."""
         from app.engine.living_agent.local_llm import LocalLLMClient
@@ -386,6 +417,36 @@ class TestLocalLLMThinkParam:
             assert result == {"key": "value"}
             payload = mock_http.post.call_args.kwargs["json"]
             assert payload["think"] is False
+
+    @pytest.mark.asyncio
+    async def test_generate_includes_keep_alive_when_configured(self):
+        """Configured keep_alive should be forwarded to Ollama API."""
+        from app.engine.living_agent.local_llm import LocalLLMClient
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "message": {"content": "Generated text"}
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_http = AsyncMock()
+        mock_http.post.return_value = mock_response
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.core.config.settings") as mock_settings:
+            mock_settings.living_agent_local_model = "qwen3:4b-instruct-2507-q4_K_M"
+            mock_settings.ollama_base_url = "http://localhost:11434"
+            mock_settings.ollama_keep_alive = "30m"
+            client = LocalLLMClient()
+
+        with patch("httpx.AsyncClient", return_value=mock_http):
+            result = await client.generate("Hello", think=False)
+
+        assert result == "Generated text"
+        payload = mock_http.post.call_args.kwargs["json"]
+        assert payload["keep_alive"] == "30m"
 
     @pytest.mark.asyncio
     async def test_summarize_uses_think_true(self):

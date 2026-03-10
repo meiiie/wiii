@@ -59,6 +59,7 @@ interface LegacyPageContext {
   quiz_question?: string;
   quiz_options?: string[];
   assignment_description?: string;
+  structured?: unknown;
 }
 
 // ── Action Support (Sprint 222b Phase 5) ──
@@ -139,8 +140,11 @@ function legacyToHostContext(
       metadata,
     },
     user_state: studentState || null,
-    content: legacy.content_snippet
-      ? { snippet: legacy.content_snippet }
+    content: (legacy.content_snippet || legacy.structured)
+      ? {
+          snippet: legacy.content_snippet || undefined,
+          structured: legacy.structured || undefined,
+        }
       : null,
     available_actions:
       (actions as HostContext["available_actions"]) || null,

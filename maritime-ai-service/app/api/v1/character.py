@@ -27,10 +27,32 @@ class CharacterBlockResponse(BaseModel):
     usage_percent: float = Field(0.0, description="Percentage of char_limit used")
 
 
+class CharacterCardResponse(BaseModel):
+    """Immutable + live Wiii character card snapshot."""
+
+    card_id: str = "wiii.living-core.v1"
+    card_name: str = "Wiii Living Core Card"
+    card_kind: str = "living_core"
+    card_family: str = "core"
+    contract_version: str = "1.0"
+    name: str = "Wiii"
+    summary: str = ""
+    origin: str = ""
+    greeting: str = ""
+    traits: List[str] = Field(default_factory=list)
+    quirks: List[str] = Field(default_factory=list)
+    core_truths: List[str] = Field(default_factory=list)
+    reasoning_style: List[str] = Field(default_factory=list)
+    relationship_style: List[str] = Field(default_factory=list)
+    anti_drift: List[str] = Field(default_factory=list)
+    runtime_notes: List[str] = Field(default_factory=list)
+
+
 class CharacterStateResponse(BaseModel):
     """Full character state response."""
     blocks: List[CharacterBlockResponse] = []
     total_blocks: int = 0
+    card: CharacterCardResponse | None = None
 
 
 @router.get("/state", response_model=CharacterStateResponse)
@@ -67,9 +89,20 @@ async def get_character_state(
                 usage_percent=round(usage, 1),
             ))
 
+        card_payload = None
+        try:
+            from app.engine.character.character_card import build_character_card_payload
+
+            card_payload = CharacterCardResponse(
+                **build_character_card_payload(user_id=str(auth.user_id))
+            )
+        except Exception as exc:
+            logger.debug("[CHARACTER_API] Card payload unavailable: %s", exc)
+
         return CharacterStateResponse(
             blocks=blocks,
             total_blocks=len(blocks),
+            card=card_payload,
         )
     except Exception as e:
         logger.warning("[CHARACTER_API] Failed to get state: %s", e)

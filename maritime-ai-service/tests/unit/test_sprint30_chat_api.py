@@ -9,8 +9,10 @@ Covers:
 - delete_chat_history: role-based access control
 """
 
+import json
+
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, patch, MagicMock
 
 
 # =============================================================================
@@ -102,6 +104,22 @@ class TestGenerateSuggestedQuestions:
         assert len(result) == 3
         assert all(isinstance(q, str) for q in result)
 
+    def test_code_generation_followups(self):
+        from app.api.v1.chat import _generate_suggested_questions
+        result = _generate_suggested_questions(
+            "Ve bieu do bang Python",
+            "Mình đã tạo xong artifact cho bạn.",
+        )
+        assert any(
+            "artifact" in q.lower() or "html" in q.lower() or "excel" in q.lower()
+            for q in result
+        )
+
+
+def test_classify_query_type_code_generation():
+    from app.api.v1.chat import _classify_query_type
+    assert _classify_query_type("Ve bieu do bang Python va gui file PNG") == "code_generation"
+
 
 # =============================================================================
 # _get_tool_description
@@ -150,6 +168,665 @@ class TestGetToolDescription:
         from app.api.v1.chat import _get_tool_description
         result = _get_tool_description({"name": "custom_tool"})
         assert "custom_tool" in result
+
+
+class TestBuildChatResponse:
+    """Test sync API response presenter contract."""
+
+    def test_build_chat_response_maps_sources_tools_and_metadata(self):
+        from app.models.schemas import ChatRequest, InternalChatResponse, Source, UserRole
+        from app.services.chat_response_presenter import build_chat_response
+
+        request = ChatRequest(
+            user_id="user-1",
+            message="COLREG Rule 5 là gì?",
+            role=UserRole.STUDENT,
+        )
+        internal_response = InternalChatResponse(
+            message="Rule 5 yêu cầu luôn duy trì cảnh giới thích đáng.",
+            agent_type="rag",
+            sources=[
+                Source(
+                    node_id="n1",
+                    title="COLREG Rule 5",
+                    source_type="knowledge_graph",
+                    content_snippet="Every vessel shall at all times maintain a proper look-out.",
+                    document_id="doc-1",
+                    page_number=12,
+                )
+            ],
+            metadata={
+                "session_id": "session-1",
+                "tools_used": [{"name": "tool_knowledge_search", "args": {"query": "Rule 5"}}],
+                "thinking": "Tôi sẽ tra cứu đúng điều khoản liên quan.",
+                "routing_metadata": {"intent": "lookup"},
+                "domain_notice": "ngoài domain nhẹ",
+            },
+        )
+
+        response = build_chat_response(
+            chat_request=request,
+            internal_response=internal_response,
+            processing_time=1.2345,
+            model_name="agentic-rag-v3",
+        )
+
+        assert response.status == "success"
+        assert response.data.answer == internal_response.message
+        assert response.data.domain_notice == "ngoài domain nhẹ"
+        assert response.data.sources[0].title == "COLREG Rule 5"
+        assert response.metadata.session_id == "session-1"
+        assert response.metadata.processing_time == 1.234
+        assert response.metadata.query_type == "factual"
+        assert response.metadata.tools_used[0].description == "Tra cứu: Rule 5"
+        assert response.metadata.topics_accessed == ["COLREG Rule 5"]
+        assert response.metadata.document_ids_used == ["doc-1"]
+        assert response.metadata.thinking == "Tôi sẽ tra cứu đúng điều khoản liên quan."
+
+    def test_build_chat_response_handles_empty_sources_and_tools(self):
+        from app.models.schemas import ChatRequest, InternalChatResponse, UserRole
+        from app.services.chat_response_presenter import build_chat_response
+
+        request = ChatRequest(
+            user_id="user-1",
+            message="Giải thích giúp tôi",
+            role=UserRole.STUDENT,
+        )
+        internal_response = InternalChatResponse(
+            message="Đây là giải thích tổng quan.",
+            agent_type="direct",
+            metadata={},
+        )
+
+        response = build_chat_response(
+            chat_request=request,
+            internal_response=internal_response,
+            processing_time=0.5,
+            model_name="agentic-rag-v3",
+        )
+
+        assert response.data.sources == []
+        assert response.metadata.tools_used == []
+        assert response.metadata.topics_accessed is None
+        assert response.metadata.document_ids_used is None
+        assert response.metadata.confidence_score is None
+
+
+class TestChatEndpointPresenter:
+    """Test sync endpoint transport helpers."""
+
+    def test_build_chat_service_error_response_preserves_request_id(self):
+        from app.api.v1.chat_endpoint_presenter import (
+            build_chat_service_error_response,
+        )
+
+        response = build_chat_service_error_response(
+            error_code="CHAT_FAILED",
+            message="boom",
+            http_status=418,
+            request_id="req-123",
+        )
+
+        assert response.status_code == 418
+        payload = json.loads(response.body)
+        assert payload["error_code"] == "CHAT_FAILED"
+        assert payload["message"] == "boom"
+        assert payload["request_id"] == "req-123"
+
+    def test_build_chat_internal_error_response_uses_standard_payload(self):
+        from app.api.v1.chat_endpoint_presenter import (
+            build_chat_internal_error_response,
+        )
+
+        response = build_chat_internal_error_response(request_id="req-500")
+
+        assert response.status_code == 500
+        payload = json.loads(response.body)
+        assert payload == {
+            "status": "error",
+            "error_code": "INTERNAL_ERROR",
+            "message": "An unexpected error occurred",
+            "request_id": "req-500",
+        }
+
+    def test_build_chat_api_error_response_uses_simple_payload(self):
+        from app.api.v1.chat_endpoint_presenter import build_chat_api_error_response
+
+        response = build_chat_api_error_response(
+            status_code=403,
+            error="permission_denied",
+            message="forbidden",
+        )
+
+        assert response.status_code == 403
+        payload = json.loads(response.body)
+        assert payload == {
+            "error": "permission_denied",
+            "message": "forbidden",
+        }
+
+    def test_build_logged_chat_api_error_response_logs_and_builds_payload(self):
+        from app.api.v1.chat_endpoint_presenter import (
+            build_logged_chat_api_error_response,
+        )
+
+        logger = MagicMock()
+
+        response = build_logged_chat_api_error_response(
+            logger=logger,
+            operation_label="retrieving chat history",
+            error=RuntimeError("boom"),
+            error_code="internal_error",
+            message="Failed to retrieve chat history",
+        )
+
+        assert response.status_code == 500
+        payload = json.loads(response.body)
+        assert payload == {
+            "error": "internal_error",
+            "message": "Failed to retrieve chat history",
+        }
+        logger.exception.assert_called_once()
+
+    def test_build_missing_session_response_uses_standard_payload(self):
+        from app.api.v1.chat_endpoint_presenter import build_missing_session_response
+
+        response = build_missing_session_response()
+
+        assert response.status_code == 400
+        payload = json.loads(response.body)
+        assert payload == {
+            "error": "missing_session",
+            "message": "X-Session-ID header required",
+        }
+
+    def test_log_chat_completion_response_logs_reasoning_and_completion(self):
+        from types import SimpleNamespace
+
+        from app.api.v1.chat_endpoint_presenter import log_chat_completion_response
+
+        logger = MagicMock()
+        response = SimpleNamespace(
+            metadata=SimpleNamespace(
+                reasoning_trace=SimpleNamespace(total_steps=4),
+                thinking="abc",
+            )
+        )
+        internal_response = SimpleNamespace(
+            agent_type=SimpleNamespace(value="rag"),
+        )
+
+        log_chat_completion_response(
+            logger=logger,
+            response=response,
+            internal_response=internal_response,
+            processing_time=1.5,
+        )
+
+        assert logger.info.call_count == 3
+
+    def test_build_chat_completion_success_response_builds_and_logs(self):
+        from types import SimpleNamespace
+
+        from app.api.v1.chat_endpoint_presenter import (
+            build_chat_completion_success_response,
+        )
+
+        logger = MagicMock()
+        chat_request = SimpleNamespace(message="Hello", user_id="user-1")
+        internal_response = SimpleNamespace(
+            message="World",
+            agent_type=SimpleNamespace(value="rag"),
+            sources=[],
+            metadata={},
+        )
+
+        with patch(
+            "app.api.v1.chat_endpoint_presenter.time.time",
+            side_effect=[100.0],
+        ), patch(
+            "app.api.v1.chat_endpoint_presenter.build_chat_response",
+            return_value=SimpleNamespace(
+                metadata=SimpleNamespace(reasoning_trace=None, thinking=None),
+            ),
+        ) as mock_build:
+            response = build_chat_completion_success_response(
+                logger=logger,
+                chat_request=chat_request,
+                internal_response=internal_response,
+                start_time=98.5,
+                model_name="gemini-test",
+            )
+
+        assert response is not None
+        mock_build.assert_called_once_with(
+            chat_request=chat_request,
+            internal_response=internal_response,
+            processing_time=1.5,
+            model_name="gemini-test",
+        )
+        logger.info.assert_called_once_with(
+            "Chat response generated in %.3fs (agent: %s)",
+            1.5,
+            "rag",
+        )
+
+    def test_build_chat_completion_error_response_maps_wiii_exception(self):
+        from app.api.v1.chat_endpoint_presenter import (
+            build_chat_completion_error_response,
+        )
+        from app.core.exceptions import ChatServiceError
+
+        logger = MagicMock()
+        error = ChatServiceError(message="boom")
+
+        response = build_chat_completion_error_response(
+            logger=logger,
+            error=error,
+            request_id="req-1",
+        )
+
+        assert response.status_code == 500
+        payload = json.loads(response.body)
+        assert payload["error_code"] == "CHAT_SERVICE_ERROR"
+        logger.error.assert_called_once()
+
+    def test_build_chat_completion_error_response_maps_generic_exception(self):
+        from app.api.v1.chat_endpoint_presenter import (
+            build_chat_completion_error_response,
+        )
+
+        logger = MagicMock()
+
+        response = build_chat_completion_error_response(
+            logger=logger,
+            error=RuntimeError("boom"),
+            request_id="req-2",
+        )
+
+        assert response.status_code == 500
+        payload = json.loads(response.body)
+        assert payload["error_code"] == "INTERNAL_ERROR"
+        logger.exception.assert_called_once()
+
+
+class TestChatCompletionEndpointSupport:
+    """Test transport support helpers for /chat service invocation."""
+
+    def test_begin_chat_completion_request_logs_and_returns_route_metadata(self):
+        from types import SimpleNamespace
+
+        from app.api.v1.chat_completion_endpoint_support import (
+            begin_chat_completion_request,
+        )
+
+        logger = MagicMock()
+        request = SimpleNamespace(headers={"X-Request-ID": "req-1"})
+        chat_request = SimpleNamespace(
+            user_id="user-1",
+            role=SimpleNamespace(value="student"),
+            message="Hello world",
+        )
+
+        with patch(
+            "app.api.v1.chat_completion_endpoint_support.time.time",
+            return_value=42.0,
+        ):
+            start_time, request_id = begin_chat_completion_request(
+                logger=logger,
+                request=request,
+                chat_request=chat_request,
+                auth_method="api_key",
+            )
+
+        assert start_time == 42.0
+        assert request_id == "req-1"
+        logger.info.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_chat_completion_request_uses_chat_service(self):
+        from app.api.v1.chat_completion_endpoint_support import (
+            process_chat_completion_request,
+        )
+
+        chat_request = MagicMock()
+        background_save = MagicMock()
+        mock_chat_service = MagicMock()
+        mock_chat_service.process_message = AsyncMock(return_value="response")
+
+        with patch(
+            "app.services.chat_service.get_chat_service",
+            return_value=mock_chat_service,
+        ):
+            result = await process_chat_completion_request(
+                chat_request=chat_request,
+                background_save=background_save,
+            )
+
+        assert result == "response"
+        mock_chat_service.process_message.assert_awaited_once_with(
+            chat_request,
+            background_save=background_save,
+        )
+
+
+class TestChatContextEndpointSupport:
+    """Test context endpoint service-wiring helpers."""
+
+    def test_get_context_session_id_reads_standard_header(self):
+        from types import SimpleNamespace
+
+        from app.api.v1.chat_context_endpoint_support import get_context_session_id
+
+        request = SimpleNamespace(headers={"X-Session-ID": "session-1"})
+
+        assert get_context_session_id(request=request) == "session-1"
+
+    def test_resolve_context_session_request_returns_missing_response(self):
+        from types import SimpleNamespace
+
+        from app.api.v1.chat_context_endpoint_support import (
+            resolve_context_session_request,
+        )
+
+        request = SimpleNamespace(headers={})
+
+        session_id, response = resolve_context_session_request(request=request)
+
+        assert session_id == ""
+        assert response is not None
+        assert response.status_code == 400
+
+    def test_resolve_context_session_request_returns_session_id(self):
+        from types import SimpleNamespace
+
+        from app.api.v1.chat_context_endpoint_support import (
+            resolve_context_session_request,
+        )
+
+        request = SimpleNamespace(headers={"X-Session-ID": "session-1"})
+
+        session_id, response = resolve_context_session_request(request=request)
+
+        assert session_id == "session-1"
+        assert response is None
+
+    def test_build_missing_context_session_response_reuses_standard_payload(self):
+        from app.api.v1.chat_context_endpoint_support import (
+            build_missing_context_session_response,
+        )
+
+        response = build_missing_context_session_response()
+
+        assert response.status_code == 400
+        payload = json.loads(response.body)
+        assert payload == {
+            "error": "missing_session",
+            "message": "X-Session-ID header required",
+        }
+
+    @pytest.mark.asyncio
+    async def test_compact_context_session_loads_history_and_compacts(self):
+        from app.api.v1.chat_context_endpoint_support import compact_context_session
+
+        mock_compactor = MagicMock()
+        mock_compactor.force_compact = AsyncMock(return_value="summary")
+        mock_chat_history = MagicMock()
+        mock_chat_history.is_available.return_value = True
+        mock_chat_history.get_recent_messages.return_value = [
+            MagicMock(role="user", content="hi"),
+            MagicMock(role="assistant", content="hello"),
+        ]
+
+        with patch(
+            "app.engine.context_manager.get_compactor",
+            return_value=mock_compactor,
+        ), patch(
+            "app.repositories.chat_history_repository.get_chat_history_repository",
+            return_value=mock_chat_history,
+        ):
+            summary, history_list = await compact_context_session(
+                session_id="session-1",
+                user_id="user-1",
+            )
+
+        assert summary == "summary"
+        assert history_list == [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
+        ]
+        mock_compactor.force_compact.assert_awaited_once_with(
+            "session-1",
+            history_list,
+            user_id="user-1",
+        )
+
+    def test_load_context_info_inputs_returns_compactor_and_history(self):
+        from app.api.v1.chat_context_endpoint_support import load_context_info_inputs
+
+        mock_compactor = MagicMock()
+        mock_chat_history = MagicMock()
+        mock_chat_history.is_available.return_value = True
+        mock_chat_history.get_recent_messages.return_value = [
+            MagicMock(role="user", content="hi"),
+        ]
+
+        with patch(
+            "app.engine.context_manager.get_compactor",
+            return_value=mock_compactor,
+        ), patch(
+            "app.repositories.chat_history_repository.get_chat_history_repository",
+            return_value=mock_chat_history,
+        ):
+            compactor, history_list = load_context_info_inputs(
+                session_id="session-1",
+                user_id="user-1",
+            )
+
+        assert compactor is mock_compactor
+        assert history_list == [{"role": "user", "content": "hi"}]
+
+    def test_build_context_operation_error_response_logs_and_builds_payload(self):
+        from app.api.v1.chat_context_endpoint_support import (
+            build_context_operation_error_response,
+        )
+
+        logger = MagicMock()
+
+        response = build_context_operation_error_response(
+            logger=logger,
+            operation_label="compacting context",
+            error=RuntimeError("boom"),
+            error_code="compact_failed",
+            message="Failed to compact context",
+        )
+
+        assert response.status_code == 500
+        payload = json.loads(response.body)
+        assert payload == {
+            "error": "compact_failed",
+            "message": "Failed to compact context",
+        }
+        logger.exception.assert_called_once()
+
+    def test_clear_context_session_clears_both_compactor_and_summarizer(self):
+        from app.api.v1.chat_context_endpoint_support import clear_context_session
+
+        mock_compactor = MagicMock()
+        mock_summarizer = MagicMock()
+
+        with patch(
+            "app.engine.context_manager.get_compactor",
+            return_value=mock_compactor,
+        ), patch(
+            "app.engine.memory_summarizer.get_memory_summarizer",
+            return_value=mock_summarizer,
+        ):
+            clear_context_session(
+                session_id="session-1",
+                user_id="user-1",
+            )
+
+        mock_compactor.clear_session.assert_called_once_with(
+            "session-1",
+            user_id="user-1",
+        )
+        mock_summarizer.clear_session.assert_called_once_with("session-1")
+
+
+class TestChatHistoryEndpointSupport:
+    """Test transport helpers for history-specific auth and repo access."""
+
+    def test_ensure_chat_history_access_allowed_denies_other_user(self):
+        from app.api.v1.chat_history_endpoint_support import (
+            ensure_chat_history_access_allowed,
+        )
+
+        auth = MagicMock(role="student", user_id="user-1")
+
+        response = ensure_chat_history_access_allowed(
+            auth=auth,
+            user_id="user-2",
+        )
+
+        assert response is not None
+        assert response.status_code == 403
+        payload = json.loads(response.body)
+        assert payload["error"] == "permission_denied"
+
+    def test_ensure_delete_chat_history_allowed_rejects_invalid_role(self):
+        from app.api.v1.chat_history_endpoint_support import (
+            ensure_delete_chat_history_allowed,
+        )
+
+        auth = MagicMock(role="guest", user_id="user-1")
+
+        response = ensure_delete_chat_history_allowed(
+            auth=auth,
+            user_id="user-1",
+        )
+
+        assert response is not None
+        assert response.status_code == 403
+        payload = json.loads(response.body)
+        assert payload["error"] == "invalid_role"
+
+    def test_build_chat_history_operation_error_response_logs_and_builds_payload(self):
+        from app.api.v1.chat_history_endpoint_support import (
+            build_chat_history_operation_error_response,
+        )
+
+        logger = MagicMock()
+
+        response = build_chat_history_operation_error_response(
+            logger=logger,
+            operation_label="retrieving chat history",
+            error=RuntimeError("boom"),
+            message="Failed to retrieve chat history",
+        )
+
+        assert response.status_code == 500
+        payload = json.loads(response.body)
+        assert payload == {
+            "error": "internal_error",
+            "message": "Failed to retrieve chat history",
+        }
+        logger.exception.assert_called_once()
+
+    def test_load_chat_history_page_uses_repository(self):
+        from app.api.v1.chat_history_endpoint_support import load_chat_history_page
+
+        mock_repo = MagicMock()
+        mock_repo.get_user_history.return_value = ([], 0)
+
+        with patch(
+            "app.repositories.chat_history_repository."
+            "get_chat_history_repository",
+            return_value=mock_repo,
+        ):
+            result = load_chat_history_page(
+                user_id="user-1",
+                limit=20,
+                offset=5,
+            )
+
+        assert result == ([], 0)
+        mock_repo.get_user_history.assert_called_once_with("user-1", 20, 5)
+
+    def test_process_get_chat_history_request_shapes_and_logs_response(self):
+        from types import SimpleNamespace
+
+        from app.api.v1.chat_history_endpoint_support import (
+            process_get_chat_history_request,
+        )
+
+        logger = MagicMock()
+        mock_message = SimpleNamespace(role="user", content="hi", created_at="ts")
+
+        with patch(
+            "app.api.v1.chat_history_endpoint_support.load_chat_history_page",
+            return_value=([mock_message], 1),
+        ), patch(
+            "app.api.v1.chat_history_endpoint_support._chat_endpoint_presenter"
+            ".build_get_chat_history_response",
+            return_value=SimpleNamespace(data=[1]),
+        ) as mock_build:
+            response = process_get_chat_history_request(
+                logger=logger,
+                user_id="user-1",
+                limit=999,
+                offset=-1,
+            )
+
+        assert response.data == [1]
+        mock_build.assert_called_once_with(
+            messages=[mock_message],
+            total=1,
+            limit=100,
+            offset=0,
+        )
+        logger.info.assert_called_once_with(
+            "Retrieved %d messages for user %s (total: %d)",
+            1,
+            "user-1",
+            1,
+        )
+
+    def test_process_delete_chat_history_request_deletes_and_logs_response(self):
+        from app.api.v1.chat_history_endpoint_support import (
+            process_delete_chat_history_request,
+        )
+
+        logger = MagicMock()
+
+        with patch(
+            "app.api.v1.chat_history_endpoint_support.delete_chat_history_records",
+            return_value=3,
+        ), patch(
+            "app.api.v1.chat_history_endpoint_support._chat_endpoint_presenter"
+            ".build_delete_chat_history_response",
+            return_value="response",
+        ) as mock_build:
+            response = process_delete_chat_history_request(
+                logger=logger,
+                user_id="user-1",
+                deleted_by="admin-1",
+                role="admin",
+            )
+
+        assert response == "response"
+        mock_build.assert_called_once_with(
+            user_id="user-1",
+            deleted_count=3,
+            deleted_by="admin-1",
+        )
+        logger.info.assert_called_once_with(
+            "Deleted %d chat messages for user %s by %s (%s)",
+            3,
+            "user-1",
+            "admin-1",
+            "admin",
+        )
 
 
 # =============================================================================

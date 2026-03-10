@@ -159,6 +159,24 @@ def _init_extended_tools():
         except Exception as e:
             logger.warning("Code execution tools init failed: %s", e)
 
+    # Browser Sandbox Tools (OpenSandbox-backed, admin-only)
+    if (
+        settings.enable_browser_agent
+        and settings.enable_privileged_sandbox
+        and settings.sandbox_provider == "opensandbox"
+        and settings.sandbox_allow_browser_workloads
+    ):
+        try:
+            from app.engine.tools.browser_sandbox_tools import get_browser_sandbox_tools
+            for tool_fn in get_browser_sandbox_tools():
+                registry.register(
+                    tool_fn, ToolCategory.EXECUTION, ToolAccess.WRITE,
+                    roles=["admin"]
+                )
+            logger.info("Browser sandbox tools registered (admin-only)")
+        except Exception as e:
+            logger.warning("Browser sandbox tools init failed: %s", e)
+
     # Skill Management Tools (self-extending agent)
     # Sprint 26: Restricted to admin — creating/modifying skills is privileged
     if settings.enable_skill_creation:
@@ -212,6 +230,15 @@ def _init_extended_tools():
         except Exception as e:
             logger.warning("Visual product search tool init failed: %s", e)
 
+    # LMS Tools (Sprint 175 tools, Sprint 220 registration)
+    if settings.enable_lms_integration:
+        try:
+            from app.engine.tools.lms_tools import register_lms_tools
+            register_lms_tools()
+            logger.info("LMS tools registered (gate: enable_lms_integration)")
+        except Exception as e:
+            logger.warning("LMS tools init failed: %s", e)
+
     # Character Tools (Sprint 95: self-editing character state)
     if settings.enable_character_tools:
         try:
@@ -263,6 +290,14 @@ def init_all_tools(rag_agent=None, semantic_memory=None, user_id: str = None, do
 
     # Initialize utility tools (always available)
     init_utility_tools()
+
+    # Deterministic output generation tools (HTML/Excel/Word)
+    try:
+        from app.engine.tools.output_generation_tools import init_output_generation_tools
+
+        init_output_generation_tools()
+    except Exception as e:
+        logger.warning("Output generation tools init failed: %s", e)
 
     # Sprint 147: Register think tool as core utility (always available)
     registry = get_tool_registry()

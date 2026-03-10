@@ -112,6 +112,7 @@ class TestStreamEventType:
         assert event.content["url"] == "https://facebook.com/marketplace"
         assert event.content["image"] == "abc123=="
         assert event.content["label"] == "Đang tải trang..."
+        assert event.content["metadata"] == {}
         assert event.node == "product_search_agent"
 
     @pytest.mark.asyncio
@@ -124,6 +125,20 @@ class TestStreamEventType:
             label="Test",
         )
         assert event.node is None
+        assert event.content["metadata"] == {}
+
+    @pytest.mark.asyncio
+    async def test_create_browser_screenshot_event_with_metadata(self):
+        from app.engine.multi_agent.stream_utils import create_browser_screenshot_event
+
+        event = await create_browser_screenshot_event(
+            url="https://example.com",
+            image_base64="data",
+            label="Test",
+            metadata={"execution_id": "exec-1"},
+        )
+
+        assert event.content["metadata"]["execution_id"] == "exec-1"
 
 
 # =============================================================================
@@ -284,6 +299,7 @@ class TestBusEventConversion:
                 "url": "https://facebook.com/marketplace",
                 "image": "base64data",
                 "label": "Đang tải trang...",
+                "metadata": {"execution_id": "exec-1"},
             },
             "node": "product_search_agent",
         }
@@ -293,6 +309,7 @@ class TestBusEventConversion:
         assert result.content["url"] == "https://facebook.com/marketplace"
         assert result.content["image"] == "base64data"
         assert result.content["label"] == "Đang tải trang..."
+        assert result.content["metadata"]["execution_id"] == "exec-1"
         assert result.node == "product_search_agent"
 
     @pytest.mark.asyncio
@@ -307,6 +324,7 @@ class TestBusEventConversion:
         assert result.content["url"] == ""
         assert result.content["image"] == ""
         assert result.content["label"] == ""
+        assert result.content["metadata"] == {}
 
     @pytest.mark.asyncio
     async def test_existing_event_types_unchanged(self):
@@ -352,7 +370,7 @@ class TestEventFactory:
         event = await create_browser_screenshot_event(
             url="u", image_base64="i", label="l"
         )
-        assert set(event.content.keys()) == {"url", "image", "label"}
+        assert set(event.content.keys()) == {"url", "image", "label", "metadata"}
 
 
 # =============================================================================

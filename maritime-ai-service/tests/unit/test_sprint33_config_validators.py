@@ -97,6 +97,42 @@ class TestGeminiThinkingLevel:
 
 
 # =============================================================================
+# OpenRouter routing validators
+# =============================================================================
+
+
+class TestOpenRouterRoutingValidators:
+    def test_data_collection_accepts_allow(self):
+        s = _make_settings(openrouter_data_collection="allow")
+        assert s.openrouter_data_collection == "allow"
+
+    def test_data_collection_accepts_deny(self):
+        s = _make_settings(openrouter_data_collection="deny")
+        assert s.openrouter_data_collection == "deny"
+
+    def test_data_collection_rejects_invalid_value(self):
+        with pytest.raises(ValidationError, match="openrouter_data_collection"):
+            _make_settings(openrouter_data_collection="archive")
+
+    @pytest.mark.parametrize("val", ["price", "latency", "throughput"])
+    def test_provider_sort_accepts_known_values(self, val):
+        s = _make_settings(openrouter_provider_sort=val)
+        assert s.openrouter_provider_sort == val
+
+    def test_provider_sort_rejects_invalid_value(self):
+        with pytest.raises(ValidationError, match="openrouter_provider_sort"):
+            _make_settings(openrouter_provider_sort="balanced")
+
+    def test_string_lists_are_trimmed_and_deduped(self):
+        s = _make_settings(
+            openrouter_provider_order=[" openai ", "anthropic", "openai", ""],
+            openrouter_model_fallbacks=[" model-a ", "model-b", "model-a"],
+        )
+        assert s.openrouter_provider_order == ["openai", "anthropic"]
+        assert s.openrouter_model_fallbacks == ["model-a", "model-b"]
+
+
+# =============================================================================
 # log_format
 # =============================================================================
 

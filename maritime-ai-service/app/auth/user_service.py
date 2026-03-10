@@ -401,6 +401,52 @@ async def unlink_identity(user_id: str, identity_id: str) -> bool:
         return True
 
 
+# ---------------------------------------------------------------------------
+# Sprint 220c: Reverse-lookup (Wiii UUID → external identity)
+# ---------------------------------------------------------------------------
+
+async def find_external_identity(
+    user_id: str,
+    provider: str,
+    provider_issuer: Optional[str] = None,
+) -> Optional[dict]:
+    """
+    Reverse-lookup: Wiii UUID → external identity.
+
+    Used to resolve the original LMS user ID from a Wiii user,
+    so LMS APIs can be called with the ID they recognize.
+
+    Returns dict with {provider_sub, provider_issuer, email, display_name} or None.
+    """
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        if provider_issuer:
+            row = await conn.fetchrow(
+                """
+                SELECT provider_sub, provider_issuer, email, display_name
+                FROM user_identities
+                WHERE user_id = $1 AND provider = $2 AND provider_issuer = $3
+                ORDER BY last_used_at DESC
+                LIMIT 1
+                """,
+                user_id, provider, provider_issuer,
+            )
+        else:
+            row = await conn.fetchrow(
+                """
+                SELECT provider_sub, provider_issuer, email, display_name
+                FROM user_identities
+                WHERE user_id = $1 AND provider = $2
+                ORDER BY last_used_at DESC
+                LIMIT 1
+                """,
+                user_id, provider,
+            )
+        if row:
+            return dict(row)
+    return None
+
+
 async def list_users(
     org_id: Optional[str] = None,
     limit: int = 50,

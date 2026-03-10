@@ -57,6 +57,36 @@ def extract_org_from_subdomain(host: str, base_domain: str) -> str | None:
     return subdomain
 
 
+class EmbedCSPMiddleware(BaseHTTPMiddleware):
+    """
+    Sprint 220b: Set CSP frame-ancestors on /embed routes to allow iframe embedding.
+
+    Without this, browsers block iframing due to X-Frame-Options: DENY (default).
+    Only applies to /embed paths — other routes remain unaffected.
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        response: Response = await call_next(request)
+
+        if request.url.path.startswith("/embed"):
+            from app.core.config import settings
+
+            origins = settings.embed_allowed_origins.strip()
+            if origins:
+                # Space-separated origins → CSP frame-ancestors directive
+                frame_ancestors = f"frame-ancestors 'self' {origins}"
+            else:
+                frame_ancestors = "frame-ancestors 'self'"
+
+            response.headers["Content-Security-Policy"] = frame_ancestors
+            # Remove X-Frame-Options — it conflicts with CSP frame-ancestors
+            # and older browsers use it to block iframes
+            if "X-Frame-Options" in response.headers:
+                del response.headers["X-Frame-Options"]
+
+        return response
+
+
 class RequestIDMiddleware(BaseHTTPMiddleware):
     """Inject / propagate X-Request-ID for every request."""
 

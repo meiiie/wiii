@@ -99,6 +99,7 @@ class LMSStudentProfile(BaseModel):
     """Student profile from LMS API."""
     id: str
     name: str
+    full_name: Optional[str] = None  # Sprint 220c: prefer full_name over username
     email: Optional[str] = None
     class_name: Optional[str] = None  # e.g. "ĐKTB K62A"
     program: Optional[str] = None     # e.g. "Điều khiển tàu biển"
@@ -109,6 +110,7 @@ class LMSGrade(BaseModel):
     """Single grade record from LMS API."""
     course_id: str
     course_name: Optional[str] = None
+    class_name: Optional[str] = None   # Sprint 220c: class name (e.g. "Lop Co Khi Tau K66")
     grade: float
     max_grade: float
     date: Optional[str] = None
@@ -125,4 +127,5 @@ class LMSUpcomingAssignment(BaseModel):
     assignment_name: str
     course_id: str
     course_name: Optional[str] = None
-    due_date: datetime
+    class_name: Optional[str] = None   # Sprint 220c: class name (e.g. "Lop An Toan HH K66")
+    due_date: Optional[datetime] = None  # Sprint 220c: some assignments may not have due dates

@@ -328,7 +328,7 @@ class TestFeatureGate:
         assert s.living_agent_enable_skill_building is False
         assert s.living_agent_require_human_approval is True
         assert s.living_agent_heartbeat_interval == 1800
-        assert s.living_agent_local_model == "qwen3:8b"
+        assert s.living_agent_local_model == "qwen3:4b-instruct-2507-q4_K_M"
 
 
 # =============================================================================

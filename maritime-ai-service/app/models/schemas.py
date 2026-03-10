@@ -22,6 +22,7 @@ class AgentType(str, Enum):
     TUTOR = "tutor"
     DIRECT = "direct"
     MEMORY = "memory"
+    CODE_STUDIO = "code_studio"
 
 
 class IntentType(str, Enum):

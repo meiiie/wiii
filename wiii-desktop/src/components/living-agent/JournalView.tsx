@@ -74,7 +74,7 @@ function JournalCard({ entry }: { entry: LivingAgentJournalEntry }) {
             className="border-t border-[var(--border-primary)]"
           >
             <div className="p-3 text-sm">
-              <MarkdownRenderer content={entry.content} />
+              {entry.content && <MarkdownRenderer content={entry.content} />}
 
               {entry.notable_events.length > 0 && (
                 <div className="mt-3">

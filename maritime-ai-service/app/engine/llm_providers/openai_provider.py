@@ -11,6 +11,7 @@ from typing import Any
 from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
+from app.engine.openrouter_routing import build_openrouter_extra_body
 from app.engine.llm_providers.base import LLMProvider
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,13 @@ class OpenAIProvider(LLMProvider):
         # Support OpenRouter or custom base URL
         if settings.openai_base_url:
             llm_kwargs["base_url"] = settings.openai_base_url
+
+        openrouter_extra_body = build_openrouter_extra_body(
+            settings,
+            primary_model=model,
+        )
+        if openrouter_extra_body:
+            llm_kwargs["extra_body"] = openrouter_extra_body
 
         llm = ChatOpenAI(**llm_kwargs)
         logger.info(

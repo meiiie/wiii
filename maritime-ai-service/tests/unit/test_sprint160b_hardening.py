@@ -577,8 +577,8 @@ class TestConfigSecurity:
                 google_oauth_client_id="test-id",
                 google_oauth_client_secret="test-secret",
                 session_secret_key="change-session-secret-in-production",
-                jwt_secret_key="real-secret-key",
-                api_key="real-api-key",
+                jwt_secret_key="real-secret-key-with-32-chars",
+                api_key="real-api-key-with-32-chars",
             )
 
     def test_session_secret_allowed_in_development(self):

@@ -4,7 +4,7 @@
  * Tests for:
  *   - AdminContext type and API function
  *   - org-store: adminContext state, fetchAdminContext, isSystemAdmin, isOrgAdmin
- *   - ui-store: orgManagerPanelOpen, open/close actions
+ *   - ui-store: activeView, open/close actions
  *   - org-admin-store: tabs, members, toast
  *   - Sidebar visibility logic (Shield vs Building2)
  */
@@ -214,48 +214,43 @@ describe("org-store admin context", () => {
 describe("ui-store org manager panel", () => {
   beforeEach(() => {
     useUIStore.setState({
-      orgManagerPanelOpen: false,
+      activeView: "chat",
       orgManagerTargetOrgId: null,
-      adminPanelOpen: false,
-      settingsOpen: false,
       commandPaletteOpen: false,
     });
   });
 
-  it("should start closed", () => {
-    expect(useUIStore.getState().orgManagerPanelOpen).toBe(false);
+  it("should start at chat with no orgId", () => {
+    expect(useUIStore.getState().activeView).toBe("chat");
     expect(useUIStore.getState().orgManagerTargetOrgId).toBeNull();
   });
 
-  it("openOrgManagerPanel sets orgId and opens", () => {
+  it("openOrgManagerPanel sets activeView and orgId", () => {
     useUIStore.getState().openOrgManagerPanel("org-x");
     const state = useUIStore.getState();
-    expect(state.orgManagerPanelOpen).toBe(true);
+    expect(state.activeView).toBe("org-admin");
     expect(state.orgManagerTargetOrgId).toBe("org-x");
-    expect(state.adminPanelOpen).toBe(false);
   });
 
-  it("closeOrgManagerPanel resets state", () => {
+  it("closeOrgManagerPanel resets to chat", () => {
     useUIStore.getState().openOrgManagerPanel("org-x");
     useUIStore.getState().closeOrgManagerPanel();
     const state = useUIStore.getState();
-    expect(state.orgManagerPanelOpen).toBe(false);
+    expect(state.activeView).toBe("chat");
     expect(state.orgManagerTargetOrgId).toBeNull();
   });
 
-  it("openAdminPanel closes org manager panel", () => {
+  it("openAdminPanel switches from org-admin to system-admin", () => {
     useUIStore.getState().openOrgManagerPanel("org-x");
     useUIStore.getState().openAdminPanel();
-    const state = useUIStore.getState();
-    expect(state.adminPanelOpen).toBe(true);
-    expect(state.orgManagerPanelOpen).toBe(false);
+    expect(useUIStore.getState().activeView).toBe("system-admin");
   });
 
-  it("closeAll closes org manager panel", () => {
+  it("closeAll returns to chat", () => {
     useUIStore.getState().openOrgManagerPanel("org-x");
     useUIStore.getState().closeAll();
     const state = useUIStore.getState();
-    expect(state.orgManagerPanelOpen).toBe(false);
+    expect(state.activeView).toBe("chat");
     expect(state.orgManagerTargetOrgId).toBeNull();
   });
 });

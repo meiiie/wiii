@@ -1,53 +1,142 @@
 /**
- * ArtifactPanel — side panel for expanded artifact view.
- * Sprint 167: "Không Gian Sáng Tạo"
- * Sprint 167b: H-3 (blob leak), H-4 (iframeRef), M-3 (CSS vars), M-7 (narrowed deps)
+ * ArtifactPanel - side panel for expanded artifact viewing.
  *
- * Tabs: Code | Preview | Output
- * Follows PreviewPanel pattern but wider (50vw).
- * Renders sandboxed iframe for HTML artifacts, code display for code.
+ * Type-aware panel:
+ * - HTML/React default to live preview
+ * - Document/Excel/Table/Chart default to meaningful preview
+ * - Code keeps source first
+ * - Generated files always expose a direct download action
  */
-import { memo, useMemo, useCallback, useState, useEffect, useRef } from "react";
+import { memo, useMemo, useCallback, useState, useEffect } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { X, Copy, Check, Code2, Eye, Terminal, Play } from "lucide-react";
+import { X, Copy, Check, Code2, Eye, Terminal, Play, Download, Globe, FileText, FileSpreadsheet, Table2, BarChart3 } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
 import { useChatStore } from "@/stores/chat-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import { wrapInSandboxHtml, createSandboxUrl, listenFromSandbox, escapeHtml } from "@/lib/artifact-sandbox";
+import { ArtifactRenderer } from "@/components/chat/artifacts";
 import type { ArtifactData } from "@/api/types";
+import {
+  artifactPreviewSnippet,
+  describeArtifactFile,
+  resolveArtifactFileUrl,
+} from "@/lib/artifact-file";
 
-const TAB_ITEMS = [
-  { id: "code" as const, label: "Code", icon: Code2 },
-  { id: "preview" as const, label: "Xem trước", icon: Eye },
-  { id: "output" as const, label: "Kết quả", icon: Terminal },
-];
+type ArtifactTabId = "code" | "preview" | "output";
+
+interface ArtifactTabConfig {
+  id: ArtifactTabId;
+  label: string;
+  icon: typeof Code2;
+}
+
+const PANEL_ICONS: Record<string, typeof Code2> = {
+  code: Code2,
+  html: Globe,
+  react: Code2,
+  table: Table2,
+  chart: BarChart3,
+  document: FileText,
+  excel: FileSpreadsheet,
+};
+
+function artifactHasOutput(artifact: ArtifactData): boolean {
+  return Boolean(
+    artifact.metadata?.output ||
+    artifact.metadata?.error ||
+    artifact.metadata?.image_url,
+  );
+}
+
+function getArtifactTabs(artifact: ArtifactData): ArtifactTabConfig[] {
+  const tabs: ArtifactTabConfig[] = [];
+  const hasOutput = artifactHasOutput(artifact);
+
+  if (artifact.artifact_type === "code") {
+    tabs.push({ id: "code", label: "Ma nguon", icon: Code2 });
+    if (hasOutput) tabs.push({ id: "output", label: "Ket qua", icon: Terminal });
+    return tabs;
+  }
+
+  if (artifact.artifact_type === "html" || artifact.artifact_type === "react") {
+    tabs.push({ id: "preview", label: "Xem truoc", icon: Eye });
+    tabs.push({ id: "code", label: "Ma nguon", icon: Code2 });
+    if (hasOutput) tabs.push({ id: "output", label: "Ket qua", icon: Terminal });
+    return tabs;
+  }
+
+  tabs.push({
+    id: "preview",
+    label:
+      artifact.artifact_type === "excel"
+        ? "Du lieu"
+        : artifact.artifact_type === "chart"
+        ? "Bieu do"
+        : artifact.artifact_type === "table"
+        ? "Bang"
+        : "Noi dung",
+    icon: Eye,
+  });
+  tabs.push({ id: "code", label: "Chi tiet", icon: Code2 });
+  if (hasOutput) tabs.push({ id: "output", label: "Ket qua", icon: Terminal });
+  return tabs;
+}
+
+function getDefaultArtifactTab(artifact: ArtifactData): ArtifactTabId {
+  return artifact.artifact_type === "code" ? "code" : "preview";
+}
 
 export const ArtifactPanel = memo(function ArtifactPanel() {
-  const { artifactPanelOpen, selectedArtifactId, artifactActiveTab, closeArtifact, setArtifactTab, _ephemeralArtifact } = useUIStore();
+  const {
+    artifactPanelOpen,
+    selectedArtifactId,
+    artifactActiveTab,
+    closeArtifact,
+    setArtifactTab,
+    _ephemeralArtifact,
+  } = useUIStore();
+  const serverUrl = useSettingsStore((s) => s.settings.server_url);
 
-  // M-7: Narrow dependencies — extract only what we need
   const streamingArtifacts = useChatStore((s) => s.streamingArtifacts);
   const messages = useChatStore((s) => s.activeConversation()?.messages);
   const messageCount = messages?.length ?? 0;
 
   const artifact = useMemo<ArtifactData | null>(() => {
     if (!selectedArtifactId) return null;
-    // Sprint 168: Check ephemeral artifact first (from CodeBlock "Sandbox" button)
     if (_ephemeralArtifact && _ephemeralArtifact.artifact_id === selectedArtifactId) {
       return _ephemeralArtifact;
     }
-    // Check streaming
-    const streaming = streamingArtifacts.find((a) => a.artifact_id === selectedArtifactId);
+    const streaming = streamingArtifacts.find((item) => item.artifact_id === selectedArtifactId);
     if (streaming) return streaming;
-    // Check finalized messages
     if (messages) {
-      for (const msg of messages) {
-        const found = msg.artifacts?.find((a) => a.artifact_id === selectedArtifactId);
+      for (const message of messages) {
+        const found = message.artifacts?.find((item) => item.artifact_id === selectedArtifactId);
         if (found) return found;
       }
     }
     return null;
   }, [selectedArtifactId, streamingArtifacts, messages, messageCount, _ephemeralArtifact]);
+
+  const resolvedFileUrl = useMemo(
+    () => (artifact ? resolveArtifactFileUrl(artifact, serverUrl) : null),
+    [artifact, serverUrl],
+  );
+  const tabs = useMemo(() => (artifact ? getArtifactTabs(artifact) : []), [artifact]);
+  const HeaderIcon = artifact ? (PANEL_ICONS[artifact.artifact_type] || Code2) : Code2;
+  const fileDescription = artifact ? describeArtifactFile(artifact) : null;
+
+  useEffect(() => {
+    if (!artifact) return;
+    const defaultTab = getDefaultArtifactTab(artifact);
+    setArtifactTab(defaultTab);
+  }, [artifact?.artifact_id, artifact, setArtifactTab]);
+
+  useEffect(() => {
+    if (!artifact || tabs.length === 0) return;
+    if (!tabs.some((tab) => tab.id === artifactActiveTab)) {
+      setArtifactTab(tabs[0].id);
+    }
+  }, [artifact, tabs, artifactActiveTab, setArtifactTab]);
 
   if (!artifactPanelOpen || !artifact) return null;
 
@@ -59,42 +148,55 @@ export const ArtifactPanel = memo(function ArtifactPanel() {
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: "100%", opacity: 0 }}
         transition={{ type: "spring", damping: 25, stiffness: 200 }}
-        className="fixed right-0 top-[var(--titlebar-height,32px)] bottom-[var(--statusbar-height,24px)] w-[50vw] max-w-[800px] min-w-[400px] bg-surface border-l border-border z-40 flex flex-col shadow-xl"
+        className="fixed right-0 top-[var(--titlebar-height,32px)] bottom-[var(--statusbar-height,24px)] w-[52vw] max-w-[860px] min-w-[420px] border-l border-border z-40 flex flex-col shadow-xl artifact-panel-shell"
       >
-        {/* Header */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
-          <Code2 size={16} className="text-[var(--accent)]" />
-          <span className="text-sm font-medium text-text truncate flex-1">
-            {artifact.title}
-          </span>
-          {artifact.language && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-tertiary text-text-secondary font-mono">
-              {artifact.language}
-            </span>
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-border shrink-0 artifact-panel-shell__header">
+          <div className="w-9 h-9 rounded-xl bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center shrink-0">
+            <HeaderIcon size={17} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-text truncate">{artifact.title}</div>
+            <div className="flex items-center gap-2 mt-1 text-[11px] text-text-tertiary">
+              <span className="uppercase tracking-[0.08em]">{artifact.artifact_type}</span>
+              {fileDescription && <span className="truncate">{fileDescription}</span>}
+              {artifact.language && <span className="font-mono">{artifact.language}</span>}
+            </div>
+          </div>
+          {resolvedFileUrl && (
+            <a
+              href={resolvedFileUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-surface-tertiary text-text-tertiary hover:text-text transition-colors text-xs"
+              title="Mo hoac tai file da tao"
+            >
+              <Download size={14} />
+              Tai file
+            </a>
           )}
           <button
             onClick={closeArtifact}
             className="p-1.5 rounded-md hover:bg-surface-tertiary text-text-tertiary hover:text-text transition-colors"
-            aria-label="Đóng panel artifact"
+            aria-label="Dong panel artifact"
           >
             <X size={16} />
           </button>
         </div>
 
-        {/* Tab bar */}
-        <div className="flex border-b border-border shrink-0">
-          {TAB_ITEMS.map((tab) => {
+        <div className="flex border-b border-border shrink-0 artifact-panel-shell__tabs">
+          {tabs.map((tab) => {
             const TabIcon = tab.icon;
             const isActive = artifactActiveTab === tab.id;
             return (
               <button
                 key={tab.id}
                 onClick={() => setArtifactTab(tab.id)}
-                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
+                data-active={isActive ? "true" : "false"}
+                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors ${
                   isActive
-                    ? "border-[var(--accent)] text-[var(--accent)]"
-                    : "border-transparent text-text-tertiary hover:text-text-secondary"
-                }`}
+                    ? "text-[var(--accent)]"
+                    : "text-text-tertiary hover:text-text-secondary"
+                } artifact-panel-shell__tab`}
               >
                 <TabIcon size={14} />
                 {tab.label}
@@ -103,18 +205,21 @@ export const ArtifactPanel = memo(function ArtifactPanel() {
           })}
         </div>
 
-        {/* Content area */}
         <div className="flex-1 overflow-auto">
-          {artifactActiveTab === "code" && <CodeTab artifact={artifact} />}
           {artifactActiveTab === "preview" && <PreviewTab artifact={artifact} />}
+          {artifactActiveTab === "code" && (
+            artifact.artifact_type === "code" ||
+            artifact.artifact_type === "html" ||
+            artifact.artifact_type === "react"
+              ? <CodeTab artifact={artifact} />
+              : <DetailsTab artifact={artifact} resolvedFileUrl={resolvedFileUrl} />
+          )}
           {artifactActiveTab === "output" && <OutputTab artifact={artifact} />}
         </div>
       </motion.div>
     </AnimatePresence>
   );
 });
-
-// ===== Code Tab =====
 
 function CodeTab({ artifact }: { artifact: ArtifactData }) {
   const [copied, setCopied] = useState(false);
@@ -125,7 +230,7 @@ function CodeTab({ artifact }: { artifact: ArtifactData }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Silent fail
+      // Ignore clipboard errors.
     }
   }, [artifact.content]);
 
@@ -133,19 +238,17 @@ function CodeTab({ artifact }: { artifact: ArtifactData }) {
 
   return (
     <div className="relative">
-      {/* Copy button */}
       <div className="absolute top-2 right-2 z-10 flex gap-1">
         <button
           onClick={handleCopy}
           className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-surface-tertiary hover:bg-border text-text-secondary transition-colors"
-          title="Sao chép"
+          title="Sao chep"
         >
           {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
-          {copied ? "Đã sao chép" : "Sao chép"}
+          {copied ? "Da sao chep" : "Sao chep"}
         </button>
       </div>
 
-      {/* Code rendering */}
       <div className="p-4 text-sm">
         <MarkdownRenderer content={codeBlock} />
       </div>
@@ -153,60 +256,71 @@ function CodeTab({ artifact }: { artifact: ArtifactData }) {
   );
 }
 
-// ===== Preview Tab =====
-
 function PreviewTab({ artifact }: { artifact: ArtifactData }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [iframeHeight, setIframeHeight] = useState(400);
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const blobUrlRef = useRef<string | null>(null);
+  return <ArtifactRenderer artifact={artifact} mode="panel" />;
+}
 
-  // H-3: Create and track blob URL properly — revoke previous on change
-  useEffect(() => {
-    // Revoke previous
-    if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
-    // Create new
-    const isHtml = artifact.artifact_type === "html" || artifact.artifact_type === "react";
-    const content = isHtml ? artifact.content : `<pre><code>${escapeHtml(artifact.content)}</code></pre>`;
-    const html = wrapInSandboxHtml(content, artifact.title);
-    const url = createSandboxUrl(html);
-    blobUrlRef.current = url;
-    setBlobUrl(url);
-    return () => {
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
-      }
-    };
-  }, [artifact.artifact_type, artifact.content, artifact.title]);
+function DetailsTab({
+  artifact,
+  resolvedFileUrl,
+}: {
+  artifact: ArtifactData;
+  resolvedFileUrl: string | null;
+}) {
+  const metadataEntries = Object.entries(artifact.metadata || {})
+    .filter(([key, value]) => {
+      if (value == null || value === "") return false;
+      return !["output", "error", "image_url", "table_data"].includes(key);
+    })
+    .slice(0, 12);
 
-  // H-4: Listen for resize messages — validate source via iframeRef
-  useEffect(() => {
-    const cleanup = listenFromSandbox((msg) => {
-      if (msg.type === "resize" && typeof (msg.payload as { height?: number })?.height === "number") {
-        setIframeHeight(Math.min((msg.payload as { height: number }).height, 800));
-      }
-    }, iframeRef);
-    return cleanup;
-  }, []);
-
-  if (!blobUrl) return null;
+  const summary = artifactPreviewSnippet(artifact, 500);
+  const filename = describeArtifactFile(artifact);
 
   return (
-    <div className="p-4">
-      <iframe
-        ref={iframeRef}
-        src={blobUrl}
-        sandbox="allow-scripts"
-        style={{ width: "100%", height: `${iframeHeight}px`, border: "none", borderRadius: "8px" }}
-        className="bg-white"
-        title={artifact.title}
-      />
+    <div className="p-5 space-y-4">
+      <div className="rounded-2xl border border-border bg-surface-secondary p-4">
+        <div className="text-sm font-medium text-text">{artifact.title}</div>
+        {filename && <div className="text-xs text-text-tertiary mt-1">{filename}</div>}
+        <div className="text-xs text-text-tertiary mt-1">Loai artifact: {artifact.artifact_type}</div>
+        {resolvedFileUrl && (
+          <a
+            href={resolvedFileUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 mt-3 px-3 py-2 rounded-xl bg-surface-tertiary hover:bg-border text-text-secondary hover:text-text transition-colors text-xs"
+          >
+            <Download size={14} />
+            Mo file da tao
+          </a>
+        )}
+      </div>
+
+      {metadataEntries.length > 0 && (
+        <div className="rounded-2xl border border-border bg-surface-secondary overflow-hidden">
+          <div className="px-4 py-3 border-b border-border text-xs uppercase tracking-wider text-text-tertiary">
+            Metadata
+          </div>
+          <div className="divide-y divide-border/60">
+            {metadataEntries.map(([key, value]) => (
+              <div key={key} className="px-4 py-3 flex items-start gap-4 text-sm">
+                <div className="w-32 shrink-0 text-text-tertiary">{key}</div>
+                <div className="min-w-0 text-text break-words">
+                  {typeof value === "string" ? value : JSON.stringify(value)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-border bg-surface-secondary p-4">
+        <div className="text-xs uppercase tracking-wider text-text-tertiary mb-2">Tom tat noi dung</div>
+        <pre className="text-sm text-text-secondary whitespace-pre-wrap leading-relaxed">{summary}</pre>
+      </div>
     </div>
   );
 }
-
-// ===== Output Tab =====
 
 function OutputTab({ artifact }: { artifact: ArtifactData }) {
   const output = artifact.metadata?.output;
@@ -217,15 +331,14 @@ function OutputTab({ artifact }: { artifact: ArtifactData }) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-text-tertiary py-16">
         <Play size={32} className="mb-3 opacity-50" />
-        <p className="text-sm">Nhấn "Chạy" để xem kết quả</p>
-        <p className="text-xs mt-1 opacity-70">Kết quả thực thi sẽ hiển thị ở đây</p>
+        <p className="text-sm">Artifact nay khong co kenh output rieng.</p>
+        <p className="text-xs mt-1 opacity-70">Hay xem tab preview hoac chi tiet de lam viec voi file da tao.</p>
       </div>
     );
   }
 
   return (
     <div className="p-4 space-y-3">
-      {/* stdout */}
       {output && (
         <div>
           <div className="text-[10px] text-text-tertiary font-medium mb-1 uppercase tracking-wider">stdout</div>
@@ -235,7 +348,6 @@ function OutputTab({ artifact }: { artifact: ArtifactData }) {
         </div>
       )}
 
-      {/* stderr */}
       {error && (
         <div>
           <div className="text-[10px] text-red-500 font-medium mb-1 uppercase tracking-wider">stderr</div>
@@ -245,7 +357,6 @@ function OutputTab({ artifact }: { artifact: ArtifactData }) {
         </div>
       )}
 
-      {/* Chart/Image output */}
       {imageUrl && (
         <div>
           <div className="text-[10px] text-text-tertiary font-medium mb-1 uppercase tracking-wider">Output</div>

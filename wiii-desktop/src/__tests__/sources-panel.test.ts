@@ -10,7 +10,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   useUIStore.setState({
     sidebarOpen: true,
-    settingsOpen: false,
+    activeView: "chat",
     sourcesPanelOpen: false,
     selectedSourceIndex: null,
     commandPaletteOpen: false,

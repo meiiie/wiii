@@ -1,0 +1,502 @@
+"""Tests for the shared sync/stream request preparation helpers."""
+
+import json
+from types import SimpleNamespace
+from uuid import uuid4
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from app.models.schemas import UserRole
+from app.services.chat_orchestrator import ChatOrchestrator, RequestScope
+from app.services.input_processor import ChatContext
+
+
+def _make_orchestrator() -> ChatOrchestrator:
+    chat_history = MagicMock()
+    chat_history.is_available.return_value = True
+    return ChatOrchestrator(
+        session_manager=MagicMock(),
+        input_processor=MagicMock(),
+        output_processor=MagicMock(),
+        background_runner=MagicMock(),
+        chat_history=chat_history,
+    )
+
+
+def _make_request(**overrides):
+    base = {
+        "user_id": "user-1",
+        "message": "Explain COLREG Rule 5",
+        "role": UserRole.STUDENT,
+        "thread_id": None,
+        "session_id": None,
+        "organization_id": None,
+        "domain_id": None,
+    }
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def _make_session(total_responses: int = 0):
+    return SimpleNamespace(
+        user_name=None,
+        state=SimpleNamespace(
+            is_first_message=False,
+            pronoun_style=None,
+            update_pronoun_style=MagicMock(),
+            total_responses=total_responses,
+            name_usage_count=2,
+            recent_phrases=["xin chao"],
+        )
+    )
+
+
+def _make_chat_context() -> ChatContext:
+    context = ChatContext(
+        user_id="user-1",
+        session_id=uuid4(),
+        message="Explain COLREG Rule 5",
+        user_role=UserRole.STUDENT,
+        user_name="Minh",
+        lms_course_name="COLREGs",
+        lms_module_id="module-1",
+        conversation_history="User asked about lookout.",
+        semantic_context="Rule 5 requires proper lookout.",
+        conversation_summary="Earlier discussion about lookout duties.",
+        core_memory_block="Learner prefers examples.",
+        mood_hint="curious",
+        organization_id="org-1",
+    )
+    context.history_list = [{"role": "user", "content": "Hi"}]
+    context.page_context = {"page_type": "lesson"}
+    context.student_state = {"scroll_percent": 42}
+    context.available_actions = [{"action": "navigate", "label": "Next"}]
+    context.host_context = {"host_type": "lms"}
+    context.images = [SimpleNamespace(model_dump=lambda: {"kind": "image"})]
+    return context
+
+
+def test_normalize_thread_id_prefers_thread_id():
+    request = _make_request(thread_id="thread-1", session_id="session-1")
+
+    assert ChatOrchestrator.normalize_thread_id(request) == "thread-1"
+
+
+def test_normalize_thread_id_falls_back_to_session_id():
+    request = _make_request(thread_id=None, session_id="session-1")
+
+    assert ChatOrchestrator.normalize_thread_id(request) == "session-1"
+
+
+def test_normalize_thread_id_treats_new_as_none():
+    request = _make_request(thread_id="new", session_id="session-1")
+
+    assert ChatOrchestrator.normalize_thread_id(request) == "session-1"
+
+
+@pytest.mark.asyncio
+async def test_resolve_request_scope_uses_request_and_router():
+    orchestrator = _make_orchestrator()
+    request = _make_request(organization_id="org-explicit", domain_id="maritime")
+    domain_router = MagicMock()
+    domain_router.resolve = AsyncMock(return_value="traffic_law")
+
+    with patch(
+        "app.core.org_context.get_current_org_id",
+        return_value="org-context",
+    ), patch(
+        "app.core.org_context.get_current_org_allowed_domains",
+        return_value=["maritime", "traffic_law"],
+    ), patch(
+        "app.domains.router.get_domain_router",
+        return_value=domain_router,
+    ):
+        scope = await orchestrator.resolve_request_scope(request)
+
+    assert scope == RequestScope(
+        organization_id="org-explicit",
+        domain_id="traffic_law",
+    )
+    domain_router.resolve.assert_awaited_once_with(
+        query="Explain COLREG Rule 5",
+        explicit_domain_id="maritime",
+        allowed_domains=["maritime", "traffic_law"],
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_multi_agent_context_uses_shared_contract_fields():
+    orchestrator = _make_orchestrator()
+    context = _make_chat_context()
+    session = _make_session(total_responses=7)
+
+    with patch.object(
+        orchestrator,
+        "resolve_lms_identity",
+        new=AsyncMock(return_value=("lms-user-1", "maritime-lms")),
+    ):
+        multi_agent_context = await orchestrator.build_multi_agent_context(
+            context,
+            session,
+        )
+
+    assert multi_agent_context["user_name"] == "Minh"
+    assert multi_agent_context["user_role"] == UserRole.STUDENT.value
+    assert multi_agent_context["organization_id"] == "org-1"
+    assert multi_agent_context["conversation_phase"] == "deep"
+    assert multi_agent_context["total_responses"] == 7
+    assert multi_agent_context["lms_external_id"] == "lms-user-1"
+    assert multi_agent_context["lms_connector_id"] == "maritime-lms"
+    assert multi_agent_context["page_context"] == {"page_type": "lesson"}
+    assert multi_agent_context["student_state"] == {"scroll_percent": 42}
+    assert multi_agent_context["available_actions"] == [
+        {"action": "navigate", "label": "Next"}
+    ]
+    assert multi_agent_context["host_context"] == {"host_type": "lms"}
+    assert multi_agent_context["images"] == [{"kind": "image"}]
+
+
+@pytest.mark.asyncio
+async def test_build_multi_agent_execution_input_for_streaming_adds_transport_fields():
+    orchestrator = _make_orchestrator()
+    context = _make_chat_context()
+    session = _make_session(total_responses=2)
+    prepared_turn = SimpleNamespace(
+        request_scope=RequestScope("org-1", "maritime"),
+        session=session,
+        session_id="session-1",
+        chat_context=context,
+    )
+    request = _make_request(
+        show_previews=True,
+        preview_types=["tool", "product"],
+        preview_max_count=3,
+    )
+
+    with patch.object(
+        orchestrator,
+        "resolve_lms_identity",
+        new=AsyncMock(return_value=("lms-user-1", "maritime-lms")),
+    ):
+        execution_input = await orchestrator.build_multi_agent_execution_input(
+            request=request,
+            prepared_turn=prepared_turn,
+            include_streaming_fields=True,
+            thinking_effort="high",
+        )
+
+    assert execution_input.query == "Explain COLREG Rule 5"
+    assert execution_input.user_id == "user-1"
+    assert execution_input.session_id == "session-1"
+    assert execution_input.domain_id == "maritime"
+    assert execution_input.thinking_effort == "high"
+    assert execution_input.context["user_facts"] == []
+    assert execution_input.context["history_list"] == [{"role": "user", "content": "Hi"}]
+    assert execution_input.context["show_previews"] is True
+    assert execution_input.context["preview_types"] == ["tool", "product"]
+    assert execution_input.context["preview_max_count"] == 3
+
+
+def test_build_minimal_multi_agent_execution_input_uses_degraded_contract():
+    orchestrator = _make_orchestrator()
+    prepared_turn = SimpleNamespace(
+        request_scope=RequestScope("org-1", "maritime"),
+        session_id="session-1",
+    )
+    request = _make_request(organization_id="org-1", domain_id="maritime")
+
+    execution_input = orchestrator.build_minimal_multi_agent_execution_input(
+        request=request,
+        prepared_turn=prepared_turn,
+        thinking_effort="low",
+    )
+
+    assert execution_input.query == "Explain COLREG Rule 5"
+    assert execution_input.user_id == "user-1"
+    assert execution_input.session_id == "session-1"
+    assert execution_input.domain_id == "maritime"
+    assert execution_input.thinking_effort == "low"
+    assert execution_input.context == {
+        "user_id": "user-1",
+        "user_role": UserRole.STUDENT.value,
+        "user_name": None,
+        "conversation_history": "",
+        "organization_id": "org-1",
+    }
+
+
+def test_persist_chat_message_passes_user_id_immediately():
+    orchestrator = _make_orchestrator()
+
+    orchestrator.persist_chat_message(
+        session_id="session-1",
+        role="user",
+        content="hello",
+        user_id="user-1",
+        immediate=True,
+    )
+
+    orchestrator._chat_history.save_message.assert_called_once_with(
+        "session-1",
+        "user",
+        "hello",
+        "user-1",
+    )
+
+
+def test_persist_chat_message_passes_user_id_to_background_save():
+    orchestrator = _make_orchestrator()
+    background_save = MagicMock()
+
+    orchestrator.persist_chat_message(
+        session_id="session-1",
+        role="assistant",
+        content="hi",
+        user_id="user-1",
+        background_save=background_save,
+    )
+
+    background_save.assert_called_once_with(
+        orchestrator._chat_history.save_message,
+        "session-1",
+        "assistant",
+        "hi",
+        "user-1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_prepare_turn_builds_shared_session_and_context_contract():
+    orchestrator = _make_orchestrator()
+    request = _make_request()
+    session = _make_session()
+    session.state.is_first_message = True
+    session.session_id = "session-1"
+    chat_context = _make_chat_context()
+
+    orchestrator._session_manager.get_or_create_session.return_value = session
+    orchestrator._input_processor.build_context = AsyncMock(return_value=chat_context)
+    orchestrator._input_processor.extract_user_name.return_value = "Minh"
+    orchestrator._input_processor.validate_pronoun_request = AsyncMock(return_value=None)
+
+    with patch.object(
+        orchestrator,
+        "resolve_request_scope",
+        new=AsyncMock(return_value=RequestScope("org-1", "maritime")),
+    ), patch.object(
+        orchestrator,
+        "validate_request",
+        new=AsyncMock(return_value=SimpleNamespace(blocked=False)),
+    ), patch.object(
+        orchestrator,
+        "_maybe_summarize_previous_session",
+    ) as mock_summarize, patch.object(
+        orchestrator,
+        "_load_pronoun_style_from_facts",
+    ) as mock_load_pronoun, patch.object(
+        orchestrator,
+        "persist_chat_message",
+    ) as mock_persist_message, patch(
+        "app.prompts.prompt_loader.detect_pronoun_style",
+        return_value={"user": "mình", "assistant": "bạn"},
+    ):
+        prepared_turn = await orchestrator.prepare_turn(
+            request=request,
+            background_save=MagicMock(),
+            persist_user_message_immediately=True,
+        )
+
+    assert prepared_turn.request_scope == RequestScope("org-1", "maritime")
+    assert prepared_turn.session is session
+    assert prepared_turn.session_id == "session-1"
+    assert prepared_turn.chat_context is chat_context
+    assert chat_context.organization_id == "org-1"
+    orchestrator._session_manager.get_or_create_session.assert_called_once_with(
+        "user-1",
+        None,
+        organization_id="org-1",
+    )
+    mock_summarize.assert_called_once()
+    mock_load_pronoun.assert_called_once_with(session, "user-1")
+    mock_persist_message.assert_called_once_with(
+        session_id="session-1",
+        role="user",
+        content="Explain COLREG Rule 5",
+        user_id="user-1",
+        background_save=mock_persist_message.call_args.kwargs["background_save"],
+        immediate=True,
+    )
+    orchestrator._session_manager.update_user_name.assert_called_once_with(
+        "session-1",
+        "Minh",
+    )
+    session.state.update_pronoun_style.assert_called_once_with(
+        {"user": "mình", "assistant": "bạn"}
+    )
+
+
+@pytest.mark.asyncio
+async def test_prepare_turn_returns_early_when_validation_blocks():
+    orchestrator = _make_orchestrator()
+    request = _make_request()
+    session = _make_session()
+    session.session_id = "session-1"
+    validation = SimpleNamespace(blocked=True, blocked_response=MagicMock())
+
+    orchestrator._session_manager.get_or_create_session.return_value = session
+
+    with patch.object(
+        orchestrator,
+        "resolve_request_scope",
+        new=AsyncMock(return_value=RequestScope("org-1", "maritime")),
+    ), patch.object(
+        orchestrator,
+        "validate_request",
+        new=AsyncMock(return_value=validation),
+    ), patch.object(
+        orchestrator,
+        "persist_chat_message",
+    ) as mock_persist_message:
+        prepared_turn = await orchestrator.prepare_turn(request=request)
+
+    assert prepared_turn.validation is validation
+    assert prepared_turn.chat_context is None
+    mock_persist_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_validate_request_delegates_to_input_processor_with_blocked_factory():
+    orchestrator = _make_orchestrator()
+    request = _make_request()
+    validation_result = SimpleNamespace(blocked=False)
+    orchestrator._input_processor.validate = AsyncMock(return_value=validation_result)
+    blocked_factory = MagicMock()
+    orchestrator._output_processor.create_blocked_response = blocked_factory
+
+    result = await orchestrator.validate_request(request, "session-1")
+
+    assert result is validation_result
+    orchestrator._input_processor.validate.assert_awaited_once_with(
+        request=request,
+        session_id="session-1",
+        create_blocked_response=blocked_factory,
+    )
+
+
+def test_finalize_response_turn_runs_authoritative_post_response_contract():
+    orchestrator = _make_orchestrator()
+    context = _make_chat_context()
+    background_save = MagicMock()
+
+    with patch.object(
+        orchestrator,
+        "upsert_thread_view",
+    ) as mock_upsert, patch(
+        "app.services.chat_orchestrator.schedule_post_response_continuity",
+        return_value=("routine_tracking", "lms_insights"),
+    ) as mock_schedule_continuity, patch(
+        "app.services.chat_orchestrator.logger",
+    ) as mock_logger:
+        orchestrator.finalize_response_turn(
+            session_id="session-1",
+            user_id="user-1",
+            user_role=UserRole.STUDENT,
+            message="Explain COLREG Rule 5",
+            response_text="Minh, Rule 5 requires proper lookout.",
+            context=context,
+            domain_id="maritime",
+            organization_id="org-1",
+            current_agent="memory_agent",
+            background_save=background_save,
+        )
+
+    orchestrator._session_manager.update_state.assert_called_once_with(
+        session_id="session-1",
+        phrase="Minh, Rule 5 requires proper lookout.",
+        used_name=True,
+    )
+    background_save.assert_called_once_with(
+        orchestrator._chat_history.save_message,
+        "session-1",
+        "assistant",
+        "Minh, Rule 5 requires proper lookout.",
+        "user-1",
+    )
+    mock_upsert.assert_called_once_with(
+        user_id="user-1",
+        session_id="session-1",
+        domain_id="maritime",
+        title="Explain COLREG Rule 5",
+        organization_id="org-1",
+    )
+    orchestrator._background_runner.schedule_all.assert_called_once_with(
+        background_save=background_save,
+        user_id="user-1",
+        session_id="session-1",
+        message="Explain COLREG Rule 5",
+        response="Minh, Rule 5 requires proper lookout.",
+        skip_fact_extraction=True,
+        org_id="org-1",
+    )
+    continuity_context = mock_schedule_continuity.call_args.args[0]
+    assert continuity_context.user_id == "user-1"
+    assert continuity_context.response_text == "Minh, Rule 5 requires proper lookout."
+    assert mock_schedule_continuity.call_args.kwargs == {"include_lms_insights": True}
+    mock_logger.info.assert_called_once()
+    log_payload = json.loads(mock_logger.info.call_args.args[1])
+    assert log_payload == {
+        "background_tasks_scheduled": True,
+        "continuity_channel": "web",
+        "domain_id": "maritime",
+        "include_lms_insights": True,
+        "organization_id": "org-1",
+        "response_persistence": "background",
+        "scheduled_hooks": ["routine_tracking", "lms_insights"],
+        "session_id": "session-1",
+        "transport_type": "sync",
+        "user_id": "user-1",
+    }
+
+
+def test_finalize_response_turn_can_persist_immediately_for_streaming():
+    orchestrator = _make_orchestrator()
+    context = _make_chat_context()
+
+    with patch.object(
+        orchestrator,
+        "upsert_thread_view",
+    ), patch(
+        "app.services.chat_orchestrator.schedule_post_response_continuity",
+        return_value=("living_continuity",),
+    ) as mock_schedule_continuity, patch(
+        "app.services.chat_orchestrator.logger",
+    ) as mock_logger:
+        orchestrator.finalize_response_turn(
+            session_id="session-1",
+            user_id="user-1",
+            user_role=UserRole.STUDENT,
+            message="Hello",
+            response_text="Streaming answer",
+            context=context,
+            domain_id="maritime",
+            organization_id="org-1",
+            background_save=MagicMock(),
+            save_response_immediately=True,
+            include_lms_insights=False,
+            transport_type="stream",
+        )
+
+    orchestrator._chat_history.save_message.assert_called_once_with(
+        "session-1",
+        "assistant",
+        "Streaming answer",
+        "user-1",
+    )
+    assert mock_schedule_continuity.call_args.kwargs == {
+        "include_lms_insights": False,
+    }
+    log_payload = json.loads(mock_logger.info.call_args.args[1])
+    assert log_payload["transport_type"] == "stream"
+    assert log_payload["response_persistence"] == "immediate"
+    assert log_payload["scheduled_hooks"] == ["living_continuity"]

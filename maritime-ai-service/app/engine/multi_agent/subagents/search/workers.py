@@ -16,6 +16,9 @@ import re
 import time
 from typing import Any, Dict, List, Optional
 
+from app.engine.reasoning import ReasoningRenderRequest, get_reasoning_narrator
+from app.engine.reasoning.reasoning_narrator import build_tool_context_summary
+
 logger = logging.getLogger(__name__)
 
 # Platform tiers — most valuable sources first
@@ -27,20 +30,6 @@ _BROWSER_PLATFORMS = ["facebook_groups_auto"]
 # Chunk streaming config (same as product_search_node.py)
 _CHUNK_SIZE = 40
 _CHUNK_DELAY = 0.008
-
-# Post-tool acknowledgments
-_PLATFORM_ACK = {
-    "google_shopping": "Tìm được từ Google Shopping!",
-    "shopee": "Đã tìm trên Shopee!",
-    "lazada": "Đã tìm trên Lazada!",
-    "tiktok_shop": "Đã tìm trên TikTok Shop!",
-    "websosanh": "Đã so sánh giá trên 94+ cửa hàng!",
-    "all_web": "Đã quét web cửa hàng nhỏ!",
-    "facebook_marketplace": "Đã tìm trên Facebook Marketplace!",
-    "instagram_shopping": "Đã tìm trên Instagram!",
-    "facebook_groups_auto": "Đã quét nhóm Facebook!",
-}
-
 
 # Sprint 201b: Extract rating/sold_count from Serper organic snippets
 # Shopee/Lazada/TikTok snippets often contain "4.8/5", "đánh giá 4.8", "đã bán 1.2k"
@@ -146,6 +135,66 @@ async def _push_thinking_deltas(queue, text: str, node: str = "product_search_ag
             await asyncio.sleep(_CHUNK_DELAY)
 
 
+async def _render_search_narration(
+    *,
+    state: Dict[str, Any],
+    phase: str,
+    cue: str,
+    next_action: str,
+    observations: Optional[list[str]] = None,
+    tool_names: Optional[list[str]] = None,
+    result: object = None,
+):
+    """Render narrator-driven visible reasoning for product search."""
+    context = state.get("context", {}) or {}
+    return await get_reasoning_narrator().render(
+        ReasoningRenderRequest(
+            node="product_search_agent",
+            phase=phase,
+            cue=cue,
+            intent="product_search",
+            user_goal=state.get("query", ""),
+            conversation_context=str(context.get("conversation_summary", "")),
+            capability_context=str(state.get("capability_context", "")),
+            tool_context=build_tool_context_summary(tool_names, result=result),
+            next_action=next_action,
+            observations=[item for item in (observations or []) if item],
+            user_id=str(state.get("user_id", "__global__")),
+            organization_id=state.get("organization_id"),
+            personality_mode=context.get("personality_mode"),
+            mood_hint=context.get("mood_hint"),
+            visibility_mode="rich",
+            style_tags=["product_search", phase],
+        )
+    )
+
+
+async def _emit_search_narration(
+    queue,
+    narration,
+    *,
+    node: str = "product_search_agent",
+    include_start: bool = True,
+) -> None:
+    """Push narrator output onto the search event stream."""
+    if queue is None or narration is None:
+        return
+    if include_start:
+        await _push(
+            queue,
+            {
+                "type": "thinking_start",
+                "content": narration.label,
+                "node": node,
+                "summary": narration.summary,
+                "details": {"phase": narration.phase, "style_tags": narration.style_tags},
+            },
+        )
+    chunks = narration.delta_chunks or ([narration.summary] if narration.summary else [])
+    for chunk in chunks:
+        await _push_thinking_deltas(queue, chunk, node=node)
+
+
 def _get_available_platforms() -> List[str]:
     """Query SearchPlatformRegistry for enabled platform IDs."""
     try:
@@ -192,23 +241,33 @@ async def plan_search(state: Dict[str, Any]) -> dict:
         from app.core.config import get_settings as _gs197
         if _gs197().enable_query_planner:
             from app.engine.tools.query_planner import plan_search_queries, format_plan_for_prompt
+
             if eq:
-                await _push(eq, {
-                    "type": "thinking_start",
-                    "content": "Lập kế hoạch tìm kiếm thông minh",
-                    "node": "product_search_agent",
-                    "summary": f"Phân tích: {query[:50]}",
-                })
+                _plan_narration = await _render_search_narration(
+                    state=state,
+                    phase="route",
+                    cue="query_planner",
+                    next_action="Bẻ yêu cầu thành những nhánh dò ngắn hơn trước khi chạy tìm kiếm.",
+                    observations=[query],
+                )
+                await _emit_search_narration(eq, _plan_narration)
+
             context = state.get("context", {})
             _query_plan = await plan_search_queries(query, context)
             if _query_plan:
                 query_plan_text = format_plan_for_prompt(_query_plan)
                 if eq:
-                    await _push_thinking_deltas(
-                        eq,
-                        f"Đã lập kế hoạch: {_query_plan.intent.value}, "
-                        f"{len(_query_plan.sub_queries)} truy vấn tối ưu",
+                    _plan_detail = await _render_search_narration(
+                        state=state,
+                        phase="route",
+                        cue=_query_plan.intent.value,
+                        next_action="Giữ lại vài lối dò đủ chặt để so giá mà không lệch ý người dùng.",
+                        observations=[
+                            f"intent={_query_plan.intent.value}",
+                            f"sub_queries={len(_query_plan.sub_queries)}",
+                        ],
                     )
+                    await _emit_search_narration(eq, _plan_detail, include_start=False)
                 logger.info(
                     "[PLAN_SEARCH] Query plan: intent=%s, strategy=%s, %d sub_queries",
                     _query_plan.intent.value,
@@ -222,16 +281,14 @@ async def plan_search(state: Dict[str, Any]) -> dict:
 
     # Push platform planning event
     if eq:
-        await _push(eq, {
-            "type": "thinking_start",
-            "content": "Lập kế hoạch tìm kiếm",
-            "node": "product_search_agent",
-            "summary": f"Tìm kiếm sản phẩm: {query[:50]}",
-        })
-        await _push_thinking_deltas(
-            eq,
-            f"Sẽ tìm song song trên {len(ordered)} nền tảng: {', '.join(ordered[:6])}{'...' if len(ordered) > 6 else ''}",
+        _platform_plan = await _render_search_narration(
+            state=state,
+            phase="retrieve",
+            cue="platform_plan",
+            next_action="Dò nhiều nền tảng song song rồi chỉ giữ lại nơi thật sự giúp quyết định cuối.",
+            observations=[f"platforms={', '.join(ordered[:6])}"],
         )
+        await _emit_search_narration(eq, _platform_plan)
         await _push(eq, {"type": "thinking_end", "content": "", "node": "product_search_agent"})
 
     # Sprint 202b: Rewrite query when planner detects follow-up with more specific product
@@ -320,8 +377,20 @@ async def platform_worker(state: Dict[str, Any]) -> dict:
         "content": {"name": tool_name, "result": result_summary, "id": f"sw_{platform_id}"},
         "node": "product_search_agent",
     })
-    ack = _PLATFORM_ACK.get(platform_id, f"Đã tìm trên {platform_id}")
-    await _push_thinking_deltas(eq, f"\n{ack} ({len(products)} SP, {duration_ms}ms)")
+    ack_narration = await _render_search_narration(
+        state=state,
+        phase="act",
+        cue=platform_id,
+        tool_names=[tool_name],
+        result=result_summary,
+        next_action="Lồng mặt bằng giá mới này vào bức tranh chung rồi đi tiếp.",
+        observations=[
+            f"platform={platform_id}",
+            f"results={len(products)}",
+            f"duration_ms={duration_ms}",
+        ],
+    )
+    await _emit_search_narration(eq, ack_narration, include_start=False)
 
     # Sprint 201: Image enrichment — add Google-cached thumbnails before preview emission
     try:
@@ -402,11 +471,14 @@ async def aggregate_results(state: Dict[str, Any]) -> dict:
     query = state.get("query", "")
 
     eq = _get_event_queue(state.get("_event_bus_id"))
-    await _push(eq, {
-        "type": "thinking_start",
-        "content": "Tổng hợp và sắp xếp kết quả",
-        "node": "product_search_agent",
-    })
+    _aggregate_narration = await _render_search_narration(
+        state=state,
+        phase="verify",
+        cue="aggregate",
+        next_action="Gạn trùng và giữ lại mặt bằng giá đủ sạch để so tiếp.",
+        observations=[f"platforms={len(platforms)}", f"all_products={len(all_products)}"],
+    )
+    await _emit_search_narration(eq, _aggregate_narration)
 
     # Deduplicate by link
     seen_links: set = set()
@@ -423,9 +495,21 @@ async def aggregate_results(state: Dict[str, Any]) -> dict:
     # see platform-interleaved results, not price-biased. Excel tool does
     # its own sorting internally.
 
-    await _push_thinking_deltas(
+    await _emit_search_narration(
         eq,
-        f"Tổng cộng: {len(unique)} SP (loại trùng {len(all_products) - len(unique)}) từ {len(platforms)} nền tảng",
+        await _render_search_narration(
+            state=state,
+            phase="verify",
+            cue="dedupe",
+            next_action="Giữ lại những lựa chọn thật sự khác nhau để bảng so đỡ nhiễu.",
+            observations=[
+                f"unique={len(unique)}",
+                f"duplicates={len(all_products) - len(unique)}",
+                f"platforms={len(platforms)}",
+            ],
+            result=f"{len(unique)} sản phẩm sau khi gạn trùng",
+        ),
+        include_start=False,
     )
 
     # Generate Excel for many results
@@ -525,12 +609,14 @@ async def curate_products(state: Dict[str, Any]) -> dict:
         return {"curated_products": curated}
 
     # LLM curation
-    await _push(eq, {
-        "type": "thinking_start",
-        "content": "Lọc sản phẩm tốt nhất bằng AI",
-        "node": "product_search_agent",
-        "summary": f"Lọc {len(deduped)} → top {max_curated}",
-    })
+    _curation_narration = await _render_search_narration(
+        state=state,
+        phase="verify",
+        cue="curation",
+        next_action="Gạn những lựa chọn đáng cân nhắc nhất trước khi chốt.",
+        observations=[f"deduped={len(deduped)}", f"max_curated={max_curated}"],
+    )
+    await _emit_search_narration(eq, _curation_narration)
 
     curated = None
     try:
@@ -552,10 +638,19 @@ async def curate_products(state: Dict[str, Any]) -> dict:
                 product["_curation_reason"] = pick.reason
                 curated.append(product)
 
-            await _push_thinking_deltas(
+            await _emit_search_narration(
                 eq,
-                f"Đã chọn {len(curated)}/{len(deduped)} sản phẩm tốt nhất: "
-                + ", ".join(p.get("_highlight", "") for p in curated[:5]),
+                await _render_search_narration(
+                    state=state,
+                    phase="verify",
+                    cue="curated",
+                    next_action="Giữ lại vài lựa chọn đủ đáng mua rồi bước sang lúc chốt.",
+                    observations=[
+                        f"curated={len(curated)}",
+                        ", ".join(p.get("_highlight", "") for p in curated[:5]),
+                    ],
+                ),
+                include_start=False,
             )
     except Exception as exc:
         logger.warning("[CURATE_NODE] LLM curation failed: %s", exc)
@@ -563,7 +658,17 @@ async def curate_products(state: Dict[str, Any]) -> dict:
     # Fallback: top-N by price
     if not curated:
         curated = deduped[:max_curated]
-        await _push_thinking_deltas(eq, f"Hiển thị top {len(curated)} sản phẩm giá tốt nhất")
+        await _emit_search_narration(
+            eq,
+            await _render_search_narration(
+                state=state,
+                phase="verify",
+                cue="fallback_curated",
+                next_action="Tạm giữ top sản phẩm giá ổn nhất để bạn so nhanh trước.",
+                observations=[f"curated={len(curated)}"],
+            ),
+            include_start=False,
+        )
 
     await _push(eq, {"type": "thinking_end", "content": "", "node": "product_search_agent"})
 
@@ -618,10 +723,28 @@ async def synthesize_response(state: Dict[str, Any]) -> dict:
         from langchain_core.messages import HumanMessage, SystemMessage
 
         # Sprint 197: Inject query plan context for better synthesis
-        system_content = "Bạn là Wiii — trợ lý tìm kiếm sản phẩm. Tổng hợp kết quả tìm kiếm và trình bày rõ ràng."
+        from app.engine.character.character_card import build_wiii_runtime_prompt
+
+        system_sections = [
+            build_wiii_runtime_prompt(
+                user_id=state.get("user_id", "__global__"),
+                organization_id=state.get("organization_id"),
+                mood_hint=(state.get("context") or {}).get("mood_hint"),
+                personality_mode=(state.get("context") or {}).get("personality_mode"),
+            ),
+            "Bạn là Wiii — trợ lý tìm kiếm sản phẩm. Tổng hợp kết quả tìm kiếm và trình bày rõ ràng.",
+        ]
         plan_text = state.get("_query_plan_text", "")
         if plan_text:
-            system_content += "\n\n" + plan_text
+            system_sections.append(plan_text)
+        if state.get("skill_context"):
+            system_sections.append("## Skill Context\n" + str(state.get("skill_context")))
+        if state.get("capability_context"):
+            system_sections.append("## Capability Handbook\n" + str(state.get("capability_context")))
+        if state.get("host_context_prompt"):
+            system_sections.append(str(state.get("host_context_prompt")))
+
+        system_content = "\n\n".join(section for section in system_sections if section)
 
         messages = [
             SystemMessage(content=system_content),
@@ -649,11 +772,14 @@ async def synthesize_response(state: Dict[str, Any]) -> dict:
 
         if eq:
             # Streaming synthesis
-            await _push(eq, {
-                "type": "thinking_start",
-                "content": "Tổng hợp kết quả cuối cùng",
-                "node": "product_search_agent",
-            })
+            _synthesis_narration = await _render_search_narration(
+                state=state,
+                phase="synthesize",
+                cue="final_response",
+                next_action="Xếp lại các nguồn theo giá, độ tin cậy, rồi chốt lựa chọn đáng mua nhất.",
+                observations=[f"products={len(products)}", f"platforms={len(platforms)}"],
+            )
+            await _emit_search_narration(eq, _synthesis_narration)
 
             chunks: List[str] = []
             async for chunk in llm.astream(messages):
@@ -695,11 +821,20 @@ async def synthesize_response(state: Dict[str, Any]) -> dict:
     except Exception as _e:
         logger.debug("[SYNTHESIZE] Product JSON serialization failed: %s", _e)
 
+    _thinking_rollup = await _render_search_narration(
+        state=state,
+        phase="synthesize",
+        cue="summary_rollup",
+        next_action="Giữ lại mặt bằng giá đủ tin rồi chốt phương án phù hợp nhất.",
+        observations=[f"platforms={len(platforms)}", f"products={len(products)}"],
+        result=final_response[:400],
+    )
+
     return {
         "final_response": final_response,
         "agent_outputs": {"product_search": final_response},
         "current_agent": "product_search_agent",
         "_answer_streamed_via_bus": answer_streamed,
-        "thinking": f"Tìm kiếm song song trên {len(platforms)} nền tảng, thu được {len(products)} SP",
+        "thinking": _thinking_rollup.summary,
         "_all_search_products_json": all_products_json,
     }

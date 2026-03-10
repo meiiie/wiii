@@ -222,6 +222,13 @@ class TestSessionManager:
 
         assert ctx1.session_id != ctx2.session_id
 
+    def test_get_or_create_session_same_user_different_orgs(self, manager):
+        """Same user should get distinct fallback sessions across orgs."""
+        ctx1 = manager.get_or_create_session(user_id="user-1", organization_id="org-a")
+        ctx2 = manager.get_or_create_session(user_id="user-1", organization_id="org-b")
+
+        assert ctx1.session_id != ctx2.session_id
+
     # ---- get_or_create_session (with thread_id) ----
 
     def test_thread_id_valid_uuid(self, manager):
@@ -256,7 +263,10 @@ class TestSessionManager:
 
         assert ctx.session_id == mock_session.session_id
         assert ctx.user_name == "Nguyễn Văn A"
-        mock_chat_history.get_or_create_session.assert_called_once_with("user-1")
+        mock_chat_history.get_or_create_session.assert_called_once_with(
+            "user-1",
+            organization_id=None,
+        )
 
     def test_session_from_chat_history_returns_none(self, mock_chat_history):
         """When DB is available but returns None, falls back to in-memory."""
@@ -269,6 +279,26 @@ class TestSessionManager:
 
         # Falls through to in-memory
         assert isinstance(ctx.session_id, UUID)
+
+    def test_session_from_chat_history_passes_organization_id(self, mock_chat_history):
+        """Persistent lookup should carry org scope when available."""
+        mock_chat_history.is_available.return_value = True
+        mock_session = MagicMock()
+        mock_session.session_id = uuid4()
+        mock_chat_history.get_or_create_session.return_value = mock_session
+        mock_chat_history.get_user_name.return_value = None
+
+        manager = SessionManager(chat_history=mock_chat_history)
+        ctx = manager.get_or_create_session(
+            user_id="user-1",
+            organization_id="org-1",
+        )
+
+        assert ctx.session_id == mock_session.session_id
+        mock_chat_history.get_or_create_session.assert_called_once_with(
+            "user-1",
+            organization_id="org-1",
+        )
 
     # ---- State management ----
 

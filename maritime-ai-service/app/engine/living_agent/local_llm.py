@@ -25,6 +25,15 @@ logger = logging.getLogger(__name__)
 # Default timeout for local model calls (generous for thinking models)
 _DEFAULT_TIMEOUT = 300.0
 _DEFAULT_BASE_URL = "http://localhost:11434"
+_DEFAULT_THINKING_MODEL_PREFIXES = ("qwen3", "deepseek-r1", "qwq")
+
+
+def _model_supports_thinking(model_name: str) -> bool:
+    """Return True when a local Ollama model should receive think=True."""
+    model_lower = model_name.lower()
+    if model_lower.startswith("qwen3") and "-instruct" in model_lower:
+        return False
+    return model_lower.startswith(_DEFAULT_THINKING_MODEL_PREFIXES)
 
 
 class LocalLLMClient:
@@ -37,7 +46,7 @@ class LocalLLMClient:
     - Emotional state analysis
 
     Usage:
-        client = LocalLLMClient(model="qwen3:8b")
+        client = LocalLLMClient(model="qwen3:4b-instruct-2507-q4_K_M")
         response = await client.generate("Summarize this article...")
         structured = await client.generate_json("Extract key facts...", schema_hint="...")
     """
@@ -51,6 +60,12 @@ class LocalLLMClient:
         from app.core.config import settings
         self._model = model or settings.living_agent_local_model
         self._base_url = (base_url or settings.ollama_base_url or _DEFAULT_BASE_URL).rstrip("/")
+        keep_alive = getattr(settings, "ollama_keep_alive", None)
+        if isinstance(keep_alive, str):
+            keep_alive = keep_alive.strip() or None
+        else:
+            keep_alive = None
+        self._keep_alive = keep_alive
         self._timeout = timeout
         self._available: Optional[bool] = None
         self._unavailable_logged = False
@@ -99,7 +114,7 @@ class LocalLLMClient:
         Returns:
             Generated text, or empty string if unavailable.
         """
-        if self._available is not True:
+        if self._available is False:
             available = await self.is_available()
             if not available:
                 if not self._unavailable_logged:
@@ -216,18 +231,22 @@ class LocalLLMClient:
                    content but response is 6x faster (~6s). Use False for simple
                    scoring/classification tasks.
         """
+        effective_think = think and _model_supports_thinking(self._model)
+
         # Budget x3 when thinking to account for thinking tokens (discarded).
-        num_predict = max_tokens * 3 if think else max_tokens
+        num_predict = max_tokens * 3 if effective_think else max_tokens
         payload = {
             "model": self._model,
             "messages": messages,
             "stream": False,
-            "think": think,
+            "think": effective_think,
             "options": {
                 "temperature": temperature,
                 "num_predict": num_predict,
             },
         }
+        if self._keep_alive:
+            payload["keep_alive"] = self._keep_alive
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:

@@ -47,6 +47,7 @@ class LMSTokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     user: dict
+    organization_id: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

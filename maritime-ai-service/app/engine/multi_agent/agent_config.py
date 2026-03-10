@@ -48,6 +48,9 @@ _DEFAULT_CONFIGS: Dict[str, AgentNodeConfig] = {
     "grader": AgentNodeConfig("grader", tier="moderate"),
     "memory": AgentNodeConfig("memory", tier="light", temperature=0.5),
     "direct": AgentNodeConfig("direct", tier="light"),
+    "code_studio_agent": AgentNodeConfig(
+        "code_studio_agent", tier="moderate", enable_agentic_loop=True,
+    ),
     "synthesizer": AgentNodeConfig("synthesizer", tier="moderate"),
 }
 

@@ -22,6 +22,8 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from app.mcp.policy import maybe_build_policy_bundle, parse_access_value
+
 logger = logging.getLogger(__name__)
 
 # Module-level singleton
@@ -40,7 +42,10 @@ class MCPToolDefinition:
     })
     source: str = ""  # "tool_registry", "domain_plugin", "living_agent", "mcp_external"
     category: str = ""
+    access: str = "read"
     roles: List[str] = field(default_factory=lambda: ["student", "teacher", "admin"])
+    annotations: Dict[str, Any] = field(default_factory=dict)
+    meta: Dict[str, Any] = field(default_factory=dict)
 
 
 def get_mcp_tool_server() -> "MCPToolServer":
@@ -166,11 +171,7 @@ class MCPToolServer:
             self.refresh()
 
         return [
-            {
-                "name": t.name,
-                "description": t.description,
-                "inputSchema": t.input_schema,
-            }
+            self._tool_to_mcp_dict(t)
             for t in self._cache
         ]
 
@@ -213,28 +214,47 @@ class MCPToolServer:
         try:
             from app.engine.tools.registry import get_tool_registry
             registry = get_tool_registry()
-            if not registry._initialized:
-                return 0
         except ImportError:
+            return 0
+
+        # Sprint 226: Do not rely on ToolRegistry._initialized here.
+        # The registry may already contain tools even when that internal flag
+        # is absent or stale, and MCP exposure should reflect actual registry
+        # contents instead of a separate bookkeeping bit.
+        tools = getattr(registry, "_tools", None)
+        if not tools:
             return 0
 
         count = 0
         existing_names = {t.name for t in self._cache}
 
-        for name, info in registry._tools.items():
+        for name, info in tools.items():
             if name in existing_names:
                 continue
 
             # Extract input schema from LangChain tool if available
             input_schema = self._extract_tool_schema(info.tool)
+            category = info.category.value if info.category else ""
+            roles = info.roles or ["student", "teacher", "admin"]
+            access = parse_access_value(getattr(info, "access", None))
+            annotations, meta = maybe_build_policy_bundle(
+                name=name,
+                category=category,
+                access=access,
+                source="tool_registry",
+                roles=roles,
+            )
 
             self._cache.append(MCPToolDefinition(
                 name=name,
                 description=info.description,
                 input_schema=input_schema,
                 source="tool_registry",
-                category=info.category.value if info.category else "",
-                roles=info.roles or ["student", "teacher", "admin"],
+                category=category,
+                access=access,
+                roles=roles,
+                annotations=annotations,
+                meta=meta,
             ))
             count += 1
 
@@ -269,13 +289,25 @@ class MCPToolServer:
             if manifest.skill_type.value == "tool":
                 continue
 
+            roles = ["student", "teacher", "admin"]
+            annotations, meta = maybe_build_policy_bundle(
+                name=manifest.id,
+                category=manifest.domain_id or "",
+                access="read",
+                source=manifest.skill_type.value,
+                roles=roles,
+            )
+
             self._cache.append(MCPToolDefinition(
                 name=manifest.id,  # Composite ID: "domain:maritime:colregs"
                 description=manifest.description,
                 input_schema={"type": "object", "properties": {}},
                 source=manifest.skill_type.value,
                 category=manifest.domain_id or "",
-                roles=["student", "teacher", "admin"],
+                access="read",
+                roles=roles,
+                annotations=annotations,
+                meta=meta,
             ))
             existing_names.add(manifest.id)
             count += 1
@@ -285,6 +317,20 @@ class MCPToolServer:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _tool_to_mcp_dict(tool_def: MCPToolDefinition) -> Dict[str, Any]:
+        """Serialize the internal tool definition into MCP JSON format."""
+        payload = {
+            "name": tool_def.name,
+            "description": tool_def.description,
+            "inputSchema": tool_def.input_schema,
+        }
+        if tool_def.annotations:
+            payload["annotations"] = dict(tool_def.annotations)
+        if tool_def.meta:
+            payload["_meta"] = dict(tool_def.meta)
+        return payload
 
     @staticmethod
     def _extract_tool_schema(tool) -> Dict[str, Any]:

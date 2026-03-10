@@ -67,8 +67,11 @@ export function ChatView() {
   };
 
   // No active conversation OR empty conversation — show welcome screen
+  // Sprint 220c: Skip welcome in widget/embed mode
+  const embedCfg = (window as any).__WIII_EMBED_CONFIG__;
+  const hideWelcome = embedCfg?.hide_welcome || embedCfg?.mode === "widget";
   const showWelcome =
-    !activeConversation || activeConversation.messages.length === 0;
+    !hideWelcome && (!activeConversation || activeConversation.messages.length === 0);
 
   // Sprint 85: Wrap callbacks with useCallback to prevent child re-renders
   const handleRegenerate = useCallback(() => {
@@ -104,7 +107,7 @@ export function ChatView() {
   return (
     <div className="flex flex-col h-full">
       <MessageList
-        messages={activeConversation!.messages}
+        messages={activeConversation?.messages ?? []}
         onSuggestedQuestion={handleSend}
         onCancel={cancelStream}
         onRegenerate={handleRegenerate}

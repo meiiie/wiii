@@ -20,6 +20,7 @@ from app.api.v1.organizations import router as org_router  # Sprint 24: Multi-Te
 from app.api.v1.feedback import router as feedback_router  # Sprint 107: Feedback
 from app.api.v1.character import router as character_router  # Sprint 120: Character State
 from app.api.v1.mood import router as mood_router  # Sprint 120: Mood/Emotional State
+from app.api.v1.generated_files import router as generated_files_router  # Generated artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ router.include_router(org_router)  # Sprint 24: Organizations
 router.include_router(feedback_router)  # Sprint 107: Feedback
 router.include_router(character_router)  # Sprint 120: Character State
 router.include_router(mood_router)  # Sprint 120: Mood/Emotional State
+router.include_router(generated_files_router)
 
 # Sprint 158: User profile + admin endpoints (always included, JWT-enforced)
 from app.auth.user_router import router as user_router
@@ -77,6 +79,7 @@ _register_optional_router("enable_zalo_webhook", "app.api.v1.zalo_webhook.router
 _register_optional_router("enable_org_knowledge", "app.api.v1.org_knowledge.router", "Org Knowledge")
 _register_optional_router("enable_soul_bridge", "app.api.v1.soul_bridge.router", "Soul Bridge")
 _register_optional_router("enable_knowledge_visualization", "app.api.v1.knowledge_visualization.router", "Knowledge Visualization")
+_register_optional_router("enable_magic_link_auth", "app.auth.magic_link_router.router", "Magic Link Auth")
 
 # Sprint 155: LMS Integration (multiple routers)
 try:

@@ -54,6 +54,16 @@ class LMSWebhookHandler:
 
         try:
             facts_created = await handler(event.payload, event.source)
+
+            # Sprint 220: Invalidate LMS context cache so next chat sees fresh data
+            student_id = event.payload.get("student_id")
+            if student_id:
+                try:
+                    from app.integrations.lms.context_loader import get_lms_context_loader
+                    get_lms_context_loader().invalidate_cache(student_id)
+                except Exception:
+                    pass  # Cache invalidation is best-effort
+
             return LMSWebhookResponse(
                 status="accepted",
                 event_type=event.event_type.value,

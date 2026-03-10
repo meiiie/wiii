@@ -14,8 +14,7 @@ Architecture:
         visual_product_search_provider: "google" | "openai"
         visual_product_search_model:    (empty=provider default)
             Google: gemini-3.1-flash-lite-preview (default),
-                    gemini-3-flash-preview, gemini-3-pro-preview,
-                    gemini-3.1-pro-preview
+                    gemini-3-flash-preview, gemini-3-pro-preview
             OpenAI: gpt-4o (default), gpt-4o-mini
 
 Feature gate: enable_visual_product_search=False
@@ -28,6 +27,8 @@ import logging
 from typing import Any, Dict
 
 from langchain_core.tools import StructuredTool
+
+from app.engine.llm_runtime_profiles import GOOGLE_DEFAULT_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -169,13 +170,12 @@ def get_vision_provider(provider_name: str) -> VisionProvider:
 # ============================================================================
 
 _DEFAULT_MODELS: Dict[str, str] = {
-    "google": "gemini-3.1-flash-lite-preview",
+    "google": GOOGLE_DEFAULT_MODEL,
     "openai": "gpt-4o",
 }
 
-# All supported Google models (for reference):
-# Gemini 3.1: gemini-3.1-flash-lite-preview, gemini-3.1-pro-preview, gemini-3.1-flash-image-preview
-# Gemini 3.0: gemini-3-flash-preview, gemini-3-pro-preview
+# Current Google 3-series models (for reference):
+# gemini-3.1-flash-lite-preview, gemini-3-flash-preview, gemini-3-pro-preview
 
 
 # ============================================================================
@@ -244,7 +244,7 @@ def _identify_product_from_image(
         provider_name = getattr(settings, "visual_product_search_provider", "google")
         model_name = getattr(settings, "visual_product_search_model", None)
         if not model_name:
-            model_name = _DEFAULT_MODELS.get(provider_name, "gemini-3.1-flash-lite-preview")
+            model_name = _DEFAULT_MODELS.get(provider_name, GOOGLE_DEFAULT_MODEL)
 
         # Build prompt
         prompt = _IDENTIFY_PROMPT

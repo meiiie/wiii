@@ -1,0 +1,17 @@
+id: python_exec
+display_name: Privileged Python Execution
+description: Execute Python source code inside the privileged sandbox.
+workload_kind: python
+runtime_template: opensandbox/code-interpreter:v1.0.1
+network_mode: egress
+timeout_seconds: 120
+working_directory: /workspace
+approval_scope: privileged_execution
+execution_backend: opensandbox
+tool_names:
+  - tool_execute_python
+capabilities:
+  - python
+  - code_execution
+metadata:
+  risk_level: high

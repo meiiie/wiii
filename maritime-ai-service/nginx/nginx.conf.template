@@ -62,10 +62,17 @@ server {
     listen 80;
     server_name ~^(?<subdomain>[^.]+)\.holilihu\.online$ holilihu.online;
 
+    # Behind Caddy/Cloudflare: use relative redirects to preserve https:// scheme
+    absolute_redirect off;
+
     # Default: no subdomain (root domain)
+    # 'wiii' is the app's own subdomain, NOT an org slug — skip org injection
     set $subdomain_header "";
     if ($subdomain != "") {
         set $subdomain_header $subdomain;
+    }
+    if ($subdomain = "wiii") {
+        set $subdomain_header "";
     }
 
     # Root for SPA static files
@@ -253,10 +260,19 @@ server {
         alias /usr/share/nginx/embed;
         try_files $uri $uri/ /embed/embed.html;
 
+        # Inherit security headers (nginx add_header doesn't cascade into nested locations)
+        add_header Content-Security-Policy "frame-ancestors 'self' ${EMBED_ALLOWED_ORIGINS}" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
         # Don't cache embed.html (ensures new deployments are picked up)
         location = /embed/embed.html {
+            alias /usr/share/nginx/embed/embed.html;
             expires -1;
             add_header Cache-Control "no-store, no-cache, must-revalidate";
+            add_header Content-Security-Policy "frame-ancestors 'self' ${EMBED_ALLOWED_ORIGINS}" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         }
     }
 
@@ -264,6 +280,7 @@ server {
         alias /usr/share/nginx/embed/assets/;
         expires 1y;
         add_header Cache-Control "public, immutable";
+        add_header Content-Security-Policy "frame-ancestors 'self' ${EMBED_ALLOWED_ORIGINS}" always;
     }
 
     # ─────────────────────────────────────────────
@@ -276,6 +293,9 @@ server {
         location = /index.html {
             expires -1;
             add_header Cache-Control "no-store, no-cache, must-revalidate";
+            # Must re-declare CSP here (nginx add_header doesn't inherit into nested locations)
+            add_header Content-Security-Policy "frame-ancestors 'self' ${EMBED_ALLOWED_ORIGINS}" always;
+            add_header X-Content-Type-Options "nosniff" always;
         }
     }
 

@@ -1,32 +1,49 @@
-/**
- * ChartArtifact — renders chart images (from matplotlib/backend).
- * Sprint 167: "Không Gian Sáng Tạo"
- * Sprint 167b: M-4 — onError handler + fallback UI
- */
 import { useState } from "react";
+import { Download } from "lucide-react";
 import type { ArtifactData } from "@/api/types";
+import { useSettingsStore } from "@/stores/settings-store";
+import { resolveArtifactFileUrl } from "@/lib/artifact-file";
 
 interface Props {
   artifact: ArtifactData;
   mode: "card" | "panel";
 }
 
-export default function ChartArtifact({ artifact, mode }: Props) {
-  const [imgError, setImgError] = useState(false);
+function resolveChartSrc(artifact: ArtifactData, fileUrl: string | null): string | null {
   const imageUrl = artifact.metadata?.image_url;
+  if (typeof imageUrl === "string" && imageUrl) {
+    return imageUrl.startsWith("data:") ? imageUrl : `data:image/png;base64,${imageUrl}`;
+  }
+  if (artifact.content.startsWith("data:")) {
+    return artifact.content;
+  }
+  if (/^[A-Za-z0-9+/=\r\n]+$/.test(artifact.content.trim()) && artifact.content.trim().length > 64) {
+    return `data:image/png;base64,${artifact.content}`;
+  }
+  return fileUrl;
+}
 
-  // If content is base64 image data
-  const src = imageUrl
-    ? (typeof imageUrl === "string" && imageUrl.startsWith("data:") ? imageUrl : `data:image/png;base64,${imageUrl}`)
-    : artifact.content.startsWith("data:")
-    ? artifact.content
-    : `data:image/png;base64,${artifact.content}`;
+export default function ChartArtifact({ artifact, mode }: Props) {
+  const serverUrl = useSettingsStore((s) => s.settings.server_url);
+  const [imgError, setImgError] = useState(false);
+  const fileUrl = resolveArtifactFileUrl(artifact, serverUrl);
+  const src = resolveChartSrc(artifact, fileUrl);
 
-  // M-4: Fallback UI on broken image
-  if (imgError) {
+  if (imgError || !src) {
     return (
-      <div className="p-4 text-sm text-text-tertiary text-center">
-        Không thể hiển thị biểu đồ.
+      <div className="p-4 text-sm text-text-tertiary text-center space-y-3">
+        <div>Khong the hien thi xem truoc bieu do ngay trong khung nay.</div>
+        {fileUrl && (
+          <a
+            href={fileUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-tertiary hover:bg-border text-text-secondary hover:text-text transition-colors text-xs"
+          >
+            <Download size={14} />
+            Mo tep bieu do
+          </a>
+        )}
       </div>
     );
   }

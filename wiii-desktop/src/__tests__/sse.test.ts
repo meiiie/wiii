@@ -33,6 +33,7 @@ function createHandlers(): SSEEventHandler & { calls: Record<string, unknown[]> 
     tool_call: [],
     tool_result: [],
     status: [],
+    keepalive: [],
   };
 
   return {
@@ -46,6 +47,7 @@ function createHandlers(): SSEEventHandler & { calls: Record<string, unknown[]> 
     onToolCall: (data) => calls.tool_call.push(data),
     onToolResult: (data) => calls.tool_result.push(data),
     onStatus: (data) => calls.status.push(data),
+    onKeepAlive: () => calls.keepalive.push({}),
   };
 }
 
@@ -120,9 +122,10 @@ describe("SSE Parser", () => {
     ]);
 
     const handlers = createHandlers();
-    await parseSSEStream(stream, handlers);
+    const result = await parseSSEStream(stream, handlers);
 
     expect(handlers.calls.done).toHaveLength(1);
+    expect(result.sawDone).toBe(true);
   });
 
   it("should parse error event", async () => {
@@ -449,5 +452,61 @@ describe("SSE Parser", () => {
     expect(result.lastEventId).toBe("5");
     expect(handlers.calls.status).toHaveLength(1);
     expect(handlers.calls.answer).toHaveLength(1);
+  });
+
+  it("should parse streams that use CRLF separators", async () => {
+    const stream = createStream([
+      'event: answer\r\ndata: {"content":"hello"}\r\n\r\nevent: metadata\r\ndata: {"model":"gemini"}\r\n\r\nevent: done\r\ndata: {"status":"complete"}\r\n\r\n',
+    ]);
+
+    const handlers = createHandlers();
+    const result = await parseSSEStream(stream, handlers);
+
+    expect(handlers.calls.answer).toHaveLength(1);
+    expect(handlers.calls.metadata).toHaveLength(1);
+    expect(handlers.calls.done).toHaveLength(1);
+    expect(result.sawDone).toBe(true);
+    expect(result.eventOrder).toEqual(["answer", "metadata", "done"]);
+  });
+
+  it("should flush a trailing event when stream closes without blank-line terminator", async () => {
+    const stream = createStream([
+      'event: answer\ndata: {"content":"tail event"}',
+    ]);
+
+    const handlers = createHandlers();
+    const result = await parseSSEStream(stream, handlers);
+
+    expect(handlers.calls.answer).toHaveLength(1);
+    expect(handlers.calls.answer[0]).toEqual({ content: "tail event" });
+    expect(result.sawDone).toBe(false);
+    expect(result.eventOrder).toEqual(["answer"]);
+  });
+
+  it("should parse metadata even when EOF arrives before a done event", async () => {
+    const stream = createStream([
+      'event: metadata\ndata: {"session_id":"sess-1","model":"gemini"}',
+    ]);
+
+    const handlers = createHandlers();
+    const result = await parseSSEStream(stream, handlers);
+
+    expect(handlers.calls.metadata).toHaveLength(1);
+    expect(result.sawDone).toBe(false);
+    expect(result.eventOrder).toEqual(["metadata"]);
+  });
+
+  it("should treat keepalive comments as transport activity", async () => {
+    const stream = createStream([
+      ': keepalive\n\n',
+      'event: answer\ndata: {"content":"hello"}\n\n',
+    ]);
+
+    const handlers = createHandlers();
+    const result = await parseSSEStream(stream, handlers);
+
+    expect(handlers.calls.keepalive).toHaveLength(1);
+    expect(handlers.calls.answer).toHaveLength(1);
+    expect(result.eventOrder).toEqual(["keepalive", "answer"]);
   });
 });

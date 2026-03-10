@@ -33,6 +33,22 @@ class TestModelSupportsThinking:
             from app.engine.llm_providers.ollama_provider import _model_supports_thinking
             assert _model_supports_thinking("qwen3:14b") is True
 
+    def test_qwen3_instruct_tag_does_not_support_thinking(self):
+        mock_settings = MagicMock()
+        mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
+
+        with patch("app.engine.llm_providers.ollama_provider.settings", mock_settings):
+            from app.engine.llm_providers.ollama_provider import _model_supports_thinking
+            assert _model_supports_thinking("qwen3:4b-instruct-2507-q4_K_M") is False
+
+    def test_qwen3_thinking_tag_supports_thinking(self):
+        mock_settings = MagicMock()
+        mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
+
+        with patch("app.engine.llm_providers.ollama_provider.settings", mock_settings):
+            from app.engine.llm_providers.ollama_provider import _model_supports_thinking
+            assert _model_supports_thinking("qwen3:4b-thinking-2507-q4_K_M") is True
+
     def test_deepseek_r1_supports_thinking(self):
         mock_settings = MagicMock()
         mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
@@ -99,6 +115,7 @@ class TestOllamaProviderThinking:
         mock_settings = MagicMock()
         mock_settings.ollama_model = "qwen3:8b"
         mock_settings.ollama_base_url = "http://localhost:11434"
+        mock_settings.ollama_keep_alive = "30m"
         mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
 
         mock_ollama_module = types.ModuleType("langchain_ollama")
@@ -118,6 +135,7 @@ class TestOllamaProviderThinking:
         mock_chat_ollama.assert_called_once()
         call_kwargs = mock_chat_ollama.call_args
         assert call_kwargs.kwargs.get("extra_body") == {"think": True}
+        assert call_kwargs.kwargs.get("keep_alive") == "30m"
 
     def test_thinking_not_enabled_for_llama(self):
         """Non-thinking model does NOT pass extra_body."""
@@ -173,6 +191,33 @@ class TestOllamaProviderThinking:
         call_kwargs = mock_chat_ollama.call_args
         assert "extra_body" not in call_kwargs.kwargs
 
+    def test_thinking_not_enabled_for_qwen3_instruct_tag(self):
+        """Explicit Qwen3 instruct tags should not receive think=True."""
+        import sys
+        import types
+
+        mock_settings = MagicMock()
+        mock_settings.ollama_model = "qwen3:4b-instruct-2507-q4_K_M"
+        mock_settings.ollama_base_url = "http://localhost:11434"
+        mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
+
+        mock_ollama_module = types.ModuleType("langchain_ollama")
+        mock_chat_ollama = MagicMock()
+        mock_ollama_module.ChatOllama = mock_chat_ollama
+
+        with patch("app.engine.llm_providers.ollama_provider.settings", mock_settings):
+            with patch.dict(sys.modules, {"langchain_ollama": mock_ollama_module}):
+                from app.engine.llm_providers.ollama_provider import OllamaProvider
+                provider = OllamaProvider()
+                provider.create_instance(
+                    tier="moderate",
+                    thinking_budget=1024,
+                    include_thoughts=True,
+                )
+
+        call_kwargs = mock_chat_ollama.call_args
+        assert "extra_body" not in call_kwargs.kwargs
+
 
 # ============================================================================
 # Config defaults
@@ -184,8 +229,8 @@ class TestOllamaConfigDefaults:
 
     def test_default_model_qwen3(self):
         from app.core.config import Settings
-        s = Settings()
-        assert s.ollama_model == "qwen3:8b"
+        s = Settings(_env_file=None)
+        assert s.ollama_model == "qwen3:4b-instruct-2507-q4_K_M"
 
     def test_default_thinking_models(self):
         from app.core.config import Settings
@@ -193,6 +238,11 @@ class TestOllamaConfigDefaults:
         assert "qwen3" in s.ollama_thinking_models
         assert "deepseek-r1" in s.ollama_thinking_models
         assert "qwq" in s.ollama_thinking_models
+
+    def test_default_keep_alive(self):
+        from app.core.config import Settings
+        s = Settings(_env_file=None)
+        assert s.ollama_keep_alive == "30m"
 
     def test_custom_thinking_models(self):
         from app.core.config import Settings

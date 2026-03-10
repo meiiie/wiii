@@ -28,9 +28,8 @@ import { useContextStore } from "@/stores/context-store";
 import { useDomainStore } from "@/stores/domain-store";
 import { useOrgStore } from "@/stores/org-store";
 import { useChatStore } from "@/stores/chat-store";
-import { usePageContextStore } from "@/stores/page-context-store";
-import { useHostContextStore } from "@/stores/host-context-store";
 import { initClient } from "@/api/client";
+import "@/lib/context-bridge";
 import { parseEmbedConfig, validateEmbedConfig, getAuthMode } from "@/lib/embed-auth";
 import { sendReadySignal, sendError, setParentOrigin } from "@/lib/embed-bridge";
 import type { EmbedConfig } from "@/lib/embed-auth";
@@ -121,8 +120,10 @@ export default function EmbedApp() {
           // Decode JWT to extract user info (basic payload extraction)
           const user = decodeJwtUser(config.token);
           // Set user_id in settings so useSSEStream sends correct user_id in chat body
+          // Also update global config so storage.ts getEmbedPrefix() can namespace per-user
           if (user.id) {
             await updateSettings({ user_id: user.id });
+            (window as any).__WIII_EMBED_CONFIG__.user_id = user.id;
           }
           await loginWithTokens(
             config.token,
@@ -134,8 +135,20 @@ export default function EmbedApp() {
           await setLegacyMode();
         }
 
-        // 2c. Load persisted conversations
-        await loadConversations();
+        // 2c. Load persisted conversations (with user-switch detection)
+        // Sprint 226: Detect user change — if new JWT has different user_id,
+        // switch to that user's conversation store to prevent cross-user leakage.
+        // __WIII_EMBED_PREV_USER_ID__ persists across iframe hash changes (same origin).
+        const prevUserId = (window as any).__WIII_EMBED_PREV_USER_ID__ as string | undefined;
+        const newUserId = useSettingsStore.getState().settings.user_id;
+        if (prevUserId && newUserId && prevUserId !== newUserId) {
+          await useChatStore.getState().switchUser(newUserId);
+        } else {
+          await loadConversations();
+        }
+        if (newUserId) {
+          (window as any).__WIII_EMBED_PREV_USER_ID__ = newUserId;
+        }
 
         // Sprint 220c: Session resumption — match by session_id from embed config
         if (config.session_id) {
@@ -202,67 +215,31 @@ export default function EmbedApp() {
     };
   }, [embedConfig]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Listen for parent PostMessages (clear-chat, page-context, etc.)
+  // Action PostMessages that need app state (clear-chat) — gated by isReady
   useEffect(() => {
     if (!isReady) return;
 
-    const handler = (event: MessageEvent) => {
+    const actionHandler = (event: MessageEvent) => {
       const msgType = event.data?.type;
-      if (!msgType || typeof msgType !== 'string' || !msgType.startsWith('wiii:')) return;
+      if (msgType !== 'wiii:clear-chat') return;
 
-      if (msgType === 'wiii:clear-chat') {
-        // Create new conversation — old one stays in history
-        const chatState = useChatStore.getState();
-        const domain = useDomainStore.getState().activeDomainId || embedConfig?.domain;
-        const org = embedConfig?.org;
-        chatState.createConversation(domain, org);
+      // Create new conversation — old one stays in history
+      const chatState = useChatStore.getState();
+      const domain = useDomainStore.getState().activeDomainId || embedConfig?.domain;
+      const org = embedConfig?.org;
+      chatState.createConversation(domain, org);
 
-        // Reply to parent
-        if (event.source && event.origin) {
-          (event.source as Window).postMessage(
-            { type: 'wiii:chat-cleared' },
-            event.origin
-          );
-        }
-      } else if (msgType === 'wiii:page-context') {
-        // Sprint 221: Page-Aware AI Context
-        const payload = event.data.payload || event.data;
-        const { student_state, available_actions, type: _type, ...pageCtx } = payload;
-
-        // Sprint 222: Also update host-context-store (backward compat bridge)
-        useHostContextStore.getState().setLegacyPageContext(
-          pageCtx,
-          student_state,
-          available_actions,
+      // Reply to parent
+      if (event.source && event.origin) {
+        (event.source as Window).postMessage(
+          { type: 'wiii:chat-cleared' },
+          event.origin
         );
-
-        // Keep old page-context-store update for backward compat
-        if (pageCtx.page_type) {
-          usePageContextStore.getState().setPageContext(pageCtx);
-          if (student_state) {
-            usePageContextStore.getState().setStudentState(student_state);
-          }
-          if (available_actions) {
-            usePageContextStore.getState().setAvailableActions(available_actions);
-          }
-        }
-      } else if (msgType === 'wiii:capabilities') {
-        // Sprint 222: Host capabilities declaration
-        useHostContextStore.getState().setCapabilities(event.data.payload);
-      } else if (msgType === 'wiii:context') {
-        // Sprint 222: Generic host context update
-        useHostContextStore.getState().updateContext(event.data.payload);
-      } else if (msgType === 'wiii:action-response') {
-        // Sprint 222b: Host responded to action request
-        const { id, result } = event.data;
-        if (id && result) {
-          useHostContextStore.getState().resolveAction(id, result);
-        }
       }
     };
 
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
+    window.addEventListener('message', actionHandler);
+    return () => window.removeEventListener('message', actionHandler);
   }, [isReady, embedConfig]);
 
   // Context polling for active conversation

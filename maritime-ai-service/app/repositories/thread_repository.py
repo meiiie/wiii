@@ -56,16 +56,12 @@ class ThreadRepository:
                 logger.error("ThreadRepository init failed: %s", e)
 
     def is_available(self) -> bool:
-        """Check if the repository is available."""
+        """Check if the repository is initialized (no live DB round-trip)."""
         try:
             self._ensure_initialized()
-            if not self._session_factory:
-                return False
-            with self._session_factory() as session:
-                session.execute(text("SELECT 1"))
-            return True
+            return self._session_factory is not None
         except Exception as e:
-            logger.debug("Thread repository health check failed: %s", e)
+            logger.debug("ThreadRepository availability check failed: %s", e)
             return False
 
     def upsert_thread(

@@ -70,6 +70,7 @@ class AgentState(TypedDict, total=False):
     domain_id: str  # Active domain for this request (e.g. "maritime")
     domain_config: Dict[str, Any]  # Domain routing config (keywords, descriptions)
     skill_context: Optional[str]  # Activated SKILL.md content (progressive disclosure)
+    capability_context: Optional[str]  # Runtime capability handbook summary for this turn
 
     # Agentic Loop Tool Events (Sprint 58: Enhanced Streaming)
     # Tool calls from agentic loop for SSE streaming

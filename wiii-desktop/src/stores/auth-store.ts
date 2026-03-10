@@ -31,6 +31,7 @@ interface AuthTokens {
 
 interface AuthState {
   isAuthenticated: boolean;
+  isLoaded: boolean; // Sprint 218: true after loadAuth() completes (prevents API race condition)
   user: AuthUser | null;
   tokens: AuthTokens | null;
   authMode: "oauth" | "legacy"; // oauth = Google login, legacy = API key
@@ -59,6 +60,7 @@ let _refreshPromise: Promise<boolean> | null = null;
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
+  isLoaded: false,
   user: null,
   tokens: null,
   authMode: "legacy",
@@ -101,15 +103,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (tokens && saved?.user) {
         set({
           isAuthenticated: true,
+          isLoaded: true,
           user: saved.user,
           tokens,
           authMode: saved.authMode || "oauth",
         });
       } else if (saved?.authMode === "legacy") {
-        set({ authMode: "legacy", isAuthenticated: true });
+        set({ authMode: "legacy", isAuthenticated: true, isLoaded: true });
+      } else {
+        // Sprint 218: Mark as loaded even if no saved auth found
+        set({ isLoaded: true });
       }
     } catch (err) {
       console.warn("[Auth] Failed to load saved auth:", err);
+      // Sprint 218: Mark as loaded even on error so app doesn't hang
+      set({ isLoaded: true });
     }
   },
 
@@ -173,6 +181,38 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // ignore
       }
     }
+
+    // Sprint 218: Clear ALL user-specific stores to prevent cross-user data leakage
+    // Each store may contain PII (memories, conversations, emotions, journal, etc.)
+    try {
+      const { useChatStore } = await import("@/stores/chat-store");
+      useChatStore.getState().clearForLogout();
+    } catch { /* ignore */ }
+    try {
+      const { useMemoryStore } = await import("@/stores/memory-store");
+      useMemoryStore.getState().reset();
+    } catch { /* ignore */ }
+    try {
+      const { useLivingAgentStore } = await import("@/stores/living-agent-store");
+      useLivingAgentStore.getState().reset();
+    } catch { /* ignore */ }
+    try {
+      const { useContextStore } = await import("@/stores/context-store");
+      useContextStore.getState().stopPolling();
+      useContextStore.setState({ info: null, status: "unknown", error: null });
+    } catch { /* ignore */ }
+    try {
+      const { useCharacterStore } = await import("@/stores/character-store");
+      useCharacterStore.getState().reset();
+    } catch { /* ignore */ }
+    try {
+      const { useAdminStore } = await import("@/stores/admin-store");
+      useAdminStore.getState().reset();
+    } catch { /* ignore */ }
+    try {
+      const { useDomainStore } = await import("@/stores/domain-store");
+      useDomainStore.setState({ domains: [], activeDomainId: "maritime", orgAllowedDomains: [], isLoading: false });
+    } catch { /* ignore */ }
 
     set({
       isAuthenticated: false,

@@ -22,6 +22,7 @@ class TestOllamaHealthEndpoint:
         mock_settings = MagicMock()
         mock_settings.ollama_base_url = "http://localhost:11434"
         mock_settings.ollama_model = "qwen3:8b"
+        mock_settings.ollama_keep_alive = "30m"
 
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -47,6 +48,7 @@ class TestOllamaHealthEndpoint:
         assert result["model_count"] == 2
         assert "qwen3:8b" in result["models"]
         assert result["default_model"] == "qwen3:8b"
+        assert result["keep_alive"] == "30m"
 
     @pytest.mark.asyncio
     async def test_unavailable_no_base_url(self):

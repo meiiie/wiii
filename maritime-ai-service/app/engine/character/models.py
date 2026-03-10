@@ -10,7 +10,7 @@ CharacterExperience: A logged experience event (milestone, learning, etc.)
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -65,7 +65,7 @@ class CharacterBlock(BaseModel):
     - is_core=True blocks cannot be auto-modified
     """
 
-    id: UUID = Field(default_factory=uuid4)
+    id: Union[int, UUID] = Field(default_factory=uuid4)
     label: str = Field(..., description="Block label (learned_lessons, etc.)")
     content: str = Field(default="", description="Block content (Markdown text)")
     char_limit: int = Field(default=1000, description="Max characters for this block")

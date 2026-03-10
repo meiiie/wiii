@@ -986,9 +986,25 @@ class TestSubagentPlanSearchIntegration:
         while not eq.empty():
             events.append(eq.get_nowait())
 
-        # Find planner events
-        planner_events = [e for e in events if isinstance(e, dict) and "thông minh" in str(e.get("content", ""))]
-        assert len(planner_events) >= 1, f"Expected planner thinking_start event, got: {[e.get('content','')[:40] for e in events]}"
+        thinking_starts = [
+            e for e in events
+            if isinstance(e, dict) and e.get("type") == "thinking_start"
+        ]
+        thinking_deltas = [
+            e for e in events
+            if isinstance(e, dict) and e.get("type") == "thinking_delta"
+        ]
+        thinking_ends = [
+            e for e in events
+            if isinstance(e, dict) and e.get("type") == "thinking_end"
+        ]
+
+        assert len(thinking_starts) >= 2, (
+            "Expected query-planner + platform-plan thinking_start events, got: "
+            f"{[e.get('content', '')[:40] for e in events]}"
+        )
+        assert thinking_deltas, "Expected planner path to emit thinking_delta chunks"
+        assert len(thinking_ends) >= 1
 
     @pytest.mark.asyncio
     async def test_synthesize_response_uses_plan_text(self):

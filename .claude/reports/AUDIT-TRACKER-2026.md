@@ -27,7 +27,7 @@
 | 15 | Testing & CI/CD | FIXED | 5 found, 5 fixed | 2026-02-28 | TEST-1→5 all resolved |
 | — | **Post-audit: 6 noted items** | **FIXED** | **6 found, 6 fixed** | 2026-02-28 | CI DB service, coverage, Neo4j org_id, middleware 503 |
 | 16 | E2E UI Testing (Chrome) | FIXED | 2 found, 2 fixed | 2026-02-28 | UITEST-1→2: Unicode JSX + SoulBridge min_priority |
-| 17 | Google OAuth Flow (E2E) | FIXED + NOTED | 1 fixed, 1 noted | 2026-02-28 | OAUTH-1 redirect URI fix, OAUTH-2 GCP config pending |
+| 17 | Google OAuth Flow (E2E) | FIXED | 2 fixed, 0 open | 2026-02-28 | OAUTH-1 redirect URI fix, OAUTH-2 GCP config done, E2E verified |
 
 ---
 
@@ -687,8 +687,8 @@
 ---
 
 ### Flow 17: Google OAuth Flow (E2E)
-**Method**: Chrome browser automation — login screen → Google OAuth redirect → GCP Console inspection
-**Status**: FIXED + NOTED
+**Method**: Chrome browser automation — login screen → Google OAuth → GCP Console → E2E login verified
+**Status**: FIXED
 **Last reviewed**: 2026-02-28
 
 #### OAUTH-1: Redirect URI missing /api/v1 prefix (google_oauth.py:41-47) — FIXED
@@ -697,10 +697,15 @@
 - **Fix**: Added `prefix = settings.api_v1_prefix.rstrip("/")` and prepended to all callback paths
 - **Verified**: Backend restart confirms correct redirect URI `http://localhost:8000/api/v1/auth/google/callback` sent to Google
 
-#### OAUTH-2: GCP redirect URI not registered — NOTED (manual action required)
-- **Severity**: MEDIUM (blocks OAuth login until configured)
-- **Root cause**: The OAuth client `833679922323-*` in `.env` belongs to a GCP project not accessible from the current Google account (`hung95707@st.vimaru.edu.vn`). Checked all 6 projects under vimaru.edu.vn org — none contain this client
-- **Action needed**: Log into the Google account owning project `833679922323`, add these redirect URIs:
-  - `http://localhost:8000/api/v1/auth/google/callback` (web flow)
-  - `http://localhost:8000/api/v1/auth/google/callback/desktop` (desktop flow)
-  - Production URL when deploying
+#### OAUTH-2: GCP redirect URI not registered — FIXED
+- **Severity**: MEDIUM (blocked OAuth login until configured)
+- **Root cause**: OAuth client `833679922323-*` in `.env` belongs to GCP project `gen-lang-client-0320953068` ("Gemini API") under `hungkhp888@gmail.com` (not the vimaru.edu.vn org)
+- **Fix**: Registered redirect URIs in GCP Console:
+  - JavaScript origin: `http://localhost:8000`
+  - Redirect URI: `http://localhost:8000/api/v1/auth/google/callback`
+- **E2E Verified** (2026-02-28): Full flow tested via Chrome automation:
+  1. Wiii login → "Đăng nhập với Google" → Google account chooser
+  2. Selected "Hùng Nguyễn (hungkhp888@gmail.com)" → Consent screen "Đăng nhập vào Wiii"
+  3. Clicked "Tiếp tục" → Backend callback → JWT pair created → User logged in
+  4. Sidebar shows "Hùng Nguyễn" with Google avatar, chat history loaded
+- **Note**: Desktop flow URI (`/callback/desktop`) not yet registered — needed for Tauri builds

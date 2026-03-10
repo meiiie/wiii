@@ -92,21 +92,6 @@ describe("Sprint 179b API Module", () => {
     expect(typeof api.getAdminOrgMembers).toBe("function");
   });
 
-  it("exports getFeatureFlagsForOrg", async () => {
-    const api = await vi.importActual<typeof import("@/api/admin")>("@/api/admin");
-    expect(typeof api.getFeatureFlagsForOrg).toBe("function");
-  });
-
-  it("exports getOrgAnalyticsOverview", async () => {
-    const api = await vi.importActual<typeof import("@/api/admin")>("@/api/admin");
-    expect(typeof api.getOrgAnalyticsOverview).toBe("function");
-  });
-
-  it("exports getOrgLlmUsage", async () => {
-    const api = await vi.importActual<typeof import("@/api/admin")>("@/api/admin");
-    expect(typeof api.getOrgLlmUsage).toBe("function");
-  });
-
   it("getFeatureFlags accepts optional orgId parameter", async () => {
     const api = await vi.importActual<typeof import("@/api/admin")>("@/api/admin");
     // Verify function signature accepts string argument

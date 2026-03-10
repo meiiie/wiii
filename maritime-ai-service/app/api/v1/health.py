@@ -468,26 +468,42 @@ async def ollama_health():
     import httpx
 
     base_url = getattr(settings, "ollama_base_url", "http://localhost:11434")
-    if not base_url:
+    normalized_base_url = base_url
+    if isinstance(base_url, str) and base_url.rstrip().endswith("/api"):
+        normalized_base_url = base_url.rstrip()[:-4]
+    keep_alive = getattr(settings, "ollama_keep_alive", None)
+    if not isinstance(keep_alive, str):
+        keep_alive = None
+    else:
+        keep_alive = keep_alive.strip() or None
+    if not normalized_base_url:
         return {"status": "unavailable", "reason": "ollama_base_url not configured"}
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{base_url.rstrip('/')}/api/tags")
+            resp = await client.get(f"{normalized_base_url.rstrip('/')}/api/tags")
             if resp.status_code == 200:
                 data = resp.json()
                 models = [m.get("name", "") for m in data.get("models", [])]
                 return {
                     "status": "available",
                     "base_url": base_url,
+                    "normalized_base_url": normalized_base_url,
+                    "keep_alive": keep_alive,
                     "models": models,
                     "model_count": len(models),
-                    "default_model": getattr(settings, "ollama_model", "qwen3:8b"),
+                    "default_model": getattr(
+                        settings,
+                        "ollama_model",
+                        "qwen3:4b-instruct-2507-q4_K_M",
+                    ),
                 }
             else:
                 return {
                     "status": "unavailable",
                     "base_url": base_url,
+                    "normalized_base_url": normalized_base_url,
+                    "keep_alive": keep_alive,
                     "http_status": resp.status_code,
                 }
     except Exception as e:
@@ -495,8 +511,69 @@ async def ollama_health():
         return {
             "status": "unavailable",
             "base_url": base_url,
+            "normalized_base_url": normalized_base_url,
+            "keep_alive": keep_alive,
             "reason": "Connection failed",
         }
+
+
+@router.get(
+    "/opensandbox",
+    summary="OpenSandbox Health Check",
+    description="Check OpenSandbox privileged execution control plane availability",
+)
+async def opensandbox_health():
+    """OpenSandbox health check for the privileged execution layer."""
+    if not getattr(settings, "enable_privileged_sandbox", False):
+        return {
+            "status": "disabled",
+            "provider": getattr(settings, "sandbox_provider", "disabled"),
+            "reason": "enable_privileged_sandbox is false",
+        }
+
+    provider = getattr(settings, "sandbox_provider", "disabled")
+    if provider != "opensandbox":
+        return {
+            "status": "disabled",
+            "provider": provider,
+            "reason": "sandbox_provider is not opensandbox",
+        }
+
+    base_url = getattr(settings, "opensandbox_base_url", None)
+    if not base_url:
+        return {
+            "status": "unavailable",
+            "provider": provider,
+            "reason": "opensandbox_base_url not configured",
+        }
+
+    from app.sandbox.factory import get_sandbox_executor
+
+    executor = get_sandbox_executor()
+    if executor is None or not executor.is_configured():
+        return {
+            "status": "unavailable",
+            "provider": provider,
+            "base_url": base_url,
+            "reason": "OpenSandbox executor not configured",
+        }
+
+    ok = await executor.healthcheck()
+    return {
+        "status": "available" if ok else "unavailable",
+        "provider": provider,
+        "base_url": base_url,
+        "code_image": getattr(settings, "opensandbox_code_template", ""),
+        "browser_image": getattr(settings, "opensandbox_browser_template", ""),
+        "code_template": getattr(settings, "opensandbox_code_template", ""),
+        "browser_template": getattr(settings, "opensandbox_browser_template", ""),
+        "network_mode": getattr(settings, "opensandbox_network_mode", "disabled"),
+        "browser_workloads_enabled": getattr(
+            settings,
+            "sandbox_allow_browser_workloads",
+            False,
+        ),
+    }
 
 
 @router.get(

@@ -38,6 +38,7 @@ export function LivingAgentPanel() {
     reflections,
     journalEntries,
     loading,
+    error,
     fetchStatus,
     fetchEmotionalState,
     fetchSkills,
@@ -46,10 +47,11 @@ export function LivingAgentPanel() {
     fetchReflections,
   } = useLivingAgentStore();
 
-  // Fetch on mount
+  // Fetch on mount + emotional state
   useEffect(() => {
     fetchStatus();
-  }, [fetchStatus]);
+    fetchEmotionalState();
+  }, [fetchStatus, fetchEmotionalState]);
 
   // Auto-refresh emotional state every 30s while panel is open
   useEffect(() => {
@@ -145,6 +147,13 @@ export function LivingAgentPanel() {
           );
         })}
       </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="mx-4 mt-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs text-red-700 dark:text-red-300">
+          {error}
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">

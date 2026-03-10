@@ -1,12 +1,17 @@
 /**
- * Lightweight toast notification for admin panel.
+ * Lightweight toast notification for admin/org-admin panels.
  * Sprint 180: "Quản Trị Hoàn Thiện"
+ * Sprint 219d: Extracted PanelToast for reuse across admin + org-admin.
  */
 import { CheckCircle, XCircle } from "lucide-react";
 import { useAdminStore } from "@/stores/admin-store";
 
-export function AdminToast() {
-  const toast = useAdminStore((s) => s.toast);
+interface PanelToastProps {
+  toast: { type: "success" | "error"; message: string } | null;
+}
+
+/** Generic panel toast — accepts toast object as prop. */
+export function PanelToast({ toast }: PanelToastProps) {
   if (!toast) return null;
 
   const isSuccess = toast.type === "success";
@@ -27,4 +32,10 @@ export function AdminToast() {
       </div>
     </div>
   );
+}
+
+/** Admin-panel toast — wired to admin-store. */
+export function AdminToast() {
+  const toast = useAdminStore((s) => s.toast);
+  return <PanelToast toast={toast} />;
 }

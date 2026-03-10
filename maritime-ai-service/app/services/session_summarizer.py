@@ -167,27 +167,28 @@ class SessionSummarizer:
         Falls back to empty list if checkpointer is not available.
         """
         try:
-            from app.engine.multi_agent.checkpointer import get_checkpointer
-            checkpointer = await get_checkpointer()
-            if not checkpointer:
-                return []
+            from app.engine.multi_agent.checkpointer import open_checkpointer
 
-            config = {"configurable": {"thread_id": thread_id}}
-            checkpoint = await checkpointer.aget(config)
-            if not checkpoint:
-                return []
+            async with open_checkpointer() as checkpointer:
+                if not checkpointer:
+                    return []
 
-            # Extract messages from checkpoint state
-            state = checkpoint.get("channel_values", {})
-            messages = state.get("messages", [])
+                config = {"configurable": {"thread_id": thread_id}}
+                checkpoint = await checkpointer.aget(config)
+                if not checkpoint:
+                    return []
 
-            return [
-                {
-                    "role": getattr(msg, "type", "unknown"),
-                    "content": getattr(msg, "content", str(msg)),
-                }
-                for msg in messages[-20:]  # Last 20 messages max
-            ]
+                # Extract messages from checkpoint state
+                state = checkpoint.get("channel_values", {})
+                messages = state.get("messages", [])
+
+                return [
+                    {
+                        "role": getattr(msg, "type", "unknown"),
+                        "content": getattr(msg, "content", str(msg)),
+                    }
+                    for msg in messages[-20:]  # Last 20 messages max
+                ]
 
         except Exception as e:
             logger.debug("Failed to load thread messages: %s", e)

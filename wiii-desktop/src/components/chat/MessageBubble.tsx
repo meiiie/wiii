@@ -1,23 +1,12 @@
-/**
- * MessageBubble — professional UI with interleaved block support.
- * Sprint 62: Interleaved thinking/answer rendering.
- * Sprint 81: Message action bar, timestamps, regenerate/edit/feedback.
- */
 import { useState, useCallback, memo } from "react";
 import { motion } from "motion/react";
 import { Copy, Check, RefreshCw, ThumbsUp, ThumbsDown, Pencil } from "lucide-react";
-import type { Message, ContentBlock, ThinkingBlockData, ScreenshotBlockData, SubagentGroupBlockData, PreviewBlockData, ArtifactBlockData, MoodType } from "@/api/types";
-import type { SoulEmotionData } from "@/lib/avatar/types";
-import type { AvatarState } from "@/lib/avatar/types";
+import type { ContentBlock, Message, MoodType } from "@/api/types";
+import type { AvatarState, SoulEmotionData } from "@/lib/avatar/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { ThinkingBlock } from "./ThinkingBlock";
-import { ActionText } from "./ActionText";
-import { ScreenshotBlock } from "./ScreenshotBlock";
-import { SubagentGroup } from "./SubagentGroup";
-import { PreviewGroup } from "./PreviewGroup";
-import { ArtifactCard } from "./ArtifactCard";
-import { ThinkingTimeline } from "./ThinkingTimeline";
+import { InterleavedBlockSequence } from "./InterleavedBlockSequence";
 import { SourceCitation } from "./SourceCitation";
 import { SuggestedQuestions } from "./SuggestedQuestions";
 import { ReasoningTrace } from "./ReasoningTrace";
@@ -32,7 +21,6 @@ import { useReducedMotion, motionSafe } from "@/hooks/useReducedMotion";
 interface MessageBubbleProps {
   message: Message;
   isLastAssistant?: boolean;
-  /** Live avatar state — only passed for the latest assistant message */
   liveAvatarState?: AvatarState;
   liveAvatarMood?: MoodType;
   liveSoulEmotion?: SoulEmotionData | null;
@@ -54,7 +42,7 @@ export const MessageBubble = memo(function MessageBubble({
   const isUser = message.role === "user";
   const reduced = useReducedMotion();
   const { show_thinking, show_reasoning_trace, thinking_level } = useSettingsStore(
-    (s) => s.settings
+    (s) => s.settings,
   );
 
   if (isUser) {
@@ -70,35 +58,39 @@ export const MessageBubble = memo(function MessageBubble({
             <p className="text-[15px] leading-[1.7] font-sans text-text selectable">
               {message.content}
             </p>
-            {/* Sprint 179: Render user-attached images */}
+
             {message.images && message.images.length > 0 && (
               <div className="flex gap-2 flex-wrap mt-2">
                 {message.images.map((img, i) => (
                   <img
                     key={i}
                     src={img.type === "base64" ? `data:${img.media_type};base64,${img.data}` : img.data}
-                    alt={`Ảnh ${i + 1}`}
+                    alt={`Anh ${i + 1}`}
                     className="max-w-[200px] max-h-[200px] rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                    onClick={() => window.open(img.type === "base64" ? `data:${img.media_type};base64,${img.data}` : img.data)}
+                    onClick={() => {
+                      const safeImageTypes = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml"];
+                      if (img.type === "base64" && !safeImageTypes.includes(img.media_type)) return;
+                      window.open(img.type === "base64" ? `data:${img.media_type};base64,${img.data}` : img.data);
+                    }}
                   />
                 ))}
               </div>
             )}
-            {/* User message actions */}
+
             {onEditMessage && (
               <div className="absolute -left-10 top-1/2 -translate-y-1/2 opacity-0 group-hover/msg:opacity-100 transition-opacity">
                 <button
                   onClick={() => onEditMessage(message.content)}
                   className="p-1.5 rounded-md hover:bg-surface-tertiary text-text-tertiary hover:text-text-secondary"
-                  title="Chỉnh sửa"
-                  aria-label="Chỉnh sửa tin nhắn"
+                  title="Chinh sua"
+                  aria-label="Chinh sua tin nhan"
                 >
                   <Pencil size={14} />
                 </button>
               </div>
             )}
           </div>
-          {/* Timestamp */}
+
           {message.timestamp && (
             <div
               className="mt-0.5 text-right text-[10px] text-text-tertiary opacity-0 group-hover/msg:opacity-100 transition-opacity"
@@ -112,17 +104,18 @@ export const MessageBubble = memo(function MessageBubble({
     );
   }
 
-  // Extract mood from message metadata (saved at finalize time)
   const messageMood: MoodType | undefined = (() => {
     const md = message.metadata?.mood as { mood?: string } | undefined;
-    const m = md?.mood;
+    const value = md?.mood;
     const valid: string[] = ["excited", "warm", "concerned", "gentle", "neutral"];
-    return valid.includes(m ?? "") ? (m as MoodType) : undefined;
+    return valid.includes(value ?? "") ? (value as MoodType) : undefined;
   })();
 
-  // Assistant message
-  const blocks = message.blocks;
-  const hasBlocks = blocks && blocks.length > 0;
+  const hasBlocks = Boolean(message.blocks && message.blocks.length > 0);
+  const metadataAgentLabel = resolveAgentLabel(
+    typeof message.metadata?.agent_type === "string" ? (message.metadata.agent_type as string) : undefined,
+    hasBlocks,
+  );
 
   return (
     <motion.div
@@ -131,7 +124,6 @@ export const MessageBubble = memo(function MessageBubble({
       initial={reduced ? false : "hidden"}
       animate="visible"
     >
-      {/* Wiii avatar — latest: 64px kawaii face (live state), older: 24px "W" logo */}
       {isLastAssistant ? (
         <motion.div layoutId="wiii-active-avatar">
           <WiiiAvatar
@@ -148,24 +140,19 @@ export const MessageBubble = memo(function MessageBubble({
       <div className="flex-1 min-w-0">
         {hasBlocks ? (
           <BlockRenderer
-            blocks={blocks}
+            blocks={message.blocks as ContentBlock[]}
             showThinking={show_thinking}
             thinkingLevel={thinking_level}
             message={message}
           />
         ) : (
-          <LegacyRenderer
-            message={message}
-            showThinking={show_thinking}
-          />
+          <LegacyRenderer message={message} showThinking={show_thinking} />
         )}
 
-        {/* Sources */}
         {message.sources && message.sources.length > 0 && (
           <SourceCitation sources={message.sources} />
         )}
 
-        {/* Domain notice — gentle indicator for off-domain content */}
         {message.domain_notice && (
           <div className="mt-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 text-xs text-amber-700 dark:text-amber-400 flex items-center gap-2">
             <span className="text-amber-500">&#x1F4A1;</span>
@@ -173,19 +160,16 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         )}
 
-        {/* Reasoning trace — guarded by setting */}
         {show_reasoning_trace && message.reasoning_trace && (
           <ReasoningTrace trace={message.reasoning_trace} />
         )}
 
-        {/* Metadata + action bar row */}
         <div className="mt-2 flex items-center gap-2">
-          {/* Metadata */}
           {message.metadata && (
             <div className="flex items-center gap-3 text-[11px] text-text-tertiary">
-              {typeof message.metadata.agent_type === "string" && (
+              {metadataAgentLabel && (
                 <span className="px-1.5 py-0.5 rounded bg-[var(--surface-tertiary)]">
-                  {message.metadata.agent_type}
+                  {metadataAgentLabel}
                 </span>
               )}
               {typeof message.metadata.processing_time === "number" && (
@@ -197,7 +181,6 @@ export const MessageBubble = memo(function MessageBubble({
             </div>
           )}
 
-          {/* Action bar */}
           <MessageActions
             message={message}
             isLastAssistant={isLastAssistant}
@@ -205,7 +188,6 @@ export const MessageBubble = memo(function MessageBubble({
           />
         </div>
 
-        {/* Timestamp */}
         {message.timestamp && (
           <div
             className="mt-0.5 text-[10px] text-text-tertiary opacity-0 group-hover/msg:opacity-100 transition-opacity"
@@ -215,7 +197,6 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         )}
 
-        {/* Suggested questions */}
         {message.suggested_questions &&
           message.suggested_questions.length > 0 &&
           onSuggestedQuestion && (
@@ -229,10 +210,35 @@ export const MessageBubble = memo(function MessageBubble({
   );
 });
 
-/**
- * Message action bar — copy, regenerate, feedback.
- * Sprint 107: Feedback persisted locally + sent to backend.
- */
+const AGENT_LABELS: Record<string, string | null> = {
+  chat: null,
+  rag: "Tra cuu",
+  tutor: "Giai thich",
+  direct: null,
+  memory: "Ngu canh",
+  memory_agent: "Ngu canh",
+  product_search_agent: "Doi chieu",
+  code_studio_agent: null,
+  parallel_dispatch: null,
+  synthesizer: null,
+  supervisor: null,
+};
+
+function resolveAgentLabel(agentType?: string, hasBlocks = false): string | null {
+  if (!agentType) return null;
+  const normalized = agentType.toLowerCase().trim();
+  if (hasBlocks) {
+    return AGENT_LABELS[normalized] ?? null;
+  }
+  if (normalized in AGENT_LABELS) {
+    return AGENT_LABELS[normalized];
+  }
+  if (normalized.endsWith("_agent")) {
+    return null;
+  }
+  return agentType;
+}
+
 function MessageActions({
   message,
   isLastAssistant,
@@ -246,58 +252,50 @@ function MessageActions({
   const setMessageFeedback = useChatStore((s) => s.setMessageFeedback);
   const activeConv = useChatStore((s) => s.activeConversation());
   const [copied, setCopied] = useState(false);
-
-  // Use persisted feedback from message, not local state
   const feedback = message.feedback ?? null;
 
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(message.content);
       setCopied(true);
-      addToast("success", "Đã sao chép tin nhắn!");
+      addToast("success", "Da sao chep tin nhan!");
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback for non-secure contexts
+      // Ignore clipboard failures in insecure contexts.
     }
   }, [message.content, addToast]);
 
   const handleFeedback = useCallback(
     (rating: "up" | "down") => {
       const newRating = feedback === rating ? null : rating;
-      // Persist locally
       setMessageFeedback(message.id, newRating);
-      // Send to backend (fire-and-forget)
       const sessionId = activeConv?.session_id || activeConv?.id || "";
       if (newRating && sessionId) {
-        submitFeedback(message.id, sessionId, newRating).catch(() => {
-          // Silent: local persistence is the primary store
-        });
+        submitFeedback(message.id, sessionId, newRating).catch(() => {});
       }
     },
-    [feedback, message.id, activeConv, setMessageFeedback]
+    [feedback, message.id, activeConv, setMessageFeedback],
   );
 
   return (
     <div className="flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity ml-auto">
-      {/* Copy */}
       <motion.button
         onClick={handleCopy}
         className="p-1.5 rounded-md hover:bg-surface-tertiary text-text-tertiary hover:text-text-secondary transition-colors"
-        title="Sao chép"
-        aria-label="Sao chép tin nhắn"
+        title="Sao chep"
+        aria-label="Sao chep tin nhan"
         whileHover={{ scale: 1.15 }}
         whileTap={{ scale: 0.9 }}
       >
         {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
       </motion.button>
 
-      {/* Regenerate — only on last assistant message */}
       {isLastAssistant && onRegenerate && (
         <motion.button
           onClick={onRegenerate}
           className="p-1.5 rounded-md hover:bg-surface-tertiary text-text-tertiary hover:text-text-secondary transition-colors"
-          title="Tạo lại"
-          aria-label="Tạo lại phản hồi"
+          title="Tao lai"
+          aria-label="Tao lai phan hoi"
           whileHover={{ scale: 1.15, rotate: 15 }}
           whileTap={{ scale: 0.9 }}
         >
@@ -305,28 +303,26 @@ function MessageActions({
         </motion.button>
       )}
 
-      {/* Thumbs up */}
       <motion.button
         onClick={() => handleFeedback("up")}
         className={`p-1.5 rounded-md hover:bg-surface-tertiary transition-colors ${
           feedback === "up" ? "text-green-500" : "text-text-tertiary hover:text-text-secondary"
         }`}
-        title="Phản hồi tốt"
-        aria-label="Đánh giá tốt"
+        title="Phan hoi tot"
+        aria-label="Danh gia tot"
         whileHover={{ scale: 1.15, y: -2 }}
         whileTap={{ scale: 0.9 }}
       >
         <ThumbsUp size={14} />
       </motion.button>
 
-      {/* Thumbs down */}
       <motion.button
         onClick={() => handleFeedback("down")}
         className={`p-1.5 rounded-md hover:bg-surface-tertiary transition-colors ${
           feedback === "down" ? "text-red-500" : "text-text-tertiary hover:text-text-secondary"
         }`}
-        title="Phản hồi chưa tốt"
-        aria-label="Đánh giá chưa tốt"
+        title="Phan hoi chua tot"
+        aria-label="Danh gia chua tot"
         whileHover={{ scale: 1.15, y: 2 }}
         whileTap={{ scale: 0.9 }}
       >
@@ -336,207 +332,25 @@ function MessageActions({
   );
 }
 
-/**
- * Block-based renderer — interleaved thinking + answer (Opus pattern).
- *
- * Sprint 146: Each thinking block rendered independently, interleaved with
- * answer blocks in their original order.
- *
- * Sprint 149 "Dòng Chảy Tư Duy":
- * - 0-2 thinking+action_text blocks → render individually (backward compat)
- * - 3+ thinking+action_text blocks → group into ThinkingTimeline
- * - Segments: consecutive thinking+action_text → timeline, answer → inline
- */
 function BlockRenderer({
   blocks,
   showThinking,
   thinkingLevel = "balanced",
-  message: _message,
 }: {
   blocks: ContentBlock[];
   showThinking: boolean;
   thinkingLevel?: import("@/api/types").ThinkingLevel;
   message: Message;
 }) {
-  // Sprint 164: Collect grouped block IDs so they render inside SubagentGroup
-  const groupedBlockIds = new Set<string>();
-  for (const b of blocks) {
-    if (b.type === "thinking" && (b as ThinkingBlockData).groupId) {
-      groupedBlockIds.add(b.id);
-    }
-  }
-
-  // If thinking hidden, only render answer + subagent_group blocks
-  if (!showThinking || thinkingLevel === "minimal") {
-    return (
-      <>
-        {blocks
-          .filter((b) => b.type === "answer")
-          .map((block) => (
-            <div key={block.id} className="font-serif relative">
-              <MarkdownRenderer content={block.content} />
-            </div>
-          ))}
-      </>
-    );
-  }
-
-  // Count thinking + action_text blocks (excluding grouped ones)
-  const thinkingActionCount = blocks.filter(
-    (b) => (b.type === "thinking" || b.type === "action_text") && !groupedBlockIds.has(b.id)
-  ).length;
-
-  // Helper to render a single block (reused in simple + timeline paths)
-  const renderBlock = (block: ContentBlock) => {
-    // Skip blocks rendered inside SubagentGroup
-    if (block.type === "thinking" && groupedBlockIds.has(block.id)) return null;
-
-    if (block.type === "subagent_group") {
-      const group = block as SubagentGroupBlockData;
-      const childBlocks = blocks.filter(
-        (b) => b.type === "thinking" && (b as ThinkingBlockData).groupId === group.id,
-      ) as ThinkingBlockData[];
-      return (
-        <SubagentGroup
-          key={group.id}
-          group={group}
-          childBlocks={childBlocks}
-          isStreaming={false}
-          thinkingLevel={thinkingLevel}
-        />
-      );
-    }
-    if (block.type === "thinking") {
-      const tb = block as ThinkingBlockData;
-      return (
-        <ThinkingBlock
-          key={block.id}
-          content={tb.content}
-          toolCalls={tb.toolCalls}
-          savedDuration={
-            tb.startTime && tb.endTime
-              ? Math.round((tb.endTime - tb.startTime) / 1000)
-              : undefined
-          }
-          label={tb.label}
-          summary={tb.summary || tb.label}
-          thinkingLevel={thinkingLevel}
-        />
-      );
-    }
-    if (block.type === "action_text") {
-      return <ActionText key={block.id} content={block.content} node={block.node} />;
-    }
-    if (block.type === "screenshot") {
-      return <ScreenshotBlock key={block.id} block={block as ScreenshotBlockData} />;
-    }
-    if (block.type === "preview") {
-      return <PreviewGroup key={block.id} block={block as PreviewBlockData} />;
-    }
-    if (block.type === "artifact") {
-      return <ArtifactCard key={block.id} artifact={(block as ArtifactBlockData).artifact} />;
-    }
-    if (block.type === "answer") {
-      return (
-        <div key={block.id} className="font-serif relative">
-          <MarkdownRenderer content={block.content} />
-        </div>
-      );
-    }
-    return null;
-  };
-
-  // Simple path: 0-2 blocks → render individually (backward compat)
-  if (thinkingActionCount < 3) {
-    return <>{blocks.map(renderBlock)}</>;
-  }
-
-  // Timeline path: 3+ blocks → segment into timeline groups + answer segments
-  const segments: Array<
-    | { kind: "timeline"; blocks: ContentBlock[]; key: string }
-    | { kind: "standalone"; block: ContentBlock }
-  > = [];
-
-  let currentTimeline: ContentBlock[] = [];
-
-  for (const block of blocks) {
-    // Skip grouped thinking blocks (rendered inside SubagentGroup)
-    if (block.type === "thinking" && groupedBlockIds.has(block.id)) continue;
-
-    if (block.type === "thinking" || block.type === "action_text") {
-      currentTimeline.push(block);
-    } else {
-      // Flush accumulated timeline blocks
-      if (currentTimeline.length > 0) {
-        segments.push({
-          kind: "timeline",
-          blocks: currentTimeline,
-          key: currentTimeline[0].id,
-        });
-        currentTimeline = [];
-      }
-      segments.push({ kind: "standalone", block });
-    }
-  }
-  // Flush remaining timeline blocks
-  if (currentTimeline.length > 0) {
-    segments.push({
-      kind: "timeline",
-      blocks: currentTimeline,
-      key: currentTimeline[0].id,
-    });
-  }
-
   return (
-    <>
-      {segments.map((seg) => {
-        if (seg.kind === "timeline") {
-          return (
-            <ThinkingTimeline
-              key={seg.key}
-              phases={seg.blocks}
-              thinkingLevel={thinkingLevel}
-            />
-          );
-        }
-        // Standalone blocks: subagent_group, screenshot, answer
-        if (seg.block.type === "subagent_group") {
-          const group = seg.block as SubagentGroupBlockData;
-          const childBlocks = blocks.filter(
-            (b) => b.type === "thinking" && (b as ThinkingBlockData).groupId === group.id,
-          ) as ThinkingBlockData[];
-          return (
-            <SubagentGroup
-              key={group.id}
-              group={group}
-              childBlocks={childBlocks}
-              isStreaming={false}
-              thinkingLevel={thinkingLevel}
-            />
-          );
-        }
-        if (seg.block.type === "screenshot") {
-          return <ScreenshotBlock key={seg.block.id} block={seg.block as ScreenshotBlockData} />;
-        }
-        if (seg.block.type === "preview") {
-          return <PreviewGroup key={seg.block.id} block={seg.block as PreviewBlockData} />;
-        }
-        if (seg.block.type === "artifact") {
-          return <ArtifactCard key={seg.block.id} artifact={(seg.block as ArtifactBlockData).artifact} />;
-        }
-        return (
-          <div key={seg.block.id} className="font-serif relative">
-            <MarkdownRenderer content={seg.block.content} />
-          </div>
-        );
-      })}
-    </>
+    <InterleavedBlockSequence
+      blocks={blocks}
+      showThinking={showThinking}
+      thinkingLevel={thinkingLevel}
+    />
   );
 }
 
-/**
- * Legacy renderer — for messages without blocks (pre-Sprint 62 or simple).
- */
 function LegacyRenderer({
   message,
   showThinking,
@@ -546,7 +360,6 @@ function LegacyRenderer({
 }) {
   return (
     <>
-      {/* ThinkingBlock with inline tool cards */}
       {showThinking && (message.thinking || (message.tool_calls && message.tool_calls.length > 0)) && (
         <ThinkingBlock
           content={message.thinking || ""}
@@ -559,11 +372,9 @@ function LegacyRenderer({
         />
       )}
 
-      {/* Serif answer */}
-      <div className="font-serif relative">
+      <div className="assistant-response">
         <MarkdownRenderer content={message.content} />
       </div>
     </>
   );
 }
-

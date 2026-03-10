@@ -109,7 +109,7 @@ async def lms_webhook_global(request: Request):
 
     # 3. Verify signature BEFORE parsing body
     if settings.lms_webhook_secret:
-        signature = request.headers.get("X-LMS-Signature", "")
+        signature = request.headers.get("x-lms-signature", "")
         if not signature:
             raise HTTPException(status_code=401, detail="Missing X-LMS-Signature header")
         if not verify_hmac_sha256(body_bytes, signature, settings.lms_webhook_secret):

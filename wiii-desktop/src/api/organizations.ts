@@ -8,12 +8,6 @@ import type {
 } from "./types";
 import { getClient } from "./client";
 
-/** List organizations for the current user */
-export async function listMyOrganizations(): Promise<OrganizationSummary[]> {
-  const client = getClient();
-  return client.get<OrganizationSummary[]>("/api/v1/organizations/users/me/organizations");
-}
-
 /** List all organizations (admin) */
 export async function listOrganizations(): Promise<OrganizationSummary[]> {
   const client = getClient();

@@ -1019,6 +1019,9 @@ class CorrectiveRAG:
                 user_name=user_name,
                 is_follow_up=is_follow_up,
                 entity_context=context.get("entity_context", ""),
+                host_context_prompt=context.get("host_context_prompt", ""),  # Sprint 222
+                skill_context=context.get("skill_context", ""),
+                capability_context=context.get("capability_context", ""),
             )
 
             # CHỈ THỊ SỐ 29: Capture native_thinking from RAGResponse
@@ -1400,7 +1403,10 @@ class CorrectiveRAG:
                 nodes=knowledge_nodes,
                 conversation_history=history,
                 user_role=user_role,
-                entity_context=graph_entity_context_streaming
+                entity_context=graph_entity_context_streaming,
+                host_context_prompt=context.get("host_context_prompt", ""),  # Sprint 222
+                skill_context=context.get("skill_context", ""),
+                capability_context=context.get("capability_context", ""),
             ):
                 token_count += 1
                 full_answer_parts.append(chunk)

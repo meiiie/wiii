@@ -392,18 +392,21 @@ class TestIsAvailable:
     """Test is_available — true and false."""
 
     def test_is_available_true(self):
-        """Returns True when database responds to SELECT 1."""
+        """Returns True when session_factory is set (no live DB call)."""
         repo, mock_session = _make_repo_with_mock_session()
 
         assert repo.is_available() is True
-        mock_session.execute.assert_called_once()
+        # Sprint 225 fix: is_available no longer hits DB, just checks factory
+        mock_session.execute.assert_not_called()
 
-    def test_is_available_false_on_exception(self):
-        """Returns False when database raises."""
+    def test_is_available_true_even_if_db_down(self):
+        """Returns True when session_factory exists even if DB would fail.
+        This is intentional — is_available only checks initialization state."""
         repo, mock_session = _make_repo_with_mock_session()
         mock_session.execute.side_effect = Exception("Connection refused")
 
-        assert repo.is_available() is False
+        # Sprint 225 fix: is_available checks factory, not DB connectivity
+        assert repo.is_available() is True
 
     def test_is_available_false_when_not_initialized(self):
         """Returns False when initialization fails."""

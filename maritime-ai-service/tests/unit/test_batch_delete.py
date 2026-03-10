@@ -1,42 +1,25 @@
-"""
-Test batch delete uses IN clause instead of loop.
-Verifies TASK-003 fix.
-"""
-import pytest
+"""Tests for the chat_history bulk delete path."""
+
 import inspect
 
 
-def test_delete_user_history_uses_batch():
-    """
-    Verify delete_user_history uses batch delete (IN clause).
-
-    Before fix: Loop with N queries
-    After fix: Single query with IN clause
-    """
+def test_delete_user_history_uses_single_chat_history_delete():
+    """delete_user_history should issue one direct DELETE on chat_history."""
     from app.repositories.chat_history_repository import ChatHistoryRepository
 
     source = inspect.getsource(ChatHistoryRepository.delete_user_history)
 
-    # Should use .in_() for batch operation
-    assert ".in_(" in source, (
-        "delete_user_history should use .in_() for batch delete"
-    )
-
-    # Should NOT have nested query in loop
-    # This is a heuristic check
-    assert "for chat_session in sessions:" not in source or ".in_(" in source, (
-        "delete_user_history should not query inside loop"
-    )
+    assert "DELETE FROM chat_history" in source
+    assert ".in_(" not in source
+    assert "chat_sessions" not in source
+    assert "chat_messages" not in source
 
 
-def test_delete_uses_synchronize_session_false():
-    """
-    Verify batch delete uses synchronize_session=False for performance.
-    """
+def test_delete_user_history_is_org_scoped():
+    """delete_user_history should respect current org scope."""
     from app.repositories.chat_history_repository import ChatHistoryRepository
 
     source = inspect.getsource(ChatHistoryRepository.delete_user_history)
 
-    assert "synchronize_session=False" in source, (
-        "Batch delete should use synchronize_session=False"
-    )
+    assert "org_filter" in source
+    assert "org_params" in source

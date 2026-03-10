@@ -271,11 +271,19 @@ GET /api/v1/sources/{node_id}
 
 | Header | Required | Description |
 |--------|----------|-------------|
-| `X-API-Key` | ✅ Yes | Server API key |
-| `X-User-ID` | ✅ Yes | Student/User ID from LMS |
+| `X-API-Key` | ✅ Yes | Server API key or dedicated LMS service token |
+| `X-User-ID` | Conditional | Required for proxied LMS service requests; ignored for general API-key auth in production |
 | `X-Role` | ⚠️ Recommended | `student` / `teacher` / `admin` |
 | `X-Session-ID` | 🔘 Optional | Session tracking |
 | `X-Organization-ID` | 🔘 Optional | Multi-tenant |
+
+### Auth Modes
+
+| Mode | Identity Source | Notes |
+|------|-----------------|-------|
+| General API key | `api-client` in production | Use for server-to-server access only; do not rely on `X-User-ID` |
+| LMS service token | `X-User-ID` + `X-Role` | For trusted proxied LMS requests carrying end-user context |
+| JWT bearer | JWT `sub` + token claims | Required for first-class end-user identity |
 
 ### Role-Based Access
 

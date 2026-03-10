@@ -1,7 +1,7 @@
 /**
  * OrgManagerKnowledge — Sprint 190: "Kho Tri Thức"
  *
- * 5th tab in OrgManagerPanel. Org admins can upload, list, and
+ * 5th tab in OrgAdminView. Org admins can upload, list, and
  * delete PDF documents for their organization's knowledge base.
  *
  * Uses org-admin-store for state management (consistent with Members/Settings tabs).
@@ -77,6 +77,16 @@ export function OrgManagerKnowledge({ orgId }: { orgId: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Cleanup stageTimerRef on unmount (if component unmounts mid-upload)
+  useEffect(() => {
+    return () => {
+      if (stageTimerRef.current) {
+        clearTimeout(stageTimerRef.current);
+        stageTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Fetch document list on mount
   useEffect(() => {

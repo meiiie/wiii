@@ -12,7 +12,7 @@
 # Services:
 #   - wiii-app:     FastAPI backend with Living Agent enabled
 #   - wiii-postgres: PostgreSQL 16 + pgvector
-#   - wiii-ollama:   Ollama with local LLM (qwen3:4b)
+#   - wiii-ollama:   Ollama with local LLM (qwen3:4b-instruct-2507-q4_K_M)
 #   - cloudflared:   Cloudflare Tunnel for stable webhook URL
 ##############################################################################
 
@@ -31,6 +31,7 @@ services:
       # Core
       - DATABASE_URL=postgresql+asyncpg://wiii:wiii_secret@postgres:5432/wiii_ai
       - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_KEEP_ALIVE=30m
 
       # Living Agent — Enable all features
       - ENABLE_LIVING_AGENT=true
@@ -39,7 +40,7 @@ services:
       - LIVING_AGENT_ENABLE_JOURNAL=true
       - LIVING_AGENT_ACTIVE_HOURS_START=5
       - LIVING_AGENT_ACTIVE_HOURS_END=23
-      - LIVING_AGENT_LOCAL_MODEL=qwen3:4b
+      - LIVING_AGENT_LOCAL_MODEL=qwen3:4b-instruct-2507-q4_K_M
       - LIVING_AGENT_HEARTBEAT_INTERVAL=1800
       - LIVING_AGENT_REQUIRE_HUMAN_APPROVAL=false
 

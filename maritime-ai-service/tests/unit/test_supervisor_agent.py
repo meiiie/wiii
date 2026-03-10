@@ -122,6 +122,25 @@ class TestSupervisorRoute:
         result = await sup.route(base_state)
         assert result == "direct"
 
+    def test_code_studio_keywords_route_to_code_studio(self):
+        sup = _make_supervisor(None)
+        result = sup._rule_based_route("ve bieu do bang python va luu PNG")
+        assert result == "code_studio_agent"
+
+    @pytest.mark.asyncio
+    async def test_route_to_code_studio(self, mock_llm, base_state):
+        from app.engine.structured_schemas import RoutingDecision
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(
+            return_value=RoutingDecision(agent="CODE_STUDIO_AGENT", intent="code_execution")
+        )
+        mock_llm.with_structured_output.return_value = mock_structured
+        sup = _make_supervisor(mock_llm)
+        base_state["query"] = "Ve bieu do bang python va tao file PNG"
+
+        result = await sup.route(base_state)
+        assert result == "code_studio_agent"
+
     @pytest.mark.asyncio
     async def test_route_llm_unavailable_falls_back(self, base_state):
         sup = _make_supervisor(None)
@@ -300,6 +319,32 @@ class TestSupervisorProcess:
         assert result["skill_context"] == "## COLREGs Overview\nContent here..."
 
     @pytest.mark.asyncio
+    async def test_process_keeps_capability_context_separate(self, mock_llm, base_state):
+        self._setup_structured_mock(mock_llm, "TUTOR_AGENT")
+        sup = _make_supervisor(mock_llm)
+
+        mock_domain = MagicMock()
+        mock_skill = MagicMock()
+        mock_skill.id = "colregs_overview"
+        mock_domain.match_skills.return_value = [mock_skill]
+        mock_domain.activate_skill.return_value = "## COLREGs Overview\nContent here..."
+
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = mock_domain
+
+        with patch(DOMAIN_REGISTRY_PATCH, return_value=mock_registry):
+            with patch(
+                "app.engine.skills.skill_handbook.get_skill_handbook",
+                return_value=MagicMock(
+                    summarize_for_query=MagicMock(return_value="Capability handbook phù hợp lúc này:\n- tool_knowledge_search")
+                ),
+            ):
+                result = await sup.process(base_state)
+
+        assert result["skill_context"] == "## COLREGs Overview\nContent here..."
+        assert result["capability_context"].startswith("Capability handbook phù hợp")
+
+    @pytest.mark.asyncio
     async def test_process_skill_activation_error_doesnt_crash(self, mock_llm, base_state):
         self._setup_structured_mock(mock_llm, "RAG_AGENT")
         sup = _make_supervisor(mock_llm)
@@ -319,6 +364,47 @@ class TestSupervisorProcess:
         result = await sup.process(state)
 
         assert "skill_context" not in result
+
+    @pytest.mark.asyncio
+    async def test_process_uses_parallel_dispatch_for_complex_learning_query(self, mock_llm, base_state):
+        self._setup_structured_mock(mock_llm, "TUTOR_AGENT")
+        sup = _make_supervisor(mock_llm)
+        base_state["query"] = (
+            "Giải thích thật chi tiết quy tắc 13 COLREG, "
+            "đưa ví dụ thực tế và đối chiếu với tài liệu gốc giúp tôi nhé."
+        )
+
+        with patch("app.core.config.settings.enable_subagent_architecture", True):
+            with patch.object(sup, "_is_complex_query", return_value=True):
+                with patch(
+                    "app.engine.multi_agent.orchestration_planner.plan_parallel_targets",
+                    return_value=["tutor", "rag"],
+                ):
+                    result = await sup.process(base_state)
+
+        assert result["next_agent"] == "parallel_dispatch"
+        assert result["_parallel_targets"] == ["tutor", "rag"]
+
+    @pytest.mark.asyncio
+    async def test_process_uses_parallel_dispatch_for_complex_product_query(self, mock_llm, base_state):
+        self._setup_structured_mock(mock_llm, "PRODUCT_SEARCH_AGENT")
+        sup = _make_supervisor(mock_llm)
+        base_state["query"] = (
+            "Tìm iPhone 17 Pro Max rẻ nhất, so giá trên nhiều nguồn "
+            "và phân tích giúp tôi nguồn nào đáng tin nhất."
+        )
+
+        with patch("app.core.config.settings.enable_product_search", True):
+            with patch("app.core.config.settings.enable_subagent_architecture", True):
+                with patch.object(sup, "_is_complex_query", return_value=True):
+                    with patch(
+                        "app.engine.multi_agent.orchestration_planner.plan_parallel_targets",
+                        return_value=["search", "rag"],
+                    ):
+                        result = await sup.process(base_state)
+
+        assert result["next_agent"] == "parallel_dispatch"
+        assert result["_parallel_targets"] == ["search", "rag"]
 
 
 # ---------------------------------------------------------------------------

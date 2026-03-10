@@ -274,6 +274,15 @@ class TestOpenAIProvider:
         mock_settings.openai_model = "gpt-4o-mini"
         mock_settings.openai_model_advanced = "gpt-4o"
         mock_settings.openai_base_url = "https://openrouter.ai/api/v1"
+        mock_settings.openrouter_model_fallbacks = []
+        mock_settings.openrouter_provider_order = []
+        mock_settings.openrouter_allowed_providers = []
+        mock_settings.openrouter_ignored_providers = []
+        mock_settings.openrouter_allow_fallbacks = None
+        mock_settings.openrouter_require_parameters = None
+        mock_settings.openrouter_data_collection = None
+        mock_settings.openrouter_zdr = None
+        mock_settings.openrouter_provider_sort = None
         mock_chat.return_value = MagicMock(spec=BaseChatModel)
 
         p = OpenAIProvider()
@@ -283,17 +292,60 @@ class TestOpenAIProvider:
 
     @patch("langchain_openai.ChatOpenAI")
     @patch("app.engine.llm_providers.openai_provider.settings")
+    def test_create_instance_adds_openrouter_extra_body(self, mock_settings, mock_chat):
+        mock_settings.openai_api_key = "sk-test"
+        mock_settings.openai_model = "openai/gpt-oss-20b:free"
+        mock_settings.openai_model_advanced = "openai/gpt-oss-120b:free"
+        mock_settings.openai_base_url = "https://openrouter.ai/api/v1"
+        mock_settings.openrouter_model_fallbacks = ["anthropic/claude-sonnet-4"]
+        mock_settings.openrouter_provider_order = ["anthropic", "openai"]
+        mock_settings.openrouter_allowed_providers = []
+        mock_settings.openrouter_ignored_providers = []
+        mock_settings.openrouter_allow_fallbacks = False
+        mock_settings.openrouter_require_parameters = True
+        mock_settings.openrouter_data_collection = "deny"
+        mock_settings.openrouter_zdr = True
+        mock_settings.openrouter_provider_sort = "latency"
+        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+
+        p = OpenAIProvider()
+        p.create_instance(tier="moderate")
+        call_kwargs = mock_chat.call_args[1]
+        assert call_kwargs["extra_body"] == {
+            "models": ["anthropic/claude-sonnet-4"],
+            "provider": {
+                "order": ["anthropic", "openai"],
+                "allow_fallbacks": False,
+                "require_parameters": True,
+                "data_collection": "deny",
+                "zdr": True,
+                "sort": "latency",
+            },
+        }
+
+    @patch("langchain_openai.ChatOpenAI")
+    @patch("app.engine.llm_providers.openai_provider.settings")
     def test_create_instance_no_base_url(self, mock_settings, mock_chat):
         mock_settings.openai_api_key = "sk-test"
         mock_settings.openai_model = "gpt-4o-mini"
         mock_settings.openai_model_advanced = "gpt-4o"
         mock_settings.openai_base_url = None
+        mock_settings.openrouter_model_fallbacks = ["anthropic/claude-sonnet-4"]
+        mock_settings.openrouter_provider_order = ["anthropic"]
+        mock_settings.openrouter_allowed_providers = []
+        mock_settings.openrouter_ignored_providers = []
+        mock_settings.openrouter_allow_fallbacks = False
+        mock_settings.openrouter_require_parameters = True
+        mock_settings.openrouter_data_collection = "deny"
+        mock_settings.openrouter_zdr = True
+        mock_settings.openrouter_provider_sort = "latency"
         mock_chat.return_value = MagicMock(spec=BaseChatModel)
 
         p = OpenAIProvider()
         p.create_instance(tier="moderate")
         call_kwargs = mock_chat.call_args[1]
         assert "base_url" not in call_kwargs
+        assert "extra_body" not in call_kwargs
 
 
 # ============================================================================
@@ -337,6 +389,8 @@ class TestOllamaProvider:
     def test_create_instance_uses_config(self, mock_settings):
         mock_settings.ollama_base_url = "http://localhost:11434"
         mock_settings.ollama_model = "llama3.2"
+        mock_settings.ollama_api_key = None
+        mock_settings.ollama_keep_alive = None
 
         # Mock the langchain_ollama module since it may not be installed
         mock_chat_ollama = MagicMock(return_value=MagicMock(spec=BaseChatModel))
@@ -351,6 +405,27 @@ class TestOllamaProvider:
             assert call_kwargs["model"] == "llama3.2"
             assert call_kwargs["base_url"] == "http://localhost:11434"
             assert call_kwargs["temperature"] == 0.5
+
+    @patch("app.engine.llm_providers.ollama_provider.settings")
+    def test_create_instance_with_cloud_api_key_sets_auth_header(self, mock_settings):
+        mock_settings.ollama_base_url = "https://ollama.com/api"
+        mock_settings.ollama_model = "gpt-oss:20b"
+        mock_settings.ollama_api_key = "ollama-cloud-key"
+        mock_settings.ollama_keep_alive = None
+
+        mock_chat_ollama = MagicMock(return_value=MagicMock(spec=BaseChatModel))
+        mock_module = MagicMock()
+        mock_module.ChatOllama = mock_chat_ollama
+
+        import sys
+        with patch.dict(sys.modules, {"langchain_ollama": mock_module}):
+            p = OllamaProvider()
+            p.create_instance(tier="moderate", temperature=0.1)
+            call_kwargs = mock_chat_ollama.call_args[1]
+            assert call_kwargs["base_url"] == "https://ollama.com"
+            assert call_kwargs["client_kwargs"]["headers"]["Authorization"] == (
+                "Bearer ollama-cloud-key"
+            )
 
     def test_create_instance_missing_dependency(self):
         """Should raise ImportError with helpful message when langchain-ollama missing."""

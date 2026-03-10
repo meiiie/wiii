@@ -40,6 +40,10 @@ class TestRouteDecision:
         state = {"next_agent": "direct"}
         assert route_decision(state) == "direct"
 
+    def test_routes_to_code_studio_agent(self):
+        state = {"next_agent": "code_studio_agent"}
+        assert route_decision(state) == "code_studio_agent"
+
     def test_unknown_agent_defaults_to_direct(self):
         state = {"next_agent": "unknown_agent"}
         assert route_decision(state) == "direct"

@@ -17,6 +17,7 @@ Tests:
 import pytest
 from unittest.mock import MagicMock, patch
 
+from app.engine.tools.registry import ToolAccess
 from app.mcp.tool_server import (
     MCPToolDefinition,
     MCPToolServer,
@@ -33,7 +34,6 @@ import app.mcp.tool_server as ts_module
 def _make_mock_registry():
     """Create a mock ToolRegistry with sample tools."""
     registry = MagicMock()
-    registry._initialized = True
 
     # Create mock ToolInfo entries
     tools = {}
@@ -50,6 +50,7 @@ def _make_mock_registry():
         info.roles = roles
         info.category = MagicMock()
         info.category.value = cat
+        info.access = ToolAccess.READ
         info.tool = MagicMock()
         info.tool.args_schema = None  # No schema by default
         tools[name] = info
@@ -99,7 +100,10 @@ class TestMCPToolDefinition:
         assert td.input_schema == {"type": "object", "properties": {}}
         assert td.source == ""
         assert td.category == ""
+        assert td.access == "read"
         assert "student" in td.roles
+        assert td.annotations == {}
+        assert td.meta == {}
 
     def test_with_values(self):
         """Custom values preserved."""
@@ -217,13 +221,32 @@ class TestToolRegistryLoading:
         assert td.roles == ["admin"]
 
     @patch("app.engine.tools.registry.get_tool_registry")
-    def test_uninitialized_registry_returns_zero(self, mock_get_reg, server):
-        """Uninitialized registry returns 0 tools."""
+    def test_empty_registry_returns_zero(self, mock_get_reg, server):
+        """Empty registry returns 0 tools."""
         reg = MagicMock()
-        reg._initialized = False
+        reg._tools = {}
         mock_get_reg.return_value = reg
         count = server.refresh()
         assert count == 0
+
+    @patch("app.engine.tools.registry.get_tool_registry")
+    def test_loads_tools_without_initialized_flag(self, mock_get_reg, server):
+        """Loads tools based on registry contents, not a private init flag."""
+        reg = MagicMock(spec=[])
+        reg._tools = {
+            "tool_web_search": MagicMock(
+                description="Search the web",
+                roles=["student", "teacher", "admin"],
+                category=MagicMock(value="utility"),
+                tool=MagicMock(args_schema=None),
+            ),
+        }
+        mock_get_reg.return_value = reg
+
+        count = server.refresh()
+
+        assert count == 1
+        assert server.get_tool("tool_web_search") is not None
 
     @patch("app.engine.tools.registry.get_tool_registry")
     def test_description_preserved(self, mock_get_reg, server, mock_registry):
@@ -232,6 +255,75 @@ class TestToolRegistryLoading:
         server.refresh()
         td = server.get_tool("tool_search_shopee")
         assert td.description == "Search Shopee Vietnam"
+
+    @patch("app.engine.tools.registry.get_tool_registry")
+    @patch("app.core.config.get_settings")
+    def test_execution_tools_receive_policy_metadata(
+        self,
+        mock_get_settings,
+        mock_get_reg,
+        server,
+    ):
+        reg = MagicMock(spec=[])
+        reg._tools = {
+            "tool_execute_python": MagicMock(
+                description="Run Python",
+                roles=["admin"],
+                category=MagicMock(value="execution"),
+                access=ToolAccess.WRITE,
+                tool=MagicMock(args_schema=None),
+            ),
+        }
+        mock_get_reg.return_value = reg
+        mock_get_settings.return_value = MagicMock(
+            enable_privileged_sandbox=True,
+            sandbox_provider="opensandbox",
+            sandbox_allow_browser_workloads=False,
+        )
+
+        server.refresh()
+
+        td = server.get_tool("tool_execute_python")
+        assert td.annotations["readOnlyHint"] is False
+        assert td.annotations["destructiveHint"] is True
+        assert td.meta["wiii"]["riskLevel"] == "high"
+        assert td.meta["wiii"]["approvalRequired"] is True
+        assert td.meta["wiii"]["approvalScope"] == "privileged_execution"
+        assert td.meta["wiii"]["executionBackend"] == "opensandbox"
+
+    @patch("app.engine.tools.registry.get_tool_registry")
+    @patch("app.core.config.get_settings")
+    def test_profile_backed_browser_tools_receive_browser_policy_metadata(
+        self,
+        mock_get_settings,
+        mock_get_reg,
+        server,
+    ):
+        reg = MagicMock(spec=[])
+        reg._tools = {
+            "tool_browser_snapshot_url": MagicMock(
+                description="Visit a URL in browser sandbox",
+                roles=["admin"],
+                category=MagicMock(value="execution"),
+                access=ToolAccess.WRITE,
+                tool=MagicMock(args_schema=None),
+            ),
+        }
+        mock_get_reg.return_value = reg
+        mock_get_settings.return_value = MagicMock(
+            enable_privileged_sandbox=True,
+            sandbox_provider="opensandbox",
+            sandbox_allow_browser_workloads=True,
+        )
+
+        server.refresh()
+
+        td = server.get_tool("tool_browser_snapshot_url")
+        assert td.meta["wiii"]["riskLevel"] == "high"
+        assert td.meta["wiii"]["approvalRequired"] is True
+        assert td.meta["wiii"]["approvalScope"] == "browser_automation"
+        assert td.meta["wiii"]["sandboxWorkload"] == "browser"
+        assert td.meta["wiii"]["executionBackend"] == "opensandbox"
 
     def test_import_error_graceful(self, server):
         """Handles ImportError gracefully."""
@@ -453,6 +545,8 @@ class TestMCPFormatExport:
             assert "name" in d
             assert "description" in d
             assert "inputSchema" in d
+            assert "annotations" in d
+            assert "_meta" in d
 
     @patch("app.engine.tools.registry.get_tool_registry")
     def test_schema_has_properties(self, mock_get_reg, server, mock_registry):
@@ -472,6 +566,17 @@ class TestMCPFormatExport:
         assert "tool_registry" in s["by_source"]
         assert s["by_source"]["tool_registry"] == 5
         assert "rag" in s["by_category"]
+
+    @patch("app.engine.tools.registry.get_tool_registry")
+    def test_export_contains_policy_metadata(self, mock_get_reg, server, mock_registry):
+        """Export includes MCP annotations and Wiii policy metadata."""
+        mock_get_reg.return_value = mock_registry
+        result = server.to_mcp_format()
+        first = result[0]
+        assert "readOnlyHint" in first["annotations"]
+        assert "destructiveHint" in first["annotations"]
+        assert "openWorldHint" in first["annotations"]
+        assert "wiii" in first["_meta"]
 
 
 # ============================================================================

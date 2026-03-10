@@ -69,6 +69,8 @@ export interface ChatResponseMetadata {
   model: string;
   agent_type: "chat" | "rag" | "tutor";
   session_id?: string;
+  /** Sprint 225: Composite thread ID for cross-platform sync */
+  thread_id?: string;
   tools_used?: ToolUsageInfo[];
   reasoning_trace?: ReasoningTrace;
   thinking_content?: string;
@@ -98,14 +100,29 @@ export interface SSEThinkingEvent {
   node?: string;
   confidence?: number;
   details?: Record<string, unknown>;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 export interface SSEAnswerEvent {
   content: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 export interface SSESourcesEvent {
   sources: SourceInfo[];
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 export interface SSEMetadataEvent {
@@ -120,11 +137,21 @@ export interface SSEMetadataEvent {
     energy: number;
     mood: MoodType;
   } | null;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
   [key: string]: unknown;
 }
 
 export interface SSEErrorEvent {
   message: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 export interface SSEToolCallEvent {
@@ -135,6 +162,11 @@ export interface SSEToolCallEvent {
   };
   node?: string;
   step?: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 export interface SSEToolResultEvent {
@@ -145,6 +177,11 @@ export interface SSEToolResultEvent {
   };
   node?: string;
   step?: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 export interface SSEStatusEvent {
@@ -153,10 +190,20 @@ export interface SSEStatusEvent {
   node?: string;
   /** Sprint 164: Extra details (e.g. aggregation decision) */
   details?: Record<string, unknown>;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 export interface SSEDomainNoticeEvent {
   content: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 /** Sprint 135: Soul emotion event — LLM-driven avatar expression */
@@ -164,17 +211,32 @@ export interface SSEEmotionEvent {
   mood: MoodType;
   face: Partial<Record<string, number>>;
   intensity: number;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 export interface SSEThinkingDeltaEvent {
   content: string;
   node?: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 /** Sprint 147: Bold action text event — narrative between thinking blocks */
 export interface SSEActionTextEvent {
   content: string;
   node?: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 /** Sprint 153: Browser screenshot event — Playwright visual transparency */
@@ -185,6 +247,11 @@ export interface SSEBrowserScreenshotEvent {
     label: string;
   };
   node?: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 export interface SSEThinkingStartEvent {
@@ -194,6 +261,13 @@ export interface SSEThinkingStartEvent {
   block_id?: string;
   /** Sprint 145: One-line summary for Claude-like collapsed header */
   summary?: string;
+  /** Runtime reasoning phase from backend contract */
+  phase?: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 export interface SSEThinkingEndEvent {
@@ -201,6 +275,11 @@ export interface SSEThinkingEndEvent {
   node?: string;
   duration_ms?: number;
   block_id?: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 export type SSEEventType =
@@ -231,6 +310,18 @@ export interface ToolCallInfo {
   node?: string;
 }
 
+export type DisplayRole = "thinking" | "tool" | "action" | "answer" | "artifact";
+export type StepState = "live" | "completed";
+export type PresentationMode = "compact" | "expanded" | "technical";
+
+export interface DisplayPresentationMeta {
+  displayRole?: DisplayRole;
+  sequenceId?: number;
+  stepId?: string;
+  stepState?: StepState;
+  presentation?: PresentationMode;
+}
+
 // ===== Streaming Progress =====
 
 /** Pipeline progress step (separate from AI thinking content) */
@@ -243,12 +334,16 @@ export interface StreamingStep {
 // ===== Content Blocks (interleaved thinking/answer) =====
 
 /** A thinking block with optional inline tool calls */
-export interface ThinkingBlockData {
+export interface ThinkingBlockData extends DisplayPresentationMeta {
   type: "thinking";
   id: string;
   label?: string;
   /** Sprint 145: One-line summary for Claude-like collapsed header */
   summary?: string;
+  /** Backend node that produced this thinking block */
+  node?: string;
+  /** Runtime reasoning phase from backend contract */
+  phase?: string;
   content: string;
   toolCalls: ToolCallInfo[];
   /** epoch ms when block was created (for duration) */
@@ -261,15 +356,23 @@ export interface ThinkingBlockData {
   workerNode?: string;
 }
 
+export interface ToolExecutionBlockData extends DisplayPresentationMeta {
+  type: "tool_execution";
+  id: string;
+  tool: ToolCallInfo;
+  node?: string;
+  status: "pending" | "completed";
+}
+
 /** An answer/content block with markdown text */
-export interface AnswerBlockData {
+export interface AnswerBlockData extends DisplayPresentationMeta {
   type: "answer";
   id: string;
   content: string;
 }
 
 /** Sprint 147: Bold narrative text between thinking blocks (Claude-style action text) */
-export interface ActionTextBlockData {
+export interface ActionTextBlockData extends DisplayPresentationMeta {
   type: "action_text";
   id: string;
   content: string;
@@ -278,11 +381,11 @@ export interface ActionTextBlockData {
 }
 
 /** Sprint 153: Browser screenshot block — Playwright visual transparency */
-export interface ScreenshotBlockData {
+export interface ScreenshotBlockData extends DisplayPresentationMeta {
   type: "screenshot";
   id: string;
   url: string;
-  image: string;           // Base64 JPEG — kept permanently
+  image: string;           // Base64 JPEG - kept permanently
   label: string;
   node?: string;
 }
@@ -307,7 +410,7 @@ export interface AggregationSummary {
 }
 
 /** Sprint 164: Subagent group block — visual container for parallel dispatch */
-export interface SubagentGroupBlockData {
+export interface SubagentGroupBlockData extends DisplayPresentationMeta {
   type: "subagent_group";
   id: string;
   label: string;
@@ -347,7 +450,7 @@ export interface ArtifactData {
   };
 }
 
-export interface ArtifactBlockData {
+export interface ArtifactBlockData extends DisplayPresentationMeta {
   type: "artifact";
   id: string;
   artifact: ArtifactData;
@@ -358,6 +461,11 @@ export interface ArtifactBlockData {
 export interface SSEArtifactEvent {
   content: ArtifactData;
   node?: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 // ===== Preview System (Sprint 166) =====
@@ -374,7 +482,7 @@ export interface PreviewItemData {
   metadata?: Record<string, unknown>;
 }
 
-export interface PreviewBlockData {
+export interface PreviewBlockData extends DisplayPresentationMeta {
   type: "preview";
   id: string;
   items: PreviewItemData[];
@@ -385,6 +493,11 @@ export interface PreviewBlockData {
 export interface SSEPreviewEvent {
   content: PreviewItemData;
   node?: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
 /** Sprint 222b: SSE host_action event — AI requests an action from the host app */
@@ -395,10 +508,23 @@ export interface SSEHostActionEvent {
     params?: Record<string, unknown>;
   };
   node?: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
 }
 
-/** Ordered content block — enables interleaved thinking+answer rendering */
-export type ContentBlock = ThinkingBlockData | AnswerBlockData | ActionTextBlockData | ScreenshotBlockData | SubagentGroupBlockData | PreviewBlockData | ArtifactBlockData;
+/** Ordered content block - enables interleaved thinking+answer rendering */
+export type ContentBlock =
+  | ThinkingBlockData
+  | ToolExecutionBlockData
+  | AnswerBlockData
+  | ActionTextBlockData
+  | ScreenshotBlockData
+  | SubagentGroupBlockData
+  | PreviewBlockData
+  | ArtifactBlockData;
 
 /** Sprint 141: Unified thinking phase for ThinkingFlow component */
 export interface ThinkingPhase {
@@ -573,9 +699,29 @@ export interface CharacterBlockInfo {
   usage_percent: number;
 }
 
+export interface CharacterCardInfo {
+  card_id: string;
+  card_name: string;
+  card_kind: string;
+  card_family: string;
+  contract_version: string;
+  name: string;
+  summary: string;
+  origin: string;
+  greeting: string;
+  traits: string[];
+  quirks: string[];
+  core_truths: string[];
+  reasoning_style: string[];
+  relationship_style: string[];
+  anti_drift: string[];
+  runtime_notes: string[];
+}
+
 export interface CharacterStateResponse {
   blocks: CharacterBlockInfo[];
   total_blocks: number;
+  card?: CharacterCardInfo | null;
 }
 
 // ===== Mood / Emotional State (Sprint 120) =====
@@ -619,6 +765,7 @@ export interface Conversation {
   pinned?: boolean;
   message_count?: number;
   summary?: string;
+  user_renamed?: boolean;  // Sprint 225: tracks if user explicitly renamed (prevents server title overwrite)
 }
 
 export interface Message {
@@ -654,6 +801,25 @@ export type ThinkingLevel = "minimal" | "balanced" | "detailed";
 export interface AppSettings {
   server_url: string;
   api_key: string;
+  llm_provider?: "google" | "openai" | "openrouter" | "ollama";
+  google_model?: string;
+  openai_base_url?: string;
+  openai_model?: string;
+  openai_model_advanced?: string;
+  openrouter_model_fallbacks?: string[];
+  openrouter_provider_order?: string[];
+  openrouter_allowed_providers?: string[];
+  openrouter_ignored_providers?: string[];
+  openrouter_allow_fallbacks?: boolean | null;
+  openrouter_require_parameters?: boolean | null;
+  openrouter_data_collection?: "allow" | "deny" | "";
+  openrouter_zdr?: boolean | null;
+  openrouter_provider_sort?: "price" | "latency" | "throughput" | "";
+  ollama_base_url?: string;
+  ollama_model?: string;
+  ollama_keep_alive?: string;
+  llm_failover_enabled?: boolean;
+  llm_failover_chain?: string[];
   user_id: string;
   user_role: UserRole;
   display_name: string;
@@ -674,6 +840,63 @@ export interface AppSettings {
   show_previews?: boolean;
   /** Sprint 167: Show interactive artifacts */
   show_artifacts?: boolean;
+}
+
+export interface LlmRuntimeConfig {
+  provider: "google" | "openai" | "openrouter" | "ollama";
+  use_multi_agent: boolean;
+  google_model: string;
+  openai_base_url?: string | null;
+  openai_model: string;
+  openai_model_advanced: string;
+  openrouter_model_fallbacks: string[];
+  openrouter_provider_order: string[];
+  openrouter_allowed_providers: string[];
+  openrouter_ignored_providers: string[];
+  openrouter_allow_fallbacks?: boolean | null;
+  openrouter_require_parameters?: boolean | null;
+  openrouter_data_collection?: "allow" | "deny" | null;
+  openrouter_zdr?: boolean | null;
+  openrouter_provider_sort?: "price" | "latency" | "throughput" | null;
+  ollama_base_url?: string | null;
+  ollama_model: string;
+  ollama_keep_alive?: string | null;
+  google_api_key_configured: boolean;
+  openai_api_key_configured: boolean;
+  ollama_api_key_configured: boolean;
+  enable_llm_failover: boolean;
+  llm_failover_chain: string[];
+  active_provider?: string | null;
+  providers_registered: string[];
+}
+
+export interface LlmRuntimeUpdateBody {
+  provider?: "google" | "openai" | "openrouter" | "ollama";
+  use_multi_agent?: boolean;
+  google_api_key?: string;
+  clear_google_api_key?: boolean;
+  google_model?: string;
+  openai_api_key?: string;
+  clear_openai_api_key?: boolean;
+  ollama_api_key?: string;
+  clear_ollama_api_key?: boolean;
+  openai_base_url?: string;
+  openai_model?: string;
+  openai_model_advanced?: string;
+  openrouter_model_fallbacks?: string[];
+  openrouter_provider_order?: string[];
+  openrouter_allowed_providers?: string[];
+  openrouter_ignored_providers?: string[];
+  openrouter_allow_fallbacks?: boolean | null;
+  openrouter_require_parameters?: boolean | null;
+  openrouter_data_collection?: "allow" | "deny" | "";
+  openrouter_zdr?: boolean | null;
+  openrouter_provider_sort?: "price" | "latency" | "throughput" | "";
+  ollama_base_url?: string;
+  ollama_model?: string;
+  ollama_keep_alive?: string;
+  enable_llm_failover?: boolean;
+  llm_failover_chain?: string[];
 }
 
 // ===== Sprint 170: Living Agent Types =====

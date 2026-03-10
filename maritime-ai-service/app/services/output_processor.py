@@ -9,6 +9,7 @@ Handles all output processing: formatting, validation, source merging.
 """
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
@@ -153,7 +154,7 @@ class OutputProcessor:
             metadata=response_metadata
         )
     
-    def merge_same_page_sources(self, sources: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def merge_same_page_sources(self, sources: List[Any]) -> List[Dict[str, Any]]:
         """
         Merge sources from the same page into single entries with combined bounding_boxes.
         
@@ -161,22 +162,24 @@ class OutputProcessor:
         **Validates: Requirements 2.4**
         
         Args:
-            sources: List of source dictionaries
+            sources: List of source dictionaries or Pydantic citation models
             
         Returns:
             Merged list of sources
         """
+        normalized_sources = [self._coerce_source_mapping(source) for source in sources]
+
         if self._response_builder:
-            return self._response_builder.merge_same_page_sources(sources)
-        
+            return self._response_builder.merge_same_page_sources(normalized_sources)
+
         # Fallback implementation if no response_builder
-        if not sources:
+        if not normalized_sources:
             return []
-        
+
         # Group by (document_id, page_number)
         page_groups: Dict[str, Dict[str, Any]] = {}
-        
-        for source in sources:
+
+        for source in normalized_sources:
             doc_id = source.get("document_id")
             page_num = source.get("page_number")
             
@@ -199,9 +202,20 @@ class OutputProcessor:
         
         return list(page_groups.values())
     
+    @staticmethod
+    def _coerce_source_mapping(source: Any) -> Dict[str, Any]:
+        """Normalize citations/source objects into plain dicts."""
+        if isinstance(source, Mapping):
+            return dict(source)
+        if hasattr(source, "model_dump"):
+            return source.model_dump(exclude_none=True)
+        if hasattr(source, "dict"):
+            return source.dict(exclude_none=True)
+        raise TypeError(f"Unsupported source type: {type(source)!r}")
+
     def format_sources(
         self,
-        raw_sources: List[Dict[str, Any]]
+        raw_sources: List[Any]
     ) -> List[Source]:
         """
         Format raw source dictionaries into Source objects.
@@ -214,7 +228,7 @@ class OutputProcessor:
         """
         if not raw_sources:
             return []
-        
+
         # First merge same-page sources
         merged_sources = self.merge_same_page_sources(raw_sources)
         

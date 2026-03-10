@@ -23,7 +23,7 @@ import math
 import threading
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +107,108 @@ def get_intelligent_tool_selector() -> "IntelligentToolSelector":
     return _selector_instance
 
 
+def _resolve_tool_name(tool: Callable) -> str:
+    """Extract a stable tool name from a callable-like object."""
+    return str(
+        getattr(tool, "name", None)
+        or getattr(tool, "__name__", None)
+        or ""
+    ).strip()
+
+
+def select_runtime_tools(
+    tools: List[Callable],
+    *,
+    query: str,
+    intent: Optional[str] = None,
+    user_role: str = "student",
+    max_tools: Optional[int] = None,
+    must_include: Optional[List[str]] = None,
+    enabled: Optional[bool] = None,
+    strategy: SelectionStrategy = SelectionStrategy.HYBRID,
+) -> List[Callable]:
+    """Select a runtime-safe subset of tool objects for the current turn.
+
+    The selector works on registered tool names, then maps the ranked
+    recommendations back to the concrete tool callables that a node will bind
+    to its LLM. When the feature is disabled or selection fails, the original
+    tool list is returned unchanged.
+    """
+    if not tools:
+        return []
+
+    available_map: Dict[str, Callable] = {}
+    ordered_names: List[str] = []
+    for tool in tools:
+        name = _resolve_tool_name(tool)
+        if not name or name in available_map:
+            continue
+        available_map[name] = tool
+        ordered_names.append(name)
+
+    if len(ordered_names) <= 1:
+        return list(tools)
+
+    if enabled is None:
+        try:
+            from app.core.config import settings as _settings
+
+            enabled = bool(getattr(_settings, "enable_intelligent_tool_selection", False))
+        except Exception:
+            enabled = False
+
+    if not enabled:
+        return list(tools)
+
+    selector = get_intelligent_tool_selector()
+    resolved_intent = intent or selector.detect_intent_from_query(query)
+    selected_max_tools = max_tools or min(len(ordered_names), 8)
+
+    selected_names: List[str] = []
+    try:
+        recommendations = selector.select_tools(
+            query=query,
+            intent=resolved_intent,
+            user_role=user_role,
+            strategy=strategy,
+            max_tools=selected_max_tools,
+            available_tools=ordered_names,
+        )
+        selected_names = [
+            rec.tool_name
+            for rec in recommendations
+            if rec.tool_name in available_map
+        ]
+    except Exception as exc:
+        logger.debug("[TOOL_SELECTOR] Runtime selection failed: %s", exc)
+        selected_names = []
+
+    try:
+        from app.engine.tools.registry import get_tool_registry
+
+        registry = get_tool_registry()
+        passthrough_names = [
+            name
+            for name in ordered_names
+            if name not in getattr(registry, "_tools", {})
+        ]
+    except Exception:
+        passthrough_names = []
+
+    for name in passthrough_names:
+        if name not in selected_names:
+            selected_names.append(name)
+
+    for name in must_include or []:
+        if name in available_map and name not in selected_names:
+            selected_names.append(name)
+
+    if not selected_names:
+        return list(tools)
+
+    return [available_map[name] for name in selected_names if name in available_map]
+
+
 class IntelligentToolSelector:
     """
     4-step intelligent tool selection pipeline.
@@ -182,7 +284,11 @@ class IntelligentToolSelector:
 
         # Step 4: Metrics reranking
         if strategy in (SelectionStrategy.METRICS, SelectionStrategy.HYBRID):
-            tool_pool = self._step4_metrics_rerank(tool_pool)
+            tool_pool = self._step4_metrics_rerank(
+                tool_pool,
+                query=query,
+                intent=intent,
+            )
 
         # Ensure core tools are always included
         tool_pool = self._ensure_core_tools(tool_pool, available_tools, user_role)
@@ -272,6 +378,8 @@ class IntelligentToolSelector:
         try:
             from app.engine.tools.registry import get_tool_registry
             registry = get_tool_registry()
+            from app.engine.skills.capability_registry import get_capability_registry
+            capability_registry = get_capability_registry()
         except ImportError:
             return pool
 
@@ -282,6 +390,8 @@ class IntelligentToolSelector:
                 continue
 
             category_val = info.category.value if info.category else None
+            if category_val is None:
+                category_val = capability_registry.get_selector_category(rec.tool_name)
 
             if category_val in relevant_categories:
                 rec.confidence = min(rec.confidence + 0.2, 1.0)
@@ -312,6 +422,8 @@ class IntelligentToolSelector:
         try:
             from app.engine.tools.registry import get_tool_registry
             registry = get_tool_registry()
+            from app.engine.skills.capability_registry import get_capability_registry
+            capability_registry = get_capability_registry()
         except ImportError:
             return pool
 
@@ -325,7 +437,13 @@ class IntelligentToolSelector:
                 continue
 
             # Build searchable text from tool description
-            searchable = f"{info.name} {info.description}".lower()
+            searchable = " ".join(
+                part for part in (
+                    info.name,
+                    info.description,
+                    capability_registry.searchable_text(rec.tool_name),
+                ) if part
+            ).lower()
             searchable_words = set(searchable.split())
 
             # Compute Jaccard-like overlap
@@ -350,38 +468,76 @@ class IntelligentToolSelector:
     def _step4_metrics_rerank(
         self,
         pool: List[ToolRecommendation],
+        *,
+        query: str = "",
+        intent: Optional[str] = None,
     ) -> List[ToolRecommendation]:
-        """Rerank tools using execution metrics (success rate, latency) + mastery."""
+        """Rerank tools using handbook competence/cost signals."""
         try:
+            from app.engine.skills.skill_handbook import get_skill_handbook
             from app.engine.skills.skill_metrics import get_skill_metrics_tracker
+            handbook = get_skill_handbook()
             tracker = get_skill_metrics_tracker()
         except ImportError:
             return pool
 
+        handbook_suggestions: dict[str, int] = {}
+        if query or intent:
+            suggested_entries = handbook.suggest_for_query(
+                query,
+                intent=intent,
+                max_entries=max(len(pool), 5),
+            )
+            handbook_suggestions = {
+                entry.tool_name: rank
+                for rank, entry in enumerate(suggested_entries)
+            }
+
         for rec in pool:
             skill_id = f"tool:{rec.tool_name}"
             metrics = tracker.get_metrics(skill_id)
+            entry = handbook.get_tool_entry(rec.tool_name)
+            competence = entry.competence_score if entry is not None else 0.0
+            success_rate = entry.success_rate if entry is not None else 0.0
+            estimated_latency = int(entry.avg_latency_ms) if entry and entry.avg_latency_ms > 0 else 0
+            estimated_cost = entry.avg_cost_usd if entry is not None else 0.0
+            total_invocations = 0
+            if metrics is not None:
+                try:
+                    total_invocations = int(getattr(metrics, "total_invocations", 0))
+                except Exception:
+                    total_invocations = 0
 
-            if metrics is None or metrics.total_invocations == 0:
+            handbook_bonus = 0.0
+            if rec.tool_name in handbook_suggestions:
+                rank = handbook_suggestions[rec.tool_name]
+                handbook_bonus = max(0.0, 0.18 - (rank * 0.03))
+            if metrics is None or total_invocations == 0:
                 # No data — neutral score, but still check mastery
                 mastery = self._get_mastery_boost(rec.tool_name)
+                if handbook_bonus > 0:
+                    rec.score += handbook_bonus
+                    rec.reason = f"{rec.reason}+handbook({handbook_bonus:.2f})"
+                rec.estimated_latency_ms = estimated_latency or rec.estimated_latency_ms
+                rec.estimated_cost_usd = estimated_cost or rec.estimated_cost_usd
                 if mastery > 0:
                     rec.score += mastery * 0.15  # Weight: 15% for mastery alone
                     rec.reason = f"{rec.reason}+mastery({mastery:.2f})"
                 continue
 
             # Composite metric score
-            success_factor = metrics.success_rate  # 0-1
+            success_factor = (metrics.success_rate * 0.7) + (competence * 0.3)
             # Latency factor: lower is better, normalize to 0-1 range
             latency_factor = 1.0 / (1.0 + metrics.avg_latency_ms / 1000.0)
             # Volume factor: more invocations = more reliable signal
-            volume_factor = min(math.sqrt(metrics.total_invocations) / 10.0, 1.0)
+            volume_factor = min(math.sqrt(total_invocations) / 10.0, 1.0)
             # Sprint 195: Cost factor — cheaper tools score higher
             avg_cost = metrics.avg_cost_per_invocation
             cost_factor = 1.0 / (1.0 + avg_cost * 100.0)  # Normalize: $0.01 → 0.5
 
             metrics_score = (
-                0.4 * success_factor
+                0.32 * success_factor
+                + 0.08 * competence
                 + 0.3 * latency_factor
                 + 0.2 * volume_factor
                 + 0.1 * cost_factor
@@ -391,13 +547,24 @@ class IntelligentToolSelector:
             mastery = self._get_mastery_boost(rec.tool_name)
 
             rec.score += metrics_score * 0.4  # Weight: 40% for metrics
+            if handbook_bonus > 0:
+                rec.score += handbook_bonus
             if mastery > 0:
                 rec.score += mastery * 0.15  # Weight: 15% for mastery
-                rec.reason = f"{rec.reason}+metrics({metrics_score:.2f})+mastery({mastery:.2f})"
+                rec.reason = (
+                    f"{rec.reason}+metrics({metrics_score:.2f})"
+                    f"+competence({competence:.2f})"
+                    f"{f'+handbook({handbook_bonus:.2f})' if handbook_bonus > 0 else ''}"
+                    f"+mastery({mastery:.2f})"
+                )
             else:
-                rec.reason = f"{rec.reason}+metrics({metrics_score:.2f})"
-            rec.estimated_latency_ms = int(metrics.avg_latency_ms)
-            rec.estimated_cost_usd = metrics.cost_estimate_usd
+                rec.reason = (
+                    f"{rec.reason}+metrics({metrics_score:.2f})"
+                    f"+competence({competence:.2f})"
+                    f"{f'+handbook({handbook_bonus:.2f})' if handbook_bonus > 0 else ''}"
+                )
+            rec.estimated_latency_ms = estimated_latency or int(metrics.avg_latency_ms)
+            rec.estimated_cost_usd = metrics.cost_estimate_usd or estimated_cost
 
         # Re-sort by final score
         pool.sort(key=lambda r: r.score, reverse=True)

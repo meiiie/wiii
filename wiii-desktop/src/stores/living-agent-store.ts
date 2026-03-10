@@ -85,46 +85,50 @@ export const useLivingAgentStore = create<LivingAgentState>((set, get) => ({
   fetchEmotionalState: async () => {
     try {
       const state = await getEmotionalState();
-      set({ emotionalState: state });
+      set({ emotionalState: state, error: null });
     } catch (e) {
-      // Silent — emotional state is non-critical
       console.warn("[living-agent] Failed to fetch emotional state:", e);
+      set({ error: String(e) });
     }
   },
 
   fetchJournal: async (days = 7) => {
     try {
       const entries = await getJournalEntries(days);
-      set({ journalEntries: entries });
+      set({ journalEntries: entries, error: null });
     } catch (e) {
       console.warn("[living-agent] Failed to fetch journal:", e);
+      set({ error: String(e) });
     }
   },
 
   fetchSkills: async (params) => {
     try {
       const skills = await getSkills(params);
-      set({ skills });
+      set({ skills, error: null });
     } catch (e) {
       console.warn("[living-agent] Failed to fetch skills:", e);
+      set({ error: String(e) });
     }
   },
 
   fetchGoals: async () => {
     try {
       const goals = await getGoals();
-      set({ goals });
+      set({ goals, error: null });
     } catch (e) {
       console.warn("[living-agent] Failed to fetch goals:", e);
+      set({ error: String(e) });
     }
   },
 
   fetchReflections: async (days = 14) => {
     try {
       const reflections = await getReflections(days);
-      set({ reflections });
+      set({ reflections, error: null });
     } catch (e) {
       console.warn("[living-agent] Failed to fetch reflections:", e);
+      set({ error: String(e) });
     }
   },
 

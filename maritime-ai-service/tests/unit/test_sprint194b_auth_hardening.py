@@ -43,6 +43,7 @@ def mock_settings_production():
     s.jwt_expire_minutes = 15
     s.jwt_audience = "wiii"
     s.environment = "production"
+    s.lms_service_token = None
     s.enable_org_membership_check = False
     s.enable_jti_denylist = False
     s.enforce_api_key_role_restriction = True
@@ -60,6 +61,7 @@ def mock_settings_development():
     s.jwt_expire_minutes = 15
     s.jwt_audience = "wiii"
     s.environment = "development"
+    s.lms_service_token = None
     s.enable_org_membership_check = False
     s.enable_jti_denylist = False
     s.enforce_api_key_role_restriction = True
@@ -91,12 +93,18 @@ def mock_settings_org_admin_disabled():
 
 
 class TestAPIKeyUserIDTrustProduction:
-    """Sprint 194b (C2): In production, API key auth flags X-User-ID usage."""
+    """Sprint 194b (C2): In production, API key auth ignores X-User-ID."""
 
     @pytest.mark.asyncio
-    async def test_production_with_user_id_accepts_but_flags(self, mock_settings_production):
-        """In production, X-User-ID is accepted but a warning is logged."""
-        with patch("app.core.security.settings", mock_settings_production):
+    async def test_production_with_user_id_uses_api_client_principal(
+        self,
+        mock_settings_production,
+    ):
+        """In production, general API key auth ignores caller-supplied X-User-ID."""
+        with patch(
+            "app.core.security.settings",
+            mock_settings_production,
+        ), patch("app.core.security.logger") as mock_logger:
             from app.core.security import require_auth
 
             result = await require_auth(
@@ -107,12 +115,19 @@ class TestAPIKeyUserIDTrustProduction:
                 x_session_id="sess-1",
                 x_org_id=None,
             )
-            # user_id should be the X-User-ID value (accepted but flagged)
-            assert result.user_id == "student-123"
+            assert result.user_id == "api-client"
             assert result.auth_method == "api_key"
+            warning_calls = [
+                call for call in mock_logger.warning.call_args_list
+                if "Ignoring X-User-ID=%s" in str(call)
+            ]
+            assert len(warning_calls) == 1
 
     @pytest.mark.asyncio
-    async def test_production_without_user_id_defaults_to_api_client(self, mock_settings_production):
+    async def test_production_without_user_id_defaults_to_api_client(
+        self,
+        mock_settings_production,
+    ):
         """In production, missing X-User-ID defaults to 'api-client'."""
         with patch("app.core.security.settings", mock_settings_production):
             from app.core.security import require_auth
@@ -129,7 +144,10 @@ class TestAPIKeyUserIDTrustProduction:
             assert result.auth_method == "api_key"
 
     @pytest.mark.asyncio
-    async def test_production_api_client_literal_no_warning(self, mock_settings_production):
+    async def test_production_api_client_literal_no_warning(
+        self,
+        mock_settings_production,
+    ):
         """In production, X-User-ID='api-client' should not trigger the warning branch."""
         with patch("app.core.security.settings", mock_settings_production):
             with patch("app.core.security.logger") as mock_logger:
@@ -144,16 +162,17 @@ class TestAPIKeyUserIDTrustProduction:
                     x_org_id=None,
                 )
                 assert result.user_id == "api-client"
-                # The warning about impersonation should NOT be triggered
-                # since x_user_id == "api-client" is the safe default
                 warning_calls = [
                     call for call in mock_logger.warning.call_args_list
-                    if "X-User-ID=" in str(call) and "accepted but flagged" in str(call)
+                    if "Ignoring X-User-ID=%s" in str(call)
                 ]
                 assert len(warning_calls) == 0
 
     @pytest.mark.asyncio
-    async def test_development_with_user_id_trusts_normally(self, mock_settings_development):
+    async def test_development_with_user_id_trusts_normally(
+        self,
+        mock_settings_development,
+    ):
         """In development, X-User-ID is trusted without flagging."""
         with patch("app.core.security.settings", mock_settings_development):
             from app.core.security import require_auth
@@ -170,7 +189,10 @@ class TestAPIKeyUserIDTrustProduction:
             assert result.auth_method == "api_key"
 
     @pytest.mark.asyncio
-    async def test_development_without_user_id_defaults_to_anonymous(self, mock_settings_development):
+    async def test_development_without_user_id_defaults_to_anonymous(
+        self,
+        mock_settings_development,
+    ):
         """In development, missing X-User-ID defaults to 'anonymous'."""
         with patch("app.core.security.settings", mock_settings_development):
             from app.core.security import require_auth
@@ -187,7 +209,10 @@ class TestAPIKeyUserIDTrustProduction:
             assert result.role == "student"  # Default role
 
     @pytest.mark.asyncio
-    async def test_production_empty_string_user_id_defaults_to_api_client(self, mock_settings_production):
+    async def test_production_empty_string_user_id_defaults_to_api_client(
+        self,
+        mock_settings_production,
+    ):
         """In production, empty-string X-User-ID is falsy so defaults to 'api-client'."""
         with patch("app.core.security.settings", mock_settings_production):
             from app.core.security import require_auth
@@ -201,6 +226,71 @@ class TestAPIKeyUserIDTrustProduction:
                 x_org_id=None,
             )
             assert result.user_id == "api-client"
+
+
+class TestLMSServiceTokenAuth:
+    """Sprint 220/194b: LMS service token is a separate proxied auth mode."""
+
+    @pytest.mark.asyncio
+    async def test_lms_service_token_auth_preserves_proxied_user(
+        self,
+        mock_settings_production,
+    ):
+        mock_settings_production.api_key = "primary-api-key"
+        mock_settings_production.lms_service_token = "lms-service-token"
+
+        with patch("app.core.security.settings", mock_settings_production):
+            from app.core.security import require_auth
+
+            result = await require_auth(
+                api_key="lms-service-token",
+                credentials=None,
+                x_user_id="student-123",
+                x_role="teacher",
+                x_session_id="sess-1",
+                x_org_id=None,
+            )
+
+            assert result.user_id == "student-123"
+            assert result.role == "teacher"
+            assert result.auth_method == "lms_service"
+
+    @pytest.mark.asyncio
+    async def test_lms_service_token_requires_user_id(
+        self,
+        mock_settings_production,
+    ):
+        mock_settings_production.api_key = "primary-api-key"
+        mock_settings_production.lms_service_token = "lms-service-token"
+
+        with patch("app.core.security.settings", mock_settings_production):
+            from app.core.security import require_auth
+
+            with pytest.raises(HTTPException) as exc_info:
+                await require_auth(
+                    api_key="lms-service-token",
+                    credentials=None,
+                    x_user_id=None,
+                    x_role="student",
+                    x_session_id=None,
+                    x_org_id=None,
+                )
+
+        assert exc_info.value.status_code == 401
+        assert "requires X-User-ID" in exc_info.value.detail
+
+    def test_verify_api_key_ignores_non_string_lms_secret(
+        self,
+        mock_settings_production,
+    ):
+        mock_settings_production.api_key = "primary-api-key"
+        mock_settings_production.lms_service_token = MagicMock()
+
+        with patch("app.core.security.settings", mock_settings_production):
+            from app.core.security import verify_api_key
+
+            assert verify_api_key("primary-api-key") is True
+            assert verify_api_key("wrong-key") is False
 
 
 # ============================================================================
@@ -572,6 +662,7 @@ class TestCombinedScenarios:
         s = MagicMock()
         s.api_key = "combo-key"
         s.environment = "production"
+        s.lms_service_token = None
         s.enforce_api_key_role_restriction = True
         s.enable_org_membership_check = False
         s.enable_jti_denylist = False
@@ -589,7 +680,7 @@ class TestCombinedScenarios:
                 x_org_id="org-combo",
             )
             assert result.role == "student"  # Downgraded
-            assert result.user_id == "user-combo"  # Accepted with warning
+            assert result.user_id == "api-client"
             assert result.organization_id == "org-combo"
             assert result.session_id == "sess-combo"
 

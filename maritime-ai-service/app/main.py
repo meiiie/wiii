@@ -265,7 +265,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if settings.enable_mcp_client:
         try:
             from app.mcp.client import MCPToolManager
-            configs = MCPToolManager.parse_configs(settings.mcp_server_configs)
+            configs = MCPToolManager.resolve_configs(settings)
             await MCPToolManager.initialize(configs)
             logger.info("[OK] MCP Client initialized")
         except Exception as e:

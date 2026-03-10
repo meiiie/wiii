@@ -55,12 +55,12 @@ export function PreviewPanel() {
           initial="hidden"
           animate="visible"
           exit="exit"
-          className="fixed right-0 top-11 bottom-0 w-[420px] max-w-[90vw] bg-surface border-l border-border shadow-xl z-40 flex flex-col"
+          className="fixed right-0 top-11 bottom-0 w-[420px] max-w-[90vw] border-l border-border shadow-xl z-40 flex flex-col preview-panel-shell"
           role="complementary"
           aria-label="Xem trước nội dung"
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 preview-panel-shell__header">
             <div className="flex items-center gap-2">
               <Eye size={16} className="text-[var(--accent)]" />
               <span className="font-medium text-sm text-text">
@@ -236,8 +236,8 @@ function ExpandedPreview({ item }: { item: PreviewItemData }) {
         </div>
       )}
 
-      {/* URL link */}
-      {item.url && (
+      {/* URL link — validate scheme to prevent javascript:/data: injection */}
+      {item.url && /^https?:\/\//i.test(item.url) && (
         <a
           href={item.url}
           target="_blank"

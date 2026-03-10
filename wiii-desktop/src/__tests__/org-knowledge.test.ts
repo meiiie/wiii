@@ -5,7 +5,7 @@
  *   - OrgDocument type validation
  *   - API function exports (upload, list, get, delete)
  *   - org-admin-store: knowledge tab type
- *   - OrgManagerPanel: 5th tab integration
+ *   - OrgAdminView: 5th tab integration
  *   - OrgManagerKnowledge: upload area, document list, status badges, delete
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -365,10 +365,10 @@ describe("org-admin-store document state", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5. OrgManagerPanel: 5th Tab Integration
+// 5. OrgAdminView: 5th Tab Integration
 // ---------------------------------------------------------------------------
 
-describe("OrgManagerPanel 5th tab", () => {
+describe("OrgAdminView 5th tab", () => {
   it("should have knowledge in OrgManagerTab type", () => {
     // Type-level test: if this compiles, the type is correct
     const tab: OrgManagerTab = "knowledge";

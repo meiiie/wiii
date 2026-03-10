@@ -137,15 +137,15 @@ async def chat_endpoint():
 
 ### 4. Security (`security.py`)
 
-**Pattern:** Dual auth (API Key + JWT) with LMS headers
+**Pattern:** Three auth modes: general API key, LMS service token, and JWT
 
 ```python
 from app.core.security import require_auth, AuthenticatedUser
 
 @router.post("/endpoint")
 async def endpoint(auth: AuthenticatedUser = Depends(require_auth)):
-    print(auth.user_id)    # From X-User-ID or JWT
-    print(auth.role)       # From X-Role
+    print(auth.user_id)    # JWT subject, LMS proxied user, or 'api-client'
+    print(auth.role)       # From JWT claims or trusted service headers
     print(auth.session_id) # From X-Session-ID
 ```
 
@@ -154,9 +154,11 @@ async def endpoint(auth: AuthenticatedUser = Depends(require_auth)):
 ```mermaid
 graph TD
     Request --> CheckAPIKey{X-API-Key?}
-    CheckAPIKey -->|Yes| ValidateKey{Valid?}
-    ValidateKey -->|Yes| ExtractHeaders[Extract X-User-ID, X-Role]
-    ValidateKey -->|No| Reject401
+    CheckAPIKey -->|Yes| ValidateKey{Primary API key?}
+    ValidateKey -->|Yes| ApiClient[Return api-client principal in production]
+    ValidateKey -->|No| CheckService{LMS service token?}
+    CheckService -->|Yes| ExtractHeaders[Extract trusted X-User-ID, X-Role]
+    CheckService -->|No| Reject401
     
     CheckAPIKey -->|No| CheckJWT{Bearer Token?}
     CheckJWT -->|Yes| ValidateJWT{Valid?}
@@ -165,7 +167,8 @@ graph TD
     
     CheckJWT -->|No| Reject401[401 Unauthorized]
     
-    ExtractHeaders --> Return[AuthenticatedUser]
+    ApiClient --> Return[AuthenticatedUser]
+    ExtractHeaders --> Return
     ExtractJWT --> Return
 ```
 

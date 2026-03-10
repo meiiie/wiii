@@ -615,7 +615,6 @@ class TestEnableRLSScript:
         expected_tables = [
             "semantic_memories",
             "chat_history",
-            "chat_sessions",
         ]
         for table in expected_tables:
             assert table in content, f"Table {table} missing from enable_rls.py"

@@ -32,6 +32,7 @@ function ReflectionCard({
     <div className="rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-primary)] overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
         className="w-full flex items-center justify-between p-3 hover:bg-[var(--bg-tertiary)] transition-colors text-left"
       >
         <div className="flex items-center gap-3">

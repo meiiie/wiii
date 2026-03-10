@@ -21,6 +21,7 @@ interface ToastState {
 
 const MAX_VISIBLE_TOASTS = 3;
 let _nextId = 0;
+const _timerMap = new Map<string, ReturnType<typeof setTimeout>>();
 
 export const useToastStore = create<ToastState>((set) => ({
   toasts: [],
@@ -33,17 +34,20 @@ export const useToastStore = create<ToastState>((set) => ({
       return { toasts: next.length > MAX_VISIBLE_TOASTS ? next.slice(-MAX_VISIBLE_TOASTS) : next };
     });
 
-    // Auto-dismiss
+    // Auto-dismiss (track timer for cleanup on manual dismiss)
     if (duration > 0) {
-      setTimeout(() => {
+      _timerMap.set(id, setTimeout(() => {
+        _timerMap.delete(id);
         set((state) => ({
           toasts: state.toasts.filter((t) => t.id !== id),
         }));
-      }, duration);
+      }, duration));
     }
   },
 
   removeToast: (id) => {
+    const timer = _timerMap.get(id);
+    if (timer) { clearTimeout(timer); _timerMap.delete(id); }
     set((state) => ({
       toasts: state.toasts.filter((t) => t.id !== id),
     }));

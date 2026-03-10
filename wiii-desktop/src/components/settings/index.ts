@@ -4,7 +4,6 @@ export {
   ConnectionTab,
   UserTab,
   PreferencesTab,
-  LearningTab,
   MemoryTab,
   ContextTab,
   FieldGroup,

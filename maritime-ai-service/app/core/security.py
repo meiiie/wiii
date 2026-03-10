@@ -45,7 +45,7 @@ class AuthenticatedUser(BaseModel):
     LMS Integration: Now includes role and session tracking.
     """
     user_id: str
-    auth_method: str  # "api_key" or "jwt"
+    auth_method: str  # "api_key", "lms_service", or "jwt"
     role: str = "student"  # student / teacher / admin
     session_id: Optional[str] = None  # For LMS session tracking
     organization_id: Optional[str] = None  # For multi-tenant support
@@ -90,31 +90,70 @@ def verify_jwt_token(token: str) -> TokenPayload:
 # API Key Validation
 # =============================================================================
 
+
+def _get_configured_secret(value: object) -> str | None:
+    """Normalize configured shared secrets before constant-time comparison."""
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
 def verify_api_key(api_key: str) -> bool:
     """
     Verify an API key.
-    
+
     Args:
         api_key: The API key to verify
-    
+
     Returns:
         True if valid, False otherwise
     """
-    if not settings.api_key:
+    if not isinstance(api_key, str) or not api_key:
+        return False
+
+    configured_api_key = _get_configured_secret(
+        getattr(settings, "api_key", None)
+    )
+    if not configured_api_key:
         if settings.environment == "production":
-            logger.error("SECURITY: No API key configured in production — rejecting request")
+            logger.error(
+                "SECURITY: No API key configured in production "
+                "— rejecting request"
+            )
             return False
-        logger.warning("No API key configured — allowing all requests (development mode)")
+        logger.warning(
+            "No API key configured — allowing all requests "
+            "(development mode)"
+        )
         return True
-    
-    return hmac.compare_digest(api_key, settings.api_key)
+
+    return hmac.compare_digest(api_key, configured_api_key)
+
+
+def verify_lms_service_token(service_token: str) -> bool:
+    """Verify the dedicated LMS service token for proxied backend requests."""
+    if not isinstance(service_token, str) or not service_token:
+        return False
+
+    configured_service_token = _get_configured_secret(
+        getattr(settings, "lms_service_token", None)
+    )
+    if not configured_service_token:
+        return False
+
+    return hmac.compare_digest(service_token, configured_service_token)
 
 
 # =============================================================================
 # Sprint 192: Org Membership Validation
 # =============================================================================
 
-async def _validate_org_membership(user_id: str, org_id: str, role: str) -> bool:
+async def _validate_org_membership(
+    user_id: str,
+    org_id: str,
+    role: str,
+) -> bool:
     """Check if user is a member of the specified organization.
 
     Platform admins (role=admin) bypass the check.
@@ -128,13 +167,17 @@ async def _validate_org_membership(user_id: str, org_id: str, role: str) -> bool
         pool = await get_asyncpg_pool(create=True)
         async with pool.acquire() as conn:
             row = await conn.fetchval(
-                "SELECT 1 FROM user_organizations WHERE user_id = $1 AND organization_id = $2",
-                user_id, org_id,
+                (
+                    "SELECT 1 FROM user_organizations "
+                    "WHERE user_id = $1 AND organization_id = $2"
+                ),
+                user_id,
+                org_id,
             )
             return row is not None
     except Exception as e:
         logger.warning("Org membership check failed (fail-closed): %s", e)
-        return False  # Fail-closed: block on DB error (consistent with OrgContextMiddleware)
+        return False
 
 
 # =============================================================================
@@ -143,17 +186,24 @@ async def _validate_org_membership(user_id: str, org_id: str, role: str) -> bool
 
 async def require_auth(
     api_key: Optional[str] = Security(api_key_header),
-    credentials: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(
+        bearer_scheme
+    ),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
     x_role: Optional[str] = Header(None, alias="X-Role"),
     x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
     x_org_id: Optional[str] = Header(None, alias="X-Organization-ID"),
 ) -> AuthenticatedUser:
     """
-    Require authentication via API Key OR JWT Token.
+    Require authentication via API Key, LMS service token, or JWT Token.
 
-    LMS Integration: Accepts additional headers for user context.
-    - X-User-ID: Real user ID from LMS (required for API key auth)
+    Auth modes:
+    - API key: server-to-server client identity only
+    - LMS service token: trusted proxied LMS request carrying end-user context
+    - JWT: end-user identity
+
+    LMS Integration: Accepts additional headers for proxied user context.
+    - X-User-ID: Real user ID from LMS (required for LMS service auth)
     - X-Role: User role (student/teacher/admin)
     - X-Session-ID: Session tracking for analytics
     - X-Organization-ID: Multi-tenant support
@@ -175,7 +225,7 @@ async def require_auth(
         HTTPException 401: If no valid authentication provided
         HTTPException 403: If user is not a member of the specified org
     """
-    # Try API Key first
+    # Try API Key or LMS service token first
     if api_key:
         if verify_api_key(api_key):
             effective_role = x_role or "student"
@@ -187,32 +237,37 @@ async def require_auth(
                 and effective_role not in ("student", "teacher")
             ):
                 logger.warning(
-                    "SECURITY: API key auth attempted role=%s for user=%s — downgraded to student",
-                    effective_role, x_user_id or "anonymous",
+                    "SECURITY: API key auth attempted role=%s for "
+                    "user=%s — downgraded to student",
+                    effective_role,
+                    x_user_id or "anonymous",
                 )
                 # Audit event (fire-and-forget)
                 try:
                     import asyncio
                     from app.auth.auth_audit import log_auth_event
                     asyncio.ensure_future(log_auth_event(
-                        "role_downgrade", provider="api_key",
+                        "role_downgrade",
+                        provider="api_key",
                         user_id=x_user_id or "anonymous",
-                        reason=f"Attempted role={effective_role} via API key in production",
+                        reason=(
+                            f"Attempted role={effective_role} "
+                            "via API key in production"
+                        ),
                     ))
                 except Exception:
                     pass
                 effective_role = "student"
 
-            # Sprint 194b (C2): In production, API key auth does NOT trust
-            # X-User-ID header to prevent impersonation attacks.
-            # Actual user identity MUST come via JWT tokens.
-            # Development mode still trusts X-User-ID for testing convenience.
+            # Sprint 194b (C2): In production, general API key auth does NOT
+            # trust X-User-ID. End-user identity must come from JWT or the
+            # dedicated LMS service token path below.
             if settings.environment == "production":
-                effective_user_id = x_user_id or "api-client"
+                effective_user_id = "api-client"
                 if x_user_id and x_user_id != "api-client":
                     logger.warning(
-                        "SECURITY: API key auth with X-User-ID=%s in production — "
-                        "accepted but flagged (use JWT for proper identity)",
+                        "SECURITY: Ignoring X-User-ID=%s for API key auth in production — "
+                        "use JWT or LMS service token for end-user identity",
                         x_user_id,
                     )
             else:
@@ -228,7 +283,53 @@ async def require_auth(
 
             # Sprint 192: Validate org membership
             if x_org_id and settings.enable_org_membership_check:
-                is_member = await _validate_org_membership(user.user_id, x_org_id, user.role)
+                is_member = await _validate_org_membership(
+                    user.user_id,
+                    x_org_id,
+                    user.role,
+                )
+                if not is_member:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"User is not a member of organization '{x_org_id}'",
+                    )
+
+            return user
+        elif verify_lms_service_token(api_key):
+            if not x_user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="LMS service authentication requires X-User-ID header.",
+                )
+
+            effective_role = x_role or "student"
+            if (
+                settings.enforce_api_key_role_restriction
+                and settings.environment == "production"
+                and effective_role not in ("student", "teacher")
+            ):
+                logger.warning(
+                    "SECURITY: LMS service auth attempted role=%s for "
+                    "user=%s — downgraded to student",
+                    effective_role,
+                    x_user_id,
+                )
+                effective_role = "student"
+
+            user = AuthenticatedUser(
+                user_id=x_user_id,
+                auth_method="lms_service",
+                role=effective_role,
+                session_id=x_session_id,
+                organization_id=x_org_id,
+            )
+
+            if x_org_id and settings.enable_org_membership_check:
+                is_member = await _validate_org_membership(
+                    user.user_id,
+                    x_org_id,
+                    user.role,
+                )
                 if not is_member:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
@@ -292,7 +393,9 @@ async def require_auth(
 
 async def optional_auth(
     api_key: Optional[str] = Security(api_key_header),
-    credentials: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(
+        bearer_scheme
+    ),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
     x_role: Optional[str] = Header(None, alias="X-Role"),
     x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
@@ -301,12 +404,13 @@ async def optional_auth(
     """
     Optional authentication - returns None if not authenticated.
     Useful for endpoints that work with or without auth.
-    
+
     LMS Integration: Passes all headers to require_auth.
     """
     try:
         return await require_auth(
-            api_key, credentials, 
+            api_key,
+            credentials,
             x_user_id, x_role, x_session_id, x_org_id
         )
     except HTTPException:

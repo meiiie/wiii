@@ -19,6 +19,9 @@ This service wires together:
 - Learning Profile
 - Chat History
 
+Authoritative request flow:
+see app/services/REQUEST_FLOW_CONTRACT.md
+
 **Feature: wiii**
 **Validates: Requirements 1.1, 2.1, 2.2, 2.3**
 """
@@ -112,6 +115,10 @@ class ChatService:
 
     **Pattern:** Facade Pattern
     **Validates: Requirements 1.1, 2.1, 2.2, 2.3**
+
+    Contract note:
+    This facade should stay thin. Stage ordering and mutation rights are
+    defined in REQUEST_FLOW_CONTRACT.md, not here.
     """
 
     @staticmethod
@@ -280,6 +287,12 @@ def get_chat_service() -> ChatService:
     return _chat_service
 
 
+def reset_chat_service() -> None:
+    """Clear the ChatService singleton so the next request rebuilds runtime state."""
+    global _chat_service
+    _chat_service = None
+
+
 # =============================================================================
 # BACKWARD COMPATIBILITY EXPORTS
 # =============================================================================
@@ -288,6 +301,7 @@ def get_chat_service() -> ChatService:
 __all__ = [
     'ChatService',
     'get_chat_service',
+    'reset_chat_service',
     'AgentType',
     'ProcessingResult',
     'SessionState',

@@ -35,6 +35,7 @@ interface MemoryState {
   fetchMemories: (userId: string) => Promise<void>;
   deleteOne: (userId: string, memoryId: string) => Promise<void>;
   clearAll: (userId: string) => Promise<void>;
+  reset: () => void;
 }
 
 export const useMemoryStore = create<MemoryState>((set, get) => ({
@@ -84,4 +85,6 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
       await get().fetchMemories(userId);
     }
   },
+
+  reset: () => set({ memories: [], isLoading: false, error: null }),
 }));

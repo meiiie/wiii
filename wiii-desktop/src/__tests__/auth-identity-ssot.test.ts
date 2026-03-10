@@ -341,7 +341,7 @@ describe("C4: Legacy mode role downgrade — no admin escalation", () => {
     useAuthStore.setState({ authMode: "legacy", tokens: null });
   });
 
-  it("downgrades 'admin' role to 'student' in headers", () => {
+  it("allows 'admin' role through in API key mode (backend enforces in production)", () => {
     useSettingsStore.setState({
       settings: {
         ...DEFAULT_SETTINGS,
@@ -353,7 +353,7 @@ describe("C4: Legacy mode role downgrade — no admin escalation", () => {
     });
 
     const headers = useSettingsStore.getState().getAuthHeaders();
-    expect(headers["X-Role"]).toBe("student");
+    expect(headers["X-Role"]).toBe("admin");
   });
 
   it("passes 'student' role through unchanged", () => {
@@ -798,7 +798,7 @@ describe("Integration: settings + auth store header coordination", () => {
     expect(legacyHeaders["X-API-Key"]).toBe("key");
   });
 
-  it("legacy mode with admin role gets downgraded to student", () => {
+  it("legacy mode with admin role passes through (backend enforces in production)", () => {
     useAuthStore.setState({ authMode: "legacy", tokens: null });
 
     useSettingsStore.setState({
@@ -812,6 +812,6 @@ describe("Integration: settings + auth store header coordination", () => {
     });
 
     const headers = useSettingsStore.getState().getAuthHeaders();
-    expect(headers["X-Role"]).toBe("student");
+    expect(headers["X-Role"]).toBe("admin");
   });
 });

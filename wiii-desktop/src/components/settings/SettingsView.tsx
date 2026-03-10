@@ -12,7 +12,6 @@ import {
   Palette,
   Brain,
   Database,
-  GraduationCap,
   Building2,
   Heart,
   Settings,
@@ -30,7 +29,6 @@ import {
   ConnectionTab,
   UserTab,
   PreferencesTab,
-  LearningTab,
   MemoryTab,
   ContextTab,
 } from "./SettingsPage";
@@ -38,10 +36,16 @@ import { OrgSettingsTab } from "./OrgSettingsTab";
 import { LivingAgentPanel } from "@/components/living-agent/LivingAgentPanel";
 import { initClient } from "@/api/client";
 import { setTheme } from "@/lib/theme";
-import { storeFacebookCookie, loadFacebookCookie } from "@/lib/secure-token-storage";
+import {
+  clearGeminiApiKey,
+  clearOllamaApiKey,
+  clearOpenRouterApiKey,
+  storeFacebookCookie,
+  loadFacebookCookie,
+} from "@/lib/secure-token-storage";
 import type { AppSettings } from "@/api/types";
 
-type SettingsTab = "connection" | "profile" | "preferences" | "learning" | "memory" | "context" | "organization" | "living-agent";
+type SettingsTab = "connection" | "profile" | "preferences" | "memory" | "context" | "organization" | "living-agent";
 
 export function SettingsView() {
   const { settings, updateSettings, resetSettings } = useSettingsStore();
@@ -53,24 +57,24 @@ export function SettingsView() {
 
   // Sprint 216: Progressive disclosure — hide developer/admin tabs from regular users
   const isDeveloperMode = authMode === "legacy" || isSystemAdmin();
+  const hasOrgAdminAccess = isOrgAdmin() || isSystemAdmin();
 
   const visibleTabs = useMemo(() => {
     const tabs: (FullPageTab & { id: SettingsTab })[] = [
       { id: "profile", label: "Hồ sơ", icon: <User size={16} /> },
       { id: "preferences", label: "Tùy chỉnh", icon: <Palette size={16} /> },
-      { id: "learning", label: "Học tập", icon: <GraduationCap size={16} /> },
       { id: "memory", label: "Trí nhớ", icon: <Brain size={16} /> },
       { id: "context", label: "Ngữ cảnh", icon: <Database size={16} /> },
     ];
     if (isDeveloperMode) {
       tabs.push({ id: "connection", label: "Kết nối", icon: <Server size={16} /> });
     }
-    if (activeOrgId && (isOrgAdmin() || isSystemAdmin())) {
+    if (activeOrgId && hasOrgAdminAccess) {
       tabs.push({ id: "organization", label: "Tổ chức", icon: <Building2 size={16} /> });
     }
     tabs.push({ id: "living-agent", label: "Linh hồn", icon: <Heart size={16} /> });
     return tabs;
-  }, [isDeveloperMode, activeOrgId]);
+  }, [isDeveloperMode, activeOrgId, hasOrgAdminAccess]);
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
 
@@ -189,7 +193,6 @@ export function SettingsView() {
         {activeTab === "preferences" && (
           <PreferencesTab settings={settings} onUpdate={handleUpdateField} />
         )}
-        {activeTab === "learning" && <LearningTab />}
         {activeTab === "memory" && <MemoryTab userId={settings.user_id} />}
         {activeTab === "context" && <ContextTab />}
         {activeTab === "organization" && <OrgSettingsTab />}
@@ -206,7 +209,13 @@ export function SettingsView() {
         onConfirm={async () => {
           await resetSettings();
           // Sprint 194b (H5): Clear facebook cookie from secure storage
-          try { const { clearFacebookCookie } = await import("@/lib/secure-token-storage"); await clearFacebookCookie(); } catch { /* ignore */ }
+          try {
+            const { clearFacebookCookie } = await import("@/lib/secure-token-storage");
+            await clearFacebookCookie();
+            await clearGeminiApiKey();
+            await clearOpenRouterApiKey();
+            await clearOllamaApiKey();
+          } catch { /* ignore */ }
           setDraft({
             server_url: "http://localhost:8000",
             api_key: "local-dev-key",

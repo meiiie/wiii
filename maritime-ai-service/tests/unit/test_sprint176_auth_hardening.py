@@ -71,8 +71,16 @@ class TestPKCE:
             from app.auth.google_oauth import oauth
         except ImportError:
             pytest.skip("authlib not installed")
-        config = oauth._registry.get("google", {})
-        client_kwargs = config.get("client_kwargs", {})
+        config = oauth._registry.get("google")
+        assert config is not None
+        client_kwargs = getattr(config, "client_kwargs", None)
+        if client_kwargs is None and isinstance(config, tuple) and len(config) >= 2:
+            registry_entry = config[1]
+            if isinstance(registry_entry, dict):
+                client_kwargs = registry_entry.get("client_kwargs", {})
+            else:
+                client_kwargs = getattr(registry_entry, "client_kwargs", {})
+        client_kwargs = client_kwargs or {}
         assert client_kwargs.get("code_challenge_method") == "S256"
 
     def test_oauth_module_imports(self):

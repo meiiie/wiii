@@ -1,10 +1,8 @@
-/**
- * TableArtifact — renders JSON data as a sortable HTML table.
- * Sprint 167: "Không Gian Sáng Tạo"
- */
 import { useState, useMemo } from "react";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, Download, Table2 } from "lucide-react";
 import type { ArtifactData } from "@/api/types";
+import { useSettingsStore } from "@/stores/settings-store";
+import { resolveArtifactFileUrl } from "@/lib/artifact-file";
 
 interface Props {
   artifact: ArtifactData;
@@ -14,10 +12,11 @@ interface Props {
 const MAX_CARD_ROWS = 5;
 
 export default function TableArtifact({ artifact, mode }: Props) {
+  const serverUrl = useSettingsStore((s) => s.settings.server_url);
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const fileUrl = resolveArtifactFileUrl(artifact, serverUrl);
 
-  // Parse JSON content into rows
   const rows = useMemo<Record<string, unknown>[]>(() => {
     try {
       const parsed = JSON.parse(artifact.content);
@@ -36,7 +35,6 @@ export default function TableArtifact({ artifact, mode }: Props) {
     return Object.keys(rows[0]);
   }, [rows]);
 
-  // Sort rows
   const sortedRows = useMemo(() => {
     if (!sortColumn) return rows;
     return [...rows].sort((a, b) => {
@@ -49,55 +47,96 @@ export default function TableArtifact({ artifact, mode }: Props) {
 
   const displayRows = mode === "card" ? sortedRows.slice(0, MAX_CARD_ROWS) : sortedRows;
 
-  const handleSort = (col: string) => {
-    if (sortColumn === col) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortColumn(col);
-      setSortDir("asc");
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDir((direction) => (direction === "asc" ? "desc" : "asc"));
+      return;
     }
+    setSortColumn(column);
+    setSortDir("asc");
   };
 
   if (rows.length === 0) {
-    return <div className="text-sm text-text-tertiary p-4">Không có dữ liệu bảng.</div>;
+    return (
+      <div className="p-4">
+        <div className="rounded-2xl border border-border bg-surface-secondary p-4 flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center shrink-0">
+            <Table2 size={18} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-text">{artifact.title}</div>
+            <div className="text-xs text-text-tertiary mt-1">
+              Bang du lieu da duoc tao. Mo tep goc de xem day du neu can.
+            </div>
+          </div>
+          {fileUrl && (
+            <a
+              href={fileUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-tertiary hover:bg-border text-text-secondary hover:text-text transition-colors text-xs shrink-0"
+            >
+              <Download size={14} />
+              Mo tep
+            </a>
+          )}
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className={mode === "card" ? "overflow-auto max-h-[200px]" : "overflow-auto"}>
-      <table className="w-full text-xs">
-        <thead>
-          <tr>
-            {columns.map((col) => (
-              <th
-                key={col}
-                onClick={() => handleSort(col)}
-                className="sticky top-0 bg-surface-tertiary px-3 py-2 text-left text-text-secondary font-medium cursor-pointer hover:bg-border/50 transition-colors"
-              >
-                <span className="flex items-center gap-1">
-                  {col}
-                  <ArrowUpDown size={10} className="text-text-tertiary" />
-                </span>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {displayRows.map((row, idx) => (
-            <tr key={idx} className="border-t border-border/50 hover:bg-surface-secondary transition-colors">
-              {columns.map((col) => (
-                <td key={col} className="px-3 py-1.5 text-text">
-                  {String(row[col] ?? "")}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {mode === "card" && rows.length > MAX_CARD_ROWS && (
-        <div className="text-center text-[10px] text-text-tertiary py-1">
-          +{rows.length - MAX_CARD_ROWS} hàng khác
+    <div className="space-y-2">
+      {mode === "panel" && fileUrl && (
+        <div className="flex justify-end px-4 pt-2">
+          <a
+            href={fileUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 text-xs text-text-secondary hover:text-text px-2 py-1 rounded bg-surface-tertiary hover:bg-border transition-colors"
+          >
+            <Download size={12} />
+            Mo tep goc
+          </a>
         </div>
       )}
+
+      <div className={mode === "card" ? "overflow-auto max-h-[200px]" : "overflow-auto"}>
+        <table className="w-full text-xs">
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th
+                  key={column}
+                  onClick={() => handleSort(column)}
+                  className="sticky top-0 bg-surface-tertiary px-3 py-2 text-left text-text-secondary font-medium cursor-pointer hover:bg-border/50 transition-colors"
+                >
+                  <span className="flex items-center gap-1">
+                    {column}
+                    <ArrowUpDown size={10} className="text-text-tertiary" />
+                  </span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {displayRows.map((row, index) => (
+              <tr key={index} className="border-t border-border/50 hover:bg-surface-secondary transition-colors">
+                {columns.map((column) => (
+                  <td key={column} className="px-3 py-1.5 text-text">
+                    {String(row[column] ?? "")}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {mode === "card" && rows.length > MAX_CARD_ROWS && (
+          <div className="text-center text-[10px] text-text-tertiary py-1">
+            +{rows.length - MAX_CARD_ROWS} hang khac
+          </div>
+        )}
+      </div>
     </div>
   );
 }

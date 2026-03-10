@@ -90,6 +90,11 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
           if (images.length >= 5) addToast("info", "Tối đa 5 ảnh mỗi tin nhắn.");
           return;
         }
+        // Security: enforce 10MB file size limit
+        if (file.size > 10 * 1024 * 1024) {
+          addToast("error", "Ảnh quá lớn (tối đa 10MB).");
+          return;
+        }
         const reader = new FileReader();
         reader.onload = () => {
           const base64 = (reader.result as string).split(",")[1];
@@ -117,6 +122,11 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
         return;
       }
       Array.from(files).slice(0, remaining).forEach(file => {
+        // Security: enforce 10MB file size limit
+        if (file.size > 10 * 1024 * 1024) {
+          addToast("error", `"${file.name}" quá lớn (tối đa 10MB).`);
+          return;
+        }
         const reader = new FileReader();
         reader.onload = () => {
           const base64 = (reader.result as string).split(",")[1];
@@ -231,8 +241,8 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
 
   // Normal bottom-bar mode — input-card style (Sprint 162)
   return (
-    <div className="bg-surface px-4 py-3">
-      <div className="max-w-[720px] mx-auto">
+    <div className="chat-composer-shell px-4 py-3">
+      <div className="chat-lane">
         {/* Edit mode banner */}
         {editingMessage && onClearEdit && (
           <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-lg bg-[var(--accent-light)] text-[var(--accent)] text-xs">

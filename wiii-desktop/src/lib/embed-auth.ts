@@ -26,6 +26,10 @@ export interface EmbedConfig {
   // UI
   theme?: "light" | "dark" | "system";
   hide_welcome?: boolean;
+  mode?: "full" | "widget";
+
+  // Session
+  session_id?: string;
 }
 
 /**
@@ -97,6 +101,18 @@ export function parseEmbedConfig(url?: string): EmbedConfig {
   const hideWelcome = params.get("hide_welcome");
   if (hideWelcome === "true" || hideWelcome === "1") {
     config.hide_welcome = true;
+  }
+
+  // Sprint 220c: Widget mode
+  const mode = params.get("mode");
+  if (mode === "widget" || mode === "full") {
+    config.mode = mode;
+  }
+
+  // Sprint 220c: Session resumption
+  const sessionId = params.get("session_id");
+  if (sessionId && /^[a-zA-Z0-9_.-]{1,128}$/.test(sessionId)) {
+    config.session_id = sessionId;
   }
 
   return config;

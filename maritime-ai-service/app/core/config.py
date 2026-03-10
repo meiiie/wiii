@@ -15,6 +15,9 @@ from typing import Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.engine.llm_provider_registry import get_supported_provider_names
+from app.engine.llm_runtime_profiles import GOOGLE_DEFAULT_MODEL
+
 _config_logger = logging.getLogger(__name__)
 
 
@@ -36,15 +39,28 @@ class DatabaseConfig(BaseModel):
 
 class LLMConfig(BaseModel):
     """LLM provider settings — Gemini, OpenAI, Ollama."""
-    provider: str = "google"
-    failover_chain: list[str] = ["google", "openai", "ollama"]
+    provider: str = "ollama"
+    failover_chain: list[str] = ["ollama", "google", "openrouter"]
     enable_failover: bool = True
     google_api_key: Optional[str] = None
-    google_model: str = "gemini-3.1-flash-lite-preview"
+    google_model: str = GOOGLE_DEFAULT_MODEL
     openai_api_key: Optional[str] = None
+    openai_base_url: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
+    openai_model_advanced: str = "gpt-4o"
+    openrouter_model_fallbacks: list[str] = []
+    openrouter_provider_order: list[str] = []
+    openrouter_allowed_providers: list[str] = []
+    openrouter_ignored_providers: list[str] = []
+    openrouter_allow_fallbacks: Optional[bool] = None
+    openrouter_require_parameters: Optional[bool] = None
+    openrouter_data_collection: Optional[str] = None
+    openrouter_zdr: Optional[bool] = None
+    openrouter_provider_sort: Optional[str] = None
+    ollama_api_key: Optional[str] = None
     ollama_base_url: Optional[str] = "http://localhost:11434"
-    ollama_model: str = "qwen3:8b"
+    ollama_model: str = "qwen3:4b-instruct-2507-q4_K_M"
+    ollama_keep_alive: Optional[str] = "30m"
     ollama_thinking_models: list[str] = ["qwen3", "deepseek-r1", "qwq"]
 
 
@@ -140,7 +156,7 @@ class LivingAgentConfig(BaseModel):
     heartbeat_interval: int = 1800
     active_hours_start: int = 8
     active_hours_end: int = 23
-    local_model: str = "qwen3:8b"
+    local_model: str = "qwen3:4b-instruct-2507-q4_K_M"
     max_browse_items: int = 10
     enable_social_browse: bool = False
     enable_skill_building: bool = False
@@ -331,8 +347,8 @@ class Settings(BaseSettings):
             url = self.database_url
             url = url.replace("postgresql+asyncpg://", "postgresql://")
             url = url.replace("postgres://", "postgresql://")
-            return self._append_connect_timeout(url)
-        return self._append_connect_timeout(
+            return self._remove_connect_timeout(url)
+        return self._remove_connect_timeout(
             f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 
@@ -367,6 +383,21 @@ class Settings(BaseSettings):
         separator = "&" if "?" in url else "?"
         return f"{url}{separator}connect_timeout={self.postgres_connect_timeout_seconds}"
 
+    def _remove_connect_timeout(self, url: str) -> str:
+        """Strip connect_timeout for asyncpg DSNs, which do not accept it as a server setting."""
+        if "connect_timeout=" not in url:
+            return url
+
+        from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+        parts = urlsplit(url)
+        filtered_query = [
+            (key, value)
+            for key, value in parse_qsl(parts.query, keep_blank_values=True)
+            if key != "connect_timeout"
+        ]
+        return urlunsplit(parts._replace(query=urlencode(filtered_query)))
+
     # Database - Neo4j (Local Docker)
     neo4j_uri: str = Field(default="bolt://localhost:7687", description="Neo4j connection URI (local or Aura)")
     neo4j_user: str = Field(default="neo4j", description="Neo4j user")
@@ -383,15 +414,65 @@ class Settings(BaseSettings):
     openai_base_url: Optional[str] = Field(default=None, description="OpenAI-compatible API base URL (e.g., OpenRouter)")
     openai_model: str = Field(default="gpt-4o-mini", description="OpenAI model for general tasks")
     openai_model_advanced: str = Field(default="gpt-4o", description="OpenAI model for complex tasks")
+    openrouter_model_fallbacks: list[str] = Field(
+        default_factory=list,
+        description="Ordered fallback models for OpenRouter requests",
+    )
+    openrouter_provider_order: list[str] = Field(
+        default_factory=list,
+        description="Preferred OpenRouter providers in priority order",
+    )
+    openrouter_allowed_providers: list[str] = Field(
+        default_factory=list,
+        description="Restrict OpenRouter requests to these providers",
+    )
+    openrouter_ignored_providers: list[str] = Field(
+        default_factory=list,
+        description="Providers OpenRouter should avoid",
+    )
+    openrouter_allow_fallbacks: Optional[bool] = Field(
+        default=None,
+        description="Override OpenRouter provider fallback behavior",
+    )
+    openrouter_require_parameters: Optional[bool] = Field(
+        default=None,
+        description="Only choose OpenRouter providers that support all request params",
+    )
+    openrouter_data_collection: Optional[str] = Field(
+        default=None,
+        description="OpenRouter data collection policy: allow | deny",
+    )
+    openrouter_zdr: Optional[bool] = Field(
+        default=None,
+        description="Require Zero Data Retention providers on OpenRouter",
+    )
+    openrouter_provider_sort: Optional[str] = Field(
+        default=None,
+        description="OpenRouter provider sort: price | latency | throughput",
+    )
 
-    # LLM Settings - Google Gemini (primary)
+    # LLM Settings - Google Gemini (cloud fallback)
     google_api_key: Optional[str] = Field(default=None, description="Google Gemini API key")
-    google_model: str = Field(default="gemini-3.1-flash-lite-preview", description="Google Gemini model (3.1 Flash-Lite = fastest, cheapest Gemini 3)")
-    llm_provider: str = Field(default="google", description="LLM provider: google, openai, openrouter")
+    google_model: str = Field(
+        default=GOOGLE_DEFAULT_MODEL,
+        description="Google Gemini model (default: gemini-3.1-flash-lite-preview, latest 3.1 low-cost preview model)",
+    )
+    llm_provider: str = Field(default="ollama", description="LLM provider: google, openai, openrouter, ollama")
 
     # LLM Settings - Ollama (local/self-hosted)
+    ollama_api_key: Optional[str] = Field(
+        default=None,
+        description="Ollama Cloud API key for direct access to https://ollama.com/api",
+    )
     ollama_base_url: Optional[str] = Field(default="http://localhost:11434", description="Ollama API base URL")
-    ollama_model: str = Field(default="qwen3:8b", description="Ollama model name (Sprint 59: Qwen3 default)")
+    ollama_model: str = Field(
+        default="qwen3:4b-instruct-2507-q4_K_M",
+        description="Ollama model name (explicit Qwen3 instruct default)",
+    )
+    ollama_keep_alive: Optional[str] = Field(
+        default="30m",
+        description="How long Ollama should keep the active model loaded in memory",
+    )
     ollama_thinking_models: list[str] = Field(
         default=["qwen3", "deepseek-r1", "qwq"],
         description="Models supporting thinking mode via Ollama (matched by prefix)"
@@ -399,7 +480,7 @@ class Settings(BaseSettings):
 
     # Multi-Provider Failover (Sprint 11: OpenClaw-inspired)
     llm_failover_chain: list[str] = Field(
-        default=["google", "openai", "ollama"],
+        default=["ollama", "google", "openrouter"],
         description="LLM provider failover chain (try in order)"
     )
     enable_llm_failover: bool = Field(default=True, description="Enable automatic LLM provider failover")
@@ -600,6 +681,17 @@ class Settings(BaseSettings):
     enable_filesystem_tools: bool = Field(default=False, description="Enable sandboxed filesystem tools")
     enable_code_execution: bool = Field(default=False, description="Enable sandboxed Python execution")
     code_execution_timeout: int = Field(default=30, description="Code execution timeout in seconds")
+    enable_privileged_sandbox: bool = Field(default=False, description="Enable dedicated privileged sandbox executor for remote code/browser workloads")
+    sandbox_provider: str = Field(default="disabled", description="Privileged sandbox provider: disabled, local_subprocess, opensandbox")
+    sandbox_default_timeout_seconds: int = Field(default=120, ge=5, le=3600, description="Default timeout for remote sandbox workloads in seconds")
+    sandbox_allow_browser_workloads: bool = Field(default=False, description="Allow browser-class workloads to use the privileged sandbox executor")
+    opensandbox_base_url: Optional[str] = Field(default=None, description="Base URL for OpenSandbox control plane")
+    opensandbox_api_key: Optional[str] = Field(default=None, description="API key for OpenSandbox control plane")
+    opensandbox_healthcheck_path: str = Field(default="/health", description="Health check path for OpenSandbox control plane")
+    opensandbox_code_template: str = Field(default="opensandbox/code-interpreter:v1.0.1", description="Default OpenSandbox runtime image for Python or command execution")
+    opensandbox_browser_template: str = Field(default="opensandbox/playwright:latest", description="Default OpenSandbox runtime image for browser automation workloads")
+    opensandbox_network_mode: str = Field(default="egress", description="OpenSandbox network mode: disabled, bridge, egress")
+    opensandbox_keepalive_seconds: int = Field(default=600, ge=30, le=86400, description="How long an OpenSandbox session may stay alive for reuse before cleanup")
     enable_skill_creation: bool = Field(default=False, description="Enable runtime skill creation")
 
     # Unified LLM Client
@@ -708,7 +800,10 @@ class Settings(BaseSettings):
     living_agent_heartbeat_interval: int = Field(default=1800, ge=300, le=86400, description="Heartbeat interval in seconds (default 30 min)")
     living_agent_active_hours_start: int = Field(default=8, ge=0, le=23, description="Start hour for active period (UTC+7)")
     living_agent_active_hours_end: int = Field(default=23, ge=0, le=23, description="End hour for active period (UTC+7)")
-    living_agent_local_model: str = Field(default="qwen3:8b", description="Local Ollama model for autonomous tasks")
+    living_agent_local_model: str = Field(
+        default="qwen3:4b-instruct-2507-q4_K_M",
+        description="Local Ollama model for autonomous tasks",
+    )
     living_agent_max_browse_items: int = Field(default=10, ge=1, le=50, description="Max items to process per browsing session")
     living_agent_enable_social_browse: bool = Field(default=False, description="Allow Wiii to browse social media autonomously")
     living_agent_enable_skill_building: bool = Field(default=False, description="Allow Wiii to learn new skills autonomously")
@@ -870,9 +965,8 @@ class Settings(BaseSettings):
         description=(
             "Vision model for product identification. "
             "Empty = provider default. "
-            "Google options: gemini-2.5-pro (default, best stable), "
-            "gemini-2.5-flash (fast/cheap), gemini-3-flash-preview (SOTA preview), "
-            "gemini-3-pro-preview, gemini-3.1-pro-preview. "
+            "Google options: gemini-3.1-flash-lite-preview (default, latest 3.1 preview), "
+            "gemini-3-flash-preview (3.0 general), gemini-3-pro-preview (3.0 quality). "
             "OpenAI options: gpt-4o (default), gpt-4o-mini."
         ),
     )
@@ -1135,9 +1229,27 @@ class Settings(BaseSettings):
     @field_validator("llm_provider")
     @classmethod
     def validate_llm_provider(cls, v: str) -> str:
-        allowed = ["google", "openai", "ollama", "openrouter"]
+        allowed = list(get_supported_provider_names())
         if v not in allowed:
             raise ValueError(f"llm_provider must be one of {allowed}")
+        return v
+
+    @field_validator("sandbox_provider")
+    @classmethod
+    def validate_sandbox_provider(cls, v: str) -> str:
+        allowed = ["disabled", "local_subprocess", "opensandbox"]
+        if v not in allowed:
+            raise ValueError(f"sandbox_provider must be one of {allowed}")
+        return v
+
+    @field_validator("opensandbox_network_mode")
+    @classmethod
+    def validate_opensandbox_network_mode(cls, v: str) -> str:
+        allowed = ["disabled", "bridge", "egress"]
+        if v not in allowed:
+            raise ValueError(
+                f"opensandbox_network_mode must be one of {allowed}"
+            )
         return v
 
     @field_validator("rag_quality_mode")
@@ -1205,6 +1317,50 @@ class Settings(BaseSettings):
         if v and not v.startswith(("http://", "https://")):
             raise ValueError("URL must start with http:// or https://")
         return v
+
+    @field_validator(
+        "openrouter_model_fallbacks",
+        "openrouter_provider_order",
+        "openrouter_allowed_providers",
+        "openrouter_ignored_providers",
+    )
+    @classmethod
+    def normalize_string_lists(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in values:
+            value = item.strip()
+            if not value or value in seen:
+                continue
+            normalized.append(value)
+            seen.add(value)
+        return normalized
+
+    @field_validator("openrouter_data_collection")
+    @classmethod
+    def validate_openrouter_data_collection(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        normalized = v.strip().lower()
+        allowed = {"allow", "deny"}
+        if normalized not in allowed:
+            raise ValueError(
+                f"openrouter_data_collection must be one of {sorted(allowed)}"
+            )
+        return normalized
+
+    @field_validator("openrouter_provider_sort")
+    @classmethod
+    def validate_openrouter_provider_sort(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        normalized = v.strip().lower()
+        allowed = {"price", "latency", "throughput"}
+        if normalized not in allowed:
+            raise ValueError(
+                f"openrouter_provider_sort must be one of {sorted(allowed)}"
+            )
+        return normalized
 
     @field_validator("google_openai_compat_url")
     @classmethod
@@ -1274,6 +1430,19 @@ class Settings(BaseSettings):
         if self.enable_browser_scraping and not self.enable_product_search:
             _config_logger.warning(
                 "enable_browser_scraping=True requires enable_product_search=True — browser scraping will be unused"
+            )
+        if self.enable_privileged_sandbox:
+            if self.sandbox_provider == "disabled":
+                _config_logger.warning(
+                    "enable_privileged_sandbox=True but sandbox_provider='disabled' — dedicated sandbox executor will be unused"
+                )
+            if self.sandbox_provider == "opensandbox" and not self.opensandbox_base_url:
+                _config_logger.warning(
+                    "sandbox_provider='opensandbox' but opensandbox_base_url is not set — OpenSandbox executor will not connect"
+                )
+        if self.sandbox_provider == "opensandbox" and self.enable_browser_agent and not self.sandbox_allow_browser_workloads:
+            _config_logger.warning(
+                "enable_browser_agent=True with sandbox_provider='opensandbox' but sandbox_allow_browser_workloads=False — browser workloads stay outside the privileged sandbox"
             )
         if self.enable_oauth_token_store and not self.oauth_encryption_key:
             _config_logger.warning(
@@ -1375,9 +1544,22 @@ class Settings(BaseSettings):
             google_api_key=self.google_api_key,
             google_model=self.google_model,
             openai_api_key=self.openai_api_key,
+            openai_base_url=self.openai_base_url,
             openai_model=self.openai_model,
+            openai_model_advanced=self.openai_model_advanced,
+            openrouter_model_fallbacks=self.openrouter_model_fallbacks,
+            openrouter_provider_order=self.openrouter_provider_order,
+            openrouter_allowed_providers=self.openrouter_allowed_providers,
+            openrouter_ignored_providers=self.openrouter_ignored_providers,
+            openrouter_allow_fallbacks=self.openrouter_allow_fallbacks,
+            openrouter_require_parameters=self.openrouter_require_parameters,
+            openrouter_data_collection=self.openrouter_data_collection,
+            openrouter_zdr=self.openrouter_zdr,
+            openrouter_provider_sort=self.openrouter_provider_sort,
+            ollama_api_key=self.ollama_api_key,
             ollama_base_url=self.ollama_base_url,
             ollama_model=self.ollama_model,
+            ollama_keep_alive=self.ollama_keep_alive,
             ollama_thinking_models=self.ollama_thinking_models,
         ))
         object.__setattr__(self, "rag", RAGConfig(
@@ -1483,6 +1665,10 @@ class Settings(BaseSettings):
             api_timeout=self.lms_api_timeout,
         ))
         return self
+
+    def refresh_nested_views(self) -> None:
+        """Refresh nested config snapshots after runtime field mutation."""
+        self._sync_nested_groups()
 
 
 @lru_cache

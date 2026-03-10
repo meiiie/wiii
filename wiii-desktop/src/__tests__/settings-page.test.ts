@@ -50,8 +50,8 @@ beforeEach(() => {
     isLoaded: false,
   });
   useUIStore.setState({
+    activeView: "chat",
     sidebarOpen: true,
-    settingsOpen: false,
     sourcesPanelOpen: false,
     selectedSourceIndex: null,
   });
@@ -136,27 +136,27 @@ describe("Settings Store", () => {
   });
 });
 
-describe("UI Store — Settings Modal", () => {
-  it("should start with settingsOpen = false", () => {
-    expect(useUIStore.getState().settingsOpen).toBe(false);
+describe("UI Store — Settings View", () => {
+  it("should start with activeView = chat", () => {
+    expect(useUIStore.getState().activeView).toBe("chat");
   });
 
-  it("should open settings modal", () => {
+  it("should open settings view", () => {
     useUIStore.getState().openSettings();
-    expect(useUIStore.getState().settingsOpen).toBe(true);
+    expect(useUIStore.getState().activeView).toBe("settings");
   });
 
-  it("should close settings modal", () => {
+  it("should close settings view", () => {
     useUIStore.getState().openSettings();
     useUIStore.getState().closeSettings();
-    expect(useUIStore.getState().settingsOpen).toBe(false);
+    expect(useUIStore.getState().activeView).toBe("chat");
   });
 
   it("should toggle sidebar independently", () => {
     useUIStore.getState().openSettings();
     useUIStore.getState().toggleSidebar();
 
-    expect(useUIStore.getState().settingsOpen).toBe(true);
+    expect(useUIStore.getState().activeView).toBe("settings");
     expect(useUIStore.getState().sidebarOpen).toBe(false);
   });
 });

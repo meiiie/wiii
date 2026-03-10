@@ -79,6 +79,7 @@ class TestCheckpointerInit:
         import app.engine.multi_agent.checkpointer as mod
 
         mock_saver = AsyncMock()
+        mock_saver.setup = AsyncMock()
         mock_cm = AsyncMock()
         mock_cm.__aenter__ = AsyncMock(return_value=mock_saver)
         mock_cm.__aexit__ = AsyncMock(return_value=False)
@@ -94,6 +95,7 @@ class TestCheckpointerInit:
 
             assert result is mock_saver
             mock_cm.__aenter__.assert_awaited_once()
+            mock_saver.setup.assert_awaited_once()
             assert mod._initialized is True
             assert mod._context_manager is mock_cm
 
