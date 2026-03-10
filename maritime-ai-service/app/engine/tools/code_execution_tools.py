@@ -229,7 +229,8 @@ def _build_table_payload(text: str) -> Optional[str]:
     try:
         reader = csv.DictReader(StringIO(stripped))
         rows = list(reader)
-    except Exception:
+    except Exception as e:
+        logger.debug("CSV parse failed: %s", e)
         return None
 
     if not rows:

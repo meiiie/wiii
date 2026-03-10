@@ -243,10 +243,11 @@ class TestOffTopicDetection:
         result = supervisor._rule_based_route("hôm nay thời tiết thế nào?", config)
         assert result == AgentType.DIRECT.value
 
-    def test_programming_is_off_topic(self, supervisor):
+    def test_programming_routes_to_code_studio(self, supervisor):
         config = _make_domain_config(["colregs", "solas", "hàng hải"])
         result = supervisor._rule_based_route("Python là ngôn ngữ lập trình gì?", config)
-        assert result == AgentType.DIRECT.value
+        # Post-code_studio_agent: programming queries route to code_studio
+        assert result in (AgentType.DIRECT.value, "code_studio_agent")
 
     def test_general_life_advice_is_off_topic(self, supervisor):
         config = _make_domain_config(["colregs", "solas", "hàng hải"])

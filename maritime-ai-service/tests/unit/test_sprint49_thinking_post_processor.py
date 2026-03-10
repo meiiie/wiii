@@ -103,6 +103,7 @@ class TestProcessList:
     """Test processing Gemini native format lists."""
 
     def test_native_thinking_blocks(self):
+        """Native thinking in English is suppressed (only Vietnamese surfaces to UX)."""
         from app.services.thinking_post_processor import ThinkingPostProcessor
         p = ThinkingPostProcessor()
         blocks = [
@@ -110,7 +111,8 @@ class TestProcessList:
             {"type": "text", "text": "Rule 15 describes crossing situations"},
         ]
         text, thinking = p.process(blocks)
-        assert thinking == "I need to consider Rule 15"
+        # English-only native thinking is suppressed by _should_surface_native_thinking
+        assert thinking is None
         assert text == "Rule 15 describes crossing situations"
 
     def test_text_tags_take_priority_over_native(self):
@@ -154,6 +156,7 @@ class TestProcessList:
         assert thinking is None
 
     def test_multiple_thinking_blocks(self):
+        """Multiple native thinking blocks in English are suppressed (non-Vietnamese)."""
         from app.services.thinking_post_processor import ThinkingPostProcessor
         p = ThinkingPostProcessor()
         blocks = [
@@ -162,8 +165,8 @@ class TestProcessList:
             {"type": "text", "text": "Final answer"},
         ]
         text, thinking = p.process(blocks)
-        assert "Step 1" in thinking
-        assert "Step 2" in thinking
+        # English-only native thinking is suppressed by _should_surface_native_thinking
+        assert thinking is None
         assert text == "Final answer"
 
     def test_empty_thinking_ignored(self):

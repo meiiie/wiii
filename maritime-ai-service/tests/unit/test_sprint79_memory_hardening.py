@@ -271,6 +271,12 @@ class TestSessionSummaryMilestones:
             "agent_outputs": {},
         })
 
+        class _MockGraphCM:
+            async def __aenter__(self_cm):
+                return mock_graph
+            async def __aexit__(self_cm, *args):
+                pass
+
         mock_repo = MagicMock()
         mock_repo.upsert_thread.return_value = {
             "thread_id": "tid", "user_id": "u1",
@@ -278,9 +284,11 @@ class TestSessionSummaryMilestones:
             "message_count": 6,
         }
 
-        with patch.object(graph_mod, "get_multi_agent_graph_async", return_value=mock_graph), \
+        with patch.object(graph_mod, "open_multi_agent_graph", return_value=_MockGraphCM()), \
              patch.object(graph_mod, "get_agent_registry") as mock_reg, \
              patch.object(graph_mod, "_build_domain_config", return_value={}), \
+             patch.object(graph_mod, "_build_turn_local_state_defaults", return_value={}), \
+             patch.object(graph_mod, "_inject_host_context", return_value=None), \
              patch("app.repositories.thread_repository.get_thread_repository", return_value=mock_repo), \
              patch("app.core.token_tracker.start_tracking"), \
              patch("app.core.token_tracker.get_tracker", return_value=None), \
@@ -307,6 +315,12 @@ class TestSessionSummaryMilestones:
             "agent_outputs": {},
         })
 
+        class _MockGraphCM:
+            async def __aenter__(self_cm):
+                return mock_graph
+            async def __aexit__(self_cm, *args):
+                pass
+
         mock_repo = MagicMock()
         mock_repo.upsert_thread.return_value = {
             "thread_id": "tid", "user_id": "u1",
@@ -314,9 +328,11 @@ class TestSessionSummaryMilestones:
             "message_count": 5,  # NOT a milestone
         }
 
-        with patch.object(graph_mod, "get_multi_agent_graph_async", return_value=mock_graph), \
+        with patch.object(graph_mod, "open_multi_agent_graph", return_value=_MockGraphCM()), \
              patch.object(graph_mod, "get_agent_registry") as mock_reg, \
              patch.object(graph_mod, "_build_domain_config", return_value={}), \
+             patch.object(graph_mod, "_build_turn_local_state_defaults", return_value={}), \
+             patch.object(graph_mod, "_inject_host_context", return_value=None), \
              patch("app.repositories.thread_repository.get_thread_repository", return_value=mock_repo), \
              patch("app.core.token_tracker.start_tracking"), \
              patch("app.core.token_tracker.get_tracker", return_value=None), \

@@ -698,8 +698,9 @@ class TestSupervisorContextEnhancement:
 
         # Verify the prompt was called with recent conversation, not truncated dict
         call_args = mock_structured.ainvoke.call_args[0][0]
-        prompt_content = call_args[1].content  # HumanMessage content
-        assert "Recent conversation" in prompt_content
+        # HumanMessage is now at index 2 (index 0: supervisor card, index 1: system instruction)
+        human_msg = next(m for m in call_args if hasattr(m, 'type') and m.type == 'human')
+        assert "Recent conversation" in human_msg.content
 
     @pytest.mark.asyncio
     async def test_supervisor_fallback_without_messages(self):

@@ -81,9 +81,10 @@ elif _orig_cs is not None:
     sys.modules[_cs_key] = _orig_cs
 
 if not _had_graph:
-    # Don't remove — graph_streaming already cached references to the mock.
-    # Removing would cause AttributeError on cached function refs.
-    pass
+    # Remove mock so later tests get the real module.
+    # graph_streaming's top-level references to graph functions are fine because
+    # we patch them per-test anyway via _get_patches().
+    sys.modules.pop(_graph_key, None)
 elif _orig_graph is not None:
     sys.modules[_graph_key] = _orig_graph
 

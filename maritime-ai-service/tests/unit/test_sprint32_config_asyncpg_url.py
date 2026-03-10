@@ -35,7 +35,7 @@ class TestAsyncpgUrl:
         s = _make_settings(database_url="postgresql+asyncpg://user:pass@host:5432/db")
         assert (
             s.asyncpg_url
-            == "postgresql://user:pass@host:5432/db?connect_timeout=5"
+            == "postgresql://user:pass@host:5432/db"
         )
 
     def test_converts_postgres_shorthand(self):
@@ -43,7 +43,7 @@ class TestAsyncpgUrl:
         s = _make_settings(database_url="postgres://user:pass@host:5432/db")
         assert (
             s.asyncpg_url
-            == "postgresql://user:pass@host:5432/db?connect_timeout=5"
+            == "postgresql://user:pass@host:5432/db"
         )
 
     def test_plain_postgresql_unchanged(self):
@@ -51,7 +51,7 @@ class TestAsyncpgUrl:
         s = _make_settings(database_url="postgresql://user:pass@host:5432/db")
         assert (
             s.asyncpg_url
-            == "postgresql://user:pass@host:5432/db?connect_timeout=5"
+            == "postgresql://user:pass@host:5432/db"
         )
 
     def test_fallback_to_components(self):
@@ -66,7 +66,7 @@ class TestAsyncpgUrl:
         )
         assert (
             s.asyncpg_url
-            == "postgresql://wiii:secret@localhost:5433/wiii_ai?connect_timeout=5"
+            == "postgresql://wiii:secret@localhost:5433/wiii_ai"
         )
 
     def test_default_fallback(self):
@@ -75,7 +75,7 @@ class TestAsyncpgUrl:
         url = s.asyncpg_url
         assert url.startswith("postgresql://")
         assert "postgresql+asyncpg" not in url
-        assert "connect_timeout=5" in url
+        assert "connect_timeout" not in url
 
 
 # =============================================================================

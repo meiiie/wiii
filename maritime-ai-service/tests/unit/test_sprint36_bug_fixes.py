@@ -15,20 +15,33 @@ import pytest
 
 
 class TestSQLAlchemyComparison:
-    """Verify SQLAlchemy column comparisons use .is_(False) not == False."""
+    """Verify repository does not use Python equality == False for boolean columns."""
 
     def test_no_equality_false_in_repository(self):
         with open("app/repositories/chat_history_repository.py", "r", encoding="utf-8") as f:
             content = f.read()
         # Should NOT contain == False (Python equality, not SQLAlchemy)
         assert "== False" not in content, (
-            "Use .is_(False) instead of == False for SQLAlchemy column comparisons"
+            "Use .is_(False) or raw SQL FALSE instead of == False for boolean comparisons"
         )
 
-    def test_uses_is_false(self):
+    def test_uses_safe_boolean_filter(self):
+        """Repository uses either .is_(False) or SQL FALSE literal — never Python == False."""
         with open("app/repositories/chat_history_repository.py", "r", encoding="utf-8") as f:
             content = f.read()
-        assert ".is_(False)" in content
+        # The repository migrated to raw SQL; acceptable patterns are:
+        # - "is_blocked = FALSE" (SQL literal in text())
+        # - "is_blocked IS NULL" (SQL null-safe)
+        # - ".is_(False)" (SQLAlchemy ORM style)
+        has_safe_pattern = (
+            ".is_(False)" in content
+            or "is_blocked = FALSE" in content
+            or "is_blocked IS NULL" in content
+            or "COALESCE(is_blocked, FALSE)" in content
+        )
+        assert has_safe_pattern, (
+            "Expected safe boolean filter pattern (SQL FALSE or .is_(False)) in chat_history_repository.py"
+        )
 
 
 class TestOpenEncodingSpecified:
