@@ -5,7 +5,7 @@ Verify citations, sources, and suggested questions
 import requests
 import json
 
-# API_URL = 'https://maritime-ai-service.onrender.com/api/v1/chat'
+# API_URL = 'https://wiii.holilihu.online/api/v1/chat'
 API_URL = 'http://localhost:8000/api/v1/chat'  # Local testing
 
 def test_chat(message: str, role: str = "student"):

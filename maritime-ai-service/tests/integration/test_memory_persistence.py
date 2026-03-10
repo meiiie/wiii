@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 
 # Production API
-BASE_URL = "https://maritime-ai-chatbot.onrender.com"
+BASE_URL = "https://wiii.holilihu.online"
 API_KEY = "test_key"  # Replace with actual key if needed
 
 # Test user - unique per test run

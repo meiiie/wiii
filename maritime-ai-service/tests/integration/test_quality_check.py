@@ -4,7 +4,7 @@ Quality check for Chat API responses.
 import requests
 import json
 
-BASE_URL = "https://maritime-ai-chatbot.onrender.com"
+BASE_URL = "https://wiii.holilihu.online"
 
 def test_chat_quality():
     """Test chat response quality."""

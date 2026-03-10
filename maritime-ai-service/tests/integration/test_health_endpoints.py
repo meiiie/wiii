@@ -15,7 +15,7 @@ import sys
 
 # URLs
 LOCAL_URL = "http://localhost:8000"
-PROD_URL = "https://maritime-ai-chatbot.onrender.com"
+PRODUCTION_URL = "https://wiii.holilihu.online"
 
 # Default to local, use --prod for production
 BASE_URL = PROD_URL if "--prod" in sys.argv else LOCAL_URL

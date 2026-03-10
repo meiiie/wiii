@@ -2,7 +2,7 @@
 Test Wiii Chatbot API on Render
 CHỈ THỊ KỸ THUẬT SỐ 06
 
-Test the deployed API at https://maritime-ai-chatbot.onrender.com
+Test the deployed API at https://wiii.holilihu.online
 """
 import asyncio
 import httpx
@@ -10,7 +10,7 @@ from uuid import uuid4
 
 
 # Render API URL
-BASE_URL = "https://maritime-ai-chatbot.onrender.com"
+BASE_URL = "https://wiii.holilihu.online"
 # Local API URL (for local testing)
 LOCAL_URL = "http://localhost:8000"
 

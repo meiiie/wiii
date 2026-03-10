@@ -99,7 +99,7 @@ def test_tables_created():
                 print(f"   - {table}")
             
             # Check required tables
-            required = ['chat_sessions', 'chat_messages', 'semantic_memories', 'alembic_version']
+            required = ['chat_history', 'semantic_memories', 'alembic_version']
             missing = [t for t in required if t not in tables]
             
             if not missing:

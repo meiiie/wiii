@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BASE_URL = "https://maritime-ai-chatbot.onrender.com"
+BASE_URL = "https://wiii.holilihu.online"
 API_KEY = os.getenv("LMS_API_KEY", "secret_key_cho_team_lms")
 
 HEADERS = {
