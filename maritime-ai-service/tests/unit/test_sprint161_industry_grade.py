@@ -510,15 +510,14 @@ class TestToolAckWebSosanh:
     """WebSosanh tool acknowledgment in _TOOL_ACK dict."""
 
     def test_ack_exists(self):
-        """tool_search_websosanh has an acknowledgment entry."""
-        from app.engine.multi_agent.agents.product_search_node import _TOOL_ACK
-        assert "tool_search_websosanh" in _TOOL_ACK
+        """tool_search_websosanh is described in system prompt."""
+        from app.engine.multi_agent.agents.product_search_node import _SYSTEM_PROMPT
+        assert "tool_search_websosanh" in _SYSTEM_PROMPT
 
     def test_ack_text_mentions_94_shops(self):
-        """Ack text references the 94+ shops aggregation."""
-        from app.engine.multi_agent.agents.product_search_node import _TOOL_ACK
-        ack = _TOOL_ACK["tool_search_websosanh"]
-        assert "94+" in ack or "WebSosanh" in ack
+        """System prompt references the 94+ shops aggregation."""
+        from app.engine.multi_agent.agents.product_search_node import _SYSTEM_PROMPT
+        assert "94+" in _SYSTEM_PROMPT or "WebSosanh" in _SYSTEM_PROMPT
 
 
 class TestPromptWebSosanh:

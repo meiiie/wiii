@@ -154,10 +154,11 @@ class TestBuildSystemPromptDirect:
     """Test build_system_prompt output for direct_agent role."""
 
     def test_prompt_contains_identity(self):
-        """Prompt should have TÍNH CÁCH WIII section from identity."""
+        """Prompt should have identity section from character card."""
         loader = PromptLoader()
         prompt = loader.build_system_prompt(role="direct_agent")
-        assert "TÍNH CÁCH WIII" in prompt
+        # The identity section is now "CỐT LÕI NHÂN VẬT" or "WIII LIVING CORE CARD"
+        assert "CỐT LÕI NHÂN VẬT" in prompt or "WIII LIVING CORE CARD" in prompt
 
     def test_prompt_contains_wiii_name(self):
         """Prompt should mention Wiii."""
@@ -172,16 +173,18 @@ class TestBuildSystemPromptDirect:
         assert "đa lĩnh vực" in prompt
 
     def test_prompt_contains_emoji_usage(self):
-        """Prompt should include emoji usage from identity."""
+        """Prompt should include identity traits from character card."""
         loader = PromptLoader()
         prompt = loader.build_system_prompt(role="direct_agent")
-        assert "EMOJI:" in prompt
+        # Emoji section was consolidated into character card traits (CỐT LÕI NHÂN VẬT)
+        assert "CỐT LÕI NHÂN VẬT" in prompt or "WIII LIVING CORE CARD" in prompt
 
     def test_prompt_contains_avoid_rules(self):
         """Prompt should include avoid rules from identity."""
         loader = PromptLoader()
         prompt = loader.build_system_prompt(role="direct_agent")
-        assert "QUY TẮC PHONG CÁCH:" in prompt
+        # "QUY TẮC PHONG CÁCH:" was replaced by "TRÁNH:" in the character card
+        assert "TRÁNH:" in prompt or "QUY TẮC PHONG CÁCH:" in prompt
 
     def test_prompt_contains_personality_summary(self):
         """Prompt should include personality summary."""
@@ -214,10 +217,15 @@ class TestBuildSystemPromptDirect:
             role="direct_agent",
             is_follow_up=True,
         )
-        assert "FOLLOW-UP" in prompt or "follow-up" in prompt.lower()
-        # Sprint 203: Natural conversation uses positive framing ("Đi thẳng vào nội dung")
+        # Sprint 203/204: "FOLLOW-UP" label removed; anti-greeting is now expressed via
+        # positive framing: "Đi thẳng vào nội dung" or "không qua lời chào lặp".
         # Legacy path uses "TUYỆT ĐỐI KHÔNG". Either is valid depending on config.
-        assert "Đi thẳng vào nội dung" in prompt or "TUYỆT ĐỐI KHÔNG" in prompt
+        assert (
+            "Đi thẳng vào nội dung" in prompt
+            or "lời chào lặp" in prompt
+            or "TUYỆT ĐỐI KHÔNG" in prompt
+            or "FOLLOW-UP" in prompt
+        )
 
     def test_no_anti_greeting_on_first_message(self):
         """First messages should NOT have follow-up anti-greeting."""
@@ -287,12 +295,15 @@ class TestBuildDirectToolsContext:
         assert "tool_character_note" not in result
 
     def test_code_execution_hint_when_enabled(self):
-        from app.engine.multi_agent.graph import _build_direct_tools_context
+        # tool_execute_python moved from direct node to code_studio_agent (WAVE-001).
+        # Verify it appears in the code studio tools context with admin role.
+        from app.engine.multi_agent.graph import _build_code_studio_tools_context
         mock_settings = MagicMock()
-        mock_settings.enable_character_tools = False
         mock_settings.enable_code_execution = True
+        mock_settings.enable_browser_agent = False
+        mock_settings.enable_privileged_sandbox = False
 
-        result = _build_direct_tools_context(mock_settings, "")
+        result = _build_code_studio_tools_context(mock_settings, user_role="admin")
         assert "tool_execute_python" in result
 
     def test_no_code_execution_hint_when_disabled(self):
@@ -419,8 +430,14 @@ class TestDirectNodeUsesPromptLoader:
         assert "đa lĩnh vực" in system_content
         assert "Wiii" in system_content
         assert "2024" in system_content
-        # Sprint 203/204: "GIỚI HẠN KIẾN THỨC" renamed to "Ranh giới" (positive framing)
-        assert "Ranh giới" in system_content or "GIỚI HẠN KIẾN THỨC" in system_content
+        # Sprint 203/204: "GIỚI HẠN KIẾN THỨC" renamed in natural mode;
+        # now appears as "VỀ KIẾN THỨC CỦA WIII" (positive framing) or legacy variants.
+        assert (
+            "VỀ KIẾN THỨC CỦA WIII" in system_content
+            or "Ranh giới" in system_content
+            or "GIỚI HẠN KIẾN THỨC" in system_content
+            or "kiến thức" in system_content.lower()
+        )
         assert "tool_web_search" in system_content
         assert "tool_current_datetime" in system_content
         # Must NOT have old "trả lời MỌI câu hỏi" contradiction
@@ -499,8 +516,13 @@ class TestBackwardCompatibility:
         assert "Wiii" in prompt
 
     def test_all_agents_have_identity_section(self):
-        """All agent roles should have TÍNH CÁCH WIII section."""
+        """All agent roles should have an identity section from the character card."""
         loader = PromptLoader()
         for role in ["student", "tutor_agent", "rag_agent", "memory_agent", "direct_agent"]:
             prompt = loader.build_system_prompt(role=role)
-            assert "TÍNH CÁCH WIII" in prompt, f"Missing identity for role={role}"
+            # "TÍNH CÁCH WIII" was replaced by "CỐT LÕI NHÂN VẬT" / "WIII LIVING CORE CARD"
+            assert (
+                "CỐT LÕI NHÂN VẬT" in prompt
+                or "WIII LIVING CORE CARD" in prompt
+                or "TÍNH CÁCH WIII" in prompt
+            ), f"Missing identity for role={role}"

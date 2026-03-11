@@ -341,6 +341,8 @@ class TestSprint203Compatibility:
         assert "tool_character_note" in prompt
 
     def test_code_execution_conditional(self):
-        """Code execution tool should appear when enable_code_execution=True."""
-        prompt = _build_tools_context(natural=True, enable_code_execution=True)
+        """Code execution tool appears in code_studio context (moved from direct node in WAVE-001)."""
+        from app.engine.multi_agent.graph import _build_code_studio_tools_context
+        s = _mock_settings(enable_code_execution=True, enable_browser_agent=False, enable_privileged_sandbox=False)
+        prompt = _build_code_studio_tools_context(s, user_role="admin")
         assert "tool_execute_python" in prompt

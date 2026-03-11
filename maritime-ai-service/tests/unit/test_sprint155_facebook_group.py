@@ -587,9 +587,9 @@ class TestSystemPrompt:
         assert "tool_search_facebook_group" in _SYSTEM_PROMPT
 
     def test_tool_ack_entry(self):
-        from app.engine.multi_agent.agents.product_search_node import _TOOL_ACK
-        assert "tool_search_facebook_group" in _TOOL_ACK
-        assert "nhóm Facebook" in _TOOL_ACK["tool_search_facebook_group"]
+        from app.engine.multi_agent.agents.product_search_node import _SYSTEM_PROMPT
+        assert "tool_search_facebook_group" in _SYSTEM_PROMPT
+        assert "nhóm Facebook" in _SYSTEM_PROMPT
 
     def test_deep_search_mentions_group(self):
         from app.engine.multi_agent.agents.product_search_node import _DEEP_SEARCH_PROMPT

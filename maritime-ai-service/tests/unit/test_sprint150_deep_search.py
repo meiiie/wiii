@@ -355,9 +355,9 @@ class TestDeepSearchPrompt:
         assert "bổ sung" in _iteration_label(10, [])
 
     def test_tool_ack_has_scraper(self):
-        """Post-tool acknowledgment includes scraper tool."""
-        from app.engine.multi_agent.agents.product_search_node import _TOOL_ACK
-        assert "tool_fetch_product_detail" in _TOOL_ACK
+        """System prompt includes scraper tool description."""
+        from app.engine.multi_agent.agents.product_search_node import _SYSTEM_PROMPT
+        assert "tool_fetch_product_detail" in _SYSTEM_PROMPT
 
 
 # =============================================================================

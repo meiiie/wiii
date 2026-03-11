@@ -226,11 +226,11 @@ class TestAgentPrompt:
         assert "printhead" in _SYSTEM_PROMPT.lower() or "đầu in" in _SYSTEM_PROMPT
 
     def test_tool_ack_for_new_tools(self):
-        from app.engine.multi_agent.agents.product_search_node import _TOOL_ACK
-        assert "tool_dealer_search" in _TOOL_ACK
-        assert "tool_extract_contacts" in _TOOL_ACK
-        assert "tool_international_search" in _TOOL_ACK
+        from app.engine.multi_agent.agents.product_search_node import _SYSTEM_PROMPT
+        assert "tool_dealer_search" in _SYSTEM_PROMPT
+        assert "tool_extract_contacts" in _SYSTEM_PROMPT
+        assert "tool_international_search" in _SYSTEM_PROMPT
 
     def test_tool_ack_vietnamese(self):
-        from app.engine.multi_agent.agents.product_search_node import _TOOL_ACK
-        assert "đại lý" in _TOOL_ACK["tool_dealer_search"].lower() or "phân phối" in _TOOL_ACK["tool_dealer_search"].lower()
+        from app.engine.multi_agent.agents.product_search_node import _SYSTEM_PROMPT
+        assert "đại lý" in _SYSTEM_PROMPT.lower() or "phân phối" in _SYSTEM_PROMPT.lower()

@@ -260,9 +260,8 @@ class TestToolFunctionDispatch:
     """Test tool_generate_product_report dispatches correctly."""
 
     @patch("app.engine.tools.excel_report_tool._generate_legacy_report")
-    @patch("app.core.config.get_settings")
-    def test_flag_off_uses_legacy(self, mock_settings, mock_legacy):
-        mock_settings.return_value = MagicMock(enable_advanced_excel_report=False)
+    @patch("app.engine.tools.excel_report_tool._advanced_excel_report_enabled", return_value=False)
+    def test_flag_off_uses_legacy(self, mock_flag, mock_legacy):
         mock_legacy.return_value = json.dumps({"file_path": "/tmp/test.xlsx"})
 
         from app.engine.tools.excel_report_tool import tool_generate_product_report

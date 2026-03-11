@@ -694,9 +694,9 @@ class TestPrompt:
         assert "TỰ ĐỘNG" in _DEEP_SEARCH_PROMPT
 
     def test_tool_ack_entry(self):
-        """_TOOL_ACK has entry for auto group tool."""
-        from app.engine.multi_agent.agents.product_search_node import _TOOL_ACK
-        assert "tool_search_facebook_groups_auto" in _TOOL_ACK
+        """System prompt has entry for auto group tool."""
+        from app.engine.multi_agent.agents.product_search_node import _SYSTEM_PROMPT
+        assert "tool_search_facebook_groups_auto" in _SYSTEM_PROMPT
 
     def test_existing_group_tool_still_in_prompt(self):
         """tool_search_facebook_group still referenced (for manual search)."""

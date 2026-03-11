@@ -18,7 +18,7 @@ from app.engine.tools.output_generation_tools import (
 class TestOutputGenerationTools:
     def test_generate_html_file(self, tmp_path: Path):
         with patch(
-            "app.engine.tools.output_generation_tools._get_generated_dir",
+            "app.engine.tools.output_generation_tools._shared_generated_dir",
             return_value=tmp_path,
         ):
             result = tool_generate_html_file.invoke(
@@ -47,7 +47,7 @@ class TestOutputGenerationTools:
         )
 
         with patch(
-            "app.engine.tools.output_generation_tools._get_generated_dir",
+            "app.engine.tools.output_generation_tools._shared_generated_dir",
             return_value=tmp_path,
         ):
             result = tool_generate_excel_file.invoke(
@@ -73,7 +73,7 @@ class TestOutputGenerationTools:
 
     def test_generate_word_document(self, tmp_path: Path):
         with patch(
-            "app.engine.tools.output_generation_tools._get_generated_dir",
+            "app.engine.tools.output_generation_tools._shared_generated_dir",
             return_value=tmp_path,
         ):
             result = tool_generate_word_document.invoke(

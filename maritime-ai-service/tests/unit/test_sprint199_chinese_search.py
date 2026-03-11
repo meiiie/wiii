@@ -605,10 +605,9 @@ class TestAgentPromptUpdate:
         assert "tool_international_search" in _DEEP_SEARCH_PROMPT
 
     def test_tool_ack_updated(self):
-        from app.engine.multi_agent.agents.product_search_node import _TOOL_ACK
-        ack = _TOOL_ACK["tool_international_search"]
-        assert "1688" in ack
-        assert "AliExpress" in ack
+        from app.engine.multi_agent.agents.product_search_node import _SYSTEM_PROMPT
+        assert "1688" in _SYSTEM_PROMPT
+        assert "AliExpress" in _SYSTEM_PROMPT
 
     def test_system_prompt_has_chinese_strategy_section(self):
         from app.engine.multi_agent.agents.product_search_node import _SYSTEM_PROMPT

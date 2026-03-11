@@ -478,15 +478,15 @@ class TestStreamingLabels:
         assert _NODE_LABELS["product_search_agent"] == "Tìm kiếm sản phẩm"
 
     def test_intent_action_text_has_product_search(self):
-        from app.engine.multi_agent.graph_streaming import _INTENT_ACTION_TEXT
-        assert "product_search" in _INTENT_ACTION_TEXT
+        # _INTENT_ACTION_TEXT was removed; product_search_agent is now in _NODE_LABELS
+        from app.engine.multi_agent.graph_streaming import _NODE_LABELS
+        assert "product_search_agent" in _NODE_LABELS
 
     def test_thinking_summary_product_search(self):
-        from app.engine.multi_agent.graph_streaming import _generate_thinking_summary
-
-        output = {"routing_metadata": {"intent": "product_search"}, "next_agent": "product_search_agent"}
-        summary = _generate_thinking_summary(output, "dây điện 3x2.5mm")
-        assert "sản phẩm" in summary.lower()
+        # _generate_thinking_summary was removed; verify product_search label contains Vietnamese
+        from app.engine.multi_agent.graph_streaming import _NODE_LABELS
+        label = _NODE_LABELS.get("product_search_agent", "")
+        assert "sản phẩm" in label.lower()
 
     def test_node_label_product_search(self):
         """_INTENT_EFFORT was removed; verify product_search_agent is in _NODE_LABELS instead."""

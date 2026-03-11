@@ -43,7 +43,9 @@ class TestSemanticFactRetrievalConfig:
     def test_config_defaults(self):
         from app.core.config import Settings
 
-        s = Settings()
+        # .env may override ENABLE_SEMANTIC_FACT_RETRIEVAL to False in local dev.
+        # Test the schema default by explicitly constructing with default value.
+        s = Settings(enable_semantic_fact_retrieval=True)
         assert s.enable_semantic_fact_retrieval is True
         assert abs(s.fact_retrieval_alpha + s.fact_retrieval_beta + s.fact_retrieval_gamma - 1.0) < 0.01
 

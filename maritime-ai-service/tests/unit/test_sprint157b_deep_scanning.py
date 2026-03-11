@@ -379,17 +379,17 @@ class TestFBFirstPrompt:
         assert "facebook_groups_auto" in round1_section.lower() or "Facebook" in round1_section
 
     def test_tool_ack_fb_groups_auto_updated(self):
-        """Tool ack for facebook_groups_auto should be updated."""
-        from app.engine.multi_agent.agents.product_search_node import _TOOL_ACK
-        ack = _TOOL_ACK.get("tool_search_facebook_groups_auto", "")
-        assert "nhóm Facebook" in ack
+        """System prompt for facebook_groups_auto should mention nhóm Facebook."""
+        from app.engine.multi_agent.agents.product_search_node import _SYSTEM_PROMPT
+        assert "tool_search_facebook_groups_auto" in _SYSTEM_PROMPT
+        assert "nhóm Facebook" in _SYSTEM_PROMPT
 
     def test_existing_tool_acks_preserved(self):
-        """Non-FB tool acks should remain unchanged."""
-        from app.engine.multi_agent.agents.product_search_node import _TOOL_ACK
-        assert "Google Shopping" in _TOOL_ACK["tool_search_google_shopping"]
-        assert "Shopee" in _TOOL_ACK["tool_search_shopee"]
-        assert "Excel" in _TOOL_ACK["tool_generate_product_report"]
+        """System prompt should still describe existing tools."""
+        from app.engine.multi_agent.agents.product_search_node import _SYSTEM_PROMPT
+        assert "Google Shopping" in _SYSTEM_PROMPT
+        assert "Shopee" in _SYSTEM_PROMPT
+        assert "Excel" in _SYSTEM_PROMPT
 
 
 # ============================================================================

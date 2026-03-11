@@ -516,12 +516,12 @@ class TestToolAck:
     """Product search node should have tool ack for facebook_search."""
 
     def test_facebook_search_tool_ack_exists(self):
-        from app.engine.multi_agent.agents.product_search_node import _TOOL_ACK
-        assert "tool_search_facebook_search" in _TOOL_ACK
+        from app.engine.multi_agent.agents.product_search_node import _PRODUCT_RESULT_TOOLS
+        assert "tool_search_facebook_search" in _PRODUCT_RESULT_TOOLS
 
     def test_facebook_marketplace_tool_ack_still_exists(self):
-        from app.engine.multi_agent.agents.product_search_node import _TOOL_ACK
-        assert "tool_search_facebook_marketplace" in _TOOL_ACK
+        from app.engine.multi_agent.agents.product_search_node import _SYSTEM_PROMPT
+        assert "tool_search_facebook_marketplace" in _SYSTEM_PROMPT
 
 
 # =============================================================================
