@@ -80,6 +80,22 @@ class DocumentInfo(BaseModel):
     status: str
 
 
+class ModelCatalogEntry(BaseModel):
+    provider: str
+    model_name: str
+    display_name: str
+    status: str  # "current", "legacy", "available", "preset"
+    released_on: Optional[str] = None
+    is_default: bool = False
+
+
+class ModelCatalogResponse(BaseModel):
+    providers: dict[str, list[ModelCatalogEntry]]
+    embedding_models: list[ModelCatalogEntry] = []
+    ollama_discovered: bool = False
+    timestamp: str
+
+
 class LlmRuntimeConfigResponse(BaseModel):
     provider: str
     use_multi_agent: bool
@@ -106,6 +122,7 @@ class LlmRuntimeConfigResponse(BaseModel):
     llm_failover_chain: list[str]
     active_provider: Optional[str] = None
     providers_registered: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class LlmRuntimeConfigUpdate(BaseModel):
@@ -237,7 +254,7 @@ def _normalize_optional_choice(
     return normalized
 
 
-def _serialize_llm_runtime() -> LlmRuntimeConfigResponse:
+def _serialize_llm_runtime(warnings: list[str] | None = None) -> LlmRuntimeConfigResponse:
     from app.engine.llm_pool import LLMPool
 
     stats = LLMPool.get_stats()
@@ -278,6 +295,7 @@ def _serialize_llm_runtime() -> LlmRuntimeConfigResponse:
         llm_failover_chain=list(getattr(settings, "llm_failover_chain", [])),
         active_provider=stats.get("active_provider"),
         providers_registered=list(stats.get("providers_registered", [])),
+        warnings=warnings or [],
     )
 
 
@@ -310,6 +328,64 @@ async def get_llm_runtime_config(auth: RequireAuth):
             detail="Admin or local developer access required.",
         )
     return _serialize_llm_runtime()
+
+
+@router.get("/model-catalog", response_model=ModelCatalogResponse)
+async def get_model_catalog(auth: RequireAuth):
+    """Return available models from all providers (static + Ollama discovery)."""
+    if not _can_manage_llm_runtime(auth):
+        raise HTTPException(status_code=403, detail="Admin or local developer access required.")
+
+    from app.engine.model_catalog import (
+        ModelCatalogService, GOOGLE_DEFAULT_MODEL, DEFAULT_EMBEDDING_MODEL,
+        EMBEDDING_MODELS,
+    )
+
+    catalog = await ModelCatalogService.get_full_catalog(
+        ollama_base_url=settings.ollama_base_url if settings.ollama_base_url else None,
+    )
+
+    # Convert to response format
+    providers_out: dict[str, list[ModelCatalogEntry]] = {}
+    for provider, models in catalog["providers"].items():
+        entries = []
+        for model_name, meta in models.items():
+            is_default = False
+            if provider == "google" and model_name == settings.google_model:
+                is_default = True
+            elif provider == "ollama" and model_name == settings.ollama_model:
+                is_default = True
+            entries.append(ModelCatalogEntry(
+                provider=meta.provider,
+                model_name=meta.model_name,
+                display_name=meta.display_name,
+                status=meta.status,
+                released_on=meta.released_on,
+                is_default=is_default,
+            ))
+        # Sort: current/available first, then preset, then legacy
+        status_order = {"current": 0, "available": 1, "preset": 2, "legacy": 3}
+        entries.sort(key=lambda e: (status_order.get(e.status, 9), e.model_name))
+        providers_out[provider] = entries
+
+    # Embedding models
+    embedding_entries = []
+    for model_name, meta in catalog.get("embedding_models", {}).items():
+        embedding_entries.append(ModelCatalogEntry(
+            provider="google",
+            model_name=meta.model_name,
+            display_name=meta.display_name,
+            status=meta.status,
+            released_on=meta.released_on,
+            is_default=(model_name == settings.embedding_model),
+        ))
+
+    return ModelCatalogResponse(
+        providers=providers_out,
+        embedding_models=embedding_entries,
+        ollama_discovered=catalog.get("ollama_discovered", False),
+        timestamp=catalog["timestamp"],
+    )
 
 
 @router.patch("/llm-runtime", response_model=LlmRuntimeConfigResponse)
@@ -448,7 +524,26 @@ async def update_llm_runtime_config(
         settings.llm_failover_chain,
         settings.openai_base_url,
     )
-    return _serialize_llm_runtime()
+
+    # Catalog-driven validation (warnings only, never reject)
+    warnings = []
+    from app.engine.model_catalog import is_known_model, is_legacy_google_model
+    if body.google_model is not None:
+        gm = body.google_model.strip()
+        if is_legacy_google_model(gm):
+            warnings.append(f"google_model '{gm}' is legacy. Consider a current model.")
+        elif not is_known_model("google", gm):
+            warnings.append(f"google_model '{gm}' is not in the known catalog.")
+    if body.ollama_model is not None:
+        om = body.ollama_model.strip()
+        if not is_known_model("ollama", om):
+            warnings.append(f"ollama_model '{om}' is not in the known catalog.")
+    if body.openai_model is not None:
+        oam = body.openai_model.strip()
+        if not is_known_model("openrouter", oam):
+            warnings.append(f"openai_model '{oam}' is not in the known catalog.")
+
+    return _serialize_llm_runtime(warnings=warnings)
 
 
 # =============================================================================

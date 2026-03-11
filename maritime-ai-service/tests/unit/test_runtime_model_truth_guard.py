@@ -18,6 +18,7 @@ ACTIVE_PATHS = (
 ALLOWED_LEGACY_PATHS: set[Path] = {
     REPO_ROOT / "maritime-ai-service" / "app" / "engine" / "model_catalog.py",
     REPO_ROOT / "maritime-ai-service" / "tests" / "unit" / "test_model_catalog.py",
+    REPO_ROOT / "maritime-ai-service" / "tests" / "unit" / "test_model_catalog_service.py",
     REPO_ROOT / "wiii-desktop" / "src" / "lib" / "llm-presets.ts",
 }
 TEXT_SUFFIXES = {".css", ".html", ".md", ".py", ".sh", ".toml", ".ts", ".tsx"}
