@@ -16,6 +16,7 @@ from typing import List, Optional, Dict, Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core.singleton import singleton_factory
 from app.engine.llm_pool import get_llm_moderate  # SOTA: Shared LLM Pool
 
 logger = logging.getLogger(__name__)
@@ -271,12 +272,4 @@ class AnswerVerifier:
         return self._llm is not None
 
 
-# Singleton
-_verifier: Optional[AnswerVerifier] = None
-
-def get_answer_verifier() -> AnswerVerifier:
-    """Get or create AnswerVerifier singleton."""
-    global _verifier
-    if _verifier is None:
-        _verifier = AnswerVerifier()
-    return _verifier
+get_answer_verifier = singleton_factory(AnswerVerifier)

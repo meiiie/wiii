@@ -17,6 +17,7 @@ from enum import Enum
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core.singleton import singleton_factory
 from app.engine.llm_pool import get_llm_light  # SOTA: Shared LLM Pool
 
 logger = logging.getLogger(__name__)
@@ -217,12 +218,4 @@ class QueryAnalyzer:
         return self._llm is not None
 
 
-# Singleton
-_analyzer: Optional[QueryAnalyzer] = None
-
-def get_query_analyzer() -> QueryAnalyzer:
-    """Get or create QueryAnalyzer singleton."""
-    global _analyzer
-    if _analyzer is None:
-        _analyzer = QueryAnalyzer()
-    return _analyzer
+get_query_analyzer = singleton_factory(QueryAnalyzer)

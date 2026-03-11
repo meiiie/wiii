@@ -78,6 +78,37 @@ jobs:
         working-directory: maritime-ai-service
         run: pytest tests/unit/ -x -p no:capture --tb=short -q
 
+  security-audit:
+    name: Security Audit (pip-audit)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies and pip-audit
+        working-directory: maritime-ai-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pip-audit
+
+      - name: Run pip-audit
+        working-directory: maritime-ai-service
+        run: pip-audit --strict --desc on 2>&1 | tee pip-audit-results.txt
+
+      - name: Upload audit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-results
+          path: maritime-ai-service/pip-audit-results.txt
+          retention-days: 30
+
   docker-build:
     name: Docker Build
     needs: test

@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
+from app.core.singleton import singleton_factory
+
 logger = logging.getLogger(__name__)
 
 
@@ -215,13 +217,4 @@ class AdaptiveTokenBudget:
         )
 
 
-# Singleton
-_token_budget: Optional[AdaptiveTokenBudget] = None
-
-
-def get_adaptive_token_budget() -> AdaptiveTokenBudget:
-    """Get or create AdaptiveTokenBudget singleton."""
-    global _token_budget
-    if _token_budget is None:
-        _token_budget = AdaptiveTokenBudget()
-    return _token_budget
+get_adaptive_token_budget = singleton_factory(AdaptiveTokenBudget)

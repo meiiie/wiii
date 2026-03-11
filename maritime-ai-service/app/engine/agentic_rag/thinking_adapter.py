@@ -20,6 +20,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from app.core.singleton import singleton_factory
 from app.engine.llm_pool import get_llm_light
 
 logger = logging.getLogger(__name__)
@@ -309,13 +310,4 @@ Trả lời:"""
         return ", ".join(parts) if parts else "Người dùng mới"
 
 
-# Singleton
-_thinking_adapter: Optional[ThinkingAdapter] = None
-
-
-def get_thinking_adapter() -> ThinkingAdapter:
-    """Get or create ThinkingAdapter singleton."""
-    global _thinking_adapter
-    if _thinking_adapter is None:
-        _thinking_adapter = ThinkingAdapter()
-    return _thinking_adapter
+get_thinking_adapter = singleton_factory(ThinkingAdapter)

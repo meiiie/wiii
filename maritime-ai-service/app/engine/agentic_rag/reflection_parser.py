@@ -23,6 +23,7 @@ from typing import Optional, Any, Tuple
 from enum import Enum
 
 from app.core.config import settings
+from app.core.singleton import singleton_factory
 
 logger = logging.getLogger(__name__)
 
@@ -322,12 +323,4 @@ class ReflectionParser:
 # SINGLETON
 # =============================================================================
 
-_parser: Optional[ReflectionParser] = None
-
-
-def get_reflection_parser() -> ReflectionParser:
-    """Get or create ReflectionParser singleton."""
-    global _parser
-    if _parser is None:
-        _parser = ReflectionParser()
-    return _parser
+get_reflection_parser = singleton_factory(ReflectionParser)

@@ -14,6 +14,7 @@ from typing import List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core.singleton import singleton_factory
 from app.engine.llm_pool import get_llm_light  # SOTA: Shared LLM Pool
 
 logger = logging.getLogger(__name__)
@@ -234,12 +235,4 @@ class QueryRewriter:
         return self._llm is not None
 
 
-# Singleton
-_rewriter: Optional[QueryRewriter] = None
-
-def get_query_rewriter() -> QueryRewriter:
-    """Get or create QueryRewriter singleton."""
-    global _rewriter
-    if _rewriter is None:
-        _rewriter = QueryRewriter()
-    return _rewriter
+get_query_rewriter = singleton_factory(QueryRewriter)
