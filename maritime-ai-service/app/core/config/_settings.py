@@ -1,4 +1,5 @@
-"""
+"""Settings class, validators, get_settings() factory and module-level singleton.
+
 Configuration Management using Pydantic Settings
 Loads configuration from environment variables with validation
 Requirements: 9.1
@@ -12,175 +13,24 @@ import logging
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.engine.llm_provider_registry import get_supported_provider_names
 from app.engine.llm_runtime_profiles import GOOGLE_DEFAULT_MODEL
 
+from app.core.config.database import DatabaseConfig
+from app.core.config.llm import LLMConfig
+from app.core.config.rag import RAGConfig
+from app.core.config.memory import MemoryConfig
+from app.core.config.product_search import ProductSearchConfig
+from app.core.config.thinking import ThinkingConfig
+from app.core.config.character import CharacterConfig
+from app.core.config.cache import CacheConfig
+from app.core.config.living_agent import LivingAgentConfig
+from app.core.config.lms import LMSIntegrationConfig
+
 _config_logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# Sprint 154: Nested Config Groups (read-only views of flat fields)
-# =============================================================================
-
-class DatabaseConfig(BaseModel):
-    """PostgreSQL + async pool configuration."""
-    host: str = "localhost"
-    port: int = 5433
-    user: str = "wiii"
-    password: str = "wiii_secret"
-    db: str = "wiii_ai"
-    database_url: Optional[str] = None
-    async_pool_min_size: int = 10
-    async_pool_max_size: int = 50
-
-
-class LLMConfig(BaseModel):
-    """LLM provider settings — Gemini, OpenAI, Ollama."""
-    provider: str = "ollama"
-    failover_chain: list[str] = ["ollama", "google", "openrouter"]
-    enable_failover: bool = True
-    google_api_key: Optional[str] = None
-    google_model: str = GOOGLE_DEFAULT_MODEL
-    openai_api_key: Optional[str] = None
-    openai_base_url: Optional[str] = None
-    openai_model: str = "gpt-4o-mini"
-    openai_model_advanced: str = "gpt-4o"
-    openrouter_model_fallbacks: list[str] = []
-    openrouter_provider_order: list[str] = []
-    openrouter_allowed_providers: list[str] = []
-    openrouter_ignored_providers: list[str] = []
-    openrouter_allow_fallbacks: Optional[bool] = None
-    openrouter_require_parameters: Optional[bool] = None
-    openrouter_data_collection: Optional[str] = None
-    openrouter_zdr: Optional[bool] = None
-    openrouter_provider_sort: Optional[str] = None
-    ollama_api_key: Optional[str] = None
-    ollama_base_url: Optional[str] = "http://localhost:11434"
-    ollama_model: str = "qwen3:4b-instruct-2507-q4_K_M"
-    ollama_keep_alive: Optional[str] = "30m"
-    ollama_thinking_models: list[str] = ["qwen3", "deepseek-r1", "qwq"]
-
-
-class RAGConfig(BaseModel):
-    """RAG quality, confidence, iteration settings."""
-    enable_corrective_rag: bool = True
-    quality_mode: str = "balanced"
-    confidence_high: float = 0.70
-    confidence_medium: float = 0.60
-    max_iterations: int = 2
-    enable_reflection: bool = True
-    early_exit_on_high_confidence: bool = True
-    grading_threshold: float = 6.0
-    retrieval_grade_threshold: float = 7.0
-    enable_answer_verification: bool = True
-
-
-class MemoryConfig(BaseModel):
-    """Memory system — core memory, facts, character, emotion."""
-    enable_core_memory_block: bool = True
-    core_memory_max_tokens: int = 800
-    core_memory_cache_ttl: int = 300
-    max_user_facts: int = 50
-    max_injected_facts: int = 5
-    fact_injection_min_confidence: float = 0.5
-    enable_memory_decay: bool = True
-    enable_memory_pruning: bool = True
-    enable_semantic_fact_retrieval: bool = True
-    fact_retrieval_alpha: float = 0.3
-    fact_retrieval_beta: float = 0.5
-    fact_retrieval_gamma: float = 0.2
-
-
-class ProductSearchConfig(BaseModel):
-    """Product search — platforms, scraping, browser."""
-    enable_product_search: bool = False
-    serper_api_key: Optional[str] = None
-    apify_api_token: Optional[str] = None
-    max_results: int = 30
-    timeout: int = 30
-    platforms: list[str] = ["google_shopping", "shopee", "tiktok_shop", "lazada", "facebook_marketplace", "all_web", "instagram", "websosanh"]
-    max_iterations: int = 15
-    scrape_timeout: int = 10
-    max_scrape_pages: int = 10
-    enable_tiktok_native_api: bool = False
-    enable_browser_scraping: bool = False
-    browser_scraping_timeout: int = 15
-    enable_browser_screenshots: bool = False
-    browser_screenshot_quality: int = 40
-    enable_network_interception: bool = True
-    network_interception_max_response_size: int = 5_000_000
-    enable_auto_group_discovery: bool = False
-    auto_group_max_groups: int = 3
-
-
-class ThinkingConfig(BaseModel):
-    """Deep reasoning and thinking budget."""
-    enabled: bool = True
-    include_summaries: bool = True
-    budget_deep: int = 8192
-    budget_moderate: int = 4096
-    budget_light: int = 1024
-    budget_minimal: int = 512
-    gemini_level: str = "medium"
-    enable_chain: bool = False
-
-
-class CharacterConfig(BaseModel):
-    """Character reflection, personality, emotion."""
-    enable_reflection: bool = True
-    reflection_interval: int = 5
-    enable_tools: bool = True
-    reflection_threshold: float = 5.0
-    experience_retention_days: int = 90
-    enable_emotional_state: bool = False
-    emotional_decay_rate: float = 0.15
-    enable_soul_emotion: bool = False
-
-
-class CacheConfig(BaseModel):
-    """Semantic cache settings."""
-    enabled: bool = True
-    similarity_threshold: float = 0.92
-    response_ttl: int = 7200
-    retrieval_ttl: int = 1800
-    max_entries: int = 10000
-    adaptive_ttl: bool = True
-
-
-class LivingAgentConfig(BaseModel):
-    """Living Agent — autonomous life, browsing, learning, emotion (Sprint 170)."""
-    enabled: bool = False
-    heartbeat_interval: int = 1800
-    active_hours_start: int = 8
-    active_hours_end: int = 23
-    local_model: str = "qwen3:4b-instruct-2507-q4_K_M"
-    max_browse_items: int = 10
-    enable_social_browse: bool = False
-    enable_skill_building: bool = False
-    enable_journal: bool = True
-    require_human_approval: bool = True
-    max_actions_per_heartbeat: int = 3
-    max_skills_per_week: int = 5
-    max_searches_per_heartbeat: int = 3
-    max_daily_cycles: int = 48
-    callmebot_api_key: Optional[str] = None
-    notification_channel: str = "websocket"
-    # Sprint 177: Skill Learning
-    enable_skill_learning: bool = False
-    quiz_questions_per_session: int = 3
-    review_confidence_weight: float = 0.3
-
-
-class LMSIntegrationConfig(BaseModel):
-    """LMS integration — Spring Boot LMS webhook + API (Sprint 155)."""
-    enabled: bool = False
-    base_url: Optional[str] = None
-    service_token: Optional[str] = None
-    webhook_secret: Optional[str] = None
-    api_timeout: int = 10
 
 
 class Settings(BaseSettings):

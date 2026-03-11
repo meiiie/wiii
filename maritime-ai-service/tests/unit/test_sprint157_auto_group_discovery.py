@@ -150,7 +150,7 @@ class TestConfig:
                 "PRODUCT_SEARCH_PLATFORMS": '["facebook_group"]',
                 "GOOGLE_API_KEY": "fake",
             }, clear=False):
-                with patch("app.core.config._config_logger") as mock_logger:
+                with patch("app.core.config._settings._config_logger") as mock_logger:
                     try:
                         s = Settings()
                     except Exception:
@@ -169,7 +169,7 @@ class TestConfig:
             "PRODUCT_SEARCH_PLATFORMS": '["facebook_group"]',
             "GOOGLE_API_KEY": "fake",
         }, clear=False):
-            with patch("app.core.config._config_logger") as mock_logger:
+            with patch("app.core.config._settings._config_logger") as mock_logger:
                 try:
                     from app.core.config import Settings
                     s = Settings()
@@ -188,7 +188,7 @@ class TestConfig:
             "PRODUCT_SEARCH_PLATFORMS": '["google_shopping"]',
             "GOOGLE_API_KEY": "fake",
         }, clear=False):
-            with patch("app.core.config._config_logger") as mock_logger:
+            with patch("app.core.config._settings._config_logger") as mock_logger:
                 try:
                     from app.core.config import Settings
                     s = Settings()
