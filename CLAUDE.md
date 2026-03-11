@@ -58,7 +58,7 @@ To work as a different agent:
 
 ## Project Overview
 
-**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright+Crawl4AI+Scrapling), Google OAuth + LMS integration (production-connected), multi-tenant data isolation, org-level customization, two-tier admin (system + org), Living Agent autonomy system (Soul AGI — all coding phases complete), spaced repetition skill learning, cross-platform memory sync, unified skill architecture, MCP tool exposure, Universal Context Engine (7-phase: host-agnostic context, bidirectional actions, YAML skills, browser agent), and cross-platform conversation sync. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. 385+ Python files, 70+ API endpoints, 88 feature flags, 10250+ backend tests, 1905 desktop tests. Connection pool: min=10, max=50 (Sprint 173).
+**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright+Crawl4AI+Scrapling), Google OAuth + LMS integration (production-connected), multi-tenant data isolation, org-level customization, two-tier admin (system + org), Living Agent autonomy system (Soul AGI — all coding phases complete), spaced repetition skill learning, cross-platform memory sync, unified skill architecture, MCP tool exposure, Universal Context Engine (7-phase: host-agnostic context, bidirectional actions, YAML skills, browser agent), and cross-platform conversation sync. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. 385+ Python files, 70+ API endpoints, 110 feature flags, 10250+ backend tests, 1905 desktop tests. Connection pool: min=10, max=50 (Sprint 173).
 
 ### Domain Plugin System (Feb 2026)
 - **Plugin architecture**: `app/domains/*/domain.yaml` — add new domains by creating a folder + YAML config
@@ -365,7 +365,7 @@ app/domains/
 
 ## Key Configuration
 
-88 feature flags in `app/core/config.py`. Key flags (all `False` unless noted):
+110 feature flags in `app/core/config.py`. Key flags (all `False` unless noted):
 ```python
 # Core (all True)
 use_multi_agent, enable_corrective_rag, enable_structured_outputs, deep_reasoning_enabled

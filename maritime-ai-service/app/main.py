@@ -135,28 +135,44 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.warning("Domain plugin discovery failed: %s (service will continue)", e)
 
     # =========================================================================
-    # DATABASE MIGRATION (Auto-run Alembic on startup — SOTA 2026)
+    # DATABASE MIGRATION (guarded by RUN_MIGRATIONS env var)
     # =========================================================================
-    try:
-        import os
-        from alembic.config import Config as AlembicConfig
-        from alembic import command as alembic_command
+    # IMPORTANT: Do NOT run migrations automatically on every worker startup.
+    # With multiple Gunicorn workers, all workers race to run `alembic upgrade
+    # head` simultaneously against the same database, which causes lock
+    # conflicts and unpredictable migration state.
+    #
+    # Instead, trigger migrations explicitly before starting workers, e.g.:
+    #   docker compose exec app python -c "
+    #       from alembic.config import Config; from alembic import command
+    #       cfg = Config('alembic.ini'); command.upgrade(cfg, 'head')"
+    # or via a dedicated init-container / entrypoint script.
+    #
+    # To opt in (single-worker dev / CI), set: RUN_MIGRATIONS=true
+    # =========================================================================
+    import os
+    if os.environ.get("RUN_MIGRATIONS", "false").lower() == "true":
+        try:
+            from alembic.config import Config as AlembicConfig
+            from alembic import command as alembic_command
 
-        alembic_ini_path = os.path.join(
-            os.path.dirname(__file__), "..", "alembic.ini"
-        )
-        if os.path.exists(alembic_ini_path):
-            alembic_cfg = AlembicConfig(alembic_ini_path)
-            alembic_cfg.set_main_option(
-                "script_location",
-                os.path.join(os.path.dirname(__file__), "..", "alembic"),
+            alembic_ini_path = os.path.join(
+                os.path.dirname(__file__), "..", "alembic.ini"
             )
-            alembic_command.upgrade(alembic_cfg, "head")
-            logger.info("Database migrations applied (Alembic upgrade head)")
-        else:
-            logger.info("alembic.ini not found — skipping migrations")
-    except Exception as e:
-        logger.warning("Database migration failed: %s (service will continue)", e)
+            if os.path.exists(alembic_ini_path):
+                alembic_cfg = AlembicConfig(alembic_ini_path)
+                alembic_cfg.set_main_option(
+                    "script_location",
+                    os.path.join(os.path.dirname(__file__), "..", "alembic"),
+                )
+                alembic_command.upgrade(alembic_cfg, "head")
+                logger.info("Database migrations applied (Alembic upgrade head)")
+            else:
+                logger.info("alembic.ini not found — skipping migrations")
+        except Exception as e:
+            logger.warning("Database migration failed: %s (service will continue)", e)
+    else:
+        logger.info("Skipping auto-migration (set RUN_MIGRATIONS=true to enable)")
 
     # =========================================================================
     # LMS CONNECTOR BOOTSTRAP (Sprint 220c: Moved early in lifespan)
