@@ -10,6 +10,7 @@ Usage:
 
 import asyncio
 import json
+import os
 import time
 from dataclasses import dataclass
 from typing import List, Optional, Callable
@@ -21,7 +22,7 @@ import httpx
 
 BASE_URL = "https://wiii.holilihu.online"
 API_PREFIX = "/api/v1"
-API_KEY = "secret_key_cho_team_lms"  # From env vars
+API_KEY = os.environ.get("WIII_API_KEY", "secret_key_cho_team_lms")  # Set WIII_API_KEY env var for production
 
 # Test user - Use valid UUID for learning_profile table compatibility
 # CHỈ THỊ SỐ 28: learning_profile.user_id requires UUID type
@@ -31,7 +32,7 @@ TEST_ROLE = "student"
 # Debug mode - print full API responses
 VERBOSE = True
 
-# Retry configuration for 502 errors (Render auto-restart)
+# Retry configuration for 502 errors (GCP deploy restarts)
 MAX_RETRIES = 3
 RETRY_DELAY_BASE = 5  # seconds
 RETRY_STATUS_CODES = [502, 503, 504]  # Gateway errors
