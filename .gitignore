@@ -103,3 +103,5 @@ docs/assets/screenshots/tmp/
 # === Generated embed bundle ===
 wiii-desktop/dist-embed/
 pytest-cache-files-*
+.agents/
+AGENTS.md
