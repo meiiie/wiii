@@ -622,8 +622,6 @@ async def extract_graph_from_facts(
         "location": RelationType.LOCATED_AT,
     }
 
-    user_entity_id = f"{user_id}_person_v1"
-
     # Ensure user entity exists
     user_entity = manager.add_entity(
         user_id=user_id,

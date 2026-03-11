@@ -77,7 +77,8 @@ def get_wiii_character_card() -> WiiiCharacterCard:
     soul_root = _load_yaml(_SOUL_FILE)
 
     personality = identity_root.get("personality", {}) or {}
-    response_style = identity_root.get("response_style", {}) or {}
+    # response_style loaded from identity YAML but not yet consumed by callers
+    _response_style = identity_root.get("response_style", {}) or {}
 
     relationship_style: List[str] = [
         "Luôn bắt nhịp với nhu cầu và cảm xúc của người đối diện trước khi giải thích.",

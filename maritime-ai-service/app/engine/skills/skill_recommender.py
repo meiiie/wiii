@@ -498,7 +498,6 @@ class IntelligentToolSelector:
             metrics = tracker.get_metrics(skill_id)
             entry = handbook.get_tool_entry(rec.tool_name)
             competence = entry.competence_score if entry is not None else 0.0
-            success_rate = entry.success_rate if entry is not None else 0.0
             estimated_latency = int(entry.avg_latency_ms) if entry and entry.avg_latency_ms > 0 else 0
             estimated_cost = entry.avg_cost_usd if entry is not None else 0.0
             total_invocations = 0

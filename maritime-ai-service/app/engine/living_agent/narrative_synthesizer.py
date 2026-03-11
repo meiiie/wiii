@@ -96,7 +96,7 @@ def get_brief_context(organization_id: Optional[str] = None) -> str:
         recent = engine.state.recent_emotions[-3:] if engine.state.recent_emotions else []
         learning_events = [e for e in recent if "learn" in str(getattr(e, "trigger", "")).lower()]
         if learning_events:
-            parts.append(f"Vừa học được điều mới.")
+            parts.append("Vừa học được điều mới.")
     except Exception:
         pass
 

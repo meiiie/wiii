@@ -153,9 +153,6 @@ async def curate_with_llm(
     try:
         from app.engine.multi_agent.agent_config import AgentConfigRegistry
 
-        tier_map = {"light": "light", "moderate": "moderate", "deep": "deep"}
-        effective_tier = tier_map.get(llm_tier, "light")
-
         # Get LLM for the specified tier
         llm = AgentConfigRegistry.get_llm("product_search")
         if not llm:

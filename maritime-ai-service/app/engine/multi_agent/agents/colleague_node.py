@@ -9,7 +9,6 @@ Feature-gated: enable_cross_soul_query + enable_soul_bridge.
 """
 
 import logging
-from typing import Optional
 
 from app.engine.multi_agent.state import AgentState
 

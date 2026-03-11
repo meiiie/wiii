@@ -14,7 +14,7 @@ system one place to ask:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Optional
 
 from app.engine.skills.capability_registry import ToolCapability, get_capability_registry
 

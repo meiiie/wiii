@@ -134,7 +134,7 @@ async def messenger_incoming(request: Request):
     raw_body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256", "")
     if not _verify_signature(raw_body, signature):
-        _log_to_file(f"Signature verification FAILED")
+        _log_to_file("Signature verification FAILED")
         raise HTTPException(status_code=403, detail="Invalid signature")
 
     body = json.loads(raw_body)

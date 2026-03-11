@@ -8,7 +8,7 @@ Endpoints:
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query
 
 from app.core.admin_security import check_admin_module as _check_admin_module
 from app.api.deps import RequireAdmin

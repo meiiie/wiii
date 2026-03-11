@@ -580,13 +580,9 @@ class Settings(BaseSettings):
     facebook_app_id: Optional[str] = Field(default=None, description="Facebook App ID")
     facebook_app_secret: Optional[str] = Field(default=None, description="Facebook App Secret for X-Hub-Signature verification")
     facebook_page_id: Optional[str] = Field(default=None, description="Facebook Page ID")
-    facebook_page_access_token: Optional[str] = Field(default=None, description="Facebook Page Access Token for Messenger API")
-    facebook_verify_token: Optional[str] = Field(default=None, description="Verify token for Messenger webhook handshake")
     enable_zalo: bool = Field(default=False, description="Enable Zalo OA notification channel")
-    zalo_oa_access_token: Optional[str] = Field(default=None, description="Zalo OA access token")
     zalo_oa_refresh_token: Optional[str] = Field(default=None, description="Zalo OA refresh token")
     zalo_oa_app_id: Optional[str] = Field(default=None, description="Zalo OA application ID")
-    zalo_oa_secret_key: Optional[str] = Field(default=None, description="Zalo OA secret key")
 
     # Sprint 174b: OTP Identity Linking
     otp_link_expiry_seconds: int = Field(default=300, ge=60, le=900, description="OTP code expiry in seconds (default 5 min)")

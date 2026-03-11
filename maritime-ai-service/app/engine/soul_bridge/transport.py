@@ -22,15 +22,13 @@ import json
 import logging
 import time
 from urllib.parse import urlparse
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from typing import Any, Callable, Coroutine, List, Optional
 
 from app.core.config import settings
 from app.engine.soul_bridge.models import (
     BridgeConfig,
     ConnectionState,
-    MessagePriority,
     SoulBridgeMessage,
-    get_retry_config,
 )
 
 logger = logging.getLogger(__name__)

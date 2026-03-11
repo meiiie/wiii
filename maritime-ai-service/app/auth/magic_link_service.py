@@ -5,12 +5,11 @@ import hashlib
 import logging
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
 
 from fastapi import WebSocket
 
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 

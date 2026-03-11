@@ -569,6 +569,10 @@ class ProductSearchAgentNode:
 
         system_prompt = "\n\n".join(section for section in system_sections if section)
 
+        # Initialise narrated_thinking early so the query planner block can append to it
+        # before the main agentic loop initialises it at line ~688.
+        narrated_thinking: List[str] = []
+
         # Sprint 197: LLM Query Planner pre-step
         _query_plan = None
         try:
@@ -685,7 +689,7 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
 
         tools_used = []
         all_thinking = []
-        narrated_thinking = []
+        # narrated_thinking already initialised above (before query planner) — do not reset
         final_response = ""
         answer_streamed = False
         response = None

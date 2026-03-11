@@ -186,7 +186,6 @@ class DocumentRetriever:
         Returns:
             List of EvidenceImage objects
         """
-        import asyncpg
         from app.repositories.dense_search_repository import get_dense_search_repository
         # Import EvidenceImage from rag_agent (no circular dependency since
         # rag_agent imports DocumentRetriever, but EvidenceImage is a standalone dataclass)

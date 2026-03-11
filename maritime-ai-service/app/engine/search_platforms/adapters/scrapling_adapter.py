@@ -206,8 +206,6 @@ class ScraplingStealthAdapter(SearchPlatformAdapter):
 
         Falls back to heuristic text extraction when selectors not configured.
         """
-        results: List[ProductSearchResult] = []
-
         # If CSS selectors provided, use structured extraction
         if self._css_selectors.get("container"):
             return self._extract_with_selectors(response, source_url)

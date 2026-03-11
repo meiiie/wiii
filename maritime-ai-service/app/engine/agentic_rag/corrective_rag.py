@@ -350,13 +350,14 @@ class CorrectiveRAG:
 
         for iteration in range(self._max_iterations):
             iterations = iteration + 1
-            
+
             # Retrieval step
             tracer.start_step(StepNames.RETRIEVAL, f"Tìm kiếm tài liệu (lần {iterations})")
             logger.info("[CRAG] Step 2.%d: Retrieving for '%s...'", iterations, current_query[:50])
-            
-            # Retrieve documents
-            documents = await self._retrieve(current_query, context)
+
+            # Retrieve documents — use HyDE blended embedding on the first pass if available
+            _embedding_override = hyde_embedding if (iteration == 0 and hyde_embedding is not None) else None
+            documents = await self._retrieve(current_query, context, query_embedding_override=_embedding_override)
             
             if not documents:
                 logger.warning("[CRAG] No documents retrieved")
@@ -723,38 +724,84 @@ class CorrectiveRAG:
     async def _retrieve(
         self,
         query: str,
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        query_embedding_override: Optional[List[float]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Retrieve documents for grading using HybridSearchService directly.
-        
+
         SOTA Pattern (2024-2025): CRAG grading requires FULL document content.
-        
+
         Previous implementation used RAGAgent.query() → Citation → lost content.
         Now uses HybridSearchService.search() → HybridSearchResult → full content.
-        
+
         Reference: LangChain CRAG grading requires knowledge strips (full chunks).
+
+        Args:
+            query_embedding_override: Optional pre-computed embedding (e.g. HyDE blended
+                vector) to use for the dense leg instead of re-embedding ``query``.
         """
         if not self._rag:
             logger.warning("[CRAG] No RAG agent available")
             return []
-        
+
         try:
             # ================================================================
             # SOTA FIX: Use HybridSearchService directly for full content
             # ================================================================
             # Access HybridSearchService from RAGAgent
             hybrid_search = getattr(self._rag, '_hybrid_search', None)
-            
+
             if hybrid_search and hybrid_search.is_available():
                 # Direct hybrid search - returns HybridSearchResult with content
                 # Sprint 160: Pass org_id for multi-tenant isolation
                 _org_id = context.get("organization_id")
-                results = await hybrid_search.search(
-                    query=query,
-                    limit=10,
-                    org_id=_org_id
-                )
+
+                # Sprint 187 (HyDE): When a blended embedding is provided, bypass the
+                # standard query-embedding path and drive the dense leg directly.
+                if query_embedding_override is not None:
+                    try:
+                        dense_repo = getattr(hybrid_search, '_dense_repo', None)
+                        sparse_repo = getattr(hybrid_search, '_sparse_repo', None)
+                        reranker = getattr(hybrid_search, '_reranker', None)
+                        dense_w = getattr(hybrid_search, '_dense_weight', 0.7)
+                        sparse_w = getattr(hybrid_search, '_sparse_weight', 0.3)
+                        if dense_repo and sparse_repo and reranker:
+                            import asyncio as _asyncio
+                            _dense_task = dense_repo.search(
+                                query_embedding_override, limit=20, org_id=_org_id
+                            )
+                            _sparse_task = sparse_repo.search(query, limit=20, org_id=_org_id)
+                            _dense_res, _sparse_res = await _asyncio.gather(
+                                _dense_task, _sparse_task, return_exceptions=True
+                            )
+                            if isinstance(_dense_res, Exception):
+                                _dense_res = []
+                            if isinstance(_sparse_res, Exception):
+                                _sparse_res = []
+                            results = reranker.merge(
+                                _dense_res, _sparse_res,
+                                dense_weight=dense_w, sparse_weight=sparse_w,
+                                limit=10, query=query,
+                            )
+                            logger.info(
+                                "[CRAG] HyDE retrieval: %d docs (dense=%d sparse=%d)",
+                                len(results), len(_dense_res), len(_sparse_res),
+                            )
+                        else:
+                            # Fallback: standard search when internals unavailable
+                            results = await hybrid_search.search(
+                                query=query, limit=10, org_id=_org_id
+                            )
+                    except Exception as _hyde_err:
+                        logger.warning("[CRAG] HyDE dense retrieval failed, falling back: %s", _hyde_err)
+                        results = await hybrid_search.search(query=query, limit=10, org_id=_org_id)
+                else:
+                    results = await hybrid_search.search(
+                        query=query,
+                        limit=10,
+                        org_id=_org_id
+                    )
                 
                 # Convert to grading format WITH full content
                 documents = []
