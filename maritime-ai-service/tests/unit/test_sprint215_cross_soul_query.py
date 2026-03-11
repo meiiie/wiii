@@ -109,7 +109,8 @@ class TestConsultationModels:
 class TestResponseTracker:
     """Test the ResponseTracker class for pending request-response management."""
 
-    def test_create_future(self):
+    @pytest.mark.asyncio
+    async def test_create_future(self):
         from app.engine.soul_bridge.response_tracker import ResponseTracker
 
         tracker = ResponseTracker()
@@ -117,7 +118,8 @@ class TestResponseTracker:
         assert not future.done()
         assert tracker.pending_count == 1
 
-    def test_resolve(self):
+    @pytest.mark.asyncio
+    async def test_resolve(self):
         from app.engine.soul_bridge.response_tracker import ResponseTracker
 
         tracker = ResponseTracker()
@@ -136,7 +138,8 @@ class TestResponseTracker:
         resolved = tracker.resolve("nonexistent", "data")
         assert resolved is False
 
-    def test_cancel(self):
+    @pytest.mark.asyncio
+    async def test_cancel(self):
         from app.engine.soul_bridge.response_tracker import ResponseTracker
 
         tracker = ResponseTracker()
@@ -153,7 +156,8 @@ class TestResponseTracker:
         tracker = ResponseTracker()
         assert tracker.cancel("nonexistent") is False
 
-    def test_cleanup(self):
+    @pytest.mark.asyncio
+    async def test_cleanup(self):
         from app.engine.soul_bridge.response_tracker import ResponseTracker
 
         tracker = ResponseTracker()
