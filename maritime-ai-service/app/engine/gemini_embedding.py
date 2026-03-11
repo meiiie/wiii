@@ -3,7 +3,7 @@ Gemini Optimized Embeddings for Semantic Memory v0.3
 CHỈ THỊ KỸ THUẬT SỐ 06
 
 Features:
-1. Force 768 dimensions (Matryoshka Representation Learning)
+1. Model-aware output dimensions from the canonical catalog
 2. Auto L2 Normalization
 3. Correct Task Type handling (RETRIEVAL_QUERY vs RETRIEVAL_DOCUMENT)
 
@@ -15,6 +15,7 @@ from typing import List, Optional
 import numpy as np
 
 from app.core.config import settings
+from app.engine.model_catalog import DEFAULT_EMBEDDING_MODEL, get_embedding_dimensions
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +25,9 @@ class GeminiOptimizedEmbeddings:
     Wrapper tối ưu cho Wiii Semantic Memory.
     
     Implements:
-    - Gemini embedding-001 model with MRL (Matryoshka Representation Learning)
-    - Force 768 dimensions for optimal storage/performance balance
-    - Manual L2 Normalization (required for non-3072 dimensions)
+    - Canonical embedding model defaults from the runtime catalog
+    - Model-aware dimensions for production and benchmark candidates
+    - Manual L2 Normalization (required for reduced dimensional outputs)
     - Correct task_type handling for retrieval optimization
     
     Usage:
@@ -40,8 +41,8 @@ class GeminiOptimizedEmbeddings:
     """
     
     # Model configuration from CHỈ THỊ KỸ THUẬT SỐ 06
-    MODEL_NAME = "models/gemini-embedding-001"
-    OUTPUT_DIMENSIONS = 768  # MRL optimized dimensions
+    MODEL_NAME = DEFAULT_EMBEDDING_MODEL
+    OUTPUT_DIMENSIONS = get_embedding_dimensions(DEFAULT_EMBEDDING_MODEL)
     
     # Task types for Gemini API
     TASK_TYPE_DOCUMENT = "RETRIEVAL_DOCUMENT"
@@ -59,12 +60,18 @@ class GeminiOptimizedEmbeddings:
         
         Args:
             api_key: Google API key (defaults to settings.google_api_key)
-            model_name: Embedding model name (defaults to gemini-embedding-001)
-            dimensions: Output dimensions (defaults to 768 for MRL)
+            model_name: Embedding model name (defaults to settings/catalog)
+            dimensions: Output dimensions (defaults to catalog metadata)
         """
         self._api_key = api_key or settings.google_api_key
-        self._model_name = model_name or self.MODEL_NAME
-        self._dimensions = dimensions or settings.embedding_dimensions or self.OUTPUT_DIMENSIONS
+        self._model_name = model_name or settings.embedding_model or self.MODEL_NAME
+        default_dimensions = get_embedding_dimensions(self._model_name)
+        configured_dimensions = (
+            settings.embedding_dimensions
+            if (settings.embedding_model or self.MODEL_NAME) == self._model_name
+            else default_dimensions
+        )
+        self._dimensions = dimensions or configured_dimensions or default_dimensions
         self._client = None
         
         if not self._api_key:
@@ -81,7 +88,7 @@ class GeminiOptimizedEmbeddings:
             except ImportError as e:
                 error_msg = (
                     "google-genai package not installed. "
-                    "Run: pip install google-genai>=0.3.0 "
+                    "Run: pip install google-genai>=1.66.0 "
                     "This is required for Semantic Memory embeddings."
                 )
                 logger.error(error_msg)
@@ -129,7 +136,7 @@ class GeminiOptimizedEmbeddings:
             task_type: RETRIEVAL_DOCUMENT, RETRIEVAL_QUERY, or SEMANTIC_SIMILARITY
             
         Returns:
-            Normalized embedding vector (768 dimensions)
+            Normalized embedding vector using the configured dimensions
         """
         try:
             from google.genai import types
@@ -146,7 +153,7 @@ class GeminiOptimizedEmbeddings:
             # Extract embedding values
             embedding = response.embeddings[0].values
             
-            # Apply L2 normalization (required for 768 dimensions)
+            # Apply L2 normalization when reduced dimensionality is used.
             normalized = self._normalize(embedding)
             
             return normalized
@@ -165,7 +172,7 @@ class GeminiOptimizedEmbeddings:
             texts: List of document texts to embed
             
         Returns:
-            List of normalized embedding vectors (768 dimensions each)
+            List of normalized embedding vectors using the configured dimensions
             
         Requirements: 1.1, 1.3
         """
@@ -199,7 +206,7 @@ class GeminiOptimizedEmbeddings:
             text: Query text to embed
             
         Returns:
-            Normalized embedding vector (768 dimensions)
+            Normalized embedding vector using the configured dimensions
             
         Requirements: 1.1, 1.2
         """
@@ -219,7 +226,7 @@ class GeminiOptimizedEmbeddings:
             texts: List of document texts to embed
 
         Returns:
-            List of normalized embedding vectors (768 dimensions each)
+            List of normalized embedding vectors using the configured dimensions
         """
         import asyncio
         return await asyncio.to_thread(self.embed_documents, texts)
@@ -235,7 +242,7 @@ class GeminiOptimizedEmbeddings:
             text: Query text to embed
 
         Returns:
-            Normalized embedding vector (768 dimensions)
+            Normalized embedding vector using the configured dimensions
         """
         import asyncio
         return await asyncio.to_thread(self.embed_query, text)
@@ -250,7 +257,7 @@ class GeminiOptimizedEmbeddings:
             text: Text to embed
             
         Returns:
-            Normalized embedding vector (768 dimensions)
+            Normalized embedding vector using the configured dimensions
         """
         return self._embed_content(text, self.TASK_TYPE_SIMILARITY)
     

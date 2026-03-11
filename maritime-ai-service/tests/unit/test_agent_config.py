@@ -77,8 +77,8 @@ class TestAgentNodeConfig:
         assert config.temperature == 0.0
 
     def test_custom_model(self):
-        config = AgentNodeConfig("test", model="gemini-2.0-flash")
-        assert config.model == "gemini-2.0-flash"
+        config = AgentNodeConfig("test", model="gemini-3.1-flash-lite-preview")
+        assert config.model == "gemini-3.1-flash-lite-preview"
 
     def test_custom_max_steps(self):
         config = AgentNodeConfig("test", max_agentic_steps=10)

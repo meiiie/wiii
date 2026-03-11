@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from app.engine.llm_runtime_profiles import GOOGLE_DEFAULT_MODEL
+from app.engine.model_catalog import GOOGLE_DEFAULT_MODEL
 
 
 class LLMConfig(BaseModel):

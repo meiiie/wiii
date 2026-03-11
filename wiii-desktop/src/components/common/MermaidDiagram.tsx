@@ -19,7 +19,7 @@ async function ensureMermaid(isDark: boolean): Promise<typeof import("mermaid")>
     startOnLoad: false,
     theme: isDark ? "dark" : "default",
     securityLevel: "strict",
-    fontFamily: "'Inter', sans-serif",
+    fontFamily: "Manrope, sans-serif",
   });
   return mermaidInstance;
 }

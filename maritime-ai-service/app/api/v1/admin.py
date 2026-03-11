@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import RequireAuth, RequireAdmin
 from app.core.config import settings
 from app.core.rate_limit import limiter
+from app.engine.model_catalog import GOOGLE_DEFAULT_MODEL, get_chat_model_metadata
 from app.engine.llm_provider_registry import is_supported_provider
 from app.engine.llm_runtime_profiles import (
     get_runtime_provider_preset,
@@ -246,10 +247,15 @@ def _serialize_llm_runtime() -> LlmRuntimeConfigResponse:
         keep_alive = None
     else:
         keep_alive = keep_alive.strip() or None
+    google_model = settings.google_model or GOOGLE_DEFAULT_MODEL
+    google_metadata = get_chat_model_metadata(google_model)
+    if google_metadata and google_metadata.status == "legacy":
+        logger.warning("Serializing legacy Google model in admin runtime config: %s", google_model)
+
     return LlmRuntimeConfigResponse(
         provider=provider,
         use_multi_agent=getattr(settings, "use_multi_agent", True),
-        google_model=settings.google_model,
+        google_model=google_model,
         openai_base_url=settings.openai_base_url,
         openai_model=settings.openai_model,
         openai_model_advanced=settings.openai_model_advanced,

@@ -167,7 +167,7 @@ const S = {
   page: {
     background: "#0f0f1a",
     color: "#e0e0e0",
-    fontFamily: "'Inter', system-ui, sans-serif",
+    fontFamily: "var(--font-body)",
     minHeight: "100vh",
     padding: "24px 32px",
   } as const,

@@ -1,5 +1,5 @@
 """
-Quick test to verify GuardianAgent uses correct model (gemini-2.5-flash)
+Quick test to verify GuardianAgent uses the current Google runtime default.
 """
 import sys
 sys.path.insert(0, ".")
@@ -20,11 +20,11 @@ def test_model():
         model_name = agent._llm.model
         print(f"✅ LLM initialized with model: {model_name}")
         
-        if "gemini-2.5-flash" in model_name:
-            print("✅ Correct model: gemini-2.5-flash")
+        if "gemini-3.1-flash-lite-preview" in model_name:
+            print("✅ Correct model: gemini-3.1-flash-lite-preview")
             return True
         else:
-            print(f"❌ Wrong model! Expected gemini-2.5-flash, got {model_name}")
+            print(f"❌ Wrong model! Expected gemini-3.1-flash-lite-preview, got {model_name}")
             return False
     else:
         print("❌ LLM not initialized")

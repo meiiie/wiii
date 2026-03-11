@@ -17,7 +17,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.engine.llm_provider_registry import get_supported_provider_names
-from app.engine.llm_runtime_profiles import GOOGLE_DEFAULT_MODEL
+from app.engine.model_catalog import DEFAULT_EMBEDDING_MODEL, GOOGLE_DEFAULT_MODEL, get_embedding_dimensions
 
 from app.core.config.database import DatabaseConfig
 from app.core.config.llm import LLMConfig
@@ -305,7 +305,7 @@ class Settings(BaseSettings):
     google_api_key: Optional[str] = Field(default=None, description="Google Gemini API key")
     google_model: str = Field(
         default=GOOGLE_DEFAULT_MODEL,
-        description="Google Gemini model (default: gemini-3.1-flash-lite-preview, latest 3.1 low-cost preview model)",
+        description="Google Gemini model (default: gemini-3.1-flash-lite-preview, current March 2026 default)",
     )
     llm_provider: str = Field(default="ollama", description="LLM provider: google, openai, openrouter, ollama")
 
@@ -336,8 +336,14 @@ class Settings(BaseSettings):
     enable_llm_failover: bool = Field(default=True, description="Enable automatic LLM provider failover")
 
     # Semantic Memory Settings (v0.3 - Vector Embeddings)
-    embedding_model: str = Field(default="models/gemini-embedding-001", description="Gemini embedding model")
-    embedding_dimensions: int = Field(default=768, description="Embedding vector dimensions (MRL)")
+    embedding_model: str = Field(
+        default=DEFAULT_EMBEDDING_MODEL,
+        description="Gemini embedding model (production default remains gemini-embedding-001)",
+    )
+    embedding_dimensions: int = Field(
+        default=get_embedding_dimensions(DEFAULT_EMBEDDING_MODEL),
+        description="Embedding vector dimensions for the configured embedding model",
+    )
     semantic_memory_enabled: bool = Field(default=True, description="Enable semantic memory v0.3")
     summarization_token_threshold: int = Field(default=2000, description="Token threshold for summarization")
 

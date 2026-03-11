@@ -109,7 +109,7 @@ async def test_llm_availability():
         from langchain_google_genai import ChatGoogleGenerativeAI
         
         llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash-exp",
+            model="gemini-3.1-flash-lite-preview",
             google_api_key=settings.google_api_key,
             temperature=0.1
         )

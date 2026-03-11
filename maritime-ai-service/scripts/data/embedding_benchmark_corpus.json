@@ -1,0 +1,107 @@
+{
+  "metadata": {
+    "name": "wiii-embedding-benchmark-v1",
+    "created_at": "2026-03-11",
+    "notes": "Representative maritime and traffic-law snippets for offline retrieval benchmarking."
+  },
+  "documents": [
+    {
+      "id": "maritime_rule_15",
+      "domain": "maritime",
+      "title": "COLREGs Rule 15 Crossing Situation",
+      "text": "Rule 15 requires the vessel that has the other on her starboard side in a crossing situation to keep out of the way and avoid crossing ahead when circumstances permit."
+    },
+    {
+      "id": "maritime_rule_16",
+      "domain": "maritime",
+      "title": "COLREGs Rule 16 Give-Way Action",
+      "text": "Rule 16 states that every vessel directed to keep out of the way shall take early and substantial action to keep well clear."
+    },
+    {
+      "id": "maritime_solas_lsa",
+      "domain": "maritime",
+      "title": "SOLAS Life-Saving Appliances",
+      "text": "SOLAS Chapter III requires life-saving appliances, emergency drills, and maintenance routines so that crew can abandon ship safely during an emergency."
+    },
+    {
+      "id": "maritime_marpol_annex_vi",
+      "domain": "maritime",
+      "title": "MARPOL Annex VI Emissions",
+      "text": "MARPOL Annex VI limits sulfur oxide and nitrogen oxide emissions from ships and sets requirements for fuel sulfur content and air pollution prevention."
+    },
+    {
+      "id": "traffic_red_light",
+      "domain": "traffic_law",
+      "title": "Traffic Law Red Light Violation",
+      "text": "Running a red light is an administrative traffic violation. Sanctions depend on the vehicle category, the severity of the breach, and whether an accident occurred."
+    },
+    {
+      "id": "traffic_alcohol_limits",
+      "domain": "traffic_law",
+      "title": "Traffic Law Alcohol Concentration",
+      "text": "Vietnamese traffic enforcement treats alcohol concentration as a strict safety issue. Penalties escalate based on measured concentration and vehicle type."
+    },
+    {
+      "id": "traffic_b2_license",
+      "domain": "traffic_law",
+      "title": "B2 License Conditions",
+      "text": "A B2 driving license requires age eligibility, training completion, theory and practice exams, and compliance with health standards."
+    },
+    {
+      "id": "traffic_accident_duties",
+      "domain": "traffic_law",
+      "title": "Driver Duties After Collision",
+      "text": "After a collision, a driver must stop, protect the scene, assist injured people when safe, and cooperate with authorities during the incident response."
+    }
+  ],
+  "queries": [
+    {
+      "id": "q_crossing_starboard",
+      "domain": "maritime",
+      "text": "Trong tinh huong cat huong, tau nao phai tranh khi thay tau kia ben man phai?",
+      "relevant_doc_ids": ["maritime_rule_15", "maritime_rule_16"]
+    },
+    {
+      "id": "q_give_way_action",
+      "domain": "maritime",
+      "text": "Tau duoc yeu cau tranh duong phai hanh dong nhu the nao de tranh va cham?",
+      "relevant_doc_ids": ["maritime_rule_16"]
+    },
+    {
+      "id": "q_solas_emergency",
+      "domain": "maritime",
+      "text": "SOLAS quy dinh gi ve phuong tien cuu sinh va drill khan cap?",
+      "relevant_doc_ids": ["maritime_solas_lsa"]
+    },
+    {
+      "id": "q_marpol_emissions",
+      "domain": "maritime",
+      "text": "Annex VI cua MARPOL tap trung vao khi thai nao tu tau bien?",
+      "relevant_doc_ids": ["maritime_marpol_annex_vi"]
+    },
+    {
+      "id": "q_red_light_followup",
+      "domain": "traffic_law",
+      "text": "Vuot den do bi xu ly ra sao neu khong gay tai nan?",
+      "relevant_doc_ids": ["traffic_red_light"]
+    },
+    {
+      "id": "q_alcohol_penalty",
+      "domain": "traffic_law",
+      "text": "Nong do con anh huong muc phat giao thong nhu the nao?",
+      "relevant_doc_ids": ["traffic_alcohol_limits"]
+    },
+    {
+      "id": "q_b2_requirements",
+      "domain": "traffic_law",
+      "text": "Dieu kien de thi bang lai B2 gom nhung gi?",
+      "relevant_doc_ids": ["traffic_b2_license"]
+    },
+    {
+      "id": "q_collision_actions",
+      "domain": "traffic_law",
+      "text": "Sau va cham giao thong, tai xe phai dung lai va ho tro ra sao?",
+      "relevant_doc_ids": ["traffic_accident_duties"]
+    }
+  ]
+}

@@ -83,7 +83,7 @@ export function WelcomeScreen({ onSendMessage, onCancel }: WelcomeScreenProps) {
         <h1
           className="welcome-reveal welcome-reveal-2 text-center font-normal text-text-secondary leading-[1.5]"
           style={{
-            fontFamily: '"Source Serif 4", "Noto Serif", Georgia, ui-serif, serif',
+            fontFamily: "var(--font-serif)",
             fontSize: "clamp(1.875rem, 1.2rem + 2vw, 2.5rem)",
           }}
         >

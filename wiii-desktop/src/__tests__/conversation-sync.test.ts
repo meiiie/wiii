@@ -98,7 +98,7 @@ describe("Sprint 225: ChatResponseMetadata thread_id", () => {
     // Type-level check: if this compiles, the field exists
     const metadata: import("@/api/types").ChatResponseMetadata = {
       processing_time: 1.5,
-      model: "gemini-2.5-pro",
+      model: "gemini-3.1-flash-lite-preview",
       agent_type: "rag",
       session_id: "abc-123",
       thread_id: "user_u1__session_abc-123",
@@ -109,7 +109,7 @@ describe("Sprint 225: ChatResponseMetadata thread_id", () => {
   it("thread_id is optional (undefined when not present)", () => {
     const metadata: import("@/api/types").ChatResponseMetadata = {
       processing_time: 0.5,
-      model: "gemini-2.5-flash",
+      model: "gemini-3.1-flash-lite-preview",
       agent_type: "chat",
     };
     expect(metadata.thread_id).toBeUndefined();
@@ -470,7 +470,7 @@ describe("Sprint 225: chat-store finalizeStream thread_id", () => {
 
     useChatStore.getState().finalizeStream({
       processing_time: 1.5,
-      model: "gemini-2.5-pro",
+      model: "gemini-3.1-flash-lite-preview",
       agent_type: "rag",
       session_id: "session-abc",
       thread_id: "user_u1__session_session-abc",

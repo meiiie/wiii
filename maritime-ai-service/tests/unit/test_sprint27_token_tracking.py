@@ -58,7 +58,7 @@ class TestTokenTrackingCallback:
             "input_tokens": 100,
             "output_tokens": 50,
         }
-        mock_msg.response_metadata = {"model_name": "gemini-2.0-flash"}
+        mock_msg.response_metadata = {"model_name": "gemini-3.1-flash-lite-preview"}
 
         mock_gen = MagicMock()
         mock_gen.message = mock_msg
@@ -153,7 +153,7 @@ class TestTokenTrackingCallbackAttrMeta:
 
         mock_msg = MagicMock()
         mock_msg.usage_metadata = mock_meta
-        mock_msg.response_metadata = {"model_name": "gemini-2.5-flash"}
+        mock_msg.response_metadata = {"model_name": "gemini-3.1-flash-lite-preview"}
 
         # Make isinstance check work: not a dict
         type(mock_meta).__contains__ = MagicMock(side_effect=TypeError)
@@ -227,13 +227,13 @@ class TestTokenTrackerSummary:
         tracker = start_tracking("req-summary")
 
         record_llm_call(
-            model="gemini-2.5-flash",
+            model="gemini-3.1-flash-lite-preview",
             tier="moderate",
             input_tokens=100,
             output_tokens=50,
         )
         record_llm_call(
-            model="gemini-2.5-flash",
+            model="gemini-3.1-flash-lite-preview",
             tier="light",
             input_tokens=30,
             output_tokens=15,

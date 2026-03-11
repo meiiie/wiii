@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Optional
 
+from app.engine.model_catalog import GOOGLE_DEFAULT_MODEL
+
 
 @dataclass(frozen=True)
 class RuntimeProviderPreset:
@@ -16,8 +18,6 @@ class RuntimeProviderPreset:
     ollama_model: Optional[str] = None
     ollama_keep_alive: Optional[str] = None
 
-
-GOOGLE_DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_DEFAULT_MODEL = "openai/gpt-oss-20b:free"
 OPENROUTER_DEFAULT_MODEL_ADVANCED = "openai/gpt-oss-120b:free"

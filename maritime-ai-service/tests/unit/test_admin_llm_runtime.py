@@ -63,7 +63,7 @@ async def test_update_llm_runtime_config_updates_use_multi_agent_and_resets_serv
                     provider="google",
                     use_multi_agent=False,
                     google_api_key="gemini-runtime-key",
-                    google_model="gemini-2.5-flash",
+                    google_model="gemini-3.1-flash-lite-preview",
                     ollama_api_key="ollama-cloud-key",
                 ),
                 auth,
@@ -72,13 +72,13 @@ async def test_update_llm_runtime_config_updates_use_multi_agent_and_resets_serv
         assert settings.use_multi_agent is False
         assert settings.llm_provider == "google"
         assert settings.google_api_key == "gemini-runtime-key"
-        assert settings.google_model == "gemini-2.5-flash"
+        assert settings.google_model == "gemini-3.1-flash-lite-preview"
         assert settings.llm.google_api_key == "gemini-runtime-key"
-        assert settings.llm.google_model == "gemini-2.5-flash"
+        assert settings.llm.google_model == "gemini-3.1-flash-lite-preview"
         assert settings.ollama_api_key == "ollama-cloud-key"
         assert result.use_multi_agent is False
         assert result.provider == "google"
-        assert result.google_model == "gemini-2.5-flash"
+        assert result.google_model == "gemini-3.1-flash-lite-preview"
         assert result.google_api_key_configured is True
         assert result.ollama_api_key_configured is True
         mock_pool_reset.assert_called_once()

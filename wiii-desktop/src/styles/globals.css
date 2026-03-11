@@ -142,7 +142,8 @@ html.dark .shiki span {
     color: var(--text);
     font-family: var(--font-body);
     overflow: hidden;
-    user-select: none;
+    user-select: text;
+    -webkit-user-select: text;
     -webkit-font-smoothing: antialiased;
     /* Smooth theme transitions */
     transition: background-color 200ms ease, color 200ms ease;
@@ -151,6 +152,20 @@ html.dark .shiki span {
   .selectable {
     user-select: text;
     -webkit-user-select: text;
+  }
+
+  :where(a, button, input, select, textarea, summary, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 72%, white);
+    outline-offset: 2px;
+  }
+
+  button,
+  label,
+  img,
+  svg,
+  [data-tauri-drag-region] {
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   code,
@@ -287,14 +302,14 @@ html.dark .shiki span {
 }
 
 .th-tool-fn {
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
   color: var(--accent-orange);
 }
 
 .th-tool-args {
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-tertiary);
   overflow: hidden;
@@ -309,7 +324,7 @@ html.dark .shiki span {
   padding: 6px 10px;
   border-radius: 8px;
   background: var(--surface-tertiary);
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
   white-space: pre-wrap;

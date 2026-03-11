@@ -5,6 +5,8 @@ Centralized magic numbers and threshold values used across the platform.
 Change values here instead of hunting through multiple files.
 """
 
+from app.engine.model_catalog import DEFAULT_EMBEDDING_MODEL, get_embedding_dimensions
+
 # =============================================================================
 # Content Truncation Limits
 # =============================================================================
@@ -46,8 +48,8 @@ DEFAULT_RELEVANCE_THRESHOLD = 7.0
 # Embedding Validation
 # =============================================================================
 
-EXPECTED_EMBEDDING_DIMENSIONS = 768
-"""Expected embedding vector dimensions (Gemini embedding-001 default)."""
+EXPECTED_EMBEDDING_DIMENSIONS = get_embedding_dimensions(DEFAULT_EMBEDDING_MODEL)
+"""Expected embedding vector dimensions for the current production embedding default."""
 
 # =============================================================================
 # Preview System (Sprint 166)

@@ -814,7 +814,7 @@ flowchart TB
 
 | Provider | Deep Model | Moderate Model | Light Model | Thinking |
 |----------|-----------|---------------|-------------|----------|
-| Gemini | gemini-2.0-flash | gemini-2.0-flash | gemini-2.0-flash | `thinking_budget` |
+| Gemini | gemini-3.1-flash-lite-preview | gemini-3.1-flash-lite-preview | gemini-3.1-flash-lite-preview | `thinking_budget` |
 | OpenAI | gpt-4o | gpt-4o-mini | gpt-4o-mini | `reasoning_effort` |
 | Ollama | qwen3:8b | qwen3:8b | qwen3:8b | `extra_body: {think: true}` |
 

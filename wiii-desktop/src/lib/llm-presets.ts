@@ -3,6 +3,13 @@ import type { AppSettings } from "@/api/types";
 export type LlmProvider = "google" | "openai" | "openrouter" | "ollama";
 
 export const GOOGLE_DEFAULT_MODEL = "gemini-3.1-flash-lite-preview";
+export const CURRENT_GOOGLE_CHAT_MODELS = [GOOGLE_DEFAULT_MODEL] as const;
+export const GOOGLE_LEGACY_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.5-pro",
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-exp",
+] as const;
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 export const OPENROUTER_DEFAULT_MODEL = "openai/gpt-oss-20b:free";
 export const OPENROUTER_DEFAULT_MODEL_ADVANCED = "openai/gpt-oss-120b:free";

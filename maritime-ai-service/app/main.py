@@ -223,16 +223,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.warning("[WARN] UnifiedLLMClient initialization failed: %s", e)
 
-    # 1c. Validate embedding dimensions against config (SOTA 2026)
+    # 1c. Validate embedding dimensions against model metadata (SOTA 2026)
     try:
-        from app.core.constants import EXPECTED_EMBEDDING_DIMENSIONS
-        if settings.embedding_dimensions != EXPECTED_EMBEDDING_DIMENSIONS:
+        from app.engine.model_catalog import get_embedding_dimensions
+
+        expected_dimensions = get_embedding_dimensions(settings.embedding_model)
+        if settings.embedding_dimensions != expected_dimensions:
             logger.error(
                 "Embedding dimension mismatch: config=%d, "
                 "expected=%d. "
                 "This may cause pgvector index errors.",
                 settings.embedding_dimensions,
-                EXPECTED_EMBEDDING_DIMENSIONS,
+                expected_dimensions,
             )
         else:
             logger.info("Embedding dimension validated: %dd", settings.embedding_dimensions)

@@ -698,7 +698,7 @@ flowchart TB
 **Provider Configuration:**
 | Provider | Default Model (Deep) | Thinking Support | Endpoint |
 |----------|---------------------|------------------|----------|
-| Gemini | `gemini-2.0-flash` | `thinking_budget` | Vertex AI / OpenAI-compat |
+| Gemini | `gemini-3.1-flash-lite-preview` | `thinking_budget` | Vertex AI / OpenAI-compat |
 | OpenAI | `gpt-4o` | `reasoning_effort` | api.openai.com |
 | Ollama | `qwen3:8b` | `extra_body: {think: true}` | localhost:11434 |
 

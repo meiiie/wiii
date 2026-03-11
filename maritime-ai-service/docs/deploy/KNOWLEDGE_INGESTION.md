@@ -29,7 +29,8 @@ This uses the same API endpoint (`/knowledge/ingest-multimodal`) under the hood.
 
 ## Embedding Model
 
-- **Model**: Gemini `text-embedding-004` (768 dimensions)
+- **Production model**: Gemini `models/gemini-embedding-001` (768 dimensions)
+- **Benchmark candidate**: Gemini `gemini-embedding-2-preview` (evaluate before any migration or reindex)
 - **Chunking**: Recursive, 800 chars, 100 overlap
 - **Index**: pgvector HNSW (`m=16, ef_construction=64`)
 - **Cost**: FREE (Gemini embedding API)

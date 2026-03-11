@@ -565,7 +565,7 @@ class TestLLMUsageLogger:
                 request_id="req-1",
                 user_id="user-1",
                 session_id="sess-1",
-                model="gemini-2.0-flash",
+                model="gemini-3.1-flash-lite-preview",
                 provider="google",
                 tier="moderate",
                 input_tokens=100,
@@ -587,12 +587,12 @@ class TestLLMUsageLogger:
 
         calls = [
             {
-                "model": "gemini-2.0-flash", "provider": "google", "tier": "moderate",
+                "model": "gemini-3.1-flash-lite-preview", "provider": "google", "tier": "moderate",
                 "component": "rag", "input_tokens": 100, "output_tokens": 200,
                 "duration_ms": 300.0, "estimated_cost_usd": 0.0001,
             },
             {
-                "model": "gemini-2.0-flash", "provider": "google", "tier": "deep",
+                "model": "gemini-3.1-flash-lite-preview", "provider": "google", "tier": "deep",
                 "component": "tutor", "input_tokens": 300, "output_tokens": 400,
                 "duration_ms": 600.0, "estimated_cost_usd": 0.0003,
             },
@@ -804,7 +804,7 @@ class TestLLMUsageAnalytics:
             "total_requests": 2,
         }
         mock_conn.fetch.return_value = [
-            {"group_key": "gemini-2.0-flash", "tokens": 80, "cost": 0.008, "requests": 1},
+            {"group_key": "gemini-3.1-flash-lite-preview", "tokens": 80, "cost": 0.008, "requests": 1},
             {"group_key": "gpt-4o", "tokens": 20, "cost": 0.002, "requests": 1},
         ]
 
@@ -861,7 +861,7 @@ class TestLLMUsageAnalytics:
         # fetch called three times: breakdown, top_models, top_users
         mock_conn.fetch.side_effect = [
             [],  # breakdown
-            [{"model": "gemini-2.0-flash", "tokens": 100, "requests": 5}],  # top_models
+            [{"model": "gemini-3.1-flash-lite-preview", "tokens": 100, "requests": 5}],  # top_models
             [{"user_id": "u1", "tokens": 80, "requests": 3}],  # top_users
         ]
 

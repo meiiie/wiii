@@ -284,7 +284,7 @@ export function LoginScreen() {
   }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-surface">
+    <div className="flex flex-col items-center justify-center h-screen bg-surface" aria-busy={isLoading}>
       <div className="w-full max-w-sm mx-auto flex flex-col items-center gap-6 px-6">
         {/* Wiii avatar */}
         <WiiiAvatar state="idle" size={56} />
@@ -293,7 +293,7 @@ export function LoginScreen() {
         <div className="text-center">
           <h1
             className="text-3xl font-normal text-text"
-            style={{ fontFamily: '"Source Serif 4", "Noto Serif", Georgia, ui-serif, serif' }}
+            style={{ fontFamily: "var(--font-serif)" }}
           >
             Chào mừng đến Wiii
           </h1>
@@ -335,7 +335,11 @@ export function LoginScreen() {
 
         {/* Error message */}
         {error && (
-          <div className="w-full p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
+          <div
+            role="alert"
+            aria-live="assertive"
+            className="w-full p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300"
+          >
             {error}
           </div>
         )}
@@ -350,8 +354,9 @@ export function LoginScreen() {
         {/* Sprint 224: Magic link email login */}
         {emailState === "idle" ? (
           <div className="w-full flex flex-col gap-2">
-            <label className="text-xs text-text-tertiary">Email</label>
+            <label htmlFor="magic-link-email" className="text-xs text-text-tertiary">Email</label>
             <input
+              id="magic-link-email"
               type="email"
               placeholder="you@example.com"
               value={emailValue}
@@ -372,7 +377,7 @@ export function LoginScreen() {
             </button>
           </div>
         ) : (
-          <div className="w-full flex flex-col items-center gap-3 py-2">
+          <div className="w-full flex flex-col items-center gap-3 py-2" aria-live="polite">
             <div className="text-2xl">✉️</div>
             <p className="text-sm font-medium text-text text-center">
               Kiểm tra email của bạn
@@ -430,6 +435,7 @@ export function LoginScreen() {
               Dành cho nhà phát triển — nhập Khóa API thủ công
             </p>
             <input
+              aria-label="KhÃ³a API"
               type="password"
               placeholder="Khóa API"
               value={settings.api_key}

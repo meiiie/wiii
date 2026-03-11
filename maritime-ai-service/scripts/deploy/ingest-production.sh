@@ -12,7 +12,7 @@
 #
 # Pipeline (SOTA 2026):
 #   PDF → PyMuPDF/Gemini Vision → Semantic Chunking (800 chars, 100 overlap)
-#   → Gemini text-embedding-004 (768-dim) → pgvector HNSW
+#   → Gemini models/gemini-embedding-001 (768-dim) → pgvector HNSW
 
 set -euo pipefail
 

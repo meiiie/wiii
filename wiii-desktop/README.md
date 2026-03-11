@@ -54,7 +54,7 @@
 | Lucide React | 0.400 | Icon library |
 | Motion | 12.x | Animation library |
 | React Markdown | 9.x | Markdown rendering with GFM and syntax highlighting |
-| Shiki | 1.x | Code syntax highlighting (JetBrains Mono, dual-theme) |
+| Shiki | 1.x | Code syntax highlighting (IBM Plex Mono, dual-theme) |
 | Rive (WebGL2) | 4.27 | Avatar animation runtime |
 
 ### Tauri Plugins (Rust)
@@ -133,7 +133,7 @@ wiii-desktop/
 |
 +-- docs/                        # Desktop-local design and asset specs
 +-- scripts/                     # Utility scripts (embed build, screenshots)
-+-- vite.config.ts, tailwind.config.js, tsconfig.json
++-- vite.config.ts, tailwind.config.ts, tsconfig.json
 ```
 
 ### Local Conventions

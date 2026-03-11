@@ -24,13 +24,13 @@ alembic~=1.15.0
 pgvector==0.2.5
 
 # --- AI CORE STACK (PINNED to tested minor versions) ---
-langchain~=1.2.9
-langchain-core~=1.2.9
+langchain~=1.2.11
+langchain-core~=1.2.18
 langchain-community~=0.4.1
 langchain-openai~=1.1.0
 langchain-text-splitters~=1.1.0
 
-langgraph~=1.0.8
+langgraph~=1.1.0
 langgraph-checkpoint~=4.0.0
 langgraph-checkpoint-postgres>=3.0.0,<5.0.0
 langgraph-prebuilt>=1.0.0,<2.0.0
@@ -39,7 +39,7 @@ langgraph-prebuilt>=1.0.0,<2.0.0
 psycopg[binary]>=3.1.0,<4.0.0
 
 # LLM Providers
-langchain-google-genai~=4.2.0
+langchain-google-genai~=4.2.1
 langchain-ollama>=0.3.0,<1.0.0
 
 # Unified LLM Client (Sprint 55: AsyncOpenAI SDK for OpenAI-compatible endpoints)
@@ -55,7 +55,7 @@ opensandbox-code-interpreter>=0.1.1,<0.2.0
 # Google GenAI SDK (UNIFIED - CHỈ THỊ 26 + Semantic Memory)
 # SDK mới thống nhất cho Gemini API - hỗ trợ cả embeddings và vision
 # NOTE: Không dùng google-generativeai vì conflict với langchain-google-genai
-google-genai>=1.53.0,<2.0.0
+google-genai>=1.66.0,<2.0.0
 
 # Semantic Memory
 numpy>=1.24.0

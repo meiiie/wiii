@@ -26,14 +26,14 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
-          "Inter",
+          "var(--font-body)",
           "-apple-system",
           "BlinkMacSystemFont",
           "Segoe UI",
           "sans-serif",
         ],
-        serif: ["Source Serif 4", "Noto Serif", "Georgia", "ui-serif", "serif"],
-        mono: ["JetBrains Mono", "Fira Code", "SF Mono", "Consolas", "monospace"],
+        serif: ["var(--font-serif)", "Georgia", "ui-serif", "serif"],
+        mono: ["var(--font-mono)", "Consolas", "monospace"],
       },
       animation: {
         "pulse-dot": "pulse-dot 1.4s ease-in-out infinite",

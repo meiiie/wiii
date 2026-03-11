@@ -137,11 +137,11 @@ describe("Admin Types", () => {
       total_cost_usd: 5.0,
       total_requests: 100,
       breakdown: [bd],
-      top_models: [{ model: "gemini-2.0-flash", tokens: 30000, requests: 60 }],
+      top_models: [{ model: "gemini-3.1-flash-lite-preview", tokens: 30000, requests: 60 }],
       top_users: [{ user_id: "u-1", tokens: 10000, requests: 20 }],
     };
     expect(a.total_tokens).toBe(50000);
-    expect(a.top_models[0].model).toBe("gemini-2.0-flash");
+    expect(a.top_models[0].model).toBe("gemini-3.1-flash-lite-preview");
   });
 
   it("creates valid UserAnalytics", () => {

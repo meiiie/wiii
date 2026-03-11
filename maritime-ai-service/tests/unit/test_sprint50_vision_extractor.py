@@ -59,10 +59,10 @@ class TestInit:
     def test_defaults(self):
         from app.engine.vision_extractor import VisionExtractor
         with patch("app.engine.vision_extractor.settings") as mock_s:
-            mock_s.google_model = "gemini-2.0-flash"
+            mock_s.google_model = "gemini-3.1-flash-lite-preview"
             mock_s.google_api_key = "test-key"
             ve = VisionExtractor()
-        assert ve.model_name == "gemini-2.0-flash"
+        assert ve.model_name == "gemini-3.1-flash-lite-preview"
         assert ve.api_key == "test-key"
         assert ve._client is None
 

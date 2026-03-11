@@ -59,7 +59,7 @@ export function wrapInSandboxHtml(content: string, title?: string): string {
       color: #1a1a2e;
       background: #ffffff;
     }
-    pre, code { font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace; }
+    pre, code { font-family: 'IBM Plex Mono', 'JetBrains Mono', 'Fira Code', 'Consolas', monospace; }
     table { border-collapse: collapse; width: 100%; }
     th, td { border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left; }
     th { background: #f7fafc; font-weight: 600; }

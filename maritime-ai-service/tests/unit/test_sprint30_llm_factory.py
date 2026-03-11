@@ -120,7 +120,7 @@ class TestCreateLLM:
         """Default provider is Google Gemini."""
         mock_settings = MagicMock()
         mock_settings.thinking_enabled = False
-        mock_settings.google_model = "gemini-2.0-flash"
+        mock_settings.google_model = "gemini-3.1-flash-lite-preview"
         mock_settings.google_api_key = "test-key"
         mock_settings.include_thought_summaries = False
 
@@ -134,7 +134,7 @@ class TestCreateLLM:
         assert result == mock_gemini
         mock_cls.assert_called_once()
         call_kwargs = mock_cls.call_args[1]
-        assert call_kwargs["model"] == "gemini-2.0-flash"
+        assert call_kwargs["model"] == "gemini-3.1-flash-lite-preview"
         assert call_kwargs["google_api_key"] == "test-key"
 
     def test_custom_model_override(self):
@@ -155,7 +155,7 @@ class TestCreateLLM:
         mock_settings = MagicMock()
         mock_settings.thinking_enabled = True
         mock_settings.thinking_budget_deep = 8192
-        mock_settings.google_model = "gemini-2.0-flash"
+        mock_settings.google_model = "gemini-3.1-flash-lite-preview"
         mock_settings.google_api_key = "key"
         mock_settings.include_thought_summaries = True
 

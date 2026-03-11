@@ -307,7 +307,7 @@ class TestAnalyzeImageWithVision:
 
         mock_settings = MagicMock()
         mock_settings.google_api_key = "test-key"
-        mock_settings.google_model = "gemini-2.0-flash"
+        mock_settings.google_model = "gemini-3.1-flash-lite-preview"
 
         fake_b64 = base64.b64encode(b"fake image data").decode()
 

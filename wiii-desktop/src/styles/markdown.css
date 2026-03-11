@@ -1,6 +1,6 @@
 /* Markdown content styling */
 .markdown-content {
-  font-family: 'Source Serif 4', Georgia, serif;
+  font-family: var(--font-serif);
   font-size: 16px;
   line-height: 1.85;
   color: var(--text);
@@ -98,7 +98,7 @@
 
 /* Shiki code styling (Sprint 169) */
 .markdown-content .shiki {
-  font-family: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.7;
   tab-size: 2;
