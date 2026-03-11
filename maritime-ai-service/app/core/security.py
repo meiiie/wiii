@@ -255,8 +255,8 @@ async def require_auth(
                             "via API key in production"
                         ),
                     ))
-                except Exception:
-                    pass
+                except Exception as _audit_err:
+                    logger.debug("Auth audit log failed (role_downgrade): %s", _audit_err)
                 effective_role = "student"
 
             # Sprint 194b (C2): In production, general API key auth does NOT
@@ -347,8 +347,8 @@ async def require_auth(
                     "auth_failed", provider="api_key", result="failed",
                     reason="Invalid API key",
                 ))
-            except Exception:
-                pass
+            except Exception as _audit_err:
+                logger.debug("Auth audit log failed (auth_failed): %s", _audit_err)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid API key",

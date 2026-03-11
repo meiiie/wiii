@@ -2251,8 +2251,8 @@ async def direct_response_node(state: AgentState) -> AgentState:
         if _event_queue:
             try:
                 _event_queue.put_nowait(event)
-            except Exception:
-                pass
+            except Exception as _qe:
+                logger.debug("[DIRECT] Event queue push failed: %s", _qe)
 
     # CHỈ THỊ SỐ 30: Get inherited tracer from supervisor
     tracer = _get_or_create_tracer(state)
@@ -2458,8 +2458,8 @@ async def code_studio_node(state: AgentState) -> AgentState:
         if _event_queue:
             try:
                 _event_queue.put_nowait(event)
-            except Exception:
-                pass
+            except Exception as _qe:
+                logger.debug("[CODE_STUDIO] Event queue push failed: %s", _qe)
 
     tracer = _get_or_create_tracer(state)
     tracer.start_step(StepNames.DIRECT_RESPONSE, "Che tac dau ra ky thuat")
@@ -2621,8 +2621,8 @@ def _emit_subagent_event(state: dict, event: dict) -> None:
         queue = _get_event_queue(bus_id)
         if queue:
             queue.put_nowait(event)
-    except Exception:
-        pass
+    except Exception as _qe:
+        logger.debug("[SUBAGENT_EVENT] Event emit failed: %s", _qe)
 
 
 async def _run_rag_subagent(state: dict, **kwargs) -> "SubagentResult":
@@ -2887,8 +2887,8 @@ async def parallel_dispatch_node(state: AgentState) -> AgentState:
                     "content": f"Triển khai song song: {', '.join(targets)}",
                     "node": "parallel_dispatch",
                 })
-        except Exception:
-            pass
+        except Exception as _se:
+            logger.debug("[PARALLEL_DISPATCH] Status event emit failed: %s", _se)
 
     # Build task list for parallel execution
     tasks = []
@@ -2896,8 +2896,8 @@ async def parallel_dispatch_node(state: AgentState) -> AgentState:
     try:
         from app.core.config import settings as _settings
         timeout = _settings.subagent_default_timeout
-    except Exception:
-        pass
+    except Exception as _cfg_err:
+        logger.debug("[PARALLEL_DISPATCH] Could not read subagent_default_timeout: %s", _cfg_err)
 
     for name in targets:
         adapter = _SUBAGENT_ADAPTERS.get(name)
@@ -2917,8 +2917,8 @@ async def parallel_dispatch_node(state: AgentState) -> AgentState:
     try:
         from app.core.config import settings as _settings
         max_concurrent = _settings.subagent_max_parallel
-    except Exception:
-        pass
+    except Exception as _cfg_err:
+        logger.debug("[PARALLEL_DISPATCH] Could not read subagent_max_parallel: %s", _cfg_err)
 
     results = await execute_parallel_subagents(tasks, max_concurrent=max_concurrent)
 
@@ -3577,8 +3577,8 @@ async def process_with_multi_agent(
                     calls=_calls,
                     organization_id=(context or {}).get("organization_id"),
                 ))
-        except Exception:
-            pass
+        except Exception as _usage_err:
+            logger.debug("[MULTI_AGENT] LLM usage batch log failed: %s", _usage_err)
 
     return {
         "response": result.get("final_response", ""),

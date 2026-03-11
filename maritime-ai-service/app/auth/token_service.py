@@ -274,8 +274,8 @@ async def refresh_access_token(refresh_token: str) -> Optional[TokenPair]:
                                 result="blocked",
                                 reason=f"family={family_id}, purged={active_count}",
                             )
-                        except Exception:
-                            pass
+                        except Exception as _audit_err:
+                            logger.debug("Auth audit log failed (token_replay_detected): %s", _audit_err)
                 logger.warning("Refresh token already revoked (user %s)", row["user_id"])
                 return None
 
@@ -303,8 +303,8 @@ async def refresh_access_token(refresh_token: str) -> Optional[TokenPair]:
             try:
                 from app.auth.auth_audit import log_auth_event
                 await log_auth_event("token_refresh", user_id=row["user_id"])
-            except Exception:
-                pass
+            except Exception as _audit_err:
+                logger.debug("Auth audit log failed (token_refresh): %s", _audit_err)
 
             return new_pair
     except Exception:
@@ -332,8 +332,8 @@ async def revoke_user_tokens(user_id: str) -> int:
                     "token_revoked", user_id=user_id,
                     metadata={"count": count},
                 )
-            except Exception:
-                pass
+            except Exception as _audit_err:
+                logger.debug("Auth audit log failed (token_revoked): %s", _audit_err)
 
             return count
     except Exception:
