@@ -116,9 +116,11 @@ class TestBrowserSandboxService:
 
         assert captured["profile_id"] == "browser_playwright"
         kwargs = captured["kwargs"]
-        assert kwargs["command"] == ["node", "browser_runner.mjs", "browser_job.json"]
-        assert sorted(kwargs["files"].keys()) == ["browser_job.json", "browser_runner.mjs"]
-        job = json.loads(kwargs["files"]["browser_job.json"])
+        _runner_file = "/opt/wiii-browser/browser_runner.mjs"
+        _job_file = "/opt/wiii-browser/browser_job.json"
+        assert kwargs["command"] == ["node", _runner_file, _job_file]
+        assert sorted(kwargs["files"].keys()) == sorted([_job_file, _runner_file])
+        job = json.loads(kwargs["files"][_job_file])
         assert job["url"] == "https://example.com"
         assert job["capture_screenshot"] is True
         assert job["wait_until"] == "networkidle"

@@ -54,11 +54,11 @@ class TestGraphSingleton:
 
     @pytest.fixture(autouse=True)
     def reset_singleton(self):
-        """Reset graph singleton between tests."""
+        """Reset sync graph singleton between tests."""
         import app.engine.multi_agent.graph as mod
-        mod._graph = None
+        mod._sync_graph = None
         yield
-        mod._graph = None
+        mod._sync_graph = None
 
     def test_sync_singleton(self):
         """Sync singleton creates graph without checkpointer."""
@@ -75,26 +75,19 @@ class TestGraphSingleton:
     async def test_async_singleton_with_none_checkpointer(self):
         """Async singleton works when checkpointer returns None (no DB)."""
         import app.engine.multi_agent.graph as mod
-        mod._graph = None
 
-        with patch(
-            "app.engine.multi_agent.checkpointer.get_checkpointer",
-            new_callable=AsyncMock,
-            return_value=None,
-        ):
-            graph = await mod.get_multi_agent_graph_async()
-            assert graph is not None
+        # get_multi_agent_graph_async() always builds a fresh graph (request-scoped)
+        graph = await mod.get_multi_agent_graph_async()
+        assert graph is not None
 
     @pytest.mark.asyncio
     async def test_async_singleton_returns_same_instance(self):
-        """Async singleton returns cached instance on second call."""
+        """get_multi_agent_graph_async() returns a compiled graph each call."""
         import app.engine.multi_agent.graph as mod
 
-        mock_graph = MagicMock()
-        mod._graph = mock_graph
-
+        # The async accessor always builds a fresh no-checkpointer graph
         result = await mod.get_multi_agent_graph_async()
-        assert result is mock_graph
+        assert result is not None
 
 
 class TestThreadIdPassing:
@@ -103,7 +96,9 @@ class TestThreadIdPassing:
     @pytest.mark.asyncio
     async def test_process_passes_thread_id(self):
         """process_with_multi_agent passes composite thread_id in config (Sprint 16)."""
-        mock_graph = AsyncMock()
+        from contextlib import asynccontextmanager
+
+        mock_graph = MagicMock()
         mock_graph.ainvoke = AsyncMock(return_value={
             "final_response": "test",
             "sources": [],
@@ -116,6 +111,10 @@ class TestThreadIdPassing:
             "thinking_content": None,
         })
 
+        @asynccontextmanager
+        async def mock_open_graph():
+            yield mock_graph
+
         mock_registry = MagicMock()
         mock_registry.start_request_trace.return_value = "trace-123"
         mock_registry.end_request_trace.return_value = {"span_count": 0, "total_duration_ms": 0}
@@ -124,9 +123,8 @@ class TestThreadIdPassing:
         mock_thread_repo.upsert_thread.return_value = None
 
         with patch(
-            "app.engine.multi_agent.graph.get_multi_agent_graph_async",
-            new_callable=AsyncMock,
-            return_value=mock_graph,
+            "app.engine.multi_agent.graph.open_multi_agent_graph",
+            side_effect=mock_open_graph,
         ), patch(
             "app.engine.multi_agent.graph.get_agent_registry",
             return_value=mock_registry,
@@ -155,7 +153,9 @@ class TestThreadIdPassing:
     @pytest.mark.asyncio
     async def test_process_empty_session_id(self):
         """Empty session_id produces empty config (no thread_id)."""
-        mock_graph = AsyncMock()
+        from contextlib import asynccontextmanager
+
+        mock_graph = MagicMock()
         mock_graph.ainvoke = AsyncMock(return_value={
             "final_response": "test",
             "sources": [],
@@ -168,14 +168,17 @@ class TestThreadIdPassing:
             "thinking_content": None,
         })
 
+        @asynccontextmanager
+        async def mock_open_graph():
+            yield mock_graph
+
         mock_registry = MagicMock()
         mock_registry.start_request_trace.return_value = "trace-123"
         mock_registry.end_request_trace.return_value = {"span_count": 0, "total_duration_ms": 0}
 
         with patch(
-            "app.engine.multi_agent.graph.get_multi_agent_graph_async",
-            new_callable=AsyncMock,
-            return_value=mock_graph,
+            "app.engine.multi_agent.graph.open_multi_agent_graph",
+            side_effect=mock_open_graph,
         ), patch(
             "app.engine.multi_agent.graph.get_agent_registry",
             return_value=mock_registry,

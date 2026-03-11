@@ -1,12 +1,16 @@
 """
-Tests for LangGraph Checkpointer Singleton.
+Tests for LangGraph Checkpointer — request-scoped open_checkpointer() API.
 
 Verifies:
-- Singleton initialization and reuse
-- Graceful degradation when PostgreSQL unavailable
-- Close and reset behavior
-- ImportError handling when package missing
-- New context manager API (>=3.0.4) and old .setup() API
+- open_checkpointer() yields a working checkpointer on success
+- open_checkpointer() yields None when package not installed
+- open_checkpointer() yields None on connection failure
+- Old API (no __aenter__) falls back to direct use + conn.close()
+- New API (context manager) uses __aenter__/__aexit__
+- setup() is called once per process (idempotent via _setup_complete)
+- reset_checkpointer() resets _setup_complete
+- get_checkpointer() shim always returns None
+- close_checkpointer() is a no-op
 """
 
 import sys
@@ -31,47 +35,21 @@ if _cs_key not in sys.modules:
 def _reset():
     """Reset checkpointer singleton state between tests."""
     from app.engine.multi_agent import checkpointer as mod
-    mod._checkpointer = None
-    mod._context_manager = None
-    mod._initialized = False
+    mod._setup_complete = False
 
 
 # ---------------------------------------------------------------------------
-# Tests: Initialization
+# Tests: open_checkpointer() — new context manager API
 # ---------------------------------------------------------------------------
 
 class TestCheckpointerInit:
-    """Test checkpointer singleton initialization."""
+    """Test open_checkpointer() context manager."""
 
     @pytest.fixture(autouse=True)
     def reset_singleton(self):
         _reset()
         yield
         _reset()
-
-    @pytest.mark.asyncio
-    async def test_get_checkpointer_old_api_setup(self):
-        """Old API: from_conn_string returns instance, calls .setup()."""
-        import app.engine.multi_agent.checkpointer as mod
-
-        mock_saver = AsyncMock()
-        mock_saver.setup = AsyncMock()
-        # Old API: no __aenter__ attribute
-        del mock_saver.__aenter__
-
-        mock_module = MagicMock()
-        mock_module.AsyncPostgresSaver.from_conn_string.return_value = mock_saver
-
-        with patch.dict("sys.modules", {
-            "langgraph.checkpoint.postgres.aio": mock_module,
-        }):
-            _reset()
-            result = await mod.get_checkpointer()
-
-            assert result is mock_saver
-            mock_saver.setup.assert_awaited_once()
-            assert mod._initialized is True
-            assert mod._context_manager is None
 
     @pytest.mark.asyncio
     async def test_get_checkpointer_new_api_context_manager(self):
@@ -91,17 +69,38 @@ class TestCheckpointerInit:
             "langgraph.checkpoint.postgres.aio": mock_module,
         }):
             _reset()
-            result = await mod.get_checkpointer()
-
-            assert result is mock_saver
+            async with mod.open_checkpointer() as checkpointer:
+                assert checkpointer is mock_saver
             mock_cm.__aenter__.assert_awaited_once()
             mock_saver.setup.assert_awaited_once()
-            assert mod._initialized is True
-            assert mod._context_manager is mock_cm
+
+    @pytest.mark.asyncio
+    async def test_get_checkpointer_old_api_setup(self):
+        """Old API: from_conn_string returns instance directly, calls .setup() then .conn.close()."""
+        import app.engine.multi_agent.checkpointer as mod
+
+        mock_conn = AsyncMock()
+        mock_saver = AsyncMock()
+        mock_saver.setup = AsyncMock()
+        mock_saver.conn = mock_conn
+        # Old API: no __aenter__ attribute
+        del mock_saver.__aenter__
+
+        mock_module = MagicMock()
+        mock_module.AsyncPostgresSaver.from_conn_string.return_value = mock_saver
+
+        with patch.dict("sys.modules", {
+            "langgraph.checkpoint.postgres.aio": mock_module,
+        }):
+            _reset()
+            async with mod.open_checkpointer() as checkpointer:
+                assert checkpointer is mock_saver
+            mock_saver.setup.assert_awaited_once()
+            mock_conn.close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_get_checkpointer_import_error(self):
-        """Checkpointer returns None when package not installed."""
+        """open_checkpointer yields None when package not installed."""
         import app.engine.multi_agent.checkpointer as mod
         _reset()
 
@@ -118,13 +117,12 @@ class TestCheckpointerInit:
 
             with patch("builtins.__import__", side_effect=mock_import):
                 _reset()
-                result = await mod.get_checkpointer()
-                assert result is None
-                assert mod._initialized is True
+                async with mod.open_checkpointer() as checkpointer:
+                    assert checkpointer is None
 
     @pytest.mark.asyncio
     async def test_get_checkpointer_connection_error(self):
-        """Checkpointer returns None on connection failure."""
+        """open_checkpointer yields None on connection failure."""
         import app.engine.multi_agent.checkpointer as mod
         _reset()
 
@@ -135,43 +133,80 @@ class TestCheckpointerInit:
             "langgraph.checkpoint.postgres.aio": mock_module,
         }):
             _reset()
-            result = await mod.get_checkpointer()
-            assert result is None
-            assert mod._initialized is True
-            assert mod._context_manager is None
+            async with mod.open_checkpointer() as checkpointer:
+                assert checkpointer is None
+
+    @pytest.mark.asyncio
+    async def test_setup_only_called_once(self):
+        """_ensure_setup: setup() is called only on first call per process."""
+        import app.engine.multi_agent.checkpointer as mod
+
+        mock_saver = AsyncMock()
+        mock_saver.setup = AsyncMock()
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_saver)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_module = MagicMock()
+        mock_module.AsyncPostgresSaver.from_conn_string.return_value = mock_cm
+
+        with patch.dict("sys.modules", {
+            "langgraph.checkpoint.postgres.aio": mock_module,
+        }):
+            _reset()
+            # First call
+            async with mod.open_checkpointer() as cp1:
+                assert cp1 is mock_saver
+            # Second call — setup should NOT be called again
+            async with mod.open_checkpointer() as cp2:
+                assert cp2 is mock_saver
+
+        # setup() should have been called exactly once
+        assert mock_saver.setup.await_count == 1
 
     @pytest.mark.asyncio
     async def test_singleton_returns_same_instance(self):
-        """Second call returns cached instance without re-initializing."""
+        """Each open_checkpointer() call opens a fresh connection (request-scoped)."""
         import app.engine.multi_agent.checkpointer as mod
         _reset()
 
         mock_saver = AsyncMock()
-        mod._checkpointer = mock_saver
-        mod._initialized = True
+        mock_saver.setup = AsyncMock()
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_saver)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
 
-        result = await mod.get_checkpointer()
-        assert result is mock_saver
+        mock_module = MagicMock()
+        mock_module.AsyncPostgresSaver.from_conn_string.return_value = mock_cm
+
+        with patch.dict("sys.modules", {
+            "langgraph.checkpoint.postgres.aio": mock_module,
+        }):
+            async with mod.open_checkpointer() as cp:
+                assert cp is not None
 
     @pytest.mark.asyncio
     async def test_singleton_returns_none_after_failed_init(self):
-        """After failed init, returns None without retrying."""
+        """open_checkpointer yields None when connection fails."""
         import app.engine.multi_agent.checkpointer as mod
         _reset()
 
-        mod._checkpointer = None
-        mod._initialized = True
+        mock_module = MagicMock()
+        mock_module.AsyncPostgresSaver.from_conn_string.side_effect = Exception("DB down")
 
-        result = await mod.get_checkpointer()
-        assert result is None
+        with patch.dict("sys.modules", {
+            "langgraph.checkpoint.postgres.aio": mock_module,
+        }):
+            async with mod.open_checkpointer() as cp:
+                assert cp is None
 
 
 # ---------------------------------------------------------------------------
-# Tests: Close
+# Tests: Compatibility shims
 # ---------------------------------------------------------------------------
 
 class TestCheckpointerClose:
-    """Test checkpointer close and reset."""
+    """Test that deprecated shims behave as no-ops."""
 
     @pytest.fixture(autouse=True)
     def reset_singleton(self):
@@ -181,81 +216,40 @@ class TestCheckpointerClose:
 
     @pytest.mark.asyncio
     async def test_close_with_context_manager(self):
-        """New API: close calls __aexit__ on context manager."""
+        """close_checkpointer() is a no-op (request-scoped cleanup happens in open_checkpointer)."""
         import app.engine.multi_agent.checkpointer as mod
-
-        mock_cm = AsyncMock()
-        mock_cm.__aexit__ = AsyncMock(return_value=False)
-
-        mod._checkpointer = AsyncMock()
-        mod._context_manager = mock_cm
-        mod._initialized = True
-
-        await mod.close_checkpointer()
-
-        mock_cm.__aexit__.assert_awaited_once_with(None, None, None)
-        assert mod._checkpointer is None
-        assert mod._context_manager is None
-        assert mod._initialized is False
+        # Should not raise
+        result = await mod.close_checkpointer()
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_close_with_old_api_connection(self):
-        """Old API: close calls conn.close() on active checkpointer."""
+        """close_checkpointer() always returns None without error."""
         import app.engine.multi_agent.checkpointer as mod
-
-        mock_conn = AsyncMock()
-        mock_saver = MagicMock()
-        mock_saver.conn = mock_conn
-
-        mod._checkpointer = mock_saver
-        mod._context_manager = None
-        mod._initialized = True
-
-        await mod.close_checkpointer()
-
-        mock_conn.close.assert_awaited_once()
-        assert mod._checkpointer is None
-        assert mod._initialized is False
+        result = await mod.close_checkpointer()
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_close_without_connection(self):
-        """Close handles None checkpointer gracefully."""
+        """close_checkpointer() is safe to call with no active checkpointer."""
         import app.engine.multi_agent.checkpointer as mod
-
-        mod._checkpointer = None
-        mod._initialized = True
-
-        await mod.close_checkpointer()
-
-        assert mod._checkpointer is None
-        assert mod._initialized is False
+        result = await mod.close_checkpointer()
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_close_handles_error(self):
-        """Close handles error during close gracefully."""
+        """close_checkpointer() never raises."""
         import app.engine.multi_agent.checkpointer as mod
-
-        mock_cm = AsyncMock()
-        mock_cm.__aexit__ = AsyncMock(side_effect=Exception("Already closed"))
-
-        mod._checkpointer = AsyncMock()
-        mod._context_manager = mock_cm
-        mod._initialized = True
-
-        # Should not raise
+        # Should not raise even if called multiple times
         await mod.close_checkpointer()
-        assert mod._checkpointer is None
+        await mod.close_checkpointer()
 
     def test_reset_checkpointer(self):
-        """reset_checkpointer clears all singleton state."""
+        """reset_checkpointer() clears _setup_complete for fresh setup next open."""
         import app.engine.multi_agent.checkpointer as mod
 
-        mod._checkpointer = "something"
-        mod._context_manager = "cm"
-        mod._initialized = True
+        mod._setup_complete = True
 
         mod.reset_checkpointer()
 
-        assert mod._checkpointer is None
-        assert mod._context_manager is None
-        assert mod._initialized is False
+        assert mod._setup_complete is False

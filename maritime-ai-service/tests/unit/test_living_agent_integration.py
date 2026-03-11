@@ -171,7 +171,10 @@ class TestPromptInjection:
             return_value=mock_soul_prompt,
         ), patch(
             "app.engine.living_agent.emotion_engine.get_emotion_engine",
-        ) as mock_engine_fn:
+        ) as mock_engine_fn, patch(
+            "app.engine.character.character_card.build_wiii_runtime_prompt",
+            return_value="",
+        ):
             mock_settings.enable_living_agent = True
             # Provide other attrs the prompt_loader might access
             mock_settings.enable_soul_emotion = False

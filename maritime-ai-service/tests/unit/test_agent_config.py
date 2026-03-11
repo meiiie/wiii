@@ -183,6 +183,7 @@ class TestAgentConfigRegistry:
         expected = {
             "tutor_agent", "rag_agent", "supervisor",
             "guardian", "grader", "memory", "direct", "synthesizer",
+            "code_studio_agent",
         }
         assert set(AgentConfigRegistry._configs.keys()) == expected
 

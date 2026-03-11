@@ -127,6 +127,9 @@ class TestFallbackBehavior:
             orchestrator,
             "_should_use_local_direct_llm_fallback",
             return_value=False,
+        ), patch(
+            "app.services.chat_orchestrator.resolve_runtime_llm_metadata",
+            return_value={},
         ):
             result = await orchestrator.process_without_multi_agent(
                 MagicMock(
