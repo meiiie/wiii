@@ -124,7 +124,7 @@ class TestJWTAudience:
     """Sprint 192: JWT audience claim in create + verify."""
 
     def test_create_access_token_has_aud(self, mock_settings):
-        from jose import jwt as jose_jwt
+        import jwt as jose_jwt
         with patch("app.auth.token_service.settings", mock_settings):
             from app.auth.token_service import create_access_token
             token = create_access_token(user_id="user-1", role="student")
@@ -132,7 +132,7 @@ class TestJWTAudience:
             assert payload["aud"] == "wiii"
 
     def test_verify_access_token_with_aud(self, mock_settings):
-        from jose import jwt as jose_jwt
+        import jwt as jose_jwt
         with patch("app.auth.token_service.settings", mock_settings):
             from app.auth.token_service import create_access_token, verify_access_token
             token = create_access_token(user_id="user-1")
@@ -141,7 +141,7 @@ class TestJWTAudience:
 
     def test_verify_access_token_legacy_no_aud(self, mock_settings):
         """Old tokens without `aud` should still be accepted."""
-        from jose import jwt as jose_jwt
+        import jwt as jose_jwt
         with patch("app.auth.token_service.settings", mock_settings):
             from app.auth.token_service import verify_access_token
             # Create a legacy token without aud
@@ -160,7 +160,7 @@ class TestJWTAudience:
 
     def test_verify_access_token_wrong_aud(self, mock_settings):
         """Token with wrong aud should fail."""
-        from jose import jwt as jose_jwt, JWTError
+        import jwt as jose_jwt; JWTError = jose_jwt.PyJWTError
         with patch("app.auth.token_service.settings", mock_settings):
             from app.auth.token_service import verify_access_token
             payload = {
@@ -182,7 +182,7 @@ class TestJWTAudience:
         mock_settings.enable_jti_denylist = True
         with patch("app.auth.token_service.settings", mock_settings):
             from app.auth.token_service import create_access_token, verify_access_token, deny_jti, _clear_jti_denylist
-            from jose import jwt as jose_jwt, JWTError
+            import jwt as jose_jwt; JWTError = jose_jwt.PyJWTError
             _clear_jti_denylist()
 
             token = create_access_token(user_id="user-denied", role="student")
@@ -208,7 +208,7 @@ class TestSecurityJWTAud:
     """Sprint 192: security.py verify_jwt_token audience handling."""
 
     def test_verify_jwt_token_with_aud(self, mock_settings):
-        from jose import jwt as jose_jwt
+        import jwt as jose_jwt
         with patch("app.core.security.settings", mock_settings), \
              patch("app.auth.token_service.settings", mock_settings):
             from app.core.security import verify_jwt_token
@@ -224,7 +224,7 @@ class TestSecurityJWTAud:
             assert result.sub == "user-sec"
 
     def test_verify_jwt_token_legacy_no_aud(self, mock_settings):
-        from jose import jwt as jose_jwt
+        import jwt as jose_jwt
         with patch("app.core.security.settings", mock_settings), \
              patch("app.auth.token_service.settings", mock_settings):
             from app.core.security import verify_jwt_token
@@ -241,7 +241,7 @@ class TestSecurityJWTAud:
     def test_verify_jwt_token_jti_denylist(self, mock_settings):
         """When jti denylist enabled, denied tokens are rejected."""
         mock_settings.enable_jti_denylist = True
-        from jose import jwt as jose_jwt
+        import jwt as jose_jwt
         from fastapi import HTTPException
         with patch("app.core.security.settings", mock_settings), \
              patch("app.auth.token_service.settings", mock_settings):
@@ -360,7 +360,7 @@ class TestRequireAuthOrgCheck:
         """JWT auth path should also check org membership."""
         from fastapi import HTTPException
         from fastapi.security import HTTPAuthorizationCredentials
-        from jose import jwt as jose_jwt
+        import jwt as jose_jwt
 
         mock_settings.enable_org_membership_check = True
         mock_settings.enable_jti_denylist = False
@@ -788,7 +788,7 @@ class TestBackwardCompat:
     async def test_jwt_auth_still_works(self, mock_settings):
         """JWT auth should still work."""
         from fastapi.security import HTTPAuthorizationCredentials
-        from jose import jwt as jose_jwt
+        import jwt as jose_jwt
 
         mock_settings.enable_org_membership_check = False
         mock_settings.enable_jti_denylist = False
@@ -872,7 +872,7 @@ class TestCombinedScenarios:
         """JWT with denied JTI should fail before org check."""
         from fastapi import HTTPException
         from fastapi.security import HTTPAuthorizationCredentials
-        from jose import jwt as jose_jwt
+        import jwt as jose_jwt
 
         mock_settings.enable_jti_denylist = True
         mock_settings.enable_org_membership_check = True

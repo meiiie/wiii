@@ -1,8 +1,8 @@
 # Core API
 fastapi>=0.109.2,<1.0.0
 uvicorn[standard]>=0.31.1,<1.0.0
-gunicorn==21.2.0
-python-multipart==0.0.9
+gunicorn~=22.0.0
+python-multipart~=0.0.18
 pydantic~=2.12.4
 pydantic-settings~=2.12.0
 
@@ -20,7 +20,7 @@ sentry-sdk[fastapi]>=2.0.0,<3.0.0
 sqlalchemy>=2.0.27,<3.0.0
 asyncpg>=0.30.0,<1.0.0
 # psycopg2-binary removed Sprint 154 — psycopg[binary]>=3.1.0 (line 29) is the modern async replacement
-alembic==1.13.1
+alembic~=1.15.0
 pgvector==0.2.5
 
 # --- AI CORE STACK (PINNED to tested minor versions) ---
@@ -80,9 +80,9 @@ feedparser>=6.0.0  # Sprint 102: RSS news feeds (Vietnamese news aggregation)
 
 # Utils
 httpx>=0.28.1
-python-jose[cryptography]==3.3.0
+PyJWT[crypto]>=2.8.0,<3.0.0
 python-dotenv==1.0.1
-slowapi==0.1.9
+slowapi~=0.1.9
 pyyaml>=6.0.0  # CHỈ THỊ SỐ 16: YAML config for personas
 
 # Observability (SOTA 2026: OpenTelemetry GenAI Semantic Conventions)

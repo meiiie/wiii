@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from jose import jwt
+import jwt
 from pydantic import BaseModel
 
 from app.core.config import settings
@@ -130,11 +130,9 @@ def decode_jwt_payload(token: str) -> dict:
     """Decode and validate a JWT token, returning the raw claims dict.
 
     Single-source decode logic: audience fallback + JTI denylist check.
-    Raises JWTError on failure. Used by both verify_access_token() and
+    Raises jwt.PyJWTError on failure. Used by both verify_access_token() and
     security.verify_jwt_token().
     """
-    from jose import JWTError as _JWTError
-
     audience = settings.jwt_audience
     try:
         payload = jwt.decode(
@@ -143,7 +141,7 @@ def decode_jwt_payload(token: str) -> dict:
             algorithms=[settings.jwt_algorithm],
             audience=audience,
         )
-    except _JWTError:
+    except jwt.PyJWTError:
         # Backward compat: retry without audience for legacy tokens
         payload = jwt.decode(
             token,
@@ -156,7 +154,7 @@ def decode_jwt_payload(token: str) -> dict:
     jti = payload.get("jti")
     if settings.enable_jti_denylist and jti:
         if is_jti_denied(jti):
-            raise _JWTError("Token has been revoked (jti denied)")
+            raise jwt.PyJWTError("Token has been revoked (jti denied)")
 
     return payload
 

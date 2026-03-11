@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from jose import jwt
+import jwt
 
 # ---------------------------------------------------------------------------
 # Config tests

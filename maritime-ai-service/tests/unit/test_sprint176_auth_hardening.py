@@ -111,7 +111,7 @@ class TestJWTJti:
             from app.auth.token_service import create_access_token
             token = create_access_token(user_id="user-1", email="a@b.com")
 
-            from jose import jwt
+            import jwt
             payload = jwt.decode(token, "test-secret-key-12345", algorithms=["HS256"], audience="wiii")
             assert "jti" in payload
             assert payload["jti"] is not None
@@ -127,7 +127,7 @@ class TestJWTJti:
             from app.auth.token_service import create_access_token
             token = create_access_token(user_id="user-1")
 
-            from jose import jwt
+            import jwt
             payload = jwt.decode(token, "test-secret-key-12345", algorithms=["HS256"], audience="wiii")
             uuid.UUID(payload["jti"])  # Should not raise
 
@@ -143,7 +143,7 @@ class TestJWTJti:
             t1 = create_access_token(user_id="user-1")
             t2 = create_access_token(user_id="user-1")
 
-            from jose import jwt
+            import jwt
             p1 = jwt.decode(t1, "test-secret-key-12345", algorithms=["HS256"], audience="wiii")
             p2 = jwt.decode(t2, "test-secret-key-12345", algorithms=["HS256"], audience="wiii")
             assert p1["jti"] != p2["jti"]
