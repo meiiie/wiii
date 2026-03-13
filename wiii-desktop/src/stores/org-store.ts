@@ -20,7 +20,7 @@ import { applyOrgBranding, resetBranding, DEFAULT_BRANDING } from "@/lib/org-bra
 
 // Sprint 175: Base domain for subdomain org detection (matches backend config)
 const SUBDOMAIN_BASE_DOMAIN = "holilihu.online";
-const RESERVED_SUBDOMAINS = new Set(["www", "api", "admin", "app", "mail", "static", "cdn"]);
+const RESERVED_SUBDOMAINS = new Set(["www", "api", "admin", "app", "mail", "static", "cdn", "wiii"]);
 
 /**
  * Detect org slug from current hostname subdomain.
