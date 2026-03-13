@@ -61,20 +61,35 @@ visual:
       - "Thứ tự ưu tiên → flowchart TD"
       - "Quan hệ giữa quy tắc/công ước → ER diagram"
     format: "```mermaid code block"
-  widget:
+  chart:
     when_to_use:
-      - "So sánh số liệu, thống kê → Chart.js bar/pie/doughnut"
-      - "Bảng dữ liệu lớn cần lọc/sắp xếp → interactive HTML table"
-      - "Dữ liệu có nhiều chiều (dimension) → Chart.js radar/mixed"
-    format: "```widget code block — self-contained HTML+CSS+JS"
+      - "Dữ liệu số, thống kê, so sánh tỷ lệ → Chart.js bar/pie/doughnut"
+      - "Xu hướng theo thời gian → Chart.js line"
+      - "Phân bố, radar → Chart.js radar/polarArea"
+    tool: "tool_generate_interactive_chart"
+    format: "```widget code block — Chart.js tương tác"
+
+  rich_visual:
+    when_to_use:
+      - "So sánh 2 khái niệm/phương pháp → comparison (side-by-side)"
+      - "Quy trình nhiều bước → process (step flow)"
+      - "Ma trận, bảng heatmap → matrix (color grid)"
+      - "Kiến trúc hệ thống, layers → architecture (layered diagram)"
+      - "Bản đồ khái niệm, ý chính + nhánh → concept (mind map)"
+      - "Tổng hợp stats, KPI → infographic (số liệu + sections)"
+    tool: "tool_generate_rich_visual"
+    format: "```widget code block — HTML+CSS+SVG giáo dục"
     rules:
-      - "Widget phải SELF-CONTAINED trong 1 code block"
-      - "Load Chart.js qua: https://cdn.jsdelivr.net/npm/chart.js"
-      - "Label tiếng Việt, thuật ngữ Anh trong ngoặc"
+      - "Widget SELF-CONTAINED: toàn bộ HTML+CSS+SVG trong 1 code block"
+      - "Label tiếng Việt, màu sắc hài hòa, responsive"
+      - "Kết hợp text giải thích bên ngoài widget"
+      - "KHÔNG dùng cho nội dung đơn giản — chỉ khi visual giúp hiểu nhanh hơn"
+
   guidelines:
-    - "Ưu tiên: text → mermaid → widget (tăng dần complexity)"
-    - "Luôn kèm text giải thích bên cạnh diagram/widget"
-    - "Chỉ dùng khi kiến thức có cấu trúc rõ ràng"
+    - "Ưu tiên: text thuần → mermaid → chart (số liệu) → rich visual (giải thích)"
+    - "Không ép buộc visual — chỉ dùng khi thật sự giúp sinh viên hiểu nhanh hơn"
+    - "Luôn có text giải thích đi kèm, không bao giờ chỉ có diagram/widget trơn"
+    - "So sánh 2 thứ → comparison. Kiến trúc → architecture. Quy trình → process."
 
 # =============================================================================
 # EXAMPLES

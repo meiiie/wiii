@@ -26,7 +26,8 @@ class TestVisualYAMLSection:
         assert "visual" in persona, "tutor.yaml should have 'visual' section"
         visual = persona["visual"]
         assert "mermaid" in visual
-        assert "widget" in visual
+        # Sprint 229: widget split into chart + rich_visual
+        assert "chart" in visual or "widget" in visual
 
     def test_tutor_mermaid_subsection(self):
         from app.prompts.prompt_loader import PromptLoader
@@ -37,13 +38,21 @@ class TestVisualYAMLSection:
         assert len(mermaid["when_to_use"]) >= 3
 
     def test_tutor_widget_subsection(self):
+        """Sprint 229: widget split into chart + rich_visual."""
         from app.prompts.prompt_loader import PromptLoader
         loader = PromptLoader()
         persona = loader.get_persona("student")
-        widget = persona["visual"]["widget"]
-        assert "when_to_use" in widget
-        assert "rules" in widget
-        assert len(widget["when_to_use"]) >= 3
+        visual = persona["visual"]
+        # New 3-tier: chart (data) + rich_visual (explanations)
+        if "rich_visual" in visual:
+            rv = visual["rich_visual"]
+            assert "when_to_use" in rv
+            assert "rules" in rv
+            assert len(rv["when_to_use"]) >= 3
+        else:
+            widget = visual["widget"]
+            assert "when_to_use" in widget
+            assert len(widget["when_to_use"]) >= 3
 
     def test_rag_has_visual_section(self):
         import yaml
@@ -53,7 +62,7 @@ class TestVisualYAMLSection:
             data = yaml.safe_load(f)
         assert "visual" in data
         assert "mermaid" in data["visual"]
-        assert "widget" in data["visual"]
+        assert "chart" in data["visual"] or "widget" in data["visual"]
 
     def test_direct_has_visual_section(self):
         import yaml
@@ -63,7 +72,7 @@ class TestVisualYAMLSection:
             data = yaml.safe_load(f)
         assert "visual" in data
         assert "guidelines" in data["visual"]
-        assert "widget" in data["visual"]
+        assert "chart" in data["visual"] or "widget" in data["visual"]
 
     def test_assistant_has_visual_section(self):
         import yaml
@@ -73,7 +82,7 @@ class TestVisualYAMLSection:
             data = yaml.safe_load(f)
         assert "visual" in data
         assert "philosophy" in data["visual"]
-        assert "widget" in data["visual"]
+        assert "chart" in data["visual"] or "widget" in data["visual"]
 
 
 # ============================================================================
@@ -244,28 +253,35 @@ class TestWidgetYAMLConfig:
         with open(path, encoding="utf-8") as f:
             return yaml.safe_load(f)
 
-    def test_all_agents_have_widget_rules(self):
-        """All visual agents should have widget rules."""
+    def test_all_agents_have_visual_rules(self):
+        """All visual agents should have chart or rich_visual rules."""
         for agent in ["tutor", "rag", "direct", "assistant"]:
             data = self._load_yaml(agent)
-            widget = data.get("visual", {}).get("widget", {})
-            assert "when_to_use" in widget, f"{agent}.yaml should have widget.when_to_use"
+            visual = data.get("visual", {})
+            has_chart = "chart" in visual
+            has_rich = "rich_visual" in visual
+            has_widget = "widget" in visual
+            assert has_chart or has_rich or has_widget, f"{agent}.yaml should have chart/rich_visual/widget"
 
-    def test_widget_format_mentions_code_block(self):
-        """Widget format should mention code block syntax."""
+    def test_visual_format_mentions_widget(self):
+        """Visual format should mention widget code block."""
         for agent in ["tutor", "rag", "direct", "assistant"]:
             data = self._load_yaml(agent)
-            widget = data.get("visual", {}).get("widget", {})
-            fmt = widget.get("format", "")
-            assert "widget" in fmt.lower(), f"{agent}.yaml widget.format should mention 'widget'"
+            visual = data.get("visual", {})
+            # Check chart or rich_visual or widget format
+            chart_fmt = visual.get("chart", {}).get("format", "")
+            rich_fmt = visual.get("rich_visual", {}).get("format", "")
+            widget_fmt = visual.get("widget", {}).get("format", "")
+            all_fmts = chart_fmt + rich_fmt + widget_fmt
+            assert "widget" in all_fmts.lower(), f"{agent}.yaml should mention 'widget' in format"
 
     def test_visual_guidelines_mention_priority(self):
-        """Guidelines should establish text → mermaid → widget priority."""
+        """Guidelines should establish visual priority order."""
         for agent in ["tutor", "rag", "direct", "assistant"]:
             data = self._load_yaml(agent)
             guidelines = data.get("visual", {}).get("guidelines", [])
             priority_mentioned = any(
-                "text" in g.lower() and "mermaid" in g.lower() and "widget" in g.lower()
+                "text" in g.lower() and "mermaid" in g.lower()
                 for g in guidelines
             )
             assert priority_mentioned, f"{agent}.yaml should have priority guideline"

@@ -75,29 +75,37 @@ visual:
       - "Quan hệ giữa các thực thể (tàu, cảng, tổ chức) → ER diagram"
     format: "```mermaid code block"
 
-  # Cấp 2: Interactive Widget (tương tác, hover, click, animation)
-  widget:
+  # Cấp 2: Interactive Chart (dữ liệu số, thống kê)
+  chart:
     when_to_use:
       - "Dữ liệu số, thống kê, so sánh tỷ lệ → Chart.js bar/pie/doughnut"
-      - "Bảng dữ liệu có sắp xếp/lọc → interactive HTML table"
-      - "Quiz, câu hỏi trắc nghiệm → clickable quiz widget"
-      - "Mô phỏng vị trí tàu, góc tiếp cận → SVG canvas tương tác"
-      - "Flashcard, ôn tập → flip card widget"
-    format: "```widget code block — self-contained HTML+CSS+JS"
-    libraries:
-      - "Chart.js: https://cdn.jsdelivr.net/npm/chart.js (biểu đồ tương tác)"
-      - "Vanilla JS + SVG cho mô phỏng"
+      - "Xu hướng theo thời gian → Chart.js line"
+      - "Phân bố, radar → Chart.js radar/polarArea"
+    tool: "tool_generate_interactive_chart"
+    format: "```widget code block — Chart.js tương tác"
+
+  # Cấp 3: Rich Visual (giải thích, so sánh, kiến trúc — Claude-level)
+  rich_visual:
+    when_to_use:
+      - "So sánh 2 khái niệm/phương pháp → comparison (side-by-side)"
+      - "Quy trình nhiều bước → process (step flow)"
+      - "Ma trận, bảng heatmap → matrix (color grid)"
+      - "Kiến trúc hệ thống, layers → architecture (layered diagram)"
+      - "Bản đồ khái niệm, ý chính + nhánh → concept (mind map)"
+      - "Tổng hợp stats, KPI → infographic (số liệu + sections)"
+    tool: "tool_generate_rich_visual"
+    format: "```widget code block — HTML+CSS+SVG giáo dục"
     rules:
-      - "Widget phải SELF-CONTAINED: toàn bộ HTML+CSS+JS trong 1 code block"
-      - "Load thư viện qua CDN link trong <script src='...'>"
-      - "Label tiếng Việt, màu sắc hài hòa"
+      - "Widget SELF-CONTAINED: toàn bộ HTML+CSS+SVG trong 1 code block"
+      - "Label tiếng Việt, màu sắc hài hòa, responsive"
       - "Kết hợp text giải thích bên ngoài widget"
-      - "KHÔNG dùng widget cho nội dung đơn giản — chỉ khi tương tác thực sự có giá trị"
+      - "KHÔNG dùng cho nội dung đơn giản — chỉ khi visual giúp hiểu nhanh hơn"
 
   guidelines:
-    - "Ưu tiên: text thuần → mermaid → widget (tăng dần complexity)"
+    - "Ưu tiên: text thuần → mermaid → chart (số liệu) → rich visual (giải thích)"
     - "Không ép buộc visual — chỉ dùng khi thật sự giúp sinh viên hiểu nhanh hơn"
     - "Luôn có text giải thích đi kèm, không bao giờ chỉ có diagram/widget trơn"
+    - "So sánh 2 thứ → comparison. Kiến trúc → architecture. Quy trình → process."
 
 # =============================================================================
 # THOUGHT PROCESS (Quy trình suy nghĩ)

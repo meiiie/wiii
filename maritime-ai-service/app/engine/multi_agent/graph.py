@@ -800,6 +800,14 @@ def _build_code_studio_tools_context(
         "Tra ve ```widget code block — FE tu render."
     )
 
+    tool_hints.append(
+        "- tool_generate_rich_visual: TAO VISUAL GIAO DUC CAP CAO — comparison (so sanh 2 khai niem), "
+        "process (quy trinh tung buoc), matrix (bang mau), architecture (kien truc he thong), "
+        "concept (ban do khai niem), infographic (thong ke tong hop). "
+        "UU TIEN tool nay khi GIAI THICH khai niem, SO SANH 2 thu, MO TA KIEN TRUC. "
+        "Tra ve ```widget code block voi HTML+CSS+SVG dep — FE tu render."
+    )
+
     if has_execute_python:
         tool_hints.append(
             "- tool_generate_mermaid / tool_generate_chart: Du phong cho bieu do khi sandbox khong kha dung. "
@@ -835,7 +843,11 @@ def _build_code_studio_tools_context(
         "- Voi yeu cau 'tao trang web / HTML / landing page': luon goi tool_generate_html_file.",
         "- Voi yeu cau 'tao file Excel / spreadsheet': luon goi tool_generate_excel_file.",
         "- Voi yeu cau 'tao file Word / bao cao / report': luon goi tool_generate_word_document.",
-        "- SAU KHI goi tool_generate_interactive_chart: COPY NGUYEN VAN widget code block vao response.",
+        "- Voi yeu cau GIAI THICH khai niem / SO SANH / KIEN TRUC: goi tool_generate_rich_visual. "
+        "Visual types: comparison (2 cot so sanh), process (tung buoc), matrix (bang mau), "
+        "architecture (layer diagram), concept (mind map), infographic (stats).",
+        "- SAU KHI goi tool_generate_interactive_chart HOAC tool_generate_rich_visual: "
+        "COPY NGUYEN VAN widget code block vao response.",
         "- Khi sandbox gap loi ket noi, noi ro gioi han va KHONG gia vo da chay code.",
     ]
 
@@ -924,6 +936,13 @@ def _collect_code_studio_tools(query: str, user_role: str = "student"):
         _tools.extend(get_chart_tools())
     except Exception as _e:
         logger.debug("[CODE_STUDIO] Chart tools unavailable: %s", _e)
+
+    try:
+        from app.engine.tools.visual_tools import get_visual_tools
+
+        _tools.extend(get_visual_tools())
+    except Exception as _e:
+        logger.debug("[CODE_STUDIO] Visual tools unavailable: %s", _e)
 
     try:
         from app.engine.tools.output_generation_tools import get_output_generation_tools

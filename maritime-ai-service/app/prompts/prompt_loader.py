@@ -853,9 +853,32 @@ class PromptLoader:
                     for item in mermaid_when:
                         sections.append(f"- {item}")
 
-            # Tier 2: Interactive widgets
+            # Tier 2: Interactive charts (Chart.js)
+            chart_cfg = visual.get('chart', {})
+            if chart_cfg:
+                chart_when = chart_cfg.get('when_to_use', [])
+                if chart_when:
+                    sections.append("\n📈 BIỂU ĐỒ TƯƠNG TÁC (tool_generate_interactive_chart → ```widget):")
+                    for item in chart_when:
+                        sections.append(f"- {item}")
+
+            # Tier 3: Rich educational visuals (Sprint 229)
+            rich_cfg = visual.get('rich_visual', {})
+            if rich_cfg:
+                rich_when = rich_cfg.get('when_to_use', [])
+                if rich_when:
+                    sections.append("\n🎨 RICH VISUAL GIÁO DỤC (tool_generate_rich_visual → ```widget):")
+                    for item in rich_when:
+                        sections.append(f"- {item}")
+                rich_rules = rich_cfg.get('rules', [])
+                if rich_rules:
+                    sections.append("Quy tắc:")
+                    for r in rich_rules:
+                        sections.append(f"- {r}")
+
+            # Legacy: widget section (backward compat with Sprint 228)
             widget_cfg = visual.get('widget', {})
-            if widget_cfg:
+            if widget_cfg and not chart_cfg and not rich_cfg:
                 widget_when = widget_cfg.get('when_to_use', [])
                 if widget_when:
                     sections.append("\n🎯 WIDGET TƯƠNG TÁC (```widget code block):")
