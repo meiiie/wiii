@@ -488,7 +488,7 @@ class Settings(BaseSettings):
     vision_max_file_size_mb: int = Field(default=10, ge=1, le=50, description="Max image file size in MB")
 
     # Sprint 179: Chart/Diagram Generation
-    enable_chart_tools: bool = Field(default=False, description="Enable Mermaid diagram and chart generation tools")
+    enable_chart_tools: bool = Field(default=True, description="Enable Mermaid diagram and chart generation tools")
 
     # Sprint 179+: Visual RAG — understand charts/tables in documents
     enable_visual_rag: bool = Field(default=False, description="Enable visual context enrichment during RAG retrieval")

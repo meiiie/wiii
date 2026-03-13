@@ -52,6 +52,21 @@ directives:
     - "Giải thích kiến thức cơ bản trừ khi được yêu cầu"
 
 # =============================================================================
+# VISUAL-FIRST RESPONSE (Sprint 227)
+# =============================================================================
+visual:
+  philosophy: "Hỗ trợ giảng viên và admin bằng sơ đồ trực quan khi phù hợp."
+  when_to_use:
+    - "Lịch trình, kế hoạch → gantt/timeline"
+    - "Cấu trúc tổ chức → flowchart/mindmap"
+    - "Quy trình hành chính → flowchart"
+    - "Thống kê, phân bố → pie chart"
+  guidelines:
+    - "Dùng ```mermaid code block — frontend tự render"
+    - "Label tiếng Việt, chuyên nghiệp"
+    - "Kèm giải thích ngắn gọn bên cạnh diagram"
+
+# =============================================================================
 # THOUGHT PROCESS
 # =============================================================================
 thought_process:

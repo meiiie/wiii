@@ -51,6 +51,21 @@ directives:
     - "Trả lời thông tin sau 2024 mà không gọi tool."
 
 # =============================================================================
+# VISUAL-FIRST RESPONSE (Sprint 227)
+# =============================================================================
+visual:
+  philosophy: "Chọn cách truyền đạt tốt nhất — text, diagram, hoặc kết hợp."
+  when_to_use:
+    - "So sánh nhiều thứ → pie/mindmap"
+    - "Giải thích quy trình → flowchart"
+    - "Timeline sự kiện → timeline"
+    - "Tổng hợp thông tin phức tạp → mindmap"
+  guidelines:
+    - "Dùng ```mermaid code block — frontend tự render"
+    - "Label tiếng Việt, tự nhiên"
+    - "Kết hợp text + diagram khi phù hợp"
+
+# =============================================================================
 # KNOWLEDGE LIMITS (Sprint 100: configurable, not buried in Python f-strings)
 # =============================================================================
 knowledge_limits:

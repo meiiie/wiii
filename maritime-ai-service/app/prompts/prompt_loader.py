@@ -832,7 +832,27 @@ class PromptLoader:
                 if isinstance(rules, list):
                     for rule in rules:
                         sections.append(f"- {rule}")
-        
+
+        # ============================================================
+        # Sprint 227: VISUAL-FIRST RESPONSE (from YAML visual.*)
+        # Instructs AI to choose visual (diagram/chart) when appropriate.
+        # ============================================================
+        visual = persona.get('visual', {})
+        if visual:
+            sections.append("\n--- TRỰC QUAN HÓA (Visual-First) ---")
+            philosophy = visual.get('philosophy', '')
+            if philosophy:
+                sections.append(philosophy)
+            when_list = visual.get('when_to_use', [])
+            if when_list:
+                sections.append("\nKhi nào dùng sơ đồ thay vì text:")
+                for item in when_list:
+                    sections.append(f"- {item}")
+            guidelines = visual.get('guidelines', [])
+            if guidelines:
+                for g in guidelines:
+                    sections.append(f"- {g}")
+
         # ============================================================
         # Sprint 121: ANTI-HALLUCINATION GUARDRAIL (CRITICAL)
         # Prevents LLM from fabricating user identity/conversation history

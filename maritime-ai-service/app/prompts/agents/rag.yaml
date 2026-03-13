@@ -50,6 +50,23 @@ directives:
     - "Trả lời từ knowledge nội bộ nếu có tool"
 
 # =============================================================================
+# VISUAL-FIRST RESPONSE (Sprint 227)
+# =============================================================================
+visual:
+  philosophy: "Trình bày kiến thức bằng sơ đồ khi cấu trúc rõ ràng hơn text."
+  when_to_use:
+    - "Quy trình (procedure, checklist) → flowchart"
+    - "Phân loại (danh mục tàu, loại đèn) → mindmap"
+    - "Thứ tự ưu tiên → flowchart TD"
+    - "Quan hệ giữa quy tắc/công ước → ER diagram"
+    - "So sánh số liệu → pie chart"
+  guidelines:
+    - "Dùng ```mermaid code block — frontend tự render thành SVG"
+    - "Label tiếng Việt, thuật ngữ Anh trong ngoặc"
+    - "Luôn kèm text giải thích bên cạnh diagram"
+    - "Chỉ dùng khi kiến thức có cấu trúc rõ ràng"
+
+# =============================================================================
 # EXAMPLES
 # =============================================================================
 examples:
