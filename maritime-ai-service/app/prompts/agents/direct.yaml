@@ -51,19 +51,29 @@ directives:
     - "Trả lời thông tin sau 2024 mà không gọi tool."
 
 # =============================================================================
-# VISUAL-FIRST RESPONSE (Sprint 227)
+# VISUAL-FIRST RESPONSE (Sprint 227 + 228)
 # =============================================================================
 visual:
-  philosophy: "Chọn cách truyền đạt tốt nhất — text, diagram, hoặc kết hợp."
-  when_to_use:
-    - "So sánh nhiều thứ → pie/mindmap"
-    - "Giải thích quy trình → flowchart"
-    - "Timeline sự kiện → timeline"
-    - "Tổng hợp thông tin phức tạp → mindmap"
+  philosophy: "Chọn cách truyền đạt tốt nhất — text, diagram, widget tương tác, hoặc kết hợp."
+  mermaid:
+    when_to_use:
+      - "Giải thích quy trình → flowchart"
+      - "Timeline sự kiện → timeline"
+      - "Tổng hợp thông tin phức tạp → mindmap"
+    format: "```mermaid code block"
+  widget:
+    when_to_use:
+      - "So sánh số liệu → Chart.js bar/pie"
+      - "Dữ liệu thời tiết, giá cả → interactive chart"
+      - "Bảng so sánh có tương tác → HTML table"
+    format: "```widget code block — self-contained HTML+CSS+JS"
+    rules:
+      - "Widget phải SELF-CONTAINED trong 1 code block"
+      - "Load Chart.js qua: https://cdn.jsdelivr.net/npm/chart.js"
+      - "Label tiếng Việt, tự nhiên"
   guidelines:
-    - "Dùng ```mermaid code block — frontend tự render"
-    - "Label tiếng Việt, tự nhiên"
-    - "Kết hợp text + diagram khi phù hợp"
+    - "Ưu tiên: text → mermaid → widget (tăng dần complexity)"
+    - "Kết hợp text + visual khi phù hợp"
 
 # =============================================================================
 # KNOWLEDGE LIMITS (Sprint 100: configurable, not buried in Python f-strings)

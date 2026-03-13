@@ -9,6 +9,7 @@ import "katex/dist/katex.min.css";
 import { CodeBlock } from "./CodeBlock";
 
 const MermaidDiagram = lazy(() => import("./MermaidDiagram"));
+const InlineHtmlWidget = lazy(() => import("./InlineHtmlWidget"));
 
 /**
  * Extended sanitize schema — allows KaTeX-generated HTML elements.
@@ -88,6 +89,15 @@ export function MarkdownRenderer({ content, className = "" }: MarkdownRendererPr
               return (
                 <Suspense fallback={<pre className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm"><code>{rawCode}</code></pre>}>
                   <MermaidDiagram code={rawCode} />
+                </Suspense>
+              );
+            }
+
+            // Sprint 228: Route widget code blocks to InlineHtmlWidget
+            if (match && match[1] === "widget") {
+              return (
+                <Suspense fallback={<div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm animate-pulse">Dang tai widget...</div>}>
+                  <InlineHtmlWidget code={rawCode} />
                 </Suspense>
               );
             }

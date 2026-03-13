@@ -52,19 +52,29 @@ directives:
     - "Giải thích kiến thức cơ bản trừ khi được yêu cầu"
 
 # =============================================================================
-# VISUAL-FIRST RESPONSE (Sprint 227)
+# VISUAL-FIRST RESPONSE (Sprint 227 + 228)
 # =============================================================================
 visual:
-  philosophy: "Hỗ trợ giảng viên và admin bằng sơ đồ trực quan khi phù hợp."
-  when_to_use:
-    - "Lịch trình, kế hoạch → gantt/timeline"
-    - "Cấu trúc tổ chức → flowchart/mindmap"
-    - "Quy trình hành chính → flowchart"
-    - "Thống kê, phân bố → pie chart"
+  philosophy: "Hỗ trợ giảng viên và admin bằng sơ đồ hoặc widget tương tác khi phù hợp."
+  mermaid:
+    when_to_use:
+      - "Lịch trình, kế hoạch → gantt/timeline"
+      - "Cấu trúc tổ chức → flowchart/mindmap"
+      - "Quy trình hành chính → flowchart"
+    format: "```mermaid code block"
+  widget:
+    when_to_use:
+      - "Thống kê, phân bố → Chart.js pie/bar"
+      - "Bảng điểm, kết quả học tập → interactive table"
+      - "Dashboard tổng hợp → mixed chart"
+    format: "```widget code block — self-contained HTML+CSS+JS"
+    rules:
+      - "Widget phải SELF-CONTAINED trong 1 code block"
+      - "Load Chart.js qua: https://cdn.jsdelivr.net/npm/chart.js"
+      - "Label tiếng Việt, chuyên nghiệp"
   guidelines:
-    - "Dùng ```mermaid code block — frontend tự render"
-    - "Label tiếng Việt, chuyên nghiệp"
-    - "Kèm giải thích ngắn gọn bên cạnh diagram"
+    - "Ưu tiên: text → mermaid → widget (tăng dần complexity)"
+    - "Kèm giải thích ngắn gọn bên cạnh diagram/widget"
 
 # =============================================================================
 # THOUGHT PROCESS

@@ -834,8 +834,8 @@ class PromptLoader:
                         sections.append(f"- {rule}")
 
         # ============================================================
-        # Sprint 227: VISUAL-FIRST RESPONSE (from YAML visual.*)
-        # Instructs AI to choose visual (diagram/chart) when appropriate.
+        # Sprint 227 + 228: VISUAL-FIRST RESPONSE (from YAML visual.*)
+        # Two tiers: Mermaid (static diagrams) + Widget (interactive HTML)
         # ============================================================
         visual = persona.get('visual', {})
         if visual:
@@ -843,13 +843,41 @@ class PromptLoader:
             philosophy = visual.get('philosophy', '')
             if philosophy:
                 sections.append(philosophy)
-            when_list = visual.get('when_to_use', [])
-            if when_list:
+
+            # Tier 1: Mermaid diagrams
+            mermaid_cfg = visual.get('mermaid', {})
+            if mermaid_cfg:
+                mermaid_when = mermaid_cfg.get('when_to_use', [])
+                if mermaid_when:
+                    sections.append("\n📊 SƠ ĐỒ MERMAID (```mermaid code block):")
+                    for item in mermaid_when:
+                        sections.append(f"- {item}")
+
+            # Tier 2: Interactive widgets
+            widget_cfg = visual.get('widget', {})
+            if widget_cfg:
+                widget_when = widget_cfg.get('when_to_use', [])
+                if widget_when:
+                    sections.append("\n🎯 WIDGET TƯƠNG TÁC (```widget code block):")
+                    for item in widget_when:
+                        sections.append(f"- {item}")
+                widget_rules = widget_cfg.get('rules', [])
+                if widget_rules:
+                    sections.append("Quy tắc widget:")
+                    for r in widget_rules:
+                        sections.append(f"- {r}")
+
+            # Legacy flat when_to_use (backward compat with Sprint 227 format)
+            flat_when = visual.get('when_to_use', [])
+            if flat_when and not mermaid_cfg:
                 sections.append("\nKhi nào dùng sơ đồ thay vì text:")
-                for item in when_list:
+                for item in flat_when:
                     sections.append(f"- {item}")
+
+            # Guidelines (applies to both tiers)
             guidelines = visual.get('guidelines', [])
             if guidelines:
+                sections.append("\nNguyên tắc chung:")
                 for g in guidelines:
                     sections.append(f"- {g}")
 

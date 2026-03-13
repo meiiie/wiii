@@ -50,20 +50,30 @@ directives:
     - "Trả lời từ knowledge nội bộ nếu có tool"
 
 # =============================================================================
-# VISUAL-FIRST RESPONSE (Sprint 227)
+# VISUAL-FIRST RESPONSE (Sprint 227 + 228)
 # =============================================================================
 visual:
-  philosophy: "Trình bày kiến thức bằng sơ đồ khi cấu trúc rõ ràng hơn text."
-  when_to_use:
-    - "Quy trình (procedure, checklist) → flowchart"
-    - "Phân loại (danh mục tàu, loại đèn) → mindmap"
-    - "Thứ tự ưu tiên → flowchart TD"
-    - "Quan hệ giữa quy tắc/công ước → ER diagram"
-    - "So sánh số liệu → pie chart"
+  philosophy: "Trình bày kiến thức bằng sơ đồ hoặc widget tương tác khi rõ ràng hơn text."
+  mermaid:
+    when_to_use:
+      - "Quy trình (procedure, checklist) → flowchart"
+      - "Phân loại (danh mục tàu, loại đèn) → mindmap"
+      - "Thứ tự ưu tiên → flowchart TD"
+      - "Quan hệ giữa quy tắc/công ước → ER diagram"
+    format: "```mermaid code block"
+  widget:
+    when_to_use:
+      - "So sánh số liệu, thống kê → Chart.js bar/pie/doughnut"
+      - "Bảng dữ liệu lớn cần lọc/sắp xếp → interactive HTML table"
+      - "Dữ liệu có nhiều chiều (dimension) → Chart.js radar/mixed"
+    format: "```widget code block — self-contained HTML+CSS+JS"
+    rules:
+      - "Widget phải SELF-CONTAINED trong 1 code block"
+      - "Load Chart.js qua: https://cdn.jsdelivr.net/npm/chart.js"
+      - "Label tiếng Việt, thuật ngữ Anh trong ngoặc"
   guidelines:
-    - "Dùng ```mermaid code block — frontend tự render thành SVG"
-    - "Label tiếng Việt, thuật ngữ Anh trong ngoặc"
-    - "Luôn kèm text giải thích bên cạnh diagram"
+    - "Ưu tiên: text → mermaid → widget (tăng dần complexity)"
+    - "Luôn kèm text giải thích bên cạnh diagram/widget"
     - "Chỉ dùng khi kiến thức có cấu trúc rõ ràng"
 
 # =============================================================================
