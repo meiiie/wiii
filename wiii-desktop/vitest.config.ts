@@ -12,7 +12,13 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
-    setupFiles: [],
+    setupFiles: ["src/__tests__/setup.ts"],
+    // Single worker prevents Zustand store leakage between concurrent test files
+    // and eliminates 15s dynamic-import timeouts under jsdom load.
+    pool: "forks",
+    poolOptions: {
+      forks: { singleFork: true },
+    },
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "json-summary"],

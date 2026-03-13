@@ -92,6 +92,7 @@ wiii-desktop/scripts/screenshots/
 .claude/plans/
 .claude/reports/
 .claude/tasks/
+plans/
 
 # === Large data files ===
 maritime-ai-service/data/*.pdf
