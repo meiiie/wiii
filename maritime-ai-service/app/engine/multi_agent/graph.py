@@ -2239,7 +2239,43 @@ async def _execute_code_studio_tool_rounds(
         "node": "code_studio_agent",
     })
 
+    # Sprint 229: Auto-inject widget code blocks from tool results into AI response
+    # Problem: AI often doesn't copy ```widget blocks from tool output into its response.
+    # Fix: Extract widget blocks from tool results and prepend to AI response.
+    llm_response = _inject_widget_blocks_from_tool_results(llm_response, tool_call_events)
+
     return llm_response, messages, tool_call_events
+
+
+def _inject_widget_blocks_from_tool_results(llm_response, tool_call_events: list):
+    """If tool results contain ```widget blocks that are missing from AI response, inject them."""
+    import re
+    from langchain_core.messages import AIMessage as _AM
+
+    response_text = llm_response.content if hasattr(llm_response, "content") else str(llm_response)
+
+    # Already has widget block — no injection needed
+    if "```widget" in response_text:
+        return llm_response
+
+    # Collect widget blocks from tool results
+    widget_blocks = []
+    for event in tool_call_events:
+        if event.get("type") != "result":
+            continue
+        result_text = event.get("result", "")
+        # Extract ```widget ... ``` blocks from tool output
+        matches = re.findall(r"(```widget\n.+?```)", result_text, re.DOTALL)
+        widget_blocks.extend(matches)
+
+    if not widget_blocks:
+        return llm_response
+
+    # Inject widget blocks at the beginning of the response
+    injected = "\n\n".join(widget_blocks) + "\n\n" + response_text
+    if hasattr(llm_response, "content"):
+        return _AM(content=injected)
+    return injected
 
 
 def _should_surface_direct_thinking(thinking: str) -> bool:
