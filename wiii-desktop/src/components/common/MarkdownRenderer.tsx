@@ -58,61 +58,118 @@ interface MarkdownRendererProps {
   className?: string;
 }
 
+/**
+ * Sprint 229: Pre-extract ```widget blocks BEFORE markdown parsing.
+ * rehype-raw + rehype-sanitize can mangle HTML inside code fences.
+ * This splits content into [markdown, widget, markdown, widget, ...] segments.
+ */
+interface ContentSegment {
+  type: "markdown" | "widget";
+  content: string;
+}
+
+function splitWidgetBlocks(raw: string): ContentSegment[] {
+  const segments: ContentSegment[] = [];
+  // Match ```widget\n...\n``` blocks (non-greedy, multiline)
+  const widgetRe = /```widget\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = widgetRe.exec(raw)) !== null) {
+    // Text before this widget block
+    if (match.index > lastIndex) {
+      const before = raw.slice(lastIndex, match.index).trim();
+      if (before) segments.push({ type: "markdown", content: before });
+    }
+    // The widget HTML
+    segments.push({ type: "widget", content: match[1].trim() });
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Remaining text after last widget
+  if (lastIndex < raw.length) {
+    const after = raw.slice(lastIndex).trim();
+    if (after) segments.push({ type: "markdown", content: after });
+  }
+
+  // No widget blocks found — return original content as single markdown segment
+  if (segments.length === 0) {
+    segments.push({ type: "markdown", content: raw });
+  }
+
+  return segments;
+}
+
 export function MarkdownRenderer({ content, className = "" }: MarkdownRendererProps) {
+  const segments = splitWidgetBlocks(content);
+
   return (
     <div className={`markdown-content selectable ${className}`}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[
-          rehypeRaw,
-          [rehypeKatex, { strict: false, throwOnError: false }],
-          [rehypeSanitize, mathSanitizeSchema],
-        ]}
-        components={{
-          code({ className: codeClassName, children, ...props }) {
-            const match = /language-(\w+)/.exec(codeClassName || "");
-            const isInline = !match;
+      {segments.map((seg, i) => {
+        if (seg.type === "widget") {
+          return (
+            <Suspense
+              key={`widget-${i}`}
+              fallback={<div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm animate-pulse">Đang tải widget...</div>}
+            >
+              <InlineHtmlWidget code={seg.content} />
+            </Suspense>
+          );
+        }
+        return (
+          <ReactMarkdown
+            key={`md-${i}`}
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[
+              rehypeRaw,
+              [rehypeKatex, { strict: false, throwOnError: false }],
+              [rehypeSanitize, mathSanitizeSchema],
+            ]}
+            components={{
+              code({ className: codeClassName, children, ...props }) {
+                const match = /language-(\w+)/.exec(codeClassName || "");
+                const isInline = !match;
 
-            if (isInline) {
-              return (
-                <code className={codeClassName} {...props}>
-                  {children}
-                </code>
-              );
-            }
+                if (isInline) {
+                  return (
+                    <code className={codeClassName} {...props}>
+                      {children}
+                    </code>
+                  );
+                }
 
-            // Extract raw text — rehype plugins may wrap children in React elements
-            const rawCode = extractText(children).replace(/\n$/, "");
+                const rawCode = extractText(children).replace(/\n$/, "");
 
-            // Sprint 179: Route mermaid code blocks to MermaidDiagram
-            if (match && match[1] === "mermaid") {
-              return (
-                <Suspense fallback={<pre className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm"><code>{rawCode}</code></pre>}>
-                  <MermaidDiagram code={rawCode} />
-                </Suspense>
-              );
-            }
+                if (match && match[1] === "mermaid") {
+                  return (
+                    <Suspense fallback={<pre className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm"><code>{rawCode}</code></pre>}>
+                      <MermaidDiagram code={rawCode} />
+                    </Suspense>
+                  );
+                }
 
-            // Sprint 228: Route widget code blocks to InlineHtmlWidget
-            if (match && match[1] === "widget") {
-              return (
-                <Suspense fallback={<div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm animate-pulse">Dang tai widget...</div>}>
-                  <InlineHtmlWidget code={rawCode} />
-                </Suspense>
-              );
-            }
+                // Fallback: widget inside markdown (shouldn't happen with pre-split, but just in case)
+                if (match && match[1] === "widget") {
+                  return (
+                    <Suspense fallback={<div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm animate-pulse">Đang tải widget...</div>}>
+                      <InlineHtmlWidget code={rawCode} />
+                    </Suspense>
+                  );
+                }
 
-            return (
-              <CodeBlock
-                language={match?.[1] || ""}
-                code={rawCode}
-              />
-            );
-          },
-        }}
-      >
-        {content}
-      </ReactMarkdown>
+                return (
+                  <CodeBlock
+                    language={match?.[1] || ""}
+                    code={rawCode}
+                  />
+                );
+              },
+            }}
+          >
+            {seg.content}
+          </ReactMarkdown>
+        );
+      })}
     </div>
   );
 }
