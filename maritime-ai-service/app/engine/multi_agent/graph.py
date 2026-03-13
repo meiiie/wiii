@@ -793,6 +793,13 @@ def _build_code_studio_tools_context(
         "- tool_generate_word_document: Tao file Word (.docx) tu noi dung co cau truc khi user can memo, report, proposal, hoac handout.",
     ]
 
+    tool_hints.append(
+        "- tool_generate_interactive_chart: TAO BIEU DO TUONG TAC (bar, line, pie, doughnut, radar) "
+        "voi Chart.js — render INLINE trong chat. User co the hover, xem tooltip. "
+        "UU TIEN tool nay khi co du lieu so cu the (labels + data). "
+        "Tra ve ```widget code block — FE tu render."
+    )
+
     if has_execute_python:
         tool_hints.append(
             "- tool_generate_mermaid / tool_generate_chart: Du phong cho bieu do khi sandbox khong kha dung. "
@@ -801,7 +808,7 @@ def _build_code_studio_tools_context(
     else:
         tool_hints.append(
             "- tool_generate_mermaid / tool_generate_chart: Tao so do, bieu do cau truc (flowchart, sequence, pie chart) "
-            "bang Mermaid syntax. FE se render thanh SVG."
+            "bang Mermaid syntax. FE se render thanh SVG. Chi dung cho so do/quy trinh, KHONG cho data visualization."
         )
 
     if (
@@ -817,15 +824,18 @@ def _build_code_studio_tools_context(
 
     priority_rules = [
         "## NGUYEN TAC UU TIEN:",
-        "- Uu tien tao output THAT (file, PNG, HTML, artifact) thay vi chi mo ta bang loi.",
-        "- Voi yeu cau 've bieu do / chart / plot': " + (
-            "goi tool_execute_python truoc, luu PNG, tra artifact that cho user."
+        "- Uu tien tao output THAT (file, PNG, HTML, widget) thay vi chi mo ta bang loi.",
+        "- Voi yeu cau 've bieu do / chart / thong ke / so lieu': " + (
+            "goi tool_execute_python neu can tinh toan phuc tap, HOAC goi tool_generate_interactive_chart "
+            "neu da co san labels + data. Widget chart hien thi INLINE trong chat, user co the tuong tac."
             if has_execute_python else
-            "goi tool_generate_mermaid hoac tool_generate_chart de FE render SVG."
+            "goi tool_generate_interactive_chart (uu tien) de tao bieu do tuong tac inline. "
+            "Chi dung tool_generate_mermaid cho so do/quy trinh (flowchart, mindmap), KHONG cho data chart."
         ),
         "- Voi yeu cau 'tao trang web / HTML / landing page': luon goi tool_generate_html_file.",
         "- Voi yeu cau 'tao file Excel / spreadsheet': luon goi tool_generate_excel_file.",
         "- Voi yeu cau 'tao file Word / bao cao / report': luon goi tool_generate_word_document.",
+        "- SAU KHI goi tool_generate_interactive_chart: COPY NGUYEN VAN widget code block vao response.",
         "- Khi sandbox gap loi ket noi, noi ro gioi han va KHONG gia vo da chay code.",
     ]
 

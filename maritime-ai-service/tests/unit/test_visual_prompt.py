@@ -145,7 +145,7 @@ class TestChartToolsDefault:
         with patch("app.core.config.get_settings", return_value=mock_settings):
             from app.engine.tools.chart_tools import get_chart_tools
             tools = get_chart_tools()
-            assert len(tools) == 2
+            assert len(tools) == 3  # mermaid + chart + interactive_chart
 
     def test_get_chart_tools_empty_when_disabled(self):
         mock_settings = MagicMock()
@@ -154,6 +154,16 @@ class TestChartToolsDefault:
             from app.engine.tools.chart_tools import get_chart_tools
             tools = get_chart_tools()
             assert len(tools) == 0
+
+    def test_interactive_chart_tool_exists(self):
+        """Sprint 228: tool_generate_interactive_chart should be in chart_tools."""
+        mock_settings = MagicMock()
+        mock_settings.enable_chart_tools = True
+        with patch("app.core.config.get_settings", return_value=mock_settings):
+            from app.engine.tools.chart_tools import get_chart_tools
+            tools = get_chart_tools()
+            tool_names = [t.name for t in tools]
+            assert "tool_generate_interactive_chart" in tool_names
 
 
 # ============================================================================
@@ -259,3 +269,86 @@ class TestWidgetYAMLConfig:
                 for g in guidelines
             )
             assert priority_mentioned, f"{agent}.yaml should have priority guideline"
+
+
+# ============================================================================
+# Interactive Chart Tool (Sprint 228)
+# ============================================================================
+
+
+class TestInteractiveChartTool:
+    """Verify tool_generate_interactive_chart works correctly."""
+
+    def test_generates_widget_code_block(self):
+        """Tool output should contain ```widget code block."""
+        from app.engine.tools.chart_tools import tool_generate_interactive_chart
+        result = tool_generate_interactive_chart.invoke({
+            "chart_type": "bar",
+            "labels_json": '["A", "B", "C"]',
+            "datasets_json": '[{"label": "Test", "data": [10, 20, 30]}]',
+            "title": "Test Chart",
+        })
+        assert "```widget" in result
+        assert "chart.js" in result.lower()
+        assert "Chart(" in result or "Chart(" in result
+
+    def test_generates_pie_chart(self):
+        from app.engine.tools.chart_tools import tool_generate_interactive_chart
+        result = tool_generate_interactive_chart.invoke({
+            "chart_type": "pie",
+            "labels_json": '["Red", "Blue"]',
+            "datasets_json": '[{"label": "Colors", "data": [60, 40]}]',
+            "title": "Pie Chart",
+        })
+        assert "```widget" in result
+        assert "'pie'" in result
+
+    def test_generates_doughnut_chart(self):
+        from app.engine.tools.chart_tools import tool_generate_interactive_chart
+        result = tool_generate_interactive_chart.invoke({
+            "chart_type": "doughnut",
+            "labels_json": '["X", "Y"]',
+            "datasets_json": '[{"label": "D", "data": [70, 30]}]',
+        })
+        assert "```widget" in result
+        assert "'doughnut'" in result
+
+    def test_invalid_chart_type_defaults_to_bar(self):
+        from app.engine.tools.chart_tools import tool_generate_interactive_chart
+        result = tool_generate_interactive_chart.invoke({
+            "chart_type": "invalid",
+            "labels_json": '["A"]',
+            "datasets_json": '[{"label": "T", "data": [1]}]',
+        })
+        assert "'bar'" in result
+
+    def test_invalid_json_returns_error(self):
+        from app.engine.tools.chart_tools import tool_generate_interactive_chart
+        result = tool_generate_interactive_chart.invoke({
+            "chart_type": "bar",
+            "labels_json": "not json",
+            "datasets_json": '[{"label": "T", "data": [1]}]',
+        })
+        assert "Error" in result
+
+    def test_horizontal_bar_uses_index_axis(self):
+        from app.engine.tools.chart_tools import tool_generate_interactive_chart
+        result = tool_generate_interactive_chart.invoke({
+            "chart_type": "horizontalBar",
+            "labels_json": '["A", "B"]',
+            "datasets_json": '[{"label": "H", "data": [5, 10]}]',
+        })
+        assert "```widget" in result
+        assert "'bar'" in result  # converted to bar
+        assert "indexAxis" in result  # with y axis
+
+    def test_vietnamese_labels_preserved(self):
+        from app.engine.tools.chart_tools import tool_generate_interactive_chart
+        result = tool_generate_interactive_chart.invoke({
+            "chart_type": "pie",
+            "labels_json": '["Lỗi con người", "Hỏng thiết bị", "Thời tiết"]',
+            "datasets_json": '[{"label": "Tai nạn", "data": [80, 10, 10]}]',
+            "title": "Phân bố tai nạn",
+        })
+        assert "Lỗi con người" in result
+        assert "Phân bố tai nạn" in result
