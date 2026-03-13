@@ -23,7 +23,6 @@ from typing import Optional
 import logging
 
 from langchain_core.language_models import BaseChatModel
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.core.config import settings
 from app.engine.llm_provider_registry import create_provider, get_supported_provider_names
@@ -38,7 +37,7 @@ logger = logging.getLogger(__name__)
 class ThinkingTier(Enum):
     """
     4-Tier Thinking Strategy.
-    
+
     Values correspond to thinking_budget tokens.
     """
     DEEP = "deep"         # Teaching agents (tutor)
@@ -52,16 +51,16 @@ class ThinkingTier(Enum):
 def get_thinking_budget(tier: ThinkingTier) -> int:
     """
     Get thinking budget for a tier from config.
-    
+
     Args:
         tier: ThinkingTier enum value
-        
+
     Returns:
         Token budget for thinking (0-24576, or -1 for dynamic)
     """
     if not settings.thinking_enabled:
         return 0
-    
+
     budget_map = {
         ThinkingTier.DEEP: settings.thinking_budget_deep,
         ThinkingTier.MODERATE: settings.thinking_budget_moderate,
@@ -70,7 +69,7 @@ def get_thinking_budget(tier: ThinkingTier) -> int:
         ThinkingTier.DYNAMIC: -1,
         ThinkingTier.OFF: 0,
     }
-    
+
     return budget_map.get(tier, settings.thinking_budget_moderate)
 
 
@@ -152,6 +151,24 @@ def create_llm(
             )
 
     # --- Default: Google Gemini ---
+    # Behind unified providers gate, delegate to GeminiProvider (which
+    # internally picks ChatOpenAI or ChatGoogleGenerativeAI).
+    if getattr(settings, "enable_unified_providers", False):
+        p = create_provider("google")
+        logger.info(
+            "[LLM_FACTORY] Creating LLM via GeminiProvider [unified]: tier=%s, budget=%d",
+            tier.value, thinking_budget,
+        )
+        return p.create_instance(
+            tier=tier.value,
+            thinking_budget=thinking_budget,
+            include_thoughts=include_thoughts,
+            temperature=temperature,
+        )
+
+    # Legacy direct path
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
     model_name = model or settings.google_model
 
     logger.info(

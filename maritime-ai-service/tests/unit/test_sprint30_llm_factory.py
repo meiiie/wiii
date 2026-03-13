@@ -123,11 +123,12 @@ class TestCreateLLM:
         mock_settings.google_model = "gemini-3.1-flash-lite-preview"
         mock_settings.google_api_key = "test-key"
         mock_settings.include_thought_summaries = False
+        mock_settings.enable_unified_providers = False
 
         mock_gemini = MagicMock()
 
         with patch("app.engine.llm_factory.settings", mock_settings), \
-             patch("app.engine.llm_factory.ChatGoogleGenerativeAI", return_value=mock_gemini) as mock_cls:
+             patch("langchain_google_genai.ChatGoogleGenerativeAI", return_value=mock_gemini) as mock_cls:
             from app.engine.llm_factory import create_llm
             result = create_llm()
 
@@ -143,9 +144,10 @@ class TestCreateLLM:
         mock_settings.google_model = "default-model"
         mock_settings.google_api_key = "key"
         mock_settings.include_thought_summaries = False
+        mock_settings.enable_unified_providers = False
 
         with patch("app.engine.llm_factory.settings", mock_settings), \
-             patch("app.engine.llm_factory.ChatGoogleGenerativeAI", return_value=MagicMock()) as mock_cls:
+             patch("langchain_google_genai.ChatGoogleGenerativeAI", return_value=MagicMock()) as mock_cls:
             from app.engine.llm_factory import create_llm
             create_llm(model="custom-model")
 
@@ -158,9 +160,10 @@ class TestCreateLLM:
         mock_settings.google_model = "gemini-3.1-flash-lite-preview"
         mock_settings.google_api_key = "key"
         mock_settings.include_thought_summaries = True
+        mock_settings.enable_unified_providers = False
 
         with patch("app.engine.llm_factory.settings", mock_settings), \
-             patch("app.engine.llm_factory.ChatGoogleGenerativeAI", return_value=MagicMock()) as mock_cls:
+             patch("langchain_google_genai.ChatGoogleGenerativeAI", return_value=MagicMock()) as mock_cls:
             from app.engine.llm_factory import create_llm
             create_llm(tier=ThinkingTier.DEEP)
 
@@ -174,9 +177,10 @@ class TestCreateLLM:
         mock_settings.google_model = "m"
         mock_settings.google_api_key = "k"
         mock_settings.include_thought_summaries = False
+        mock_settings.enable_unified_providers = False
 
         with patch("app.engine.llm_factory.settings", mock_settings), \
-             patch("app.engine.llm_factory.ChatGoogleGenerativeAI", return_value=MagicMock()) as mock_cls:
+             patch("langchain_google_genai.ChatGoogleGenerativeAI", return_value=MagicMock()) as mock_cls:
             from app.engine.llm_factory import create_llm
             create_llm(tier=ThinkingTier.OFF)
 
@@ -216,9 +220,10 @@ class TestCreateLLM:
         mock_settings.google_model = "gemini"
         mock_settings.google_api_key = "key"
         mock_settings.include_thought_summaries = False
+        mock_settings.enable_unified_providers = False
 
         with patch("app.engine.llm_factory.settings", mock_settings), \
-             patch("app.engine.llm_factory.ChatGoogleGenerativeAI", return_value="gemini-llm"), \
+             patch("langchain_google_genai.ChatGoogleGenerativeAI", return_value="gemini-llm"), \
              patch.dict("sys.modules", {"app.engine.llm_providers": None}):
             from app.engine.llm_factory import create_llm
             # This should fall back to Gemini gracefully

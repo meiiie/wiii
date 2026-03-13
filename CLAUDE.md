@@ -74,9 +74,10 @@ To work as a different agent:
 - **Thread isolation**: Org-prefixed IDs (`org_{org_id}__user_{uid}__session_{sid}`)
 - **Two-tier admin** (Sprint 181): `enable_org_admin=False` — system admin vs org admin (scoped to members/branding)
 
-### Unified Provider Layer (Sprint 55)
-- **Feature-gated**: `enable_unified_client=False` by default
-- **AsyncOpenAI SDK**: Direct API access alongside existing LangChain providers
+### Unified Provider Layer (Sprint 55, simplified Sprint 226)
+- **UnifiedLLMClient**: `enable_unified_client=True` (default) — `AsyncOpenAI` SDK for non-graph code paths
+- **Unified Providers**: `enable_unified_providers=False` — when enabled, all LLM providers use `ChatOpenAI` via OpenAI-compatible endpoints (eliminates `langchain-google-genai` + `langchain-ollama` dependencies)
+- **Two-path architecture**: Graph nodes → `LLMPool` → `BaseChatModel` (LangGraph compat); New code → `UnifiedLLMClient` → `AsyncOpenAI` (raw SDK)
 - **Provider configs**: Google Gemini, OpenAI, Ollama — all via OpenAI-compatible endpoints
 - **Singleton**: `UnifiedLLMClient` with `get_client(provider)` → `AsyncOpenAI`
 - **Tier mapping**: `get_model(provider, tier)` → deep/moderate/light model names
@@ -369,7 +370,7 @@ app/domains/
 ```python
 # Core (all True)
 use_multi_agent, enable_corrective_rag, enable_structured_outputs, deep_reasoning_enabled
-enable_llm_failover = True; enable_unified_client = False
+enable_llm_failover = True; enable_unified_client = True; enable_unified_providers = False
 
 # Product Search — enable_product_search, enable_browser_scraping, enable_tiktok_native_api
 #   enable_crawl4ai, enable_scrapling, enable_scrapegraph, enable_thinking_chain

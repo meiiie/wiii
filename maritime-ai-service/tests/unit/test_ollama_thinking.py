@@ -113,6 +113,7 @@ class TestOllamaProviderThinking:
         import types
 
         mock_settings = MagicMock()
+        mock_settings.enable_unified_providers = False
         mock_settings.ollama_model = "qwen3:8b"
         mock_settings.ollama_base_url = "http://localhost:11434"
         mock_settings.ollama_keep_alive = "30m"
@@ -143,6 +144,7 @@ class TestOllamaProviderThinking:
         import types
 
         mock_settings = MagicMock()
+        mock_settings.enable_unified_providers = False
         mock_settings.ollama_model = "llama3.2"
         mock_settings.ollama_base_url = "http://localhost:11434"
         mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
@@ -170,6 +172,7 @@ class TestOllamaProviderThinking:
         import types
 
         mock_settings = MagicMock()
+        mock_settings.enable_unified_providers = False
         mock_settings.ollama_model = "qwen3:8b"
         mock_settings.ollama_base_url = "http://localhost:11434"
         mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
@@ -197,6 +200,7 @@ class TestOllamaProviderThinking:
         import types
 
         mock_settings = MagicMock()
+        mock_settings.enable_unified_providers = False
         mock_settings.ollama_model = "qwen3:4b-instruct-2507-q4_K_M"
         mock_settings.ollama_base_url = "http://localhost:11434"
         mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]

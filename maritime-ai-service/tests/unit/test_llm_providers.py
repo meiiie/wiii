@@ -165,6 +165,7 @@ class TestGeminiProvider:
     @patch("langchain_google_genai.ChatGoogleGenerativeAI")
     @patch("app.engine.llm_providers.gemini_provider.settings")
     def test_create_instance_returns_base_chat_model(self, mock_settings, mock_chat):
+        mock_settings.enable_unified_providers = False
         mock_settings.google_api_key = "key"
         mock_settings.google_model = "gemini-3-flash-preview"
         mock_settings.thinking_enabled = True
@@ -179,6 +180,7 @@ class TestGeminiProvider:
     @patch("langchain_google_genai.ChatGoogleGenerativeAI")
     @patch("app.engine.llm_providers.gemini_provider.settings")
     def test_create_instance_without_thinking(self, mock_settings, mock_chat):
+        mock_settings.enable_unified_providers = False
         mock_settings.google_api_key = "key"
         mock_settings.google_model = "gemini-3-flash-preview"
         mock_settings.thinking_enabled = False
@@ -195,6 +197,7 @@ class TestGeminiProvider:
     @patch("langchain_google_genai.ChatGoogleGenerativeAI")
     @patch("app.engine.llm_providers.gemini_provider.settings")
     def test_create_instance_with_thinking_budget(self, mock_settings, mock_chat):
+        mock_settings.enable_unified_providers = False
         mock_settings.google_api_key = "key"
         mock_settings.google_model = "gemini-3-flash-preview"
         mock_settings.thinking_enabled = True
@@ -387,6 +390,7 @@ class TestOllamaProvider:
 
     @patch("app.engine.llm_providers.ollama_provider.settings")
     def test_create_instance_uses_config(self, mock_settings):
+        mock_settings.enable_unified_providers = False
         mock_settings.ollama_base_url = "http://localhost:11434"
         mock_settings.ollama_model = "llama3.2"
         mock_settings.ollama_api_key = None
@@ -408,6 +412,7 @@ class TestOllamaProvider:
 
     @patch("app.engine.llm_providers.ollama_provider.settings")
     def test_create_instance_with_cloud_api_key_sets_auth_header(self, mock_settings):
+        mock_settings.enable_unified_providers = False
         mock_settings.ollama_base_url = "https://ollama.com/api"
         mock_settings.ollama_model = "gpt-oss:20b"
         mock_settings.ollama_api_key = "ollama-cloud-key"

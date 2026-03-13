@@ -229,8 +229,33 @@ class LLMPool:
         Legacy single-provider creation (Gemini-only).
 
         Used when enable_llm_failover=False or as ultimate fallback.
-        Preserves exact behavior of the original _create_instance().
+
+        Behind ``enable_unified_providers`` gate, delegates to
+        GeminiProvider (which picks ChatOpenAI or ChatGoogleGenerativeAI).
         """
+        # Unified path: delegate to provider registry
+        if getattr(settings, "enable_unified_providers", False):
+            provider = create_provider("google")
+            try:
+                llm = provider.create_instance(
+                    tier=tier_key,
+                    thinking_budget=thinking_budget,
+                    include_thoughts=include_thoughts,
+                    temperature=0.5,
+                )
+                cls._attach_tracking_callback(llm, tier_key)
+                cls._pool[tier_key] = llm
+                cls._active_provider = "google"
+                logger.info(
+                    "[LLM_POOL] Created %s instance [unified] (budget=%d, thoughts=%s)",
+                    tier_key.upper(), thinking_budget, include_thoughts,
+                )
+                return llm
+            except Exception as e:
+                logger.error("[LLM_POOL] Failed to create %s instance [unified]: %s", tier_key, e)
+                raise
+
+        # Legacy direct ChatGoogleGenerativeAI path
         from langchain_google_genai import ChatGoogleGenerativeAI
 
         llm_kwargs = {

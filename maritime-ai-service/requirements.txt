@@ -24,9 +24,8 @@ alembic~=1.15.0
 pgvector==0.2.5
 
 # --- AI CORE STACK (PINNED to tested minor versions) ---
-langchain~=1.2.11
+# Phase 0: langchain + langchain-community removed (0 imports in app/)
 langchain-core~=1.2.18
-langchain-community~=0.4.1
 langchain-openai~=1.1.0
 langchain-text-splitters~=1.1.0
 

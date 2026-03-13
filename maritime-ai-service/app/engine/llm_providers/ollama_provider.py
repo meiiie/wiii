@@ -5,6 +5,10 @@ Supports both unauthenticated local hosts and direct authenticated access to
 Ollama Cloud via https://ollama.com/api.
 
 Sprint 59: Enhanced with thinking mode support for Qwen3/DeepSeek-R1.
+
+Phase 1 (unified providers): Behind ``enable_unified_providers`` gate,
+uses ``ChatOpenAI`` pointed at Ollama's ``/v1`` endpoint instead of
+``ChatOllama``.
 """
 
 import logging
@@ -75,11 +79,12 @@ def _model_supports_thinking(model_name: str) -> bool:
 
 class OllamaProvider(LLMProvider):
     """
-    Ollama provider via langchain-ollama.
+    Ollama provider.
 
-    Works with local Ollama hosts and with Ollama Cloud when `ollama_api_key`
-    is configured.
-    Sprint 59: Supports thinking mode for compatible models.
+    Two paths:
+    - Legacy (default): ``ChatOllama`` from langchain-ollama
+    - Unified (``enable_unified_providers=True``): ``ChatOpenAI`` via
+      Ollama's ``/v1`` OpenAI-compatible endpoint
     """
 
     @property
@@ -103,6 +108,16 @@ class OllamaProvider(LLMProvider):
         include_thoughts: bool = False,
         temperature: float = 0.5,
         **kwargs: Any,
+    ) -> BaseChatModel:
+        if getattr(settings, "enable_unified_providers", False):
+            return self._create_unified(tier, thinking_budget, include_thoughts, temperature)
+        return self._create_legacy(tier, thinking_budget, include_thoughts, temperature)
+
+    # --------------------------------------------------------------------- #
+    # Legacy path: ChatOllama
+    # --------------------------------------------------------------------- #
+    def _create_legacy(
+        self, tier: str, thinking_budget: int, include_thoughts: bool, temperature: float,
     ) -> BaseChatModel:
         try:
             from langchain_ollama import ChatOllama
@@ -150,13 +165,55 @@ class OllamaProvider(LLMProvider):
             **ollama_kwargs,
         )
         logger.info(
-            "[OLLAMA] Created %s instance (model=%s, base_url=%s, thinking=%s, keep_alive=%s, auth=%s)",
+            "[OLLAMA] Created %s instance [legacy] (model=%s, base_url=%s, thinking=%s, keep_alive=%s, auth=%s)",
             tier.upper(),
             model,
             base_url,
             bool("extra_body" in ollama_kwargs),
             keep_alive,
             bool(api_key),
+        )
+        return llm
+
+    # --------------------------------------------------------------------- #
+    # Unified path: ChatOpenAI → Ollama /v1 endpoint
+    # --------------------------------------------------------------------- #
+    def _create_unified(
+        self, tier: str, thinking_budget: int, include_thoughts: bool, temperature: float,
+    ) -> BaseChatModel:
+        from langchain_openai import ChatOpenAI
+
+        model = getattr(settings, "ollama_model", "qwen3:4b-instruct-2507-q4_K_M")
+        raw_base_url = getattr(settings, "ollama_base_url", "http://localhost:11434")
+        api_key = getattr(settings, "ollama_api_key", None)
+        if not isinstance(api_key, str) or not api_key.strip():
+            api_key = "ollama"  # Ollama /v1 requires a non-empty key
+        else:
+            api_key = api_key.strip()
+
+        # Ensure /v1 suffix for OpenAI-compat endpoint
+        base_url_v1 = raw_base_url.rstrip("/")
+        if not base_url_v1.endswith("/v1"):
+            base_url_v1 = base_url_v1 + "/v1"
+
+        llm_kwargs: dict[str, Any] = {
+            "model": model,
+            "api_key": api_key,
+            "base_url": base_url_v1,
+            "temperature": temperature,
+            "streaming": True,
+        }
+
+        # Ollama thinking for Qwen3/DeepSeek-R1
+        thinks = thinking_budget > 0 or include_thoughts
+        if _model_supports_thinking(model) and thinks:
+            llm_kwargs["model_kwargs"] = {"extra_body": {"think": True}}
+            logger.info("[OLLAMA] Thinking mode enabled for %s [unified]", model)
+
+        llm = ChatOpenAI(**llm_kwargs)
+        logger.info(
+            "[OLLAMA] Created %s instance [unified/ChatOpenAI] (model=%s, base_url=%s)",
+            tier.upper(), model, base_url_v1,
         )
         return llm
 

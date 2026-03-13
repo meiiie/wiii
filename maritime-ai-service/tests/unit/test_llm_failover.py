@@ -198,6 +198,7 @@ class TestLegacyPath:
     @patch("app.engine.llm_pool.settings")
     def test_legacy_thinking_disabled(self, mock_settings, mock_chat):
         mock_settings.enable_llm_failover = False
+        mock_settings.enable_unified_providers = False
         mock_settings.google_api_key = "test-key"
         mock_settings.google_model = "gemini-3-flash-preview"
         mock_settings.thinking_enabled = False

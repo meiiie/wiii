@@ -410,8 +410,9 @@ class TestLLMFactoryProvider:
         mock_settings.include_thought_summaries = False
         mock_settings.google_model = "gemini-3-flash-preview"
         mock_settings.google_api_key = "test-key"
+        mock_settings.enable_unified_providers = False
 
-        with patch("app.engine.llm_factory.ChatGoogleGenerativeAI") as mock_chat:
+        with patch("langchain_google_genai.ChatGoogleGenerativeAI") as mock_chat:
             mock_chat.return_value = MagicMock(spec=BaseChatModel)
             from app.engine.llm_factory import create_llm
             llm = create_llm(tier=ThinkingTier.LIGHT)
