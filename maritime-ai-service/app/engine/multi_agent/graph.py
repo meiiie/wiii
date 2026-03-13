@@ -2272,7 +2272,14 @@ def _inject_widget_blocks_from_tool_results(llm_response, tool_call_events: list
     import re
     from langchain_core.messages import AIMessage as _AM
 
-    response_text = llm_response.content if hasattr(llm_response, "content") else str(llm_response)
+    raw_content = llm_response.content if hasattr(llm_response, "content") else str(llm_response)
+    # Gemini may return content as list of parts — flatten to string
+    if isinstance(raw_content, list):
+        response_text = "\n".join(
+            p.get("text", "") if isinstance(p, dict) else str(p) for p in raw_content
+        )
+    else:
+        response_text = str(raw_content)
 
     # Already has widget block — no injection needed
     if "```widget" in response_text:
