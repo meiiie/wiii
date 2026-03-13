@@ -931,10 +931,19 @@ def _collect_direct_tools(query: str, user_role: str = "student"):
 
     _direct_tools = filter_tools_for_role(_direct_tools, user_role)
 
+    # Sprint 229: Include visual signal in force_tools
+    _normalized = _normalize_for_intent(query)
+    _needs_visual = any(
+        s in _normalized for s in (
+            "so sanh", "compare", "visual", "bieu do", "diagram",
+            "kien truc", "architecture", "quy trinh", "process",
+            "quiz", "trac nghiem", "mo phong", "simulation",
+        )
+    )
     force_tools = bool(_direct_tools) and (
         _needs_web_search(query) or _needs_datetime(query)
         or _needs_news_search(query) or _needs_legal_search(query)
-        or _needs_lms_query(query)
+        or _needs_lms_query(query) or _needs_visual
     )
     return _direct_tools, force_tools
 
@@ -1048,6 +1057,15 @@ def _direct_required_tool_names(query: str, user_role: str = "student") -> list[
         required.append("tool_knowledge_search")
     # WAVE-001: browser_snapshot and execute_python removed from direct.
     # These capabilities now live exclusively in code_studio_agent.
+
+    # Sprint 229: Force visual tool when query suggests comparison/visual/diagram
+    visual_signals = (
+        "so sanh", "compare", "visual", "bieu do", "diagram", "kien truc",
+        "architecture", "quy trinh", "process", "quiz", "trac nghiem",
+        "mo phong", "simulation", "infographic",
+    )
+    if any(signal in normalized for signal in visual_signals):
+        required.append("tool_generate_rich_visual")
 
     return required
 
