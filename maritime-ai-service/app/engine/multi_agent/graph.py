@@ -713,6 +713,13 @@ def _build_direct_tools_context(
     # These capabilities are handled by code_studio_agent.
     # Direct now focuses on: conversation, web search, knowledge, character, LMS.
 
+    # Sprint 229d: Visual tools available to direct for inline rich visuals.
+    tool_hints.append(
+        "- tool_generate_rich_visual: TAO VISUAL TUONG TAC inline (comparison, process, matrix, "
+        "architecture, concept, infographic, simulation, quiz, interactive_table, react_app). "
+        "Goi tool nay khi can GIAI THICH TRUC QUAN, SO SANH, hoac QUIZ."
+    )
+
     parts = []
     parts.append("## CÔNG CỤ CÓ SẴN:\n" + "\n".join(tool_hints))
 
@@ -911,6 +918,16 @@ def _collect_direct_tools(query: str, user_role: str = "student"):
 
     # WAVE-001: chart_tools, output_generation_tools removed from direct.
     # Document/chart/file generation now exclusively in code_studio_agent.
+
+    # Sprint 229d: Re-add visual tools to direct agent so it can generate
+    # rich visuals (comparison, process, quiz, etc.) without routing to code_studio.
+    # This fixes the issue where direct agent writes raw JSON in widget blocks.
+    try:
+        from app.engine.tools.visual_tools import get_visual_tools
+
+        _direct_tools.extend(get_visual_tools())
+    except Exception as _e:
+        logger.debug("[DIRECT] Visual tools unavailable: %s", _e)
 
     _direct_tools = filter_tools_for_role(_direct_tools, user_role)
 
@@ -1401,6 +1418,9 @@ async def _execute_direct_tool_rounds(
             "content": "",
             "node": "direct",
         })
+
+    # Sprint 229d: Auto-inject widget blocks (same as code_studio)
+    llm_response = _inject_widget_blocks_from_tool_results(llm_response, tool_call_events)
 
     return llm_response, messages, tool_call_events
 
