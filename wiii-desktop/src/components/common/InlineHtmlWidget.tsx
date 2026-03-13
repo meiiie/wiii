@@ -15,14 +15,14 @@
 import { useEffect, useState, useRef, memo } from "react";
 
 // Allowed CDN origins for interactive libraries
-// Sprint 229: Added KaTeX (math), Three.js (3D), GSAP (animation)
+// Sprint 229: React runtime (React 18, Babel, Tailwind, Recharts) + utility CDNs
 const ALLOWED_CDNS = [
-  "https://cdn.jsdelivr.net",
-  "https://cdnjs.cloudflare.com",
-  "https://unpkg.com",
-  "https://d3js.org",
-  "https://cdn.katex.org",
-  "https://cdnjs.cloudflare.com",
+  "https://cdn.jsdelivr.net",    // Chart.js, Recharts, general packages
+  "https://cdnjs.cloudflare.com", // Alternative CDN
+  "https://unpkg.com",            // React, ReactDOM, Babel standalone
+  "https://d3js.org",             // D3.js
+  "https://cdn.katex.org",        // KaTeX math notation
+  "https://cdn.tailwindcss.com",  // Tailwind CSS Play CDN (for react_app)
 ];
 
 const WIDGET_CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' blob: ${ALLOWED_CDNS.join(" ")}; style-src 'unsafe-inline' ${ALLOWED_CDNS.join(" ")}; img-src blob: data: ${ALLOWED_CDNS.join(" ")}; font-src data: ${ALLOWED_CDNS.join(" ")}; connect-src 'none';">`;

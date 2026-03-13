@@ -290,6 +290,49 @@ class TestInteractiveTableVisual:
         assert "parseFloat" in html  # numeric sort
 
 
+class TestReactAppVisual:
+    """Test React app (Claude-level architecture) visual generation."""
+
+    def test_basic_react_app(self):
+        from app.engine.tools.visual_tools import _build_react_app_html
+
+        spec = {
+            "code": "function App() { const [count, setCount] = React.useState(0); return React.createElement('div', null, React.createElement('h1', null, 'Count: ' + count), React.createElement('button', {onClick: () => setCount(c => c+1)}, '+1')); }"
+        }
+        html = _build_react_app_html(spec, "Counter App")
+        assert "react@18" in html  # React CDN
+        assert "react-dom@18" in html  # ReactDOM CDN
+        assert "babel" in html.lower()  # Babel for JSX
+        assert "tailwindcss" in html  # Tailwind CDN
+        assert "Recharts" in html  # Recharts CDN
+        assert "Counter App" in html  # title
+        assert "function App()" in html  # component code
+        assert 'type="text/babel"' in html  # JSX script type
+
+    def test_react_app_no_code_returns_error(self):
+        from app.engine.tools.visual_tools import _build_react_app_html
+
+        html = _build_react_app_html({}, "Test")
+        assert "Error" in html
+
+    def test_react_app_with_recharts(self):
+        from app.engine.tools.visual_tools import _build_react_app_html
+
+        spec = {
+            "code": """function App() {
+  const data = [{name: 'A', value: 400}, {name: 'B', value: 300}];
+  return React.createElement('div', {className: 'p-4'},
+    React.createElement(BarChart, {width: 400, height: 200, data: data},
+      React.createElement(Bar, {dataKey: 'value', fill: '#2563eb'})
+    )
+  );
+}"""
+        }
+        html = _build_react_app_html(spec, "Recharts Demo")
+        assert "BarChart" in html
+        assert "Recharts.min.js" in html
+
+
 # =============================================================================
 # Tool integration tests
 # =============================================================================
@@ -404,6 +447,7 @@ class TestDesignSystem:
                 "simulation": {"variables": [], "setup": "", "draw": "", "update": ""},
                 "quiz": {"questions": [{"question": "Q", "options": [{"text": "A", "correct": True}]}]},
                 "interactive_table": {"headers": ["H"], "rows": [["V"]]},
+                "react_app": {"code": "function App() { return React.createElement('div', null, 'Hello'); }"},
             }
             html = builder(specs[visual_type], "Test")
             assert "<!DOCTYPE html>" in html, f"{visual_type} missing DOCTYPE"

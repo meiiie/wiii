@@ -745,6 +745,62 @@ render();
 
 
 # =============================================================================
+# REACT APP — Full React component (Claude-level architecture)
+# Uses React 18 + Tailwind Play CDN + Recharts + Lucide in sandboxed iframe.
+# AI writes JSX component code → tool wraps in runtime shell → rendered live.
+# =============================================================================
+
+_REACT_RUNTIME_SHELL = """<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+// Expose Recharts components globally for JSX
+if (window.Recharts) {
+  Object.keys(window.Recharts).forEach(k => window[k] = window.Recharts[k]);
+}
+</script>
+<style>
+body { margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+%COMPONENT_CODE%
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>"""
+
+
+def _build_react_app_html(spec: dict, title: str) -> str:
+    """Render a React component in full Claude-like runtime environment."""
+    component_code = spec.get("code", "")
+    if not component_code:
+        return _wrap_html("", "<p>Error: no React component code provided</p>", title)
+
+    # Insert component code into runtime shell
+    # Note: we do NOT escape the code — it's JS, expected to contain JSX/HTML
+    html = _REACT_RUNTIME_SHELL.replace("%COMPONENT_CODE%", component_code)
+
+    # Inject title if provided
+    if title:
+        title_html = f'<h2 style="text-align:center;font-size:17px;font-weight:700;margin-bottom:12px">{_esc(title)}</h2>'
+        html = html.replace('<div id="root"></div>', f'{title_html}<div id="root"></div>')
+
+    return html
+
+
+# =============================================================================
 # Dispatcher
 # =============================================================================
 
@@ -758,6 +814,7 @@ _BUILDERS = {
     "simulation": _build_simulation_html,
     "quiz": _build_quiz_html,
     "interactive_table": _build_interactive_table_html,
+    "react_app": _build_react_app_html,
 }
 
 
@@ -779,7 +836,7 @@ def tool_generate_rich_visual(
 
     Args:
         visual_type: One of: comparison, process, matrix, architecture, concept,
-                     infographic, simulation, quiz, interactive_table
+                     infographic, simulation, quiz, interactive_table, react_app
         spec_json: JSON object describing the visual content. Structure depends on visual_type:
 
             comparison: {
@@ -842,6 +899,14 @@ def tool_generate_rich_visual(
               "rows": [["Item 1", 100, "OK"], ["Item 2", 200, "Good"]],
               "searchable": true, "sortable": true
             }
+
+            react_app: {
+              "code": "function App() { const [count, setCount] = React.useState(0); return (<div className='p-4'><h1 className='text-2xl font-bold'>Count: {count}</h1><button className='mt-2 px-4 py-2 bg-blue-500 text-white rounded' onClick={() => setCount(c => c+1)}>+1</button></div>); }"
+            }
+            NOTE: react_app has React 18 + Tailwind CSS + Recharts available.
+            Write a function App() component. Use Tailwind classes for styling.
+            Use Recharts components (BarChart, LineChart, PieChart, etc.) for data viz.
+            BEST FOR: Complex interactive UIs, dashboards, multi-component layouts.
 
         title: Visual title in Vietnamese (displayed above the diagram).
 

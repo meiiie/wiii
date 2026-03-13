@@ -802,13 +802,14 @@ def _build_code_studio_tools_context(
 
     tool_hints.append(
         "- tool_generate_rich_visual: TAO VISUAL TUONG TAC CAP CAO (Claude-level). "
-        "9 loai: comparison (so sanh), process (quy trinh), matrix (bang mau), "
-        "architecture (kien truc), concept (ban do khai niem), infographic (thong ke), "
-        "simulation (MO PHONG VAT LY/TOAN HOC voi Canvas + sliders — user tuong tac truc tiep), "
-        "quiz (TRAC NGHIEM tuong tac — click chon dap an, hien ket qua), "
-        "interactive_table (BANG DU LIEU — sap xep, tim kiem, loc). "
-        "UU TIEN tool nay khi: GIAI THICH khai niem, SO SANH, MO PHONG, QUIZ, BANG DU LIEU. "
-        "Tra ve ```widget code block voi HTML+CSS+JS tuong tac — FE tu render."
+        "10 loai: comparison, process, matrix, architecture, concept, infographic, "
+        "simulation (Canvas + sliders), quiz (trac nghiem), interactive_table (sap xep/tim kiem), "
+        "react_app (FULL REACT APP — React 18 + Tailwind + Recharts — cung kien truc nhu Claude Artifacts). "
+        "Voi react_app: viet function App() component, dung Tailwind classes, Recharts charts. "
+        "UU TIEN react_app cho: dashboards phuc tap, UI tuong tac nhieu component, data viz voi Recharts. "
+        "UU TIEN simulation cho: vat ly, toan hoc, animation Canvas. "
+        "UU TIEN quiz cho: kiem tra kien thuc. "
+        "Tra ve ```widget code block — FE tu render trong sandboxed iframe."
     )
 
     if has_execute_python:
