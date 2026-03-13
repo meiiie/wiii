@@ -77,7 +77,7 @@ export function SettingsPage() {
   const { checkHealth, status: connStatus } = useConnectionStore();
 
   const { addToast } = useToastStore();
-  const { authMode } = useAuthStore();
+  const { authMode, user: authUser } = useAuthStore();
   const { activeOrgId, isSystemAdmin, isOrgAdmin } = useOrgStore();
   const [activeTab, setActiveTab] = useState<Tab>("profile");
   const [testStatus, setTestStatus] = useState<
@@ -297,7 +297,7 @@ export function SettingsPage() {
           )}
 
           {activeTab === "memory" && (
-            <MemoryTab userId={settings.user_id} />
+            <MemoryTab userId={authMode === "oauth" && authUser?.id ? authUser.id : settings.user_id} />
           )}
 
           {activeTab === "context" && (

@@ -101,8 +101,9 @@ maritime-ai-service/data/*.csv
 # === Documentation screenshots ===
 docs/assets/screenshots/tmp/
 
-# === Generated embed bundle ===
+# === Generated build output ===
 wiii-desktop/dist-embed/
+wiii-desktop/dist-web/
 pytest-cache-files-*
 .agents/
 AGENTS.md

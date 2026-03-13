@@ -52,7 +52,7 @@ export function SettingsView() {
   const { navigateToChat } = useUIStore();
   const { checkHealth } = useConnectionStore();
   const { addToast } = useToastStore();
-  const { authMode } = useAuthStore();
+  const { authMode, user: authUser } = useAuthStore();
   const { activeOrgId, isSystemAdmin, isOrgAdmin } = useOrgStore();
 
   // Sprint 216: Progressive disclosure — hide developer/admin tabs from regular users
@@ -193,7 +193,7 @@ export function SettingsView() {
         {activeTab === "preferences" && (
           <PreferencesTab settings={settings} onUpdate={handleUpdateField} />
         )}
-        {activeTab === "memory" && <MemoryTab userId={settings.user_id} />}
+        {activeTab === "memory" && <MemoryTab userId={authMode === "oauth" && authUser?.id ? authUser.id : settings.user_id} />}
         {activeTab === "context" && <ContextTab />}
         {activeTab === "organization" && <OrgSettingsTab />}
         {activeTab === "living-agent" && <LivingAgentPanel />}
