@@ -134,8 +134,8 @@ const InlineHtmlWidget = memo(function InlineHtmlWidget({ code, className = "" }
       if (data && typeof data === "object" && data.type === "widget-resize") {
         const newHeight = (data.payload as { height?: number })?.height;
         if (typeof newHeight === "number" && newHeight > 0) {
-          // Cap between 80px and 600px for inline display
-          setHeight(Math.min(Math.max(newHeight + 8, 80), 600));
+          // Cap between 80px and 900px for inline display (Sprint 229: increased for rich visuals)
+          setHeight(Math.min(Math.max(newHeight + 8, 80), 900));
         }
       }
     };

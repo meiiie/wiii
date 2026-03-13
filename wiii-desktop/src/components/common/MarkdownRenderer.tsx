@@ -70,19 +70,22 @@ interface ContentSegment {
 
 function splitWidgetBlocks(raw: string): ContentSegment[] {
   const segments: ContentSegment[] = [];
-  // Match ```widget\n...\n``` blocks (non-greedy, multiline)
-  const widgetRe = /```widget\n([\s\S]*?)```/g;
+  // Tolerant regex: handles \n, \r\n, optional spaces after "widget", nested backticks
+  // Uses possessive-like matching: finds opening fence, then captures until closing fence
+  const widgetRe = /```widget[ \t]*[\r\n]+([\s\S]*?)[\r\n]+```(?:\s|$)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
   while ((match = widgetRe.exec(raw)) !== null) {
-    // Text before this widget block
+    const widgetHtml = match[1].trim();
+    // Only treat as widget if content looks like HTML (has < tag)
+    if (!widgetHtml.includes("<")) continue;
+
     if (match.index > lastIndex) {
       const before = raw.slice(lastIndex, match.index).trim();
       if (before) segments.push({ type: "markdown", content: before });
     }
-    // The widget HTML
-    segments.push({ type: "widget", content: match[1].trim() });
+    segments.push({ type: "widget", content: widgetHtml });
     lastIndex = match.index + match[0].length;
   }
 
