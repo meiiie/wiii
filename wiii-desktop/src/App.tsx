@@ -28,7 +28,7 @@ export default function App() {
   }
 
   const { loadSettings, settings, updateSettings, isLoaded: settingsLoaded } = useSettingsStore();
-  const { loadAuth, loginWithTokens, isAuthenticated, isLoaded: authLoaded, authMode, isTokenExpiringSoon, refreshAccessToken } = useAuthStore();
+  const { loadAuth, loginWithTokens, isAuthenticated, isLoaded: authLoaded, authMode, user: authUser, isTokenExpiringSoon, refreshAccessToken } = useAuthStore();
   const { startPolling, stopPolling, setOnReconnect } = useConnectionStore();
   const { startPolling: startContextPolling, stopPolling: stopContextPolling } =
     useContextStore();
@@ -172,6 +172,16 @@ export default function App() {
     }, 60_000); // Check every minute
     return () => clearInterval(interval);
   }, [authMode, isAuthenticated, isTokenExpiringSoon, refreshAccessToken, settings.server_url]);
+
+  // Keep settings.user_id in sync with auth.user.id in OAuth mode.
+  // Fixes race condition where loadSettings() loads stale anonymous UUID from
+  // localStorage before loginWithTokens() updates it — any code using
+  // settings.user_id (chat requests, memory tab, etc.) stays correct.
+  useEffect(() => {
+    if (authMode === "oauth" && authUser?.id && settings.user_id !== authUser.id) {
+      updateSettings({ user_id: authUser.id });
+    }
+  }, [authMode, authUser?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Loading screen while stores initialize
   if (!settingsLoaded || !authLoaded || !chatsLoaded) {
