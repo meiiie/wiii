@@ -284,7 +284,7 @@ export default function EmbedApp() {
     return (
       <div className="flex items-center justify-center h-screen bg-surface">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
           <span className="text-sm text-text-tertiary">Wiii...</span>
         </div>
       </div>

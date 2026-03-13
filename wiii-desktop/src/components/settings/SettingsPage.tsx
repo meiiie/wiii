@@ -1337,7 +1337,7 @@ export function PreferencesTab({ settings, onUpdate }: PreferencesTabProps) {
 
 /** Sprint 219: Category groups for organized memory display */
 export const MEMORY_CATEGORIES: { id: string; label: string; types: string[] }[] = [
-  { id: "identity", label: "Bản thân", types: ["name", "age", "location", "hometown", "organization", "role"] },
+  { id: "identity", label: "Bản thân", types: ["name", "age", "location", "hometown", "organization", "role", "pronoun_style"] },
   { id: "learning", label: "Học tập", types: ["learning_style", "level", "strength", "weakness", "goal"] },
   { id: "personal", label: "Sở thích", types: ["hobby", "interest", "preference", "emotion", "recent_topic"] },
 ];
@@ -1351,12 +1351,10 @@ export function MemoryTab({ userId }: { userId: string }) {
   const [filterType, setFilterType] = useState<string | null>(null);
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
 
-  // Fetch on mount
-  const [loaded, setLoaded] = useState(false);
-  if (!loaded) {
-    setLoaded(true);
-    fetchMemories(userId);
-  }
+  // Fetch on mount and whenever userId changes
+  useEffect(() => {
+    if (userId) fetchMemories(userId);
+  }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Compute type counts for filter chips
   const typeCounts = useMemo(() => {
