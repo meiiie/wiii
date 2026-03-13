@@ -53,7 +53,7 @@ export const MessageBubble = memo(function MessageBubble({
         initial={reduced ? false : "hidden"}
         animate="visible"
       >
-        <div className="max-w-[85%]">
+        <div className="max-w-[min(85%,800px)]">
           <div className="bg-[var(--user-bg)] rounded-xl px-4 py-2.5 relative">
             <p className="text-[15px] leading-[1.7] font-sans text-text selectable">
               {message.content}
@@ -82,8 +82,8 @@ export const MessageBubble = memo(function MessageBubble({
                 <button
                   onClick={() => onEditMessage(message.content)}
                   className="p-1.5 rounded-md hover:bg-surface-tertiary text-text-tertiary hover:text-text-secondary"
-                  title="Chinh sua"
-                  aria-label="Chinh sua tin nhan"
+                  title="Chỉnh sửa"
+                  aria-label="Chỉnh sửa tin nhắn"
                 >
                   <Pencil size={14} />
                 </button>
@@ -212,12 +212,12 @@ export const MessageBubble = memo(function MessageBubble({
 
 const AGENT_LABELS: Record<string, string | null> = {
   chat: null,
-  rag: "Tra cuu",
-  tutor: "Giai thich",
+  rag: "Tra cứu",
+  tutor: "Giải thích",
   direct: null,
-  memory: "Ngu canh",
-  memory_agent: "Ngu canh",
-  product_search_agent: "Doi chieu",
+  memory: "Ngữ cảnh",
+  memory_agent: "Ngữ cảnh",
+  product_search_agent: "Đối chiếu",
   code_studio_agent: null,
   parallel_dispatch: null,
   synthesizer: null,
@@ -282,8 +282,8 @@ function MessageActions({
       <motion.button
         onClick={handleCopy}
         className="p-1.5 rounded-md hover:bg-surface-tertiary text-text-tertiary hover:text-text-secondary transition-colors"
-        title="Sao chep"
-        aria-label="Sao chep tin nhan"
+        title="Sao chép"
+        aria-label="Sao chép tin nhắn"
         whileHover={{ scale: 1.15 }}
         whileTap={{ scale: 0.9 }}
       >
@@ -294,8 +294,8 @@ function MessageActions({
         <motion.button
           onClick={onRegenerate}
           className="p-1.5 rounded-md hover:bg-surface-tertiary text-text-tertiary hover:text-text-secondary transition-colors"
-          title="Tao lai"
-          aria-label="Tao lai phan hoi"
+          title="Tạo lại"
+          aria-label="Tạo lại phản hồi"
           whileHover={{ scale: 1.15, rotate: 15 }}
           whileTap={{ scale: 0.9 }}
         >
@@ -308,8 +308,8 @@ function MessageActions({
         className={`p-1.5 rounded-md hover:bg-surface-tertiary transition-colors ${
           feedback === "up" ? "text-green-500" : "text-text-tertiary hover:text-text-secondary"
         }`}
-        title="Phan hoi tot"
-        aria-label="Danh gia tot"
+        title="Phản hồi tốt"
+        aria-label="Đánh giá tốt"
         whileHover={{ scale: 1.15, y: -2 }}
         whileTap={{ scale: 0.9 }}
       >
@@ -321,8 +321,8 @@ function MessageActions({
         className={`p-1.5 rounded-md hover:bg-surface-tertiary transition-colors ${
           feedback === "down" ? "text-red-500" : "text-text-tertiary hover:text-text-secondary"
         }`}
-        title="Phan hoi chua tot"
-        aria-label="Danh gia chua tot"
+        title="Phản hồi chưa tốt"
+        aria-label="Đánh giá chưa tốt"
         whileHover={{ scale: 1.15, y: 2 }}
         whileTap={{ scale: 0.9 }}
       >

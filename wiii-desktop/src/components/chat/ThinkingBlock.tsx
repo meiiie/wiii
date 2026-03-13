@@ -230,7 +230,7 @@ export function ThinkingBlock({
       startTimeRef.current = null;
       if (thinkingLevel !== "detailed") {
         const contentLen = content?.length ?? 0;
-        const collapseDelay = Math.min(Math.max(900, contentLen * 2), 2200);
+        const collapseDelay = Math.min(Math.max(1200, contentLen * 3), 4500);
         const collapseTimer = setTimeout(() => setExpanded(false), collapseDelay);
         return () => clearTimeout(collapseTimer);
       }

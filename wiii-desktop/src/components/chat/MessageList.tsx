@@ -182,8 +182,8 @@ export function MessageList({
         <button
           onClick={scrollToBottom}
           className="absolute bottom-4 right-4 w-9 h-9 rounded-full bg-surface border border-border shadow-lg flex items-center justify-center text-text-secondary hover:text-text hover:bg-surface-secondary transition-all animate-fade-in"
-          title="Cuon xuong cuoi"
-          aria-label="Cuon xuong cuoi"
+          title="Cuộn xuống cuối"
+          aria-label="Cuộn xuống cuối"
         >
           <ChevronDown size={18} />
         </button>

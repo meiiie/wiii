@@ -4,6 +4,7 @@
  * refined typography following Anthropic Frontend Aesthetics Cookbook.
  * Sprint 161: Org-aware branding (welcome message, chatbot name, quick-start).
  */
+import { useState } from "react";
 import { useDomainStore } from "@/stores/domain-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -38,6 +39,7 @@ export function WelcomeScreen({ onSendMessage, onCancel }: WelcomeScreenProps) {
   const { createConversation, activeConversationId } = useChatStore();
   const { settings } = useSettingsStore();
   const { activeOrgId, orgSettings } = useOrgStore();
+  const [logoError, setLogoError] = useState(false);
 
   const { state: avatarState, mood: avatarMood, soulEmotion } = useAvatarState();
   const greeting = getGreeting(settings.display_name);
@@ -67,12 +69,12 @@ export function WelcomeScreen({ onSendMessage, onCancel }: WelcomeScreenProps) {
       <div className="w-full max-w-[720px] flex flex-col items-center gap-7">
         {/* Avatar — org logo or Wiii avatar (staggered reveal 1) */}
         <div className="welcome-reveal welcome-reveal-1">
-          {orgBranding?.logo_url ? (
+          {orgBranding?.logo_url && !logoError ? (
             <img
               src={orgBranding.logo_url}
               alt={orgBranding.chatbot_name}
               className="w-10 h-10 rounded-full object-cover"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              onError={() => setLogoError(true)}
             />
           ) : (
             <WiiiAvatar state={avatarState} size={40} mood={avatarMood} soulEmotion={soulEmotion} />

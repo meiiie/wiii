@@ -31,6 +31,7 @@ export function SuggestedQuestions({ questions, onSelect }: SuggestedQuestionsPr
           className="px-3 py-1.5 rounded-full bg-transparent border border-[var(--border)] text-xs font-medium text-text-secondary hover:bg-surface-secondary hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
           whileHover={reduced ? undefined : { scale: 1.04, boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}
           whileTap={reduced ? undefined : { scale: 0.97 }}
+          title={q}
           aria-label={`Hỏi: ${q}`}
         >
           {q}

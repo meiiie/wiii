@@ -122,7 +122,7 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
         return;
       }
       Array.from(files).slice(0, remaining).forEach(file => {
-        // Security: enforce 10MB file size limit
+        // Security: enforce 10MB file size limit — checked BEFORE FileReader instantiation
         if (file.size > 10 * 1024 * 1024) {
           addToast("error", `"${file.name}" quá lớn (tối đa 10MB).`);
           return;
@@ -158,7 +158,7 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
               <div className="flex gap-2 flex-wrap">
                 {images.map((img, i) => (
                   <div key={`img-${img.data.substring(0, 16)}`} className="relative group">
-                    <img src={img.preview} alt={`Ảnh đính kèm ${i + 1}`} className="w-16 h-16 object-cover rounded-lg border border-gray-200 dark:border-gray-700" />
+                    <img src={img.preview} alt={`Ảnh đính kèm ${i + 1}`} className="w-16 h-16 object-cover rounded-lg border border-[var(--border)]" />
                     <button
                       onClick={() => setImages(prev => prev.filter((_, idx) => idx !== i))}
                       className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
@@ -267,7 +267,7 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
               <div className="flex gap-2 flex-wrap">
                 {images.map((img, i) => (
                   <div key={`img-${img.data.substring(0, 16)}`} className="relative group">
-                    <img src={img.preview} alt={`Ảnh đính kèm ${i + 1}`} className="w-16 h-16 object-cover rounded-lg border border-gray-200 dark:border-gray-700" />
+                    <img src={img.preview} alt={`Ảnh đính kèm ${i + 1}`} className="w-16 h-16 object-cover rounded-lg border border-[var(--border)]" />
                     <button
                       onClick={() => setImages(prev => prev.filter((_, idx) => idx !== i))}
                       className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"

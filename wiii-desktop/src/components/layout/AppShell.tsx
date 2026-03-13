@@ -53,6 +53,7 @@ export function AppShell() {
                 exit="exit"
                 className="flex items-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-800 text-sm"
                 role="alert"
+                aria-live="assertive"
               >
                 <WifiOff size={14} className="shrink-0 text-red-500" />
                 <span className="flex-1 text-red-700 dark:text-red-300">
