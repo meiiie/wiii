@@ -75,7 +75,9 @@ services:
       - DEBUG=false
       - LOG_LEVEL=INFO
       - LOG_FORMAT=json
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-wiii}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wiii_ai}
+      # DATABASE_URL must be set in .env.production — shell substitution here
+      # fails when POSTGRES_PASSWORD is only in env_file (not host env).
+      # See: https://docs.docker.com/compose/how-tos/environment-variables/
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-wiii}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
