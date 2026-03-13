@@ -1342,6 +1342,24 @@ export const MEMORY_CATEGORIES: { id: string; label: string; types: string[] }[]
   { id: "personal", label: "Sở thích", types: ["hobby", "interest", "preference", "emotion", "recent_topic"] },
 ];
 
+/** Render a memory value in a human-readable way.
+ * Some types (e.g. pronoun_style) store a JSON object as their value. */
+function formatMemoryValue(type: string, value: string): string {
+  if (type === "pronoun_style") {
+    try {
+      const p = JSON.parse(value) as Record<string, string>;
+      const parts: string[] = [];
+      if (p.user_called) parts.push(`Wiii gọi bạn: "${p.user_called}"`);
+      if (p.ai_self) parts.push(`Wiii tự xưng: "${p.ai_self}"`);
+      if (p.user_self) parts.push(`Bạn tự xưng: "${p.user_self}"`);
+      return parts.length > 0 ? parts.join(" · ") : value;
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
 export function MemoryTab({ userId }: { userId: string }) {
   const { memories, isLoading, error, fetchMemories, deleteOne, clearAll } =
     useMemoryStore();
@@ -1555,7 +1573,7 @@ export function MemoryTab({ userId }: { userId: string }) {
                         {FACT_TYPE_LABELS[mem.type] || mem.type}
                       </span>
                       <span className="flex-1 text-sm text-text truncate">
-                        {mem.value}
+                        {formatMemoryValue(mem.type, mem.value)}
                       </span>
                       <span className="shrink-0 text-[10px] text-text-tertiary">
                         {new Date(mem.created_at).toLocaleDateString("vi-VN", {
