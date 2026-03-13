@@ -10,11 +10,11 @@ function isLocalBrowserHost(): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1";
 }
 
-/** Default server URL — prefer localhost when running locally, even in preview builds */
+/** Default server URL — localhost in dev, same-origin in production web builds */
 export const DEFAULT_SERVER_URL = (
   (typeof import.meta !== "undefined" && import.meta.env?.DEV) || isLocalBrowserHost()
     ? "http://localhost:8000"
-    : ""
+    : typeof window !== "undefined" ? window.location.origin : ""
 );
 
 /** Default user settings */

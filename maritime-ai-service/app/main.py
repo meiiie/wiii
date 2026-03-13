@@ -610,6 +610,26 @@ def create_application() -> FastAPI:
     except Exception as e:
         logger.warning("Embed static mount failed: %s", e)
 
+    # Sprint 228: Mount Wiii web SPA for standalone browser access
+    # Serves dist-web/ at root / — must be LAST mount (after all API routes)
+    # Production images expose /app-web; local dev falls back to ../wiii-desktop/dist-web
+    try:
+        from pathlib import Path
+        from starlette.staticfiles import StaticFiles
+
+        web_candidates = [
+            Path("/app-web"),
+            Path(__file__).parent.parent.parent / "wiii-desktop" / "dist-web",  # Local dev
+        ]
+        web_dir = next((p for p in web_candidates if p.exists() and (p / "index.html").exists()), None)
+        if web_dir:
+            app.mount("/", StaticFiles(directory=str(web_dir), html=True), name="web-spa")
+            logger.info("[OK] Web SPA mounted at / from %s", web_dir)
+        else:
+            logger.debug("Web SPA not found (build with: cd wiii-desktop && npm run build:web)")
+    except Exception as e:
+        logger.warning("Web SPA mount failed: %s", e)
+
     return app
 
 

@@ -33,6 +33,7 @@ RUN python -m playwright install chromium 2>/dev/null || true
 
 COPY maritime-ai-service/ ./
 COPY wiii-desktop/dist-embed /app-embed
+COPY wiii-desktop/dist-web /app-web
 
 RUN useradd --create-home --shell /bin/bash appuser
 RUN mkdir -p /home/appuser/.cache \
