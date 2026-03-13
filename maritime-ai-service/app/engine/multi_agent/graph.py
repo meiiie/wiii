@@ -801,11 +801,14 @@ def _build_code_studio_tools_context(
     )
 
     tool_hints.append(
-        "- tool_generate_rich_visual: TAO VISUAL GIAO DUC CAP CAO — comparison (so sanh 2 khai niem), "
-        "process (quy trinh tung buoc), matrix (bang mau), architecture (kien truc he thong), "
-        "concept (ban do khai niem), infographic (thong ke tong hop). "
-        "UU TIEN tool nay khi GIAI THICH khai niem, SO SANH 2 thu, MO TA KIEN TRUC. "
-        "Tra ve ```widget code block voi HTML+CSS+SVG dep — FE tu render."
+        "- tool_generate_rich_visual: TAO VISUAL TUONG TAC CAP CAO (Claude-level). "
+        "9 loai: comparison (so sanh), process (quy trinh), matrix (bang mau), "
+        "architecture (kien truc), concept (ban do khai niem), infographic (thong ke), "
+        "simulation (MO PHONG VAT LY/TOAN HOC voi Canvas + sliders — user tuong tac truc tiep), "
+        "quiz (TRAC NGHIEM tuong tac — click chon dap an, hien ket qua), "
+        "interactive_table (BANG DU LIEU — sap xep, tim kiem, loc). "
+        "UU TIEN tool nay khi: GIAI THICH khai niem, SO SANH, MO PHONG, QUIZ, BANG DU LIEU. "
+        "Tra ve ```widget code block voi HTML+CSS+JS tuong tac — FE tu render."
     )
 
     if has_execute_python:

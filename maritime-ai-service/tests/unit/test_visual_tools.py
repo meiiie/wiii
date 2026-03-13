@@ -178,6 +178,118 @@ class TestInfographicVisual:
         assert "info-stat" in html
 
 
+class TestSimulationVisual:
+    """Test simulation (Canvas + controls) visual generation."""
+
+    def test_basic_simulation(self):
+        from app.engine.tools.visual_tools import _build_simulation_html
+
+        spec = {
+            "variables": [{"name": "speed", "label": "Tốc độ", "min": 1, "max": 100, "value": 50}],
+            "setup": "vars.x = 0;",
+            "draw": "ctx.fillStyle='#2563eb'; ctx.fillRect(vars.x, 100, 20, 20);",
+            "update": "vars.x = (vars.x + vars.speed * 0.1) % canvas.offsetWidth;",
+            "description": "Mô phỏng chuyển động",
+        }
+        html = _build_simulation_html(spec, "Physics Sim")
+        assert "canvas" in html.lower()
+        assert "requestAnimationFrame" in html
+        assert "Tốc độ" in html
+        assert "sim-controls" in html
+        assert "togglePlay" in html  # play/pause button
+
+    def test_simulation_has_controls(self):
+        from app.engine.tools.visual_tools import _build_simulation_html
+
+        spec = {
+            "variables": [
+                {"name": "gravity", "label": "Gravity", "min": 0, "max": 20, "value": 9.8, "step": 0.1},
+                {"name": "mass", "label": "Mass", "min": 1, "max": 50, "value": 10},
+            ],
+            "setup": "", "draw": "", "update": "",
+        }
+        html = _build_simulation_html(spec, "")
+        assert "sl_gravity" in html  # slider id
+        assert "sl_mass" in html
+        assert "range" in html  # input type=range
+
+
+class TestQuizVisual:
+    """Test quiz (multiple choice) visual generation."""
+
+    def test_basic_quiz(self):
+        from app.engine.tools.visual_tools import _build_quiz_html
+
+        spec = {
+            "questions": [
+                {
+                    "question": "1 + 1 = ?",
+                    "options": [
+                        {"text": "1", "correct": False},
+                        {"text": "2", "correct": True},
+                        {"text": "3", "correct": False},
+                    ],
+                    "explanation": "1 + 1 = 2 theo phép cộng cơ bản",
+                },
+            ]
+        }
+        html = _build_quiz_html(spec, "Math Quiz")
+        assert "1 + 1 = ?" in html
+        assert "checkAnswer" in html  # JS function
+        assert "scoreBoard" in html  # score display
+        assert "q-opt" in html  # option class
+        assert "Giải thích" not in html or "explanation" in html.lower()  # explanation exists
+
+    def test_quiz_multiple_questions(self):
+        from app.engine.tools.visual_tools import _build_quiz_html
+
+        spec = {
+            "questions": [
+                {"question": "Q1", "options": [{"text": "A", "correct": True}]},
+                {"question": "Q2", "options": [{"text": "B", "correct": True}]},
+                {"question": "Q3", "options": [{"text": "C", "correct": True}]},
+            ]
+        }
+        html = _build_quiz_html(spec, "")
+        assert "total = 3" in html
+        assert "Câu 1" in html
+        assert "Câu 3" in html
+
+
+class TestInteractiveTableVisual:
+    """Test interactive table visual generation."""
+
+    def test_basic_table(self):
+        from app.engine.tools.visual_tools import _build_interactive_table_html
+
+        spec = {
+            "headers": ["Tên", "Điểm", "Xếp loại"],
+            "rows": [
+                ["Nguyễn A", 9.5, "Giỏi"],
+                ["Trần B", 7.0, "Khá"],
+                ["Lê C", 5.5, "TB"],
+            ],
+        }
+        html = _build_interactive_table_html(spec, "Bảng điểm")
+        assert "Tên" in html
+        assert "filterTable" in html  # search function
+        assert "itbl" in html  # table class
+        assert "tblSearch" in html  # search input
+
+    def test_table_sort(self):
+        from app.engine.tools.visual_tools import _build_interactive_table_html
+
+        spec = {
+            "headers": ["Name", "Value"],
+            "rows": [["A", 10], ["B", 5]],
+            "sortable": True,
+        }
+        html = _build_interactive_table_html(spec, "")
+        assert "sortCol" in html  # sort state
+        assert "localeCompare" in html  # string sort
+        assert "parseFloat" in html  # numeric sort
+
+
 # =============================================================================
 # Tool integration tests
 # =============================================================================
@@ -289,6 +401,9 @@ class TestDesignSystem:
                 "architecture": {"layers": [{"name": "L", "components": ["C"]}]},
                 "concept": {"center": {"title": "X"}, "branches": []},
                 "infographic": {"stats": [{"value": "1", "label": "L"}]},
+                "simulation": {"variables": [], "setup": "", "draw": "", "update": ""},
+                "quiz": {"questions": [{"question": "Q", "options": [{"text": "A", "correct": True}]}]},
+                "interactive_table": {"headers": ["H"], "rows": [["V"]]},
             }
             html = builder(specs[visual_type], "Test")
             assert "<!DOCTYPE html>" in html, f"{visual_type} missing DOCTYPE"
@@ -300,11 +415,12 @@ class TestDesignSystem:
 
         assert "prefers-color-scheme: dark" in _DESIGN_CSS
 
-    def test_html_escaping_in_all_types(self):
-        """XSS protection: user content must be escaped (no raw <img> tags)."""
+    def test_html_escaping_in_text_types(self):
+        """XSS protection: user content in text-based types must be escaped."""
         from app.engine.tools.visual_tools import _BUILDERS
 
         xss = "<img src=x onerror=alert(1)>"
+        # Only test types that render user text (not simulation which takes JS code)
         specs = {
             "comparison": {"left": {"title": xss}, "right": {"title": "safe"}},
             "process": {"steps": [{"title": xss}]},
@@ -312,10 +428,11 @@ class TestDesignSystem:
             "architecture": {"layers": [{"name": xss, "components": [xss]}]},
             "concept": {"center": {"title": xss}, "branches": [{"title": xss, "items": [xss]}]},
             "infographic": {"stats": [{"value": xss, "label": xss}]},
+            "quiz": {"questions": [{"question": xss, "options": [{"text": xss, "correct": True}]}]},
         }
-        for visual_type, builder in _BUILDERS.items():
+        for visual_type in specs:
+            builder = _BUILDERS[visual_type]
             html = builder(specs[visual_type], "Test")
-            # Raw <img> tag must not appear — should be escaped to &lt;img
             assert "<img src=x" not in html, f"{visual_type} has XSS vulnerability"
             assert "&lt;img" in html, f"{visual_type} did not escape HTML"
 

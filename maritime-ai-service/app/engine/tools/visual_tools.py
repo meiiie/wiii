@@ -472,6 +472,279 @@ def _build_infographic_html(spec: dict, title: str) -> str:
 
 
 # =============================================================================
+# SIMULATION — Interactive Canvas with controls (physics, math, animations)
+# =============================================================================
+
+def _build_simulation_html(spec: dict, title: str) -> str:
+    """Interactive simulation with Canvas, sliders, and live state."""
+    variables = spec.get("variables", [])  # [{name, label, min, max, value, step}]
+    setup_code = spec.get("setup", "")     # JS: initialize state
+    draw_code = spec.get("draw", "")       # JS: draw frame (receives ctx, canvas, vars, t)
+    update_code = spec.get("update", "")   # JS: update state each frame
+    description = spec.get("description", "")
+    fps = spec.get("fps", 60)
+    canvas_height = spec.get("height", 300)
+
+    css = f"""
+canvas#sim {{ width:100%; height:{canvas_height}px; border-radius:var(--radius); background:var(--bg2); display:block; cursor:crosshair; }}
+.sim-controls {{ display:flex; flex-wrap:wrap; gap:12px; margin-top:12px; align-items:center; }}
+.sim-control {{ flex:1; min-width:150px; }}
+.sim-control label {{ font-size:11px; font-weight:600; color:var(--text2); display:block; margin-bottom:2px; }}
+.sim-control input[type=range] {{ width:100%; accent-color:var(--accent); }}
+.sim-value {{ font-size:11px; color:var(--text3); font-family:monospace; }}
+.sim-desc {{ font-size:12px; color:var(--text2); margin-top:8px; font-style:italic; }}
+.sim-btns {{ display:flex; gap:8px; margin-top:8px; }}
+.sim-btn {{
+  padding:6px 14px; border-radius:var(--radius-sm); border:1px solid var(--border);
+  background:var(--bg2); color:var(--text); font-size:12px; cursor:pointer;
+}}
+.sim-btn:hover {{ background:var(--bg3); }}
+.sim-btn.active {{ background:var(--accent); color:white; border-color:var(--accent); }}
+"""
+
+    # Build slider controls
+    controls_html = ""
+    vars_init = "const vars = {};\n"
+    for v in variables:
+        vname = _esc(v.get("name", "x"))
+        vlabel = _esc(v.get("label", vname))
+        vmin = v.get("min", 0)
+        vmax = v.get("max", 100)
+        vval = v.get("value", 50)
+        vstep = v.get("step", 1)
+        controls_html += f"""<div class="sim-control">
+  <label>{vlabel}: <span class="sim-value" id="val_{vname}">{vval}</span></label>
+  <input type="range" id="sl_{vname}" min="{vmin}" max="{vmax}" value="{vval}" step="{vstep}"
+    oninput="vars.{vname}=+this.value;document.getElementById('val_{vname}').textContent=this.value">
+</div>\n"""
+        vars_init += f"vars.{vname} = {vval};\n"
+
+    desc_html = f'<div class="sim-desc">{_esc(description)}</div>' if description else ""
+
+    body = f"""<canvas id="sim" width="800" height="{canvas_height}"></canvas>
+<div class="sim-btns">
+  <button class="sim-btn active" id="btnPlay" onclick="togglePlay()">⏸ Pause</button>
+  <button class="sim-btn" onclick="resetSim()">↺ Reset</button>
+</div>
+<div class="sim-controls">{controls_html}</div>
+{desc_html}
+<script>
+const canvas = document.getElementById('sim');
+const ctx = canvas.getContext('2d');
+{vars_init}
+let t = 0, running = true, animId = null;
+function resizeCanvas() {{
+  canvas.width = canvas.offsetWidth * (window.devicePixelRatio || 1);
+  canvas.height = {canvas_height} * (window.devicePixelRatio || 1);
+  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+}}
+resizeCanvas();
+/* USER SETUP */
+{setup_code}
+/* ANIMATION LOOP */
+function frame() {{
+  if (!running) return;
+  ctx.clearRect(0, 0, canvas.offsetWidth, {canvas_height});
+  /* USER UPDATE */
+  {update_code}
+  /* USER DRAW */
+  {draw_code}
+  t += 1/{fps};
+  animId = requestAnimationFrame(frame);
+}}
+function togglePlay() {{
+  running = !running;
+  document.getElementById('btnPlay').textContent = running ? '⏸ Pause' : '▶ Play';
+  document.getElementById('btnPlay').classList.toggle('active', running);
+  if (running) frame();
+}}
+function resetSim() {{
+  t = 0;
+  {setup_code}
+  if (!running) {{ running = true; document.getElementById('btnPlay').textContent = '⏸ Pause'; document.getElementById('btnPlay').classList.add('active'); }}
+  frame();
+}}
+frame();
+</script>"""
+
+    return _wrap_html(css, body, title)
+
+
+# =============================================================================
+# QUIZ — Multiple choice with instant feedback
+# =============================================================================
+
+def _build_quiz_html(spec: dict, title: str) -> str:
+    questions = spec.get("questions", [])
+    # [{question, options: [{text, correct: bool}], explanation}]
+
+    css = """
+.quiz { display:flex; flex-direction:column; gap:16px; }
+.q-card { background:var(--bg2); border-radius:var(--radius); padding:16px; border:1.5px solid var(--border); }
+.q-text { font-size:14px; font-weight:600; color:var(--text); margin-bottom:10px; }
+.q-options { display:flex; flex-direction:column; gap:6px; }
+.q-opt {
+  padding:10px 14px; border-radius:var(--radius-sm); border:1.5px solid var(--border);
+  background:var(--bg); cursor:pointer; font-size:13px; color:var(--text); transition:all 0.2s;
+  display:flex; align-items:center; gap:8px;
+}
+.q-opt:hover:not(.disabled) { border-color:var(--accent); background:var(--accent-bg); }
+.q-opt.correct { border-color:var(--green); background:var(--green-bg); color:var(--green); }
+.q-opt.wrong { border-color:var(--red); background:var(--red-bg); color:var(--red); }
+.q-opt.disabled { cursor:default; opacity:0.7; }
+.q-opt .q-icon { width:20px; text-align:center; }
+.q-explain { margin-top:10px; padding:10px; border-radius:var(--radius-sm); background:var(--accent-bg); font-size:12px; color:var(--text2); display:none; }
+.q-explain.show { display:block; }
+.q-score { text-align:center; font-size:15px; font-weight:700; color:var(--accent); padding:12px; background:var(--accent-bg); border-radius:var(--radius); }
+"""
+
+    q_cards = []
+    for i, q in enumerate(questions):
+        q_text = _esc(q.get("question", ""))
+        explanation = _esc(q.get("explanation", ""))
+        options = q.get("options", [])
+
+        opts_html = ""
+        for j, opt in enumerate(options):
+            opt_text = _esc(opt.get("text", ""))
+            is_correct = "true" if opt.get("correct", False) else "false"
+            opts_html += f'<div class="q-opt" id="q{i}o{j}" onclick="checkAnswer({i},{j},{is_correct})">'
+            opts_html += f'<span class="q-icon" id="q{i}o{j}i">○</span> {opt_text}</div>\n'
+
+        explain_html = f'<div class="q-explain" id="q{i}exp">{explanation}</div>' if explanation else ""
+
+        q_cards.append(f"""<div class="q-card">
+  <div class="q-text">Câu {i + 1}: {q_text}</div>
+  <div class="q-options">{opts_html}</div>
+  {explain_html}
+</div>""")
+
+    total = len(questions)
+    body = f"""<div class="quiz">
+  {"".join(q_cards)}
+  <div class="q-score" id="scoreBoard" style="display:none"></div>
+</div>
+<script>
+let score = 0, answered = 0, total = {total};
+function checkAnswer(qi, oi, correct) {{
+  const opts = document.querySelectorAll('[id^="q'+qi+'o"]');
+  if (opts[0] && opts[0].classList.contains('disabled')) return;
+  opts.forEach((el, idx) => {{
+    el.classList.add('disabled');
+    const isCorrect = el.getAttribute('onclick').includes('true');
+    if (idx === oi) {{
+      el.classList.add(correct ? 'correct' : 'wrong');
+      document.getElementById('q'+qi+'o'+oi+'i').textContent = correct ? '✓' : '✗';
+    }} else if (isCorrect) {{
+      el.classList.add('correct');
+      el.querySelector('.q-icon').textContent = '✓';
+    }}
+  }});
+  const exp = document.getElementById('q'+qi+'exp');
+  if (exp) exp.classList.add('show');
+  if (correct) score++;
+  answered++;
+  if (answered === total) {{
+    const board = document.getElementById('scoreBoard');
+    board.style.display = 'block';
+    board.textContent = 'Kết quả: ' + score + '/' + total + ' (' + Math.round(score/total*100) + '%)';
+  }}
+}}
+</script>"""
+
+    return _wrap_html(css, body, title)
+
+
+# =============================================================================
+# INTERACTIVE TABLE — Sortable, filterable, clickable
+# =============================================================================
+
+def _build_interactive_table_html(spec: dict, title: str) -> str:
+    headers = spec.get("headers", [])
+    rows = spec.get("rows", [])  # 2D array
+    searchable = spec.get("searchable", True)
+    sortable = spec.get("sortable", True)
+    row_click = spec.get("row_click", "")  # JS template: receives rowData array
+
+    css = """
+.itbl-search {
+  width:100%; padding:8px 12px; border-radius:var(--radius-sm); border:1.5px solid var(--border);
+  background:var(--bg); color:var(--text); font-size:13px; margin-bottom:12px; outline:none;
+}
+.itbl-search:focus { border-color:var(--accent); }
+.itbl-wrap { overflow-x:auto; border-radius:var(--radius); border:1px solid var(--border); }
+table.itbl { width:100%; border-collapse:collapse; font-size:13px; }
+.itbl th {
+  padding:10px 12px; text-align:left; font-weight:600; font-size:11px; text-transform:uppercase;
+  letter-spacing:0.5px; color:var(--text2); background:var(--bg2); border-bottom:2px solid var(--border);
+  cursor:pointer; user-select:none; white-space:nowrap;
+}
+.itbl th:hover { color:var(--accent); }
+.itbl th .sort-icon { margin-left:4px; font-size:10px; }
+.itbl td { padding:8px 12px; border-bottom:1px solid var(--border); color:var(--text); }
+.itbl tr:hover td { background:var(--accent-bg); }
+.itbl tr { transition:background 0.15s; cursor:default; }
+.itbl-count { font-size:11px; color:var(--text3); margin-top:6px; text-align:right; }
+"""
+
+    headers_json = json.dumps(headers, ensure_ascii=False)
+    rows_json = json.dumps(rows, ensure_ascii=False)
+
+    search_html = '<input class="itbl-search" id="tblSearch" placeholder="Tìm kiếm..." oninput="filterTable()">' if searchable else ""
+
+    body = f"""{search_html}
+<div class="itbl-wrap"><table class="itbl" id="dataTable">
+  <thead><tr id="tblHead"></tr></thead>
+  <tbody id="tblBody"></tbody>
+</table></div>
+<div class="itbl-count" id="tblCount"></div>
+<script>
+const headers = {headers_json};
+const allRows = {rows_json};
+let sortCol = -1, sortAsc = true;
+
+function renderHead() {{
+  const head = document.getElementById('tblHead');
+  head.innerHTML = '';
+  headers.forEach((h, i) => {{
+    const th = document.createElement('th');
+    const icon = sortCol === i ? (sortAsc ? ' ▲' : ' ▼') : '';
+    th.innerHTML = h + '<span class="sort-icon">' + icon + '</span>';
+    th.onclick = () => {{ sortCol = sortCol === i && sortAsc ? i : i; sortAsc = sortCol === i ? !sortAsc : true; sortCol = i; render(); }};
+    head.appendChild(th);
+  }});
+}}
+
+function render() {{
+  const q = (document.getElementById('tblSearch') || {{}}).value || '';
+  let filtered = allRows.filter(r => !q || r.some(c => String(c).toLowerCase().includes(q.toLowerCase())));
+  if (sortCol >= 0) {{
+    filtered.sort((a, b) => {{
+      const va = a[sortCol], vb = b[sortCol];
+      const na = parseFloat(va), nb = parseFloat(vb);
+      if (!isNaN(na) && !isNaN(nb)) return sortAsc ? na - nb : nb - na;
+      return sortAsc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+    }});
+  }}
+  const body = document.getElementById('tblBody');
+  body.innerHTML = '';
+  filtered.forEach(r => {{
+    const tr = document.createElement('tr');
+    r.forEach(c => {{ const td = document.createElement('td'); td.textContent = c; tr.appendChild(td); }});
+    body.appendChild(tr);
+  }});
+  document.getElementById('tblCount').textContent = filtered.length + '/' + allRows.length + ' dòng';
+  renderHead();
+}}
+
+function filterTable() {{ render(); }}
+render();
+</script>"""
+
+    return _wrap_html(css, body, title)
+
+
+# =============================================================================
 # Dispatcher
 # =============================================================================
 
@@ -482,6 +755,9 @@ _BUILDERS = {
     "architecture": _build_architecture_html,
     "concept": _build_concept_html,
     "infographic": _build_infographic_html,
+    "simulation": _build_simulation_html,
+    "quiz": _build_quiz_html,
+    "interactive_table": _build_interactive_table_html,
 }
 
 
@@ -491,18 +767,19 @@ def tool_generate_rich_visual(
     spec_json: str,
     title: str = "",
 ) -> str:
-    """Generate a rich educational visual widget (SVG/HTML) rendered INLINE in chat.
+    """Generate a rich interactive visual widget (HTML+CSS+JS) rendered INLINE in chat.
 
-    Creates Claude-level custom diagrams: comparisons, process flows, matrices,
-    architecture diagrams, concept maps, and infographics. Returns a ```widget
-    code block that the frontend renders as a beautiful interactive visual.
+    Creates Claude-level interactive widgets: comparisons, simulations, quizzes,
+    interactive tables, architecture diagrams, and more. Returns a ```widget
+    code block that the frontend renders as a fully interactive visual.
 
-    PRIORITY: Use this for EXPLANATIONS, COMPARISONS, ARCHITECTURES.
+    PRIORITY: Use this for EXPLANATIONS, COMPARISONS, SIMULATIONS, QUIZZES.
     Use tool_generate_interactive_chart for DATA/STATISTICS (bar, pie, line charts).
     Use tool_generate_mermaid for simple FLOWCHARTS and SEQUENCE diagrams.
 
     Args:
-        visual_type: One of: comparison, process, matrix, architecture, concept, infographic
+        visual_type: One of: comparison, process, matrix, architecture, concept,
+                     infographic, simulation, quiz, interactive_table
         spec_json: JSON object describing the visual content. Structure depends on visual_type:
 
             comparison: {
@@ -525,23 +802,45 @@ def tool_generate_rich_visual(
             }
 
             architecture: {
-              "layers": [
-                {"name": "Layer Name", "components": ["Comp1", "Comp2"]},
-                ...
-              ]
+              "layers": [{"name": "Layer Name", "components": ["Comp1", "Comp2"]}, ...]
             }
 
             concept: {
               "center": {"title": "Main Idea", "description": "..."},
-              "branches": [
-                {"title": "Branch 1", "items": ["detail1", "detail2"]},
-                ...
-              ]
+              "branches": [{"title": "Branch 1", "items": ["detail1", ...]}, ...]
             }
 
             infographic: {
               "stats": [{"value": "95%", "label": "Accuracy"}, ...],
               "sections": [{"title": "Key Finding", "content": "..."}, ...]
+            }
+
+            simulation: {
+              "variables": [{"name": "speed", "label": "Tốc độ", "min": 1, "max": 100, "value": 50, "step": 1}],
+              "setup": "// JS: initialize state (runs once)",
+              "update": "// JS: update physics each frame (has vars, t)",
+              "draw": "// JS: draw on canvas (has ctx, canvas, vars, t)",
+              "fps": 60, "height": 300,
+              "description": "Mô phỏng vật lý tương tác"
+            }
+
+            quiz: {
+              "questions": [
+                {
+                  "question": "Câu hỏi?",
+                  "options": [
+                    {"text": "Đáp án A", "correct": false},
+                    {"text": "Đáp án B", "correct": true}
+                  ],
+                  "explanation": "Giải thích đáp án đúng"
+                }
+              ]
+            }
+
+            interactive_table: {
+              "headers": ["Tên", "Giá trị", "Ghi chú"],
+              "rows": [["Item 1", 100, "OK"], ["Item 2", 200, "Good"]],
+              "searchable": true, "sortable": true
             }
 
         title: Visual title in Vietnamese (displayed above the diagram).
