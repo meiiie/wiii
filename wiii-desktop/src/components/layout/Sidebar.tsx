@@ -5,7 +5,7 @@
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Plus, Trash2, Settings, MessageSquare, Search, Pin, PinOff, Pencil, Shield, Building2, LogOut, User, Network } from "lucide-react";
+import { Plus, Trash2, Settings, MessageSquare, Search, Pin, PinOff, Pencil, Shield, Building2, LogOut, User, Network, PanelLeftClose } from "lucide-react";
 import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useDomainStore } from "@/stores/domain-store";
@@ -224,11 +224,22 @@ export function Sidebar() {
   }
 
   // Full expanded mode (256px)
+  const { toggleSidebar } = useUIStore();
   return (
     <div className="flex flex-col h-full w-72 bg-surface-secondary border-r border-border">
-      {/* Sprint 156: Workspace selector */}
-      <div className="px-3 pt-3 pb-1">
-        <WorkspaceSelector />
+      {/* Sprint 231: Workspace selector + sidebar close button */}
+      <div className="flex items-center gap-1 px-3 pt-3 pb-1">
+        <div className="flex-1 min-w-0">
+          <WorkspaceSelector />
+        </div>
+        <button
+          onClick={toggleSidebar}
+          className="shrink-0 p-1 rounded-md hover:bg-surface-tertiary transition-colors"
+          title="Ẩn sidebar"
+          aria-label="Ẩn sidebar"
+        >
+          <PanelLeftClose size={16} className="text-text-tertiary" />
+        </button>
       </div>
 
       {/* New chat button */}
