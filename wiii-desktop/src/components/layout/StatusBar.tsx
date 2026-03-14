@@ -25,6 +25,10 @@ const CONTEXT_BADGE_COLORS: Record<ContextStatus, string> = {
 };
 
 export function StatusBar() {
+  // Sprint 231: Hide StatusBar on web — Claude/ChatGPT don't have bottom bar
+  // Only show on Tauri desktop (useful for dev/debug context)
+  const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  if (!isTauri) return null;
   const { activeDomainId } = useDomainStore();
   const { isStreaming, streamingStep } = useChatStore();
   const { info, status, togglePanel } = useContextStore();
