@@ -11,20 +11,20 @@
   "lang": "vi",
   "icons": [
     {
-      "src": "/wiii-logo.svg",
-      "type": "image/svg+xml",
-      "sizes": "any"
-    },
-    {
       "src": "/icon-512.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any maskable"
     },
     {
-      "src": "/favicon.ico",
-      "type": "image/x-icon",
-      "sizes": "48x48"
+      "src": "/apple-touch-icon.png",
+      "type": "image/png",
+      "sizes": "180x180"
+    },
+    {
+      "src": "/wiii-logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
     }
   ]
 }
