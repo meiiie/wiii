@@ -1,0 +1,11 @@
+# Wiii AI — by The Wiii Lab
+# https://wiii.holilihu.online
+
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /embed/
+Disallow: /docs
+Disallow: /redoc
+
+Sitemap: https://wiii.holilihu.online/sitemap.xml

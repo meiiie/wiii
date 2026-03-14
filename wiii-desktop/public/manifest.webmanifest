@@ -1,0 +1,30 @@
+{
+  "name": "Wiii — Trợ lý AI thông minh",
+  "short_name": "Wiii",
+  "description": "Trợ lý AI đa lĩnh vực cho học tập và nghiên cứu. Hỏi đáp thông minh, trực quan hóa tương tác, trí nhớ dài hạn. By The Wiii Lab.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAF5EE",
+  "theme_color": "#F97316",
+  "orientation": "portrait-primary",
+  "categories": ["education", "productivity"],
+  "lang": "vi",
+  "icons": [
+    {
+      "src": "/wiii-logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.ico",
+      "type": "image/x-icon",
+      "sizes": "48x48"
+    }
+  ]
+}
