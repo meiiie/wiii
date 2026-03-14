@@ -5,7 +5,7 @@
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Plus, Trash2, Settings, MessageSquare, Search, Pin, PinOff, Pencil, Shield, Building2, LogOut, User, Network, PanelLeftClose, PanelLeft } from "lucide-react";
+import { Plus, Trash2, Settings, MessageSquare, Search, Pin, PinOff, Pencil, Shield, Building2, LogOut, User, Network, PanelLeftClose, PanelLeft, MoreHorizontal } from "lucide-react";
 import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useDomainStore } from "@/stores/domain-store";
@@ -53,6 +53,9 @@ export function Sidebar() {
     await logout();
     addToast("success", "Đã đăng xuất");
   };
+
+  // Sprint 231h: User profile dropdown menu state
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   // Sprint 85: Debounce search to prevent O(n) filter on every keystroke
   const [localSearch, setLocalSearch] = useState(searchQuery);
@@ -333,63 +336,105 @@ export function Sidebar() {
         )}
       </div>
 
-      {/* Sprint 231: Simplified footer — Claude.ai pattern (user row + settings icon) */}
-      <div className="px-3 py-2 border-t border-border">
-        <div className="flex items-center gap-2">
-          {/* User avatar + name */}
-          {isAuthenticated && (
-            <>
+      {/* Sprint 231h: User profile footer — click avatar → dropdown menu (Claude.ai pattern) */}
+      <div className="px-2 py-2 border-t border-border relative">
+        {isAuthenticated && (
+          <>
+            <button
+              onClick={() => setUserMenuOpen(!userMenuOpen)}
+              className="flex items-center gap-2.5 w-full px-2 py-2 rounded-lg hover:bg-surface-tertiary transition-colors"
+              aria-expanded={userMenuOpen}
+              aria-haspopup="menu"
+            >
               {user?.avatar_url ? (
                 <img
                   src={user.avatar_url}
                   alt={displayUserName || "Avatar"}
-                  className="w-7 h-7 rounded-full shrink-0"
+                  className="w-8 h-8 rounded-full shrink-0 ring-2 ring-border"
                   referrerPolicy="no-referrer"
                 />
               ) : (
-                <div className="w-7 h-7 rounded-full shrink-0 bg-[var(--accent)]/10 flex items-center justify-center">
-                  <User size={14} className="text-[var(--accent)]" />
+                <div className="w-8 h-8 rounded-full shrink-0 bg-[var(--accent)]/10 flex items-center justify-center ring-2 ring-border">
+                  <User size={16} className="text-[var(--accent)]" />
                 </div>
               )}
-              <span className="flex-1 text-sm text-text-secondary truncate">
+              <span className="flex-1 text-sm font-medium text-text truncate text-left">
                 {displayUserName || "Người dùng"}
               </span>
-            </>
-          )}
+              <MoreHorizontal size={16} className="shrink-0 text-text-tertiary" />
+            </button>
 
-          {/* Action icons — compact row */}
-          <div className="flex items-center gap-0.5 shrink-0">
-            {/* Admin (conditional) */}
-            {isSystemAdmin() && (
-              <button
-                onClick={openAdminPanel}
-                className="p-1.5 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-surface-tertiary transition-colors"
-                title="Quản trị hệ thống"
-                aria-label="Quản trị hệ thống"
-              >
-                <Shield size={15} />
-              </button>
-            )}
-            {/* Settings */}
-            <button
-              onClick={openSettings}
-              className="p-1.5 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-surface-tertiary transition-colors"
-              title="Cài đặt"
-              aria-label="Cài đặt"
-            >
-              <Settings size={15} />
-            </button>
-            {/* Logout */}
-            <button
-              onClick={handleLogout}
-              className="p-1.5 rounded-md text-text-tertiary hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-              title="Đăng xuất"
-              aria-label="Đăng xuất"
-            >
-              <LogOut size={15} />
-            </button>
-          </div>
-        </div>
+            {/* Dropdown menu */}
+            <AnimatePresence>
+              {userMenuOpen && (
+                <>
+                  {/* Backdrop to close menu */}
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setUserMenuOpen(false)}
+                    aria-hidden="true"
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute bottom-full left-2 right-2 mb-1 z-50 bg-surface border border-border rounded-xl shadow-lg overflow-hidden"
+                    role="menu"
+                  >
+                    <div className="py-1">
+                      <button
+                        onClick={() => { openSettings(); setUserMenuOpen(false); }}
+                        className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-text-secondary hover:bg-surface-tertiary transition-colors"
+                        role="menuitem"
+                      >
+                        <Settings size={15} />
+                        Cài đặt
+                      </button>
+                      {isSystemAdmin() && (
+                        <button
+                          onClick={() => { openAdminPanel(); setUserMenuOpen(false); }}
+                          className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-text-secondary hover:bg-surface-tertiary transition-colors"
+                          role="menuitem"
+                        >
+                          <Shield size={15} />
+                          Quản trị hệ thống
+                        </button>
+                      )}
+                      {(isOrgAdmin() || isSystemAdmin()) && activeOrgId && activeOrgId !== "personal" && (
+                        <button
+                          onClick={() => { openOrgManagerPanel(activeOrgId); setUserMenuOpen(false); }}
+                          className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-text-secondary hover:bg-surface-tertiary transition-colors"
+                          role="menuitem"
+                        >
+                          <Building2 size={15} />
+                          Quản lý tổ chức
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { openSoulBridge(); setUserMenuOpen(false); }}
+                        className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-text-secondary hover:bg-surface-tertiary transition-colors"
+                        role="menuitem"
+                      >
+                        <Network size={15} />
+                        Mạng Linh Hồn
+                      </button>
+                      <div className="border-t border-border my-1" />
+                      <button
+                        onClick={() => { handleLogout(); setUserMenuOpen(false); }}
+                        className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                        role="menuitem"
+                      >
+                        <LogOut size={15} />
+                        Đăng xuất
+                      </button>
+                    </div>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </>
+        )}
       </div>
 
       {/* Delete confirmation dialog */}
