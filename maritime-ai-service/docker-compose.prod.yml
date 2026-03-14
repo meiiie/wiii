@@ -65,9 +65,11 @@ services:
   # =============================================================================
   app:
     image: ${WIII_APP_IMAGE:-ghcr.io/meiiie/lms-ai-app:main}
-    container_name: wiii-app
-    ports:
-      - "127.0.0.1:${APP_PORT:-8000}:8000"
+    # Sprint 232: Removed container_name to allow docker compose scale
+    # container_name: wiii-app
+    # Sprint 232: Removed host port mapping (Nginx connects via internal network)
+    # ports:
+    #   - "127.0.0.1:${APP_PORT:-8000}:8000"
     env_file:
       - .env.production
     environment:
@@ -75,9 +77,8 @@ services:
       - DEBUG=false
       - LOG_LEVEL=INFO
       - LOG_FORMAT=json
-      # DATABASE_URL must be set in .env.production — shell substitution here
-      # fails when POSTGRES_PASSWORD is only in env_file (not host env).
-      # See: https://docs.docker.com/compose/how-tos/environment-variables/
+      # Sprint 232: Connect via PgBouncer for connection pooling at scale
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-wiii}:${POSTGRES_PASSWORD}@${DB_HOST:-postgres}:5432/${POSTGRES_DB:-wiii_ai}
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-wiii}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
@@ -110,6 +111,8 @@ services:
       - wiii-network
     restart: unless-stopped
     deploy:
+      # Sprint 232: Scale to multiple instances for 1000+ concurrent users
+      replicas: ${APP_REPLICAS:-1}
       resources:
         limits:
           cpus: "${APP_CPU_LIMIT:-2.0}"
@@ -121,7 +124,7 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/live"]
       interval: 30s
       timeout: 10s
-      start_period: 60s
+      start_period: 90s
       retries: 5
     logging:
       driver: "json-file"
