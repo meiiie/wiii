@@ -5,7 +5,7 @@
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Plus, Trash2, Settings, MessageSquare, Search, Pin, PinOff, Pencil, Shield, Building2, LogOut, User, Network, PanelLeftClose } from "lucide-react";
+import { Plus, Trash2, Settings, MessageSquare, Search, Pin, PinOff, Pencil, Shield, Building2, LogOut, User, Network, PanelLeftClose, PanelLeft } from "lucide-react";
 import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useDomainStore } from "@/stores/domain-store";
@@ -126,14 +126,14 @@ export function Sidebar() {
           </>
         ) : (
           <>
-            {/* Org icon (collapsed) */}
+            {/* Sprint 231: Open sidebar button — first icon in rail */}
             <button
               onClick={() => useUIStore.getState().setSidebarOpen(true)}
               className={iconBtnClass(false)}
-              title={displayName}
+              title="Mở sidebar"
               aria-label="Mở sidebar"
             >
-              <CollapsedOrgIcon size={18} />
+              <PanelLeft size={18} />
             </button>
 
             {/* New chat */}

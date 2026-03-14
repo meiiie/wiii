@@ -244,9 +244,22 @@ html.dark .shiki span {
     pointer-events: none;
   }
 
-  /* Hide Tauri titlebar on web mobile */
-  .titlebar-web-hide {
-    display: none !important;
+  /* Mobile: show floating menu button when sidebar is closed */
+  .mobile-menu-btn {
+    display: flex !important;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 40;
+    width: 36px;
+    height: 36px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: var(--surface-secondary, #F0EEE6);
+    border: 1px solid var(--border, #D8D5CD);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    color: var(--text-secondary, #3D3D3A);
   }
 
   /* Chat input full-width on mobile */

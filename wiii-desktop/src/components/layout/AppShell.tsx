@@ -5,7 +5,7 @@
  * Sprint 192: View routing — chat, system-admin, org-admin, settings.
  */
 import { AnimatePresence, motion } from "motion/react";
-import { WifiOff, RefreshCw } from "lucide-react";
+import { WifiOff, RefreshCw, Menu } from "lucide-react";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
@@ -50,6 +50,16 @@ export function AppShell() {
           onClick={toggleSidebar}
           aria-hidden="true"
         />
+        {/* Sprint 231: Mobile menu button (only visible <768px when sidebar closed) */}
+        {isInChat && !sidebarOpen && (
+          <button
+            className="mobile-menu-btn hidden"
+            onClick={toggleSidebar}
+            aria-label="Menu"
+          >
+            <Menu size={18} />
+          </button>
+        )}
         <main className="flex-1 flex flex-col overflow-hidden transition-all duration-200">
           {/* Disconnected banner */}
           <AnimatePresence>
