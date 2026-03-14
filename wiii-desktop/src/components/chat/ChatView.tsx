@@ -6,10 +6,11 @@
  */
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, X, PanelLeft } from "lucide-react";
 import { useChatStore } from "@/stores/chat-store";
 import { useContextStore } from "@/stores/context-store";
 import { useToastStore } from "@/stores/toast-store";
+import { useUIStore } from "@/stores/ui-store";
 import { useSSEStream } from "@/hooks/useSSEStream";
 import { slideDown } from "@/lib/animations";
 import { MessageList } from "./MessageList";
@@ -94,10 +95,27 @@ export function ChatView() {
     sendMessage(message, images);
   }, [sendMessage]);
 
+  // Sprint 231: Floating sidebar toggle when TitleBar is hidden (web mode)
+  const { sidebarOpen, toggleSidebar } = useUIStore();
+  const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  const showFloatingToggle = !isTauri && !sidebarOpen;
+
+  const floatingToggle = showFloatingToggle ? (
+    <button
+      onClick={toggleSidebar}
+      className="absolute top-3 left-3 z-10 p-1.5 rounded-lg bg-surface-secondary/80 backdrop-blur-sm hover:bg-surface-tertiary transition-colors shadow-sm border border-border/50"
+      title="Hiện sidebar"
+      aria-label="Hiện sidebar"
+    >
+      <PanelLeft size={16} className="text-text-secondary" />
+    </button>
+  ) : null;
+
   if (showWelcome) {
     // Welcome mode: WelcomeScreen owns the entire viewport including input
     return (
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full relative">
+        {floatingToggle}
         <WelcomeScreen onSendMessage={handleSend} onCancel={cancelStream} />
       </div>
     );
@@ -105,7 +123,8 @@ export function ChatView() {
 
   // Chat mode: MessageList + ChatInput at bottom
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
+      {floatingToggle}
       <MessageList
         messages={activeConversation?.messages ?? []}
         onSuggestedQuestion={handleSend}

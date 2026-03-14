@@ -15,14 +15,21 @@ export function TitleBar() {
   const { sidebarOpen, toggleSidebar } = useUIStore();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [appWindow, setAppWindow] = useState<any>(null);
+  const [tauri, setTauri] = useState(false);
 
   useEffect(() => {
-    if (isTauri()) {
+    const isTauriEnv = isTauri();
+    setTauri(isTauriEnv);
+    if (isTauriEnv) {
       import("@tauri-apps/api/window")
         .then((mod) => setAppWindow(mod.getCurrentWindow()))
         .catch(() => {});
     }
   }, []);
+
+  // Sprint 231: Hide TitleBar on web — only show on Tauri desktop (needs window controls + drag)
+  // Sidebar toggle moves to inline button in chat area via ChatView
+  if (!tauri) return null;
 
   return (
     <div
