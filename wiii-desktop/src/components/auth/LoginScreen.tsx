@@ -284,29 +284,35 @@ export function LoginScreen() {
   }, []);
 
   return (
-    <div className="flex flex-col items-center h-screen bg-surface pt-[20vh]" aria-busy={isLoading}>
-      <div className="w-full max-w-sm mx-auto flex flex-col items-center gap-5 px-6">
+    <div
+      className="flex flex-col items-center h-screen pt-[16vh]"
+      style={{
+        background: "linear-gradient(180deg, var(--surface) 0%, var(--surface-secondary) 100%)",
+      }}
+      aria-busy={isLoading}
+    >
+      <div className="w-full max-w-[360px] mx-auto flex flex-col items-center px-6">
         {/* Wiii avatar */}
-        <WiiiAvatar state="idle" size={56} />
-
-        {/* Title */}
-        <div className="text-center">
-          <h1
-            className="text-3xl font-normal text-text"
-            style={{ fontFamily: "var(--font-serif)" }}
-          >
-            Chào mừng đến Wiii
-          </h1>
-          <p className="mt-2 text-sm text-text-tertiary">
-            Trợ lý AI thông minh cho học tập và nghiên cứu
-          </p>
+        <div className="mb-5">
+          <WiiiAvatar state="idle" size={64} />
         </div>
 
-        {/* Google login button — prominent with shadow */}
+        {/* Title */}
+        <h1
+          className="text-[32px] font-normal text-text text-center leading-tight"
+          style={{ fontFamily: "var(--font-serif)" }}
+        >
+          Chào mừng đến Wiii
+        </h1>
+        <p className="mt-2 mb-7 text-[15px] text-text-tertiary text-center">
+          Trợ lý AI thông minh cho học tập và nghiên cứu
+        </p>
+
+        {/* Google login button — primary CTA */}
         <button
           onClick={handleGoogleLogin}
           disabled={isLoading}
-          className="w-full flex items-center justify-center gap-3 h-12 px-6 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 active:scale-[0.98] transition-all disabled:opacity-50 shadow-md hover:shadow-lg"
+          className="w-full flex items-center justify-center gap-3 h-[48px] px-6 rounded-2xl bg-white dark:bg-gray-800 border border-gray-200/80 dark:border-gray-600 text-[15px] font-semibold text-gray-700 dark:text-gray-200 hover:border-gray-300 hover:shadow-lg active:scale-[0.97] transition-all disabled:opacity-50 shadow-md"
         >
           {isLoading ? (
             <div className="w-5 h-5 border-2 border-gray-300 dark:border-gray-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin" />
@@ -345,16 +351,16 @@ export function LoginScreen() {
         )}
 
         {/* Divider */}
-        <div className="w-full flex items-center gap-3">
+        <div className="w-full flex items-center gap-3 my-2">
           <div className="flex-1 h-px bg-border" />
-          <span className="text-[11px] text-text-tertiary">hoặc đăng nhập bằng email</span>
+          <span className="text-[11px] text-text-quaternary">hoặc</span>
           <div className="flex-1 h-px bg-border" />
         </div>
 
         {/* Sprint 224: Magic link email login */}
         {emailState === "idle" ? (
-          <div className="w-full flex flex-col gap-2">
-            <label htmlFor="magic-link-email" className="text-xs text-text-tertiary">Email</label>
+          <div className="w-full flex flex-col gap-2.5">
+            <label htmlFor="magic-link-email" className="text-xs font-medium text-text-tertiary">Đăng nhập bằng email</label>
             <input
               id="magic-link-email"
               type="email"
@@ -366,12 +372,12 @@ export function LoginScreen() {
                   handleEmailLogin();
                 }
               }}
-              className="w-full h-9 px-3 rounded-lg bg-surface-secondary border border-border text-sm text-text placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+              className="w-full h-[44px] px-4 rounded-xl bg-surface border border-border text-[15px] text-text placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 focus:border-[var(--accent)] transition-all"
             />
             <button
               onClick={handleEmailLogin}
               disabled={isLoading || !emailValue.includes("@")}
-              className="w-full h-10 rounded-xl bg-[var(--accent)] text-sm text-white font-semibold hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-40 shadow-sm"
+              className="w-full h-[44px] rounded-2xl bg-[var(--accent)] text-[15px] text-white font-semibold hover:opacity-90 active:scale-[0.97] transition-all disabled:opacity-35 shadow-sm"
             >
               {isLoading ? "Đang gửi..." : "Tiếp tục"}
             </button>
@@ -416,16 +422,11 @@ export function LoginScreen() {
           </div>
         )}
 
-        {/* Divider before dev mode */}
-        <div className="w-full flex items-center gap-3">
-          <div className="flex-1 h-px bg-border" />
-        </div>
-
         {/* Developer mode toggle */}
         {!showDevMode ? (
           <button
             onClick={() => setShowDevMode(true)}
-            className="text-[10px] text-text-tertiary hover:text-text-secondary transition-colors"
+            className="mt-3 text-[10px] text-text-quaternary hover:text-text-tertiary transition-colors"
           >
             Chế độ nhà phát triển
           </button>
@@ -453,14 +454,14 @@ export function LoginScreen() {
         )}
 
         {/* Footer — Terms & Privacy */}
-        <div className="text-center mt-6 space-y-2">
+        <div className="text-center mt-8 space-y-1.5">
           <p className="text-[11px] text-text-tertiary leading-relaxed">
             Bằng việc tiếp tục, bạn đồng ý với{" "}
-            <a href="/terms" className="underline hover:text-text-secondary transition-colors">
+            <a href="/terms.html" target="_blank" rel="noopener" className="underline underline-offset-2 hover:text-text-secondary transition-colors">
               Điều khoản sử dụng
             </a>{" "}
             và{" "}
-            <a href="/privacy" className="underline hover:text-text-secondary transition-colors">
+            <a href="/privacy.html" target="_blank" rel="noopener" className="underline underline-offset-2 hover:text-text-secondary transition-colors">
               Chính sách bảo mật
             </a>
           </p>
