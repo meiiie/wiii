@@ -284,8 +284,8 @@ export function LoginScreen() {
   }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-surface" aria-busy={isLoading}>
-      <div className="w-full max-w-sm mx-auto flex flex-col items-center gap-6 px-6">
+    <div className="flex flex-col items-center h-screen bg-surface pt-[20vh]" aria-busy={isLoading}>
+      <div className="w-full max-w-sm mx-auto flex flex-col items-center gap-5 px-6">
         {/* Wiii avatar */}
         <WiiiAvatar state="idle" size={56} />
 
@@ -302,11 +302,11 @@ export function LoginScreen() {
           </p>
         </div>
 
-        {/* Google login button */}
+        {/* Google login button — prominent with shadow */}
         <button
           onClick={handleGoogleLogin}
           disabled={isLoading}
-          className="w-full flex items-center justify-center gap-3 h-11 px-6 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-600 transition-colors disabled:opacity-50 shadow-sm"
+          className="w-full flex items-center justify-center gap-3 h-12 px-6 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 active:scale-[0.98] transition-all disabled:opacity-50 shadow-md hover:shadow-lg"
         >
           {isLoading ? (
             <div className="w-5 h-5 border-2 border-gray-300 dark:border-gray-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin" />
@@ -371,7 +371,7 @@ export function LoginScreen() {
             <button
               onClick={handleEmailLogin}
               disabled={isLoading || !emailValue.includes("@")}
-              className="w-full h-9 rounded-lg bg-[var(--accent)] text-sm text-white font-medium hover:opacity-90 active:opacity-80 transition-opacity disabled:opacity-50"
+              className="w-full h-10 rounded-xl bg-[var(--accent)] text-sm text-white font-semibold hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-40 shadow-sm"
             >
               {isLoading ? "Đang gửi..." : "Tiếp tục"}
             </button>
@@ -452,10 +452,22 @@ export function LoginScreen() {
           </div>
         )}
 
-        {/* Footer */}
-        <p className="text-[10px] text-text-tertiary text-center mt-4">
-          by The Wiii Lab
-        </p>
+        {/* Footer — Terms & Privacy */}
+        <div className="text-center mt-6 space-y-2">
+          <p className="text-[11px] text-text-tertiary leading-relaxed">
+            Bằng việc tiếp tục, bạn đồng ý với{" "}
+            <a href="/terms" className="underline hover:text-text-secondary transition-colors">
+              Điều khoản sử dụng
+            </a>{" "}
+            và{" "}
+            <a href="/privacy" className="underline hover:text-text-secondary transition-colors">
+              Chính sách bảo mật
+            </a>
+          </p>
+          <p className="text-[10px] text-text-quaternary">
+            by The Wiii Lab
+          </p>
+        </div>
       </div>
     </div>
   );
