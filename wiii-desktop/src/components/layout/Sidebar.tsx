@@ -39,7 +39,7 @@ export function Sidebar() {
     pinConversation,
     unpinConversation,
   } = useChatStore();
-  const { sidebarOpen, activeView, openSettings, openAdminPanel, openOrgManagerPanel, openSoulBridge, navigateToChat } = useUIStore();
+  const { sidebarOpen, toggleSidebar, activeView, openSettings, openAdminPanel, openOrgManagerPanel, openSoulBridge, navigateToChat } = useUIStore();
   const { isSystemAdmin, isOrgAdmin } = useOrgStore();
   const { activeDomainId } = useDomainStore();
   const { activeOrgId } = useOrgStore();
@@ -224,7 +224,6 @@ export function Sidebar() {
   }
 
   // Full expanded mode (256px)
-  const { toggleSidebar } = useUIStore();
   return (
     <div className="flex flex-col h-full w-72 bg-surface-secondary border-r border-border">
       {/* Sprint 231: Workspace selector + sidebar close button */}
