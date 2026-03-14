@@ -160,6 +160,14 @@ export function Sidebar() {
 
         {/* Spacer */}
         <div className="flex-1" />
+        <span className="sr-only">{displayName}</span>
+        <div
+          className="mb-1 grid h-9 w-9 place-items-center rounded-lg border border-border bg-surface text-text-secondary"
+          title={displayName}
+          aria-label={displayName}
+        >
+          <CollapsedOrgIcon size={16} />
+        </div>
 
         {/* Connection badge — compact */}
         <div className="mb-1" title="Trạng thái kết nối">
@@ -225,7 +233,7 @@ export function Sidebar() {
 
   // Full expanded mode (256px)
   return (
-    <div className="flex flex-col h-full w-72 bg-surface-secondary border-r border-border">
+    <div className="flex flex-col h-full w-[260px] bg-surface-secondary border-r border-border">
       {/* Sprint 231: Workspace selector + sidebar close button */}
       <div className="flex items-center gap-1 px-3 pt-3 pb-1">
         <div className="flex-1 min-w-0">
@@ -325,75 +333,63 @@ export function Sidebar() {
         )}
       </div>
 
-      {/* Footer */}
-      <div className="p-3 border-t border-border space-y-2">
-        <ConnectionBadge />
+      {/* Sprint 231: Simplified footer — Claude.ai pattern (user row + settings icon) */}
+      <div className="px-3 py-2 border-t border-border">
+        <div className="flex items-center gap-2">
+          {/* User avatar + name */}
+          {isAuthenticated && (
+            <>
+              {user?.avatar_url ? (
+                <img
+                  src={user.avatar_url}
+                  alt={displayUserName || "Avatar"}
+                  className="w-7 h-7 rounded-full shrink-0"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-full shrink-0 bg-[var(--accent)]/10 flex items-center justify-center">
+                  <User size={14} className="text-[var(--accent)]" />
+                </div>
+              )}
+              <span className="flex-1 text-sm text-text-secondary truncate">
+                {displayUserName || "Người dùng"}
+              </span>
+            </>
+          )}
 
-        {/* Sprint 193: User profile row with logout */}
-        {isAuthenticated && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg">
-            {user?.avatar_url ? (
-              <img
-                src={user.avatar_url}
-                alt={displayUserName || "Avatar"}
-                className="w-6 h-6 rounded-full shrink-0"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <User size={16} className="shrink-0 text-text-tertiary" />
+          {/* Action icons — compact row */}
+          <div className="flex items-center gap-0.5 shrink-0">
+            {/* Admin (conditional) */}
+            {isSystemAdmin() && (
+              <button
+                onClick={openAdminPanel}
+                className="p-1.5 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-surface-tertiary transition-colors"
+                title="Quản trị hệ thống"
+                aria-label="Quản trị hệ thống"
+              >
+                <Shield size={15} />
+              </button>
             )}
-            <span className="flex-1 text-sm text-text-secondary truncate">
-              {displayUserName || "Người dùng"}
-            </span>
+            {/* Settings */}
+            <button
+              onClick={openSettings}
+              className="p-1.5 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-surface-tertiary transition-colors"
+              title="Cài đặt"
+              aria-label="Cài đặt"
+            >
+              <Settings size={15} />
+            </button>
+            {/* Logout */}
             <button
               onClick={handleLogout}
-              className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 text-text-tertiary transition-colors"
+              className="p-1.5 rounded-md text-text-tertiary hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
               title="Đăng xuất"
               aria-label="Đăng xuất"
             >
-              <LogOut size={14} />
+              <LogOut size={15} />
             </button>
           </div>
-        )}
-
-        {/* Sprint 179+181: Admin buttons — system admin (Shield) or org admin (Building2) */}
-        {isSystemAdmin() && (
-          <button
-            onClick={openAdminPanel}
-            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-tertiary transition-colors"
-            aria-label="Mở bảng quản trị hệ thống"
-          >
-            <Shield size={14} />
-            Quản trị hệ thống
-          </button>
-        )}
-        {(isOrgAdmin() || isSystemAdmin()) && activeOrgId && activeOrgId !== "personal" && (
-          <button
-            onClick={() => openOrgManagerPanel(activeOrgId)}
-            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-tertiary transition-colors"
-            aria-label="Mở bảng quản lý tổ chức"
-          >
-            <Building2 size={14} />
-            Quản lý tổ chức
-          </button>
-        )}
-        {/* Sprint 216: Soul Bridge */}
-        <button
-          onClick={openSoulBridge}
-          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-tertiary transition-colors"
-          aria-label="Mở mạng linh hồn"
-        >
-          <Network size={14} />
-          Mạng Linh Hồn
-        </button>
-        <button
-          onClick={openSettings}
-          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-tertiary transition-colors"
-          aria-label="Mở cài đặt"
-        >
-          <Settings size={14} />
-          Cài đặt
-        </button>
+        </div>
       </div>
 
       {/* Delete confirmation dialog */}
