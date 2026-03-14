@@ -285,7 +285,7 @@ export function LoginScreen() {
 
   return (
     <div
-      className="flex flex-col items-center h-screen pt-[16vh]"
+      className="flex flex-col items-center h-screen pt-[10vh]"
       style={{
         background: "linear-gradient(180deg, var(--surface) 0%, var(--surface-secondary) 100%)",
       }}
