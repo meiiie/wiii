@@ -52,8 +52,11 @@ export function getGreeting(displayName?: string, hour?: number): string {
   const variants = GREETING_MAP[timeOfDay];
   const base = variants[Math.floor(Math.random() * variants.length)];
 
-  if (displayName && displayName.trim()) {
-    return `${base}, ${displayName.trim()}!`;
+  const name = displayName?.trim();
+  // Sprint 231: Don't show generic names like "User", "Desktop User", etc.
+  const genericNames = ["user", "desktop-user", "desktop user", "anonymous", "guest"];
+  if (name && !genericNames.includes(name.toLowerCase())) {
+    return `${base}, ${name}!`;
   }
   return `${base}!`;
 }

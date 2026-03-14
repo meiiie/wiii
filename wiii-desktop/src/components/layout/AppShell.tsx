@@ -33,6 +33,8 @@ export function AppShell() {
   // Sprint 192b: Hide main sidebar entirely when not in chat view (Claude.ai pattern)
   const isInChat = activeView === "chat";
 
+  const { toggleSidebar } = useUIStore();
+
   return (
     <div className="flex flex-col h-screen">
       <TitleBar />
@@ -42,6 +44,12 @@ export function AppShell() {
         >
           <Sidebar />
         </div>
+        {/* Sprint 231: Mobile backdrop overlay when sidebar is open */}
+        <div
+          className={`sidebar-backdrop ${!sidebarOpen || !isInChat ? "hidden" : ""}`}
+          onClick={toggleSidebar}
+          aria-hidden="true"
+        />
         <main className="flex-1 flex flex-col overflow-hidden transition-all duration-200">
           {/* Disconnected banner */}
           <AnimatePresence>
