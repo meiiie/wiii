@@ -4,63 +4,134 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Chính sách bảo mật — Wiii AI</title>
+<link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=2">
+<meta name="theme-color" content="#F97316">
 <style>
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 680px; margin: 0 auto; padding: 40px 20px; color: #1e293b; line-height: 1.7; }
-h1 { font-size: 28px; margin-bottom: 8px; }
-h2 { font-size: 20px; margin-top: 32px; color: #334155; }
-p, li { font-size: 15px; color: #475569; }
-a { color: #c75b39; }
-.date { font-size: 13px; color: #94a3b8; margin-bottom: 32px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #1e293b; background: #FAF9F5; line-height: 1.75; -webkit-font-smoothing: antialiased;
+}
+.header {
+  background: white; border-bottom: 1px solid #e2e8f0; padding: 16px 24px;
+  display: flex; align-items: center; gap: 12px;
+}
+.header img { width: 32px; height: 32px; border-radius: 8px; }
+.header a { text-decoration: none; font-size: 15px; font-weight: 600; color: #1e293b; }
+.container { max-width: 720px; margin: 0 auto; padding: 48px 24px 80px; }
+h1 { font-size: 32px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+.meta { font-size: 13px; color: #94a3b8; margin-bottom: 40px; }
+h2 { font-size: 19px; font-weight: 600; color: #0f172a; margin-top: 40px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #f1f5f9; }
+h3 { font-size: 16px; font-weight: 600; color: #334155; margin-top: 20px; margin-bottom: 8px; }
+p { font-size: 15px; color: #475569; margin-bottom: 12px; }
+ul { padding-left: 20px; margin-bottom: 12px; }
+li { font-size: 15px; color: #475569; margin-bottom: 6px; }
+strong { color: #334155; }
+a { color: #c75b39; text-decoration: underline; text-underline-offset: 2px; }
+a:hover { color: #a04a2e; }
+.footer { text-align: center; padding: 32px; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; margin-top: 48px; }
+.data-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+.data-table th { text-align: left; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; font-weight: 600; color: #334155; }
+.data-table td { padding: 10px 12px; border: 1px solid #e2e8f0; color: #475569; }
+.shield { display: inline-flex; align-items: center; gap: 6px; background: #ecfdf5; color: #065f46; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 500; margin-bottom: 16px; }
+.highlight { background: #eff6ff; border-left: 3px solid #2563eb; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+.highlight p { margin: 0; font-size: 14px; color: #1e40af; }
+@media (max-width: 640px) { .container { padding: 32px 16px 60px; } h1 { font-size: 26px; } .data-table { font-size: 13px; } }
 </style>
 </head>
 <body>
+<div class="header">
+  <a href="/"><img src="/icon-192.png?v=2" alt="Wiii AI"></a>
+  <a href="/">Wiii AI</a>
+</div>
+<div class="container">
 <h1>Chính sách bảo mật</h1>
-<p class="date">Cập nhật lần cuối: 14 tháng 3, 2026</p>
+<p class="meta">Cập nhật lần cuối: 14 tháng 3, 2026 &middot; Phiên bản 1.0</p>
+
+<p>Tại <strong>The Wiii Lab</strong>, chúng tôi coi trọng quyền riêng tư của bạn. Chính sách này giải thích cách chúng tôi thu thập, sử dụng, và bảo vệ dữ liệu khi bạn sử dụng <strong>Wiii AI</strong>.</p>
+
+<div class="shield">🔒 Dữ liệu được mã hóa và bảo vệ</div>
 
 <h2>1. Thông tin chúng tôi thu thập</h2>
-<ul>
-<li><strong>Thông tin tài khoản:</strong> Tên, email, ảnh đại diện (từ Google OAuth)</li>
-<li><strong>Nội dung trò chuyện:</strong> Tin nhắn bạn gửi và phản hồi AI</li>
-<li><strong>Dữ liệu sử dụng:</strong> Thời gian truy cập, tần suất sử dụng, loại câu hỏi</li>
-</ul>
+
+<table class="data-table">
+<tr><th>Loại dữ liệu</th><th>Chi tiết</th><th>Mục đích</th></tr>
+<tr><td><strong>Tài khoản</strong></td><td>Tên, email, ảnh đại diện (từ Google OAuth)</td><td>Xác thực, cá nhân hóa</td></tr>
+<tr><td><strong>Trò chuyện</strong></td><td>Tin nhắn gửi và phản hồi AI</td><td>Cung cấp dịch vụ, trí nhớ AI</td></tr>
+<tr><td><strong>Trí nhớ AI</strong></td><td>Sở thích học tập, chủ đề quan tâm</td><td>Cá nhân hóa trải nghiệm</td></tr>
+<tr><td><strong>Sử dụng</strong></td><td>Thời gian, tần suất, loại câu hỏi</td><td>Cải thiện chất lượng</td></tr>
+<tr><td><strong>Kỹ thuật</strong></td><td>IP (ẩn danh), trình duyệt, thiết bị</td><td>Bảo mật, gỡ lỗi</td></tr>
+</table>
 
 <h2>2. Cách sử dụng thông tin</h2>
 <ul>
-<li>Cung cấp và cải thiện Dịch vụ</li>
-<li>Cá nhân hóa trải nghiệm học tập (trí nhớ dài hạn)</li>
-<li>Phân tích xu hướng sử dụng để nâng cao chất lượng</li>
-<li>Bảo mật và ngăn chặn lạm dụng</li>
+<li><strong>Cung cấp Dịch vụ:</strong> Xử lý câu hỏi, tạo phản hồi AI, lưu lịch sử trò chuyện</li>
+<li><strong>Cá nhân hóa:</strong> Trí nhớ dài hạn giúp AI hiểu ngữ cảnh và phong cách học của bạn</li>
+<li><strong>Cải thiện:</strong> Phân tích xu hướng sử dụng (ẩn danh) để nâng cao chất lượng AI</li>
+<li><strong>Bảo mật:</strong> Phát hiện và ngăn chặn truy cập trái phép, lạm dụng</li>
 </ul>
 
-<h2>3. Chia sẻ thông tin</h2>
-<p>Chúng tôi <strong>không bán</strong> thông tin cá nhân. Dữ liệu có thể được chia sẻ với:</p>
-<ul>
-<li>Nhà cung cấp LLM (Google Gemini) — chỉ nội dung câu hỏi để xử lý AI</li>
-<li>Cơ quan pháp luật khi được yêu cầu theo quy định</li>
-</ul>
+<h2>3. Chia sẻ dữ liệu</h2>
+<div class="highlight">
+<p><strong>Cam kết:</strong> Chúng tôi <u>không bán</u> thông tin cá nhân của bạn cho bất kỳ bên thứ ba nào.</p>
+</div>
+
+<h3>Bên thứ ba nhận dữ liệu (giới hạn):</h3>
+<table class="data-table">
+<tr><th>Bên thứ ba</th><th>Dữ liệu</th><th>Lý do</th></tr>
+<tr><td><strong>Google Gemini API</strong></td><td>Nội dung câu hỏi (không có thông tin cá nhân)</td><td>Xử lý AI</td></tr>
+<tr><td><strong>Google Cloud Platform</strong></td><td>Dữ liệu lưu trữ (mã hóa)</td><td>Hosting infrastructure</td></tr>
+<tr><td><strong>Cloudflare</strong></td><td>Traffic metadata</td><td>CDN, DDoS protection</td></tr>
+<tr><td><strong>Cơ quan pháp luật</strong></td><td>Theo yêu cầu pháp lý</td><td>Tuân thủ quy định</td></tr>
+</table>
 
 <h2>4. Bảo mật dữ liệu</h2>
 <ul>
-<li>Mã hóa truyền tải (HTTPS/TLS)</li>
-<li>JWT token authentication với refresh rotation</li>
-<li>Dữ liệu lưu trữ trên GCP (Google Cloud Platform) asia-southeast1</li>
-<li>Backup tự động hàng ngày</li>
+<li><strong>Truyền tải:</strong> HTTPS/TLS mã hóa toàn bộ giao tiếp</li>
+<li><strong>Xác thực:</strong> JWT token với refresh rotation, PKCE cho OAuth</li>
+<li><strong>Lưu trữ:</strong> PostgreSQL trên GCP asia-southeast1 (Singapore)</li>
+<li><strong>Backup:</strong> Tự động hàng ngày, lưu trữ 30 ngày</li>
+<li><strong>Truy cập:</strong> Phân quyền theo vai trò (student/teacher/admin)</li>
+<li><strong>Rate limiting:</strong> Giới hạn tần suất truy cập để chống lạm dụng</li>
 </ul>
 
 <h2>5. Quyền của bạn</h2>
+<table class="data-table">
+<tr><th>Quyền</th><th>Cách thực hiện</th></tr>
+<tr><td><strong>Xem dữ liệu</strong></td><td>Cài đặt → Hồ sơ (thông tin tài khoản)</td></tr>
+<tr><td><strong>Xem trí nhớ AI</strong></td><td>Cài đặt → Trí nhớ (facts AI đã học về bạn)</td></tr>
+<tr><td><strong>Xóa trí nhớ</strong></td><td>Cài đặt → Trí nhớ → Quên tất cả</td></tr>
+<tr><td><strong>Xóa trò chuyện</strong></td><td>Sidebar → hover conversation → nút xóa</td></tr>
+<tr><td><strong>Xóa tài khoản</strong></td><td>Email <a href="mailto:admin@holilihu.online">admin@holilihu.online</a></td></tr>
+<tr><td><strong>Xuất dữ liệu</strong></td><td>Liên hệ email (xử lý trong 7 ngày)</td></tr>
+</table>
+
+<h2>6. Cookie và Lưu trữ cục bộ</h2>
 <ul>
-<li><strong>Truy cập:</strong> Xem dữ liệu cá nhân trong Cài đặt</li>
-<li><strong>Xóa:</strong> Yêu cầu xóa tài khoản và dữ liệu qua email</li>
-<li><strong>Sửa đổi:</strong> Cập nhật thông tin trong trang Hồ sơ</li>
-<li><strong>Trí nhớ:</strong> Xem và xóa dữ liệu trí nhớ AI trong Cài đặt → Trí nhớ</li>
+<li><strong>localStorage:</strong> Lưu cài đặt giao diện, phiên đăng nhập, lịch sử trò chuyện</li>
+<li><strong>Không sử dụng</strong> cookie theo dõi của bên thứ ba</li>
+<li><strong>Không sử dụng</strong> công cụ phân tích bên thứ ba (Google Analytics, Facebook Pixel...)</li>
 </ul>
 
-<h2>6. Cookie và lưu trữ cục bộ</h2>
-<p>Wiii sử dụng localStorage để lưu cài đặt và phiên đăng nhập. Không sử dụng cookie theo dõi của bên thứ ba.</p>
+<h2>7. Trẻ em</h2>
+<p>Wiii AI không dành cho trẻ em dưới 13 tuổi. Nếu chúng tôi phát hiện tài khoản của người dưới 13 tuổi, tài khoản sẽ được xóa.</p>
 
-<h2>7. Liên hệ</h2>
-<p>Để yêu cầu xóa dữ liệu hoặc có câu hỏi về bảo mật: <a href="mailto:admin@holilihu.online">admin@holilihu.online</a></p>
+<h2>8. Thay đổi Chính sách</h2>
+<p>Chúng tôi có thể cập nhật chính sách này. Thay đổi quan trọng sẽ được thông báo qua email hoặc trong ứng dụng ít nhất 30 ngày trước khi có hiệu lực.</p>
 
-<p style="margin-top:40px;text-align:center;font-size:13px;color:#94a3b8">© 2026 The Wiii Lab. All rights reserved.</p>
+<h2>9. Liên hệ về Bảo mật</h2>
+<p>Để báo cáo vấn đề bảo mật, yêu cầu xóa dữ liệu, hoặc có câu hỏi:</p>
+<ul>
+<li><strong>Email:</strong> <a href="mailto:admin@holilihu.online">admin@holilihu.online</a></li>
+<li><strong>Tổ chức:</strong> The Wiii Lab</li>
+<li><strong>Thời gian phản hồi:</strong> Trong vòng 7 ngày làm việc</li>
+</ul>
+</div>
+
+<div class="footer">
+  <p>&copy; 2026 The Wiii Lab. All rights reserved.</p>
+  <p style="margin-top:8px"><a href="/terms.html">Điều khoản sử dụng</a> &middot; <a href="/">Quay lại Wiii</a></p>
+</div>
 </body>
 </html>
