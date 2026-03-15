@@ -65,7 +65,7 @@ function normalizeNode(node?: string) {
 }
 
 function getNodeLabel(node?: string) {
-  return NODE_LABELS[normalizeNode(node)] || node || "Dang suy luan";
+  return NODE_LABELS[normalizeNode(node)] || node || "Đang suy luận";
 }
 
 function getIntervalTitle(interval: ReasoningIntervalViewModel) {
@@ -77,7 +77,7 @@ function getIntervalTitle(interval: ReasoningIntervalViewModel) {
 
 function buildPreviewLine(block: PreviewBlockData) {
   const first = block.items[0];
-  if (!first) return "Da doi chieu mot preview";
+  if (!first) return "Đã đối chiếu một preview";
   return `${first.title}${first.snippet ? ` — ${first.snippet}` : ""}`;
 }
 
@@ -196,7 +196,7 @@ function renderOperationItem(
   if (item.kind === "tool") {
     const summary = summarizeToolExecutionBlock(item.block);
     const body = [summary.argsLine, summary.resultLine].filter(Boolean).join(" • ")
-      || "Dang thuc hien mot thao tac";
+      || "Đang thực hiện một thao tác";
     return (
       <OperationRow
         key={item.id}
@@ -339,7 +339,7 @@ export function ReasoningInterval({
 }) {
   const title = getIntervalTitle(interval);
   const phaseLabel = interval.phase ? PHASE_LABELS[interval.phase] : undefined;
-  const statusBadge = interval.isLive ? "Dang suy luan" : "Da ghi lai";
+  const statusBadge = interval.isLive ? "Đang suy luận" : "Đã ghi lại";
   const durationText = interval.durationSeconds ? `${interval.durationSeconds}s` : "";
   const showExtendedMeta = thinkingLevel === "detailed";
 

@@ -2391,7 +2391,7 @@ html.dark .shiki span {
 }
 
 .editorial-visual-flow__lead-copy::before {
-  content: "Mo bai";
+  content: "Mở bài";
   display: inline-flex;
   margin-bottom: 0.7rem;
   border-radius: 999px;

@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import type {
   ArtifactBlockData,
   ContentBlock,
@@ -6,71 +7,351 @@ import type {
   SubagentGroupBlockData,
   ThinkingBlockData,
   ThinkingLevel,
-  ToolExecutionBlockData,
+  ThinkingPhase,
+  VisualBlockData,
 } from "@/api/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import { ThinkingBlock } from "./ThinkingBlock";
-import { ActionText } from "./ActionText";
+import InlineHtmlWidget from "@/components/common/InlineHtmlWidget";
+import { splitWidgetBlocks } from "@/components/common/widget-segments";
+import {
+  ReasoningInterval,
+  ThinkingInspectorDrawer,
+  type ReasoningIntervalItem,
+  type ReasoningIntervalViewModel,
+} from "./ReasoningInterval";
 import { ScreenshotBlock } from "./ScreenshotBlock";
 import { SubagentGroup } from "./SubagentGroup";
 import { PreviewGroup } from "./PreviewGroup";
 import { ArtifactCard } from "./ArtifactCard";
-import { ToolExecutionStrip } from "./ToolExecutionStrip";
+import { VisualBlock } from "./VisualBlock";
 
-function normalizeText(value: string | undefined): string {
-  return (value || "")
-    .toLowerCase()
-    .replace(/[`*_#>]/g, " ")
-    .replace(/\s+/g, " ")
+type ArticleFigureComposition = {
+  visualId: string;
+  narrativeAnchor: string;
+  bridgeLabel: string;
+  claim: string;
+  chromeMode: string;
+  pedagogicalRole: string;
+};
+
+type ArticleCompositionSegment =
+  | {
+    kind: "prose";
+    id: string;
+    content: string;
+    surfaceRole: "lead" | "body" | "tail";
+  }
+  | {
+    kind: "figure";
+    id: string;
+    figure: ArticleFigureComposition;
+  }
+  | {
+    kind: "legacy-widget";
+    id: string;
+    html: string;
+    bridgeLabel: string;
+    claim: string;
+  };
+
+type ArticleComposition = {
+  answerIds: string[];
+  entryId: string;
+  figureIds: string[];
+  answerIsLast: boolean;
+  segments: ArticleCompositionSegment[];
+};
+
+type RenderItem =
+  | { kind: "interval"; id: string; interval: ReasoningIntervalViewModel }
+  | { kind: "block"; id: string; block: ContentBlock };
+
+const EDITORIAL_BRIDGE_LABELS: Record<string, string> = {
+  comparison: "Minh họa so sánh",
+  process: "Minh họa theo bước",
+  matrix: "Minh họa ma trận",
+  architecture: "Minh họa hệ thống",
+  concept: "Sơ đồ ý chính",
+  infographic: "Minh họa tổng hợp",
+  chart: "Biểu đồ trung tâm",
+  timeline: "Dòng thời gian",
+  map_lite: "Bản đồ tâm điểm",
+};
+
+function stripLegacyWidgetBlocks(content: string): string {
+  return content
+    .replace(/```widget[ \t]*[\r\n]+[\s\S]*?[\r\n]+```/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
-function getThinkingLead(block: ThinkingBlockData | undefined): string {
-  if (!block) return "";
-  const source = block.summary?.trim() || block.content?.trim() || block.label?.trim() || "";
-  if (!source) return "";
-  const [firstLine] = source.split(/\n+/);
-  return normalizeText(firstLine);
+function splitEditorialAnswer(content: string): string[] {
+  const paragraphSegments = content
+    .split(/\n\s*\n+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  if (paragraphSegments.length >= 2) return paragraphSegments;
+
+  const singleParagraph = paragraphSegments[0] || content.trim();
+  if (!singleParagraph) return [];
+
+  const sentenceSegments = singleParagraph
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9À-ỹ])/u)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  if (sentenceSegments.length >= 3) return sentenceSegments;
+
+  return paragraphSegments;
 }
 
-function shouldHideActionBridge(blocks: ContentBlock[], index: number): boolean {
-  const current = blocks[index];
-  if (!current || current.type !== "action_text") return false;
+function collectAnswerNarrative(blocks: ContentBlock[]): Array<Extract<ContentBlock, { type: "answer" }>> {
+  return blocks
+    .filter((block): block is Extract<ContentBlock, { type: "answer" }> => block.type === "answer")
+    .map((answer) => ({
+      ...answer,
+      content: stripLegacyWidgetBlocks(answer.content),
+    }))
+    .filter((answer) => Boolean(answer.content));
+}
 
-  const previousThinking = [...blocks.slice(0, index)]
-    .reverse()
-    .find((block): block is ThinkingBlockData => block.type === "thinking");
-  const nextThinking = blocks
-    .slice(index + 1)
-    .find((block): block is ThinkingBlockData => block.type === "thinking");
+function collectRawAnswers(blocks: ContentBlock[]): Array<Extract<ContentBlock, { type: "answer" }>> {
+  return blocks.filter((block): block is Extract<ContentBlock, { type: "answer" }> => block.type === "answer");
+}
 
-  const currentText = normalizeText(current.content);
-  if (!currentText) return true;
+function normalizeEditorialSnippet(value: string | undefined): string {
+  return (value || "").replace(/\s+/g, " ").trim();
+}
 
-  const previousLead = getThinkingLead(previousThinking);
-  const nextLead = getThinkingLead(nextThinking);
+function buildSyntheticEditorialNarrative(figures: VisualBlockData[]): string[] {
+  if (figures.length === 0) return [];
 
-  return Boolean(
-    currentText === previousLead ||
-    currentText === nextLead ||
-    (previousLead && currentText.includes(previousLead)) ||
-    (nextLead && currentText.includes(nextLead))
+  const firstFigure = figures[0]?.visual;
+  const lastFigure = figures[figures.length - 1]?.visual;
+  const total = figures.length;
+  const snippets: string[] = [];
+  const seen = new Set<string>();
+
+  const pushUnique = (value: string) => {
+    const cleaned = normalizeEditorialSnippet(value);
+    if (!cleaned) return;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    snippets.push(cleaned);
+  };
+
+  pushUnique(
+    `Minh se di qua ${total} figure nho de tach tung y, bat dau tu ${firstFigure?.title || "khung nhin mo dau"}.`,
   );
+
+  if (figures.length > 1) {
+    const middleFigure = figures[Math.min(1, figures.length - 1)]?.visual;
+    pushUnique(middleFigure?.claim || middleFigure?.summary || "");
+  }
+
+  pushUnique(
+    `Tu nhom figure nay, diem chot la ${lastFigure?.summary || lastFigure?.claim || lastFigure?.title || "y chinh can nam"}.`,
+  );
+
+  if (snippets.length < 2) {
+    pushUnique(firstFigure?.summary || firstFigure?.claim || firstFigure?.title || "");
+  }
+
+  return snippets.slice(0, 3);
 }
 
-function isThinkingContinuation(blocks: ContentBlock[], index: number): boolean {
-  const current = blocks[index];
-  if (!current || current.type !== "thinking" || !current.stepId) return false;
+function extractLegacyWidgetTitle(html: string, fallback: string) {
+  const titleMatch = html.match(/<(h1|h2|h3)[^>]*>([\s\S]*?)<\/\1>/i) || html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const raw = titleMatch?.[2] || titleMatch?.[1] || "";
+  const title = raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return title || fallback;
+}
 
-  for (let i = index - 1; i >= 0; i--) {
-    const candidate = blocks[i];
-    if (candidate.stepId !== current.stepId) continue;
-    if (candidate.type === "thinking" || candidate.type === "tool_execution" || candidate.type === "action_text" || candidate.type === "artifact" || candidate.type === "preview" || candidate.type === "screenshot") {
-      return true;
+function buildLegacyWidgetComposition(
+  answers: Array<Extract<ContentBlock, { type: "answer" }>>,
+): ArticleComposition | null {
+  const segments: ArticleCompositionSegment[] = [];
+  const widgetIds: string[] = [];
+  const proseBaseId = answers[0]?.id || "legacy-editorial";
+  let proseIndex = 0;
+  let widgetIndex = 0;
+
+  for (const answer of answers) {
+    const splitSegments = splitWidgetBlocks(answer.content);
+    for (const segment of splitSegments) {
+      if (segment.type === "markdown") {
+        const prose = segment.content.trim();
+        if (!prose) continue;
+        segments.push({
+          kind: "prose",
+          id: `${proseBaseId}-legacy-prose-${proseIndex + 1}`,
+          content: prose,
+          surfaceRole: proseIndex === 0 ? "lead" : "body",
+        });
+        proseIndex += 1;
+        continue;
+      }
+
+      const widgetId = `${proseBaseId}-legacy-widget-${widgetIndex + 1}`;
+      widgetIds.push(widgetId);
+      segments.push({
+        kind: "legacy-widget",
+        id: widgetId,
+        html: segment.content,
+        bridgeLabel: widgetIndex === 0 ? "Minh họa trung tâm" : `Figure ${widgetIndex + 1}`,
+        claim: extractLegacyWidgetTitle(segment.content, `Figure ${widgetIndex + 1}`),
+      });
+      widgetIndex += 1;
     }
   }
 
-  return false;
+  if (widgetIds.length === 0) return null;
+
+  const proseSegments = segments.filter((segment): segment is Extract<ArticleCompositionSegment, { kind: "prose" }> => segment.kind === "prose");
+  if (proseSegments.length === 0) {
+    segments.unshift({
+      kind: "prose",
+      id: `${proseBaseId}-legacy-lead`,
+      content: `Minh se di qua ${widgetIds.length} figure nho de tach tung y trong loi giai thich nay.`,
+      surfaceRole: "lead",
+    });
+    segments.push({
+      kind: "prose",
+      id: `${proseBaseId}-legacy-tail`,
+      content: "Tu nhom figure nay, minh co the tiep tuc patch tung khung nhin ma khong can quay lai dang widget cu.",
+      surfaceRole: "tail",
+    });
+  } else {
+    const proseOnly = segments.filter((segment): segment is Extract<ArticleCompositionSegment, { kind: "prose" }> => segment.kind === "prose");
+    const lastProse = proseOnly[proseOnly.length - 1];
+    if (lastProse) {
+      lastProse.surfaceRole = "tail";
+    }
+  }
+
+  return {
+    answerIds: answers.map((answer) => answer.id),
+    entryId: answers[0]?.id || widgetIds[0],
+    figureIds: widgetIds,
+    answerIsLast: true,
+    segments,
+  };
+}
+
+function buildArticleComposition(blocks: ContentBlock[]): ArticleComposition | null {
+  const rawAnswers = collectRawAnswers(blocks);
+  const answers = collectAnswerNarrative(blocks);
+  const visuals = blocks.filter((block): block is VisualBlockData => block.type === "visual");
+
+  if (visuals.length === 0) {
+    return buildLegacyWidgetComposition(rawAnswers);
+  }
+
+  const candidateVisuals = visuals.filter((visual) => visual.visual.shell_variant !== "immersive");
+  if (candidateVisuals.length === 0) return null;
+
+  const visualsByGroup = new Map<string, VisualBlockData[]>();
+  for (const visual of candidateVisuals) {
+    const groupId = visual.visual.figure_group_id || visual.visual.visual_session_id || visual.id;
+    const existing = visualsByGroup.get(groupId) || [];
+    existing.push(visual);
+    visualsByGroup.set(groupId, existing);
+  }
+
+  const orderedCandidates = candidateVisuals
+    .slice()
+    .sort((left, right) => (
+      blocks.findIndex((block) => block.id === left.id) - blocks.findIndex((block) => block.id === right.id)
+    ));
+
+  const groupedCandidates = Array.from(visualsByGroup.values())
+    .filter((group) => group.length > 1)
+    .sort((left, right) => right.length - left.length)[0];
+
+  const selectedFigures = (groupedCandidates || (orderedCandidates.length > 1 ? orderedCandidates : orderedCandidates.slice(0, 1)))
+    ?.slice()
+    .sort((left, right) => (
+      (left.visual.figure_index || 1) - (right.visual.figure_index || 1)
+    ));
+  if (!selectedFigures || selectedFigures.length === 0) return null;
+
+  const answerContent = answers
+    .map((answer) => answer.content)
+    .filter(Boolean)
+    .join("\n\n");
+  const proseSegments = answerContent
+    ? splitEditorialAnswer(answerContent)
+    : buildSyntheticEditorialNarrative(selectedFigures);
+  if (proseSegments.length === 0) return null;
+
+  const proseBaseId = answers[0]?.id || selectedFigures[0]?.id || "editorial";
+
+  const proseSlots = Array.from(
+    { length: selectedFigures.length + 1 },
+    () => [] as string[],
+  );
+  proseSegments.forEach((segment, index) => {
+    const slotIndex = Math.min(index, selectedFigures.length);
+    proseSlots[slotIndex]?.push(segment);
+  });
+
+  const segments: ArticleCompositionSegment[] = [];
+  const leadContent = proseSlots[0]?.join("\n\n").trim();
+  if (leadContent) {
+    segments.push({
+      kind: "prose",
+      id: `${proseBaseId}-lead`,
+      content: leadContent,
+      surfaceRole: "lead",
+    });
+  }
+
+  selectedFigures.forEach((visual, index) => {
+    segments.push({
+      kind: "figure",
+      id: visual.id,
+      figure: {
+        visualId: visual.id,
+        narrativeAnchor: visual.visual.narrative_anchor || "after-lead",
+        bridgeLabel: EDITORIAL_BRIDGE_LABELS[visual.visual.type] || "Minh họa trung tâm",
+        claim: visual.visual.claim || "",
+        chromeMode: visual.visual.chrome_mode || "editorial",
+        pedagogicalRole: visual.visual.pedagogical_role || "mechanism",
+      },
+    });
+
+    const proseAfterFigure = proseSlots[index + 1]?.join("\n\n").trim();
+    if (!proseAfterFigure) return;
+    const isTail = index === selectedFigures.length - 1;
+    segments.push({
+      kind: "prose",
+      id: `${proseBaseId}-prose-${index + 1}`,
+      content: proseAfterFigure,
+      surfaceRole: isTail ? "tail" : "body",
+    });
+  });
+
+  if (segments.filter((segment) => segment.kind === "figure").length === 0) return null;
+
+  const entryId = answers[0]?.id || selectedFigures[0]?.id;
+  if (!entryId) return null;
+
+  const lastAnswerId = answers[answers.length - 1]?.id;
+  const lastAnswerIndex = lastAnswerId
+    ? blocks.findIndex((block) => block.id === lastAnswerId)
+    : -1;
+
+  return {
+    answerIds: answers.map((answer) => answer.id),
+    entryId,
+    figureIds: selectedFigures.map((visual) => visual.id),
+    answerIsLast: lastAnswerIndex === -1
+      ? false
+      : !blocks.slice(lastAnswerIndex + 1).some((candidate) => candidate.type === "answer"),
+    segments,
+  };
 }
 
 function reorderForDisplay(blocks: ContentBlock[]): ContentBlock[] {
@@ -81,12 +362,12 @@ function reorderForDisplay(blocks: ContentBlock[]): ContentBlock[] {
   if (firstAnswerIndex === -1) return blocks;
 
   const pinnedArtifacts = blocks.filter(
-    (block, index) => block.type === "artifact" && index < firstAnswerIndex,
+    (block, index) => (block.type === "artifact" || block.type === "visual") && index < firstAnswerIndex,
   );
   if (pinnedArtifacts.length === 0) return blocks;
 
   const withoutPinnedArtifacts = blocks.filter(
-    (block, index) => !(block.type === "artifact" && index < firstAnswerIndex),
+    (block, index) => !((block.type === "artifact" || block.type === "visual") && index < firstAnswerIndex),
   );
 
   const lastAnswerIndex = withoutPinnedArtifacts.reduce((acc, block, index) => (
@@ -102,11 +383,418 @@ function reorderForDisplay(blocks: ContentBlock[]): ContentBlock[] {
   ];
 }
 
+function mapBlockToIntervalItem(block: ContentBlock): ReasoningIntervalItem | null {
+  switch (block.type) {
+    case "thinking":
+      return { kind: "thinking", id: block.id, block };
+    case "action_text":
+      return { kind: "action", id: block.id, block };
+    case "tool_execution":
+      return { kind: "tool", id: block.id, block };
+    case "preview":
+      return { kind: "preview", id: block.id, block };
+    case "artifact":
+      return { kind: "artifact", id: block.id, block };
+    case "screenshot":
+      return { kind: "screenshot", id: block.id, block };
+    default:
+      return null;
+  }
+}
+
+function normalizeInlineText(value: string | undefined) {
+  return (value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function extractComparableIntervalText(item: ReasoningIntervalItem) {
+  if (item.kind === "thinking") return normalizeInlineText(item.block.content);
+  if (item.kind === "action") return normalizeInlineText(item.block.content);
+  if (item.kind === "status") return normalizeInlineText(item.content);
+  return "";
+}
+
+function dedupeIntervalItems(items: ReasoningIntervalItem[]) {
+  const deduped: ReasoningIntervalItem[] = [];
+
+  for (const item of items) {
+    const previous = deduped[deduped.length - 1];
+    const currentComparableText = extractComparableIntervalText(item);
+    const previousComparableText = previous ? extractComparableIntervalText(previous) : "";
+
+    if (previous && currentComparableText !== "" && currentComparableText === previousComparableText) {
+      const comparableKinds = ["thinking", "action", "status"];
+      if (comparableKinds.includes(item.kind) && comparableKinds.includes(previous.kind)) {
+        continue;
+      }
+    }
+
+    if (
+      item.kind === "tool"
+      && previous?.kind === "tool"
+      && item.block.tool.name === previous.block.tool.name
+      && item.block.status === previous.block.status
+    ) {
+      const previousResult = normalizeInlineText(previous.block.tool.result);
+      const currentResult = normalizeInlineText(item.block.tool.result);
+      if (previousResult === currentResult) {
+        continue;
+      }
+    }
+
+    deduped.push(item);
+  }
+
+  return deduped;
+}
+
+function isDetailedOnlyBlock(block: ContentBlock) {
+  return block.type === "preview" || block.type === "artifact" || block.type === "screenshot";
+}
+
+function isIntervalCandidate(
+  block: ContentBlock,
+  thinkingLevel: ThinkingLevel,
+): boolean {
+  if (block.type === "thinking" || block.type === "action_text" || block.type === "tool_execution") {
+    return true;
+  }
+  if (isDetailedOnlyBlock(block)) {
+    return thinkingLevel === "detailed";
+  }
+  return false;
+}
+
+function getIntervalStepId(block: ContentBlock) {
+  return block.stepId;
+}
+
+function getBlockNode(block?: ContentBlock) {
+  if (!block) return undefined;
+  return "node" in block ? block.node : undefined;
+}
+
+function isCompatibleIntervalBlock(
+  currentBlocks: ContentBlock[],
+  nextBlock: ContentBlock,
+) {
+  if (currentBlocks.length === 0) return true;
+  const lastBlock = currentBlocks[currentBlocks.length - 1];
+  if (!lastBlock) return true;
+
+  const lastStepId = getIntervalStepId(lastBlock);
+  const nextStepId = getIntervalStepId(nextBlock);
+  if (lastStepId && nextStepId && lastStepId !== nextStepId) return false;
+
+  const currentHasDetailedOnly = currentBlocks.some(isDetailedOnlyBlock);
+  if (currentHasDetailedOnly && nextStepId && !lastStepId) return false;
+
+  return true;
+}
+
+function findMatchingPhases(
+  rawBlocks: ContentBlock[],
+  livePhases: ThinkingPhase[],
+) {
+  if (livePhases.length === 0) return [];
+
+  const stepIds = new Set(
+    rawBlocks
+      .map((block) => block.stepId)
+      .filter((value): value is string => Boolean(value)),
+  );
+
+  const nodes = new Set(
+    rawBlocks
+      .map((block) => ("node" in block ? block.node : undefined))
+      .filter((value): value is string => Boolean(value)),
+  );
+
+  return livePhases.filter((phase) => (
+    (phase.stepId && stepIds.has(phase.stepId))
+    || (phase.node && nodes.has(phase.node))
+  ));
+}
+
+function enrichIntervalWithPhases(
+  interval: ReasoningIntervalViewModel,
+  livePhases: ThinkingPhase[],
+) {
+  const matchedPhases = findMatchingPhases(interval.rawBlocks, livePhases);
+  if (matchedPhases.length === 0) return interval;
+
+  const nextItems = [...interval.items];
+  const statusItems: ReasoningIntervalItem[] = matchedPhases.flatMap((phase, phaseIndex) => (
+    phase.statusMessages.map((message, messageIndex) => ({
+      kind: "status" as const,
+      id: `status-${phase.id}-${phaseIndex}-${messageIndex}`,
+      content: message,
+    }))
+  ));
+
+  if (statusItems.length > 0) {
+    const firstNonThinkingIndex = nextItems.findIndex((item) => item.kind !== "thinking");
+    if (firstNonThinkingIndex === -1) {
+      nextItems.push(...statusItems);
+    } else {
+      nextItems.splice(firstNonThinkingIndex, 0, ...statusItems);
+    }
+  }
+
+  const latestPhase = matchedPhases[matchedPhases.length - 1];
+  const label = interval.label || latestPhase.label;
+  const summary = interval.summary || latestPhase.summary;
+  const phase = interval.phase || latestPhase.phase;
+  const node = interval.node || latestPhase.node;
+  const stepId = interval.stepId || latestPhase.stepId;
+  const isLive = matchedPhases.some((candidate) => candidate.status === "active") || interval.isLive;
+  const completedEnds = matchedPhases
+    .map((candidate) => candidate.endTime)
+    .filter((value): value is number => typeof value === "number");
+  const lastEnd = completedEnds.length > 0 ? Math.max(...completedEnds) : undefined;
+  const durationSeconds = interval.durationSeconds
+    || (latestPhase.startTime && lastEnd ? Math.max(1, Math.round((lastEnd - latestPhase.startTime) / 1000)) : undefined);
+
+  return {
+    ...interval,
+    label,
+    summary,
+    phase,
+    node,
+    stepId,
+    isLive,
+    durationSeconds,
+    items: nextItems,
+  };
+}
+
+function buildReasoningInterval(
+  rawBlocks: ContentBlock[],
+  livePhases: ThinkingPhase[],
+): ReasoningIntervalViewModel {
+  const thinkingBlocks = rawBlocks.filter((block): block is ThinkingBlockData => block.type === "thinking");
+  const firstThinking = thinkingBlocks[0];
+  const firstBlock = rawBlocks[0];
+  const label = firstThinking?.label || firstThinking?.summary || firstThinking?.phase || "Đang suy luận";
+  const stepId = firstThinking?.stepId || firstBlock?.stepId;
+  const node = firstThinking?.node || getBlockNode(firstBlock);
+  const phase = firstThinking?.phase;
+  const summary = firstThinking?.summary;
+  const startTime = thinkingBlocks
+    .map((block) => block.startTime)
+    .filter((value): value is number => typeof value === "number")
+    .sort((a, b) => a - b)[0];
+  const endTime = thinkingBlocks
+    .map((block) => block.endTime)
+    .filter((value): value is number => typeof value === "number")
+    .sort((a, b) => b - a)[0];
+
+  const baseInterval: ReasoningIntervalViewModel = {
+    id: stepId || rawBlocks.map((block) => block.id).join("-"),
+    stepId,
+    node,
+    label,
+    summary,
+    phase,
+    isLive: rawBlocks.some((block) => block.stepState === "live")
+      || thinkingBlocks.some((block) => !block.endTime),
+    durationSeconds: startTime && endTime ? Math.max(1, Math.round((endTime - startTime) / 1000)) : undefined,
+    items: dedupeIntervalItems(
+      rawBlocks
+        .map((block) => mapBlockToIntervalItem(block))
+        .filter((item): item is ReasoningIntervalItem => Boolean(item)),
+    ),
+    rawBlocks,
+  };
+
+  return enrichIntervalWithPhases(baseInterval, livePhases);
+}
+
+function buildRenderItems(
+  blocks: ContentBlock[],
+  thinkingLevel: ThinkingLevel,
+  livePhases: ThinkingPhase[],
+): RenderItem[] {
+  const items: RenderItem[] = [];
+
+  for (let index = 0; index < blocks.length; ) {
+    const current = blocks[index];
+    if (!current) {
+      index += 1;
+      continue;
+    }
+
+    if (current.type === "thinking" && current.groupId) {
+      index += 1;
+      continue;
+    }
+
+    if (isIntervalCandidate(current, thinkingLevel)) {
+      const intervalBlocks: ContentBlock[] = [current];
+      index += 1;
+      while (index < blocks.length) {
+        const candidate = blocks[index];
+        if (!candidate || !isIntervalCandidate(candidate, thinkingLevel)) break;
+        if (!isCompatibleIntervalBlock(intervalBlocks, candidate)) break;
+        intervalBlocks.push(candidate);
+        index += 1;
+      }
+      const interval = buildReasoningInterval(intervalBlocks, livePhases);
+      items.push({ kind: "interval", id: interval.id, interval });
+      continue;
+    }
+
+    items.push({ kind: "block", id: current.id, block: current });
+    index += 1;
+  }
+
+  return items;
+}
+
+export function shouldRenderReasoningRail(
+  _blocks: ContentBlock[],
+  showThinking: boolean,
+  thinkingLevel: ThinkingLevel = "balanced",
+): boolean {
+  return showThinking && thinkingLevel !== "minimal";
+}
+
+function hasEditorialVisualSurface(blocks: ContentBlock[]): boolean {
+  return blocks.some((block) => block.type === "visual");
+}
+
 interface InterleavedBlockSequenceProps {
   blocks: ContentBlock[];
   showThinking: boolean;
   thinkingLevel?: ThinkingLevel;
   isStreaming?: boolean;
+  livePhases?: ThinkingPhase[];
+}
+
+function AnswerSurface({
+  content,
+  showCursor = false,
+  className = "",
+  surfaceRole = "standalone",
+}: {
+  content: string;
+  showCursor?: boolean;
+  className?: string;
+  surfaceRole?: "standalone" | "lead" | "body" | "tail";
+}) {
+  if (!content) return null;
+
+  return (
+    <div
+      className={`assistant-response assistant-response--editorial ${className}`.trim()}
+      data-editorial-role={surfaceRole}
+      data-testid="answer-block"
+    >
+      <MarkdownRenderer content={content} />
+      {showCursor && (
+        <span className="inline-block w-[2px] h-[1em] bg-[var(--accent-orange)] ml-0.5 align-middle animate-pulse rounded-sm" />
+      )}
+    </div>
+  );
+}
+
+function renderEditorialFlow(
+  composition: ArticleComposition,
+  blocks: ContentBlock[],
+  isStreaming: boolean,
+) {
+  const visualBlocks = new Map(
+    blocks
+      .filter((candidate): candidate is VisualBlockData => candidate.type === "visual")
+      .map((candidate) => [candidate.id, candidate]),
+  );
+  const lastProseIndex = composition.segments.reduce((acc, segment, index) => (
+    segment.kind === "prose" ? index : acc
+  ), -1);
+
+  return (
+    <div
+      key={`editorial-flow-${composition.entryId}`}
+      className="editorial-visual-flow"
+      data-testid="editorial-visual-flow"
+      data-figure-count={composition.figureIds.length}
+    >
+      {composition.segments.map((segment, index) => {
+        if (segment.kind === "prose") {
+          const proseClassName = segment.surfaceRole === "lead"
+            ? "editorial-visual-flow__lead-copy"
+            : segment.surfaceRole === "tail"
+              ? "editorial-visual-flow__tail-copy"
+              : "editorial-visual-flow__body-copy";
+          return (
+            <div
+              key={segment.id}
+              className={`editorial-visual-flow__prose editorial-visual-flow__prose--${segment.surfaceRole}`}
+            >
+              <AnswerSurface
+                content={segment.content}
+                className={proseClassName}
+                showCursor={isStreaming && composition.answerIsLast && index === lastProseIndex}
+                surfaceRole={segment.surfaceRole}
+              />
+            </div>
+          );
+        }
+
+        if (segment.kind === "legacy-widget") {
+          return (
+            <div
+              key={segment.id}
+              className="editorial-visual-flow__figure"
+              data-anchor="legacy-widget"
+              data-chrome-mode="editorial"
+              data-pedagogical-role="mechanism"
+            >
+              <div className="editorial-visual-flow__bridge" data-anchor="legacy-widget">
+                <span className="editorial-visual-flow__bridge-chip">{segment.bridgeLabel}</span>
+                {segment.claim ? (
+                  <span className="editorial-visual-flow__bridge-claim">{segment.claim}</span>
+                ) : null}
+                <span className="editorial-visual-flow__bridge-line" aria-hidden="true" />
+              </div>
+              <div className="editorial-visual-flow__stage" data-testid="legacy-widget-figure">
+                <InlineHtmlWidget code={segment.html} />
+              </div>
+            </div>
+          );
+        }
+
+        const visualBlock = visualBlocks.get(segment.figure.visualId);
+        if (!visualBlock) return null;
+
+        return (
+          <div
+            key={segment.id}
+            className="editorial-visual-flow__figure"
+            data-anchor={segment.figure.narrativeAnchor}
+            data-chrome-mode={segment.figure.chromeMode}
+            data-pedagogical-role={segment.figure.pedagogicalRole}
+          >
+            <div
+              className="editorial-visual-flow__bridge"
+              data-anchor={segment.figure.narrativeAnchor}
+            >
+              <span className="editorial-visual-flow__bridge-chip">{segment.figure.bridgeLabel}</span>
+              {segment.figure.claim ? (
+                <span className="editorial-visual-flow__bridge-claim">{segment.figure.claim}</span>
+              ) : null}
+              <span className="editorial-visual-flow__bridge-line" aria-hidden="true" />
+            </div>
+            <div className="editorial-visual-flow__stage">
+              <VisualBlock block={visualBlock} embedded />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function InterleavedBlockSequence({
@@ -114,30 +802,70 @@ export function InterleavedBlockSequence({
   showThinking,
   thinkingLevel = "balanced",
   isStreaming = false,
+  livePhases = [],
 }: InterleavedBlockSequenceProps) {
-  const hasStandaloneToolBlocks = blocks.some((block) => block.type === "tool_execution");
+  const [inspectorIntervalId, setInspectorIntervalId] = useState<string | null>(null);
+  const showReasoningRail = shouldRenderReasoningRail(blocks, showThinking, thinkingLevel);
+  const editorialVisualSurface = hasEditorialVisualSurface(blocks);
   const groupedBlockIds = new Set<string>();
+
   for (const block of blocks) {
     if (block.type === "thinking" && block.groupId) {
       groupedBlockIds.add(block.id);
     }
   }
 
-  const visibleBlocks = reorderForDisplay(
+  const visibleBlocks = useMemo(() => reorderForDisplay(
     blocks.filter((block) => {
-      if (!showThinking || thinkingLevel === "minimal") {
+      if (!showReasoningRail) {
         return !["thinking", "action_text", "tool_execution"].includes(block.type);
       }
       return true;
     }),
+  ), [blocks, showReasoningRail]);
+
+  const editorialComposition = useMemo(
+    () => buildArticleComposition(visibleBlocks),
+    [visibleBlocks],
   );
+
+  const renderItems = useMemo(
+    () => buildRenderItems(
+      visibleBlocks.filter((block) => !(block.type === "thinking" && groupedBlockIds.has(block.id))),
+      thinkingLevel,
+      showReasoningRail ? livePhases : [],
+    ),
+    [groupedBlockIds, livePhases, showReasoningRail, thinkingLevel, visibleBlocks],
+  );
+
+  const activeInspector = renderItems.find((item) => (
+    item.kind === "interval" && item.interval.id === inspectorIntervalId
+  ));
+  const inspectorBlocks = useMemo(
+    () => renderItems.flatMap((item) => item.kind === "interval" ? item.interval.rawBlocks : []),
+    [renderItems],
+  );
+  const inspectorTitle = activeInspector?.kind === "interval"
+    ? (activeInspector.interval.summary || activeInspector.interval.label || "Trace")
+    : inspectorBlocks.length > 0
+      ? "Trace chi tiet"
+      : "Trace";
 
   return (
     <>
-      {visibleBlocks.map((block, index) => {
-        if (block.type === "thinking" && groupedBlockIds.has(block.id)) {
-          return null;
+      {renderItems.map((item, index) => {
+        if (item.kind === "interval") {
+          return (
+            <ReasoningInterval
+              key={item.id}
+              interval={item.interval}
+              thinkingLevel={thinkingLevel}
+              onOpenInspector={() => setInspectorIntervalId(item.interval.id)}
+            />
+          );
         }
+
+        const block = item.block;
 
         if (block.type === "subagent_group") {
           const childBlocks = visibleBlocks.filter(
@@ -154,39 +882,6 @@ export function InterleavedBlockSequence({
           );
         }
 
-        if (block.type === "thinking") {
-          const thinkingBlock = block as ThinkingBlockData;
-          const continuation = isThinkingContinuation(visibleBlocks, index);
-          return (
-            <ThinkingBlock
-              key={block.id}
-              content={thinkingBlock.content}
-              toolCalls={hasStandaloneToolBlocks ? [] : thinkingBlock.toolCalls}
-              savedDuration={
-                thinkingBlock.startTime && thinkingBlock.endTime
-                  ? Math.round((thinkingBlock.endTime - thinkingBlock.startTime) / 1000)
-                  : undefined
-              }
-              label={thinkingBlock.label}
-              summary={thinkingBlock.summary || thinkingBlock.label}
-              phase={thinkingBlock.phase}
-              isStreaming={isStreaming && !thinkingBlock.endTime}
-              autoExpand={isStreaming && !thinkingBlock.endTime}
-              thinkingLevel={thinkingLevel}
-              continuation={continuation}
-            />
-          );
-        }
-
-        if (block.type === "tool_execution") {
-          return <ToolExecutionStrip key={block.id} block={block as ToolExecutionBlockData} />;
-        }
-
-        if (block.type === "action_text") {
-          if (shouldHideActionBridge(visibleBlocks, index)) return null;
-          return <ActionText key={block.id} content={block.content} node={block.node} />;
-        }
-
         if (block.type === "screenshot") {
           return <ScreenshotBlock key={block.id} block={block as ScreenshotBlockData} />;
         }
@@ -199,20 +894,58 @@ export function InterleavedBlockSequence({
           return <ArtifactCard key={block.id} artifact={(block as ArtifactBlockData).artifact} />;
         }
 
+        if (block.type === "visual") {
+          if (editorialComposition?.entryId === block.id) {
+            return renderEditorialFlow(editorialComposition, visibleBlocks, isStreaming);
+          }
+          if (editorialComposition?.figureIds.includes(block.id)) return null;
+          return <VisualBlock key={block.id} block={block as VisualBlockData} />;
+        }
+
         if (block.type === "answer") {
+          const answerContent = editorialVisualSurface
+            ? stripLegacyWidgetBlocks(block.content)
+            : block.content;
+          if (!answerContent) return null;
+
+          if (editorialComposition?.entryId === block.id) {
+            return renderEditorialFlow(editorialComposition, visibleBlocks, isStreaming);
+          }
+          if (editorialComposition?.answerIds.includes(block.id)) return null;
+
           const isLastAnswer = !visibleBlocks.slice(index + 1).some((candidate) => candidate.type === "answer");
+
           return (
-            <div key={block.id} className="assistant-response">
-              <MarkdownRenderer content={block.content} />
-              {isStreaming && isLastAnswer && (
-                <span className="inline-block w-[2px] h-[1em] bg-[var(--accent-orange)] ml-0.5 align-middle animate-pulse rounded-sm" />
-              )}
-            </div>
+            <AnswerSurface
+              key={block.id}
+              content={answerContent}
+              showCursor={isStreaming && isLastAnswer}
+            />
           );
         }
 
         return null;
       })}
+
+      {showReasoningRail && thinkingLevel === "detailed" && inspectorBlocks.length > 0 ? (
+        <div className="reasoning-trace-launcher">
+          <button
+            type="button"
+            className="reasoning-trace-launcher__button"
+            onClick={() => setInspectorIntervalId("__message__")}
+            data-testid="reasoning-inspector-toggle"
+          >
+            Xem trace chi tiet
+          </button>
+        </div>
+      ) : null}
+
+      <ThinkingInspectorDrawer
+        isOpen={Boolean(activeInspector) || inspectorIntervalId === "__message__"}
+        title={inspectorTitle}
+        blocks={activeInspector?.kind === "interval" ? activeInspector.interval.rawBlocks : inspectorBlocks}
+        onClose={() => setInspectorIntervalId(null)}
+      />
     </>
   );
 }
