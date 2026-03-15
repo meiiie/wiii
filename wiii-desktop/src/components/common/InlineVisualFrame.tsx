@@ -208,6 +208,42 @@ export function buildVisualFrameDocument(
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: transparent; color: var(--wiii-text); font-family: var(--wiii-body); }
+
+    /* Sprint V5: Host-owned form element styling (Claude pattern — bare elements auto-styled) */
+    button:not([class]) {
+      padding: 6px 14px; font-size: 13px; background: transparent;
+      color: var(--wiii-text); border: 0.5px solid var(--wiii-border);
+      border-radius: 6px; cursor: pointer; font-family: inherit;
+      transition: background 0.15s, transform 0.1s;
+    }
+    button:not([class]):hover { background: var(--wiii-bg-secondary); }
+    button:not([class]):active { transform: scale(0.98); }
+    input[type="range"] {
+      -webkit-appearance: none; appearance: none; width: 100%; height: 3px;
+      background: light-dark(rgba(0,0,0,0.08), rgba(255,255,255,0.1));
+      border-radius: 2px; outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+      background: var(--wiii-bg); border: 1px solid var(--wiii-border); cursor: pointer;
+    }
+    h1,h2,h3,h4,h5,h6 { color: var(--wiii-text); }
+
+    /* Sprint V5: SVG utility classes (Claude pattern — .t .ts .th .box .arr) */
+    .t { font-size: 14px; fill: var(--wiii-text); }
+    .ts { font-size: 12px; fill: var(--wiii-text-secondary); }
+    .th { font-size: 14px; fill: var(--wiii-text); font-weight: 600; }
+    .box { fill: var(--wiii-bg-secondary); stroke: var(--wiii-border); }
+    .arr { stroke: var(--wiii-text-tertiary); fill: none; stroke-width: 1.5; }
+    .leader { stroke: var(--wiii-text-tertiary); stroke-width: 0.5; stroke-dasharray: 4 3; fill: none; }
+
+    /* Sprint V5: Color ramp classes for SVG shapes */
+    rect.c-red,g.c-red>rect { fill: light-dark(#fef2f2,#3b1111); stroke: light-dark(#fca5a5,#f87171); }
+    rect.c-blue,g.c-blue>rect { fill: light-dark(#eff6ff,#1e3a5f); stroke: light-dark(#93c5fd,#60a5fa); }
+    rect.c-teal,g.c-teal>rect { fill: light-dark(#f0fdfa,#0d3331); stroke: light-dark(#5eead4,#2dd4bf); }
+    rect.c-purple,g.c-purple>rect { fill: light-dark(#f5f3ff,#2d1b69); stroke: light-dark(#c4b5fd,#a78bfa); }
+    rect.c-amber,g.c-amber>rect { fill: light-dark(#fffbeb,#3b2e0a); stroke: light-dark(#fcd34d,#fbbf24); }
+    rect.c-green,g.c-green>rect { fill: light-dark(#ecfdf5,#0d3320); stroke: light-dark(#6ee7b7,#34d399); }
     body {
       padding: ${bodyPadding};
       overflow: hidden;

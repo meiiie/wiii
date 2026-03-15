@@ -698,16 +698,17 @@ html.dark .shiki span {
   font-weight: 700;
 }
 
+/* Sprint V5: Claude-like inline code badge */
 .assistant-response code:not(pre code) {
-  display: inline-flex;
-  align-items: center;
-  margin: 0 0.12rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--border));
-  background: color-mix(in srgb, white 70%, var(--accent-light));
-  padding: 0.12rem 0.56rem;
-  color: var(--accent-orange);
-  font-size: 0.92rem;
+  display: inline;
+  font-family: var(--font-mono);
+  margin: 0 0.08rem;
+  border-radius: 5px;
+  background: var(--surface-tertiary);
+  padding: 0.15rem 0.45rem;
+  color: color-mix(in srgb, var(--text) 85%, var(--accent));
+  font-size: 0.88em;
+  font-weight: 500;
 }
 
 .assistant-response .markdown-content > *:first-child {

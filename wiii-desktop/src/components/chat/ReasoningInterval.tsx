@@ -366,22 +366,19 @@ export function ReasoningInterval({
         {/* Claude pattern: clickable header with chevron — always collapsible */}
         <button
           className="reasoning-interval__header-btn"
-          onClick={() => !interval.isLive && setExpanded(!expanded)}
+          onClick={() => setExpanded(!expanded)}
           aria-expanded={showBody}
-          disabled={interval.isLive}
         >
-          <span className="reasoning-interval__header-label">{title}</span>
-          {!interval.isLive && (
-            <svg
-              width="12" height="12" viewBox="0 0 20 20" fill="currentColor"
-              className={`reasoning-interval__chevron ${showBody ? "reasoning-interval__chevron--open" : ""}`}
-            >
-              <path d="M14.128 7.16482C14.3126 6.95983 14.6298 6.94336 14.835 7.12771C15.0402 7.31242 15.0567 7.62952 14.8721 7.83477L10.372 12.835C10.1755 13.0551 9.82445 13.0551 9.62788 12.835L5.12778 7.83477C4.94317 7.62952 4.95963 7.31242 5.16489 7.12771C5.37015 6.94336 5.68741 6.95983 5.87193 7.16482L9.99995 11.7519L14.128 7.16482Z" />
-            </svg>
-          )}
           {interval.isLive && (
             <span className="reasoning-interval__live-dot" />
           )}
+          <span className="reasoning-interval__header-label">{title}</span>
+          <svg
+            width="12" height="12" viewBox="0 0 20 20" fill="currentColor"
+            className={`reasoning-interval__chevron ${showBody ? "reasoning-interval__chevron--open" : ""}`}
+          >
+            <path d="M14.128 7.16482C14.3126 6.95983 14.6298 6.94336 14.835 7.12771C15.0402 7.31242 15.0567 7.62952 14.8721 7.83477L10.372 12.835C10.1755 13.0551 9.82445 13.0551 9.62788 12.835L5.12778 7.83477C4.94317 7.62952 4.95963 7.31242 5.16489 7.12771C5.37015 6.94336 5.68741 6.95983 5.87193 7.16482L9.99995 11.7519L14.128 7.16482Z" />
+          </svg>
         </button>
         <span className="sr-only" role="status" aria-live="polite">{title}</span>
 

@@ -1977,7 +1977,7 @@ def _build_simulation_html(spec: dict, title: str) -> str:
     canvas_height = spec.get("height", 300)
 
     css = f"""
-canvas#sim {{ width:100%; height:{canvas_height}px; border-radius:8px; background:var(--bg3); display:block; cursor:crosshair; }}
+canvas#sim {{ width:100%; height:{canvas_height}px; border-radius:8px; background:var(--bg2); display:block; cursor:crosshair; border:0.5px solid var(--border); }}
 .sim-controls {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; align-items:center; }}
 .sim-control {{ flex:1; min-width:140px; }}
 .sim-control label {{ font-size:11px; font-weight:500; color:var(--text3); display:block; margin-bottom:2px; }}
