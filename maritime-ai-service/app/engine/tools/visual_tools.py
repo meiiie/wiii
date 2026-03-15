@@ -1550,15 +1550,15 @@ _DESIGN_CSS = """
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: var(--text); background: transparent; line-height: 1.5;
-  padding: 8px 4px; font-size: 14px;
+  padding: 4px 0; font-size: 14px;
 }
 .widget-title {
-  font-size: 15px; font-weight: 600; text-align: left;
-  margin-bottom: 12px; color: var(--text); padding-left: 2px;
+  font-size: 13px; font-weight: 700; text-align: left;
+  margin-bottom: 14px; color: var(--text2); letter-spacing: 0.02em;
 }
 .widget-subtitle {
-  font-size: 12px; color: var(--text2); text-align: left;
-  margin-top: -8px; margin-bottom: 12px; padding-left: 2px;
+  font-size: 11px; color: var(--text3); text-align: left;
+  margin-top: -10px; margin-bottom: 12px;
 }
 .code-badge {
   display: inline-block; font-family: 'SF Mono', 'Fira Code', monospace;
@@ -1620,7 +1620,7 @@ def _build_comparison_html(spec: dict, title: str) -> str:
         svg_html = f'<div class="side-svg">{svg_content}</div>' if svg_content else ""
         desc_html = f'<p class="side-desc">{desc}</p>' if desc else ""
 
-        return f"""<div class="side" style="--side-color:{color};--side-bg:{bg}">
+        return f"""<div class="side" style="--side-color:{color}">
   <div class="side-header">
     <h3 class="side-title">{side_title}</h3>
     {f'<span class="side-sub">{side_sub}</span>' if side_sub else ''}
@@ -1632,44 +1632,41 @@ def _build_comparison_html(spec: dict, title: str) -> str:
     note_html = f'<div class="comp-note">{_esc(note)}</div>' if note else ""
 
     css = """
-.comparison { display: grid; grid-template-columns: 1fr auto 1fr; gap: 0; align-items: stretch; }
-.side {
-  background: transparent; padding: 16px 14px;
-  border-top: 2px solid color-mix(in srgb, var(--side-color) 40%, transparent);
-}
-.side-header { margin-bottom: 10px; }
-.side-title { font-size: 14px; font-weight: 700; color: var(--side-color); }
-.side-sub { font-size: 11px; color: var(--text3); display: block; margin-top: 2px; }
+.comparison { display: grid; grid-template-columns: 1fr 1px 1fr; gap: 0; align-items: start; }
+.side { background: transparent; padding: 0 16px; }
+.side:first-child { padding-left: 0; }
+.side-header { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid color-mix(in srgb, var(--side-color) 30%, transparent); }
+.side-title { font-size: 14px; font-weight: 700; color: var(--text); }
+.side-sub { font-size: 11px; color: var(--text3); display: block; margin-top: 3px; }
 .side-items { list-style: none; padding: 0; }
 .side-items li {
-  padding: 5px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
-  font-size: 13px; color: var(--text2); line-height: 1.55;
+  position: relative; padding: 6px 0 6px 14px; font-size: 13px; color: var(--text2); line-height: 1.6;
+}
+.side-items li::before {
+  content: ""; position: absolute; left: 0; top: 12px;
+  width: 5px; height: 5px; border-radius: 50%;
+  background: color-mix(in srgb, var(--side-color) 40%, var(--text3));
 }
 .side-items li:last-child { border-bottom: none; }
 .item-icon { font-size: 14px; }
 .side-svg { display: flex; justify-content: center; margin: 12px 0; }
 .side-svg svg { max-width: 100%; height: auto; }
 .side-desc { font-size: 12px; color: var(--text3); margin-top: 8px; font-style: italic; }
-.comp-divider {
-  display: flex; align-items: center; justify-content: center; padding: 0 8px;
-}
-.comp-divider svg { width: 24px; height: 24px; opacity: 0.35; }
+.comp-sep { background: color-mix(in srgb, var(--border) 35%, transparent); margin: 0 4px; }
 .comp-note {
-  grid-column: 1 / -1; text-align: center; font-size: 11px; color: var(--text3);
-  margin-top: 10px; padding: 6px 0; border-top: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+  grid-column: 1 / -1; font-size: 11px; color: var(--text3);
+  margin-top: 14px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--border) 25%, transparent);
 }
 @media (max-width: 500px) {
-  .comparison { grid-template-columns: 1fr; gap: 4px; }
-  .comp-divider { transform: rotate(90deg); padding: 4px; }
+  .comparison { grid-template-columns: 1fr; }
+  .comp-sep { display: none; }
+  .side { padding: 0 0 12px; }
+  .side:first-child { margin-bottom: 8px; border-bottom: 1px solid color-mix(in srgb, var(--border) 30%, transparent); }
 }"""
-
-    divider_svg = """<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M10 16H22M22 16L17 11M22 16L17 21" stroke="var(--text3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>"""
 
     body = f"""<div class="comparison">
   {_render_side(left, left_color, left_bg)}
-  <div class="comp-divider">{divider_svg}</div>
+  <div class="comp-sep"></div>
   {_render_side(right, right_color, right_bg)}
   {note_html}
 </div>"""
