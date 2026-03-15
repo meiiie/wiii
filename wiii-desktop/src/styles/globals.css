@@ -1567,6 +1567,46 @@ html.dark .shiki span {
 [data-embed-mode="widget"] .welcome-reveal-1,
 [data-embed-mode="widget"] .welcome-reveal-5 { display: none; }
 
+/* ===== Sprint V5: Minimal-clean thinking indicator ===== */
+.thinking-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+.thinking-indicator__spinner {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: thinking-spin 0.8s linear infinite;
+}
+.thinking-indicator__text {
+  font-size: 0.82rem;
+  color: var(--text-tertiary);
+  background: linear-gradient(
+    90deg,
+    var(--text-tertiary) 0%,
+    var(--text-tertiary) 40%,
+    color-mix(in srgb, var(--accent) 60%, var(--text-tertiary)) 50%,
+    var(--text-tertiary) 60%,
+    var(--text-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 2s ease-in-out infinite;
+}
+@keyframes thinking-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes thinking-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
 /* ===== Sprint 240: Interleaved reasoning UI ===== */
 /* Sprint V5: Claude-like thin interval — no rail dot, just label + chevron */
 .reasoning-interval {

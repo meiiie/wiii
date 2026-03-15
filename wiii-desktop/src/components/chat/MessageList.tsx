@@ -8,7 +8,10 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useAvatarState } from "@/hooks/useAvatarState";
 import { MessageBubble } from "./MessageBubble";
-import { InterleavedBlockSequence } from "./InterleavedBlockSequence";
+import {
+  InterleavedBlockSequence,
+  shouldRenderReasoningRail,
+} from "./InterleavedBlockSequence";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { SourceCitation } from "./SourceCitation";
 
@@ -20,7 +23,11 @@ function getVisibleStreamingBlocks(
   showThinking: boolean,
   thinkingLevel: string,
 ): ContentBlock[] {
-  const includeThinking = showThinking && thinkingLevel !== "minimal";
+  const includeThinking = shouldRenderReasoningRail(
+    blocks,
+    showThinking,
+    thinkingLevel as import("@/api/types").ThinkingLevel,
+  );
   return blocks.filter((block) => includeThinking || !["thinking", "action_text", "tool_execution"].includes(block.type));
 }
 
@@ -42,6 +49,7 @@ export function MessageList({
   const {
     isStreaming,
     streamingBlocks,
+    streamingPhases,
     streamingSources,
     streamingContent,
     streamingStartTime,
@@ -150,10 +158,15 @@ export function MessageList({
                   showThinking={show_thinking}
                   thinkingLevel={thinking_level}
                   isStreaming
+                  livePhases={streamingPhases}
                 />
 
-                {streamingContent && !visibleStreamingBlocks.length && (
-                  <span className="inline-block w-1.5 h-3.5 bg-accent-orange animate-pulse rounded-sm ml-0.5" />
+                {/* Sprint V5: Minimal-clean thinking indicator while waiting for first content */}
+                {!visibleStreamingBlocks.length && (
+                  <div className="thinking-indicator" aria-live="polite">
+                    <span className="thinking-indicator__spinner" />
+                    <span className="thinking-indicator__text">Đang suy nghĩ...</span>
+                  </div>
                 )}
 
                 {streamingStartTime && (
