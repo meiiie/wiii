@@ -161,8 +161,8 @@ export function MessageList({
                   livePhases={streamingPhases}
                 />
 
-                {/* Sprint V5: Minimal-clean thinking indicator while waiting for first content */}
-                {!visibleStreamingBlocks.length && (
+                {/* Sprint V5: Minimal-clean thinking indicator — only before ANY content arrives */}
+                {!visibleStreamingBlocks.length && !streamingContent && (
                   <div className="thinking-indicator" aria-live="polite">
                     <span className="thinking-indicator__spinner" />
                     <span className="thinking-indicator__text">Đang suy nghĩ...</span>
