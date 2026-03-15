@@ -1,0 +1,494 @@
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import type { VisualRuntimeManifest, VisualShellVariant } from "@/api/types";
+
+const ALLOWED_CDNS = [
+  "https://cdn.jsdelivr.net",
+  "https://cdnjs.cloudflare.com",
+  "https://unpkg.com",
+  "https://d3js.org",
+  "https://cdn.katex.org",
+  "https://cdn.tailwindcss.com",
+];
+
+const FRAME_CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' blob: ${ALLOWED_CDNS.join(" ")}; style-src 'unsafe-inline' ${ALLOWED_CDNS.join(" ")}; img-src blob: data: ${ALLOWED_CDNS.join(" ")}; font-src data: ${ALLOWED_CDNS.join(" ")}; connect-src 'none';">`;
+
+const STORAGE_SHIM = `
+<script>
+  (function () {
+    function createMemoryStorage() {
+      var store = {};
+      return {
+        getItem: function (key) {
+          return Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null;
+        },
+        setItem: function (key, value) {
+          store[String(key)] = String(value);
+        },
+        removeItem: function (key) {
+          delete store[String(key)];
+        },
+        clear: function () {
+          store = {};
+        },
+        key: function (index) {
+          return Object.keys(store)[index] || null;
+        },
+        get length() {
+          return Object.keys(store).length;
+        }
+      };
+    }
+
+    var safeStorage = createMemoryStorage();
+    ['localStorage', 'sessionStorage'].forEach(function (name) {
+      try {
+        var candidate = window[name];
+        if (candidate) return;
+      } catch (error) {
+        try {
+          Object.defineProperty(window, name, {
+            configurable: true,
+            enumerable: false,
+            get: function () { return safeStorage; }
+          });
+        } catch (defineError) {
+          window.__WIII_STORAGE_SHIM_ERROR__ = String(defineError);
+        }
+      }
+    });
+  })();
+</script>`;
+
+interface InlineVisualFrameProps {
+  html: string;
+  className?: string;
+  title?: string;
+  summary?: string;
+  sessionId?: string;
+  shellVariant?: VisualShellVariant;
+  frameKind?: "legacy" | "inline_html" | "app";
+  runtimeManifest?: VisualRuntimeManifest | null;
+  showFrameIntro?: boolean;
+  hostShellMode?: "auto" | "force";
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function frameLabel(frameKind: NonNullable<InlineVisualFrameProps["frameKind"]>) {
+  if (frameKind === "app") return "Embedded App";
+  if (frameKind === "inline_html") return "Inline Visual";
+  return "Interactive Widget";
+}
+
+function mergeBodyClassAttribute(attrs: string, extraClass: string) {
+  if (!extraClass) return attrs;
+  if (!/\bclass=/i.test(attrs)) return `${attrs} class="${extraClass}"`;
+  return attrs.replace(/\bclass=(["'])(.*?)\1/i, (_match, quote: string, value: string) => (
+    `class=${quote}${value} ${extraClass}${quote}`
+  ));
+}
+
+function injectIntoHead(content: string, payload: string) {
+  if (/<head[^>]*>/i.test(content)) {
+    return content.replace(/<head[^>]*>/i, (match) => `${match}\n${payload}`);
+  }
+  if (/<html[^>]*>/i.test(content)) {
+    return content.replace(/<html[^>]*>/i, (match) => `${match}\n<head>\n${payload}\n</head>`);
+  }
+  return `<!DOCTYPE html>\n<html>\n<head>\n${payload}\n</head>\n${content}\n</html>`;
+}
+
+export function buildVisualFrameDocument(
+  content: string,
+  {
+    title = "",
+    summary = "",
+    sessionId = "",
+    shellVariant = "editorial",
+    frameKind = "inline_html",
+    showFrameIntro = false,
+    hostShellMode = frameKind === "legacy" ? "auto" : "force",
+  }: Required<Pick<InlineVisualFrameProps, "title" | "summary" | "sessionId" | "shellVariant" | "frameKind" | "showFrameIntro" | "hostShellMode">>,
+): string {
+  const hasIntro = showFrameIntro && Boolean(title || summary);
+  const bridgeScript = `
+  <script>
+    (function () {
+      var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var state = {
+        sessionId: ${JSON.stringify(sessionId)},
+        title: ${JSON.stringify(title)},
+        summary: ${JSON.stringify(summary)},
+        shellVariant: ${JSON.stringify(shellVariant)},
+        frameKind: ${JSON.stringify(frameKind)},
+        reducedMotion: reducedMotion
+      };
+
+      function post(type, payload) {
+        parent.postMessage({ type: type, payload: payload || {} }, '*');
+      }
+
+      function notifyResize() {
+        post('wiii-frame-resize', { height: document.body.scrollHeight, sessionId: state.sessionId });
+      }
+
+      window.WiiiVisualBridge = {
+        resize: notifyResize,
+        getState: function () { return state; },
+        telemetry: function (name, detail) {
+          post('wiii-frame-telemetry', { name: name, detail: detail || {}, sessionId: state.sessionId });
+        },
+        interaction: function (detail) {
+          post('wiii-frame-interaction', { detail: detail || {}, sessionId: state.sessionId });
+        },
+        setControlValue: function (controlId, value, focusedNodeId) {
+          post('wiii-frame-control', { controlId: controlId, value: value, focusedNodeId: focusedNodeId || '', sessionId: state.sessionId });
+        },
+        focusAnnotation: function (annotationId) {
+          post('wiii-frame-focus', { annotationId: annotationId || '', sessionId: state.sessionId });
+        }
+      };
+
+      window.addEventListener('message', function (event) {
+        var data = event.data;
+        if (!data || typeof data !== 'object') return;
+        if (data.type === 'wiii-visual-sync') {
+          state.parentState = data.payload || {};
+          document.documentElement.dataset.wiiiShellVariant = state.shellVariant;
+          notifyResize();
+        }
+      });
+
+      window.addEventListener('load', function () {
+        notifyResize();
+        if (window.ResizeObserver) {
+          new ResizeObserver(function () { notifyResize(); }).observe(document.body);
+        }
+        setTimeout(notifyResize, 120);
+        setTimeout(notifyResize, 500);
+        post('wiii-frame-ready', { sessionId: state.sessionId, frameKind: state.frameKind, shellVariant: state.shellVariant });
+      });
+    })();
+  </script>`;
+
+  const shellBorder = frameKind === "legacy" ? "1px solid var(--wiii-border)" : "1px solid transparent";
+  const shellShadow = frameKind === "legacy" ? "var(--wiii-shadow)" : "none";
+  const shellBackground = frameKind === "legacy" ? "var(--wiii-panel)" : "transparent";
+  const bodyPadding = frameKind === "legacy"
+    ? "14px"
+    : shellVariant === "immersive"
+      ? "6px 0 0"
+      : "4px 0 0";
+  const contentPadding = frameKind === "legacy"
+    ? (shellVariant === "immersive" ? "16px" : "14px")
+    : (shellVariant === "immersive" ? "2px 0 0" : "0");
+
+  const shellStyle = `
+  <style>
+    :root {
+      color-scheme: light;
+      --wiii-bg: #fcfaf6;
+      --wiii-panel: rgba(255,255,255,0.92);
+      --wiii-border: rgba(161,145,127,0.26);
+      --wiii-text: #1c1917;
+      --wiii-muted: #5f5a52;
+      --wiii-accent: #b85a33;
+      --wiii-blue: #2d79c7;
+      --wiii-shadow: 0 14px 40px rgba(30,24,18,0.10);
+      --wiii-radius: 24px;
+      --wiii-body: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --wiii-display: "Newsreader", Georgia, serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: transparent; color: var(--wiii-text); font-family: var(--wiii-body); }
+    body {
+      padding: ${bodyPadding};
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 12% 12%, rgba(184,90,51,0.12), transparent 26%),
+        radial-gradient(circle at 88% 4%, rgba(45,121,199,0.10), transparent 20%),
+        linear-gradient(180deg, rgba(255,255,255,0.78), rgba(252,250,246,0.94));
+    }
+    body.wiii-host-shell-active {
+      padding: ${frameKind === "legacy" ? bodyPadding : "0"};
+      background: transparent;
+    }
+    .wiii-frame-shell {
+      border-radius: var(--wiii-radius);
+      border: ${shellBorder};
+      background: ${shellBackground};
+      box-shadow: ${shellShadow};
+      overflow: clip;
+    }
+    .wiii-frame-intro {
+      padding: 14px 16px 8px;
+      border-bottom: 1px solid rgba(161,145,127,0.18);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0.35));
+    }
+    .wiii-frame-label {
+      margin: 0 0 6px;
+      font: 700 10px/1.2 var(--wiii-body);
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: var(--wiii-accent);
+    }
+    .wiii-frame-title {
+      margin: 0;
+      font-family: var(--wiii-display);
+      font-size: ${frameKind === "app" ? "1.55rem" : "1.35rem"};
+      line-height: 1.04;
+      letter-spacing: -0.03em;
+    }
+    .wiii-frame-summary {
+      margin: 8px 0 0;
+      font-size: 0.92rem;
+      line-height: 1.6;
+      color: var(--wiii-muted);
+    }
+    .wiii-frame-content {
+      padding: ${contentPadding};
+    }
+    canvas, svg, table, img { max-width: 100%; height: auto; }
+    button, select, input, textarea {
+      font-family: inherit;
+      font-size: 13px;
+      border-radius: 999px;
+      border: 1px solid rgba(28,25,23,0.14);
+      background: rgba(255,255,255,0.96);
+      color: var(--wiii-text);
+      padding: 7px 12px;
+    }
+    .wiii-host-shell-active[data-wiii-has-intro="true"] .widget-title,
+    .wiii-host-shell-active[data-wiii-has-intro="true"] h1.widget-title,
+    .wiii-host-shell-active[data-wiii-has-intro="true"] h2.widget-title {
+      display: none !important;
+    }
+    .wiii-host-shell-active .widget-shell,
+    .wiii-host-shell-active .widget-card,
+    .wiii-host-shell-active .widget-panel,
+    .wiii-host-shell-active .simulation-card,
+    .wiii-host-shell-active .simulation-shell,
+    .wiii-host-shell-active .chart-shell,
+    .wiii-host-shell-active .interactive-shell {
+      border: 0 !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      padding-inline: 0 !important;
+    }
+    .wiii-host-shell-active .sim-controls,
+    .wiii-host-shell-active .widget-controls,
+    .wiii-host-shell-active .sim-btns,
+    .wiii-host-shell-active .control-bar {
+      background: transparent !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      padding-inline: 0 !important;
+    }
+    .wiii-host-shell-active canvas,
+    .wiii-host-shell-active svg {
+      display: block;
+      margin-inline: auto;
+    }
+    .wiii-host-shell-active .widget-caption,
+    .wiii-host-shell-active .sim-caption,
+    .wiii-host-shell-active .widget-note {
+      color: var(--wiii-muted) !important;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>`;
+
+  const intro = hasIntro
+    ? `<div class="wiii-frame-intro"><p class="wiii-frame-label">${escapeHtml(frameLabel(frameKind))}</p>${title ? `<h1 class="wiii-frame-title">${escapeHtml(title)}</h1>` : ""}${summary ? `<p class="wiii-frame-summary">${escapeHtml(summary)}</p>` : ""}</div>`
+    : "";
+
+  if (/<html/i.test(content)) {
+    const headInjected = injectIntoHead(content, `${FRAME_CSP}\n${STORAGE_SHIM}\n${shellStyle}`);
+    const shouldWrapBody = hostShellMode === "force" && !/wiii-frame-shell|data-wiii-host-shell/i.test(content);
+
+    if (shouldWrapBody && /<body[^>]*>/i.test(headInjected) && /<\/body>/i.test(headInjected)) {
+      return headInjected.replace(/<body([^>]*)>([\s\S]*?)<\/body>/i, (_match, attrs: string, bodyContent: string) => {
+        const mergedAttrs = mergeBodyClassAttribute(attrs, "wiii-host-shell-active");
+        return `<body${mergedAttrs} data-wiii-host-shell="true" data-wiii-has-intro="${hasIntro ? "true" : "false"}">
+  <div class="wiii-frame-shell" data-wiii-frame-kind="${escapeHtml(frameKind)}" data-wiii-shell-variant="${escapeHtml(shellVariant)}">
+    ${intro}
+    <div class="wiii-frame-content">${bodyContent}</div>
+  </div>
+  ${bridgeScript}
+</body>`;
+      });
+    }
+
+    const bodyDecorated = headInjected.replace(/<body([^>]*)>/i, (_match, attrs: string) => {
+      const mergedAttrs = mergeBodyClassAttribute(attrs, hostShellMode === "force" ? "wiii-host-shell-active" : "");
+      return `<body${mergedAttrs}${hostShellMode === "force" ? ` data-wiii-host-shell="true" data-wiii-has-intro="${hasIntro ? "true" : "false"}"` : ""}>`;
+    });
+
+    return /<\/body>/i.test(bodyDecorated)
+      ? bodyDecorated.replace(/<\/body>/i, `${bridgeScript}\n</body>`)
+      : `${bodyDecorated}\n${bridgeScript}`;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  ${FRAME_CSP}
+  ${STORAGE_SHIM}
+  ${shellStyle}
+</head>
+<body class="${hostShellMode === "force" ? "wiii-host-shell-active" : ""}" data-wiii-host-shell="${hostShellMode === "force" ? "true" : "false"}" data-wiii-has-intro="${hasIntro ? "true" : "false"}">
+  <div class="wiii-frame-shell" data-wiii-frame-kind="${escapeHtml(frameKind)}" data-wiii-shell-variant="${escapeHtml(shellVariant)}">
+    ${intro}
+    <div class="wiii-frame-content">${content}</div>
+  </div>
+  ${bridgeScript}
+</body>
+</html>`;
+}
+
+export const InlineVisualFrame = memo(function InlineVisualFrame({
+  html,
+  className = "",
+  title = "",
+  summary = "",
+  sessionId = "",
+  shellVariant = "editorial",
+  frameKind = "inline_html",
+  runtimeManifest,
+  showFrameIntro = false,
+  hostShellMode = frameKind === "legacy" ? "auto" : "force",
+}: InlineVisualFrameProps) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const blobUrlRef = useRef<string | null>(null);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [height, setHeight] = useState(frameKind === "app" ? 420 : 320);
+  const [error, setError] = useState<string | null>(null);
+
+  const wrappedHtml = useMemo(
+    () => buildVisualFrameDocument(html, {
+      title,
+      summary,
+      sessionId,
+      shellVariant,
+      frameKind,
+      showFrameIntro,
+      hostShellMode,
+    }),
+    [frameKind, hostShellMode, html, sessionId, shellVariant, showFrameIntro, summary, title],
+  );
+
+  useEffect(() => {
+    if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+    try {
+      const blob = new Blob([wrappedHtml], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      blobUrlRef.current = url;
+      setBlobUrl(url);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Khong the tao visual frame");
+    }
+    return () => {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, [wrappedHtml]);
+
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (iframeRef.current && event.source !== iframeRef.current.contentWindow) return;
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+      if (data.type === "wiii-frame-resize") {
+        const nextHeight = (data.payload as { height?: number } | undefined)?.height;
+        if (typeof nextHeight === "number" && nextHeight > 0) {
+          setHeight(Math.min(Math.max(nextHeight + 10, frameKind === "app" ? 260 : 120), frameKind === "app" ? 980 : 880));
+        }
+        return;
+      }
+      if (data.type === "wiii-frame-ready" && iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage({
+          type: "wiii-visual-sync",
+          payload: {
+            sessionId,
+            frameKind,
+            shellVariant,
+            runtimeManifest: runtimeManifest || null,
+          },
+        }, "*");
+        return;
+      }
+      if (data.type === "wiii-frame-telemetry" || data.type === "wiii-frame-interaction" || data.type === "wiii-frame-control" || data.type === "wiii-frame-focus") {
+        const bridgeType =
+          data.type === "wiii-frame-telemetry" ? "telemetry"
+            : data.type === "wiii-frame-control" ? "control"
+              : data.type === "wiii-frame-focus" ? "focus"
+                : "interaction";
+        window.dispatchEvent(new CustomEvent("wiii:visual-frame", { detail: { bridgeType, ...(data.payload || {}) } }));
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [frameKind, runtimeManifest, sessionId, shellVariant]);
+
+  if (error) {
+    return (
+      <div className={`rounded-[20px] border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 ${className}`}>
+        Loi frame: {error}
+      </div>
+    );
+  }
+
+  if (!blobUrl) return null;
+
+  // Sprint V5: editorial = transparent + no card chrome (Claude-like seamless figure)
+  const wrapperClassName = frameKind === "legacy"
+    ? (
+        shellVariant === "editorial"
+          ? "overflow-hidden bg-transparent"
+          : "overflow-hidden rounded-2xl border border-[var(--border)] bg-[rgba(255,255,255,0.92)] shadow-[var(--shadow-md)]"
+      )
+    : shellVariant === "editorial"
+      ? "overflow-hidden bg-transparent"
+      : "overflow-hidden rounded-2xl bg-transparent";
+
+  return (
+    <div
+      className={`${wrapperClassName} ${className}`.trim()}
+      data-inline-visual-frame={frameKind}
+      data-inline-visual-shell={shellVariant}
+    >
+      <iframe
+        ref={iframeRef}
+        src={blobUrl}
+        sandbox="allow-scripts"
+        style={{
+          width: "100%",
+          height: `${height}px`,
+          border: "none",
+          display: "block",
+          background: "transparent",
+          transition: "height 220ms var(--ease-default)",
+        }}
+        title={title || frameLabel(frameKind)}
+      />
+    </div>
+  );
+});

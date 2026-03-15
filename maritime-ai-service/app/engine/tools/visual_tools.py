@@ -16,10 +16,1502 @@ Feature-gated by enable_chart_tools (shared with chart_tools).
 import html as html_mod
 import json
 import logging
+import re
+import uuid
+from typing import Any, Literal
 
 from langchain_core.tools import tool
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from app.engine.tools.runtime_context import get_current_tool_runtime_context
 
 logger = logging.getLogger(__name__)
+
+
+CORE_STRUCTURED_VISUAL_TYPES = (
+    "comparison",
+    "process",
+    "matrix",
+    "architecture",
+    "concept",
+    "infographic",
+    "chart",
+    "timeline",
+    "map_lite",
+)
+
+LEGACY_SANDBOX_VISUAL_TYPES = (
+    "simulation",
+    "quiz",
+    "interactive_table",
+    "react_app",
+)
+
+
+class VisualPayloadV1(BaseModel):
+    """Structured inline visual contract for streaming-first rendering."""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str = Field(min_length=1)
+    visual_session_id: str = Field(min_length=1)
+    type: str = Field(min_length=1)
+    renderer_kind: Literal["template", "inline_html", "app"] = "template"
+    shell_variant: Literal["editorial", "compact", "immersive"] = "editorial"
+    patch_strategy: Literal["spec_merge", "replace_html", "app_state"] = "spec_merge"
+    figure_group_id: str = Field(min_length=1)
+    figure_index: int = Field(ge=1, default=1)
+    figure_total: int = Field(ge=1, default=1)
+    pedagogical_role: Literal[
+        "problem",
+        "mechanism",
+        "comparison",
+        "architecture",
+        "result",
+        "benchmark",
+        "conclusion",
+    ] = "mechanism"
+    chrome_mode: Literal["editorial", "app", "immersive"] = "editorial"
+    claim: str = Field(min_length=1)
+    narrative_anchor: str = "after-lead"
+    runtime: Literal["svg", "sandbox_html", "sandbox_react"]
+    title: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    spec: dict[str, Any]
+    scene: dict[str, Any] = Field(default_factory=dict)
+    controls: list[dict[str, Any]] = Field(default_factory=list)
+    annotations: list[dict[str, Any]] = Field(default_factory=list)
+    interaction_mode: Literal["static", "guided", "explorable", "scrubbable", "filterable"] = "guided"
+    ephemeral: bool = True
+    lifecycle_event: Literal["visual_open", "visual_patch"] = "visual_open"
+    subtitle: str | None = None
+    fallback_html: str | None = None
+    runtime_manifest: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
+
+
+def _default_visual_title(visual_type: str) -> str:
+    return visual_type.replace("_", " ").strip().title() or "Inline visual"
+
+
+def _generate_figure_group_id(visual_type: str) -> str:
+    slug = (visual_type or "figure").replace("_", "-").strip("-") or "figure"
+    return f"fg-{slug}-{uuid.uuid4().hex[:10]}"
+
+
+def _clean_summary_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.strip().split())
+
+
+def _spec_text(spec: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = spec.get(key)
+        cleaned = _clean_summary_text(value)
+        if cleaned:
+            return cleaned
+    return ""
+
+
+def _named_count(items: Any) -> int:
+    return len(items) if isinstance(items, list) else 0
+
+
+def _sanitize_summary_candidate(value: str, visual_type: str, title: str) -> str:
+    cleaned = _clean_summary_text(value)
+    if not cleaned:
+        return ""
+
+    patterns = [
+        r"^structured visual san sang:\s*",
+        r"^structured visual summary\s*",
+        rf"^visual\s+{re.escape(visual_type).replace('_', '[_ ]')}\s+de tom tat nhanh noi dung:\s*",
+        rf"^visual\s+{re.escape(visual_type).replace('_', '[_ ]')}:\s*",
+    ]
+    for pattern in patterns:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
+
+    if _clean_summary_text(cleaned).lower() == _clean_summary_text(title).lower():
+        return ""
+    return cleaned
+
+
+def _default_visual_summary(visual_type: str, title: str, spec: dict[str, Any] | None = None) -> str:
+    safe_title = title.strip() or _default_visual_title(visual_type)
+    safe_spec = spec if isinstance(spec, dict) else {}
+
+    direct_hint = _spec_text(
+        safe_spec,
+        "takeaway",
+        "key_takeaway",
+        "caption",
+        "note",
+        "description",
+        "summary",
+    )
+    if direct_hint:
+        return direct_hint
+
+    if visual_type == "comparison":
+        left = safe_spec.get("left") if isinstance(safe_spec.get("left"), dict) else {}
+        right = safe_spec.get("right") if isinstance(safe_spec.get("right"), dict) else {}
+        left_title = _clean_summary_text(left.get("title")) or "goc nhin ben trai"
+        right_title = _clean_summary_text(right.get("title")) or "goc nhin ben phai"
+        return f"Dat {left_title} canh {right_title} de thay diem khac biet chinh."
+
+    if visual_type == "process":
+        step_count = _named_count(safe_spec.get("steps"))
+        if step_count > 0:
+            return f"Quy trinh duoc chia thanh {step_count} buoc lien tiep de de theo doi."
+
+    if visual_type == "matrix":
+        row_count = _named_count(safe_spec.get("rows"))
+        col_count = _named_count(safe_spec.get("cols"))
+        if row_count and col_count:
+            return f"Ma tran nay cho thay muc do lien he giua {row_count} hang va {col_count} cot."
+
+    if visual_type == "architecture":
+        layer_count = _named_count(safe_spec.get("layers"))
+        if layer_count:
+            return f"Kien truc duoc tach thanh {layer_count} lop chinh va cach chung ket noi voi nhau."
+
+    if visual_type == "concept":
+        center = safe_spec.get("center") if isinstance(safe_spec.get("center"), dict) else {}
+        center_title = _clean_summary_text(center.get("title")) or safe_title
+        return f"{center_title} duoc mo rong thanh cac nhanh chinh de de dinh vi y tuong."
+
+    if visual_type == "infographic":
+        stat_count = _named_count(safe_spec.get("stats"))
+        section_count = _named_count(safe_spec.get("sections"))
+        if stat_count or section_count:
+            return f"Khung nhin nay gom {stat_count or 0} chi so va {section_count or 0} diem nhan de doc nhanh."
+
+    if visual_type == "chart":
+        label_count = _named_count(safe_spec.get("labels"))
+        if label_count:
+            return f"Bieu do nay lam ro xu huong qua {label_count} moc chinh."
+
+    if visual_type == "timeline":
+        event_count = _named_count(safe_spec.get("events"))
+        if event_count:
+            return f"Dong thoi gian nay gom {event_count} moc de theo doi su chuyen dich theo thu tu."
+
+    if visual_type == "map_lite":
+        region_count = _named_count(safe_spec.get("regions"))
+        if region_count:
+            return f"Ban do nay nhan vao {region_count} khu vuc de so sanh nhanh."
+
+    return f"{safe_title} trong mot khung nhin truc quan de doc nhanh."
+
+
+def _infer_pedagogical_role(
+    visual_type: str,
+    spec: dict[str, Any],
+    provided: str = "",
+) -> str:
+    candidate = str(provided or spec.get("pedagogical_role") or "").strip().lower()
+    if candidate in {
+        "problem",
+        "mechanism",
+        "comparison",
+        "architecture",
+        "result",
+        "benchmark",
+        "conclusion",
+    }:
+        return candidate
+
+    default_map = {
+        "comparison": "comparison",
+        "process": "mechanism",
+        "matrix": "mechanism",
+        "architecture": "architecture",
+        "concept": "mechanism",
+        "infographic": "result",
+        "chart": "benchmark",
+        "timeline": "mechanism",
+        "map_lite": "mechanism",
+        "simulation": "mechanism",
+        "quiz": "conclusion",
+        "interactive_table": "result",
+        "react_app": "result",
+    }
+    return default_map.get(visual_type, "mechanism")
+
+
+def _infer_chrome_mode(
+    renderer_kind: str,
+    shell_variant: str,
+    provided: str = "",
+) -> str:
+    candidate = str(provided or "").strip().lower()
+    if candidate in {"editorial", "app", "immersive"}:
+        return candidate
+    if renderer_kind == "app":
+        return "app"
+    if shell_variant == "immersive":
+        return "immersive"
+    return "editorial"
+
+
+def _default_visual_claim(
+    visual_type: str,
+    title: str,
+    summary: str,
+    spec: dict[str, Any],
+) -> str:
+    explicit = _clean_summary_text(spec.get("claim"))
+    if explicit:
+        return explicit
+    if summary:
+        return summary
+    if visual_type == "comparison":
+        left = _spec_text(spec.get("left") if isinstance(spec.get("left"), dict) else {}, "title")
+        right = _spec_text(spec.get("right") if isinstance(spec.get("right"), dict) else {}, "title")
+        if left and right:
+            return f"Dat {left} canh {right} de thay ra su khac biet chinh."
+    return f"{title} lam ro mot y chinh trong loi giai dang theo."
+
+
+def _get_runtime_visual_metadata() -> dict[str, Any]:
+    runtime = get_current_tool_runtime_context()
+    if runtime and isinstance(runtime.metadata, dict):
+        return runtime.metadata
+    return {}
+
+
+def _supports_auto_grouping(visual_type: str, renderer_kind: str) -> bool:
+    if renderer_kind != "template":
+        return False
+    return visual_type in {
+        "comparison",
+        "process",
+        "matrix",
+        "architecture",
+        "concept",
+        "infographic",
+        "chart",
+        "timeline",
+        "map_lite",
+    }
+
+
+def _collect_story_points(
+    visual_type: str,
+    spec: dict[str, Any],
+    title: str,
+    summary: str,
+) -> list[str]:
+    points: list[str] = []
+
+    def add_point(value: Any) -> None:
+        text = _clean_summary_text(value)
+        if not text or text in points:
+            return
+        points.append(text)
+
+    add_point(summary)
+    add_point(spec.get("note"))
+    add_point(spec.get("caption"))
+    add_point(spec.get("takeaway"))
+
+    if visual_type == "comparison":
+        left = spec.get("left", {}) if isinstance(spec.get("left"), dict) else {}
+        right = spec.get("right", {}) if isinstance(spec.get("right"), dict) else {}
+        left_title = _spec_text(left, "title")
+        right_title = _spec_text(right, "title")
+        if left_title and right_title:
+            add_point(f"{left_title} va {right_title} nen duoc doc canh nhau de thay do lech chinh.")
+        left_items = left.get("items") if isinstance(left.get("items"), list) else []
+        right_items = right.get("items") if isinstance(right.get("items"), list) else []
+        if left_items or right_items:
+            add_point(
+                f"Ben trai co {len(left_items)} diem nhan, ben phai co {len(right_items)} diem nhan."
+            )
+
+    elif visual_type == "process":
+        steps = spec.get("steps", []) if isinstance(spec.get("steps"), list) else []
+        labels = [
+            str((step if isinstance(step, dict) else {}).get("title") or f"Buoc {index + 1}")
+            for index, step in enumerate(steps[:3])
+        ]
+        if labels:
+            add_point("Thu tu xu ly: " + " -> ".join(labels))
+
+    elif visual_type == "architecture":
+        layers = spec.get("layers", []) if isinstance(spec.get("layers"), list) else []
+        labels = [
+            str((layer if isinstance(layer, dict) else {}).get("name") or f"Lop {index + 1}")
+            for index, layer in enumerate(layers[:4])
+        ]
+        if labels:
+            add_point("Dong xu ly di qua cac lop: " + " -> ".join(labels))
+
+    elif visual_type == "concept":
+        center = spec.get("center", {}) if isinstance(spec.get("center"), dict) else {}
+        branches = spec.get("branches", []) if isinstance(spec.get("branches"), list) else []
+        center_title = _spec_text(center, "title") or title
+        branch_titles = [
+            str((branch if isinstance(branch, dict) else {}).get("title") or f"Nhanh {index + 1}")
+            for index, branch in enumerate(branches[:3])
+        ]
+        if center_title and branch_titles:
+            add_point(f"{center_title} duoc mo rong qua: {', '.join(branch_titles)}.")
+
+    elif visual_type == "chart":
+        datasets = spec.get("datasets", []) if isinstance(spec.get("datasets"), list) else []
+        labels = spec.get("labels", []) if isinstance(spec.get("labels"), list) else []
+        dataset_labels = [
+            str((dataset if isinstance(dataset, dict) else {}).get("label") or f"Series {index + 1}")
+            for index, dataset in enumerate(datasets[:3])
+        ]
+        if dataset_labels:
+            add_point("Bieu do theo doi cac duong: " + ", ".join(dataset_labels) + ".")
+        if labels:
+            add_point(f"Truc x gom {len(labels)} moc chinh de doc xu huong.")
+
+    elif visual_type == "matrix":
+        rows = spec.get("rows", []) if isinstance(spec.get("rows"), list) else []
+        cols = spec.get("cols", []) if isinstance(spec.get("cols"), list) else []
+        if rows or cols:
+            add_point(f"Ma tran nay duoc doc qua {len(rows)} hang va {len(cols)} cot.")
+
+    elif visual_type == "timeline":
+        events = spec.get("events", []) if isinstance(spec.get("events"), list) else []
+        labels = [
+            str((event if isinstance(event, dict) else {}).get("title") or (event if isinstance(event, dict) else {}).get("label") or f"Moc {index + 1}")
+            for index, event in enumerate(events[:4])
+        ]
+        if labels:
+            add_point("Cac moc can theo doi: " + " -> ".join(labels))
+
+    elif visual_type == "map_lite":
+        regions = spec.get("regions", []) if isinstance(spec.get("regions"), list) else []
+        labels = [
+            str((region if isinstance(region, dict) else {}).get("label") or f"Khu vuc {index + 1}")
+            for index, region in enumerate(regions[:4])
+        ]
+        if labels:
+            add_point("Ban do dang nhan vao: " + ", ".join(labels) + ".")
+
+    return points[:3]
+
+
+def _build_takeaway_infographic_spec(
+    visual_type: str,
+    spec: dict[str, Any],
+    title: str,
+    summary: str,
+) -> dict[str, Any]:
+    points = _collect_story_points(visual_type, spec, title, summary)
+    if not points:
+        points = [summary or f"{title} gom mot vai diem nhan de doc nhanh."]
+
+    stats: list[dict[str, Any]] = []
+    if visual_type == "comparison":
+        stats = [
+            {"value": "2", "label": "Goc nhin"},
+            {"value": str(_named_count((spec.get("left") or {}).get("items")) + _named_count((spec.get("right") or {}).get("items"))), "label": "Diem nhan"},
+        ]
+    elif visual_type == "process":
+        stats = [{"value": str(_named_count(spec.get("steps"))), "label": "Buoc"}]
+    elif visual_type == "architecture":
+        stats = [{"value": str(_named_count(spec.get("layers"))), "label": "Lop"}]
+    elif visual_type == "concept":
+        stats = [{"value": str(_named_count(spec.get("branches"))), "label": "Nhanh"}]
+    elif visual_type == "chart":
+        stats = [
+            {"value": str(_named_count(spec.get("datasets")) or 1), "label": "Series"},
+            {"value": str(_named_count(spec.get("labels"))), "label": "Moc doc"},
+        ]
+    elif visual_type == "matrix":
+        stats = [
+            {"value": str(_named_count(spec.get("rows"))), "label": "Hang"},
+            {"value": str(_named_count(spec.get("cols"))), "label": "Cot"},
+        ]
+    elif visual_type == "timeline":
+        stats = [{"value": str(_named_count(spec.get("events"))), "label": "Moc"}]
+    elif visual_type == "map_lite":
+        stats = [{"value": str(_named_count(spec.get("regions"))), "label": "Khu vuc"}]
+
+    sections = [
+        {"title": "Can nhin gi", "content": points[0]},
+    ]
+    if len(points) > 1:
+        sections.append({"title": "Vi sao quan trong", "content": points[1]})
+    sections.append({
+        "title": "Diem chot",
+        "content": points[-1],
+    })
+
+    return {
+        "stats": stats,
+        "sections": sections,
+        "caption": summary or f"Diem chot tu {title}.",
+    }
+
+
+def _build_takeaway_claim(
+    visual_type: str,
+    title: str,
+    summary: str,
+    spec: dict[str, Any],
+) -> str:
+    if summary:
+        return f"Diem chot cua {title}: {summary}"
+    if visual_type == "chart":
+        return f"{title} can duoc doc nhu mot xu huong chu khong chi la mot hinh minh hoa."
+    if visual_type == "comparison":
+        return f"{title} chot lai su khac biet can nho nhat giua hai ben."
+    return f"{title} can duoc doc thanh mot ket luan ngan gon sau figure chinh."
+
+
+def _normalize_visual_query_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.lower().strip().split())
+
+
+def _estimate_query_figure_pressure(query: str) -> int:
+    normalized = _normalize_visual_query_text(query)
+    if not normalized:
+        return 0
+
+    score = 0
+    if (
+        ("chart" in normalized or "bieu do" in normalized or "visual" in normalized)
+        and any(token in normalized for token in ("explain", "giai thich", "intuition", "truc quan"))
+    ):
+        score += 1
+
+    if any(
+        phrase in normalized
+        for phrase in (
+            "step by step",
+            "tung buoc",
+            "theo buoc",
+            "build intuition",
+            "de hinh dung",
+            "break it down",
+            "co che",
+            "mechanism",
+            "evolution",
+            "benchmark",
+            "tradeoff",
+            "kien truc",
+            "architecture",
+        )
+    ):
+        score += 1
+
+    return min(score, 2)
+
+
+def _estimate_spec_figure_pressure(visual_type: str, spec: dict[str, Any]) -> int:
+    if visual_type == "comparison":
+        left = spec.get("left", {}) if isinstance(spec.get("left"), dict) else {}
+        right = spec.get("right", {}) if isinstance(spec.get("right"), dict) else {}
+        total_items = _named_count(left.get("items")) + _named_count(right.get("items"))
+        if total_items >= 8:
+            return 1
+        return 0
+
+    if visual_type == "process":
+        step_count = _named_count(spec.get("steps"))
+        return 1 if step_count >= 5 else 0
+
+    if visual_type == "architecture":
+        layer_count = _named_count(spec.get("layers"))
+        link_count = _named_count(spec.get("links"))
+        return 1 if layer_count >= 4 or link_count >= 4 else 0
+
+    if visual_type == "concept":
+        return 1 if _named_count(spec.get("branches")) >= 4 else 0
+
+    if visual_type == "infographic":
+        section_count = _named_count(spec.get("sections"))
+        stat_count = _named_count(spec.get("stats"))
+        return 1 if section_count >= 4 or (section_count >= 3 and stat_count >= 2) else 0
+
+    if visual_type == "chart":
+        label_count = _named_count(spec.get("labels"))
+        dataset_count = _named_count(spec.get("datasets"))
+        return 1 if (label_count >= 5 and dataset_count >= 2) or label_count >= 7 else 0
+
+    if visual_type == "matrix":
+        row_count = _named_count(spec.get("rows"))
+        col_count = _named_count(spec.get("cols"))
+        return 1 if row_count * col_count >= 16 else 0
+
+    if visual_type == "timeline":
+        return 1 if _named_count(spec.get("events")) >= 5 else 0
+
+    if visual_type == "map_lite":
+        return 1 if _named_count(spec.get("regions")) >= 4 else 0
+
+    return 0
+
+
+def _plan_auto_group_figure_budget(
+    *,
+    visual_type: str,
+    spec: dict[str, Any],
+    renderer_kind: str,
+    operation: str,
+) -> int:
+    if operation != "open":
+        return 1
+    if spec.get("allow_single_figure") or spec.get("disable_auto_group"):
+        return 1
+    if isinstance(spec.get("figures"), list) and spec.get("figures"):
+        return 1
+    if not _supports_auto_grouping(visual_type, renderer_kind):
+        return 1
+
+    metadata = _get_runtime_visual_metadata()
+    if not (
+        metadata.get("visual_force_tool")
+        and str(metadata.get("visual_intent_mode") or "") == "template"
+    ):
+        return 1
+
+    query = str(metadata.get("visual_user_query") or "")
+    budget = 1
+    budget += _estimate_query_figure_pressure(query)
+    budget += _estimate_spec_figure_pressure(visual_type, spec)
+
+    return max(1, min(3, budget))
+
+
+def _build_bridge_infographic_spec(
+    visual_type: str,
+    spec: dict[str, Any],
+    title: str,
+    summary: str,
+) -> dict[str, Any]:
+    base = _build_takeaway_infographic_spec(visual_type, spec, title, summary)
+    points = _collect_story_points(visual_type, spec, title, summary)
+    if not points:
+        points = [summary or f"{title} can mot nhom diem nhan de doc theo tung lop."]
+
+    sections = [{"title": "Can de mat toi", "content": points[0]}]
+    if len(points) > 1:
+        sections.append({"title": "Co che chinh", "content": points[1]})
+    if len(points) > 2:
+        sections.append({"title": "Dau hieu can nho", "content": points[2]})
+
+    return {
+        **base,
+        "sections": sections,
+        "caption": f"Cach doc {title} qua mot vai diem nhan chinh.",
+    }
+
+
+def _should_auto_group_visual_request(
+    *,
+    visual_type: str,
+    spec: dict[str, Any],
+    renderer_kind: str,
+    operation: str,
+) -> bool:
+    return _plan_auto_group_figure_budget(
+        visual_type=visual_type,
+        spec=spec,
+        renderer_kind=renderer_kind,
+        operation=operation,
+    ) > 1
+
+
+def _build_auto_grouped_payloads(
+    *,
+    visual_type: str,
+    spec: dict[str, Any],
+    title: str,
+    summary: str,
+    subtitle: str,
+    operation: str,
+    renderer_kind: str,
+    shell_variant: str,
+    patch_strategy: str,
+    narrative_anchor: str,
+    runtime_manifest: dict[str, Any] | None,
+) -> list[VisualPayloadV1]:
+    figure_budget = _plan_auto_group_figure_budget(
+        visual_type=visual_type,
+        spec=spec,
+        renderer_kind=renderer_kind,
+        operation=operation,
+    )
+    if figure_budget <= 1:
+        return []
+
+    primary_role = _infer_pedagogical_role(visual_type, spec)
+    secondary_role = "conclusion" if primary_role != "conclusion" else "result"
+    resolved_title = title.strip() or _default_visual_title(visual_type)
+    resolved_summary = _sanitize_summary_candidate(summary, visual_type, resolved_title) or _default_visual_summary(
+        visual_type,
+        resolved_title,
+        spec,
+    )
+    group_id = _generate_figure_group_id(visual_type)
+    bridge_claim = _collect_story_points(visual_type, spec, resolved_title, resolved_summary)
+    bridge_role = "mechanism" if primary_role in {"problem", "comparison", "benchmark"} else "result"
+    figures: list[dict[str, Any]] = [
+        {
+            "type": visual_type,
+            "title": resolved_title,
+            "summary": resolved_summary,
+            "subtitle": subtitle,
+            "pedagogical_role": primary_role,
+            "claim": _default_visual_claim(visual_type, resolved_title, resolved_summary, spec),
+            "narrative_anchor": narrative_anchor or "after-lead",
+            "spec": {
+                **spec,
+                "figure_group_id": group_id,
+            },
+        },
+    ]
+
+    if figure_budget >= 3:
+        figures.append({
+            "type": "infographic",
+            "title": f"Cach doc {resolved_title}",
+            "summary": bridge_claim[1] if len(bridge_claim) > 1 else resolved_summary,
+            "pedagogical_role": bridge_role,
+            "claim": bridge_claim[1] if len(bridge_claim) > 1 else resolved_summary,
+            "narrative_anchor": "after-figure-1",
+            "spec": _build_bridge_infographic_spec(
+                visual_type,
+                spec,
+                resolved_title,
+                resolved_summary,
+            ),
+        })
+
+    figures.append({
+        "type": "infographic",
+        "title": f"Diem chot tu {resolved_title}",
+        "summary": _build_takeaway_claim(visual_type, resolved_title, resolved_summary, spec),
+        "pedagogical_role": secondary_role,
+        "claim": _build_takeaway_claim(visual_type, resolved_title, resolved_summary, spec),
+        "narrative_anchor": "after-figure-1" if figure_budget == 2 else "after-figure-2",
+        "spec": _build_takeaway_infographic_spec(
+            visual_type,
+            spec,
+            resolved_title,
+            resolved_summary,
+        ),
+    })
+
+    raw_group = {
+        "figure_group_id": group_id,
+        "type": visual_type,
+        "title": resolved_title,
+        "summary": resolved_summary,
+        "subtitle": subtitle,
+        "operation": operation,
+        "renderer_kind": renderer_kind,
+        "shell_variant": shell_variant,
+        "patch_strategy": patch_strategy,
+        "narrative_anchor": narrative_anchor,
+        "runtime_manifest": runtime_manifest,
+        "figures": figures,
+    }
+    return _build_multi_figure_payloads(
+        default_visual_type=visual_type,
+        raw_group=raw_group,
+    )
+
+
+def _log_visual_telemetry(event_name: str, **fields: Any) -> None:
+    """Structured logger hook for visual pipeline telemetry."""
+    if fields:
+        logger.info("[VISUAL_TELEMETRY] %s %s", event_name, json.dumps(fields, ensure_ascii=False, sort_keys=True))
+    else:
+        logger.info("[VISUAL_TELEMETRY] %s", event_name)
+
+
+def _slugify_fragment(value: str) -> str:
+    cleaned = "".join(ch.lower() if ch.isalnum() else "-" for ch in str(value))
+    cleaned = cleaned.strip("-")
+    return cleaned or "item"
+
+
+def _generate_visual_session_id(visual_type: str) -> str:
+    return f"vs-{_slugify_fragment(visual_type)}-{uuid.uuid4().hex[:10]}"
+
+
+def _build_scene(visual_type: str, spec: dict[str, Any], title: str) -> dict[str, Any]:
+    provided_scene = spec.get("scene")
+    if isinstance(provided_scene, dict):
+        return provided_scene
+
+    if visual_type == "comparison":
+        left = spec.get("left", {}) if isinstance(spec.get("left"), dict) else {}
+        right = spec.get("right", {}) if isinstance(spec.get("right"), dict) else {}
+        return {
+            "kind": "comparison",
+            "nodes": [
+                {"id": "left", "label": str(left.get("title") or "Left"), "kind": "column"},
+                {"id": "right", "label": str(right.get("title") or "Right"), "kind": "column"},
+            ],
+            "panels": [
+                {
+                    "id": "summary",
+                    "title": title or _default_visual_title(visual_type),
+                    "body": str(spec.get("note") or ""),
+                    "node_ids": ["left", "right"],
+                }
+            ],
+        }
+
+    if visual_type == "process":
+        steps = spec.get("steps", []) if isinstance(spec.get("steps"), list) else []
+        nodes = []
+        links = []
+        for index, step in enumerate(steps):
+            item = step if isinstance(step, dict) else {}
+            node_id = f"step-{index + 1}"
+            nodes.append({
+                "id": node_id,
+                "label": str(item.get("title") or f"Step {index + 1}"),
+                "kind": "step",
+            })
+            if index > 0:
+                links.append({"source": f"step-{index}", "target": node_id})
+        return {
+            "kind": "process",
+            "nodes": nodes,
+            "links": links,
+        }
+
+    if visual_type == "matrix":
+        rows = spec.get("rows", []) if isinstance(spec.get("rows"), list) else []
+        cols = spec.get("cols", []) if isinstance(spec.get("cols"), list) else []
+        nodes = [{"id": f"row-{i}", "label": str(row), "kind": "row"} for i, row in enumerate(rows)]
+        nodes.extend({"id": f"col-{i}", "label": str(col), "kind": "column"} for i, col in enumerate(cols))
+        return {
+            "kind": "matrix",
+            "nodes": nodes,
+            "metadata": {
+                "row_count": len(rows),
+                "column_count": len(cols),
+            },
+        }
+
+    if visual_type == "architecture":
+        layers = spec.get("layers", []) if isinstance(spec.get("layers"), list) else []
+        nodes = []
+        links = []
+        for index, layer in enumerate(layers):
+            item = layer if isinstance(layer, dict) else {}
+            node_id = f"layer-{index + 1}"
+            nodes.append({
+                "id": node_id,
+                "label": str(item.get("name") or f"Layer {index + 1}"),
+                "kind": "layer",
+            })
+            if index > 0:
+                links.append({"source": f"layer-{index}", "target": node_id})
+        return {
+            "kind": "architecture",
+            "nodes": nodes,
+            "links": links,
+        }
+
+    if visual_type == "concept":
+        center = spec.get("center", {}) if isinstance(spec.get("center"), dict) else {}
+        branches = spec.get("branches", []) if isinstance(spec.get("branches"), list) else []
+        nodes = [{"id": "center", "label": str(center.get("title") or title or "Core concept"), "kind": "center"}]
+        links = []
+        for index, branch in enumerate(branches):
+            item = branch if isinstance(branch, dict) else {}
+            node_id = f"branch-{index + 1}"
+            nodes.append({
+                "id": node_id,
+                "label": str(item.get("title") or f"Branch {index + 1}"),
+                "kind": "branch",
+            })
+            links.append({"source": "center", "target": node_id})
+        return {
+            "kind": "concept",
+            "nodes": nodes,
+            "links": links,
+        }
+
+    if visual_type == "infographic":
+        stats = spec.get("stats", []) if isinstance(spec.get("stats"), list) else []
+        sections = spec.get("sections", []) if isinstance(spec.get("sections"), list) else []
+        nodes = []
+        for index, stat in enumerate(stats):
+            item = stat if isinstance(stat, dict) else {}
+            nodes.append({
+                "id": f"stat-{index + 1}",
+                "label": str(item.get("label") or f"Stat {index + 1}"),
+                "kind": "stat",
+            })
+        for index, section in enumerate(sections):
+            item = section if isinstance(section, dict) else {}
+            nodes.append({
+                "id": f"section-{index + 1}",
+                "label": str(item.get("title") or f"Section {index + 1}"),
+                "kind": "section",
+            })
+        return {
+            "kind": "infographic",
+            "nodes": nodes,
+        }
+
+    if visual_type == "chart":
+        labels = spec.get("labels", []) if isinstance(spec.get("labels"), list) else []
+        return {
+            "kind": "chart",
+            "nodes": [
+                {"id": f"point-{index + 1}", "label": str(label), "kind": "point"}
+                for index, label in enumerate(labels)
+            ],
+            "scales": {
+                "x": {"kind": "categorical", "domain": labels},
+            },
+        }
+
+    if visual_type == "timeline":
+        events = spec.get("events", []) if isinstance(spec.get("events"), list) else []
+        nodes = []
+        links = []
+        for index, event in enumerate(events):
+            item = event if isinstance(event, dict) else {}
+            node_id = f"milestone-{index + 1}"
+            nodes.append({
+                "id": node_id,
+                "label": str(item.get("title") or item.get("label") or f"Milestone {index + 1}"),
+                "kind": "milestone",
+            })
+            if index > 0:
+                links.append({"source": f"milestone-{index}", "target": node_id})
+        return {
+            "kind": "timeline",
+            "nodes": nodes,
+            "links": links,
+        }
+
+    if visual_type == "map_lite":
+        regions = spec.get("regions", []) if isinstance(spec.get("regions"), list) else []
+        return {
+            "kind": "map_lite",
+            "nodes": [
+                {
+                    "id": f"region-{index + 1}",
+                    "label": str((region if isinstance(region, dict) else {}).get("label") or f"Region {index + 1}"),
+                    "kind": "region",
+                }
+                for index, region in enumerate(regions)
+            ],
+        }
+
+    return {"kind": visual_type}
+
+
+def _build_controls(visual_type: str, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    provided_controls = spec.get("controls")
+    if isinstance(provided_controls, list):
+        return [item for item in provided_controls if isinstance(item, dict)]
+
+    if visual_type == "comparison":
+        left = spec.get("left", {}) if isinstance(spec.get("left"), dict) else {}
+        right = spec.get("right", {}) if isinstance(spec.get("right"), dict) else {}
+        return [{
+            "id": "focus_side",
+            "type": "chips",
+            "label": "Focus",
+            "value": "both",
+            "options": [
+                {"value": "both", "label": "Both"},
+                {"value": "left", "label": str(left.get("title") or "Left")},
+                {"value": "right", "label": str(right.get("title") or "Right")},
+            ],
+        }]
+
+    if visual_type == "process":
+        steps = spec.get("steps", []) if isinstance(spec.get("steps"), list) else []
+        if len(steps) > 1:
+            return [{
+                "id": "current_step",
+                "type": "range",
+                "label": "Current step",
+                "value": 1,
+                "min": 1,
+                "max": len(steps),
+                "step": 1,
+            }]
+        return []
+
+    if visual_type == "matrix":
+        return [{
+            "id": "show_values",
+            "type": "toggle",
+            "label": "Show values",
+            "value": bool(spec.get("show_values")),
+        }]
+
+    if visual_type == "architecture":
+        layers = spec.get("layers", []) if isinstance(spec.get("layers"), list) else []
+        if layers:
+            return [{
+                "id": "active_layer",
+                "type": "chips",
+                "label": "Layer focus",
+                "value": "all",
+                "options": [{"value": "all", "label": "All"}] + [
+                    {
+                        "value": f"layer-{index + 1}",
+                        "label": str((layer if isinstance(layer, dict) else {}).get("name") or f"Layer {index + 1}"),
+                    }
+                    for index, layer in enumerate(layers)
+                ],
+            }]
+        return []
+
+    if visual_type == "concept":
+        branches = spec.get("branches", []) if isinstance(spec.get("branches"), list) else []
+        if branches:
+            return [{
+                "id": "active_branch",
+                "type": "chips",
+                "label": "Branch focus",
+                "value": "all",
+                "options": [{"value": "all", "label": "All"}] + [
+                    {
+                        "value": f"branch-{index + 1}",
+                        "label": str((branch if isinstance(branch, dict) else {}).get("title") or f"Branch {index + 1}"),
+                    }
+                    for index, branch in enumerate(branches)
+                ],
+            }]
+        return []
+
+    if visual_type == "infographic":
+        sections = spec.get("sections", []) if isinstance(spec.get("sections"), list) else []
+        if sections:
+            return [{
+                "id": "active_section",
+                "type": "chips",
+                "label": "Section focus",
+                "value": "all",
+                "options": [{"value": "all", "label": "All"}] + [
+                    {
+                        "value": f"section-{index + 1}",
+                        "label": str((section if isinstance(section, dict) else {}).get("title") or f"Section {index + 1}"),
+                    }
+                    for index, section in enumerate(sections)
+                ],
+            }]
+        return []
+
+    if visual_type == "chart":
+        return [{
+            "id": "chart_style",
+            "type": "chips",
+            "label": "Chart style",
+            "value": str(spec.get("chart_type") or "bar"),
+            "options": [
+                {"value": "bar", "label": "Bar"},
+                {"value": "line", "label": "Line"},
+                {"value": "area", "label": "Area"},
+            ],
+        }]
+
+    if visual_type == "timeline":
+        events = spec.get("events", []) if isinstance(spec.get("events"), list) else []
+        if len(events) > 1:
+            return [{
+                "id": "current_event",
+                "type": "range",
+                "label": "Current milestone",
+                "value": 1,
+                "min": 1,
+                "max": len(events),
+                "step": 1,
+            }]
+        return []
+
+    if visual_type == "map_lite":
+        regions = spec.get("regions", []) if isinstance(spec.get("regions"), list) else []
+        if regions:
+            return [{
+                "id": "active_region",
+                "type": "chips",
+                "label": "Region focus",
+                "value": "all",
+                "options": [{"value": "all", "label": "All"}] + [
+                    {
+                        "value": f"region-{index + 1}",
+                        "label": str((region if isinstance(region, dict) else {}).get("label") or f"Region {index + 1}"),
+                    }
+                    for index, region in enumerate(regions)
+                ],
+            }]
+        return []
+
+    return []
+
+
+def _build_annotations(visual_type: str, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    annotations: list[dict[str, Any]] = []
+    provided_annotations = spec.get("annotations")
+    if isinstance(provided_annotations, list):
+        for index, annotation in enumerate(provided_annotations):
+            if not isinstance(annotation, dict):
+                continue
+            annotations.append({
+                "id": str(annotation.get("id") or f"annotation-{index + 1}"),
+                "title": str(annotation.get("title") or annotation.get("label") or f"Annotation {index + 1}"),
+                "body": str(annotation.get("body") or annotation.get("content") or ""),
+                "target_id": annotation.get("target_id"),
+                "tone": annotation.get("tone") or "accent",
+            })
+
+    if not annotations:
+        note = spec.get("note")
+        caption = spec.get("caption")
+        emphasis = spec.get("takeaway")
+        fallback_body = note or caption or emphasis
+        if fallback_body:
+            annotations.append({
+                "id": "summary-note",
+                "title": "Takeaway",
+                "body": str(fallback_body),
+                "tone": "accent" if visual_type != "matrix" else "neutral",
+            })
+
+    return annotations
+
+
+def _infer_interaction_mode(controls: list[dict[str, Any]]) -> str:
+    if not controls:
+        return "static"
+    control_types = {str(control.get("type")) for control in controls}
+    if "range" in control_types:
+        return "scrubbable"
+    if control_types & {"chips", "select", "toggle"}:
+        return "filterable"
+    return "guided"
+
+
+def _infer_renderer_kind(visual_type: str, spec: dict[str, Any], requested: str = "") -> str:
+    candidate = requested.strip()
+    if candidate in {"template", "inline_html", "app"}:
+        return candidate
+    if visual_type in LEGACY_SANDBOX_VISUAL_TYPES:
+        return "app"
+    if any(isinstance(spec.get(key), str) and str(spec.get(key)).strip() for key in ("html", "markup", "custom_html", "template_html")):
+        return "inline_html"
+    return "template"
+
+
+def _infer_runtime(renderer_kind: str, visual_type: str, spec: dict[str, Any]) -> str:
+    if renderer_kind == "template":
+        return "svg"
+    if renderer_kind == "app":
+        ui_runtime = str(spec.get("ui_runtime") or "")
+        return "sandbox_react" if visual_type == "react_app" or ui_runtime == "react" else "sandbox_html"
+    return "sandbox_html"
+
+
+def _infer_shell_variant(renderer_kind: str, requested: str = "") -> str:
+    candidate = requested.strip()
+    if candidate in {"editorial", "compact", "immersive"}:
+        return candidate
+    return "immersive" if renderer_kind == "app" else "editorial"
+
+
+def _infer_patch_strategy(renderer_kind: str, requested: str = "") -> str:
+    candidate = requested.strip()
+    if candidate in {"spec_merge", "replace_html", "app_state"}:
+        return candidate
+    if renderer_kind == "template":
+        return "spec_merge"
+    if renderer_kind == "app":
+        return "app_state"
+    return "replace_html"
+
+
+def _resolve_fallback_html(
+    visual_type: str,
+    spec: dict[str, Any],
+    title: str,
+    builder_output: str | None,
+) -> str | None:
+    if builder_output:
+        return builder_output
+    for key in ("html", "markup", "custom_html", "template_html", "app_html"):
+        value = spec.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    if visual_type == "react_app":
+        code = spec.get("code")
+        if isinstance(code, str) and code.strip():
+            return _build_react_app_html(spec, title)
+    return None
+
+
+def _build_runtime_manifest(
+    *,
+    renderer_kind: str,
+    visual_type: str,
+    spec: dict[str, Any],
+    provided: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    if renderer_kind != "app":
+        return None
+    manifest = {
+        "ui_runtime": str((provided or {}).get("ui_runtime") or spec.get("ui_runtime") or ("react" if visual_type == "react_app" else "html")),
+        "storage": bool((provided or {}).get("storage", spec.get("storage", False))),
+        "mcp_access": bool((provided or {}).get("mcp_access", spec.get("mcp_access", False))),
+        "file_export": bool((provided or {}).get("file_export", spec.get("file_export", False))),
+        "shareability": str((provided or {}).get("shareability") or spec.get("shareability") or "session"),
+    }
+    return manifest
+
+
+def _normalize_visual_payload(
+    *,
+    visual_type: str,
+    spec: dict[str, Any],
+    title: str = "",
+    summary: str = "",
+    subtitle: str = "",
+    visual_session_id: str = "",
+    operation: str = "open",
+    renderer_kind: str = "",
+    shell_variant: str = "",
+    patch_strategy: str = "",
+    narrative_anchor: str = "",
+    runtime: str = "",
+    fallback_html: str | None = None,
+    runtime_manifest: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    figure_group_id: str = "",
+    figure_index: int = 1,
+    figure_total: int = 1,
+    pedagogical_role: str = "",
+    chrome_mode: str = "",
+    claim: str = "",
+) -> VisualPayloadV1:
+    resolved_title = title.strip() or _default_visual_title(visual_type)
+    resolved_summary = _sanitize_summary_candidate(summary, visual_type, resolved_title) or _default_visual_summary(
+        visual_type,
+        resolved_title,
+        spec,
+    )
+    resolved_subtitle = subtitle.strip() or None
+    resolved_renderer_kind = _infer_renderer_kind(visual_type, spec, renderer_kind)
+    resolved_runtime = runtime.strip() or _infer_runtime(resolved_renderer_kind, visual_type, spec)
+    resolved_shell_variant = _infer_shell_variant(resolved_renderer_kind, shell_variant)
+    resolved_patch_strategy = _infer_patch_strategy(resolved_renderer_kind, patch_strategy)
+    resolved_pedagogical_role = _infer_pedagogical_role(visual_type, spec, pedagogical_role)
+    resolved_chrome_mode = _infer_chrome_mode(
+        resolved_renderer_kind,
+        resolved_shell_variant,
+        chrome_mode,
+    )
+    resolved_claim = _clean_summary_text(claim) or _default_visual_claim(
+        visual_type,
+        resolved_title,
+        resolved_summary,
+        spec,
+    )
+    resolved_controls = _build_controls(visual_type, spec)
+    resolved_scene = _build_scene(visual_type, spec, resolved_title)
+    resolved_annotations = _build_annotations(visual_type, spec)
+    if not resolved_annotations:
+        resolved_annotations = [{
+            "id": "takeaway",
+            "title": "Diem chot",
+            "body": resolved_summary,
+            "tone": "accent",
+        }]
+    lifecycle_event = "visual_patch" if operation == "patch" else "visual_open"
+    resolved_metadata = {
+        "contract_version": "visual_payload_v3",
+        "source_tool": "tool_generate_visual",
+        "figure_group_id": figure_group_id.strip() or spec.get("figure_group_id") or "",
+        "pedagogical_role": resolved_pedagogical_role,
+        **(metadata or {}),
+    }
+    return VisualPayloadV1(
+        id=f"visual-{uuid.uuid4().hex[:12]}",
+        visual_session_id=visual_session_id.strip() or _generate_visual_session_id(visual_type),
+        type=visual_type,
+        renderer_kind=resolved_renderer_kind,  # type: ignore[arg-type]
+        shell_variant=resolved_shell_variant,  # type: ignore[arg-type]
+        patch_strategy=resolved_patch_strategy,  # type: ignore[arg-type]
+        figure_group_id=figure_group_id.strip() or str(spec.get("figure_group_id") or _generate_figure_group_id(visual_type)),
+        figure_index=max(1, int(figure_index or 1)),
+        figure_total=max(1, int(figure_total or 1)),
+        pedagogical_role=resolved_pedagogical_role,  # type: ignore[arg-type]
+        chrome_mode=resolved_chrome_mode,  # type: ignore[arg-type]
+        claim=resolved_claim,
+        narrative_anchor=narrative_anchor.strip() or str(spec.get("narrative_anchor") or "after-lead"),
+        runtime=resolved_runtime,  # type: ignore[arg-type]
+        title=resolved_title,
+        summary=resolved_summary,
+        spec=spec,
+        scene=resolved_scene,
+        controls=resolved_controls,
+        annotations=resolved_annotations,
+        interaction_mode=_infer_interaction_mode(resolved_controls),  # type: ignore[arg-type]
+        ephemeral=True,
+        lifecycle_event=lifecycle_event,  # type: ignore[arg-type]
+        subtitle=resolved_subtitle,
+        fallback_html=fallback_html,
+        runtime_manifest=_build_runtime_manifest(
+            renderer_kind=resolved_renderer_kind,
+            visual_type=visual_type,
+            spec=spec,
+            provided=runtime_manifest,
+        ),
+        metadata=resolved_metadata,
+    )
+
+
+def _coerce_visual_payload_data(data: dict[str, Any]) -> dict[str, Any]:
+    visual_type = str(data.get("type") or "comparison")
+    spec = data.get("spec") if isinstance(data.get("spec"), dict) else {}
+    controls = data.get("controls")
+    if not isinstance(controls, list):
+        controls = _build_controls(visual_type, spec)
+
+    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    metadata = {
+        "contract_version": metadata.get("contract_version") or "visual_payload_v3",
+        **metadata,
+    }
+
+    coerced = dict(data)
+    coerced["visual_session_id"] = str(
+        data.get("visual_session_id") or _generate_visual_session_id(visual_type)
+    )
+    coerced["renderer_kind"] = _infer_renderer_kind(
+        visual_type,
+        spec,
+        str(data.get("renderer_kind") or ""),
+    )
+    coerced["shell_variant"] = _infer_shell_variant(
+        str(coerced["renderer_kind"]),
+        str(data.get("shell_variant") or ""),
+    )
+    coerced["patch_strategy"] = _infer_patch_strategy(
+        str(coerced["renderer_kind"]),
+        str(data.get("patch_strategy") or ""),
+    )
+    coerced["figure_group_id"] = str(
+        data.get("figure_group_id")
+        or metadata.get("figure_group_id")
+        or spec.get("figure_group_id")
+        or _generate_figure_group_id(visual_type)
+    )
+    coerced["figure_index"] = max(1, int(data.get("figure_index") or 1))
+    coerced["figure_total"] = max(
+        coerced["figure_index"],
+        int(data.get("figure_total") or 1),
+    )
+    coerced["pedagogical_role"] = _infer_pedagogical_role(
+        visual_type,
+        spec,
+        str(data.get("pedagogical_role") or metadata.get("pedagogical_role") or ""),
+    )
+    coerced["chrome_mode"] = _infer_chrome_mode(
+        str(coerced["renderer_kind"]),
+        str(coerced["shell_variant"]),
+        str(data.get("chrome_mode") or ""),
+    )
+    coerced["claim"] = _clean_summary_text(str(data.get("claim") or "")) or _default_visual_claim(
+        visual_type,
+        str(data.get("title") or _default_visual_title(visual_type)),
+        str(data.get("summary") or ""),
+        spec,
+    )
+    coerced["narrative_anchor"] = str(data.get("narrative_anchor") or "after-lead")
+    coerced["runtime"] = str(
+        data.get("runtime")
+        or _infer_runtime(str(coerced["renderer_kind"]), visual_type, spec)
+    )
+    coerced["scene"] = data.get("scene") if isinstance(data.get("scene"), dict) else _build_scene(
+        visual_type,
+        spec,
+        str(data.get("title") or ""),
+    )
+    coerced["controls"] = controls
+    coerced["annotations"] = (
+        data.get("annotations")
+        if isinstance(data.get("annotations"), list)
+        else _build_annotations(visual_type, spec)
+    )
+    coerced["interaction_mode"] = str(
+        data.get("interaction_mode") or _infer_interaction_mode(controls)
+    )
+    coerced["ephemeral"] = bool(data.get("ephemeral", True))
+    coerced["lifecycle_event"] = str(data.get("lifecycle_event") or "visual_open")
+    coerced["runtime_manifest"] = _build_runtime_manifest(
+        renderer_kind=str(coerced["renderer_kind"]),
+        visual_type=visual_type,
+        spec=spec,
+        provided=data.get("runtime_manifest") if isinstance(data.get("runtime_manifest"), dict) else None,
+    )
+    coerced["metadata"] = metadata
+    return coerced
+
+
+def _apply_runtime_patch_defaults(
+    *,
+    visual_session_id: str,
+    operation: str,
+) -> tuple[str, str]:
+    """Fill patch defaults from tool runtime metadata for visual follow-up edits."""
+    runtime = get_current_tool_runtime_context()
+    metadata = runtime.metadata if runtime and isinstance(runtime.metadata, dict) else {}
+    preferred_operation = str(metadata.get("preferred_visual_operation") or "").strip()
+    preferred_session_id = str(metadata.get("preferred_visual_session_id") or "").strip()
+
+    resolved_session_id = visual_session_id.strip()
+    resolved_operation = operation.strip() or "open"
+
+    if preferred_operation != "patch" or not preferred_session_id:
+        return resolved_session_id, resolved_operation
+
+    # Model-generated session IDs are not trustworthy on follow-up patch turns.
+    # When the client tells us which session is active, keep patches anchored there.
+    resolved_session_id = preferred_session_id
+    if resolved_operation == "open":
+        resolved_operation = "patch"
+
+    return resolved_session_id, resolved_operation
+
+
+def _build_multi_figure_payloads(
+    *,
+    default_visual_type: str,
+    raw_group: dict[str, Any],
+) -> list[VisualPayloadV1]:
+    figures = raw_group.get("figures")
+    if not isinstance(figures, list) or not figures:
+        return []
+
+    figure_total = len(figures)
+    group_id = str(raw_group.get("figure_group_id") or _generate_figure_group_id(default_visual_type))
+    payloads: list[VisualPayloadV1] = []
+
+    for index, figure in enumerate(figures, start=1):
+        if not isinstance(figure, dict):
+            continue
+
+        figure_visual_type = str(figure.get("type") or figure.get("visual_type") or default_visual_type or "comparison").strip()
+        figure_spec = figure.get("spec") if isinstance(figure.get("spec"), dict) else {}
+        if not isinstance(figure_spec, dict):
+            figure_spec = {}
+        figure_title = str(figure.get("title") or raw_group.get("title") or "")
+        builder = _BUILDERS.get(figure_visual_type)
+        builder_html = None
+        if builder is not None:
+            try:
+                builder_html = builder(figure_spec, figure_title)
+            except Exception as exc:
+                logger.warning("Structured visual fallback HTML failed for grouped type=%s: %s", figure_visual_type, exc)
+        resolved_renderer_kind = _infer_renderer_kind(
+            figure_visual_type,
+            figure_spec,
+            str(figure.get("renderer_kind") or raw_group.get("renderer_kind") or ""),
+        )
+        fallback_html = str(figure.get("fallback_html") or "") or _resolve_fallback_html(
+            figure_visual_type,
+            figure_spec,
+            figure_title,
+            builder_html,
+        )
+        runtime_manifest = (
+            figure.get("runtime_manifest")
+            if isinstance(figure.get("runtime_manifest"), dict)
+            else raw_group.get("runtime_manifest")
+            if isinstance(raw_group.get("runtime_manifest"), dict)
+            else None
+        )
+
+        payloads.append(
+            _normalize_visual_payload(
+                visual_type=figure_visual_type,
+                spec={
+                    **figure_spec,
+                    "figure_group_id": group_id,
+                },
+                title=figure_title,
+                summary=str(figure.get("summary") or ""),
+                subtitle=str(figure.get("subtitle") or ""),
+                visual_session_id=str(figure.get("visual_session_id") or ""),
+                operation=str(figure.get("operation") or raw_group.get("operation") or "open"),
+                renderer_kind=resolved_renderer_kind,
+                shell_variant=str(figure.get("shell_variant") or raw_group.get("shell_variant") or ""),
+                patch_strategy=str(figure.get("patch_strategy") or ""),
+                narrative_anchor=str(figure.get("narrative_anchor") or raw_group.get("narrative_anchor") or ""),
+                runtime=str(figure.get("runtime") or ""),
+                fallback_html=fallback_html,
+                runtime_manifest=runtime_manifest,
+                metadata=figure.get("metadata") if isinstance(figure.get("metadata"), dict) else None,
+                figure_group_id=group_id,
+                figure_index=index,
+                figure_total=figure_total,
+                pedagogical_role=str(figure.get("pedagogical_role") or ""),
+                chrome_mode=str(figure.get("chrome_mode") or raw_group.get("chrome_mode") or ""),
+                claim=str(figure.get("claim") or ""),
+            )
+        )
+
+    return payloads
+
+
+def parse_visual_payloads(raw: Any) -> list[VisualPayloadV1]:
+    """Best-effort parser for single or grouped structured visual tool results."""
+    if isinstance(raw, VisualPayloadV1):
+        return [raw]
+
+    if isinstance(raw, list):
+        payloads: list[VisualPayloadV1] = []
+        for item in raw:
+            payloads.extend(parse_visual_payloads(item))
+        return payloads
+
+    if isinstance(raw, dict):
+        if isinstance(raw.get("figures"), list):
+            payloads = _build_multi_figure_payloads(
+                default_visual_type=str(raw.get("type") or raw.get("visual_type") or "comparison"),
+                raw_group=raw,
+            )
+            if payloads:
+                return payloads
+        try:
+            return [VisualPayloadV1.model_validate(_coerce_visual_payload_data(raw))]
+        except ValidationError:
+            return []
+
+    if not raw:
+        return []
+
+    text = str(raw).strip()
+    if not text:
+        return []
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+
+    return parse_visual_payloads(data)
+
+
+def parse_visual_payload(raw: Any) -> VisualPayloadV1 | None:
+    """Backward-compatible parser that returns the first structured visual payload."""
+    payloads = parse_visual_payloads(raw)
+    return payloads[0] if payloads else None
 
 
 # =============================================================================
@@ -58,15 +1550,15 @@ _DESIGN_CSS = """
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: var(--text); background: transparent; line-height: 1.5;
-  padding: 16px; font-size: 14px;
+  padding: 8px 4px; font-size: 14px;
 }
 .widget-title {
-  font-size: 17px; font-weight: 700; text-align: center;
-  margin-bottom: 16px; color: var(--text);
+  font-size: 15px; font-weight: 600; text-align: left;
+  margin-bottom: 12px; color: var(--text); padding-left: 2px;
 }
 .widget-subtitle {
-  font-size: 12px; color: var(--text2); text-align: center;
-  margin-top: -12px; margin-bottom: 16px;
+  font-size: 12px; color: var(--text2); text-align: left;
+  margin-top: -8px; margin-bottom: 12px; padding-left: 2px;
 }
 .code-badge {
   display: inline-block; font-family: 'SF Mono', 'Fira Code', monospace;
@@ -142,15 +1634,16 @@ def _build_comparison_html(spec: dict, title: str) -> str:
     css = """
 .comparison { display: grid; grid-template-columns: 1fr auto 1fr; gap: 0; align-items: stretch; }
 .side {
-  background: var(--side-bg); border-radius: var(--radius); padding: 20px;
-  border: 1.5px solid color-mix(in srgb, var(--side-color) 25%, transparent);
+  background: transparent; padding: 16px 14px;
+  border-top: 2px solid color-mix(in srgb, var(--side-color) 40%, transparent);
 }
-.side-header { margin-bottom: 12px; }
-.side-title { font-size: 15px; font-weight: 700; color: var(--side-color); }
-.side-sub { font-size: 12px; color: var(--text2); display: block; margin-top: 2px; }
+.side-header { margin-bottom: 10px; }
+.side-title { font-size: 14px; font-weight: 700; color: var(--side-color); }
+.side-sub { font-size: 11px; color: var(--text3); display: block; margin-top: 2px; }
 .side-items { list-style: none; padding: 0; }
 .side-items li {
-  padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text2);
+  padding: 5px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  font-size: 13px; color: var(--text2); line-height: 1.55;
 }
 .side-items li:last-child { border-bottom: none; }
 .item-icon { font-size: 14px; }
@@ -158,15 +1651,15 @@ def _build_comparison_html(spec: dict, title: str) -> str:
 .side-svg svg { max-width: 100%; height: auto; }
 .side-desc { font-size: 12px; color: var(--text3); margin-top: 8px; font-style: italic; }
 .comp-divider {
-  display: flex; align-items: center; justify-content: center; padding: 0 12px;
+  display: flex; align-items: center; justify-content: center; padding: 0 8px;
 }
-.comp-divider svg { width: 32px; height: 32px; }
+.comp-divider svg { width: 24px; height: 24px; opacity: 0.35; }
 .comp-note {
-  grid-column: 1 / -1; text-align: center; font-size: 12px; color: var(--text3);
-  margin-top: 12px; padding: 8px; background: var(--bg2); border-radius: var(--radius-sm);
+  grid-column: 1 / -1; text-align: center; font-size: 11px; color: var(--text3);
+  margin-top: 10px; padding: 6px 0; border-top: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
 }
 @media (max-width: 500px) {
-  .comparison { grid-template-columns: 1fr; gap: 8px; }
+  .comparison { grid-template-columns: 1fr; gap: 4px; }
   .comp-divider { transform: rotate(90deg); padding: 4px; }
 }"""
 
@@ -819,6 +2312,176 @@ _BUILDERS = {
 
 
 @tool
+def tool_generate_visual(
+    visual_type: str,
+    spec_json: str,
+    title: str = "",
+    summary: str = "",
+    subtitle: str = "",
+    visual_session_id: str = "",
+    operation: str = "open",
+    renderer_kind: str = "",
+    shell_variant: str = "",
+    patch_strategy: str = "",
+    narrative_anchor: str = "",
+    runtime_manifest_json: str = "",
+) -> str:
+    """Generate a structured visual payload for inline visuals or app runtime.
+
+    Use this as the PRIMARY path for Wiii Visual Runtime V3:
+    - template: native React + SVG/CSS explanatory visuals
+    - inline_html: bespoke HTML/CSS/JS visuals inside Wiii shell
+    - app: MCP-style iframe app runtime for simulations and mini tools
+
+    Unlike tool_generate_rich_visual, this tool returns JSON payload data for the
+    frontend visual renderer. Do NOT copy this payload verbatim into prose.
+    """
+    valid_types = CORE_STRUCTURED_VISUAL_TYPES + LEGACY_SANDBOX_VISUAL_TYPES
+    if visual_type not in valid_types:
+        valid = ", ".join(valid_types)
+        return f"Error: visual_type '{visual_type}' khong hop le cho visual runtime. Chon mot trong: {valid}"
+
+    if operation not in {"open", "patch"}:
+        return "Error: operation phai la 'open' hoac 'patch'."
+
+    try:
+        spec = json.loads(spec_json)
+        if not isinstance(spec, dict):
+            return "Error: spec_json phai la mot JSON object."
+    except json.JSONDecodeError as exc:
+        return f"Error: JSON khong hop le: {exc}"
+
+    runtime_manifest = None
+    if runtime_manifest_json.strip():
+        try:
+            runtime_manifest = json.loads(runtime_manifest_json)
+            if not isinstance(runtime_manifest, dict):
+                return "Error: runtime_manifest_json phai la mot JSON object."
+        except json.JSONDecodeError as exc:
+            return f"Error: runtime_manifest_json khong hop le: {exc}"
+
+    if isinstance(spec.get("figures"), list) and spec.get("figures"):
+        group_payloads = _build_multi_figure_payloads(
+            default_visual_type=visual_type,
+            raw_group={
+                **spec,
+                "type": visual_type,
+                "title": title,
+                "summary": summary,
+                "subtitle": subtitle,
+                "operation": operation,
+                "renderer_kind": renderer_kind,
+                "shell_variant": shell_variant,
+                "patch_strategy": patch_strategy,
+                "narrative_anchor": narrative_anchor,
+                "runtime_manifest": runtime_manifest,
+            },
+        )
+        if not group_payloads:
+            return "Error: Khong the tao nhom figure tu spec_json.figures."
+
+        for payload in group_payloads:
+            _log_visual_telemetry(
+                "tool_generate_visual",
+                visual_id=payload.id,
+                visual_session_id=payload.visual_session_id,
+                visual_type=payload.type,
+                renderer_kind=payload.renderer_kind,
+                shell_variant=payload.shell_variant,
+                patch_strategy=payload.patch_strategy,
+                runtime=payload.runtime,
+                lifecycle_event=payload.lifecycle_event,
+                figure_group_id=payload.figure_group_id,
+                figure_index=payload.figure_index,
+                figure_total=payload.figure_total,
+                pedagogical_role=payload.pedagogical_role,
+            )
+        return json.dumps(
+            [payload.model_dump(mode="json") for payload in group_payloads],
+            ensure_ascii=False,
+        )
+
+    builder = _BUILDERS.get(visual_type)
+    builder_html = None
+    if builder is not None:
+        try:
+            builder_html = builder(spec, title)
+        except Exception as exc:
+            logger.warning("Structured visual fallback HTML failed for type=%s: %s", visual_type, exc)
+
+    resolved_renderer_kind = _infer_renderer_kind(visual_type, spec, renderer_kind)
+    resolved_visual_session_id, resolved_operation = _apply_runtime_patch_defaults(
+        visual_session_id=visual_session_id,
+        operation=operation,
+    )
+    auto_group_payloads = _build_auto_grouped_payloads(
+        visual_type=visual_type,
+        spec=spec,
+        title=title,
+        summary=summary,
+        subtitle=subtitle,
+        operation=resolved_operation,
+        renderer_kind=resolved_renderer_kind,
+        shell_variant=shell_variant,
+        patch_strategy=patch_strategy,
+        narrative_anchor=narrative_anchor,
+        runtime_manifest=runtime_manifest,
+    )
+    if auto_group_payloads:
+        for payload in auto_group_payloads:
+            _log_visual_telemetry(
+                "tool_generate_visual",
+                visual_id=payload.id,
+                visual_session_id=payload.visual_session_id,
+                visual_type=payload.type,
+                renderer_kind=payload.renderer_kind,
+                shell_variant=payload.shell_variant,
+                patch_strategy=payload.patch_strategy,
+                runtime=payload.runtime,
+                lifecycle_event=payload.lifecycle_event,
+                figure_group_id=payload.figure_group_id,
+                figure_index=payload.figure_index,
+                figure_total=payload.figure_total,
+                pedagogical_role=payload.pedagogical_role,
+                auto_grouped=True,
+            )
+        return json.dumps(
+            [payload.model_dump(mode="json") for payload in auto_group_payloads],
+            ensure_ascii=False,
+        )
+
+    fallback_html = _resolve_fallback_html(visual_type, spec, title, builder_html)
+
+    payload = _normalize_visual_payload(
+        visual_type=visual_type,
+        spec=spec,
+        title=title,
+        summary=summary,
+        subtitle=subtitle,
+        visual_session_id=resolved_visual_session_id,
+        operation=resolved_operation,
+        renderer_kind=resolved_renderer_kind,
+        shell_variant=shell_variant,
+        patch_strategy=patch_strategy,
+        narrative_anchor=narrative_anchor,
+        fallback_html=fallback_html,
+        runtime_manifest=runtime_manifest,
+    )
+    _log_visual_telemetry(
+        "tool_generate_visual",
+        visual_id=payload.id,
+        visual_session_id=payload.visual_session_id,
+        visual_type=payload.type,
+        renderer_kind=payload.renderer_kind,
+        shell_variant=payload.shell_variant,
+        patch_strategy=payload.patch_strategy,
+        runtime=payload.runtime,
+        lifecycle_event=payload.lifecycle_event,
+    )
+    return json.dumps(payload.model_dump(mode="json"), ensure_ascii=False)
+
+
+@tool
 def tool_generate_rich_visual(
     visual_type: str,
     spec_json: str,
@@ -830,8 +2493,11 @@ def tool_generate_rich_visual(
     interactive tables, architecture diagrams, and more. Returns a ```widget
     code block that the frontend renders as a fully interactive visual.
 
-    PRIORITY: Use this for EXPLANATIONS, COMPARISONS, SIMULATIONS, QUIZZES.
-    Use tool_generate_interactive_chart for DATA/STATISTICS (bar, pie, line charts).
+    PRIORITY: Use this only as a legacy/fallback sandbox runtime for simulation,
+    quiz, interactive_table, react_app, or highly bespoke HTML/JS cases.
+    For explanatory visuals, comparisons, article-style charts, and inline figures,
+    prefer tool_generate_visual.
+    Use tool_generate_interactive_chart only for standalone numeric dashboard charts.
     Use tool_generate_mermaid for simple FLOWCHARTS and SEQUENCE diagrams.
 
     Args:
@@ -947,4 +2613,8 @@ def get_visual_tools() -> list:
     if not getattr(settings, "enable_chart_tools", False):
         return []
 
-    return [tool_generate_rich_visual]
+    tools = []
+    if getattr(settings, "enable_structured_visuals", False):
+        tools.append(tool_generate_visual)
+    tools.append(tool_generate_rich_visual)
+    return tools

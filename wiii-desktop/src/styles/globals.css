@@ -2328,39 +2328,32 @@ html.dark .shiki span {
 .editorial-visual-flow__bridge-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 12%, var(--border));
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.96), rgba(245,240,232,0.9));
-  padding: 0.34rem 0.82rem;
-  color: color-mix(in srgb, var(--accent-orange) 76%, var(--text-secondary));
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
+  border: none;
+  background: transparent;
+  padding: 0.2rem 0;
+  color: var(--text-tertiary);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  box-shadow: var(--shadow-sm);
 }
 
 .editorial-visual-flow__bridge-chip::before {
   content: "";
-  width: 0.48rem;
-  height: 0.48rem;
+  width: 0.32rem;
+  height: 0.32rem;
   border-radius: 999px;
-  background: linear-gradient(180deg, var(--accent-orange), color-mix(in srgb, var(--accent-teal) 64%, white));
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 10%, transparent);
+  background: var(--text-tertiary);
+  opacity: 0.5;
 }
 
 .editorial-visual-flow__bridge-line {
   flex: 1;
-  min-width: 4rem;
+  min-width: 3rem;
   height: 1px;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent) 26%, transparent) 0%,
-    color-mix(in srgb, var(--accent-teal) 18%, transparent) 52%,
-    transparent 100%
-  );
+  background: color-mix(in srgb, var(--border) 40%, transparent);
 }
 
 .editorial-visual-flow__bridge-claim {
@@ -2391,19 +2384,8 @@ html.dark .shiki span {
 }
 
 .editorial-visual-flow__lead-copy::before {
-  content: "Mở bài";
-  display: inline-flex;
-  margin-bottom: 0.7rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border) 72%, white);
-  background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(244,239,230,0.92));
-  padding: 0.25rem 0.65rem;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--accent-orange) 72%, var(--text-secondary));
-  box-shadow: var(--shadow-sm);
+  content: "";
+  display: none;
 }
 
 .editorial-visual-flow__tail .assistant-response {
