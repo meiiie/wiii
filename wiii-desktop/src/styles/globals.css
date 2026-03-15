@@ -1567,13 +1567,11 @@ html.dark .shiki span {
 [data-embed-mode="widget"] .welcome-reveal-5 { display: none; }
 
 /* ===== Sprint 240: Interleaved reasoning UI ===== */
+/* Sprint V5: Claude-like thin interval — no rail dot, just label + chevron */
 .reasoning-interval {
   position: relative;
-  display: grid;
-  grid-template-columns: 1rem minmax(0, 1fr);
-  column-gap: 0.9rem;
-  margin: 0.15rem 0 0.9rem;
-  width: calc(100% - 0.1rem);
+  margin: 0.1rem 0 0.4rem;
+  padding-left: 0.5rem;
 }
 
 .reasoning-interval__rail {
@@ -1670,29 +1668,59 @@ html.dark .shiki span {
   min-width: 0;
 }
 
-/* Sprint 231: Show more / Show less toggle (Claude-like collapsible thinking) */
-.reasoning-interval__toggle {
-  display: inline-flex;
+/* Sprint V5: Claude-pattern collapsible thinking interval */
+.reasoning-interval__header-btn {
+  display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 0;
-  margin-top: 2px;
-  font-size: 0.78rem;
-  color: var(--text-tertiary);
+  gap: 6px;
+  width: 100%;
+  padding: 6px 2px;
   background: none;
   border: none;
   cursor: pointer;
-  transition: color 200ms;
+  text-align: left;
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  transition: color 150ms;
 }
-.reasoning-interval__toggle:hover {
+.reasoning-interval__header-btn:hover {
   color: var(--text-secondary);
 }
-.reasoning-interval__toggle-chevron {
+.reasoning-interval__header-btn:disabled {
+  cursor: default;
+}
+.reasoning-interval__header-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reasoning-interval__chevron {
+  flex-shrink: 0;
   transition: transform 200ms ease-out;
+  transform: rotate(-90deg);
+  opacity: 0.6;
+}
+.reasoning-interval__chevron--open {
+  transform: rotate(0deg);
+}
+.reasoning-interval__live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse-dot 1.5s infinite;
   flex-shrink: 0;
 }
-.reasoning-interval__toggle-chevron--open {
-  transform: rotate(180deg);
+.reasoning-interval__collapse {
+  display: grid;
+  transition: grid-template-rows 300ms ease-out;
+}
+.reasoning-interval__collapse-inner {
+  overflow: hidden;
+  min-width: 0;
 }
 
 .reasoning-interval__thinking {

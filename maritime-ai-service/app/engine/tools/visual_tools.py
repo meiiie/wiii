@@ -1977,20 +1977,22 @@ def _build_simulation_html(spec: dict, title: str) -> str:
     canvas_height = spec.get("height", 300)
 
     css = f"""
-canvas#sim {{ width:100%; height:{canvas_height}px; border-radius:var(--radius); background:var(--bg2); display:block; cursor:crosshair; }}
-.sim-controls {{ display:flex; flex-wrap:wrap; gap:12px; margin-top:12px; align-items:center; }}
-.sim-control {{ flex:1; min-width:150px; }}
-.sim-control label {{ font-size:11px; font-weight:600; color:var(--text2); display:block; margin-bottom:2px; }}
-.sim-control input[type=range] {{ width:100%; accent-color:var(--accent); }}
-.sim-value {{ font-size:11px; color:var(--text3); font-family:monospace; }}
-.sim-desc {{ font-size:12px; color:var(--text2); margin-top:8px; font-style:italic; }}
-.sim-btns {{ display:flex; gap:8px; margin-top:8px; }}
+canvas#sim {{ width:100%; height:{canvas_height}px; border-radius:8px; background:var(--bg3); display:block; cursor:crosshair; }}
+.sim-controls {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; align-items:center; }}
+.sim-control {{ flex:1; min-width:140px; }}
+.sim-control label {{ font-size:11px; font-weight:500; color:var(--text3); display:block; margin-bottom:2px; }}
+.sim-control input[type=range] {{ width:100%; accent-color:var(--text3); height:3px; }}
+.sim-value {{ font-size:10px; color:var(--text3); font-family:monospace; }}
+.sim-desc {{ font-size:11px; color:var(--text3); margin-top:8px; }}
+.sim-btns {{ display:flex; gap:6px; margin-top:6px; }}
 .sim-btn {{
-  padding:6px 14px; border-radius:var(--radius-sm); border:1px solid var(--border);
-  background:var(--bg2); color:var(--text); font-size:12px; cursor:pointer;
+  padding:4px 12px; border-radius:6px; border:0.5px solid var(--border);
+  background:transparent; color:var(--text2); font-size:11px; cursor:pointer;
+  transition: background 0.15s, transform 0.1s;
 }}
-.sim-btn:hover {{ background:var(--bg3); }}
-.sim-btn.active {{ background:var(--accent); color:white; border-color:var(--accent); }}
+.sim-btn:hover {{ background:var(--bg2); }}
+.sim-btn:active {{ transform:scale(0.98); }}
+.sim-btn.active {{ background:transparent; color:var(--accent); border-color:var(--accent); }}
 """
 
     # Build slider controls

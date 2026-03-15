@@ -343,16 +343,18 @@ export function ReasoningInterval({
   const durationText = interval.durationSeconds ? `${interval.durationSeconds}s` : "";
   const showExtendedMeta = thinkingLevel === "detailed";
 
-  // Sprint 231: Collapsible thinking — balanced shows compact + "Xem thêm" toggle
+  // Sprint V5: Claude-pattern collapsible — header is clickable, body toggles
   const [expanded, setExpanded] = useState(false);
-  const allItems = interval.items;
-  const compactItems = useMemo(
-    () => selectVisibleItems(allItems, "balanced", interval.isLive),
-    [allItems, interval.isLive],
-  );
   const isBalanced = thinkingLevel === "balanced";
-  const hasHiddenItems = isBalanced && allItems.length > compactItems.length;
-  const visibleItems = isBalanced && !expanded ? compactItems : selectVisibleItems(allItems, thinkingLevel, interval.isLive);
+  const allItems = interval.items;
+  const visibleItems = useMemo(
+    () => selectVisibleItems(allItems, thinkingLevel, interval.isLive),
+    [allItems, thinkingLevel, interval.isLive],
+  );
+  // In balanced mode: collapsed by default, show body on click
+  // In detailed mode: always expanded
+  // While live: always show body (streaming)
+  const showBody = thinkingLevel === "detailed" || interval.isLive || expanded;
 
   return (
     <section
@@ -360,60 +362,54 @@ export function ReasoningInterval({
       data-testid="reasoning-interval"
       data-step-id={interval.stepId || ""}
     >
-      <div className="reasoning-interval__rail" aria-hidden="true">
-        <span className="reasoning-interval__rail-dot">
-          {interval.isLive ? <Clock3 size={12} /> : <CheckCircle2 size={12} />}
-        </span>
-      </div>
-
       <div className="reasoning-interval__main">
-        <header className="reasoning-interval__meta">
-          <div className="reasoning-interval__titles">
-            {showExtendedMeta && phaseLabel && (
-              <span className="reasoning-interval__phase">{phaseLabel}</span>
-            )}
-            <span className="reasoning-interval__title">{title}</span>
-            {showExtendedMeta && <span className="reasoning-interval__state">{statusBadge}</span>}
-            {showExtendedMeta && durationText && <span className="reasoning-interval__duration">{durationText}</span>}
-          </div>
-        </header>
-
-        <div className="reasoning-interval__body">
-          {visibleItems.map((item) => {
-            if (item.kind === "thinking") {
-              const isLastThinking = interval.isLive && interval.items[interval.items.length - 1]?.id === item.id;
-              return (
-                <div key={item.id} className="reasoning-interval__segment">
-                  {renderThinkingMarkdown(item.block, isLastThinking)}
-                </div>
-              );
-            }
-            const operation = renderOperationItem(item, thinkingLevel);
-            if (!operation) return null;
-            return (
-              <div key={item.id} className="reasoning-interval__segment reasoning-interval__segment--operation">
-                {operation}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Sprint 231: Show more / Show less toggle for balanced mode */}
-        {hasHiddenItems && !interval.isLive && (
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="reasoning-interval__toggle"
-            aria-expanded={expanded}
-          >
-            <span>{expanded ? "Thu gọn" : `Xem thêm (${allItems.length - compactItems.length})`}</span>
+        {/* Claude pattern: clickable header with chevron — always collapsible */}
+        <button
+          className="reasoning-interval__header-btn"
+          onClick={() => !interval.isLive && setExpanded(!expanded)}
+          aria-expanded={showBody}
+          disabled={interval.isLive}
+        >
+          <span className="reasoning-interval__header-label">{title}</span>
+          {!interval.isLive && (
             <svg
               width="12" height="12" viewBox="0 0 20 20" fill="currentColor"
-              className={`reasoning-interval__toggle-chevron ${expanded ? "reasoning-interval__toggle-chevron--open" : ""}`}
+              className={`reasoning-interval__chevron ${showBody ? "reasoning-interval__chevron--open" : ""}`}
             >
               <path d="M14.128 7.16482C14.3126 6.95983 14.6298 6.94336 14.835 7.12771C15.0402 7.31242 15.0567 7.62952 14.8721 7.83477L10.372 12.835C10.1755 13.0551 9.82445 13.0551 9.62788 12.835L5.12778 7.83477C4.94317 7.62952 4.95963 7.31242 5.16489 7.12771C5.37015 6.94336 5.68741 6.95983 5.87193 7.16482L9.99995 11.7519L14.128 7.16482Z" />
             </svg>
-          </button>
-        )}
+          )}
+          {interval.isLive && (
+            <span className="reasoning-interval__live-dot" />
+          )}
+        </button>
+        <span className="sr-only" role="status" aria-live="polite">{title}</span>
+
+        {/* Collapsible body — grid-template-rows animation */}
+        <div
+          className="reasoning-interval__collapse"
+          style={{ gridTemplateRows: showBody ? "1fr" : "0fr" }}
+        >
+          <div className="reasoning-interval__collapse-inner">
+            {visibleItems.map((item) => {
+              if (item.kind === "thinking") {
+                const isLastThinking = interval.isLive && interval.items[interval.items.length - 1]?.id === item.id;
+                return (
+                  <div key={item.id} className="reasoning-interval__segment">
+                    {renderThinkingMarkdown(item.block, isLastThinking)}
+                  </div>
+                );
+              }
+              const operation = renderOperationItem(item, thinkingLevel);
+              if (!operation) return null;
+              return (
+                <div key={item.id} className="reasoning-interval__segment reasoning-interval__segment--operation">
+                  {operation}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </section>
   );
