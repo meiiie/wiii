@@ -1580,6 +1580,7 @@ def _wrap_html(body_css: str, body_html: str, title: str = "", subtitle: str = "
     subtitle_html = f'<div class="widget-subtitle">{_esc(subtitle)}</div>' if subtitle else ""
     return f"""<!DOCTYPE html>
 <html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
 <style>{_DESIGN_CSS}
 {body_css}</style></head>
 <body>{title_html}{subtitle_html}{body_html}</body></html>"""

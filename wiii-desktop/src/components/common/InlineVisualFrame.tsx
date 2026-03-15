@@ -475,16 +475,20 @@ export const InlineVisualFrame = memo(function InlineVisualFrame({
       data-inline-visual-frame={frameKind}
       data-inline-visual-shell={shellVariant}
     >
+      {/* eslint-disable-next-line react/iframe-missing-sandbox */}
       <iframe
         ref={iframeRef}
         src={blobUrl}
         sandbox="allow-scripts"
+        // @ts-expect-error allowtransparency is a legacy but widely supported iframe attribute
+        allowtransparency="true"
         style={{
           width: "100%",
           height: `${height}px`,
           border: "none",
           display: "block",
           background: "transparent",
+          colorScheme: "normal",
           transition: "height 220ms var(--ease-default)",
         }}
         title={title || frameLabel(frameKind)}
