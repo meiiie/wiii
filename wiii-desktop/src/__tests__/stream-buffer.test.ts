@@ -345,6 +345,7 @@ describe("StreamBuffer", () => {
       minCharsPerFrame: 100,
       maxCharsPerFrame: 100,
       minFlushInterval: 0,
+      initialHoldMs: 0,
     });
     buf.push("initial");
     tickFrame(); // Flushes "initial", callback pushes " extra"

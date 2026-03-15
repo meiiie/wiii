@@ -15,14 +15,16 @@
 export interface StreamBufferOptions {
   /** Called each rAF frame with the chars to render */
   onFlush: (chars: string) => void;
-  /** Minimum chars to emit per frame (default: 1) */
+  /** Minimum chars to emit per frame (default: 3 — prevents single-char stutter) */
   minCharsPerFrame?: number;
-  /** Maximum chars to emit per frame (default: 12) */
+  /** Maximum chars to emit per frame (default: 28 — smooth burst drain) */
   maxCharsPerFrame?: number;
-  /** Target frames to drain the current buffer (default: 8 ≈ 133ms at 60fps) */
+  /** Target frames to drain the current buffer (default: 6 ≈ 100ms at 60fps) */
   targetFrames?: number;
   /** Minimum interval between flushes in ms (default: 16 ≈ 60fps cap) */
   minFlushInterval?: number;
+  /** Initial hold delay in ms before first flush (default: 60 — accumulate tokens) */
+  initialHoldMs?: number;
 }
 
 // Markdown tokens that should not be split mid-sequence
@@ -37,13 +39,17 @@ export class StreamBuffer {
   private _maxChars: number;
   private _targetFrames: number;
   private _minFlushInterval: number;
+  private _initialHoldMs: number;
+  private _firstPushTime = 0;
+  private _hasStartedFlushing = false;
 
   constructor(opts: StreamBufferOptions) {
     this._onFlush = opts.onFlush;
-    this._minChars = opts.minCharsPerFrame ?? 1;
-    this._maxChars = opts.maxCharsPerFrame ?? 12;
-    this._targetFrames = opts.targetFrames ?? 8;
+    this._minChars = opts.minCharsPerFrame ?? 3;
+    this._maxChars = opts.maxCharsPerFrame ?? 28;
+    this._targetFrames = opts.targetFrames ?? 6;
     this._minFlushInterval = opts.minFlushInterval ?? 16;
+    this._initialHoldMs = opts.initialHoldMs ?? 60;
   }
 
   /** Number of characters waiting in the buffer */
@@ -65,6 +71,9 @@ export class StreamBuffer {
   push(chunk: string): void {
     if (!chunk) return;
     this._buffer += chunk;
+    if (!this._firstPushTime) {
+      this._firstPushTime = performance.now();
+    }
     if (!this._rafId) {
       this._startLoop();
     }
@@ -84,6 +93,8 @@ export class StreamBuffer {
   discard(): void {
     this._stopLoop();
     this._buffer = "";
+    this._firstPushTime = 0;
+    this._hasStartedFlushing = false;
   }
 
   // -- Internal -----------------------------------------------------------
@@ -100,16 +111,24 @@ export class StreamBuffer {
   }
 
   private _tick = (_timestamp?: number): void => {
-    // Respect min flush interval
     const now = performance.now();
+
+    // Sprint V5: Initial hold — accumulate tokens before first flush for smoother onset
+    if (!this._hasStartedFlushing && this._firstPushTime > 0) {
+      if (now - this._firstPushTime < this._initialHoldMs) {
+        this._rafId = requestAnimationFrame(this._tick);
+        return;
+      }
+      this._hasStartedFlushing = true;
+    }
+
+    // Respect min flush interval
     if (now - this._lastFlushTime < this._minFlushInterval) {
-      // Too soon — schedule next frame
       this._rafId = requestAnimationFrame(this._tick);
       return;
     }
 
     if (this._buffer.length === 0) {
-      // Nothing left — self-pause
       this._rafId = null;
       return;
     }
@@ -141,13 +160,25 @@ export class StreamBuffer {
       return out;
     }
 
-    // Prefer splitting at a newline if one is within ±3 chars of the cut point
-    const searchStart = Math.max(0, count - 3);
-    const searchEnd = Math.min(this._buffer.length, count + 3);
+    // Sprint V5: Prefer splitting at word boundary (space, newline, punctuation)
+    // Look for the nearest boundary within ±4 chars of cut point
+    const searchStart = Math.max(0, count - 4);
+    const searchEnd = Math.min(this._buffer.length, count + 4);
     const nearSlice = this._buffer.slice(searchStart, searchEnd);
+
+    // Newline first (highest priority boundary)
     const nlIdx = nearSlice.indexOf("\n");
     if (nlIdx !== -1) {
-      const splitAt = searchStart + nlIdx + 1; // include the newline
+      const splitAt = searchStart + nlIdx + 1;
+      const out = this._buffer.slice(0, splitAt);
+      this._buffer = this._buffer.slice(splitAt);
+      return out;
+    }
+
+    // Space boundary (word-level flushing — much smoother than mid-word)
+    const spaceIdx = nearSlice.lastIndexOf(" ");
+    if (spaceIdx !== -1 && spaceIdx > 0) {
+      const splitAt = searchStart + spaceIdx + 1;
       const out = this._buffer.slice(0, splitAt);
       this._buffer = this._buffer.slice(splitAt);
       return out;
