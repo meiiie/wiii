@@ -1,6 +1,136 @@
 # V5 Remaining Gaps — Handoff cho team tiếp theo
 **Date:** 2026-03-15
-**Status:** 4 gaps chưa đạt Claude parity
+**Status:** 8 gaps chưa đạt Claude parity (4 gần đạt + 4 chưa đạt)
+
+---
+
+---
+
+# PHẦN A: GẦN ĐẠT (cần polish)
+
+---
+
+## Gap A1: Thinking Chevron không hiện
+
+**Claude:** Mỗi thinking interval có chevron ▼ xoay -90° (collapsed) → 0° (expanded). Luôn visible.
+**Wiii:** Header button có nhưng chevron không render — CSS selector issue.
+
+### Root cause:
+`ReasoningInterval` component render chevron bên trong `<button>` nhưng CSS `.reasoning-interval__chevron` có thể bị override bởi parent styles hoặc Tailwind purge.
+
+### Cách fix:
+
+**File:** `wiii-desktop/src/components/chat/ReasoningInterval.tsx`
+
+Kiểm tra SVG chevron render condition:
+```tsx
+{!interval.isLive && (
+  <svg className="reasoning-interval__chevron ...">
+```
+Vấn đề: `!interval.isLive` — khi response xong, intervals chuyển sang complete → chevron PHẢI hiện. Nhưng có thể `interval.isLive` vẫn `true` sau streaming (race condition trong finalization).
+
+**Debug steps:**
+1. Playwright: `page.locator('.reasoning-interval__chevron').count()` → kiểm tra có 0 không
+2. Nếu 0: check `interval.isLive` state sau finalization
+3. Nếu > 0 nhưng không thấy: check CSS visibility/opacity
+
+**Files cần sửa:**
+- `wiii-desktop/src/components/chat/ReasoningInterval.tsx` — check isLive logic
+- `wiii-desktop/src/styles/globals.css` — verify chevron CSS
+
+**Effort:** 30 phút
+
+---
+
+## Gap A2: Simulation Canvas Background
+
+**Claude:** Figure canvas transparent hoặc rất nhạt, hòa vào nền article
+**Wiii:** Canvas dùng `var(--bg3)` (#f1f5f9) — tạo vùng xám visible
+
+### Cách fix:
+
+Canvas simulation CẦN background cho drawing (không thể hoàn toàn transparent — vẽ trên transparent sẽ mất).
+
+Giải pháp: Dùng `var(--bg2)` (gần nền chat hơn) hoặc match chính xác nền chat `var(--surface)`:
+
+**File:** `maritime-ai-service/app/engine/tools/visual_tools.py`
+
+```python
+# Thay:
+canvas#sim { background: var(--bg3); }
+# Bằng:
+canvas#sim { background: var(--bg2); }  # hoặc transparent với border nhẹ
+```
+
+Hoặc approach khác: canvas transparent + thin border:
+```css
+canvas#sim { background: transparent; border: 0.5px solid var(--border); }
+```
+
+**Effort:** 10 phút
+
+---
+
+## Gap A3: Multi-Figure Planner Chưa Trigger
+
+**Claude:** Explanatory query → 3-7 figures, mỗi figure 1 claim
+**Wiii:** Planner logic có trong `visual_tools.py` nhưng thực tế thường trả 1 figure
+
+### Root cause:
+Xem Gap 3 bên dưới (chi tiết). Tóm tắt: AI chọn `tool_generate_rich_visual` (legacy, trả 1 figure) thay vì `tool_generate_visual` (structured, trả 1-3 figures).
+
+**Effort:** 1-2 giờ (xem Gap 3)
+
+---
+
+## Gap A4: Custom SVG Diagrams
+
+**Claude:** Vẽ **matrix grid bằng SVG** (ô vuông hồng), **boxes + arrows** (t₁, t₂, State S), **stepper tabs**
+**Wiii:** Dùng **HTML text lists** trong comparison/process templates
+
+### Cách fix:
+
+Đây là thay đổi LỚN — cần redesign visual templates từ text lists sang SVG.
+
+**Approach 1: SVG templates trong backend**
+Thêm SVG generation vào `_build_comparison_html()`:
+```python
+def _build_comparison_svg(left_items, right_items):
+    """Generate SVG side-by-side diagram instead of HTML lists."""
+    svg = f'''<svg viewBox="0 0 800 {height}" xmlns="http://www.w3.org/2000/svg">
+      <!-- Left column -->
+      <text x="20" y="30" class="th">{left_title}</text>
+      <!-- Grid/boxes for each item -->
+      {_render_item_boxes(left_items, x=20, y=50)}
+      <!-- Right column -->
+      <text x="420" y="30" class="th">{right_title}</text>
+      {_render_item_boxes(right_items, x=420, y=50)}
+      <!-- Separator -->
+      <line x1="400" y1="0" x2="400" y2="{height}" class="arr"/>
+    </svg>'''
+    return svg
+```
+
+**Approach 2: Frontend SVG components**
+Dùng `visual-primitives.tsx` components (đã có 14 diagram primitives):
+- `DiagramNodeCard` — boxes
+- `DiagramConnectorArrow` — arrows
+- `DiagramStepBadge` — step numbers
+- `DiagramFlowBridge` — connectors
+
+Structured visual path (`tool_generate_visual`) đã dùng những components này. Khi multi-figure path hoạt động (Gap 3), SVG rendering sẽ tự động theo.
+
+**Files cần sửa:**
+- `maritime-ai-service/app/engine/tools/visual_tools.py` — SVG templates (approach 1)
+- Hoặc: fix Gap 3 trước → structured visuals tự dùng `visual-primitives.tsx` (approach 2)
+
+**Effort:** 3-5 giờ (approach 1) hoặc 0 nếu fix Gap 3 trước (approach 2)
+
+**Khuyến nghị:** Fix Gap 3 (multi-figure routing) trước → structured visual path tự dùng SVG primitives.
+
+---
+
+# PHẦN B: CHƯA ĐẠT (cần xây mới)
 
 ---
 
@@ -183,14 +313,35 @@ h1, h2, h3, h4, h5, h6 { color: var(--wiii-text); }
 
 ## Tóm tắt effort:
 
-| Gap | Effort | Priority |
-|-----|--------|----------|
-| Inline code badge | 15 phút | P2 (cosmetic) |
-| Color ramp SVG classes | 30 phút | P2 (enables better SVG figures) |
-| Multi-figure (2-3 per response) | 1-2 giờ | **P0 (biggest UX gap)** |
-| Host form element styling | 30 phút | P1 (simulation/quiz UX) |
+### Phần A — Gần đạt (polish):
 
-**Ưu tiên:** Gap 3 (multi-figure) > Gap 4 (form styling) > Gap 2 (SVG classes) > Gap 1 (code badge)
+| Gap | Vấn đề | Effort | Priority |
+|-----|--------|--------|----------|
+| A1: Thinking chevron | Không hiện sau complete | 30 phút | P1 |
+| A2: Simulation canvas bg | Quá xám, chưa hòa nền | 10 phút | P2 |
+| A3: Multi-figure trigger | Planner có nhưng AI chọn legacy tool | 1-2 giờ | **P0** |
+| A4: Custom SVG diagrams | HTML text lists thay vì SVG | 3-5 giờ (hoặc 0 nếu fix A3) | P1 |
+
+### Phần B — Chưa đạt (xây mới):
+
+| Gap | Vấn đề | Effort | Priority |
+|-----|--------|--------|----------|
+| B1: Inline code badge | `<code>` chưa styled | 15 phút | P2 |
+| B2: Color ramp SVG classes | Chưa có `.c-purple` etc. | 30 phút | P2 |
+| B3: Multi-figure routing | Force `tool_generate_visual` | 1-2 giờ | **P0** |
+| B4: Host form element styling | Bare elements chưa auto-styled | 30 phút | P1 |
+
+### Thứ tự ưu tiên:
+
+1. **A3 + B3: Multi-figure** (P0) — fix routing → structured visuals → SVG primitives tự động
+2. **A1: Thinking chevron** (P1) — debug isLive race condition
+3. **B4: Form styling** (P1) — simulation/quiz buttons/sliders
+4. **A4: SVG diagrams** (P1) — tự giải quyết khi structured path hoạt động
+5. **A2: Canvas bg** (P2) — quick CSS fix
+6. **B2: SVG color ramp** (P2) — enables better figures
+7. **B1: Code badge** (P2) — cosmetic
+
+**Tổng effort ước tính:** 6-10 giờ để đạt full Claude parity
 
 ---
 
