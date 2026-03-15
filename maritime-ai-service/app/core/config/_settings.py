@@ -489,6 +489,10 @@ class Settings(BaseSettings):
 
     # Sprint 179: Chart/Diagram Generation
     enable_chart_tools: bool = Field(default=True, description="Enable Mermaid diagram and chart generation tools")
+    enable_structured_visuals: bool = Field(
+        default=True,
+        description="Enable streaming-first structured inline visuals (VisualPayload v1 + SSE visual events)",
+    )
 
     # Sprint 179+: Visual RAG — understand charts/tables in documents
     enable_visual_rag: bool = Field(default=False, description="Enable visual context enrichment during RAG retrieval")

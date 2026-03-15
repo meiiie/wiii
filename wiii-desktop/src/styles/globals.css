@@ -2371,6 +2371,7 @@ html.dark .shiki span {
 }
 
 .editorial-visual-flow__lead .assistant-response {
+  font-family: var(--font-serif, "Newsreader", Georgia, serif);
   font-size: clamp(1.1rem, 1.25vw, 1.2rem);
   line-height: 1.9;
 }
@@ -2406,6 +2407,7 @@ html.dark .shiki span {
 }
 
 .editorial-visual-flow__tail .assistant-response {
+  font-family: var(--font-serif, "Newsreader", Georgia, serif);
   color: color-mix(in srgb, var(--text) 78%, var(--text-secondary));
 }
 
@@ -2430,6 +2432,7 @@ html.dark .shiki span {
 
 .editorial-visual-flow__body-copy {
   max-width: 66ch;
+  font-family: var(--font-serif, "Newsreader", Georgia, serif);
   color: color-mix(in srgb, var(--text) 84%, var(--text-secondary));
 }
 
