@@ -71,6 +71,10 @@ from app.engine.multi_agent.stream_utils import (
     create_browser_screenshot_event,
     create_preview_event,
     create_artifact_event,
+    create_visual_open_event,
+    create_visual_patch_event,
+    create_visual_commit_event,
+    create_visual_dispose_event,
 )
 
 logger = logging.getLogger(__name__)
@@ -193,6 +197,33 @@ async def _convert_bus_event(event: dict) -> StreamEvent:
             language=str(_af.get("language", "")),
             node=node,
             metadata=_af.get("metadata"),
+        )
+    elif etype in {"visual", "visual_open"}:
+        _visual = event.get("content", {})
+        return await create_visual_open_event(
+            payload=dict(_visual) if isinstance(_visual, dict) else {},
+            node=node,
+        )
+    elif etype == "visual_patch":
+        _visual = event.get("content", {})
+        return await create_visual_patch_event(
+            payload=dict(_visual) if isinstance(_visual, dict) else {},
+            node=node,
+        )
+    elif etype == "visual_commit":
+        _visual = event.get("content", {})
+        return await create_visual_commit_event(
+            visual_session_id=str(_visual.get("visual_session_id", "")),
+            node=node,
+            status=str(_visual.get("status") or "committed"),
+        )
+    elif etype == "visual_dispose":
+        _visual = event.get("content", {})
+        return await create_visual_dispose_event(
+            visual_session_id=str(_visual.get("visual_session_id", "")),
+            node=node,
+            reason=str(_visual.get("reason") or ""),
+            status=str(_visual.get("status") or "disposed"),
         )
     else:
         return await create_status_event(
@@ -553,11 +584,21 @@ async def process_with_multi_agent_streaming(
             **_build_turn_local_state_defaults(context),
         }
 
-        # Sprint 222: Graph-level host context injection (sync/stream parity)
-        from app.engine.multi_agent.graph import _inject_host_context
+        # Sprint 222/231: Graph-level host + visual context injection (sync/stream parity)
+        from app.engine.multi_agent.graph import (
+            _inject_host_context,
+            _inject_visual_context,
+            _inject_widget_feedback_context,
+        )
         _host_prompt = _inject_host_context(initial_state)
         if _host_prompt:
             initial_state["host_context_prompt"] = _host_prompt
+        _visual_prompt = _inject_visual_context(initial_state)
+        if _visual_prompt:
+            initial_state["visual_context_prompt"] = _visual_prompt
+        _widget_feedback_prompt = _inject_widget_feedback_context(initial_state)
+        if _widget_feedback_prompt:
+            initial_state["widget_feedback_prompt"] = _widget_feedback_prompt
 
         answer_emitted = False
         partial_answer_emitted = False

@@ -19,7 +19,7 @@ interface ToolExecutionStripProps {
 const ABSOLUTE_PATH_PATTERN = /(?:[A-Za-z]:)?(?:[\\/][^\\/\s"'`]+)+/g;
 const MARKDOWN_FENCE_PATTERN = /```[\s\S]*?```/g;
 
-function resolveIcon(name: string) {
+export function resolveToolExecutionIcon(name: string) {
   if (name.includes("browser") || name.includes("web")) return Globe2;
   if (name.includes("search")) return Search;
   if (name.includes("python") || name.includes("exec") || name.includes("code")) return TerminalSquare;
@@ -90,6 +90,10 @@ function describePythonIntent(code: string): string {
 
 function summarizeArgs(toolName: string, args?: Record<string, unknown>): string {
   if (!args) return "";
+  if (toolName === "tool_generate_visual" || toolName === "tool_generate_rich_visual") {
+    const title = typeof args.title === "string" ? sanitizeInlineText(args.title) : "";
+    return title ? `Dang phac thao minh hoa cho: ${clampNaturalText(title, 90)}` : "Dang phac thao mot minh hoa de giai thich ro hon";
+  }
   if (toolName === "tool_execute_python") {
     const code = typeof args.code === "string"
       ? args.code
@@ -155,6 +159,14 @@ function summarizeResult(
 ): { line: string; technicalDetail?: string; detailLabel?: string } {
   if (!result) return { line: "" };
 
+  if (toolName === "tool_generate_visual" || toolName === "tool_generate_rich_visual") {
+    return {
+      line: "Da chen minh hoa ngay trong cau tra loi",
+      technicalDetail: sanitizeTechnicalDetail(result) || undefined,
+      detailLabel: "Chi tiet tao minh hoa",
+    };
+  }
+
   if (toolName === "tool_execute_python") {
     const artifactNames = extractArtifactNames(result);
     const outputSummary = extractOutputSummary(result);
@@ -184,7 +196,7 @@ function normalizeForCompare(value: string): string {
 export function ToolExecutionStrip({ block }: ToolExecutionStripProps) {
   const [expanded, setExpanded] = useState(false);
   const toolName = block.tool.name;
-  const Icon = resolveIcon(toolName);
+  const Icon = resolveToolExecutionIcon(toolName);
   const label = TOOL_LABELS[toolName] || toolName.replace(/^tool_/, "").replace(/_/g, " ");
   const isPending = block.status === "pending";
   const argsLine = useMemo(
@@ -225,7 +237,7 @@ export function ToolExecutionStrip({ block }: ToolExecutionStripProps) {
             aria-expanded={expanded}
             onClick={() => setExpanded((value) => !value)}
           >
-            <span>{expanded ? "An chi tiet ky thuat" : detailLabel || "Xem chi tiet ky thuat"}</span>
+            <span>{expanded ? "An chi tiet" : detailLabel || "Xem chi tiet"}</span>
             <ChevronDown
               size={12}
               className={`tool-strip__toggle-chevron ${expanded ? "tool-strip__toggle-chevron--open" : ""}`}
@@ -243,4 +255,20 @@ export function ToolExecutionStrip({ block }: ToolExecutionStripProps) {
       </div>
     </div>
   );
+}
+
+export function summarizeToolExecutionBlock(block: ToolExecutionBlockData) {
+  const toolName = block.tool.name;
+  const label = TOOL_LABELS[toolName] || toolName.replace(/^tool_/, "").replace(/_/g, " ");
+  const argsLine = summarizeArgs(toolName, block.tool.args);
+  const summary = summarizeResult(toolName, block.tool.result, block.tool.args);
+  return {
+    label,
+    argsLine,
+    resultLine: summary.line,
+    technicalDetail: summary.technicalDetail,
+    detailLabel: summary.detailLabel,
+    isPending: block.status === "pending",
+    Icon: resolveToolExecutionIcon(toolName),
+  };
 }

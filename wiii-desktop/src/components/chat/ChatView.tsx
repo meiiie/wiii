@@ -4,7 +4,7 @@
  * Chat mode — MessageList + ChatInput at bottom (unchanged).
  * Sprint 105: Compaction warning banner when context utilization >= 75%.
  */
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { lazy, Suspense, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AlertTriangle, X } from "lucide-react";
 import { useChatStore } from "@/stores/chat-store";
@@ -14,8 +14,39 @@ import { useSSEStream } from "@/hooks/useSSEStream";
 import { slideDown } from "@/lib/animations";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
-import { WelcomeScreen } from "./WelcomeScreen";
 import type { ImageInput } from "@/api/types";
+
+const WelcomeScreen = lazy(async () => {
+  const mod = await import("./WelcomeScreen");
+  return { default: mod.WelcomeScreen };
+});
+
+function WelcomeFallback({
+  onSendMessage,
+  onCancel,
+}: {
+  onSendMessage: (message: string, images?: ImageInput[]) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex-1 flex flex-col items-center px-6 pt-[12vh] pb-8 welcome-bg">
+      <div className="w-full max-w-[720px] flex flex-col items-center gap-6">
+        <p
+          className="text-center font-normal text-text-secondary leading-[1.5]"
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: "clamp(1.875rem, 1.2rem + 2vw, 2.5rem)",
+          }}
+        >
+          Wiii dang mo khong gian chao ban.
+        </p>
+        <div className="w-full">
+          <ChatInput onSend={onSendMessage} onCancel={onCancel} centered />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function ChatView() {
   const { activeConversationId, conversations } = useChatStore();
@@ -98,7 +129,9 @@ export function ChatView() {
     // Welcome mode: WelcomeScreen owns the entire viewport including input
     return (
       <div className="flex flex-col h-full">
-        <WelcomeScreen onSendMessage={handleSend} onCancel={cancelStream} />
+        <Suspense fallback={<WelcomeFallback onSendMessage={handleSend} onCancel={cancelStream} />}>
+          <WelcomeScreen onSendMessage={handleSend} onCancel={cancelStream} />
+        </Suspense>
       </div>
     );
   }

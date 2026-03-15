@@ -437,6 +437,7 @@ class ChatOrchestrator:
             "student_state": getattr(context, "student_state", None),
             "available_actions": getattr(context, "available_actions", None),
             "host_context": getattr(context, "host_context", None),
+            "visual_context": getattr(context, "visual_context", None),
         }
 
     async def build_multi_agent_execution_input(

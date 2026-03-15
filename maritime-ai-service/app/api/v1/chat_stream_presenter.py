@@ -17,6 +17,11 @@ DISPLAY_ROLE_BY_EVENT: dict[str, str] = {
     "action_text": "action",
     "answer": "answer",
     "artifact": "artifact",
+    "visual": "artifact",
+    "visual_open": "artifact",
+    "visual_patch": "artifact",
+    "visual_commit": "artifact",
+    "visual_dispose": "artifact",
 }
 
 PRESENTATION_BY_EVENT: dict[str, str] = {
@@ -32,6 +37,11 @@ PRESENTATION_BY_EVENT: dict[str, str] = {
     "status": "compact",
     "answer": "compact",
     "artifact": "compact",
+    "visual": "compact",
+    "visual_open": "compact",
+    "visual_patch": "compact",
+    "visual_commit": "compact",
+    "visual_dispose": "compact",
     "sources": "compact",
     "metadata": "compact",
     "done": "compact",
@@ -106,9 +116,12 @@ def _step_state_for_event(event_type: str) -> str | None:
         "action_text",
         "browser_screenshot",
         "preview",
+        "visual",
+        "visual_open",
+        "visual_patch",
     }:
         return "live"
-    if event_type in {"answer", "artifact", "sources", "metadata", "done", "error"}:
+    if event_type in {"answer", "artifact", "visual", "visual_commit", "visual_dispose", "sources", "metadata", "done", "error"}:
         return "completed"
     return None
 
@@ -330,7 +343,7 @@ def serialize_stream_event(
         )
         return [format_sse(event_type, data, event_id=event_counter)], event_counter, False
 
-    if event_type == "artifact":
+    if event_type in {"artifact", "visual", "visual_open", "visual_patch", "visual_commit", "visual_dispose"}:
         data = _apply_presentation_metadata(
             payload={
                 "content": event.content,
@@ -341,7 +354,7 @@ def serialize_stream_event(
             event=event,
             presentation_state=presentation_state,
         )
-        return [format_sse("artifact", data, event_id=event_counter)], event_counter, False
+        return [format_sse(event_type, data, event_id=event_counter)], event_counter, False
 
     if event_type == "thinking_start":
         data = {

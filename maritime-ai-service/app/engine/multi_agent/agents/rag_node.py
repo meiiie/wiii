@@ -79,6 +79,9 @@ class RAGAgentNode:
         _host_ctx = state.get("host_context_prompt", "")
         if _host_ctx:
             context["host_context_prompt"] = _host_ctx
+        _widget_feedback_ctx = state.get("widget_feedback_prompt", "")
+        if _widget_feedback_ctx:
+            context["widget_feedback_prompt"] = _widget_feedback_ctx
 
         bus_id = state.get("_event_bus_id")
         event_queue = None

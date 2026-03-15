@@ -10,6 +10,12 @@
     "tauri": "tauri",
     "test": "vitest",
     "test:ui": "vitest --ui",
+    "dev:visual:test:backend": "node scripts/start-visual-backend.mjs",
+    "dev:visual:test:frontend": "node scripts/start-visual-frontend.mjs",
+    "test:web:visual": "node scripts/run-web-visual-smoke.mjs",
+    "test:web:visual:mobile": "node scripts/run-web-visual-smoke.mjs --viewport-width 390 --viewport-height 1440 --result-name web-visual-mobile-result.json --screenshot-name visual-mobile-rendered.png --user-id visual-mobile-smoke-user --display-name \"Visual Mobile Smoke\"",
+    "test:e2e:visual": "playwright test -c playwright.visual.config.ts",
+    "test:e2e:visual:headed": "playwright test -c playwright.visual.config.ts --headed",
     "dev:embed": "cross-env BUILD_TARGET=embed vite",
     "build:embed": "cross-env BUILD_TARGET=embed vite build && node -e \"require('fs').copyFileSync('dist-embed/embed.html','dist-embed/index.html')\"",
     "build:web": "cross-env BUILD_TARGET=web tsc && cross-env BUILD_TARGET=web vite build",
@@ -48,6 +54,7 @@
     "zustand": "^4.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tauri-apps/cli": "^2.0.0",
     "@testing-library/react": "^15.0.0",
     "@types/node": "^25.2.3",

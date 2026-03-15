@@ -79,6 +79,8 @@ class ChatContext:
 
     # Sprint 222: Universal Host Context
     host_context: Optional[Any] = None  # HostContext dict from user_context
+    visual_context: Optional[Any] = None  # Inline visual session context from user_context
+    widget_feedback: Optional[Any] = None  # Semantic widget/app results from user_context
 
     # Analysis Context
     conversation_analysis: Any = None  # ConversationContext
@@ -254,6 +256,8 @@ class InputProcessor:
             available_actions=user_context.available_actions if user_context else None,
             # Sprint 222: Universal Host Context
             host_context=user_context.host_context if user_context else None,
+            visual_context=user_context.visual_context if user_context else None,
+            widget_feedback=user_context.widget_feedback if user_context else None,
         )
         
         # Prioritize LMS user name

@@ -834,11 +834,15 @@ class PromptLoader:
                         sections.append(f"- {rule}")
 
         # ============================================================
-        # Sprint 227 + 228: VISUAL-FIRST RESPONSE (from YAML visual.*)
-        # Two tiers: Mermaid (static diagrams) + Widget (interactive HTML)
+        # Sprint 227 + 230: VISUAL-FIRST RESPONSE (from YAML visual.*)
+        # Three tiers: Mermaid + Charts + Structured/Fallback visuals
         # ============================================================
         visual = persona.get('visual', {})
         if visual:
+            from app.core.config import get_settings
+
+            settings = get_settings()
+            structured_visuals_enabled = bool(getattr(settings, "enable_structured_visuals", False))
             sections.append("\n--- TRỰC QUAN HÓA (Visual-First) ---")
             philosophy = visual.get('philosophy', '')
             if philosophy:
@@ -867,7 +871,10 @@ class PromptLoader:
             if rich_cfg:
                 rich_when = rich_cfg.get('when_to_use', [])
                 if rich_when:
-                    sections.append("\n🎨 RICH VISUAL GIÁO DỤC (tool_generate_rich_visual → ```widget):")
+                    if structured_visuals_enabled:
+                        sections.append("\n🎨 VISUAL RUNTIME V3 (tool_generate_visual → SSE visual; legacy fallback: tool_generate_rich_visual → ```widget):")
+                    else:
+                        sections.append("\n🎨 RICH VISUAL GIÁO DỤC (tool_generate_rich_visual → ```widget):")
                     for item in rich_when:
                         sections.append(f"- {item}")
                 rich_rules = rich_cfg.get('rules', [])
@@ -875,6 +882,10 @@ class PromptLoader:
                     sections.append("Quy tắc:")
                     for r in rich_rules:
                         sections.append(f"- {r}")
+                if structured_visuals_enabled:
+                    sections.append("- Chon renderer_kind=template cho visual giao duc chuan; inline_html cho custom editorial visual; app cho simulation/mini tool.")
+                    sections.append("- Sau khi gọi tool_generate_visual: KHÔNG copy payload JSON vào answer. Viết narrative + takeaway, frontend sẽ render visual.")
+                    sections.append("- Chỉ dùng tool_generate_rich_visual khi cần legacy ```widget compatibility.")
 
             # Legacy: widget section (backward compat with Sprint 228)
             widget_cfg = visual.get('widget', {})

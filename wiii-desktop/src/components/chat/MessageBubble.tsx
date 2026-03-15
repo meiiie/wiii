@@ -1,4 +1,4 @@
-import { useState, useCallback, memo } from "react";
+import { useState, useCallback, memo, lazy, Suspense } from "react";
 import { motion } from "motion/react";
 import { Copy, Check, RefreshCw, ThumbsUp, ThumbsDown, Pencil } from "lucide-react";
 import type { ContentBlock, Message, MoodType } from "@/api/types";
@@ -8,8 +8,6 @@ import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { InterleavedBlockSequence } from "./InterleavedBlockSequence";
 import { SourceCitation } from "./SourceCitation";
-import { SuggestedQuestions } from "./SuggestedQuestions";
-import { ReasoningTrace } from "./ReasoningTrace";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useToastStore } from "@/stores/toast-store";
@@ -17,6 +15,16 @@ import { submitFeedback } from "@/api/feedback";
 import { formatRelativeTime, formatAbsoluteTime } from "@/lib/date-utils";
 import { userMessageEntry, aiMessageEntry } from "@/lib/animations";
 import { useReducedMotion, motionSafe } from "@/hooks/useReducedMotion";
+
+const SuggestedQuestions = lazy(async () => {
+  const mod = await import("./SuggestedQuestions");
+  return { default: mod.SuggestedQuestions };
+});
+
+const ReasoningTrace = lazy(async () => {
+  const mod = await import("./ReasoningTrace");
+  return { default: mod.ReasoningTrace };
+});
 
 interface MessageBubbleProps {
   message: Message;
@@ -49,6 +57,7 @@ export const MessageBubble = memo(function MessageBubble({
     return (
       <motion.div
         className="flex justify-end group/msg"
+        data-message-role="user"
         variants={motionSafe(reduced, userMessageEntry)}
         initial={reduced ? false : "hidden"}
         animate="visible"
@@ -112,6 +121,9 @@ export const MessageBubble = memo(function MessageBubble({
   })();
 
   const hasBlocks = Boolean(message.blocks && message.blocks.length > 0);
+  const hasInlineVisualBlock = Boolean(
+    message.blocks?.some((block) => block.type === "visual"),
+  );
   const metadataAgentLabel = resolveAgentLabel(
     typeof message.metadata?.agent_type === "string" ? (message.metadata.agent_type as string) : undefined,
     hasBlocks,
@@ -120,6 +132,7 @@ export const MessageBubble = memo(function MessageBubble({
   return (
     <motion.div
       className="flex gap-2.5 group/msg"
+      data-message-role="assistant"
       variants={motionSafe(reduced, aiMessageEntry)}
       initial={reduced ? false : "hidden"}
       animate="visible"
@@ -161,11 +174,13 @@ export const MessageBubble = memo(function MessageBubble({
         )}
 
         {show_reasoning_trace && message.reasoning_trace && (
-          <ReasoningTrace trace={message.reasoning_trace} />
+          <Suspense fallback={null}>
+            <ReasoningTrace trace={message.reasoning_trace} />
+          </Suspense>
         )}
 
         <div className="mt-2 flex items-center gap-2">
-          {message.metadata && (
+          {message.metadata && !hasInlineVisualBlock && (
             <div className="flex items-center gap-3 text-[11px] text-text-tertiary">
               {metadataAgentLabel && (
                 <span className="px-1.5 py-0.5 rounded bg-[var(--surface-tertiary)]">
@@ -200,10 +215,12 @@ export const MessageBubble = memo(function MessageBubble({
         {message.suggested_questions &&
           message.suggested_questions.length > 0 &&
           onSuggestedQuestion && (
-            <SuggestedQuestions
-              questions={message.suggested_questions}
-              onSelect={onSuggestedQuestion}
-            />
+            <Suspense fallback={null}>
+              <SuggestedQuestions
+                questions={message.suggested_questions}
+                onSelect={onSuggestedQuestion}
+              />
+            </Suspense>
           )}
       </div>
     </motion.div>

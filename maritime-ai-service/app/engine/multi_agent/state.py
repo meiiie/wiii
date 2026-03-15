@@ -111,6 +111,7 @@ class AgentState(TypedDict, total=False):
     # Sprint 222: Universal Host Context Engine
     host_context: Optional[Dict[str, Any]]  # Raw HostContext from request
     host_context_prompt: Optional[str]  # Formatted prompt block (graph-level injection)
+    widget_feedback_prompt: Optional[str]  # Formatted widget/app result context
 
     # Sprint 163 Phase 4: Parallel dispatch + aggregator
     subagent_reports: Optional[List[Dict[str, Any]]]  # List[SubagentReport.model_dump()]

@@ -127,6 +127,14 @@ class UserContext(BaseModel):
     host_context: Optional[dict] = Field(
         default=None, description="Generic host context (Sprint 222 — replaces page_context)"
     )
+    visual_context: Optional[dict] = Field(
+        default=None,
+        description="Inline visual session context from chat client for follow-up visual patching",
+    )
+    widget_feedback: Optional[dict] = Field(
+        default=None,
+        description="Recent widget/app interaction results from chat client for personalized follow-up",
+    )
 
     model_config = {
         "json_schema_extra": {

@@ -41,6 +41,12 @@ from app.engine.tools.runtime_context import (
     build_tool_runtime_context,
     filter_tools_for_role,
 )
+from app.engine.multi_agent.visual_intent_resolver import (
+    filter_tools_for_visual_intent,
+    preferred_visual_tool_name,
+    required_visual_tool_names,
+    resolve_visual_intent,
+)
 # SOTA 2025: PromptLoader for YAML-driven persona (CrewAI pattern)
 from app.prompts.prompt_loader import get_prompt_loader
 
@@ -70,6 +76,15 @@ TOOL_INSTRUCTION_DEFAULT = """
 
 # Legacy alias
 TOOL_INSTRUCTION = TOOL_INSTRUCTION_DEFAULT
+
+STRUCTURED_VISUAL_TOOL_INSTRUCTION = """
+## CONG CU MINH HOA TRUC QUAN:
+- `tool_generate_visual`: Dung cho minh hoa inline trong chat.
+- Uu tien `tool_generate_visual` cho so sanh, quy trinh, kien truc, concept, infographic, chart.
+- Khi can mo phong, canvas, slider, keo tha, hoac mini app, dung `tool_generate_visual`
+  voi renderer_kind=`app` va visual_type phu hop nhu `simulation`.
+- Khong chen payload JSON vao cau tra loi. Chi viet narrative + takeaway.
+"""
 
 _MAX_PHASE_TRANSITIONS = 4
 
@@ -241,6 +256,16 @@ class TutorAgentNode:
             logger.debug("[TUTOR_AGENT] Chart tools not available: %s", e)
 
         try:
+            from app.engine.tools.visual_tools import get_visual_tools
+
+            visual_tools = get_visual_tools()
+            if visual_tools:
+                self._tools.extend(visual_tools)
+                logger.info("[TUTOR_AGENT] Visual tools enabled: %d tools", len(visual_tools))
+        except Exception as e:
+            logger.debug("[TUTOR_AGENT] Visual tools not available: %s", e)
+
+        try:
             from app.engine.tools.output_generation_tools import get_output_generation_tools
 
             output_tools = get_output_generation_tools()
@@ -332,6 +357,9 @@ class TutorAgentNode:
         _host_prompt = context.get("host_context_prompt", "")
         if _host_prompt:
             base_prompt = base_prompt + "\n\n" + _host_prompt
+        _widget_feedback_prompt = context.get("widget_feedback_prompt", "")
+        if _widget_feedback_prompt:
+            base_prompt = base_prompt + "\n\n" + _widget_feedback_prompt
 
         # Build context string for query
         # Sprint 77: Exclude history fields — they're now in LangChain messages
@@ -403,11 +431,27 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
   Dung khi can xac minh giao dien, trang thai trang web, bang bieu, hoac noi dung hien thi ma web search khong du.
 """
 
+        visual_tool_section = ""
+        if getattr(settings, "enable_structured_visuals", False):
+            visual_decision = resolve_visual_intent(query)
+            if visual_decision.force_tool and visual_decision.mode in {"template", "inline_html", "app", "mermaid"}:
+                preferred_tool_names = required_visual_tool_names(
+                    visual_decision,
+                    structured_visuals_enabled=True,
+                )
+                preferred_tool_label = preferred_tool_names[0] if preferred_tool_names else preferred_visual_tool_name(True)
+                visual_tool_section = f"""
+{STRUCTURED_VISUAL_TOOL_INSTRUCTION}
+## UU TIEN CHO YEU CAU NAY:
+- Query hien tai dang nghieng ve `{visual_decision.mode}`.
+- Uu tien goi `{preferred_tool_label}` thay vi widget/chart legacy.
+"""
+
         # Append tool instruction, skill context, core memory, and user context
         full_prompt = f"""{base_prompt}
 
 {tool_instruction}
-{character_tool_section}{browser_tool_section}{skill_section}{capability_section}{core_memory_section}
+{character_tool_section}{browser_tool_section}{visual_tool_section}{skill_section}{capability_section}{core_memory_section}
 ## Ngữ cảnh học viên:
 {context_str}
 
@@ -473,31 +517,51 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
             _host_ctx = state.get("host_context_prompt", "")
             if _host_ctx:
                 merged_context["host_context_prompt"] = _host_ctx
+            _widget_feedback_ctx = state.get("widget_feedback_prompt", "")
+            if _widget_feedback_ctx:
+                merged_context["widget_feedback_prompt"] = _widget_feedback_ctx
             # Sprint 148: Pass thinking_effort to context for prompt injection
             if thinking_effort:
                 merged_context["thinking_effort"] = thinking_effort
 
+            visual_decision = resolve_visual_intent(query)
             active_tools = filter_tools_for_role(
                 self._tools,
                 merged_context.get("user_role", "student"),
             )
+            active_tools = filter_tools_for_visual_intent(
+                active_tools,
+                visual_decision,
+                structured_visuals_enabled=getattr(settings, "enable_structured_visuals", False),
+            )
             try:
                 from app.engine.skills.skill_recommender import select_runtime_tools
 
+                must_include = [
+                    "tool_knowledge_search",
+                    "tool_think",
+                    "tool_report_progress",
+                ]
+                must_include.extend(
+                    required_visual_tool_names(
+                        visual_decision,
+                        structured_visuals_enabled=getattr(settings, "enable_structured_visuals", False),
+                    )
+                )
                 selected_tools = select_runtime_tools(
                     active_tools,
                     query=query,
                     intent=(state.get("routing_metadata") or {}).get("intent") or "learning",
                     user_role=merged_context.get("user_role", "student"),
                     max_tools=min(len(active_tools), 6),
-                    must_include=[
-                        "tool_knowledge_search",
-                        "tool_think",
-                        "tool_report_progress",
-                    ],
+                    must_include=must_include,
                 )
                 if selected_tools:
-                    active_tools = selected_tools
+                    active_tools = filter_tools_for_visual_intent(
+                        selected_tools,
+                        visual_decision,
+                        structured_visuals_enabled=getattr(settings, "enable_structured_visuals", False),
+                    )
                     logger.info(
                         "[TUTOR_AGENT] Runtime-selected tools: %s",
                         [getattr(tool, "name", getattr(tool, "__name__", "unknown")) for tool in active_tools],
@@ -743,6 +807,7 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                     await _push_thinking_deltas(f"{_beat.summary}\n\n")
                 response = None
                 chunk_count = 0
+                pre_tool_stream_text = ""
                 async for chunk in llm_with_tools.astream(messages):
                     chunk_count += 1
                     if response is None:
@@ -752,7 +817,7 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                     # Sprint 70: Extract text and sub-chunk for smooth streaming
                     text = _extract_chunk_text(chunk.content)
                     if text:
-                        await _push_thinking_deltas(text)
+                        pre_tool_stream_text += text
                 logger.debug("[TUTOR_AGENT] .astream() yielded %d chunks", chunk_count)
                 if response is None:
                     # Empty response fallback
@@ -769,16 +834,19 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                     await _push({"type": "thinking_end", "content": "", "node": "tutor_agent"})
                 # No tool calls = LLM is done, extract final response AND thinking
                 final_response, llm_thinking = self._extract_content_with_thinking(response.content)
-                # Sprint 74 fix: Content was already streamed as thinking_delta.
-                # Now push as answer_delta so it appears in the answer section too.
-                # Sprint 75: Use bulk push (no delay) since content already displayed
-                # via thinking — drops re-emission from ~7s to <0.5s.
+                # Keep public thinking compact: summary stays in the thinking lane,
+                # final prose only streams into the answer lane.
                 if event_queue is not None:
                     _answer_streamed_via_bus = True
                     if final_response:
                         await _push_answer_bulk(final_response)
                 logger.info("[TUTOR_AGENT] No more tool calls, generating final response")
                 break
+
+            if event_queue is not None and pre_tool_stream_text.strip():
+                # If the model decided to call tools, surface the pre-tool draft as
+                # a single reasoning beat instead of duplicating it into the answer.
+                await _push_thinking_deltas(pre_tool_stream_text)
 
             # ACT: Execute tool calls
             for tool_call in response.tool_calls:

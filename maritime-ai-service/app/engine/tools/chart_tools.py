@@ -177,10 +177,13 @@ def tool_generate_interactive_chart(
 ) -> str:
     """Generate an interactive Chart.js widget rendered INLINE in chat.
 
-    Use this when the user needs data visualization with hover/click interaction.
+    Use this when the user needs a standalone numeric chart with hover/click interaction.
+    This is NOT the primary tool for explanatory article-style visuals when
+    tool_generate_visual is available.
     Returns a ```widget code block that the frontend renders as an interactive chart.
 
-    PRIORITY: Use this INSTEAD of tool_generate_chart when data has specific numbers.
+    PRIORITY: Use this INSTEAD of tool_generate_chart when data has specific numbers
+    and the goal is a standalone interactive dashboard/chart.
     tool_generate_chart → static Mermaid pie only.
     tool_generate_interactive_chart → interactive Chart.js (bar, line, doughnut, radar, etc.)
 
@@ -193,7 +196,7 @@ def tool_generate_interactive_chart(
 
     Returns:
         A ```widget code block containing self-contained HTML+Chart.js.
-        Include this DIRECTLY in your response — the frontend will render it inline.
+        Only include this directly in the response for legacy/fallback widget paths.
     """
     valid_types = {"bar", "line", "pie", "doughnut", "radar", "polarArea", "horizontalBar"}
     if chart_type not in valid_types:

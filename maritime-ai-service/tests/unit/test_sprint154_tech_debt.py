@@ -216,6 +216,7 @@ class TestDirectAnalysisTools:
         with patch("app.engine.multi_agent.graph.settings") as ms:
             ms.enable_character_tools = False
             ms.enable_code_execution = True
+            ms.enable_structured_visuals = False
             ms.enable_browser_agent = False
             ms.enable_privileged_sandbox = False
             ms.sandbox_provider = "disabled"
@@ -232,6 +233,7 @@ class TestDirectAnalysisTools:
         # Python queries are now exclusively owned by code_studio_agent.
         with patch("app.engine.multi_agent.graph.settings") as ms:
             ms.enable_code_execution = True
+            ms.enable_structured_visuals = False
             ms.enable_browser_agent = False
             ms.enable_privileged_sandbox = False
             ms.sandbox_provider = "disabled"
@@ -268,6 +270,7 @@ class TestDirectAnalysisTools:
         with patch("app.engine.multi_agent.graph.settings") as ms:
             ms.enable_character_tools = False
             ms.enable_code_execution = True
+            ms.enable_structured_visuals = False
             ms.enable_browser_agent = False
             ms.enable_privileged_sandbox = False
             ms.sandbox_provider = "disabled"
@@ -285,6 +288,7 @@ class TestDirectAnalysisTools:
     def test_student_query_does_not_require_execute_python(self):
         with patch("app.engine.multi_agent.graph.settings") as ms:
             ms.enable_code_execution = True
+            ms.enable_structured_visuals = False
             ms.enable_browser_agent = False
             ms.enable_privileged_sandbox = False
             ms.sandbox_provider = "disabled"
@@ -442,6 +446,40 @@ class TestCodeStudioWave002:
 
             required = _code_studio_required_tool_names("chay Python tinh giai thua 10", user_role="admin")
             assert "tool_execute_python" in required
+
+    def test_visual_query_code_studio_requires_structured_visual_tool(self):
+        """Visual explanation requests in code studio must keep the structured visual tool available."""
+        with patch("app.engine.multi_agent.graph.settings") as ms:
+            ms.enable_code_execution = False
+            ms.enable_browser_agent = False
+            ms.enable_privileged_sandbox = False
+            ms.sandbox_provider = "disabled"
+            ms.sandbox_allow_browser_workloads = False
+            ms.enable_structured_visuals = True
+            from app.engine.multi_agent.graph import _code_studio_required_tool_names
+
+            required = _code_studio_required_tool_names(
+                "Explain Kimi linear attention in charts and compare standard attention vs linear attention",
+                user_role="admin",
+            )
+            assert "tool_generate_visual" in required
+
+    def test_mermaid_query_code_studio_requires_mermaid_tool_when_structured_enabled(self):
+        """Diagram requests in code studio should preserve the mermaid tool requirement."""
+        with patch("app.engine.multi_agent.graph.settings") as ms:
+            ms.enable_code_execution = False
+            ms.enable_browser_agent = False
+            ms.enable_privileged_sandbox = False
+            ms.sandbox_provider = "disabled"
+            ms.sandbox_allow_browser_workloads = False
+            ms.enable_structured_visuals = True
+            from app.engine.multi_agent.graph import _code_studio_required_tool_names
+
+            required = _code_studio_required_tool_names(
+                "Ve flowchart quy trinh onboarding cho team moi",
+                user_role="admin",
+            )
+            assert "tool_generate_mermaid" in required
 
     def test_delivery_contract_chart_request_includes_chart_guidance(self):
         """Chart requests should get chart-specific delivery contract line."""

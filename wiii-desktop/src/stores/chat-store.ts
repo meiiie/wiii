@@ -33,6 +33,10 @@ import type {
   ArtifactBlockData,
   ToolExecutionBlockData,
   ImageInput,
+  VisualPayload,
+  VisualBlockData,
+  VisualSessionState,
+  WidgetFeedbackItem,
 } from "@/api/types";
 
 const BASE_STORE_NAME = "conversations.json";
@@ -93,6 +97,7 @@ interface ChatState {
   // Sprint 167: Artifact state
   streamingArtifacts: ArtifactData[];
   pendingStreamMetadata: ChatResponseMetadata | null;
+  visualSessions: Record<string, VisualSessionState>;
 
   // Sprint 164: Active subagent group tracking
   _activeSubagentGroupId: string | null;
@@ -144,13 +149,29 @@ interface ChatState {
   addPreviewItem: (item: PreviewItemData, node?: string, meta?: DisplayPresentationMeta) => void;
   /** Sprint 167: Add an artifact to the streaming state */
   addArtifact: (artifact: ArtifactData, node?: string, meta?: DisplayPresentationMeta) => void;
+  /** Sprint 230: Add a structured inline visual to the streaming state */
+  addVisual: (visual: VisualPayload, node?: string, meta?: DisplayPresentationMeta) => void;
+  openVisualSession: (visual: VisualPayload, node?: string, meta?: DisplayPresentationMeta) => void;
+  patchVisualSession: (visual: VisualPayload, node?: string, meta?: DisplayPresentationMeta) => void;
+  commitVisualSession: (sessionId: string) => void;
+  disposeVisualSession: (sessionId: string, reason?: string) => void;
+  updateVisualSessionInteraction: (
+    sessionId: string,
+    patch: Partial<Pick<VisualSessionState, "focusedAnnotationId" | "focusedNodeId">> & {
+      controlValues?: Record<string, string | number | boolean>;
+      interactionDelta?: number;
+    },
+  ) => void;
+  getActiveVisualContext: () => Record<string, unknown> | undefined;
+  recordWidgetFeedback: (feedback: Omit<WidgetFeedbackItem, "timestamp"> & { timestamp?: string }) => void;
+  getActiveWidgetFeedbackContext: () => Record<string, unknown> | undefined;
   // Sprint 141: ThinkingFlow phase actions
-  addOrUpdatePhase: (label: string, node?: string) => void;
-  appendPhaseThinking: (content: string) => void;
-  appendPhaseThinkingDelta: (delta: string, node?: string) => void;
+  addOrUpdatePhase: (label: string, node?: string, stepId?: string, phase?: string, summary?: string) => void;
+  appendPhaseThinking: (content: string, node?: string, stepId?: string) => void;
+  appendPhaseThinkingDelta: (delta: string, node?: string, stepId?: string) => void;
   closeActivePhase: (durationMs?: number) => void;
-  appendPhaseStatus: (message: string, node?: string) => void;
-  appendPhaseToolCall: (tc: ToolCallInfo) => void;
+  appendPhaseStatus: (message: string, node?: string, stepId?: string) => void;
+  appendPhaseToolCall: (tc: ToolCallInfo, stepId?: string) => void;
   updatePhaseToolCallResult: (id: string, result: string) => void;
   setPendingStreamMetadata: (metadata: ChatResponseMetadata) => void;
   finalizeStream: (metadata?: ChatResponseMetadata) => void;
@@ -218,6 +239,9 @@ function buildDegradedAssistantContent(state: Pick<
   | "streamingPreviews"
 >): string {
   if (state.streamingContent.trim()) return state.streamingContent;
+  if (state.streamingBlocks.some((block) => block.type === "visual")) {
+    return "Wiii da tao xong visual inline, nhung phan text tong hop bi ngat truoc khi gui tron ven.";
+  }
   if (state.streamingArtifacts.length > 0 || state.streamingPreviews.length > 0) {
     return "Wiii đã hoàn tất phần tạo nội dung và giữ lại các tệp/kết quả cho bạn, nhưng câu trả lời cuối đã bị ngắt trước khi gửi trọn vẹn.";
   }
@@ -273,6 +297,211 @@ function findLastThinkingBlock(
   return undefined;
 }
 
+function findActiveThinkingPhaseIndex(
+  phases: ThinkingPhase[],
+  stepId?: string,
+  node?: string,
+) {
+  let fallbackIndex = -1;
+  for (let i = phases.length - 1; i >= 0; i--) {
+    const phase = phases[i];
+    if (phase.status !== "active") continue;
+    if (stepId && phase.stepId === stepId) return i;
+    if (!stepId && node && phase.node === node) return i;
+    if (fallbackIndex === -1) fallbackIndex = i;
+  }
+  return fallbackIndex;
+}
+
+function getVisualSessionId(visual: Pick<VisualPayload, "visual_session_id" | "id">): string {
+  return visual.visual_session_id || visual.id;
+}
+
+function getDefaultVisualControlValues(visual: VisualPayload): Record<string, string | number | boolean> {
+  const values: Record<string, string | number | boolean> = {};
+  for (const control of visual.controls || []) {
+    if (typeof control.value !== "undefined") {
+      values[control.id] = control.value;
+      continue;
+    }
+    if (control.type === "toggle") {
+      values[control.id] = false;
+      continue;
+    }
+    if (control.type === "range") {
+      values[control.id] = typeof control.min === "number" ? control.min : 0;
+      continue;
+    }
+    if (control.options && control.options.length > 0) {
+      values[control.id] = control.options[0].value;
+    }
+  }
+  return values;
+}
+
+function summarizeVisualSessionState(session: VisualSessionState): string {
+  const controls = Object.entries(session.controlValues || {})
+    .slice(0, 3)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(", ");
+  const focus = [session.focusedAnnotationId, session.focusedNodeId].filter(Boolean).join(" / ");
+  return [controls, focus].filter(Boolean).join(" | ");
+}
+
+function summarizeWidgetFeedback(feedback: WidgetFeedbackItem): string {
+  if (feedback.summary) return feedback.summary;
+  if (typeof feedback.score === "number" && typeof feedback.total_count === "number") {
+    return `${feedback.score}/${feedback.total_count}`;
+  }
+  if (typeof feedback.correct_count === "number" && typeof feedback.total_count === "number") {
+    return `${feedback.correct_count}/${feedback.total_count} dung`;
+  }
+  return feedback.widget_kind.replaceAll("_", " ");
+}
+
+function matchesVisualBlockSession(block: VisualBlockData, sessionId: string, visualId?: string): boolean {
+  return Boolean(
+    (block.sessionId || block.visual.visual_session_id) === sessionId
+    || block.id === sessionId
+    || (visualId && block.visual.id === visualId),
+  );
+}
+
+function upsertVisualBlockDraft(
+  state: Pick<ChatState, "streamingBlocks">,
+  visual: VisualPayload,
+  node?: string,
+  meta?: DisplayPresentationMeta,
+  status: VisualSessionState["status"] = "open",
+): void {
+  const sessionId = getVisualSessionId(visual);
+  const existingIdx = state.streamingBlocks.findIndex(
+    (block) =>
+      block.type === "visual" && (
+        (block as VisualBlockData).sessionId === sessionId
+        || (block as VisualBlockData).visual.visual_session_id === sessionId
+        || (block as VisualBlockData).id === sessionId
+        || (block as VisualBlockData).visual.id === visual.id
+      ),
+  );
+
+  if (existingIdx >= 0) {
+    const existing = state.streamingBlocks[existingIdx] as VisualBlockData;
+    existing.id = sessionId;
+    existing.sessionId = sessionId;
+    existing.visual = visual;
+    existing.node = node ?? existing.node;
+    existing.status = status;
+    applyDisplayMeta(existing, meta);
+    return;
+  }
+
+  state.streamingBlocks.push(applyDisplayMeta({
+    type: "visual",
+    id: sessionId,
+    sessionId,
+    visual,
+    node,
+    status,
+    displayRole: "artifact",
+    presentation: "compact",
+  } as VisualBlockData, meta));
+}
+
+function upsertPersistedVisualBlockDraft(
+  state: Pick<ChatState, "conversations" | "activeConversationId">,
+  visual: VisualPayload,
+  node?: string,
+  meta?: DisplayPresentationMeta,
+  status: VisualSessionState["status"] = "open",
+): boolean {
+  const conversation = state.conversations.find((item) => item.id === state.activeConversationId);
+  if (!conversation) return false;
+
+  const sessionId = getVisualSessionId(visual);
+  let updated = false;
+
+  for (const message of conversation.messages) {
+    if (!message.blocks) continue;
+    for (const block of message.blocks) {
+      if (block.type !== "visual") continue;
+      const visualBlock = block as VisualBlockData;
+      if (!matchesVisualBlockSession(visualBlock, sessionId, visual.id)) continue;
+      visualBlock.id = sessionId;
+      visualBlock.sessionId = sessionId;
+      visualBlock.visual = visual;
+      visualBlock.node = node ?? visualBlock.node;
+      visualBlock.status = status;
+      applyDisplayMeta(visualBlock, meta);
+      updated = true;
+    }
+  }
+
+  return updated;
+}
+
+function markVisualSessionStatusDraft(
+  state: Pick<ChatState, "visualSessions" | "streamingBlocks" | "conversations" | "activeConversationId">,
+  sessionId: string,
+  status: VisualSessionState["status"],
+): void {
+  const session = state.visualSessions[sessionId];
+  if (session) {
+    session.status = status;
+    session.lastUpdatedAt = Date.now();
+  }
+  for (const block of state.streamingBlocks) {
+    if (block.type === "visual" && matchesVisualBlockSession(block as VisualBlockData, sessionId)) {
+      (block as VisualBlockData).status = status;
+    }
+  }
+
+  const conversation = state.conversations.find((item) => item.id === state.activeConversationId);
+  if (!conversation) return;
+  for (const message of conversation.messages) {
+    if (!message.blocks) continue;
+    for (const block of message.blocks) {
+      if (block.type === "visual" && matchesVisualBlockSession(block as VisualBlockData, sessionId)) {
+        (block as VisualBlockData).status = status;
+      }
+    }
+  }
+}
+
+function disposeLiveVisualSessionsDraft(
+  state: Pick<ChatState, "visualSessions" | "streamingBlocks" | "conversations" | "activeConversationId">,
+): void {
+  for (const session of Object.values(state.visualSessions)) {
+    if (session.status === "open") {
+      markVisualSessionStatusDraft(state, session.sessionId, "disposed");
+    }
+  }
+}
+
+function upsertConversationWidgetFeedbackDraft(
+  state: Pick<ChatState, "conversations" | "activeConversationId">,
+  feedback: WidgetFeedbackItem,
+): void {
+  const conversation = state.conversations.find((item) => item.id === state.activeConversationId);
+  if (!conversation) return;
+
+  const items = conversation.widget_feedback || [];
+  const existingIndex = items.findIndex((item) => item.widget_id === feedback.widget_id);
+  if (existingIndex >= 0) {
+    items[existingIndex] = {
+      ...items[existingIndex],
+      ...feedback,
+    };
+  } else {
+    items.unshift(feedback);
+  }
+
+  conversation.widget_feedback = items
+    .slice()
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
+    .slice(0, 12);
+}
+
 function resetStreamingDraft(state: ChatState): void {
   state.isStreaming = false;
   state.streamingContent = "";
@@ -311,6 +540,7 @@ export const useChatStore = create<ChatState>()(
     streamingPreviews: [],
     streamingArtifacts: [],
     pendingStreamMetadata: null,
+    visualSessions: {},
     _activeSubagentGroupId: null,
     streamError: "",
     streamCompletedAt: null,
@@ -320,16 +550,8 @@ export const useChatStore = create<ChatState>()(
         // Sprint 218: Resolve current user_id for per-user storage
         // Sprint 223-fix: Also read from embed config as fallback (JWT user_id)
         try {
-          const { useAuthStore } = await import("@/stores/auth-store");
-          const authState = useAuthStore.getState();
-          if (authState.authMode === "oauth" && authState.user?.id) {
-            _currentUserId = authState.user.id;
-          } else {
-            // Legacy mode: use settings user_id
-            const { useSettingsStore } = await import("@/stores/settings-store");
-            const userId = useSettingsStore.getState().settings.user_id;
-            _currentUserId = userId || null;
-          }
+          const { resolveCurrentChatUserId } = await import("@/stores/chat-store-runtime");
+          _currentUserId = resolveCurrentChatUserId();
         } catch {
           _currentUserId = null;
         }
@@ -501,6 +723,7 @@ export const useChatStore = create<ChatState>()(
 
     startStreaming: () => {
       set((state) => {
+        disposeLiveVisualSessionsDraft(state);
         resetStreamingDraft(state);
         state.isStreaming = true;
         state.streamingStartTime = Date.now();
@@ -861,9 +1084,188 @@ export const useChatStore = create<ChatState>()(
       });
     },
 
+    addVisual: (visual, node, meta) => {
+      get().openVisualSession(visual, node, meta);
+    },
+
+    openVisualSession: (visual, node, meta) => {
+      set((state) => {
+        const sessionId = getVisualSessionId(visual);
+        const existing = state.visualSessions[sessionId];
+        state.visualSessions[sessionId] = {
+          sessionId,
+          latestVisual: visual,
+          status: "open",
+          revisionCount: (existing?.revisionCount || 0) + 1,
+          node: node ?? existing?.node,
+          controlValues: existing?.controlValues
+            ? { ...getDefaultVisualControlValues(visual), ...existing.controlValues }
+            : getDefaultVisualControlValues(visual),
+          focusedAnnotationId: existing?.focusedAnnotationId,
+          focusedNodeId: existing?.focusedNodeId,
+          interactionCount: existing?.interactionCount || 0,
+          lastUpdatedAt: Date.now(),
+        };
+        upsertVisualBlockDraft(state, visual, node, meta, "open");
+      });
+    },
+
+    patchVisualSession: (visual, node, meta) => {
+      set((state) => {
+        const sessionId = getVisualSessionId(visual);
+        const existing = state.visualSessions[sessionId];
+        state.visualSessions[sessionId] = {
+          sessionId,
+          latestVisual: visual,
+          status: "open",
+          revisionCount: (existing?.revisionCount || 0) + 1,
+          node: node ?? existing?.node,
+          controlValues: existing?.controlValues
+            ? { ...getDefaultVisualControlValues(visual), ...existing.controlValues }
+            : getDefaultVisualControlValues(visual),
+          focusedAnnotationId: existing?.focusedAnnotationId,
+          focusedNodeId: existing?.focusedNodeId,
+          interactionCount: existing?.interactionCount || 0,
+          lastUpdatedAt: Date.now(),
+        };
+        const patchedPersistedBlock = upsertPersistedVisualBlockDraft(state, visual, node, meta, "open");
+        if (!patchedPersistedBlock) {
+          upsertVisualBlockDraft(state, visual, node, meta, "open");
+        }
+      });
+    },
+
+    commitVisualSession: (sessionId) => {
+      set((state) => {
+        if (!sessionId) return;
+        markVisualSessionStatusDraft(state, sessionId, "committed");
+      });
+    },
+
+    disposeVisualSession: (sessionId, _reason) => {
+      set((state) => {
+        if (!sessionId) return;
+        markVisualSessionStatusDraft(state, sessionId, "disposed");
+      });
+    },
+
+    updateVisualSessionInteraction: (sessionId, patch) => {
+      set((state) => {
+        const session = state.visualSessions[sessionId];
+        if (!session) return;
+        if (patch.controlValues) {
+          session.controlValues = {
+            ...session.controlValues,
+            ...patch.controlValues,
+          };
+        }
+        if (typeof patch.focusedAnnotationId !== "undefined") {
+          session.focusedAnnotationId = patch.focusedAnnotationId;
+        }
+        if (typeof patch.focusedNodeId !== "undefined") {
+          session.focusedNodeId = patch.focusedNodeId;
+        }
+        session.interactionCount += patch.interactionDelta || 0;
+        session.lastUpdatedAt = Date.now();
+      });
+    },
+
+    getActiveVisualContext: () => {
+      const { activeConversationId, conversations, streamingBlocks, visualSessions } = get();
+      const conversation = conversations.find((item) => item.id === activeConversationId);
+      const persistedVisualBlocks = (conversation?.messages || [])
+        .flatMap((message) => message.blocks || [])
+        .filter((block): block is VisualBlockData => block.type === "visual");
+      const liveVisualBlocks = streamingBlocks.filter((block): block is VisualBlockData => block.type === "visual");
+      const orderedBlocks = [...persistedVisualBlocks, ...liveVisualBlocks];
+      const lastVisualBlock = orderedBlocks.length > 0 ? orderedBlocks[orderedBlocks.length - 1] : undefined;
+
+      const sessionSummaries = Object.values(visualSessions)
+        .filter((session) => session.status !== "disposed")
+        .sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt)
+        .map((session) => ({
+          visual_session_id: session.sessionId,
+          type: session.latestVisual.type,
+          title: session.latestVisual.title,
+          renderer_kind: session.latestVisual.renderer_kind,
+          shell_variant: session.latestVisual.shell_variant,
+          patch_strategy: session.latestVisual.patch_strategy,
+          state_summary: summarizeVisualSessionState(session),
+          status: session.status,
+        }));
+      if (sessionSummaries.length === 0 && lastVisualBlock?.visual) {
+        sessionSummaries.push({
+          visual_session_id: lastVisualBlock.visual.visual_session_id || lastVisualBlock.id,
+          type: lastVisualBlock.visual.type,
+          title: lastVisualBlock.visual.title,
+          renderer_kind: lastVisualBlock.visual.renderer_kind,
+          shell_variant: lastVisualBlock.visual.shell_variant,
+          patch_strategy: lastVisualBlock.visual.patch_strategy,
+          state_summary: "",
+          status: lastVisualBlock.status || "committed",
+        });
+      }
+
+      if (!lastVisualBlock && sessionSummaries.length === 0) {
+        return undefined;
+      }
+
+      return {
+        last_visual_session_id: lastVisualBlock?.visual.visual_session_id || lastVisualBlock?.sessionId,
+        last_visual_type: lastVisualBlock?.visual.type,
+        last_visual_title: lastVisualBlock?.visual.title,
+        visual_state_summary: sessionSummaries[0]?.state_summary,
+        active_inline_visuals: sessionSummaries,
+      };
+    },
+
+    recordWidgetFeedback: (feedback) => {
+      const normalizedFeedback: WidgetFeedbackItem = {
+        ...feedback,
+        timestamp: feedback.timestamp || new Date().toISOString(),
+      };
+
+      set((state) => {
+        upsertConversationWidgetFeedbackDraft(state, normalizedFeedback);
+      });
+
+      persistConversations(get().conversations);
+    },
+
+    getActiveWidgetFeedbackContext: () => {
+      const { activeConversationId, conversations } = get();
+      const conversation = conversations.find((item) => item.id === activeConversationId);
+      const feedbackItems = [...(conversation?.widget_feedback || [])]
+        .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
+        .slice(0, 5);
+
+      if (feedbackItems.length === 0) {
+        return undefined;
+      }
+
+      const latest = feedbackItems[0];
+      return {
+        last_widget_kind: latest.widget_kind,
+        last_widget_summary: summarizeWidgetFeedback(latest),
+        recent_widget_feedback: feedbackItems.map((item) => ({
+          widget_id: item.widget_id,
+          widget_kind: item.widget_kind,
+          summary: summarizeWidgetFeedback(item),
+          status: item.status,
+          title: item.title,
+          visual_session_id: item.visual_session_id,
+          score: item.score,
+          correct_count: item.correct_count,
+          total_count: item.total_count,
+          source: item.source,
+          timestamp: item.timestamp,
+        })),
+      };
+    },
+
     // ---- Sprint 141: ThinkingFlow phase actions ----
 
-    addOrUpdatePhase: (label, node) => {
+    addOrUpdatePhase: (label, node, stepId, phase, summary) => {
       set((state) => {
         for (const p of state.streamingPhases) {
           if (p.status === "active") {
@@ -875,6 +1277,9 @@ export const useChatStore = create<ChatState>()(
           id: uuidv4(),
           label,
           node,
+          stepId,
+          phase,
+          summary,
           status: "active",
           startTime: Date.now(),
           thinkingContent: "",
@@ -884,27 +1289,23 @@ export const useChatStore = create<ChatState>()(
       });
     },
 
-    appendPhaseThinking: (content) => {
+    appendPhaseThinking: (content, node, stepId) => {
       set((state) => {
-        for (let i = state.streamingPhases.length - 1; i >= 0; i--) {
-          if (state.streamingPhases[i].status === "active") {
-            const phase = state.streamingPhases[i];
-            phase.thinkingContent = phase.thinkingContent
-              ? phase.thinkingContent + "\n" + content
-              : content;
-            break;
-          }
+        const idx = findActiveThinkingPhaseIndex(state.streamingPhases, stepId, node);
+        if (idx >= 0) {
+          const phase = state.streamingPhases[idx];
+          phase.thinkingContent = phase.thinkingContent
+            ? phase.thinkingContent + "\n" + content
+            : content;
         }
       });
     },
 
-    appendPhaseThinkingDelta: (delta, _node) => {
+    appendPhaseThinkingDelta: (delta, node, stepId) => {
       set((state) => {
-        for (let i = state.streamingPhases.length - 1; i >= 0; i--) {
-          if (state.streamingPhases[i].status === "active") {
-            state.streamingPhases[i].thinkingContent += delta;
-            break;
-          }
+        const idx = findActiveThinkingPhaseIndex(state.streamingPhases, stepId, node);
+        if (idx >= 0) {
+          state.streamingPhases[idx].thinkingContent += delta;
         }
       });
     },
@@ -920,15 +1321,9 @@ export const useChatStore = create<ChatState>()(
       });
     },
 
-    appendPhaseStatus: (message, node) => {
+    appendPhaseStatus: (message, node, stepId) => {
       set((state) => {
-        let idx = -1;
-        for (let i = state.streamingPhases.length - 1; i >= 0; i--) {
-          if (state.streamingPhases[i].status === "active") {
-            if (!node || state.streamingPhases[i].node === node) { idx = i; break; }
-            if (idx === -1) idx = i;
-          }
-        }
+        const idx = findActiveThinkingPhaseIndex(state.streamingPhases, stepId, node);
         if (idx >= 0) {
           state.streamingPhases[idx].statusMessages.push(message);
         } else {
@@ -936,6 +1331,7 @@ export const useChatStore = create<ChatState>()(
             id: uuidv4(),
             label: message,
             node,
+            stepId,
             status: "active",
             startTime: Date.now(),
             thinkingContent: "",
@@ -946,13 +1342,11 @@ export const useChatStore = create<ChatState>()(
       });
     },
 
-    appendPhaseToolCall: (tc) => {
+    appendPhaseToolCall: (tc, stepId) => {
       set((state) => {
-        for (let i = state.streamingPhases.length - 1; i >= 0; i--) {
-          if (state.streamingPhases[i].status === "active") {
-            state.streamingPhases[i].toolCalls.push(tc);
-            break;
-          }
+        const idx = findActiveThinkingPhaseIndex(state.streamingPhases, stepId, tc.node);
+        if (idx >= 0) {
+          state.streamingPhases[idx].toolCalls.push(tc);
         }
       });
     },
@@ -971,12 +1365,13 @@ export const useChatStore = create<ChatState>()(
 
     closeThinkingBlock: (durationMs) => {
       set((state) => {
-        const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
-        if (lastBlock?.type === "thinking" && !lastBlock.endTime) {
-          lastBlock.endTime =
-            durationMs != null && lastBlock.startTime
-              ? lastBlock.startTime + durationMs
+        const openBlock = findLastOpenThinkingBlock(state.streamingBlocks);
+        if (openBlock) {
+          openBlock.endTime =
+            durationMs != null && openBlock.startTime
+              ? openBlock.startTime + durationMs
               : Date.now();
+          openBlock.stepState = "completed";
         }
       });
     },
@@ -1077,6 +1472,7 @@ export const useChatStore = create<ChatState>()(
         streamingPreviews,
         streamingArtifacts,
         pendingStreamMetadata,
+        visualSessions,
       } = get();
 
       // Sprint 153b: Guard against double finalization.
@@ -1086,9 +1482,20 @@ export const useChatStore = create<ChatState>()(
       const suggestedQuestions = extractSuggestedQuestions(effectiveMetadata);
 
       // Close any remaining open thinking blocks (immutable copy for message)
+      const committedVisualSessionIds = Object.values(visualSessions)
+        .filter((session) => session.status === "open")
+        .map((session) => session.sessionId);
+
       const closedBlocks: ContentBlock[] = streamingBlocks.map((block) => {
         if (block.type === "thinking" && !block.endTime) {
           return { ...block, endTime: Date.now(), stepState: "completed" as const };
+        }
+        if (block.type === "visual") {
+          const visualBlock = block as VisualBlockData;
+          const sessionId = visualBlock.sessionId || visualBlock.visual.visual_session_id;
+          if (sessionId && committedVisualSessionIds.includes(sessionId)) {
+            return { ...visualBlock, status: "committed" as const };
+          }
         }
         return block;
       });
@@ -1123,6 +1530,9 @@ export const useChatStore = create<ChatState>()(
       const backendThreadId = typeof effectiveMetadata?.thread_id === "string" ? effectiveMetadata.thread_id : undefined;
 
       set((state) => {
+        for (const sessionId of committedVisualSessionIds) {
+          markVisualSessionStatusDraft(state, sessionId, "committed");
+        }
         resetStreamingDraft(state);
         state.streamError = "";
         state.streamCompletedAt = Date.now();
@@ -1156,6 +1566,7 @@ export const useChatStore = create<ChatState>()(
       };
 
       set((state) => {
+        disposeLiveVisualSessionsDraft(state);
         resetStreamingDraft(state);
         state.streamError = error;
         state.streamCompletedAt = null;
@@ -1185,6 +1596,7 @@ export const useChatStore = create<ChatState>()(
 
     clearStreaming: () => {
       set((state) => {
+        disposeLiveVisualSessionsDraft(state);
         resetStreamingDraft(state);
         state.streamError = "";
         state.streamCompletedAt = null;
@@ -1196,9 +1608,8 @@ export const useChatStore = create<ChatState>()(
       if (_syncInProgress) return;
       _syncInProgress = true;
       try {
-        const { useAuthStore } = await import("@/stores/auth-store");
-        const authState = useAuthStore.getState();
-        if (authState.isLoaded && !authState.isAuthenticated) return;
+        const { shouldUseServerThreadApis } = await import("@/stores/chat-store-runtime");
+        if (!shouldUseServerThreadApis()) return;
 
         const { fetchThreads } = await import("@/api/threads");
         const resp = await fetchThreads(200, 0);
@@ -1264,9 +1675,8 @@ export const useChatStore = create<ChatState>()(
       if (!conv || conv.messages.length > 0 || !conv.thread_id) return;
 
       try {
-        const { useAuthStore } = await import("@/stores/auth-store");
-        const authState = useAuthStore.getState();
-        if (authState.isLoaded && !authState.isAuthenticated) return;
+        const { shouldUseServerThreadApis } = await import("@/stores/chat-store-runtime");
+        if (!shouldUseServerThreadApis()) return;
 
         const { fetchThreadMessages } = await import("@/api/threads");
         const msgs = await fetchThreadMessages(conv.thread_id, 500);
@@ -1298,6 +1708,8 @@ export const useChatStore = create<ChatState>()(
         state.conversations = [];
         state.activeConversationId = null;
         state.isLoaded = false;
+        state.visualSessions = {};
+        resetStreamingDraft(state);
       });
     },
 
@@ -1311,6 +1723,8 @@ export const useChatStore = create<ChatState>()(
           state.conversations = saved;
           state.activeConversationId = saved.length > 0 ? saved[0].id : null;
           state.isLoaded = true;
+          state.visualSessions = {};
+          resetStreamingDraft(state);
         });
       } catch (err) {
         console.warn("[chat-store] Failed to load conversations for user:", err);
@@ -1318,6 +1732,8 @@ export const useChatStore = create<ChatState>()(
           state.conversations = [];
           state.activeConversationId = null;
           state.isLoaded = true;
+          state.visualSessions = {};
+          resetStreamingDraft(state);
         });
       }
     },

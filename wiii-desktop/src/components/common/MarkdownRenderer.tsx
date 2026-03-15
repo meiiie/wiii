@@ -1,106 +1,86 @@
-import { type ReactNode, lazy, Suspense } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import rehypeRaw from "rehype-raw";
-import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import "katex/dist/katex.min.css";
-import { CodeBlock } from "./CodeBlock";
+import { lazy, Suspense } from "react";
+import { splitWidgetBlocks } from "./widget-segments";
 
-const MermaidDiagram = lazy(() => import("./MermaidDiagram"));
 const InlineHtmlWidget = lazy(() => import("./InlineHtmlWidget"));
-
-/**
- * Extended sanitize schema — allows KaTeX-generated HTML elements.
- * KaTeX produces complex HTML with MathML elements, styled spans, and aria attrs.
- * Without this, rehype-sanitize strips the rendered math output.
- */
-const mathSanitizeSchema = {
-  ...defaultSchema,
-  tagNames: [
-    ...(defaultSchema.tagNames || []),
-    // KaTeX MathML elements
-    "math", "semantics", "mrow", "mi", "mn", "mo", "mover", "munder", "munderover",
-    "msup", "msub", "msubsup", "mfrac", "msqrt", "mroot", "mtable",
-    "mtr", "mtd", "mtext", "mspace", "annotation", "mpadded", "menclose",
-    // Extra markdown
-    "mark", "del", "ins",
-  ],
-  attributes: {
-    ...defaultSchema.attributes,
-    div: [...(defaultSchema.attributes?.div || []), "className", "style"],
-    span: [...(defaultSchema.attributes?.span || []), "className", "style", "aria-hidden"],
-    math: ["xmlns", "display"],
-    annotation: ["encoding"],
-  },
-};
-
-/**
- * Extract raw text from React children tree.
- * Rehype plugins (katex, sanitize) may wrap code in React elements,
- * so `String(children)` returns "[object Object]". This recursively
- * extracts the actual text content for CodeBlock.
- */
-function extractText(node: ReactNode): string {
-  if (node == null || typeof node === "boolean") return "";
-  if (typeof node === "string") return node;
-  if (typeof node === "number") return String(node);
-  if (Array.isArray(node)) return node.map(extractText).join("");
-  if (typeof node === "object" && "props" in node) {
-    return extractText((node as { props: { children?: ReactNode } }).props.children);
-  }
-  return "";
-}
+const RichMarkdownSegment = lazy(async () => {
+  const mod = await import("./RichMarkdownSegment");
+  return { default: mod.RichMarkdownSegment };
+});
+const MarkdownLiteSegment = lazy(async () => {
+  const mod = await import("./MarkdownLiteSegment");
+  return { default: mod.MarkdownLiteSegment };
+});
+const MathMarkdownSegment = lazy(async () => {
+  const mod = await import("./MathMarkdownSegment");
+  return { default: mod.MathMarkdownSegment };
+});
 
 interface MarkdownRendererProps {
   content: string;
   className?: string;
 }
 
-/**
- * Sprint 229: Pre-extract ```widget blocks BEFORE markdown parsing.
- * rehype-raw + rehype-sanitize can mangle HTML inside code fences.
- * This splits content into [markdown, widget, markdown, widget, ...] segments.
- */
-interface ContentSegment {
-  type: "markdown" | "widget";
-  content: string;
+function PendingWidgetSegment() {
+  return (
+    <div
+      className="rounded-[24px] border border-[color-mix(in_srgb,var(--border)_78%,white)] bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(248,244,236,0.76))] px-5 py-5 text-sm text-text-secondary shadow-[var(--shadow-sm)]"
+      data-testid="pending-inline-widget"
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
+        Dang dung widget
+      </p>
+      <p className="mt-2 leading-6">
+        Wiii dang hoan thien khung tuong tac de chen vao ngay trong cau tra loi.
+      </p>
+    </div>
+  );
 }
 
-function splitWidgetBlocks(raw: string): ContentSegment[] {
-  const segments: ContentSegment[] = [];
-  // Tolerant regex: handles \n, \r\n, optional spaces after "widget", nested backticks
-  // Uses possessive-like matching: finds opening fence, then captures until closing fence
-  const widgetRe = /```widget[ \t]*[\r\n]+([\s\S]*?)[\r\n]+```(?:\s|$)/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
+function shouldUseRichMarkdown(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) return false;
 
-  while ((match = widgetRe.exec(raw)) !== null) {
-    const widgetHtml = match[1].trim();
-    // Only treat as widget if content looks like HTML (has < tag)
-    if (!widgetHtml.includes("<")) continue;
+  return (
+    /```|~~~/.test(trimmed) ||
+    /(^|\n)\s{0,3}(#{1,6}\s|[-*+]\s|>\s|\d+[.)]\s)/m.test(trimmed) ||
+    /!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)/.test(trimmed) ||
+    /(^|\n)\|.+\|/m.test(trimmed) ||
+    /\bhttps?:\/\/\S+/i.test(trimmed) ||
+    /\$\$?/.test(trimmed) ||
+    /[*_~`]/.test(trimmed) ||
+    /<\/?[A-Za-z][^>]*>/.test(trimmed)
+  );
+}
 
-    if (match.index > lastIndex) {
-      const before = raw.slice(lastIndex, match.index).trim();
-      if (before) segments.push({ type: "markdown", content: before });
-    }
-    segments.push({ type: "widget", content: widgetHtml });
-    lastIndex = match.index + match[0].length;
-  }
+function shouldUseMathMarkdown(content: string): boolean {
+  return (
+    /\$\$[\s\S]+?\$\$/.test(content)
+    || /(^|[^\\])\$[^$\n]+\$/.test(content)
+    || /\\\(|\\\[/.test(content)
+  );
+}
 
-  // Remaining text after last widget
-  if (lastIndex < raw.length) {
-    const after = raw.slice(lastIndex).trim();
-    if (after) segments.push({ type: "markdown", content: after });
-  }
+function shouldUseHtmlMarkdown(content: string): boolean {
+  return /<\/?[A-Za-z][^>]*>/.test(content);
+}
 
-  // No widget blocks found — return original content as single markdown segment
-  if (segments.length === 0) {
-    segments.push({ type: "markdown", content: raw });
-  }
+function PlainTextSegment({ content }: { content: string }) {
+  const paragraphs = content
+    .split(/\n\s*\n+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
 
-  return segments;
+  if (paragraphs.length === 0) return null;
+
+  return (
+    <div className="markdown-plain space-y-4">
+      {paragraphs.map((paragraph, index) => (
+        <p key={`${index}-${paragraph.slice(0, 24)}`} className="whitespace-pre-wrap">
+          {paragraph}
+        </p>
+      ))}
+    </div>
+  );
 }
 
 export function MarkdownRenderer({ content, className = "" }: MarkdownRendererProps) {
@@ -110,67 +90,36 @@ export function MarkdownRenderer({ content, className = "" }: MarkdownRendererPr
     <div className={`markdown-content selectable ${className}`}>
       {segments.map((seg, i) => {
         if (seg.type === "widget") {
+          if (seg.pending) {
+            return <PendingWidgetSegment key={`widget-pending-${i}`} />;
+          }
           return (
             <Suspense
               key={`widget-${i}`}
-              fallback={<div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm animate-pulse">Đang tải widget...</div>}
+              fallback={<div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm animate-pulse">Dang tai widget...</div>}
             >
-              <InlineHtmlWidget code={seg.content} />
+              <InlineHtmlWidget code={seg.content} widgetId={`legacy-widget-${i}`} />
             </Suspense>
           );
         }
+
+        if (!shouldUseRichMarkdown(seg.content)) {
+          return <PlainTextSegment key={`plain-${i}`} content={seg.content} />;
+        }
+
+        const SegmentComponent = shouldUseMathMarkdown(seg.content)
+          ? MathMarkdownSegment
+          : shouldUseHtmlMarkdown(seg.content)
+            ? RichMarkdownSegment
+            : MarkdownLiteSegment;
+
         return (
-          <ReactMarkdown
+          <Suspense
             key={`md-${i}`}
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[
-              rehypeRaw,
-              [rehypeKatex, { strict: false, throwOnError: false }],
-              [rehypeSanitize, mathSanitizeSchema],
-            ]}
-            components={{
-              code({ className: codeClassName, children, ...props }) {
-                const match = /language-(\w+)/.exec(codeClassName || "");
-                const isInline = !match;
-
-                if (isInline) {
-                  return (
-                    <code className={codeClassName} {...props}>
-                      {children}
-                    </code>
-                  );
-                }
-
-                const rawCode = extractText(children).replace(/\n$/, "");
-
-                if (match && match[1] === "mermaid") {
-                  return (
-                    <Suspense fallback={<pre className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm"><code>{rawCode}</code></pre>}>
-                      <MermaidDiagram code={rawCode} />
-                    </Suspense>
-                  );
-                }
-
-                // Fallback: widget inside markdown (shouldn't happen with pre-split, but just in case)
-                if (match && match[1] === "widget") {
-                  return (
-                    <Suspense fallback={<div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm animate-pulse">Đang tải widget...</div>}>
-                      <InlineHtmlWidget code={rawCode} />
-                    </Suspense>
-                  );
-                }
-
-                return (
-                  <CodeBlock
-                    language={match?.[1] || ""}
-                    code={rawCode}
-                  />
-                );
-              },
-            }}
+            fallback={<PlainTextSegment content={seg.content} />}
           >
-            {seg.content}
-          </ReactMarkdown>
+            <SegmentComponent content={seg.content} />
+          </Suspense>
         );
       })}
     </div>

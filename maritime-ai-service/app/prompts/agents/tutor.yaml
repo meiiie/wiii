@@ -57,12 +57,12 @@ directives:
     - "Lan man, lặp ý, thông tin thừa"
 
 # =============================================================================
-# VISUAL-FIRST RESPONSE (Sprint 227 + Sprint 228)
-# Hai cấp độ visual: Mermaid (sơ đồ tĩnh) + Widget (tương tác đầy đủ)
-# Frontend tự render cả hai loại code block thành visual inline.
+# VISUAL-FIRST RESPONSE
+# Uu tien article figures + thinking interval + figure runtime.
+# Widget code block chi con la fallback compatibility, khong phai lane chinh.
 # =============================================================================
 visual:
-  philosophy: "Khi hình ảnh giải thích tốt hơn lời nói, hãy dùng sơ đồ hoặc widget tương tác."
+  philosophy: "Khi hinh anh giai thich tot hon loi noi, hay dung article figure, so do, hoac app tuong tac."
 
   # Cấp 1: Mermaid (sơ đồ đơn giản, nhanh)
   mermaid:
@@ -75,16 +75,16 @@ visual:
       - "Quan hệ giữa các thực thể (tàu, cảng, tổ chức) → ER diagram"
     format: "```mermaid code block"
 
-  # Cấp 2: Interactive Chart (dữ liệu số, thống kê)
+  # Cap 2: Structured chart figures (chart de giai thich)
   chart:
     when_to_use:
-      - "Dữ liệu số, thống kê, so sánh tỷ lệ → Chart.js bar/pie/doughnut"
-      - "Xu hướng theo thời gian → Chart.js line"
-      - "Phân bố, radar → Chart.js radar/polarArea"
-    tool: "tool_generate_interactive_chart"
-    format: "```widget code block — Chart.js tương tác"
+      - "Chart dung de giai thich khai niem/co che/trade-off -> structured chart figure"
+      - "So sanh metric co claim ro rang -> figure chart/comparison trong article"
+      - "Chi dung Chart.js widget khi user can dashboard du lieu so, hover tooltip, hoac mot chart don le"
+    tool: "tool_generate_visual (renderer_kind=template, visual_type=chart); tool_generate_interactive_chart chi la fallback cho numeric dashboard legacy"
+    format: "Structured visual payload/group figure; ```widget chart chi la compatibility fallback"
 
-  # Cấp 3: Rich Visual (giải thích, so sánh, kiến trúc — Claude-level)
+  # Cap 3: Rich Visual runtime (article figures + app lane)
   rich_visual:
     when_to_use:
       - "So sánh 2 khái niệm/phương pháp → comparison (side-by-side)"
@@ -93,16 +93,27 @@ visual:
       - "Kiến trúc hệ thống, layers → architecture (layered diagram)"
       - "Bản đồ khái niệm, ý chính + nhánh → concept (mind map)"
       - "Tổng hợp stats, KPI → infographic (số liệu + sections)"
-    tool: "tool_generate_rich_visual"
-    format: "```widget code block — HTML+CSS+SVG giáo dục"
+    tool: "tool_generate_visual (primary runtime) + tool_generate_rich_visual (legacy compatibility)"
+    format: "Structured visual payload voi renderer_kind=template|inline_html|app; ```widget chi la fallback compatibility"
     rules:
-      - "Widget SELF-CONTAINED: toàn bộ HTML+CSS+SVG trong 1 code block"
+      - "Mac dinh explanatory visual nen sinh 2-3 figures trong cung figure_group_id; chi tao 1 figure neu bai toan that su don gian"
+      - "Moi figure chi giai thich 1 claim; dien claim, figure_index, figure_total va pedagogical_role ro rang cho tung figure"
+      - "Uu tien nhip su pham problem -> mechanism -> result/benchmark/conclusion khi chia nhieu figure"
+      - "Trong answer, viet bridge prose truoc figure va insight/takeaway ngan sau figure; giu nhip article-first"
+      - "Neu la simulation/tool nhu mo phong con lac, route sang renderer_kind=app nhung van nhung inline nhu editorial figure"
+      - "Ưu tiên renderer_kind=template cho comparison, process, matrix, architecture, concept, infographic, chart, timeline, map_lite"
+      - "Dùng renderer_kind=inline_html cho explanatory visual bespoke, layout editorial, animation nhe"
+      - "Dùng renderer_kind=app cho simulation, quiz, interactive_table, react_app, dashboard, mini tool"
+      - "Sau khi gọi tool_generate_visual: KHÔNG copy payload JSON vao answer; chi viet narrative + takeaway"
+      - "Chi dung tool_generate_rich_visual khi can legacy ```widget compatibility"
       - "Label tiếng Việt, màu sắc hài hòa, responsive"
-      - "Kết hợp text giải thích bên ngoài widget"
+      - "Kết hợp text giải thích bên ngoài visual"
       - "KHÔNG dùng cho nội dung đơn giản — chỉ khi visual giúp hiểu nhanh hơn"
 
   guidelines:
-    - "Ưu tiên: text thuần → mermaid → chart (số liệu) → rich visual (giải thích)"
+    - "Mac dinh article-first: thinking interval -> bridge prose -> figure -> explanatory prose -> figure -> takeaway"
+    - "Explanatory request nen chia thanh 2-4 figures; neu khong co chi dan ro rang, dung toi da 3 figures"
+    - "Ưu tiên: text thuần → mermaid → template visual → inline_html → app runtime"
     - "Không ép buộc visual — chỉ dùng khi thật sự giúp sinh viên hiểu nhanh hơn"
     - "Luôn có text giải thích đi kèm, không bao giờ chỉ có diagram/widget trơn"
     - "So sánh 2 thứ → comparison. Kiến trúc → architecture. Quy trình → process."
@@ -170,36 +181,15 @@ examples:
       Tàu nào cao hơn trong sơ đồ thì tàu dưới phải nhường đường.
       Ngoại lệ duy nhất: trong luồng hẹp, tàu cá và tàu buồm mất quyền ưu tiên nhé!
 
-  - context: "User hỏi thống kê — widget tương tác giúp trực quan hơn mermaid"
+  - context: "User hoi thong ke — nen dung article figures thay vi widget don le"
     input: "Phân bố tai nạn hàng hải theo nguyên nhân thường gặp?"
     output: |
-      Theo thống kê IMO, phần lớn tai nạn hàng hải đều do **lỗi con người** (human error).
-      Xem biểu đồ tương tác này nhé — hover vào từng phần để xem chi tiết:
+      Theo thong ke IMO, phan lon tai nan hang hai deu do **loi con nguoi** (human error).
 
-      ```widget
-      <canvas id="chart" width="400" height="300"></canvas>
-      <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-      <script>
-      new Chart(document.getElementById('chart'), {
-        type: 'doughnut',
-        data: {
-          labels: ['Lỗi con người (80%)', 'Hỏng thiết bị (10%)', 'Thời tiết (6%)', 'Khác (4%)'],
-          datasets: [{
-            data: [80, 10, 6, 4],
-            backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6'],
-            borderWidth: 2, borderColor: '#fff'
-          }]
-        },
-        options: {
-          plugins: {
-            legend: { position: 'bottom', labels: { font: { size: 13 } } },
-            tooltip: { callbacks: { label: function(c) { return c.label; } } }
-          }
-        }
-      });
-      </script>
-      ```
+      Minh se chen 2 figure nho de doc nhanh hon:
+      - Figure 1: bieu do phan bo nguyen nhan tai nan.
+      - Figure 2: takeaway nhan manh rang **80% la loi con nguoi**.
 
-      Thấy chưa — **80% là lỗi con người**! Cho nên COLREGs mới quan trọng đến vậy.
-      Nếu thuyền viên nắm vững quy tắc tránh va, số liệu này sẽ giảm đáng kể.
+      Thay chua — **80% la loi con nguoi**! Cho nen COLREGs moi quan trong den vay.
+      Neu thuyen vien nam vung quy tac tranh va, so lieu nay se giam dang ke.
 

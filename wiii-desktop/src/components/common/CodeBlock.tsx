@@ -1,4 +1,4 @@
-import { useState, useCallback, lazy, Suspense } from "react";
+import { useState, useCallback } from "react";
 import { Copy, Check, Play, Maximize2, Loader2 } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
 import {
@@ -7,28 +7,10 @@ import {
   getLanguageDisplayName,
 } from "@/lib/code-languages";
 import type { ArtifactData } from "@/api/types";
+import { ShikiMinimalHighlighter } from "./ShikiMinimalHighlighter";
 
 // Re-export for backward compat (tests import from here)
 export { LANGUAGE_LABELS } from "@/lib/code-languages";
-
-/* ---------------------------------------------------------------------------
- * Shiki lazy-loader
- * Only fetched when a code block first renders. On failure (offline, WASM
- * blocked) falls back to unstyled <code>.
- * --------------------------------------------------------------------------- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ShikiHighlighter = lazy(async (): Promise<{ default: React.ComponentType<any> }> => {
-  try {
-    const mod = await import("react-shiki/web");
-    return { default: mod.default };
-  } catch {
-    return {
-      default: ({ children }: { children: string }) => (
-        <code className="text-sm font-mono">{children}</code>
-      ),
-    };
-  }
-});
 
 /* ---------------------------------------------------------------------------
  * Constants
@@ -182,24 +164,16 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
 
       {/* Code content — Shiki highlighted */}
       <div className="p-4 overflow-x-auto [&_.shiki]:!bg-transparent">
-        <Suspense
-          fallback={
-            <pre>
-              <code className="text-sm font-mono leading-relaxed">{code}</code>
-            </pre>
-          }
+        <ShikiMinimalHighlighter
+          language={langLower || "text"}
+          theme={SHIKI_THEMES}
+          delay={SHIKI_DELAY}
+          showLineNumbers={showLineNumbers}
+          showLanguage={false}
+          addDefaultStyles={false}
         >
-          <ShikiHighlighter
-            language={langLower || "text"}
-            theme={SHIKI_THEMES}
-            delay={SHIKI_DELAY}
-            showLineNumbers={showLineNumbers}
-            showLanguage={false}
-            addDefaultStyles={false}
-          >
-            {code}
-          </ShikiHighlighter>
-        </Suspense>
+          {code}
+        </ShikiMinimalHighlighter>
       </div>
 
       {/* Inline output — Python run results */}

@@ -5,6 +5,69 @@ import path from "path";
 const isEmbed = process.env.BUILD_TARGET === "embed";
 const isWeb = process.env.BUILD_TARGET === "web";
 
+function manualChunks(id: string) {
+  const normalizedId = id.replace(/\\/g, "/");
+
+  if (!normalizedId.includes("/node_modules/")) {
+    return undefined;
+  }
+
+  if (normalizedId.includes("/node_modules/plotly.js") || normalizedId.includes("/node_modules/react-plotly.js/")) {
+    return "vendor-plotly";
+  }
+
+  if (normalizedId.includes("/node_modules/mermaid/") || normalizedId.includes("/node_modules/@mermaid-js/")) {
+    return "vendor-mermaid";
+  }
+
+  if (
+    normalizedId.includes("/node_modules/@codesandbox/")
+    || normalizedId.includes("/node_modules/@stitches/")
+  ) {
+    return "vendor-sandpack";
+  }
+
+  if (normalizedId.includes("/node_modules/monaco-editor/")) {
+    return "vendor-monaco";
+  }
+
+  const shikiThemeMatch = normalizedId.match(/\/node_modules\/@shikijs\/themes\/dist\/([^/]+)\.mjs$/);
+  if (shikiThemeMatch) {
+    return `vendor-syntax-theme-${shikiThemeMatch[1]}`;
+  }
+
+  const shikiLangMatch = normalizedId.match(/\/node_modules\/@shikijs\/langs\/dist\/([^/]+)\.mjs$/);
+  if (shikiLangMatch) {
+    return `vendor-syntax-lang-${shikiLangMatch[1]}`;
+  }
+
+  if (
+    normalizedId.includes("/node_modules/react-shiki/")
+    || normalizedId.includes("/node_modules/shiki/")
+    || normalizedId.includes("/node_modules/@shikijs/core/")
+    || normalizedId.includes("/node_modules/@shikijs/types/")
+    || normalizedId.includes("/node_modules/@shikijs/engine-javascript/")
+    || normalizedId.includes("/node_modules/@shikijs/vscode-textmate/")
+    || normalizedId.includes("/node_modules/refractor/")
+  ) {
+    return "vendor-syntax-core";
+  }
+
+  if (normalizedId.includes("/node_modules/cytoscape/") || normalizedId.includes("/node_modules/cose-bilkent/")) {
+    return "vendor-diagrams";
+  }
+
+  if (normalizedId.includes("/node_modules/katex/")) {
+    return "vendor-katex";
+  }
+
+  if (normalizedId.includes("/node_modules/react/") || normalizedId.includes("/node_modules/react-dom/")) {
+    return "vendor-react";
+  }
+
+  return undefined;
+}
+
 // https://tauri.app/start/frontend/vite/
 export default defineConfig({
   plugins: [react()],
@@ -43,6 +106,9 @@ export default defineConfig({
       input: isEmbed
         ? { embed: path.resolve(__dirname, "embed.html") }
         : undefined,
+      output: {
+        manualChunks,
+      },
       // Tauri-only plugins resolved at runtime (dynamic import with try/catch fallback)
       // Web + Embed: bundle everything (Tauri APIs fail gracefully via try/catch)
       external: isEmbed || isWeb ? [] : ["@fabianlars/tauri-plugin-oauth"],

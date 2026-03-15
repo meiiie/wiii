@@ -26,6 +26,9 @@ import type {
   SSEBrowserScreenshotEvent,
   SSEPreviewEvent,
   SSEArtifactEvent,
+  SSEVisualEvent,
+  SSEVisualCommitEvent,
+  SSEVisualDisposeEvent,
   SSEHostActionEvent,
 } from "./types";
 
@@ -53,6 +56,12 @@ export interface SSEEventHandler {
   onPreview?: (data: SSEPreviewEvent) => void;
   /** Sprint 167: Interactive artifact */
   onArtifact?: (data: SSEArtifactEvent) => void;
+  /** Sprint 230: Structured inline visual */
+  onVisual?: (data: SSEVisualEvent) => void;
+  onVisualOpen?: (data: SSEVisualEvent) => void;
+  onVisualPatch?: (data: SSEVisualEvent) => void;
+  onVisualCommit?: (data: SSEVisualCommitEvent) => void;
+  onVisualDispose?: (data: SSEVisualDisposeEvent) => void;
   /** Sprint 222b: Host action request from AI agent */
   onHostAction?: (data: SSEHostActionEvent) => void;
   /** Transport keepalive comment such as ": keepalive" */
@@ -271,6 +280,25 @@ function dispatchEvent(
       break;
     case "artifact":
       handlers.onArtifact?.(data as SSEArtifactEvent);
+      break;
+    case "visual":
+      if (handlers.onVisualOpen) {
+        handlers.onVisualOpen(data as SSEVisualEvent);
+      } else {
+        handlers.onVisual?.(data as SSEVisualEvent);
+      }
+      break;
+    case "visual_open":
+      handlers.onVisualOpen?.(data as SSEVisualEvent);
+      break;
+    case "visual_patch":
+      handlers.onVisualPatch?.(data as SSEVisualEvent);
+      break;
+    case "visual_commit":
+      handlers.onVisualCommit?.(data as SSEVisualCommitEvent);
+      break;
+    case "visual_dispose":
+      handlers.onVisualDispose?.(data as SSEVisualDisposeEvent);
       break;
     case "host_action":
       handlers.onHostAction?.(data as SSEHostActionEvent);

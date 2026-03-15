@@ -5,6 +5,7 @@ Tests ReAct loop, tool execution, thinking extraction, prompt building,
 fallback response, and state wiring.
 """
 
+import asyncio
 import sys
 import types
 import pytest
@@ -241,6 +242,70 @@ class TestTutorProcess:
 
         assert result["reasoning_trace"] is mock_trace
 
+    @pytest.mark.asyncio
+    async def test_process_filters_legacy_visual_tools_for_structured_visual_intent(self, base_state):
+        class _Tool:
+            def __init__(self, name: str):
+                self.name = name
+
+        mock_llm = MagicMock()
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
+
+        node = _make_tutor(llm=mock_llm, llm_with_tools=mock_llm)
+        node._llm = mock_llm
+        node._tools = [
+            _Tool("tool_knowledge_search"),
+            _Tool("tool_think"),
+            _Tool("tool_report_progress"),
+            _Tool("tool_generate_interactive_chart"),
+            _Tool("tool_generate_visual"),
+        ]
+
+        state = {
+            **base_state,
+            "query": "Explain Kimi linear attention in charts",
+            "routing_metadata": {"intent": "learning"},
+        }
+
+        with patch(
+            "app.engine.multi_agent.agents.tutor_node.settings.enable_structured_visuals",
+            True,
+        ), patch(
+            "app.engine.skills.skill_recommender.select_runtime_tools",
+            return_value=[
+                _Tool("tool_generate_interactive_chart"),
+                _Tool("tool_generate_visual"),
+                _Tool("tool_knowledge_search"),
+            ],
+        ), patch.object(
+            node,
+            "_react_loop",
+            AsyncMock(return_value=("Visual answer", [], [], None, False)),
+        ):
+            result = await node.process(state)
+
+        bound_tools = mock_llm.bind_tools.call_args[0][0]
+        bound_names = [tool.name for tool in bound_tools]
+
+        assert "tool_generate_visual" in bound_names
+        assert "tool_generate_interactive_chart" not in bound_names
+        assert result["tutor_output"] == "Visual answer"
+
+    def test_build_system_prompt_mentions_structured_visual_priority(self, mock_llm, base_state):
+        node = _make_tutor(llm=mock_llm, llm_with_tools=mock_llm)
+
+        with patch(
+            "app.engine.multi_agent.agents.tutor_node.settings.enable_structured_visuals",
+            True,
+        ):
+            prompt = node._build_system_prompt(
+                base_state["context"],
+                "Hay mo phong vat ly con lac co the keo tha",
+            )
+
+        assert "tool_generate_visual" in prompt
+        assert "widget/chart legacy" in prompt
+
 
 # ---------------------------------------------------------------------------
 # _react_loop() tests
@@ -275,6 +340,63 @@ class TestReactLoop:
 
         assert response == "Direct answer"
         assert tools_used == []
+
+    @pytest.mark.asyncio
+    async def test_no_tool_calls_stream_answer_without_repeating_it_in_thinking(self, mock_llm):
+        chunk = MagicMock()
+        chunk.tool_calls = []
+        chunk.content = "Direct answer"
+
+        async def _astream(_messages):
+            yield chunk
+
+        mock_llm.astream = _astream
+
+        node = _make_tutor(llm=mock_llm, llm_with_tools=mock_llm)
+        queue = asyncio.Queue()
+
+        with patch(
+            "app.engine.multi_agent.agents.tutor_node.extract_thinking_from_response",
+            return_value=("Direct answer", None),
+        ), patch(
+            "app.engine.multi_agent.agents.tutor_node._iteration_beat",
+            AsyncMock(return_value=types.SimpleNamespace(
+                label="Phan tich cau hoi",
+                summary="Dang tong hop huong giai thich.",
+                phase="synthesize",
+            )),
+        ), patch(
+            "app.engine.multi_agent.agents.tutor_node.clear_retrieved_sources",
+        ), patch(
+            "app.engine.multi_agent.agents.tutor_node.get_last_retrieved_sources",
+            return_value=[],
+        ), patch(
+            "app.engine.multi_agent.agents.tutor_node.get_last_native_thinking",
+            return_value=None,
+        ), patch(
+            "app.engine.multi_agent.agents.tutor_node.get_last_confidence",
+            return_value=(0.0, False),
+        ):
+            response, sources, tools_used, thinking, streamed = await node._react_loop(
+                "test",
+                {},
+                event_queue=queue,
+            )
+
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+
+        thinking_chunks = [event["content"] for event in events if event.get("type") == "thinking_delta"]
+        answer_chunks = [event["content"] for event in events if event.get("type") == "answer_delta"]
+
+        assert response == "Direct answer"
+        assert sources == []
+        assert tools_used == []
+        assert thinking is None
+        assert streamed is True
+        assert "".join(thinking_chunks) == "Dang tong hop huong giai thich.\n\n"
+        assert "".join(answer_chunks) == "Direct answer"
 
     @pytest.mark.asyncio
     async def test_tool_call_then_respond(self, mock_llm):

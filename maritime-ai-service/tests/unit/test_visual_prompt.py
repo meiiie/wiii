@@ -106,11 +106,15 @@ class TestPromptLoaderVisualRendering:
         assert "mermaid" in prompt.lower() or "MERMAID" in prompt
 
     def test_visual_section_has_widget_instruction(self):
-        """Sprint 228: Widget instructions should appear in system prompt."""
+        """Visual system prompt should mention either structured visuals or widget fallback."""
         from app.prompts.prompt_loader import PromptLoader
         loader = PromptLoader()
         prompt = loader.build_system_prompt("student")
-        assert "widget" in prompt.lower() or "WIDGET" in prompt
+        assert (
+            "widget" in prompt.lower()
+            or "tool_generate_visual" in prompt
+            or "inline visual" in prompt.lower()
+        )
 
     def test_visual_section_has_flowchart(self):
         from app.prompts.prompt_loader import PromptLoader
@@ -118,12 +122,13 @@ class TestPromptLoaderVisualRendering:
         prompt = loader.build_system_prompt("student")
         assert "flowchart" in prompt
 
-    def test_visual_section_has_chart_js_reference(self):
-        """Sprint 228: Widget instructions should reference Chart.js CDN."""
+    def test_visual_section_prefers_structured_chart_guidance(self):
+        """Prompt should prefer structured chart figures over raw Chart.js widgets."""
         from app.prompts.prompt_loader import PromptLoader
         loader = PromptLoader()
         prompt = loader.build_system_prompt("student")
-        assert "chart.js" in prompt.lower() or "Chart.js" in prompt
+        assert "tool_generate_visual" in prompt
+        assert "structured visual payload" in prompt.lower() or "structured chart" in prompt.lower()
 
     def test_no_visual_section_when_not_in_yaml(self):
         """If persona has no visual section, prompt should not have it."""
@@ -176,12 +181,12 @@ class TestChartToolsDefault:
 
 
 # ============================================================================
-# Tutor Visual Examples (Mermaid + Widget)
+# Tutor Visual Examples (Mermaid + Structured Figure)
 # ============================================================================
 
 
 class TestTutorVisualExample:
-    """Verify tutor.yaml has visual-first examples with Mermaid and Widget."""
+    """Verify tutor.yaml has visual-first examples with Mermaid and structured figures."""
 
     def test_tutor_has_mermaid_example(self):
         import yaml
@@ -209,33 +214,34 @@ class TestTutorVisualExample:
         ]
         assert len(mermaid_examples) >= 1
 
-    def test_tutor_has_widget_example(self):
-        """Sprint 228: tutor.yaml should have at least 1 interactive widget example."""
+    def test_tutor_has_structured_chart_example(self):
+        """Tutor examples should demonstrate article-first chart figures, not raw widgets."""
         import yaml
         from pathlib import Path
         path = Path(__file__).parent.parent.parent / "app" / "prompts" / "agents" / "tutor.yaml"
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         examples = data.get("examples", [])
-        widget_examples = [
+        figure_examples = [
             ex for ex in examples
-            if "widget" in ex.get("output", "")
+            if "figure" in ex.get("output", "").lower()
         ]
-        assert len(widget_examples) >= 1, "tutor.yaml should have at least 1 widget example"
+        assert len(figure_examples) >= 1, "tutor.yaml should have at least 1 structured figure example"
 
-    def test_tutor_widget_example_has_chart_js(self):
-        """Sprint 228: Widget example should use Chart.js."""
+    def test_tutor_chart_example_avoids_raw_widget_code(self):
+        """Tutor chart example should not teach the model to emit raw widget code."""
         import yaml
         from pathlib import Path
         path = Path(__file__).parent.parent.parent / "app" / "prompts" / "agents" / "tutor.yaml"
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         examples = data.get("examples", [])
-        chartjs_examples = [
+        chart_examples = [
             ex for ex in examples
-            if "chart.js" in ex.get("output", "").lower() or "Chart(" in ex.get("output", "")
+            if "tai nạn hàng hải" in ex.get("input", "").lower()
         ]
-        assert len(chartjs_examples) >= 1, "tutor.yaml should have widget example with Chart.js"
+        assert len(chart_examples) == 1
+        assert "```widget" not in chart_examples[0].get("output", "")
 
 
 # ============================================================================

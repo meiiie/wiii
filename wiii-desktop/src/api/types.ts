@@ -14,6 +14,69 @@ export interface ImageInput {
   detail?: "auto" | "low" | "high";
 }
 
+export interface ChatVisualContext {
+  last_visual_session_id?: string;
+  last_visual_type?: string;
+  last_visual_title?: string;
+  visual_state_summary?: string;
+  active_inline_visuals?: Array<{
+    visual_session_id: string;
+    type: string;
+    title: string;
+    renderer_kind?: string;
+    shell_variant?: string;
+    patch_strategy?: string;
+    state_summary?: string;
+    summary?: string;
+    status?: string;
+  }>;
+}
+
+export interface WidgetFeedbackItem {
+  widget_id: string;
+  widget_kind: string;
+  summary?: string;
+  status?: string;
+  title?: string;
+  visual_session_id?: string;
+  score?: number;
+  correct_count?: number;
+  total_count?: number;
+  source?: string;
+  data?: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface ChatWidgetFeedbackContext {
+  last_widget_kind?: string;
+  last_widget_summary?: string;
+  recent_widget_feedback?: Array<{
+    widget_id: string;
+    widget_kind: string;
+    summary?: string;
+    status?: string;
+    title?: string;
+    visual_session_id?: string;
+    score?: number;
+    correct_count?: number;
+    total_count?: number;
+    source?: string;
+    timestamp: string;
+  }>;
+}
+
+export interface ChatUserContext {
+  display_name?: string;
+  role?: UserRole;
+  page_context?: unknown | null;
+  student_state?: unknown | null;
+  available_actions?: unknown[] | null;
+  host_context?: unknown | null;
+  visual_context?: ChatVisualContext | null;
+  widget_feedback?: ChatWidgetFeedbackContext | null;
+  [key: string]: unknown;
+}
+
 // ===== Chat Request =====
 export interface ChatRequest {
   user_id: string;
@@ -24,6 +87,7 @@ export interface ChatRequest {
   domain_id?: string;
   organization_id?: string;
   images?: ImageInput[];
+  user_context?: ChatUserContext;
 }
 
 // ===== Chat Response =====
@@ -304,7 +368,12 @@ export type SSEEventType =
   | "action_text"
   | "browser_screenshot"
   | "preview"
-  | "artifact";
+  | "artifact"
+  | "visual"
+  | "visual_open"
+  | "visual_patch"
+  | "visual_commit"
+  | "visual_dispose";
 
 export interface ToolCallInfo {
   id: string;
@@ -472,6 +541,188 @@ export interface SSEArtifactEvent {
   presentation?: PresentationMode;
 }
 
+// ===== Structured Visual System (Sprint 230) =====
+export type VisualType =
+  | "comparison"
+  | "process"
+  | "matrix"
+  | "architecture"
+  | "concept"
+  | "infographic"
+  | "chart"
+  | "timeline"
+  | "map_lite"
+  | "simulation"
+  | "quiz"
+  | "interactive_table"
+  | "react_app";
+
+export type VisualRuntime = "svg" | "sandbox_html" | "sandbox_react";
+export type VisualRendererKind = "template" | "inline_html" | "app";
+export type VisualShellVariant = "editorial" | "compact" | "immersive";
+export type VisualPatchStrategy = "spec_merge" | "replace_html" | "app_state";
+export type VisualInteractionMode = "static" | "guided" | "explorable" | "scrubbable" | "filterable";
+export type VisualLifecycleEventType = "visual_open" | "visual_patch";
+export type VisualSessionStatus = "open" | "committed" | "disposed";
+export type VisualPedagogicalRole =
+  | "problem"
+  | "mechanism"
+  | "comparison"
+  | "architecture"
+  | "result"
+  | "benchmark"
+  | "conclusion";
+export type VisualChromeMode = "editorial" | "app" | "immersive";
+
+export interface VisualRuntimeManifest {
+  ui_runtime: string;
+  storage?: boolean;
+  mcp_access?: boolean;
+  file_export?: boolean;
+  shareability?: string;
+}
+
+export interface VisualControlOption {
+  value: string;
+  label: string;
+}
+
+export interface VisualControl {
+  id: string;
+  type: "select" | "range" | "chips" | "toggle";
+  label: string;
+  value?: string | number | boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+  options?: VisualControlOption[];
+}
+
+export interface VisualAnnotation {
+  id: string;
+  title: string;
+  body: string;
+  target_id?: string;
+  tone?: "neutral" | "accent" | "warning" | "success";
+}
+
+export interface VisualSceneNode {
+  id: string;
+  label: string;
+  kind?: string;
+  parent_id?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface VisualScenePanel {
+  id: string;
+  title: string;
+  body?: string;
+  node_ids?: string[];
+}
+
+export interface VisualScene {
+  kind: string;
+  nodes?: VisualSceneNode[];
+  links?: Array<{
+    source: string;
+    target: string;
+    label?: string;
+  }>;
+  panels?: VisualScenePanel[];
+  scales?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface VisualPayload {
+  id: string;
+  visual_session_id: string;
+  type: VisualType;
+  renderer_kind: VisualRendererKind;
+  shell_variant: VisualShellVariant;
+  patch_strategy: VisualPatchStrategy;
+  figure_group_id: string;
+  figure_index: number;
+  figure_total: number;
+  pedagogical_role: VisualPedagogicalRole;
+  chrome_mode: VisualChromeMode;
+  claim: string;
+  narrative_anchor: string;
+  runtime: VisualRuntime;
+  title: string;
+  summary: string;
+  spec: Record<string, unknown>;
+  scene: VisualScene;
+  controls: VisualControl[];
+  annotations: VisualAnnotation[];
+  interaction_mode: VisualInteractionMode;
+  ephemeral: boolean;
+  lifecycle_event: VisualLifecycleEventType;
+  subtitle?: string;
+  fallback_html?: string;
+  runtime_manifest?: VisualRuntimeManifest | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface VisualBlockData extends DisplayPresentationMeta {
+  type: "visual";
+  id: string;
+  sessionId?: string;
+  visual: VisualPayload;
+  node?: string;
+  status?: VisualSessionStatus;
+}
+
+export interface SSEVisualEvent {
+  content: VisualPayload;
+  node?: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
+}
+
+export interface SSEVisualCommitEvent {
+  content: {
+    visual_session_id: string;
+    status?: VisualSessionStatus;
+  };
+  node?: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
+}
+
+export interface SSEVisualDisposeEvent {
+  content: {
+    visual_session_id: string;
+    reason?: string;
+    status?: VisualSessionStatus;
+  };
+  node?: string;
+  display_role?: DisplayRole;
+  sequence_id?: number;
+  step_id?: string;
+  step_state?: StepState;
+  presentation?: PresentationMode;
+}
+
+export interface VisualSessionState {
+  sessionId: string;
+  latestVisual: VisualPayload;
+  status: VisualSessionStatus;
+  revisionCount: number;
+  node?: string;
+  controlValues: Record<string, string | number | boolean>;
+  focusedAnnotationId?: string;
+  focusedNodeId?: string;
+  interactionCount: number;
+  lastUpdatedAt: number;
+}
+
 // ===== Preview System (Sprint 166) =====
 export type PreviewType = "document" | "product" | "web" | "link" | "code";
 
@@ -527,6 +778,7 @@ export type ContentBlock =
   | ActionTextBlockData
   | ScreenshotBlockData
   | SubagentGroupBlockData
+  | VisualBlockData
   | PreviewBlockData
   | ArtifactBlockData;
 
@@ -535,6 +787,9 @@ export interface ThinkingPhase {
   id: string;
   label: string;              // Vietnamese label from thinking_start
   node?: string;              // Backend node name
+  stepId?: string;            // Stable SSE step_id / block_id for interval grouping
+  phase?: string;             // Backend reasoning phase label
+  summary?: string;           // One-line summary from thinking_start
   status: "active" | "completed";
   startTime: number;
   endTime?: number;
@@ -770,6 +1025,7 @@ export interface Conversation {
   message_count?: number;
   summary?: string;
   user_renamed?: boolean;  // Sprint 225: tracks if user explicitly renamed (prevents server title overwrite)
+  widget_feedback?: WidgetFeedbackItem[];
 }
 
 export interface Message {

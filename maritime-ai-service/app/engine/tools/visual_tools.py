@@ -2032,6 +2032,17 @@ function resizeCanvas() {{
   ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
 }}
 resizeCanvas();
+function emitSimulationFeedback(eventName) {{
+  if (!window.WiiiVisualBridge || typeof window.WiiiVisualBridge.reportResult !== 'function') return;
+  const payload = {{
+    event: eventName,
+    running: running,
+    time: Number(t.toFixed(2)),
+    variables: Object.assign({{}}, vars),
+  }};
+  const summary = 'Mo phong dang ' + (running ? 'chay' : 'tam dung') + ' | t=' + payload.time;
+  window.WiiiVisualBridge.reportResult('simulation_state', payload, summary, running ? 'active' : 'paused');
+}}
 /* USER SETUP */
 {setup_code}
 /* ANIMATION LOOP */
@@ -2049,14 +2060,22 @@ function togglePlay() {{
   running = !running;
   document.getElementById('btnPlay').textContent = running ? '⏸ Pause' : '▶ Play';
   document.getElementById('btnPlay').classList.toggle('active', running);
+  emitSimulationFeedback(running ? 'resume' : 'pause');
   if (running) frame();
 }}
 function resetSim() {{
   t = 0;
   {setup_code}
   if (!running) {{ running = true; document.getElementById('btnPlay').textContent = '⏸ Pause'; document.getElementById('btnPlay').classList.add('active'); }}
+  emitSimulationFeedback('reset');
   frame();
 }}
+document.querySelectorAll('.sim-control input[type=range]').forEach((input) => {{
+  input.addEventListener('change', function () {{
+    emitSimulationFeedback('control_change');
+  }});
+}});
+emitSimulationFeedback('init');
 frame();
 </script>"""
 
@@ -2119,6 +2138,21 @@ def _build_quiz_html(spec: dict, title: str) -> str:
 </div>
 <script>
 let score = 0, answered = 0, total = {total};
+function reportQuizResult(status, detail) {{
+  if (!window.WiiiVisualBridge || typeof window.WiiiVisualBridge.reportResult !== 'function') return;
+  const percentage = total > 0 ? Math.round(score / total * 100) : 0;
+  const payload = Object.assign({{
+    score: score,
+    correct_count: score,
+    total_count: total,
+    answered_count: answered,
+    percentage: percentage
+  }}, detail || {{}});
+  const summary = answered === total
+    ? 'Ban dung ' + score + '/' + total + ' cau (' + percentage + '%)'
+    : 'Da tra loi ' + answered + '/' + total + ' cau';
+  window.WiiiVisualBridge.reportResult('quiz_result', payload, summary, status);
+}}
 function checkAnswer(qi, oi, correct) {{
   const opts = document.querySelectorAll('[id^="q'+qi+'o"]');
   if (opts[0] && opts[0].classList.contains('disabled')) return;
@@ -2137,12 +2171,18 @@ function checkAnswer(qi, oi, correct) {{
   if (exp) exp.classList.add('show');
   if (correct) score++;
   answered++;
+  reportQuizResult(answered === total ? 'completed' : 'in_progress', {{
+    question_index: qi,
+    selected_index: oi,
+    is_correct: !!correct
+  }});
   if (answered === total) {{
     const board = document.getElementById('scoreBoard');
     board.style.display = 'block';
     board.textContent = 'Kết quả: ' + score + '/' + total + ' (' + Math.round(score/total*100) + '%)';
   }}
 }}
+reportQuizResult('ready', {{}});
 </script>"""
 
     return _wrap_html(css, body, title)

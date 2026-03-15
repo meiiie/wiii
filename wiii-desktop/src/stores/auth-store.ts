@@ -155,18 +155,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     const { tokens, authMode } = get();
+    let maintenance:
+      | typeof import("@/stores/auth-store-maintenance")
+      | null = null;
+
+    try {
+      maintenance = await import("@/stores/auth-store-maintenance");
+    } catch {
+      maintenance = null;
+    }
 
     // Try to revoke on server (OAuth mode only — legacy has no Bearer token)
     if (tokens?.access_token) {
       try {
-        const { useSettingsStore } = await import("@/stores/settings-store");
-        const serverUrl = useSettingsStore.getState().settings.server_url;
-        await fetch(`${serverUrl}/api/v1/auth/logout`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${tokens.access_token}`,
-          },
-        });
+        await maintenance?.revokeServerSession(tokens.access_token);
       } catch {
         // Best effort — ignore server errors
       }
@@ -175,8 +177,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Sprint 193: For legacy mode, clear API key from settings
     if (authMode === "legacy") {
       try {
-        const { useSettingsStore } = await import("@/stores/settings-store");
-        await useSettingsStore.getState().updateSettings({ api_key: "" });
+        await maintenance?.clearLegacyApiKey();
       } catch {
         // ignore
       }
@@ -185,33 +186,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Sprint 218: Clear ALL user-specific stores to prevent cross-user data leakage
     // Each store may contain PII (memories, conversations, emotions, journal, etc.)
     try {
-      const { useChatStore } = await import("@/stores/chat-store");
-      useChatStore.getState().clearForLogout();
-    } catch { /* ignore */ }
-    try {
-      const { useMemoryStore } = await import("@/stores/memory-store");
-      useMemoryStore.getState().reset();
-    } catch { /* ignore */ }
-    try {
-      const { useLivingAgentStore } = await import("@/stores/living-agent-store");
-      useLivingAgentStore.getState().reset();
-    } catch { /* ignore */ }
-    try {
-      const { useContextStore } = await import("@/stores/context-store");
-      useContextStore.getState().stopPolling();
-      useContextStore.setState({ info: null, status: "unknown", error: null });
-    } catch { /* ignore */ }
-    try {
-      const { useCharacterStore } = await import("@/stores/character-store");
-      useCharacterStore.getState().reset();
-    } catch { /* ignore */ }
-    try {
-      const { useAdminStore } = await import("@/stores/admin-store");
-      useAdminStore.getState().reset();
-    } catch { /* ignore */ }
-    try {
-      const { useDomainStore } = await import("@/stores/domain-store");
-      useDomainStore.setState({ domains: [], activeDomainId: "maritime", orgAllowedDomains: [], isLoading: false });
+      maintenance?.resetUserScopedStores();
     } catch { /* ignore */ }
 
     set({

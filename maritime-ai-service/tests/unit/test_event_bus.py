@@ -131,6 +131,56 @@ class TestConvertBusEvent:
         assert event.content["result"] == "found docs"
 
     @pytest.mark.asyncio
+    async def test_visual(self):
+        event = await _convert_bus_event({
+            "type": "visual",
+            "content": {
+                "id": "visual-1",
+                "visual_session_id": "vs-1",
+                "type": "comparison",
+                "runtime": "svg",
+                "title": "A vs B",
+                "summary": "Quick compare",
+                "spec": {"left": {"title": "A"}, "right": {"title": "B"}},
+            },
+            "node": "direct",
+        })
+        assert event.type == StreamEventType.VISUAL_OPEN
+        assert event.content["id"] == "visual-1"
+        assert event.node == "direct"
+
+    @pytest.mark.asyncio
+    async def test_visual_lifecycle_events(self):
+        patch_event = await _convert_bus_event({
+            "type": "visual_patch",
+            "content": {
+                "id": "visual-2",
+                "visual_session_id": "vs-2",
+                "type": "process",
+                "runtime": "svg",
+                "title": "Pipeline",
+                "summary": "Process summary",
+                "spec": {"steps": [{"title": "Start"}, {"title": "End"}]},
+            },
+            "node": "direct",
+        })
+        commit_event = await _convert_bus_event({
+            "type": "visual_commit",
+            "content": {"visual_session_id": "vs-2", "status": "committed"},
+            "node": "direct",
+        })
+        dispose_event = await _convert_bus_event({
+            "type": "visual_dispose",
+            "content": {"visual_session_id": "vs-2", "status": "disposed", "reason": "reset"},
+            "node": "direct",
+        })
+
+        assert patch_event.type == StreamEventType.VISUAL_PATCH
+        assert commit_event.type == StreamEventType.VISUAL_COMMIT
+        assert commit_event.content["visual_session_id"] == "vs-2"
+        assert dispose_event.type == StreamEventType.VISUAL_DISPOSE
+
+    @pytest.mark.asyncio
     async def test_unknown_fallback_status(self):
         event = await _convert_bus_event({
             "type": "unknown_type",

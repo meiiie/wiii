@@ -400,12 +400,483 @@ class TestToolGenerateRichVisual:
         assert "Error" in result
 
 
+class TestToolGenerateVisual:
+    """Test the structured visual payload tool."""
+
+    def test_returns_visual_payload_json(self):
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_generate_visual
+
+        result = tool_generate_visual.invoke({
+            "visual_type": "comparison",
+            "spec_json": json.dumps({
+                "left": {"title": "Softmax"},
+                "right": {"title": "Linear"},
+            }),
+            "title": "Softmax vs Linear",
+            "summary": "Quick comparison",
+        })
+        payload = parse_visual_payload(result)
+
+        assert payload is not None
+        assert payload.type == "comparison"
+        assert payload.renderer_kind == "template"
+        assert payload.shell_variant == "editorial"
+        assert payload.patch_strategy == "spec_merge"
+        assert payload.runtime == "svg"
+        assert payload.title == "Softmax vs Linear"
+        assert payload.summary == "Quick comparison"
+        assert payload.visual_session_id.startswith("vs-comparison-")
+        assert payload.figure_group_id.startswith("fg-comparison-")
+        assert payload.figure_index == 1
+        assert payload.figure_total == 1
+        assert payload.pedagogical_role == "comparison"
+        assert payload.chrome_mode == "editorial"
+        assert payload.claim == "Quick comparison"
+        assert payload.scene["kind"] == "comparison"
+        assert payload.controls[0]["id"] == "focus_side"
+        assert payload.annotations
+        assert payload.lifecycle_event == "visual_open"
+        assert payload.fallback_html is not None
+        assert payload.metadata["source_tool"] == "tool_generate_visual"
+
+    def test_returns_grouped_figure_payloads_for_article_flow(self):
+        from app.engine.tools.visual_tools import parse_visual_payloads, tool_generate_visual
+
+        result = tool_generate_visual.invoke({
+            "visual_type": "comparison",
+            "spec_json": json.dumps({
+                "figures": [
+                    {
+                        "type": "comparison",
+                        "title": "Chi phi tinh toan",
+                        "summary": "Softmax tang nhanh hon khi context dai ra.",
+                        "claim": "Figure 1 chot van de chi phi tinh toan.",
+                        "pedagogical_role": "problem",
+                        "spec": {
+                            "left": {"title": "Softmax attention"},
+                            "right": {"title": "Linear attention"},
+                        },
+                    },
+                    {
+                        "type": "process",
+                        "title": "Co che cap nhat bo nho",
+                        "pedagogical_role": "mechanism",
+                        "spec": {
+                            "steps": [
+                                {"title": "Doc token moi"},
+                                {"title": "Cap nhat state S"},
+                                {"title": "Sinh dau ra"},
+                            ],
+                        },
+                    },
+                ],
+            }),
+            "title": "Giai thich Kimi Linear",
+        })
+        payloads = parse_visual_payloads(result)
+
+        assert len(payloads) == 2
+        assert {payload.figure_index for payload in payloads} == {1, 2}
+        assert {payload.figure_total for payload in payloads} == {2}
+        assert len({payload.figure_group_id for payload in payloads}) == 1
+        assert payloads[0].pedagogical_role == "problem"
+        assert payloads[1].pedagogical_role == "mechanism"
+        assert payloads[0].claim == "Figure 1 chot van de chi phi tinh toan."
+        assert payloads[1].claim
+        assert payloads[0].renderer_kind == "template"
+        assert payloads[1].renderer_kind == "template"
+        assert payloads[0].metadata["source_tool"] == "tool_generate_visual"
+        assert payloads[1].metadata["source_tool"] == "tool_generate_visual"
+
+    def test_supports_patch_operation_with_existing_session(self):
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_generate_visual
+
+        result = tool_generate_visual.invoke({
+            "visual_type": "process",
+            "spec_json": json.dumps({
+                "steps": [{"title": "Step 1"}, {"title": "Step 2"}],
+            }),
+            "visual_session_id": "vs-process-123",
+            "operation": "patch",
+        })
+        payload = parse_visual_payload(result)
+
+        assert payload is not None
+        assert payload.visual_session_id == "vs-process-123"
+        assert payload.lifecycle_event == "visual_patch"
+        assert payload.patch_strategy == "spec_merge"
+        assert payload.scene["kind"] == "process"
+
+    def test_runtime_context_can_promote_followup_to_patch(self):
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_generate_visual
+
+        runtime = build_tool_runtime_context(
+            session_id="session-1",
+            user_id="user-1",
+            user_role="admin",
+            metadata={
+                "preferred_visual_operation": "patch",
+                "preferred_visual_session_id": "vs-comparison-keep",
+            },
+        )
+        with tool_runtime_scope(runtime):
+            result = tool_generate_visual.invoke({
+                "visual_type": "comparison",
+                "spec_json": json.dumps({
+                    "left": {"title": "Before"},
+                    "right": {"title": "After"},
+                }),
+                "operation": "open",
+            })
+
+        payload = parse_visual_payload(result)
+
+        assert payload is not None
+        assert payload.visual_session_id == "vs-comparison-keep"
+        assert payload.lifecycle_event == "visual_patch"
+
+    def test_runtime_context_overrides_hallucinated_patch_session_id(self):
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_generate_visual
+
+        runtime = build_tool_runtime_context(
+            session_id="session-1",
+            user_id="user-1",
+            user_role="admin",
+            metadata={
+                "preferred_visual_operation": "patch",
+                "preferred_visual_session_id": "vs-comparison-keep",
+            },
+        )
+        with tool_runtime_scope(runtime):
+            result = tool_generate_visual.invoke({
+                "visual_type": "process",
+                "spec_json": json.dumps({
+                    "steps": [{"title": "One"}, {"title": "Two"}, {"title": "Three"}],
+                }),
+                "operation": "patch",
+                "visual_session_id": "hallucinated-new-session",
+            })
+
+        payload = parse_visual_payload(result)
+
+        assert payload is not None
+        assert payload.visual_session_id == "vs-comparison-keep"
+        assert payload.lifecycle_event == "visual_patch"
+
+    def test_supports_app_runtime_types(self):
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_generate_visual
+
+        result = tool_generate_visual.invoke({
+            "visual_type": "simulation",
+            "spec_json": json.dumps({
+                "html": "<div>Sim</div>",
+                "ui_runtime": "html",
+            }),
+        })
+        payload = parse_visual_payload(result)
+
+        assert payload is not None
+        assert payload.renderer_kind == "app"
+        assert payload.patch_strategy == "app_state"
+        assert payload.chrome_mode == "app"
+        assert payload.runtime_manifest["ui_runtime"] == "html"
+
+    def test_supports_inline_html_renderer(self):
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_generate_visual
+
+        result = tool_generate_visual.invoke({
+            "visual_type": "concept",
+            "spec_json": json.dumps({
+                "html": "<section><h1>Custom inline visual</h1></section>",
+            }),
+            "renderer_kind": "inline_html",
+        })
+        payload = parse_visual_payload(result)
+
+        assert payload is not None
+        assert payload.renderer_kind == "inline_html"
+        assert payload.patch_strategy == "replace_html"
+        assert payload.fallback_html is not None
+
+    def test_runtime_context_auto_groups_explanatory_template_visuals(self):
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payloads, tool_generate_visual
+
+        runtime = build_tool_runtime_context(
+            session_id="session-article-1",
+            user_id="user-1",
+            user_role="admin",
+            metadata={
+                "visual_force_tool": True,
+                "visual_intent_mode": "template",
+                "visual_intent_reason": "chart-template",
+                "visual_user_query": "Explain Kimi linear attention in charts",
+                "visual_requested_type": "chart",
+            },
+        )
+
+        with tool_runtime_scope(runtime):
+            result = tool_generate_visual.invoke({
+                "visual_type": "chart",
+                "spec_json": json.dumps({
+                    "chart_type": "line",
+                    "labels": ["1k", "4k", "16k", "64k"],
+                    "datasets": [
+                        {"label": "Softmax", "data": [1, 16, 256, 4096]},
+                        {"label": "Linear", "data": [1, 4, 16, 64]},
+                    ],
+                }),
+                "title": "Compute cost vs context length",
+                "summary": "Softmax tang nhanh hon Linear khi context dai len.",
+            })
+
+        payloads = parse_visual_payloads(result)
+
+        assert len(payloads) == 2
+        assert {payload.figure_total for payload in payloads} == {2}
+        assert len({payload.figure_group_id for payload in payloads}) == 1
+        assert payloads[0].type == "chart"
+        assert payloads[0].pedagogical_role == "benchmark"
+        assert payloads[1].type == "infographic"
+        assert payloads[1].pedagogical_role == "conclusion"
+        assert payloads[1].claim.startswith("Diem chot cua Compute cost vs context length")
+
+    def test_runtime_context_can_plan_three_figures_for_dense_stepwise_explanation(self):
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payloads, tool_generate_visual
+
+        runtime = build_tool_runtime_context(
+            session_id="session-article-3",
+            user_id="user-1",
+            user_role="admin",
+            metadata={
+                "visual_force_tool": True,
+                "visual_intent_mode": "template",
+                "visual_intent_reason": "chart-template",
+                "visual_user_query": "Explain Kimi linear attention in charts step by step with mechanism and benchmark",
+                "visual_requested_type": "chart",
+            },
+        )
+
+        with tool_runtime_scope(runtime):
+            result = tool_generate_visual.invoke({
+                "visual_type": "chart",
+                "spec_json": json.dumps({
+                    "chart_type": "line",
+                    "labels": ["1k", "4k", "16k", "64k", "256k", "1M"],
+                    "datasets": [
+                        {"label": "Softmax", "data": [1, 16, 256, 4096, 65536, 1048576]},
+                        {"label": "Linear", "data": [1, 4, 16, 64, 256, 1024]},
+                    ],
+                }),
+                "title": "Compute cost vs context length",
+                "summary": "Softmax tang nhanh hon Linear khi context dai len.",
+            })
+
+        payloads = parse_visual_payloads(result)
+
+        assert len(payloads) == 3
+        assert {payload.figure_total for payload in payloads} == {3}
+        assert [payload.pedagogical_role for payload in payloads] == ["benchmark", "mechanism", "conclusion"]
+        assert payloads[1].type == "infographic"
+        assert payloads[2].type == "infographic"
+
+    def test_runtime_context_keeps_simple_template_visual_single_when_scope_is_narrow(self):
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payloads, tool_generate_visual
+
+        runtime = build_tool_runtime_context(
+            session_id="session-article-simple-1",
+            user_id="user-1",
+            user_role="admin",
+            metadata={
+                "visual_force_tool": True,
+                "visual_intent_mode": "template",
+                "visual_intent_reason": "comparison",
+                "visual_user_query": "So sanh nhanh TCP va UDP",
+                "visual_requested_type": "comparison",
+            },
+        )
+
+        with tool_runtime_scope(runtime):
+            result = tool_generate_visual.invoke({
+                "visual_type": "comparison",
+                "spec_json": json.dumps({
+                    "left": {"title": "TCP"},
+                    "right": {"title": "UDP"},
+                }),
+                "title": "TCP vs UDP",
+                "summary": "Dat TCP canh UDP de thay su khac nhau co ban.",
+            })
+
+        payloads = parse_visual_payloads(result)
+
+        assert len(payloads) == 1
+        assert payloads[0].figure_total == 1
+        assert payloads[0].type == "comparison"
+
+    def test_runtime_context_does_not_auto_group_app_runtime(self):
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payloads, tool_generate_visual
+
+        runtime = build_tool_runtime_context(
+            session_id="session-app-1",
+            user_id="user-1",
+            user_role="admin",
+            metadata={
+                "visual_force_tool": True,
+                "visual_intent_mode": "app",
+                "visual_intent_reason": "app-request",
+                "visual_user_query": "Hay mo phong vat ly con lac",
+                "visual_requested_type": "simulation",
+            },
+        )
+
+        with tool_runtime_scope(runtime):
+            result = tool_generate_visual.invoke({
+                "visual_type": "simulation",
+                "spec_json": json.dumps({
+                    "html": "<div>Sim</div>",
+                    "ui_runtime": "html",
+                }),
+            })
+
+        payloads = parse_visual_payloads(result)
+
+        assert len(payloads) == 1
+        assert payloads[0].type == "simulation"
+        assert payloads[0].renderer_kind == "app"
+        assert payloads[0].figure_total == 1
+
+    def test_runtime_context_auto_groups_infographic_explanations(self):
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payloads, tool_generate_visual
+
+        runtime = build_tool_runtime_context(
+            session_id="session-article-infographic-1",
+            user_id="user-1",
+            user_role="admin",
+            metadata={
+                "visual_force_tool": True,
+                "visual_intent_mode": "template",
+                "visual_intent_reason": "article-figure",
+                "visual_user_query": "Explain Kimi linear attention in charts",
+                "visual_requested_type": "infographic",
+            },
+        )
+
+        with tool_runtime_scope(runtime):
+            result = tool_generate_visual.invoke({
+                "visual_type": "infographic",
+                "spec_json": json.dumps({
+                    "sections": [
+                        {"title": "Van de", "content": "Softmax can ma tran day du O(n^2)."},
+                        {"title": "Co che", "content": "Linear attention chuyen sang running state."},
+                        {"title": "Ket qua", "content": "Context dai hon voi chi phi gon hon."},
+                    ],
+                }),
+                "title": "Co che Linear Attention cua Kimi",
+                "summary": "Ba diem nhan: van de, co che, va ket qua.",
+            })
+
+        payloads = parse_visual_payloads(result)
+
+        assert len(payloads) == 2
+        assert {payload.figure_total for payload in payloads} == {2}
+        assert len({payload.figure_group_id for payload in payloads}) == 1
+        assert payloads[0].type == "infographic"
+        assert payloads[1].type == "infographic"
+        assert payloads[1].pedagogical_role == "conclusion"
+
+    def test_runtime_context_does_not_auto_group_patch_turn(self):
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payloads, tool_generate_visual
+
+        runtime = build_tool_runtime_context(
+            session_id="session-patch-1",
+            user_id="user-1",
+            user_role="admin",
+            metadata={
+                "visual_force_tool": True,
+                "visual_intent_mode": "template",
+                "visual_intent_reason": "comparison",
+                "visual_user_query": "Giu visual hien tai va highlight bottleneck",
+                "preferred_visual_operation": "patch",
+                "preferred_visual_session_id": "vs-comparison-keep",
+            },
+        )
+
+        with tool_runtime_scope(runtime):
+            result = tool_generate_visual.invoke({
+                "visual_type": "comparison",
+                "spec_json": json.dumps({
+                    "left": {"title": "Before"},
+                    "right": {"title": "After"},
+                }),
+                "operation": "open",
+            })
+
+        payloads = parse_visual_payloads(result)
+
+        assert len(payloads) == 1
+        assert payloads[0].lifecycle_event == "visual_patch"
+        assert payloads[0].visual_session_id == "vs-comparison-keep"
+
+    def test_generates_natural_default_summary_and_takeaway_annotation(self):
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_generate_visual
+
+        result = tool_generate_visual.invoke({
+            "visual_type": "comparison",
+            "spec_json": json.dumps({
+                "left": {"title": "Softmax attention"},
+                "right": {"title": "Linear attention"},
+            }),
+            "title": "Softmax vs Linear",
+        })
+        payload = parse_visual_payload(result)
+
+        assert payload is not None
+        assert payload.summary == "Dat Softmax attention canh Linear attention de thay diem khac biet chinh."
+        assert payload.annotations[0]["title"] == "Diem chot"
+
+
+class TestParseVisualPayload:
+    """Test structured payload parsing helpers."""
+
+    def test_parses_dict(self):
+        from app.engine.tools.visual_tools import parse_visual_payload
+
+        payload = parse_visual_payload({
+            "id": "visual-123",
+            "type": "process",
+            "runtime": "svg",
+            "title": "Pipeline",
+            "summary": "Step flow",
+            "spec": {"steps": [{"title": "Start"}]},
+        })
+
+        assert payload is not None
+        assert payload.id == "visual-123"
+        assert payload.type == "process"
+        assert payload.renderer_kind == "template"
+        assert payload.visual_session_id.startswith("vs-process-")
+        assert payload.scene["kind"] == "process"
+
+    def test_returns_none_for_legacy_widget_string(self):
+        from app.engine.tools.visual_tools import parse_visual_payload
+
+        assert parse_visual_payload("```widget\n<div>legacy</div>\n```") is None
+
+
 class TestGetVisualTools:
     """Test feature gating."""
 
-    def test_returns_tools_when_enabled(self, monkeypatch):
+    def test_returns_legacy_tool_when_structured_disabled(self, monkeypatch):
         class FakeSettings:
             enable_chart_tools = True
+            enable_structured_visuals = False
 
         monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
         from app.engine.tools.visual_tools import get_visual_tools
@@ -413,9 +884,23 @@ class TestGetVisualTools:
         assert len(tools) == 1
         assert tools[0].name == "tool_generate_rich_visual"
 
+    def test_returns_structured_and_legacy_tools_when_enabled(self, monkeypatch):
+        class FakeSettings:
+            enable_chart_tools = True
+            enable_structured_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import get_visual_tools
+        tools = get_visual_tools()
+        assert [tool.name for tool in tools] == [
+            "tool_generate_visual",
+            "tool_generate_rich_visual",
+        ]
+
     def test_returns_empty_when_disabled(self, monkeypatch):
         class FakeSettings:
             enable_chart_tools = False
+            enable_structured_visuals = False
 
         monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
         from app.engine.tools.visual_tools import get_visual_tools
@@ -489,7 +974,12 @@ class TestPromptLoaderVisualTiers:
 
         loader = PromptLoader()
         prompt = loader.build_system_prompt("tutor", "Test User")
-        assert "RICH VISUAL" in prompt or "rich_visual" in prompt or "tool_generate_rich_visual" in prompt
+        assert (
+            "INLINE VISUAL" in prompt
+            or "RICH VISUAL" in prompt
+            or "tool_generate_visual" in prompt
+            or "tool_generate_rich_visual" in prompt
+        )
 
     def test_prompt_includes_chart_section(self):
         from app.prompts.prompt_loader import PromptLoader

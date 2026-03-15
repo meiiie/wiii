@@ -2,10 +2,8 @@
  * Root App component — initializes stores, mounts layout.
  * Sprint 106: Loading screen during init.
  */
-import { useEffect } from "react";
-import { AppShell } from "@/components/layout/AppShell";
+import { lazy, Suspense, useEffect } from "react";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
-import { LoginScreen } from "@/components/auth/LoginScreen";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useConnectionStore } from "@/stores/connection-store";
@@ -16,15 +14,48 @@ import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useToastStore } from "@/stores/toast-store";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { CommandPalette } from "@/components/common/CommandPalette";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { initClient } from "@/api/client";
-import { AvatarPreview } from "@/components/common/AvatarPreview";
+
+const AppShell = lazy(async () => {
+  const mod = await import("@/components/layout/AppShell");
+  return { default: mod.AppShell };
+});
+
+const LoginScreen = lazy(async () => {
+  const mod = await import("@/components/auth/LoginScreen");
+  return { default: mod.LoginScreen };
+});
+
+const CommandPalette = lazy(async () => {
+  const mod = await import("@/components/common/CommandPalette");
+  return { default: mod.CommandPalette };
+});
+
+const AvatarPreview = lazy(async () => {
+  const mod = await import("@/components/common/AvatarPreview");
+  return { default: mod.AvatarPreview };
+});
+
+function BootSplash({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-screen bg-surface">
+      <div className="flex flex-col items-center gap-4">
+        <WiiiAvatar state="thinking" size={48} />
+        <span className="text-sm text-text-tertiary">{label}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   // Dev tool: ?preview=avatar shows avatar preview page
   if (window.location.search.includes("preview=avatar")) {
-    return <AvatarPreview />;
+    return (
+      <Suspense fallback={<BootSplash label="Wiii dang mo ban xem truoc..." />}>
+        <AvatarPreview />
+      </Suspense>
+    );
   }
 
   const { loadSettings, settings, updateSettings, isLoaded: settingsLoaded } = useSettingsStore();
@@ -71,7 +102,6 @@ export default function App() {
         ...(orgId ? { organization_id: orgId } : {}),
       });
       // Sprint 218: Switch chat store to new user's conversations
-      const { useChatStore } = await import("@/stores/chat-store");
       await useChatStore.getState().switchUser(user.id);
       // Clear hash AFTER login succeeds to prevent token leakage in browser history
       window.history.replaceState(null, "", window.location.pathname);
@@ -185,29 +215,28 @@ export default function App() {
 
   // Loading screen while stores initialize
   if (!settingsLoaded || !authLoaded || !chatsLoaded) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen bg-surface">
-        <div className="flex flex-col items-center gap-4">
-          <WiiiAvatar state="thinking" size={48} />
-          <span className="text-sm text-text-tertiary">Wiii đang thức dậy...</span>
-        </div>
-      </div>
-    );
+    return <BootSplash label="Wiii dang thuc day..." />;
   }
 
   // Sprint 157: Show login screen when not authenticated
   if (!isAuthenticated) {
     return (
       <ErrorBoundary>
-        <LoginScreen />
+        <Suspense fallback={<BootSplash label="Wiii dang mo cong dang nhap..." />}>
+          <LoginScreen />
+        </Suspense>
       </ErrorBoundary>
     );
   }
 
   return (
     <ErrorBoundary>
-      <AppShell />
-      <CommandPalette open={commandPaletteOpen} onClose={closeCommandPalette} />
+      <Suspense fallback={<BootSplash label="Wiii dang mo khong gian tro chuyen..." />}>
+        <AppShell />
+      </Suspense>
+      <Suspense fallback={null}>
+        <CommandPalette open={commandPaletteOpen} onClose={closeCommandPalette} />
+      </Suspense>
     </ErrorBoundary>
   );
 }

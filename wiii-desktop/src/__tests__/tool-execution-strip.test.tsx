@@ -58,4 +58,26 @@ describe("ToolExecutionStrip", () => {
     expect(screen.queryByText(/C:\\temp\\generated/i)).toBeNull();
     expect(detail.textContent || "").toContain("demo.png");
   });
+
+  it("uses softer phrasing for visual generation strips", () => {
+    const block: ToolExecutionBlockData = {
+      type: "tool_execution",
+      id: "tool-visual-1",
+      status: "completed",
+      tool: {
+        id: "tool-visual-1",
+        name: "tool_generate_visual",
+        args: {
+          title: "Softmax vs linear attention",
+        },
+        result: '{"title":"Softmax vs linear attention"}',
+      },
+    };
+
+    render(<ToolExecutionStrip block={block} />);
+
+    expect(screen.getByText("Dang phac thao minh hoa cho: Softmax vs linear attention")).toBeTruthy();
+    expect(screen.getByText("Da chen minh hoa ngay trong cau tra loi")).toBeTruthy();
+    expect(screen.queryByText(/ky thuat/i)).toBeNull();
+  });
 });

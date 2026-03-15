@@ -33,6 +33,11 @@ function createHandlers(): SSEEventHandler & { calls: Record<string, unknown[]> 
     tool_call: [],
     tool_result: [],
     status: [],
+    visual: [],
+    visual_open: [],
+    visual_patch: [],
+    visual_commit: [],
+    visual_dispose: [],
     keepalive: [],
   };
 
@@ -47,6 +52,11 @@ function createHandlers(): SSEEventHandler & { calls: Record<string, unknown[]> 
     onToolCall: (data) => calls.tool_call.push(data),
     onToolResult: (data) => calls.tool_result.push(data),
     onStatus: (data) => calls.status.push(data),
+    onVisual: (data) => calls.visual.push(data),
+    onVisualOpen: (data) => calls.visual_open.push(data),
+    onVisualPatch: (data) => calls.visual_patch.push(data),
+    onVisualCommit: (data) => calls.visual_commit.push(data),
+    onVisualDispose: (data) => calls.visual_dispose.push(data),
     onKeepAlive: () => calls.keepalive.push({}),
   };
 }
@@ -114,6 +124,88 @@ describe("SSE Parser", () => {
       processing_time: 1.5,
       streaming_version: "v3",
     });
+  });
+
+  it("should parse visual events", async () => {
+    const visual = {
+      id: "visual-1",
+      visual_session_id: "vs-1",
+      type: "comparison",
+      renderer_kind: "template",
+      shell_variant: "editorial",
+      patch_strategy: "spec_merge",
+      figure_group_id: "fg-vs-1",
+      figure_index: 1,
+      figure_total: 1,
+      pedagogical_role: "comparison",
+      chrome_mode: "editorial",
+      claim: "Figure nay dat hai co che canh nhau de doc nhanh.",
+      narrative_anchor: "after-lead",
+      runtime: "svg",
+      title: "A vs B",
+      summary: "Structured visual summary",
+      spec: { left: { title: "A" }, right: { title: "B" } },
+      scene: { kind: "comparison", nodes: [], panels: [] },
+      controls: [],
+      annotations: [],
+      interaction_mode: "static",
+      ephemeral: true,
+      lifecycle_event: "visual_open",
+    };
+    const stream = createStream([
+      `event: visual\ndata: ${JSON.stringify({ content: visual, node: "direct", display_role: "artifact", presentation: "compact" })}\n\n`,
+    ]);
+
+    const handlers = createHandlers();
+    await parseSSEStream(stream, handlers);
+
+    expect(handlers.calls.visual_open).toHaveLength(1);
+    expect(handlers.calls.visual_open[0]).toMatchObject({
+      content: visual,
+      node: "direct",
+      display_role: "artifact",
+      presentation: "compact",
+    });
+  });
+
+  it("should parse visual lifecycle events", async () => {
+    const visual = {
+      id: "visual-2",
+      visual_session_id: "vs-2",
+      type: "process",
+      renderer_kind: "template",
+      shell_variant: "editorial",
+      patch_strategy: "spec_merge",
+      figure_group_id: "fg-vs-2",
+      figure_index: 1,
+      figure_total: 1,
+      pedagogical_role: "mechanism",
+      chrome_mode: "editorial",
+      claim: "Figure nay cho thay quy trinh duoc patch.",
+      narrative_anchor: "after-lead",
+      runtime: "svg",
+      title: "Pipeline",
+      summary: "Process summary",
+      spec: { steps: [{ title: "Start" }, { title: "End" }] },
+      scene: { kind: "process", nodes: [], panels: [] },
+      controls: [],
+      annotations: [],
+      interaction_mode: "scrubbable",
+      ephemeral: true,
+      lifecycle_event: "visual_patch",
+    };
+    const stream = createStream([
+      `event: visual_patch\ndata: ${JSON.stringify({ content: visual, node: "direct" })}\n\n`,
+      `event: visual_commit\ndata: ${JSON.stringify({ content: { visual_session_id: "vs-2", status: "committed" }, node: "direct" })}\n\n`,
+      `event: visual_dispose\ndata: ${JSON.stringify({ content: { visual_session_id: "vs-2", status: "disposed", reason: "reset" }, node: "direct" })}\n\n`,
+    ]);
+
+    const handlers = createHandlers();
+    await parseSSEStream(stream, handlers);
+
+    expect(handlers.calls.visual_patch).toHaveLength(1);
+    expect(handlers.calls.visual_commit).toHaveLength(1);
+    expect(handlers.calls.visual_dispose).toHaveLength(1);
   });
 
   it("should parse done event", async () => {

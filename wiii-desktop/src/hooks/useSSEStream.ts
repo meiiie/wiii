@@ -14,6 +14,7 @@ import { useCharacterStore } from "@/stores/character-store";
 import { usePageContextStore } from "@/stores/page-context-store";
 import { useHostContextStore } from "@/stores/host-context-store";
 import { StreamBuffer } from "@/lib/stream-buffer";
+import { trackVisualTelemetry } from "@/lib/visual-telemetry";
 import type { SSEEventHandler } from "@/api/sse";
 import type {
   AggregationSummary,
@@ -220,25 +221,40 @@ export function useSSEStream() {
     eventOrderRef.current = [];
     thinkingMetaRef.current = undefined;
 
-    // Create abort controller
-    abortRef.current = new AbortController();
+    // Keep a per-send controller so an aborted previous request cannot
+    // accidentally clear/finalize the newly-started stream.
+    const streamController = new AbortController();
+    abortRef.current = streamController;
+    const clearIdleGuardIfCurrent = () => {
+      if (abortRef.current === streamController) {
+        clearIdleGuard();
+      }
+    };
     scheduleIdleGuard();
 
     // Sprint 150: Create fresh StreamBuffer instances for this stream
     answerBufferRef.current = new StreamBuffer({
       onFlush: (chars) => useChatStore.getState().appendStreamingContent(chars),
-      minCharsPerFrame: 1,
-      maxCharsPerFrame: 12,
-      targetFrames: 8,
+      initialHoldMs: 80,
+      minCharsPerFrame: 3,
+      maxCharsPerFrame: 28,
+      targetBufferDepth: 40,
+      easeInFrames: 15,
     });
     thinkingBufferRef.current = new StreamBuffer({
       onFlush: (chars) => {
         useChatStore.getState().appendThinkingDelta(chars, thinkingNodeRef.current, thinkingMetaRef.current);
-        useChatStore.getState().appendPhaseThinkingDelta(chars, thinkingNodeRef.current);
+        useChatStore.getState().appendPhaseThinkingDelta(
+          chars,
+          thinkingNodeRef.current,
+          thinkingMetaRef.current?.stepId,
+        );
       },
+      initialHoldMs: 70,
       minCharsPerFrame: 2,
-      maxCharsPerFrame: 16,
-      targetFrames: 6,
+      maxCharsPerFrame: 20,
+      targetBufferDepth: 28,
+      easeInFrames: 10,
     });
 
     const handlers: SSEEventHandler = {
@@ -250,7 +266,7 @@ export function useSSEStream() {
         if (data.content) {
           const store = useChatStore.getState();
           store.setStreamingThinking(data.content);
-          store.appendPhaseThinking(data.content);
+          store.appendPhaseThinking(data.content, data.node, data.step_id);
         }
       },
       onAnswer: (data) => {
@@ -328,7 +344,7 @@ export function useSSEStream() {
         };
         store.appendToolCall(tc, toDisplayMeta(data));
         store.setStreamingStep(`🔧 ${data.content.name}`);
-        store.appendPhaseToolCall(tc);
+        store.appendPhaseToolCall(tc, data.step_id);
       },
       onToolResult: (data) => {
         traceEvent("tool_result", { id: data.content.id, node: data.node });
@@ -375,7 +391,7 @@ export function useSSEStream() {
         if (label) {
           store.addStreamingStep(label, data.node);
           store.setStreamingStep(label);
-          store.appendPhaseStatus(label, data.node);
+          store.appendPhaseStatus(label, data.node, data.step_id);
         }
       },
       onThinkingDelta: (data) => {
@@ -402,7 +418,13 @@ export function useSSEStream() {
             step_id: data.step_id || data.block_id,
           }),
         );
-        store.addOrUpdatePhase(data.content || data.node || "", data.node);
+        store.addOrUpdatePhase(
+          data.content || data.node || "",
+          data.node,
+          data.step_id || data.block_id,
+          data.phase,
+          data.summary,
+        );
       },
       onThinkingEnd: (data) => {
         traceEvent("thinking_end", { node: data.node });
@@ -479,6 +501,70 @@ export function useSSEStream() {
           artifact_type: data.content.artifact_type as ArtifactType,
         }, data.node, toDisplayMeta(data));
       },
+      onVisual: (data) => {
+        traceEvent("visual", { id: data.content.id, type: data.content.type, node: data.node });
+        answerBufferRef.current?.drain();
+        thinkingBufferRef.current?.drain();
+        try {
+          useChatStore.getState().openVisualSession(data.content, data.node, toDisplayMeta(data));
+          trackVisualTelemetry("visual_opened", {
+            visual_id: data.content.id,
+            visual_session_id: data.content.visual_session_id,
+            visual_type: data.content.type,
+            runtime: data.content.runtime,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "unknown visual store error";
+          trackVisualTelemetry("visual_render_error", {
+            visual_id: data.content.id,
+            visual_type: data.content.type,
+            runtime: data.content.runtime,
+            error: `store_insert_failed:${message}`,
+          });
+          throw error;
+        }
+      },
+      onVisualOpen: (data) => {
+        traceEvent("visual_open", { id: data.content.id, session: data.content.visual_session_id, node: data.node });
+        answerBufferRef.current?.drain();
+        thinkingBufferRef.current?.drain();
+        useChatStore.getState().openVisualSession(data.content, data.node, toDisplayMeta(data));
+        trackVisualTelemetry("visual_opened", {
+          visual_id: data.content.id,
+          visual_session_id: data.content.visual_session_id,
+          visual_type: data.content.type,
+          runtime: data.content.runtime,
+        });
+      },
+      onVisualPatch: (data) => {
+        traceEvent("visual_patch", { id: data.content.id, session: data.content.visual_session_id, node: data.node });
+        answerBufferRef.current?.drain();
+        thinkingBufferRef.current?.drain();
+        useChatStore.getState().patchVisualSession(data.content, data.node, toDisplayMeta(data));
+        trackVisualTelemetry("visual_patched", {
+          visual_id: data.content.id,
+          visual_session_id: data.content.visual_session_id,
+          visual_type: data.content.type,
+          runtime: data.content.runtime,
+        });
+      },
+      onVisualCommit: (data) => {
+        traceEvent("visual_commit", { session: data.content.visual_session_id, node: data.node });
+        useChatStore.getState().commitVisualSession(data.content.visual_session_id);
+        trackVisualTelemetry("visual_committed", {
+          visual_session_id: data.content.visual_session_id,
+          status: data.content.status || "committed",
+        });
+      },
+      onVisualDispose: (data) => {
+        traceEvent("visual_dispose", { session: data.content.visual_session_id, node: data.node });
+        useChatStore.getState().disposeVisualSession(data.content.visual_session_id, data.content.reason);
+        trackVisualTelemetry("visual_disposed", {
+          visual_session_id: data.content.visual_session_id,
+          status: data.content.status || "disposed",
+          reason: data.content.reason || "",
+        });
+      },
       onHostAction: (data) => {
         traceEvent("host_action", { id: data.content?.id, action: data.content?.action });
         // Sprint 222b: AI agent requested a host action
@@ -513,6 +599,8 @@ export function useSSEStream() {
 
     // Build user_context: prefer host-context-store, fallback to page-context-store
     const buildUserContext = () => {
+      const visualContext = useChatStore.getState().getActiveVisualContext();
+      const widgetFeedback = useChatStore.getState().getActiveWidgetFeedbackContext();
       if (hostCtx) {
         return {
           display_name: settings.display_name || settings.user_id,
@@ -527,6 +615,8 @@ export function useSSEStream() {
           },
           student_state: hostCtx.user_state || undefined,
           available_actions: hostCtx.available_actions || undefined,
+          visual_context: visualContext,
+          widget_feedback: widgetFeedback,
         };
       }
       if (pageData) {
@@ -534,6 +624,16 @@ export function useSSEStream() {
           display_name: settings.display_name || settings.user_id,
           role: settings.user_role,
           ...pageData,
+          visual_context: visualContext,
+          widget_feedback: widgetFeedback,
+        };
+      }
+      if (visualContext || widgetFeedback) {
+        return {
+          display_name: settings.display_name || settings.user_id,
+          role: settings.user_role,
+          visual_context: visualContext,
+          widget_feedback: widgetFeedback,
         };
       }
       return undefined;
@@ -567,51 +667,59 @@ export function useSSEStream() {
     let lastEventId: string | null = null;
     let retryCount = 0;
 
-    while (retryCount <= MAX_SSE_RETRIES) {
-      try {
-        const result = await sendMessageStream(
-          request,
-          handlers,
-          abortRef.current.signal,
-          lastEventId,
-        );
-        lastEventId = result.lastEventId;
-        clearIdleGuard();
+    try {
+      while (retryCount <= MAX_SSE_RETRIES) {
+        try {
+          const result = await sendMessageStream(
+            request,
+            handlers,
+            streamController.signal,
+            lastEventId,
+          );
+          lastEventId = result.lastEventId;
+          clearIdleGuardIfCurrent();
 
-        if (TRACE_SSE) {
-          console.debug("[SSE] stream-end", result);
-        }
+          if (TRACE_SSE) {
+            console.debug("[SSE] stream-end", result);
+          }
 
-        if (useChatStore.getState().isStreaming) {
-          finalizeFromTransport(result.sawDone ? "done" : "eof");
-        }
+          if (abortRef.current === streamController && useChatStore.getState().isStreaming) {
+            finalizeFromTransport(result.sawDone ? "done" : "eof");
+          }
 
-        lastEventId = null;
-        break; // Success — exit retry loop
-      } catch (err) {
-        clearIdleGuard();
+          lastEventId = null;
+          break; // Success — exit retry loop
+        } catch (err) {
+          clearIdleGuardIfCurrent();
 
-        if (abortRef.current.signal.aborted) {
-          if (abortRef.current.signal.reason === IDLE_TIMEOUT_ABORT_REASON) {
+          if (streamController.signal.aborted) {
+            if (streamController.signal.reason === IDLE_TIMEOUT_ABORT_REASON) {
+              break;
+            }
             break;
           }
-          break;
-        }
-        retryCount++;
-        if (retryCount > MAX_SSE_RETRIES) {
-          // Sprint 153b: Discard buffered tokens on final failure
+          retryCount++;
+          if (retryCount > MAX_SSE_RETRIES) {
+            // Sprint 153b: Discard buffered tokens on final failure
+            answerBufferRef.current?.discard();
+            thinkingBufferRef.current?.discard();
+            // Sprint 165: Localized error messages based on error type
+            const errorMsg = _getVietnameseErrorMessage(err);
+            useChatStore.getState().setStreamError(errorMsg);
+            break;
+          }
+          // Sprint 153b: Discard partially-buffered tokens before retry
           answerBufferRef.current?.discard();
           thinkingBufferRef.current?.discard();
-          // Sprint 165: Localized error messages based on error type
-          const errorMsg = _getVietnameseErrorMessage(err);
-          useChatStore.getState().setStreamError(errorMsg);
-          break;
+          if (abortRef.current === streamController) {
+            scheduleIdleGuard();
+          }
+          await sleep(SSE_BACKOFF_MS * Math.pow(2, retryCount - 1));
         }
-        // Sprint 153b: Discard partially-buffered tokens before retry
-        answerBufferRef.current?.discard();
-        thinkingBufferRef.current?.discard();
-        scheduleIdleGuard();
-        await sleep(SSE_BACKOFF_MS * Math.pow(2, retryCount - 1));
+      }
+    } finally {
+      if (abortRef.current === streamController) {
+        abortRef.current = null;
       }
     }
   }, [clearIdleGuard, finalizeFromTransport, scheduleIdleGuard, traceEvent]);

@@ -557,13 +557,18 @@ class SupervisorAgent:
             # Sprint 222: Include host context in synthesis
             _host_prompt = state.get("host_context_prompt", "")
             _host_suffix = f"\n\nHost Context:\n{_host_prompt}" if _host_prompt else ""
+            _widget_feedback_prompt = state.get("widget_feedback_prompt", "")
+            _widget_suffix = (
+                f"\n\nWidget Feedback Context:\n{_widget_feedback_prompt}"
+                if _widget_feedback_prompt else ""
+            )
 
             messages = [
                 SystemMessage(content=build_synthesis_card_prompt()),
                 HumanMessage(content=_synth_prompt.format(
                     query=state.get("query", ""),
                     outputs=output_text
-                ) + _host_suffix)
+                ) + _host_suffix + _widget_suffix)
             ]
 
             response = await self._llm.ainvoke(messages)

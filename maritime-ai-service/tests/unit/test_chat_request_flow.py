@@ -73,6 +73,18 @@ def _make_chat_context() -> ChatContext:
     context.student_state = {"scroll_percent": 42}
     context.available_actions = [{"action": "navigate", "label": "Next"}]
     context.host_context = {"host_type": "lms"}
+    context.visual_context = {
+        "last_visual_session_id": "vs-comparison-keep",
+        "last_visual_type": "comparison",
+        "last_visual_title": "Softmax vs Linear",
+        "active_inline_visuals": [
+            {
+                "visual_session_id": "vs-comparison-keep",
+                "type": "comparison",
+                "title": "Softmax vs Linear",
+            }
+        ],
+    }
     context.images = [SimpleNamespace(model_dump=lambda: {"kind": "image"})]
     return context
 
@@ -154,6 +166,18 @@ async def test_build_multi_agent_context_uses_shared_contract_fields():
         {"action": "navigate", "label": "Next"}
     ]
     assert multi_agent_context["host_context"] == {"host_type": "lms"}
+    assert multi_agent_context["visual_context"] == {
+        "last_visual_session_id": "vs-comparison-keep",
+        "last_visual_type": "comparison",
+        "last_visual_title": "Softmax vs Linear",
+        "active_inline_visuals": [
+            {
+                "visual_session_id": "vs-comparison-keep",
+                "type": "comparison",
+                "title": "Softmax vs Linear",
+            }
+        ],
+    }
     assert multi_agent_context["images"] == [{"kind": "image"}]
 
 

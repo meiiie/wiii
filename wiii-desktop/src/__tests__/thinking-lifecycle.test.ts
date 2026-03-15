@@ -92,6 +92,7 @@ describe("closeThinkingBlock", () => {
     const tb = thinkingAt(blocks, 0);
     expect(tb.endTime).toBeDefined();
     expect(tb.endTime!).toBeGreaterThanOrEqual(beforeClose);
+    expect(tb.stepState).toBe("completed");
   });
 
   it("should compute endTime from startTime + durationMs when provided", () => {
@@ -125,6 +126,26 @@ describe("closeThinkingBlock", () => {
     // Answer block should be unchanged
     expect(getBlocks()).toHaveLength(1);
     expect(getBlocks()[0].type).toBe("answer");
+  });
+
+  it("should close the most recent open thinking block even after tool rows arrive", () => {
+    useChatStore.getState().startStreaming();
+    useChatStore.getState().openThinkingBlock("Test");
+    useChatStore.getState().appendToolCall({
+      id: "tool-1",
+      name: "tool_web_search",
+      args: { q: "kimi linear attention" },
+      node: "tutor_agent",
+    });
+
+    useChatStore.getState().closeThinkingBlock(750);
+
+    const blocks = getBlocks();
+    expect(blocks).toHaveLength(2);
+    const tb = thinkingAt(blocks, 0);
+    expect(tb.endTime).toBe(tb.startTime! + 750);
+    expect(tb.stepState).toBe("completed");
+    expect(blocks[1].type).toBe("tool_execution");
   });
 
   it("should be no-op when last thinking block is already closed", () => {

@@ -70,6 +70,7 @@ interface InlineVisualFrameProps {
   runtimeManifest?: VisualRuntimeManifest | null;
   showFrameIntro?: boolean;
   hostShellMode?: "auto" | "force";
+  onBridgeEvent?: (detail: Record<string, unknown>) => void;
 }
 
 function escapeHtml(value: string): string {
@@ -153,6 +154,17 @@ export function buildVisualFrameDocument(
         },
         focusAnnotation: function (annotationId) {
           post('wiii-frame-focus', { annotationId: annotationId || '', sessionId: state.sessionId });
+        },
+        reportResult: function (kind, payload, summary, status) {
+          post('wiii-frame-result', {
+            kind: kind || 'widget_result',
+            payload: payload || {},
+            summary: summary || '',
+            status: status || '',
+            sessionId: state.sessionId,
+            title: state.title,
+            frameKind: state.frameKind
+          });
         }
       };
 
@@ -408,6 +420,7 @@ export const InlineVisualFrame = memo(function InlineVisualFrame({
   runtimeManifest,
   showFrameIntro = false,
   hostShellMode = frameKind === "legacy" ? "auto" : "force",
+  onBridgeEvent,
 }: InlineVisualFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const blobUrlRef = useRef<string | null>(null);
@@ -471,18 +484,27 @@ export const InlineVisualFrame = memo(function InlineVisualFrame({
         }, "*");
         return;
       }
-      if (data.type === "wiii-frame-telemetry" || data.type === "wiii-frame-interaction" || data.type === "wiii-frame-control" || data.type === "wiii-frame-focus") {
+      if (
+        data.type === "wiii-frame-telemetry"
+        || data.type === "wiii-frame-interaction"
+        || data.type === "wiii-frame-control"
+        || data.type === "wiii-frame-focus"
+        || data.type === "wiii-frame-result"
+      ) {
         const bridgeType =
           data.type === "wiii-frame-telemetry" ? "telemetry"
             : data.type === "wiii-frame-control" ? "control"
               : data.type === "wiii-frame-focus" ? "focus"
-                : "interaction";
-        window.dispatchEvent(new CustomEvent("wiii:visual-frame", { detail: { bridgeType, ...(data.payload || {}) } }));
+                : data.type === "wiii-frame-result" ? "result"
+                  : "interaction";
+        const detail = { bridgeType, ...(data.payload || {}) };
+        onBridgeEvent?.(detail);
+        window.dispatchEvent(new CustomEvent("wiii:visual-frame", { detail }));
       }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [frameKind, runtimeManifest, sessionId, shellVariant]);
+  }, [frameKind, onBridgeEvent, runtimeManifest, sessionId, shellVariant]);
 
   if (error) {
     return (

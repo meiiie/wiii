@@ -41,6 +41,11 @@ class StreamEventType:
     BROWSER_SCREENSHOT = "browser_screenshot"  # Sprint 153: Playwright screenshot
     PREVIEW = "preview"                          # Sprint 166: Rich preview cards
     ARTIFACT = "artifact"                        # Sprint 167: Interactive artifacts (code, HTML, data)
+    VISUAL = "visual"                            # Sprint 230: Structured inline visuals
+    VISUAL_OPEN = "visual_open"                  # Sprint 231: Open inline visual session
+    VISUAL_PATCH = "visual_patch"                # Sprint 231: Patch inline visual session
+    VISUAL_COMMIT = "visual_commit"              # Sprint 231: Commit inline visual session
+    VISUAL_DISPOSE = "visual_dispose"            # Sprint 231: Dispose inline visual session
     HOST_ACTION = "host_action"                    # Sprint 222b: Bidirectional host action request
 
 
@@ -376,6 +381,78 @@ async def create_artifact_event(
             "language": language,
             "metadata": metadata or {},
         },
+        node=node,
+    )
+
+
+async def create_visual_event(
+    payload: Dict[str, Any],
+    node: Optional[str] = None,
+) -> StreamEvent:
+    """Create a structured inline visual event."""
+    return StreamEvent(
+        type=StreamEventType.VISUAL,
+        content=payload,
+        node=node,
+    )
+
+
+async def create_visual_open_event(
+    payload: Dict[str, Any],
+    node: Optional[str] = None,
+) -> StreamEvent:
+    """Create a visual_open lifecycle event."""
+    return StreamEvent(
+        type=StreamEventType.VISUAL_OPEN,
+        content=payload,
+        node=node,
+    )
+
+
+async def create_visual_patch_event(
+    payload: Dict[str, Any],
+    node: Optional[str] = None,
+) -> StreamEvent:
+    """Create a visual_patch lifecycle event."""
+    return StreamEvent(
+        type=StreamEventType.VISUAL_PATCH,
+        content=payload,
+        node=node,
+    )
+
+
+async def create_visual_commit_event(
+    visual_session_id: str,
+    node: Optional[str] = None,
+    status: str = "committed",
+) -> StreamEvent:
+    """Create a visual_commit lifecycle event."""
+    return StreamEvent(
+        type=StreamEventType.VISUAL_COMMIT,
+        content={
+            "visual_session_id": visual_session_id,
+            "status": status,
+        },
+        node=node,
+    )
+
+
+async def create_visual_dispose_event(
+    visual_session_id: str,
+    node: Optional[str] = None,
+    reason: str = "",
+    status: str = "disposed",
+) -> StreamEvent:
+    """Create a visual_dispose lifecycle event."""
+    payload: Dict[str, Any] = {
+        "visual_session_id": visual_session_id,
+        "status": status,
+    }
+    if reason:
+        payload["reason"] = reason
+    return StreamEvent(
+        type=StreamEventType.VISUAL_DISPOSE,
+        content=payload,
         node=node,
     )
 

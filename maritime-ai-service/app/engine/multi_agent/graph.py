@@ -12,10 +12,11 @@ Pattern: Supervisor with specialized worker agents
 
 import asyncio
 from contextlib import asynccontextmanager
+import json
 import logging
 import re
 import uuid
-from typing import Dict, Optional, Literal
+from typing import Any, Dict, Optional, Literal
 
 
 from langgraph.graph import StateGraph, END
@@ -34,6 +35,12 @@ from app.engine.multi_agent.agents.memory_agent import get_memory_agent_node
 from app.engine.multi_agent.agents.grader_agent import get_grader_agent_node
 from app.engine.reasoning import ReasoningRenderRequest, get_reasoning_narrator
 from app.engine.reasoning.reasoning_narrator import build_tool_context_summary
+from app.engine.multi_agent.visual_intent_resolver import (
+    detect_visual_patch_request,
+    filter_tools_for_visual_intent,
+    preferred_visual_tool_name,
+    resolve_visual_intent,
+)
 
 # Agent Registry integration
 from app.engine.agents import get_agent_registry
@@ -714,11 +721,24 @@ def _build_direct_tools_context(
     # Direct now focuses on: conversation, web search, knowledge, character, LMS.
 
     # Sprint 229d: Visual tools available to direct for inline rich visuals.
-    tool_hints.append(
-        "- tool_generate_rich_visual: TAO VISUAL TUONG TAC inline (comparison, process, matrix, "
-        "architecture, concept, infographic, simulation, quiz, interactive_table, react_app). "
-        "Goi tool nay khi can GIAI THICH TRUC QUAN, SO SANH, hoac QUIZ."
-    )
+    if getattr(settings, "enable_structured_visuals", False):
+        tool_hints.append(
+            "- tool_generate_visual: TAO VISUAL CO CAU TRUC inline (comparison, process, matrix, "
+            "architecture, concept, infographic, chart, timeline, map_lite). Frontend se nhan payload va render ngay trong luong stream."
+        )
+        tool_hints.append(
+            "- Neu user follow-up de sua/hightlight/loc visual vua tao, goi tool_generate_visual voi CUNG visual_session_id va operation='patch'."
+        )
+        tool_hints.append(
+            "- tool_generate_rich_visual: Fallback sandbox HTML cho simulation, quiz, interactive_table, react_app, "
+            "hoac khi can widget HTML/JS tu do."
+        )
+    else:
+        tool_hints.append(
+            "- tool_generate_rich_visual: TAO VISUAL TUONG TAC inline (comparison, process, matrix, "
+            "architecture, concept, infographic, simulation, quiz, interactive_table, react_app). "
+            "Goi tool nay khi can GIAI THICH TRUC QUAN, SO SANH, hoac QUIZ."
+        )
 
     parts = []
     parts.append("## CÔNG CỤ CÓ SẴN:\n" + "\n".join(tool_hints))
@@ -777,6 +797,7 @@ def _build_direct_tools_context(
 def _build_code_studio_tools_context(
     settings_obj,
     user_role: str = "student",
+    query: str = "",
 ) -> str:
     """Build focused tool guidance for the code studio capability.
 
@@ -784,6 +805,8 @@ def _build_code_studio_tools_context(
     Mermaid tools are for diagrams/structures when sandbox is unavailable.
     """
     has_execute_python = getattr(settings_obj, "enable_code_execution", False) and user_role == "admin"
+    structured_visuals_enabled = getattr(settings_obj, "enable_structured_visuals", False)
+    visual_decision = resolve_visual_intent(query)
 
     tool_hints = []
 
@@ -800,24 +823,44 @@ def _build_code_studio_tools_context(
         "- tool_generate_word_document: Tao file Word (.docx) tu noi dung co cau truc khi user can memo, report, proposal, hoac handout.",
     ]
 
-    tool_hints.append(
-        "- tool_generate_interactive_chart: TAO BIEU DO TUONG TAC (bar, line, pie, doughnut, radar) "
-        "voi Chart.js — render INLINE trong chat. User co the hover, xem tooltip. "
-        "UU TIEN tool nay khi co du lieu so cu the (labels + data). "
-        "Tra ve ```widget code block — FE tu render."
-    )
+    if structured_visuals_enabled and visual_decision.force_tool and visual_decision.mode == "template":
+        tool_hints.append(
+            "- tool_generate_interactive_chart: KHONG phai lua chon chinh cho query hien tai. "
+            "Chi dung khi user can dashboard so hoc / hover tooltip / raw numeric chart. "
+            "Neu chart dung de giai thich khai niem, co che, trade-off, hoac so sanh -> dung tool_generate_visual."
+        )
+    else:
+        tool_hints.append(
+            "- tool_generate_interactive_chart: TAO BIEU DO TUONG TAC (bar, line, pie, doughnut, radar) "
+            "voi Chart.js cho dashboard du lieu so hoc, hover tooltip, va metric widgets. "
+            "UU TIEN tool nay khi user can data chart tuong tac don le. "
+            "Tra ve ```widget code block — FE tu render."
+        )
 
-    tool_hints.append(
-        "- tool_generate_rich_visual: TAO VISUAL TUONG TAC CAP CAO (Claude-level). "
-        "10 loai: comparison, process, matrix, architecture, concept, infographic, "
-        "simulation (Canvas + sliders), quiz (trac nghiem), interactive_table (sap xep/tim kiem), "
-        "react_app (FULL REACT APP — React 18 + Tailwind + Recharts — cung kien truc nhu Claude Artifacts). "
-        "Voi react_app: viet function App() component, dung Tailwind classes, Recharts charts. "
-        "UU TIEN react_app cho: dashboards phuc tap, UI tuong tac nhieu component, data viz voi Recharts. "
-        "UU TIEN simulation cho: vat ly, toan hoc, animation Canvas. "
-        "UU TIEN quiz cho: kiem tra kien thuc. "
-        "Tra ve ```widget code block — FE tu render trong sandboxed iframe."
-    )
+    if structured_visuals_enabled:
+        tool_hints.append(
+            "- tool_generate_visual: TAO VISUAL CO CAU TRUC cho inline teaching visuals: comparison, process, matrix, "
+            "architecture, concept, infographic, chart, timeline, map_lite. Frontend render thanh visual inline ngay khi stream, khong can copy payload."
+        )
+        tool_hints.append(
+            "- Follow-up visual edits: neu user muon chinh visual vua co, reuse visual_session_id va set operation='patch'."
+        )
+        tool_hints.append(
+            "- tool_generate_rich_visual: Fallback sandbox HTML cho simulation, quiz, interactive_table, react_app, "
+            "hoac truong hop legacy compatibility. Khong dung no lam default cho explanatory charts/figures."
+        )
+    else:
+        tool_hints.append(
+            "- tool_generate_rich_visual: TAO VISUAL TUONG TAC CAP CAO (Claude-level). "
+            "10 loai: comparison, process, matrix, architecture, concept, infographic, "
+            "simulation (Canvas + sliders), quiz (trac nghiem), interactive_table (sap xep/tim kiem), "
+            "react_app (FULL REACT APP — React 18 + Tailwind + Recharts — cung kien truc nhu Claude Artifacts). "
+            "Voi react_app: viet function App() component, dung Tailwind classes, Recharts charts. "
+            "UU TIEN react_app cho: dashboards phuc tap, UI tuong tac nhieu component, data viz voi Recharts. "
+            "UU TIEN simulation cho: vat ly, toan hoc, animation Canvas. "
+            "UU TIEN quiz cho: kiem tra kien thuc. "
+            "Tra ve ```widget code block — FE tu render trong sandboxed iframe."
+        )
 
     if has_execute_python:
         tool_hints.append(
@@ -845,24 +888,218 @@ def _build_code_studio_tools_context(
         "## NGUYEN TAC UU TIEN:",
         "- Uu tien tao output THAT (file, PNG, HTML, widget) thay vi chi mo ta bang loi.",
         "- Voi yeu cau 've bieu do / chart / thong ke / so lieu': " + (
-            "goi tool_execute_python neu can tinh toan phuc tap, HOAC goi tool_generate_interactive_chart "
-            "neu da co san labels + data. Widget chart hien thi INLINE trong chat, user co the tuong tac."
+            (
+                "neu chart dung de GIAI THICH khai niem/co che/trade-off -> goi tool_generate_visual (type=chart, comparison, process...). "
+                "Chi dung tool_execute_python hoac tool_generate_interactive_chart cho data dashboard / raw numeric plots khi hover, tooltip, metric widgets la muc tieu chinh."
+                if structured_visuals_enabled else
+                "goi tool_execute_python neu can tinh toan phuc tap, HOAC goi tool_generate_interactive_chart "
+                "neu da co san labels + data. Widget chart hien thi INLINE trong chat, user co the tuong tac."
+            )
             if has_execute_python else
-            "goi tool_generate_interactive_chart (uu tien) de tao bieu do tuong tac inline. "
-            "Chi dung tool_generate_mermaid cho so do/quy trinh (flowchart, mindmap), KHONG cho data chart."
+            (
+                "neu chart dung de GIAI THICH khai niem/co che/trade-off -> goi tool_generate_visual. "
+                "Chi dung tool_generate_interactive_chart cho data dashboard / numeric chart. "
+                "Chi dung tool_generate_mermaid cho so do/quy trinh (flowchart, mindmap), KHONG cho data chart."
+                if structured_visuals_enabled else
+                "goi tool_generate_interactive_chart (uu tien) de tao bieu do tuong tac inline. "
+                "Chi dung tool_generate_mermaid cho so do/quy trinh (flowchart, mindmap), KHONG cho data chart."
+            )
         ),
         "- Voi yeu cau 'tao trang web / HTML / landing page': luon goi tool_generate_html_file.",
         "- Voi yeu cau 'tao file Excel / spreadsheet': luon goi tool_generate_excel_file.",
         "- Voi yeu cau 'tao file Word / bao cao / report': luon goi tool_generate_word_document.",
-        "- Voi yeu cau GIAI THICH khai niem / SO SANH / KIEN TRUC: goi tool_generate_rich_visual. "
-        "Visual types: comparison (2 cot so sanh), process (tung buoc), matrix (bang mau), "
+        "- Voi yeu cau GIAI THICH khai niem / SO SANH / KIEN TRUC: goi "
+        + ("tool_generate_visual" if structured_visuals_enabled else "tool_generate_rich_visual")
+        + ". Visual types: comparison (2 cot so sanh), process (tung buoc), matrix (bang mau), "
         "architecture (layer diagram), concept (mind map), infographic (stats).",
-        "- SAU KHI goi tool_generate_interactive_chart HOAC tool_generate_rich_visual: "
-        "COPY NGUYEN VAN widget code block vao response.",
+        (
+            "- SAU KHI goi tool_generate_interactive_chart HOAC tool_generate_rich_visual: "
+            "COPY NGUYEN VAN widget code block vao response."
+            if not structured_visuals_enabled
+            else "- SAU KHI goi tool_generate_visual: khong copy payload JSON vao answer. Viet bridge prose + takeaway, frontend se chen figure tu dong. "
+                 "Chi copy ```widget khi dang fallback sang rich_visual/interactive_chart cho legacy compatibility."
+        ),
         "- Khi sandbox gap loi ket noi, noi ro gioi han va KHONG gia vo da chay code.",
     ]
 
     return "\n".join(["## CODE STUDIO TOOLKIT:", *tool_hints, "", *priority_rules])
+
+
+def _log_visual_telemetry(event_name: str, **fields: object) -> None:
+    if fields:
+        logger.info("[VISUAL_TELEMETRY] %s %s", event_name, json.dumps(fields, ensure_ascii=False, sort_keys=True))
+    else:
+        logger.info("[VISUAL_TELEMETRY] %s", event_name)
+
+
+def _summarize_tool_result_for_stream(tool_name: str, result: object) -> str:
+    """Keep SSE tool_result concise for structured payload tools."""
+    try:
+        from app.engine.tools.visual_tools import parse_visual_payloads
+
+        payloads = parse_visual_payloads(result)
+        if payloads:
+            if len(payloads) == 1:
+                return f"Minh hoa da san sang: {payloads[0].title}"
+            group_title = payloads[0].title
+            return f"Nhom minh hoa da san sang: {group_title} va {len(payloads) - 1} figure lien ket"
+    except Exception:
+        pass
+    return str(result)[:500]
+
+
+def _collect_active_visual_session_ids(state: AgentState) -> list[str]:
+    """Collect active inline visual sessions from client-provided visual context."""
+    visual_ctx = ((state.get("context") or {}).get("visual_context") or {})
+    if not isinstance(visual_ctx, dict):
+        return []
+
+    session_ids: list[str] = []
+    active_items = visual_ctx.get("active_inline_visuals")
+    if isinstance(active_items, list):
+        for item in active_items:
+            if not isinstance(item, dict):
+                continue
+            visual_session_id = str(item.get("visual_session_id") or item.get("session_id") or "").strip()
+            if visual_session_id and visual_session_id not in session_ids:
+                session_ids.append(visual_session_id)
+
+    fallback_session_id = str(visual_ctx.get("last_visual_session_id") or "").strip()
+    if fallback_session_id and fallback_session_id not in session_ids:
+        session_ids.append(fallback_session_id)
+
+    return session_ids
+
+
+async def _maybe_emit_visual_event(
+    *,
+    push_event,
+    tool_name: str,
+    tool_call_id: str,
+    result: object,
+    node: str,
+    tool_call_events: list[dict],
+    previous_visual_session_ids: list[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Stream structured visual results immediately when available."""
+    try:
+        from app.engine.tools.visual_tools import parse_visual_payloads
+
+        payloads = parse_visual_payloads(result)
+        if not payloads:
+            return [], []
+
+        payloads = sorted(payloads, key=lambda payload: (payload.figure_index, payload.title))
+        emitted_session_ids = [payload.visual_session_id for payload in payloads if payload.visual_session_id]
+        disposed_session_ids: list[str] = []
+        existing_session_ids = [
+            session_id
+            for session_id in (previous_visual_session_ids or [])
+            if session_id
+        ]
+
+        first_event_type = (
+            payloads[0].lifecycle_event
+            if payloads[0].lifecycle_event in {"visual_open", "visual_patch"}
+            else "visual_open"
+        )
+        if first_event_type == "visual_open":
+            for previous_visual_session_id in existing_session_ids:
+                if previous_visual_session_id in emitted_session_ids:
+                    continue
+                disposed_session_ids.append(previous_visual_session_id)
+                await push_event({
+                    "type": "visual_dispose",
+                    "content": {
+                        "visual_session_id": previous_visual_session_id,
+                        "status": "disposed",
+                        "reason": "superseded_by_new_visual",
+                    },
+                    "node": node,
+                })
+                tool_call_events.append({
+                    "type": "visual_dispose",
+                    "visual_session_id": previous_visual_session_id,
+                    "reason": "superseded_by_new_visual",
+                    "node": node,
+                })
+                _log_visual_telemetry(
+                    "visual_disposed",
+                    visual_session_id=previous_visual_session_id,
+                    reason="superseded_by_new_visual",
+                    node=node,
+                )
+
+        for payload in payloads:
+            payload_dict = payload.model_dump(mode="json")
+            event_type = payload.lifecycle_event if payload.lifecycle_event in {"visual_open", "visual_patch"} else "visual_open"
+            await push_event({
+                "type": event_type,
+                "content": payload_dict,
+                "node": node,
+            })
+            tool_call_events.append({
+                "type": event_type,
+                "name": tool_name,
+                "id": tool_call_id,
+                "visual": payload_dict,
+                "visual_session_id": payload.visual_session_id,
+                "figure_group_id": payload.figure_group_id,
+                "figure_index": payload.figure_index,
+            })
+            _log_visual_telemetry(
+                "visual_emitted",
+                tool_name=tool_name,
+                tool_call_id=tool_call_id,
+                visual_id=payload.id,
+                visual_session_id=payload.visual_session_id,
+                visual_type=payload.type,
+                lifecycle_event=event_type,
+                node=node,
+                figure_group_id=payload.figure_group_id,
+                figure_index=payload.figure_index,
+                figure_total=payload.figure_total,
+                pedagogical_role=payload.pedagogical_role,
+                chrome_mode=payload.chrome_mode,
+            )
+
+        return emitted_session_ids, disposed_session_ids
+    except Exception as exc:
+        logger.warning("[VISUAL] Failed to emit structured visual event: %s", exc)
+    return [], []
+
+
+async def _emit_visual_commit_events(
+    *,
+    push_event,
+    node: str,
+    visual_session_ids: list[str],
+    tool_call_events: list[dict],
+) -> None:
+    """Emit commit events for visual sessions touched in the current tool round."""
+    emitted: set[str] = set()
+    for visual_session_id in visual_session_ids:
+        if not visual_session_id or visual_session_id in emitted:
+            continue
+        emitted.add(visual_session_id)
+        await push_event({
+            "type": "visual_commit",
+            "content": {
+                "visual_session_id": visual_session_id,
+                "status": "committed",
+            },
+            "node": node,
+        })
+        tool_call_events.append({
+            "type": "visual_commit",
+            "visual_session_id": visual_session_id,
+            "node": node,
+        })
+        _log_visual_telemetry(
+            "visual_committed",
+            visual_session_id=visual_session_id,
+            node=node,
+        )
 
 
 def _collect_direct_tools(query: str, user_role: str = "student"):
@@ -916,8 +1153,15 @@ def _collect_direct_tools(query: str, user_role: str = "student"):
     except Exception as _e:
         logger.debug("[DIRECT] LMS tools unavailable: %s", _e)
 
-    # WAVE-001: chart_tools, output_generation_tools removed from direct.
-    # Document/chart/file generation now exclusively in code_studio_agent.
+    # Structured visuals re-enable lightweight inline diagram/chart tools for direct,
+    # but keep heavy artifact/file generation inside code_studio_agent.
+    if getattr(settings, "enable_structured_visuals", False):
+        try:
+            from app.engine.tools.chart_tools import get_chart_tools
+
+            _direct_tools.extend(get_chart_tools())
+        except Exception as _e:
+            logger.debug("[DIRECT] Chart tools unavailable: %s", _e)
 
     # Sprint 229d: Re-add visual tools to direct agent so it can generate
     # rich visuals (comparison, process, quiz, etc.) without routing to code_studio.
@@ -929,21 +1173,30 @@ def _collect_direct_tools(query: str, user_role: str = "student"):
     except Exception as _e:
         logger.debug("[DIRECT] Visual tools unavailable: %s", _e)
 
+    visual_decision = resolve_visual_intent(query)
     _direct_tools = filter_tools_for_role(_direct_tools, user_role)
-
-    # Sprint 229: Include visual signal in force_tools
-    _normalized = _normalize_for_intent(query)
-    _needs_visual = any(
-        s in _normalized for s in (
-            "so sanh", "compare", "visual", "bieu do", "diagram",
-            "kien truc", "architecture", "quy trinh", "process",
-            "quiz", "trac nghiem", "mo phong", "simulation",
-        )
+    _direct_tools = filter_tools_for_visual_intent(
+        _direct_tools,
+        visual_decision,
+        structured_visuals_enabled=getattr(settings, "enable_structured_visuals", False),
     )
+    _needs_visual_tool = (
+        not _needs_analysis_tool(query)
+        and visual_decision.force_tool
+        and visual_decision.mode in {"template", "inline_html", "app", "mermaid"}
+    )
+    if _needs_visual_tool:
+        _log_visual_telemetry(
+            "visual_requested",
+            mode=visual_decision.mode,
+            visual_type=visual_decision.visual_type,
+            user_role=user_role,
+            query=query[:180],
+        )
     force_tools = bool(_direct_tools) and (
         _needs_web_search(query) or _needs_datetime(query)
         or _needs_news_search(query) or _needs_legal_search(query)
-        or _needs_lms_query(query) or _needs_visual
+        or _needs_lms_query(query) or _needs_visual_tool
     )
     return _direct_tools, force_tools
 
@@ -995,7 +1248,13 @@ def _collect_code_studio_tools(query: str, user_role: str = "student"):
     except Exception as _e:
         logger.debug("[CODE_STUDIO] Browser sandbox tools unavailable: %s", _e)
 
+    visual_decision = resolve_visual_intent(query)
     _tools = filter_tools_for_role(_tools, user_role)
+    _tools = filter_tools_for_visual_intent(
+        _tools,
+        visual_decision,
+        structured_visuals_enabled=getattr(settings, "enable_structured_visuals", False),
+    )
     force_tools = bool(_tools)
     return _tools, force_tools
 
@@ -1038,6 +1297,7 @@ def _direct_required_tool_names(query: str, user_role: str = "student") -> list[
     """Return must-have direct tools inferred from the current query."""
     required: list[str] = []
     normalized = _normalize_for_intent(query)
+    visual_decision = resolve_visual_intent(query)
 
     if _needs_datetime(query):
         required.append("tool_current_datetime")
@@ -1058,14 +1318,15 @@ def _direct_required_tool_names(query: str, user_role: str = "student") -> list[
     # WAVE-001: browser_snapshot and execute_python removed from direct.
     # These capabilities now live exclusively in code_studio_agent.
 
-    # Sprint 229: Force visual tool when query suggests comparison/visual/diagram
-    visual_signals = (
-        "so sanh", "compare", "visual", "bieu do", "diagram", "kien truc",
-        "architecture", "quy trinh", "process", "quiz", "trac nghiem",
-        "mo phong", "simulation", "infographic",
-    )
-    if any(signal in normalized for signal in visual_signals):
-        required.append("tool_generate_rich_visual")
+    if visual_decision.force_tool and not _needs_analysis_tool(query):
+        if visual_decision.mode in {"template", "inline_html", "app"}:
+            required.append(
+                preferred_visual_tool_name(
+                    getattr(settings, "enable_structured_visuals", False),
+                )
+            )
+        elif visual_decision.mode == "mermaid" and getattr(settings, "enable_structured_visuals", False):
+            required.append("tool_generate_mermaid")
 
     return required
 
@@ -1074,6 +1335,7 @@ def _code_studio_required_tool_names(query: str, user_role: str = "student") -> 
     """Return must-have tools inferred for the code studio capability."""
     normalized = _normalize_for_intent(query)
     required: list[str] = []
+    visual_decision = resolve_visual_intent(query)
 
     if any(token in normalized for token in ("html", "landing page", "website", "web app", "microsite")):
         required.append("tool_generate_html_file")
@@ -1097,7 +1359,66 @@ def _code_studio_required_tool_names(query: str, user_role: str = "student") -> 
     ):
         required.append("tool_browser_snapshot_url")
 
+    if visual_decision.force_tool:
+        if visual_decision.mode in {"template", "inline_html", "app"}:
+            required.append(
+                preferred_visual_tool_name(
+                    getattr(settings, "enable_structured_visuals", False),
+                )
+            )
+        elif visual_decision.mode == "mermaid" and getattr(settings, "enable_structured_visuals", False):
+            required.append("tool_generate_mermaid")
+
     return required
+
+
+def _build_visual_tool_runtime_metadata(state: dict, query: str) -> dict[str, Any] | None:
+    """Provide visual intent metadata and patch defaults to the tool runtime layer."""
+    visual_decision = resolve_visual_intent(query)
+    metadata: dict[str, Any] = {}
+
+    if visual_decision.force_tool and visual_decision.mode in {"template", "inline_html", "app", "mermaid"}:
+        metadata.update({
+            "visual_user_query": query,
+            "visual_intent_mode": visual_decision.mode,
+            "visual_intent_reason": visual_decision.reason,
+            "visual_force_tool": True,
+        })
+        if visual_decision.visual_type:
+            metadata["visual_requested_type"] = visual_decision.visual_type
+
+    if not detect_visual_patch_request(query):
+        return metadata or None
+
+    visual_ctx = ((state.get("context") or {}).get("visual_context") or {})
+    if not isinstance(visual_ctx, dict):
+        return metadata or None
+
+    preferred_session_id = str(visual_ctx.get("last_visual_session_id") or "").strip()
+    preferred_visual_type = str(visual_ctx.get("last_visual_type") or "").strip()
+
+    if not preferred_session_id:
+        active_items = visual_ctx.get("active_inline_visuals")
+        if isinstance(active_items, list):
+            for item in active_items:
+                if not isinstance(item, dict):
+                    continue
+                preferred_session_id = str(item.get("visual_session_id") or item.get("session_id") or "").strip()
+                preferred_visual_type = preferred_visual_type or str(item.get("type") or "").strip()
+                if preferred_session_id:
+                    break
+
+    if not preferred_session_id:
+        return metadata or None
+
+    metadata.update({
+        "preferred_visual_operation": "patch",
+        "preferred_visual_session_id": preferred_session_id,
+        "preferred_visual_patch_hint": "followup-patch",
+    })
+    if preferred_visual_type:
+        metadata["preferred_visual_type"] = preferred_visual_type
+    return metadata or None
 
 
 def _bind_direct_tools(llm, tools: list, force: bool):
@@ -1170,6 +1491,12 @@ def _build_direct_system_messages(
     _host_prompt = state.get("host_context_prompt", "")
     if _host_prompt:
         system_prompt = system_prompt + "\n\n" + _host_prompt
+    _visual_prompt = state.get("visual_context_prompt", "")
+    if _visual_prompt:
+        system_prompt = system_prompt + "\n\n" + _visual_prompt
+    _widget_feedback_prompt = state.get("widget_feedback_prompt", "")
+    if _widget_feedback_prompt:
+        system_prompt = system_prompt + "\n\n" + _widget_feedback_prompt
     _capability_prompt = state.get("capability_context", "")
     if _capability_prompt:
         system_prompt = system_prompt + "\n\n## Capability Handbook\n" + _capability_prompt
@@ -1295,6 +1622,8 @@ async def _execute_direct_tool_rounds(
                 "node": "direct",
             })
         messages.append(llm_response)
+        visual_session_ids: list[str] = []
+        active_visual_session_ids = _collect_active_visual_session_ids(state)
         for tc in llm_response.tool_calls:
             _tc_id = tc.get("id", f"tc_{_tool_round}")
             _tc_name = tc.get("name", "unknown")
@@ -1328,9 +1657,31 @@ async def _execute_direct_tool_rounds(
             # Sprint 205: Record tool usage for Skill↔Tool bridge
             await push_event({
                 "type": "tool_result",
-                "content": {"name": _tc_name, "result": str(result)[:500], "id": _tc_id},
+                "content": {
+                    "name": _tc_name,
+                    "result": _summarize_tool_result_for_stream(_tc_name, result),
+                    "id": _tc_id,
+                },
                 "node": "direct",
             })
+            _emitted_visual_session_ids, _disposed_visual_session_ids = await _maybe_emit_visual_event(
+                push_event=push_event,
+                tool_name=_tc_name,
+                tool_call_id=_tc_id,
+                result=result,
+                node="direct",
+                tool_call_events=tool_call_events,
+                previous_visual_session_ids=active_visual_session_ids,
+            )
+            if _emitted_visual_session_ids:
+                visual_session_ids.extend(_emitted_visual_session_ids)
+                active_visual_session_ids = list(dict.fromkeys(_emitted_visual_session_ids))
+            elif _disposed_visual_session_ids:
+                active_visual_session_ids = [
+                    session_id
+                    for session_id in active_visual_session_ids
+                    if session_id not in set(_disposed_visual_session_ids)
+                ]
             _reflection = await _build_direct_tool_reflection(state, _tc_name, result)
             if _reflection:
                 await push_event({
@@ -1344,6 +1695,12 @@ async def _execute_direct_tool_rounds(
                 "result": str(result), "id": _tc_id,
             })
             messages.append(_TM(content=str(result), tool_call_id=_tc_id))
+        await _emit_visual_commit_events(
+            push_event=push_event,
+            node="direct",
+            visual_session_ids=visual_session_ids,
+            tool_call_events=tool_call_events,
+        )
         await push_event({
             "type": "thinking_end",
             "content": "",
@@ -1437,8 +1794,13 @@ async def _execute_direct_tool_rounds(
             "node": "direct",
         })
 
-    # Sprint 229d: Auto-inject widget blocks (same as code_studio)
-    llm_response = _inject_widget_blocks_from_tool_results(llm_response, tool_call_events)
+    # Legacy widget fallback: only auto-inject for non-structured turns.
+    llm_response = _inject_widget_blocks_from_tool_results(
+        llm_response,
+        tool_call_events,
+        query=query,
+        structured_visuals_enabled=getattr(settings, "enable_structured_visuals", False),
+    )
 
     return llm_response, messages, tool_call_events
 
@@ -2152,6 +2514,8 @@ async def _execute_code_studio_tool_rounds(
 
         messages.append(llm_response)
         _terminal_failure_detected = False
+        visual_session_ids: list[str] = []
+        active_visual_session_ids = _collect_active_visual_session_ids(state)
         for tc in llm_response.tool_calls:
             _tc_id = tc.get("id", f"tc_{_tool_round}")
             _tc_name = tc.get("name", "unknown")
@@ -2187,9 +2551,31 @@ async def _execute_code_studio_tool_rounds(
 
             await push_event({
                 "type": "tool_result",
-                "content": {"name": _tc_name, "result": str(result)[:500], "id": _tc_id},
+                "content": {
+                    "name": _tc_name,
+                    "result": _summarize_tool_result_for_stream(_tc_name, result),
+                    "id": _tc_id,
+                },
                 "node": "code_studio_agent",
             })
+            _emitted_visual_session_ids, _disposed_visual_session_ids = await _maybe_emit_visual_event(
+                push_event=push_event,
+                tool_name=_tc_name,
+                tool_call_id=_tc_id,
+                result=result,
+                node="code_studio_agent",
+                tool_call_events=tool_call_events,
+                previous_visual_session_ids=active_visual_session_ids,
+            )
+            if _emitted_visual_session_ids:
+                visual_session_ids.extend(_emitted_visual_session_ids)
+                active_visual_session_ids = list(dict.fromkeys(_emitted_visual_session_ids))
+            elif _disposed_visual_session_ids:
+                active_visual_session_ids = [
+                    session_id
+                    for session_id in active_visual_session_ids
+                    if session_id not in set(_disposed_visual_session_ids)
+                ]
             _reflection = await _build_code_studio_tool_reflection(state, _tc_name, result)
             if _reflection:
                 await push_event({
@@ -2207,6 +2593,12 @@ async def _execute_code_studio_tool_rounds(
             if _is_terminal_code_studio_tool_error(_tc_name, result):
                 _terminal_failure_detected = True
 
+        await _emit_visual_commit_events(
+            push_event=push_event,
+            node="code_studio_agent",
+            visual_session_ids=visual_session_ids,
+            tool_call_events=tool_call_events,
+        )
         await push_event({
             "type": "thinking_end",
             "content": "",
@@ -2277,16 +2669,25 @@ async def _execute_code_studio_tool_rounds(
         "node": "code_studio_agent",
     })
 
-    # Sprint 229: Auto-inject widget code blocks from tool results into AI response
-    # Problem: AI often doesn't copy ```widget blocks from tool output into its response.
-    # Fix: Extract widget blocks from tool results and prepend to AI response.
-    llm_response = _inject_widget_blocks_from_tool_results(llm_response, tool_call_events)
+    # Legacy widget fallback: only auto-inject for non-structured turns.
+    llm_response = _inject_widget_blocks_from_tool_results(
+        llm_response,
+        tool_call_events,
+        query=query,
+        structured_visuals_enabled=getattr(settings, "enable_structured_visuals", False),
+    )
 
     return llm_response, messages, tool_call_events
 
 
-def _inject_widget_blocks_from_tool_results(llm_response, tool_call_events: list):
-    """If tool results contain ```widget blocks that are missing from AI response, inject them."""
+def _inject_widget_blocks_from_tool_results(
+    llm_response,
+    tool_call_events: list,
+    *,
+    query: str = "",
+    structured_visuals_enabled: bool = False,
+):
+    """Inject legacy widget blocks only when the turn is not on the structured figure lane."""
     import re
     from langchain_core.messages import AIMessage as _AM
 
@@ -2298,6 +2699,35 @@ def _inject_widget_blocks_from_tool_results(llm_response, tool_call_events: list
         )
     else:
         response_text = str(raw_content)
+
+    def _build_response(value: str):
+        if hasattr(llm_response, "content"):
+            return _AM(content=value)
+        return value
+
+    def _strip_widget_blocks(value: str) -> str:
+        return re.sub(r"\n?```widget[ \t]*\n[\s\S]*?\n```\n?", "\n\n", value).strip()
+
+    visual_decision = resolve_visual_intent(query) if query else None
+    has_structured_visual_events = any(
+        (
+            event.get("type") in {"visual_open", "visual_patch", "visual_commit", "visual_dispose"}
+            or event.get("name") == "tool_generate_visual"
+        )
+        for event in tool_call_events
+    )
+
+    if structured_visuals_enabled and has_structured_visual_events and "```widget" in response_text:
+        cleaned = _strip_widget_blocks(response_text)
+        return _build_response(cleaned) if cleaned != response_text else llm_response
+
+    if (
+        structured_visuals_enabled
+        and visual_decision
+        and visual_decision.force_tool
+        and visual_decision.mode in {"template", "inline_html"}
+    ):
+        return llm_response
 
     # Already has widget block — no injection needed
     if "```widget" in response_text:
@@ -2318,9 +2748,7 @@ def _inject_widget_blocks_from_tool_results(llm_response, tool_call_events: list
 
     # Inject widget blocks at the beginning of the response
     injected = "\n\n".join(widget_blocks) + "\n\n" + response_text
-    if hasattr(llm_response, "content"):
-        return _AM(content=injected)
-    return injected
+    return _build_response(injected)
 
 
 def _should_surface_direct_thinking(thinking: str) -> bool:
@@ -2469,6 +2897,7 @@ async def direct_response_node(state: AgentState) -> AgentState:
                     user_role=_ctx.get("user_role", "student"),
                     node="direct",
                     source="agentic_loop",
+                    metadata=_build_visual_tool_runtime_metadata(state, query),
                 )
 
                 # Phase 4: Multi-round tool execution
@@ -2637,6 +3066,7 @@ async def code_studio_node(state: AgentState) -> AgentState:
                 tools_context_override=_build_code_studio_tools_context(
                     settings,
                     _ctx.get("user_role", "student"),
+                    query,
                 ),
             )
             runtime_context_base = build_tool_runtime_context(
@@ -2648,6 +3078,7 @@ async def code_studio_node(state: AgentState) -> AgentState:
                 user_role=_ctx.get("user_role", "student"),
                 node="code_studio_agent",
                 source="agentic_loop",
+                metadata=_build_visual_tool_runtime_metadata(state, query),
             )
 
             llm_response, messages, _tc_events = await _execute_code_studio_tool_rounds(
@@ -3538,6 +3969,122 @@ def _inject_host_context(state: dict) -> str:
     return ""
 
 
+def _inject_visual_context(state: dict) -> str:
+    """Format client-side inline visual context as prompt guidance for patchable visuals."""
+    ctx = state.get("context", {})
+    if not isinstance(ctx, dict):
+        return ""
+
+    raw_visual = ctx.get("visual_context")
+    if not isinstance(raw_visual, dict) or not raw_visual:
+        return ""
+
+    last_session_id = str(raw_visual.get("last_visual_session_id") or "").strip()
+    last_visual_type = str(raw_visual.get("last_visual_type") or "").strip()
+    last_visual_title = str(raw_visual.get("last_visual_title") or "").strip()
+    active_inline_visuals = raw_visual.get("active_inline_visuals")
+    active_items = active_inline_visuals if isinstance(active_inline_visuals, list) else []
+
+    lines = [
+        "## Inline Visual Context",
+        "- Neu user dang sua, lam ro, highlight, loc, hoac bien doi visual vua co trong chat, UU TIEN patch cung visual session thay vi tao visual moi.",
+        "- Khi patch, goi tool_generate_visual voi visual_session_id cu va operation='patch'. Chi doi visual_type neu user yeu cau ro rang.",
+        "- Chon renderer_kind phu hop: template cho visual giao duc chuan, inline_html cho custom editorial visual, app cho simulation/mini tool.",
+        "- Sau khi goi tool_generate_visual, KHONG copy JSON vao answer. Viet narrative ngan + takeaway; frontend se tu dong cap nhat visual.",
+    ]
+
+    if last_session_id:
+        lines.append(f"- Visual session gan nhat: {last_session_id}")
+    if last_visual_type:
+        lines.append(f"- Loai visual gan nhat: {last_visual_type}")
+    if last_visual_title:
+        lines.append(f"- Tieu de visual gan nhat: {last_visual_title}")
+
+    if active_items:
+        lines.append("- Visual dang co san trong thread:")
+        for index, item in enumerate(active_items[:4], start=1):
+            if not isinstance(item, dict):
+                continue
+            session_id = str(item.get("visual_session_id") or item.get("session_id") or "").strip()
+            visual_type = str(item.get("type") or "").strip()
+            title = str(item.get("title") or "").strip()
+            status = str(item.get("status") or "").strip()
+            renderer_kind = str(item.get("renderer_kind") or "").strip()
+            shell_variant = str(item.get("shell_variant") or "").strip()
+            state_summary = str(item.get("state_summary") or "").strip()
+            summary = " | ".join(
+                part for part in (session_id, visual_type, title, renderer_kind, shell_variant, status, state_summary) if part
+            )
+            if summary:
+                lines.append(f"  {index}. {summary}")
+
+    return "\n".join(lines)
+
+
+def _inject_widget_feedback_context(state: dict) -> str:
+    """Format recent widget/app outcomes as prompt guidance for the next turn."""
+    ctx = state.get("context", {})
+    if not isinstance(ctx, dict):
+        return ""
+
+    raw_feedback = ctx.get("widget_feedback")
+    if not isinstance(raw_feedback, dict) or not raw_feedback:
+        return ""
+
+    items = raw_feedback.get("recent_widget_feedback")
+    recent_items = items if isinstance(items, list) else []
+    last_kind = str(raw_feedback.get("last_widget_kind") or "").strip()
+    last_summary = str(raw_feedback.get("last_widget_summary") or "").strip()
+
+    if not recent_items and not (last_kind or last_summary):
+        return ""
+
+    lines = [
+        "## Widget Feedback Context",
+        "- User vua tuong tac voi widget/app trong chat. Neu phu hop, hay phan tich ket qua nay de ca nhan hoa cau tra loi tiep theo.",
+        "- Uu tien nhan xet tien do, diem manh, diem can on lai, va goi y buoc tiep theo dua tren ket qua widget.",
+        "- Neu ket qua cho thay user gap kho khan, co the de xuat giai thich lai, bai tap bo sung, hoac ghi nho bang tool_character_note khi that su huu ich.",
+    ]
+
+    if last_kind:
+        lines.append(f"- Loai widget gan nhat: {last_kind}")
+    if last_summary:
+        lines.append(f"- Tom tat ket qua gan nhat: {last_summary}")
+
+    if recent_items:
+        lines.append("- Ket qua widget gan day:")
+        for index, item in enumerate(recent_items[:5], start=1):
+            if not isinstance(item, dict):
+                continue
+            widget_kind = str(item.get("widget_kind") or "").strip()
+            summary = str(item.get("summary") or "").strip()
+            status = str(item.get("status") or "").strip()
+            title = str(item.get("title") or "").strip()
+            score = item.get("score")
+            correct_count = item.get("correct_count")
+            total_count = item.get("total_count")
+
+            metrics = []
+            if isinstance(score, (int, float)):
+                metrics.append(f"score={score}")
+            if isinstance(correct_count, (int, float)) and isinstance(total_count, (int, float)):
+                metrics.append(f"correct={correct_count}/{total_count}")
+
+            details = " | ".join(
+                part for part in (
+                    widget_kind,
+                    title,
+                    status,
+                    summary,
+                    ", ".join(metrics) if metrics else "",
+                ) if part
+            )
+            if details:
+                lines.append(f"  {index}. {details}")
+
+    return "\n".join(lines)
+
+
 async def process_with_multi_agent(
     query: str,
     user_id: str,
@@ -3615,6 +4162,12 @@ async def process_with_multi_agent(
     _host_prompt = _inject_host_context(initial_state)
     if _host_prompt:
         initial_state["host_context_prompt"] = _host_prompt
+    _visual_prompt = _inject_visual_context(initial_state)
+    if _visual_prompt:
+        initial_state["visual_context_prompt"] = _visual_prompt
+    _widget_feedback_prompt = _inject_widget_feedback_context(initial_state)
+    if _widget_feedback_prompt:
+        initial_state["widget_feedback_prompt"] = _widget_feedback_prompt
 
     # Run graph with composite thread_id for per-user isolation (Sprint 16)
     # Sprint 170c: Include org_id for cross-org thread isolation

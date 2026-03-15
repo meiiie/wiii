@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from "motion/react";
 import { createPortal } from "react-dom";
 import {
   BookOpen,
-  CheckCircle2,
   ChevronRight,
   Clock3,
   FileSearch,
@@ -342,10 +341,15 @@ export function ReasoningInterval({
   const statusBadge = interval.isLive ? "Đang suy luận" : "Đã ghi lại";
   const durationText = interval.durationSeconds ? `${interval.durationSeconds}s` : "";
   const showExtendedMeta = thinkingLevel === "detailed";
+  void phaseLabel;
+  void statusBadge;
+  void durationText;
+  void showExtendedMeta;
 
   // Sprint V5: Claude-pattern collapsible — header is clickable, body toggles
   const [expanded, setExpanded] = useState(false);
   const isBalanced = thinkingLevel === "balanced";
+  void isBalanced;
   const allItems = interval.items;
   const visibleItems = useMemo(
     () => selectVisibleItems(allItems, thinkingLevel, interval.isLive),

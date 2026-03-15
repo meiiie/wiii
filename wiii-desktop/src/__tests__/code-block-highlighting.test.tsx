@@ -7,10 +7,11 @@
  * - LANGUAGE_LABELS map completeness
  */
 import { describe, it, expect, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
 
-// --- Mock react-shiki/web BEFORE importing CodeBlock ---
-vi.mock("react-shiki/web", () => ({
-  default: ({ children, language, showLineNumbers, theme, delay }: {
+// --- Mock the local minimal Shiki wrapper BEFORE importing CodeBlock ---
+vi.mock("@/components/common/ShikiMinimalHighlighter", () => ({
+  ShikiMinimalHighlighter: ({ children, language, showLineNumbers, theme, delay }: {
     children: string;
     language?: string;
     showLineNumbers?: boolean;
@@ -212,21 +213,33 @@ describe("MarkdownRenderer", () => {
     expect(extractText({ props: { children: "nested" } })).toBe("nested");
     expect(extractText({ props: { children: ["a", { props: { children: "b" } }] } })).toBe("ab");
   });
+
+  it("renders plain text paragraphs without losing comparison symbols", async () => {
+    const { MarkdownRenderer } = await import("@/components/common/MarkdownRenderer");
+    render(
+      <MarkdownRenderer content={"Softmax attention costs O(n^2).\n\nLinear attention keeps A < B and C > D visible."} />,
+    );
+
+    expect(screen.getByText("Softmax attention costs O(n^2).")).toBeTruthy();
+    expect(
+      screen.getByText("Linear attention keeps A < B and C > D visible."),
+    ).toBeTruthy();
+  });
 });
 
 // ============================================================
 // Shiki integration contract tests
 // ============================================================
 describe("Shiki integration contract", () => {
-  it("ShikiHighlighter mock is available via lazy import", async () => {
-    const mod = await import("react-shiki/web");
-    expect(mod.default).toBeDefined();
+  it("minimal Shiki wrapper is available via local import", async () => {
+    const mod = await import("@/components/common/ShikiMinimalHighlighter");
+    expect(mod.ShikiMinimalHighlighter).toBeDefined();
   });
 
   it("Shiki delay should be 150ms for streaming throttle", () => {
     const STREAMING_DELAY = 150;
     expect(STREAMING_DELAY).toBe(150);
-    // This matches react-shiki's delay prop for debounced re-highlighting
+    // This matches the code block highlight throttle for streamed content
   });
 
   it("Shiki themes should be github-light and github-dark", () => {

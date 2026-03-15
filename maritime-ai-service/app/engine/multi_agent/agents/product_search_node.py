@@ -566,6 +566,9 @@ class ProductSearchAgentNode:
         host_context_prompt = state.get("host_context_prompt", "")
         if host_context_prompt:
             system_sections.append(str(host_context_prompt))
+        widget_feedback_prompt = state.get("widget_feedback_prompt", "")
+        if widget_feedback_prompt:
+            system_sections.append(str(widget_feedback_prompt))
 
         system_prompt = "\n\n".join(section for section in system_sections if section)
 
@@ -743,6 +746,7 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
             # LLM inference (streaming if event queue available)
             if event_queue is not None:
                 response = None
+                pre_tool_stream_text = ""
                 async for chunk in llm_to_use.astream(messages):
                     if response is None:
                         response = chunk
@@ -761,7 +765,7 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
                                 elif isinstance(block, str):
                                     text += block
                     if text:
-                        await _push_thinking_deltas(text)
+                        pre_tool_stream_text += text
             else:
                 response = await llm_to_use.ainvoke(messages)
 
@@ -785,6 +789,10 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
                     answer_streamed = True
                     await _push_answer_deltas(final_response)
                 break
+
+            if event_queue is not None and pre_tool_stream_text.strip():
+                # Keep the reasoning lane compact until we know tools are needed.
+                await _push_thinking_deltas(pre_tool_stream_text)
 
             # Execute tool calls
             for tool_call in tool_calls:

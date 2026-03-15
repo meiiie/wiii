@@ -1,17 +1,28 @@
 import json
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+
+
+def _load_chat_stream_presenter():
+    path = Path(__file__).resolve().parents[2] / "app" / "api" / "v1" / "chat_stream_presenter.py"
+    spec = spec_from_file_location("chat_stream_presenter_test", path)
+    module = module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_emit_blocked_sse_events_emits_answer_metadata_done():
     from types import SimpleNamespace
 
-    from app.api.v1.chat_stream_presenter import emit_blocked_sse_events
+    presenter = _load_chat_stream_presenter()
 
     blocked_response = SimpleNamespace(
         message="Blocked message",
         metadata={"blocked": True},
     )
 
-    chunks, counter = emit_blocked_sse_events(
+    chunks, counter = presenter.emit_blocked_sse_events(
         blocked_response=blocked_response,
         session_id="session-1",
         processing_time=0.25,
@@ -28,11 +39,11 @@ def test_emit_blocked_sse_events_emits_answer_metadata_done():
 def test_serialize_stream_event_metadata_adds_streaming_version():
     from types import SimpleNamespace
 
-    from app.api.v1.chat_stream_presenter import serialize_stream_event
+    presenter = _load_chat_stream_presenter()
 
     event = SimpleNamespace(type="metadata", content={"processing_time": 1.5})
 
-    chunks, counter, should_stop = serialize_stream_event(
+    chunks, counter, should_stop = presenter.serialize_stream_event(
         event=event,
         event_counter=4,
         enable_artifacts=True,
@@ -50,7 +61,7 @@ def test_serialize_stream_event_metadata_adds_streaming_version():
 def test_serialize_stream_event_skips_artifact_when_disabled():
     from types import SimpleNamespace
 
-    from app.api.v1.chat_stream_presenter import serialize_stream_event
+    presenter = _load_chat_stream_presenter()
 
     event = SimpleNamespace(
         type="artifact",
@@ -58,7 +69,7 @@ def test_serialize_stream_event_skips_artifact_when_disabled():
         node="tutor_agent",
     )
 
-    chunks, counter, should_stop = serialize_stream_event(
+    chunks, counter, should_stop = presenter.serialize_stream_event(
         event=event,
         event_counter=2,
         enable_artifacts=False,
@@ -72,11 +83,11 @@ def test_serialize_stream_event_skips_artifact_when_disabled():
 def test_serialize_stream_event_error_requests_stop():
     from types import SimpleNamespace
 
-    from app.api.v1.chat_stream_presenter import serialize_stream_event
+    presenter = _load_chat_stream_presenter()
 
     event = SimpleNamespace(type="error", content={"message": "boom"})
 
-    chunks, counter, should_stop = serialize_stream_event(
+    chunks, counter, should_stop = presenter.serialize_stream_event(
         event=event,
         event_counter=7,
         enable_artifacts=True,
@@ -87,10 +98,94 @@ def test_serialize_stream_event_error_requests_stop():
     assert "stream_error" in chunks[0]
 
 
-def test_emit_internal_error_sse_events_can_include_done():
-    from app.api.v1.chat_stream_presenter import emit_internal_error_sse_events
+def test_serialize_stream_event_visual_emits_sse_chunk():
+    from types import SimpleNamespace
 
-    chunks, counter = emit_internal_error_sse_events(
+    presenter = _load_chat_stream_presenter()
+
+    event = SimpleNamespace(
+        type="visual",
+        content={
+            "id": "visual-1",
+            "visual_session_id": "vs-1",
+            "type": "comparison",
+            "runtime": "svg",
+            "title": "A vs B",
+            "summary": "Quick compare",
+            "spec": {"left": {"title": "A"}, "right": {"title": "B"}},
+        },
+        node="direct",
+    )
+
+    chunks, counter, should_stop = presenter.serialize_stream_event(
+        event=event,
+        event_counter=1,
+        enable_artifacts=False,
+    )
+
+    assert should_stop is False
+    assert counter == 2
+    assert len(chunks) == 1
+    assert "event: visual" in chunks[0]
+    data_line = next(
+        line for line in chunks[0].split("\n") if line.startswith("data: ")
+    )
+    payload = json.loads(data_line[6:])
+    assert payload["display_role"] == "artifact"
+    assert payload["presentation"] == "compact"
+
+
+def test_serialize_stream_event_visual_lifecycle_chunks():
+    from types import SimpleNamespace
+
+    presenter = _load_chat_stream_presenter()
+
+    events = [
+        SimpleNamespace(
+            type="visual_open",
+            content={
+                "id": "visual-2",
+                "visual_session_id": "vs-2",
+                "type": "process",
+                "runtime": "svg",
+                "title": "Pipeline",
+                "summary": "Quick process",
+                "spec": {"steps": [{"title": "Start"}, {"title": "End"}]},
+            },
+            node="direct",
+        ),
+        SimpleNamespace(
+            type="visual_commit",
+            content={"visual_session_id": "vs-2", "status": "committed"},
+            node="direct",
+        ),
+        SimpleNamespace(
+            type="visual_dispose",
+            content={"visual_session_id": "vs-2", "status": "disposed", "reason": "reset"},
+            node="direct",
+        ),
+    ]
+
+    counter = 2
+    emitted = []
+    for event in events:
+        chunks, counter, should_stop = presenter.serialize_stream_event(
+            event=event,
+            event_counter=counter,
+            enable_artifacts=False,
+        )
+        assert should_stop is False
+        emitted.extend(chunks)
+
+    assert any("event: visual_open" in chunk for chunk in emitted)
+    assert any("event: visual_commit" in chunk for chunk in emitted)
+    assert any("event: visual_dispose" in chunk for chunk in emitted)
+
+
+def test_emit_internal_error_sse_events_can_include_done():
+    presenter = _load_chat_stream_presenter()
+
+    chunks, counter = presenter.emit_internal_error_sse_events(
         processing_time=1.25,
         event_counter=3,
     )
@@ -102,9 +197,9 @@ def test_emit_internal_error_sse_events_can_include_done():
 
 
 def test_emit_internal_error_sse_events_supports_single_error_chunk():
-    from app.api.v1.chat_stream_presenter import emit_internal_error_sse_events
+    presenter = _load_chat_stream_presenter()
 
-    chunks, counter = emit_internal_error_sse_events()
+    chunks, counter = presenter.emit_internal_error_sse_events()
 
     assert counter is None
     assert len(chunks) == 1

@@ -47,16 +47,19 @@ describe("Sprint 228: Widget Routing in MarkdownRenderer", () => {
     });
   });
 
-  it("renders normal code blocks via CodeBlock (not widget)", () => {
+  it("renders normal code blocks via CodeBlock (not widget)", async () => {
     const content = "```python\nprint('hello')\n```";
     render(<MarkdownRenderer content={content} />);
-    expect(screen.getByTestId("code-block")).toBeTruthy();
+    const codeBlock = await screen.findByTestId("code-block");
+    expect(codeBlock.getAttribute("data-lang")).toBe("python");
     expect(screen.queryByTestId("inline-widget")).toBeNull();
   });
 
-  it("does not render widget for html code blocks", () => {
+  it("does not render widget for html code blocks", async () => {
     const content = "```html\n<div>Normal HTML code</div>\n```";
     render(<MarkdownRenderer content={content} />);
+    const codeBlock = await screen.findByTestId("code-block");
+    expect(codeBlock.getAttribute("data-lang")).toBe("html");
     expect(screen.queryByTestId("inline-widget")).toBeNull();
   });
 
@@ -91,9 +94,11 @@ describe("Sprint 228: Widget Routing in MarkdownRenderer", () => {
     });
   });
 
-  it("does not render widget for javascript code blocks", () => {
+  it("does not render widget for javascript code blocks", async () => {
     const content = "```javascript\nconst x = 1;\n```";
     render(<MarkdownRenderer content={content} />);
+    const codeBlock = await screen.findByTestId("code-block");
+    expect(codeBlock.getAttribute("data-lang")).toBe("javascript");
     expect(screen.queryByTestId("inline-widget")).toBeNull();
   });
 
@@ -113,5 +118,19 @@ describe("Sprint 228: Widget Routing in MarkdownRenderer", () => {
     await waitFor(() => {
       expect(screen.getByTestId("inline-widget")).toBeTruthy();
     });
+  });
+
+  it("shows a pending widget shell while the closing fence has not arrived yet", () => {
+    const content = [
+      "Dang giai thich truoc khi widget xuat hien.",
+      "",
+      "```widget",
+      "<div>Dang stream widget",
+    ].join("\n");
+
+    render(<MarkdownRenderer content={content} />);
+
+    expect(screen.getByTestId("pending-inline-widget")).toBeTruthy();
+    expect(screen.queryByText("```widget")).toBeNull();
   });
 });
