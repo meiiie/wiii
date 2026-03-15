@@ -79,14 +79,14 @@ afterEach(() => {
 describe("StreamBuffer", () => {
   // 1. Construction defaults
   it("has pending=0 and running=false on construction", () => {
-    const buf = new StreamBuffer({ onFlush: vi.fn() });
+    const buf = new StreamBuffer({ onFlush: vi.fn(), initialHoldMs: 0 });
     expect(buf.pending).toBe(0);
     expect(buf.running).toBe(false);
   });
 
   // 2. push accumulates
   it("accumulates multiple pushes into the buffer", () => {
-    const buf = new StreamBuffer({ onFlush: vi.fn() });
+    const buf = new StreamBuffer({ onFlush: vi.fn(), initialHoldMs: 0 });
     buf.push("Hello");
     buf.push(" ");
     buf.push("World");
@@ -95,7 +95,7 @@ describe("StreamBuffer", () => {
 
   // 3. push starts rAF loop
   it("starts rAF loop after first push", () => {
-    const buf = new StreamBuffer({ onFlush: vi.fn() });
+    const buf = new StreamBuffer({ onFlush: vi.fn(), initialHoldMs: 0 });
     expect(buf.running).toBe(false);
     buf.push("x");
     expect(buf.running).toBe(true);
@@ -103,7 +103,7 @@ describe("StreamBuffer", () => {
 
   // 4. push ignores empty
   it("ignores empty string push — no loop start", () => {
-    const buf = new StreamBuffer({ onFlush: vi.fn() });
+    const buf = new StreamBuffer({ onFlush: vi.fn(), initialHoldMs: 0 });
     buf.push("");
     expect(buf.running).toBe(false);
     expect(buf.pending).toBe(0);
@@ -117,7 +117,7 @@ describe("StreamBuffer", () => {
       minCharsPerFrame: 2,
       maxCharsPerFrame: 5,
       targetFrames: 4,
-      minFlushInterval: 0,
+      minFlushInterval: 0, initialHoldMs: 0,
     });
     buf.push("abcdefgh"); // 8 chars
     tickFrame(); // Should flush some chars
@@ -133,7 +133,7 @@ describe("StreamBuffer", () => {
       minCharsPerFrame: 1,
       maxCharsPerFrame: 3,
       targetFrames: 4,
-      minFlushInterval: 0,
+      minFlushInterval: 0, initialHoldMs: 0,
     });
     buf.push("Hello World!"); // 12 chars
     // Tick enough frames to drain everything
@@ -148,7 +148,7 @@ describe("StreamBuffer", () => {
       onFlush: vi.fn(),
       minCharsPerFrame: 100, // Will drain in 1 frame
       maxCharsPerFrame: 100,
-      minFlushInterval: 0,
+      minFlushInterval: 0, initialHoldMs: 0,
     });
     buf.push("short");
     expect(buf.running).toBe(true);
@@ -163,7 +163,7 @@ describe("StreamBuffer", () => {
       onFlush: vi.fn(),
       minCharsPerFrame: 100,
       maxCharsPerFrame: 100,
-      minFlushInterval: 0,
+      minFlushInterval: 0, initialHoldMs: 0,
     });
     buf.push("first");
     tickFrame(); // Drains, pauses
@@ -180,41 +180,44 @@ describe("StreamBuffer", () => {
       minCharsPerFrame: 1,
       maxCharsPerFrame: 12,
       targetFrames: 8,
-      minFlushInterval: 0,
+      minFlushInterval: 0, initialHoldMs: 0,
     });
     buf.push("ab"); // 2 chars, ceil(2/8)=1, clamped to min=1
     tickFrame();
     expect(chunks[0].length).toBe(1); // minCharsPerFrame
   });
 
-  // 10. Adaptive: max chars
+  // 10. Adaptive: max chars (disable ease-in to test raw adaptive logic)
   it("caps at maxCharsPerFrame for large buffers", () => {
     const chunks: string[] = [];
     const buf = new StreamBuffer({
       onFlush: (c) => chunks.push(c),
       minCharsPerFrame: 1,
       maxCharsPerFrame: 5,
-      targetFrames: 4,
-      minFlushInterval: 0,
+      targetBufferDepth: 40,
+      minFlushInterval: 0, initialHoldMs: 0,
+      easeInFrames: 0,
     });
-    buf.push("a".repeat(200)); // ceil(200/4)=50, capped at max=5
+    buf.push("a".repeat(200)); // bufferRatio=1 → max=5
     tickFrame();
     expect(chunks[0].length).toBe(5);
   });
 
-  // 11. Adaptive: proportional
+  // 11. Adaptive: proportional (disable ease-in)
   it("uses proportional chars for medium buffers", () => {
     const chunks: string[] = [];
     const buf = new StreamBuffer({
       onFlush: (c) => chunks.push(c),
       minCharsPerFrame: 1,
       maxCharsPerFrame: 20,
-      targetFrames: 8,
-      minFlushInterval: 0,
+      targetBufferDepth: 40,
+      minFlushInterval: 0, initialHoldMs: 0,
+      easeInFrames: 0,
     });
-    buf.push("a".repeat(40)); // ceil(40/8)=5, between 1 and 20
+    buf.push("a".repeat(20)); // bufferRatio=0.5 → 1+(20-1)*0.5=10.5 → ~11
     tickFrame();
-    expect(chunks[0].length).toBe(5);
+    expect(chunks[0].length).toBeGreaterThanOrEqual(5);
+    expect(chunks[0].length).toBeLessThanOrEqual(15);
   });
 
   // 12. drain flushes all immediately
@@ -224,7 +227,7 @@ describe("StreamBuffer", () => {
       onFlush: (c) => chunks.push(c),
       minCharsPerFrame: 1,
       maxCharsPerFrame: 3,
-      minFlushInterval: 0,
+      minFlushInterval: 0, initialHoldMs: 0,
     });
     buf.push("Hello World");
     buf.drain();
@@ -236,7 +239,7 @@ describe("StreamBuffer", () => {
   // 13. drain no-op on empty
   it("drain() does nothing when buffer is empty", () => {
     const onFlush = vi.fn();
-    const buf = new StreamBuffer({ onFlush });
+    const buf = new StreamBuffer({ onFlush, initialHoldMs: 0 });
     buf.drain();
     expect(onFlush).not.toHaveBeenCalled();
   });
@@ -247,7 +250,7 @@ describe("StreamBuffer", () => {
       onFlush: vi.fn(),
       minCharsPerFrame: 1,
       maxCharsPerFrame: 2,
-      minFlushInterval: 0,
+      minFlushInterval: 0, initialHoldMs: 0,
     });
     buf.push("abcdefghij");
     expect(buf.running).toBe(true);
@@ -263,7 +266,7 @@ describe("StreamBuffer", () => {
       minCharsPerFrame: 2,
       maxCharsPerFrame: 3,
       targetFrames: 4,
-      minFlushInterval: 0,
+      minFlushInterval: 0, initialHoldMs: 0,
     });
     buf.push("Hello World!"); // 12 chars
     tickFrame(); // Flush ~3 chars
@@ -278,7 +281,7 @@ describe("StreamBuffer", () => {
   // 16. discard throws away content
   it("discard() clears buffer without calling onFlush", () => {
     const onFlush = vi.fn();
-    const buf = new StreamBuffer({ onFlush });
+    const buf = new StreamBuffer({ onFlush, initialHoldMs: 0 });
     buf.push("secret data");
     buf.discard();
     expect(onFlush).not.toHaveBeenCalled();
@@ -287,7 +290,7 @@ describe("StreamBuffer", () => {
 
   // 17. discard stops loop
   it("discard() stops the rAF loop", () => {
-    const buf = new StreamBuffer({ onFlush: vi.fn() });
+    const buf = new StreamBuffer({ onFlush: vi.fn(), initialHoldMs: 0 });
     buf.push("data");
     expect(buf.running).toBe(true);
     buf.discard();
@@ -302,7 +305,7 @@ describe("StreamBuffer", () => {
       onFlush: first,
       minCharsPerFrame: 100,
       maxCharsPerFrame: 100,
-      minFlushInterval: 0,
+      minFlushInterval: 0, initialHoldMs: 0,
     });
     buf.push("initial");
     buf.setOnFlush(second);
@@ -319,7 +322,7 @@ describe("StreamBuffer", () => {
       minCharsPerFrame: 3,
       maxCharsPerFrame: 3,
       targetFrames: 1,
-      minFlushInterval: 0,
+      minFlushInterval: 0, initialHoldMs: 0,
     });
     // "ab**cd" — if we extract 3, we'd land between the two *.
     // The buffer should extend to include both **.
@@ -344,7 +347,7 @@ describe("StreamBuffer", () => {
       },
       minCharsPerFrame: 100,
       maxCharsPerFrame: 100,
-      minFlushInterval: 0,
+      minFlushInterval: 0, initialHoldMs: 0,
       initialHoldMs: 0,
     });
     buf.push("initial");

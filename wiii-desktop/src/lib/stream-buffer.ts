@@ -1,30 +1,41 @@
 /**
- * Sprint 150: StreamBuffer — rAF-based token smoothing.
+ * Sprint V5: StreamBuffer — Claude-quality token smoothing engine.
  *
- * Sits between SSE event handlers and Zustand store to buffer incoming
- * tokens and flush them at ~60fps via requestAnimationFrame, producing
- * smooth, consistent text rendering instead of bursty TCP-paced updates.
+ * 5 layers processing each frame:
+ *   1. Adaptive Pacing — chars/frame scales with buffer depth
+ *   2. Ease-in — cubic smoothstep ramp over first N frames
+ *   3. Word Boundary Snap — flush at space/punctuation, never mid-word
+ *   4. Markdown Guard — don't break inside **, ```, [], ()
+ *   5. Drain Mode — accelerated flush when stream ends
  *
- * Flow:  SSE event → buffer.push(chunk)  [no re-render]
+ * Flow:  SSE event → buffer.push(chunk)
+ *                          ↓
+ *                  initial hold (~80ms)
  *                          ↓
  *                  rAF loop (~60fps)
  *                          ↓
- *                  buffer.flush(N chars) → onFlush()  [1 re-render/frame]
+ *                  adaptive flush → onFlush()
+ *
+ * Based on StreamBufferV2 architecture from Claude AI analysis.
  */
 
 export interface StreamBufferOptions {
   /** Called each rAF frame with the chars to render */
   onFlush: (chars: string) => void;
-  /** Minimum chars to emit per frame (default: 3 — prevents single-char stutter) */
-  minCharsPerFrame?: number;
-  /** Maximum chars to emit per frame (default: 28 — smooth burst drain) */
-  maxCharsPerFrame?: number;
-  /** Target frames to drain the current buffer (default: 6 ≈ 100ms at 60fps) */
-  targetFrames?: number;
-  /** Minimum interval between flushes in ms (default: 16 ≈ 60fps cap) */
-  minFlushInterval?: number;
-  /** Initial hold delay in ms before first flush (default: 60 — accumulate tokens) */
+  /** ms to wait before first flush (default: 80 — accumulate initial tokens) */
   initialHoldMs?: number;
+  /** Minimum chars to flush per frame (default: 3 — prevents stalling) */
+  minCharsPerFrame?: number;
+  /** Maximum chars to flush per frame (default: 28 — prevents massive bursts) */
+  maxCharsPerFrame?: number;
+  /** Buffer depth at which we flush at max rate (default: 40) */
+  targetBufferDepth?: number;
+  /** Number of frames for cubic ease-in ramp (default: 15) */
+  easeInFrames?: number;
+  /** @deprecated Use targetBufferDepth. Kept for backward compat. */
+  targetFrames?: number;
+  /** @deprecated V2 uses rAF pacing only. Kept for backward compat (ignored). */
+  minFlushInterval?: number;
 }
 
 // Markdown tokens that should not be split mid-sequence
@@ -33,23 +44,25 @@ const MD_PAIRS = ["```", "**", "__", "~~", "``", "`"];
 export class StreamBuffer {
   private _buffer = "";
   private _rafId: number | null = null;
-  private _lastFlushTime = 0;
   private _onFlush: (chars: string) => void;
   private _minChars: number;
   private _maxChars: number;
-  private _targetFrames: number;
-  private _minFlushInterval: number;
+  private _targetBufferDepth: number;
   private _initialHoldMs: number;
-  private _firstPushTime = 0;
-  private _hasStartedFlushing = false;
+  private _easeInFrames: number;
+  private _holdTimer: ReturnType<typeof setTimeout> | null = null;
+  private _started = false;
+  private _running = false;
+  private _frameCount = 0;
+  private _streamEnded = false;
 
   constructor(opts: StreamBufferOptions) {
     this._onFlush = opts.onFlush;
     this._minChars = opts.minCharsPerFrame ?? 3;
     this._maxChars = opts.maxCharsPerFrame ?? 28;
-    this._targetFrames = opts.targetFrames ?? 6;
-    this._minFlushInterval = opts.minFlushInterval ?? 16;
-    this._initialHoldMs = opts.initialHoldMs ?? 60;
+    this._targetBufferDepth = opts.targetBufferDepth ?? 40;
+    this._initialHoldMs = opts.initialHoldMs ?? 80;
+    this._easeInFrames = opts.easeInFrames ?? 15;
   }
 
   /** Number of characters waiting in the buffer */
@@ -59,7 +72,7 @@ export class StreamBuffer {
 
   /** Whether the rAF loop is currently active */
   get running(): boolean {
-    return this._rafId !== null;
+    return this._running;
   }
 
   /** Replace the flush callback (e.g. when switching streams) */
@@ -67,21 +80,51 @@ export class StreamBuffer {
     this._onFlush = fn;
   }
 
-  /** Add tokens to the buffer. Auto-starts the rAF loop if idle. */
+  /** Add tokens to the buffer. Auto-starts after initial hold. */
   push(chunk: string): void {
     if (!chunk) return;
     this._buffer += chunk;
-    if (!this._firstPushTime) {
-      this._firstPushTime = performance.now();
-    }
-    if (!this._rafId) {
+
+    if (!this._started && !this._holdTimer) {
+      if (this._initialHoldMs <= 0) {
+        // No hold — start immediately (useful for testing)
+        this._started = true;
+        if (!this._running) this._startLoop();
+      } else {
+        // First token — start initial hold timer
+        this._holdTimer = setTimeout(() => {
+          this._started = true;
+          this._holdTimer = null;
+          if (!this._running) this._startLoop();
+        }, this._initialHoldMs);
+      }
+    } else if (this._started && !this._running) {
       this._startLoop();
+    }
+  }
+
+  /** Signal stream ended. Triggers accelerated drain. */
+  end(): void {
+    this._streamEnded = true;
+    if (!this._started) {
+      // Still in hold — flush immediately
+      if (this._holdTimer) {
+        clearTimeout(this._holdTimer);
+        this._holdTimer = null;
+      }
+      this._started = true;
+      if (!this._running) this._startLoop();
     }
   }
 
   /** Flush ALL remaining chars synchronously. Use before block boundaries. */
   drain(): void {
     this._stopLoop();
+    if (this._holdTimer) {
+      clearTimeout(this._holdTimer);
+      this._holdTimer = null;
+    }
+    this._started = true;
     if (this._buffer.length > 0) {
       const out = this._buffer;
       this._buffer = "";
@@ -92,14 +135,21 @@ export class StreamBuffer {
   /** Discard all buffered content without emitting. Use on cancel/error. */
   discard(): void {
     this._stopLoop();
+    if (this._holdTimer) {
+      clearTimeout(this._holdTimer);
+      this._holdTimer = null;
+    }
     this._buffer = "";
-    this._firstPushTime = 0;
-    this._hasStartedFlushing = false;
+    this._started = false;
+    this._running = false;
+    this._frameCount = 0;
+    this._streamEnded = false;
   }
 
   // -- Internal -----------------------------------------------------------
 
   private _startLoop(): void {
+    this._running = true;
     this._rafId = requestAnimationFrame(this._tick);
   }
 
@@ -108,87 +158,99 @@ export class StreamBuffer {
       cancelAnimationFrame(this._rafId);
       this._rafId = null;
     }
+    this._running = false;
   }
 
-  private _tick = (_timestamp?: number): void => {
-    const now = performance.now();
-
-    // Sprint V5: Initial hold — accumulate tokens before first flush for smoother onset
-    if (!this._hasStartedFlushing && this._firstPushTime > 0) {
-      if (now - this._firstPushTime < this._initialHoldMs) {
-        this._rafId = requestAnimationFrame(this._tick);
-        return;
-      }
-      this._hasStartedFlushing = true;
-    }
-
-    // Respect min flush interval
-    if (now - this._lastFlushTime < this._minFlushInterval) {
-      this._rafId = requestAnimationFrame(this._tick);
-      return;
-    }
-
+  private _tick = (): void => {
     if (this._buffer.length === 0) {
+      this._running = false;
       this._rafId = null;
       return;
     }
 
-    // Adaptive: chars = clamp(bufferLen / targetFrames, min, max)
-    const raw = Math.ceil(this._buffer.length / this._targetFrames);
-    const count = Math.max(this._minChars, Math.min(this._maxChars, raw));
+    this._frameCount++;
 
-    const extracted = this._extractChars(count);
-    this._lastFlushTime = now;
+    // Layer 1: Adaptive pacing — scale chars/frame with buffer depth
+    const bufferRatio = Math.min(1, this._buffer.length / this._targetBufferDepth);
+    let targetChars = this._minChars + (this._maxChars - this._minChars) * bufferRatio;
+
+    // Layer 2: Ease-in — cubic smoothstep t²(3-2t) over first N frames
+    if (this._frameCount <= this._easeInFrames) {
+      const t = this._frameCount / this._easeInFrames;
+      const eased = t * t * (3 - 2 * t); // smoothstep
+      targetChars = Math.max(this._minChars, targetChars * eased);
+    }
+
+    // Layer 5: Drain mode — stream ended, accelerate to finish
+    if (this._streamEnded && this._buffer.length < this._targetBufferDepth) {
+      targetChars = Math.max(targetChars, Math.ceil(this._buffer.length * 0.25));
+    }
+
+    let count = Math.round(targetChars);
+    count = Math.max(1, Math.min(count, this._buffer.length));
+
+    // Layer 3: Word boundary snap
+    count = this._snapToWordBoundary(count);
+
+    // Layer 4: Markdown guard
+    count = this._avoidMarkdownBreak(count);
+
+    // Safety
+    count = Math.max(1, Math.min(count, this._buffer.length));
+
+    const extracted = this._buffer.slice(0, count);
+    this._buffer = this._buffer.slice(count);
     this._onFlush(extracted);
 
     // Continue loop if more content remains
     if (this._buffer.length > 0) {
       this._rafId = requestAnimationFrame(this._tick);
     } else {
+      this._running = false;
       this._rafId = null;
     }
   };
 
   /**
-   * Extract `count` chars from the front of the buffer, avoiding splits
-   * in the middle of markdown tokens (**, ```, __, ~~, \n).
+   * Snap flush count to nearest word boundary (space, newline, punctuation).
+   * Searches ±6 chars from target with bias toward flushing more.
    */
-  private _extractChars(count: number): string {
-    if (count >= this._buffer.length) {
-      const out = this._buffer;
-      this._buffer = "";
-      return out;
+  private _snapToWordBoundary(count: number): number {
+    if (count >= this._buffer.length) return count;
+
+    const SEARCH_RANGE = 6;
+    const searchStart = Math.max(1, count - SEARCH_RANGE);
+    const searchEnd = Math.min(this._buffer.length, count + SEARCH_RANGE);
+
+    let bestPos = count;
+    let bestDist = SEARCH_RANGE + 1;
+
+    for (let i = searchStart; i <= searchEnd; i++) {
+      const ch = this._buffer[i];
+      if (ch === " " || ch === "\n" || ch === "\t" ||
+          ch === "," || ch === "." || ch === "!" || ch === "?" ||
+          ch === ";" || ch === ":" || ch === ")" || ch === "]") {
+        const dist = Math.abs(i - count);
+        // Bias: prefer positions at/after target (flush more, not less)
+        const adjustedDist = i >= count ? dist : dist + 1;
+        if (adjustedDist < bestDist) {
+          bestDist = adjustedDist;
+          bestPos = i + 1; // include boundary character
+        }
+      }
     }
 
-    // Sprint V5: Prefer splitting at word boundary (space, newline, punctuation)
-    // Look for the nearest boundary within ±4 chars of cut point
-    const searchStart = Math.max(0, count - 4);
-    const searchEnd = Math.min(this._buffer.length, count + 4);
-    const nearSlice = this._buffer.slice(searchStart, searchEnd);
+    return Math.max(1, bestPos);
+  }
 
-    // Newline first (highest priority boundary)
-    const nlIdx = nearSlice.indexOf("\n");
-    if (nlIdx !== -1) {
-      const splitAt = searchStart + nlIdx + 1;
-      const out = this._buffer.slice(0, splitAt);
-      this._buffer = this._buffer.slice(splitAt);
-      return out;
-    }
+  /**
+   * Avoid breaking inside markdown tokens: **, ```, __, ~~
+   */
+  private _avoidMarkdownBreak(count: number): number {
+    if (count >= this._buffer.length) return count;
 
-    // Space boundary (word-level flushing — much smoother than mid-word)
-    const spaceIdx = nearSlice.lastIndexOf(" ");
-    if (spaceIdx !== -1 && spaceIdx > 0) {
-      const splitAt = searchStart + spaceIdx + 1;
-      const out = this._buffer.slice(0, splitAt);
-      this._buffer = this._buffer.slice(splitAt);
-      return out;
-    }
-
-    // Check if we'd split a markdown token
     for (const token of MD_PAIRS) {
       const tLen = token.length;
-      // Check if the cut point (count) lands inside a token occurrence
-      // Look at a window around the cut point
       const windowStart = Math.max(0, count - tLen + 1);
       const windowEnd = Math.min(this._buffer.length, count + tLen - 1);
       const window = this._buffer.slice(windowStart, windowEnd);
@@ -196,18 +258,12 @@ export class StreamBuffer {
       if (tokenPos !== -1) {
         const absoluteStart = windowStart + tokenPos;
         const absoluteEnd = absoluteStart + tLen;
-        // If cut point is inside this token, extend to include it
         if (absoluteStart < count && count < absoluteEnd) {
-          const out = this._buffer.slice(0, absoluteEnd);
-          this._buffer = this._buffer.slice(absoluteEnd);
-          return out;
+          return Math.min(absoluteEnd, this._buffer.length);
         }
       }
     }
 
-    // No markdown boundary conflict — split at count
-    const out = this._buffer.slice(0, count);
-    this._buffer = this._buffer.slice(count);
-    return out;
+    return count;
   }
 }
