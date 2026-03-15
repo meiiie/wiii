@@ -247,10 +247,7 @@ export function buildVisualFrameDocument(
     body {
       padding: ${bodyPadding};
       overflow: hidden;
-      background:
-        radial-gradient(circle at 12% 12%, rgba(184,90,51,0.12), transparent 26%),
-        radial-gradient(circle at 88% 4%, rgba(45,121,199,0.10), transparent 20%),
-        linear-gradient(180deg, rgba(255,255,255,0.78), rgba(252,250,246,0.94));
+      background: transparent;
     }
     body.wiii-host-shell-active {
       padding: ${frameKind === "legacy" ? bodyPadding : "0"};

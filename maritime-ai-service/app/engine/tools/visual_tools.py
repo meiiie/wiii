@@ -1812,19 +1812,19 @@ def _build_architecture_html(spec: dict, title: str) -> str:
     css = """
 .arch { display: flex; flex-direction: column; gap: 0; align-items: center; }
 .arch-layer {
-  width: 100%; padding: 14px 20px; border-radius: var(--radius);
-  border: 1.5px solid var(--border); position: relative;
+  width: 100%; padding: 12px 16px;
+  border-left: 2px solid var(--layer-color, var(--border));
+  position: relative;
 }
 .arch-layer-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
-.arch-components { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.arch-components { display: flex; flex-wrap: wrap; gap: 6px; }
 .arch-comp {
-  background: white; border-radius: var(--radius-sm); padding: 8px 14px;
+  background: transparent; border-radius: 6px; padding: 6px 12px;
   font-size: 12px; font-weight: 500; color: var(--text);
-  border: 1px solid var(--border); box-shadow: 0 1px 3px var(--shadow);
+  border: 0.5px solid var(--border);
 }
-@media (prefers-color-scheme: dark) { .arch-comp { background: var(--bg); } }
-.arch-arrow { display: flex; justify-content: center; padding: 4px 0; }
-.arch-arrow svg { width: 20px; height: 20px; }
+.arch-arrow { display: flex; justify-content: center; padding: 2px 0; }
+.arch-arrow svg { width: 16px; height: 16px; opacity: 0.3; }
 """
 
     arrow_svg = '<svg viewBox="0 0 20 20" fill="none"><path d="M10 4V16M10 16L5 11M10 16L15 11" stroke="var(--text3)" stroke-width="2" stroke-linecap="round"/></svg>'
@@ -1835,7 +1835,7 @@ def _build_architecture_html(spec: dict, title: str) -> str:
         name = _esc(layer.get("name", f"Layer {i + 1}"))
         components = layer.get("components", [])
         comps_html = "".join(f'<div class="arch-comp">{_esc(c)}</div>' for c in components)
-        parts.append(f"""<div class="arch-layer" style="background:color-mix(in srgb,{color} 8%,var(--bg));border-color:color-mix(in srgb,{color} 30%,transparent)">
+        parts.append(f"""<div class="arch-layer" style="--layer-color:{color}">
   <div class="arch-layer-name" style="color:{color}">{name}</div>
   <div class="arch-components">{comps_html}</div>
 </div>""")
@@ -1858,15 +1858,15 @@ def _build_concept_html(spec: dict, title: str) -> str:
     css = """
 .concept { display: flex; flex-direction: column; align-items: center; gap: 16px; }
 .concept-center {
-  background: var(--accent-bg); border: 2px solid var(--accent); border-radius: var(--radius);
-  padding: 16px 24px; text-align: center; max-width: 300px;
+  background: transparent; border-left: 3px solid var(--accent);
+  padding: 12px 16px; text-align: left; max-width: 400px;
 }
 .concept-center-title { font-size: 16px; font-weight: 700; color: var(--accent); }
 .concept-center-desc { font-size: 12px; color: var(--text2); margin-top: 4px; }
 .concept-branches { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; width: 100%; }
 .concept-branch {
-  flex: 1; min-width: 140px; max-width: 220px; border-radius: var(--radius);
-  padding: 14px; border: 1.5px solid var(--border);
+  flex: 1; min-width: 140px; max-width: 220px;
+  padding: 10px 12px; background: transparent;
 }
 .concept-branch-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
 .concept-branch-items { list-style: none; padding: 0; }
@@ -1888,7 +1888,7 @@ def _build_concept_html(spec: dict, title: str) -> str:
         b_title = _esc(branch.get("title", ""))
         items = branch.get("items", [])
         items_html = "".join(f"<li>{_esc(item)}</li>" for item in items)
-        branch_parts.append(f"""<div class="concept-branch" style="background:color-mix(in srgb,{color} 6%,var(--bg));border-color:color-mix(in srgb,{color} 30%,transparent)">
+        branch_parts.append(f"""<div class="concept-branch" style="border-left:2px solid color-mix(in srgb,{color} 40%,transparent)">
   <div class="concept-branch-title" style="color:{color}">{b_title}</div>
   <ul class="concept-branch-items">{items_html}</ul>
 </div>""")
@@ -1939,7 +1939,7 @@ def _build_infographic_html(spec: dict, title: str) -> str:
             color = stat.get("color", colors[i % len(colors)])
             value = _esc(stat.get("value", ""))
             label = _esc(stat.get("label", ""))
-            stat_parts.append(f"""<div class="info-stat" style="background:color-mix(in srgb,{color} 6%,var(--bg))">
+            stat_parts.append(f"""<div class="info-stat">
   <div class="info-stat-value" style="color:{color}">{value}</div>
   <div class="info-stat-label">{label}</div>
 </div>""")
