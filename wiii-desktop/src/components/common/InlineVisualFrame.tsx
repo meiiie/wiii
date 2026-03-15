@@ -256,11 +256,11 @@ export function buildVisualFrameDocument(
       background: transparent;
     }
     .wiii-frame-shell {
-      border-radius: var(--wiii-radius);
+      border-radius: ${isEditorialLegacy ? '0' : 'var(--wiii-radius)'};
       border: ${shellBorder};
       background: ${shellBackground};
       box-shadow: ${shellShadow};
-      overflow: clip;
+      overflow: ${isEditorialLegacy ? 'visible' : 'clip'};
     }
     .wiii-frame-intro {
       padding: 14px 16px 8px;
@@ -292,14 +292,15 @@ export function buildVisualFrameDocument(
       padding: ${contentPadding};
     }
     canvas, svg, table, img { max-width: 100%; height: auto; }
-    button, select, input, textarea {
+    /* Sprint V5: Lighter form defaults — transparent, thin border */
+    button, select, input:not([type="range"]), textarea {
       font-family: inherit;
       font-size: 13px;
-      border-radius: 999px;
-      border: 1px solid rgba(28,25,23,0.14);
-      background: rgba(255,255,255,0.96);
+      border-radius: 6px;
+      border: 0.5px solid var(--wiii-border);
+      background: transparent;
       color: var(--wiii-text);
-      padding: 7px 12px;
+      padding: 6px 12px;
     }
     .wiii-host-shell-active[data-wiii-has-intro="true"] .widget-title,
     .wiii-host-shell-active[data-wiii-has-intro="true"] h1.widget-title,
