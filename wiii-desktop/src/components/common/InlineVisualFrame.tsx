@@ -178,17 +178,19 @@ export function buildVisualFrameDocument(
     })();
   </script>`;
 
-  const shellBorder = frameKind === "legacy" ? "1px solid var(--wiii-border)" : "1px solid transparent";
-  const shellShadow = frameKind === "legacy" ? "var(--wiii-shadow)" : "none";
-  const shellBackground = frameKind === "legacy" ? "var(--wiii-panel)" : "transparent";
-  const bodyPadding = frameKind === "legacy"
+  // Sprint V5: All shells transparent — no more white card container
+  const isEditorialLegacy = frameKind === "legacy" && shellVariant === "editorial";
+  const shellBorder = isEditorialLegacy ? "none" : (frameKind === "legacy" ? "1px solid var(--wiii-border)" : "1px solid transparent");
+  const shellShadow = isEditorialLegacy ? "none" : (frameKind === "legacy" ? "var(--wiii-shadow)" : "none");
+  const shellBackground = isEditorialLegacy ? "transparent" : (frameKind === "legacy" ? "var(--wiii-panel)" : "transparent");
+  const bodyPadding = isEditorialLegacy ? "0" : (frameKind === "legacy"
     ? "14px"
     : shellVariant === "immersive"
       ? "6px 0 0"
-      : "4px 0 0";
-  const contentPadding = frameKind === "legacy"
+      : "4px 0 0");
+  const contentPadding = isEditorialLegacy ? "0" : (frameKind === "legacy"
     ? (shellVariant === "immersive" ? "16px" : "14px")
-    : (shellVariant === "immersive" ? "2px 0 0" : "0");
+    : (shellVariant === "immersive" ? "2px 0 0" : "0"));
 
   const shellStyle = `
   <style>
