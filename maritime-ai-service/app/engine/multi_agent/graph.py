@@ -723,15 +723,17 @@ def _build_direct_tools_context(
     # Sprint 229d: Visual tools available to direct for inline rich visuals.
     if getattr(settings, "enable_structured_visuals", False):
         tool_hints.append(
-            "- tool_generate_visual: TAO VISUAL CO CAU TRUC inline (comparison, process, matrix, "
-            "architecture, concept, infographic, chart, timeline, map_lite). Frontend se nhan payload va render ngay trong luong stream."
+            "- tool_generate_visual: TOOL CHINH cho moi visual giai thich. "
+            "Tao 2-3 figures co cau truc (comparison, process, matrix, architecture, concept, infographic, chart, timeline, map_lite). "
+            "LUON goi NHIEU LAN (2-3 calls) de tao multi-figure explanation. "
+            "Frontend render inline ngay trong stream."
         )
         tool_hints.append(
             "- Neu user follow-up de sua/hightlight/loc visual vua tao, goi tool_generate_visual voi CUNG visual_session_id va operation='patch'."
         )
         tool_hints.append(
-            "- tool_generate_rich_visual: Fallback sandbox HTML cho simulation, quiz, interactive_table, react_app, "
-            "hoac khi can widget HTML/JS tu do."
+            "- tool_generate_rich_visual: CHI dung cho simulation (Canvas+sliders), quiz trac nghiem, hoac react_app. "
+            "KHONG dung cho comparison, process, matrix, architecture, concept, infographic — nhung loai nay PHAI dung tool_generate_visual."
         )
     else:
         tool_hints.append(
@@ -839,15 +841,17 @@ def _build_code_studio_tools_context(
 
     if structured_visuals_enabled:
         tool_hints.append(
-            "- tool_generate_visual: TAO VISUAL CO CAU TRUC cho inline teaching visuals: comparison, process, matrix, "
-            "architecture, concept, infographic, chart, timeline, map_lite. Frontend render thanh visual inline ngay khi stream, khong can copy payload."
+            "- tool_generate_visual: TOOL CHINH — tao 2-3 structured figures cho moi giai thich. "
+            "Types: comparison, process, matrix, architecture, concept, infographic, chart, timeline, map_lite. "
+            "GOI NHIEU LAN (2-3 calls) de tao multi-figure explanation nhu Claude Artifacts. "
+            "Frontend render inline ngay khi stream, khong can copy payload."
         )
         tool_hints.append(
             "- Follow-up visual edits: neu user muon chinh visual vua co, reuse visual_session_id va set operation='patch'."
         )
         tool_hints.append(
-            "- tool_generate_rich_visual: Fallback sandbox HTML cho simulation, quiz, interactive_table, react_app, "
-            "hoac truong hop legacy compatibility. Khong dung no lam default cho explanatory charts/figures."
+            "- tool_generate_rich_visual: CHI dung cho simulation (Canvas+sliders), quiz trac nghiem, react_app. "
+            "KHONG dung cho comparison/process/matrix/architecture/concept/infographic — dung tool_generate_visual."
         )
     else:
         tool_hints.append(
@@ -909,7 +913,7 @@ def _build_code_studio_tools_context(
         "- Voi yeu cau 'tao file Excel / spreadsheet': luon goi tool_generate_excel_file.",
         "- Voi yeu cau 'tao file Word / bao cao / report': luon goi tool_generate_word_document.",
         "- Voi yeu cau GIAI THICH khai niem / SO SANH / KIEN TRUC: goi "
-        + ("tool_generate_visual" if structured_visuals_enabled else "tool_generate_rich_visual")
+        + ("tool_generate_visual 2-3 LAN de tao multi-figure" if structured_visuals_enabled else "tool_generate_rich_visual")
         + ". Visual types: comparison (2 cot so sanh), process (tung buoc), matrix (bang mau), "
         "architecture (layer diagram), concept (mind map), infographic (stats).",
         (
@@ -1319,14 +1323,14 @@ def _direct_required_tool_names(query: str, user_role: str = "student") -> list[
     # These capabilities now live exclusively in code_studio_agent.
 
     if visual_decision.force_tool and not _needs_analysis_tool(query):
-        if visual_decision.mode in {"template", "inline_html", "app"}:
-            required.append(
-                preferred_visual_tool_name(
-                    getattr(settings, "enable_structured_visuals", False),
-                )
-            )
-        elif visual_decision.mode == "mermaid" and getattr(settings, "enable_structured_visuals", False):
+        _structured = getattr(settings, "enable_structured_visuals", False)
+        if visual_decision.mode == "mermaid" and _structured:
             required.append("tool_generate_mermaid")
+        elif _structured:
+            # Structured mode: ALL visual intents → multi-figure tool
+            required.append("tool_generate_visual")
+        elif visual_decision.mode in {"template", "inline_html", "app"}:
+            required.append("tool_generate_rich_visual")
 
     return required
 
@@ -1360,14 +1364,14 @@ def _code_studio_required_tool_names(query: str, user_role: str = "student") -> 
         required.append("tool_browser_snapshot_url")
 
     if visual_decision.force_tool:
-        if visual_decision.mode in {"template", "inline_html", "app"}:
-            required.append(
-                preferred_visual_tool_name(
-                    getattr(settings, "enable_structured_visuals", False),
-                )
-            )
-        elif visual_decision.mode == "mermaid" and getattr(settings, "enable_structured_visuals", False):
+        _structured = getattr(settings, "enable_structured_visuals", False)
+        if visual_decision.mode == "mermaid" and _structured:
             required.append("tool_generate_mermaid")
+        elif _structured:
+            # Structured mode: ALL visual intents → multi-figure tool
+            required.append("tool_generate_visual")
+        elif visual_decision.mode in {"template", "inline_html", "app"}:
+            required.append("tool_generate_rich_visual")
 
     return required
 
