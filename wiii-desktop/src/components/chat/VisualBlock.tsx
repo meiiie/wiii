@@ -1303,6 +1303,20 @@ export function VisualBlock({ block, embedded = false }: { block: VisualBlockDat
     return () => window.cancelAnimationFrame(rafId);
   }, [embedded, reduced, visual.lifecycle_event, visual.title, visual.summary, visual.type]);
 
+  // inline_html: clean render — iframe only, no editorial chrome (Claude Artifacts pattern)
+  if (visual.renderer_kind === "inline_html") {
+    return <figure ref={figureRef} data-testid="visual-block" className={`${embedded ? "" : "my-6"} overflow-hidden`} aria-labelledby={titleId} aria-describedby={describedById} data-visual-status={status} data-visual-lifecycle={visual.lifecycle_event} data-visual-cue={stageCue} data-visual-embedded={embedded ? "true" : "false"}>
+      <motion.div
+        variants={staggerContainer}
+        initial={reduced ? "visible" : "hidden"}
+        animate="visible"
+      >
+        {body}
+      </motion.div>
+      <figcaption id={srSummaryId} className="sr-only">{accessibleSummary}</figcaption>
+    </figure>;
+  }
+
   return <figure ref={figureRef} data-testid="visual-block" className={shellClassName} aria-labelledby={titleId} aria-describedby={describedById} data-visual-status={status} data-visual-lifecycle={visual.lifecycle_event} data-visual-cue={stageCue} data-visual-embedded={embedded ? "true" : "false"}>
     <div className={headerClassName}>
       <div className="max-w-3xl">
