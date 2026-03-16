@@ -383,22 +383,23 @@ class SupervisorAgent:
             chosen_agent = AgentType.CODE_STUDIO.value
             method = "structured+intent_override"
 
-        if _needs_code_studio(query) and chosen_agent == AgentType.DIRECT.value:
-            logger.info("[SUPERVISOR] Capability override: direct -> code_studio_agent")
+        if _needs_code_studio(query) and chosen_agent in (AgentType.DIRECT.value, AgentType.TUTOR.value):
+            logger.info("[SUPERVISOR] Capability override: %s -> code_studio_agent", chosen_agent)
             chosen_agent = AgentType.CODE_STUDIO.value
             method = "structured+capability_override"
 
-        # Visual code-gen override: when flag enabled, visual intent upgrades TUTOR→CODE_STUDIO
-        # for richer HTML/SVG code generation (Gemini Pro instead of Flash-Lite)
-        if chosen_agent == AgentType.TUTOR.value:
+        # Visual code-gen override (LLM-first pattern): khi flag bật và query
+        # có visual intent rõ ràng, upgrade tới code_studio cho model mạnh hơn.
+        # Theo kiểu v0/Claude: LLM quyết output type, model mạnh sinh code đẹp.
+        if chosen_agent in (AgentType.TUTOR.value, AgentType.RAG.value):
             from app.core.config import settings as _settings
             if getattr(_settings, "enable_code_gen_visuals", False):
                 from app.engine.multi_agent.visual_intent_resolver import resolve_visual_intent
                 _visual_decision = resolve_visual_intent(query)
                 if _visual_decision.force_tool and _visual_decision.mode in ("inline_html", "app"):
                     logger.info(
-                        "[SUPERVISOR] Visual code-gen upgrade: tutor -> code_studio (mode=%s, reason=%s)",
-                        _visual_decision.mode, _visual_decision.reason,
+                        "[SUPERVISOR] Visual code-gen upgrade: %s -> code_studio (mode=%s, reason=%s)",
+                        chosen_agent, _visual_decision.mode, _visual_decision.reason,
                     )
                     chosen_agent = AgentType.CODE_STUDIO.value
                     method = "structured+visual_codegen_upgrade"
