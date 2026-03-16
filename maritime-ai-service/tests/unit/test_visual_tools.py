@@ -1447,3 +1447,124 @@ class TestCodeHtmlToolIntegration:
         # Should be single payload, not auto-grouped
         assert len(payloads) == 1
         assert payloads[0].renderer_kind == "inline_html"
+
+
+# =============================================================================
+# tool_create_visual_code tests
+# =============================================================================
+
+
+class TestCreateVisualCodeTool:
+    """Test tool_create_visual_code — dedicated code-gen visual tool."""
+
+    def test_requires_code_html(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import tool_create_visual_code
+
+        result = tool_create_visual_code.invoke({
+            "code_html": "",
+            "title": "Empty",
+        })
+        assert "Error" in result
+        assert "BẮT BUỘC" in result
+
+    def test_rejects_when_flag_off(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = False
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import tool_create_visual_code
+
+        result = tool_create_visual_code.invoke({
+            "code_html": "<div>Hello</div>",
+            "title": "Test",
+        })
+        assert "Error" in result
+
+    def test_produces_inline_html_payload(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
+
+        result = tool_create_visual_code.invoke({
+            "code_html": '<style>.box{color:var(--accent)}</style><div class="box">Hello World</div>',
+            "title": "Test Visual",
+        })
+        payload = parse_visual_payload(result)
+        assert payload is not None
+        assert payload.renderer_kind == "inline_html"
+        assert payload.title == "Test Visual"
+        assert payload.fallback_html is not None
+        assert "<!DOCTYPE html>" in payload.fallback_html
+        assert "Hello World" in payload.fallback_html
+        assert ".box" in payload.fallback_html
+
+    def test_full_html_passthrough(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
+
+        full_html = '<!DOCTYPE html><html><body><h1>Full doc</h1></body></html>'
+        result = tool_create_visual_code.invoke({
+            "code_html": full_html,
+            "title": "Full Doc",
+        })
+        payload = parse_visual_payload(result)
+        assert payload is not None
+        assert payload.fallback_html == full_html
+
+    def test_svg_content(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
+
+        result = tool_create_visual_code.invoke({
+            "code_html": '<svg viewBox="0 0 200 100"><circle cx="100" cy="50" r="40" fill="var(--accent)"/></svg>',
+            "title": "SVG Visual",
+        })
+        payload = parse_visual_payload(result)
+        assert payload is not None
+        assert "svg" in payload.fallback_html.lower()
+        assert "circle" in payload.fallback_html
+
+    def test_with_javascript(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
+
+        result = tool_create_visual_code.invoke({
+            "code_html": '<div id="app"></div><script>document.getElementById("app").textContent="Dynamic";</script>',
+            "title": "JS Visual",
+        })
+        payload = parse_visual_payload(result)
+        assert payload is not None
+        assert "<script>" in payload.fallback_html
+
+    def test_included_in_get_visual_tools_when_flag_on(self, monkeypatch):
+        class FakeSettings:
+            enable_chart_tools = True
+            enable_structured_visuals = True
+            enable_llm_code_gen_visuals = True
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import get_visual_tools
+
+        tools = get_visual_tools()
+        tool_names = [t.name for t in tools]
+        assert "tool_create_visual_code" in tool_names
+
+    def test_not_included_when_flag_off(self, monkeypatch):
+        class FakeSettings:
+            enable_chart_tools = True
+            enable_structured_visuals = True
+            enable_llm_code_gen_visuals = False
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import get_visual_tools
+
+        tools = get_visual_tools()
+        tool_names = [t.name for t in tools]
+        assert "tool_create_visual_code" not in tool_names

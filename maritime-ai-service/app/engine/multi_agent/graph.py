@@ -843,22 +843,23 @@ def _build_code_studio_tools_context(
     if structured_visuals_enabled:
         llm_code_gen = getattr(settings_obj, "enable_llm_code_gen_visuals", False)
         if llm_code_gen:
-            # LLM code-gen mode: code_html là DEFAULT, spec_json là fallback
+            # tool_create_visual_code là tool CHÍNH — ép LLM viết code trực tiếp
             tool_hints.append(
-                "- tool_generate_visual: TOOL CHÍNH cho visual inline. "
-                "LUÔN DÙNG code_html ĐỂ VIẾT HTML/CSS/SVG/JS TRỰC TIẾP — giống Claude Artifacts. "
-                "Mỗi visual phải UNIQUE, có đồ họa thật (SVG, Canvas, animation), KHÔNG CHỈ text trong boxes. "
-                "Dùng CSS vars: --bg, --bg2, --text, --text2, --text3, --accent, --green, --purple, --amber, --teal, --pink, --border, --radius. "
-                "Dark mode tự động qua CSS vars."
+                "- tool_create_visual_code: ★ TOOL CHÍNH ★ — LUÔN dùng tool này cho MỌI visual. "
+                "Viết HTML/CSS/SVG/JS trực tiếp trong code_html — giống Claude Artifacts. "
+                "Mỗi visual phải UNIQUE, có đồ họa thật (SVG shapes, Canvas animation, CSS gradient). "
+                "KHÔNG BAO GIỜ trả visual chỉ có text — phải có visual elements thật. "
+                "CSS vars có sẵn: --bg, --bg2, --text, --accent, --green, --purple, --amber, --teal, --pink, --border, --radius. "
+                "Dark mode tự động."
             )
             tool_hints.append(
-                "- QUAN TRỌNG: MỌI mô phỏng (simulation, physics, animation) PHẢI dùng code_html với SVG animated "
+                "- QUAN TRỌNG: MỌI mô phỏng (simulation, physics, animation) PHẢI dùng tool_create_visual_code với SVG animated "
                 "hoặc Canvas + requestAnimationFrame. PHẢI có: sliders tương tác, stats realtime, nút đặt lại/tạm dừng, "
-                "energy visualization. KHÔNG BAO GIỜ trả visual chỉ có text cards — phải có đồ họa thật."
+                "energy visualization. KHÔNG BAO GIỜ trả visual chỉ có text cards."
             )
             tool_hints.append(
-                "- spec_json CHỈ dùng cho visual ĐƠN GIẢN: so sánh 2 cột, danh sách 3-5 bước, bảng số liệu. "
-                "Với visual PHỨC TẠP (kiến trúc, mô phỏng, flowchart, data viz): LUÔN dùng code_html."
+                "- tool_generate_visual: CHỈ dùng làm FALLBACK cho visual rất đơn giản (so sánh 2 cột, danh sách bước). "
+                "Với visual PHỨC TẠP (kiến trúc, mô phỏng, flowchart, data viz): LUÔN dùng tool_create_visual_code."
             )
         else:
             tool_hints.append(
@@ -949,41 +950,54 @@ def _build_code_studio_tools_context(
 
     sections = ["## CODE STUDIO TOOLKIT:", *tool_hints, "", *priority_rules]
 
-    # Phase 4: Append design system reference for visual code-gen
+    # Append visual Skills cho code-gen
     if getattr(settings_obj, "enable_llm_code_gen_visuals", False):
-        sections.append("")
-        sections.append(_load_visual_code_gen_skill())
+        for skill_content in _load_code_studio_visual_skills():
+            if skill_content:
+                sections.append("")
+                sections.append(skill_content)
 
     return "\n".join(sections)
 
 
-_VISUAL_CODE_GEN_SKILL_CACHE: str | None = None
+_CODE_STUDIO_SKILLS_CACHE: list[str] | None = None
+
+# Skill files để load — thứ tự ưu tiên
+_CODE_STUDIO_SKILL_FILES = [
+    "VISUAL_CODE_GEN.md",
+    "INTERACTIVE_SIMULATION.md",
+    "SVG_DIAGRAM.md",
+    "DATA_VISUALIZATION.md",
+]
 
 
-def _load_visual_code_gen_skill() -> str:
-    """Load and cache the visual code-gen design system skill reference."""
-    global _VISUAL_CODE_GEN_SKILL_CACHE
-    if _VISUAL_CODE_GEN_SKILL_CACHE is not None:
-        return _VISUAL_CODE_GEN_SKILL_CACHE
+def _load_code_studio_visual_skills() -> list[str]:
+    """Load and cache all visual skills for code_studio_agent."""
+    global _CODE_STUDIO_SKILLS_CACHE
+    if _CODE_STUDIO_SKILLS_CACHE is not None:
+        return _CODE_STUDIO_SKILLS_CACHE
 
-    skill_path = (
+    skills_dir = (
         Path(__file__).resolve().parent.parent
-        / "reasoning" / "skills" / "subagents" / "code_studio_agent" / "VISUAL_CODE_GEN.md"
+        / "reasoning" / "skills" / "subagents" / "code_studio_agent"
     )
-    try:
-        raw = skill_path.read_text(encoding="utf-8")
-        # Strip YAML frontmatter
-        if raw.startswith("---"):
-            parts = raw.split("---", 2)
-            if len(parts) >= 3:
-                _VISUAL_CODE_GEN_SKILL_CACHE = parts[2].strip()
-                return _VISUAL_CODE_GEN_SKILL_CACHE
-        _VISUAL_CODE_GEN_SKILL_CACHE = raw.strip()
-        return _VISUAL_CODE_GEN_SKILL_CACHE
-    except Exception as exc:
-        logger.debug("[CODE_STUDIO] Visual code-gen skill unavailable: %s", exc)
-        _VISUAL_CODE_GEN_SKILL_CACHE = ""
-        return ""
+    results: list[str] = []
+    for filename in _CODE_STUDIO_SKILL_FILES:
+        skill_path = skills_dir / filename
+        try:
+            raw = skill_path.read_text(encoding="utf-8")
+            # Strip YAML frontmatter
+            if raw.startswith("---"):
+                parts = raw.split("---", 2)
+                if len(parts) >= 3:
+                    results.append(parts[2].strip())
+                    continue
+            results.append(raw.strip())
+        except Exception as exc:
+            logger.debug("[CODE_STUDIO] Skill %s unavailable: %s", filename, exc)
+
+    _CODE_STUDIO_SKILLS_CACHE = results
+    return _CODE_STUDIO_SKILLS_CACHE
 
 
 def _log_visual_telemetry(event_name: str, **fields: object) -> None:
@@ -1422,10 +1436,13 @@ def _code_studio_required_tool_names(query: str, user_role: str = "student") -> 
 
     if visual_decision.force_tool:
         _structured = getattr(settings, "enable_structured_visuals", False)
+        _llm_code_gen = getattr(settings, "enable_llm_code_gen_visuals", False)
         if visual_decision.mode == "mermaid" and _structured:
             required.append("tool_generate_mermaid")
+        elif _structured and _llm_code_gen:
+            # LLM code-gen mode: ưu tiên tool_create_visual_code
+            required.append("tool_create_visual_code")
         elif _structured:
-            # Structured mode: ALL visual intents → multi-figure tool
             required.append("tool_generate_visual")
         elif visual_decision.mode in {"template", "inline_html", "app"}:
             required.append("tool_generate_rich_visual")
@@ -2329,6 +2346,8 @@ def _infer_code_studio_reasoning_cue(
     normalized = _normalize_for_intent(query)
     tool_set = set(tool_names)
 
+    if "tool_create_visual_code" in tool_set:
+        return "visual"
     if "tool_browser_snapshot_url" in tool_set or _needs_browser_snapshot(query):
         return "browser"
     if "tool_generate_html_file" in tool_set or any(

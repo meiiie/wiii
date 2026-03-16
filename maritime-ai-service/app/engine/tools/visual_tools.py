@@ -3003,6 +3003,104 @@ def tool_generate_rich_visual(
     )
 
 
+@tool
+def tool_create_visual_code(
+    code_html: str,
+    title: str = "",
+    subtitle: str = "",
+    visual_session_id: str = "",
+) -> str:
+    """Tạo visual bằng HTML/CSS/SVG/JS trực tiếp — giống Claude Artifacts.
+
+    ĐÂY LÀ TOOL CHÍNH cho visual. LUÔN dùng tool này thay vì tool_generate_visual.
+
+    code_html là NỘI DUNG BẮT BUỘC — viết HTML/CSS/SVG/JS trực tiếp:
+    - Dùng <style> cho CSS, HTML cho cấu trúc, <script> cho JS
+    - CSS vars có sẵn: --bg, --bg2, --bg3, --text, --text2, --text3,
+      --accent, --green, --purple, --amber, --teal, --pink, --border, --radius
+    - Dark mode TỰ ĐỘNG qua CSS vars — KHÔNG cần media query
+    - Font-family đã có sẵn — không cần khai báo
+    - KHÔNG viết <!DOCTYPE>, <html>, <head>, <body> — chỉ viết body content
+
+    Quy tắc chất lượng:
+    - MỌI visual PHẢI có đồ họa thật (SVG shapes, Canvas, animation)
+    - KHÔNG BAO GIỜ trả visual chỉ có text — phải có visual elements
+    - Mô phỏng: PHẢI có sliders, stats realtime, nút đặt lại/tạm dừng
+    - Sơ đồ: PHẢI có màu phân biệt, mô tả, hover effect
+    - So sánh: PHẢI có 2+ cột, highlight, responsive
+
+    Ví dụ code_html cho sơ đồ flow:
+        code_html='<style>.flow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+        .node{padding:14px 20px;border-radius:var(--radius);border:1.5px solid var(--border);
+        background:var(--bg2);font-size:13px;font-weight:600;color:var(--text);min-width:100px;text-align:center}
+        .arrow{color:var(--text3);font-size:20px}
+        .highlight{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent);color:var(--accent)}
+        </style><div class="flow"><div class="node highlight">Input</div>
+        <span class="arrow">→</span><div class="node">Process</div>
+        <span class="arrow">→</span><div class="node highlight">Output</div></div>'
+
+    Args:
+        code_html: HTML/CSS/SVG/JS code — NỘI DUNG BẮT BUỘC, phải có đồ họa thật
+        title: Tiêu đề visual (tiếng Việt)
+        subtitle: Phụ đề (tùy chọn)
+        visual_session_id: ID session để patch visual sau này
+
+    Returns:
+        JSON payload cho frontend renderer (iframe sandbox).
+    """
+    raw = code_html.strip() if isinstance(code_html, str) else ""
+    if not raw:
+        return "Error: code_html là BẮT BUỘC. Viết HTML/CSS/SVG/JS trực tiếp — không để trống."
+
+    from app.core.config import get_settings
+    if not getattr(get_settings(), "enable_llm_code_gen_visuals", False):
+        return "Error: Visual code generation chưa được bật (enable_llm_code_gen_visuals=False)."
+
+    # Wrap in design system if not a full HTML document
+    if raw.lstrip().lower().startswith("<!doctype") or raw.lstrip().lower().startswith("<html"):
+        final_html = raw
+    else:
+        css_parts = []
+        body_content = raw
+        style_pattern = re.compile(r'<style[^>]*>(.*?)</style>', re.DOTALL | re.IGNORECASE)
+        for match in style_pattern.finditer(raw):
+            css_parts.append(match.group(1))
+        body_content = style_pattern.sub('', body_content).strip()
+        final_html = _wrap_html("\n".join(css_parts), body_content, title, subtitle)
+
+    safe_title = title.strip() or "Visual"
+    safe_summary = f"{safe_title} — custom visual code"
+
+    resolved_visual_session_id, resolved_operation = _apply_runtime_patch_defaults(
+        visual_session_id=visual_session_id,
+        operation="open",
+    )
+
+    payload = _normalize_visual_payload(
+        visual_type="concept",
+        spec={},
+        title=safe_title,
+        summary=safe_summary,
+        subtitle=subtitle,
+        visual_session_id=resolved_visual_session_id,
+        operation=resolved_operation,
+        renderer_kind="inline_html",
+        shell_variant="editorial",
+        patch_strategy="replace_html",
+        narrative_anchor="after-lead",
+        fallback_html=final_html,
+        runtime_manifest=None,
+    )
+    _log_visual_telemetry(
+        "tool_create_visual_code",
+        visual_id=payload.id,
+        visual_session_id=payload.visual_session_id,
+        renderer_kind=payload.renderer_kind,
+        has_code_html=True,
+    )
+    return json.dumps(payload.model_dump(mode="json"), ensure_ascii=False)
+
+
 def get_visual_tools() -> list:
     """Return list of rich visual tools. Feature-gated by enable_chart_tools."""
     from app.core.config import get_settings
@@ -3015,5 +3113,8 @@ def get_visual_tools() -> list:
     tools = []
     if getattr(settings, "enable_structured_visuals", False):
         tools.append(tool_generate_visual)
+    # tool_create_visual_code: tool riêng cho LLM code-gen visuals
+    if getattr(settings, "enable_llm_code_gen_visuals", False):
+        tools.append(tool_create_visual_code)
     tools.append(tool_generate_rich_visual)
     return tools
