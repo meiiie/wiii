@@ -216,8 +216,15 @@ _MIXED_INTENT_PAIRS = [
 
 
 def _normalize_router_text(text: str) -> str:
-    """Normalize routing text for capability guardrails."""
-    return " ".join((text or "").lower().split())
+    """Normalize routing text — strip diacritics + lowercase cho keyword matching."""
+    lowered = " ".join((text or "").lower().split())
+    try:
+        from app.engine.content_filter import TextNormalizer
+        return TextNormalizer.strip_diacritics(lowered)
+    except Exception:
+        import unicodedata
+        nfkd = unicodedata.normalize("NFD", lowered)
+        return "".join(c for c in nfkd if unicodedata.category(c) != "Mn")
 
 
 def _needs_code_studio(query: str) -> bool:
@@ -390,8 +397,8 @@ class SupervisorAgent:
 
         # Visual code-gen override (LLM-first pattern): khi flag bật và query
         # có visual intent rõ ràng, upgrade tới code_studio cho model mạnh hơn.
-        # Theo kiểu v0/Claude: LLM quyết output type, model mạnh sinh code đẹp.
-        if chosen_agent in (AgentType.TUTOR.value, AgentType.RAG.value):
+        # Bao gồm DIRECT — off_topic queries vẫn cần visual nếu user yêu cầu.
+        if chosen_agent in (AgentType.DIRECT.value, AgentType.TUTOR.value, AgentType.RAG.value):
             from app.core.config import settings as _settings
             if getattr(_settings, "enable_code_gen_visuals", False):
                 from app.engine.multi_agent.visual_intent_resolver import resolve_visual_intent
