@@ -13,6 +13,8 @@ import { useContextStore } from "@/stores/context-store";
 import { useCharacterStore } from "@/stores/character-store";
 import { usePageContextStore } from "@/stores/page-context-store";
 import { useHostContextStore } from "@/stores/host-context-store";
+import { useCodeStudioStore } from "@/stores/code-studio-store";
+import { useUIStore } from "@/stores/ui-store";
 import { StreamBuffer } from "@/lib/stream-buffer";
 import { trackVisualTelemetry } from "@/lib/visual-telemetry";
 import type { SSEEventHandler } from "@/api/sse";
@@ -578,6 +580,37 @@ export function useSSEStream() {
               console.warn(`[SSE] Host action ${id} failed:`, err.message);
             });
         }
+      },
+      onCodeOpen: (data) => {
+        traceEvent("code_open", { session: data.content.session_id, title: data.content.title });
+        answerBufferRef.current?.drain();
+        thinkingBufferRef.current?.drain();
+        useCodeStudioStore.getState().openSession(
+          data.content.session_id,
+          data.content.title,
+          data.content.language,
+          data.content.version,
+        );
+        useUIStore.getState().openCodeStudio();
+      },
+      onCodeDelta: (data) => {
+        traceEvent("code_delta", { session: data.content.session_id, idx: data.content.chunk_index });
+        useCodeStudioStore.getState().appendCode(
+          data.content.session_id,
+          data.content.chunk,
+          data.content.chunk_index,
+          data.content.total_bytes,
+        );
+      },
+      onCodeComplete: (data) => {
+        traceEvent("code_complete", { session: data.content.session_id, version: data.content.version });
+        useCodeStudioStore.getState().completeSession(
+          data.content.session_id,
+          data.content.full_code,
+          data.content.language,
+          data.content.version,
+          data.content.visual_payload,
+        );
       },
       onKeepAlive: () => {
         traceEvent("keepalive");

@@ -65,6 +65,11 @@ const SoulBridgePanel = lazy(async () => {
   return { default: mod.SoulBridgePanel };
 });
 
+const CodeStudioPanel = lazy(async () => {
+  const mod = await import("./CodeStudioPanel");
+  return { default: mod.CodeStudioPanel };
+});
+
 function ViewFallback({ label }: { label: string }) {
   return (
     <div className="flex flex-1 items-center justify-center bg-surface px-6 text-sm text-text-tertiary">
@@ -191,6 +196,7 @@ export function AppShell() {
           <CharacterPanel />
           <PreviewPanel />
           <ArtifactPanel />
+          <CodeStudioPanel />
         </Suspense>
       )}
       <StatusBar />

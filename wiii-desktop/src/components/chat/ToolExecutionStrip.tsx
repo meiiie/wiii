@@ -3,14 +3,20 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock3,
+  ExternalLink,
   FileSearch,
+  Globe,
   Globe2,
+  Palette,
   Search,
   TerminalSquare,
   Wrench,
 } from "lucide-react";
 import type { ToolExecutionBlockData } from "@/api/types";
 import { TOOL_LABELS } from "@/lib/reasoning-labels";
+import { VisualArtifactCard } from "./VisualArtifactCard";
+import { CodeStudioCard } from "./CodeStudioCard";
+import { useCodeStudioStore } from "@/stores/code-studio-store";
 
 interface ToolExecutionStripProps {
   block: ToolExecutionBlockData;
@@ -19,7 +25,21 @@ interface ToolExecutionStripProps {
 const ABSOLUTE_PATH_PATTERN = /(?:[A-Za-z]:)?(?:[\\/][^\\/\s"'`]+)+/g;
 const MARKDOWN_FENCE_PATTERN = /```[\s\S]*?```/g;
 
+const VISUAL_TOOL_NAMES = new Set([
+  "tool_create_visual_code",
+]);
+
+const SEARCH_TOOL_NAMES = new Set([
+  "tool_web_search",
+  "tool_search_news",
+  "tool_search_legal",
+  "tool_search_maritime",
+  "tool_search_products",
+  "tool_search_shopping",
+]);
+
 export function resolveToolExecutionIcon(name: string) {
+  if (name === "tool_create_visual_code") return Palette;
   if (name.includes("browser") || name.includes("web")) return Globe2;
   if (name.includes("search")) return Search;
   if (name.includes("python") || name.includes("exec") || name.includes("code")) return TerminalSquare;
@@ -90,7 +110,7 @@ function describePythonIntent(code: string): string {
 
 function summarizeArgs(toolName: string, args?: Record<string, unknown>): string {
   if (!args) return "";
-  if (toolName === "tool_generate_visual" || toolName === "tool_generate_rich_visual") {
+  if (toolName === "tool_generate_visual" || toolName === "tool_generate_rich_visual" || toolName === "tool_create_visual_code") {
     const title = typeof args.title === "string" ? sanitizeInlineText(args.title) : "";
     return title ? `Dang phac thao minh hoa cho: ${clampNaturalText(title, 90)}` : "Dang phac thao mot minh hoa de giai thich ro hon";
   }
@@ -159,7 +179,7 @@ function summarizeResult(
 ): { line: string; technicalDetail?: string; detailLabel?: string } {
   if (!result) return { line: "" };
 
-  if (toolName === "tool_generate_visual" || toolName === "tool_generate_rich_visual") {
+  if (toolName === "tool_generate_visual" || toolName === "tool_generate_rich_visual" || toolName === "tool_create_visual_code") {
     return {
       line: "Da chen minh hoa ngay trong cau tra loi",
       technicalDetail: sanitizeTechnicalDetail(result) || undefined,
@@ -193,7 +213,128 @@ function normalizeForCompare(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+/* ---------- Search result parsing ---------- */
+
+interface SearchResultItem {
+  title: string;
+  url: string;
+  domain: string;
+  snippet?: string;
+}
+
+function extractDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url.slice(0, 40);
+  }
+}
+
+function parseSearchResults(result?: string): SearchResultItem[] {
+  if (!result) return [];
+  const items: SearchResultItem[] = [];
+
+  // Try JSON parse first
+  try {
+    const parsed = JSON.parse(result);
+    const arr = Array.isArray(parsed) ? parsed : parsed?.results || parsed?.items || [];
+    for (const item of arr) {
+      if (typeof item?.title === "string" && typeof item?.url === "string") {
+        items.push({
+          title: item.title,
+          url: item.url,
+          domain: extractDomain(item.url),
+          snippet: typeof item.snippet === "string" ? item.snippet : undefined,
+        });
+      }
+      if (items.length >= 5) break;
+    }
+    if (items.length > 0) return items;
+  } catch { /* not JSON, try text parsing */ }
+
+  // Text pattern: "- [Title](URL)" or "Title: URL" or "Title — domain.com"
+  const linkPattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  for (const match of result.matchAll(linkPattern)) {
+    items.push({
+      title: match[1],
+      url: match[2],
+      domain: extractDomain(match[2]),
+    });
+    if (items.length >= 5) break;
+  }
+  if (items.length > 0) return items;
+
+  // Pattern: "Title\nURL" on consecutive lines
+  const lines = result.split("\n").map((l) => l.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length - 1 && items.length < 5; i++) {
+    const line = lines[i];
+    const nextLine = lines[i + 1];
+    if (nextLine && /^https?:\/\//.test(nextLine) && !/^https?:\/\//.test(line)) {
+      items.push({
+        title: line.replace(/^\d+\.\s*/, "").replace(/^[-*]\s*/, ""),
+        url: nextLine,
+        domain: extractDomain(nextLine),
+      });
+      i += 1;
+    }
+  }
+
+  return items;
+}
+
+function SearchResultWidget({ items }: { items: SearchResultItem[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="search-result-widget">
+      {items.map((item, index) => (
+        <a
+          key={`${item.url}-${index}`}
+          href={item.url}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="search-result-widget__item group/search-item"
+        >
+          <Globe size={12} className="search-result-widget__favicon shrink-0" />
+          <div className="search-result-widget__content">
+            <span className="search-result-widget__title">{clampNaturalText(item.title, 80)}</span>
+            <span className="search-result-widget__domain">{item.domain}</span>
+          </div>
+          <ExternalLink size={10} className="search-result-widget__link-icon shrink-0 opacity-0 group-hover/search-item:opacity-50" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+/* ---------- Main component ---------- */
+
 export function ToolExecutionStrip({ block }: ToolExecutionStripProps) {
+  const toolName = block.tool.name;
+
+  if (VISUAL_TOOL_NAMES.has(toolName)) {
+    return <VisualToolStrip block={block} />;
+  }
+
+  return <GenericToolStrip block={block} />;
+}
+
+/** Visual tool strip — renders CodeStudioCard if session exists, otherwise VisualArtifactCard. */
+function VisualToolStrip({ block }: ToolExecutionStripProps) {
+  const vsId = typeof block.tool.args?.visual_session_id === "string"
+    ? block.tool.args.visual_session_id
+    : "";
+  const hasCodeStudioSession = useCodeStudioStore(
+    (s) => vsId ? Boolean(s.sessions[vsId]) : false,
+  );
+
+  if (hasCodeStudioSession) {
+    return <CodeStudioCard sessionId={vsId} />;
+  }
+  return <VisualArtifactCard block={block} />;
+}
+
+/** Generic tool strip — separated to avoid hooks-after-return violation. */
+function GenericToolStrip({ block }: ToolExecutionStripProps) {
   const [expanded, setExpanded] = useState(false);
   const toolName = block.tool.name;
   const Icon = resolveToolExecutionIcon(toolName);
@@ -209,6 +350,13 @@ export function ToolExecutionStrip({ block }: ToolExecutionStripProps) {
   );
   const resultLine = normalizeForCompare(rawResultLine) === normalizeForCompare(argsLine) ? "" : rawResultLine;
   const showDetailsToggle = Boolean(technicalDetail && !isPending);
+
+  // Search result widget — rich rendering for search tools
+  const isSearchTool = SEARCH_TOOL_NAMES.has(toolName) || toolName.includes("search");
+  const searchItems = useMemo(
+    () => isSearchTool ? parseSearchResults(block.tool.result) : [],
+    [isSearchTool, block.tool.result],
+  );
 
   return (
     <div className={`tool-strip ${isPending ? "tool-strip--pending" : "tool-strip--complete"}`}>
@@ -228,7 +376,13 @@ export function ToolExecutionStrip({ block }: ToolExecutionStripProps) {
         </div>
 
         {argsLine && <div className="tool-strip__query">{argsLine}</div>}
-        {resultLine && <div className="tool-strip__result">{resultLine}</div>}
+
+        {/* Rich search results when available */}
+        {searchItems.length > 0 ? (
+          <SearchResultWidget items={searchItems} />
+        ) : (
+          resultLine && <div className="tool-strip__result">{resultLine}</div>
+        )}
 
         {showDetailsToggle && (
           <button

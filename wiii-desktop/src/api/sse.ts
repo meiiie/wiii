@@ -30,6 +30,9 @@ import type {
   SSEVisualCommitEvent,
   SSEVisualDisposeEvent,
   SSEHostActionEvent,
+  SSECodeOpenEvent,
+  SSECodeDeltaEvent,
+  SSECodeCompleteEvent,
 } from "./types";
 
 export interface SSEEventHandler {
@@ -64,6 +67,12 @@ export interface SSEEventHandler {
   onVisualDispose?: (data: SSEVisualDisposeEvent) => void;
   /** Sprint 222b: Host action request from AI agent */
   onHostAction?: (data: SSEHostActionEvent) => void;
+  /** Code Studio: session opened */
+  onCodeOpen?: (data: SSECodeOpenEvent) => void;
+  /** Code Studio: chunked code content */
+  onCodeDelta?: (data: SSECodeDeltaEvent) => void;
+  /** Code Studio: full code + trigger preview */
+  onCodeComplete?: (data: SSECodeCompleteEvent) => void;
   /** Transport keepalive comment such as ": keepalive" */
   onKeepAlive?: () => void;
 }
@@ -302,6 +311,15 @@ function dispatchEvent(
       break;
     case "host_action":
       handlers.onHostAction?.(data as SSEHostActionEvent);
+      break;
+    case "code_open":
+      handlers.onCodeOpen?.(data as SSECodeOpenEvent);
+      break;
+    case "code_delta":
+      handlers.onCodeDelta?.(data as SSECodeDeltaEvent);
+      break;
+    case "code_complete":
+      handlers.onCodeComplete?.(data as SSECodeCompleteEvent);
       break;
     default:
       console.warn(`[SSE] Unknown event type: ${eventType}`);

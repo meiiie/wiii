@@ -162,6 +162,12 @@ class Settings(BaseSettings):
     browser_agent_timeout: int = 120  # seconds per browser session
     browser_agent_max_sessions_per_hour: int = 10
 
+    # Code Studio streaming
+    enable_code_studio_streaming: bool = Field(
+        default=False,
+        description="Emit chunked code_delta SSE events for Code Studio streaming display",
+    )
+
     @property
     def postgres_url(self) -> str:
         """
@@ -494,11 +500,11 @@ class Settings(BaseSettings):
         description="Enable streaming-first structured inline visuals (VisualPayload v1 + SSE visual events)",
     )
     enable_code_gen_visuals: bool = Field(
-        default=False,
+        default=True,
         description="Route explanatory visuals to inline_html (code-gen) instead of template (card layout)",
     )
     enable_llm_code_gen_visuals: bool = Field(
-        default=False,
+        default=True,
         description="Allow LLM to write custom HTML/CSS/SVG via code_html param (Claude Artifacts style)",
     )
 

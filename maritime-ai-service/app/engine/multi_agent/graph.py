@@ -721,28 +721,19 @@ def _build_direct_tools_context(
     # These capabilities are handled by code_studio_agent.
     # Direct now focuses on: conversation, web search, knowledge, character, LMS.
 
-    # Sprint 229d: Visual tools available to direct for inline rich visuals.
-    if getattr(settings, "enable_structured_visuals", False):
+    # LLM-first visual tools: tool_create_visual_code is the primary tool
+    if getattr(settings_obj, "enable_llm_code_gen_visuals", False):
         tool_hints.append(
-            "- tool_generate_visual: TOOL CHINH cho moi visual giai thich. "
-            "Tao 2-3 figures co cau truc (comparison, process, matrix, architecture, concept, infographic, chart, timeline, map_lite). "
-            "LUON goi NHIEU LAN (2-3 calls) de tao multi-figure explanation. "
+            "- tool_create_visual_code: TAO VISUAL bang HTML/CSS/SVG/JS truc tiep. "
+            "Day la tool CHINH cho visual. Viet code HTML dep, co animation, responsive. "
+            "Moi visual PHAI khac nhau — khong dung template. "
+            "Neu user muon sua visual truoc do, reuse visual_session_id."
+        )
+    elif getattr(settings_obj, "enable_structured_visuals", False):
+        tool_hints.append(
+            "- tool_generate_visual: Tao visual co cau truc (comparison, process, chart, etc.). "
             "Frontend render inline ngay trong stream."
         )
-        tool_hints.append(
-            "- Neu user follow-up de sua/hightlight/loc visual vua tao, goi tool_generate_visual voi CUNG visual_session_id va operation='patch'."
-        )
-        tool_hints.append(
-            "- tool_generate_rich_visual: CHI dung cho simulation (Canvas+sliders), quiz trac nghiem, hoac react_app. "
-            "KHONG dung cho comparison, process, matrix, architecture, concept, infographic — nhung loai nay PHAI dung tool_generate_visual."
-        )
-    else:
-        tool_hints.append(
-            "- tool_generate_rich_visual: TAO VISUAL TUONG TAC inline (comparison, process, matrix, "
-            "architecture, concept, infographic, simulation, quiz, interactive_table, react_app). "
-            "Goi tool nay khi can GIAI THICH TRUC QUAN, SO SANH, hoac QUIZ."
-        )
-
     parts = []
     parts.append("## CÔNG CỤ CÓ SẴN:\n" + "\n".join(tool_hints))
 
@@ -869,22 +860,6 @@ def _build_code_studio_tools_context(
         tool_hints.append(
             "- Follow-up visual edits: nếu user muốn chỉnh visual vừa có, reuse visual_session_id và set operation='patch'."
         )
-        tool_hints.append(
-            "- tool_generate_rich_visual: CHỈ dùng cho simulation (Canvas+sliders), quiz trắc nghiệm, react_app. "
-            "KHÔNG dùng cho comparison/process/matrix/architecture/concept/infographic — dùng tool_generate_visual."
-        )
-    else:
-        tool_hints.append(
-            "- tool_generate_rich_visual: TAO VISUAL TUONG TAC CAP CAO (Claude-level). "
-            "10 loai: comparison, process, matrix, architecture, concept, infographic, "
-            "simulation (Canvas + sliders), quiz (trac nghiem), interactive_table (sap xep/tim kiem), "
-            "react_app (FULL REACT APP — React 18 + Tailwind + Recharts — cung kien truc nhu Claude Artifacts). "
-            "Voi react_app: viet function App() component, dung Tailwind classes, Recharts charts. "
-            "UU TIEN react_app cho: dashboards phuc tap, UI tuong tac nhieu component, data viz voi Recharts. "
-            "UU TIEN simulation cho: vat ly, toan hoc, animation Canvas. "
-            "UU TIEN quiz cho: kiem tra kien thuc. "
-            "Tra ve ```widget code block — FE tu render trong sandboxed iframe."
-        )
 
     if has_execute_python:
         tool_hints.append(
@@ -933,15 +908,14 @@ def _build_code_studio_tools_context(
         "- Voi yeu cau 'tao file Excel / spreadsheet': luon goi tool_generate_excel_file.",
         "- Voi yeu cau 'tao file Word / bao cao / report': luon goi tool_generate_word_document.",
         "- Voi yeu cau GIAI THICH khai niem / SO SANH / KIEN TRUC: goi "
-        + ("tool_generate_visual 2-3 LAN de tao multi-figure" if structured_visuals_enabled else "tool_generate_rich_visual")
+        + ("tool_generate_visual 2-3 LAN de tao multi-figure" if structured_visuals_enabled else "tool_create_visual_code")
         + ". Visual types: comparison (2 cot so sanh), process (tung buoc), matrix (bang mau), "
         "architecture (layer diagram), concept (mind map), infographic (stats).",
         (
-            "- SAU KHI goi tool_generate_interactive_chart HOAC tool_generate_rich_visual: "
+            "- SAU KHI goi tool_generate_interactive_chart: "
             "COPY NGUYEN VAN widget code block vao response."
             if not structured_visuals_enabled
-            else "- SAU KHI goi tool_generate_visual: khong copy payload JSON vao answer. Viet bridge prose + takeaway, frontend se chen figure tu dong. "
-                 "Chi copy ```widget khi dang fallback sang rich_visual/interactive_chart cho legacy compatibility."
+            else "- SAU KHI goi tool_generate_visual: khong copy payload JSON vao answer. Viet bridge prose + takeaway, frontend se chen figure tu dong."
         ),
         "- Khi sandbox gap loi ket noi, noi ro gioi han va KHONG gia vo da chay code.",
     ]
@@ -963,9 +937,6 @@ _CODE_STUDIO_SKILLS_CACHE: list[str] | None = None
 # Skill files để load — thứ tự ưu tiên
 _CODE_STUDIO_SKILL_FILES = [
     "VISUAL_CODE_GEN.md",
-    "INTERACTIVE_SIMULATION.md",
-    "SVG_DIAGRAM.md",
-    "DATA_VISUALIZATION.md",
 ]
 
 
@@ -1044,6 +1015,75 @@ def _collect_active_visual_session_ids(state: AgentState) -> list[str]:
     return session_ids
 
 
+# Code Studio streaming constants
+CODE_CHUNK_SIZE = 250       # ~5 lines per chunk
+CODE_CHUNK_DELAY_SEC = 0.015  # 15ms between chunks → ~66 chunks/sec
+
+
+async def _maybe_emit_code_studio_events(
+    *,
+    push_event,
+    payload,
+    payload_dict: dict,
+    node: str,
+) -> None:
+    """Emit chunked code_open → code_delta × N → code_complete SSE events.
+
+    Called inside _maybe_emit_visual_event when Code Studio streaming is enabled
+    and the payload contains fallback_html from tool_create_visual_code.
+    """
+    fallback_html = payload.fallback_html
+    if not fallback_html:
+        return
+
+    session_id = payload.visual_session_id
+    title = payload.title or "Visual"
+    version = getattr(payload, "figure_index", 1)
+
+    # 1. Emit code_open
+    await push_event({
+        "type": "code_open",
+        "content": {
+            "session_id": session_id,
+            "title": title,
+            "language": "html",
+            "version": version,
+        },
+        "node": node,
+    })
+
+    # 2. Emit code_delta chunks
+    total_bytes = len(fallback_html)
+    chunk_index = 0
+    for i in range(0, total_bytes, CODE_CHUNK_SIZE):
+        chunk = fallback_html[i:i + CODE_CHUNK_SIZE]
+        await push_event({
+            "type": "code_delta",
+            "content": {
+                "session_id": session_id,
+                "chunk": chunk,
+                "chunk_index": chunk_index,
+                "total_bytes": total_bytes,
+            },
+            "node": node,
+        })
+        chunk_index += 1
+        await asyncio.sleep(CODE_CHUNK_DELAY_SEC)
+
+    # 3. Emit code_complete
+    await push_event({
+        "type": "code_complete",
+        "content": {
+            "session_id": session_id,
+            "full_code": fallback_html,
+            "language": "html",
+            "version": version,
+            "visual_payload": payload_dict,
+        },
+        "node": node,
+    })
+
+
 async def _maybe_emit_visual_event(
     *,
     push_event,
@@ -1105,6 +1145,16 @@ async def _maybe_emit_visual_event(
 
         for payload in payloads:
             payload_dict = payload.model_dump(mode="json")
+
+            # Code Studio streaming: emit chunked code events before visual_open
+            if settings.enable_code_studio_streaming and payload.fallback_html:
+                await _maybe_emit_code_studio_events(
+                    push_event=push_event,
+                    payload=payload,
+                    payload_dict=payload_dict,
+                    node=node,
+                )
+
             event_type = payload.lifecycle_event if payload.lifecycle_event in {"visual_open", "visual_patch"} else "visual_open"
             await push_event({
                 "type": event_type,
@@ -1398,8 +1448,6 @@ def _direct_required_tool_names(query: str, user_role: str = "student") -> list[
         elif _structured:
             # Structured mode: ALL visual intents → multi-figure tool
             required.append("tool_generate_visual")
-        elif visual_decision.mode in {"template", "inline_html", "app"}:
-            required.append("tool_generate_rich_visual")
 
     return required
 
@@ -1442,8 +1490,6 @@ def _code_studio_required_tool_names(query: str, user_role: str = "student") -> 
             required.append("tool_create_visual_code")
         elif _structured:
             required.append("tool_generate_visual")
-        elif visual_decision.mode in {"template", "inline_html", "app"}:
-            required.append("tool_generate_rich_visual")
 
     return required
 
@@ -1494,6 +1540,18 @@ def _build_visual_tool_runtime_metadata(state: dict, query: str) -> dict[str, An
     })
     if preferred_visual_type:
         metadata["preferred_visual_type"] = preferred_visual_type
+
+    # C3: Conversational editing — inject last visual HTML so LLM can modify
+    last_visual_html = str(visual_ctx.get("last_visual_html") or "").strip()
+    if not last_visual_html:
+        # Try to find HTML from active visuals state_summary
+        for item in (visual_ctx.get("active_inline_visuals") or []):
+            if isinstance(item, dict) and str(item.get("visual_session_id", "")) == preferred_session_id:
+                last_visual_html = str(item.get("state_summary") or "").strip()
+                break
+    if last_visual_html:
+        metadata["last_visual_html"] = last_visual_html[:50000]  # cap at 50k chars
+
     return metadata or None
 
 
@@ -4077,6 +4135,20 @@ def _inject_visual_context(state: dict) -> str:
         lines.append(f"- Loai visual gan nhat: {last_visual_type}")
     if last_visual_title:
         lines.append(f"- Tieu de visual gan nhat: {last_visual_title}")
+
+    # C3: Conversational editing — inject last visual HTML so LLM can modify
+    query = str(ctx.get("last_user_message") or state.get("query") or "").strip()
+    if query and detect_visual_patch_request(query) and last_session_id:
+        # Find HTML from active visuals
+        _prev_html = ""
+        for item in active_items:
+            if isinstance(item, dict) and str(item.get("visual_session_id", "")) == last_session_id:
+                _prev_html = str(item.get("state_summary") or "").strip()
+                break
+        if _prev_html:
+            lines.append("- CONVERSATIONAL EDIT: User muon chinh sua visual truoc do. Day la code HTML hien tai:")
+            lines.append(f"```html\n{_prev_html[:8000]}\n```")
+            lines.append("- Dung tool_create_visual_code voi visual_session_id nay de cap nhat, chi thay doi phan user yeu cau.")
 
     if active_items:
         lines.append("- Visual dang co san trong thread:")

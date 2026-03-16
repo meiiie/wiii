@@ -28,6 +28,8 @@ interface UIState {
   /** Sprint 168: Ad-hoc artifact from CodeBlock "Sandbox" button */
   _ephemeralArtifact: ArtifactData | null;
   orgManagerTargetOrgId: string | null;
+  /** Code Studio panel */
+  codeStudioPanelOpen: boolean;
 
   // Actions
   toggleSidebar: () => void;
@@ -58,6 +60,9 @@ interface UIState {
   /** Sprint 216: Soul Bridge panel */
   openSoulBridge: () => void;
   closeSoulBridge: () => void;
+  /** Code Studio panel actions */
+  openCodeStudio: () => void;
+  closeCodeStudio: () => void;
   /** Sprint 192: Navigate back to chat from any view */
   navigateToChat: () => void;
   closeAll: () => void;
@@ -78,6 +83,7 @@ export const useUIStore = create<UIState>((set) => ({
   artifactActiveTab: "code" as const,
   _ephemeralArtifact: null,
   orgManagerTargetOrgId: null,
+  codeStudioPanelOpen: false,
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
@@ -110,9 +116,12 @@ export const useUIStore = create<UIState>((set) => ({
   closeAdminPanel: () => set({ activeView: "chat" as ActiveView }),
   openOrgManagerPanel: (orgId) => set({ activeView: "org-admin" as ActiveView, orgManagerTargetOrgId: orgId, commandPaletteOpen: false }),
   closeOrgManagerPanel: () => set({ activeView: "chat" as ActiveView, orgManagerTargetOrgId: null }),
+  // Code Studio panel — mutual exclusion with artifact + preview + sources
+  openCodeStudio: () => set({ codeStudioPanelOpen: true, artifactPanelOpen: false, previewPanelOpen: false, sourcesPanelOpen: false }),
+  closeCodeStudio: () => set({ codeStudioPanelOpen: false }),
   openSoulBridge: () => set({ activeView: "soul-bridge" as ActiveView, commandPaletteOpen: false }),
   closeSoulBridge: () => set({ activeView: "chat" as ActiveView }),
   navigateToChat: () => set({ activeView: "chat" as ActiveView, orgManagerTargetOrgId: null }),
   closeAll: () =>
-    set({ activeView: "chat" as ActiveView, commandPaletteOpen: false, sourcesPanelOpen: false, characterPanelOpen: false, previewPanelOpen: false, selectedPreviewId: null, artifactPanelOpen: false, selectedArtifactId: null, _ephemeralArtifact: null, orgManagerTargetOrgId: null }),
+    set({ activeView: "chat" as ActiveView, commandPaletteOpen: false, sourcesPanelOpen: false, characterPanelOpen: false, previewPanelOpen: false, selectedPreviewId: null, artifactPanelOpen: false, selectedArtifactId: null, _ephemeralArtifact: null, orgManagerTargetOrgId: null, codeStudioPanelOpen: false }),
 }));

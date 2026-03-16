@@ -47,6 +47,9 @@ class StreamEventType:
     VISUAL_COMMIT = "visual_commit"              # Sprint 231: Commit inline visual session
     VISUAL_DISPOSE = "visual_dispose"            # Sprint 231: Dispose inline visual session
     HOST_ACTION = "host_action"                    # Sprint 222b: Bidirectional host action request
+    CODE_OPEN = "code_open"                          # Code Studio: session metadata
+    CODE_DELTA = "code_delta"                        # Code Studio: chunked code content
+    CODE_COMPLETE = "code_complete"                  # Code Studio: full code + trigger preview
 
 
 # =============================================================================
@@ -498,6 +501,70 @@ async def create_preview_event(
             "citation_index": citation_index,
             "metadata": metadata or {},
         },
+        node=node,
+    )
+
+
+async def create_code_open_event(
+    session_id: str,
+    title: str,
+    language: str,
+    version: int,
+    node: Optional[str] = None,
+) -> StreamEvent:
+    """Code Studio: Create a code_open event to start a streaming code session."""
+    return StreamEvent(
+        type=StreamEventType.CODE_OPEN,
+        content={
+            "session_id": session_id,
+            "title": title,
+            "language": language,
+            "version": version,
+        },
+        node=node,
+    )
+
+
+async def create_code_delta_event(
+    session_id: str,
+    chunk: str,
+    chunk_index: int,
+    total_bytes: int,
+    node: Optional[str] = None,
+) -> StreamEvent:
+    """Code Studio: Create a code_delta event with a chunk of streaming code."""
+    return StreamEvent(
+        type=StreamEventType.CODE_DELTA,
+        content={
+            "session_id": session_id,
+            "chunk": chunk,
+            "chunk_index": chunk_index,
+            "total_bytes": total_bytes,
+        },
+        node=node,
+    )
+
+
+async def create_code_complete_event(
+    session_id: str,
+    full_code: str,
+    language: str,
+    version: int,
+    visual_payload: Optional[Dict[str, Any]] = None,
+    node: Optional[str] = None,
+) -> StreamEvent:
+    """Code Studio: Create a code_complete event with full code and optional visual payload."""
+    content: Dict[str, Any] = {
+        "session_id": session_id,
+        "full_code": full_code,
+        "language": language,
+        "version": version,
+    }
+    if visual_payload:
+        content["visual_payload"] = visual_payload
+    return StreamEvent(
+        type=StreamEventType.CODE_COMPLETE,
+        content=content,
         node=node,
     )
 

@@ -770,6 +770,40 @@ export interface SSEHostActionEvent {
   presentation?: PresentationMode;
 }
 
+/** Code Studio: session opened */
+export interface SSECodeOpenEvent {
+  content: {
+    session_id: string;
+    title: string;
+    language: string;
+    version: number;
+  };
+  node?: string;
+}
+
+/** Code Studio: chunked code content */
+export interface SSECodeDeltaEvent {
+  content: {
+    session_id: string;
+    chunk: string;
+    chunk_index: number;
+    total_bytes: number;
+  };
+  node?: string;
+}
+
+/** Code Studio: full code + trigger preview */
+export interface SSECodeCompleteEvent {
+  content: {
+    session_id: string;
+    full_code: string;
+    language: string;
+    version: number;
+    visual_payload?: VisualPayload;
+  };
+  node?: string;
+}
+
 /** Ordered content block - enables interleaved thinking+answer rendering */
 export type ContentBlock =
   | ThinkingBlockData

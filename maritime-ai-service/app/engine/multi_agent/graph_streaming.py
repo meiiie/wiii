@@ -75,6 +75,9 @@ from app.engine.multi_agent.stream_utils import (
     create_visual_patch_event,
     create_visual_commit_event,
     create_visual_dispose_event,
+    create_code_open_event,
+    create_code_delta_event,
+    create_code_complete_event,
 )
 
 logger = logging.getLogger(__name__)
@@ -224,6 +227,34 @@ async def _convert_bus_event(event: dict) -> StreamEvent:
             node=node,
             reason=str(_visual.get("reason") or ""),
             status=str(_visual.get("status") or "disposed"),
+        )
+    elif etype == "code_open":
+        _cs = event.get("content", {})
+        return await create_code_open_event(
+            session_id=str(_cs.get("session_id", "")),
+            title=str(_cs.get("title", "")),
+            language=str(_cs.get("language", "html")),
+            version=int(_cs.get("version", 1)),
+            node=node,
+        )
+    elif etype == "code_delta":
+        _cs = event.get("content", {})
+        return await create_code_delta_event(
+            session_id=str(_cs.get("session_id", "")),
+            chunk=str(_cs.get("chunk", "")),
+            chunk_index=int(_cs.get("chunk_index", 0)),
+            total_bytes=int(_cs.get("total_bytes", 0)),
+            node=node,
+        )
+    elif etype == "code_complete":
+        _cs = event.get("content", {})
+        return await create_code_complete_event(
+            session_id=str(_cs.get("session_id", "")),
+            full_code=str(_cs.get("full_code", "")),
+            language=str(_cs.get("language", "html")),
+            version=int(_cs.get("version", 1)),
+            visual_payload=_cs.get("visual_payload"),
+            node=node,
         )
     else:
         return await create_status_event(

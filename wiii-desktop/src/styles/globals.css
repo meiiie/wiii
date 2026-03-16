@@ -932,6 +932,286 @@ html.dark .shiki span {
   gap: 6px;
 }
 
+/* ===== Visual Artifact Card (Claude-style tool card) ===== */
+.visual-artifact-card {
+  width: 100%;
+  margin: 0.35rem 0;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, white);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 5%, transparent) 0%, transparent 40%),
+    color-mix(in srgb, var(--surface-secondary) 70%, white);
+  overflow: hidden;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.visual-artifact-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 20%, var(--border));
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+.visual-artifact-card[data-status="pending"] {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+}
+
+.visual-artifact-card__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px 8px;
+}
+
+.visual-artifact-card__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--accent) 11%, white);
+}
+
+.visual-artifact-card__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  margin-bottom: 3px;
+}
+
+.visual-artifact-card__title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.visual-artifact-card__status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.visual-artifact-card__preview {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  background: color-mix(in srgb, var(--surface-white, white) 30%, transparent);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.15s ease;
+}
+
+.visual-artifact-card__preview:hover {
+  background: color-mix(in srgb, var(--surface-secondary) 40%, transparent);
+}
+
+.visual-artifact-card__code {
+  margin: 0;
+  padding: 10px 14px;
+  color: color-mix(in srgb, var(--text) 70%, var(--text-tertiary));
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.visual-artifact-card__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 14px 8px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.visual-artifact-card__shimmer {
+  padding: 8px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.visual-artifact-card__shimmer-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, transparent) 0%, color-mix(in srgb, var(--accent) 24%, transparent) 50%, color-mix(in srgb, var(--accent) 12%, transparent) 100%);
+  background-size: 200% 100%;
+  animation: shimmer-slide 1.4s ease infinite;
+}
+
+.visual-artifact-card__shimmer-bar--short {
+  width: 60%;
+}
+
+@keyframes shimmer-slide {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ===== Code Studio Panel ===== */
+.code-studio-panel {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 3%, transparent) 0%, transparent 30%),
+    var(--surface);
+}
+
+.code-studio-panel__header {
+  background: var(--surface);
+}
+
+.code-studio-panel__code {
+  background: color-mix(in srgb, var(--surface-secondary) 50%, var(--surface));
+}
+
+/* Blinking cursor during streaming */
+.code-studio-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: cursor-blink 0.8s steps(1) infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* ===== Code Studio Card (inline in chat rail) ===== */
+.code-studio-card {
+  width: 100%;
+  margin: 0.35rem 0;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, white);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 5%, transparent) 0%, transparent 40%),
+    color-mix(in srgb, var(--surface-secondary) 70%, white);
+  overflow: hidden;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.code-studio-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 20%, var(--border));
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+.code-studio-card[data-status="streaming"] {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+}
+
+/* ===== Search Result Widget ===== */
+.search-result-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 6px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: color-mix(in srgb, var(--surface-secondary) 40%, transparent);
+  overflow: hidden;
+}
+
+.search-result-widget__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: color-mix(in srgb, var(--surface-white, white) 50%, transparent);
+  text-decoration: none;
+  transition: background 0.12s ease;
+}
+
+.search-result-widget__item:hover {
+  background: color-mix(in srgb, var(--accent) 6%, white);
+}
+
+.search-result-widget__favicon {
+  color: var(--text-tertiary);
+}
+
+.search-result-widget__content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.search-result-widget__title {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-result-widget__domain {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.search-result-widget__link-icon {
+  color: var(--text-tertiary);
+  transition: opacity 0.15s ease;
+}
+
+/* ===== Visual Block Progressive Reveal ===== */
+.visual-block-reveal {
+  position: relative;
+}
+
+.visual-block-reveal__skeleton {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-secondary) 80%, white);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.visual-block-reveal__skeleton-bar {
+  width: 40%;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 15%, transparent) 0%, color-mix(in srgb, var(--accent) 30%, transparent) 50%, color-mix(in srgb, var(--accent) 15%, transparent) 100%);
+  background-size: 200% 100%;
+  animation: shimmer-slide 1.2s ease infinite;
+}
+
+.visual-block-reveal__skeleton-text {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+}
+
 /* ===== Welcome staggered reveal (Sprint 82b — cookbook pattern) ===== */
 @keyframes welcome-reveal {
   from {

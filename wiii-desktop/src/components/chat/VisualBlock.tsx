@@ -6,9 +6,11 @@ import type {
   VisualPayload,
   VisualSessionState,
 } from "@/api/types";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useChatStore } from "@/stores/chat-store";
+import { useCodeStudioStore } from "@/stores/code-studio-store";
+import { useUIStore } from "@/stores/ui-store";
 import { trackVisualTelemetry } from "@/lib/visual-telemetry";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import InlineHtmlWidget from "@/components/common/InlineHtmlWidget";
@@ -21,7 +23,6 @@ import {
   DiagramCurveConnector,
   DiagramCenterpiece,
   DiagramFlowBridge,
-  // DiagramFormulaChip, // removed — template cards eliminated
   DiagramGroupBand,
   DiagramInsightPanel,
   DiagramLegend,
@@ -1274,45 +1275,89 @@ export function VisualBlock({ block, embedded = false }: { block: VisualBlockDat
   }, [embedded, reduced, visual.lifecycle_event, visual.title, visual.summary, visual.type]);
 
   // ALL visuals: clean iframe + action bar — no template cards (Claude Artifacts pattern)
+  // Progressive reveal: decorative skeleton overlay during "open" cue, content always rendered
+  const isBuilding = stageCue === "open" && !reduced;
   return <figure ref={figureRef} data-testid="visual-block" className={`${embedded ? "" : "my-6"} overflow-hidden`} aria-labelledby={titleId} aria-describedby={describedById} data-visual-status={status} data-visual-lifecycle={visual.lifecycle_event} data-visual-cue={stageCue} data-visual-embedded={embedded ? "true" : "false"}>
-    <motion.div
-      variants={staggerContainer}
-      initial={reduced ? "visible" : "hidden"}
-      animate="visible"
-    >
-      {body}
-    </motion.div>
-    {htmlPayload && (
-      <div className="flex items-center gap-2 px-2 py-1.5 transition-opacity duration-200" style={{ opacity: 0.35 }}
-        onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.35"; }}
+    <div className="visual-block-reveal" style={{ position: "relative" }}>
+      <motion.div
+        variants={staggerContainer}
+        initial={reduced ? "visible" : "hidden"}
+        animate="visible"
       >
-        <button
-          type="button"
-          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-text-tertiary hover:bg-surface-secondary hover:text-text-secondary transition-colors"
-          onClick={() => {
-            const blob = new Blob([htmlPayload], { type: "text/html" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `${(visual.title || "visual").replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, "_").substring(0, 40)}.html`;
-            a.click();
-            URL.revokeObjectURL(url);
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Tải HTML
-        </button>
-        <button
-          type="button"
-          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-text-tertiary hover:bg-surface-secondary hover:text-text-secondary transition-colors"
-          onClick={() => { navigator.clipboard.writeText(htmlPayload); }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-          Sao chép
-        </button>
-      </div>
+        {body}
+      </motion.div>
+      {/* Building skeleton overlay — decorative, fades out when visual is ready */}
+      <AnimatePresence>
+        {isBuilding && (
+          <motion.div
+            className="visual-block-reveal__skeleton"
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.35, ease: "easeOut" } }}
+            style={{ position: "absolute", inset: 0, zIndex: 2, pointerEvents: "none" }}
+          >
+            <div className="visual-block-reveal__skeleton-bar" />
+            <div className="visual-block-reveal__skeleton-text">Dang dung visual...</div>
+            <div className="visual-block-reveal__skeleton-bar" style={{ width: "25%" }} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+    {htmlPayload && (
+      <VisualActionBar htmlPayload={htmlPayload} title={visual.title} sessionId={sessionId} />
     )}
     <figcaption id={srSummaryId} className="sr-only">{accessibleSummary}</figcaption>
   </figure>;
+}
+
+/** Action bar below visual — includes Code Studio link when session exists. */
+function VisualActionBar({ htmlPayload, title, sessionId }: { htmlPayload: string; title: string; sessionId: string }) {
+  const hasCodeStudioSession = useCodeStudioStore((s) => Boolean(s.sessions[sessionId]));
+
+  const openInCodeStudio = () => {
+    useCodeStudioStore.getState().setActiveSession(sessionId);
+    useUIStore.getState().openCodeStudio();
+  };
+
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 transition-opacity duration-200" style={{ opacity: 0.35 }}
+      onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.35"; }}
+    >
+      {hasCodeStudioSession && (
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors font-medium"
+          onClick={openInCodeStudio}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          Code Studio
+        </button>
+      )}
+      <button
+        type="button"
+        className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-text-tertiary hover:bg-surface-secondary hover:text-text-secondary transition-colors"
+        onClick={() => {
+          const blob = new Blob([htmlPayload], { type: "text/html" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `${(title || "visual").replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, "_").substring(0, 40)}.html`;
+          a.click();
+          URL.revokeObjectURL(url);
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Tai HTML
+      </button>
+      <button
+        type="button"
+        className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-text-tertiary hover:bg-surface-secondary hover:text-text-secondary transition-colors"
+        onClick={() => { navigator.clipboard.writeText(htmlPayload); }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        Sao chep
+      </button>
+    </div>
+  );
 }
