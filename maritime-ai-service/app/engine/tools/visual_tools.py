@@ -3057,13 +3057,12 @@ def tool_create_visual_code(
             "Xem VISUAL_CODE_GEN.md để tham khảo patterns."
         )
 
-    # minLength validation — chống lazy output
-    _MIN_CODE_HTML_LENGTH = 100
+    # Chống empty/placeholder — không ép rigid length
+    _MIN_CODE_HTML_LENGTH = 50
     if len(raw) < _MIN_CODE_HTML_LENGTH:
         return (
-            f"Error: code_html quá ngắn ({len(raw)} ký tự, tối thiểu {_MIN_CODE_HTML_LENGTH}). "
-            "Visual PHẢI có đồ họa thật — SVG shapes, styled elements, animations. "
-            "KHÔNG trả placeholder hoặc text đơn giản. Viết code hoàn chỉnh."
+            f"Error: code_html quá ngắn ({len(raw)} ký tự). "
+            "Viết HTML/CSS/SVG hoàn chỉnh — model tự quyết complexity phù hợp với nội dung."
         )
 
     from app.core.config import get_settings

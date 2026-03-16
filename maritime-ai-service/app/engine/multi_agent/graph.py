@@ -843,27 +843,21 @@ def _build_code_studio_tools_context(
     if structured_visuals_enabled:
         llm_code_gen = getattr(settings_obj, "enable_llm_code_gen_visuals", False)
         if llm_code_gen:
-            # tool_create_visual_code là tool CHÍNH — ép LLM viết code trực tiếp
+            # LLM-first: model tự quyết complexity phù hợp với nội dung
             tool_hints.append(
-                "- tool_create_visual_code: ★ TOOL CHÍNH ★ — LUÔN dùng tool này cho MỌI visual. "
-                "Viết HTML/CSS/SVG/JS trực tiếp trong code_html — giống Claude Artifacts. "
-                "Mỗi visual phải UNIQUE, có đồ họa thật (SVG shapes, Canvas animation, CSS gradient). "
-                "KHÔNG BAO GIỜ trả visual chỉ có text — phải có visual elements thật. "
-                "code_html phải ít nhất 150+ dòng code hoàn chỉnh."
+                "- tool_create_visual_code: ★ TOOL CHÍNH ★ — dùng cho visual. "
+                "Viết HTML/CSS/SVG/JS trực tiếp — mỗi visual unique, tailored theo context. "
+                "Model tự quyết complexity: đơn giản cho so sánh, phức tạp cho simulation. "
+                "Phải có đồ họa thật (SVG shapes, styled elements), không chỉ text."
             )
             tool_hints.append(
-                "- DESIGN PHILOSOPHY: Tự hỏi 'Visual này có khiến người ta dừng cuộn và nói whoa không?'. "
-                "Animation là MẶC ĐỊNH, không phải ngoại lệ. Dùng micro-animations (fade, slide, pulse), "
-                "hover effects cho MỌI element, SVG gradients, CSS transitions mượt. "
-                "TRÁNH: centered layouts đồng loạt, purple gradients, text-only cards, cookie-cutter patterns."
+                "- DESIGN: Tự hỏi 'Visual này có khiến người ta dừng cuộn và nói whoa không?'. "
+                "Mỗi visual có character riêng phù hợp nội dung. Tránh cookie-cutter patterns. "
+                "CSS vars có sẵn: --bg, --text, --accent, --green, --purple, --amber, --teal, --pink, --border, --radius."
             )
             tool_hints.append(
-                "- THINKING STEP: TRƯỚC KHI viết code, suy nghĩ: (1) thông điệp cốt lõi? (2) visual metaphor tốt nhất? "
-                "(3) tương tác hấp dẫn? (4) animations polish? (5) color palette phù hợp?"
-            )
-            tool_hints.append(
-                "- tool_generate_visual: CHỈ dùng làm FALLBACK cho visual rất đơn giản (so sánh 2 cột, danh sách bước). "
-                "Với visual PHỨC TẠP (kiến trúc, mô phỏng, flowchart, data viz): LUÔN dùng tool_create_visual_code."
+                "- tool_generate_visual: Fallback cho visual rất đơn giản (spec-based). "
+                "Với visual custom (kiến trúc, mô phỏng, flowchart, data viz): dùng tool_create_visual_code."
             )
         else:
             tool_hints.append(

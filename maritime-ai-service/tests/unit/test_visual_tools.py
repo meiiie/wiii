@@ -1477,7 +1477,7 @@ class TestCreateVisualCodeTool:
         from app.engine.tools.visual_tools import tool_create_visual_code
 
         result = tool_create_visual_code.invoke({
-            "code_html": "<div>Hi</div>",  # Too short
+            "code_html": "<div>Hi</div>",  # Too short (< 50 chars)
             "title": "Short",
         })
         assert "Error" in result
