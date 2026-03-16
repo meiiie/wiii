@@ -188,6 +188,10 @@ CODE_STUDIO_KEYWORDS = [
     "landing page", "website", "web app", "microsite",
     "bieu do", "chart", "plot", "matplotlib", "pandas", "seaborn",
     "png", "svg", "canvas", "artifact", "sandbox",
+    # Visual/simulation — route to code_studio for richer code generation
+    "mo phong", "simulation", "simulate", "simulator",
+    "animation", "animate", "animated",
+    "interactive diagram", "tuong tac",
 ]
 
 
@@ -383,6 +387,21 @@ class SupervisorAgent:
             logger.info("[SUPERVISOR] Capability override: direct -> code_studio_agent")
             chosen_agent = AgentType.CODE_STUDIO.value
             method = "structured+capability_override"
+
+        # Visual code-gen override: when flag enabled, visual intent upgrades TUTOR→CODE_STUDIO
+        # for richer HTML/SVG code generation (Gemini Pro instead of Flash-Lite)
+        if chosen_agent == AgentType.TUTOR.value:
+            from app.core.config import settings as _settings
+            if getattr(_settings, "enable_code_gen_visuals", False):
+                from app.engine.multi_agent.visual_intent_resolver import resolve_visual_intent
+                _visual_decision = resolve_visual_intent(query)
+                if _visual_decision.force_tool and _visual_decision.mode in ("inline_html", "app"):
+                    logger.info(
+                        "[SUPERVISOR] Visual code-gen upgrade: tutor -> code_studio (mode=%s, reason=%s)",
+                        _visual_decision.mode, _visual_decision.reason,
+                    )
+                    chosen_agent = AgentType.CODE_STUDIO.value
+                    method = "structured+visual_codegen_upgrade"
 
         # Sprint 148: Product search feature gate — fallback to DIRECT if disabled
         if chosen_agent == AgentType.PRODUCT_SEARCH.value:
