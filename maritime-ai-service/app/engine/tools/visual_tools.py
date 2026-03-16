@@ -3050,7 +3050,21 @@ def tool_create_visual_code(
     """
     raw = code_html.strip() if isinstance(code_html, str) else ""
     if not raw:
-        return "Error: code_html là BẮT BUỘC. Viết HTML/CSS/SVG/JS trực tiếp — không để trống."
+        return (
+            "Error: code_html là BẮT BUỘC — không để trống. "
+            "Viết HTML/CSS/SVG/JS trực tiếp với đồ họa thật. "
+            "Ít nhất phải có <style> + HTML elements + visual content (SVG, divs styled, canvas). "
+            "Xem VISUAL_CODE_GEN.md để tham khảo patterns."
+        )
+
+    # minLength validation — chống lazy output
+    _MIN_CODE_HTML_LENGTH = 100
+    if len(raw) < _MIN_CODE_HTML_LENGTH:
+        return (
+            f"Error: code_html quá ngắn ({len(raw)} ký tự, tối thiểu {_MIN_CODE_HTML_LENGTH}). "
+            "Visual PHẢI có đồ họa thật — SVG shapes, styled elements, animations. "
+            "KHÔNG trả placeholder hoặc text đơn giản. Viết code hoàn chỉnh."
+        )
 
     from app.core.config import get_settings
     if not getattr(get_settings(), "enable_llm_code_gen_visuals", False):

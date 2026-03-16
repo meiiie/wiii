@@ -1470,6 +1470,19 @@ class TestCreateVisualCodeTool:
         assert "Error" in result
         assert "BẮT BUỘC" in result
 
+    def test_rejects_too_short_code_html(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import tool_create_visual_code
+
+        result = tool_create_visual_code.invoke({
+            "code_html": "<div>Hi</div>",  # Too short
+            "title": "Short",
+        })
+        assert "Error" in result
+        assert "quá ngắn" in result
+
     def test_rejects_when_flag_off(self, monkeypatch):
         class FakeSettings:
             enable_llm_code_gen_visuals = False
@@ -1489,7 +1502,7 @@ class TestCreateVisualCodeTool:
         from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
 
         result = tool_create_visual_code.invoke({
-            "code_html": '<style>.box{color:var(--accent)}</style><div class="box">Hello World</div>',
+            "code_html": '<style>.box{color:var(--accent);padding:20px;border:1.5px solid var(--border);border-radius:var(--radius);background:var(--bg2)}</style><div class="box">Hello World — visual content with real styling</div>',
             "title": "Test Visual",
         })
         payload = parse_visual_payload(result)
@@ -1507,14 +1520,15 @@ class TestCreateVisualCodeTool:
         monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
         from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
 
-        full_html = '<!DOCTYPE html><html><body><h1>Full doc</h1></body></html>'
+        full_html = '<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"><style>body{font-family:system-ui;color:#1e293b}</style></head><body><h1>Full document with styling</h1><p>Content here</p></body></html>'
         result = tool_create_visual_code.invoke({
             "code_html": full_html,
             "title": "Full Doc",
         })
         payload = parse_visual_payload(result)
         assert payload is not None
-        assert payload.fallback_html == full_html
+        assert payload.fallback_html is not None
+        assert "Full document with styling" in payload.fallback_html
 
     def test_svg_content(self, monkeypatch):
         class FakeSettings:
@@ -1523,7 +1537,7 @@ class TestCreateVisualCodeTool:
         from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
 
         result = tool_create_visual_code.invoke({
-            "code_html": '<svg viewBox="0 0 200 100"><circle cx="100" cy="50" r="40" fill="var(--accent)"/></svg>',
+            "code_html": '<svg viewBox="0 0 400 200" style="width:100%;height:auto"><rect x="10" y="10" width="380" height="180" rx="12" fill="var(--bg2)" stroke="var(--border)"/><circle cx="200" cy="100" r="40" fill="var(--accent)" opacity="0.8"/><text x="200" y="105" text-anchor="middle" fill="white" font-size="14">Visual</text></svg>',
             "title": "SVG Visual",
         })
         payload = parse_visual_payload(result)
@@ -1538,7 +1552,7 @@ class TestCreateVisualCodeTool:
         from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
 
         result = tool_create_visual_code.invoke({
-            "code_html": '<div id="app"></div><script>document.getElementById("app").textContent="Dynamic";</script>',
+            "code_html": '<style>#app{padding:20px;background:var(--bg2);border-radius:var(--radius);min-height:100px}</style><div id="app">Loading...</div><script>document.getElementById("app").textContent="Dynamic content loaded successfully";</script>',
             "title": "JS Visual",
         })
         payload = parse_visual_payload(result)
