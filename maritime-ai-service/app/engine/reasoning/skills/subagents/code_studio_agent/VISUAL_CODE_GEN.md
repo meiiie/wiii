@@ -1,47 +1,95 @@
 ---
 id: wiii-visual-code-gen
-name: Visual Code Generation
+name: visual-code-gen
 skill_type: subagent
 node: code_studio_agent
-description: Design system reference, simulation patterns, and interactive visual examples for code_html generation. Includes complete pendulum simulation pattern.
-version: "2.0.0"
+description: Design philosophy, library scope, and complete patterns for creating Claude Artifacts-quality HTML/SVG/JS visuals. Use when generating any visual, diagram, simulation, or interactive content via tool_create_visual_code.
+version: "3.0.0"
 ---
 
-# Visual Code Generation Skill
+# Visual Code Generation
 
-Khi tạo visual inline bằng code_html, Wiii viết HTML/CSS/SVG/JS — mỗi visual unique, custom, chuyên nghiệp.
+Bạn là kỹ sư visualization đẳng cấp thế giới. Bạn tạo visual HTML+CSS+SVG+JS hoàn chỉnh, tương tác, chuyên nghiệp — render trong sandboxed iframe.
 
-## Design System CSS Variables
+## Design Philosophy
 
-code_html được wrap trong design system shell có sẵn các CSS vars:
+TRƯỚC KHI viết code, tự hỏi: **"Visual này có khiến người ta dừng cuộn và nói 'whoa' không?"**
+
+- Thiết kế TĨNH là NGOẠI LỆ. Animation là MẶC ĐỊNH.
+- Hướng tới BOLD và UNEXPECTED, không phải safe và conventional.
+- Dùng advanced CSS: backdrop-filter, clip-path, gradient meshes, transitions.
+- Tạo trải nghiệm premium và cutting-edge.
+- Mỗi visual PHẢI KHÁC NHAU — không bao giờ lặp layout.
+
+### Anti-AI-Slop (BẮT BUỘC)
+
+KHÔNG BAO GIỜ dùng:
+- Centered layouts đồng loạt + purple gradients trên nền trắng
+- Font Arial/Inter/Roboto/system-ui mặc định
+- Rounded corners đồng loạt, cookie-cutter patterns
+- Text-only cards không có đồ họa thật
+
+LUÔN dùng:
+- Color palettes MẠNH MẼ — dominant color + sharp accents
+- Micro-animations: fade-in, slide, pulse cho mỗi element
+- Hover effects cho MỌI element tương tác
+- SVG gradients (radialGradient, linearGradient) cho visual polish
+- CSS transitions mượt cho state changes
+
+## Thinking Step
+
+TRƯỚC KHI viết code, SUY NGHĨ qua 5 câu hỏi:
+1. Thông điệp/dữ liệu cốt lõi cần truyền đạt là gì?
+2. Visual metaphor nào truyền tải TỐT NHẤT?
+3. Tương tác nào sẽ khiến visual HẤP DẪN?
+4. Animation nào thêm POLISH?
+5. Color palette nào PHÙ HỢP với nội dung?
+
+## Available Libraries (CDN whitelist)
+
+```
+Có sẵn trong iframe sandbox — import từ cdnjs.cloudflare.com:
+- D3.js v7 — data visualization, SVG manipulation
+- Chart.js v4 — charts (bar, line, pie, radar)
+- Three.js r160 — 3D WebGL
+- KaTeX — math formulas
+- Tailwind CSS v3.4 — utility-first styling
+
+Có sẵn KHÔNG CẦN CDN (built-in browser):
+- SVG — tất cả shape, path, gradient, animation, filter
+- Canvas 2D — pixel-level rendering, physics simulation
+- CSS Animations — keyframes, transitions
+- requestAnimationFrame — smooth 60fps animation
+- Web Audio API — sound (nếu cần)
+```
+
+## Code Rules
+
+1. CHỈ viết body content: `<style>` + HTML + `<script>`. KHÔNG `<!DOCTYPE>`, `<html>`, `<head>`.
+2. LUÔN dùng CSS variables: `color: var(--accent)` KHÔNG `color: #2563eb`.
+3. LUÔN viết code HOÀN CHỈNH — KHÔNG BAO GIỜ placeholder, "TODO", "fill in", "...".
+4. MỌI element tương tác PHẢI có `:hover` state.
+5. Responsive: dùng `width: 100%`, `viewBox`, `@media` queries.
+6. Dark mode TỰ ĐỘNG qua CSS vars — KHÔNG cần media query.
+
+## CSS Variables (có sẵn)
 
 ```
 --bg: #ffffff    --bg2: #f8fafc   --bg3: #f1f5f9
 --text: #1e293b  --text2: #475569  --text3: #94a3b8
---accent: #2563eb --green: #10b981 --purple: #8b5cf6
+--accent: #2563eb --accent-bg: #eff6ff
+--red: #ef4444   --green: #10b981  --purple: #8b5cf6
 --amber: #f59e0b  --teal: #14b8a6  --pink: #ec4899
 --border: #e2e8f0  --shadow: rgba(0,0,0,0.06)
 --radius: 12px     --radius-sm: 8px
-Dark mode tự động qua CSS vars — KHÔNG cần media query.
 ```
 
-## Quy tắc viết code_html
-
-1. CHỈ viết body content (CSS + HTML + JS). KHÔNG viết <!DOCTYPE>, <html>, <head>, <body>.
-2. Dùng `<style>` block cho CSS, sau đó HTML, cuối cùng `<script>`.
-3. LUÔN dùng CSS variables: `color: var(--accent)` KHÔNG `color: #2563eb`.
-4. Font-family đã có sẵn — không cần khai báo lại.
-5. PHẢI có interactive elements: sliders, buttons, stats display.
-6. Dùng SVG cho đồ họa tĩnh/animated. Dùng Canvas cho vật lý realtime.
-
-## Pattern 1: Mô phỏng vật lý (SVG + JavaScript)
-
-Mẫu hoàn chỉnh cho mô phỏng tương tác — con lắc, lò xo, va chạm, quỹ đạo.
+## Pattern 1: Mô phỏng vật lý (SVG + JS animation)
 
 ```html
 <style>
 .ctrl{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:13px;color:var(--text2)}
-.ctrl input[type=range]{flex:1}
+.ctrl input[type=range]{flex:1;accent-color:var(--accent)}
 .val{min-width:52px;text-align:right;font-weight:500;font-size:13px;color:var(--text)}
 .bar-wrap{display:flex;gap:8px;margin:4px 0}
 .bar-label{font-size:12px;min-width:28px;color:var(--text2)}
@@ -53,7 +101,8 @@ Mẫu hoàn chỉnh cho mô phỏng tương tác — con lắc, lò xo, va chạ
 .stat-val{font-size:18px;font-weight:500;color:var(--text);margin-top:2px}
 .btn-row{display:flex;gap:8px;margin:8px 0}
 .btn-row button{padding:6px 14px;font-size:13px;background:transparent;color:var(--text);
-  border:1px solid var(--border);border-radius:6px;cursor:pointer}
+  border:1px solid var(--border);border-radius:6px;cursor:pointer;transition:all .15s}
+.btn-row button:hover{background:var(--bg3);border-color:var(--accent)}
 </style>
 <svg id="sim-svg" width="100%" viewBox="0 0 680 340">
   <defs>
@@ -67,7 +116,7 @@ Mẫu hoàn chỉnh cho mô phỏng tương tác — con lắc, lò xo, va chạ
   <path id="trail" d="" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity="0.3"/>
   <line id="string" x1="340" y1="30" x2="340" y2="230" stroke="var(--text2)" stroke-width="1.5"/>
   <circle id="bob" cx="340" cy="230" r="20" fill="url(#bob-grad)"/>
-  <text class="ts" x="340" y="16" text-anchor="middle" fill="var(--text3)" font-size="11px">Điểm treo</text>
+  <text x="340" y="16" text-anchor="middle" fill="var(--text3)" font-size="11px">Điểm treo</text>
   <path id="angle-arc" d="" fill="none" stroke="var(--amber)" stroke-width="1" stroke-dasharray="3 2"/>
   <text id="angle-label" x="0" y="0" fill="var(--amber)" font-size="11px"></text>
 </svg>
@@ -156,53 +205,48 @@ updateParam();step();
 </script>
 ```
 
-## Pattern 2: Sơ đồ kiến trúc (SVG tĩnh + hover)
+## Pattern 2: Sơ đồ kiến trúc (SVG layers + hover + arrows)
 
 ```html
 <style>
-.arch-svg text{font-family:inherit}
-.layer-box{transition:opacity .15s}
-.layer-box:hover{opacity:0.85}
+.layer{transition:all .2s;cursor:default}
+.layer:hover{opacity:0.85;transform:translateY(-1px)}
+.layer:hover rect{stroke-width:2.5}
 </style>
 <svg viewBox="0 0 600 360" style="width:100%;height:auto">
   <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
     <path d="M0,0L10,5L0,10Z" fill="var(--text3)"/></marker></defs>
-  <!-- Layer 1 -->
-  <g class="layer-box">
-    <rect x="50" y="20" width="500" height="80" rx="12" fill="var(--accent)" opacity="0.1" stroke="var(--accent)" stroke-width="1.5"/>
+  <g class="layer">
+    <rect x="50" y="20" width="500" height="80" rx="12" fill="var(--accent)" opacity="0.08" stroke="var(--accent)" stroke-width="1.5"/>
     <text x="300" y="48" text-anchor="middle" fill="var(--accent)" font-size="13" font-weight="700">API GATEWAY</text>
     <text x="300" y="68" text-anchor="middle" fill="var(--text2)" font-size="11">Xác thực JWT • Rate Limiting • Load Balancing</text>
-    <rect x="80" y="76" width="80" height="18" rx="4" fill="var(--accent)" opacity="0.15"/>
+    <rect x="80" y="76" width="80" height="18" rx="4" fill="var(--accent)" opacity="0.12"/>
     <text x="120" y="89" text-anchor="middle" fill="var(--accent)" font-size="10">Auth</text>
-    <rect x="180" y="76" width="80" height="18" rx="4" fill="var(--accent)" opacity="0.15"/>
+    <rect x="180" y="76" width="80" height="18" rx="4" fill="var(--accent)" opacity="0.12"/>
     <text x="220" y="89" text-anchor="middle" fill="var(--accent)" font-size="10">Router</text>
   </g>
-  <!-- Arrow -->
   <line x1="300" y1="100" x2="300" y2="130" stroke="var(--text3)" stroke-width="1.5" marker-end="url(#arr)"/>
-  <!-- Layer 2 -->
-  <g class="layer-box">
-    <rect x="50" y="130" width="500" height="80" rx="12" fill="var(--green)" opacity="0.1" stroke="var(--green)" stroke-width="1.5"/>
+  <g class="layer">
+    <rect x="50" y="130" width="500" height="80" rx="12" fill="var(--green)" opacity="0.08" stroke="var(--green)" stroke-width="1.5"/>
     <text x="300" y="158" text-anchor="middle" fill="var(--green)" font-size="13" font-weight="700">SERVICE LAYER</text>
     <text x="300" y="178" text-anchor="middle" fill="var(--text2)" font-size="11">Business Logic • Event-Driven • Microservices</text>
   </g>
-  <!-- Arrow -->
   <line x1="300" y1="210" x2="300" y2="240" stroke="var(--text3)" stroke-width="1.5" marker-end="url(#arr)"/>
-  <!-- Layer 3 -->
-  <g class="layer-box">
-    <rect x="50" y="240" width="500" height="80" rx="12" fill="var(--purple)" opacity="0.1" stroke="var(--purple)" stroke-width="1.5"/>
+  <g class="layer">
+    <rect x="50" y="240" width="500" height="80" rx="12" fill="var(--purple)" opacity="0.08" stroke="var(--purple)" stroke-width="1.5"/>
     <text x="300" y="268" text-anchor="middle" fill="var(--purple)" font-size="13" font-weight="700">DATA LAYER</text>
     <text x="300" y="288" text-anchor="middle" fill="var(--text2)" font-size="11">PostgreSQL • Redis Cache • Object Storage</text>
   </g>
 </svg>
 ```
 
-## Pattern 3: So sánh tương tác (HTML + CSS)
+## Pattern 3: So sánh tương tác (CSS Grid + hover + responsive)
 
 ```html
 <style>
 .comp{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.side{padding:16px;border-radius:var(--radius);border:1.5px solid var(--border);transition:transform .15s}
-.side:hover{transform:translateY(-2px)}
+.side{padding:16px;border-radius:var(--radius);border:1.5px solid var(--border);transition:all .2s}
+.side:hover{transform:translateY(-3px);box-shadow:0 8px 24px var(--shadow)}
 .side h3{font-size:15px;font-weight:700;margin-bottom:4px}
 .side .sub{font-size:11px;color:var(--text3);margin-bottom:12px}
 .side ul{list-style:none;padding:0}
@@ -227,11 +271,12 @@ updateParam();step();
 </div>
 ```
 
-## Nguyên tắc chất lượng
+## Chất lượng bắt buộc
 
-1. MỌI mô phỏng PHẢI có: sliders, stats realtime, nút đặt lại/tạm dừng.
-2. MỌI sơ đồ PHẢI có: màu phân biệt layers, mô tả từng layer, hover effect.
-3. MỌI so sánh PHẢI có: 2 cột rõ ràng, highlight kết luận, responsive mobile.
-4. Dùng SVG gradient cho visual polish (radialGradient, linearGradient).
-5. Dùng CSS transition/animation cho tương tác mượt.
-6. KHÔNG bao giờ trả visual chỉ có text — phải có đồ họa thật (shapes, lines, animations).
+1. MỌI visual ít nhất 150+ dòng code — đầy đủ styling, layout, interactions.
+2. MỌI mô phỏng PHẢI có: sliders, stats realtime, nút đặt lại/tạm dừng, energy bars.
+3. MỌI sơ đồ PHẢI có: SVG shapes thật, màu phân biệt, mô tả, hover effect, arrows.
+4. MỌI so sánh PHẢI có: 2+ cột, highlight kết luận, responsive, hover lift.
+5. KHÔNG BAO GIỜ trả visual chỉ có text — PHẢI có đồ họa thật.
+6. KHÔNG BAO GIỜ trả code chưa hoàn chỉnh, placeholder, hoặc "TODO".
+7. Sau khi viết code, TỰ KIỂM TRA: animations hoạt động? colors đủ contrast? responsive?

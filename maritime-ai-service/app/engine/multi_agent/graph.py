@@ -849,13 +849,17 @@ def _build_code_studio_tools_context(
                 "Viết HTML/CSS/SVG/JS trực tiếp trong code_html — giống Claude Artifacts. "
                 "Mỗi visual phải UNIQUE, có đồ họa thật (SVG shapes, Canvas animation, CSS gradient). "
                 "KHÔNG BAO GIỜ trả visual chỉ có text — phải có visual elements thật. "
-                "CSS vars có sẵn: --bg, --bg2, --text, --accent, --green, --purple, --amber, --teal, --pink, --border, --radius. "
-                "Dark mode tự động."
+                "code_html phải ít nhất 150+ dòng code hoàn chỉnh."
             )
             tool_hints.append(
-                "- QUAN TRỌNG: MỌI mô phỏng (simulation, physics, animation) PHẢI dùng tool_create_visual_code với SVG animated "
-                "hoặc Canvas + requestAnimationFrame. PHẢI có: sliders tương tác, stats realtime, nút đặt lại/tạm dừng, "
-                "energy visualization. KHÔNG BAO GIỜ trả visual chỉ có text cards."
+                "- DESIGN PHILOSOPHY: Tự hỏi 'Visual này có khiến người ta dừng cuộn và nói whoa không?'. "
+                "Animation là MẶC ĐỊNH, không phải ngoại lệ. Dùng micro-animations (fade, slide, pulse), "
+                "hover effects cho MỌI element, SVG gradients, CSS transitions mượt. "
+                "TRÁNH: centered layouts đồng loạt, purple gradients, text-only cards, cookie-cutter patterns."
+            )
+            tool_hints.append(
+                "- THINKING STEP: TRƯỚC KHI viết code, suy nghĩ: (1) thông điệp cốt lõi? (2) visual metaphor tốt nhất? "
+                "(3) tương tác hấp dẫn? (4) animations polish? (5) color palette phù hợp?"
             )
             tool_hints.append(
                 "- tool_generate_visual: CHỈ dùng làm FALLBACK cho visual rất đơn giản (so sánh 2 cột, danh sách bước). "
