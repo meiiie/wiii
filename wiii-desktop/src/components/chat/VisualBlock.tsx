@@ -21,7 +21,7 @@ import {
   DiagramCurveConnector,
   DiagramCenterpiece,
   DiagramFlowBridge,
-  DiagramFormulaChip,
+  // DiagramFormulaChip, // removed — template cards eliminated
   DiagramGroupBand,
   DiagramInsightPanel,
   DiagramLegend,
@@ -42,21 +42,7 @@ const asIndexList = (value: unknown) => asList(value)
   .map((item) => asNumber(item, -1))
   .filter((item): item is number => Number.isInteger(item) && item >= 0);
 
-const VISUAL_KICKERS: Record<string, string> = {
-  comparison: "Hai cách nhìn",
-  process: "Theo từng bước",
-  matrix: "Tín hiệu nổi bật",
-  architecture: "Bên trong hệ thống",
-  concept: "Ý chính và các nhánh",
-  infographic: "Đọc nhanh ý chính",
-  chart: "Đọc bằng biểu đồ",
-  timeline: "Theo dòng thời gian",
-  map_lite: "Theo từng khu vực",
-  simulation: "Trải nghiệm tương tác",
-  quiz: "Thử kiểm tra nhanh",
-  interactive_table: "Khám phá dữ liệu",
-  react_app: "Công cụ tương tác",
-};
+// Template kickers removed — all visuals render via clean iframe
 
 const CONTROL_LABELS: Record<string, string> = {
   focus_side: "Xem phần",
@@ -158,9 +144,7 @@ function getVisiblePanels(visual: VisualPayload) {
     .filter((panel) => panel.title || panel.body);
 }
 
-function visualKicker(visual: VisualPayload): string {
-  return VISUAL_KICKERS[visual.type] || "Visual giải thích";
-}
+// visualKicker removed — template cards eliminated
 
 function controlLabel(control: VisualControl): string {
   return CONTROL_LABELS[control.id] || control.label || "Tùy chọn";
@@ -921,7 +905,8 @@ function MapLite({ spec, focusId }: { spec: Record<string, unknown>; focusId: st
   </div>;
 }
 
-const renderStructured = (visual: VisualPayload, session: VisualSessionState | undefined, reduced: boolean) => {
+/* Dead code — template cards eliminated. Kept for rollback. */
+const _renderStructured = (visual: VisualPayload, session: VisualSessionState | undefined, reduced: boolean) => {
   const spec = asRecord(visual.spec);
   let content: ReactNode = null;
   switch (visual.type) {
@@ -938,8 +923,10 @@ const renderStructured = (visual: VisualPayload, session: VisualSessionState | u
   }
   return <motion.div variants={staggerItem}>{content}</motion.div>;
 };
+void _renderStructured; // dead code ref
 
-function ControlBar({
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _ControlBar({
   visual,
   session,
   onChange,
@@ -960,7 +947,8 @@ function ControlBar({
   })}</div>;
 }
 
-function Details({
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _Details({
   visual,
   sessionId,
   session,
@@ -1045,7 +1033,8 @@ function getHtmlPayload(visual: VisualPayload): string | null {
   return null;
 }
 
-function getFormulaChips(visual: VisualPayload): string[] {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _getFormulaChips(visual: VisualPayload): string[] {
   const spec = asRecord(visual.spec);
   const metadata = asRecord(visual.metadata);
   const direct = asList(spec.formulas).concat(asList(spec.equations)).concat(asList(metadata.formula_chips));
@@ -1054,6 +1043,8 @@ function getFormulaChips(visual: VisualPayload): string[] {
     .filter(Boolean)
     .slice(0, 4);
 }
+
+void _ControlBar; void _Details; void _getFormulaChips; // dead code refs
 
 export function VisualBlock({ block, embedded = false }: { block: VisualBlockData; embedded?: boolean }) {
   const initialVisual = block.visual;
@@ -1087,39 +1078,32 @@ export function VisualBlock({ block, embedded = false }: { block: VisualBlockDat
     narrative_anchor: activeVisual.narrative_anchor || "after-lead",
   };
 
-  const structured = visual.renderer_kind === "template" ? renderStructured(visual, session, reduced) : null;
+  // ALL visuals render via iframe — no template cards (Claude Artifacts pattern)
   const htmlPayload = getHtmlPayload(visual);
-  const formulaChips = getFormulaChips(visual);
   const cleanedSummary = cleanVisualSummary(visual);
   const accessibleSummary = cleanedSummary || getVisibleAnnotations(visual)[0]?.body || visual.title;
   const describedById = cleanedSummary ? visibleSummaryId : accessibleSummary ? srSummaryId : undefined;
-  const kicker = visualKicker(visual);
   const status = session?.status || block.status || "committed";
-  const shellClassName = [
-    "visual-block-shell",
-    `visual-block-shell--${visual.shell_variant}`,
-    embedded ? "visual-block-shell--embedded" : "my-6",
-    embedded ? "visual-block-shell--article" : "",
-    "overflow-hidden rounded-[32px] border border-[color-mix(in_srgb,var(--border)_82%,white)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,244,236,0.96))] shadow-[var(--shadow-lg)]",
-  ].join(" ");
-  const headerClassName = [
-    "visual-block-shell__header",
-    "border-b border-[color-mix(in_srgb,var(--border)_70%,white)] bg-[radial-gradient(circle_at_top_left,rgba(199,91,57,0.12),transparent_42%),radial-gradient(circle_at_85%_0,rgba(44,132,219,0.09),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.94),rgba(255,255,255,0.72))] px-5 py-5 md:px-6 md:py-6",
-    embedded ? "visual-block-shell__header--embedded" : "",
-  ].join(" ");
-  const bodyClassName = [
-    "visual-block-shell__body",
-    "px-5 py-5 md:px-6 md:py-6",
-    embedded ? "visual-block-shell__body--embedded" : "",
-  ].join(" ");
 
   let renderError: string | null = null;
   let usedFallback = false;
-  let body: ReactNode = structured;
+  let body: ReactNode = null;
 
   try {
-    if (visual.renderer_kind === "inline_html") {
-      if (!htmlPayload) throw new Error("Missing html payload for inline_html visual");
+    if (visual.renderer_kind === "app") {
+      if (!htmlPayload) throw new Error("Missing html payload for app visual");
+      body = (
+        <EmbeddedAppFrame
+          html={htmlPayload}
+          title={visual.title}
+          summary={visual.summary}
+          sessionId={sessionId}
+          shellVariant={visual.shell_variant}
+          runtimeManifest={visual.runtime_manifest}
+        />
+      );
+    } else if (htmlPayload) {
+      // template + inline_html both render via InlineVisualFrame
       body = (
         <InlineVisualFrame
           html={htmlPayload}
@@ -1132,22 +1116,8 @@ export function VisualBlock({ block, embedded = false }: { block: VisualBlockDat
           hostShellMode="force"
         />
       );
-    } else if (visual.renderer_kind === "app") {
-      if (!htmlPayload) throw new Error("Missing html payload for app visual");
-      body = (
-        <EmbeddedAppFrame
-          html={htmlPayload}
-          title={visual.title}
-          summary={visual.summary}
-          sessionId={sessionId}
-          shellVariant={visual.shell_variant}
-          runtimeManifest={visual.runtime_manifest}
-        />
-      );
-    } else if (!structured) {
-      if (!htmlPayload) throw new Error("Missing fallback_html for template visual");
-      body = <InlineHtmlWidget code={htmlPayload} />;
-      usedFallback = true;
+    } else {
+      throw new Error("Missing html payload for visual");
     }
   } catch (error) {
     renderError = error instanceof Error ? error.message : "Unknown visual render error";
@@ -1303,82 +1273,46 @@ export function VisualBlock({ block, embedded = false }: { block: VisualBlockDat
     return () => window.cancelAnimationFrame(rafId);
   }, [embedded, reduced, visual.lifecycle_event, visual.title, visual.summary, visual.type]);
 
-  // inline_html: clean render — iframe + action bar (Claude Artifacts pattern)
-  if (visual.renderer_kind === "inline_html") {
-    return <figure ref={figureRef} data-testid="visual-block" className={`${embedded ? "" : "my-6"} overflow-hidden`} aria-labelledby={titleId} aria-describedby={describedById} data-visual-status={status} data-visual-lifecycle={visual.lifecycle_event} data-visual-cue={stageCue} data-visual-embedded={embedded ? "true" : "false"}>
-      <motion.div
-        variants={staggerContainer}
-        initial={reduced ? "visible" : "hidden"}
-        animate="visible"
+  // ALL visuals: clean iframe + action bar — no template cards (Claude Artifacts pattern)
+  return <figure ref={figureRef} data-testid="visual-block" className={`${embedded ? "" : "my-6"} overflow-hidden`} aria-labelledby={titleId} aria-describedby={describedById} data-visual-status={status} data-visual-lifecycle={visual.lifecycle_event} data-visual-cue={stageCue} data-visual-embedded={embedded ? "true" : "false"}>
+    <motion.div
+      variants={staggerContainer}
+      initial={reduced ? "visible" : "hidden"}
+      animate="visible"
+    >
+      {body}
+    </motion.div>
+    {htmlPayload && (
+      <div className="flex items-center gap-2 px-2 py-1.5 transition-opacity duration-200" style={{ opacity: 0.35 }}
+        onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.35"; }}
       >
-        {body}
-      </motion.div>
-      {htmlPayload && (
-        <div className="flex items-center gap-2 px-2 py-1.5 opacity-0 transition-opacity duration-200 hover:opacity-100 focus-within:opacity-100" style={{ opacity: 0.4 }}>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-text-tertiary hover:bg-surface-secondary hover:text-text-secondary transition-colors"
-            onClick={() => {
-              const blob = new Blob([htmlPayload], { type: "text/html" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `${(visual.title || "visual").replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, "_").substring(0, 40)}.html`;
-              a.click();
-              URL.revokeObjectURL(url);
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Tải HTML
-          </button>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-text-tertiary hover:bg-surface-secondary hover:text-text-secondary transition-colors"
-            onClick={() => { navigator.clipboard.writeText(htmlPayload); }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-            Sao chép
-          </button>
-        </div>
-      )}
-      <figcaption id={srSummaryId} className="sr-only">{accessibleSummary}</figcaption>
-    </figure>;
-  }
-
-  return <figure ref={figureRef} data-testid="visual-block" className={shellClassName} aria-labelledby={titleId} aria-describedby={describedById} data-visual-status={status} data-visual-lifecycle={visual.lifecycle_event} data-visual-cue={stageCue} data-visual-embedded={embedded ? "true" : "false"}>
-    <div className={headerClassName}>
-      <div className="max-w-3xl">
-        <p className="text-[10px] font-medium tracking-[0.12em] text-text-tertiary">{kicker}</p>
-        <h3 id={titleId} className="mt-2 font-serif text-[clamp(1.95rem,4vw,3rem)] leading-[0.98] tracking-[-0.04em] text-text">{visual.title}</h3>
-        {visual.subtitle && <p className="mt-3 max-w-2xl text-sm leading-6 text-text-tertiary">{visual.subtitle}</p>}
-        {cleanedSummary && (
-          embedded
-            ? <div id={visibleSummaryId} className="visual-block-shell__lede mt-4 max-w-3xl rounded-[22px] border border-[rgba(184,90,51,0.12)] bg-[rgba(255,255,255,0.66)] px-4 py-3 text-[0.98rem] leading-7 text-text-secondary">{cleanedSummary}</div>
-            : <p id={visibleSummaryId} className="mt-4 max-w-3xl text-[0.98rem] leading-7 text-text-secondary">{cleanedSummary}</p>
-        )}
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-text-tertiary hover:bg-surface-secondary hover:text-text-secondary transition-colors"
+          onClick={() => {
+            const blob = new Blob([htmlPayload], { type: "text/html" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${(visual.title || "visual").replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, "_").substring(0, 40)}.html`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Tải HTML
+        </button>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-text-tertiary hover:bg-surface-secondary hover:text-text-secondary transition-colors"
+          onClick={() => { navigator.clipboard.writeText(htmlPayload); }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          Sao chép
+        </button>
       </div>
-
-      {formulaChips.length > 0 && (
-        <div className={`mt-4 flex flex-wrap gap-2 ${embedded ? "visual-block-shell__formula-row" : ""}`.trim()}>
-          {formulaChips.map((chip) => (
-            <DiagramFormulaChip key={chip}>{chip}</DiagramFormulaChip>
-          ))}
-        </div>
-      )}
-    </div>
-
-    <div className={bodyClassName}>
-      {visual.renderer_kind === "template" && <ControlBar visual={visual} session={session} embedded={embedded} onChange={(controlId, value, focusedNodeId) => { update(sessionId, { controlValues: { [controlId]: value }, focusedNodeId, interactionDelta: 1 }); trackVisualTelemetry("visual_interacted", { visual_id: visual.id, visual_session_id: sessionId, visual_type: visual.type, control_id: controlId, value: String(value) }); }} />}
-      <motion.div
-        className={`visual-block-shell__canvas ${embedded ? "visual-block-shell__canvas--embedded" : ""}`.trim()}
-        variants={staggerContainer}
-        initial={reduced ? "visible" : "hidden"}
-        animate="visible"
-      >
-        {body}
-      </motion.div>
-      <Details visual={visual} sessionId={sessionId} session={session} embedded={embedded} />
-    </div>
+    )}
     <figcaption id={srSummaryId} className="sr-only">{accessibleSummary}</figcaption>
   </figure>;
 }
