@@ -361,7 +361,7 @@ export function DiagramCalloutPanel({
           <span className="grid h-8 w-8 place-items-center rounded-full text-white" style={{ background: palette.accent }}>
             {accentLabel || "!"}
           </span>
-          <span>{eyebrow || "Diem can chu y"}</span>
+          <span>{eyebrow || "Điểm cần chú ý"}</span>
         </div>
         <div>
           <h4 className="font-serif text-[clamp(1.5rem,2.5vw,2rem)] leading-tight text-text">{title}</h4>

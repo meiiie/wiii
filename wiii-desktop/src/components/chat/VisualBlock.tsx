@@ -6,9 +6,11 @@ import type {
   VisualPayload,
   VisualSessionState,
 } from "@/api/types";
+import { motion } from "motion/react";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useChatStore } from "@/stores/chat-store";
 import { trackVisualTelemetry } from "@/lib/visual-telemetry";
+import { staggerContainer, staggerItem } from "@/lib/animations";
 import InlineHtmlWidget from "@/components/common/InlineHtmlWidget";
 import { InlineVisualFrame } from "@/components/common/InlineVisualFrame";
 import { EmbeddedAppFrame } from "@/components/common/EmbeddedAppFrame";
@@ -41,55 +43,55 @@ const asIndexList = (value: unknown) => asList(value)
   .filter((item): item is number => Number.isInteger(item) && item >= 0);
 
 const VISUAL_KICKERS: Record<string, string> = {
-  comparison: "Hai cach nhin",
-  process: "Theo tung buoc",
-  matrix: "Tin hieu noi bat",
-  architecture: "Ben trong he thong",
-  concept: "Y chinh va cac nhanh",
-  infographic: "Doc nhanh y chinh",
-  chart: "Doc bang bieu do",
-  timeline: "Theo dong thoi gian",
-  map_lite: "Theo tung khu vuc",
-  simulation: "Trai nghiem tuong tac",
-  quiz: "Thu kiem tra nhanh",
-  interactive_table: "Kham pha du lieu",
-  react_app: "Cong cu tuong tac",
+  comparison: "Hai cách nhìn",
+  process: "Theo từng bước",
+  matrix: "Tín hiệu nổi bật",
+  architecture: "Bên trong hệ thống",
+  concept: "Ý chính và các nhánh",
+  infographic: "Đọc nhanh ý chính",
+  chart: "Đọc bằng biểu đồ",
+  timeline: "Theo dòng thời gian",
+  map_lite: "Theo từng khu vực",
+  simulation: "Trải nghiệm tương tác",
+  quiz: "Thử kiểm tra nhanh",
+  interactive_table: "Khám phá dữ liệu",
+  react_app: "Công cụ tương tác",
 };
 
 const CONTROL_LABELS: Record<string, string> = {
-  focus_side: "Xem phan",
-  current_step: "Buoc hien tai",
-  show_values: "Hien gia tri",
-  active_layer: "Lop dang xem",
-  active_branch: "Nhanh dang xem",
-  active_section: "Diem nhan",
-  chart_style: "Kieu bieu do",
-  current_event: "Moc dang xem",
-  active_region: "Khu vuc dang xem",
+  focus_side: "Xem phần",
+  current_step: "Bước hiện tại",
+  show_values: "Hiện giá trị",
+  active_layer: "Lớp đang xem",
+  active_branch: "Nhánh đang xem",
+  active_section: "Điểm nhấn",
+  chart_style: "Kiểu biểu đồ",
+  current_event: "Mốc đang xem",
+  active_region: "Khu vực đang xem",
 };
 
 const CONTROL_OPTION_LABELS: Record<string, Record<string, string>> = {
   focus_side: {
-    both: "Toan canh",
-    left: "Phia trai",
-    right: "Phia phai",
+    both: "Toàn cảnh",
+    left: "Phía trái",
+    right: "Phía phải",
   },
   active_layer: {
-    all: "Tat ca",
+    all: "Tất cả",
   },
   active_branch: {
-    all: "Tat ca",
+    all: "Tất cả",
   },
   active_section: {
-    all: "Tat ca",
+    all: "Tất cả",
   },
   active_region: {
-    all: "Tat ca",
+    all: "Tất cả",
   },
   chart_style: {
-    bar: "Cot",
-    line: "Duong",
-    area: "Mien",
+    bar: "Cột",
+    line: "Đường",
+    area: "Miền",
   },
 };
 
@@ -130,9 +132,9 @@ function cleanVisualSummary(visual: VisualPayload): string {
 
 function cleanAnnotationTitle(value: string): string {
   const normalized = normalizeNaturalText(value);
-  if (!normalized) return "Diem nhan";
-  if (normalized === "summary" || normalized === "takeaway") return "Diem chot";
-  if (/^annotation \d+$/.test(normalized)) return "Ghi chu";
+  if (!normalized) return "Điểm nhấn";
+  if (normalized === "summary" || normalized === "takeaway") return "Điểm chốt";
+  if (/^annotation \d+$/.test(normalized)) return "Ghi chú";
   return value;
 }
 
@@ -157,11 +159,11 @@ function getVisiblePanels(visual: VisualPayload) {
 }
 
 function visualKicker(visual: VisualPayload): string {
-  return VISUAL_KICKERS[visual.type] || "Visual giai thich";
+  return VISUAL_KICKERS[visual.type] || "Visual giải thích";
 }
 
 function controlLabel(control: VisualControl): string {
-  return CONTROL_LABELS[control.id] || control.label || "Tuy chon";
+  return CONTROL_LABELS[control.id] || control.label || "Tùy chọn";
 }
 
 function controlOptionLabel(control: VisualControl, value: string, fallback: string): string {
@@ -202,21 +204,21 @@ function renderSignalChips(items: string[], paletteLine: string, muted = false) 
 
 function Comparison({ spec, focus }: { spec: Record<string, unknown>; focus: string }) {
   const columns = [asRecord(spec.left), asRecord(spec.right)];
-  const axisLabel = asText(spec.axis_label, "Chi phi, bo nho, do chinh xac");
-  const comparisonTitle = asText(spec.title, `So sanh tren truc ${axisLabel.toLowerCase()}`);
+  const axisLabel = asText(spec.axis_label, "Chi phí, bộ nhớ, độ chính xác");
+  const comparisonTitle = asText(spec.title, `So sánh trên trục ${axisLabel.toLowerCase()}`);
   const comparisonCaption = asText(
     spec.caption,
-    `Hai goc nhin duoc dat canh nhau de doc nhanh su danh doi quanh ${axisLabel.toLowerCase()}.`,
+    `Hai góc nhìn được đặt cạnh nhau để đọc nhanh sự đánh đổi quanh ${axisLabel.toLowerCase()}.`,
   );
   const legendItems = columns.map((side, index) => ({
-    label: asText(side.title, index === 0 ? "Goc nhin A" : "Goc nhin B"),
+    label: asText(side.title, index === 0 ? "Góc nhìn A" : "Góc nhìn B"),
     color: paletteAt(index).accent,
     detail: asText(side.subtitle),
   }));
   return <div className="space-y-4">
     <DiagramSectionPill className="hidden md:inline-flex">{axisLabel}</DiagramSectionPill>
     <DiagramStageFrame
-      eyebrow="So sanh truc dien"
+      eyebrow="So sánh trực diện"
       title={comparisonTitle}
       caption={comparisonCaption}
       className="comparison-stage-frame"
@@ -236,13 +238,13 @@ function Comparison({ spec, focus }: { spec: Record<string, unknown>; focus: str
           <DiagramNodeCard
             key={sideKey}
             palette={palette}
-            eyebrow={asText(side.subtitle, index === 0 ? "Left" : "Right")}
-            title={asText(side.title, index === 0 ? "Before" : "After")}
-            badge={index === 0 ? "Goc nhin A" : "Goc nhin B"}
+            eyebrow={asText(side.subtitle, index === 0 ? "Bên trái" : "Bên phải")}
+            title={asText(side.title, index === 0 ? "Phương án A" : "Phương án B")}
+            badge={index === 0 ? "Góc nhìn A" : "Góc nhìn B"}
             muted={muted}
             emphasis={highlight ? (
               <>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-text-tertiary">Diem de nhin nhanh</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-text-tertiary">Điểm để nhìn nhanh</p>
                 <p className="mt-2 text-sm leading-6 text-text-secondary">{highlight}</p>
               </>
             ) : undefined}
@@ -278,15 +280,15 @@ function Process({ spec, currentStep, reduced }: { spec: Record<string, unknown>
   const activeIndex = Math.max(0, Math.min(currentStep - 1, steps.length - 1));
   const activeItem = asRecord(steps[activeIndex]);
   const activePalette = paletteAt(activeIndex);
-  const processTitle = asText(spec.title, steps.length > 0 ? `${steps.length} buoc chinh` : "Quy trinh tung buoc");
+  const processTitle = asText(spec.title, steps.length > 0 ? `${steps.length} bước chính` : "Quy trình từng bước");
   const processCaption = asText(
     spec.caption,
-    asText(activeItem.description, "Moi buoc dua ban den mot trang thai ro rang hon cua quy trinh."),
+    asText(activeItem.description, "Mỗi bước đưa bạn đến một trạng thái rõ ràng hơn của quy trình."),
   );
   return <div className="space-y-5">
-    <DiagramSectionPill tone="neutral">Dong chay tung buoc</DiagramSectionPill>
+    <DiagramSectionPill tone="neutral">Dòng chảy từng bước</DiagramSectionPill>
     <DiagramStageFrame
-      eyebrow="Quy trinh giai thich"
+      eyebrow="Quy trình giải thích"
       title={processTitle}
       caption={processCaption}
       className="process-stage-frame"
@@ -349,18 +351,18 @@ function Process({ spec, currentStep, reduced }: { spec: Record<string, unknown>
             <DiagramLegend
               items={[
                 {
-                  label: "Buoc dang mo",
+                  label: "Bước đang mở",
                   color: activePalette.accent,
                   detail: asText(activeItem.title, `Step ${activeIndex + 1}`),
                 },
                 {
-                  label: "Dong chay",
+                  label: "Dòng chảy",
                   color: paletteAt(Math.min(activeIndex + 1, Math.max(steps.length - 1, 0))).accent,
-                  detail: "Tinh tien dan",
+                  detail: "Tinh tiến dần",
                 },
               ]}
             />
-            <DiagramFlowBridge label="Tinh tien dan" compact />
+            <DiagramFlowBridge label="Tinh tiến dần" compact />
           </>
         ) : null}
       </div>
@@ -369,7 +371,7 @@ function Process({ spec, currentStep, reduced }: { spec: Record<string, unknown>
     {steps.length > 0 && (
       <DiagramCalloutPanel
         palette={activePalette}
-        eyebrow="Diem can chu y"
+        eyebrow="Điểm cần chú ý"
         title={asText(activeItem.title, `Step ${activeIndex + 1}`)}
         accentLabel={activeIndex + 1}
         body={asText(activeItem.description) ? (
@@ -445,7 +447,7 @@ function getArchitectureBands(spec: Record<string, unknown>, layers: unknown[]):
 
       return {
         id: asText(record.id, `group-${index + 1}`),
-        label: asText(record.title, `Cum ${index + 1}`),
+        label: asText(record.title, `Cụm ${index + 1}`),
         detail: asText(record.detail, asText(record.description)),
         tone,
         layerIndexes,
@@ -459,8 +461,8 @@ function getArchitectureBands(spec: Record<string, unknown>, layers: unknown[]):
   if (layers.length === 1) {
     return [{
       id: "band-core",
-      label: "Lop trung tam",
-      detail: "Mot lop gom toan bo vai tro chinh cua visual runtime.",
+      label: "Lớp trung tâm",
+      detail: "Một lớp gồm toàn bộ vai trò chính của visual runtime.",
       tone: "accent" as const,
       layerIndexes: [0],
     }];
@@ -469,15 +471,15 @@ function getArchitectureBands(spec: Record<string, unknown>, layers: unknown[]):
     return [
       {
         id: "band-entry",
-        label: "Lop nhap",
-        detail: "Nhan yeu cau, dieu huong context, va mo flow giai thich.",
+        label: "Lớp nhập",
+        detail: "Nhận yêu cầu, điều hướng context, và mở flow giải thích.",
         tone: "accent" as const,
         layerIndexes: [0],
       },
       {
         id: "band-output",
-        label: "Lop dau ra",
-        detail: "Tong hop, render, va dua ket qua tro lai man hinh.",
+        label: "Lớp đầu ra",
+        detail: "Tổng hợp, render, và đưa kết quả trở lại màn hình.",
         tone: "success" as const,
         layerIndexes: [1],
       },
@@ -487,22 +489,22 @@ function getArchitectureBands(spec: Record<string, unknown>, layers: unknown[]):
   return [
     {
       id: "band-entry",
-      label: "Lop nhap",
-      detail: "Nhan input va dat nhac cho toan bo luong giai thich.",
+      label: "Lớp nhập",
+      detail: "Nhận input và đặt nhịp cho toàn bộ luồng giải thích.",
       tone: "accent" as const,
       layerIndexes: [0],
     },
     {
       id: "band-core",
-      label: "Vung dieu phoi",
-      detail: "Cac lop giua phoi hop voi nhau de render, patch, va giu visual session on dinh.",
+      label: "Vùng điều phối",
+      detail: "Các lớp giữa phối hợp với nhau để render, patch, và giữ visual session ổn định.",
       tone: "neutral" as const,
       layerIndexes: layers.slice(1, -1).map((_, index) => index + 1),
     },
     {
       id: "band-output",
-      label: "Lop dau ra",
-      detail: "Phat visual va prose thanh mot cau tra loi liền mach.",
+      label: "Lớp đầu ra",
+      detail: "Phát visual và prose thành một câu trả lời liền mạch.",
       tone: "success" as const,
       layerIndexes: [layers.length - 1],
     },
@@ -512,15 +514,15 @@ function getArchitectureBands(spec: Record<string, unknown>, layers: unknown[]):
 function Architecture({ spec, focusId }: { spec: Record<string, unknown>; focusId: string }) {
   const layers = asList(spec.layers);
   const bands = getArchitectureBands(spec, layers);
-  const architectureTitle = asText(spec.title, "Dong chay qua cac lop he thong");
+  const architectureTitle = asText(spec.title, "Dòng chảy qua các lớp hệ thống");
   const architectureCaption = asText(
     spec.caption,
-    "Moi lop co mot vai tro rieng va noi voi nhau bang duong chay ro rang.",
+    "Mỗi lớp có một vai trò riêng và nối với nhau bằng đường chảy rõ ràng.",
   );
   return <div className="space-y-4">
-    <DiagramSectionPill tone="neutral">He thong nhieu lop</DiagramSectionPill>
+    <DiagramSectionPill tone="neutral">Hệ thống nhiều lớp</DiagramSectionPill>
     <DiagramStageFrame
-      eyebrow="Kien truc he thong"
+      eyebrow="Kiến trúc hệ thống"
       title={architectureTitle}
       caption={architectureCaption}
       className="architecture-stage-frame"
@@ -551,9 +553,9 @@ function Architecture({ spec, focusId }: { spec: Record<string, unknown>; focusI
                   </div>
                   <DiagramNodeCard
                     palette={palette}
-                    eyebrow={`Lop ${layerIndex + 1}`}
+                    eyebrow={`Lớp ${layerIndex + 1}`}
                     title={asText(record.name) || asText(record.title, `Layer ${layerIndex + 1}`)}
-                    badge={asText(record.value, `Tang ${layerIndex + 1}`)}
+                    badge={asText(record.value, `Tầng ${layerIndex + 1}`)}
                     muted={muted}
                   >
                     <div className="space-y-4">
@@ -565,7 +567,7 @@ function Architecture({ spec, focusId }: { spec: Record<string, unknown>; focusI
                 </div>;
               })}
             </DiagramGroupBand>
-            {bandIndex < bands.length - 1 ? <DiagramFlowBridge label="Chuyen vung" compact /> : null}
+            {bandIndex < bands.length - 1 ? <DiagramFlowBridge label="Chuyển vùng" compact /> : null}
           </div>
         ))}
       </div>
@@ -577,18 +579,18 @@ function Concept({ spec, focusId }: { spec: Record<string, unknown>; focusId: st
   const center = asRecord(spec.center);
   const branches = asList(spec.branches);
   const centerTitle = asText(center.title, "Core concept");
-  const conceptTitleCandidate = asText(spec.title, "Ban do mo rong");
+  const conceptTitleCandidate = asText(spec.title, "Bản đồ mở rộng");
   const conceptTitle = normalizeNaturalText(conceptTitleCandidate) === normalizeNaturalText(centerTitle)
-    ? "Ban do mo rong"
+    ? "Bản đồ mở rộng"
     : conceptTitleCandidate;
   const conceptCaption = asText(
     spec.caption,
-    "Bat dau tu y trung tam, sau do mo rong tung nhanh de thay toan bo buc tranh.",
+    "Bắt đầu từ ý trung tâm, sau đó mở rộng từng nhánh để thấy toàn bộ bức tranh.",
   );
   return <div className="space-y-6">
-    <DiagramSectionPill tone="neutral">Y trung tam va cac nhanh</DiagramSectionPill>
+    <DiagramSectionPill tone="neutral">Ý trung tâm và các nhánh</DiagramSectionPill>
     <DiagramStageFrame
-      eyebrow="Ban do khai niem"
+      eyebrow="Bản đồ khái niệm"
       title={conceptTitle}
       caption={conceptCaption}
       className="concept-stage-frame"
@@ -597,7 +599,7 @@ function Concept({ spec, focusId }: { spec: Record<string, unknown>; focusId: st
         <div className="mx-auto max-w-2xl">
           <DiagramCenterpiece
             palette={paletteAt(0)}
-            eyebrow="Y trung tam"
+            eyebrow="Ý trung tâm"
             title={centerTitle}
             body={asText(center.description) ? <p>{asText(center.description)}</p> : undefined}
           />
@@ -628,7 +630,7 @@ function Concept({ spec, focusId }: { spec: Record<string, unknown>; focusId: st
                 </div>
                 <DiagramNodeCard
                   palette={palette}
-                  eyebrow={`Nhanh ${index + 1}`}
+                  eyebrow={`Nhánh ${index + 1}`}
                   title={asText(record.title, `Branch ${index + 1}`)}
                   muted={muted}
                   emphasis={(asText(record.content) || asText(record.description)) ? (
@@ -658,27 +660,27 @@ function Chart({ spec, style }: { spec: Record<string, unknown>; style: string }
   const secondary = paletteAt(0);
   const points = values.map((value, index) => ({ x: 42 + (index * 292) / Math.max(values.length - 1, 1), y: 180 - (value / max) * 124, value, label: labels[index] || `Item ${index + 1}` }));
   const line = points.map((point) => `${point.x},${point.y}`).join(" ");
-  const seriesLabel = asText(dataset.label, asText(spec.series_label, "Du lieu"));
+  const seriesLabel = asText(dataset.label, asText(spec.series_label, "Dữ liệu"));
   const peakPoint = points[peakIndex] || points[0];
   const chartTitle = asText(spec.title, seriesLabel);
-  const chartCaption = asText(spec.caption, "Bieu do nay nhan vao su thay doi cua gia tri theo tung moc.");
+  const chartCaption = asText(spec.caption, "Biểu đồ này nhấn vào sự thay đổi của giá trị theo từng mốc.");
   const yMarkers = [max, average, min].map((value) => ({
     value,
     y: 180 - (value / max) * 124,
   }));
 
   return <div className="space-y-4">
-    <DiagramSectionPill tone="neutral">Doc xu huong theo truc</DiagramSectionPill>
+    <DiagramSectionPill tone="neutral">Đọc xu hướng theo trục</DiagramSectionPill>
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
       <DiagramStageFrame
-        eyebrow="Bieu do giai thich"
+        eyebrow="Biểu đồ giải thích"
         title={chartTitle}
         caption={chartCaption}
       >
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
             <DiagramStatusPill label="Series" detail={seriesLabel} tone="accent" />
-            <DiagramStatusPill label="Peak" detail={peakPoint?.label || "Moc noi bat"} tone="warning" />
+            <DiagramStatusPill label="Peak" detail={peakPoint?.label || "Mốc nổi bật"} tone="warning" />
             <DiagramStatusPill label="Average" detail={average.toFixed(1)} tone="neutral" />
           </div>
           <svg viewBox="0 0 360 220" className="w-full">
@@ -759,7 +761,7 @@ function Chart({ spec, style }: { spec: Record<string, unknown>; style: string }
                   textAnchor="middle"
                   className="fill-[var(--accent-orange)] text-[9px] font-semibold uppercase tracking-[0.14em]"
                 >
-                  Diem noi bat
+                  Điểm nổi bật
                 </text>
               </>
             ) : null}
@@ -773,21 +775,21 @@ function Chart({ spec, style }: { spec: Record<string, unknown>; style: string }
           <DiagramLegend
             items={[
               { label: seriesLabel, color: primary.accent },
-              { label: "Diem cao nhat", color: secondary.accent, detail: peakPoint?.label || "Peak" },
+              { label: "Điểm cao nhất", color: secondary.accent, detail: peakPoint?.label || "Peak" },
             ]}
           />
         </div>
       </DiagramStageFrame>
 
       <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-        <DiagramMetricPill label="Gia tri cao nhat" value={max.toFixed(1)} tone="accent" />
-        <DiagramMetricPill label="Trung binh" value={average.toFixed(1)} tone="neutral" />
-        <DiagramMetricPill label="Bien do" value={`${Math.abs(max - min).toFixed(1)}`} tone="success" />
+        <DiagramMetricPill label="Giá trị cao nhất" value={max.toFixed(1)} tone="accent" />
+        <DiagramMetricPill label="Trung bình" value={average.toFixed(1)} tone="neutral" />
+        <DiagramMetricPill label="Biên độ" value={`${Math.abs(max - min).toFixed(1)}`} tone="success" />
         <DiagramInsightPanel
           tone="accent"
-          eyebrow="Diem nen nhin"
-          title={points[peakIndex]?.label || "Diem noi bat"}
-          body={<p>{style === "area" ? "Bien do cho thay xu huong tich luy ro hon qua tung moc." : "Gia tri nay la diem can tap trung de doc xu huong toan canh."}</p>}
+          eyebrow="Điểm nên nhìn"
+          title={points[peakIndex]?.label || "Điểm nổi bật"}
+          body={<p>{style === "area" ? "Biên độ cho thấy xu hướng tích lũy rõ hơn qua từng mốc." : "Giá trị này là điểm cần tập trung để đọc xu hướng toàn cảnh."}</p>}
           className="sm:col-span-3 xl:col-span-1"
         />
       </div>
@@ -800,16 +802,16 @@ function Timeline({ spec, current }: { spec: Record<string, unknown>; current: n
   const activeIndex = Math.max(0, Math.min(current - 1, events.length - 1));
   const activeItem = asRecord(events[activeIndex]);
   const activePalette = paletteAt(activeIndex);
-  const timelineTitle = asText(spec.title, "Cac moc chinh");
-  const timelineCaption = asText(spec.caption, "Doc dong thay doi theo thu tu thoi gian.");
+  const timelineTitle = asText(spec.title, "Các mốc chính");
+  const timelineCaption = asText(spec.caption, "Đọc dòng thay đổi theo thứ tự thời gian.");
   return <div className="space-y-4">
-    <DiagramSectionPill tone="neutral">Theo dong thoi gian</DiagramSectionPill>
+    <DiagramSectionPill tone="neutral">Theo dòng thời gian</DiagramSectionPill>
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-      <DiagramStageFrame eyebrow="Dong thoi gian" title={timelineTitle} caption={timelineCaption}>
+      <DiagramStageFrame eyebrow="Dòng thời gian" title={timelineTitle} caption={timelineCaption}>
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
-            <DiagramStatusPill label="Moc dang mo" detail={asText(activeItem.title, `Milestone ${activeIndex + 1}`)} tone="accent" />
-            <DiagramStatusPill label="Tong moc" detail={String(events.length)} tone="neutral" />
+            <DiagramStatusPill label="Mốc đang mở" detail={asText(activeItem.title, `Milestone ${activeIndex + 1}`)} tone="accent" />
+            <DiagramStatusPill label="Tổng mốc" detail={String(events.length)} tone="neutral" />
           </div>
           <div className="grid gap-3">
           {events.map((event, index) => {
@@ -817,7 +819,7 @@ function Timeline({ spec, current }: { spec: Record<string, unknown>; current: n
             const active = current === index + 1;
             const palette = paletteAt(index);
             const tone = active ? "accent" : index < activeIndex ? "success" : "neutral";
-            const statusLabel = active ? "Dang mo" : index < activeIndex ? "Da di qua" : "Sap toi";
+            const statusLabel = active ? "Đang mở" : index < activeIndex ? "Đã đi qua" : "Sắp tới";
             return <div key={index} className="grid gap-3 md:grid-cols-[auto_1fr]">
               <div className="grid place-items-start justify-items-center pt-1">
                 <div className="grid h-8 w-8 place-items-center rounded-full text-xs font-bold text-white shadow-[var(--shadow-sm)]" style={{ background: active ? palette.accent : "rgba(148,163,184,0.68)" }}>
@@ -841,7 +843,7 @@ function Timeline({ spec, current }: { spec: Record<string, unknown>; current: n
       {events.length > 0 ? (
         <DiagramCalloutPanel
           palette={activePalette}
-          eyebrow="Moc dang xem"
+          eyebrow="Mốc đang xem"
           title={asText(activeItem.title, `Milestone ${activeIndex + 1}`)}
           accentLabel={activeIndex + 1}
           body={asText(activeItem.description) ? <p>{asText(activeItem.description)}</p> : undefined}
@@ -856,16 +858,16 @@ function MapLite({ spec, focusId }: { spec: Record<string, unknown>; focusId: st
   const activeIndex = focusId === "all" ? 0 : Math.max(0, regions.findIndex((_, index) => `region-${index + 1}` === focusId));
   const activeRecord = asRecord(regions[activeIndex]);
   const activePalette = paletteAt(activeIndex);
-  const mapTitle = asText(spec.title, "Cum khu vuc can theo doi");
-  const mapCaption = asText(spec.caption, "Tap trung vao tung khu vuc de doc tin hieu noi bat.");
+  const mapTitle = asText(spec.title, "Cụm khu vực cần theo dõi");
+  const mapCaption = asText(spec.caption, "Tập trung vào từng khu vực để đọc tín hiệu nổi bật.");
   return <div className="space-y-4">
-    <DiagramSectionPill tone="neutral">Theo tung khu vuc</DiagramSectionPill>
+    <DiagramSectionPill tone="neutral">Theo từng khu vực</DiagramSectionPill>
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-      <DiagramStageFrame eyebrow="Ban do rut gon" title={mapTitle} caption={mapCaption}>
+      <DiagramStageFrame eyebrow="Bản đồ rút gọn" title={mapTitle} caption={mapCaption}>
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
-            <DiagramStatusPill label="Khu vuc dang xem" detail={asText(activeRecord.title) || asText(activeRecord.name) || asText(activeRecord.label, `Region ${activeIndex + 1}`)} tone="accent" />
-            <DiagramStatusPill label="Tong cum" detail={String(regions.length)} tone="neutral" />
+            <DiagramStatusPill label="Khu vực đang xem" detail={asText(activeRecord.title) || asText(activeRecord.name) || asText(activeRecord.label, `Region ${activeIndex + 1}`)} tone="accent" />
+            <DiagramStatusPill label="Tổng cụm" detail={String(regions.length)} tone="neutral" />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
           {regions.map((region, index) => {
@@ -888,9 +890,9 @@ function MapLite({ spec, focusId }: { spec: Record<string, unknown>; focusId: st
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: palette.ink }}>
-                        Khu vuc {index + 1}
+                        Khu vực {index + 1}
                       </p>
-                      <DiagramStatusPill label={active ? "Tap trung" : "Theo doi"} tone={active ? "accent" : "neutral"} />
+                      <DiagramStatusPill label={active ? "Tập trung" : "Theo dõi"} tone={active ? "accent" : "neutral"} />
                     </div>
                     <h4 className="mt-1 font-serif text-[1.35rem] leading-tight text-text">{asText(record.title) || asText(record.name) || asText(record.label, `Region ${index + 1}`)}</h4>
                   </div>
@@ -909,7 +911,7 @@ function MapLite({ spec, focusId }: { spec: Record<string, unknown>; focusId: st
       {regions.length > 0 ? (
         <DiagramCalloutPanel
           palette={activePalette}
-          eyebrow="Khu vuc dang xem"
+          eyebrow="Khu vực đang xem"
           title={asText(activeRecord.title) || asText(activeRecord.name) || asText(activeRecord.label, `Region ${activeIndex + 1}`)}
           accentLabel={activeIndex + 1}
           body={(asText(activeRecord.content) || asText(activeRecord.description)) ? <p>{asText(activeRecord.content) || asText(activeRecord.description)}</p> : undefined}
@@ -921,18 +923,20 @@ function MapLite({ spec, focusId }: { spec: Record<string, unknown>; focusId: st
 
 const renderStructured = (visual: VisualPayload, session: VisualSessionState | undefined, reduced: boolean) => {
   const spec = asRecord(visual.spec);
+  let content: ReactNode = null;
   switch (visual.type) {
-    case "comparison": return <Comparison spec={spec} focus={String(controlValueOf(session, visual.controls.find((item) => item.id === "focus_side") || { id: "focus_side", type: "chips", label: "Focus", value: "both" }))} />;
-    case "process": return <Process spec={spec} reduced={reduced} currentStep={Number(controlValueOf(session, visual.controls.find((item) => item.id === "current_step") || { id: "current_step", type: "range", label: "Step", value: 1 }))} />;
-    case "matrix": return <Matrix spec={spec} showValues={Boolean(controlValueOf(session, visual.controls.find((item) => item.id === "show_values") || { id: "show_values", type: "toggle", label: "Show", value: false }))} />;
-    case "architecture": return <Architecture spec={spec} focusId={String(controlValueOf(session, visual.controls.find((item) => item.id === "active_layer") || { id: "active_layer", type: "chips", label: "Layer", value: "all" }))} />;
-    case "concept": return <Concept spec={spec} focusId={String(controlValueOf(session, visual.controls.find((item) => item.id === "active_branch") || { id: "active_branch", type: "chips", label: "Branch", value: "all" }))} />;
-    case "infographic": return <div className="space-y-5">{asList(spec.stats).length > 0 && <Cards items={asList(spec.stats)} keyName="stat" focusId="all" labelPrefix="Stat" />}<Cards items={asList(spec.sections)} keyName="section" focusId={String(controlValueOf(session, visual.controls.find((item) => item.id === "active_section") || { id: "active_section", type: "chips", label: "Section", value: "all" }))} labelPrefix="Section" /></div>;
-    case "chart": return <Chart spec={spec} style={String(controlValueOf(session, visual.controls.find((item) => item.id === "chart_style") || { id: "chart_style", type: "chips", label: "Chart style", value: "bar" }))} />;
-    case "timeline": return <Timeline spec={spec} current={Number(controlValueOf(session, visual.controls.find((item) => item.id === "current_event") || { id: "current_event", type: "range", label: "Current", value: 1 }))} />;
-    case "map_lite": return <MapLite spec={spec} focusId={String(controlValueOf(session, visual.controls.find((item) => item.id === "active_region") || { id: "active_region", type: "chips", label: "Region", value: "all" }))} />;
+    case "comparison": content = <Comparison spec={spec} focus={String(controlValueOf(session, visual.controls.find((item) => item.id === "focus_side") || { id: "focus_side", type: "chips", label: "Focus", value: "both" }))} />; break;
+    case "process": content = <Process spec={spec} reduced={reduced} currentStep={Number(controlValueOf(session, visual.controls.find((item) => item.id === "current_step") || { id: "current_step", type: "range", label: "Step", value: 1 }))} />; break;
+    case "matrix": content = <Matrix spec={spec} showValues={Boolean(controlValueOf(session, visual.controls.find((item) => item.id === "show_values") || { id: "show_values", type: "toggle", label: "Show", value: false }))} />; break;
+    case "architecture": content = <Architecture spec={spec} focusId={String(controlValueOf(session, visual.controls.find((item) => item.id === "active_layer") || { id: "active_layer", type: "chips", label: "Layer", value: "all" }))} />; break;
+    case "concept": content = <Concept spec={spec} focusId={String(controlValueOf(session, visual.controls.find((item) => item.id === "active_branch") || { id: "active_branch", type: "chips", label: "Branch", value: "all" }))} />; break;
+    case "infographic": content = <div className="space-y-5">{asList(spec.stats).length > 0 && <Cards items={asList(spec.stats)} keyName="stat" focusId="all" labelPrefix="Stat" />}<Cards items={asList(spec.sections)} keyName="section" focusId={String(controlValueOf(session, visual.controls.find((item) => item.id === "active_section") || { id: "active_section", type: "chips", label: "Section", value: "all" }))} labelPrefix="Section" /></div>; break;
+    case "chart": content = <Chart spec={spec} style={String(controlValueOf(session, visual.controls.find((item) => item.id === "chart_style") || { id: "chart_style", type: "chips", label: "Chart style", value: "bar" }))} />; break;
+    case "timeline": content = <Timeline spec={spec} current={Number(controlValueOf(session, visual.controls.find((item) => item.id === "current_event") || { id: "current_event", type: "range", label: "Current", value: 1 }))} />; break;
+    case "map_lite": content = <MapLite spec={spec} focusId={String(controlValueOf(session, visual.controls.find((item) => item.id === "active_region") || { id: "active_region", type: "chips", label: "Region", value: "all" }))} />; break;
     default: return null;
   }
+  return <motion.div variants={staggerItem}>{content}</motion.div>;
 };
 
 function ControlBar({
@@ -949,7 +953,7 @@ function ControlBar({
   if (!visual.controls.length) return null;
   return <div className={`visual-control-bar mb-6 flex flex-col gap-4 rounded-[24px] border border-[color-mix(in_srgb,var(--border)_72%,white)] bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(249,246,239,0.74))] p-4 shadow-[var(--shadow-sm)] ${embedded ? "visual-control-bar--embedded" : ""}`.trim()}>{visual.controls.map((control) => {
     const value = controlValueOf(session, control);
-    if (control.type === "toggle") return <label key={control.id} className="flex items-center justify-between gap-3 text-sm font-medium text-text"><span>{controlLabel(control)}</span><button type="button" aria-pressed={Boolean(value)} className={`min-h-[40px] rounded-full px-3.5 py-1.5 text-xs font-semibold ${value ? "bg-[var(--accent-orange)] text-white" : "border border-[var(--border)] bg-white text-text-secondary"}`} onClick={() => onChange(control.id, !Boolean(value))}>{value ? "Bat" : "Tat"}</button></label>;
+    if (control.type === "toggle") return <label key={control.id} className="flex items-center justify-between gap-3 text-sm font-medium text-text"><span>{controlLabel(control)}</span><button type="button" aria-pressed={Boolean(value)} className={`min-h-[40px] rounded-full px-3.5 py-1.5 text-xs font-semibold ${value ? "bg-[var(--accent-orange)] text-white" : "border border-[var(--border)] bg-white text-text-secondary"}`} onClick={() => onChange(control.id, !Boolean(value))}>{value ? "Bật" : "Tắt"}</button></label>;
     if (control.type === "range") return <label key={control.id} className="space-y-2 text-sm font-medium text-text"><div className="flex items-center justify-between gap-3"><span>{controlLabel(control)}</span><span className="text-xs text-text-tertiary">{String(value ?? control.min ?? 0)}</span></div><input type="range" min={control.min} max={control.max} step={control.step} value={Number(value ?? control.min ?? 0)} className="w-full accent-[var(--accent-orange)]" onChange={(event) => onChange(control.id, Number(event.currentTarget.value), `${control.id}:${event.currentTarget.value}`)} /></label>;
     if (control.type === "select") return <label key={control.id} className="space-y-2 text-sm font-medium text-text"><span>{controlLabel(control)}</span><select value={String(value ?? "")} onChange={(event) => onChange(control.id, event.currentTarget.value)} className="min-h-[42px] rounded-[14px] border border-[var(--border)] bg-white px-3 py-2 text-sm text-text shadow-[var(--shadow-sm)]">{(control.options || []).map((option) => <option key={option.value} value={option.value}>{controlOptionLabel(control, option.value, option.label)}</option>)}</select></label>;
     return <div key={control.id} className="space-y-2"><p className="text-sm font-medium text-text">{controlLabel(control)}</p><div className="flex flex-wrap gap-2">{(control.options || []).map((option) => { const selected = String(value ?? "") === option.value; return <button key={option.value} type="button" aria-pressed={selected} className={`min-h-[40px] rounded-full px-3.5 py-1.5 text-xs font-semibold ${selected ? "bg-[var(--accent-orange)] text-white shadow-[var(--shadow-sm)]" : "border border-[var(--border)] bg-white text-text-secondary"}`} onClick={() => onChange(control.id, option.value, option.value)}>{controlOptionLabel(control, option.value, option.label)}</button>; })}</div></div>;
@@ -978,7 +982,7 @@ function Details({
         className={`visual-detail-shell mt-5 space-y-3 ${embedded ? "visual-detail-shell--embedded" : ""}`.trim()}
         data-focus-active={focusedAnnotation ? "true" : "false"}
       >
-        <DiagramSectionPill tone="neutral" className="visual-detail-shell__label">Diem nhan dang mo</DiagramSectionPill>
+        <DiagramSectionPill tone="neutral" className="visual-detail-shell__label">Điểm nhấn đang mở</DiagramSectionPill>
         <div className="visual-detail-shell__rail flex flex-wrap gap-2">
           {annotations.map((annotation, index) => {
             const selected = session?.focusedAnnotationId === annotation.id;
@@ -1008,7 +1012,7 @@ function Details({
           <DiagramInsightPanel
             className="visual-detail-shell__body"
             tone={focusedAnnotation.tone || "accent"}
-            eyebrow="Giai thich nhanh"
+            eyebrow="Giải thích nhanh"
             title={focusedAnnotation.title}
             body={focusedAnnotation.body ? <p id={focusedAnnotationBodyId}>{focusedAnnotation.body}</p> : undefined}
           />
@@ -1021,7 +1025,7 @@ function Details({
           <DiagramInsightPanel
             key={panel.id}
             tone={index % 2 === 0 ? "neutral" : "accent"}
-            eyebrow="Goi y doc"
+            eyebrow="Gợi ý đọc"
             title={panel.title}
             body={panel.body ? <p>{panel.body}</p> : undefined}
           />
@@ -1149,7 +1153,7 @@ export function VisualBlock({ block, embedded = false }: { block: VisualBlockDat
     renderError = error instanceof Error ? error.message : "Unknown visual render error";
     body = htmlPayload
       ? <InlineHtmlWidget code={htmlPayload} />
-      : <div className="rounded-[20px] border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">Khong the render visual nay luc nay.</div>;
+      : <div className="rounded-[20px] border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">Không thể render visual này lúc này.</div>;
     usedFallback = Boolean(htmlPayload);
   }
 
@@ -1323,9 +1327,14 @@ export function VisualBlock({ block, embedded = false }: { block: VisualBlockDat
 
     <div className={bodyClassName}>
       {visual.renderer_kind === "template" && <ControlBar visual={visual} session={session} embedded={embedded} onChange={(controlId, value, focusedNodeId) => { update(sessionId, { controlValues: { [controlId]: value }, focusedNodeId, interactionDelta: 1 }); trackVisualTelemetry("visual_interacted", { visual_id: visual.id, visual_session_id: sessionId, visual_type: visual.type, control_id: controlId, value: String(value) }); }} />}
-      <div className={`visual-block-shell__canvas ${embedded ? "visual-block-shell__canvas--embedded" : ""}`.trim()}>
+      <motion.div
+        className={`visual-block-shell__canvas ${embedded ? "visual-block-shell__canvas--embedded" : ""}`.trim()}
+        variants={staggerContainer}
+        initial={reduced ? "visible" : "hidden"}
+        animate="visible"
+      >
         {body}
-      </div>
+      </motion.div>
       <Details visual={visual} sessionId={sessionId} session={session} embedded={embedded} />
     </div>
     <figcaption id={srSummaryId} className="sr-only">{accessibleSummary}</figcaption>

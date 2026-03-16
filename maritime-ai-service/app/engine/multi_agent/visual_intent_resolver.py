@@ -134,6 +134,12 @@ def filter_tools_for_visual_intent(
 
 def resolve_visual_intent(query: str) -> VisualIntentDecision:
     """Classify a user request into the most suitable visual delivery mode."""
+    decision = _resolve_visual_intent_core(query)
+    return maybe_upgrade_to_code_gen(decision)
+
+
+def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
+    """Core classification logic (before code-gen upgrade)."""
     normalized = _normalize(query)
     if not normalized:
         return VisualIntentDecision(mode="text", reason="empty-query")
@@ -270,3 +276,27 @@ def resolve_visual_intent(query: str) -> VisualIntentDecision:
         return VisualIntentDecision(mode="template", force_tool=True, visual_type="concept", reason="concept")
 
     return VisualIntentDecision(mode="text", reason="plain-text")
+
+
+# Visual types that have HTML builders and can be routed to code-gen
+_CODE_GEN_UPGRADABLE_TYPES = frozenset({
+    "comparison", "process", "matrix", "architecture",
+    "concept", "infographic", "chart", "timeline", "map_lite",
+})
+
+
+def maybe_upgrade_to_code_gen(decision: VisualIntentDecision) -> VisualIntentDecision:
+    """Upgrade template→inline_html when enable_code_gen_visuals is active."""
+    if decision.mode != "template":
+        return decision
+    if decision.visual_type not in _CODE_GEN_UPGRADABLE_TYPES:
+        return decision
+    from app.core.config import get_settings
+    if not getattr(get_settings(), "enable_code_gen_visuals", False):
+        return decision
+    return VisualIntentDecision(
+        mode="inline_html",
+        force_tool=decision.force_tool,
+        visual_type=decision.visual_type,
+        reason=f"{decision.reason}→code-gen",
+    )

@@ -80,10 +80,26 @@ TOOL_INSTRUCTION = TOOL_INSTRUCTION_DEFAULT
 STRUCTURED_VISUAL_TOOL_INSTRUCTION = """
 ## CONG CU MINH HOA TRUC QUAN:
 - `tool_generate_visual`: Dung cho minh hoa inline trong chat.
-- Uu tien `tool_generate_visual` cho so sanh, quy trinh, kien truc, concept, infographic, chart.
+- Uu tien `tool_generate_visual` cho so sanh, quy trinh, kien truc, concept, infographic, chart, timeline, map_lite.
 - Khi can mo phong, canvas, slider, keo tha, hoac mini app, dung `tool_generate_visual`
   voi renderer_kind=`app` va visual_type phu hop nhu `simulation`.
 - Khong chen payload JSON vao cau tra loi. Chi viet narrative + takeaway.
+- QUAN TRONG: Moi layer/step/branch PHAI co description chi tiet.
+  Khong chi ten, ma can giai thich vai tro, cach hoat dong, y nghia.
+  Vi du: thay vi chi "API Gateway", hay them description "Tiep nhan va phan phoi request, xac thuc JWT, rate limiting".
+"""
+
+# Appended when enable_llm_code_gen_visuals=True
+LLM_CODE_GEN_VISUAL_INSTRUCTION = """
+## CUSTOM VISUAL (code_html):
+- Khi can visual PHUC TAP hoac KHONG PHU HOP voi cac type co san, dung param `code_html`.
+- Viet HTML/CSS/SVG truc tiep — moi visual unique, dep, custom-designed.
+- Dung CSS variables co san: --bg, --bg2, --bg3, --text, --text2, --text3,
+  --accent, --green, --purple, --amber, --teal, --pink, --border, --radius.
+- Dark mode tu dong qua CSS variables — KHONG can media query rieng.
+- Chi dung JavaScript khi that su can (animation, interaction). Uu tien CSS animation.
+- PHAI co spec_json (du la {}) va visual_type hop le.
+- Vi du dung code_html: tao SVG diagram custom, flowchart phuc tap, so do mang luoi, visual hoa data doc dao.
 """
 
 _MAX_PHASE_TRANSITIONS = 4
@@ -440,8 +456,13 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                     structured_visuals_enabled=True,
                 )
                 preferred_tool_label = preferred_tool_names[0] if preferred_tool_names else preferred_visual_tool_name(True)
+                # Conditionally append code_html instruction
+                code_gen_section = ""
+                from app.core.config import get_settings as _get_settings
+                if getattr(_get_settings(), "enable_llm_code_gen_visuals", False):
+                    code_gen_section = LLM_CODE_GEN_VISUAL_INSTRUCTION
                 visual_tool_section = f"""
-{STRUCTURED_VISUAL_TOOL_INSTRUCTION}
+{STRUCTURED_VISUAL_TOOL_INSTRUCTION}{code_gen_section}
 ## UU TIEN CHO YEU CAU NAY:
 - Query hien tai dang nghieng ve `{visual_decision.mode}`.
 - Uu tien goi `{preferred_tool_label}` thay vi widget/chart legacy.

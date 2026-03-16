@@ -17,6 +17,7 @@ agent:
     - tool_generate_html_file
     - tool_generate_excel_file
     - tool_generate_word_document
+    - tool_generate_visual
 
 style:
   tone: "Tinh gon, sang ro, co chat lam ra san pham that"

@@ -123,9 +123,9 @@ def _sanitize_summary_candidate(value: str, visual_type: str, title: str) -> str
         return ""
 
     patterns = [
-        r"^structured visual san sang:\s*",
+        r"^structured visual sẵn sàng:\s*",
         r"^structured visual summary\s*",
-        rf"^visual\s+{re.escape(visual_type).replace('_', '[_ ]')}\s+de tom tat nhanh noi dung:\s*",
+        rf"^visual\s+{re.escape(visual_type).replace('_', '[_ ]')}\s+để tóm tắt nhanh nội dung:\s*",
         rf"^visual\s+{re.escape(visual_type).replace('_', '[_ ]')}:\s*",
     ]
     for pattern in patterns:
@@ -155,53 +155,53 @@ def _default_visual_summary(visual_type: str, title: str, spec: dict[str, Any] |
     if visual_type == "comparison":
         left = safe_spec.get("left") if isinstance(safe_spec.get("left"), dict) else {}
         right = safe_spec.get("right") if isinstance(safe_spec.get("right"), dict) else {}
-        left_title = _clean_summary_text(left.get("title")) or "goc nhin ben trai"
-        right_title = _clean_summary_text(right.get("title")) or "goc nhin ben phai"
-        return f"Dat {left_title} canh {right_title} de thay diem khac biet chinh."
+        left_title = _clean_summary_text(left.get("title")) or "góc nhìn bên trái"
+        right_title = _clean_summary_text(right.get("title")) or "góc nhìn bên phải"
+        return f"Đặt {left_title} cạnh {right_title} để thấy điểm khác biệt chính."
 
     if visual_type == "process":
         step_count = _named_count(safe_spec.get("steps"))
         if step_count > 0:
-            return f"Quy trinh duoc chia thanh {step_count} buoc lien tiep de de theo doi."
+            return f"Quy trình được chia thành {step_count} bước liên tiếp để dễ theo dõi."
 
     if visual_type == "matrix":
         row_count = _named_count(safe_spec.get("rows"))
         col_count = _named_count(safe_spec.get("cols"))
         if row_count and col_count:
-            return f"Ma tran nay cho thay muc do lien he giua {row_count} hang va {col_count} cot."
+            return f"Ma trận này cho thấy mức độ liên hệ giữa {row_count} hàng và {col_count} cột."
 
     if visual_type == "architecture":
         layer_count = _named_count(safe_spec.get("layers"))
         if layer_count:
-            return f"Kien truc duoc tach thanh {layer_count} lop chinh va cach chung ket noi voi nhau."
+            return f"Kiến trúc được tách thành {layer_count} lớp chính và cách chúng kết nối với nhau."
 
     if visual_type == "concept":
         center = safe_spec.get("center") if isinstance(safe_spec.get("center"), dict) else {}
         center_title = _clean_summary_text(center.get("title")) or safe_title
-        return f"{center_title} duoc mo rong thanh cac nhanh chinh de de dinh vi y tuong."
+        return f"{center_title} được mở rộng thành các nhánh chính để dễ định vị ý tưởng."
 
     if visual_type == "infographic":
         stat_count = _named_count(safe_spec.get("stats"))
         section_count = _named_count(safe_spec.get("sections"))
         if stat_count or section_count:
-            return f"Khung nhin nay gom {stat_count or 0} chi so va {section_count or 0} diem nhan de doc nhanh."
+            return f"Khung nhìn này gồm {stat_count or 0} chỉ số và {section_count or 0} điểm nhấn để đọc nhanh."
 
     if visual_type == "chart":
         label_count = _named_count(safe_spec.get("labels"))
         if label_count:
-            return f"Bieu do nay lam ro xu huong qua {label_count} moc chinh."
+            return f"Biểu đồ này làm rõ xu hướng qua {label_count} mốc chính."
 
     if visual_type == "timeline":
         event_count = _named_count(safe_spec.get("events"))
         if event_count:
-            return f"Dong thoi gian nay gom {event_count} moc de theo doi su chuyen dich theo thu tu."
+            return f"Dòng thời gian này gồm {event_count} mốc để theo dõi sự chuyển dịch theo thứ tự."
 
     if visual_type == "map_lite":
         region_count = _named_count(safe_spec.get("regions"))
         if region_count:
-            return f"Ban do nay nhan vao {region_count} khu vuc de so sanh nhanh."
+            return f"Bản đồ này nhấn vào {region_count} khu vực để so sánh nhanh."
 
-    return f"{safe_title} trong mot khung nhin truc quan de doc nhanh."
+    return f"{safe_title} trong một khung nhìn trực quan để đọc nhanh."
 
 
 def _infer_pedagogical_role(
@@ -269,8 +269,8 @@ def _default_visual_claim(
         left = _spec_text(spec.get("left") if isinstance(spec.get("left"), dict) else {}, "title")
         right = _spec_text(spec.get("right") if isinstance(spec.get("right"), dict) else {}, "title")
         if left and right:
-            return f"Dat {left} canh {right} de thay ra su khac biet chinh."
-    return f"{title} lam ro mot y chinh trong loi giai dang theo."
+            return f"Đặt {left} cạnh {right} để thấy ra sự khác biệt chính."
+    return f"{title} làm rõ một ý chính trong lời giải đang theo."
 
 
 def _get_runtime_visual_metadata() -> dict[str, Any]:
@@ -321,42 +321,42 @@ def _collect_story_points(
         left_title = _spec_text(left, "title")
         right_title = _spec_text(right, "title")
         if left_title and right_title:
-            add_point(f"{left_title} va {right_title} nen duoc doc canh nhau de thay do lech chinh.")
+            add_point(f"{left_title} và {right_title} nên được đọc cạnh nhau để thấy độ lệch chính.")
         left_items = left.get("items") if isinstance(left.get("items"), list) else []
         right_items = right.get("items") if isinstance(right.get("items"), list) else []
         if left_items or right_items:
             add_point(
-                f"Ben trai co {len(left_items)} diem nhan, ben phai co {len(right_items)} diem nhan."
+                f"Bên trái có {len(left_items)} điểm nhấn, bên phải có {len(right_items)} điểm nhấn."
             )
 
     elif visual_type == "process":
         steps = spec.get("steps", []) if isinstance(spec.get("steps"), list) else []
         labels = [
-            str((step if isinstance(step, dict) else {}).get("title") or f"Buoc {index + 1}")
+            str((step if isinstance(step, dict) else {}).get("title") or f"Bước {index + 1}")
             for index, step in enumerate(steps[:3])
         ]
         if labels:
-            add_point("Thu tu xu ly: " + " -> ".join(labels))
+            add_point("Thứ tự xử lý: " + " -> ".join(labels))
 
     elif visual_type == "architecture":
         layers = spec.get("layers", []) if isinstance(spec.get("layers"), list) else []
         labels = [
-            str((layer if isinstance(layer, dict) else {}).get("name") or f"Lop {index + 1}")
+            str((layer if isinstance(layer, dict) else {}).get("name") or f"Lớp {index + 1}")
             for index, layer in enumerate(layers[:4])
         ]
         if labels:
-            add_point("Dong xu ly di qua cac lop: " + " -> ".join(labels))
+            add_point("Dòng xử lý đi qua các lớp: " + " -> ".join(labels))
 
     elif visual_type == "concept":
         center = spec.get("center", {}) if isinstance(spec.get("center"), dict) else {}
         branches = spec.get("branches", []) if isinstance(spec.get("branches"), list) else []
         center_title = _spec_text(center, "title") or title
         branch_titles = [
-            str((branch if isinstance(branch, dict) else {}).get("title") or f"Nhanh {index + 1}")
+            str((branch if isinstance(branch, dict) else {}).get("title") or f"Nhánh {index + 1}")
             for index, branch in enumerate(branches[:3])
         ]
         if center_title and branch_titles:
-            add_point(f"{center_title} duoc mo rong qua: {', '.join(branch_titles)}.")
+            add_point(f"{center_title} được mở rộng qua: {', '.join(branch_titles)}.")
 
     elif visual_type == "chart":
         datasets = spec.get("datasets", []) if isinstance(spec.get("datasets"), list) else []
@@ -366,33 +366,33 @@ def _collect_story_points(
             for index, dataset in enumerate(datasets[:3])
         ]
         if dataset_labels:
-            add_point("Bieu do theo doi cac duong: " + ", ".join(dataset_labels) + ".")
+            add_point("Biểu đồ theo dõi các đường: " + ", ".join(dataset_labels) + ".")
         if labels:
-            add_point(f"Truc x gom {len(labels)} moc chinh de doc xu huong.")
+            add_point(f"Trục x gồm {len(labels)} mốc chính để đọc xu hướng.")
 
     elif visual_type == "matrix":
         rows = spec.get("rows", []) if isinstance(spec.get("rows"), list) else []
         cols = spec.get("cols", []) if isinstance(spec.get("cols"), list) else []
         if rows or cols:
-            add_point(f"Ma tran nay duoc doc qua {len(rows)} hang va {len(cols)} cot.")
+            add_point(f"Ma trận này được đọc qua {len(rows)} hàng và {len(cols)} cột.")
 
     elif visual_type == "timeline":
         events = spec.get("events", []) if isinstance(spec.get("events"), list) else []
         labels = [
-            str((event if isinstance(event, dict) else {}).get("title") or (event if isinstance(event, dict) else {}).get("label") or f"Moc {index + 1}")
+            str((event if isinstance(event, dict) else {}).get("title") or (event if isinstance(event, dict) else {}).get("label") or f"Mốc {index + 1}")
             for index, event in enumerate(events[:4])
         ]
         if labels:
-            add_point("Cac moc can theo doi: " + " -> ".join(labels))
+            add_point("Các mốc cần theo dõi: " + " -> ".join(labels))
 
     elif visual_type == "map_lite":
         regions = spec.get("regions", []) if isinstance(spec.get("regions"), list) else []
         labels = [
-            str((region if isinstance(region, dict) else {}).get("label") or f"Khu vuc {index + 1}")
+            str((region if isinstance(region, dict) else {}).get("label") or f"Khu vực {index + 1}")
             for index, region in enumerate(regions[:4])
         ]
         if labels:
-            add_point("Ban do dang nhan vao: " + ", ".join(labels) + ".")
+            add_point("Bản đồ đang nhấn vào: " + ", ".join(labels) + ".")
 
     return points[:3]
 
@@ -405,49 +405,49 @@ def _build_takeaway_infographic_spec(
 ) -> dict[str, Any]:
     points = _collect_story_points(visual_type, spec, title, summary)
     if not points:
-        points = [summary or f"{title} gom mot vai diem nhan de doc nhanh."]
+        points = [summary or f"{title} gồm một vài điểm nhấn để đọc nhanh."]
 
     stats: list[dict[str, Any]] = []
     if visual_type == "comparison":
         stats = [
-            {"value": "2", "label": "Goc nhin"},
-            {"value": str(_named_count((spec.get("left") or {}).get("items")) + _named_count((spec.get("right") or {}).get("items"))), "label": "Diem nhan"},
+            {"value": "2", "label": "Góc nhìn"},
+            {"value": str(_named_count((spec.get("left") or {}).get("items")) + _named_count((spec.get("right") or {}).get("items"))), "label": "Điểm nhấn"},
         ]
     elif visual_type == "process":
-        stats = [{"value": str(_named_count(spec.get("steps"))), "label": "Buoc"}]
+        stats = [{"value": str(_named_count(spec.get("steps"))), "label": "Bước"}]
     elif visual_type == "architecture":
-        stats = [{"value": str(_named_count(spec.get("layers"))), "label": "Lop"}]
+        stats = [{"value": str(_named_count(spec.get("layers"))), "label": "Lớp"}]
     elif visual_type == "concept":
-        stats = [{"value": str(_named_count(spec.get("branches"))), "label": "Nhanh"}]
+        stats = [{"value": str(_named_count(spec.get("branches"))), "label": "Nhánh"}]
     elif visual_type == "chart":
         stats = [
             {"value": str(_named_count(spec.get("datasets")) or 1), "label": "Series"},
-            {"value": str(_named_count(spec.get("labels"))), "label": "Moc doc"},
+            {"value": str(_named_count(spec.get("labels"))), "label": "Mốc đọc"},
         ]
     elif visual_type == "matrix":
         stats = [
-            {"value": str(_named_count(spec.get("rows"))), "label": "Hang"},
-            {"value": str(_named_count(spec.get("cols"))), "label": "Cot"},
+            {"value": str(_named_count(spec.get("rows"))), "label": "Hàng"},
+            {"value": str(_named_count(spec.get("cols"))), "label": "Cột"},
         ]
     elif visual_type == "timeline":
-        stats = [{"value": str(_named_count(spec.get("events"))), "label": "Moc"}]
+        stats = [{"value": str(_named_count(spec.get("events"))), "label": "Mốc"}]
     elif visual_type == "map_lite":
-        stats = [{"value": str(_named_count(spec.get("regions"))), "label": "Khu vuc"}]
+        stats = [{"value": str(_named_count(spec.get("regions"))), "label": "Khu vực"}]
 
     sections = [
-        {"title": "Can nhin gi", "content": points[0]},
+        {"title": "Cần nhìn gì", "content": points[0]},
     ]
     if len(points) > 1:
-        sections.append({"title": "Vi sao quan trong", "content": points[1]})
+        sections.append({"title": "Vì sao quan trọng", "content": points[1]})
     sections.append({
-        "title": "Diem chot",
+        "title": "Điểm chốt",
         "content": points[-1],
     })
 
     return {
         "stats": stats,
         "sections": sections,
-        "caption": summary or f"Diem chot tu {title}.",
+        "caption": summary or f"Điểm chốt từ {title}.",
     }
 
 
@@ -458,12 +458,12 @@ def _build_takeaway_claim(
     spec: dict[str, Any],
 ) -> str:
     if summary:
-        return f"Diem chot cua {title}: {summary}"
+        return f"Điểm chốt của {title}: {summary}"
     if visual_type == "chart":
-        return f"{title} can duoc doc nhu mot xu huong chu khong chi la mot hinh minh hoa."
+        return f"{title} cần được đọc như một xu hướng chứ không chỉ là một hình minh họa."
     if visual_type == "comparison":
-        return f"{title} chot lai su khac biet can nho nhat giua hai ben."
-    return f"{title} can duoc doc thanh mot ket luan ngan gon sau figure chinh."
+        return f"{title} chốt lại sự khác biệt cần nhớ nhất giữa hai bên."
+    return f"{title} cần được đọc thành một kết luận ngắn gọn sau figure chính."
 
 
 def _normalize_visual_query_text(value: Any) -> str:
@@ -592,18 +592,18 @@ def _build_bridge_infographic_spec(
     base = _build_takeaway_infographic_spec(visual_type, spec, title, summary)
     points = _collect_story_points(visual_type, spec, title, summary)
     if not points:
-        points = [summary or f"{title} can mot nhom diem nhan de doc theo tung lop."]
+        points = [summary or f"{title} cần một nhóm điểm nhấn để đọc theo từng lớp."]
 
-    sections = [{"title": "Can de mat toi", "content": points[0]}]
+    sections = [{"title": "Cần để mắt tới", "content": points[0]}]
     if len(points) > 1:
-        sections.append({"title": "Co che chinh", "content": points[1]})
+        sections.append({"title": "Cơ chế chính", "content": points[1]})
     if len(points) > 2:
-        sections.append({"title": "Dau hieu can nho", "content": points[2]})
+        sections.append({"title": "Dấu hiệu cần nhớ", "content": points[2]})
 
     return {
         **base,
         "sections": sections,
-        "caption": f"Cach doc {title} qua mot vai diem nhan chinh.",
+        "caption": f"Cách đọc {title} qua một vài điểm nhấn chính.",
     }
 
 
@@ -675,7 +675,7 @@ def _build_auto_grouped_payloads(
     if figure_budget >= 3:
         figures.append({
             "type": "infographic",
-            "title": f"Cach doc {resolved_title}",
+            "title": f"Cách đọc {resolved_title}",
             "summary": bridge_claim[1] if len(bridge_claim) > 1 else resolved_summary,
             "pedagogical_role": bridge_role,
             "claim": bridge_claim[1] if len(bridge_claim) > 1 else resolved_summary,
@@ -690,7 +690,7 @@ def _build_auto_grouped_payloads(
 
     figures.append({
         "type": "infographic",
-        "title": f"Diem chot tu {resolved_title}",
+        "title": f"Điểm chốt từ {resolved_title}",
         "summary": _build_takeaway_claim(visual_type, resolved_title, resolved_summary, spec),
         "pedagogical_role": secondary_role,
         "claim": _build_takeaway_claim(visual_type, resolved_title, resolved_summary, spec),
@@ -1106,6 +1106,13 @@ def _infer_renderer_kind(visual_type: str, spec: dict[str, Any], requested: str 
         return "app"
     if any(isinstance(spec.get(key), str) and str(spec.get(key)).strip() for key in ("html", "markup", "custom_html", "template_html")):
         return "inline_html"
+
+    # Code-gen route: explanatory types with HTML builders → inline_html iframe
+    from app.core.config import get_settings
+    if getattr(get_settings(), "enable_code_gen_visuals", False):
+        if visual_type in _BUILDERS and visual_type not in LEGACY_SANDBOX_VISUAL_TYPES:
+            return "inline_html"
+
     return "template"
 
 
@@ -1134,6 +1141,44 @@ def _infer_patch_strategy(renderer_kind: str, requested: str = "") -> str:
     if renderer_kind == "app":
         return "app_state"
     return "replace_html"
+
+
+def _resolve_code_html(
+    code_html: str,
+    visual_type: str,
+    title: str,
+    spec: dict[str, Any],
+) -> str | None:
+    """Validate and wrap LLM-provided code_html into a full HTML document.
+
+    Returns wrapped HTML if code_html is valid and feature is enabled, None otherwise.
+    The LLM provides HTML/CSS/SVG body content; we wrap it in the design system shell
+    so it gets the same CSS variables, dark mode, and font stack as builder visuals.
+    """
+    raw = code_html.strip() if isinstance(code_html, str) else ""
+    if not raw:
+        return None
+
+    from app.core.config import get_settings
+    if not getattr(get_settings(), "enable_llm_code_gen_visuals", False):
+        logger.info("code_html provided but enable_llm_code_gen_visuals=False, ignoring")
+        return None
+
+    # If LLM already provided a full HTML document, use as-is
+    if raw.lstrip().lower().startswith("<!doctype") or raw.lstrip().lower().startswith("<html"):
+        return raw
+
+    # Otherwise, extract CSS and body parts and wrap in design system
+    css_parts = []
+    body_content = raw
+
+    # Extract <style> blocks from the raw content
+    style_pattern = re.compile(r'<style[^>]*>(.*?)</style>', re.DOTALL | re.IGNORECASE)
+    for match in style_pattern.finditer(raw):
+        css_parts.append(match.group(1))
+    body_content = style_pattern.sub('', body_content).strip()
+
+    return _wrap_html("\n".join(css_parts), body_content, title)
 
 
 def _resolve_fallback_html(
@@ -1227,7 +1272,7 @@ def _normalize_visual_payload(
     if not resolved_annotations:
         resolved_annotations = [{
             "id": "takeaway",
-            "title": "Diem chot",
+            "title": "Điểm chốt",
             "body": resolved_summary,
             "tone": "accent",
         }]
@@ -1631,10 +1676,13 @@ def _build_comparison_html(spec: dict, title: str) -> str:
 
     note = spec.get("note", "")
     note_html = f'<div class="comp-note">{_esc(note)}</div>' if note else ""
+    highlight = spec.get("highlight", "")
+    highlight_html = f'<div class="comp-highlight">{_esc(highlight)}</div>' if highlight else ""
 
     css = """
 .comparison { display: grid; grid-template-columns: 1fr 1px 1fr; gap: 0; align-items: start; }
-.side { background: transparent; padding: 0 16px; }
+.side { background: transparent; padding: 0 16px; transition: background 0.15s; }
+.side:hover { background: color-mix(in srgb, var(--side-color) 4%, transparent); }
 .side:first-child { padding-left: 0; }
 .side-header { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid color-mix(in srgb, var(--side-color) 30%, transparent); }
 .side-title { font-size: 14px; font-weight: 700; color: var(--text); }
@@ -1654,6 +1702,11 @@ def _build_comparison_html(spec: dict, title: str) -> str:
 .side-svg svg { max-width: 100%; height: auto; }
 .side-desc { font-size: 12px; color: var(--text3); margin-top: 8px; font-style: italic; }
 .comp-sep { background: color-mix(in srgb, var(--border) 35%, transparent); margin: 0 4px; }
+.comp-highlight {
+  grid-column: 1 / -1; font-size: 12px; font-weight: 600; color: var(--accent);
+  padding: 8px 12px; background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: var(--radius); margin-top: 12px;
+}
 .comp-note {
   grid-column: 1 / -1; font-size: 11px; color: var(--text3);
   margin-top: 14px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--border) 25%, transparent);
@@ -1669,6 +1722,7 @@ def _build_comparison_html(spec: dict, title: str) -> str:
   {_render_side(left, left_color, left_bg)}
   <div class="comp-sep"></div>
   {_render_side(right, right_color, right_bg)}
+  {highlight_html}
   {note_html}
 </div>"""
 
@@ -1698,7 +1752,14 @@ def _build_process_html(spec: dict, title: str) -> str:
   margin-bottom: 8px; color: white;
 }
 .step-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
-.step-desc { font-size: 12px; color: var(--text2); }
+.step-desc { font-size: 12px; color: var(--text2); line-height: 1.5; }
+.step-content { font-size: 11px; color: var(--text3); margin-top: 6px; line-height: 1.4; text-align: left; }
+.step-signals { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; justify-content: center; }
+.step-signal {
+  font-size: 10px; padding: 2px 6px; border-radius: 4px;
+  background: color-mix(in srgb, var(--step-color) 12%, transparent);
+  color: var(--step-color);
+}
 .step-arrow {
   display: flex; align-items: center; justify-content: center;
   min-width: 32px; min-height: 32px;
@@ -1719,11 +1780,18 @@ def _build_process_html(spec: dict, title: str) -> str:
         num = _esc(step.get("icon", str(i + 1)))
         step_title = _esc(step.get("title", f"Bước {i + 1}"))
         desc = _esc(step.get("description", ""))
+        content = _esc(step.get("content", ""))
+        signals = step.get("signals", [])
         desc_html = f'<div class="step-desc">{desc}</div>' if desc else ""
-        parts.append(f"""<div class="step-card">
+        content_html = f'<div class="step-content">{content}</div>' if content else ""
+        signals_html = ""
+        if signals:
+            sig_parts = "".join(f'<span class="step-signal">{_esc(s)}</span>' for s in signals)
+            signals_html = f'<div class="step-signals">{sig_parts}</div>'
+        parts.append(f"""<div class="step-card" style="--step-color:{color}">
   <div class="step-num" style="background:{color}">{num}</div>
   <div class="step-title">{step_title}</div>
-  {desc_html}
+  {desc_html}{content_html}{signals_html}
 </div>""")
         if i < len(steps) - 1:
             parts.append(f'<div class="step-arrow">{arrow_svg}</div>')
@@ -1812,31 +1880,38 @@ def _build_architecture_html(spec: dict, title: str) -> str:
     css = """
 .arch { display: flex; flex-direction: column; gap: 0; align-items: center; }
 .arch-layer {
-  width: 100%; padding: 12px 16px;
-  border-left: 2px solid var(--layer-color, var(--border));
-  position: relative;
+  width: 100%; padding: 14px 16px;
+  border-left: 3px solid var(--layer-color, var(--border));
+  position: relative; transition: background 0.2s;
 }
-.arch-layer-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.arch-layer:hover { background: color-mix(in srgb, var(--layer-color) 6%, transparent); }
+.arch-layer-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.arch-layer-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+.arch-layer-desc { font-size: 12px; color: var(--text2); margin-bottom: 8px; line-height: 1.5; }
 .arch-components { display: flex; flex-wrap: wrap; gap: 6px; }
 .arch-comp {
   background: transparent; border-radius: 6px; padding: 6px 12px;
   font-size: 12px; font-weight: 500; color: var(--text);
-  border: 0.5px solid var(--border);
+  border: 0.5px solid var(--border); transition: border-color 0.15s, background 0.15s;
 }
+.arch-comp:hover { border-color: var(--layer-color); background: color-mix(in srgb, var(--layer-color) 8%, transparent); }
 .arch-arrow { display: flex; justify-content: center; padding: 2px 0; }
-.arch-arrow svg { width: 16px; height: 16px; opacity: 0.3; }
+.arch-arrow svg { width: 20px; height: 20px; }
 """
 
-    arrow_svg = '<svg viewBox="0 0 20 20" fill="none"><path d="M10 4V16M10 16L5 11M10 16L15 11" stroke="var(--text3)" stroke-width="2" stroke-linecap="round"/></svg>'
+    arrow_svg = '<svg viewBox="0 0 20 20" fill="none"><path d="M10 4V16M10 16L5 11M10 16L15 11" stroke="var(--text3)" stroke-width="1.5" stroke-linecap="round"/></svg>'
 
     parts = []
     for i, layer in enumerate(layers):
         color = layer.get("color", colors[i % len(colors)])
         name = _esc(layer.get("name", f"Layer {i + 1}"))
+        desc = _esc(layer.get("description", ""))
         components = layer.get("components", [])
         comps_html = "".join(f'<div class="arch-comp">{_esc(c)}</div>' for c in components)
+        desc_html = f'<div class="arch-layer-desc">{desc}</div>' if desc else ""
         parts.append(f"""<div class="arch-layer" style="--layer-color:{color}">
-  <div class="arch-layer-name" style="color:{color}">{name}</div>
+  <div class="arch-layer-header"><div class="arch-layer-name" style="color:{color}">{name}</div></div>
+  {desc_html}
   <div class="arch-components">{comps_html}</div>
 </div>""")
         if i < len(layers) - 1:
@@ -1862,13 +1937,16 @@ def _build_concept_html(spec: dict, title: str) -> str:
   padding: 12px 16px; text-align: left; max-width: 400px;
 }
 .concept-center-title { font-size: 16px; font-weight: 700; color: var(--accent); }
-.concept-center-desc { font-size: 12px; color: var(--text2); margin-top: 4px; }
+.concept-center-desc { font-size: 12px; color: var(--text2); margin-top: 4px; line-height: 1.5; }
 .concept-branches { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; width: 100%; }
 .concept-branch {
   flex: 1; min-width: 140px; max-width: 220px;
   padding: 10px 12px; background: transparent;
+  transition: background 0.15s;
 }
-.concept-branch-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.concept-branch:hover { background: color-mix(in srgb, var(--branch-color, var(--accent)) 6%, transparent); }
+.concept-branch-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.concept-branch-desc { font-size: 11px; color: var(--text3); margin-bottom: 6px; line-height: 1.4; }
 .concept-branch-items { list-style: none; padding: 0; }
 .concept-branch-items li { font-size: 12px; color: var(--text2); padding: 3px 0; }
 .concept-branch-items li::before { content: '→ '; color: var(--text3); }
@@ -1886,10 +1964,13 @@ def _build_concept_html(spec: dict, title: str) -> str:
     for i, branch in enumerate(branches):
         color = branch.get("color", colors[i % len(colors)])
         b_title = _esc(branch.get("title", ""))
+        b_desc = _esc(branch.get("description", ""))
         items = branch.get("items", [])
         items_html = "".join(f"<li>{_esc(item)}</li>" for item in items)
-        branch_parts.append(f"""<div class="concept-branch" style="border-left:2px solid color-mix(in srgb,{color} 40%,transparent)">
+        desc_html = f'<div class="concept-branch-desc">{b_desc}</div>' if b_desc else ""
+        branch_parts.append(f"""<div class="concept-branch" style="--branch-color:{color};border-left:2px solid color-mix(in srgb,{color} 40%,transparent)">
   <div class="concept-branch-title" style="color:{color}">{b_title}</div>
+  {desc_html}
   <ul class="concept-branch-items">{items_html}</ul>
 </div>""")
 
@@ -1909,6 +1990,8 @@ def _build_concept_html(spec: dict, title: str) -> str:
 def _build_infographic_html(spec: dict, title: str) -> str:
     stats = spec.get("stats", [])
     sections = spec.get("sections", [])
+    highlights = spec.get("highlights", [])
+    takeaway = spec.get("takeaway", "")
     colors = ["var(--accent)", "var(--green)", "var(--purple)", "var(--amber)", "var(--teal)", "var(--pink)"]
 
     css = """
@@ -1917,18 +2000,29 @@ def _build_infographic_html(spec: dict, title: str) -> str:
 .info-stat {
   flex: 1; min-width: 100px; text-align: center; padding: 16px;
   border-radius: var(--radius); border: 1.5px solid var(--border);
+  transition: transform 0.15s, box-shadow 0.15s;
 }
+.info-stat:hover { transform: translateY(-2px); box-shadow: 0 4px 12px var(--shadow); }
 .info-stat-value { font-size: 28px; font-weight: 800; line-height: 1; }
 .info-stat-label { font-size: 11px; color: var(--text2); margin-top: 6px; font-weight: 500; }
+.info-stat-desc { font-size: 10px; color: var(--text3); margin-top: 4px; }
 .info-section {
   background: var(--bg2); border-radius: var(--radius); padding: 16px;
   border: 1px solid var(--border);
 }
 .info-section-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
 .info-section-content { font-size: 13px; color: var(--text2); line-height: 1.6; }
+.info-highlights { display: flex; flex-wrap: wrap; gap: 8px; }
 .info-highlight {
-  display: inline-block; padding: 2px 8px; border-radius: 6px;
+  display: inline-block; padding: 4px 10px; border-radius: 6px;
   font-weight: 600; font-size: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+.info-takeaway {
+  font-size: 12px; color: var(--text3); padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
+  font-style: italic;
 }
 """
 
@@ -1939,11 +2033,19 @@ def _build_infographic_html(spec: dict, title: str) -> str:
             color = stat.get("color", colors[i % len(colors)])
             value = _esc(stat.get("value", ""))
             label = _esc(stat.get("label", ""))
+            desc = _esc(stat.get("description", ""))
+            desc_html = f'<div class="info-stat-desc">{desc}</div>' if desc else ""
             stat_parts.append(f"""<div class="info-stat">
   <div class="info-stat-value" style="color:{color}">{value}</div>
   <div class="info-stat-label">{label}</div>
+  {desc_html}
 </div>""")
         stats_html = f'<div class="info-stats">{"".join(stat_parts)}</div>'
+
+    highlights_html = ""
+    if highlights:
+        hl_parts = "".join(f'<span class="info-highlight">{_esc(h)}</span>' for h in highlights)
+        highlights_html = f'<div class="info-highlights">{hl_parts}</div>'
 
     section_parts = []
     for section in sections:
@@ -1954,9 +2056,13 @@ def _build_infographic_html(spec: dict, title: str) -> str:
   <div class="info-section-content">{s_content}</div>
 </div>""")
 
+    takeaway_html = f'<div class="info-takeaway">{_esc(takeaway)}</div>' if takeaway else ""
+
     body = f"""<div class="infographic">
   {stats_html}
+  {highlights_html}
   {"".join(section_parts)}
+  {takeaway_html}
 </div>"""
 
     return _wrap_html(css, body, title)
@@ -2040,7 +2146,7 @@ function emitSimulationFeedback(eventName) {{
     time: Number(t.toFixed(2)),
     variables: Object.assign({{}}, vars),
   }};
-  const summary = 'Mo phong dang ' + (running ? 'chay' : 'tam dung') + ' | t=' + payload.time;
+  const summary = 'Mô phỏng đang ' + (running ? 'chạy' : 'tạm dừng') + ' | t=' + payload.time;
   window.WiiiVisualBridge.reportResult('simulation_state', payload, summary, running ? 'active' : 'paused');
 }}
 /* USER SETUP */
@@ -2149,8 +2255,8 @@ function reportQuizResult(status, detail) {{
     percentage: percentage
   }}, detail || {{}});
   const summary = answered === total
-    ? 'Ban dung ' + score + '/' + total + ' cau (' + percentage + '%)'
-    : 'Da tra loi ' + answered + '/' + total + ' cau';
+    ? 'Bạn đúng ' + score + '/' + total + ' câu (' + percentage + '%)'
+    : 'Đã trả lời ' + answered + '/' + total + ' câu';
   window.WiiiVisualBridge.reportResult('quiz_result', payload, summary, status);
 }}
 function checkAnswer(qi, oi, correct) {{
@@ -2334,6 +2440,208 @@ def _build_react_app_html(spec: dict, title: str) -> str:
 
 
 # =============================================================================
+# CHART — SVG bar/line chart (lightweight, no JS dependency)
+# =============================================================================
+
+def _build_chart_html(spec: dict, title: str) -> str:
+    chart_type = spec.get("chart_type", "bar")
+    labels = spec.get("labels", [])
+    datasets = spec.get("datasets", [])
+    caption = spec.get("caption", "")
+    colors = ["var(--accent)", "var(--green)", "var(--purple)", "var(--amber)", "var(--teal)", "var(--pink)"]
+
+    css = """
+.chart-container { width: 100%; overflow-x: auto; }
+.chart-svg { width: 100%; height: auto; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 10px; }
+.chart-legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text2); }
+.chart-legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+.chart-caption { text-align: center; font-size: 11px; color: var(--text3); margin-top: 8px; }
+.chart-label { font-size: 10px; fill: var(--text3); }
+.chart-axis { stroke: var(--border); stroke-width: 1; }
+.chart-gridline { stroke: var(--border); stroke-width: 0.5; opacity: 0.4; }
+"""
+    if not labels or not datasets:
+        body = '<div style="text-align:center;color:var(--text3);padding:20px">No chart data provided</div>'
+        return _wrap_html(css, body, title)
+
+    # Collect all values for scaling
+    all_values = []
+    for ds in datasets:
+        all_values.extend(v for v in ds.get("data", []) if isinstance(v, (int, float)))
+    max_val = max(all_values) if all_values else 1
+    min_val = min(0, min(all_values) if all_values else 0)
+    val_range = max_val - min_val or 1
+
+    # Chart dimensions
+    pad_left, pad_right, pad_top, pad_bottom = 50, 20, 20, 40
+    chart_w = max(400, len(labels) * 60)
+    chart_h = 220
+    plot_w = chart_w - pad_left - pad_right
+    plot_h = chart_h - pad_top - pad_bottom
+
+    svg_parts = [f'<svg class="chart-svg" viewBox="0 0 {chart_w} {chart_h}" xmlns="http://www.w3.org/2000/svg">']
+
+    # Grid lines (5 lines)
+    for i in range(6):
+        y = pad_top + plot_h - (i / 5) * plot_h
+        val = min_val + (i / 5) * val_range
+        svg_parts.append(f'<line x1="{pad_left}" y1="{y}" x2="{chart_w - pad_right}" y2="{y}" class="chart-gridline"/>')
+        svg_parts.append(f'<text x="{pad_left - 6}" y="{y + 3}" text-anchor="end" class="chart-label">{val:.0f}</text>')
+
+    # Axis
+    svg_parts.append(f'<line x1="{pad_left}" y1="{pad_top}" x2="{pad_left}" y2="{chart_h - pad_bottom}" class="chart-axis"/>')
+    svg_parts.append(f'<line x1="{pad_left}" y1="{chart_h - pad_bottom}" x2="{chart_w - pad_right}" y2="{chart_h - pad_bottom}" class="chart-axis"/>')
+
+    n_labels = len(labels)
+    bar_group_w = plot_w / n_labels if n_labels else plot_w
+    n_datasets = len(datasets)
+
+    for ds_idx, ds in enumerate(datasets):
+        color = ds.get("color", colors[ds_idx % len(colors)])
+        data = ds.get("data", [])
+        points = []
+
+        for i, label in enumerate(labels):
+            val = data[i] if i < len(data) else 0
+            x = pad_left + (i + 0.5) * bar_group_w
+            y = pad_top + plot_h - ((val - min_val) / val_range) * plot_h
+            points.append((x, y, val))
+
+        if chart_type == "line":
+            path_d = " ".join(f"{'M' if j == 0 else 'L'}{x:.1f},{y:.1f}" for j, (x, y, _) in enumerate(points))
+            svg_parts.append(f'<path d="{path_d}" fill="none" stroke="{color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>')
+            for x, y, _ in points:
+                svg_parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{color}"/>')
+        else:
+            bw = bar_group_w * 0.7 / n_datasets
+            for i, (x, y, val) in enumerate(points):
+                bx = x - (n_datasets * bw / 2) + ds_idx * bw
+                base_y = pad_top + plot_h - ((0 - min_val) / val_range) * plot_h
+                bar_h = base_y - y
+                svg_parts.append(f'<rect x="{bx:.1f}" y="{y:.1f}" width="{bw:.1f}" height="{bar_h:.1f}" fill="{color}" rx="2" opacity="0.85"/>')
+
+    # X labels
+    for i, label in enumerate(labels):
+        x = pad_left + (i + 0.5) * bar_group_w
+        svg_parts.append(f'<text x="{x:.1f}" y="{chart_h - pad_bottom + 16}" text-anchor="middle" class="chart-label">{_esc(str(label))}</text>')
+
+    svg_parts.append('</svg>')
+
+    # Legend
+    legend_parts = []
+    for ds_idx, ds in enumerate(datasets):
+        color = ds.get("color", colors[ds_idx % len(colors)])
+        label = _esc(ds.get("label", f"Series {ds_idx + 1}"))
+        legend_parts.append(f'<div class="chart-legend-item"><div class="chart-legend-dot" style="background:{color}"></div>{label}</div>')
+
+    caption_html = f'<div class="chart-caption">{_esc(caption)}</div>' if caption else ""
+
+    body = f"""<div class="chart-container">
+  {"".join(svg_parts)}
+  <div class="chart-legend">{"".join(legend_parts)}</div>
+  {caption_html}
+</div>"""
+
+    return _wrap_html(css, body, title)
+
+
+# =============================================================================
+# TIMELINE — Vertical timeline with events
+# =============================================================================
+
+def _build_timeline_html(spec: dict, title: str) -> str:
+    events = spec.get("events", spec.get("steps", []))
+    colors = ["var(--accent)", "var(--green)", "var(--purple)", "var(--amber)", "var(--teal)", "var(--pink)"]
+
+    css = """
+.timeline { position: relative; padding-left: 28px; }
+.timeline::before {
+  content: ""; position: absolute; left: 10px; top: 0; bottom: 0;
+  width: 2px; background: var(--border);
+}
+.tl-event { position: relative; padding: 0 0 24px 20px; }
+.tl-event:last-child { padding-bottom: 0; }
+.tl-dot {
+  position: absolute; left: -23px; top: 4px;
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--event-color, var(--accent));
+  background: var(--bg);
+}
+.tl-event:hover .tl-dot { background: var(--event-color, var(--accent)); }
+.tl-date { font-size: 10px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; }
+.tl-title { font-size: 14px; font-weight: 600; color: var(--text); margin: 2px 0; }
+.tl-desc { font-size: 12px; color: var(--text2); line-height: 1.5; }
+"""
+
+    parts = []
+    for i, event in enumerate(events):
+        color = event.get("color", colors[i % len(colors)])
+        date = _esc(event.get("date", event.get("time", "")))
+        ev_title = _esc(event.get("title", ""))
+        desc = _esc(event.get("description", ""))
+        date_html = f'<div class="tl-date">{date}</div>' if date else ""
+        desc_html = f'<div class="tl-desc">{desc}</div>' if desc else ""
+        parts.append(f"""<div class="tl-event" style="--event-color:{color}">
+  <div class="tl-dot"></div>
+  {date_html}
+  <div class="tl-title">{ev_title}</div>
+  {desc_html}
+</div>""")
+
+    body = f'<div class="timeline">{"".join(parts)}</div>'
+    return _wrap_html(css, body, title)
+
+
+# =============================================================================
+# MAP_LITE — Region/category cards grid
+# =============================================================================
+
+def _build_map_lite_html(spec: dict, title: str) -> str:
+    regions = spec.get("regions", spec.get("items", []))
+    colors = ["var(--accent)", "var(--green)", "var(--purple)", "var(--amber)", "var(--teal)", "var(--pink)"]
+
+    css = """
+.map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.map-card {
+  padding: 14px; border-radius: var(--radius); border: 1.5px solid var(--border);
+  background: var(--bg2); transition: transform 0.15s, box-shadow 0.15s;
+}
+.map-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px var(--shadow); }
+.map-card-name { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+.map-card-value { font-size: 20px; font-weight: 800; line-height: 1.2; }
+.map-card-desc { font-size: 11px; color: var(--text2); margin-top: 4px; line-height: 1.4; }
+.map-card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.map-card-tag {
+  font-size: 9px; padding: 1px 6px; border-radius: 4px;
+  background: color-mix(in srgb, var(--region-color) 10%, transparent);
+  color: var(--region-color);
+}
+"""
+
+    parts = []
+    for i, region in enumerate(regions):
+        color = region.get("color", colors[i % len(colors)])
+        name = _esc(region.get("name", region.get("title", "")))
+        value = _esc(region.get("value", ""))
+        desc = _esc(region.get("description", ""))
+        tags = region.get("tags", [])
+        value_html = f'<div class="map-card-value" style="color:{color}">{value}</div>' if value else ""
+        desc_html = f'<div class="map-card-desc">{desc}</div>' if desc else ""
+        tags_html = ""
+        if tags:
+            tag_parts = "".join(f'<span class="map-card-tag">{_esc(t)}</span>' for t in tags)
+            tags_html = f'<div class="map-card-tags">{tag_parts}</div>'
+        parts.append(f"""<div class="map-card" style="--region-color:{color}">
+  <div class="map-card-name" style="color:{color}">{name}</div>
+  {value_html}{desc_html}{tags_html}
+</div>""")
+
+    body = f'<div class="map-grid">{"".join(parts)}</div>'
+    return _wrap_html(css, body, title)
+
+
+# =============================================================================
 # Dispatcher
 # =============================================================================
 
@@ -2344,6 +2652,9 @@ _BUILDERS = {
     "architecture": _build_architecture_html,
     "concept": _build_concept_html,
     "infographic": _build_infographic_html,
+    "chart": _build_chart_html,
+    "timeline": _build_timeline_html,
+    "map_lite": _build_map_lite_html,
     "simulation": _build_simulation_html,
     "quiz": _build_quiz_html,
     "interactive_table": _build_interactive_table_html,
@@ -2365,6 +2676,7 @@ def tool_generate_visual(
     patch_strategy: str = "",
     narrative_anchor: str = "",
     runtime_manifest_json: str = "",
+    code_html: str = "",
 ) -> str:
     """Generate a structured visual payload for inline visuals or app runtime.
 
@@ -2375,30 +2687,71 @@ def tool_generate_visual(
 
     Unlike tool_generate_rich_visual, this tool returns JSON payload data for the
     frontend visual renderer. Do NOT copy this payload verbatim into prose.
+
+    IMPORTANT — Spec Quality Rules:
+    - LUÔN cung cấp description/content cho mỗi layer/step/branch. KHÔNG để trống.
+    - Mỗi item phải có title VÀ description hoặc content.
+
+    Example specs for rich output:
+
+    architecture:
+      {"layers": [
+        {"name": "API Gateway", "description": "Nhận request từ client, xác thực, rate limiting", "components": ["Auth", "Rate Limiter", "Router"]},
+        {"name": "Service Layer", "description": "Xử lý business logic, orchestrate giữa các service", "components": ["UserService", "OrderService", "PaymentService"]},
+        {"name": "Data Layer", "description": "Lưu trữ và truy vấn dữ liệu", "components": ["PostgreSQL", "Redis Cache", "S3"]}
+      ]}
+
+    comparison:
+      {"left": {"title": "Monolith", "subtitle": "Kiến trúc truyền thống", "highlight": "Đơn giản triển khai, khó scale", "items": ["Single codebase", "Shared database", "Tight coupling"]},
+       "right": {"title": "Microservices", "subtitle": "Kiến trúc phân tán", "highlight": "Scale linh hoạt, phức tạp vận hành", "items": ["Independent services", "Own database", "Loose coupling"]}}
+
+    process:
+      {"steps": [
+        {"title": "Request đến", "description": "Client gửi HTTP request tới API Gateway", "icon": "1", "signals": ["HTTP/HTTPS", "REST/GraphQL"]},
+        {"title": "Xác thực", "description": "Gateway kiểm tra JWT token và quyền truy cập", "icon": "2", "signals": ["JWT", "RBAC"]},
+        {"title": "Xử lý", "description": "Service xử lý business logic và trả kết quả", "icon": "3", "signals": ["Business Logic", "Response"]}
+      ]}
+
+    code_html (optional, khi được bật):
+      Viết HTML/CSS/SVG trực tiếp — mỗi visual unique, custom-designed.
+      Dùng CSS variables có sẵn: --bg, --bg2, --bg3, --text, --text2, --text3,
+      --accent, --green, --purple, --amber, --teal, --pink, --border, --radius.
+      Dark mode tự động qua CSS variables. KHÔNG dùng JavaScript trừ khi cần animation.
+      Ví dụ:
+        code_html='<style>.flow{display:flex;gap:12px;align-items:center}.node{padding:14px 20px;
+        border-radius:var(--radius);border:1.5px solid var(--border);background:var(--bg2);
+        font-size:13px;font-weight:600;color:var(--text)}.arrow{color:var(--text3);font-size:18px}
+        .highlight{border-color:var(--accent);background:var(--accent-bg);color:var(--accent)}
+        </style><div class="flow"><div class="node highlight">Input</div>
+        <span class="arrow">→</span><div class="node">Process</div>
+        <span class="arrow">→</span><div class="node">Output</div></div>'
     """
     valid_types = CORE_STRUCTURED_VISUAL_TYPES + LEGACY_SANDBOX_VISUAL_TYPES
     if visual_type not in valid_types:
         valid = ", ".join(valid_types)
-        return f"Error: visual_type '{visual_type}' khong hop le cho visual runtime. Chon mot trong: {valid}"
+        return f"Error: visual_type '{visual_type}' không hợp lệ cho visual runtime. Chọn một trong: {valid}"
 
     if operation not in {"open", "patch"}:
-        return "Error: operation phai la 'open' hoac 'patch'."
+        return "Error: operation phải là 'open' hoặc 'patch'."
 
     try:
         spec = json.loads(spec_json)
         if not isinstance(spec, dict):
-            return "Error: spec_json phai la mot JSON object."
+            return "Error: spec_json phải là một JSON object."
     except json.JSONDecodeError as exc:
-        return f"Error: JSON khong hop le: {exc}"
+        return f"Error: JSON không hợp lệ: {exc}"
+
+    # Phase 4: LLM-generated HTML — code_html takes priority over builder
+    resolved_code_html = _resolve_code_html(code_html, visual_type, title, spec)
 
     runtime_manifest = None
     if runtime_manifest_json.strip():
         try:
             runtime_manifest = json.loads(runtime_manifest_json)
             if not isinstance(runtime_manifest, dict):
-                return "Error: runtime_manifest_json phai la mot JSON object."
+                return "Error: runtime_manifest_json phải là một JSON object."
         except json.JSONDecodeError as exc:
-            return f"Error: runtime_manifest_json khong hop le: {exc}"
+            return f"Error: runtime_manifest_json không hợp lệ: {exc}"
 
     if isinstance(spec.get("figures"), list) and spec.get("figures"):
         group_payloads = _build_multi_figure_payloads(
@@ -2418,7 +2771,7 @@ def tool_generate_visual(
             },
         )
         if not group_payloads:
-            return "Error: Khong the tao nhom figure tu spec_json.figures."
+            return "Error: Không thể tạo nhóm figure từ spec_json.figures."
 
         for payload in group_payloads:
             _log_visual_telemetry(
@@ -2449,48 +2802,54 @@ def tool_generate_visual(
         except Exception as exc:
             logger.warning("Structured visual fallback HTML failed for type=%s: %s", visual_type, exc)
 
+    # code_html forces inline_html renderer
+    if resolved_code_html:
+        renderer_kind = "inline_html"
     resolved_renderer_kind = _infer_renderer_kind(visual_type, spec, renderer_kind)
     resolved_visual_session_id, resolved_operation = _apply_runtime_patch_defaults(
         visual_session_id=visual_session_id,
         operation=operation,
     )
-    auto_group_payloads = _build_auto_grouped_payloads(
-        visual_type=visual_type,
-        spec=spec,
-        title=title,
-        summary=summary,
-        subtitle=subtitle,
-        operation=resolved_operation,
-        renderer_kind=resolved_renderer_kind,
-        shell_variant=shell_variant,
-        patch_strategy=patch_strategy,
-        narrative_anchor=narrative_anchor,
-        runtime_manifest=runtime_manifest,
-    )
-    if auto_group_payloads:
-        for payload in auto_group_payloads:
-            _log_visual_telemetry(
-                "tool_generate_visual",
-                visual_id=payload.id,
-                visual_session_id=payload.visual_session_id,
-                visual_type=payload.type,
-                renderer_kind=payload.renderer_kind,
-                shell_variant=payload.shell_variant,
-                patch_strategy=payload.patch_strategy,
-                runtime=payload.runtime,
-                lifecycle_event=payload.lifecycle_event,
-                figure_group_id=payload.figure_group_id,
-                figure_index=payload.figure_index,
-                figure_total=payload.figure_total,
-                pedagogical_role=payload.pedagogical_role,
-                auto_grouped=True,
-            )
-        return json.dumps(
-            [payload.model_dump(mode="json") for payload in auto_group_payloads],
-            ensure_ascii=False,
+    # Skip auto-grouping when code_html provided — LLM's custom HTML is self-contained
+    if not resolved_code_html:
+        auto_group_payloads = _build_auto_grouped_payloads(
+            visual_type=visual_type,
+            spec=spec,
+            title=title,
+            summary=summary,
+            subtitle=subtitle,
+            operation=resolved_operation,
+            renderer_kind=resolved_renderer_kind,
+            shell_variant=shell_variant,
+            patch_strategy=patch_strategy,
+            narrative_anchor=narrative_anchor,
+            runtime_manifest=runtime_manifest,
         )
+        if auto_group_payloads:
+            for payload in auto_group_payloads:
+                _log_visual_telemetry(
+                    "tool_generate_visual",
+                    visual_id=payload.id,
+                    visual_session_id=payload.visual_session_id,
+                    visual_type=payload.type,
+                    renderer_kind=payload.renderer_kind,
+                    shell_variant=payload.shell_variant,
+                    patch_strategy=payload.patch_strategy,
+                    runtime=payload.runtime,
+                    lifecycle_event=payload.lifecycle_event,
+                    figure_group_id=payload.figure_group_id,
+                    figure_index=payload.figure_index,
+                    figure_total=payload.figure_total,
+                    pedagogical_role=payload.pedagogical_role,
+                    auto_grouped=True,
+                )
+            return json.dumps(
+                [payload.model_dump(mode="json") for payload in auto_group_payloads],
+                ensure_ascii=False,
+            )
 
-    fallback_html = _resolve_fallback_html(visual_type, spec, title, builder_html)
+    # code_html takes priority → builder_html as fallback
+    fallback_html = resolved_code_html or _resolve_fallback_html(visual_type, spec, title, builder_html)
 
     payload = _normalize_visual_payload(
         visual_type=visual_type,

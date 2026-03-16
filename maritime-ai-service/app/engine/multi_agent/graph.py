@@ -14,6 +14,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import json
 import logging
+from pathlib import Path
 import re
 import uuid
 from typing import Any, Dict, Optional, Literal
@@ -846,6 +847,16 @@ def _build_code_studio_tools_context(
             "GOI NHIEU LAN (2-3 calls) de tao multi-figure explanation nhu Claude Artifacts. "
             "Frontend render inline ngay khi stream, khong can copy payload."
         )
+        # Phase 4: LLM code-gen HTML for unique visuals
+        if getattr(settings_obj, "enable_llm_code_gen_visuals", False):
+            tool_hints.append(
+                "- code_html param (trong tool_generate_visual): Khi can visual PHUC TAP, CUSTOM, hoac doc dao — "
+                "viet HTML/CSS/SVG truc tiep. Moi visual se unique, dep, khong bi giong nhau. "
+                "Dung CSS vars: --bg, --bg2, --text, --text2, --text3, --accent, --green, --purple, --amber, --teal, --pink, --border, --radius. "
+                "Dark mode tu dong. Uu tien CSS animation > JavaScript. "
+                "UU TIEN code_html khi: diagram mang luoi, flowchart phuc tap, SVG custom, data viz doc dao, "
+                "hoac bat ky visual nao ma spec_json cua type co san khong the dien dat tot."
+            )
         tool_hints.append(
             "- Follow-up visual edits: neu user muon chinh visual vua co, reuse visual_session_id va set operation='patch'."
         )
@@ -926,7 +937,43 @@ def _build_code_studio_tools_context(
         "- Khi sandbox gap loi ket noi, noi ro gioi han va KHONG gia vo da chay code.",
     ]
 
-    return "\n".join(["## CODE STUDIO TOOLKIT:", *tool_hints, "", *priority_rules])
+    sections = ["## CODE STUDIO TOOLKIT:", *tool_hints, "", *priority_rules]
+
+    # Phase 4: Append design system reference for visual code-gen
+    if getattr(settings_obj, "enable_llm_code_gen_visuals", False):
+        sections.append("")
+        sections.append(_load_visual_code_gen_skill())
+
+    return "\n".join(sections)
+
+
+_VISUAL_CODE_GEN_SKILL_CACHE: str | None = None
+
+
+def _load_visual_code_gen_skill() -> str:
+    """Load and cache the visual code-gen design system skill reference."""
+    global _VISUAL_CODE_GEN_SKILL_CACHE
+    if _VISUAL_CODE_GEN_SKILL_CACHE is not None:
+        return _VISUAL_CODE_GEN_SKILL_CACHE
+
+    skill_path = (
+        Path(__file__).resolve().parent.parent
+        / "reasoning" / "skills" / "subagents" / "code_studio_agent" / "VISUAL_CODE_GEN.md"
+    )
+    try:
+        raw = skill_path.read_text(encoding="utf-8")
+        # Strip YAML frontmatter
+        if raw.startswith("---"):
+            parts = raw.split("---", 2)
+            if len(parts) >= 3:
+                _VISUAL_CODE_GEN_SKILL_CACHE = parts[2].strip()
+                return _VISUAL_CODE_GEN_SKILL_CACHE
+        _VISUAL_CODE_GEN_SKILL_CACHE = raw.strip()
+        return _VISUAL_CODE_GEN_SKILL_CACHE
+    except Exception as exc:
+        logger.debug("[CODE_STUDIO] Visual code-gen skill unavailable: %s", exc)
+        _VISUAL_CODE_GEN_SKILL_CACHE = ""
+        return ""
 
 
 def _log_visual_telemetry(event_name: str, **fields: object) -> None:

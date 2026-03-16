@@ -641,7 +641,7 @@ class TestToolGenerateVisual:
         assert payloads[0].pedagogical_role == "benchmark"
         assert payloads[1].type == "infographic"
         assert payloads[1].pedagogical_role == "conclusion"
-        assert payloads[1].claim.startswith("Diem chot cua Compute cost vs context length")
+        assert payloads[1].claim.startswith("Điểm chốt của Compute cost vs context length")
 
     def test_runtime_context_can_plan_three_figures_for_dense_stepwise_explanation(self):
         from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
@@ -838,8 +838,8 @@ class TestToolGenerateVisual:
         payload = parse_visual_payload(result)
 
         assert payload is not None
-        assert payload.summary == "Dat Softmax attention canh Linear attention de thay diem khac biet chinh."
-        assert payload.annotations[0]["title"] == "Diem chot"
+        assert payload.summary == "Đặt Softmax attention cạnh Linear attention để thấy điểm khác biệt chính."
+        assert payload.annotations[0]["title"] == "Điểm chốt"
 
 
 class TestParseVisualPayload:
@@ -929,6 +929,9 @@ class TestDesignSystem:
                 "architecture": {"layers": [{"name": "L", "components": ["C"]}]},
                 "concept": {"center": {"title": "X"}, "branches": []},
                 "infographic": {"stats": [{"value": "1", "label": "L"}]},
+                "chart": {"labels": ["A", "B"], "datasets": [{"label": "S", "data": [1, 2]}]},
+                "timeline": {"events": [{"title": "E1", "date": "2026"}]},
+                "map_lite": {"regions": [{"name": "R1", "value": "100"}]},
                 "simulation": {"variables": [], "setup": "", "draw": "", "update": ""},
                 "quiz": {"questions": [{"question": "Q", "options": [{"text": "A", "correct": True}]}]},
                 "interactive_table": {"headers": ["H"], "rows": [["V"]]},
@@ -957,6 +960,9 @@ class TestDesignSystem:
             "architecture": {"layers": [{"name": xss, "components": [xss]}]},
             "concept": {"center": {"title": xss}, "branches": [{"title": xss, "items": [xss]}]},
             "infographic": {"stats": [{"value": xss, "label": xss}]},
+            "chart": {"labels": [xss], "datasets": [{"label": xss, "data": [1]}]},
+            "timeline": {"events": [{"title": xss, "date": xss}]},
+            "map_lite": {"regions": [{"name": xss, "value": xss}]},
             "quiz": {"questions": [{"question": xss, "options": [{"text": xss, "correct": True}]}]},
         }
         for visual_type in specs:
@@ -987,3 +993,457 @@ class TestPromptLoaderVisualTiers:
         loader = PromptLoader()
         prompt = loader.build_system_prompt("tutor", "Test User")
         assert "BIỂU ĐỒ TƯƠNG TÁC" in prompt or "tool_generate_interactive_chart" in prompt
+
+
+# =============================================================================
+# New builder tests (chart, timeline, map_lite)
+# =============================================================================
+
+
+class TestChartVisual:
+    """Test chart (SVG bar/line) visual generation."""
+
+    def test_basic_bar_chart(self):
+        from app.engine.tools.visual_tools import _build_chart_html
+
+        spec = {
+            "labels": ["Q1", "Q2", "Q3"],
+            "datasets": [{"label": "Revenue", "data": [100, 200, 150]}],
+        }
+        html = _build_chart_html(spec, "Revenue Chart")
+        assert "<!DOCTYPE html>" in html
+        assert "Revenue" in html
+        assert "Q1" in html
+        assert "<svg" in html
+        assert "chart-legend" in html
+
+    def test_line_chart(self):
+        from app.engine.tools.visual_tools import _build_chart_html
+
+        spec = {
+            "chart_type": "line",
+            "labels": ["Jan", "Feb"],
+            "datasets": [{"label": "Growth", "data": [10, 20]}],
+        }
+        html = _build_chart_html(spec, "Growth")
+        assert "<path" in html  # line path
+        assert "<circle" in html  # data points
+
+    def test_multi_dataset_chart(self):
+        from app.engine.tools.visual_tools import _build_chart_html
+
+        spec = {
+            "labels": ["A", "B"],
+            "datasets": [
+                {"label": "Series 1", "data": [10, 20]},
+                {"label": "Series 2", "data": [15, 25]},
+            ],
+        }
+        html = _build_chart_html(spec, "Multi")
+        assert "Series 1" in html
+        assert "Series 2" in html
+
+    def test_empty_chart(self):
+        from app.engine.tools.visual_tools import _build_chart_html
+
+        html = _build_chart_html({}, "Empty")
+        assert "No chart data" in html
+
+
+class TestTimelineVisual:
+    """Test timeline visual generation."""
+
+    def test_basic_timeline(self):
+        from app.engine.tools.visual_tools import _build_timeline_html
+
+        spec = {
+            "events": [
+                {"title": "Founded", "date": "2020", "description": "Company started"},
+                {"title": "Series A", "date": "2022", "description": "Raised funding"},
+            ],
+        }
+        html = _build_timeline_html(spec, "Company History")
+        assert "<!DOCTYPE html>" in html
+        assert "Founded" in html
+        assert "2020" in html
+        assert "Company started" in html
+        assert "timeline" in html
+        assert "tl-event" in html
+
+    def test_timeline_uses_steps_fallback(self):
+        from app.engine.tools.visual_tools import _build_timeline_html
+
+        spec = {"steps": [{"title": "Step 1"}, {"title": "Step 2"}]}
+        html = _build_timeline_html(spec, "")
+        assert "Step 1" in html
+        assert "Step 2" in html
+
+
+class TestMapLiteVisual:
+    """Test map_lite (region cards) visual generation."""
+
+    def test_basic_map_lite(self):
+        from app.engine.tools.visual_tools import _build_map_lite_html
+
+        spec = {
+            "regions": [
+                {"name": "North", "value": "1.2M", "description": "Northern region"},
+                {"name": "South", "value": "800K", "description": "Southern region"},
+            ],
+        }
+        html = _build_map_lite_html(spec, "Population")
+        assert "<!DOCTYPE html>" in html
+        assert "North" in html
+        assert "1.2M" in html
+        assert "Northern region" in html
+        assert "map-grid" in html
+
+    def test_map_lite_with_tags(self):
+        from app.engine.tools.visual_tools import _build_map_lite_html
+
+        spec = {
+            "regions": [
+                {"name": "Zone A", "value": "High", "tags": ["priority", "active"]},
+            ],
+        }
+        html = _build_map_lite_html(spec, "Zones")
+        assert "priority" in html
+        assert "active" in html
+        assert "map-card-tag" in html
+
+
+# =============================================================================
+# Code-gen routing tests
+# =============================================================================
+
+
+class TestCodeGenRouting:
+    """Test enable_code_gen_visuals feature flag routing."""
+
+    def test_flag_off_keeps_template_default(self, monkeypatch):
+        class FakeSettings:
+            enable_code_gen_visuals = False
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import _infer_renderer_kind
+
+        assert _infer_renderer_kind("comparison", {}) == "template"
+        assert _infer_renderer_kind("architecture", {}) == "template"
+
+    def test_flag_on_routes_explanatory_to_inline_html(self, monkeypatch):
+        class FakeSettings:
+            enable_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import _infer_renderer_kind
+
+        assert _infer_renderer_kind("comparison", {}) == "inline_html"
+        assert _infer_renderer_kind("process", {}) == "inline_html"
+        assert _infer_renderer_kind("architecture", {}) == "inline_html"
+        assert _infer_renderer_kind("concept", {}) == "inline_html"
+        assert _infer_renderer_kind("infographic", {}) == "inline_html"
+        assert _infer_renderer_kind("matrix", {}) == "inline_html"
+        assert _infer_renderer_kind("chart", {}) == "inline_html"
+        assert _infer_renderer_kind("timeline", {}) == "inline_html"
+        assert _infer_renderer_kind("map_lite", {}) == "inline_html"
+
+    def test_flag_on_does_not_affect_legacy_sandbox(self, monkeypatch):
+        class FakeSettings:
+            enable_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import _infer_renderer_kind
+
+        assert _infer_renderer_kind("simulation", {}) == "app"
+        assert _infer_renderer_kind("quiz", {}) == "app"
+        assert _infer_renderer_kind("react_app", {}) == "app"
+
+    def test_explicit_renderer_kind_overrides_flag(self, monkeypatch):
+        class FakeSettings:
+            enable_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import _infer_renderer_kind
+
+        assert _infer_renderer_kind("comparison", {}, "template") == "template"
+
+    def test_intent_resolver_upgrades_template_when_flag_on(self, monkeypatch):
+        class FakeSettings:
+            enable_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.multi_agent.visual_intent_resolver import resolve_visual_intent
+
+        decision = resolve_visual_intent("so sanh TCP va UDP")
+        assert decision.mode == "inline_html"
+        assert "code-gen" in decision.reason
+
+    def test_intent_resolver_keeps_template_when_flag_off(self, monkeypatch):
+        class FakeSettings:
+            enable_code_gen_visuals = False
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.multi_agent.visual_intent_resolver import resolve_visual_intent
+
+        decision = resolve_visual_intent("so sanh TCP va UDP")
+        assert decision.mode == "template"
+
+    def test_intent_resolver_does_not_upgrade_app_mode(self, monkeypatch):
+        class FakeSettings:
+            enable_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.multi_agent.visual_intent_resolver import resolve_visual_intent
+
+        decision = resolve_visual_intent("mo phong vat ly con lac")
+        assert decision.mode == "app"
+
+    def test_intent_resolver_does_not_upgrade_text_mode(self, monkeypatch):
+        class FakeSettings:
+            enable_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.multi_agent.visual_intent_resolver import resolve_visual_intent
+
+        decision = resolve_visual_intent("hello world")
+        assert decision.mode == "text"
+
+
+# =============================================================================
+# Enhanced builder field tests
+# =============================================================================
+
+
+class TestEnhancedBuilderFields:
+    """Test that upgraded builders render new spec fields."""
+
+    def test_architecture_renders_description(self):
+        from app.engine.tools.visual_tools import _build_architecture_html
+
+        spec = {
+            "layers": [
+                {"name": "API", "description": "REST endpoints and routing", "components": ["FastAPI"]},
+            ],
+        }
+        html = _build_architecture_html(spec, "")
+        assert "REST endpoints and routing" in html
+        assert "arch-layer-desc" in html
+
+    def test_comparison_renders_highlight(self):
+        from app.engine.tools.visual_tools import _build_comparison_html
+
+        spec = {
+            "left": {"title": "A", "items": []},
+            "right": {"title": "B", "items": []},
+            "highlight": "A is clearly better for performance",
+        }
+        html = _build_comparison_html(spec, "")
+        assert "A is clearly better for performance" in html
+        assert "comp-highlight" in html
+
+    def test_concept_renders_branch_description(self):
+        from app.engine.tools.visual_tools import _build_concept_html
+
+        spec = {
+            "center": {"title": "ML"},
+            "branches": [
+                {"title": "Supervised", "description": "Learns from labeled data", "items": ["SVM"]},
+            ],
+        }
+        html = _build_concept_html(spec, "")
+        assert "Learns from labeled data" in html
+        assert "concept-branch-desc" in html
+
+    def test_infographic_renders_highlights_and_takeaway(self):
+        from app.engine.tools.visual_tools import _build_infographic_html
+
+        spec = {
+            "stats": [{"value": "99%", "label": "Accuracy"}],
+            "highlights": ["Best in class", "Production ready"],
+            "takeaway": "This model outperforms all baselines.",
+        }
+        html = _build_infographic_html(spec, "")
+        assert "Best in class" in html
+        assert "Production ready" in html
+        assert "info-highlights" in html
+        assert "This model outperforms all baselines" in html
+        assert "info-takeaway" in html
+
+    def test_process_renders_content_and_signals(self):
+        from app.engine.tools.visual_tools import _build_process_html
+
+        spec = {
+            "steps": [
+                {
+                    "title": "Parse",
+                    "description": "Parse input",
+                    "content": "Uses recursive descent parser",
+                    "signals": ["AST", "tokens"],
+                },
+            ],
+        }
+        html = _build_process_html(spec, "")
+        assert "Uses recursive descent parser" in html
+        assert "step-content" in html
+        assert "AST" in html
+        assert "step-signal" in html
+
+
+# =============================================================================
+# Phase 4: LLM code_html tests
+# =============================================================================
+
+
+class TestCodeHtmlResolve:
+    """Test _resolve_code_html helper."""
+
+    def test_empty_code_html_returns_none(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import _resolve_code_html
+
+        assert _resolve_code_html("", "comparison", "T", {}) is None
+        assert _resolve_code_html("   ", "comparison", "T", {}) is None
+
+    def test_flag_off_ignores_code_html(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = False
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import _resolve_code_html
+
+        result = _resolve_code_html("<div>Custom</div>", "comparison", "T", {})
+        assert result is None
+
+    def test_wraps_body_in_design_system(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import _resolve_code_html
+
+        result = _resolve_code_html(
+            '<div class="custom">Hello World</div>',
+            "concept",
+            "Test Title",
+            {},
+        )
+        assert result is not None
+        assert "<!DOCTYPE html>" in result
+        assert "Hello World" in result
+        assert "Test Title" in result  # title rendered
+        assert "--accent" in result  # design system CSS vars
+
+    def test_extracts_style_blocks(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import _resolve_code_html
+
+        code = '<style>.box{color:red}</style><div class="box">Hi</div>'
+        result = _resolve_code_html(code, "concept", "", {})
+        assert result is not None
+        assert ".box{color:red}" in result
+        assert '<div class="box">Hi</div>' in result
+
+    def test_full_html_document_passthrough(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import _resolve_code_html
+
+        full_doc = "<!DOCTYPE html><html><body><p>Full doc</p></body></html>"
+        result = _resolve_code_html(full_doc, "concept", "T", {})
+        assert result == full_doc  # returned as-is
+
+
+class TestCodeHtmlToolIntegration:
+    """Test code_html param in tool_generate_visual."""
+
+    def test_code_html_produces_inline_html_payload(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+            enable_code_gen_visuals = False
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_generate_visual
+
+        result = tool_generate_visual.invoke({
+            "visual_type": "architecture",
+            "spec_json": json.dumps({"layers": [{"name": "L1", "components": ["C1"]}]}),
+            "title": "Custom Arch",
+            "summary": "LLM-generated HTML",
+            "code_html": '<style>.custom{color:var(--accent)}</style><div class="custom">Custom SVG diagram here</div>',
+        })
+        payload = parse_visual_payload(result)
+
+        assert payload is not None
+        assert payload.renderer_kind == "inline_html"
+        assert payload.fallback_html is not None
+        assert "Custom SVG diagram here" in payload.fallback_html
+        assert ".custom{color:var(--accent)}" in payload.fallback_html
+        assert "<!DOCTYPE html>" in payload.fallback_html
+
+    def test_code_html_ignored_when_flag_off(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = False
+            enable_code_gen_visuals = False
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_generate_visual
+
+        result = tool_generate_visual.invoke({
+            "visual_type": "comparison",
+            "spec_json": json.dumps({
+                "left": {"title": "A"},
+                "right": {"title": "B"},
+            }),
+            "title": "Test",
+            "code_html": "<div>Should be ignored</div>",
+        })
+        payload = parse_visual_payload(result)
+
+        assert payload is not None
+        assert payload.renderer_kind == "template"
+        # fallback_html should be builder output, not code_html
+        if payload.fallback_html:
+            assert "Should be ignored" not in payload.fallback_html
+
+    def test_code_html_skips_auto_grouping(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+            enable_code_gen_visuals = False
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.visual_tools import parse_visual_payloads, tool_generate_visual
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+
+        runtime = build_tool_runtime_context(
+            session_id="session-codegen-1",
+            user_id="user-1",
+            user_role="admin",
+            metadata={
+                "visual_force_tool": True,
+                "visual_intent_mode": "template",
+                "visual_intent_reason": "chart-template",
+                "visual_user_query": "Explain with charts",
+                "visual_requested_type": "chart",
+            },
+        )
+
+        with tool_runtime_scope(runtime):
+            result = tool_generate_visual.invoke({
+                "visual_type": "chart",
+                "spec_json": json.dumps({"labels": ["A"], "datasets": [{"label": "S", "data": [1]}]}),
+                "title": "Custom Chart",
+                "code_html": '<svg><rect width="100" height="50" fill="var(--accent)"/></svg>',
+            })
+
+        payloads = parse_visual_payloads(result)
+        # Should be single payload, not auto-grouped
+        assert len(payloads) == 1
+        assert payloads[0].renderer_kind == "inline_html"

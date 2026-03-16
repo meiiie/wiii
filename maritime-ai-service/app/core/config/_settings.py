@@ -493,6 +493,14 @@ class Settings(BaseSettings):
         default=True,
         description="Enable streaming-first structured inline visuals (VisualPayload v1 + SSE visual events)",
     )
+    enable_code_gen_visuals: bool = Field(
+        default=False,
+        description="Route explanatory visuals to inline_html (code-gen) instead of template (card layout)",
+    )
+    enable_llm_code_gen_visuals: bool = Field(
+        default=False,
+        description="Allow LLM to write custom HTML/CSS/SVG via code_html param (Claude Artifacts style)",
+    )
 
     # Sprint 179+: Visual RAG — understand charts/tables in documents
     enable_visual_rag: bool = Field(default=False, description="Enable visual context enrichment during RAG retrieval")
