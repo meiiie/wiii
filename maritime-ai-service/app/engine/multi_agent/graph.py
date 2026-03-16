@@ -841,28 +841,38 @@ def _build_code_studio_tools_context(
         )
 
     if structured_visuals_enabled:
-        tool_hints.append(
-            "- tool_generate_visual: TOOL CHINH — tao 2-3 structured figures cho moi giai thich. "
-            "Types: comparison, process, matrix, architecture, concept, infographic, chart, timeline, map_lite. "
-            "GOI NHIEU LAN (2-3 calls) de tao multi-figure explanation nhu Claude Artifacts. "
-            "Frontend render inline ngay khi stream, khong can copy payload."
-        )
-        # Phase 4: LLM code-gen HTML for unique visuals
-        if getattr(settings_obj, "enable_llm_code_gen_visuals", False):
+        llm_code_gen = getattr(settings_obj, "enable_llm_code_gen_visuals", False)
+        if llm_code_gen:
+            # LLM code-gen mode: code_html là DEFAULT, spec_json là fallback
             tool_hints.append(
-                "- code_html param (trong tool_generate_visual): Khi can visual PHUC TAP, CUSTOM, hoac doc dao — "
-                "viet HTML/CSS/SVG truc tiep. Moi visual se unique, dep, khong bi giong nhau. "
-                "Dung CSS vars: --bg, --bg2, --text, --text2, --text3, --accent, --green, --purple, --amber, --teal, --pink, --border, --radius. "
-                "Dark mode tu dong. Uu tien CSS animation > JavaScript. "
-                "UU TIEN code_html khi: diagram mang luoi, flowchart phuc tap, SVG custom, data viz doc dao, "
-                "hoac bat ky visual nao ma spec_json cua type co san khong the dien dat tot."
+                "- tool_generate_visual: TOOL CHÍNH cho visual inline. "
+                "LUÔN DÙNG code_html ĐỂ VIẾT HTML/CSS/SVG/JS TRỰC TIẾP — giống Claude Artifacts. "
+                "Mỗi visual phải UNIQUE, có đồ họa thật (SVG, Canvas, animation), KHÔNG CHỈ text trong boxes. "
+                "Dùng CSS vars: --bg, --bg2, --text, --text2, --text3, --accent, --green, --purple, --amber, --teal, --pink, --border, --radius. "
+                "Dark mode tự động qua CSS vars."
+            )
+            tool_hints.append(
+                "- QUAN TRỌNG: MỌI mô phỏng (simulation, physics, animation) PHẢI dùng code_html với SVG animated "
+                "hoặc Canvas + requestAnimationFrame. PHẢI có: sliders tương tác, stats realtime, nút đặt lại/tạm dừng, "
+                "energy visualization. KHÔNG BAO GIỜ trả visual chỉ có text cards — phải có đồ họa thật."
+            )
+            tool_hints.append(
+                "- spec_json CHỈ dùng cho visual ĐƠN GIẢN: so sánh 2 cột, danh sách 3-5 bước, bảng số liệu. "
+                "Với visual PHỨC TẠP (kiến trúc, mô phỏng, flowchart, data viz): LUÔN dùng code_html."
+            )
+        else:
+            tool_hints.append(
+                "- tool_generate_visual: TOOL CHÍNH — tạo 2-3 structured figures cho mỗi giải thích. "
+                "Types: comparison, process, matrix, architecture, concept, infographic, chart, timeline, map_lite. "
+                "GỌI NHIỀU LẦN (2-3 calls) để tạo multi-figure explanation như Claude Artifacts. "
+                "Frontend render inline ngay khi stream, không cần copy payload."
             )
         tool_hints.append(
-            "- Follow-up visual edits: neu user muon chinh visual vua co, reuse visual_session_id va set operation='patch'."
+            "- Follow-up visual edits: nếu user muốn chỉnh visual vừa có, reuse visual_session_id và set operation='patch'."
         )
         tool_hints.append(
-            "- tool_generate_rich_visual: CHI dung cho simulation (Canvas+sliders), quiz trac nghiem, react_app. "
-            "KHONG dung cho comparison/process/matrix/architecture/concept/infographic — dung tool_generate_visual."
+            "- tool_generate_rich_visual: CHỈ dùng cho simulation (Canvas+sliders), quiz trắc nghiệm, react_app. "
+            "KHÔNG dùng cho comparison/process/matrix/architecture/concept/infographic — dùng tool_generate_visual."
         )
     else:
         tool_hints.append(

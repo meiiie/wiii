@@ -1303,7 +1303,7 @@ export function VisualBlock({ block, embedded = false }: { block: VisualBlockDat
     return () => window.cancelAnimationFrame(rafId);
   }, [embedded, reduced, visual.lifecycle_event, visual.title, visual.summary, visual.type]);
 
-  // inline_html: clean render — iframe only, no editorial chrome (Claude Artifacts pattern)
+  // inline_html: clean render — iframe + action bar (Claude Artifacts pattern)
   if (visual.renderer_kind === "inline_html") {
     return <figure ref={figureRef} data-testid="visual-block" className={`${embedded ? "" : "my-6"} overflow-hidden`} aria-labelledby={titleId} aria-describedby={describedById} data-visual-status={status} data-visual-lifecycle={visual.lifecycle_event} data-visual-cue={stageCue} data-visual-embedded={embedded ? "true" : "false"}>
       <motion.div
@@ -1313,6 +1313,34 @@ export function VisualBlock({ block, embedded = false }: { block: VisualBlockDat
       >
         {body}
       </motion.div>
+      {htmlPayload && (
+        <div className="flex items-center gap-2 px-2 py-1.5 opacity-0 transition-opacity duration-200 hover:opacity-100 focus-within:opacity-100" style={{ opacity: 0.4 }}>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-text-tertiary hover:bg-surface-secondary hover:text-text-secondary transition-colors"
+            onClick={() => {
+              const blob = new Blob([htmlPayload], { type: "text/html" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${(visual.title || "visual").replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, "_").substring(0, 40)}.html`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Tải HTML
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-text-tertiary hover:bg-surface-secondary hover:text-text-secondary transition-colors"
+            onClick={() => { navigator.clipboard.writeText(htmlPayload); }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            Sao chép
+          </button>
+        </div>
+      )}
       <figcaption id={srSummaryId} className="sr-only">{accessibleSummary}</figcaption>
     </figure>;
   }
