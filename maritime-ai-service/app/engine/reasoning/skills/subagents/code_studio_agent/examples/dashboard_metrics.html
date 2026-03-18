@@ -1,0 +1,624 @@
+<!--
+  STATE MODEL: kpis[]{label,value,unit,trend,delta}, monthlyTraffic[], vesselTypes[], topPorts[], activeMonth, hoveredSegment
+  RENDER SURFACE: CSS Grid layout + SVG line chart + SVG donut chart + HTML data table
+  CONTROLS: hover on chart points and donut segments, click table rows
+  READOUTS: KPI cards with trend indicators, tooltip values, table rankings
+  FEEDBACK: WiiiVisualBridge.reportResult on chart hover, donut click, table row click
+-->
+<style>
+:root {
+  --bg: #0f172a;
+  --fg: #e2e8f0;
+  --accent: #38bdf8;
+  --accent-hover: #7dd3fc;
+  --surface: #1e293b;
+  --surface-alt: #334155;
+  --border: #475569;
+  --text-secondary: #94a3b8;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --radius: 8px;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc; --fg: #0f172a; --accent: #0284c7;
+    --accent-hover: #0369a1;
+    --surface: #ffffff; --surface-alt: #f1f5f9;
+    --border: #cbd5e1; --text-secondary: #64748b;
+    --success: #16a34a; --warning: #d97706; --danger: #dc2626;
+  }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--fg); }
+.dash-root {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.dash-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dash-title { font-size: 16px; font-weight: 500; color: var(--fg); }
+.dash-period { font-size: 12px; color: var(--text-secondary); }
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kpi-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.kpi-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.3px; }
+.kpi-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.kpi-value { font-size: 22px; font-weight: 500; color: var(--fg); font-variant-numeric: tabular-nums; }
+.kpi-trend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.kpi-trend.up { color: var(--success); }
+.kpi-trend.down { color: var(--danger); }
+.kpi-trend.flat { color: var(--text-secondary); }
+.charts-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.card-title { font-size: 13px; font-weight: 500; color: var(--fg); }
+.card-subtitle { font-size: 11px; color: var(--text-secondary); }
+.chart-card svg { display: block; width: 100%; height: auto; }
+.line-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--fg);
+  opacity: 0;
+  transition: opacity 0.12s;
+  white-space: nowrap;
+  z-index: 10;
+}
+.line-tooltip.visible { opacity: 1; }
+.line-chart-wrap { position: relative; }
+.donut-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.donut-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 3px 0;
+  transition: color 0.15s;
+}
+.donut-legend-item:hover { color: var(--fg); }
+.donut-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.donut-legend-pct { margin-left: auto; font-weight: 500; color: var(--fg); font-variant-numeric: tabular-nums; }
+.table-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.table-card .card-title { margin-bottom: 12px; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg);
+  font-weight: 400;
+}
+tr:last-child td { border-bottom: none; }
+tr.table-row { cursor: pointer; transition: background 0.12s; }
+tr.table-row:hover { background: var(--surface-alt); }
+td.rank { font-weight: 500; color: var(--accent); width: 40px; }
+td.port-name { font-weight: 500; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.mini-bar-cell { width: 120px; }
+.mini-bar-bg {
+  height: 6px;
+  background: var(--surface-alt);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.mini-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+@keyframes kpi-count { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.kpi-card { animation: kpi-count 0.4s cubic-bezier(0.23, 1, 0.32, 1) backwards; }
+.kpi-card:nth-child(1) { animation-delay: 0s; }
+.kpi-card:nth-child(2) { animation-delay: 0.06s; }
+.kpi-card:nth-child(3) { animation-delay: 0.12s; }
+.kpi-card:nth-child(4) { animation-delay: 0.18s; }
+@keyframes line-draw { from { stroke-dashoffset: 2000; } to { stroke-dashoffset: 0; } }
+.line-path { stroke-dasharray: 2000; animation: line-draw 1.2s ease forwards; }
+@keyframes donut-spin { from { stroke-dashoffset: var(--dash-offset-start); } to { stroke-dashoffset: var(--dash-offset-end); } }
+@media (max-width: 720px) {
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .charts-row { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .kpi-row { grid-template-columns: 1fr; }
+}
+</style>
+
+<div class="dash-root">
+  <div class="dash-header">
+    <div class="dash-title">Dashboard thong ke hang hai</div>
+    <div class="dash-period">Du lieu nam 2025 — Cap nhat thang 12</div>
+  </div>
+
+  <div class="kpi-row" id="kpi-row"></div>
+
+  <div class="charts-row">
+    <div class="chart-card">
+      <div>
+        <div class="card-title">Luu luong tau theo thang</div>
+        <div class="card-subtitle">So luot tau qua cang — 12 thang</div>
+      </div>
+      <div class="line-chart-wrap" id="line-wrap">
+        <svg id="line-chart" viewBox="0 0 380 200" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Bieu do duong luu luong tau theo thang"></svg>
+        <div class="line-tooltip" id="line-tooltip"></div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div>
+        <div class="card-title">Phan bo loai tau</div>
+        <div class="card-subtitle">Ty le phan tram theo so luong</div>
+      </div>
+      <svg id="donut-chart" viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Bieu do donut phan bo loai tau" style="max-width: 200px; align-self: center;"></svg>
+      <div class="donut-legend" id="donut-legend"></div>
+    </div>
+  </div>
+
+  <div class="table-card">
+    <div class="card-title">Top 5 cang ban ron nhat</div>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Cang</th>
+          <th>Quoc gia</th>
+          <th style="text-align:right">Luot tau/nam</th>
+          <th>Muc do</th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function () {
+  function report(kind, payload, summary, status) {
+    if (window.WiiiVisualBridge && window.WiiiVisualBridge.reportResult) {
+      window.WiiiVisualBridge.reportResult(kind, payload, summary, status);
+    }
+  }
+
+  var NS = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs) {
+    var node = document.createElementNS(NS, tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+    return node;
+  }
+
+  var KPIS = [
+    { label: 'Tong tau', value: 12847, unit: '', trend: 'up', delta: '+8.2%', icon: '\u2693', color: 'var(--accent)' },
+    { label: 'Toc do TB', value: 14.3, unit: 'kn', trend: 'flat', delta: '+0.1%', icon: '\u2699', color: 'var(--text-secondary)' },
+    { label: 'Su co', value: 23, unit: '', trend: 'down', delta: '-12%', icon: '\u26A0', color: 'var(--danger)' },
+    { label: 'Luot cang', value: 8421, unit: '', trend: 'up', delta: '+5.6%', icon: '\u2302', color: 'var(--success)' }
+  ];
+
+  var MONTHS = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'];
+  var TRAFFIC = [680, 720, 850, 920, 1050, 1180, 1240, 1320, 1150, 1080, 980, 870];
+
+  var VESSEL_TYPES = [
+    { name: 'Container', pct: 32, color: 'var(--accent)' },
+    { name: 'Bulk carrier', pct: 24, color: 'var(--warning)' },
+    { name: 'Tanker', pct: 20, color: 'var(--success)' },
+    { name: 'Tau ca', pct: 14, color: 'var(--danger)' },
+    { name: 'Khac', pct: 10, color: 'var(--text-secondary)' }
+  ];
+
+  var PORTS = [
+    { name: 'Singapore', country: 'Singapore', calls: 37400 },
+    { name: 'Shanghai', country: 'Trung Quoc', calls: 34200 },
+    { name: 'Rotterdam', country: 'Ha Lan', calls: 29800 },
+    { name: 'Hai Phong', country: 'Viet Nam', calls: 18500 },
+    { name: 'Busan', country: 'Han Quoc', calls: 26400 }
+  ];
+  PORTS.sort(function (a, b) { return b.calls - a.calls; });
+
+  function renderKPIs() {
+    var container = document.getElementById('kpi-row');
+    container.innerHTML = '';
+    KPIS.forEach(function (kpi) {
+      var card = document.createElement('div');
+      card.className = 'kpi-card';
+
+      var top = document.createElement('div');
+      top.className = 'kpi-top';
+      var lbl = document.createElement('span');
+      lbl.className = 'kpi-label';
+      lbl.textContent = kpi.label;
+      var icon = document.createElement('span');
+      icon.className = 'kpi-icon';
+      icon.style.background = 'color-mix(in srgb, ' + kpi.color + ' 15%, transparent)';
+      icon.textContent = kpi.icon;
+      top.appendChild(lbl);
+      top.appendChild(icon);
+
+      var val = document.createElement('div');
+      val.className = 'kpi-value';
+      val.textContent = typeof kpi.value === 'number' && kpi.value > 999
+        ? kpi.value.toLocaleString('en-US') : kpi.value;
+      if (kpi.unit) val.textContent += ' ' + kpi.unit;
+
+      var trend = document.createElement('div');
+      trend.className = 'kpi-trend ' + kpi.trend;
+      var arrow = kpi.trend === 'up' ? '\u2191' : kpi.trend === 'down' ? '\u2193' : '\u2192';
+      trend.textContent = arrow + ' ' + kpi.delta + ' so voi nam truoc';
+
+      card.appendChild(top);
+      card.appendChild(val);
+      card.appendChild(trend);
+      container.appendChild(card);
+    });
+  }
+
+  function renderLineChart() {
+    var svg = document.getElementById('line-chart');
+    var tooltip = document.getElementById('line-tooltip');
+    var wrap = document.getElementById('line-wrap');
+    svg.innerHTML = '';
+
+    var left = 40;
+    var right = 365;
+    var top = 16;
+    var bottom = 175;
+    var chartW = right - left;
+    var chartH = bottom - top;
+    var maxVal = Math.max.apply(null, TRAFFIC);
+    var minVal = Math.min.apply(null, TRAFFIC);
+    var range = maxVal - minVal;
+    var yPad = range * 0.15;
+    var yMax = maxVal + yPad;
+    var yMin = Math.max(0, minVal - yPad);
+    var yRange = yMax - yMin;
+
+    var gridSteps = 5;
+    for (var g = 0; g <= gridSteps; g++) {
+      var yVal = yMin + (yRange / gridSteps) * g;
+      var yPos = bottom - (g / gridSteps) * chartH;
+      svg.appendChild(el('line', {
+        x1: left, y1: yPos, x2: right, y2: yPos,
+        stroke: 'var(--border)', 'stroke-width': '0.5', opacity: '0.4'
+      }));
+      svg.appendChild(el('text', {
+        x: left - 6, y: yPos + 3, 'text-anchor': 'end',
+        fill: 'var(--text-secondary)', 'font-size': '9',
+        'font-weight': '400', 'font-family': 'var(--font)'
+      })).textContent = Math.round(yVal);
+    }
+
+    var points = [];
+    TRAFFIC.forEach(function (val, i) {
+      var x = left + (i / (TRAFFIC.length - 1)) * chartW;
+      var y = bottom - ((val - yMin) / yRange) * chartH;
+      points.push({ x: x, y: y, val: val, month: MONTHS[i] });
+    });
+
+    var areaD = 'M ' + points[0].x + ' ' + bottom;
+    points.forEach(function (p) { areaD += ' L ' + p.x + ' ' + p.y; });
+    areaD += ' L ' + points[points.length - 1].x + ' ' + bottom + ' Z';
+    svg.appendChild(el('path', {
+      d: areaD, fill: 'var(--accent)', opacity: '0.08'
+    }));
+
+    var lineD = 'M ' + points[0].x + ' ' + points[0].y;
+    for (var i = 1; i < points.length; i++) {
+      lineD += ' L ' + points[i].x + ' ' + points[i].y;
+    }
+    svg.appendChild(el('path', {
+      d: lineD, fill: 'none', stroke: 'var(--accent)',
+      'stroke-width': '2', 'stroke-linecap': 'round',
+      'stroke-linejoin': 'round', class: 'line-path'
+    }));
+
+    points.forEach(function (p, idx) {
+      var dot = el('circle', {
+        cx: p.x, cy: p.y, r: '3',
+        fill: 'var(--surface)', stroke: 'var(--accent)', 'stroke-width': '1.5'
+      });
+      svg.appendChild(dot);
+
+      svg.appendChild(el('text', {
+        x: p.x, y: bottom + 14, 'text-anchor': 'middle',
+        fill: 'var(--text-secondary)', 'font-size': '9',
+        'font-weight': '400', 'font-family': 'var(--font)'
+      })).textContent = p.month;
+
+      var hitArea = el('rect', {
+        x: p.x - 14, y: top, width: 28, height: chartH + 20,
+        fill: 'transparent', 'pointer-events': 'all', cursor: 'pointer'
+      });
+
+      (function (pt, d, i) {
+        hitArea.addEventListener('mouseenter', function () {
+          d.setAttribute('r', '5');
+          d.setAttribute('fill', 'var(--accent)');
+          var rect = wrap.getBoundingClientRect();
+          var svgRect = svg.getBoundingClientRect();
+          var scaleX = svgRect.width / 380;
+          var scaleY = svgRect.height / 200;
+          tooltip.textContent = pt.month + ': ' + pt.val + ' luot';
+          tooltip.style.left = (pt.x * scaleX + 12) + 'px';
+          tooltip.style.top = (pt.y * scaleY - 10) + 'px';
+          tooltip.classList.add('visible');
+        });
+        hitArea.addEventListener('mouseleave', function () {
+          d.setAttribute('r', '3');
+          d.setAttribute('fill', 'var(--surface)');
+          tooltip.classList.remove('visible');
+        });
+        hitArea.addEventListener('click', function () {
+          report('month_selected', { month: pt.month, value: pt.val },
+            pt.month + ': ' + pt.val + ' luot tau', 'info');
+        });
+      })(p, dot, idx);
+
+      svg.appendChild(hitArea);
+    });
+
+    svg.appendChild(el('text', {
+      x: 5, y: 10,
+      fill: 'var(--text-secondary)', 'font-size': '9',
+      'font-weight': '400', 'font-family': 'var(--font)'
+    })).textContent = 'Luot';
+  }
+
+  function renderDonutChart() {
+    var svg = document.getElementById('donut-chart');
+    var legendEl = document.getElementById('donut-legend');
+    svg.innerHTML = '';
+    legendEl.innerHTML = '';
+
+    var cx = 100;
+    var cy = 100;
+    var outerR = 80;
+    var innerR = 50;
+    var total = VESSEL_TYPES.reduce(function (s, v) { return s + v.pct; }, 0);
+    var startAngle = -90;
+    var GAP = 2;
+
+    var centerLabel = el('text', {
+      x: cx, y: cy - 4, 'text-anchor': 'middle',
+      fill: 'var(--fg)', 'font-size': '18', 'font-weight': '500',
+      'font-family': 'var(--font)'
+    });
+    centerLabel.textContent = '100%';
+    var centerSub = el('text', {
+      x: cx, y: cy + 12, 'text-anchor': 'middle',
+      fill: 'var(--text-secondary)', 'font-size': '10',
+      'font-weight': '400', 'font-family': 'var(--font)'
+    });
+    centerSub.textContent = 'Tong';
+    svg.appendChild(centerLabel);
+    svg.appendChild(centerSub);
+
+    VESSEL_TYPES.forEach(function (vt, i) {
+      var sliceAngle = (vt.pct / total) * 360;
+      var gapAngle = (GAP / (2 * Math.PI * outerR)) * 360;
+      var drawAngle = Math.max(0, sliceAngle - gapAngle);
+      var a1 = startAngle + gapAngle / 2;
+      var a2 = a1 + drawAngle;
+
+      var rad1 = a1 * Math.PI / 180;
+      var rad2 = a2 * Math.PI / 180;
+      var largeArc = drawAngle > 180 ? 1 : 0;
+
+      var ox1 = cx + outerR * Math.cos(rad1);
+      var oy1 = cy + outerR * Math.sin(rad1);
+      var ox2 = cx + outerR * Math.cos(rad2);
+      var oy2 = cy + outerR * Math.sin(rad2);
+      var ix1 = cx + innerR * Math.cos(rad2);
+      var iy1 = cy + innerR * Math.sin(rad2);
+      var ix2 = cx + innerR * Math.cos(rad1);
+      var iy2 = cy + innerR * Math.sin(rad1);
+
+      var d = 'M ' + ox1 + ' ' + oy1 +
+              ' A ' + outerR + ' ' + outerR + ' 0 ' + largeArc + ' 1 ' + ox2 + ' ' + oy2 +
+              ' L ' + ix1 + ' ' + iy1 +
+              ' A ' + innerR + ' ' + innerR + ' 0 ' + largeArc + ' 0 ' + ix2 + ' ' + iy2 +
+              ' Z';
+
+      var path = el('path', {
+        d: d, fill: vt.color, opacity: '0.8',
+        cursor: 'pointer'
+      });
+
+      (function (vessel, pathEl) {
+        pathEl.addEventListener('mouseenter', function () {
+          pathEl.setAttribute('opacity', '1');
+          centerLabel.textContent = vessel.pct + '%';
+          centerSub.textContent = vessel.name;
+        });
+        pathEl.addEventListener('mouseleave', function () {
+          pathEl.setAttribute('opacity', '0.8');
+          centerLabel.textContent = '100%';
+          centerSub.textContent = 'Tong';
+        });
+        pathEl.addEventListener('click', function () {
+          report('vessel_type_clicked', { type: vessel.name, pct: vessel.pct },
+            vessel.name + ': ' + vessel.pct + '%', 'info');
+        });
+      })(vt, path);
+
+      svg.appendChild(path);
+      startAngle += sliceAngle;
+
+      var legendItem = document.createElement('div');
+      legendItem.className = 'donut-legend-item';
+      var swatch = document.createElement('span');
+      swatch.className = 'donut-legend-swatch';
+      swatch.style.background = vt.color;
+      var name = document.createElement('span');
+      name.textContent = vt.name;
+      var pctSpan = document.createElement('span');
+      pctSpan.className = 'donut-legend-pct';
+      pctSpan.textContent = vt.pct + '%';
+      legendItem.appendChild(swatch);
+      legendItem.appendChild(name);
+      legendItem.appendChild(pctSpan);
+
+      (function (vessel, pathEl) {
+        legendItem.addEventListener('mouseenter', function () {
+          pathEl.setAttribute('opacity', '1');
+          centerLabel.textContent = vessel.pct + '%';
+          centerSub.textContent = vessel.name;
+        });
+        legendItem.addEventListener('mouseleave', function () {
+          pathEl.setAttribute('opacity', '0.8');
+          centerLabel.textContent = '100%';
+          centerSub.textContent = 'Tong';
+        });
+      })(vt, path);
+
+      legendEl.appendChild(legendItem);
+    });
+  }
+
+  function renderTable() {
+    var tbody = document.getElementById('table-body');
+    tbody.innerHTML = '';
+    var maxCalls = PORTS[0].calls;
+
+    PORTS.forEach(function (port, i) {
+      var tr = document.createElement('tr');
+      tr.className = 'table-row';
+
+      var tdRank = document.createElement('td');
+      tdRank.className = 'rank';
+      tdRank.textContent = i + 1;
+
+      var tdName = document.createElement('td');
+      tdName.className = 'port-name';
+      tdName.textContent = port.name;
+
+      var tdCountry = document.createElement('td');
+      tdCountry.textContent = port.country;
+
+      var tdCalls = document.createElement('td');
+      tdCalls.className = 'num';
+      tdCalls.textContent = port.calls.toLocaleString('en-US');
+
+      var tdBar = document.createElement('td');
+      tdBar.className = 'mini-bar-cell';
+      var barBg = document.createElement('div');
+      barBg.className = 'mini-bar-bg';
+      var barFill = document.createElement('div');
+      barFill.className = 'mini-bar-fill';
+      barFill.style.width = ((port.calls / maxCalls) * 100) + '%';
+      barBg.appendChild(barFill);
+      tdBar.appendChild(barBg);
+
+      tr.appendChild(tdRank);
+      tr.appendChild(tdName);
+      tr.appendChild(tdCountry);
+      tr.appendChild(tdCalls);
+      tr.appendChild(tdBar);
+
+      (function (p, rank) {
+        tr.addEventListener('click', function () {
+          report('port_selected', { rank: rank, port: p.name, country: p.country, calls: p.calls },
+            '#' + rank + ' ' + p.name + ': ' + p.calls.toLocaleString('en-US') + ' luot/nam', 'info');
+        });
+      })(port, i + 1);
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  renderKPIs();
+  renderLineChart();
+  renderDonutChart();
+  renderTable();
+
+  report('dashboard_loaded', {
+    kpis: KPIS.length,
+    months: MONTHS.length,
+    vesselTypes: VESSEL_TYPES.length,
+    ports: PORTS.length
+  }, 'Dashboard hang hai da tai xong', 'ok');
+})();
+</script>

@@ -1019,11 +1019,27 @@ _CODE_STUDIO_SKILL_FILES = [
 
 # On-demand example mapping: visual_type → example filename
 _CODE_STUDIO_EXAMPLE_MAP: dict[str, str] = {
+    # Canvas simulation (physics, animation)
     "simulation": "canvas_wave_interference.html",
+    "physics": "canvas_wave_interference.html",
+    "animation": "canvas_wave_interference.html",
+    # SVG interactive diagram (ships, architecture, process)
     "diagram": "svg_ship_encounter.html",
-    "comparison": "svg_ship_encounter.html",
-    "process": "svg_ship_encounter.html",
     "architecture": "svg_ship_encounter.html",
+    # SVG comparison chart (bar charts, comparisons)
+    "comparison": "svg_comparison_chart.html",
+    "chart": "svg_comparison_chart.html",
+    "benchmark": "svg_comparison_chart.html",
+    "statistics": "svg_comparison_chart.html",
+    # SVG flow diagram (process, workflow, steps)
+    "process": "svg_flow_diagram.html",
+    "workflow": "svg_flow_diagram.html",
+    "timeline": "svg_flow_diagram.html",
+    # Interactive dashboard (data viz, metrics, KPI)
+    "dashboard": "dashboard_metrics.html",
+    "metrics": "dashboard_metrics.html",
+    "overview": "dashboard_metrics.html",
+    # HTML/CSS/JS widget (tools, calculators, quizzes)
     "tool": "widget_maritime_calculator.html",
     "quiz": "widget_maritime_calculator.html",
     "calculator": "widget_maritime_calculator.html",

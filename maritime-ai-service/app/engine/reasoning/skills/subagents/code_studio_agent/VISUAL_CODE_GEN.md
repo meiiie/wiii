@@ -209,5 +209,8 @@ When you see a `## REFERENCE EXAMPLE` section, study its structure and quality l
 - **Canvas simulation** (`canvas_wave_interference.html`): Physics engine + rAF + controls + readouts + bridge. ~800 lines.
 - **SVG interactive diagram** (`svg_ship_encounter.html`): Inline SVG + drag interaction + real-time calculation + annotations. ~830 lines.
 - **HTML/CSS/JS widget** (`widget_maritime_calculator.html`): Tab-based forms + instant calculation + compass SVG + bridge. ~370 lines.
+- **SVG comparison chart** (`svg_comparison_chart.html`): Horizontal bar chart + dataset toggle + sort + hover highlight + detail bar. ~280 lines.
+- **SVG flow diagram** (`svg_flow_diagram.html`): Step-by-step process boxes + decision diamond + arrow connectors + detail panel + keyboard nav. ~310 lines.
+- **Interactive dashboard** (`dashboard_metrics.html`): KPI cards + SVG line chart + SVG donut chart + data table + mini bars + tooltips. ~480 lines.
 
 Learn from the design system, code structure, and depth of interactivity — do NOT copy verbatim.
