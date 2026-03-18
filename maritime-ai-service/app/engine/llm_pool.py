@@ -429,6 +429,45 @@ class LLMPool:
         return _gemini_cb
 
     @classmethod
+    def create_llm_with_model(cls, model_name: str, tier: ThinkingTier) -> BaseChatModel | None:
+        """Create a dedicated LLM instance with a specific model name.
+
+        Used for per-agent model overrides (e.g., code_studio_agent -> gemini-3.1-pro).
+        Caches by model_name + tier to avoid re-creation.
+        """
+        cache_key = f"_custom_{model_name}_{tier.value}"
+        if cache_key in cls._pool:
+            return cls._pool[cache_key]
+
+        thinking_budget = THINKING_BUDGETS.get(tier.value, 4096)
+        include_thoughts = tier in (ThinkingTier.DEEP, ThinkingTier.MODERATE)
+
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+
+            llm_kwargs = {
+                "model": model_name,
+                "google_api_key": settings.google_api_key,
+                "temperature": 0.5,
+            }
+            if settings.thinking_enabled and thinking_budget > 0:
+                llm_kwargs["thinking_budget"] = thinking_budget
+                if include_thoughts:
+                    llm_kwargs["include_thoughts"] = True
+
+            llm = ChatGoogleGenerativeAI(**llm_kwargs)
+            cls._attach_tracking_callback(llm, cache_key)
+            cls._pool[cache_key] = llm
+            logger.info(
+                "[LLM_POOL] Created custom model LLM: %s tier=%s budget=%d",
+                model_name, tier.value, thinking_budget,
+            )
+            return llm
+        except Exception as exc:
+            logger.warning("[LLM_POOL] Custom model %s failed: %s", model_name, exc)
+            return None
+
+    @classmethod
     def reset(cls) -> None:
         """
         Reset the pool state (for testing purposes).

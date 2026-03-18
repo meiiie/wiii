@@ -36,11 +36,20 @@ GOOGLE_LEGACY_MODELS: tuple[str, ...] = (
     "gemini-2.0-flash-exp",
 )
 
+GOOGLE_DEEP_MODEL = "gemini-3.1-pro-preview"
+
 GOOGLE_CHAT_MODELS: dict[str, ChatModelMetadata] = {
     GOOGLE_DEFAULT_MODEL: ChatModelMetadata(
         provider="google",
         model_name=GOOGLE_DEFAULT_MODEL,
         display_name="Gemini 3.1 Flash-Lite Preview",
+        status="current",
+        released_on="2026-03-03",
+    ),
+    GOOGLE_DEEP_MODEL: ChatModelMetadata(
+        provider="google",
+        model_name=GOOGLE_DEEP_MODEL,
+        display_name="Gemini 3.1 Pro Preview",
         status="current",
         released_on="2026-03-03",
     ),

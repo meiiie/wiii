@@ -49,7 +49,8 @@ _DEFAULT_CONFIGS: Dict[str, AgentNodeConfig] = {
     "memory": AgentNodeConfig("memory", tier="light", temperature=0.5),
     "direct": AgentNodeConfig("direct", tier="light"),
     "code_studio_agent": AgentNodeConfig(
-        "code_studio_agent", tier="moderate", enable_agentic_loop=True,
+        "code_studio_agent", tier="deep", model="gemini-3.1-pro-preview",
+        enable_agentic_loop=True,
     ),
     "synthesizer": AgentNodeConfig("synthesizer", tier="moderate"),
 }
@@ -123,6 +124,10 @@ class AgentConfigRegistry:
 
         config = cls.get_config(node_id)
 
+        # Per-node model override — creates/caches a dedicated LLM instance
+        if config.model:
+            return cls._get_or_create_model_llm(config)
+
         if effort_override:
             from app.engine.llm_pool import get_llm_for_effort
             from app.engine.llm_factory import ThinkingTier
@@ -143,6 +148,49 @@ class AgentConfigRegistry:
         }
         get_llm_fn = tier_map.get(config.tier, get_llm_moderate)
         return get_llm_fn()
+
+    _model_llm_cache: Dict[str, object] = {}
+
+    @classmethod
+    def _get_or_create_model_llm(cls, config: AgentNodeConfig):
+        """Create or return a cached LLM instance for a specific model override."""
+        cache_key = f"{config.provider}:{config.model}:{config.tier}"
+        if cache_key in cls._model_llm_cache:
+            return cls._model_llm_cache[cache_key]
+
+        try:
+            from app.engine.llm_pool import LLMPool
+            from app.engine.llm_factory import ThinkingTier
+
+            tier_map = {
+                "deep": ThinkingTier.DEEP,
+                "moderate": ThinkingTier.MODERATE,
+                "light": ThinkingTier.LIGHT,
+            }
+            tier = tier_map.get(config.tier, ThinkingTier.MODERATE)
+            pool = LLMPool.get_instance()
+            llm = pool.create_llm_with_model(config.model, tier)
+            if llm:
+                cls._model_llm_cache[cache_key] = llm
+                logger.info(
+                    "[AGENT_CONFIG] Created dedicated LLM for %s: model=%s tier=%s",
+                    config.node_id, config.model, config.tier,
+                )
+                return llm
+        except Exception as exc:
+            logger.warning(
+                "[AGENT_CONFIG] Failed to create model LLM for %s (%s), falling back to tier: %s",
+                config.node_id, config.model, exc,
+            )
+
+        # Fallback to tier-based LLM
+        from app.engine.llm_pool import get_llm_deep, get_llm_moderate, get_llm_light
+        tier_fn_map = {
+            "deep": get_llm_deep,
+            "moderate": get_llm_moderate,
+            "light": get_llm_light,
+        }
+        return tier_fn_map.get(config.tier, get_llm_moderate)()
 
     @classmethod
     def reset(cls) -> None:
