@@ -3042,17 +3042,24 @@ async def _execute_code_studio_tool_rounds(
                                 _code_open_emitted = True
 
                             if delta and _code_open_emitted:
-                                await push_event({
-                                    "type": "code_delta",
-                                    "content": {
-                                        "session_id": _stream_session_id,
-                                        "chunk": delta,
-                                        "chunk_index": _stream_chunk_index,
-                                        "total_bytes": 0,
-                                    },
-                                    "node": "code_studio_agent",
-                                })
-                                _stream_chunk_index += 1
+                                # Progressive sub-chunking: break large deltas
+                                # into ~500-char pieces for smooth frontend rendering.
+                                _STREAM_CHUNK_SIZE = 500
+                                for _ci in range(0, len(delta), _STREAM_CHUNK_SIZE):
+                                    _sub_chunk = delta[_ci:_ci + _STREAM_CHUNK_SIZE]
+                                    await push_event({
+                                        "type": "code_delta",
+                                        "content": {
+                                            "session_id": _stream_session_id,
+                                            "chunk": _sub_chunk,
+                                            "chunk_index": _stream_chunk_index,
+                                            "total_bytes": 0,
+                                        },
+                                        "node": "code_studio_agent",
+                                    })
+                                    _stream_chunk_index += 1
+                                    if _ci + _STREAM_CHUNK_SIZE < len(delta):
+                                        await asyncio.sleep(0.02)
 
         except Exception as _stream_err:
             logger.warning("[CODE_STUDIO] astream failed, falling back to ainvoke: %s", _stream_err)
@@ -3215,6 +3222,7 @@ async def _execute_code_studio_tool_rounds(
                                 "language": "html",
                                 "version": 1,
                                 "visual_payload": _vps[0].model_dump(mode="json"),
+                                "visual_session_id": _emitted_visual_session_ids[0] if _emitted_visual_session_ids else "",
                             },
                             "node": "code_studio_agent",
                         })

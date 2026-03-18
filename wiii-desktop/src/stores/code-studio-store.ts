@@ -39,6 +39,8 @@ export interface CodeStudioSession {
   chunkCount: number;
   totalBytes: number;
   visualPayload?: VisualPayload;
+  /** Maps this streaming session to the visual_open session ID for frontend unification */
+  visualSessionId?: string;
   createdAt: number;
   /** Session-level metadata from backend — immutable across versions */
   metadata: CodeStudioMetadata;
@@ -50,7 +52,7 @@ interface CodeStudioState {
 
   openSession: (sessionId: string, title: string, language: string, version: number, metadata?: CodeStudioMetadata) => void;
   appendCode: (sessionId: string, chunk: string, chunkIndex: number, totalBytes: number) => void;
-  completeSession: (sessionId: string, fullCode: string, language: string, version: number, visualPayload?: VisualPayload) => void;
+  completeSession: (sessionId: string, fullCode: string, language: string, version: number, visualPayload?: VisualPayload, visualSessionId?: string) => void;
   switchVersion: (sessionId: string, version: number) => void;
   setActiveSession: (sessionId: string | null) => void;
   setRequestedView: (sessionId: string, requestedView?: "code" | "preview") => void;
@@ -124,7 +126,7 @@ export const useCodeStudioStore = create<CodeStudioState>((set, get) => ({
       };
     }),
 
-  completeSession: (sessionId, fullCode, language, version, visualPayload) =>
+  completeSession: (sessionId, fullCode, language, version, visualPayload, visualSessionId) =>
     set((state) => {
       const session = state.sessions[sessionId];
       if (!session) return state;
@@ -147,6 +149,8 @@ export const useCodeStudioStore = create<CodeStudioState>((set, get) => ({
             activeVersion: version,
             versions: [...existingVersions, newVersion],
             visualPayload,
+            // Store visual_session_id mapping so CodeStudioCard can link to VisualBlock
+            ...(visualSessionId ? { visualSessionId } : {}),
           },
         },
       };

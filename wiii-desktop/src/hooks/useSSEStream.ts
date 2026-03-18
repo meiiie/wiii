@@ -109,6 +109,9 @@ export function useSSEStream() {
   const thinkingMetaRef = useRef<DisplayPresentationMeta | undefined>(undefined);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const eventOrderRef = useRef<string[]>([]);
+  // Track whether code_open was emitted this turn — used to suppress
+  // duplicate ToolExecutionStrip for tool_create_visual_code.
+  const codeOpenActiveRef = useRef(false);
 
   const clearIdleGuard = useCallback(() => {
     if (idleTimerRef.current) {
@@ -222,6 +225,7 @@ export function useSSEStream() {
       _thinkToolIds.clear();
     eventOrderRef.current = [];
     thinkingMetaRef.current = undefined;
+    codeOpenActiveRef.current = false;
 
     // Keep a per-send controller so an aborted previous request cannot
     // accidentally clear/finalize the newly-started stream.
@@ -333,6 +337,12 @@ export function useSSEStream() {
         // Sprint 148: Progress tool — phase transition handled server-side
         // via thinking_end/action_text/thinking_start. Skip tool card display.
         if (data.content.name === "tool_report_progress") {
+          _thinkToolIds.add(data.content.id);
+          return;
+        }
+        // When code_open was emitted, CodeStudioCard handles tool_create_visual_code
+        // display — skip creating a duplicate ToolExecutionStrip.
+        if (data.content.name === "tool_create_visual_code" && codeOpenActiveRef.current) {
           _thinkToolIds.add(data.content.id);
           return;
         }
@@ -583,6 +593,7 @@ export function useSSEStream() {
       },
         onCodeOpen: (data) => {
           traceEvent("code_open", { session: data.content.session_id, title: data.content.title });
+          codeOpenActiveRef.current = true;
           answerBufferRef.current?.drain();
           thinkingBufferRef.current?.drain();
           useCodeStudioStore.getState().openSession(
@@ -617,6 +628,7 @@ export function useSSEStream() {
           data.content.language,
           data.content.version,
           data.content.visual_payload,
+          data.content.visual_session_id,
         );
       },
       onKeepAlive: () => {

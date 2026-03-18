@@ -842,6 +842,8 @@ export interface SSECodeCompleteEvent {
     renderer_contract?: "host_shell" | "chart_runtime" | "article_figure";
     requested_view?: "code" | "preview";
     visual_payload?: VisualPayload;
+    /** Maps streaming session to the visual_open session for frontend unification */
+    visual_session_id?: string;
   };
   node?: string;
 }
