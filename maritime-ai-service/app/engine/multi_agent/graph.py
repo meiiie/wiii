@@ -1000,13 +1000,39 @@ def _build_code_studio_tools_context(
                 sections.append("")
                 sections.append(skill_content)
 
+        # Quality markers — explicit checklist injected BEFORE example
+        sections.append("")
+        sections.append("## QUALITY MARKERS — Bat buoc cho moi visual output")
+        sections.append(
+            "Mot visual chat luong cao PHAI co tat ca cac yeu to sau:\n"
+            "1. **CSS variables** cho moi mau sac (--bg, --fg, --accent, --surface, --border, --text-secondary). "
+            "Ho tro dark/light qua `prefers-color-scheme`.\n"
+            "2. **Render surface phu hop**: Canvas cho simulation (rAF + deltaTime), SVG cho diagram, HTML cho widget.\n"
+            "3. **Controls tuong tac**: Toi thieu 2-3 slider/button/input de user dieu chinh tham so.\n"
+            "4. **Readouts song**: Hien thi gia tri tinh toan real-time (goc, van toc, ket qua...) — khong chi hien canvas.\n"
+            "5. **Layout responsive**: CSS Grid hoac Flexbox. Canvas/SVG ben trai (~65%), controls ben phai (~35%). "
+            "Stack doc tren man hinh hep.\n"
+            "6. **WiiiVisualBridge**: Goi `window.WiiiVisualBridge.reportResult(kind, payload, summary, status)` "
+            "khi user tuong tac.\n"
+            "7. **Fragment only**: KHONG co DOCTYPE, html, head, body. Chi `<style>` truoc, HTML giua, `<script>` cuoi.\n"
+            "8. **Khong AI slop**: Khong gradient, shadow, blur, glow, neon. Font-weight chi 400 va 500. "
+            "Khong comment trong code (tru planning block dau file).\n"
+            "9. **Planning block** o dau file: `<!-- STATE MODEL: ... RENDER SURFACE: ... CONTROLS: ... "
+            "READOUTS: ... FEEDBACK: ... -->`\n"
+            "10. **Do sau**: Simulation thuong 300-600 dong. Widget thuong 200-400 dong. "
+            "Day la HUONG DAN, khong phai bat buoc — Wiii tu quyet dinh complexity phu hop voi noi dung."
+        )
+
         # On-demand few-shot example based on visual_type (Claude-style guideline loading)
         vtype = visual_decision.visual_type if visual_decision else ""
         example = _load_code_studio_example(vtype) if vtype else None
         if example:
             sections.append("")
             sections.append(f"## REFERENCE EXAMPLE ({vtype})")
-            sections.append("Day la ma mau chat luong cao. Hoc theo cau truc, design system, va do chi tiet — KHONG copy y het.")
+            sections.append(
+                "Day la ma mau chat luong cao — hoc theo cau truc, design system, va do chi tiet. "
+                "KHONG copy y het, ma dung lam tham chieu chat luong."
+            )
             sections.append("```html")
             sections.append(example)
             sections.append("```")
