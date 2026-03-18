@@ -3103,6 +3103,25 @@ async def _execute_code_studio_tool_rounds(
             from langchain_core.messages import AIMessage as _AM
             llm_response = _AM(content="")
 
+        # Fallback: if astream produced code_html but no tool_calls formed,
+        # manually construct a tool call from the streamed code_html.
+        _has_tool_calls = bool(llm_response and getattr(llm_response, "tool_calls", None))
+        if not _has_tool_calls and _code_streamer.is_code_html_complete and _code_streamer.full_code_html:
+            logger.info("[CODE_STUDIO] No tool_calls in astream response, constructing from streamed code_html (%d chars)", len(_code_streamer.full_code_html))
+            from langchain_core.messages import AIMessage as _AM
+            _manual_tc = {
+                "name": "tool_create_visual_code",
+                "args": {
+                    "code_html": _code_streamer.full_code_html,
+                    "title": query[:60] if query else "Visual",
+                },
+                "id": f"manual_tc_{uuid.uuid4().hex[:8]}",
+            }
+            llm_response = _AM(
+                content=getattr(llm_response, "content", "") if llm_response else "",
+                tool_calls=[_manual_tc],
+            )
+
     else:
         # Existing path: ainvoke + periodic progress events
         _progress_messages = [
