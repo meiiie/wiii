@@ -4442,18 +4442,14 @@ def tool_create_visual_code(
 
     # Quality scoring gate — fires on substantial HTML (> 1500 chars = real LLM output).
     # Short HTML from test fixtures or simple widgets is exempt.
-    _gate_applies = len(raw) > 1500
-    if _gate_applies:
-        # Skip quality gate if pendulum scaffold will be applied
-        _is_pendulum = _looks_like_pendulum_simulation(raw, title, _runtime_visual_user_query())
-        if not _is_pendulum:
-            _q_score, _q_deficiencies = _quality_score_visual_output(raw, resolved_visual_type)
-            if _q_score < 6 and _q_deficiencies:
-                return (
-                    f"Quality score {_q_score}/10 — chua dat. Hay sua cac van de sau:\n"
-                    + "\n".join(f"- {d}" for d in _q_deficiencies)
-                    + "\n\nViet lai code_html hoan chinh hon."
-                )
+    if len(raw) > 1500:
+        _q_score, _q_deficiencies = _quality_score_visual_output(raw, resolved_visual_type)
+        if _q_score < 6 and _q_deficiencies:
+            return (
+                f"Quality score {_q_score}/10 — chua dat. Hay sua cac van de sau:\n"
+                + "\n".join(f"- {d}" for d in _q_deficiencies)
+                + "\n\nViet lai code_html hoan chinh hon."
+            )
 
     # Wrap in design system if not a full HTML document
     if raw.lstrip().lower().startswith("<!doctype") or raw.lstrip().lower().startswith("<html"):
