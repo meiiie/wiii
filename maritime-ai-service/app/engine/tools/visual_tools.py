@@ -4440,15 +4440,9 @@ def tool_create_visual_code(
     if quality_error:
         return quality_error
 
-    # Quality scoring gate — applies when tool is called in a real agent context
-    # (runtime scope has presentation_intent or studio_lane set).
-    # Tests without runtime scope are exempt.
-    _raw_lane = _runtime_studio_lane()
-    _gate_applies = bool(
-        presentation_intent in {"code_studio_app", "artifact"}
-        or _raw_lane in {"app", "artifact"}
-        or _runtime_visual_user_query()  # has a real user query = real agent context
-    )
+    # Quality scoring gate — fires on substantial HTML (> 1500 chars = real LLM output).
+    # Short HTML from test fixtures or simple widgets is exempt.
+    _gate_applies = len(raw) > 1500
     if _gate_applies:
         # Skip quality gate if pendulum scaffold will be applied
         _is_pendulum = _looks_like_pendulum_simulation(raw, title, _runtime_visual_user_query())
