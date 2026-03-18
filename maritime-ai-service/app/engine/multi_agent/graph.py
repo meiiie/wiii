@@ -3013,8 +3013,18 @@ async def _execute_code_studio_tool_rounds(
         })
 
         llm_response = None
+        _CHUNK_TIMEOUT = 90  # seconds — max wait between chunks
         try:
-            async for chunk in llm_with_tools.astream(messages):
+            _astream_iter = llm_with_tools.astream(messages).__aiter__()
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(_astream_iter.__anext__(), timeout=_CHUNK_TIMEOUT)
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError:
+                    logger.warning("[CODE_STUDIO] astream chunk timeout after %ds, proceeding with accumulated response", _CHUNK_TIMEOUT)
+                    break
+
                 if llm_response is None:
                     llm_response = chunk
                 else:
