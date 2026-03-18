@@ -3014,16 +3014,22 @@ async def _execute_code_studio_tool_rounds(
 
         llm_response = None
         _CHUNK_TIMEOUT = 90  # seconds — max wait between chunks
-        _CODE_DONE_TIMEOUT = 15  # seconds after code_html complete → break early
+        _CODE_DONE_TIMEOUT = 30  # seconds after code_html complete → break early
         _code_html_done_at: float | None = None
         try:
             _astream_iter = llm_with_tools.astream(messages).__aiter__()
             while True:
-                # Early break: if code_html is fully extracted, don't wait for
-                # remaining LLM output (text content can take 5+ minutes).
+                # Early break: if code_html is fully extracted AND we have a
+                # complete tool_call on llm_response, break the astream loop.
+                # Don't break if tool_calls hasn't formed yet.
                 if _code_html_done_at and (time.time() - _code_html_done_at) > _CODE_DONE_TIMEOUT:
-                    logger.info("[CODE_STUDIO] code_html complete, breaking astream after %ds", _CODE_DONE_TIMEOUT)
-                    break
+                    _has_tool_calls = bool(llm_response and getattr(llm_response, "tool_calls", None))
+                    if _has_tool_calls:
+                        logger.info("[CODE_STUDIO] code_html + tool_call complete, breaking astream")
+                        break
+                    elif (time.time() - _code_html_done_at) > _CODE_DONE_TIMEOUT * 3:
+                        logger.warning("[CODE_STUDIO] code_html done but no tool_call after %ds, force break", _CODE_DONE_TIMEOUT * 3)
+                        break
 
                 try:
                     _timeout = _CODE_DONE_TIMEOUT if _code_html_done_at else _CHUNK_TIMEOUT
