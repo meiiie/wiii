@@ -995,11 +995,7 @@ def _build_code_studio_tools_context(
 
     # Append visual Skills cho code-gen
     if getattr(settings_obj, "enable_llm_code_gen_visuals", False):
-        for skill_content in _load_code_studio_visual_skills():
-            if skill_content:
-                sections.append("")
-                sections.append(skill_content)
-
+        # CRITICAL: Output rules + skeleton go FIRST (Gemini attention bias = start + end)
         # Quality markers — assertive anchor at top, then checklist
         sections.append("")
         sections.append("## OUTPUT FORMAT — 3 RULES BAT BUOC")
@@ -1111,6 +1107,12 @@ def _build_code_studio_tools_context(
             sections.append("```html")
             sections.append(example)
             sections.append("```")
+
+        # VISUAL_CODE_GEN.md guidelines go AFTER rules + skeleton (less critical, more context)
+        for skill_content in _load_code_studio_visual_skills():
+            if skill_content:
+                sections.append("")
+                sections.append(skill_content)
 
     return "\n".join(sections)
 
