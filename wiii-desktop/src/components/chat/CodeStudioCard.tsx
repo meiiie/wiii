@@ -1,29 +1,13 @@
 /**
- * CodeStudioCard — compact inline card in the chat rail during/after code generation.
+ * CodeStudioCard — inline code streaming widget in chat (Claude Artifacts pattern).
  *
- * During streaming: progress bar + contextual phase message + code preview
- * After complete: title + "Mo Code Studio" button
+ * During streaming: shows code writing real-time in a scrollable area + spinner
+ * After complete: collapsed card with title + "Mở Code Studio" button
  */
-import { memo, useMemo } from "react";
+import { memo, useRef, useEffect } from "react";
 import { Code2, Loader2, ExternalLink } from "lucide-react";
 import { useCodeStudioStore } from "@/stores/code-studio-store";
 import { useUIStore } from "@/stores/ui-store";
-
-const LOADING_MESSAGES = [
-  { threshold: 0, message: "Đang lên kế hoạch..." },
-  { threshold: 15, message: "Đang thiết kế giao diện..." },
-  { threshold: 35, message: "Đang viết logic xử lý..." },
-  { threshold: 55, message: "Đang thêm controls tương tác..." },
-  { threshold: 75, message: "Đang kiểm tra chất lượng..." },
-  { threshold: 90, message: "Sắp xong rồi..." },
-];
-
-function getLoadingMessage(progress: number): string {
-  for (let i = LOADING_MESSAGES.length - 1; i >= 0; i--) {
-    if (progress >= LOADING_MESSAGES[i].threshold) return LOADING_MESSAGES[i].message;
-  }
-  return LOADING_MESSAGES[0].message;
-}
 
 interface CodeStudioCardProps {
   sessionId: string;
@@ -35,20 +19,21 @@ export const CodeStudioCard = memo(function CodeStudioCard({
   const session = useCodeStudioStore((s) => s.sessions[sessionId]);
   const setActiveSession = useCodeStudioStore((s) => s.setActiveSession);
   const openCodeStudio = useUIStore((s) => s.openCodeStudio);
+  const codeEndRef = useRef<HTMLDivElement>(null);
+
+  const isStreaming = session?.status === "streaming";
+  const lineCount = session?.code?.split("\n").length ?? 0;
+  const codeLength = session?.code?.length ?? 0;
+
+  useEffect(() => {
+    if (!isStreaming) return;
+    const rafId = requestAnimationFrame(() => {
+      codeEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [isStreaming, codeLength]);
 
   if (!session) return null;
-
-  const isStreaming = session.status === "streaming";
-  const lineCount = session.code.split("\n").length;
-  const progress =
-    isStreaming && session.totalBytes > 0
-      ? Math.round((session.code.length / session.totalBytes) * 100)
-      : 100;
-
-  const previewLines = useMemo(() => {
-    if (!isStreaming || !session.code) return [];
-    return session.code.split("\n").filter((l) => l.trim()).slice(-3);
-  }, [isStreaming, session.code]);
 
   const handleOpen = () => {
     setActiveSession(sessionId);
@@ -57,62 +42,57 @@ export const CodeStudioCard = memo(function CodeStudioCard({
 
   return (
     <article
-      className="code-studio-card group/code-studio"
+      className="code-studio-card group/code-studio rounded-xl border border-border/60 overflow-hidden"
       data-status={isStreaming ? "streaming" : "complete"}
     >
-      <div className="flex items-center gap-3 px-3 py-2.5">
-        <div className="w-8 h-8 rounded-lg bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center shrink-0">
-          <Code2 size={15} />
+      {/* Header */}
+      <div
+        className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-surface-secondary/30 transition-colors"
+        onClick={handleOpen}
+      >
+        <div className="w-7 h-7 rounded-lg bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center shrink-0">
+          <Code2 size={14} />
         </div>
-
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] text-text-tertiary uppercase tracking-wider">
-            Code Studio
-          </div>
           <div className="text-sm font-medium text-text truncate">
             {session.title}
           </div>
-        </div>
-
-        {isStreaming ? (
-          <div className="text-right shrink-0">
-            <div className="flex items-center gap-1.5 text-[var(--accent)]">
-              <Loader2 size={14} className="animate-spin" />
-              <span className="text-[11px]">{getLoadingMessage(progress)}</span>
-            </div>
-            <div className="text-[9px] text-text-tertiary mt-0.5">
-              {lineCount} dòng · {progress}%
-            </div>
+          <div className="text-[10px] text-text-tertiary">
+            {isStreaming ? (
+              <span className="text-[var(--accent)]">{lineCount} dòng · đang viết...</span>
+            ) : (
+              <span>{lineCount} dòng · {session.language}</span>
+            )}
           </div>
+        </div>
+        {isStreaming ? (
+          <Loader2 size={16} className="animate-spin text-[var(--accent)] shrink-0" />
         ) : (
           <button
-            onClick={handleOpen}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors text-xs font-medium"
+            onClick={(e) => { e.stopPropagation(); handleOpen(); }}
+            className="flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors text-[11px] font-medium shrink-0"
           >
-            <ExternalLink size={12} />
-            Mo
+            <ExternalLink size={11} />
+            Mở
           </button>
         )}
       </div>
 
-      {/* Progress bar during streaming */}
-      {isStreaming && (
-        <div className="px-3 pb-2">
-          <div className="h-1 rounded-full bg-surface-tertiary overflow-hidden">
-            <div
-              className="h-full rounded-full bg-[var(--accent)] transition-all duration-300 ease-out"
-              style={{ width: `${progress}%` }}
-            />
+      {/* Streaming code area — full inline view like Claude Artifacts */}
+      {isStreaming && session.code && (
+        <div className="border-t border-border/40">
+          <div className="max-h-[320px] overflow-y-auto bg-[#0f172a] text-[#e2e8f0]">
+            <pre className="p-3 text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-all m-0">
+              <code>{session.code}</code>
+              <span className="inline-block w-[2px] h-[14px] bg-[var(--accent)] animate-pulse ml-0.5 align-middle" />
+              <div ref={codeEndRef} />
+            </pre>
           </div>
-        </div>
-      )}
-
-      {/* Code preview snippet during streaming */}
-      {isStreaming && previewLines.length > 0 && (
-        <div className="mx-3 mb-2 rounded bg-surface-tertiary/50 px-2 py-1.5 font-mono text-[10px] text-text-tertiary leading-tight overflow-hidden max-h-[3.6em]">
-          {previewLines.map((line, i) => (
-            <div key={i} className="truncate">{line}</div>
-          ))}
+          {/* Bottom status bar */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-[#1e293b] text-[10px] text-[#94a3b8] border-t border-[#334155]">
+            <Loader2 size={10} className="animate-spin text-[var(--accent)]" />
+            <span>{lineCount} dòng · {codeLength.toLocaleString()} bytes</span>
+          </div>
         </div>
       )}
     </article>
