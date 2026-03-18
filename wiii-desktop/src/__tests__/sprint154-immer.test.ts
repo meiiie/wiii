@@ -141,6 +141,54 @@ describe("Sprint 154: Immer middleware — chat-store", () => {
     expect(state.streamingToolCalls[0].result).toBe("Result data");
   });
 
+  it("links tool_create_visual_code tool blocks to the opened visual session", () => {
+    useChatStore.getState().startStreaming();
+    useChatStore.getState().appendToolCall({
+      id: "tc-visual",
+      name: "tool_create_visual_code",
+      args: { title: "Mo phong con lac" },
+    });
+
+    useChatStore.getState().openVisualSession({
+      id: "visual-1",
+      visual_session_id: "vs-code-1",
+      type: "concept",
+      renderer_kind: "app",
+      shell_variant: "immersive",
+      patch_strategy: "app_state",
+      figure_group_id: "fg-1",
+      figure_index: 1,
+      figure_total: 1,
+      pedagogical_role: "mechanism",
+      chrome_mode: "app",
+      claim: "Mo phong con lac",
+      presentation_intent: "code_studio_app",
+      figure_budget: 1,
+      quality_profile: "standard",
+      renderer_contract: "host_shell",
+      studio_lane: "app",
+      artifact_kind: "html_app",
+      runtime: "sandbox_html",
+      title: "Mo phong con lac",
+      summary: "Mo phong con lac",
+      spec: {},
+      scene: { kind: "concept", nodes: [], links: [] },
+      controls: [],
+      annotations: [],
+      interaction_mode: "static",
+      ephemeral: true,
+      lifecycle_event: "visual_open",
+      metadata: {
+        source_tool: "tool_create_visual_code",
+      },
+    } as any, "code_studio_agent");
+
+    const state = useChatStore.getState();
+    const toolBlock = state.streamingBlocks.find((block) => block.type === "tool_execution") as any;
+    expect(toolBlock.tool.args.visual_session_id).toBe("vs-code-1");
+    expect(state.streamingToolCalls[0].args.visual_session_id).toBe("vs-code-1");
+  });
+
   it("appendActionText closes thinking block and adds action_text", () => {
     useChatStore.getState().startStreaming();
     useChatStore.getState().openThinkingBlock("Think");

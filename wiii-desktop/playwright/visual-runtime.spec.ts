@@ -138,6 +138,17 @@ async function applyFollowupPatch(page, previousTitle: string, previousText: str
   throw lastError instanceof Error ? lastError : new Error("Visual patch did not surface after follow-up retries.");
 }
 
+async function waitForGenerationToSettle(page) {
+  const inputBox = page.locator("textarea[aria-label]").first();
+  await expect
+    .poll(async () => await page.locator('[aria-label="Dừng tạo phản hồi"]').count(), {
+      timeout: 120_000,
+      intervals: [1_000, 1_500, 2_000],
+    })
+    .toBe(0);
+  await expect(inputBox).toBeEnabled({ timeout: 120_000 });
+}
+
 async function ensureInitialVisualStage(page) {
   let lastError: unknown = null;
 
@@ -173,7 +184,7 @@ function hasTechnicalLeak(text: string) {
 
 async function runVisualScenario(page, testInfo, viewportLabel: string) {
   const uniqueUser = `visual-e2e-${viewportLabel}-${Date.now()}`;
-  await page.addInitScript(buildInitScript("http://127.0.0.1:8001", uniqueUser, `Visual ${viewportLabel}`));
+  await page.addInitScript(buildInitScript("http://127.0.0.1:8000", uniqueUser, `Visual ${viewportLabel}`));
   await page.goto("/", { waitUntil: "domcontentloaded", timeout: 60_000 });
   await page.waitForLoadState("networkidle", { timeout: 60_000 });
 
@@ -183,6 +194,7 @@ async function runVisualScenario(page, testInfo, viewportLabel: string) {
   }
 
   await ensureInitialVisualStage(page);
+  await waitForGenerationToSettle(page);
   await expect(page.getByTestId("reasoning-interval").first()).toBeVisible({ timeout: 120_000 });
   await expect(page.getByTestId("thinking-block")).toHaveCount(0);
 
@@ -197,7 +209,7 @@ async function runVisualScenario(page, testInfo, viewportLabel: string) {
   }
 
   await applyFollowupPatch(page, before.title, before.text);
-  await page.waitForLoadState("networkidle", { timeout: 60_000 });
+  await waitForGenerationToSettle(page);
   await page.waitForTimeout(1_500);
 
   const after = await waitForStableVisualSnapshot(page);

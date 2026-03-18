@@ -235,6 +235,10 @@ async def _convert_bus_event(event: dict) -> StreamEvent:
             title=str(_cs.get("title", "")),
             language=str(_cs.get("language", "html")),
             version=int(_cs.get("version", 1)),
+            studio_lane=str(_cs.get("studio_lane", "") or "") or None,
+            artifact_kind=str(_cs.get("artifact_kind", "") or "") or None,
+            quality_profile=str(_cs.get("quality_profile", "") or "") or None,
+            renderer_contract=str(_cs.get("renderer_contract", "") or "") or None,
             node=node,
         )
     elif etype == "code_delta":
@@ -254,6 +258,10 @@ async def _convert_bus_event(event: dict) -> StreamEvent:
             language=str(_cs.get("language", "html")),
             version=int(_cs.get("version", 1)),
             visual_payload=_cs.get("visual_payload"),
+            studio_lane=str(_cs.get("studio_lane", "") or "") or None,
+            artifact_kind=str(_cs.get("artifact_kind", "") or "") or None,
+            quality_profile=str(_cs.get("quality_profile", "") or "") or None,
+            renderer_contract=str(_cs.get("renderer_contract", "") or "") or None,
             node=node,
         )
     else:

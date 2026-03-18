@@ -85,6 +85,32 @@ def _make_chat_context() -> ChatContext:
             }
         ],
     }
+    context.widget_feedback = {
+        "latest_results": [
+            {
+                "widget_id": "quiz-1",
+                "widget_kind": "quiz",
+                "status": "complete",
+                "summary": "Sai 2 cau ve COLREG Rule 15",
+            }
+        ]
+    }
+    context.code_studio_context = {
+        "requested_view": "code",
+        "active_session": {
+            "session_id": "vs-pendulum-1",
+            "title": "Mo phong Con lac",
+            "status": "complete",
+            "active_version": 2,
+            "version_count": 2,
+            "language": "html",
+            "studio_lane": "app",
+            "artifact_kind": "html_app",
+            "quality_profile": "premium",
+            "renderer_contract": "host_shell",
+            "has_preview": True,
+        }
+    }
     context.images = [SimpleNamespace(model_dump=lambda: {"kind": "image"})]
     return context
 
@@ -177,6 +203,32 @@ async def test_build_multi_agent_context_uses_shared_contract_fields():
                 "title": "Softmax vs Linear",
             }
         ],
+    }
+    assert multi_agent_context["widget_feedback"] == {
+        "latest_results": [
+            {
+                "widget_id": "quiz-1",
+                "widget_kind": "quiz",
+                "status": "complete",
+                "summary": "Sai 2 cau ve COLREG Rule 15",
+            }
+        ]
+    }
+    assert multi_agent_context["code_studio_context"] == {
+        "requested_view": "code",
+        "active_session": {
+            "session_id": "vs-pendulum-1",
+            "title": "Mo phong Con lac",
+            "status": "complete",
+            "active_version": 2,
+            "version_count": 2,
+            "language": "html",
+            "studio_lane": "app",
+            "artifact_kind": "html_app",
+            "quality_profile": "premium",
+            "renderer_contract": "host_shell",
+            "has_preview": True,
+        }
     }
     assert multi_agent_context["images"] == [{"kind": "image"}]
 

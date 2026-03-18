@@ -65,6 +65,7 @@ if not _had_graph:
     sys.modules[_graph_key] = _mock_graph
 
 from app.engine.multi_agent.graph_streaming import (
+    _convert_bus_event,
     _extract_thinking_content,
     _stream_answer_tokens,
     process_with_multi_agent_streaming,
@@ -268,6 +269,57 @@ class TestStreamAnswerTokens:
         async for event in _stream_answer_tokens("test"):
             events.append(event)
         assert events[0].type == "answer"
+
+
+class TestCodeStudioBusEventConversion:
+    """Ensure Code Studio bus events keep their studio metadata through graph_streaming."""
+
+    @pytest.mark.asyncio
+    async def test_preserves_code_open_metadata(self):
+        event = await _convert_bus_event({
+            "type": "code_open",
+            "node": "code_studio_agent",
+            "content": {
+                "session_id": "vs_1",
+                "title": "Pendulum App",
+                "language": "html",
+                "version": 2,
+                "studio_lane": "app",
+                "artifact_kind": "html_app",
+                "quality_profile": "premium",
+                "renderer_contract": "host_shell",
+            },
+        })
+
+        assert event.type == "code_open"
+        assert event.content["studio_lane"] == "app"
+        assert event.content["artifact_kind"] == "html_app"
+        assert event.content["quality_profile"] == "premium"
+        assert event.content["renderer_contract"] == "host_shell"
+
+    @pytest.mark.asyncio
+    async def test_preserves_code_complete_metadata(self):
+        event = await _convert_bus_event({
+            "type": "code_complete",
+            "node": "code_studio_agent",
+            "content": {
+                "session_id": "vs_1",
+                "full_code": "<div>done</div>",
+                "language": "html",
+                "version": 2,
+                "visual_payload": {"id": "visual-1"},
+                "studio_lane": "artifact",
+                "artifact_kind": "document",
+                "quality_profile": "standard",
+                "renderer_contract": "host_shell",
+            },
+        })
+
+        assert event.type == "code_complete"
+        assert event.content["studio_lane"] == "artifact"
+        assert event.content["artifact_kind"] == "document"
+        assert event.content["quality_profile"] == "standard"
+        assert event.content["renderer_contract"] == "host_shell"
 
 
 # ============================================================================

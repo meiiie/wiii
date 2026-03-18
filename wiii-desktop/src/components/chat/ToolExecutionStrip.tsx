@@ -57,6 +57,19 @@ function extractFilename(value: string): string {
   return segments[segments.length - 1] || trimmed;
 }
 
+function extractVisualSessionIdFromResult(result: unknown): string {
+  if (typeof result !== "string" || !result.trim()) return "";
+  try {
+    const parsed = JSON.parse(result);
+    if (parsed && typeof parsed === "object" && typeof parsed.visual_session_id === "string") {
+      return parsed.visual_session_id.trim();
+    }
+  } catch {
+    // Ignore non-JSON tool results.
+  }
+  return "";
+}
+
 function sanitizeInlineText(value: string): string {
   return normalizeWhitespace(
     value.replace(ABSOLUTE_PATH_PATTERN, (match) => extractFilename(match)),
@@ -320,9 +333,9 @@ export function ToolExecutionStrip({ block }: ToolExecutionStripProps) {
 
 /** Visual tool strip — renders CodeStudioCard if session exists, otherwise VisualArtifactCard. */
 function VisualToolStrip({ block }: ToolExecutionStripProps) {
-  const vsId = typeof block.tool.args?.visual_session_id === "string"
-    ? block.tool.args.visual_session_id
-    : "";
+  const vsId = typeof block.tool.args?.visual_session_id === "string" && block.tool.args.visual_session_id.trim()
+    ? block.tool.args.visual_session_id.trim()
+    : extractVisualSessionIdFromResult(block.tool.result);
   const hasCodeStudioSession = useCodeStudioStore(
     (s) => vsId ? Boolean(s.sessions[vsId]) : false,
   );

@@ -214,12 +214,12 @@ export function useSSEStream() {
     // Initialize the HTTP client with current settings
     initClient(settings.server_url, authHeaders);
 
-    // Start streaming
-    chatStore.startStreaming();
-    useCharacterStore.getState().clearSoulEmotion();
+      // Start streaming
+      chatStore.startStreaming();
+      useCharacterStore.getState().clearSoulEmotion();
 
-    // Sprint 153b: Clear stale think/progress tool IDs from previous streams
-    _thinkToolIds.clear();
+      // Sprint 153b: Clear stale think/progress tool IDs from previous streams
+      _thinkToolIds.clear();
     eventOrderRef.current = [];
     thinkingMetaRef.current = undefined;
 
@@ -581,18 +581,25 @@ export function useSSEStream() {
             });
         }
       },
-      onCodeOpen: (data) => {
-        traceEvent("code_open", { session: data.content.session_id, title: data.content.title });
-        answerBufferRef.current?.drain();
-        thinkingBufferRef.current?.drain();
-        useCodeStudioStore.getState().openSession(
+        onCodeOpen: (data) => {
+          traceEvent("code_open", { session: data.content.session_id, title: data.content.title });
+          answerBufferRef.current?.drain();
+          thinkingBufferRef.current?.drain();
+          useCodeStudioStore.getState().openSession(
           data.content.session_id,
           data.content.title,
           data.content.language,
           data.content.version,
-        );
-        useUIStore.getState().openCodeStudio();
-      },
+            {
+              studioLane: data.content.studio_lane,
+              artifactKind: data.content.artifact_kind,
+              qualityProfile: data.content.quality_profile,
+              rendererContract: data.content.renderer_contract,
+              requestedView: data.content.requested_view,
+            },
+          );
+          useUIStore.getState().openCodeStudio();
+        },
       onCodeDelta: (data) => {
         traceEvent("code_delta", { session: data.content.session_id, idx: data.content.chunk_index });
         useCodeStudioStore.getState().appendCode(
@@ -634,6 +641,7 @@ export function useSSEStream() {
     const buildUserContext = () => {
       const visualContext = useChatStore.getState().getActiveVisualContext();
       const widgetFeedback = useChatStore.getState().getActiveWidgetFeedbackContext();
+      const codeStudioContext = useCodeStudioStore.getState().getActiveSessionContext();
       if (hostCtx) {
         return {
           display_name: settings.display_name || settings.user_id,
@@ -650,6 +658,7 @@ export function useSSEStream() {
           available_actions: hostCtx.available_actions || undefined,
           visual_context: visualContext,
           widget_feedback: widgetFeedback,
+          code_studio_context: codeStudioContext,
         };
       }
       if (pageData) {
@@ -659,14 +668,16 @@ export function useSSEStream() {
           ...pageData,
           visual_context: visualContext,
           widget_feedback: widgetFeedback,
+          code_studio_context: codeStudioContext,
         };
       }
-      if (visualContext || widgetFeedback) {
+      if (visualContext || widgetFeedback || codeStudioContext) {
         return {
           display_name: settings.display_name || settings.user_id,
           role: settings.user_role,
           visual_context: visualContext,
           widget_feedback: widgetFeedback,
+          code_studio_context: codeStudioContext,
         };
       }
       return undefined;

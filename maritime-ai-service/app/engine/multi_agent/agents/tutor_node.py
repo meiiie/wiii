@@ -81,8 +81,10 @@ STRUCTURED_VISUAL_TOOL_INSTRUCTION = """
 ## CONG CU MINH HOA TRUC QUAN:
 - `tool_generate_visual`: Dung cho minh hoa inline trong chat.
 - Uu tien `tool_generate_visual` cho so sanh, quy trinh, kien truc, concept, infographic, chart, timeline, map_lite.
-- Khi can mo phong, canvas, slider, keo tha, hoac mini app, dung `tool_generate_visual`
-  voi renderer_kind=`app` va visual_type phu hop nhu `simulation`.
+- Với article figure/chart runtime, mac dinh sinh `code_html` truc tiep trong `tool_generate_visual`
+  voi renderer_kind=`inline_html`, SVG-first, va chi fallback sang structured spec khi that su can.
+- Khi can mo phong, canvas, slider, keo tha, hoac mini app, dung `tool_create_visual_code`
+  cho lane `code_studio_app`/`artifact`, khong day simulation vao article figure lane.
 - Khong chen payload JSON vao cau tra loi. Chi viet narrative + takeaway.
 - QUAN TRONG: Moi layer/step/branch PHAI co description chi tiet.
   Khong chi ten, ma can giai thich vai tro, cach hoat dong, y nghia.
@@ -91,15 +93,18 @@ STRUCTURED_VISUAL_TOOL_INSTRUCTION = """
 
 # Appended when enable_llm_code_gen_visuals=True
 LLM_CODE_GEN_VISUAL_INSTRUCTION = """
-## CUSTOM VISUAL (code_html):
-- Khi can visual PHUC TAP hoac KHONG PHU HOP voi cac type co san, dung param `code_html`.
-- Viet HTML/CSS/SVG truc tiep — moi visual unique, dep, custom-designed.
+## CUSTOM VISUAL (code_html - CHI KHI THAT SU CAN):
+- Với article figure/chart runtime, `code_html` la lane mac dinh khi can visual/chat quality cao:
+  sinh HTML/SVG truc tiep, uu tien SVG-first, giai thich claim ro rang, va giu inline nhu mot phan cua bai viet.
+- `tool_create_visual_code` chi dung cho simulation, mini tool, widget, app, artifact, hoac interaction bespoke.
 - Dung CSS variables co san: --bg, --bg2, --bg3, --text, --text2, --text3,
   --accent, --green, --purple, --amber, --teal, --pink, --border, --radius.
 - Dark mode tu dong qua CSS variables — KHONG can media query rieng.
-- Chi dung JavaScript khi that su can (animation, interaction). Uu tien CSS animation.
+- Chi dung JavaScript khi that su can (animation, interaction, canvas loop). Uu tien SVG/CSS cho article figure.
+- Giu host-owned shell, hierarchy ro rang, va tranh cam giac widget card tach roi khoi bai viet.
 - PHAI co spec_json (du la {}) va visual_type hop le.
-- Vi du dung code_html: tao SVG diagram custom, flowchart phuc tap, so do mang luoi, visual hoa data doc dao.
+- Vi du dung code_html: tao SVG diagram custom, chart benchmark, motion explainer, flowchart phuc tap,
+  so do mang luoi, visual hoa data doc dao, hoac app inline.
 """
 
 _MAX_PHASE_TRANSITIONS = 4

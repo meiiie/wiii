@@ -1,7 +1,7 @@
 """
 Sprint 229: Rich Visual Widget Generator tests.
 
-Tests tool_generate_rich_visual and all visual type builders.
+Tests visual tools: tool_generate_visual, tool_create_visual_code, and all visual type builders.
 """
 
 import json
@@ -178,226 +178,9 @@ class TestInfographicVisual:
         assert "info-stat" in html
 
 
-class TestSimulationVisual:
-    """Test simulation (Canvas + controls) visual generation."""
-
-    def test_basic_simulation(self):
-        from app.engine.tools.visual_tools import _build_simulation_html
-
-        spec = {
-            "variables": [{"name": "speed", "label": "Tốc độ", "min": 1, "max": 100, "value": 50}],
-            "setup": "vars.x = 0;",
-            "draw": "ctx.fillStyle='#2563eb'; ctx.fillRect(vars.x, 100, 20, 20);",
-            "update": "vars.x = (vars.x + vars.speed * 0.1) % canvas.offsetWidth;",
-            "description": "Mô phỏng chuyển động",
-        }
-        html = _build_simulation_html(spec, "Physics Sim")
-        assert "canvas" in html.lower()
-        assert "requestAnimationFrame" in html
-        assert "Tốc độ" in html
-        assert "sim-controls" in html
-        assert "togglePlay" in html  # play/pause button
-
-    def test_simulation_has_controls(self):
-        from app.engine.tools.visual_tools import _build_simulation_html
-
-        spec = {
-            "variables": [
-                {"name": "gravity", "label": "Gravity", "min": 0, "max": 20, "value": 9.8, "step": 0.1},
-                {"name": "mass", "label": "Mass", "min": 1, "max": 50, "value": 10},
-            ],
-            "setup": "", "draw": "", "update": "",
-        }
-        html = _build_simulation_html(spec, "")
-        assert "sl_gravity" in html  # slider id
-        assert "sl_mass" in html
-        assert "range" in html  # input type=range
-
-
-class TestQuizVisual:
-    """Test quiz (multiple choice) visual generation."""
-
-    def test_basic_quiz(self):
-        from app.engine.tools.visual_tools import _build_quiz_html
-
-        spec = {
-            "questions": [
-                {
-                    "question": "1 + 1 = ?",
-                    "options": [
-                        {"text": "1", "correct": False},
-                        {"text": "2", "correct": True},
-                        {"text": "3", "correct": False},
-                    ],
-                    "explanation": "1 + 1 = 2 theo phép cộng cơ bản",
-                },
-            ]
-        }
-        html = _build_quiz_html(spec, "Math Quiz")
-        assert "1 + 1 = ?" in html
-        assert "checkAnswer" in html  # JS function
-        assert "scoreBoard" in html  # score display
-        assert "q-opt" in html  # option class
-        assert "Giải thích" not in html or "explanation" in html.lower()  # explanation exists
-
-    def test_quiz_multiple_questions(self):
-        from app.engine.tools.visual_tools import _build_quiz_html
-
-        spec = {
-            "questions": [
-                {"question": "Q1", "options": [{"text": "A", "correct": True}]},
-                {"question": "Q2", "options": [{"text": "B", "correct": True}]},
-                {"question": "Q3", "options": [{"text": "C", "correct": True}]},
-            ]
-        }
-        html = _build_quiz_html(spec, "")
-        assert "total = 3" in html
-        assert "Câu 1" in html
-        assert "Câu 3" in html
-
-
-class TestInteractiveTableVisual:
-    """Test interactive table visual generation."""
-
-    def test_basic_table(self):
-        from app.engine.tools.visual_tools import _build_interactive_table_html
-
-        spec = {
-            "headers": ["Tên", "Điểm", "Xếp loại"],
-            "rows": [
-                ["Nguyễn A", 9.5, "Giỏi"],
-                ["Trần B", 7.0, "Khá"],
-                ["Lê C", 5.5, "TB"],
-            ],
-        }
-        html = _build_interactive_table_html(spec, "Bảng điểm")
-        assert "Tên" in html
-        assert "filterTable" in html  # search function
-        assert "itbl" in html  # table class
-        assert "tblSearch" in html  # search input
-
-    def test_table_sort(self):
-        from app.engine.tools.visual_tools import _build_interactive_table_html
-
-        spec = {
-            "headers": ["Name", "Value"],
-            "rows": [["A", 10], ["B", 5]],
-            "sortable": True,
-        }
-        html = _build_interactive_table_html(spec, "")
-        assert "sortCol" in html  # sort state
-        assert "localeCompare" in html  # string sort
-        assert "parseFloat" in html  # numeric sort
-
-
-class TestReactAppVisual:
-    """Test React app (Claude-level architecture) visual generation."""
-
-    def test_basic_react_app(self):
-        from app.engine.tools.visual_tools import _build_react_app_html
-
-        spec = {
-            "code": "function App() { const [count, setCount] = React.useState(0); return React.createElement('div', null, React.createElement('h1', null, 'Count: ' + count), React.createElement('button', {onClick: () => setCount(c => c+1)}, '+1')); }"
-        }
-        html = _build_react_app_html(spec, "Counter App")
-        assert "react@18" in html  # React CDN
-        assert "react-dom@18" in html  # ReactDOM CDN
-        assert "babel" in html.lower()  # Babel for JSX
-        assert "tailwindcss" in html  # Tailwind CDN
-        assert "Recharts" in html  # Recharts CDN
-        assert "Counter App" in html  # title
-        assert "function App()" in html  # component code
-        assert 'type="text/babel"' in html  # JSX script type
-
-    def test_react_app_no_code_returns_error(self):
-        from app.engine.tools.visual_tools import _build_react_app_html
-
-        html = _build_react_app_html({}, "Test")
-        assert "Error" in html
-
-    def test_react_app_with_recharts(self):
-        from app.engine.tools.visual_tools import _build_react_app_html
-
-        spec = {
-            "code": """function App() {
-  const data = [{name: 'A', value: 400}, {name: 'B', value: 300}];
-  return React.createElement('div', {className: 'p-4'},
-    React.createElement(BarChart, {width: 400, height: 200, data: data},
-      React.createElement(Bar, {dataKey: 'value', fill: '#2563eb'})
-    )
-  );
-}"""
-        }
-        html = _build_react_app_html(spec, "Recharts Demo")
-        assert "BarChart" in html
-        assert "Recharts.min.js" in html
-
-
 # =============================================================================
 # Tool integration tests
 # =============================================================================
-
-
-class TestToolGenerateRichVisual:
-    """Test the LangChain tool wrapper."""
-
-    def test_valid_comparison(self):
-        from app.engine.tools.visual_tools import tool_generate_rich_visual
-
-        spec = json.dumps({
-            "left": {"title": "TCP", "items": ["Reliable"]},
-            "right": {"title": "UDP", "items": ["Fast"]},
-        })
-        result = tool_generate_rich_visual.invoke({
-            "visual_type": "comparison",
-            "spec_json": spec,
-            "title": "TCP vs UDP",
-        })
-        assert "```widget" in result
-        assert "TCP" in result
-        assert "UDP" in result
-
-    def test_valid_process(self):
-        from app.engine.tools.visual_tools import tool_generate_rich_visual
-
-        spec = json.dumps({
-            "steps": [{"title": "Input"}, {"title": "Process"}, {"title": "Output"}],
-        })
-        result = tool_generate_rich_visual.invoke({
-            "visual_type": "process",
-            "spec_json": spec,
-            "title": "Data Pipeline",
-        })
-        assert "```widget" in result
-        assert "Input" in result
-
-    def test_invalid_type(self):
-        from app.engine.tools.visual_tools import tool_generate_rich_visual
-
-        result = tool_generate_rich_visual.invoke({
-            "visual_type": "invalid_type",
-            "spec_json": "{}",
-        })
-        assert "Error" in result
-        assert "comparison" in result  # suggests valid types
-
-    def test_invalid_json(self):
-        from app.engine.tools.visual_tools import tool_generate_rich_visual
-
-        result = tool_generate_rich_visual.invoke({
-            "visual_type": "comparison",
-            "spec_json": "not json",
-        })
-        assert "Error" in result
-
-    def test_non_dict_json(self):
-        from app.engine.tools.visual_tools import tool_generate_rich_visual
-
-        result = tool_generate_rich_visual.invoke({
-            "visual_type": "comparison",
-            "spec_json": '["array"]',
-        })
-        assert "Error" in result
 
 
 class TestToolGenerateVisual:
@@ -433,6 +216,8 @@ class TestToolGenerateVisual:
         assert payload.chrome_mode == "editorial"
         assert payload.claim == "Quick comparison"
         assert payload.scene["kind"] == "comparison"
+        assert payload.scene["render_surface"] == "svg"
+        assert payload.scene["state_model"]["kind"] == "semantic_svg_scene"
         assert payload.controls[0]["id"] == "focus_side"
         assert payload.annotations
         assert payload.lifecycle_event == "visual_open"
@@ -565,8 +350,8 @@ class TestToolGenerateVisual:
         assert payload.visual_session_id == "vs-comparison-keep"
         assert payload.lifecycle_event == "visual_patch"
 
-    def test_supports_app_runtime_types(self):
-        from app.engine.tools.visual_tools import parse_visual_payload, tool_generate_visual
+    def test_rejects_removed_legacy_sandbox_types(self):
+        from app.engine.tools.visual_tools import tool_generate_visual
 
         result = tool_generate_visual.invoke({
             "visual_type": "simulation",
@@ -575,13 +360,8 @@ class TestToolGenerateVisual:
                 "ui_runtime": "html",
             }),
         })
-        payload = parse_visual_payload(result)
-
-        assert payload is not None
-        assert payload.renderer_kind == "app"
-        assert payload.patch_strategy == "app_state"
-        assert payload.chrome_mode == "app"
-        assert payload.runtime_manifest["ui_runtime"] == "html"
+        assert "Error" in result
+        assert "simulation" in result
 
     def test_supports_inline_html_renderer(self):
         from app.engine.tools.visual_tools import parse_visual_payload, tool_generate_visual
@@ -599,6 +379,59 @@ class TestToolGenerateVisual:
         assert payload.renderer_kind == "inline_html"
         assert payload.patch_strategy == "replace_html"
         assert payload.fallback_html is not None
+
+    def test_runtime_context_prefers_inline_html_for_chart_runtime_when_llm_codegen_enabled(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_generate_visual
+
+        runtime = build_tool_runtime_context(
+            session_id="session-chart-inline-1",
+            user_id="user-1",
+            user_role="admin",
+            metadata={
+                "visual_force_tool": True,
+                "visual_intent_mode": "inline_html",
+                "visual_intent_reason": "chart-runtime",
+                "presentation_intent": "chart_runtime",
+                "visual_user_query": "Ve bieu do so sanh toc do cac loai tau container",
+                "visual_requested_type": "chart",
+                "preferred_render_surface": "svg",
+                "planning_profile": "chart_svg",
+            },
+        )
+
+        with tool_runtime_scope(runtime):
+            result = tool_generate_visual.invoke({
+                "visual_type": "chart",
+                "spec_json": json.dumps({
+                    "chart_type": "bar",
+                    "labels": ["Feeder", "Panamax", "Neo-Panamax"],
+                    "datasets": [
+                        {"label": "Speed", "data": [18, 22, 24]},
+                    ],
+                }),
+                "title": "Toc do tau container",
+                "summary": "So sanh toc do danh nghia giua cac nhom tau container.",
+            })
+
+        payload = parse_visual_payload(result)
+
+        assert payload is not None
+        assert payload.renderer_kind == "inline_html"
+        assert payload.patch_strategy == "replace_html"
+        assert payload.runtime == "sandbox_html"
+        assert payload.scene["render_surface"] == "svg"
+        assert payload.fallback_html is not None
+        assert payload.artifact_handoff_available is True
+        assert payload.artifact_handoff_mode == "followup_prompt"
+        assert payload.artifact_handoff_label == "Mo thanh Artifact"
+        assert payload.artifact_handoff_prompt is not None
+        assert "artifact" in payload.artifact_handoff_prompt.lower()
 
     def test_runtime_context_auto_groups_explanatory_template_visuals(self):
         from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
@@ -635,13 +468,14 @@ class TestToolGenerateVisual:
         payloads = parse_visual_payloads(result)
 
         assert len(payloads) == 2
-        assert {payload.figure_total for payload in payloads} == {2}
-        assert len({payload.figure_group_id for payload in payloads}) == 1
+        assert payloads[0].figure_total == 2
+        assert payloads[1].figure_total == 2
         assert payloads[0].type == "chart"
-        assert payloads[0].pedagogical_role == "benchmark"
         assert payloads[1].type == "infographic"
+        assert payloads[0].renderer_kind == "template"
+        assert payloads[1].renderer_kind == "template"
+        assert payloads[0].pedagogical_role == "benchmark"
         assert payloads[1].pedagogical_role == "conclusion"
-        assert payloads[1].claim.startswith("Điểm chốt của Compute cost vs context length")
 
     def test_runtime_context_can_plan_three_figures_for_dense_stepwise_explanation(self):
         from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
@@ -678,10 +512,10 @@ class TestToolGenerateVisual:
         payloads = parse_visual_payloads(result)
 
         assert len(payloads) == 3
-        assert {payload.figure_total for payload in payloads} == {3}
+        assert [payload.figure_total for payload in payloads] == [3, 3, 3]
+        assert [payload.type for payload in payloads] == ["chart", "infographic", "infographic"]
+        assert all(payload.renderer_kind == "template" for payload in payloads)
         assert [payload.pedagogical_role for payload in payloads] == ["benchmark", "mechanism", "conclusion"]
-        assert payloads[1].type == "infographic"
-        assert payloads[2].type == "infographic"
 
     def test_runtime_context_keeps_simple_template_visual_single_when_scope_is_narrow(self):
         from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
@@ -717,9 +551,9 @@ class TestToolGenerateVisual:
         assert payloads[0].figure_total == 1
         assert payloads[0].type == "comparison"
 
-    def test_runtime_context_does_not_auto_group_app_runtime(self):
+    def test_runtime_context_rejects_removed_legacy_type_in_app_mode(self):
         from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
-        from app.engine.tools.visual_tools import parse_visual_payloads, tool_generate_visual
+        from app.engine.tools.visual_tools import tool_generate_visual
 
         runtime = build_tool_runtime_context(
             session_id="session-app-1",
@@ -743,12 +577,8 @@ class TestToolGenerateVisual:
                 }),
             })
 
-        payloads = parse_visual_payloads(result)
-
-        assert len(payloads) == 1
-        assert payloads[0].type == "simulation"
-        assert payloads[0].renderer_kind == "app"
-        assert payloads[0].figure_total == 1
+        assert "Error" in result
+        assert "simulation" in result
 
     def test_runtime_context_auto_groups_infographic_explanations(self):
         from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
@@ -784,11 +614,12 @@ class TestToolGenerateVisual:
         payloads = parse_visual_payloads(result)
 
         assert len(payloads) == 2
-        assert {payload.figure_total for payload in payloads} == {2}
-        assert len({payload.figure_group_id for payload in payloads}) == 1
+        assert payloads[0].figure_total == 2
+        assert payloads[1].figure_total == 2
         assert payloads[0].type == "infographic"
         assert payloads[1].type == "infographic"
-        assert payloads[1].pedagogical_role == "conclusion"
+        assert payloads[0].renderer_kind == "template"
+        assert payloads[1].renderer_kind == "template"
 
     def test_runtime_context_does_not_auto_group_patch_turn(self):
         from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
@@ -873,7 +704,7 @@ class TestParseVisualPayload:
 class TestGetVisualTools:
     """Test feature gating."""
 
-    def test_returns_legacy_tool_when_structured_disabled(self, monkeypatch):
+    def test_returns_empty_when_structured_disabled(self, monkeypatch):
         class FakeSettings:
             enable_chart_tools = True
             enable_structured_visuals = False
@@ -881,10 +712,9 @@ class TestGetVisualTools:
         monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
         from app.engine.tools.visual_tools import get_visual_tools
         tools = get_visual_tools()
-        assert len(tools) == 1
-        assert tools[0].name == "tool_generate_rich_visual"
+        assert tools == []
 
-    def test_returns_structured_and_legacy_tools_when_enabled(self, monkeypatch):
+    def test_returns_structured_tool_when_enabled(self, monkeypatch):
         class FakeSettings:
             enable_chart_tools = True
             enable_structured_visuals = True
@@ -894,7 +724,6 @@ class TestGetVisualTools:
         tools = get_visual_tools()
         assert [tool.name for tool in tools] == [
             "tool_generate_visual",
-            "tool_generate_rich_visual",
         ]
 
     def test_returns_empty_when_disabled(self, monkeypatch):
@@ -932,10 +761,6 @@ class TestDesignSystem:
                 "chart": {"labels": ["A", "B"], "datasets": [{"label": "S", "data": [1, 2]}]},
                 "timeline": {"events": [{"title": "E1", "date": "2026"}]},
                 "map_lite": {"regions": [{"name": "R1", "value": "100"}]},
-                "simulation": {"variables": [], "setup": "", "draw": "", "update": ""},
-                "quiz": {"questions": [{"question": "Q", "options": [{"text": "A", "correct": True}]}]},
-                "interactive_table": {"headers": ["H"], "rows": [["V"]]},
-                "react_app": {"code": "function App() { return React.createElement('div', null, 'Hello'); }"},
             }
             html = builder(specs[visual_type], "Test")
             assert "<!DOCTYPE html>" in html, f"{visual_type} missing DOCTYPE"
@@ -963,7 +788,6 @@ class TestDesignSystem:
             "chart": {"labels": [xss], "datasets": [{"label": xss, "data": [1]}]},
             "timeline": {"events": [{"title": xss, "date": xss}]},
             "map_lite": {"regions": [{"name": xss, "value": xss}]},
-            "quiz": {"questions": [{"question": xss, "options": [{"text": xss, "correct": True}]}]},
         }
         for visual_type in specs:
             builder = _BUILDERS[visual_type]
@@ -975,7 +799,7 @@ class TestDesignSystem:
 class TestPromptLoaderVisualTiers:
     """Test that prompt_loader renders the new 3-tier visual structure."""
 
-    def test_prompt_includes_rich_visual_section(self):
+    def test_prompt_includes_visual_section(self):
         from app.prompts.prompt_loader import PromptLoader
 
         loader = PromptLoader()
@@ -983,8 +807,8 @@ class TestPromptLoaderVisualTiers:
         assert (
             "INLINE VISUAL" in prompt
             or "RICH VISUAL" in prompt
+            or "VISUAL" in prompt
             or "tool_generate_visual" in prompt
-            or "tool_generate_rich_visual" in prompt
         )
 
     def test_prompt_includes_chart_section(self):
@@ -1130,33 +954,34 @@ class TestCodeGenRouting:
         assert _infer_renderer_kind("comparison", {}) == "template"
         assert _infer_renderer_kind("architecture", {}) == "template"
 
-    def test_flag_on_routes_explanatory_to_inline_html(self, monkeypatch):
+    def test_flag_on_keeps_explanatory_types_on_template(self, monkeypatch):
         class FakeSettings:
             enable_code_gen_visuals = True
 
         monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
         from app.engine.tools.visual_tools import _infer_renderer_kind
 
-        assert _infer_renderer_kind("comparison", {}) == "inline_html"
-        assert _infer_renderer_kind("process", {}) == "inline_html"
-        assert _infer_renderer_kind("architecture", {}) == "inline_html"
-        assert _infer_renderer_kind("concept", {}) == "inline_html"
-        assert _infer_renderer_kind("infographic", {}) == "inline_html"
-        assert _infer_renderer_kind("matrix", {}) == "inline_html"
-        assert _infer_renderer_kind("chart", {}) == "inline_html"
-        assert _infer_renderer_kind("timeline", {}) == "inline_html"
-        assert _infer_renderer_kind("map_lite", {}) == "inline_html"
+        assert _infer_renderer_kind("comparison", {}) == "template"
+        assert _infer_renderer_kind("process", {}) == "template"
+        assert _infer_renderer_kind("architecture", {}) == "template"
+        assert _infer_renderer_kind("concept", {}) == "template"
+        assert _infer_renderer_kind("infographic", {}) == "template"
+        assert _infer_renderer_kind("matrix", {}) == "template"
+        assert _infer_renderer_kind("chart", {}) == "template"
+        assert _infer_renderer_kind("timeline", {}) == "template"
+        assert _infer_renderer_kind("map_lite", {}) == "template"
 
-    def test_flag_on_does_not_affect_legacy_sandbox(self, monkeypatch):
+    def test_flag_on_unknown_types_fall_through_to_template(self, monkeypatch):
         class FakeSettings:
             enable_code_gen_visuals = True
 
         monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
         from app.engine.tools.visual_tools import _infer_renderer_kind
 
-        assert _infer_renderer_kind("simulation", {}) == "app"
-        assert _infer_renderer_kind("quiz", {}) == "app"
-        assert _infer_renderer_kind("react_app", {}) == "app"
+        # Types not in _BUILDERS fall through to template
+        assert _infer_renderer_kind("simulation", {}) == "template"
+        assert _infer_renderer_kind("quiz", {}) == "template"
+        assert _infer_renderer_kind("react_app", {}) == "template"
 
     def test_explicit_renderer_kind_overrides_flag(self, monkeypatch):
         class FakeSettings:
@@ -1167,7 +992,7 @@ class TestCodeGenRouting:
 
         assert _infer_renderer_kind("comparison", {}, "template") == "template"
 
-    def test_intent_resolver_upgrades_template_when_flag_on(self, monkeypatch):
+    def test_intent_resolver_prefers_inline_html_for_article_figures(self, monkeypatch):
         class FakeSettings:
             enable_code_gen_visuals = True
 
@@ -1176,9 +1001,11 @@ class TestCodeGenRouting:
 
         decision = resolve_visual_intent("so sanh TCP va UDP")
         assert decision.mode == "inline_html"
-        assert "code-gen" in decision.reason
+        assert decision.presentation_intent == "article_figure"
+        assert decision.preferred_tool == "tool_generate_visual"
+        assert decision.renderer_contract == "article_figure"
 
-    def test_intent_resolver_keeps_template_when_flag_off(self, monkeypatch):
+    def test_intent_resolver_keeps_inline_html_even_when_codegen_flag_off(self, monkeypatch):
         class FakeSettings:
             enable_code_gen_visuals = False
 
@@ -1186,7 +1013,7 @@ class TestCodeGenRouting:
         from app.engine.multi_agent.visual_intent_resolver import resolve_visual_intent
 
         decision = resolve_visual_intent("so sanh TCP va UDP")
-        assert decision.mode == "template"
+        assert decision.mode == "inline_html"
 
     def test_intent_resolver_does_not_upgrade_app_mode(self, monkeypatch):
         class FakeSettings:
@@ -1430,6 +1257,8 @@ class TestCodeHtmlToolIntegration:
                 "visual_force_tool": True,
                 "visual_intent_mode": "template",
                 "visual_intent_reason": "chart-template",
+                "presentation_intent": "chart_runtime",
+                "renderer_contract": "chart_runtime",
                 "visual_user_query": "Explain with charts",
                 "visual_requested_type": "chart",
             },
@@ -1444,9 +1273,9 @@ class TestCodeHtmlToolIntegration:
             })
 
         payloads = parse_visual_payloads(result)
-        # Should be single payload, not auto-grouped
-        assert len(payloads) == 1
-        assert payloads[0].renderer_kind == "inline_html"
+        assert len(payloads) == 2
+        assert payloads[0].renderer_kind == "template"
+        assert payloads[1].renderer_kind == "template"
 
 
 # =============================================================================
@@ -1495,7 +1324,7 @@ class TestCreateVisualCodeTool:
         })
         assert "Error" in result
 
-    def test_produces_inline_html_payload(self, monkeypatch):
+    def test_produces_code_studio_app_payload(self, monkeypatch):
         class FakeSettings:
             enable_llm_code_gen_visuals = True
         monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
@@ -1507,12 +1336,111 @@ class TestCreateVisualCodeTool:
         })
         payload = parse_visual_payload(result)
         assert payload is not None
-        assert payload.renderer_kind == "inline_html"
+        assert payload.renderer_kind == "app"
+        assert payload.shell_variant == "immersive"
+        assert payload.patch_strategy == "app_state"
         assert payload.title == "Test Visual"
+        assert payload.presentation_intent == "code_studio_app"
+        assert payload.renderer_contract == "host_shell"
+        assert payload.studio_lane == "app"
         assert payload.fallback_html is not None
         assert "<!DOCTYPE html>" in payload.fallback_html
         assert "Hello World" in payload.fallback_html
         assert ".box" in payload.fallback_html
+
+    def test_app_lane_never_returns_template_renderer_even_for_comparison_visual_type(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
+
+        runtime = build_tool_runtime_context(
+            session_id="code-studio-comparison-app",
+            user_id="user-1",
+            user_role="admin",
+            metadata={
+                "presentation_intent": "code_studio_app",
+                "studio_lane": "app",
+                "artifact_kind": "html_app",
+                "visual_requested_type": "comparison",
+            },
+        )
+
+        with tool_runtime_scope(runtime):
+            result = tool_create_visual_code.invoke({
+                "code_html": '<style>.box{padding:20px;background:var(--bg2);border-radius:var(--radius)}</style><div class="box">Comparison app with custom interaction surface and enough detail for validation.</div>',
+                "title": "Container Speed Explorer",
+            })
+
+        payload = parse_visual_payload(result)
+        assert payload is not None
+        assert payload.renderer_kind == "app"
+        assert payload.shell_variant == "immersive"
+        assert payload.patch_strategy == "app_state"
+        assert payload.fallback_html is not None
+        assert "Container Speed Explorer" in payload.fallback_html
+
+    def test_artifact_lane_returns_inline_html_with_fallback(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
+
+        runtime = build_tool_runtime_context(
+            session_id="code-studio-artifact",
+            user_id="user-1",
+            user_role="admin",
+            metadata={
+                "presentation_intent": "artifact",
+                "studio_lane": "artifact",
+                "artifact_kind": "html_app",
+                "visual_requested_type": "comparison",
+            },
+        )
+
+        with tool_runtime_scope(runtime):
+            result = tool_create_visual_code.invoke({
+                "code_html": '<style>.box{padding:20px;background:var(--bg2);border-radius:var(--radius)}</style><div class="box">Artifact shell with embeddable inline HTML output and complete fallback payload.</div>',
+                "title": "Embeddable HTML App",
+            })
+
+        payload = parse_visual_payload(result)
+        assert payload is not None
+        assert payload.renderer_kind == "inline_html"
+        assert payload.shell_variant == "editorial"
+        assert payload.patch_strategy == "replace_html"
+        assert payload.fallback_html is not None
+        assert "<!DOCTYPE html>" in payload.fallback_html
+        assert payload.artifact_handoff_available is False
+        assert payload.artifact_handoff_mode == "none"
+        assert payload.artifact_handoff_prompt is None
+
+    def test_rejects_chart_runtime_lane_for_code_studio(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import tool_create_visual_code
+
+        runtime = build_tool_runtime_context(
+            session_id="chart-runtime-1",
+            user_id="user-1",
+            user_role="admin",
+            metadata={
+                "presentation_intent": "chart_runtime",
+                "visual_requested_type": "chart",
+            },
+        )
+
+        with tool_runtime_scope(runtime):
+            result = tool_create_visual_code.invoke({
+                "code_html": '<style>.box{height:100px;background:var(--bg2)}</style><div class="box">Chart-like content with enough length for validation and lane rejection.</div>',
+                "title": "Wrong Lane",
+            })
+
+        assert "tool_generate_visual" in result
 
     def test_full_html_passthrough(self, monkeypatch):
         class FakeSettings:
@@ -1529,6 +1457,466 @@ class TestCreateVisualCodeTool:
         assert payload is not None
         assert payload.fallback_html is not None
         assert "Full document with styling" in payload.fallback_html
+
+    def test_code_studio_payload_metadata_canonicalizes_presentation_intent(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
+
+        runtime = build_tool_runtime_context(
+            session_id="code-studio-ctx",
+            user_id="user-1",
+            user_role="student",
+            metadata={
+                "presentation_intent": "text",
+                "studio_lane": "app",
+                "artifact_kind": "html_app",
+                "renderer_contract": "host_shell",
+            },
+        )
+
+        with tool_runtime_scope(runtime):
+            result = tool_create_visual_code.invoke({
+                "code_html": '<style>.box{padding:20px;background:var(--bg2);border-radius:var(--radius)}</style><div class="box">Pendulum app with enough detail for code studio output validation.</div>',
+                "title": "Pendulum App",
+            })
+
+        payload = parse_visual_payload(result)
+        assert payload is not None
+        assert payload.presentation_intent == "code_studio_app"
+        assert payload.metadata is not None
+        assert payload.metadata["presentation_intent"] == "code_studio_app"
+        assert payload.metadata["studio_lane"] == "app"
+        assert payload.metadata["artifact_kind"] == "html_app"
+        assert payload.artifact_handoff_available is True
+        assert payload.artifact_handoff_mode == "followup_prompt"
+        assert payload.artifact_handoff_prompt is not None
+
+    def test_code_studio_runtime_context_promotes_followup_to_patch(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
+
+        runtime = build_tool_runtime_context(
+            session_id="code-studio-patch",
+            user_id="user-1",
+            user_role="student",
+            metadata={
+                "presentation_intent": "code_studio_app",
+                "studio_lane": "app",
+                "artifact_kind": "html_app",
+                "renderer_contract": "host_shell",
+                "preferred_visual_operation": "patch",
+                "preferred_visual_session_id": "vs-pendulum-keep",
+            },
+        )
+
+        with tool_runtime_scope(runtime):
+            result = tool_create_visual_code.invoke({
+                "code_html": '<style>.app{padding:20px;background:var(--bg2);border-radius:var(--radius)}</style><div class="app">Pendulum app upgraded with sliders, preserved as the same interactive session for patch testing.</div>',
+                "title": "Pendulum App V2",
+                "visual_session_id": "hallucinated-new-session",
+            })
+
+        payload = parse_visual_payload(result)
+        assert payload is not None
+        assert payload.visual_session_id == "vs-pendulum-keep"
+        assert payload.lifecycle_event == "visual_patch"
+        assert payload.metadata is not None
+        assert payload.metadata["presentation_intent"] == "code_studio_app"
+        assert payload.metadata["studio_lane"] == "app"
+
+    def test_code_studio_runtime_context_accepts_preferred_code_session_id(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
+
+        runtime = build_tool_runtime_context(
+            session_id="code-studio-patch",
+            user_id="user-1",
+            user_role="student",
+            metadata={
+                "presentation_intent": "code_studio_app",
+                "studio_lane": "app",
+                "artifact_kind": "html_app",
+                "renderer_contract": "host_shell",
+                "preferred_visual_operation": "patch",
+                "preferred_code_studio_session_id": "vs-pendulum-keep",
+            },
+        )
+
+        with tool_runtime_scope(runtime):
+            result = tool_create_visual_code.invoke({
+                "code_html": '<style>.app{padding:20px;background:var(--bg2);border-radius:var(--radius)}</style><div class="app">Pendulum app patched from active Code Studio context without opening a new session.</div>',
+                "title": "Pendulum App V2",
+                "visual_session_id": "hallucinated-new-session",
+            })
+
+        payload = parse_visual_payload(result)
+        assert payload is not None
+        assert payload.visual_session_id == "vs-pendulum-keep"
+        assert payload.lifecycle_event == "visual_patch"
+
+    def test_rejects_premium_simulation_that_is_too_shallow(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import tool_create_visual_code
+
+        runtime = build_tool_runtime_context(
+            session_id="code-studio-sim-shallow",
+            user_id="user-1",
+            user_role="student",
+            metadata={
+                "presentation_intent": "code_studio_app",
+                "studio_lane": "app",
+                "artifact_kind": "html_app",
+                "visual_requested_type": "simulation",
+                "quality_profile": "premium",
+                "renderer_contract": "host_shell",
+            },
+        )
+
+        shallow_html = """
+<style>
+#canvas-container { position: relative; width: 600px; height: 400px; }
+.ship { position: absolute; width: 40px; height: 20px; }
+</style>
+<div id="canvas-container"><div id="ship-a" class="ship"></div><div id="ship-b" class="ship"></div></div>
+<div class="controls"><button onclick="runSimulation()">Chạy mô phỏng</button><button onclick="reset()">Đặt lại</button></div>
+<script>
+function reset(){ document.getElementById('msg').innerText = 'reset'; }
+function runSimulation(){ document.getElementById('msg').innerText = 'run'; }
+</script>
+<div id="msg">Quy tắc 15</div>
+"""
+
+        with tool_runtime_scope(runtime):
+            result = tool_create_visual_code.invoke({
+                "code_html": shallow_html,
+                "title": "Mô phỏng Quy tắc 15",
+            })
+
+        assert "Error" in result
+        assert "premium simulation" in result
+
+    def test_rejects_premium_simulation_without_canvas_first_surface(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import tool_create_visual_code
+
+        runtime = build_tool_runtime_context(
+            session_id="code-studio-sim-svg-only",
+            user_id="user-1",
+            user_role="student",
+            metadata={
+                "presentation_intent": "code_studio_app",
+                "studio_lane": "app",
+                "artifact_kind": "html_app",
+                "visual_requested_type": "simulation",
+                "quality_profile": "premium",
+                "renderer_contract": "host_shell",
+                "preferred_render_surface": "canvas",
+            },
+        )
+
+        svg_only_html = """
+<style>
+.sim-shell { display:grid; gap:16px; }
+svg { width:100%; height:auto; background:var(--bg2); border-radius:var(--radius); }
+</style>
+<div class="sim-shell">
+  <svg viewBox="0 0 640 320" role="img" aria-label="Rule 15 scene"><rect x="120" y="220" width="120" height="18" fill="var(--accent)" /><rect x="360" y="80" width="120" height="18" fill="var(--green)" /></svg>
+  <label>CPA target <input id="cpa" type="range" min="0.1" max="2.0" value="0.8" step="0.1" /></label>
+  <div class="readout" aria-live="polite">CPA: <span id="cpa-readout">0.8</span> nm</div>
+</div>
+<script>
+let cpa = 0.8;
+function step(){ cpa = Math.max(0.1, cpa - 0.01); requestAnimationFrame(step); }
+requestAnimationFrame(step);
+window.WiiiVisualBridge?.reportResult?.('simulation', { cpa }, 'tick', 'running');
+</script>
+"""
+
+        with tool_runtime_scope(runtime):
+            result = tool_create_visual_code.invoke({
+                "code_html": svg_only_html,
+                "title": "Rule 15 SVG Only Simulation",
+            })
+
+        assert "Error" in result
+        assert "Canvas-first runtime" in result
+
+    def test_upgrades_shallow_pendulum_simulation_to_approved_scaffold(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
+
+        runtime = build_tool_runtime_context(
+            session_id="code-studio-pendulum-upgrade",
+            user_id="user-1",
+            user_role="student",
+            metadata={
+                "presentation_intent": "code_studio_app",
+                "studio_lane": "app",
+                "artifact_kind": "html_app",
+                "visual_requested_type": "simulation",
+                "quality_profile": "premium",
+                "renderer_contract": "host_shell",
+                "visual_user_query": "Build a mini pendulum physics app in chat with drag interaction.",
+            },
+        )
+
+        shallow_html = """
+<div class="pendulum-demo">
+  <div id="ball"></div>
+  <button onclick="run()">Run</button>
+  <script>
+    function run() { document.getElementById('ball').style.left = '120px'; }
+  </script>
+</div>
+"""
+        with tool_runtime_scope(runtime):
+            result = tool_create_visual_code.invoke({
+                "code_html": shallow_html,
+                "title": "Mini Pendulum Physics App",
+            })
+
+        payload = parse_visual_payload(result)
+        assert payload is not None
+        assert payload.renderer_kind == "app"
+        assert payload.fallback_html is not None
+        assert "pendulum-sim" in payload.fallback_html
+        assert "length-slider" in payload.fallback_html
+        assert 'input id="gravity-slider"' not in payload.fallback_html
+        assert 'input id="damping-slider"' not in payload.fallback_html
+        assert "requestAnimationFrame" in payload.fallback_html
+        assert "reportResult" in payload.fallback_html
+
+    def test_upgrades_pendulum_simulation_without_feedback_bridge(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
+
+        runtime = build_tool_runtime_context(
+            session_id="code-studio-pendulum-feedback-upgrade",
+            user_id="user-1",
+            user_role="student",
+            metadata={
+                "presentation_intent": "code_studio_app",
+                "studio_lane": "app",
+                "artifact_kind": "html_app",
+                "visual_requested_type": "simulation",
+                "quality_profile": "premium",
+                "renderer_contract": "host_shell",
+                "visual_user_query": "Build a premium pendulum simulation with drag interaction.",
+            },
+        )
+
+        rich_but_silent_html = """
+<style>
+.sim-shell { display:grid; gap:16px; }
+canvas { width:100%; height:260px; background:var(--bg2); border-radius:var(--radius); }
+.controls { display:grid; gap:10px; }
+.readout { font-size:13px; color:var(--text2); }
+</style>
+<div class="sim-shell">
+  <canvas id="sim" width="640" height="320"></canvas>
+  <div class="controls">
+    <label>Gravity <input id="gravity" type="range" min="1" max="20" value="9.8" step="0.1" /></label>
+    <label>Damping <input id="damping" type="range" min="0" max="0.2" value="0.03" step="0.01" /></label>
+  </div>
+  <div class="readout" aria-live="polite">Angle: <span id="theta">0.52</span> rad · Velocity: <span id="omega">0.00</span> rad/s</div>
+</div>
+<script>
+const canvas = document.getElementById('sim');
+const ctx = canvas.getContext('2d');
+const gravityInput = document.getElementById('gravity');
+const dampingInput = document.getElementById('damping');
+let theta = 0.52;
+let omega = 0;
+let last = performance.now();
+function frame(now){
+  const deltaTime = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  const gravity = Number(gravityInput.value);
+  const damping = Number(dampingInput.value);
+  const acceleration = -(gravity / 2) * Math.sin(theta) - damping * omega;
+  omega += acceleration * deltaTime;
+  theta += omega * deltaTime;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+"""
+
+        with tool_runtime_scope(runtime):
+            result = tool_create_visual_code.invoke({
+                "code_html": rich_but_silent_html,
+                "title": "Pendulum Lab",
+            })
+
+        payload = parse_visual_payload(result)
+        assert payload is not None
+        assert payload.fallback_html is not None
+        assert "pendulum-sim" in payload.fallback_html
+        assert "length-slider" in payload.fallback_html
+        assert 'input id="gravity-slider"' not in payload.fallback_html
+        assert "reportResult" in payload.fallback_html
+
+    def test_upgraded_pendulum_scaffold_adds_requested_gravity_and_damping_controls(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
+
+        runtime = build_tool_runtime_context(
+            session_id="code-studio-pendulum-parameter-patch",
+            user_id="user-1",
+            user_role="student",
+            metadata={
+                "presentation_intent": "code_studio_app",
+                "studio_lane": "app",
+                "artifact_kind": "html_app",
+                "visual_requested_type": "simulation",
+                "quality_profile": "premium",
+                "renderer_contract": "host_shell",
+                "visual_user_query": "Keep the pendulum app and add gravity and damping sliders.",
+            },
+        )
+
+        shallow_html = """
+<div class="pendulum-demo">
+  <div id="ball"></div>
+</div>
+"""
+        with tool_runtime_scope(runtime):
+            result = tool_create_visual_code.invoke({
+                "code_html": shallow_html,
+                "title": "Pendulum Lab",
+            })
+
+        payload = parse_visual_payload(result)
+        assert payload is not None
+        assert payload.fallback_html is not None
+        assert 'input id="gravity-slider"' in payload.fallback_html
+        assert 'input id="damping-slider"' in payload.fallback_html
+        assert 'input id="length-slider"' in payload.fallback_html
+
+    def test_accepts_premium_simulation_with_surface_controls_and_live_readout(self, monkeypatch):
+        class FakeSettings:
+            enable_llm_code_gen_visuals = True
+
+        monkeypatch.setattr("app.core.config.get_settings", lambda: FakeSettings())
+        from app.engine.tools.runtime_context import build_tool_runtime_context, tool_runtime_scope
+        from app.engine.tools.visual_tools import parse_visual_payload, tool_create_visual_code
+
+        runtime = build_tool_runtime_context(
+            session_id="code-studio-sim-rich",
+            user_id="user-1",
+            user_role="student",
+            metadata={
+                "presentation_intent": "code_studio_app",
+                "studio_lane": "app",
+                "artifact_kind": "html_app",
+                "visual_requested_type": "simulation",
+                "quality_profile": "premium",
+                "renderer_contract": "host_shell",
+            },
+        )
+
+        rich_html = """
+<style>
+.sim-shell { display:grid; gap:16px; }
+canvas { width:100%; height:260px; background:var(--bg2); border-radius:var(--radius); }
+.controls { display:grid; gap:10px; }
+.readout { font-size:13px; color:var(--text2); }
+</style>
+<div class="sim-shell">
+  <canvas id="sim" width="640" height="320"></canvas>
+  <div class="controls">
+    <label>Gravity <input id="gravity" type="range" min="1" max="20" value="9.8" step="0.1" /></label>
+    <label>Friction <input id="friction" type="range" min="0" max="1" value="0.05" step="0.01" /></label>
+    <button id="reset">Đặt lại</button>
+  </div>
+  <div class="readout" aria-live="polite">Góc lệch: <span id="theta">0.52</span> rad · Vận tốc: <span id="omega">0.00</span> rad/s</div>
+</div>
+<script>
+const canvas = document.getElementById('sim');
+const ctx = canvas.getContext('2d');
+const gravityInput = document.getElementById('gravity');
+const frictionInput = document.getElementById('friction');
+const resetButton = document.getElementById('reset');
+const thetaNode = document.getElementById('theta');
+const omegaNode = document.getElementById('omega');
+let theta = 0.52;
+let omega = 0;
+let last = performance.now();
+function frame(now){
+  const deltaTime = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  const gravity = Number(gravityInput.value);
+  const friction = Number(frictionInput.value);
+  const acceleration = -(gravity / 2) * Math.sin(theta) - friction * omega;
+  omega += acceleration * deltaTime;
+  theta += omega * deltaTime;
+  thetaNode.textContent = theta.toFixed(2);
+  omegaNode.textContent = omega.toFixed(2);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  requestAnimationFrame(frame);
+}
+function report(reason){
+  if (window.WiiiVisualBridge && typeof window.WiiiVisualBridge.reportResult === 'function') {
+    window.WiiiVisualBridge.reportResult('simulation', {
+      gravity: Number(gravityInput.value),
+      friction: Number(frictionInput.value),
+      theta,
+      omega,
+      reason,
+    }, 'Simulation updated', 'success');
+  }
+}
+gravityInput.addEventListener('input', () => report('gravity-change'));
+frictionInput.addEventListener('input', () => report('friction-change'));
+resetButton.addEventListener('click', () => report('reset'));
+requestAnimationFrame(frame);
+</script>
+"""
+
+        with tool_runtime_scope(runtime):
+            result = tool_create_visual_code.invoke({
+                "code_html": rich_html,
+                "title": "Mô phỏng Con lắc",
+            })
+
+        payload = parse_visual_payload(result)
+        assert payload is not None
+        assert payload.renderer_kind == "app"
+        assert payload.metadata is not None
+        assert payload.metadata["quality_profile"] == "premium"
+        assert payload.fallback_html is not None
+        assert "reportResult" in payload.fallback_html
 
     def test_svg_content(self, monkeypatch):
         class FakeSettings:

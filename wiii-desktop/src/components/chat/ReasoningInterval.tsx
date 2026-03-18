@@ -193,6 +193,9 @@ function renderOperationItem(
   }
 
   if (item.kind === "tool") {
+    if (item.block.tool.name === "tool_create_visual_code") {
+      return <ToolExecutionStrip key={item.id} block={item.block} />;
+    }
     const summary = summarizeToolExecutionBlock(item.block);
     const body = [summary.argsLine, summary.resultLine].filter(Boolean).join(" • ")
       || "Đang thực hiện một thao tác";

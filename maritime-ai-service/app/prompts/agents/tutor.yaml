@@ -81,8 +81,8 @@ visual:
       - "Chart dung de giai thich khai niem/co che/trade-off -> structured chart figure"
       - "So sanh metric co claim ro rang -> figure chart/comparison trong article"
       - "Chi dung Chart.js widget khi user can dashboard du lieu so, hover tooltip, hoac mot chart don le"
-    tool: "tool_generate_visual (renderer_kind=template, visual_type=chart); tool_generate_interactive_chart chi la fallback cho numeric dashboard legacy"
-    format: "Structured visual payload/group figure; ```widget chart chi la compatibility fallback"
+    tool: "tool_generate_visual (renderer_kind=inline_html, visual_type=chart, code_html SVG-first); tool_generate_interactive_chart chi la fallback cho numeric dashboard legacy"
+    format: "Visual payload/group figure inline, uu tien SVG-first; ```widget chart chi la compatibility fallback"
 
   # Cap 3: Rich Visual runtime (article figures + app lane)
   rich_visual:
@@ -93,19 +93,19 @@ visual:
       - "Kiến trúc hệ thống, layers → architecture (layered diagram)"
       - "Bản đồ khái niệm, ý chính + nhánh → concept (mind map)"
       - "Tổng hợp stats, KPI → infographic (số liệu + sections)"
-    tool: "tool_generate_visual (primary runtime) + tool_generate_rich_visual (legacy compatibility)"
-    format: "Structured visual payload voi renderer_kind=template|inline_html|app; ```widget chi la fallback compatibility"
+    tool: "tool_generate_visual la primary lane cho article_figure/chart_runtime; uu tien code_html truc tiep, SVG-first, tool_create_visual_code chi dung cho code_studio_app/artifact"
+    format: "Visual payload voi renderer_kind=inline_html|app; structured fallback chi la fail-safe, ```widget chi la compatibility fallback"
     rules:
       - "Mac dinh explanatory visual nen sinh 2-3 figures trong cung figure_group_id; chi tao 1 figure neu bai toan that su don gian"
       - "Moi figure chi giai thich 1 claim; dien claim, figure_index, figure_total va pedagogical_role ro rang cho tung figure"
       - "Uu tien nhip su pham problem -> mechanism -> result/benchmark/conclusion khi chia nhieu figure"
       - "Trong answer, viet bridge prose truoc figure va insight/takeaway ngan sau figure; giu nhip article-first"
       - "Neu la simulation/tool nhu mo phong con lac, route sang renderer_kind=app nhung van nhung inline nhu editorial figure"
-      - "Ưu tiên renderer_kind=template cho comparison, process, matrix, architecture, concept, infographic, chart, timeline, map_lite"
-      - "Dùng renderer_kind=inline_html cho explanatory visual bespoke, layout editorial, animation nhe"
+      - "Ưu tiên renderer_kind=inline_html cho comparison, process, matrix, architecture, concept, infographic, chart, timeline, map_lite; sinh SVG/HTML truc tiep theo context hien tai"
       - "Dùng renderer_kind=app cho simulation, quiz, interactive_table, react_app, dashboard, mini tool"
       - "Sau khi gọi tool_generate_visual: KHÔNG copy payload JSON vao answer; chi viet narrative + takeaway"
-      - "Chi dung tool_generate_rich_visual khi can legacy ```widget compatibility"
+      - "Chi dung tool_create_visual_code cho simulation, quiz, search/code widget, mini tool, HTML app, document, hoac artifact code-centric"
+      - "Chart/data viz thong thuong khong di qua freestyle code studio; neu can chart, uu tien chart_runtime voi axis, legend, units, source, va takeaway ro rang"
       - "Label tiếng Việt, màu sắc hài hòa, responsive"
       - "Kết hợp text giải thích bên ngoài visual"
       - "KHÔNG dùng cho nội dung đơn giản — chỉ khi visual giúp hiểu nhanh hơn"
@@ -113,7 +113,7 @@ visual:
   guidelines:
     - "Mac dinh article-first: thinking interval -> bridge prose -> figure -> explanatory prose -> figure -> takeaway"
     - "Explanatory request nen chia thanh 2-4 figures; neu khong co chi dan ro rang, dung toi da 3 figures"
-    - "Ưu tiên: text thuần → mermaid → template visual → inline_html → app runtime"
+    - "Ưu tiên: text thuần → mermaid → inline_html visual → app runtime"
     - "Không ép buộc visual — chỉ dùng khi thật sự giúp sinh viên hiểu nhanh hơn"
     - "Luôn có text giải thích đi kèm, không bao giờ chỉ có diagram/widget trơn"
     - "So sánh 2 thứ → comparison. Kiến trúc → architecture. Quy trình → process."
@@ -192,4 +192,3 @@ examples:
 
       Thay chua — **80% la loi con nguoi**! Cho nen COLREGs moi quan trong den vay.
       Neu thuyen vien nam vung quy tac tranh va, so lieu nay se giam dang ke.
-

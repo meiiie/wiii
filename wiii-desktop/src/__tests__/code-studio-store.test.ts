@@ -27,6 +27,7 @@ describe("code-studio-store", () => {
     it("resets streaming state for existing complete session (new version)", () => {
       const store = useCodeStudioStore.getState();
       store.openSession("vs_1", "Chart", "html", 1);
+      store.setRequestedView("vs_1", "code");
       store.completeSession("vs_1", "<div>v1</div>", "html", 1);
       expect(useCodeStudioStore.getState().sessions["vs_1"].status).toBe("complete");
 
@@ -35,6 +36,10 @@ describe("code-studio-store", () => {
       expect(session.status).toBe("streaming");
       expect(session.code).toBe("");
       expect(session.title).toBe("Chart v2");
+      expect(session.activeVersion).toBe(2);
+      expect(session.versions).toHaveLength(1);
+      expect(session.versions[0].version).toBe(1);
+      expect(session.metadata.requestedView).toBe("code");
     });
   });
 
@@ -91,6 +96,7 @@ describe("code-studio-store", () => {
       expect(session.versions).toHaveLength(2);
       expect(session.activeVersion).toBe(2);
     });
+
   });
 
   describe("switchVersion", () => {
@@ -127,6 +133,53 @@ describe("code-studio-store", () => {
       useCodeStudioStore.getState().setActiveSession("vs_x");
       useCodeStudioStore.getState().setActiveSession(null);
       expect(useCodeStudioStore.getState().activeSessionId).toBeNull();
+    });
+  });
+
+  describe("setRequestedView", () => {
+    it("stores the requested code/preview tab for the active session context", () => {
+      const store = useCodeStudioStore.getState();
+      store.openSession("vs_1", "Pendulum", "html", 1);
+      store.setRequestedView("vs_1", "code");
+
+      expect(useCodeStudioStore.getState().sessions["vs_1"].metadata.requestedView).toBe("code");
+    });
+  });
+
+  describe("getActiveSessionContext", () => {
+    it("returns active session metadata for follow-up turns", () => {
+      const store = useCodeStudioStore.getState();
+      store.openSession("vs_1", "Pendulum", "html", 1, {
+        studioLane: "app",
+        artifactKind: "html_app",
+        qualityProfile: "premium",
+        rendererContract: "host_shell",
+      });
+      store.setRequestedView("vs_1", "code");
+      store.appendCode("vs_1", "<div>demo</div>", 0, 32);
+      store.completeSession("vs_1", "<div>demo</div>", "html", 1, { id: "vp-1" } as any);
+
+      const context = store.getActiveSessionContext();
+      expect(context).toEqual({
+        active_session: {
+          session_id: "vs_1",
+          title: "Pendulum",
+          status: "complete",
+          active_version: 1,
+          version_count: 1,
+          language: "html",
+          studio_lane: "app",
+          artifact_kind: "html_app",
+          quality_profile: "premium",
+          renderer_contract: "host_shell",
+          requested_view: "code",
+          has_preview: true,
+        },
+      });
+    });
+
+    it("returns undefined when there is no active session", () => {
+      expect(useCodeStudioStore.getState().getActiveSessionContext()).toBeUndefined();
     });
   });
 

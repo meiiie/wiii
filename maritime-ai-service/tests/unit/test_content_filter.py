@@ -199,6 +199,11 @@ class TestContentFilterSeverity:
         result = f.check("địt mẹ mày")
         assert result.severity >= Severity.BLOCK
 
+    def test_block_con_cac_phrase(self):
+        f = ContentFilter()
+        result = f.check("con cac")
+        assert result.severity >= Severity.BLOCK
+
     def test_block_no_diacritics(self):
         """Vulgar without diacritics should still be caught."""
         f = ContentFilter()
@@ -252,6 +257,12 @@ class TestContentFilterSeverity:
         result = f.check("Đéo hiểu gì")
         assert "deo" in result.normalized_text
 
+
+    def test_vietnamese_plural_cac_is_not_blocked(self):
+        f = ContentFilter()
+        result = f.check("Vẽ biểu đồ so sánh tốc độ các loại tàu container")
+        assert result.severity == Severity.ALLOW
+        assert "cac" not in result.matched_terms
 
 # =============================================================================
 # Word Boundary Matching Tests

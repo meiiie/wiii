@@ -182,6 +182,68 @@ def test_serialize_stream_event_visual_lifecycle_chunks():
     assert any("event: visual_dispose" in chunk for chunk in emitted)
 
 
+def test_serialize_stream_event_code_studio_chunks():
+    from types import SimpleNamespace
+
+    presenter = _load_chat_stream_presenter()
+
+    events = [
+        SimpleNamespace(
+            type="code_open",
+            content={
+                "session_id": "vs-code-1",
+                "title": "Pendulum App",
+                "language": "html",
+                "version": 1,
+                "studio_lane": "app",
+                "artifact_kind": "html_app",
+            },
+            node="code_studio_agent",
+        ),
+        SimpleNamespace(
+            type="code_delta",
+            content={
+                "session_id": "vs-code-1",
+                "chunk": "<div>",
+                "chunk_index": 0,
+                "total_bytes": 1024,
+            },
+            node="code_studio_agent",
+        ),
+        SimpleNamespace(
+            type="code_complete",
+            content={
+                "session_id": "vs-code-1",
+                "full_code": "<div>done</div>",
+                "language": "html",
+                "version": 1,
+            },
+            node="code_studio_agent",
+        ),
+    ]
+
+    counter = 0
+    emitted = []
+    for event in events:
+        chunks, counter, should_stop = presenter.serialize_stream_event(
+            event=event,
+            event_counter=counter,
+            enable_artifacts=True,
+        )
+        assert should_stop is False
+        emitted.extend(chunks)
+
+    assert any("event: code_open" in chunk for chunk in emitted)
+    assert any("event: code_delta" in chunk for chunk in emitted)
+    assert any("event: code_complete" in chunk for chunk in emitted)
+
+    code_open_data = next(chunk for chunk in emitted if "event: code_open" in chunk)
+    data_line = next(line for line in code_open_data.split("\n") if line.startswith("data: "))
+    payload = json.loads(data_line[6:])
+    assert payload["display_role"] == "artifact"
+    assert payload["presentation"] == "compact"
+
+
 def test_emit_internal_error_sse_events_can_include_done():
     presenter = _load_chat_stream_presenter()
 

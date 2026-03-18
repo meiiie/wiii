@@ -211,6 +211,52 @@ class TestMaybeEmitCodeStudioEvents:
         assert types == ["code_open", "code_delta", "code_complete"]
         assert events[1]["content"]["chunk"] == "<p>Hi</p>"
 
+    @pytest.mark.asyncio
+    async def test_prefers_code_studio_version_metadata_over_figure_index(self):
+        events = []
+
+        async def push_event(event):
+            events.append(event)
+
+        class FakePayload:
+            fallback_html = "<div>patched</div>"
+            visual_session_id = "vs_patch"
+            title = "Patched App"
+            figure_index = 1
+
+        await _maybe_emit_code_studio_events(
+            push_event=push_event,
+            payload=FakePayload(),
+            payload_dict={"metadata": {"code_studio_version": 3}},
+            node="code_studio_agent",
+        )
+
+        assert events[0]["content"]["version"] == 3
+        assert events[-1]["content"]["version"] == 3
+
+    @pytest.mark.asyncio
+    async def test_forwards_requested_view_when_present(self):
+        events = []
+
+        async def push_event(event):
+            events.append(event)
+
+        class FakePayload:
+            fallback_html = "<div>patched</div>"
+            visual_session_id = "vs_patch"
+            title = "Patched App"
+            figure_index = 1
+
+        await _maybe_emit_code_studio_events(
+            push_event=push_event,
+            payload=FakePayload(),
+            payload_dict={"metadata": {"requested_view": "code"}},
+            node="code_studio_agent",
+        )
+
+        assert events[0]["content"]["requested_view"] == "code"
+        assert events[-1]["content"]["requested_view"] == "code"
+
 
 class TestCodeStudioConstants:
     def test_chunk_size(self):

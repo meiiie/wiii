@@ -25,13 +25,14 @@ if (!python) {
 
 const child = spawn(
   python,
-  ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001", "--log-level", "warning"],
+  ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000", "--log-level", "warning"],
   {
     cwd: backendDir,
     stdio: "inherit",
     env: {
       ...process.env,
       ENABLE_STRUCTURED_VISUALS: "true",
+      ENABLE_CODE_STUDIO_STREAMING: "true",
       PYTHONIOENCODING: "utf-8",
     },
   },

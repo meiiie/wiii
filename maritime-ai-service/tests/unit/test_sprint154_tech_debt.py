@@ -532,6 +532,116 @@ class TestCodeStudioWave002:
         # execute_python should NOT be primary tool hint for non-admin/no-exec
         assert "tool_execute_python" not in ctx
 
+    def test_inject_code_studio_context_mentions_active_session(self):
+        """Active Code Studio session should be converted into a compact prompt block."""
+        from app.engine.multi_agent.graph import _inject_code_studio_context
+
+        prompt = _inject_code_studio_context({
+            "context": {
+                "code_studio_context": {
+                    "active_session": {
+                        "session_id": "vs_1",
+                        "title": "Mo phong Con lac",
+                        "status": "complete",
+                        "active_version": 2,
+                        "version_count": 2,
+                        "studio_lane": "app",
+                        "artifact_kind": "html_app",
+                        "renderer_contract": "host_shell",
+                        "has_preview": True,
+                    },
+                    "requested_view": "code",
+                },
+            },
+        })
+
+        assert "Code Studio Context" in prompt
+        assert "vs_1" in prompt
+        assert "requested_view" not in prompt
+        assert "TAB CODE" in prompt
+
+    def test_sanitize_code_studio_response_collapses_raw_source_dump_when_session_exists(self):
+        """Raw HTML should be collapsed into a panel-first summary when Code Studio is active."""
+        from app.engine.multi_agent.graph import _sanitize_code_studio_response
+
+        response = _sanitize_code_studio_response(
+            "<style>.demo{color:red;}</style><div class='demo'>Hello</div>",
+            [],
+            {
+                "context": {
+                    "code_studio_context": {
+                        "active_session": {
+                            "session_id": "vs_2",
+                            "title": "Pendulum App",
+                            "status": "complete",
+                            "studio_lane": "app",
+                        },
+                        "requested_view": "code",
+                    },
+                },
+            },
+        )
+
+        assert "Code Studio" in response
+        assert "Pendulum App" in response
+        assert "<style>" not in response
+        assert "<div" not in response
+
+    def test_visual_runtime_metadata_reuses_active_code_studio_session_for_vietnamese_patch(self):
+        """Follow-up app edits should anchor to the current Code Studio session instead of opening a new one."""
+        from app.engine.multi_agent.graph import _build_visual_tool_runtime_metadata
+
+        metadata = _build_visual_tool_runtime_metadata(
+            {
+                "context": {
+                    "code_studio_context": {
+                        "active_session": {
+                            "session_id": "vs_pendulum_1",
+                            "title": "Mo phong Con lac",
+                            "status": "complete",
+                            "studio_lane": "app",
+                            "artifact_kind": "html_app",
+                        },
+                    },
+                },
+            },
+            "Giữ app hiện tại, thêm slider điều chỉnh trọng lực và ma sát",
+        )
+
+        assert isinstance(metadata, dict)
+        assert metadata["presentation_intent"] == "code_studio_app"
+        assert metadata["preferred_visual_operation"] == "patch"
+        assert metadata["preferred_visual_session_id"] == "vs_pendulum_1"
+        assert metadata["preferred_code_studio_session_id"] == "vs_pendulum_1"
+        assert metadata["studio_lane"] == "app"
+        assert metadata["artifact_kind"] == "html_app"
+
+    def test_visual_runtime_metadata_preserves_premium_quality_from_active_code_session(self):
+        """Follow-up app patches should keep the higher quality bar from the current Code Studio session."""
+        from app.engine.multi_agent.graph import _build_visual_tool_runtime_metadata
+
+        metadata = _build_visual_tool_runtime_metadata(
+            {
+                "context": {
+                    "code_studio_context": {
+                        "active_session": {
+                            "session_id": "vs_pendulum_2",
+                            "title": "Mo phong Con lac",
+                            "status": "complete",
+                            "studio_lane": "app",
+                            "artifact_kind": "html_app",
+                            "quality_profile": "premium",
+                        },
+                    },
+                },
+            },
+            "Giữ app hiện tại, đổi màu nền thành xanh nhạt",
+        )
+
+        assert isinstance(metadata, dict)
+        assert metadata["preferred_visual_session_id"] == "vs_pendulum_2"
+        assert metadata["quality_profile"] == "premium"
+
 
 class TestDocumentStudioWave003:
     """WAVE-003 regression: Document Studio artifact extraction and synthesis."""

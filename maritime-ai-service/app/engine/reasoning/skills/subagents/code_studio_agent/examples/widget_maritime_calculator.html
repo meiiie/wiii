@@ -1,0 +1,373 @@
+<!--
+  STATE MODEL: activeTab, speedDistTime{speed,distance,time,result}, conversion{value,fromUnit,toUnit,result}, bearing{compass,variation,varDir,deviation,devDir,trueBearing,magneticBearing}
+  RENDER SURFACE: HTML forms + small SVG compass rose
+  CONTROLS: tab buttons, input fields, calculate/clear/swap buttons
+  READOUTS: calculated results, formula display
+  FEEDBACK: WiiiVisualBridge.reportResult
+-->
+<style>
+:root {
+  --bg: #0f172a; --fg: #e2e8f0; --accent: #38bdf8; --accent-hover: #7dd3fc;
+  --surface: #1e293b; --surface-alt: #334155; --border: #475569; --text-secondary: #94a3b8;
+  --success: #4ade80; --warning: #fbbf24; --danger: #f87171;
+  --radius: 8px; --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc; --fg: #0f172a; --accent: #0284c7;
+    --surface: #ffffff; --surface-alt: #f1f5f9;
+    --border: #cbd5e1; --text-secondary: #64748b;
+    --success: #16a34a; --warning: #d97706; --danger: #dc2626;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+.calc-root { max-width: 560px; margin: 0 auto; font-family: var(--font); color: var(--fg); background: var(--bg); padding: 16px; }
+.tab-bar { display: flex; gap: 4px; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
+.tab-btn {
+  flex: 1; padding: 10px 8px; border: none; background: transparent; color: var(--text-secondary);
+  font: 500 14px var(--font); cursor: pointer; border-bottom: 2px solid transparent;
+  margin-bottom: -2px; transition: color 0.15s, border-color 0.15s;
+}
+.tab-btn:hover { color: var(--fg); }
+.tab-btn[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-panel { display: none; }
+.tab-panel[data-active] { display: block; }
+fieldset { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+legend { font: 500 13px var(--font); color: var(--text-secondary); padding: 0 6px; }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.field:last-child { margin-bottom: 0; }
+label { font: 400 13px var(--font); color: var(--text-secondary); }
+input[type="number"], select {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--fg); font: 400 15px var(--font); outline: none; transition: border-color 0.15s;
+}
+input[type="number"]:focus, select:focus { border-color: var(--accent); }
+input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
+.row { display: flex; gap: 8px; align-items: flex-end; }
+.row > .field { flex: 1; }
+.btn-row { display: flex; gap: 8px; margin-top: 16px; }
+button.primary, button.secondary {
+  flex: 1; padding: 10px 16px; border: none; border-radius: var(--radius);
+  font: 500 14px var(--font); cursor: pointer; transition: background 0.15s;
+}
+button.primary { background: var(--accent); color: #0f172a; }
+button.primary:hover { background: var(--accent-hover); }
+button.secondary { background: var(--surface-alt); color: var(--fg); }
+button.secondary:hover { background: var(--border); }
+.result-box {
+  margin-top: 16px; padding: 14px 16px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius); min-height: 48px;
+}
+.result-box[data-has-result] { border-color: var(--accent); }
+.result-label { font: 400 12px var(--font); color: var(--text-secondary); margin-bottom: 6px; }
+.result-value { font: 500 20px var(--font); color: var(--accent); }
+.result-formula { font: 400 12px var(--font); color: var(--text-secondary); margin-top: 6px; }
+.error-msg { font: 400 12px var(--font); color: var(--danger); margin-top: 4px; min-height: 16px; }
+.swap-btn {
+  width: 40px; height: 40px; flex-shrink: 0; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--accent); font-size: 18px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: background 0.15s;
+}
+.swap-btn:hover { background: var(--surface-alt); }
+.dir-select { width: 72px; flex-shrink: 0; }
+.bearing-results { display: flex; flex-direction: column; gap: 10px; }
+.bearing-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 6px 0; border-bottom: 1px solid var(--border);
+}
+.bearing-row:last-child { border-bottom: none; }
+.bearing-name { font: 400 13px var(--font); color: var(--text-secondary); }
+.bearing-val { font: 500 16px var(--font); color: var(--accent); }
+.compass-container { display: flex; justify-content: center; margin-top: 16px; }
+</style>
+
+<div class="calc-root">
+  <div class="tab-bar" role="tablist">
+    <button class="tab-btn" role="tab" aria-selected="true" aria-controls="tab-sdt" id="btn-sdt">Toc do - Khoang cach</button>
+    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-conv" id="btn-conv">Chuyen doi</button>
+    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-bear" id="btn-bear">Phuong vi</button>
+  </div>
+
+  <div class="tab-panel" id="tab-sdt" role="tabpanel" aria-labelledby="btn-sdt" data-active>
+    <fieldset>
+      <legend>Tinh toc do / khoang cach / thoi gian</legend>
+      <div class="field">
+        <label for="sdt-speed">Toc do (knots)</label>
+        <input type="number" id="sdt-speed" min="0" max="50" step="0.1" placeholder="0 - 50">
+      </div>
+      <div class="field">
+        <label for="sdt-distance">Khoang cach (NM)</label>
+        <input type="number" id="sdt-distance" min="0" max="10000" step="0.1" placeholder="0 - 10,000">
+      </div>
+      <div class="field">
+        <label for="sdt-time">Thoi gian (gio)</label>
+        <input type="number" id="sdt-time" min="0" max="10000" step="0.01" placeholder="gio">
+      </div>
+      <div class="error-msg" id="sdt-error"></div>
+    </fieldset>
+    <div class="btn-row">
+      <button class="primary" id="sdt-calc">Tinh</button>
+      <button class="secondary" id="sdt-clear">Xoa</button>
+    </div>
+    <div class="result-box" id="sdt-result">
+      <div class="result-label">Ket qua</div>
+      <div class="result-value" id="sdt-result-value">--</div>
+      <div class="result-formula" id="sdt-result-formula"></div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="tab-conv" role="tabpanel" aria-labelledby="btn-conv">
+    <fieldset>
+      <legend>Chuyen doi don vi hang hai</legend>
+      <div class="field">
+        <label for="conv-category">Danh muc</label>
+        <select id="conv-category">
+          <option value="distance">Khoang cach</option>
+          <option value="speed">Toc do</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="conv-value">Gia tri</label>
+        <input type="number" id="conv-value" step="any" placeholder="Nhap gia tri">
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="conv-from">Tu</label>
+          <select id="conv-from"></select>
+        </div>
+        <button class="swap-btn" id="conv-swap" aria-label="Dao nguoc don vi" title="Dao nguoc don vi">&#8652;</button>
+        <div class="field">
+          <label for="conv-to">Sang</label>
+          <select id="conv-to"></select>
+        </div>
+      </div>
+    </fieldset>
+    <div class="result-box" id="conv-result">
+      <div class="result-label">Ket qua</div>
+      <div class="result-value" id="conv-result-value">--</div>
+      <div class="result-formula" id="conv-result-formula"></div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="tab-bear" role="tabpanel" aria-labelledby="btn-bear">
+    <fieldset>
+      <legend>Tinh phuong vi</legend>
+      <div class="field">
+        <label for="bear-compass">Phuong vi la ban (°)</label>
+        <input type="number" id="bear-compass" min="0" max="360" step="0.1" placeholder="0 - 360">
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="bear-var">Do lech tu (Variation) °</label>
+          <input type="number" id="bear-var" min="-180" max="180" step="0.1" placeholder="do">
+        </div>
+        <div class="field">
+          <label for="bear-var-dir">Huong</label>
+          <select id="bear-var-dir" class="dir-select">
+            <option value="E">East</option>
+            <option value="W">West</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="bear-dev">Do lech rieng (Deviation) °</label>
+          <input type="number" id="bear-dev" min="-180" max="180" step="0.1" placeholder="do">
+        </div>
+        <div class="field">
+          <label for="bear-dev-dir">Huong</label>
+          <select id="bear-dev-dir" class="dir-select">
+            <option value="E">East</option>
+            <option value="W">West</option>
+          </select>
+        </div>
+      </div>
+      <div class="error-msg" id="bear-error"></div>
+    </fieldset>
+    <div class="btn-row">
+      <button class="primary" id="bear-calc">Tinh</button>
+      <button class="secondary" id="bear-clear">Xoa</button>
+    </div>
+    <div class="result-box" id="bear-result">
+      <div class="result-label">Ket qua phuong vi</div>
+      <div class="bearing-results" id="bear-result-values">
+        <div class="bearing-row"><span class="bearing-name">Phuong vi that (True)</span><span class="bearing-val" id="bv-true">--</span></div>
+        <div class="bearing-row"><span class="bearing-name">Phuong vi tu (Magnetic)</span><span class="bearing-val" id="bv-mag">--</span></div>
+        <div class="bearing-row"><span class="bearing-name">Phuong vi la ban (Compass)</span><span class="bearing-val" id="bv-comp">--</span></div>
+      </div>
+      <div class="result-formula" id="bear-formula"></div>
+      <div class="compass-container">
+        <svg id="compass-rose" width="140" height="140" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="70" cy="70" r="62" fill="none" stroke="var(--border)" stroke-width="1.5"/>
+          <circle cx="70" cy="70" r="56" fill="none" stroke="var(--border)" stroke-width="0.5"/>
+          <text x="70" y="16" text-anchor="middle" fill="var(--fg)" font-size="11" font-weight="500">N</text>
+          <text x="128" y="74" text-anchor="middle" fill="var(--text-secondary)" font-size="10">E</text>
+          <text x="70" y="134" text-anchor="middle" fill="var(--text-secondary)" font-size="10">S</text>
+          <text x="12" y="74" text-anchor="middle" fill="var(--text-secondary)" font-size="10">W</text>
+          <line x1="70" y1="22" x2="70" y2="28" stroke="var(--fg)" stroke-width="1.5"/>
+          <line x1="70" y1="112" x2="70" y2="118" stroke="var(--border)" stroke-width="1"/>
+          <line x1="22" y1="70" x2="28" y2="70" stroke="var(--border)" stroke-width="1"/>
+          <line x1="112" y1="70" x2="118" y2="70" stroke="var(--border)" stroke-width="1"/>
+          <line id="compass-needle" x1="70" y1="70" x2="70" y2="30" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="70" cy="70" r="3" fill="var(--accent)"/>
+          <text id="compass-label" x="70" y="96" text-anchor="middle" fill="var(--accent)" font-size="11" font-weight="500"></text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  function report(kind, payload, summary, status) {
+    if (window.WiiiVisualBridge?.reportResult) {
+      window.WiiiVisualBridge.reportResult(kind, payload, summary, status);
+    }
+  }
+
+  function $(id) { return document.getElementById(id); }
+  function num(id) { var v = $(id).value; if (v === '') return null; var n = parseFloat(v); return isNaN(n) ? null : n; }
+  function normalize(deg) { deg = deg % 360; return deg < 0 ? deg + 360 : deg; }
+  function fmt(n, d) { return Number(n.toFixed(d === undefined ? 2 : d)); }
+
+  var tabs = document.querySelectorAll('.tab-btn');
+  var panels = document.querySelectorAll('.tab-panel');
+  tabs.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      tabs.forEach(function (t) { t.setAttribute('aria-selected', 'false'); });
+      panels.forEach(function (p) { p.removeAttribute('data-active'); });
+      btn.setAttribute('aria-selected', 'true');
+      $(btn.getAttribute('aria-controls')).setAttribute('data-active', '');
+    });
+  });
+
+  $('sdt-calc').addEventListener('click', function () {
+    var s = num('sdt-speed'), d = num('sdt-distance'), t = num('sdt-time');
+    var err = $('sdt-error'), rv = $('sdt-result-value'), rf = $('sdt-result-formula'), rb = $('sdt-result');
+    err.textContent = '';
+    rb.removeAttribute('data-has-result');
+    var filled = (s !== null ? 1 : 0) + (d !== null ? 1 : 0) + (t !== null ? 1 : 0);
+    if (filled < 2) { err.textContent = 'Nhap it nhat 2 gia tri.'; rv.textContent = '--'; rf.textContent = ''; return; }
+    if (filled === 3) { err.textContent = 'Chi nhap 2 gia tri, de trong gia tri can tinh.'; rv.textContent = '--'; rf.textContent = ''; return; }
+    if (s !== null && s < 0) { err.textContent = 'Toc do phai >= 0.'; return; }
+    if (d !== null && d < 0) { err.textContent = 'Khoang cach phai >= 0.'; return; }
+    if (t !== null && t <= 0 && s === null) { err.textContent = 'Thoi gian phai > 0 khi tinh toc do.'; return; }
+    if (t !== null && t < 0) { err.textContent = 'Thoi gian phai >= 0.'; return; }
+    var resultText, formula;
+    if (s === null) {
+      s = d / t;
+      resultText = fmt(s) + ' knots';
+      formula = 'S = D / T = ' + fmt(d) + ' / ' + fmt(t) + ' = ' + fmt(s) + ' knots';
+    } else if (d === null) {
+      d = s * t;
+      resultText = fmt(d) + ' NM';
+      formula = 'D = S \u00d7 T = ' + fmt(s) + ' \u00d7 ' + fmt(t) + ' = ' + fmt(d) + ' NM';
+    } else {
+      if (s === 0) { err.textContent = 'Toc do phai > 0 khi tinh thoi gian.'; return; }
+      t = d / s;
+      var h = Math.floor(t), m = Math.round((t - h) * 60);
+      resultText = fmt(t) + ' gio (' + h + 'h ' + m + 'm)';
+      formula = 'T = D / S = ' + fmt(d) + ' / ' + fmt(s) + ' = ' + fmt(t) + ' gio';
+    }
+    rv.textContent = resultText;
+    rf.textContent = formula;
+    rb.setAttribute('data-has-result', '');
+    report('calculation_performed', { speed: s, distance: d, time: t }, resultText, 'success');
+  });
+
+  $('sdt-clear').addEventListener('click', function () {
+    $('sdt-speed').value = ''; $('sdt-distance').value = ''; $('sdt-time').value = '';
+    $('sdt-result-value').textContent = '--'; $('sdt-result-formula').textContent = '';
+    $('sdt-error').textContent = ''; $('sdt-result').removeAttribute('data-has-result');
+  });
+
+  var units = {
+    distance: {
+      NM: { label: 'Hai ly (NM)', toBase: 1 },
+      km: { label: 'Kilomet (km)', toBase: 1 / 1.852 },
+      miles: { label: 'Dam (miles)', toBase: 1 / 1.15078 },
+      meters: { label: 'Met (m)', toBase: 1 / 1852 }
+    },
+    speed: {
+      knots: { label: 'Knots (kn)', toBase: 1 },
+      kmh: { label: 'km/h', toBase: 1 / 1.852 },
+      mph: { label: 'mph', toBase: 1 / 1.15078 },
+      ms: { label: 'm/s', toBase: 1 / 0.514444 }
+    }
+  };
+
+  function populateUnits(cat) {
+    var fromSel = $('conv-from'), toSel = $('conv-to');
+    fromSel.innerHTML = ''; toSel.innerHTML = '';
+    var u = units[cat], keys = Object.keys(u);
+    keys.forEach(function (k) {
+      fromSel.appendChild(new Option(u[k].label, k));
+      toSel.appendChild(new Option(u[k].label, k));
+    });
+    if (keys.length > 1) toSel.value = keys[1];
+  }
+
+  function doConvert() {
+    var cat = $('conv-category').value, val = num('conv-value');
+    var rv = $('conv-result-value'), rf = $('conv-result-formula'), rb = $('conv-result');
+    rb.removeAttribute('data-has-result');
+    if (val === null) { rv.textContent = '--'; rf.textContent = ''; return; }
+    var fromKey = $('conv-from').value, toKey = $('conv-to').value, u = units[cat];
+    var result = (val * u[fromKey].toBase) / u[toKey].toBase;
+    rv.textContent = fmt(result, 4) + ' ' + toKey;
+    rf.textContent = fmt(val) + ' ' + fromKey + ' = ' + fmt(result, 4) + ' ' + toKey;
+    rb.setAttribute('data-has-result', '');
+    report('unit_converted', { from: fromKey, to: toKey, input: val, result: fmt(result, 4) },
+      fmt(val) + ' ' + fromKey + ' = ' + fmt(result, 4) + ' ' + toKey, 'success');
+  }
+
+  $('conv-category').addEventListener('change', function () { populateUnits(this.value); doConvert(); });
+  $('conv-value').addEventListener('input', doConvert);
+  $('conv-from').addEventListener('change', doConvert);
+  $('conv-to').addEventListener('change', doConvert);
+  $('conv-swap').addEventListener('click', function () {
+    var f = $('conv-from'), t = $('conv-to'), tmp = f.value;
+    f.value = t.value; t.value = tmp; doConvert();
+  });
+  populateUnits('distance');
+
+  function updateNeedle(deg) {
+    var rad = (deg - 90) * Math.PI / 180, len = 38;
+    $('compass-needle').setAttribute('x2', (70 + len * Math.cos(rad)).toFixed(1));
+    $('compass-needle').setAttribute('y2', (70 + len * Math.sin(rad)).toFixed(1));
+    $('compass-label').textContent = fmt(normalize(deg), 1) + '\u00b0';
+  }
+
+  $('bear-calc').addEventListener('click', function () {
+    var compass = num('bear-compass'), variation = num('bear-var'), deviation = num('bear-dev');
+    var varDir = $('bear-var-dir').value, devDir = $('bear-dev-dir').value;
+    var err = $('bear-error'), rb = $('bear-result');
+    err.textContent = ''; rb.removeAttribute('data-has-result');
+    if (compass === null) { err.textContent = 'Nhap phuong vi la ban.'; return; }
+    if (compass < 0 || compass > 360) { err.textContent = 'Phuong vi phai tu 0 den 360.'; return; }
+    var v = (variation || 0) * (varDir === 'E' ? 1 : -1);
+    var d = (deviation || 0) * (devDir === 'E' ? 1 : -1);
+    var magnetic = normalize(compass + d), trueBearing = normalize(compass + d + v);
+    $('bv-true').textContent = fmt(trueBearing, 1) + '\u00b0';
+    $('bv-mag').textContent = fmt(magnetic, 1) + '\u00b0';
+    $('bv-comp').textContent = fmt(compass, 1) + '\u00b0';
+    var fp = fmt(compass) + '\u00b0';
+    if (deviation) fp += (d >= 0 ? ' + ' : ' - ') + Math.abs(d) + '\u00b0(Dev)';
+    if (variation) fp += (v >= 0 ? ' + ' : ' - ') + Math.abs(v) + '\u00b0(Var)';
+    $('bear-formula').textContent = fp + ' = ' + fmt(trueBearing, 1) + '\u00b0(True)';
+    rb.setAttribute('data-has-result', ''); updateNeedle(trueBearing);
+    report('bearing_calculated', { compass: compass, variation: v, deviation: d,
+      trueBearing: fmt(trueBearing, 1), magnetic: fmt(magnetic, 1) },
+      'True: ' + fmt(trueBearing, 1) + '\u00b0 | Magnetic: ' + fmt(magnetic, 1) + '\u00b0', 'success');
+  });
+
+  $('bear-clear').addEventListener('click', function () {
+    $('bear-compass').value = ''; $('bear-var').value = ''; $('bear-dev').value = '';
+    $('bv-true').textContent = '--'; $('bv-mag').textContent = '--'; $('bv-comp').textContent = '--';
+    $('bear-formula').textContent = ''; $('bear-error').textContent = '';
+    $('bear-result').removeAttribute('data-has-result'); updateNeedle(0);
+  });
+
+  updateNeedle(0);
+})();
+</script>

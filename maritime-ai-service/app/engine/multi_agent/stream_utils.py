@@ -510,17 +510,31 @@ async def create_code_open_event(
     title: str,
     language: str,
     version: int,
+    studio_lane: Optional[str] = None,
+    artifact_kind: Optional[str] = None,
+    quality_profile: Optional[str] = None,
+    renderer_contract: Optional[str] = None,
     node: Optional[str] = None,
 ) -> StreamEvent:
     """Code Studio: Create a code_open event to start a streaming code session."""
+    content: Dict[str, Any] = {
+        "session_id": session_id,
+        "title": title,
+        "language": language,
+        "version": version,
+    }
+    if studio_lane:
+        content["studio_lane"] = studio_lane
+    if artifact_kind:
+        content["artifact_kind"] = artifact_kind
+    if quality_profile:
+        content["quality_profile"] = quality_profile
+    if renderer_contract:
+        content["renderer_contract"] = renderer_contract
+
     return StreamEvent(
         type=StreamEventType.CODE_OPEN,
-        content={
-            "session_id": session_id,
-            "title": title,
-            "language": language,
-            "version": version,
-        },
+        content=content,
         node=node,
     )
 
@@ -551,6 +565,10 @@ async def create_code_complete_event(
     language: str,
     version: int,
     visual_payload: Optional[Dict[str, Any]] = None,
+    studio_lane: Optional[str] = None,
+    artifact_kind: Optional[str] = None,
+    quality_profile: Optional[str] = None,
+    renderer_contract: Optional[str] = None,
     node: Optional[str] = None,
 ) -> StreamEvent:
     """Code Studio: Create a code_complete event with full code and optional visual payload."""
@@ -562,6 +580,14 @@ async def create_code_complete_event(
     }
     if visual_payload:
         content["visual_payload"] = visual_payload
+    if studio_lane:
+        content["studio_lane"] = studio_lane
+    if artifact_kind:
+        content["artifact_kind"] = artifact_kind
+    if quality_profile:
+        content["quality_profile"] = quality_profile
+    if renderer_contract:
+        content["renderer_contract"] = renderer_contract
     return StreamEvent(
         type=StreamEventType.CODE_COMPLETE,
         content=content,

@@ -228,7 +228,9 @@ _WORD_LIST: List[tuple] = [
     ("clm", Severity.BLOCK, MatchType.SUBSTRING),
     ("cmm", Severity.BLOCK, MatchType.SUBSTRING),
     ("con cac", Severity.BLOCK, MatchType.SUBSTRING),
-    ("cac", Severity.BLOCK, MatchType.WORD_BOUNDARY),
+    # Standalone "cac" is too ambiguous after diacritic stripping because
+    # the normal Vietnamese plural marker "các" also normalizes to "cac".
+    # Keep contextual vulgar phrases blocked, but do not hard-block the lone token.
     ("buoi", Severity.BLOCK, MatchType.WORD_BOUNDARY),
     ("lon", Severity.BLOCK, MatchType.WORD_BOUNDARY),
     ("vai ca lon", Severity.BLOCK, MatchType.SUBSTRING),

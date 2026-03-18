@@ -85,6 +85,53 @@ class StudentPageState(BaseModel):
     progress_percent: Optional[float] = Field(default=None, description="Tiến độ (%)")
 
 
+class HostResourceV1(BaseModel):
+    """WebMCP-compatible host resource descriptor."""
+    id: str
+    title: str
+    description: Optional[str] = None
+    mime_type: Optional[str] = None
+    access: Optional[str] = None
+    freshness: Optional[str] = None
+    fetch_mode: Optional[Literal["push", "pull"]] = None
+
+
+class HostToolV1(BaseModel):
+    """WebMCP-compatible host tool descriptor."""
+    name: str
+    title: str
+    description: Optional[str] = None
+    input_schema: Optional[dict[str, Any]] = None
+    roles: Optional[list[str]] = None
+    requires_confirmation: bool = False
+    transport: Optional[Literal["postmessage", "http"]] = None
+    result_schema: Optional[dict[str, Any]] = None
+
+
+class HostManifestV1(BaseModel):
+    """WebMCP-compatible host manifest surfaced by LMS/Wiii bridge layers."""
+    host_id: str
+    origin: Optional[str] = None
+    version: str = "1"
+    resources: list[HostResourceV1] = Field(default_factory=list)
+    tools: list[HostToolV1] = Field(default_factory=list)
+    auth_mode: Optional[str] = None
+    transport: Optional[str] = None
+    page_types: list[str] = Field(default_factory=list)
+
+
+class WidgetResultV1(BaseModel):
+    """Normalized widget/app outcome passed back into the assistant loop."""
+    widget_id: str
+    widget_kind: str
+    status: Optional[str] = None
+    summary: Optional[str] = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime = Field(default_factory=utc_now)
+    session_id: Optional[str] = None
+    message_id: Optional[str] = None
+
+
 class UserContext(BaseModel):
     """
     User context from LMS for personalization.
@@ -134,6 +181,10 @@ class UserContext(BaseModel):
     widget_feedback: Optional[dict] = Field(
         default=None,
         description="Recent widget/app interaction results from chat client for personalized follow-up",
+    )
+    code_studio_context: Optional[dict] = Field(
+        default=None,
+        description="Active Code Studio session context from chat client for code/app follow-up turns",
     )
 
     model_config = {

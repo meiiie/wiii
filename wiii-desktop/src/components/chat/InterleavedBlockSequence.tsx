@@ -11,8 +11,6 @@ import type {
   VisualBlockData,
 } from "@/api/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import InlineHtmlWidget from "@/components/common/InlineHtmlWidget";
-import { splitWidgetBlocks } from "@/components/common/widget-segments";
 import {
   ReasoningInterval,
   ThinkingInspectorDrawer,
@@ -46,13 +44,6 @@ type ArticleCompositionSegment =
     id: string;
     figure: ArticleFigureComposition;
   }
-  | {
-    kind: "legacy-widget";
-    id: string;
-    html: string;
-    bridgeLabel: string;
-    claim: string;
-  };
 
 type ArticleComposition = {
   answerIds: string[];
@@ -78,12 +69,8 @@ const EDITORIAL_BRIDGE_LABELS: Record<string, string> = {
   map_lite: "Bản đồ tâm điểm",
 };
 
-function stripLegacyWidgetBlocks(content: string): string {
-  return content
-    .replace(/```widget[ \t]*[\r\n]+[\s\S]*?[\r\n]+```/gi, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
+const VISUAL_MARKER_RE = /\{visual_(\d+)\}|\[visuals rendered above\]/gi;
+const VISUAL_INLINE_LABEL_RE = /\[(?:visual|figure)\s*:\s*[^\]]+\]/gi;
 
 function splitEditorialAnswer(content: string): string[] {
   const paragraphSegments = content
@@ -109,19 +96,64 @@ function splitEditorialAnswer(content: string): string[] {
 function collectAnswerNarrative(blocks: ContentBlock[]): Array<Extract<ContentBlock, { type: "answer" }>> {
   return blocks
     .filter((block): block is Extract<ContentBlock, { type: "answer" }> => block.type === "answer")
-    .map((answer) => ({
-      ...answer,
-      content: stripLegacyWidgetBlocks(answer.content),
-    }))
     .filter((answer) => Boolean(answer.content));
-}
-
-function collectRawAnswers(blocks: ContentBlock[]): Array<Extract<ContentBlock, { type: "answer" }>> {
-  return blocks.filter((block): block is Extract<ContentBlock, { type: "answer" }> => block.type === "answer");
 }
 
 function normalizeEditorialSnippet(value: string | undefined): string {
   return (value || "").replace(/\s+/g, " ").trim();
+}
+
+function stripEditorialVisualMarkers(value: string): string {
+  return value
+    .replace(VISUAL_MARKER_RE, " ")
+    .replace(VISUAL_INLINE_LABEL_RE, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function pushChunkIntoEditorialSlot(target: string[], chunk: string) {
+  const cleaned = stripEditorialVisualMarkers(chunk);
+  if (!cleaned) return;
+
+  cleaned
+    .split(/\n\s*\n+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .forEach((segment) => target.push(segment));
+}
+
+function buildProseSlotsFromMarkers(
+  content: string,
+  figureCount: number,
+): string[][] | null {
+  if (!content || figureCount <= 0) return null;
+
+  const slots = Array.from({ length: figureCount + 1 }, () => [] as string[]);
+  const markerRegex = new RegExp(VISUAL_MARKER_RE.source, "gi");
+  let currentSlot = 0;
+  let cursor = 0;
+  let sawMarker = false;
+
+  for (const match of content.matchAll(markerRegex)) {
+    const matchIndex = match.index;
+    if (typeof matchIndex !== "number") continue;
+
+    sawMarker = true;
+    pushChunkIntoEditorialSlot(slots[currentSlot] || [], content.slice(cursor, matchIndex));
+
+    const figureOrdinal = Number(match[1]);
+    if (Number.isFinite(figureOrdinal) && figureOrdinal > 0) {
+      currentSlot = Math.min(figureOrdinal, figureCount);
+    }
+
+    cursor = matchIndex + match[0].length;
+  }
+
+  if (!sawMarker) return null;
+
+  pushChunkIntoEditorialSlot(slots[currentSlot] || [], content.slice(cursor));
+  return slots;
 }
 
 function buildSyntheticEditorialNarrative(figures: VisualBlockData[]): string[] {
@@ -162,91 +194,12 @@ function buildSyntheticEditorialNarrative(figures: VisualBlockData[]): string[] 
   return snippets.slice(0, 3);
 }
 
-function extractLegacyWidgetTitle(html: string, fallback: string) {
-  const titleMatch = html.match(/<(h1|h2|h3)[^>]*>([\s\S]*?)<\/\1>/i) || html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  const raw = titleMatch?.[2] || titleMatch?.[1] || "";
-  const title = raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-  return title || fallback;
-}
-
-function buildLegacyWidgetComposition(
-  answers: Array<Extract<ContentBlock, { type: "answer" }>>,
-): ArticleComposition | null {
-  const segments: ArticleCompositionSegment[] = [];
-  const widgetIds: string[] = [];
-  const proseBaseId = answers[0]?.id || "legacy-editorial";
-  let proseIndex = 0;
-  let widgetIndex = 0;
-
-  for (const answer of answers) {
-    const splitSegments = splitWidgetBlocks(answer.content);
-    for (const segment of splitSegments) {
-      if (segment.type === "markdown") {
-        const prose = segment.content.trim();
-        if (!prose) continue;
-        segments.push({
-          kind: "prose",
-          id: `${proseBaseId}-legacy-prose-${proseIndex + 1}`,
-          content: prose,
-          surfaceRole: proseIndex === 0 ? "lead" : "body",
-        });
-        proseIndex += 1;
-        continue;
-      }
-
-      const widgetId = `${proseBaseId}-legacy-widget-${widgetIndex + 1}`;
-      widgetIds.push(widgetId);
-      segments.push({
-        kind: "legacy-widget",
-        id: widgetId,
-        html: segment.content,
-        bridgeLabel: widgetIndex === 0 ? "Minh họa trung tâm" : `Figure ${widgetIndex + 1}`,
-        claim: extractLegacyWidgetTitle(segment.content, `Figure ${widgetIndex + 1}`),
-      });
-      widgetIndex += 1;
-    }
-  }
-
-  if (widgetIds.length === 0) return null;
-
-  const proseSegments = segments.filter((segment): segment is Extract<ArticleCompositionSegment, { kind: "prose" }> => segment.kind === "prose");
-  if (proseSegments.length === 0) {
-    segments.unshift({
-      kind: "prose",
-      id: `${proseBaseId}-legacy-lead`,
-      content: `Minh se di qua ${widgetIds.length} figure nho de tach tung y trong loi giai thich nay.`,
-      surfaceRole: "lead",
-    });
-    segments.push({
-      kind: "prose",
-      id: `${proseBaseId}-legacy-tail`,
-      content: "Tu nhom figure nay, minh co the tiep tuc patch tung khung nhin ma khong can quay lai dang widget cu.",
-      surfaceRole: "tail",
-    });
-  } else {
-    const proseOnly = segments.filter((segment): segment is Extract<ArticleCompositionSegment, { kind: "prose" }> => segment.kind === "prose");
-    const lastProse = proseOnly[proseOnly.length - 1];
-    if (lastProse) {
-      lastProse.surfaceRole = "tail";
-    }
-  }
-
-  return {
-    answerIds: answers.map((answer) => answer.id),
-    entryId: answers[0]?.id || widgetIds[0],
-    figureIds: widgetIds,
-    answerIsLast: true,
-    segments,
-  };
-}
-
 function buildArticleComposition(blocks: ContentBlock[]): ArticleComposition | null {
-  const rawAnswers = collectRawAnswers(blocks);
   const answers = collectAnswerNarrative(blocks);
   const visuals = blocks.filter((block): block is VisualBlockData => block.type === "visual");
 
   if (visuals.length === 0) {
-    return buildLegacyWidgetComposition(rawAnswers);
+    return null;
   }
 
   const candidateVisuals = visuals.filter((visual) => visual.visual.shell_variant !== "immersive");
@@ -281,21 +234,30 @@ function buildArticleComposition(blocks: ContentBlock[]): ArticleComposition | n
     .map((answer) => answer.content)
     .filter(Boolean)
     .join("\n\n");
+  const proseSlotsFromMarkers = answerContent
+    ? buildProseSlotsFromMarkers(answerContent, selectedFigures.length)
+    : null;
   const proseSegments = answerContent
-    ? splitEditorialAnswer(answerContent)
+    ? splitEditorialAnswer(stripEditorialVisualMarkers(answerContent))
     : buildSyntheticEditorialNarrative(selectedFigures);
-  if (proseSegments.length === 0) return null;
+  const hasMarkerProse = proseSlotsFromMarkers?.some((slot) => slot.length > 0) || false;
+  if (proseSegments.length === 0 && !hasMarkerProse) return null;
 
   const proseBaseId = answers[0]?.id || selectedFigures[0]?.id || "editorial";
 
-  const proseSlots = Array.from(
-    { length: selectedFigures.length + 1 },
-    () => [] as string[],
-  );
-  proseSegments.forEach((segment, index) => {
-    const slotIndex = Math.min(index, selectedFigures.length);
-    proseSlots[slotIndex]?.push(segment);
-  });
+  const proseSlots = hasMarkerProse
+    ? proseSlotsFromMarkers!
+    : (() => {
+      const slots = Array.from(
+        { length: selectedFigures.length + 1 },
+        () => [] as string[],
+      );
+      proseSegments.forEach((segment, index) => {
+        const slotIndex = Math.min(index, selectedFigures.length);
+        slots[slotIndex]?.push(segment);
+      });
+      return slots;
+    })();
 
   const segments: ArticleCompositionSegment[] = [];
   const leadContent = proseSlots[0]?.join("\n\n").trim();
@@ -661,16 +623,13 @@ export function shouldRenderReasoningRail(
   return showThinking && thinkingLevel !== "minimal";
 }
 
-function hasEditorialVisualSurface(blocks: ContentBlock[]): boolean {
-  return blocks.some((block) => block.type === "visual");
-}
-
 interface InterleavedBlockSequenceProps {
   blocks: ContentBlock[];
   showThinking: boolean;
   thinkingLevel?: ThinkingLevel;
   isStreaming?: boolean;
   livePhases?: ThinkingPhase[];
+  onSuggestedQuestion?: (q: string) => void;
 }
 
 function AnswerSurface({
@@ -704,6 +663,7 @@ function renderEditorialFlow(
   composition: ArticleComposition,
   blocks: ContentBlock[],
   isStreaming: boolean,
+  onSuggestedQuestion?: (q: string) => void,
 ) {
   const visualBlocks = new Map(
     blocks
@@ -743,29 +703,6 @@ function renderEditorialFlow(
           );
         }
 
-        if (segment.kind === "legacy-widget") {
-          return (
-            <div
-              key={segment.id}
-              className="editorial-visual-flow__figure"
-              data-anchor="legacy-widget"
-              data-chrome-mode="editorial"
-              data-pedagogical-role="mechanism"
-            >
-              <div className="editorial-visual-flow__bridge" data-anchor="legacy-widget">
-                <span className="editorial-visual-flow__bridge-chip">{segment.bridgeLabel}</span>
-                {segment.claim ? (
-                  <span className="editorial-visual-flow__bridge-claim">{segment.claim}</span>
-                ) : null}
-                <span className="editorial-visual-flow__bridge-line" aria-hidden="true" />
-              </div>
-              <div className="editorial-visual-flow__stage" data-testid="legacy-widget-figure">
-                <InlineHtmlWidget code={segment.html} />
-              </div>
-            </div>
-          );
-        }
-
         const visualBlock = visualBlocks.get(segment.figure.visualId);
         if (!visualBlock) return null;
 
@@ -788,7 +725,7 @@ function renderEditorialFlow(
               <span className="editorial-visual-flow__bridge-line" aria-hidden="true" />
             </div>
             <div className="editorial-visual-flow__stage">
-              <VisualBlock block={visualBlock} embedded />
+              <VisualBlock block={visualBlock} embedded onSuggestedQuestion={onSuggestedQuestion} />
             </div>
           </div>
         );
@@ -803,10 +740,10 @@ export function InterleavedBlockSequence({
   thinkingLevel = "balanced",
   isStreaming = false,
   livePhases = [],
+  onSuggestedQuestion,
 }: InterleavedBlockSequenceProps) {
   const [inspectorIntervalId, setInspectorIntervalId] = useState<string | null>(null);
   const showReasoningRail = shouldRenderReasoningRail(blocks, showThinking, thinkingLevel);
-  const editorialVisualSurface = hasEditorialVisualSurface(blocks);
   const groupedBlockIds = new Set<string>();
 
   for (const block of blocks) {
@@ -896,20 +833,18 @@ export function InterleavedBlockSequence({
 
         if (block.type === "visual") {
           if (editorialComposition?.entryId === block.id) {
-            return renderEditorialFlow(editorialComposition, visibleBlocks, isStreaming);
+            return renderEditorialFlow(editorialComposition, visibleBlocks, isStreaming, onSuggestedQuestion);
           }
           if (editorialComposition?.figureIds.includes(block.id)) return null;
-          return <VisualBlock key={block.id} block={block as VisualBlockData} />;
+          return <VisualBlock key={block.id} block={block as VisualBlockData} onSuggestedQuestion={onSuggestedQuestion} />;
         }
 
         if (block.type === "answer") {
-          const answerContent = editorialVisualSurface
-            ? stripLegacyWidgetBlocks(block.content)
-            : block.content;
+          const answerContent = block.content;
           if (!answerContent) return null;
 
           if (editorialComposition?.entryId === block.id) {
-            return renderEditorialFlow(editorialComposition, visibleBlocks, isStreaming);
+            return renderEditorialFlow(editorialComposition, visibleBlocks, isStreaming, onSuggestedQuestion);
           }
           if (editorialComposition?.answerIds.includes(block.id)) return null;
 

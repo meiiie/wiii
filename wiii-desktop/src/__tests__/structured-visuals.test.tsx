@@ -288,7 +288,7 @@ describe("Structured visuals", () => {
     expect(screen.getByText("Softmax vs linear attention")).toBeTruthy();
     expect(screen.getAllByText("Softmax").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Linear").length).toBeGreaterThan(0);
-    expect(screen.getByText("Xem phan")).toBeTruthy();
+    expect(screen.getByText("Xem phần")).toBeTruthy();
     expect(screen.queryByText("Structured visual summary", { selector: "p" })).toBeNull();
     expect(screen.queryByText("template")).toBeNull();
     expect(screen.queryByText("spec_merge")).toBeNull();
@@ -353,11 +353,11 @@ describe("Structured visuals", () => {
 
     render(<VisualBlock block={{ type: "visual", id: visual.id, visual }} />);
 
-    expect(screen.getByText("Dong chay tung buoc")).toBeTruthy();
+    expect(screen.getAllByText("Dòng chảy từng bước").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Project").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Accumulate").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Emit").length).toBeGreaterThan(0);
-    expect(screen.getByText("Diem can chu y")).toBeTruthy();
+    expect(screen.getByText("Điểm cần chú ý")).toBeTruthy();
     expect(screen.getByText("Running state")).toBeTruthy();
   });
 
@@ -424,10 +424,10 @@ describe("Structured visuals", () => {
     expect(screen.getAllByText("Interface").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Runtime").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Backend").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Lop nhap").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Vung dieu phoi").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Lop dau ra").length).toBeGreaterThan(0);
-    expect(screen.getByText("Lop dang xem")).toBeTruthy();
+    expect(screen.getAllByText("Lớp nhập").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Vùng điều phối").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Lớp đầu ra").length).toBeGreaterThan(0);
+    expect(screen.getByText("Lớp đang xem")).toBeTruthy();
   });
 
   it("renders concept visuals with a central idea and branches", () => {
@@ -462,11 +462,11 @@ describe("Structured visuals", () => {
 
     render(<VisualBlock block={{ type: "visual", id: visual.id, visual }} />);
 
-    expect(screen.getByText("Y trung tam")).toBeTruthy();
+    expect(screen.getByText("Ý trung tâm")).toBeTruthy();
     expect(screen.getByText("Linear attention")).toBeTruthy();
     expect(screen.getAllByText("Chi phi").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Danh doi").length).toBeGreaterThan(0);
-    expect(screen.getByText("Nhanh dang xem")).toBeTruthy();
+    expect(screen.getByText("Nhánh đang xem")).toBeTruthy();
   });
 
   it("renders chart visuals with a stage, legend, and metrics", () => {
@@ -502,11 +502,11 @@ describe("Structured visuals", () => {
 
     render(<VisualBlock block={{ type: "visual", id: visual.id, visual }} />);
 
-    expect(screen.getByText("Doc xu huong theo truc")).toBeTruthy();
+    expect(screen.getByText("Đọc xu hướng theo trục")).toBeTruthy();
     expect(screen.getAllByText("Latency").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Series").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Average").length).toBeGreaterThan(0);
-    expect(screen.getByText("Gia tri cao nhat")).toBeTruthy();
+    expect(screen.getByText("Giá trị cao nhất")).toBeTruthy();
     expect(screen.getByText("Do tre tang manh o quy cuoi.")).toBeTruthy();
   });
 
@@ -539,10 +539,10 @@ describe("Structured visuals", () => {
 
     render(<VisualBlock block={{ type: "visual", id: visual.id, visual }} />);
 
-    expect(screen.getAllByText("Theo dong thoi gian").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Moc dang xem").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Tong moc").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Dang mo").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Theo dòng thời gian").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Mốc đang xem").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Tổng mốc").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Đang mở").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Render").length).toBeGreaterThan(0);
   });
 
@@ -576,9 +576,9 @@ describe("Structured visuals", () => {
 
     render(<VisualBlock block={{ type: "visual", id: visual.id, visual }} />);
 
-    expect(screen.getAllByText("Theo tung khu vuc").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Khu vuc dang xem").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Tong cum").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Theo từng khu vực").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Khu vực đang xem").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Tổng cụm").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Central").length).toBeGreaterThan(0);
     expect(screen.getByText("Peak load")).toBeTruthy();
   });
@@ -606,7 +606,7 @@ describe("Structured visuals", () => {
           {
             id: "panel-1",
             title: "Doc thu tu",
-            body: "Bat dau tu chi phi, sau do moi den danh doi.",
+            body: "Bắt đầu từ chi phí, sau đó mới đến đánh đổi.",
           },
         ],
       },
@@ -614,11 +614,11 @@ describe("Structured visuals", () => {
 
     render(<VisualBlock block={{ type: "visual", id: visual.id, visual }} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Diem chot/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Điểm chốt/i }));
 
     expect(screen.getByText("Linear attention keeps only a compact state.")).toBeTruthy();
-    expect(screen.getByText("Goi y doc")).toBeTruthy();
-    expect(screen.getByText("Bat dau tu chi phi, sau do moi den danh doi.")).toBeTruthy();
+    expect(screen.getByText("Gợi ý đọc")).toBeTruthy();
+    expect(screen.getByText("Bắt đầu từ chi phí, sau đó mới đến đánh đổi.")).toBeTruthy();
   });
 
   it("applies iframe bridge control events to the visual session", () => {
@@ -659,5 +659,37 @@ describe("Structured visuals", () => {
     const session = useChatStore.getState().visualSessions["vs-1"];
     expect(session?.controlValues.focus_side).toBe("left");
     expect(session?.focusedNodeId).toBe("focus:left");
+  });
+
+  it("offers a follow-up artifact handoff prompt without converting in place", () => {
+    const onSuggestedQuestion = vi.fn();
+    const visual = makeVisual({
+      artifact_handoff_available: true,
+      artifact_handoff_mode: "followup_prompt",
+      artifact_handoff_label: "Mo thanh Artifact",
+      artifact_handoff_prompt: "Bien visual nay thanh artifact HTML/SVG hoan chinh.",
+    });
+
+    render(<VisualBlock block={{ type: "visual", id: visual.id, visual }} onSuggestedQuestion={onSuggestedQuestion} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Mo thanh Artifact" }));
+    expect(onSuggestedQuestion).toHaveBeenCalledWith("Bien visual nay thanh artifact HTML/SVG hoan chinh.");
+  });
+
+  it("does not offer artifact handoff for true artifact visuals", () => {
+    const onSuggestedQuestion = vi.fn();
+    const visual = makeVisual({
+      renderer_kind: "inline_html",
+      runtime: "sandbox_html",
+      fallback_html: "<div>Artifact content</div>",
+      presentation_intent: "artifact",
+      artifact_handoff_available: false,
+      artifact_handoff_mode: "none",
+      artifact_handoff_prompt: null,
+    });
+
+    render(<VisualBlock block={{ type: "visual", id: visual.id, visual }} onSuggestedQuestion={onSuggestedQuestion} />);
+
+    expect(screen.queryByRole("button", { name: /artifact/i })).toBeNull();
   });
 });

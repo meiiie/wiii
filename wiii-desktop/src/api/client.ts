@@ -4,6 +4,7 @@
  * Uses @tauri-apps/plugin-http to bypass CORS when running in Tauri.
  * Falls back to native browser fetch when running in a regular browser.
  */
+import { DEFAULT_SERVER_URL } from "@/lib/constants";
 
 const isTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -431,7 +432,7 @@ let _client: WiiiClient | null = null;
 
 export function getClient(): WiiiClient {
   if (!_client) {
-    _client = new WiiiClient("http://localhost:8000");
+    _client = new WiiiClient(DEFAULT_SERVER_URL || "http://localhost:8000");
   }
   return _client;
 }

@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./playwright",
-  testMatch: ["visual-runtime.spec.ts"],
+  testMatch: ["visual-runtime.spec.ts", "code-studio-runtime.spec.ts"],
   fullyParallel: false,
   workers: 1,
   timeout: 180_000,
@@ -21,7 +21,7 @@ export default defineConfig({
   webServer: [
     {
       command: "node scripts/start-visual-backend.mjs",
-      url: "http://127.0.0.1:8001/api/v1/health/live",
+      url: "http://127.0.0.1:8000/api/v1/health/live",
       reuseExistingServer: true,
       timeout: 180_000,
     },

@@ -872,9 +872,9 @@ class PromptLoader:
                 rich_when = rich_cfg.get('when_to_use', [])
                 if rich_when:
                     if structured_visuals_enabled:
-                        sections.append("\n🎨 VISUAL RUNTIME V3 (tool_generate_visual → SSE visual; legacy fallback: tool_generate_rich_visual → ```widget):")
+                        sections.append("\n🎨 VISUAL RUNTIME V3 (tool_generate_visual → SSE visual):")
                     else:
-                        sections.append("\n🎨 RICH VISUAL GIÁO DỤC (tool_generate_rich_visual → ```widget):")
+                        sections.append("\n🎨 RICH VISUAL GIÁO DỤC (tool_generate_visual → SSE visual):")
                     for item in rich_when:
                         sections.append(f"- {item}")
                 rich_rules = rich_cfg.get('rules', [])
@@ -885,7 +885,7 @@ class PromptLoader:
                 if structured_visuals_enabled:
                     sections.append("- Chon renderer_kind=template cho visual giao duc chuan; inline_html cho custom editorial visual; app cho simulation/mini tool.")
                     sections.append("- Sau khi gọi tool_generate_visual: KHÔNG copy payload JSON vào answer. Viết narrative + takeaway, frontend sẽ render visual.")
-                    sections.append("- Chỉ dùng tool_generate_rich_visual khi cần legacy ```widget compatibility.")
+                    sections.append("- Dùng tool_create_visual_code cho visual custom (code-gen).")
 
             # Legacy: widget section (backward compat with Sprint 228)
             widget_cfg = visual.get('widget', {})

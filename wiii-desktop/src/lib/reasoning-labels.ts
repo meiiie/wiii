@@ -25,6 +25,9 @@ export const TOOL_LABELS: Record<string, string> = {
   tool_generate_word_document: "Tạo Word",
   tool_generate_visual: "Dựng visual giải thích",
   tool_generate_rich_visual: "Dựng visual giải thích",
+  tool_create_visual_code: "Tạo visual code",
+  tool_search_products: "Tìm sản phẩm",
+  tool_search_shopping: "Tìm mua sắm",
 };
 
 /** Vietnamese labels for agent node names. */

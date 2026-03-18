@@ -81,6 +81,7 @@ class ChatContext:
     host_context: Optional[Any] = None  # HostContext dict from user_context
     visual_context: Optional[Any] = None  # Inline visual session context from user_context
     widget_feedback: Optional[Any] = None  # Semantic widget/app results from user_context
+    code_studio_context: Optional[Any] = None  # Active code studio session context from user_context
 
     # Analysis Context
     conversation_analysis: Any = None  # ConversationContext
@@ -258,6 +259,7 @@ class InputProcessor:
             host_context=user_context.host_context if user_context else None,
             visual_context=user_context.visual_context if user_context else None,
             widget_feedback=user_context.widget_feedback if user_context else None,
+            code_studio_context=user_context.code_studio_context if user_context else None,
         )
         
         # Prioritize LMS user name

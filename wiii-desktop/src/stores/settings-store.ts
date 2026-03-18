@@ -53,6 +53,20 @@ export function isLocalPreviewHost(hostname: string): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1";
 }
 
+function migrateLocalPreviewServerUrl(
+  serverUrl: string | undefined,
+  hostname: string,
+): string | undefined {
+  if (!isLocalPreviewHost(hostname) || !serverUrl) return serverUrl;
+  if (
+    serverUrl === "http://localhost:8001" ||
+    serverUrl === "http://127.0.0.1:8001"
+  ) {
+    return "http://localhost:8000";
+  }
+  return serverUrl;
+}
+
 export function normalizeLoadedSettingsForHost(
   saved: Partial<AppSettings> | null,
   hostname: string,
@@ -62,6 +76,8 @@ export function normalizeLoadedSettingsForHost(
   if (!merged.user_id || merged.user_id === "desktop-user") {
     merged.user_id = generateAnonymousId();
   }
+
+  merged.server_url = migrateLocalPreviewServerUrl(merged.server_url, hostname) || merged.server_url;
 
   // Preview builds running on localhost should still talk to the local backend.
   if (isLocalPreviewHost(hostname) && !merged.server_url) {

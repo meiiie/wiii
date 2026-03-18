@@ -63,14 +63,6 @@ export function DiagramSectionPill({
   );
 }
 
-export function DiagramFormulaChip({ children }: { children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center rounded-full border border-[rgba(184,90,51,0.14)] bg-[rgba(255,255,255,0.78)] px-3 py-1.5 font-mono text-xs text-[var(--accent-orange)] shadow-[var(--shadow-sm)]">
-      {children}
-    </span>
-  );
-}
-
 export function DiagramStatusPill({
   label,
   detail,

@@ -35,6 +35,34 @@ describe("local preview bootstrap", () => {
     expect(patch.user_role).toBe("admin");
   });
 
+  it("migrates stale localhost:8001 settings back to localhost:8000 on local preview", () => {
+    const normalized = normalizeLoadedSettingsForHost(
+      {
+        server_url: "http://localhost:8001",
+        api_key: "local-dev-key",
+        user_role: "student",
+        user_id: "test-user",
+      },
+      "localhost",
+    );
+
+    expect(normalized.server_url).toBe("http://localhost:8000");
+  });
+
+  it("migrates stale 127.0.0.1:8001 settings back to localhost:8000 on local preview", () => {
+    const normalized = normalizeLoadedSettingsForHost(
+      {
+        server_url: "http://127.0.0.1:8001",
+        api_key: "local-dev-key",
+        user_role: "student",
+        user_id: "test-user",
+      },
+      "127.0.0.1",
+    );
+
+    expect(normalized.server_url).toBe("http://localhost:8000");
+  });
+
   it("does not override explicit non-local settings", () => {
     const patch = resolveDevModeSettingsPatch(
       {

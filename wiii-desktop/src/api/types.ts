@@ -44,6 +44,10 @@ export interface WidgetFeedbackItem {
   total_count?: number;
   source?: string;
   data?: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+  session_id?: string;
+  message_id?: string;
+  version?: string;
   timestamp: string;
 }
 
@@ -65,6 +69,23 @@ export interface ChatWidgetFeedbackContext {
   }>;
 }
 
+export interface ChatCodeStudioContext {
+  active_session?: {
+    session_id: string;
+    title: string;
+    status: "streaming" | "complete" | "error";
+    active_version: number;
+    version_count: number;
+    language: string;
+    studio_lane: "app" | "artifact" | "widget";
+    artifact_kind?: "html_app" | "code_widget" | "search_widget" | "document" | "chart_widget";
+    quality_profile?: "draft" | "standard" | "premium";
+    renderer_contract?: "host_shell" | "chart_runtime" | "article_figure";
+    has_preview: boolean;
+  };
+  requested_view?: "code" | "preview";
+}
+
 export interface ChatUserContext {
   display_name?: string;
   role?: UserRole;
@@ -74,6 +95,7 @@ export interface ChatUserContext {
   host_context?: unknown | null;
   visual_context?: ChatVisualContext | null;
   widget_feedback?: ChatWidgetFeedbackContext | null;
+  code_studio_context?: ChatCodeStudioContext | null;
   [key: string]: unknown;
 }
 
@@ -647,6 +669,12 @@ export interface VisualPayload {
   pedagogical_role: VisualPedagogicalRole;
   chrome_mode: VisualChromeMode;
   claim: string;
+  presentation_intent?: "text" | "article_figure" | "chart_runtime" | "code_studio_app" | "artifact";
+  figure_budget?: number;
+  quality_profile?: "draft" | "standard" | "premium";
+  renderer_contract?: "host_shell" | "chart_runtime" | "article_figure";
+  studio_lane?: "app" | "artifact" | "widget" | null;
+  artifact_kind?: "html_app" | "code_widget" | "search_widget" | "document" | "chart_widget" | null;
   narrative_anchor: string;
   runtime: VisualRuntime;
   title: string;
@@ -661,6 +689,10 @@ export interface VisualPayload {
   subtitle?: string;
   fallback_html?: string;
   runtime_manifest?: VisualRuntimeManifest | null;
+  artifact_handoff_available?: boolean;
+  artifact_handoff_mode?: "none" | "followup_prompt";
+  artifact_handoff_label?: string | null;
+  artifact_handoff_prompt?: string | null;
   metadata?: Record<string, unknown>;
 }
 
@@ -777,6 +809,11 @@ export interface SSECodeOpenEvent {
     title: string;
     language: string;
     version: number;
+    studio_lane?: "app" | "artifact" | "widget";
+    artifact_kind?: "html_app" | "code_widget" | "search_widget" | "document" | "chart_widget";
+    quality_profile?: "draft" | "standard" | "premium";
+    renderer_contract?: "host_shell" | "chart_runtime" | "article_figure";
+    requested_view?: "code" | "preview";
   };
   node?: string;
 }
@@ -799,6 +836,11 @@ export interface SSECodeCompleteEvent {
     full_code: string;
     language: string;
     version: number;
+    studio_lane?: "app" | "artifact" | "widget";
+    artifact_kind?: "html_app" | "code_widget" | "search_widget" | "document" | "chart_widget";
+    quality_profile?: "draft" | "standard" | "premium";
+    renderer_contract?: "host_shell" | "chart_runtime" | "article_figure";
+    requested_view?: "code" | "preview";
     visual_payload?: VisualPayload;
   };
   node?: string;

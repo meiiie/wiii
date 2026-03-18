@@ -43,7 +43,8 @@ const asIndexList = (value: unknown) => asList(value)
   .map((item) => asNumber(item, -1))
   .filter((item): item is number => Number.isInteger(item) && item >= 0);
 
-// Template kickers removed — all visuals render via clean iframe
+// Editorial kickers were removed. Inline HTML/app visuals render in sandboxed frames,
+// while the structured template fallback still exists for safety and rollback.
 
 const CONTROL_LABELS: Record<string, string> = {
   focus_side: "Xem phần",
@@ -145,7 +146,7 @@ function getVisiblePanels(visual: VisualPayload) {
     .filter((panel) => panel.title || panel.body);
 }
 
-// visualKicker removed — template cards eliminated
+// Legacy visual kicker chrome is gone; inline prose now owns the narrative framing.
 
 function controlLabel(control: VisualControl): string {
   return CONTROL_LABELS[control.id] || control.label || "Tùy chọn";
@@ -906,8 +907,8 @@ function MapLite({ spec, focusId }: { spec: Record<string, unknown>; focusId: st
   </div>;
 }
 
-/* Dead code — template cards eliminated. Kept for rollback. */
-const _renderStructured = (visual: VisualPayload, session: VisualSessionState | undefined, reduced: boolean) => {
+/* Structured template fallback. Still used when renderer_kind === "template". */
+function renderStructured(visual: VisualPayload, session: VisualSessionState | undefined, reduced: boolean) {
   const spec = asRecord(visual.spec);
   let content: ReactNode = null;
   switch (visual.type) {
@@ -923,11 +924,10 @@ const _renderStructured = (visual: VisualPayload, session: VisualSessionState | 
     default: return null;
   }
   return <motion.div variants={staggerItem}>{content}</motion.div>;
-};
-void _renderStructured; // dead code ref
+}
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-function _ControlBar({
+function ControlBar({
   visual,
   session,
   onChange,
@@ -949,7 +949,7 @@ function _ControlBar({
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-function _Details({
+function Details({
   visual,
   sessionId,
   session,
@@ -1035,7 +1035,7 @@ function getHtmlPayload(visual: VisualPayload): string | null {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-function _getFormulaChips(visual: VisualPayload): string[] {
+function getFormulaChips(visual: VisualPayload): string[] {
   const spec = asRecord(visual.spec);
   const metadata = asRecord(visual.metadata);
   const direct = asList(spec.formulas).concat(asList(spec.equations)).concat(asList(metadata.formula_chips));
@@ -1045,9 +1045,16 @@ function _getFormulaChips(visual: VisualPayload): string[] {
     .slice(0, 4);
 }
 
-void _ControlBar; void _Details; void _getFormulaChips; // dead code refs
 
-export function VisualBlock({ block, embedded = false }: { block: VisualBlockData; embedded?: boolean }) {
+export function VisualBlock({
+  block,
+  embedded = false,
+  onSuggestedQuestion,
+}: {
+  block: VisualBlockData;
+  embedded?: boolean;
+  onSuggestedQuestion?: (prompt: string) => void;
+}) {
   const initialVisual = block.visual;
   const sessionId = sessionIdOf(initialVisual);
   const session = useChatStore((state) => state.visualSessions[sessionId]);
@@ -1079,19 +1086,94 @@ export function VisualBlock({ block, embedded = false }: { block: VisualBlockDat
     narrative_anchor: activeVisual.narrative_anchor || "after-lead",
   };
 
-  // ALL visuals render via iframe — no template cards (Claude Artifacts pattern)
+  // Inline visuals can be structured, inline_html, or app-backed. Keep the render path honest.
   const htmlPayload = getHtmlPayload(visual);
   const cleanedSummary = cleanVisualSummary(visual);
   const accessibleSummary = cleanedSummary || getVisibleAnnotations(visual)[0]?.body || visual.title;
-  const describedById = cleanedSummary ? visibleSummaryId : accessibleSummary ? srSummaryId : undefined;
+  const describedById = embedded && cleanedSummary
+    ? visibleSummaryId
+    : accessibleSummary
+      ? srSummaryId
+      : undefined;
   const status = session?.status || block.status || "committed";
+  const isTemplateVisual = visual.renderer_kind === "template";
+  const formulaChips = getFormulaChips(visual);
+  const artifactHandoffPrompt = typeof visual.artifact_handoff_prompt === "string"
+    ? visual.artifact_handoff_prompt.trim()
+    : "";
+  const canRequestArtifact = Boolean(
+    visual.artifact_handoff_available
+    && visual.artifact_handoff_mode === "followup_prompt"
+    && artifactHandoffPrompt
+    && onSuggestedQuestion,
+  );
+
+  // Delegate to Code Studio panel when it's open for this visual — avoid duplicate display
+  const codeStudioPanelOpen = useUIStore((s) => s.codeStudioPanelOpen);
+  const codeStudioActiveSessionId = useCodeStudioStore((s) => s.activeSessionId);
+  const hasCodeStudioSessionForThis = useCodeStudioStore((s) => Boolean(s.sessions[sessionId]));
+  if (codeStudioPanelOpen && hasCodeStudioSessionForThis && codeStudioActiveSessionId === sessionId) {
+    return (
+      <figure data-testid="visual-block" className="my-4">
+        <button
+          type="button"
+          className="flex items-center gap-2.5 w-full rounded-xl border border-border/60 bg-surface-secondary/40 px-4 py-3 text-left text-sm text-text-secondary hover:bg-surface-secondary transition-colors"
+          onClick={() => {
+            useCodeStudioStore.getState().setActiveSession(sessionId);
+            useUIStore.getState().openCodeStudio();
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--accent)]"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <span className="truncate font-medium">{visual.title}</span>
+          <span className="ml-auto text-xs text-text-tertiary shrink-0">Dang mo trong Code Studio</span>
+        </button>
+      </figure>
+    );
+  }
 
   let renderError: string | null = null;
   let usedFallback = false;
   let body: ReactNode = null;
 
+  const handleStructuredControlChange = (
+    controlId: string,
+    value: string | number | boolean,
+    focusedNodeId?: string,
+  ) => {
+    update(sessionId, {
+      controlValues: { [controlId]: value },
+      focusedNodeId,
+      interactionDelta: 1,
+    });
+    trackVisualTelemetry("visual_interacted", {
+      visual_id: visual.id,
+      visual_session_id: sessionId,
+      visual_type: visual.type,
+      control_id: controlId,
+      value: String(value ?? ""),
+      source: "structured_control",
+    });
+  };
+
   try {
-    if (visual.renderer_kind === "app") {
+    if (isTemplateVisual) {
+      const structuredBody = renderStructured(visual, session, reduced);
+      if (!structuredBody) throw new Error(`Unsupported structured visual type: ${visual.type}`);
+      body = (
+        <>
+          <ControlBar
+            visual={visual}
+            session={session}
+            onChange={handleStructuredControlChange}
+            embedded={embedded}
+          />
+          <div className={`visual-block-shell__canvas ${embedded ? "visual-block-shell__canvas--embedded" : ""}`.trim()}>
+            {structuredBody}
+          </div>
+          <Details visual={visual} sessionId={sessionId} session={session} embedded={embedded} />
+        </>
+      );
+    } else if (visual.renderer_kind === "app") {
       if (!htmlPayload) throw new Error("Missing html payload for app visual");
       body = (
         <EmbeddedAppFrame
@@ -1104,7 +1186,6 @@ export function VisualBlock({ block, embedded = false }: { block: VisualBlockDat
         />
       );
     } else if (htmlPayload) {
-      // template + inline_html both render via InlineVisualFrame
       body = (
         <InlineVisualFrame
           html={htmlPayload}
@@ -1124,7 +1205,10 @@ export function VisualBlock({ block, embedded = false }: { block: VisualBlockDat
     renderError = error instanceof Error ? error.message : "Unknown visual render error";
     body = htmlPayload
       ? <InlineHtmlWidget code={htmlPayload} />
-      : <div className="rounded-[20px] border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">Không thể render visual này lúc này.</div>;
+      : <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-surface-secondary/50 px-5 py-4 text-sm text-text-tertiary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-50"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+          Visual dang duoc chuan bi...
+        </div>;
     usedFallback = Boolean(htmlPayload);
   }
 
@@ -1274,10 +1358,56 @@ export function VisualBlock({ block, embedded = false }: { block: VisualBlockDat
     return () => window.cancelAnimationFrame(rafId);
   }, [embedded, reduced, visual.lifecycle_event, visual.title, visual.summary, visual.type]);
 
-  // ALL visuals: clean iframe + action bar — no template cards (Claude Artifacts pattern)
+  // Inline visual shell stays shared even when body switches between structured, inline_html, and app runtimes.
   // Progressive reveal: decorative skeleton overlay during "open" cue, content always rendered
-  const isBuilding = stageCue === "open" && !reduced;
-  return <figure ref={figureRef} data-testid="visual-block" className={`${embedded ? "" : "my-6"} overflow-hidden`} aria-labelledby={titleId} aria-describedby={describedById} data-visual-status={status} data-visual-lifecycle={visual.lifecycle_event} data-visual-cue={stageCue} data-visual-embedded={embedded ? "true" : "false"}>
+  const isBuilding = stageCue === "open" && !reduced && status === "open";
+  const figureClassName = [
+    "visual-block-shell",
+    "visual-block-shell--article",
+    embedded ? "visual-block-shell--embedded" : "",
+    embedded ? "" : "my-6",
+  ].filter(Boolean).join(" ");
+
+  return <figure
+    ref={figureRef}
+    data-testid="visual-block"
+    className={figureClassName}
+    aria-labelledby={titleId}
+    aria-describedby={describedById}
+    data-visual-status={status}
+    data-visual-lifecycle={visual.lifecycle_event}
+    data-visual-cue={stageCue}
+    data-visual-embedded={embedded ? "true" : "false"}
+  >
+    <div className={`visual-block-shell__header ${embedded ? "visual-block-shell__header--embedded" : ""}`.trim()}>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <DiagramSectionPill tone="neutral">
+            {visual.pedagogical_role.replace(/_/g, " ")}
+          </DiagramSectionPill>
+          {formulaChips.map((chip) => (
+            <DiagramMetricPill key={chip} label="Formula" value={chip} />
+          ))}
+        </div>
+        <div className="space-y-2">
+          <h3 id={titleId} className="font-serif text-[clamp(1.55rem,4vw,2.25rem)] leading-tight text-text">
+            {visual.title}
+          </h3>
+          {embedded && cleanedSummary ? (
+            <p
+              id={visibleSummaryId}
+              className="visual-block-shell__lede"
+            >
+              {cleanedSummary}
+            </p>
+          ) : null}
+          {!embedded && visual.claim && normalizeNaturalText(visual.claim) !== normalizeNaturalText(visual.title) ? (
+            <p className="visual-block-shell__claim">{visual.claim}</p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+    <div className={`visual-block-shell__body ${embedded ? "visual-block-shell__body--embedded" : ""}`.trim()}>
     <div className="visual-block-reveal" style={{ position: "relative" }}>
       <motion.div
         variants={staggerContainer}
@@ -1297,67 +1427,111 @@ export function VisualBlock({ block, embedded = false }: { block: VisualBlockDat
             style={{ position: "absolute", inset: 0, zIndex: 2, pointerEvents: "none" }}
           >
             <div className="visual-block-reveal__skeleton-bar" />
-            <div className="visual-block-reveal__skeleton-text">Dang dung visual...</div>
             <div className="visual-block-reveal__skeleton-bar" style={{ width: "25%" }} />
           </motion.div>
         )}
       </AnimatePresence>
     </div>
-    {htmlPayload && (
-      <VisualActionBar htmlPayload={htmlPayload} title={visual.title} sessionId={sessionId} />
+    {(htmlPayload || canRequestArtifact) && (
+      <VisualActionBar
+        htmlPayload={htmlPayload}
+        title={visual.title}
+        sessionId={sessionId}
+        artifactHandoffLabel={visual.artifact_handoff_label || undefined}
+        artifactHandoffPrompt={canRequestArtifact ? artifactHandoffPrompt : undefined}
+        onSuggestedQuestion={onSuggestedQuestion}
+      />
     )}
+    </div>
     <figcaption id={srSummaryId} className="sr-only">{accessibleSummary}</figcaption>
   </figure>;
 }
 
 /** Action bar below visual — includes Code Studio link when session exists. */
-function VisualActionBar({ htmlPayload, title, sessionId }: { htmlPayload: string; title: string; sessionId: string }) {
+function VisualActionBar({
+  htmlPayload,
+  title,
+  sessionId,
+  artifactHandoffLabel,
+  artifactHandoffPrompt,
+  onSuggestedQuestion,
+}: {
+  htmlPayload?: string | null;
+  title: string;
+  sessionId: string;
+  artifactHandoffLabel?: string;
+  artifactHandoffPrompt?: string;
+  onSuggestedQuestion?: (prompt: string) => void;
+}) {
   const hasCodeStudioSession = useCodeStudioStore((s) => Boolean(s.sessions[sessionId]));
+  const isStreaming = useChatStore((state) => state.isStreaming);
 
   const openInCodeStudio = () => {
     useCodeStudioStore.getState().setActiveSession(sessionId);
     useUIStore.getState().openCodeStudio();
   };
 
+  const requestArtifactHandoff = () => {
+    if (!artifactHandoffPrompt || !onSuggestedQuestion || isStreaming) return;
+    trackVisualTelemetry("visual_artifact_handoff_requested", {
+      visual_session_id: sessionId,
+      source: "visual_action_bar",
+    });
+    onSuggestedQuestion(artifactHandoffPrompt);
+  };
+
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5 transition-opacity duration-200" style={{ opacity: 0.35 }}
-      onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.35"; }}
-    >
+    <div className="visual-action-bar">
+      {artifactHandoffPrompt && onSuggestedQuestion && (
+        <button
+          type="button"
+          className="visual-action-bar__button visual-action-bar__button--artifact"
+          onClick={requestArtifactHandoff}
+          disabled={isStreaming}
+          aria-label={artifactHandoffLabel || "Mo thanh Artifact"}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.5L18 9.3l-4.2 1.8L12 15.6l-1.8-4.5L6 9.3l4.2-1.8L12 3z"/><path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z"/><path d="M5 14l.6 1.5L7 16l-1.4.5L5 18l-.6-1.5L3 16l1.4-.5L5 14z"/></svg>
+          {artifactHandoffLabel || "Mo thanh Artifact"}
+        </button>
+      )}
       {hasCodeStudioSession && (
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors font-medium"
+          className="visual-action-bar__button visual-action-bar__button--studio"
           onClick={openInCodeStudio}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
           Code Studio
         </button>
       )}
-      <button
-        type="button"
-        className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-text-tertiary hover:bg-surface-secondary hover:text-text-secondary transition-colors"
-        onClick={() => {
-          const blob = new Blob([htmlPayload], { type: "text/html" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = `${(title || "visual").replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, "_").substring(0, 40)}.html`;
-          a.click();
-          URL.revokeObjectURL(url);
-        }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Tai HTML
-      </button>
-      <button
-        type="button"
-        className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-text-tertiary hover:bg-surface-secondary hover:text-text-secondary transition-colors"
-        onClick={() => { navigator.clipboard.writeText(htmlPayload); }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-        Sao chep
-      </button>
+      {htmlPayload && (
+        <>
+          <button
+            type="button"
+            className="visual-action-bar__button"
+            onClick={() => {
+              const blob = new Blob([htmlPayload], { type: "text/html" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${(title || "visual").replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, "_").substring(0, 40)}.html`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Tai HTML
+          </button>
+          <button
+            type="button"
+            className="visual-action-bar__button"
+            onClick={() => { navigator.clipboard.writeText(htmlPayload); }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            Sao chep
+          </button>
+        </>
+      )}
     </div>
   );
 }

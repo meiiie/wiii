@@ -156,6 +156,7 @@ export const MessageBubble = memo(function MessageBubble({
             blocks={message.blocks as ContentBlock[]}
             showThinking={show_thinking}
             thinkingLevel={thinking_level}
+            onSuggestedQuestion={onSuggestedQuestion}
             message={message}
           />
         ) : (
@@ -353,10 +354,12 @@ function BlockRenderer({
   blocks,
   showThinking,
   thinkingLevel = "balanced",
+  onSuggestedQuestion,
 }: {
   blocks: ContentBlock[];
   showThinking: boolean;
   thinkingLevel?: import("@/api/types").ThinkingLevel;
+  onSuggestedQuestion?: (q: string) => void;
   message: Message;
 }) {
   return (
@@ -364,6 +367,7 @@ function BlockRenderer({
       blocks={blocks}
       showThinking={showThinking}
       thinkingLevel={thinkingLevel}
+      onSuggestedQuestion={onSuggestedQuestion}
     />
   );
 }

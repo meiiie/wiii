@@ -42,7 +42,7 @@ def parse_args() -> argparse.Namespace:
         description="Run a real web smoke test for Wiii inline visuals.",
     )
     parser.add_argument("--base-url", default="http://127.0.0.1:1420")
-    parser.add_argument("--server-url", default="http://127.0.0.1:8001")
+    parser.add_argument("--server-url", default="http://127.0.0.1:8000")
     parser.add_argument("--output-dir", default=str(default_output_dir))
     parser.add_argument("--screenshot-name", default="visual-followup-rendered.png")
     parser.add_argument("--result-name", default="web-visual-patch-result.json")

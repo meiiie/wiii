@@ -39,7 +39,9 @@ from app.engine.reasoning.reasoning_narrator import build_tool_context_summary
 from app.engine.multi_agent.visual_intent_resolver import (
     detect_visual_patch_request,
     filter_tools_for_visual_intent,
-    preferred_visual_tool_name,
+    merge_quality_profile,
+    merge_thinking_effort,
+    recommended_visual_thinking_effort,
     resolve_visual_intent,
 )
 
@@ -147,6 +149,17 @@ def _build_recent_conversation_context(state: AgentState) -> str:
     return "\n\n".join(part for part in parts if part)
 
 
+def _get_active_code_studio_session(state: AgentState) -> dict[str, Any]:
+    context = state.get("context") or {}
+    code_studio_ctx = context.get("code_studio_context") or {}
+    if not isinstance(code_studio_ctx, dict):
+        return {}
+    active_session = code_studio_ctx.get("active_session") or {}
+    if not isinstance(active_session, dict):
+        return {}
+    return active_session
+
+
 async def _render_reasoning(
     *,
     state: AgentState,
@@ -218,8 +231,13 @@ async def supervisor_node(state: AgentState) -> AgentState:
         # Propagate trace_id to result state (tracer lives in _TRACERS dict)
         result_state["_trace_id"] = state.get("_trace_id")
 
+        explicit_effort = state.get("thinking_effort")
+
+        if explicit_effort:
+            result_state["thinking_effort"] = explicit_effort
+
         # Sprint 147: Set thinking_effort from routing intent if not already set
-        if not state.get("thinking_effort"):
+        if not explicit_effort:
             _intent = ""
             _routing_meta = result_state.get("routing_metadata")
             if isinstance(_routing_meta, dict):
@@ -235,6 +253,16 @@ async def supervisor_node(state: AgentState) -> AgentState:
                 "colleague_consult": "medium",
             }
             result_state["thinking_effort"] = _effort_map.get(_intent, "medium")
+
+        if not explicit_effort:
+            upgraded_effort = recommended_visual_thinking_effort(
+                result_state.get("query", "") or state.get("query", ""),
+                active_code_session=_get_active_code_studio_session(result_state),
+            )
+            result_state["thinking_effort"] = merge_thinking_effort(
+                result_state.get("thinking_effort"),
+                upgraded_effort,
+            )
 
         return result_state
 
@@ -721,19 +749,31 @@ def _build_direct_tools_context(
     # These capabilities are handled by code_studio_agent.
     # Direct now focuses on: conversation, web search, knowledge, character, LMS.
 
-    # LLM-first visual tools: tool_create_visual_code is the primary tool
-    if getattr(settings_obj, "enable_llm_code_gen_visuals", False):
-        tool_hints.append(
-            "- tool_create_visual_code: TAO VISUAL bang HTML/CSS/SVG/JS truc tiep. "
-            "Day la tool CHINH cho visual. Viet code HTML dep, co animation, responsive. "
-            "Moi visual PHAI khac nhau — khong dung template. "
-            "Neu user muon sua visual truoc do, reuse visual_session_id."
-        )
-    elif getattr(settings_obj, "enable_structured_visuals", False):
+    structured_visuals_enabled = getattr(settings_obj, "enable_structured_visuals", False)
+    llm_code_gen_visuals = getattr(settings_obj, "enable_llm_code_gen_visuals", False)
+
+    if structured_visuals_enabled:
         tool_hints.append(
             "- tool_generate_visual: Tao visual co cau truc (comparison, process, chart, etc.). "
-            "Frontend render inline ngay trong stream."
+            "Day la lane mac dinh cho article figure va chart runtime. Frontend render inline ngay trong stream."
         )
+        if llm_code_gen_visuals:
+            tool_hints.append(
+                "- tool_create_visual_code: Chi dung khi user thuc su can app/widget/artifact hoac interaction bespoke. "
+                "Neu user muon sua visual truoc do, reuse visual_session_id."
+            )
+    elif llm_code_gen_visuals:
+        tool_hints.append(
+            "- tool_create_visual_code: Tao visual bang HTML/CSS/SVG/JS truc tiep khi khong co visual runtime co cau truc. "
+            "Viet code HTML dep, co animation khi can, responsive, va reuse visual_session_id cho follow-up."
+        )
+    if structured_visuals_enabled:
+        tool_hints.append(
+            "- LANE POLICY: article figure va chart runtime mac dinh di qua tool_generate_visual "
+            "voi inline_html/SVG-first. Chi dung tool_create_visual_code khi user thuc su can "
+            "app/widget/artifact hoac interaction bespoke."
+        )
+
     parts = []
     parts.append("## CÔNG CỤ CÓ SẴN:\n" + "\n".join(tool_hints))
 
@@ -804,6 +844,13 @@ def _build_code_studio_tools_context(
 
     tool_hints = []
 
+    if structured_visuals_enabled:
+        tool_hints.append(
+            "- POLICY MOI: tool_generate_visual la primary lane cho article figure va chart runtime, "
+            "uu tien inline_html/SVG-first va chi fallback sang structured spec khi can. "
+            "tool_create_visual_code chi danh cho simulation, mini tool, widget, app, hoac artifact code-centric."
+        )
+
     if has_execute_python:
         tool_hints.append(
             "- tool_execute_python: Chay Python trong sandbox de tinh toan, phan tich, tao bieu do, va sinh artifact that. "
@@ -817,7 +864,11 @@ def _build_code_studio_tools_context(
         "- tool_generate_word_document: Tao file Word (.docx) tu noi dung co cau truc khi user can memo, report, proposal, hoac handout.",
     ]
 
-    if structured_visuals_enabled and visual_decision.force_tool and visual_decision.mode == "template":
+    if (
+        structured_visuals_enabled
+        and visual_decision.force_tool
+        and visual_decision.presentation_intent == "chart_runtime"
+    ):
         tool_hints.append(
             "- tool_generate_interactive_chart: KHONG phai lua chon chinh cho query hien tai. "
             "Chi dung khi user can dashboard so hoc / hover tooltip / raw numeric chart. "
@@ -833,26 +884,43 @@ def _build_code_studio_tools_context(
 
     if structured_visuals_enabled:
         llm_code_gen = getattr(settings_obj, "enable_llm_code_gen_visuals", False)
+        tool_hints.append(
+            "- PRIMARY POLICY: tool_generate_visual la lane mac dinh cho article_figure va chart_runtime. "
+            "Dung no de sinh HTML/SVG truc tiep theo kieu LLM-first, uu tien SVG-first cho comparison, process, "
+            "architecture, concept, infographic, timeline, chart benchmark, va visual giai thich."
+        )
+        tool_hints.append(
+            "- tool_create_visual_code CHI dung cho code_studio_app hoac artifact: simulation, quiz, search/code widget, mini tool, HTML app, document, app code-centric."
+        )
+        tool_hints.append(
+            "- CHATRT RUNTIME: khong tao div-bars demo thu cong cho chart thong thuong. "
+            "Neu can chart widget code-centric, dung SVG/Canvas/Chart.js voi axis, legend, units, source, va takeaway."
+        )
         if llm_code_gen:
-            # LLM-first: model tự quyết complexity phù hợp với nội dung
-            tool_hints.append(
-                "- tool_create_visual_code: ★ TOOL CHÍNH ★ — dùng cho visual. "
-                "Viết HTML/CSS/SVG/JS trực tiếp — mỗi visual unique, tailored theo context. "
-                "Model tự quyết complexity: đơn giản cho so sánh, phức tạp cho simulation. "
-                "Phải có đồ họa thật (SVG shapes, styled elements), không chỉ text."
-            )
-            tool_hints.append(
-                "- DESIGN: Tự hỏi 'Visual này có khiến người ta dừng cuộn và nói whoa không?'. "
-                "Mỗi visual có character riêng phù hợp nội dung. Tránh cookie-cutter patterns. "
-                "CSS vars có sẵn: --bg, --text, --accent, --green, --purple, --amber, --teal, --pink, --border, --radius."
-            )
-            tool_hints.append(
-                "- tool_generate_visual: Fallback cho visual rất đơn giản (spec-based). "
-                "Với visual custom (kiến trúc, mô phỏng, flowchart, data viz): dùng tool_create_visual_code."
-            )
+            if visual_decision.presentation_intent in {"code_studio_app", "artifact"}:
+                tool_hints.append(
+                    "- tool_create_visual_code: TOOL CHINH CHO QUERY NAY. "
+                    "Dung no de tao app/widget/artifact code-centric voi host-owned shell, body logic ro rang, va patch cung session."
+                )
+                tool_hints.append(
+                    "- DESIGN: App/widget can su dung shell cua host, controls gon, va feedback bridge ro rang. "
+                    "Khong tao dashboard/card loe loet neu bai toan la app inline trong chat."
+                )
+                tool_hints.append(
+                    "- QUALITY: Tach ro state/data, render surface, controls, va feedback bridge. "
+                    "Khong hardcode minh hoa kieu div-bars neu query la chart chuan."
+                )
+            else:
+                tool_hints.append(
+                    "- Du local co bat llm code gen, query hien tai VAN UU TIEN tool_generate_visual cho article_figure/chart_runtime. "
+                    "Chi nang cap sang tool_create_visual_code neu interaction depth that su can app/widget/artifact."
+                )
+                tool_hints.append(
+                    "- Neu can visual bespoke, van phai giu article-first, host-governed runtime, khong day query giai thich thong thuong vao Code Studio."
+                )
         else:
             tool_hints.append(
-                "- tool_generate_visual: TOOL CHÍNH — tạo 2-3 structured figures cho mỗi giải thích. "
+                "- tool_generate_visual: TOOL CHÍNH — tạo 2-3 inline figures cho mỗi giải thích. "
                 "Types: comparison, process, matrix, architecture, concept, infographic, chart, timeline, map_lite. "
                 "GỌI NHIỀU LẦN (2-3 calls) để tạo multi-figure explanation như Claude Artifacts. "
                 "Frontend render inline ngay khi stream, không cần copy payload."
@@ -908,7 +976,7 @@ def _build_code_studio_tools_context(
         "- Voi yeu cau 'tao file Excel / spreadsheet': luon goi tool_generate_excel_file.",
         "- Voi yeu cau 'tao file Word / bao cao / report': luon goi tool_generate_word_document.",
         "- Voi yeu cau GIAI THICH khai niem / SO SANH / KIEN TRUC: goi "
-        + ("tool_generate_visual 2-3 LAN de tao multi-figure" if structured_visuals_enabled else "tool_create_visual_code")
+        + ("tool_generate_visual 2-3 LAN de tao multi-figure" if structured_visuals_enabled else "tool_generate_visual")
         + ". Visual types: comparison (2 cot so sanh), process (tung buoc), matrix (bang mau), "
         "architecture (layer diagram), concept (mind map), infographic (stats).",
         (
@@ -919,6 +987,9 @@ def _build_code_studio_tools_context(
         ),
         "- Khi sandbox gap loi ket noi, noi ro gioi han va KHONG gia vo da chay code.",
     ]
+    priority_rules.append(
+        "- KHONG route chart giai thich thong thuong vao Code Studio neu chart runtime/article figure da du kha nang."
+    )
 
     sections = ["## CODE STUDIO TOOLKIT:", *tool_hints, "", *priority_rules]
 
@@ -929,15 +1000,39 @@ def _build_code_studio_tools_context(
                 sections.append("")
                 sections.append(skill_content)
 
+        # On-demand few-shot example based on visual_type (Claude-style guideline loading)
+        vtype = visual_decision.visual_type if visual_decision else ""
+        example = _load_code_studio_example(vtype) if vtype else None
+        if example:
+            sections.append("")
+            sections.append(f"## REFERENCE EXAMPLE ({vtype})")
+            sections.append("Day la ma mau chat luong cao. Hoc theo cau truc, design system, va do chi tiet — KHONG copy y het.")
+            sections.append("```html")
+            sections.append(example)
+            sections.append("```")
+
     return "\n".join(sections)
 
 
 _CODE_STUDIO_SKILLS_CACHE: list[str] | None = None
+_CODE_STUDIO_EXAMPLES_CACHE: dict[str, str] = {}
 
 # Skill files để load — thứ tự ưu tiên
 _CODE_STUDIO_SKILL_FILES = [
     "VISUAL_CODE_GEN.md",
 ]
+
+# On-demand example mapping: visual_type → example filename
+_CODE_STUDIO_EXAMPLE_MAP: dict[str, str] = {
+    "simulation": "canvas_wave_interference.html",
+    "diagram": "svg_ship_encounter.html",
+    "comparison": "svg_ship_encounter.html",
+    "process": "svg_ship_encounter.html",
+    "architecture": "svg_ship_encounter.html",
+    "tool": "widget_maritime_calculator.html",
+    "quiz": "widget_maritime_calculator.html",
+    "calculator": "widget_maritime_calculator.html",
+}
 
 
 def _load_code_studio_visual_skills() -> list[str]:
@@ -967,6 +1062,38 @@ def _load_code_studio_visual_skills() -> list[str]:
 
     _CODE_STUDIO_SKILLS_CACHE = results
     return _CODE_STUDIO_SKILLS_CACHE
+
+
+def _load_code_studio_example(visual_type: str) -> str | None:
+    """Load a reference example on-demand based on visual_type.
+
+    Returns the first 600 lines of the matching example (truncated to save tokens),
+    or None if no example matches.  Claude-style on-demand guideline loading.
+    """
+    filename = _CODE_STUDIO_EXAMPLE_MAP.get(visual_type)
+    if not filename:
+        return None
+
+    if filename in _CODE_STUDIO_EXAMPLES_CACHE:
+        return _CODE_STUDIO_EXAMPLES_CACHE[filename]
+
+    examples_dir = (
+        Path(__file__).resolve().parent.parent
+        / "reasoning" / "skills" / "subagents" / "code_studio_agent" / "examples"
+    )
+    example_path = examples_dir / filename
+    try:
+        raw = example_path.read_text(encoding="utf-8")
+        lines = raw.split("\n")
+        if len(lines) > 600:
+            truncated = "\n".join(lines[:600]) + "\n<!-- ... truncated for brevity -->"
+        else:
+            truncated = raw
+        _CODE_STUDIO_EXAMPLES_CACHE[filename] = truncated
+        return truncated
+    except Exception as exc:
+        logger.debug("[CODE_STUDIO] Example %s unavailable: %s", filename, exc)
+        return None
 
 
 def _log_visual_telemetry(event_name: str, **fields: object) -> None:
@@ -1038,7 +1165,20 @@ async def _maybe_emit_code_studio_events(
 
     session_id = payload.visual_session_id
     title = payload.title or "Visual"
-    version = getattr(payload, "figure_index", 1)
+    metadata = payload_dict.get("metadata") if isinstance(payload_dict, dict) else {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    try:
+        version = max(1, int(metadata.get("code_studio_version") or getattr(payload, "figure_index", 1) or 1))
+    except Exception:
+        version = max(1, int(getattr(payload, "figure_index", 1) or 1))
+    studio_lane = str(metadata.get("studio_lane") or "app")
+    artifact_kind = str(metadata.get("artifact_kind") or "html_app")
+    quality_profile = str(metadata.get("quality_profile") or "standard")
+    renderer_contract = str(metadata.get("renderer_contract") or "host_shell")
+    requested_view = str(metadata.get("requested_view") or "").strip().lower()
+    if requested_view not in {"code", "preview"}:
+        requested_view = ""
 
     # 1. Emit code_open
     await push_event({
@@ -1048,6 +1188,11 @@ async def _maybe_emit_code_studio_events(
             "title": title,
             "language": "html",
             "version": version,
+            "studio_lane": studio_lane,
+            "artifact_kind": artifact_kind,
+            "quality_profile": quality_profile,
+            "renderer_contract": renderer_contract,
+            **({"requested_view": requested_view} if requested_view else {}),
         },
         "node": node,
     })
@@ -1078,6 +1223,11 @@ async def _maybe_emit_code_studio_events(
             "full_code": fallback_html,
             "language": "html",
             "version": version,
+            "studio_lane": studio_lane,
+            "artifact_kind": artifact_kind,
+            "quality_profile": quality_profile,
+            "renderer_contract": renderer_contract,
+            **({"requested_view": requested_view} if requested_view else {}),
             "visual_payload": payload_dict,
         },
         "node": node,
@@ -1147,7 +1297,11 @@ async def _maybe_emit_visual_event(
             payload_dict = payload.model_dump(mode="json")
 
             # Code Studio streaming: emit chunked code events before visual_open
-            if settings.enable_code_studio_streaming and payload.fallback_html:
+            if (
+                settings.enable_code_studio_streaming
+                and payload.fallback_html
+                and str((payload.metadata or {}).get("presentation_intent") or "") in {"code_studio_app", "artifact"}
+            ):
                 await _maybe_emit_code_studio_events(
                     push_event=push_event,
                     payload=payload,
@@ -1378,6 +1532,25 @@ def _collect_code_studio_tools(query: str, user_role: str = "student"):
         visual_decision,
         structured_visuals_enabled=getattr(settings, "enable_structured_visuals", False),
     )
+
+    # Clear app/artifact requests should not drift across a broad tool bundle.
+    # Once the resolver has locked a preferred tool for the studio lane, we
+    # narrow the bound tools to that target so the first tool call is
+    # deterministic and faster to emit in streaming.
+    if (
+        visual_decision.force_tool
+        and visual_decision.preferred_tool
+        and visual_decision.presentation_intent in {"code_studio_app", "artifact"}
+    ):
+        preferred_name = visual_decision.preferred_tool
+        preferred_tools = [
+            tool
+            for tool in _tools
+            if str(getattr(tool, "name", "") or getattr(tool, "__name__", "") or "") == preferred_name
+        ]
+        if preferred_tools:
+            _tools = preferred_tools
+
     force_tools = bool(_tools)
     return _tools, force_tools
 
@@ -1445,11 +1618,17 @@ def _direct_required_tool_names(query: str, user_role: str = "student") -> list[
         _structured = getattr(settings, "enable_structured_visuals", False)
         if visual_decision.mode == "mermaid" and _structured:
             required.append("tool_generate_mermaid")
+        elif visual_decision.preferred_tool:
+            required.append(visual_decision.preferred_tool)
         elif _structured:
             # Structured mode: ALL visual intents → multi-figure tool
             required.append("tool_generate_visual")
 
-    return required
+    deduped: list[str] = []
+    for tool_name in required:
+        if tool_name not in deduped:
+            deduped.append(tool_name)
+    return deduped
 
 
 def _code_studio_required_tool_names(query: str, user_role: str = "student") -> list[str]:
@@ -1480,18 +1659,32 @@ def _code_studio_required_tool_names(query: str, user_role: str = "student") -> 
     ):
         required.append("tool_browser_snapshot_url")
 
+    if visual_decision.force_tool and visual_decision.preferred_tool:
+        required.append(visual_decision.preferred_tool)
+        deduped: list[str] = []
+        for tool_name in required:
+            if tool_name not in deduped:
+                deduped.append(tool_name)
+        return deduped
+
     if visual_decision.force_tool:
         _structured = getattr(settings, "enable_structured_visuals", False)
         _llm_code_gen = getattr(settings, "enable_llm_code_gen_visuals", False)
         if visual_decision.mode == "mermaid" and _structured:
             required.append("tool_generate_mermaid")
         elif _structured and _llm_code_gen:
-            # LLM code-gen mode: ưu tiên tool_create_visual_code
-            required.append("tool_create_visual_code")
+            if visual_decision.presentation_intent in {"article_figure", "chart_runtime"}:
+                required.append("tool_generate_visual")
+            else:
+                required.append("tool_create_visual_code")
         elif _structured:
             required.append("tool_generate_visual")
 
-    return required
+    deduped: list[str] = []
+    for tool_name in required:
+        if tool_name not in deduped:
+            deduped.append(tool_name)
+    return deduped
 
 
 def _build_visual_tool_runtime_metadata(state: dict, query: str) -> dict[str, Any] | None:
@@ -1505,16 +1698,32 @@ def _build_visual_tool_runtime_metadata(state: dict, query: str) -> dict[str, An
             "visual_intent_mode": visual_decision.mode,
             "visual_intent_reason": visual_decision.reason,
             "visual_force_tool": True,
+            "presentation_intent": visual_decision.presentation_intent,
+            "figure_budget": visual_decision.figure_budget,
+            "quality_profile": visual_decision.quality_profile,
+            "preferred_render_surface": visual_decision.preferred_render_surface,
+            "planning_profile": visual_decision.planning_profile,
+            "thinking_floor": visual_decision.thinking_floor,
+            "critic_policy": visual_decision.critic_policy,
+            "living_expression_mode": visual_decision.living_expression_mode,
         })
         if visual_decision.visual_type:
             metadata["visual_requested_type"] = visual_decision.visual_type
+        if visual_decision.preferred_tool:
+            metadata["preferred_visual_tool"] = visual_decision.preferred_tool
+        if visual_decision.studio_lane:
+            metadata["studio_lane"] = visual_decision.studio_lane
+        if visual_decision.artifact_kind:
+            metadata["artifact_kind"] = visual_decision.artifact_kind
+        if visual_decision.renderer_contract:
+            metadata["renderer_contract"] = visual_decision.renderer_contract
 
     if not detect_visual_patch_request(query):
         return metadata or None
 
     visual_ctx = ((state.get("context") or {}).get("visual_context") or {})
     if not isinstance(visual_ctx, dict):
-        return metadata or None
+        visual_ctx = {}
 
     preferred_session_id = str(visual_ctx.get("last_visual_session_id") or "").strip()
     preferred_visual_type = str(visual_ctx.get("last_visual_type") or "").strip()
@@ -1530,6 +1739,46 @@ def _build_visual_tool_runtime_metadata(state: dict, query: str) -> dict[str, An
                 if preferred_session_id:
                     break
 
+    code_studio_ctx = ((state.get("context") or {}).get("code_studio_context") or {})
+    if not isinstance(code_studio_ctx, dict):
+        code_studio_ctx = {}
+
+    active_code_session = code_studio_ctx.get("active_session")
+    if not isinstance(active_code_session, dict):
+        active_code_session = {}
+    requested_code_view = str(code_studio_ctx.get("requested_view") or "").strip().lower()
+    if requested_code_view not in {"code", "preview"}:
+        requested_code_view = ""
+
+    prefers_code_studio_session = visual_decision.presentation_intent in {"code_studio_app", "artifact"}
+    preferred_code_session_id = str(active_code_session.get("session_id") or "").strip()
+    preferred_code_lane = str(active_code_session.get("studio_lane") or "").strip()
+    preferred_code_artifact_kind = str(active_code_session.get("artifact_kind") or "").strip()
+    preferred_code_quality = str(
+        active_code_session.get("quality_profile")
+        or active_code_session.get("qualityProfile")
+        or ""
+    ).strip()
+    try:
+        preferred_code_active_version = max(0, int(active_code_session.get("active_version") or 0))
+    except Exception:
+        preferred_code_active_version = 0
+
+    if prefers_code_studio_session and preferred_code_session_id:
+        preferred_session_id = preferred_code_session_id
+        if preferred_code_lane:
+            metadata["studio_lane"] = preferred_code_lane
+        if preferred_code_artifact_kind:
+            metadata["artifact_kind"] = preferred_code_artifact_kind
+        metadata["quality_profile"] = merge_quality_profile(
+            metadata.get("quality_profile"),
+            preferred_code_quality,
+        )
+        if preferred_code_active_version > 0:
+            metadata["code_studio_version"] = preferred_code_active_version + 1
+        if requested_code_view:
+            metadata["requested_view"] = requested_code_view
+
     if not preferred_session_id:
         return metadata or None
 
@@ -1538,6 +1787,8 @@ def _build_visual_tool_runtime_metadata(state: dict, query: str) -> dict[str, An
         "preferred_visual_session_id": preferred_session_id,
         "preferred_visual_patch_hint": "followup-patch",
     })
+    if prefers_code_studio_session:
+        metadata["preferred_code_studio_session_id"] = preferred_session_id
     if preferred_visual_type:
         metadata["preferred_visual_type"] = preferred_visual_type
 
@@ -1555,6 +1806,11 @@ def _build_visual_tool_runtime_metadata(state: dict, query: str) -> dict[str, An
     return metadata or None
 
 
+def _tool_name(tool: object) -> str:
+    """Return a stable tool name for binding and telemetry."""
+    return str(getattr(tool, "name", "") or getattr(tool, "__name__", "") or "").strip()
+
+
 def _bind_direct_tools(llm, tools: list, force: bool):
     """Bind tools to LLM with optional forced calling.
 
@@ -1562,13 +1818,18 @@ def _bind_direct_tools(llm, tools: list, force: bool):
 
     Returns:
         tuple: (llm_with_tools, llm_auto)
-            - llm_with_tools: LLM for first call (may force tool_choice="any")
+            - llm_with_tools: LLM for first call (may force a specific tool)
             - llm_auto: LLM for follow-up calls (tool_choice="auto")
     """
     if tools:
         llm_auto = llm.bind_tools(tools)
         if force:
-            llm_with_tools = llm.bind_tools(tools, tool_choice="any")
+            forced_choice = "any"
+            if len(tools) == 1:
+                exact_name = _tool_name(tools[0])
+                if exact_name:
+                    forced_choice = exact_name
+            llm_with_tools = llm.bind_tools(tools, tool_choice=forced_choice)
         else:
             llm_with_tools = llm_auto
     else:
@@ -1628,9 +1889,15 @@ def _build_direct_system_messages(
     _visual_prompt = state.get("visual_context_prompt", "")
     if _visual_prompt:
         system_prompt = system_prompt + "\n\n" + _visual_prompt
+    _visual_cognition_prompt = state.get("visual_cognition_prompt", "")
+    if _visual_cognition_prompt:
+        system_prompt = system_prompt + "\n\n" + _visual_cognition_prompt
     _widget_feedback_prompt = state.get("widget_feedback_prompt", "")
     if _widget_feedback_prompt:
         system_prompt = system_prompt + "\n\n" + _widget_feedback_prompt
+    _code_studio_prompt = state.get("code_studio_context_prompt", "")
+    if _code_studio_prompt:
+        system_prompt = system_prompt + "\n\n" + _code_studio_prompt
     _capability_prompt = state.get("capability_context", "")
     if _capability_prompt:
         system_prompt = system_prompt + "\n\n## Capability Handbook\n" + _capability_prompt
@@ -2241,9 +2508,130 @@ def _ensure_code_studio_delivery_lede(cleaned: str, tool_call_events: list[dict]
     return f"{lede}\n\n{cleaned}".strip()
 
 
+def _looks_like_raw_code_dump(cleaned: str) -> bool:
+    stripped = (cleaned or "").lstrip()
+    if not stripped:
+        return False
+    if stripped.startswith(("```html", "```tsx", "```jsx", "```javascript", "```js", "```css", "```")):
+        return True
+    if stripped.startswith(("<style", "<html", "<!doctype", "<div", "<script", "<svg", "<section")):
+        return True
+    html_marker_hits = sum(1 for marker in ("<div", "<style", "<script", "<canvas", "<section", "<svg") if marker in stripped[:1200].lower())
+    return html_marker_hits >= 2
+
+
+def _collapse_code_studio_source_dump(
+    cleaned: str,
+    state: Optional["AgentState"] = None,
+) -> str:
+    """Keep raw source inside Code Studio when an active session already exists."""
+    if not _looks_like_raw_code_dump(cleaned):
+        return cleaned
+
+    ctx = ((state or {}).get("context") or {}) if isinstance(state, dict) else {}
+    if not isinstance(ctx, dict):
+        return cleaned
+
+    raw_studio = ctx.get("code_studio_context")
+    if not isinstance(raw_studio, dict) or not raw_studio:
+        return cleaned
+
+    active_session = raw_studio.get("active_session")
+    if not isinstance(active_session, dict) or not active_session:
+        return cleaned
+
+    title = str(active_session.get("title") or "artifact hien tai").strip()
+    requested_view = str(raw_studio.get("requested_view") or "").strip().lower()
+
+    lede = (
+        f"Minh da mo Code Studio o tab Code cho `{title}`."
+        if requested_view == "code"
+        else f"Code day du cho `{title}` dang nam trong Code Studio."
+    )
+    body = (
+        "Minh giu phan chat gon de de doc: ben trong do hien tai co 3 lop chinh la render surface,"
+        " controls, va logic trang thai/tuong tac."
+    )
+    next_step = "Neu can, minh co the giai thich tung phan code hoac patch tiep ngay tren cung session nay."
+    return f"{lede}\n\n{body}\n\n{next_step}".strip()
+
+
+_PENDULUM_FAST_PATH_HTML = """
+<div class="pendulum-prototype">
+  <canvas id="pendulum-proto" width="640" height="320"></canvas>
+  <button type="button">Run</button>
+</div>
+<script>
+  const proto = document.getElementById('pendulum-proto');
+  if (proto) {
+    proto.dataset.seed = 'pendulum-fast-path';
+  }
+</script>
+""".strip()
+
+
+def _active_code_studio_session(state: Optional["AgentState"]) -> dict[str, Any]:
+    ctx = ((state or {}).get("context") or {}) if isinstance(state, dict) else {}
+    if not isinstance(ctx, dict):
+        return {}
+    raw_studio = ctx.get("code_studio_context")
+    if not isinstance(raw_studio, dict):
+        return {}
+    active_session = raw_studio.get("active_session")
+    return active_session if isinstance(active_session, dict) else {}
+
+
+def _should_use_pendulum_code_studio_fast_path(query: str, state: Optional["AgentState"] = None) -> bool:
+    visual_decision = resolve_visual_intent(query)
+    if visual_decision.presentation_intent != "code_studio_app":
+        return False
+    if str(visual_decision.preferred_tool or "") != "tool_create_visual_code":
+        return False
+
+    ctx = ((state or {}).get("context") or {}) if isinstance(state, dict) else {}
+    raw_studio = ctx.get("code_studio_context") if isinstance(ctx, dict) else {}
+    requested_view = ""
+    if isinstance(raw_studio, dict):
+        requested_view = str(raw_studio.get("requested_view") or "").strip().lower()
+    if requested_view == "code":
+        return False
+
+    normalized_query = _normalize_for_intent(query)
+    if any(
+        token in normalized_query
+        for token in ("show code", "xem code", "xem ma", "hien code", "view code")
+    ):
+        return False
+
+    active_session = _active_code_studio_session(state)
+    active_title = _normalize_for_intent(str(active_session.get("title") or ""))
+    haystack = " ".join(part for part in (normalized_query, active_title) if part)
+
+    pendulum_signals = ("pendulum", "con lac", "dao dong")
+    if any(token in haystack for token in pendulum_signals):
+        return True
+
+    patch_signals = ("gravity", "trong luc", "damping", "ma sat", "friction", "theta", "omega")
+    return bool(active_title) and any(token in active_title for token in pendulum_signals) and any(
+        token in normalized_query for token in patch_signals
+    )
+
+
+def _infer_pendulum_fast_path_title(query: str, state: Optional["AgentState"] = None) -> str:
+    active_session = _active_code_studio_session(state)
+    active_title = str(active_session.get("title") or "").strip()
+    if active_title:
+        return active_title
+    normalized_query = _normalize_for_intent(query)
+    if "con lac" in normalized_query:
+        return "Mo phong con lac"
+    return "Mini Pendulum Physics App"
+
+
 def _sanitize_code_studio_response(
     response: str,
     tool_call_events: list[dict] | None = None,
+    state: Optional["AgentState"] = None,
 ) -> str:
     cleaned = response or ""
     had_raw_payload = False
@@ -2262,6 +2650,7 @@ def _sanitize_code_studio_response(
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     cleaned = _strip_code_studio_chatter(cleaned)
     cleaned = _ensure_code_studio_delivery_lede(cleaned, tool_call_events)
+    cleaned = _collapse_code_studio_source_dump(cleaned, state)
 
     if had_raw_payload:
         artifact_names = _extract_code_studio_artifact_names(tool_call_events)
@@ -2816,6 +3205,110 @@ async def _execute_code_studio_tool_rounds(
     return llm_response, messages, tool_call_events
 
 
+async def _execute_pendulum_code_studio_fast_path(
+    *,
+    state: AgentState,
+    query: str,
+    tools: list,
+    push_event,
+    runtime_context_base,
+) -> dict[str, Any] | None:
+    if not _should_use_pendulum_code_studio_fast_path(query, state):
+        return None
+
+    matched = get_tool_by_name(tools, "tool_create_visual_code")
+    if not matched:
+        return None
+
+    tool_name = str(getattr(matched, "name", "") or getattr(matched, "__name__", "") or "tool_create_visual_code")
+    tool_args = {
+        "code_html": _PENDULUM_FAST_PATH_HTML,
+        "title": _infer_pendulum_fast_path_title(query, state),
+    }
+    tool_call_id = f"fast_pendulum_{uuid.uuid4().hex[:10]}"
+
+    try:
+        result = await invoke_tool_with_runtime(
+            matched,
+            tool_args,
+            tool_name=tool_name,
+            runtime_context_base=runtime_context_base,
+            tool_call_id=tool_call_id,
+            query_snippet=query[:100],
+            prefer_async=False,
+            run_sync_in_thread=True,
+        )
+    except Exception as exc:
+        logger.warning("[CODE_STUDIO] Pendulum fast path failed: %s", exc)
+        return None
+
+    if isinstance(result, str) and result.strip().lower().startswith("error:"):
+        logger.debug("[CODE_STUDIO] Pendulum fast path returned tool error: %s", result[:180])
+        return None
+
+    tool_call_events: list[dict[str, Any]] = [
+        {"type": "call", "name": tool_name, "args": tool_args, "id": tool_call_id},
+    ]
+
+    await push_event({
+        "type": "tool_call",
+        "content": {"name": tool_name, "args": tool_args, "id": tool_call_id},
+        "node": "code_studio_agent",
+    })
+    await push_event({
+        "type": "tool_result",
+        "content": {
+            "name": tool_name,
+            "result": _summarize_tool_result_for_stream(tool_name, result),
+            "id": tool_call_id,
+        },
+        "node": "code_studio_agent",
+    })
+
+    emitted_visual_session_ids, _disposed_visual_session_ids = await _maybe_emit_visual_event(
+        push_event=push_event,
+        tool_name=tool_name,
+        tool_call_id=tool_call_id,
+        result=result,
+        node="code_studio_agent",
+        tool_call_events=tool_call_events,
+        previous_visual_session_ids=_collect_active_visual_session_ids(state),
+    )
+
+    tool_call_events.append({
+        "type": "result",
+        "name": tool_name,
+        "result": str(result),
+        "id": tool_call_id,
+    })
+
+    await _emit_visual_commit_events(
+        push_event=push_event,
+        node="code_studio_agent",
+        visual_session_ids=emitted_visual_session_ids,
+        tool_call_events=tool_call_events,
+    )
+
+    response = _sanitize_code_studio_response(
+        (
+            "Minh da dung Code Studio de tao mo phong con lac inline. "
+            "Ban co the keo qua nang, xem preview, va patch tiep tren cung session nay."
+        ),
+        tool_call_events,
+        state,
+    )
+    thinking_content = (
+        "Minh di theo scaffold con lac host-owned de uu tien preview on dinh, patch duoc, "
+        "va giu cung session Code Studio."
+    )
+    return {
+        "response": response,
+        "thinking_content": thinking_content,
+        "tool_call_events": tool_call_events,
+        "tools_used": [matched],
+    }
+
+
 def _inject_widget_blocks_from_tool_results(
     llm_response,
     tool_call_events: list,
@@ -3217,43 +3710,67 @@ async def code_studio_node(state: AgentState) -> AgentState:
                 metadata=_build_visual_tool_runtime_metadata(state, query),
             )
 
-            llm_response, messages, _tc_events = await _execute_code_studio_tool_rounds(
-                llm_with_tools,
-                llm_auto,
-                messages,
-                tools,
-                _push_event,
-                runtime_context_base=runtime_context_base,
-                query=query,
+            fast_path_result = await _execute_pendulum_code_studio_fast_path(
                 state=state,
+                query=query,
+                tools=tools,
+                push_event=_push_event,
+                runtime_context_base=runtime_context_base,
             )
 
-            if _tc_events:
-                state["tool_call_events"] = _tc_events
+            if fast_path_result:
+                response = fast_path_result["response"]
+                state["thinking_content"] = fast_path_result["thinking_content"]
+                state["tool_call_events"] = fast_path_result["tool_call_events"]
+                state["tools_used"] = fast_path_result["tools_used"]
+                tracer.end_step(
+                    result="Code studio fast path: pendulum scaffold",
+                    confidence=0.91,
+                    details={
+                        "response_type": "capability_generated",
+                        "tools_bound": len(tools),
+                        "force_tools": force_tools,
+                        "fast_path": "pendulum_scaffold",
+                    },
+                )
+            else:
+                llm_response, messages, _tc_events = await _execute_code_studio_tool_rounds(
+                    llm_with_tools,
+                    llm_auto,
+                    messages,
+                    tools,
+                    _push_event,
+                    runtime_context_base=runtime_context_base,
+                    query=query,
+                    state=state,
+                )
 
-            response, thinking_content, tools_used = _extract_direct_response(llm_response, messages)
-            response = _sanitize_code_studio_response(response, _tc_events)
+                if _tc_events:
+                    state["tool_call_events"] = _tc_events
 
-            _safe_thinking = await _build_code_studio_reasoning_summary(
-                query,
-                state,
-                _direct_tool_names(tools_used),
-            )
-            if _safe_thinking:
-                state["thinking_content"] = _safe_thinking
+                response, thinking_content, tools_used = _extract_direct_response(llm_response, messages)
+                response = _sanitize_code_studio_response(response, _tc_events, state)
 
-            if tools_used:
-                state["tools_used"] = tools_used
+                _safe_thinking = await _build_code_studio_reasoning_summary(
+                    query,
+                    state,
+                    _direct_tool_names(tools_used),
+                )
+                if _safe_thinking:
+                    state["thinking_content"] = _safe_thinking
 
-            tracer.end_step(
-                result=f"Code studio response: {len(response)} chars",
-                confidence=0.88,
-                details={
-                    "response_type": "capability_generated",
-                    "tools_bound": len(tools),
-                    "force_tools": force_tools,
-                },
-            )
+                if tools_used:
+                    state["tools_used"] = tools_used
+
+                tracer.end_step(
+                    result=f"Code studio response: {len(response)} chars",
+                    confidence=0.88,
+                    details={
+                        "response_type": "capability_generated",
+                        "tools_bound": len(tools),
+                        "force_tools": force_tools,
+                    },
+                )
         else:
             response = "Mình chưa khởi động được Code Studio lúc này. Bạn thử lại sau nhé."
             tracer.end_step(
@@ -4125,7 +4642,8 @@ def _inject_visual_context(state: dict) -> str:
         "## Inline Visual Context",
         "- Neu user dang sua, lam ro, highlight, loc, hoac bien doi visual vua co trong chat, UU TIEN patch cung visual session thay vi tao visual moi.",
         "- Khi patch, goi tool_generate_visual voi visual_session_id cu va operation='patch'. Chi doi visual_type neu user yeu cau ro rang.",
-        "- Chon renderer_kind phu hop: template cho visual giao duc chuan, inline_html cho custom editorial visual, app cho simulation/mini tool.",
+        "- Chon renderer_kind phu hop: inline_html la mac dinh cho article figure/chart runtime theo kieu SVG-first; app cho simulation/mini tool.",
+        "- Chart giai thich va article figure nen o lane article_figure/chart_runtime; app/widget/artifact moi dung lane code studio.",
         "- Sau khi goi tool_generate_visual, KHONG copy JSON vao answer. Viet narrative ngan + takeaway; frontend se tu dong cap nhat visual.",
     ]
 
@@ -4148,7 +4666,8 @@ def _inject_visual_context(state: dict) -> str:
         if _prev_html:
             lines.append("- CONVERSATIONAL EDIT: User muon chinh sua visual truoc do. Day la code HTML hien tai:")
             lines.append(f"```html\n{_prev_html[:8000]}\n```")
-            lines.append("- Dung tool_create_visual_code voi visual_session_id nay de cap nhat, chi thay doi phan user yeu cau.")
+            lines.append("- Neu day la article figure/chart runtime, uu tien patch bang tool_generate_visual voi visual_session_id cu.")
+            lines.append("- Chi dung tool_create_visual_code de cap nhat neu visual truoc do la app/widget/artifact code-centric.")
 
     if active_items:
         lines.append("- Visual dang co san trong thread:")
@@ -4167,6 +4686,70 @@ def _inject_visual_context(state: dict) -> str:
             )
             if summary:
                 lines.append(f"  {index}. {summary}")
+
+    return "\n".join(lines)
+
+
+def _inject_visual_cognition_context(state: dict) -> str:
+    """Format lane-specific visual cognition guidance for SVG-first figures and Canvas-first simulations."""
+    query = str(state.get("query") or "").strip()
+    if not query:
+        return ""
+
+    visual_decision = resolve_visual_intent(query)
+    if not visual_decision.force_tool:
+        return ""
+
+    lines = [
+        "## Visual Cognition Contract",
+        f"- Lane da chon: {visual_decision.presentation_intent}",
+        f"- Render surface uu tien: {visual_decision.preferred_render_surface}",
+        f"- Planning profile: {visual_decision.planning_profile}",
+        f"- Thinking floor: {visual_decision.thinking_floor}",
+        f"- Critic policy: {visual_decision.critic_policy}",
+        f"- Living expression mode: {visual_decision.living_expression_mode}",
+        "- LLM-first o tang planning: phan ra claim, scene, va nhip giai thich truoc khi render.",
+        "- Runtime van do host quan ly: lane, shell, bridge, patch session, va safety khong duoc drift.",
+    ]
+
+    if visual_decision.presentation_intent == "article_figure":
+        lines.extend([
+            "- Article figure mac dinh la SVG-first. Moi figure nen chung minh mot claim ro rang thay vi gom tat ca vao mot widget lon.",
+            "- Uu tien 2-3 figures nho khi yeu cau la explain/how it works/step by step/in charts.",
+            "- Character-forward duoc the hien qua callout, note, nhan manh, va takeaway co tinh dong hanh.",
+        ])
+    elif visual_decision.presentation_intent == "chart_runtime":
+        lines.extend([
+            "- Chart runtime mac dinh la SVG-first va phai doc duoc ngay ca khi khong hover.",
+            "- Chart can giu scale context, units, legend, source/provenance, va takeaway ngan gon.",
+            "- Song dong nhung tiet che: giong Wiii o note/takeaway, khong bien chart thanh demo loe loet.",
+        ])
+    elif visual_decision.presentation_intent == "code_studio_app":
+        lines.extend([
+            "- Simulation premium mac dinh la Canvas-first, uu tien state model + render loop + controls + readout + feedback bridge.",
+            "- Truoc khi code, can plan scene mo dau, model vat ly/trang thai, controls, readouts, va patch strategy.",
+            "- Tinh song cua Wiii the hien qua cach dat scene, nhip motion, va takeaway sau tuong tac, khong phai chrome trang tri.",
+        ])
+    elif visual_decision.presentation_intent == "artifact":
+        lines.extend([
+            "- Artifact la HTML lane ben vung hon, uu tien host shell va kha nang tai su dung/persist.",
+            "- Van giu narrative ro rang, nhung khong trinh bay nhu article figure inline.",
+        ])
+
+    try:
+        from app.engine.character.character_card import get_wiii_character_card
+
+        card = get_wiii_character_card()
+        if visual_decision.living_expression_mode == "expressive":
+            lines.append("## Living Visual Style")
+            lines.append("- Neo phong cach song cua Wiii vao lane nay:")
+            for line in card.reasoning_style[:3]:
+                lines.append(f"  - {line}")
+        else:
+            lines.append("## Living Visual Style")
+            lines.append("- Living style o lane nay nen tiet che, uu tien clarity va pedagogical fit.")
+    except Exception:
+        pass
 
     return "\n".join(lines)
 
@@ -4231,6 +4814,67 @@ def _inject_widget_feedback_context(state: dict) -> str:
             )
             if details:
                 lines.append(f"  {index}. {details}")
+
+    return "\n".join(lines)
+
+
+def _inject_code_studio_context(state: dict) -> str:
+    """Format active Code Studio session context for code/app follow-up turns."""
+    ctx = state.get("context", {})
+    if not isinstance(ctx, dict):
+        return ""
+
+    raw_context = ctx.get("code_studio_context")
+    if not isinstance(raw_context, dict) or not raw_context:
+        return ""
+
+    active_session = raw_context.get("active_session")
+    if not isinstance(active_session, dict):
+        active_session = {}
+    requested_view = str(raw_context.get("requested_view") or "").strip().lower()
+
+    if not active_session and not requested_view:
+        return ""
+
+    lines = [
+        "## Code Studio Context",
+        "- Dang co mot Code Studio surface song trong chat cho app/widget/artifact gan day.",
+        "- Neu user muon xem code, mo ta cau truc code, hoac patch app dang co, UU TIEN tiep tuc session Code Studio nay thay vi do nguyen van HTML/CSS/JS tho vao answer.",
+        "- Khi da co Code Studio session dang mo, chi paste toan bo ma nguon vao answer neu user yeu cau rat ro rang phai dan day du code trong chat. Mac dinh, hay tom tat ngan, noi phan chinh, va de code day du trong panel Code Studio.",
+        "- Neu user dang sua app/widget hien co, uu tien patch cung session hoac cung artifact thay vi tao mot session moi neu khong can thiet.",
+    ]
+
+    session_id = str(active_session.get("session_id") or "").strip()
+    title = str(active_session.get("title") or "").strip()
+    status = str(active_session.get("status") or "").strip()
+    studio_lane = str(active_session.get("studio_lane") or "").strip()
+    artifact_kind = str(active_session.get("artifact_kind") or "").strip()
+    renderer_contract = str(active_session.get("renderer_contract") or "").strip()
+    active_version = active_session.get("active_version")
+    version_count = active_session.get("version_count")
+    has_preview = active_session.get("has_preview")
+
+    if session_id or title or status or studio_lane:
+        details = " | ".join(
+            part for part in (
+                session_id,
+                title,
+                status,
+                studio_lane,
+                artifact_kind,
+                renderer_contract,
+                f"v{active_version}" if isinstance(active_version, int) else "",
+                f"{version_count} versions" if isinstance(version_count, int) and version_count > 1 else "",
+                "co preview" if has_preview else "",
+            ) if part
+        )
+        if details:
+            lines.append(f"- Session hien tai: {details}")
+
+    if requested_view == "code":
+        lines.append("- Luot nay user muon xem TAB CODE. Hanh vi mong doi: giu code surface la trung tam, tom tat ngan, KHONG do nguyen khoi source vao prose neu khong bi bat buoc.")
+    elif requested_view == "preview":
+        lines.append("- Luot nay user uu tien preview artifact/app hien tai hon la xem raw source.")
 
     return "\n".join(lines)
 
@@ -4315,9 +4959,15 @@ async def process_with_multi_agent(
     _visual_prompt = _inject_visual_context(initial_state)
     if _visual_prompt:
         initial_state["visual_context_prompt"] = _visual_prompt
+    _visual_cognition_prompt = _inject_visual_cognition_context(initial_state)
+    if _visual_cognition_prompt:
+        initial_state["visual_cognition_prompt"] = _visual_cognition_prompt
     _widget_feedback_prompt = _inject_widget_feedback_context(initial_state)
     if _widget_feedback_prompt:
         initial_state["widget_feedback_prompt"] = _widget_feedback_prompt
+    _code_studio_prompt = _inject_code_studio_context(initial_state)
+    if _code_studio_prompt:
+        initial_state["code_studio_context_prompt"] = _code_studio_prompt
 
     # Run graph with composite thread_id for per-user isolation (Sprint 16)
     # Sprint 170c: Include org_id for cross-org thread isolation

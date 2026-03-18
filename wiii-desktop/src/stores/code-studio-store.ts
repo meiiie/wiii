@@ -3,9 +3,22 @@
  *
  * Receives code_open → code_delta × N → code_complete SSE events
  * and accumulates code for the CodeStudioPanel to render.
+ *
+ * Metadata fields (studioLane, artifactKind, qualityProfile, rendererContract)
+ * are session-level — set once on code_open, immutable across versions.
+ * Backend uses code_studio_context.active_session for quality/session decisions.
  */
 import { create } from "zustand";
 import type { VisualPayload } from "@/api/types";
+
+/** Metadata from backend code_open/code_complete events — session-level, not per-version. */
+export interface CodeStudioMetadata {
+  studioLane?: string;
+  artifactKind?: string;
+  qualityProfile?: string;
+  rendererContract?: string;
+  requestedView?: "code" | "preview";
+}
 
 export interface CodeVersion {
   version: number;
@@ -20,39 +33,40 @@ export interface CodeStudioSession {
   title: string;
   language: string;
   status: "streaming" | "complete" | "error";
-  code: string; // accumulated from deltas
+  code: string;
   versions: CodeVersion[];
   activeVersion: number;
   chunkCount: number;
   totalBytes: number;
   visualPayload?: VisualPayload;
   createdAt: number;
+  /** Session-level metadata from backend — immutable across versions */
+  metadata: CodeStudioMetadata;
 }
 
 interface CodeStudioState {
-  /** Active session being displayed in the panel */
   activeSessionId: string | null;
-  /** All sessions keyed by sessionId */
   sessions: Record<string, CodeStudioSession>;
 
-  // Actions
-  openSession: (sessionId: string, title: string, language: string, version: number) => void;
+  openSession: (sessionId: string, title: string, language: string, version: number, metadata?: CodeStudioMetadata) => void;
   appendCode: (sessionId: string, chunk: string, chunkIndex: number, totalBytes: number) => void;
   completeSession: (sessionId: string, fullCode: string, language: string, version: number, visualPayload?: VisualPayload) => void;
   switchVersion: (sessionId: string, version: number) => void;
   setActiveSession: (sessionId: string | null) => void;
+  setRequestedView: (sessionId: string, requestedView?: "code" | "preview") => void;
+  /** Serialize active session info for backend context injection */
+  getActiveSessionContext: () => Record<string, unknown> | undefined;
   clearSessions: () => void;
 }
 
-export const useCodeStudioStore = create<CodeStudioState>((set) => ({
+export const useCodeStudioStore = create<CodeStudioState>((set, get) => ({
   activeSessionId: null,
   sessions: {},
 
-  openSession: (sessionId, title, language, version) =>
+  openSession: (sessionId, title, language, version, meta) =>
     set((state) => {
       const existing = state.sessions[sessionId];
       if (existing && existing.status === "complete") {
-        // New version for existing session — reset streaming state
         return {
           activeSessionId: sessionId,
           sessions: {
@@ -65,11 +79,13 @@ export const useCodeStudioStore = create<CodeStudioState>((set) => ({
               totalBytes: 0,
               title,
               language,
+              activeVersion: version,
+              // Merge backend metadata with any local UI preference like requestedView.
+              metadata: { ...existing.metadata, ...(meta || {}) },
             },
           },
         };
       }
-      // Brand new session
       return {
         activeSessionId: sessionId,
         sessions: {
@@ -85,6 +101,7 @@ export const useCodeStudioStore = create<CodeStudioState>((set) => ({
             chunkCount: 0,
             totalBytes: 0,
             createdAt: Date.now(),
+            metadata: meta || {},
           },
         },
       };
@@ -118,7 +135,6 @@ export const useCodeStudioStore = create<CodeStudioState>((set) => ({
         timestamp: Date.now(),
         visualPayload,
       };
-      // Append version (avoid duplicates)
       const existingVersions = session.versions.filter((v) => v.version !== version);
       return {
         sessions: {
@@ -156,6 +172,47 @@ export const useCodeStudioStore = create<CodeStudioState>((set) => ({
     }),
 
   setActiveSession: (sessionId) => set({ activeSessionId: sessionId }),
+
+  setRequestedView: (sessionId, requestedView) =>
+    set((state) => {
+      const session = state.sessions[sessionId];
+      if (!session) return state;
+      return {
+        sessions: {
+          ...state.sessions,
+          [sessionId]: {
+            ...session,
+            metadata: {
+              ...session.metadata,
+              requestedView,
+            },
+          },
+        },
+      };
+    }),
+
+  getActiveSessionContext: () => {
+    const { activeSessionId, sessions } = get();
+    if (!activeSessionId) return undefined;
+    const session = sessions[activeSessionId];
+    if (!session) return undefined;
+    return {
+      active_session: {
+        session_id: session.sessionId,
+        title: session.title,
+        status: session.status,
+        active_version: session.activeVersion,
+        version_count: session.versions.length,
+        language: session.language,
+          studio_lane: session.metadata.studioLane,
+          artifact_kind: session.metadata.artifactKind,
+          quality_profile: session.metadata.qualityProfile,
+          renderer_contract: session.metadata.rendererContract,
+          requested_view: session.metadata.requestedView,
+          has_preview: Boolean(session.visualPayload),
+        },
+      };
+    },
 
   clearSessions: () => set({ activeSessionId: null, sessions: {} }),
 }));

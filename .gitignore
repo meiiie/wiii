@@ -107,3 +107,4 @@ wiii-desktop/dist-web/
 pytest-cache-files-*
 .agents/
 AGENTS.md
+.Codex/external/OpenGenerativeUI/

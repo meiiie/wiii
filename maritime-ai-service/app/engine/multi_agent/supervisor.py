@@ -34,6 +34,7 @@ from app.engine.character.character_card import (
 )
 from app.engine.multi_agent.agent_config import AgentConfigRegistry
 from app.engine.multi_agent.state import AgentState
+from app.engine.multi_agent.visual_intent_resolver import resolve_visual_intent
 
 logger = logging.getLogger(__name__)
 
@@ -229,8 +230,38 @@ def _normalize_router_text(text: str) -> str:
 
 def _needs_code_studio(query: str) -> bool:
     """Detect requests that should route to the code studio capability."""
+    decision = resolve_visual_intent(query)
+    if decision.presentation_intent in {"code_studio_app", "artifact"}:
+        return True
     normalized = _normalize_router_text(query)
-    return any(kw in normalized for kw in CODE_STUDIO_KEYWORDS)
+    narrowed_keywords = (
+        "python",
+        "code",
+        "viet code",
+        "chay code",
+        "javascript",
+        "typescript",
+        "html",
+        "css",
+        "react",
+        "landing page",
+        "website",
+        "web app",
+        "microsite",
+        "artifact",
+        "sandbox",
+        "excel",
+        "xlsx",
+        "spreadsheet",
+        "word",
+        "docx",
+        "report",
+        "memo",
+        "proposal",
+        "screenshot",
+        "browser sandbox",
+    )
+    return any(kw in normalized for kw in narrowed_keywords)
 
 
 class SupervisorAgent:
@@ -342,6 +373,11 @@ class SupervisorAgent:
         messages = [
             SystemMessage(content=build_supervisor_card_prompt()),
             SystemMessage(content="You are a query router. Analyze the query step by step, classify intent, choose agent, and provide confidence."),
+            SystemMessage(content=(
+                "Visual policy: explanatory charts, comparisons, process diagrams, architecture diagrams, and concept visuals "
+                "should stay on DIRECT or TUTOR so those agents can call article-figure/chart tools. "
+                "Reserve CODE_STUDIO_AGENT for code execution, app/widget generation, simulations, artifacts, files, or browser sandbox work."
+            )),
             HumanMessage(content=ROUTING_PROMPT_TEMPLATE.format(
                 domain_name=domain_name,
                 rag_description=rag_desc,
@@ -366,6 +402,7 @@ class SupervisorAgent:
 
         chosen_agent = agent_map.get(result.agent, AgentType.DIRECT.value)
         method = "structured"
+        visual_decision = resolve_visual_intent(query)
 
         logger.info("[SUPERVISOR] CoT: %s → %s (conf=%.2f, intent=%s)",
                      result.reasoning, result.agent, result.confidence, result.intent)
@@ -390,26 +427,30 @@ class SupervisorAgent:
             chosen_agent = AgentType.CODE_STUDIO.value
             method = "structured+intent_override"
 
+        if (
+            visual_decision.presentation_intent in {"article_figure", "chart_runtime"}
+            and chosen_agent == AgentType.CODE_STUDIO.value
+        ):
+            fallback_agent = (
+                AgentType.TUTOR.value
+                if result.intent == "learning"
+                else AgentType.DIRECT.value
+            )
+            logger.info(
+                "[SUPERVISOR] Visual lane override: code_studio_agent -> %s (%s)",
+                fallback_agent,
+                visual_decision.presentation_intent,
+            )
+            chosen_agent = fallback_agent
+            method = "structured+visual_lane_override"
+
         if _needs_code_studio(query) and chosen_agent in (AgentType.DIRECT.value, AgentType.TUTOR.value):
             logger.info("[SUPERVISOR] Capability override: %s -> code_studio_agent", chosen_agent)
             chosen_agent = AgentType.CODE_STUDIO.value
             method = "structured+capability_override"
 
-        # Visual code-gen override (LLM-first pattern): khi flag bật và query
-        # có visual intent rõ ràng, upgrade tới code_studio cho model mạnh hơn.
-        # Bao gồm DIRECT — off_topic queries vẫn cần visual nếu user yêu cầu.
-        if chosen_agent in (AgentType.DIRECT.value, AgentType.TUTOR.value, AgentType.RAG.value):
-            from app.core.config import settings as _settings
-            if getattr(_settings, "enable_code_gen_visuals", False):
-                from app.engine.multi_agent.visual_intent_resolver import resolve_visual_intent
-                _visual_decision = resolve_visual_intent(query)
-                if _visual_decision.force_tool and _visual_decision.mode in ("inline_html", "app"):
-                    logger.info(
-                        "[SUPERVISOR] Visual code-gen upgrade: %s -> code_studio (mode=%s, reason=%s)",
-                        chosen_agent, _visual_decision.mode, _visual_decision.reason,
-                    )
-                    chosen_agent = AgentType.CODE_STUDIO.value
-                    method = "structured+visual_codegen_upgrade"
+        # LLM-first visual: no more routing override — direct/tutor/code_studio all have
+        # tool_create_visual_code bound via get_visual_tools(). The LLM decides when to use it.
 
         # Sprint 148: Product search feature gate — fallback to DIRECT if disabled
         if chosen_agent == AgentType.PRODUCT_SEARCH.value:

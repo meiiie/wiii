@@ -32,9 +32,22 @@ vi.mock("@/components/chat/ArtifactCard", () => ({
 }));
 
 vi.mock("@/components/chat/VisualBlock", () => ({
-  VisualBlock: ({ block, embedded }: { block: { visual: { title: string } }; embedded?: boolean }) => (
+  VisualBlock: ({
+    block,
+    embedded,
+    onSuggestedQuestion,
+  }: {
+    block: { visual: { title: string } };
+    embedded?: boolean;
+    onSuggestedQuestion?: (q: string) => void;
+  }) => (
     <div data-testid="visual-block" data-embedded={embedded ? "yes" : "no"}>
       {block.visual.title}
+      {onSuggestedQuestion ? (
+        <button type="button" onClick={() => onSuggestedQuestion("open as artifact")}>
+          artifact handoff
+        </button>
+      ) : null}
     </div>
   ),
 }));
@@ -329,66 +342,6 @@ describe("InterleavedBlockSequence", () => {
     expect(screen.getByTestId("tool-strip").textContent || "").toContain("tool_web_search");
   });
 
-  it("strips legacy widget fences from answer prose when a structured visual exists", () => {
-    const blocks: ContentBlock[] = [
-      createVisual(),
-      createAnswer([
-        "Mo dau bang loi.",
-        "```widget",
-        "<div>legacy widget</div>",
-        "```",
-        "Ket luan bang loi.",
-      ].join("\n")),
-    ];
-
-    render(
-      <InterleavedBlockSequence
-        blocks={blocks}
-        showThinking
-      />,
-    );
-
-    const answers = screen.getAllByTestId("answer-block");
-    const combinedText = answers.map((item) => item.textContent || "").join(" ");
-
-    expect(combinedText).toContain("Mo dau bang loi.");
-    expect(combinedText).toContain("Ket luan bang loi.");
-    expect(combinedText).not.toContain("legacy widget");
-    expect(combinedText).not.toContain("```widget");
-  });
-
-  it("replays legacy widget answers as an editorial flow instead of markdown widgets in the answer block", () => {
-    const legacyAnswer = [
-      "Mo dau bang loi de dat van de.",
-      "```widget",
-      "<div><h2>Compute cost</h2><svg></svg></div>",
-      "```",
-      "Doan giai thich giua hai figure.",
-      "```widget",
-      "<div><h2>Running state</h2><svg></svg></div>",
-      "```",
-      "Ket luan bang loi sau cung.",
-    ].join("\n");
-
-    render(
-      <InterleavedBlockSequence
-        blocks={[createAnswer(legacyAnswer, { id: "answer-legacy" })]}
-        showThinking
-      />,
-    );
-
-    const flow = screen.getByTestId("editorial-visual-flow");
-    const answers = screen.getAllByTestId("answer-block");
-    const widgets = screen.getAllByTestId("inline-html-widget");
-
-    expect(flow.getAttribute("data-figure-count")).toBe("2");
-    expect(widgets).toHaveLength(2);
-    expect(answers).toHaveLength(3);
-    expect(flow.textContent || "").toContain("Compute cost");
-    expect(flow.textContent || "").toContain("Running state");
-    expect(answers.map((item) => item.textContent || "").join(" ")).not.toContain("```widget");
-  });
-
   it("pins visuals under the answer once prose arrives", () => {
     const blocks: ContentBlock[] = [
       createVisual(),
@@ -609,6 +562,89 @@ describe("InterleavedBlockSequence", () => {
     expect(answers.length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Figure nay chung minh chi phi cua softmax tang rat nhanh theo context.")).toBeTruthy();
     expect(screen.getByText("Figure nay mo ta running state va gate de giam chi phi.")).toBeTruthy();
+  });
+
+  it("passes the suggested-question callback down to visual blocks", () => {
+    const onSuggestedQuestion = vi.fn();
+    const blocks: ContentBlock[] = [
+      createVisual(),
+      createAnswer("Day la phan giai thich bang loi."),
+    ];
+
+    render(
+      <InterleavedBlockSequence
+        blocks={blocks}
+        showThinking
+        onSuggestedQuestion={onSuggestedQuestion}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "artifact handoff" }));
+    expect(onSuggestedQuestion).toHaveBeenCalledWith("open as artifact");
+  });
+
+  it("strips visual placeholders and rendered-above markers from editorial prose", () => {
+    const blocks: ContentBlock[] = [
+      createAnswer([
+        "1. Van de: Softmax ton bo nho rat nhanh.",
+        "{visual_1}",
+        "2. Co che: Kimi Linear doi sang running state gon hon.",
+        "{visual_2}",
+        "3. Ket qua: mo rong duoc context dai hon.",
+        "",
+        "(Cac bieu do duoi day se giup cu hinh dung ro hon ve su khac biet nay nhe.)",
+        "[Visual: Linear Attention Process & Approximation Error]",
+        "[Visuals rendered above]",
+        "Takeaway: Linear attention giam ap luc bo nho nhung van giu y chinh.",
+      ].join("\n\n"), { id: "ans-marker-flow" }),
+      createVisual({
+        id: "visual-marker-a",
+        sessionId: "vs-marker-a",
+        visual: {
+          ...createVisual().visual,
+          id: "visual-marker-a",
+          visual_session_id: "vs-marker-a",
+          figure_group_id: "fg-marker-flow",
+          figure_index: 1,
+          figure_total: 2,
+          title: "Problem",
+        },
+      }),
+      createVisual({
+        id: "visual-marker-b",
+        sessionId: "vs-marker-b",
+        visual: {
+          ...createVisual().visual,
+          id: "visual-marker-b",
+          visual_session_id: "vs-marker-b",
+          type: "process",
+          figure_group_id: "fg-marker-flow",
+          figure_index: 2,
+          figure_total: 2,
+          title: "Mechanism",
+        },
+      }),
+    ];
+
+    render(
+      <InterleavedBlockSequence
+        blocks={blocks}
+        showThinking
+      />,
+    );
+
+    const flow = screen.getByTestId("editorial-visual-flow");
+    const bodyText = flow.textContent || "";
+
+    expect(flow.getAttribute("data-figure-count")).toBe("2");
+    expect(bodyText).toContain("1. Van de: Softmax ton bo nho rat nhanh.");
+    expect(bodyText).toContain("2. Co che: Kimi Linear doi sang running state gon hon.");
+    expect(bodyText).toContain("3. Ket qua: mo rong duoc context dai hon.");
+    expect(bodyText).toContain("Takeaway: Linear attention giam ap luc bo nho nhung van giu y chinh.");
+    expect(bodyText).not.toContain("{visual_1}");
+    expect(bodyText).not.toContain("{visual_2}");
+    expect(bodyText).not.toContain("[Visual: Linear Attention Process & Approximation Error]");
+    expect(bodyText).not.toContain("[Visuals rendered above]");
   });
 
   it("keeps grouped visuals inside an editorial flow even when prose is missing", () => {

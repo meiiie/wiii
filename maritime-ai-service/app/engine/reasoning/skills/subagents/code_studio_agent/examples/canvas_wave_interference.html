@@ -1,0 +1,809 @@
+<!--
+  STATE MODEL: time, frequency, wavelength, amplitude, sourceSeparation, playing, speed
+  RENDER SURFACE: Canvas 2D — pixel-level interference pattern via ImageData
+  CONTROLS: 4 sliders (frequency, wavelength, amplitude, separation) + 2 buttons (play/pause, reset) + speed selector
+  READOUTS: frequency, wavelength, wave speed, path difference (hover), fps, elapsed time
+  FEEDBACK: WiiiVisualBridge.reportResult — simulation_start, parameter_change, simulation_pause, simulation_reset
+-->
+
+<style>
+  :root {
+    --bg: #0f172a;
+    --fg: #e2e8f0;
+    --accent: #38bdf8;
+    --accent-hover: #7dd3fc;
+    --surface: #1e293b;
+    --surface-alt: #334155;
+    --border: #475569;
+    --text-secondary: #94a3b8;
+    --success: #4ade80;
+    --warning: #fbbf24;
+    --danger: #f87171;
+    --radius: 8px;
+    --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f8fafc;
+      --fg: #0f172a;
+      --accent: #0284c7;
+      --accent-hover: #0369a1;
+      --surface: #ffffff;
+      --surface-alt: #f1f5f9;
+      --border: #cbd5e1;
+      --text-secondary: #64748b;
+      --success: #16a34a;
+      --warning: #d97706;
+      --danger: #dc2626;
+    }
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  .sim-root {
+    font-family: var(--font);
+    color: var(--fg);
+    background: var(--bg);
+    min-height: 100vh;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    grid-template-rows: 1fr auto;
+    gap: 16px;
+  }
+
+  .canvas-area {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    min-height: 400px;
+  }
+
+  .canvas-area canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .hover-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 10px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--fg);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    white-space: nowrap;
+    z-index: 10;
+  }
+
+  .hover-tooltip.visible {
+    opacity: 1;
+  }
+
+  .control-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-y: auto;
+  }
+
+  .panel-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--fg);
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .control-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .control-value {
+    font-weight: 500;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    background: var(--surface-alt);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    cursor: pointer;
+  }
+
+  input[type="range"]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .button-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .btn {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-alt);
+    color: var(--fg);
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+
+  .btn:hover {
+    background: var(--border);
+  }
+
+  .btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #0f172a;
+    border-color: var(--accent);
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  .speed-row {
+    display: flex;
+    gap: 4px;
+  }
+
+  .speed-btn {
+    flex: 1;
+    padding: 6px 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-alt);
+    color: var(--text-secondary);
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .speed-btn:hover {
+    color: var(--fg);
+    background: var(--border);
+  }
+
+  .speed-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .speed-btn.active {
+    background: var(--accent);
+    color: #0f172a;
+    border-color: var(--accent);
+  }
+
+  .readout-bar {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+  }
+
+  .readout-cell {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    text-align: center;
+  }
+
+  .readout-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+
+  .readout-value {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .interference-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .tag-constructive {
+    background: color-mix(in srgb, var(--success) 20%, transparent);
+    color: var(--success);
+  }
+
+  .tag-destructive {
+    background: color-mix(in srgb, var(--danger) 20%, transparent);
+    color: var(--danger);
+  }
+
+  .tag-partial {
+    background: color-mix(in srgb, var(--warning) 20%, transparent);
+    color: var(--warning);
+  }
+
+  .legend {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    padding-top: 4px;
+    border-top: 1px solid var(--border);
+  }
+
+  .legend-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    vertical-align: middle;
+    margin-right: 4px;
+  }
+
+  @media (max-width: 768px) {
+    .sim-root {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto auto auto;
+    }
+
+    .readout-bar {
+      grid-column: 1;
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+</style>
+
+<div class="sim-root">
+  <div class="canvas-area">
+    <canvas id="waveCanvas"></canvas>
+    <div class="hover-tooltip" id="tooltip"></div>
+  </div>
+
+  <div class="control-panel" role="region" aria-label="Simulation controls">
+    <div class="panel-title">Wave Parameters</div>
+
+    <div class="control-group">
+      <div class="control-label">
+        <span>Frequency</span>
+        <span class="control-value" id="freqVal">2.0 Hz</span>
+      </div>
+      <input type="range" id="freqSlider" min="0.5" max="5.0" step="0.1" value="2.0"
+             aria-label="Frequency" tabindex="0">
+    </div>
+
+    <div class="control-group">
+      <div class="control-label">
+        <span>Wavelength</span>
+        <span class="control-value" id="waveVal">50 px</span>
+      </div>
+      <input type="range" id="waveSlider" min="20" max="100" step="1" value="50"
+             aria-label="Wavelength" tabindex="0">
+    </div>
+
+    <div class="control-group">
+      <div class="control-label">
+        <span>Amplitude</span>
+        <span class="control-value" id="ampVal">0.8</span>
+      </div>
+      <input type="range" id="ampSlider" min="0.2" max="1.0" step="0.05" value="0.8"
+             aria-label="Amplitude" tabindex="0">
+    </div>
+
+    <div class="control-group">
+      <div class="control-label">
+        <span>Source Separation</span>
+        <span class="control-value" id="sepVal">200 px</span>
+      </div>
+      <input type="range" id="sepSlider" min="40" max="400" step="5" value="200"
+             aria-label="Source separation" tabindex="0">
+    </div>
+
+    <div class="button-row">
+      <button class="btn btn-primary" id="playBtn" aria-label="Play or pause simulation" tabindex="0">Pause</button>
+      <button class="btn" id="resetBtn" aria-label="Reset simulation" tabindex="0">Reset</button>
+    </div>
+
+    <div class="control-group">
+      <div class="control-label"><span>Speed</span></div>
+      <div class="speed-row">
+        <button class="speed-btn" data-speed="0.5" aria-label="Half speed" tabindex="0">0.5x</button>
+        <button class="speed-btn active" data-speed="1" aria-label="Normal speed" tabindex="0">1x</button>
+        <button class="speed-btn" data-speed="2" aria-label="Double speed" tabindex="0">2x</button>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><span class="legend-swatch" style="background:#ef4444"></span>Constructive</span>
+      <span><span class="legend-swatch" style="background:#94a3b8"></span>Zero</span>
+      <span><span class="legend-swatch" style="background:#3b82f6"></span>Destructive</span>
+    </div>
+  </div>
+
+  <div class="readout-bar">
+    <div class="readout-cell">
+      <div class="readout-label">Frequency</div>
+      <div class="readout-value" id="roFreq">2.0 Hz</div>
+    </div>
+    <div class="readout-cell">
+      <div class="readout-label">Wavelength</div>
+      <div class="readout-value" id="roWave">50 px</div>
+    </div>
+    <div class="readout-cell">
+      <div class="readout-label">Wave Speed</div>
+      <div class="readout-value" id="roSpeed">100 px/s</div>
+    </div>
+    <div class="readout-cell">
+      <div class="readout-label">Path Difference</div>
+      <div class="readout-value" id="roPath">---</div>
+    </div>
+    <div class="readout-cell">
+      <div class="readout-label">FPS</div>
+      <div class="readout-value" id="roFps">--</div>
+    </div>
+    <div class="readout-cell">
+      <div class="readout-label">Elapsed</div>
+      <div class="readout-value" id="roTime">0.0 s</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  function report(kind, payload, summary, status) {
+    if (window.WiiiVisualBridge && window.WiiiVisualBridge.reportResult) {
+      window.WiiiVisualBridge.reportResult(kind, payload, summary, status);
+    }
+  }
+
+  var canvas = document.getElementById('waveCanvas');
+  var ctx = canvas.getContext('2d');
+  var tooltip = document.getElementById('tooltip');
+  var canvasArea = canvas.parentElement;
+
+  var state = {
+    time: 0,
+    frequency: 2.0,
+    wavelength: 50,
+    amplitude: 0.8,
+    separation: 200,
+    playing: true,
+    speed: 1.0
+  };
+
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var cw = 0;
+  var ch = 0;
+  var imageData = null;
+  var pixels = null;
+
+  var mouse = { x: -1, y: -1, inside: false };
+  var fpsFrames = 0;
+  var fpsTime = 0;
+  var fpsDisplay = 0;
+  var lastTimestamp = 0;
+  var rafId = null;
+
+  var PIXEL_SKIP = 2;
+
+  var freqSlider = document.getElementById('freqSlider');
+  var waveSlider = document.getElementById('waveSlider');
+  var ampSlider = document.getElementById('ampSlider');
+  var sepSlider = document.getElementById('sepSlider');
+  var playBtn = document.getElementById('playBtn');
+  var resetBtn = document.getElementById('resetBtn');
+  var speedBtns = document.querySelectorAll('.speed-btn');
+
+  var freqVal = document.getElementById('freqVal');
+  var waveVal = document.getElementById('waveVal');
+  var ampVal = document.getElementById('ampVal');
+  var sepVal = document.getElementById('sepVal');
+
+  var roFreq = document.getElementById('roFreq');
+  var roWave = document.getElementById('roWave');
+  var roSpeed = document.getElementById('roSpeed');
+  var roPath = document.getElementById('roPath');
+  var roFps = document.getElementById('roFps');
+  var roTime = document.getElementById('roTime');
+
+  function resizeCanvas() {
+    var rect = canvasArea.getBoundingClientRect();
+    var w = Math.floor(rect.width);
+    var h = Math.floor(rect.height);
+    if (w === cw && h === ch) return;
+    cw = w;
+    ch = h;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    imageData = ctx.createImageData(canvas.width, canvas.height);
+    pixels = imageData.data;
+  }
+
+  function getSourcePositions() {
+    var cx = cw * 0.5;
+    var cy = ch * 0.5;
+    var half = state.separation * 0.5;
+    return {
+      s1x: cx - half,
+      s1y: cy,
+      s2x: cx + half,
+      s2y: cy
+    };
+  }
+
+  function colorMap(v) {
+    var t = (v + 1) * 0.5;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+
+    var r, g, b;
+
+    if (t < 0.5) {
+      var f = t / 0.5;
+      r = 59 + (148 - 59) * f;
+      g = 130 + (163 - 130) * f;
+      b = 246 + (184 - 246) * f;
+    } else {
+      var f = (t - 0.5) / 0.5;
+      r = 148 + (239 - 148) * f;
+      g = 163 + (68 - 163) * f;
+      b = 184 + (68 - 184) * f;
+    }
+
+    return { r: r | 0, g: g | 0, b: b | 0 };
+  }
+
+  function renderField() {
+    var k = (2 * Math.PI) / state.wavelength;
+    var omega = 2 * Math.PI * state.frequency;
+    var amp = state.amplitude;
+    var t = state.time;
+    var src = getSourcePositions();
+    var pw = canvas.width;
+    var ph = canvas.height;
+    var skip = PIXEL_SKIP;
+    var invDpr = 1 / dpr;
+
+    for (var py = 0; py < ph; py += skip) {
+      var worldY = py * invDpr;
+      var dy1 = worldY - src.s1y;
+      var dy2 = worldY - src.s2y;
+      var dy1sq = dy1 * dy1;
+      var dy2sq = dy2 * dy2;
+
+      for (var px = 0; px < pw; px += skip) {
+        var worldX = px * invDpr;
+
+        var dx1 = worldX - src.s1x;
+        var dx2 = worldX - src.s2x;
+        var r1 = Math.sqrt(dx1 * dx1 + dy1sq);
+        var r2 = Math.sqrt(dx2 * dx2 + dy2sq);
+
+        var w1 = r1 < 1 ? amp : amp * Math.sin(k * r1 - omega * t) / (1 + r1 * 0.003);
+        var w2 = r2 < 1 ? amp : amp * Math.sin(k * r2 - omega * t) / (1 + r2 * 0.003);
+        var total = (w1 + w2) / (2 * amp);
+
+        var c = colorMap(total);
+
+        for (var sy = 0; sy < skip && py + sy < ph; sy++) {
+          for (var sx = 0; sx < skip && px + sx < pw; sx++) {
+            var idx = ((py + sy) * pw + (px + sx)) * 4;
+            pixels[idx] = c.r;
+            pixels[idx + 1] = c.g;
+            pixels[idx + 2] = c.b;
+            pixels[idx + 3] = 255;
+          }
+        }
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+  }
+
+  function drawSources() {
+    var src = getSourcePositions();
+    var r = 5 * dpr;
+
+    ctx.save();
+    ctx.scale(dpr, dpr);
+
+    ctx.beginPath();
+    ctx.arc(src.s1x, src.s1y, r / dpr, 0, 2 * Math.PI);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(src.s1x, src.s1y, (r / dpr) + 2, 0, 2 * Math.PI);
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(src.s2x, src.s2y, r / dpr, 0, 2 * Math.PI);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(src.s2x, src.s2y, (r / dpr) + 2, 0, 2 * Math.PI);
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawWaveFronts() {
+    var src = getSourcePositions();
+    var wl = state.wavelength;
+    var omega = 2 * Math.PI * state.frequency;
+    var t = state.time;
+    var maxR = Math.sqrt(cw * cw + ch * ch);
+    var phaseOffset = (omega * t) % (2 * Math.PI);
+
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+
+    var sources = [[src.s1x, src.s1y], [src.s2x, src.s2y]];
+    for (var si = 0; si < 2; si++) {
+      var sx = sources[si][0];
+      var sy = sources[si][1];
+      var startR = (phaseOffset / (2 * Math.PI)) * wl;
+      for (var r = startR; r < maxR; r += wl) {
+        if (r < 2) continue;
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, 2 * Math.PI);
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  function updateReadouts() {
+    var v = state.frequency * state.wavelength;
+    roFreq.textContent = state.frequency.toFixed(1) + ' Hz';
+    roWave.textContent = state.wavelength + ' px';
+    roSpeed.textContent = v.toFixed(0) + ' px/s';
+    roTime.textContent = state.time.toFixed(1) + ' s';
+  }
+
+  function updateHover() {
+    if (!mouse.inside) {
+      tooltip.classList.remove('visible');
+      roPath.textContent = '---';
+      return;
+    }
+
+    var src = getSourcePositions();
+    var dx1 = mouse.x - src.s1x;
+    var dy1 = mouse.y - src.s1y;
+    var dx2 = mouse.x - src.s2x;
+    var dy2 = mouse.y - src.s2y;
+    var r1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+    var r2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+    var pathDiff = Math.abs(r1 - r2);
+    var wl = state.wavelength;
+    var ratio = pathDiff / wl;
+    var nearestInt = Math.round(ratio);
+    var nearestHalf = Math.round(ratio - 0.5) + 0.5;
+    var distInt = Math.abs(ratio - nearestInt);
+    var distHalf = Math.abs(ratio - nearestHalf);
+
+    var tag, tagClass;
+    if (distInt < 0.15) {
+      tag = 'Constructive';
+      tagClass = 'tag-constructive';
+    } else if (distHalf < 0.15) {
+      tag = 'Destructive';
+      tagClass = 'tag-destructive';
+    } else {
+      tag = 'Partial';
+      tagClass = 'tag-partial';
+    }
+
+    roPath.innerHTML = pathDiff.toFixed(1) + ' px <span class="interference-tag ' + tagClass + '">' + tag + '</span>';
+
+    tooltip.innerHTML =
+      '|r\u2081\u2212r\u2082| = ' + pathDiff.toFixed(1) + ' px' +
+      '<br>\u0394/\u03BB = ' + ratio.toFixed(2) +
+      '<br><span class="interference-tag ' + tagClass + '">' + tag + '</span>';
+
+    var tx = mouse.x + 16;
+    var ty = mouse.y - 40;
+    var rect = canvasArea.getBoundingClientRect();
+    if (tx + 140 > rect.width) tx = mouse.x - 150;
+    if (ty < 4) ty = mouse.y + 16;
+
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top = ty + 'px';
+    tooltip.classList.add('visible');
+  }
+
+  function tick(timestamp) {
+    rafId = requestAnimationFrame(tick);
+
+    if (lastTimestamp === 0) lastTimestamp = timestamp;
+    var rawDt = (timestamp - lastTimestamp) / 1000;
+    lastTimestamp = timestamp;
+
+    var dt = Math.min(rawDt, 0.1);
+
+    fpsFrames++;
+    fpsTime += rawDt;
+    if (fpsTime >= 0.5) {
+      fpsDisplay = Math.round(fpsFrames / fpsTime);
+      roFps.textContent = fpsDisplay;
+      fpsFrames = 0;
+      fpsTime = 0;
+    }
+
+    if (state.playing) {
+      state.time += dt * state.speed;
+    }
+
+    resizeCanvas();
+    renderField();
+    drawWaveFronts();
+    drawSources();
+    updateReadouts();
+    updateHover();
+  }
+
+  function bindSlider(slider, display, key, fmt) {
+    slider.addEventListener('input', function () {
+      var v = parseFloat(this.value);
+      state[key] = v;
+      display.textContent = fmt(v);
+      report('parameter_change', { parameter: key, value: v }, key + ' changed to ' + v, 'ok');
+    });
+  }
+
+  bindSlider(freqSlider, freqVal, 'frequency', function (v) { return v.toFixed(1) + ' Hz'; });
+  bindSlider(waveSlider, waveVal, 'wavelength', function (v) { return v + ' px'; });
+  bindSlider(ampSlider, ampVal, 'amplitude', function (v) { return v.toFixed(2); });
+  bindSlider(sepSlider, sepVal, 'separation', function (v) { return v + ' px'; });
+
+  playBtn.addEventListener('click', function () {
+    state.playing = !state.playing;
+    playBtn.textContent = state.playing ? 'Pause' : 'Play';
+    playBtn.setAttribute('aria-label', state.playing ? 'Pause simulation' : 'Resume simulation');
+    if (!state.playing) {
+      report('simulation_pause', { time: state.time }, 'Paused at ' + state.time.toFixed(1) + 's', 'ok');
+    }
+  });
+
+  resetBtn.addEventListener('click', function () {
+    state.time = 0;
+    state.frequency = 2.0;
+    state.wavelength = 50;
+    state.amplitude = 0.8;
+    state.separation = 200;
+    state.playing = true;
+    state.speed = 1.0;
+
+    freqSlider.value = 2.0;
+    waveSlider.value = 50;
+    ampSlider.value = 0.8;
+    sepSlider.value = 200;
+
+    freqVal.textContent = '2.0 Hz';
+    waveVal.textContent = '50 px';
+    ampVal.textContent = '0.80';
+    sepVal.textContent = '200 px';
+    playBtn.textContent = 'Pause';
+    playBtn.setAttribute('aria-label', 'Pause simulation');
+
+    speedBtns.forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-speed') === '1');
+    });
+
+    report('simulation_reset', {}, 'Simulation reset to defaults', 'ok');
+  });
+
+  speedBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      state.speed = parseFloat(this.getAttribute('data-speed'));
+      speedBtns.forEach(function (b) { b.classList.remove('active'); });
+      this.classList.add('active');
+      report('parameter_change', { parameter: 'speed', value: state.speed }, 'Speed set to ' + state.speed + 'x', 'ok');
+    });
+  });
+
+  canvasArea.addEventListener('mousemove', function (e) {
+    var rect = canvasArea.getBoundingClientRect();
+    mouse.x = e.clientX - rect.left;
+    mouse.y = e.clientY - rect.top;
+    mouse.inside = true;
+  });
+
+  canvasArea.addEventListener('mouseleave', function () {
+    mouse.inside = false;
+  });
+
+  window.addEventListener('resize', function () {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+  });
+
+  report('simulation_start', {
+    frequency: state.frequency,
+    wavelength: state.wavelength,
+    amplitude: state.amplitude,
+    separation: state.separation
+  }, 'Wave interference simulation started', 'ok');
+
+  rafId = requestAnimationFrame(tick);
+})();
+</script>

@@ -1,0 +1,832 @@
+<!--
+  STATE MODEL: shipA{x,y,heading}, shipB{x,y,heading}, showDangerZone, showBearings
+  RENDER SURFACE: Inline SVG — vector ships, bearing lines, danger arcs
+  CONTROLS: 2 heading sliders + 2 toggles + reset
+  READOUTS: bearing, relative bearing, CPA, safety status
+  FEEDBACK: WiiiVisualBridge.reportResult
+-->
+<style>
+:root {
+  --bg: #0f172a;
+  --fg: #e2e8f0;
+  --accent: #38bdf8;
+  --surface: #1e293b;
+  --surface-alt: #334155;
+  --border: #475569;
+  --text-secondary: #94a3b8;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --radius: 8px;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc; --fg: #0f172a; --accent: #0284c7;
+    --surface: #ffffff; --surface-alt: #f1f5f9;
+    --border: #cbd5e1; --text-secondary: #64748b;
+    --success: #16a34a; --warning: #d97706; --danger: #dc2626;
+  }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--fg); }
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  grid-template-rows: 1fr auto;
+  gap: 12px;
+  padding: 12px;
+  height: 100vh;
+  min-height: 0;
+}
+.svg-area {
+  grid-row: 1;
+  grid-column: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  position: relative;
+  min-height: 400px;
+}
+.svg-area svg { width: 100%; height: 100%; display: block; }
+.panel {
+  grid-row: 1;
+  grid-column: 2;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+.readout-bar {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+.panel-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.control-group { display: flex; flex-direction: column; gap: 6px; }
+.control-label {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.control-label span { color: var(--fg); font-weight: 500; }
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--surface-alt);
+  border-radius: 2px;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+}
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.toggle-row input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 16px; height: 16px;
+  cursor: pointer;
+}
+.btn-reset {
+  background: var(--surface-alt);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-reset:hover { background: var(--border); }
+.btn-reset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+}
+.metric-label { font-size: 11px; color: var(--text-secondary); font-weight: 400; text-transform: uppercase; letter-spacing: 0.3px; }
+.metric-value { font-size: 16px; font-weight: 500; color: var(--fg); }
+.status-badge {
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  margin-left: auto;
+}
+.status-danger { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
+.status-warning { background: color-mix(in srgb, var(--warning) 20%, transparent); color: var(--warning); }
+.status-safe { background: color-mix(in srgb, var(--success) 20%, transparent); color: var(--success); }
+.annotation {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.annotation-header {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--fg);
+  background: none;
+  border: none;
+  width: 100%;
+  font-family: var(--font);
+  text-align: left;
+}
+.annotation-header:hover { background: var(--border); }
+.annotation-header:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.annotation-chevron { font-size: 11px; color: var(--text-secondary); transition: transform 0.2s; }
+.annotation.open .annotation-chevron { transform: rotate(90deg); }
+.annotation-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+}
+.annotation.open .annotation-body { max-height: 200px; }
+.annotation-text { padding: 0 12px 10px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.ship-label-group { pointer-events: none; }
+.separator { height: 1px; background: var(--border); }
+.instructions {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  padding: 8px;
+  background: var(--surface-alt);
+  border-radius: var(--radius);
+}
+.legend-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+.legend-swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+@media (max-width: 720px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(300px, 1fr) auto auto;
+    height: auto;
+    min-height: 100vh;
+  }
+  .svg-area { grid-column: 1; grid-row: 1; min-height: 300px; }
+  .panel { grid-column: 1; grid-row: 2; }
+  .readout-bar { grid-column: 1; grid-row: 3; }
+}
+</style>
+
+<div class="layout">
+  <div class="svg-area">
+    <svg id="svg-main" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid meet" aria-label="COLREGs Rule 15 - So do tinh huong cat huong">
+      <defs>
+        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="var(--border)" stroke-width="0.3" opacity="0.4"/>
+        </pattern>
+        <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6" fill="var(--success)" />
+        </marker>
+        <marker id="arrow-accent" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+          <path d="M0,0 L6,2 L0,4" fill="var(--accent)" />
+        </marker>
+      </defs>
+      <rect width="800" height="600" fill="var(--surface-alt)" />
+      <rect width="800" height="600" fill="url(#grid)" />
+      <text x="400" y="28" text-anchor="middle" fill="var(--text-secondary)" font-size="13" font-weight="500" font-family="var(--font)">COLREGs Rule 15 — Tinh huong cat huong (Crossing Situation)</text>
+      <g id="danger-zone"></g>
+      <g id="bearing-lines"></g>
+      <g id="cpa-line"></g>
+      <g id="action-arrows"></g>
+      <g id="ship-a-group" tabindex="0" aria-label="Tau A - Tau nhuong duong. Keo de di chuyen." role="img" style="cursor:grab;outline:none;">
+        <circle r="28" fill="transparent" stroke="transparent" />
+        <g id="ship-a-icon">
+          <path d="M0,-20 L7,-6 L6,14 L3,18 L-3,18 L-6,14 L-7,-6 Z" fill="var(--warning)" stroke="var(--bg)" stroke-width="1.2"/>
+          <line x1="0" y1="-20" x2="0" y2="-30" stroke="var(--warning)" stroke-width="1.5"/>
+        </g>
+        <g class="ship-label-group">
+          <text x="0" y="34" text-anchor="middle" fill="var(--warning)" font-size="12" font-weight="500" font-family="var(--font)">TAU A</text>
+          <text x="0" y="46" text-anchor="middle" fill="var(--text-secondary)" font-size="10" font-weight="400" font-family="var(--font)">Nhuong duong</text>
+        </g>
+      </g>
+      <g id="ship-b-group" tabindex="0" aria-label="Tau B - Tau giu huong. Keo de di chuyen." role="img" style="cursor:grab;outline:none;">
+        <circle r="28" fill="transparent" stroke="transparent" />
+        <g id="ship-b-icon">
+          <path d="M0,-20 L7,-6 L6,14 L3,18 L-3,18 L-6,14 L-7,-6 Z" fill="var(--accent)" stroke="var(--bg)" stroke-width="1.2"/>
+          <line x1="0" y1="-20" x2="0" y2="-30" stroke="var(--accent)" stroke-width="1.5"/>
+        </g>
+        <g class="ship-label-group">
+          <text x="0" y="34" text-anchor="middle" fill="var(--accent)" font-size="12" font-weight="500" font-family="var(--font)">TAU B</text>
+          <text x="0" y="46" text-anchor="middle" fill="var(--text-secondary)" font-size="10" font-weight="400" font-family="var(--font)">Giu huong</text>
+        </g>
+      </g>
+      <text id="compass-n" x="400" y="578" text-anchor="middle" fill="var(--text-secondary)" font-size="10" font-weight="400" font-family="var(--font)" opacity="0.6">N = 000° (len tren)</text>
+    </svg>
+  </div>
+
+  <div class="panel" role="region" aria-label="Bang dieu khien">
+    <div class="panel-title">Dieu khien</div>
+    <div class="instructions">Keo tau tren ban do de thay doi vi tri. Dung phim mui ten de di chuyen, +/- de xoay huong tau dang chon.</div>
+    <div class="control-group">
+      <label class="control-label" for="slider-a">Huong Tau A <span id="val-a">045°</span></label>
+      <input type="range" id="slider-a" min="0" max="359" value="45" aria-label="Huong tau A">
+    </div>
+    <div class="control-group">
+      <label class="control-label" for="slider-b">Huong Tau B <span id="val-b">315°</span></label>
+      <input type="range" id="slider-b" min="0" max="359" value="315" aria-label="Huong tau B">
+    </div>
+    <div class="separator"></div>
+    <label class="toggle-row">
+      <input type="checkbox" id="toggle-danger" checked aria-label="Hien thi vung nguy hiem">
+      Hien thi vung nguy hiem
+    </label>
+    <label class="toggle-row">
+      <input type="checkbox" id="toggle-bearings" checked aria-label="Hien thi duong phuong vi">
+      Hien thi duong phuong vi
+    </label>
+    <button class="btn-reset" id="btn-reset" aria-label="Dat lai vi tri va huong mac dinh">Dat lai</button>
+    <div class="separator"></div>
+    <div class="panel-title">Chu thich</div>
+    <div class="legend-row"><span class="legend-swatch" style="background:var(--warning)"></span> Tau A — Tau nhuong duong (give-way)</div>
+    <div class="legend-row"><span class="legend-swatch" style="background:var(--accent)"></span> Tau B — Tau giu huong (stand-on)</div>
+    <div class="legend-row"><span class="legend-swatch" style="background:var(--danger);opacity:0.5"></span> Vung nguy hiem</div>
+    <div class="legend-row"><span class="legend-swatch" style="background:var(--success)"></span> Huong chuyen mui dung</div>
+    <div class="separator"></div>
+    <div class="panel-title">Giai thich</div>
+    <div class="annotation" id="ann-rule15">
+      <button class="annotation-header" aria-expanded="false" aria-controls="ann-rule15-body">
+        Rule 15 la gi?
+        <span class="annotation-chevron">&#9654;</span>
+      </button>
+      <div class="annotation-body" id="ann-rule15-body" role="region">
+        <div class="annotation-text">Khi hai tau dong co cat huong nhau co nguy co va cham, tau nao nhin thay tau kia o phia man phai cua minh phai nhuong duong. Tau nhuong duong khong duoc cat truoc mui tau giu huong.</div>
+      </div>
+    </div>
+    <div class="annotation" id="ann-action">
+      <button class="annotation-header" aria-expanded="false" aria-controls="ann-action-body">
+        Hanh dong dung cua Tau A?
+        <span class="annotation-chevron">&#9654;</span>
+      </button>
+      <div class="annotation-body" id="ann-action-body" role="region">
+        <div class="annotation-text">Tau A (nhuong duong) phai chuyen huong sang phai som va ro rang, di phia sau lai Tau B. Khong chuyen huong sang trai. Khong cat truoc mui Tau B.</div>
+      </div>
+    </div>
+    <div class="annotation" id="ann-standon">
+      <button class="annotation-header" aria-expanded="false" aria-controls="ann-standon-body">
+        Trach nhiem cua Tau B?
+        <span class="annotation-chevron">&#9654;</span>
+      </button>
+      <div class="annotation-body" id="ann-standon-body" role="region">
+        <div class="annotation-text">Tau B (giu huong) phai giu nguyen toc do va huong di. Neu Tau A khong hanh dong, Tau B co the tu hanh dong theo Rule 17 nhung khong duoc chuyen huong sang trai.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="readout-bar" role="status" aria-live="polite" aria-label="So lieu tinh huong">
+    <div class="metric">
+      <span class="metric-label">Phuong vi A→B</span>
+      <span class="metric-value" id="read-ab">—</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Phuong vi B→A</span>
+      <span class="metric-value" id="read-ba">—</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Phuong vi tuong doi</span>
+      <span class="metric-value" id="read-rel">—</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">CPA (uoc tinh)</span>
+      <span class="metric-value" id="read-cpa">—</span>
+    </div>
+    <span class="status-badge" id="read-status">—</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var DEG = Math.PI / 180;
+  var DEFAULTS = { ax: 500, ay: 420, ah: 45, bx: 250, by: 180, bh: 315 };
+  var SPEED = 10;
+  var state = {
+    ax: DEFAULTS.ax, ay: DEFAULTS.ay, ah: DEFAULTS.ah,
+    bx: DEFAULTS.bx, by: DEFAULTS.by, bh: DEFAULTS.bh,
+    showDanger: true, showBearings: true, selected: null
+  };
+
+  var svg = document.getElementById('svg-main');
+  var shipAGroup = document.getElementById('ship-a-group');
+  var shipBGroup = document.getElementById('ship-b-group');
+  var shipAIcon = document.getElementById('ship-a-icon');
+  var shipBIcon = document.getElementById('ship-b-icon');
+  var dangerZone = document.getElementById('danger-zone');
+  var bearingLines = document.getElementById('bearing-lines');
+  var cpaLine = document.getElementById('cpa-line');
+  var actionArrows = document.getElementById('action-arrows');
+  var sliderA = document.getElementById('slider-a');
+  var sliderB = document.getElementById('slider-b');
+  var valA = document.getElementById('val-a');
+  var valB = document.getElementById('val-b');
+  var toggleDanger = document.getElementById('toggle-danger');
+  var toggleBearings = document.getElementById('toggle-bearings');
+  var btnReset = document.getElementById('btn-reset');
+  var readAB = document.getElementById('read-ab');
+  var readBA = document.getElementById('read-ba');
+  var readRel = document.getElementById('read-rel');
+  var readCPA = document.getElementById('read-cpa');
+  var readStatus = document.getElementById('read-status');
+
+  function report(kind, payload, summary, status) {
+    if (window.WiiiVisualBridge && window.WiiiVisualBridge.reportResult) {
+      window.WiiiVisualBridge.reportResult(kind, payload, summary, status);
+    }
+  }
+
+  function normAngle(a) { return ((a % 360) + 360) % 360; }
+  function toRad(d) { return d * DEG; }
+  function pad(n) { return String(Math.round(n)).padStart(3, '0'); }
+
+  function bearingFromTo(x1, y1, x2, y2) {
+    var dx = x2 - x1;
+    var dy = y1 - y2;
+    var angle = Math.atan2(dx, dy) / DEG;
+    return normAngle(angle);
+  }
+
+  function svgPoint(evt) {
+    var pt = svg.createSVGPoint();
+    var ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    pt.x = evt.clientX;
+    pt.y = evt.clientY;
+    var svgP = pt.matrixTransform(ctm.inverse());
+    return { x: Math.max(40, Math.min(760, svgP.x)), y: Math.max(40, Math.min(560, svgP.y)) };
+  }
+
+  function computeCPA() {
+    var vax = SPEED * Math.sin(toRad(state.ah));
+    var vay = -SPEED * Math.cos(toRad(state.ah));
+    var vbx = SPEED * Math.sin(toRad(state.bh));
+    var vby = -SPEED * Math.cos(toRad(state.bh));
+    var drx = state.ax - state.bx;
+    var dry = state.ay - state.by;
+    var dvx = vax - vbx;
+    var dvy = vay - vby;
+    var dvSq = dvx * dvx + dvy * dvy;
+    if (dvSq < 0.001) {
+      return Math.sqrt(drx * drx + dry * dry);
+    }
+    var t = -(drx * dvx + dry * dvy) / dvSq;
+    if (t < 0) t = 0;
+    var cx = drx + dvx * t;
+    var cy = dry + dvy * t;
+    return Math.sqrt(cx * cx + cy * cy);
+  }
+
+  function render() {
+    shipAGroup.setAttribute('transform', 'translate(' + state.ax + ',' + state.ay + ')');
+    shipBGroup.setAttribute('transform', 'translate(' + state.bx + ',' + state.by + ')');
+    shipAIcon.setAttribute('transform', 'rotate(' + state.ah + ')');
+    shipBIcon.setAttribute('transform', 'rotate(' + state.bh + ')');
+
+    sliderA.value = state.ah;
+    sliderB.value = state.bh;
+    valA.textContent = pad(state.ah) + '\u00B0';
+    valB.textContent = pad(state.bh) + '\u00B0';
+
+    var brgAB = bearingFromTo(state.ax, state.ay, state.bx, state.by);
+    var brgBA = bearingFromTo(state.bx, state.by, state.ax, state.ay);
+    var relBrg = normAngle(brgAB - state.ah);
+    var cpa = computeCPA();
+    var dist = Math.sqrt(Math.pow(state.ax - state.bx, 2) + Math.pow(state.ay - state.by, 2));
+
+    readAB.textContent = pad(brgAB) + '\u00B0';
+    readBA.textContent = pad(brgBA) + '\u00B0';
+    readRel.textContent = pad(relBrg) + '\u00B0';
+    readCPA.textContent = Math.round(cpa) + ' px';
+
+    var isDanger = cpa < 80 && relBrg > 10 && relBrg < 130;
+    var isWarning = cpa < 140 && relBrg > 350 || (relBrg > 5 && relBrg < 140);
+
+    if (isDanger) {
+      readStatus.textContent = 'Nguy hiem \u2014 Can chuyen huong';
+      readStatus.className = 'status-badge status-danger';
+    } else if (isWarning && cpa < 160) {
+      readStatus.textContent = 'Canh bao \u2014 Theo doi';
+      readStatus.className = 'status-badge status-warning';
+    } else {
+      readStatus.textContent = 'An toan';
+      readStatus.className = 'status-badge status-safe';
+    }
+
+    renderDangerZone(relBrg, dist);
+    renderBearings(brgAB, brgBA);
+    renderCPALine();
+    renderActionArrow(isDanger || (isWarning && cpa < 160));
+  }
+
+  function renderDangerZone(relBrg, dist) {
+    dangerZone.innerHTML = '';
+    if (!state.showDanger) return;
+
+    var arcRadius = Math.min(180, dist * 0.6);
+    var startAngle = state.ah + 10;
+    var endAngle = state.ah + 112.5;
+    var x1 = state.ax + arcRadius * Math.sin(toRad(startAngle));
+    var y1 = state.ay - arcRadius * Math.cos(toRad(startAngle));
+    var x2 = state.ax + arcRadius * Math.sin(toRad(endAngle));
+    var y2 = state.ay - arcRadius * Math.cos(toRad(endAngle));
+
+    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    var d = 'M ' + state.ax + ' ' + state.ay +
+            ' L ' + x1 + ' ' + y1 +
+            ' A ' + arcRadius + ' ' + arcRadius + ' 0 0 1 ' + x2 + ' ' + y2 +
+            ' Z';
+    path.setAttribute('d', d);
+    path.setAttribute('fill', 'var(--danger)');
+    path.setAttribute('opacity', '0.12');
+    path.setAttribute('stroke', 'var(--danger)');
+    path.setAttribute('stroke-width', '1');
+    path.setAttribute('stroke-dasharray', '4 3');
+    dangerZone.appendChild(path);
+
+    var midAngle = (startAngle + endAngle) / 2;
+    var labelR = arcRadius + 14;
+    var lx = state.ax + labelR * Math.sin(toRad(midAngle));
+    var ly = state.ay - labelR * Math.cos(toRad(midAngle));
+    var label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', lx);
+    label.setAttribute('y', ly);
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('fill', 'var(--danger)');
+    label.setAttribute('font-size', '10');
+    label.setAttribute('font-weight', '400');
+    label.setAttribute('font-family', 'var(--font)');
+    label.setAttribute('opacity', '0.8');
+    label.textContent = 'Vung nguy hiem';
+    dangerZone.appendChild(label);
+  }
+
+  function renderBearings(brgAB, brgBA) {
+    bearingLines.innerHTML = '';
+    if (!state.showBearings) return;
+
+    var len = 260;
+
+    var endAx = state.ax + len * Math.sin(toRad(brgAB));
+    var endAy = state.ay - len * Math.cos(toRad(brgAB));
+    var lineA = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    lineA.setAttribute('x1', state.ax);
+    lineA.setAttribute('y1', state.ay);
+    lineA.setAttribute('x2', endAx);
+    lineA.setAttribute('y2', endAy);
+    lineA.setAttribute('stroke', 'var(--warning)');
+    lineA.setAttribute('stroke-width', '1');
+    lineA.setAttribute('stroke-dasharray', '6 4');
+    lineA.setAttribute('opacity', '0.6');
+    bearingLines.appendChild(lineA);
+
+    var midAx = state.ax + (len * 0.55) * Math.sin(toRad(brgAB));
+    var midAy = state.ay - (len * 0.55) * Math.cos(toRad(brgAB));
+    var labelA = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    labelA.setAttribute('x', midAx + 10);
+    labelA.setAttribute('y', midAy);
+    labelA.setAttribute('fill', 'var(--warning)');
+    labelA.setAttribute('font-size', '10');
+    labelA.setAttribute('font-weight', '400');
+    labelA.setAttribute('font-family', 'var(--font)');
+    labelA.setAttribute('opacity', '0.8');
+    labelA.textContent = pad(brgAB) + '\u00B0';
+    bearingLines.appendChild(labelA);
+
+    var endBx = state.bx + len * Math.sin(toRad(brgBA));
+    var endBy = state.by - len * Math.cos(toRad(brgBA));
+    var lineB = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    lineB.setAttribute('x1', state.bx);
+    lineB.setAttribute('y1', state.by);
+    lineB.setAttribute('x2', endBx);
+    lineB.setAttribute('y2', endBy);
+    lineB.setAttribute('stroke', 'var(--accent)');
+    lineB.setAttribute('stroke-width', '1');
+    lineB.setAttribute('stroke-dasharray', '6 4');
+    lineB.setAttribute('opacity', '0.6');
+    bearingLines.appendChild(lineB);
+
+    var midBx = state.bx + (len * 0.55) * Math.sin(toRad(brgBA));
+    var midBy = state.by - (len * 0.55) * Math.cos(toRad(brgBA));
+    var labelB = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    labelB.setAttribute('x', midBx + 10);
+    labelB.setAttribute('y', midBy);
+    labelB.setAttribute('fill', 'var(--accent)');
+    labelB.setAttribute('font-size', '10');
+    labelB.setAttribute('font-weight', '400');
+    labelB.setAttribute('font-family', 'var(--font)');
+    labelB.setAttribute('opacity', '0.8');
+    labelB.textContent = pad(brgBA) + '\u00B0';
+    bearingLines.appendChild(labelB);
+
+    var headAx = state.ax + 90 * Math.sin(toRad(state.ah));
+    var headAy = state.ay - 90 * Math.cos(toRad(state.ah));
+    var hLineA = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    hLineA.setAttribute('x1', state.ax);
+    hLineA.setAttribute('y1', state.ay);
+    hLineA.setAttribute('x2', headAx);
+    hLineA.setAttribute('y2', headAy);
+    hLineA.setAttribute('stroke', 'var(--warning)');
+    hLineA.setAttribute('stroke-width', '1.5');
+    hLineA.setAttribute('opacity', '0.35');
+    hLineA.setAttribute('marker-end', 'url(#arrow-accent)');
+    bearingLines.appendChild(hLineA);
+
+    var headBx = state.bx + 90 * Math.sin(toRad(state.bh));
+    var headBy = state.by - 90 * Math.cos(toRad(state.bh));
+    var hLineB = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    hLineB.setAttribute('x1', state.bx);
+    hLineB.setAttribute('y1', state.by);
+    hLineB.setAttribute('x2', headBx);
+    hLineB.setAttribute('y2', headBy);
+    hLineB.setAttribute('stroke', 'var(--accent)');
+    hLineB.setAttribute('stroke-width', '1.5');
+    hLineB.setAttribute('opacity', '0.35');
+    hLineB.setAttribute('marker-end', 'url(#arrow-accent)');
+    bearingLines.appendChild(hLineB);
+  }
+
+  function renderCPALine() {
+    cpaLine.innerHTML = '';
+    if (!state.showBearings) return;
+
+    var vax = SPEED * Math.sin(toRad(state.ah));
+    var vay = -SPEED * Math.cos(toRad(state.ah));
+    var vbx = SPEED * Math.sin(toRad(state.bh));
+    var vby = -SPEED * Math.cos(toRad(state.bh));
+    var drx = state.ax - state.bx;
+    var dry = state.ay - state.by;
+    var dvx = vax - vbx;
+    var dvy = vay - vby;
+    var dvSq = dvx * dvx + dvy * dvy;
+    if (dvSq < 0.001) return;
+    var t = Math.max(0, -(drx * dvx + dry * dvy) / dvSq);
+    if (t > 50) return;
+
+    var cpAx = state.ax + vax * t;
+    var cpAy = state.ay + vay * t;
+    var cpBx = state.bx + vbx * t;
+    var cpBy = state.by + vby * t;
+
+    var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', cpAx);
+    line.setAttribute('y1', cpAy);
+    line.setAttribute('x2', cpBx);
+    line.setAttribute('y2', cpBy);
+    line.setAttribute('stroke', 'var(--danger)');
+    line.setAttribute('stroke-width', '1');
+    line.setAttribute('stroke-dasharray', '3 3');
+    line.setAttribute('opacity', '0.5');
+    cpaLine.appendChild(line);
+
+    var mx = (cpAx + cpBx) / 2;
+    var my = (cpAy + cpBy) / 2;
+    var label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', mx);
+    label.setAttribute('y', my - 6);
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('fill', 'var(--danger)');
+    label.setAttribute('font-size', '9');
+    label.setAttribute('font-weight', '400');
+    label.setAttribute('font-family', 'var(--font)');
+    label.setAttribute('opacity', '0.7');
+    label.textContent = 'CPA';
+    cpaLine.appendChild(label);
+
+    var trailA = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    trailA.setAttribute('x1', state.ax);
+    trailA.setAttribute('y1', state.ay);
+    trailA.setAttribute('x2', cpAx);
+    trailA.setAttribute('y2', cpAy);
+    trailA.setAttribute('stroke', 'var(--warning)');
+    trailA.setAttribute('stroke-width', '0.8');
+    trailA.setAttribute('stroke-dasharray', '2 4');
+    trailA.setAttribute('opacity', '0.3');
+    cpaLine.appendChild(trailA);
+
+    var trailB = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    trailB.setAttribute('x1', state.bx);
+    trailB.setAttribute('y1', state.by);
+    trailB.setAttribute('x2', cpBx);
+    trailB.setAttribute('y2', cpBy);
+    trailB.setAttribute('stroke', 'var(--accent)');
+    trailB.setAttribute('stroke-width', '0.8');
+    trailB.setAttribute('stroke-dasharray', '2 4');
+    trailB.setAttribute('opacity', '0.3');
+    cpaLine.appendChild(trailB);
+  }
+
+  function renderActionArrow(showAction) {
+    actionArrows.innerHTML = '';
+    if (!showAction) return;
+
+    var turnAngle = state.ah + 40;
+    var arrowLen = 60;
+    var startX = state.ax + 24 * Math.sin(toRad(state.ah));
+    var startY = state.ay - 24 * Math.cos(toRad(state.ah));
+    var arcMid = state.ah + 20;
+    var midX = state.ax + (arrowLen * 0.6) * Math.sin(toRad(arcMid));
+    var midY = state.ay - (arrowLen * 0.6) * Math.cos(toRad(arcMid));
+    var endX = state.ax + arrowLen * Math.sin(toRad(turnAngle));
+    var endY = state.ay - arrowLen * Math.cos(toRad(turnAngle));
+
+    var arrow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    var d = 'M ' + startX + ' ' + startY + ' Q ' + midX + ' ' + midY + ' ' + endX + ' ' + endY;
+    arrow.setAttribute('d', d);
+    arrow.setAttribute('fill', 'none');
+    arrow.setAttribute('stroke', 'var(--success)');
+    arrow.setAttribute('stroke-width', '2');
+    arrow.setAttribute('marker-end', 'url(#arrow-green)');
+    arrow.setAttribute('opacity', '0.8');
+    actionArrows.appendChild(arrow);
+
+    var labelX = endX + 8 * Math.sin(toRad(turnAngle + 90));
+    var labelY = endY - 8 * Math.cos(toRad(turnAngle + 90));
+    var label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', labelX);
+    label.setAttribute('y', labelY);
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('fill', 'var(--success)');
+    label.setAttribute('font-size', '10');
+    label.setAttribute('font-weight', '500');
+    label.setAttribute('font-family', 'var(--font)');
+    label.textContent = 'Chuyen phai';
+    actionArrows.appendChild(label);
+  }
+
+  var drag = { active: false, ship: null, offsetX: 0, offsetY: 0 };
+
+  function startDrag(ship, evt) {
+    evt.preventDefault();
+    drag.active = true;
+    drag.ship = ship;
+    var pt = svgPoint(evt.touches ? evt.touches[0] : evt);
+    if (ship === 'a') {
+      drag.offsetX = pt.x - state.ax;
+      drag.offsetY = pt.y - state.ay;
+    } else {
+      drag.offsetX = pt.x - state.bx;
+      drag.offsetY = pt.y - state.by;
+    }
+    state.selected = ship;
+    svg.style.cursor = 'grabbing';
+  }
+
+  function onMove(evt) {
+    if (!drag.active) return;
+    evt.preventDefault();
+    var pt = svgPoint(evt.touches ? evt.touches[0] : evt);
+    var nx = pt.x - drag.offsetX;
+    var ny = pt.y - drag.offsetY;
+    nx = Math.max(40, Math.min(760, nx));
+    ny = Math.max(40, Math.min(560, ny));
+    if (drag.ship === 'a') { state.ax = nx; state.ay = ny; }
+    else { state.bx = nx; state.by = ny; }
+    render();
+  }
+
+  function endDrag() {
+    if (drag.active) {
+      report('ship_moved', { ship: drag.ship, x: drag.ship === 'a' ? state.ax : state.bx, y: drag.ship === 'a' ? state.ay : state.by }, 'Tau ' + drag.ship.toUpperCase() + ' da di chuyen', 'info');
+    }
+    drag.active = false;
+    drag.ship = null;
+    svg.style.cursor = '';
+  }
+
+  shipAGroup.addEventListener('mousedown', function (e) { startDrag('a', e); });
+  shipAGroup.addEventListener('touchstart', function (e) { startDrag('a', e); }, { passive: false });
+  shipBGroup.addEventListener('mousedown', function (e) { startDrag('b', e); });
+  shipBGroup.addEventListener('touchstart', function (e) { startDrag('b', e); }, { passive: false });
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('mouseup', endDrag);
+  document.addEventListener('touchend', endDrag);
+
+  shipAGroup.addEventListener('focus', function () { state.selected = 'a'; });
+  shipBGroup.addEventListener('focus', function () { state.selected = 'b'; });
+
+  document.addEventListener('keydown', function (e) {
+    if (!state.selected) return;
+    var step = 5;
+    var rotStep = 5;
+    var handled = true;
+    if (e.key === 'ArrowLeft') {
+      if (state.selected === 'a') state.ax = Math.max(40, state.ax - step);
+      else state.bx = Math.max(40, state.bx - step);
+    } else if (e.key === 'ArrowRight') {
+      if (state.selected === 'a') state.ax = Math.min(760, state.ax + step);
+      else state.bx = Math.min(760, state.bx + step);
+    } else if (e.key === 'ArrowUp') {
+      if (state.selected === 'a') state.ay = Math.max(40, state.ay - step);
+      else state.by = Math.max(40, state.by - step);
+    } else if (e.key === 'ArrowDown') {
+      if (state.selected === 'a') state.ay = Math.min(560, state.ay + step);
+      else state.by = Math.min(560, state.by + step);
+    } else if (e.key === '+' || e.key === '=') {
+      if (state.selected === 'a') state.ah = normAngle(state.ah + rotStep);
+      else state.bh = normAngle(state.bh + rotStep);
+      report('heading_changed', { ship: state.selected.toUpperCase(), heading: state.selected === 'a' ? state.ah : state.bh }, 'Huong tau thay doi', 'info');
+    } else if (e.key === '-' || e.key === '_') {
+      if (state.selected === 'a') state.ah = normAngle(state.ah - rotStep);
+      else state.bh = normAngle(state.bh - rotStep);
+      report('heading_changed', { ship: state.selected.toUpperCase(), heading: state.selected === 'a' ? state.ah : state.bh }, 'Huong tau thay doi', 'info');
+    } else {
+      handled = false;
+    }
+    if (handled) { e.preventDefault(); render(); }
+  });
+
+  sliderA.addEventListener('input', function () {
+    state.ah = parseInt(this.value, 10);
+    render();
+    report('heading_changed', { ship: 'A', heading: state.ah }, 'Huong Tau A: ' + pad(state.ah) + '\u00B0', 'info');
+  });
+
+  sliderB.addEventListener('input', function () {
+    state.bh = parseInt(this.value, 10);
+    render();
+    report('heading_changed', { ship: 'B', heading: state.bh }, 'Huong Tau B: ' + pad(state.bh) + '\u00B0', 'info');
+  });
+
+  toggleDanger.addEventListener('change', function () {
+    state.showDanger = this.checked;
+    render();
+    report('danger_zone_status', { visible: state.showDanger }, 'Vung nguy hiem: ' + (state.showDanger ? 'hien' : 'an'), 'info');
+  });
+
+  toggleBearings.addEventListener('change', function () {
+    state.showBearings = this.checked;
+    render();
+  });
+
+  btnReset.addEventListener('click', function () {
+    state.ax = DEFAULTS.ax; state.ay = DEFAULTS.ay; state.ah = DEFAULTS.ah;
+    state.bx = DEFAULTS.bx; state.by = DEFAULTS.by; state.bh = DEFAULTS.bh;
+    state.showDanger = true; state.showBearings = true;
+    toggleDanger.checked = true; toggleBearings.checked = true;
+    render();
+    report('ship_moved', { reset: true }, 'Da dat lai vi tri mac dinh', 'info');
+  });
+
+  document.querySelectorAll('.annotation-header').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var ann = this.closest('.annotation');
+      var wasOpen = ann.classList.contains('open');
+      ann.classList.toggle('open');
+      this.setAttribute('aria-expanded', !wasOpen);
+      if (!wasOpen) {
+        var name = ann.querySelector('.annotation-text').textContent.substring(0, 40);
+        report('annotation_viewed', { section: ann.id }, name, 'info');
+      }
+    });
+  });
+
+  render();
+})();
+</script>

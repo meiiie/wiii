@@ -1,9 +1,59 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { ToolExecutionStrip } from "@/components/chat/ToolExecutionStrip";
 import type { ToolExecutionBlockData } from "@/api/types";
+import { useCodeStudioStore } from "@/stores/code-studio-store";
 
 describe("ToolExecutionStrip", () => {
+  beforeEach(() => {
+    useCodeStudioStore.setState({
+      activeSessionId: null,
+      sessions: {},
+    });
+  });
+
+  it("renders CodeStudioCard when tool_create_visual_code returns a visual_session_id in result payload", () => {
+    useCodeStudioStore.setState({
+      activeSessionId: "vs_app_1",
+      sessions: {
+        vs_app_1: {
+          sessionId: "vs_app_1",
+          title: "Pendulum App",
+          language: "html",
+          status: "complete",
+          code: "<div>app</div>",
+          versions: [{ version: 1, code: "<div>app</div>", title: "Pendulum App", timestamp: Date.now() }],
+          activeVersion: 1,
+          chunkCount: 1,
+          totalBytes: 14,
+          createdAt: Date.now(),
+          metadata: { studioLane: "app" },
+        },
+      },
+    });
+
+    const block: ToolExecutionBlockData = {
+      type: "tool_execution",
+      id: "tool-code-1",
+      status: "completed",
+      tool: {
+        id: "tool-code-1",
+        name: "tool_create_visual_code",
+        args: {
+          title: "Pendulum App",
+        },
+        result: JSON.stringify({
+          visual_session_id: "vs_app_1",
+        }),
+      },
+    };
+
+    render(<ToolExecutionStrip block={block} />);
+
+    expect(screen.getByText("Code Studio")).toBeTruthy();
+    expect(screen.getByText("Pendulum App")).toBeTruthy();
+  });
+
   it("hides raw python code and filesystem paths by default", () => {
     const block: ToolExecutionBlockData = {
       type: "tool_execution",

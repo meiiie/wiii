@@ -16,11 +16,11 @@ import { InlineVisualFrame } from "@/components/common/InlineVisualFrame";
 type StudioTab = "code" | "preview";
 
 export const CodeStudioPanel = memo(function CodeStudioPanel() {
-  const { codeStudioPanelOpen, closeCodeStudio } = useUIStore();
-  const activeSessionId = useCodeStudioStore((s) => s.activeSessionId);
-  const sessions = useCodeStudioStore((s) => s.sessions);
-
-  const session = activeSessionId ? sessions[activeSessionId] : null;
+  const codeStudioPanelOpen = useUIStore((s) => s.codeStudioPanelOpen);
+  const closeCodeStudio = useUIStore((s) => s.closeCodeStudio);
+  const session = useCodeStudioStore((s) =>
+    s.activeSessionId ? s.sessions[s.activeSessionId] : null,
+  );
 
   if (!codeStudioPanelOpen || !session) return null;
 
@@ -47,16 +47,40 @@ const CodeStudioContent = memo(function CodeStudioContent({
   session: CodeStudioSession;
   onClose: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<StudioTab>("code");
+  const explicitRequestedView = (session.metadata as Record<string, unknown> | undefined)
+    ?.requestedView as StudioTab | undefined;
+  const preferredTab = explicitRequestedView === "preview" ? "preview" : "code";
+  const setRequestedView = useCodeStudioStore((s) => s.setRequestedView);
+  const [activeTab, setActiveTab] = useState<StudioTab>(preferredTab);
   const switchVersion = useCodeStudioStore((s) => s.switchVersion);
   const isStreaming = session.status === "streaming";
+  const showPreviewBadge = session.status === "complete" && activeTab === "code";
 
-  // Auto-switch to preview when code completes
   useEffect(() => {
-    if (session.status === "complete") {
-      setActiveTab("preview");
-    }
-  }, [session.status]);
+    setActiveTab(preferredTab);
+  }, [preferredTab, session.sessionId, session.activeVersion, session.status]);
+
+  useEffect(() => {
+    if (session.status !== "complete" || !session.code) return;
+    if (explicitRequestedView === "code" || activeTab === "preview") return;
+    setActiveTab("preview");
+    setRequestedView(session.sessionId, "preview");
+  }, [
+    activeTab,
+    explicitRequestedView,
+    session.code,
+    session.sessionId,
+    session.status,
+    setRequestedView,
+  ]);
+
+  const handleSelectTab = useCallback(
+    (tab: StudioTab) => {
+      setActiveTab(tab);
+      setRequestedView(session.sessionId, tab);
+    },
+    [session.sessionId, setRequestedView],
+  );
 
   return (
     <>
@@ -95,14 +119,15 @@ const CodeStudioContent = memo(function CodeStudioContent({
           icon={Code2}
           label="Code"
           active={activeTab === "code"}
-          onClick={() => setActiveTab("code")}
+          onClick={() => handleSelectTab("code")}
         />
         <TabButton
           icon={Eye}
           label="Preview"
           active={activeTab === "preview"}
-          onClick={() => setActiveTab("preview")}
+          onClick={() => handleSelectTab("preview")}
           disabled={isStreaming}
+          badge={showPreviewBadge}
         />
       </div>
 
@@ -140,18 +165,20 @@ function TabButton({
   active,
   onClick,
   disabled,
+  badge,
 }: {
   icon: typeof Code2;
   label: string;
   active: boolean;
   onClick: () => void;
   disabled?: boolean;
+  badge?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors ${
+      className={`relative flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors ${
         active
           ? "text-[var(--accent)]"
           : disabled
@@ -161,6 +188,9 @@ function TabButton({
     >
       <Icon size={14} />
       {label}
+      {badge && (
+        <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse" />
+      )}
     </button>
   );
 }
@@ -170,32 +200,37 @@ function CodeTab({ session }: { session: CodeStudioSession }) {
   const codeEndRef = useRef<HTMLDivElement>(null);
   const isStreaming = session.status === "streaming";
 
-  // Auto-scroll to bottom during streaming
+  // Auto-scroll to bottom during streaming (debounced via RAF)
   useEffect(() => {
-    if (isStreaming && codeEndRef.current) {
-      codeEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [session.code, isStreaming]);
+    if (!isStreaming) return;
+    const rafId = requestAnimationFrame(() => {
+      codeEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [session.chunkCount, isStreaming]);
 
   const handleCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(session.code);
+      const s = useCodeStudioStore.getState().sessions[session.sessionId];
+      if (s) await navigator.clipboard.writeText(s.code);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Ignore clipboard errors.
     }
-  }, [session.code]);
+  }, [session.sessionId]);
 
   const handleDownload = useCallback(() => {
-    const blob = new Blob([session.code], { type: "text/html" });
+    const s = useCodeStudioStore.getState().sessions[session.sessionId];
+    if (!s) return;
+    const blob = new Blob([s.code], { type: "text/html" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${session.title.replace(/\s+/g, "_").toLowerCase()}.html`;
+    a.download = `${s.title.replace(/\s+/g, "_").toLowerCase()}.html`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [session.code, session.title]);
+  }, [session.sessionId]);
 
   const lineCount = session.code.split("\n").length;
 

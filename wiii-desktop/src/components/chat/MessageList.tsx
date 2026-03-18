@@ -159,6 +159,7 @@ export function MessageList({
                   thinkingLevel={thinking_level}
                   isStreaming
                   livePhases={streamingPhases}
+                  onSuggestedQuestion={onSuggestedQuestion}
                 />
 
                 {/* Sprint V5: Minimal-clean thinking indicator — only before ANY content arrives */}

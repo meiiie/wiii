@@ -317,6 +317,12 @@ function getVisualSessionId(visual: Pick<VisualPayload, "visual_session_id" | "i
   return visual.visual_session_id || visual.id;
 }
 
+const VISUAL_TOOL_EXECUTION_NAMES = new Set([
+  "tool_generate_visual",
+  "tool_generate_rich_visual",
+  "tool_create_visual_code",
+]);
+
 function getDefaultVisualControlValues(visual: VisualPayload): Record<string, string | number | boolean> {
   const values: Record<string, string | number | boolean> = {};
   for (const control of visual.controls || []) {
@@ -406,6 +412,42 @@ function upsertVisualBlockDraft(
     displayRole: "artifact",
     presentation: "compact",
   } as VisualBlockData, meta));
+}
+
+function attachVisualSessionIdToToolExecutionDraft(
+  state: Pick<ChatState, "streamingBlocks" | "streamingToolCalls">,
+  sessionId: string,
+  sourceTool?: string,
+  node?: string,
+): void {
+  const matchingToolName = sourceTool && VISUAL_TOOL_EXECUTION_NAMES.has(sourceTool)
+    ? sourceTool
+    : undefined;
+
+  for (let i = state.streamingBlocks.length - 1; i >= 0; i--) {
+    const block = state.streamingBlocks[i];
+    if (block.type !== "tool_execution") continue;
+    const toolBlock = block as ToolExecutionBlockData;
+    if (!VISUAL_TOOL_EXECUTION_NAMES.has(toolBlock.tool.name)) continue;
+    if (matchingToolName && toolBlock.tool.name !== matchingToolName) continue;
+    if (node && toolBlock.node && toolBlock.node !== node) continue;
+
+    const args = toolBlock.tool.args || {};
+    if (typeof args.visual_session_id === "string" && args.visual_session_id) return;
+    toolBlock.tool.args = {
+      ...args,
+      visual_session_id: sessionId,
+    };
+
+    const flatToolCall = state.streamingToolCalls.find((tc) => tc.id === toolBlock.tool.id);
+    if (flatToolCall) {
+      flatToolCall.args = {
+        ...(flatToolCall.args || {}),
+        visual_session_id: sessionId,
+      };
+    }
+    return;
+  }
 }
 
 function upsertPersistedVisualBlockDraft(
@@ -1092,6 +1134,12 @@ export const useChatStore = create<ChatState>()(
       set((state) => {
         const sessionId = getVisualSessionId(visual);
         const existing = state.visualSessions[sessionId];
+        attachVisualSessionIdToToolExecutionDraft(
+          state,
+          sessionId,
+          typeof visual.metadata?.source_tool === "string" ? visual.metadata.source_tool : undefined,
+          node,
+        );
         state.visualSessions[sessionId] = {
           sessionId,
           latestVisual: visual,
@@ -1114,6 +1162,12 @@ export const useChatStore = create<ChatState>()(
       set((state) => {
         const sessionId = getVisualSessionId(visual);
         const existing = state.visualSessions[sessionId];
+        attachVisualSessionIdToToolExecutionDraft(
+          state,
+          sessionId,
+          typeof visual.metadata?.source_tool === "string" ? visual.metadata.source_tool : undefined,
+          node,
+        );
         state.visualSessions[sessionId] = {
           sessionId,
           latestVisual: visual,
@@ -1258,6 +1312,10 @@ export const useChatStore = create<ChatState>()(
           correct_count: item.correct_count,
           total_count: item.total_count,
           source: item.source,
+          payload: item.payload || item.data,
+          session_id: item.session_id,
+          message_id: item.message_id,
+          version: item.version,
           timestamp: item.timestamp,
         })),
       };

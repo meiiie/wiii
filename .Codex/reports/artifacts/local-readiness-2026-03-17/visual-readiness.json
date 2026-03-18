@@ -1,0 +1,30 @@
+[
+  {
+    "prompt": "Explain Kimi linear attention in charts",
+    "figure_count": "2",
+    "title": "Kiến trúc Kimi Linear Attention",
+    "excerpt": "architecture\nKiến trúc Kimi Linear Attention\n\nKiến trúc được tách thành 3 lớp chính và cách chúng kết nối với nhau.\n\nLớp đang xem\n\nTất cả\nInput Sequence\nKimi Delta Attention (KDA)\nOutput Representation\nHệ thống nhiều lớp\n\nKIẾN TRÚC HỆ THỐNG\n\nDòng chảy qua các lớp hệ thống\nLỚP NHẬP\n\nNhận input và đặt nhịp cho toàn bộ luồng giải thích.\n\n1\n\nLỚP 1\n\nInput Sequence\nTẦNG 1\n\nDòng dữ liệu đầu vào (tokens)\n\nToken 1\nToken 2\nToken 3\n...\nCHUYỂN VÙNG\nVÙNG ĐIỀU PHỐI\n\nCác lớp giữa phối hợp với nhau để render, patch, và giữ visual session ổn định.\n\n2\n\nLỚP 2\n\nKimi Delta Attention (KDA)\nTẦNG 2\n\nCơ chế gating the",
+    "reasoning_count": 5
+  },
+  {
+    "prompt": "Gi? visual hi?n t?i, ??i th?nh 3 b??c r? r?ng h?n",
+    "figure_count": "2",
+    "title": "Kiến trúc Kimi Linear Attention",
+    "excerpt": "architecture\nKiến trúc Kimi Linear Attention\n\nKiến trúc được tách thành 3 lớp chính và cách chúng kết nối với nhau.\n\nLớp đang xem\n\nTất cả\nInput Sequence\nKimi Delta Attention (KDA)\nOutput Representation\nHệ thống nhiều lớp\n\nKIẾN TRÚC HỆ THỐNG\n\nDòng chảy qua các lớp hệ thống\nLỚP NHẬP\n\nNhận input và đặt nhịp cho toàn bộ luồng giải thích.\n\n1\n\nLỚP 1\n\nInput Sequence\nTẦNG 1\n\nDòng dữ liệu đầu vào (tokens)\n\nToken 1\nToken 2\nToken 3\n...\nCHUYỂN VÙNG\nVÙNG ĐIỀU PHỐI\n\nCác lớp giữa phối hợp với nhau để render, patch, và giữ visual session ổn định.\n\n2\n\nLỚP 2\n\nKimi Delta Attention (KDA)\nTẦNG 2\n\nCơ chế gating the",
+    "reasoning_count": 8
+  },
+  {
+    "prompt": "Bi?n ph?n n?y th?nh s? ?? process d? hi?u h?n, ?t k? thu?t h?n",
+    "figure_count": "2",
+    "title": "Kiến trúc Kimi Linear Attention",
+    "excerpt": "architecture\nKiến trúc Kimi Linear Attention\n\nKiến trúc được tách thành 3 lớp chính và cách chúng kết nối với nhau.\n\nLớp đang xem\n\nTất cả\nInput Sequence\nKimi Delta Attention (KDA)\nOutput Representation\nHệ thống nhiều lớp\n\nKIẾN TRÚC HỆ THỐNG\n\nDòng chảy qua các lớp hệ thống\nLỚP NHẬP\n\nNhận input và đặt nhịp cho toàn bộ luồng giải thích.\n\n1\n\nLỚP 1\n\nInput Sequence\nTẦNG 1\n\nDòng dữ liệu đầu vào (tokens)\n\nToken 1\nToken 2\nToken 3\n...\nCHUYỂN VÙNG\nVÙNG ĐIỀU PHỐI\n\nCác lớp giữa phối hợp với nhau để render, patch, và giữ visual session ổn định.\n\n2\n\nLỚP 2\n\nKimi Delta Attention (KDA)\nTẦNG 2\n\nCơ chế gating the",
+    "reasoning_count": 12
+  },
+  {
+    "prompt": "T? ??m bottleneck ch?nh v? l?m ph?n takeaway ng?n g?n h?n",
+    "figure_count": "2",
+    "title": "Kiến trúc Kimi Linear Attention",
+    "excerpt": "architecture\nKiến trúc Kimi Linear Attention\n\nKiến trúc được tách thành 3 lớp chính và cách chúng kết nối với nhau.\n\nLớp đang xem\n\nTất cả\nInput Sequence\nKimi Delta Attention (KDA)\nOutput Representation\nHệ thống nhiều lớp\n\nKIẾN TRÚC HỆ THỐNG\n\nDòng chảy qua các lớp hệ thống\nLỚP NHẬP\n\nNhận input và đặt nhịp cho toàn bộ luồng giải thích.\n\n1\n\nLỚP 1\n\nInput Sequence\nTẦNG 1\n\nDòng dữ liệu đầu vào (tokens)\n\nToken 1\nToken 2\nToken 3\n...\nCHUYỂN VÙNG\nVÙNG ĐIỀU PHỐI\n\nCác lớp giữa phối hợp với nhau để render, patch, và giữ visual session ổn định.\n\n2\n\nLỚP 2\n\nKimi Delta Attention (KDA)\nTẦNG 2\n\nCơ chế gating the",
+    "reasoning_count": 16
+  }
+]

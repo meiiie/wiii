@@ -17,6 +17,9 @@ DISPLAY_ROLE_BY_EVENT: dict[str, str] = {
     "action_text": "action",
     "answer": "answer",
     "artifact": "artifact",
+    "code_open": "artifact",
+    "code_delta": "artifact",
+    "code_complete": "artifact",
     "visual": "artifact",
     "visual_open": "artifact",
     "visual_patch": "artifact",
@@ -37,6 +40,9 @@ PRESENTATION_BY_EVENT: dict[str, str] = {
     "status": "compact",
     "answer": "compact",
     "artifact": "compact",
+    "code_open": "compact",
+    "code_delta": "compact",
+    "code_complete": "compact",
     "visual": "compact",
     "visual_open": "compact",
     "visual_patch": "compact",
@@ -116,6 +122,9 @@ def _step_state_for_event(event_type: str) -> str | None:
         "action_text",
         "browser_screenshot",
         "preview",
+        "code_open",
+        "code_delta",
+        "code_complete",
         "visual",
         "visual_open",
         "visual_patch",
@@ -343,7 +352,17 @@ def serialize_stream_event(
         )
         return [format_sse(event_type, data, event_id=event_counter)], event_counter, False
 
-    if event_type in {"artifact", "visual", "visual_open", "visual_patch", "visual_commit", "visual_dispose"}:
+    if event_type in {
+        "artifact",
+        "code_open",
+        "code_delta",
+        "code_complete",
+        "visual",
+        "visual_open",
+        "visual_patch",
+        "visual_commit",
+        "visual_dispose",
+    }:
         data = _apply_presentation_metadata(
             payload={
                 "content": event.content,

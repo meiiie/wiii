@@ -39,12 +39,6 @@ CORE_STRUCTURED_VISUAL_TYPES = (
     "map_lite",
 )
 
-LEGACY_SANDBOX_VISUAL_TYPES = (
-    "simulation",
-    "quiz",
-    "interactive_table",
-    "react_app",
-)
 
 
 class VisualPayloadV1(BaseModel):
@@ -72,6 +66,12 @@ class VisualPayloadV1(BaseModel):
     ] = "mechanism"
     chrome_mode: Literal["editorial", "app", "immersive"] = "editorial"
     claim: str = Field(min_length=1)
+    presentation_intent: Literal["text", "article_figure", "chart_runtime", "code_studio_app", "artifact"] = "article_figure"
+    figure_budget: int = Field(ge=1, le=3, default=1)
+    quality_profile: Literal["draft", "standard", "premium"] = "standard"
+    renderer_contract: Literal["host_shell", "chart_runtime", "article_figure"] = "article_figure"
+    studio_lane: Literal["app", "artifact", "widget"] | None = None
+    artifact_kind: Literal["html_app", "code_widget", "search_widget", "document", "chart_widget"] | None = None
     narrative_anchor: str = "after-lead"
     runtime: Literal["svg", "sandbox_html", "sandbox_react"]
     title: str = Field(min_length=1)
@@ -86,6 +86,10 @@ class VisualPayloadV1(BaseModel):
     subtitle: str | None = None
     fallback_html: str | None = None
     runtime_manifest: dict[str, Any] | None = None
+    artifact_handoff_available: bool = False
+    artifact_handoff_mode: Literal["none", "followup_prompt"] = "none"
+    artifact_handoff_label: str | None = None
+    artifact_handoff_prompt: str | None = None
     metadata: dict[str, Any] | None = None
 
 
@@ -278,6 +282,134 @@ def _get_runtime_visual_metadata() -> dict[str, Any]:
     if runtime and isinstance(runtime.metadata, dict):
         return runtime.metadata
     return {}
+
+
+def _runtime_metadata_text(key: str, default: str = "") -> str:
+    value = _get_runtime_visual_metadata().get(key, default)
+    return str(value or default).strip()
+
+
+def _runtime_metadata_int(key: str, default: int = 0) -> int:
+    value = _get_runtime_visual_metadata().get(key, default)
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def _runtime_presentation_intent() -> str:
+    return _runtime_metadata_text("presentation_intent", "text")
+
+
+def _runtime_renderer_contract() -> str:
+    return _runtime_metadata_text("renderer_contract", "")
+
+
+def _runtime_quality_profile() -> str:
+    return _runtime_metadata_text("quality_profile", "standard")
+
+
+def _runtime_studio_lane() -> str:
+    return _runtime_metadata_text("studio_lane", "")
+
+
+def _runtime_artifact_kind() -> str:
+    return _runtime_metadata_text("artifact_kind", "")
+
+
+def _runtime_code_studio_version() -> int:
+    return max(0, _runtime_metadata_int("code_studio_version", 0))
+
+
+def _runtime_visual_user_query() -> str:
+    return _runtime_metadata_text("visual_user_query", "")
+
+
+def _runtime_preferred_render_surface() -> str:
+    return _runtime_metadata_text("preferred_render_surface", "")
+
+
+def _runtime_planning_profile() -> str:
+    return _runtime_metadata_text("planning_profile", "")
+
+
+def _runtime_thinking_floor() -> str:
+    return _runtime_metadata_text("thinking_floor", "")
+
+
+def _runtime_critic_policy() -> str:
+    return _runtime_metadata_text("critic_policy", "")
+
+
+def _runtime_living_expression_mode() -> str:
+    return _runtime_metadata_text("living_expression_mode", "")
+
+
+def _metadata_text(metadata: dict[str, Any] | None, key: str, default: str = "") -> str:
+    if not isinstance(metadata, dict):
+        return default
+    value = metadata.get(key, default)
+    return str(value or default).strip()
+
+
+def _build_artifact_handoff(
+    *,
+    presentation_intent: str,
+    visual_type: str,
+    title: str,
+    summary: str,
+) -> dict[str, Any]:
+    if presentation_intent == "artifact":
+        return {
+            "available": False,
+            "mode": "none",
+            "label": None,
+            "prompt": None,
+        }
+
+    clean_title = _clean_summary_text(title) or _default_visual_title(visual_type)
+    clean_summary = _clean_summary_text(summary)
+
+    if presentation_intent == "code_studio_app":
+        prompt = (
+            f"Biến app inline '{clean_title}' này thành một artifact HTML hoàn chỉnh, mở trong Code Studio để tôi có thể "
+            "chỉnh sửa, lưu và chia sẻ tiếp. Giữ nguyên state model, controls, readouts, feedback hooks, và nâng chất lượng production nếu cần."
+        )
+    elif presentation_intent == "chart_runtime":
+        prompt = (
+            f"Biến chart inline '{clean_title}' này thành một artifact HTML/SVG hoàn chỉnh để tôi có thể chỉnh sửa, lưu và chia sẻ tiếp. "
+            "Giữ scale, units, legend, source/provenance, takeaway, và cho tôi quyền inspect/chỉnh tiếp như một artifact thật."
+        )
+    else:
+        prompt = (
+            f"Biến visual inline '{clean_title}' này thành một artifact HTML/SVG hoàn chỉnh để tôi có thể chỉnh sửa, lưu và chia sẻ tiếp. "
+            "Giữ claim, labels, annotations, và nâng trải nghiệm thành một artifact thật thay vì chỉ figure inline."
+        )
+
+    if clean_summary:
+        prompt += f" Context ngắn: {clean_summary}"
+
+    return {
+        "available": True,
+        "mode": "followup_prompt",
+        "label": "Mo thanh Artifact",
+        "prompt": prompt,
+    }
+
+
+def _llm_first_visual_codegen_enabled() -> bool:
+    from app.core.config import get_settings
+
+    return bool(getattr(get_settings(), "enable_llm_code_gen_visuals", False))
+
+
+def _should_keep_structured_renderer(requested: str = "") -> bool:
+    presentation_intent = _runtime_presentation_intent()
+    if presentation_intent not in {"article_figure", "chart_runtime"}:
+        return False
+    if requested.strip() == "inline_html":
+        return False
+    return _runtime_metadata_text("visual_intent_mode", "") != "inline_html"
 
 
 def _supports_auto_grouping(visual_type: str, renderer_kind: str) -> bool:
@@ -1102,15 +1234,15 @@ def _infer_renderer_kind(visual_type: str, spec: dict[str, Any], requested: str 
     candidate = requested.strip()
     if candidate in {"template", "inline_html", "app"}:
         return candidate
-    if visual_type in LEGACY_SANDBOX_VISUAL_TYPES:
-        return "app"
     if any(isinstance(spec.get(key), str) and str(spec.get(key)).strip() for key in ("html", "markup", "custom_html", "template_html")):
         return "inline_html"
+    if _runtime_presentation_intent() in {"article_figure", "chart_runtime"}:
+        return "inline_html" if _llm_first_visual_codegen_enabled() else "template"
 
     # Code-gen route: explanatory types with HTML builders → inline_html iframe
     from app.core.config import get_settings
     if getattr(get_settings(), "enable_code_gen_visuals", False):
-        if visual_type in _BUILDERS and visual_type not in LEGACY_SANDBOX_VISUAL_TYPES:
+        if visual_type in _BUILDERS:
             return "inline_html"
 
     return "template"
@@ -1123,6 +1255,25 @@ def _infer_runtime(renderer_kind: str, visual_type: str, spec: dict[str, Any]) -
         ui_runtime = str(spec.get("ui_runtime") or "")
         return "sandbox_react" if visual_type == "react_app" or ui_runtime == "react" else "sandbox_html"
     return "sandbox_html"
+
+
+def _resolve_renderer_kind(visual_type: str, spec: dict[str, Any], requested: str = "") -> str:
+    candidate = requested.strip()
+    if candidate in {"template", "inline_html", "app"}:
+        return candidate
+    if _should_keep_structured_renderer(candidate):
+        return "template"
+    if any(
+        isinstance(spec.get(key), str) and str(spec.get(key)).strip()
+        for key in ("html", "markup", "custom_html", "template_html")
+    ):
+        return "inline_html"
+    if _runtime_presentation_intent() in {"article_figure", "chart_runtime"}:
+        return "inline_html" if _llm_first_visual_codegen_enabled() else "template"
+    return "template"
+
+
+_infer_renderer_kind = _resolve_renderer_kind
 
 
 def _infer_shell_variant(renderer_kind: str, requested: str = "") -> str:
@@ -1181,6 +1332,1428 @@ def _resolve_code_html(
     return _wrap_html("\n".join(css_parts), body_content, title)
 
 
+def _validate_code_studio_output(
+    raw_html: str,
+    *,
+    requested_visual_type: str,
+    studio_lane: str,
+    artifact_kind: str,
+    quality_profile: str,
+) -> str | None:
+    lowered = raw_html.lower()
+
+    chart_like = requested_visual_type == "chart" or artifact_kind == "chart_widget"
+    uses_chart_runtime = any(
+        token in lowered
+        for token in (
+            "<svg",
+            "<canvas",
+            "chart.js",
+            "new chart(",
+            "plotly",
+            "echarts",
+            "apexcharts",
+            "vega",
+            "recharts",
+            "d3.",
+            "viewbox",
+        )
+    )
+    looks_like_handmade_div_chart = (
+        "chart-container" in lowered
+        and ("bar-group" in lowered or "bar-wrapper" in lowered or 'class=\"bar\"' in lowered or "class='bar'" in lowered)
+    )
+
+    if chart_like and looks_like_handmade_div_chart and not uses_chart_runtime:
+        return (
+            "Error: chart/data visual nay dang di vao Code Studio theo kieu demo thu cong "
+            "(div bars / CSS-only chart). Hay route qua chart_runtime/tool_generate_visual, "
+            "hoac neu that su can code widget thi dung SVG/Canvas/Chart.js voi axis, legend, "
+            "units, source, va takeaway ro rang."
+        )
+
+    if requested_visual_type == "simulation" and quality_profile == "premium":
+        preferred_surface = _runtime_preferred_render_surface() or "canvas"
+        has_canvas_surface = any(
+            token in lowered
+            for token in (
+                "<canvas",
+                "getcontext(",
+            )
+        )
+        has_render_surface = any(
+            token in lowered
+            for token in (
+                "<canvas",
+                "<svg",
+                "getcontext(",
+                "viewbox",
+                "id=\"sim\"",
+                "id='sim'",
+                "simulation-stage",
+                "sim-stage",
+            )
+        )
+        parameter_control_count = sum(
+            lowered.count(token)
+            for token in (
+                'type="range"',
+                "type='range'",
+                'type="number"',
+                "type='number'",
+                "<select",
+            )
+        )
+        has_live_readout = any(
+            token in lowered
+            for token in (
+                "innertext",
+                "textcontent",
+                "aria-live",
+                "readout",
+                "telemetry",
+                "velocity",
+                "angle",
+                "omega",
+                "theta",
+                "acceleration",
+                "thoi gian",
+                "goc lech",
+                "van toc",
+                "trang thai",
+                "status",
+            )
+        )
+        has_state_engine = any(
+            token in lowered
+            for token in (
+                "requestanimationframe",
+                "setinterval(",
+                "performance.now",
+                "deltatime",
+                "delta_time",
+                "time_step",
+                "timestep",
+                "velocity",
+                "acceleration",
+                "gravity",
+                "friction",
+                "omega",
+                "theta",
+            )
+        )
+        has_feedback_bridge = any(
+            token in lowered
+            for token in (
+                "window.wiiivisualbridge.reportresult",
+                "wiiivisualbridge.reportresult",
+                "reportresult(",
+            )
+        )
+        button_count = lowered.count("<button")
+
+        if preferred_surface == "canvas" and not has_canvas_surface:
+            return (
+                "Error: premium simulation nay dang chua dung Canvas-first runtime. "
+                "Hay dung canvas + render loop + state model ro rang, hoac de runtime "
+                "nang cap sang scaffold canvas phu hop truoc khi preview."
+            )
+
+        if (
+            not has_render_surface
+            or parameter_control_count < 1
+            or not has_live_readout
+            or not has_state_engine
+            or not has_feedback_bridge
+        ):
+            if button_count <= 2 and parameter_control_count == 0 and not has_render_surface:
+                return (
+                    "Error: premium simulation nay van qua giong demo minh hoa (vai div + nut bam) "
+                    "va chua dat bar cua Code Studio. Hay nang cap thanh mot mo phong that su: "
+                    "co render surface ro rang (canvas/svg), it nhat mot dieu khien tham so "
+                    "(slider/number/select), readout song (goc/van toc/trang thai), va state/time "
+                    "engine ro rang truoc khi preview."
+                )
+            if not has_feedback_bridge:
+                return (
+                    "Error: premium simulation can feedback bridge de Wiii biet nguoi dung "
+                    "da tuong tac gi. Hay goi window.WiiiVisualBridge.reportResult(...) "
+                    "cho cac hanh dong chinh hoac de runtime nang cap sang scaffold phu hop."
+                )
+            return (
+                "Error: premium simulation can runtime giau hon truoc khi preview. "
+                "Hay bo sung render surface ro rang, parameter controls, readout song, "
+                "va state/time engine thay vi mot canh minh hoa script qua don gian."
+            )
+
+    if studio_lane == "widget":
+        has_interaction = any(
+            token in lowered
+            for token in ("<button", "<input", "<select", "onclick=", "addeventlistener", "type=\"range\"", "type='range'")
+        )
+        if has_interaction and "reportresult" not in lowered:
+            return (
+                "Error: widget lane yeu cau feedback bridge. Hay goi "
+                "window.WiiiVisualBridge.reportResult(...) khi user tuong tac xong "
+                "de Wiii co the nho va phan hoi o luot sau."
+            )
+
+    return None
+
+
+def _looks_like_pendulum_simulation(raw_html: str, title: str, query: str) -> bool:
+    haystack = " ".join(part for part in (raw_html, title, query) if part).lower()
+    return any(
+        token in haystack
+        for token in (
+            "pendulum",
+            "con lac",
+            "con lắc",
+            "theta",
+            "omega",
+            "gravity",
+            "damping",
+            "dao dong",
+            "dao động",
+        )
+    )
+
+
+def _build_pendulum_simulation_scaffold(title: str, subtitle: str = "", query: str = "") -> str:
+    return _build_pendulum_simulation_scaffold_v2(title, subtitle, query)
+    safe_title = html_mod.escape(title.strip() or "Mini Pendulum Physics App")
+    safe_subtitle = html_mod.escape(
+        subtitle.strip() or "Kéo quả nặng để đổi góc lệch, rồi quan sát chuyển động theo trọng lực và damping."
+    )
+    normalized_query = " ".join(part for part in (title, subtitle, query) if part).lower()
+    wants_gravity = any(token in normalized_query for token in ("gravity", "trong luc", "trá»ng lá»±c"))
+    wants_damping = any(token in normalized_query for token in ("damping", "ma sat", "ma sÃ¡t", "friction"))
+    control_blocks: list[str] = []
+    if wants_gravity:
+        control_blocks.append(
+            """
+      <div class="pendulum-control">
+        <header><strong>Gravity</strong><span id="gravity-value">9.81 m/sÂ²</span></header>
+        <input id="gravity-slider" type="range" min="1" max="20" step="0.1" value="9.81" aria-label="Gravity" />
+      </div>
+""".strip("\n")
+        )
+    if wants_damping:
+        control_blocks.append(
+            """
+      <div class="pendulum-control">
+        <header><strong>Damping</strong><span id="damping-value">0.020</span></header>
+        <input id="damping-slider" type="range" min="0" max="0.12" step="0.002" value="0.02" aria-label="Damping" />
+      </div>
+""".strip("\n")
+        )
+    control_blocks.append(
+        """
+      <div class="pendulum-control">
+        <header><strong>Length</strong><span id="length-value">1.20 m</span></header>
+        <input id="length-slider" type="range" min="0.6" max="2.2" step="0.05" value="1.2" aria-label="Length" />
+      </div>
+""".strip("\n")
+    )
+    controls_markup = "\n".join(control_blocks)
+    return f"""
+<style>
+  .pendulum-lab {{
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(0, 1.55fr) minmax(240px, 0.95fr);
+    align-items: stretch;
+  }}
+  .pendulum-stage {{
+    position: relative;
+    min-height: 360px;
+    border-radius: 18px;
+    border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+    background:
+      radial-gradient(circle at top, rgba(37,99,235,0.10), transparent 42%),
+      linear-gradient(180deg, color-mix(in srgb, var(--bg2) 92%, white) 0%, color-mix(in srgb, var(--bg) 90%, white) 100%);
+    overflow: hidden;
+  }}
+  .pendulum-canvas {{
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    cursor: grab;
+  }}
+  .pendulum-canvas.is-dragging {{
+    cursor: grabbing;
+  }}
+  .pendulum-overlay {{
+    position: absolute;
+    inset: 12px 12px auto;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    pointer-events: none;
+    font-size: 12px;
+    color: var(--text2);
+  }}
+  .pendulum-chip {{
+    background: color-mix(in srgb, var(--bg) 82%, white);
+    border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+    border-radius: 999px;
+    padding: 6px 10px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  }}
+  .pendulum-panel {{
+    display: grid;
+    gap: 12px;
+    align-content: start;
+  }}
+  .pendulum-card {{
+    border-radius: 16px;
+    border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+    background: color-mix(in srgb, var(--bg) 95%, white);
+    padding: 14px;
+  }}
+  .pendulum-card h3 {{
+    margin: 0 0 6px;
+    font-family: var(--wiii-serif, "Georgia", serif);
+    font-size: 17px;
+    color: var(--text);
+  }}
+  .pendulum-card p {{
+    margin: 0;
+    color: var(--text2);
+    font-size: 13px;
+    line-height: 1.55;
+  }}
+  .pendulum-controls {{
+    display: grid;
+    gap: 12px;
+  }}
+  .pendulum-control {{
+    display: grid;
+    gap: 6px;
+  }}
+  .pendulum-control header {{
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 12px;
+    color: var(--text2);
+  }}
+  .pendulum-control strong {{
+    color: var(--text);
+    font-size: 13px;
+  }}
+  .pendulum-readouts {{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }}
+  .pendulum-readout {{
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--bg2) 80%, white);
+    border: 1px solid color-mix(in srgb, var(--border) 66%, transparent);
+    padding: 10px 12px;
+  }}
+  .pendulum-readout label {{
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text3);
+    margin-bottom: 6px;
+  }}
+  .pendulum-readout strong {{
+    font-size: 18px;
+    color: var(--text);
+  }}
+  .pendulum-actions {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }}
+  .pendulum-actions button {{
+    min-width: 108px;
+  }}
+  .pendulum-note {{
+    font-size: 12px;
+    color: var(--text2);
+  }}
+  .pendulum-live {{
+    min-height: 18px;
+  }}
+  @media (max-width: 720px) {{
+    .pendulum-lab {{
+      grid-template-columns: 1fr;
+    }}
+    .pendulum-stage {{
+      min-height: 320px;
+    }}
+  }}
+</style>
+
+<div class="pendulum-lab" data-sim-kind="pendulum">
+  <section class="pendulum-stage" aria-label="{safe_title}">
+    <canvas id="pendulum-sim" class="pendulum-canvas"></canvas>
+    <div class="pendulum-overlay">
+      <div class="pendulum-chip">Kéo quả nặng để đổi góc lệch</div>
+      <div class="pendulum-chip">Canvas runtime + live telemetry</div>
+    </div>
+  </section>
+
+  <aside class="pendulum-panel">
+    <section class="pendulum-card">
+      <h3>{safe_title}</h3>
+      <p>{safe_subtitle}</p>
+    </section>
+
+    <section class="pendulum-card pendulum-controls" aria-label="Điều chỉnh tham số">
+      <div class="pendulum-control">
+        <header><strong>Gravity</strong><span id="gravity-value">9.81 m/s²</span></header>
+        <input id="gravity-slider" type="range" min="1" max="20" step="0.1" value="9.81" aria-label="Gravity" />
+      </div>
+      <div class="pendulum-control">
+        <header><strong>Damping</strong><span id="damping-value">0.020</span></header>
+        <input id="damping-slider" type="range" min="0" max="0.12" step="0.002" value="0.02" aria-label="Damping" />
+      </div>
+      <div class="pendulum-control">
+        <header><strong>Length</strong><span id="length-value">1.20 m</span></header>
+        <input id="length-slider" type="range" min="0.6" max="2.2" step="0.05" value="1.2" aria-label="Length" />
+      </div>
+    </section>
+
+    <section class="pendulum-card pendulum-readouts" aria-live="polite">
+      <div class="pendulum-readout">
+        <label>Góc lệch</label>
+        <strong id="angle-readout">18.0°</strong>
+      </div>
+      <div class="pendulum-readout">
+        <label>Vận tốc góc</label>
+        <strong id="velocity-readout">0.00 rad/s</strong>
+      </div>
+      <div class="pendulum-readout">
+        <label>Chu kỳ xấp xỉ</label>
+        <strong id="period-readout">2.20 s</strong>
+      </div>
+      <div class="pendulum-readout">
+        <label>Trạng thái</label>
+        <strong id="status-readout">Đang chạy</strong>
+      </div>
+    </section>
+
+    <section class="pendulum-card">
+      <div class="pendulum-actions">
+        <button type="button" id="play-toggle">Tạm dừng</button>
+        <button type="button" id="reset-btn">Đặt lại</button>
+      </div>
+      <p class="pendulum-note pendulum-live" id="pendulum-live">Bạn có thể kéo trực tiếp quả nặng để đặt góc ban đầu mới.</p>
+    </section>
+  </aside>
+</div>
+
+<script>
+  (function () {{
+    const canvas = document.getElementById('pendulum-sim');
+    const ctx = canvas.getContext('2d');
+    const gravitySlider = document.getElementById('gravity-slider');
+    const dampingSlider = document.getElementById('damping-slider');
+    const lengthSlider = document.getElementById('length-slider');
+    const playToggle = document.getElementById('play-toggle');
+    const resetBtn = document.getElementById('reset-btn');
+    const gravityValue = document.getElementById('gravity-value');
+    const dampingValue = document.getElementById('damping-value');
+    const lengthValue = document.getElementById('length-value');
+    const angleReadout = document.getElementById('angle-readout');
+    const velocityReadout = document.getElementById('velocity-readout');
+    const periodReadout = document.getElementById('period-readout');
+    const statusReadout = document.getElementById('status-readout');
+    const live = document.getElementById('pendulum-live');
+
+    const baseState = {{
+      gravity: 9.81,
+      damping: 0.02,
+      length: 1.2,
+      theta: Math.PI / 10,
+      omega: 0,
+      running: true,
+      dragging: false,
+    }};
+    const state = Object.assign({{}}, baseState);
+
+    let rafId = 0;
+    let lastTime = performance.now();
+    let pivot = {{ x: 0, y: 40 }};
+    let bobRadius = 18;
+    let pixelsPerMeter = 180;
+
+    function report(kind, payload, summary, status) {{
+      if (window.WiiiVisualBridge && typeof window.WiiiVisualBridge.reportResult === 'function') {{
+        window.WiiiVisualBridge.reportResult(kind, payload, summary, status);
+      }}
+    }}
+
+    function resizeCanvas() {{
+      const rect = canvas.getBoundingClientRect();
+      const ratio = Math.max(1, window.devicePixelRatio || 1);
+      canvas.width = Math.max(320, Math.floor(rect.width * ratio));
+      canvas.height = Math.max(280, Math.floor(rect.height * ratio));
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(ratio, ratio);
+      pivot = {{ x: rect.width / 2, y: 44 }};
+      pixelsPerMeter = Math.max(110, rect.height * 0.52);
+      draw();
+      if (window.WiiiVisualBridge && typeof window.WiiiVisualBridge.resize === 'function') {{
+        window.WiiiVisualBridge.resize();
+      }}
+    }}
+
+    function pendulumMetrics() {{
+      const angleDeg = state.theta * 180 / Math.PI;
+      const approxPeriod = 2 * Math.PI * Math.sqrt(state.length / Math.max(state.gravity, 0.1));
+      return {{ angleDeg, approxPeriod }};
+    }}
+
+    function syncReadouts() {{
+      const metrics = pendulumMetrics();
+      gravityValue.textContent = state.gravity.toFixed(2) + ' m/s²';
+      dampingValue.textContent = state.damping.toFixed(3);
+      lengthValue.textContent = state.length.toFixed(2) + ' m';
+      angleReadout.textContent = metrics.angleDeg.toFixed(1) + '°';
+      velocityReadout.textContent = state.omega.toFixed(2) + ' rad/s';
+      periodReadout.textContent = metrics.approxPeriod.toFixed(2) + ' s';
+      statusReadout.textContent = state.dragging ? 'Đang kéo' : (state.running ? 'Đang chạy' : 'Tạm dừng');
+      live.textContent = state.dragging
+        ? 'Thả chuột để xem con lắc tiếp tục dao động từ góc mới.'
+        : (state.running
+          ? 'Mô phỏng đang chạy với gravity, damping và chiều dài hiện tại.'
+          : 'Mô phỏng đang tạm dừng. Bạn có thể kéo quả nặng hoặc tiếp tục chạy.');
+    }}
+
+    function bobPosition() {{
+      const rect = canvas.getBoundingClientRect();
+      const rodLength = state.length * pixelsPerMeter;
+      return {{
+        x: pivot.x + rodLength * Math.sin(state.theta),
+        y: pivot.y + rodLength * Math.cos(state.theta),
+        width: rect.width,
+        height: rect.height,
+        rodLength: rodLength,
+      }};
+    }}
+
+    function drawGrid(width, height) {{
+      ctx.save();
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+      ctx.lineWidth = 1;
+      for (let x = 24; x < width; x += 32) {{
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }}
+      for (let y = 24; y < height; y += 32) {{
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }}
+      ctx.restore();
+    }}
+
+    function draw() {{
+      const rect = canvas.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      ctx.clearRect(0, 0, width, height);
+      drawGrid(width, height);
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.06)';
+      ctx.fillRect(0, height - 38, width, 38);
+      ctx.restore();
+
+      const bob = bobPosition();
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(37, 99, 235, 0.85)';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(pivot.x, pivot.y);
+      ctx.lineTo(bob.x, bob.y);
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.42)';
+      ctx.beginPath();
+      ctx.arc(pivot.x, pivot.y, 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      const bobGradient = ctx.createRadialGradient(bob.x - 8, bob.y - 10, 4, bob.x, bob.y, 22);
+      bobGradient.addColorStop(0, '#93c5fd');
+      bobGradient.addColorStop(0.45, '#2563eb');
+      bobGradient.addColorStop(1, '#1e3a8a');
+      ctx.fillStyle = bobGradient;
+      ctx.beginPath();
+      ctx.arc(bob.x, bob.y, bobRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(bob.x - 5, bob.y - 6, 6, Math.PI * 1.2, Math.PI * 1.9);
+      ctx.stroke();
+      ctx.restore();
+
+      syncReadouts();
+    }}
+
+    function advance(dt) {{
+      const acceleration = -(state.gravity / Math.max(state.length, 0.25)) * Math.sin(state.theta) - state.damping * state.omega;
+      state.omega += acceleration * dt;
+      state.theta += state.omega * dt;
+    }}
+
+    function loop(now) {{
+      const dt = Math.min(0.032, Math.max(0.001, (now - lastTime) / 1000));
+      lastTime = now;
+      if (state.running && !state.dragging) {{
+        advance(dt);
+      }}
+      draw();
+      rafId = window.requestAnimationFrame(loop);
+    }}
+
+    function pointerToTheta(clientX, clientY) {{
+      const rect = canvas.getBoundingClientRect();
+      const dx = clientX - rect.left - pivot.x;
+      const dy = clientY - rect.top - pivot.y;
+      return Math.atan2(dx, Math.max(24, dy));
+    }}
+
+    function onPointerDown(event) {{
+      const bob = bobPosition();
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const distance = Math.hypot(x - bob.x, y - bob.y);
+      if (distance > bobRadius + 16) return;
+      state.dragging = true;
+      state.running = false;
+      state.omega = 0;
+      canvas.classList.add('is-dragging');
+      canvas.setPointerCapture(event.pointerId);
+      state.theta = pointerToTheta(event.clientX, event.clientY);
+      draw();
+    }}
+
+    function onPointerMove(event) {{
+      if (!state.dragging) return;
+      state.theta = pointerToTheta(event.clientX, event.clientY);
+      draw();
+    }}
+
+    function onPointerUp(event) {{
+      if (!state.dragging) return;
+      state.dragging = false;
+      state.running = true;
+      canvas.classList.remove('is-dragging');
+      try {{
+        canvas.releasePointerCapture(event.pointerId);
+      }} catch (_error) {{}}
+      const metrics = pendulumMetrics();
+      report(
+        'simulation_result',
+        {{
+          simulation: 'pendulum',
+          angle_deg: Number(metrics.angleDeg.toFixed(1)),
+          gravity: Number(state.gravity.toFixed(2)),
+          damping: Number(state.damping.toFixed(3)),
+          length_m: Number(state.length.toFixed(2)),
+        }},
+        'Nguoi dung vua tha con lac o goc ' + metrics.angleDeg.toFixed(1) + '°.',
+        'completed'
+      );
+    }}
+
+    gravitySlider.addEventListener('input', function () {{
+      state.gravity = Number(gravitySlider.value);
+      draw();
+    }});
+    dampingSlider.addEventListener('input', function () {{
+      state.damping = Number(dampingSlider.value);
+      draw();
+    }});
+    lengthSlider.addEventListener('input', function () {{
+      state.length = Number(lengthSlider.value);
+      draw();
+    }});
+
+    playToggle.addEventListener('click', function () {{
+      state.running = !state.running;
+      playToggle.textContent = state.running ? 'Tạm dừng' : 'Tiếp tục';
+      draw();
+      report(
+        'simulation_result',
+        {{
+          simulation: 'pendulum',
+          action: state.running ? 'resume' : 'pause',
+          gravity: Number(state.gravity.toFixed(2)),
+          damping: Number(state.damping.toFixed(3)),
+        }},
+        state.running ? 'Nguoi dung tiep tuc mo phong con lac.' : 'Nguoi dung tam dung mo phong con lac.',
+        state.running ? 'running' : 'paused'
+      );
+    }});
+
+    resetBtn.addEventListener('click', function () {{
+      Object.assign(state, baseState);
+      gravitySlider.value = String(baseState.gravity);
+      dampingSlider.value = String(baseState.damping);
+      lengthSlider.value = String(baseState.length);
+      playToggle.textContent = 'Tạm dừng';
+      draw();
+      report(
+        'simulation_result',
+        {{
+          simulation: 'pendulum',
+          action: 'reset',
+          angle_deg: 18,
+        }},
+        'Nguoi dung da dat lai mo phong con lac ve trang thai mac dinh.',
+        'reset'
+      );
+    }});
+
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerUp);
+    window.addEventListener('resize', resizeCanvas);
+
+    resizeCanvas();
+    draw();
+    rafId = window.requestAnimationFrame(loop);
+
+    window.addEventListener('beforeunload', function () {{
+      if (rafId) window.cancelAnimationFrame(rafId);
+    }});
+  }})();
+</script>
+""".strip()
+
+
+def _build_pendulum_simulation_scaffold_v2(title: str, subtitle: str = "", query: str = "") -> str:
+    safe_title = html_mod.escape(title.strip() or "Mini Pendulum Physics App")
+    safe_subtitle = html_mod.escape(
+        subtitle.strip() or "Keo qua nang de doi goc lech, roi quan sat chuyen dong cua con lac."
+    )
+    normalized_query = " ".join(part for part in (title, subtitle, query) if part).lower()
+    wants_gravity = any(token in normalized_query for token in ("gravity", "trong luc", "trong-luc"))
+    wants_damping = any(token in normalized_query for token in ("damping", "ma sat", "ma-sat", "friction"))
+
+    control_blocks: list[str] = []
+    if wants_gravity:
+        control_blocks.append(
+            """
+      <div class="pendulum-control">
+        <header><strong>Gravity</strong><span id="gravity-value">9.81 m/s^2</span></header>
+        <input id="gravity-slider" type="range" min="1" max="20" step="0.1" value="9.81" aria-label="Gravity" />
+      </div>
+""".strip("\n")
+        )
+    if wants_damping:
+        control_blocks.append(
+            """
+      <div class="pendulum-control">
+        <header><strong>Damping</strong><span id="damping-value">0.020</span></header>
+        <input id="damping-slider" type="range" min="0" max="0.12" step="0.002" value="0.02" aria-label="Damping" />
+      </div>
+""".strip("\n")
+        )
+    control_blocks.append(
+        """
+      <div class="pendulum-control">
+        <header><strong>Length</strong><span id="length-value">1.20 m</span></header>
+        <input id="length-slider" type="range" min="0.6" max="2.2" step="0.05" value="1.2" aria-label="Length" />
+      </div>
+""".strip("\n")
+    )
+    controls_markup = "\n".join(control_blocks)
+
+    live_running = "Mo phong dang chay voi cac tham so hien tai."
+    if wants_gravity and wants_damping:
+        live_running = "Mo phong dang chay voi gravity, damping va chieu dai hien tai."
+    elif wants_gravity:
+        live_running = "Mo phong dang chay voi gravity va chieu dai hien tai."
+    elif wants_damping:
+        live_running = "Mo phong dang chay voi damping va chieu dai hien tai."
+
+    return f"""
+<style>
+  .pendulum-lab {{
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(0, 1.55fr) minmax(240px, 0.95fr);
+    align-items: stretch;
+  }}
+  .pendulum-stage {{
+    position: relative;
+    min-height: 360px;
+    border-radius: 18px;
+    border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+    background:
+      radial-gradient(circle at top, rgba(37,99,235,0.10), transparent 42%),
+      linear-gradient(180deg, color-mix(in srgb, var(--bg2) 92%, white) 0%, color-mix(in srgb, var(--bg) 90%, white) 100%);
+    overflow: hidden;
+  }}
+  .pendulum-canvas {{
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    cursor: grab;
+  }}
+  .pendulum-canvas.is-dragging {{
+    cursor: grabbing;
+  }}
+  .pendulum-overlay {{
+    position: absolute;
+    inset: 12px 12px auto;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    pointer-events: none;
+    font-size: 12px;
+    color: var(--text2);
+  }}
+  .pendulum-chip {{
+    background: color-mix(in srgb, var(--bg) 82%, white);
+    border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+    border-radius: 999px;
+    padding: 6px 10px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  }}
+  .pendulum-panel {{
+    display: grid;
+    gap: 12px;
+    align-content: start;
+  }}
+  .pendulum-card {{
+    border-radius: 16px;
+    border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+    background: color-mix(in srgb, var(--bg) 95%, white);
+    padding: 14px;
+  }}
+  .pendulum-card h3 {{
+    margin: 0 0 6px;
+    font-family: var(--wiii-serif, "Georgia", serif);
+    font-size: 17px;
+    color: var(--text);
+  }}
+  .pendulum-card p {{
+    margin: 0;
+    color: var(--text2);
+    font-size: 13px;
+    line-height: 1.55;
+  }}
+  .pendulum-controls {{
+    display: grid;
+    gap: 12px;
+  }}
+  .pendulum-control {{
+    display: grid;
+    gap: 6px;
+  }}
+  .pendulum-control header {{
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 12px;
+    color: var(--text2);
+  }}
+  .pendulum-control strong {{
+    color: var(--text);
+    font-size: 13px;
+  }}
+  .pendulum-readouts {{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }}
+  .pendulum-readout {{
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--bg2) 80%, white);
+    border: 1px solid color-mix(in srgb, var(--border) 66%, transparent);
+    padding: 10px 12px;
+  }}
+  .pendulum-readout label {{
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text3);
+    margin-bottom: 6px;
+  }}
+  .pendulum-readout strong {{
+    font-size: 18px;
+    color: var(--text);
+  }}
+  .pendulum-actions {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }}
+  .pendulum-actions button {{
+    min-width: 108px;
+  }}
+  .pendulum-note {{
+    font-size: 12px;
+    color: var(--text2);
+  }}
+  .pendulum-live {{
+    min-height: 18px;
+  }}
+  @media (max-width: 720px) {{
+    .pendulum-lab {{
+      grid-template-columns: 1fr;
+    }}
+    .pendulum-stage {{
+      min-height: 320px;
+    }}
+  }}
+</style>
+
+<div class="pendulum-lab" data-sim-kind="pendulum">
+  <section class="pendulum-stage" aria-label="{safe_title}">
+    <canvas id="pendulum-sim" class="pendulum-canvas"></canvas>
+    <div class="pendulum-overlay">
+      <div class="pendulum-chip">Keo qua nang de doi goc lech</div>
+      <div class="pendulum-chip">Canvas runtime + live telemetry</div>
+    </div>
+  </section>
+
+  <aside class="pendulum-panel">
+    <section class="pendulum-card">
+      <h3>{safe_title}</h3>
+      <p>{safe_subtitle}</p>
+    </section>
+
+    <section class="pendulum-card pendulum-controls" aria-label="Dieu chinh tham so">
+{controls_markup}
+    </section>
+
+    <section class="pendulum-card pendulum-readouts" aria-live="polite">
+      <div class="pendulum-readout">
+        <label>Goc lech</label>
+        <strong id="angle-readout">18.0 deg</strong>
+      </div>
+      <div class="pendulum-readout">
+        <label>Van toc goc</label>
+        <strong id="velocity-readout">0.00 rad/s</strong>
+      </div>
+      <div class="pendulum-readout">
+        <label>Chu ky xap xi</label>
+        <strong id="period-readout">2.20 s</strong>
+      </div>
+      <div class="pendulum-readout">
+        <label>Trang thai</label>
+        <strong id="status-readout">Dang chay</strong>
+      </div>
+    </section>
+
+    <section class="pendulum-card">
+      <div class="pendulum-actions">
+        <button type="button" id="play-toggle">Tam dung</button>
+        <button type="button" id="reset-btn">Dat lai</button>
+      </div>
+      <p class="pendulum-note pendulum-live" id="pendulum-live">Ban co the keo truc tiep qua nang de dat goc ban dau moi.</p>
+    </section>
+  </aside>
+</div>
+
+<script>
+  (function () {{
+    const canvas = document.getElementById('pendulum-sim');
+    const ctx = canvas.getContext('2d');
+    const gravitySlider = document.getElementById('gravity-slider');
+    const dampingSlider = document.getElementById('damping-slider');
+    const lengthSlider = document.getElementById('length-slider');
+    const playToggle = document.getElementById('play-toggle');
+    const resetBtn = document.getElementById('reset-btn');
+    const gravityValue = document.getElementById('gravity-value');
+    const dampingValue = document.getElementById('damping-value');
+    const lengthValue = document.getElementById('length-value');
+    const angleReadout = document.getElementById('angle-readout');
+    const velocityReadout = document.getElementById('velocity-readout');
+    const periodReadout = document.getElementById('period-readout');
+    const statusReadout = document.getElementById('status-readout');
+    const live = document.getElementById('pendulum-live');
+
+    const baseState = {{
+      gravity: 9.81,
+      damping: 0.02,
+      length: 1.2,
+      theta: Math.PI / 10,
+      omega: 0,
+      running: true,
+      dragging: false,
+    }};
+    const state = Object.assign({{}}, baseState);
+
+    let rafId = 0;
+    let lastTime = performance.now();
+    let pivot = {{ x: 0, y: 40 }};
+    let bobRadius = 18;
+    let pixelsPerMeter = 180;
+
+    function report(kind, payload, summary, status) {{
+      if (window.WiiiVisualBridge && typeof window.WiiiVisualBridge.reportResult === 'function') {{
+        window.WiiiVisualBridge.reportResult(kind, payload, summary, status);
+      }}
+    }}
+
+    function setText(node, value) {{
+      if (node) {{
+        node.textContent = value;
+      }}
+    }}
+
+    function resizeCanvas() {{
+      const rect = canvas.getBoundingClientRect();
+      const ratio = Math.max(1, window.devicePixelRatio || 1);
+      canvas.width = Math.max(320, Math.floor(rect.width * ratio));
+      canvas.height = Math.max(280, Math.floor(rect.height * ratio));
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(ratio, ratio);
+      pivot = {{ x: rect.width / 2, y: 44 }};
+      pixelsPerMeter = Math.max(110, rect.height * 0.52);
+      draw();
+      if (window.WiiiVisualBridge && typeof window.WiiiVisualBridge.resize === 'function') {{
+        window.WiiiVisualBridge.resize();
+      }}
+    }}
+
+    function pendulumMetrics() {{
+      const angleDeg = state.theta * 180 / Math.PI;
+      const approxPeriod = 2 * Math.PI * Math.sqrt(state.length / Math.max(state.gravity, 0.1));
+      return {{ angleDeg, approxPeriod }};
+    }}
+
+    function syncReadouts() {{
+      const metrics = pendulumMetrics();
+      setText(gravityValue, state.gravity.toFixed(2) + ' m/s^2');
+      setText(dampingValue, state.damping.toFixed(3));
+      setText(lengthValue, state.length.toFixed(2) + ' m');
+      setText(angleReadout, metrics.angleDeg.toFixed(1) + ' deg');
+      setText(velocityReadout, state.omega.toFixed(2) + ' rad/s');
+      setText(periodReadout, metrics.approxPeriod.toFixed(2) + ' s');
+      setText(statusReadout, state.dragging ? 'Dang keo' : (state.running ? 'Dang chay' : 'Tam dung'));
+      if (live) {{
+        live.textContent = state.dragging
+          ? 'Tha chuot de xem con lac tiep tuc dao dong tu goc moi.'
+          : (state.running
+            ? '{live_running}'
+            : 'Mo phong dang tam dung. Ban co the keo qua nang hoac tiep tuc chay.');
+      }}
+    }}
+
+    function bobPosition() {{
+      const rect = canvas.getBoundingClientRect();
+      const rodLength = state.length * pixelsPerMeter;
+      return {{
+        x: pivot.x + rodLength * Math.sin(state.theta),
+        y: pivot.y + rodLength * Math.cos(state.theta),
+        width: rect.width,
+        height: rect.height,
+        rodLength: rodLength,
+      }};
+    }}
+
+    function drawGrid(width, height) {{
+      ctx.save();
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+      ctx.lineWidth = 1;
+      for (let x = 24; x < width; x += 32) {{
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }}
+      for (let y = 24; y < height; y += 32) {{
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }}
+      ctx.restore();
+    }}
+
+    function draw() {{
+      const rect = canvas.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      ctx.clearRect(0, 0, width, height);
+      drawGrid(width, height);
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.06)';
+      ctx.fillRect(0, height - 38, width, 38);
+      ctx.restore();
+
+      const bob = bobPosition();
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(37, 99, 235, 0.85)';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(pivot.x, pivot.y);
+      ctx.lineTo(bob.x, bob.y);
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.42)';
+      ctx.beginPath();
+      ctx.arc(pivot.x, pivot.y, 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      const bobGradient = ctx.createRadialGradient(bob.x - 8, bob.y - 10, 4, bob.x, bob.y, 22);
+      bobGradient.addColorStop(0, '#93c5fd');
+      bobGradient.addColorStop(0.45, '#2563eb');
+      bobGradient.addColorStop(1, '#1e3a8a');
+      ctx.fillStyle = bobGradient;
+      ctx.beginPath();
+      ctx.arc(bob.x, bob.y, bobRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(bob.x - 5, bob.y - 6, 6, Math.PI * 1.2, Math.PI * 1.9);
+      ctx.stroke();
+      ctx.restore();
+
+      syncReadouts();
+    }}
+
+    function advance(dt) {{
+      const acceleration = -(state.gravity / Math.max(state.length, 0.25)) * Math.sin(state.theta) - state.damping * state.omega;
+      state.omega += acceleration * dt;
+      state.theta += state.omega * dt;
+    }}
+
+    function loop(now) {{
+      const dt = Math.min(0.032, Math.max(0.001, (now - lastTime) / 1000));
+      lastTime = now;
+      if (state.running && !state.dragging) {{
+        advance(dt);
+      }}
+      draw();
+      rafId = window.requestAnimationFrame(loop);
+    }}
+
+    function pointerToTheta(clientX, clientY) {{
+      const rect = canvas.getBoundingClientRect();
+      const dx = clientX - rect.left - pivot.x;
+      const dy = clientY - rect.top - pivot.y;
+      return Math.atan2(dx, Math.max(24, dy));
+    }}
+
+    function onPointerDown(event) {{
+      const bob = bobPosition();
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const distance = Math.hypot(x - bob.x, y - bob.y);
+      if (distance > bobRadius + 16) return;
+      state.dragging = true;
+      state.running = false;
+      state.omega = 0;
+      canvas.classList.add('is-dragging');
+      canvas.setPointerCapture(event.pointerId);
+      state.theta = pointerToTheta(event.clientX, event.clientY);
+      draw();
+    }}
+
+    function onPointerMove(event) {{
+      if (!state.dragging) return;
+      state.theta = pointerToTheta(event.clientX, event.clientY);
+      draw();
+    }}
+
+    function onPointerUp(event) {{
+      if (!state.dragging) return;
+      state.dragging = false;
+      state.running = true;
+      canvas.classList.remove('is-dragging');
+      try {{
+        canvas.releasePointerCapture(event.pointerId);
+      }} catch (_error) {{}}
+      const metrics = pendulumMetrics();
+      report(
+        'simulation_result',
+        {{
+          simulation: 'pendulum',
+          angle_deg: Number(metrics.angleDeg.toFixed(1)),
+          gravity: Number(state.gravity.toFixed(2)),
+          damping: Number(state.damping.toFixed(3)),
+          length_m: Number(state.length.toFixed(2)),
+        }},
+        'Nguoi dung vua tha con lac o goc ' + metrics.angleDeg.toFixed(1) + ' deg.',
+        'completed'
+      );
+    }}
+
+    if (gravitySlider) {{
+      gravitySlider.addEventListener('input', function () {{
+        state.gravity = Number(gravitySlider.value);
+        draw();
+      }});
+    }}
+    if (dampingSlider) {{
+      dampingSlider.addEventListener('input', function () {{
+        state.damping = Number(dampingSlider.value);
+        draw();
+      }});
+    }}
+    if (lengthSlider) {{
+      lengthSlider.addEventListener('input', function () {{
+        state.length = Number(lengthSlider.value);
+        draw();
+      }});
+    }}
+
+    playToggle.addEventListener('click', function () {{
+      state.running = !state.running;
+      playToggle.textContent = state.running ? 'Tam dung' : 'Tiep tuc';
+      draw();
+      report(
+        'simulation_result',
+        {{
+          simulation: 'pendulum',
+          action: state.running ? 'resume' : 'pause',
+          gravity: Number(state.gravity.toFixed(2)),
+          damping: Number(state.damping.toFixed(3)),
+          length_m: Number(state.length.toFixed(2)),
+        }},
+        state.running ? 'Nguoi dung tiep tuc mo phong con lac.' : 'Nguoi dung tam dung mo phong con lac.',
+        state.running ? 'running' : 'paused'
+      );
+    }});
+
+    resetBtn.addEventListener('click', function () {{
+      Object.assign(state, baseState);
+      if (gravitySlider) gravitySlider.value = String(baseState.gravity);
+      if (dampingSlider) dampingSlider.value = String(baseState.damping);
+      if (lengthSlider) lengthSlider.value = String(baseState.length);
+      playToggle.textContent = 'Tam dung';
+      draw();
+      report(
+        'simulation_result',
+        {{
+          simulation: 'pendulum',
+          action: 'reset',
+          angle_deg: 18,
+        }},
+        'Nguoi dung da dat lai mo phong con lac ve trang thai mac dinh.',
+        'reset'
+      );
+    }});
+
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerUp);
+    window.addEventListener('resize', resizeCanvas);
+
+    resizeCanvas();
+    draw();
+    rafId = window.requestAnimationFrame(loop);
+
+    window.addEventListener('beforeunload', function () {{
+      if (rafId) window.cancelAnimationFrame(rafId);
+    }});
+  }})();
+</script>
+""".strip()
+
+
+def _maybe_upgrade_code_studio_output(
+    raw_html: str,
+    *,
+    title: str,
+    subtitle: str,
+    requested_visual_type: str,
+    studio_lane: str,
+    artifact_kind: str,
+    quality_profile: str,
+) -> str:
+    quality_error = _validate_code_studio_output(
+        raw_html,
+        requested_visual_type=requested_visual_type,
+        studio_lane=studio_lane,
+        artifact_kind=artifact_kind,
+        quality_profile=quality_profile,
+    )
+    if not quality_error:
+        return raw_html
+
+    if (
+        requested_visual_type == "simulation"
+        and quality_profile == "premium"
+        and _looks_like_pendulum_simulation(raw_html, title, _runtime_visual_user_query())
+    ):
+        upgraded = _build_pendulum_simulation_scaffold(title, subtitle, _runtime_visual_user_query())
+        if not _validate_code_studio_output(
+            upgraded,
+            requested_visual_type=requested_visual_type,
+            studio_lane=studio_lane,
+            artifact_kind=artifact_kind,
+            quality_profile=quality_profile,
+        ):
+            return upgraded
+
+    return raw_html
+
+
+def _infer_scene_render_surface(renderer_kind: str, visual_type: str) -> str:
+    preferred = _runtime_preferred_render_surface()
+    if preferred in {"svg", "canvas", "html", "video"}:
+        return preferred
+    if visual_type == "simulation":
+        return "canvas"
+    if renderer_kind == "template":
+        return "svg"
+    if renderer_kind == "app":
+        return "canvas" if visual_type == "simulation" else "html"
+    return "html"
+
+
+def _infer_scene_motion_profile(
+    *,
+    visual_type: str,
+    presentation_intent: str,
+    render_surface: str,
+) -> str:
+    if render_surface == "canvas":
+        return "continuous_simulation" if visual_type == "simulation" else "continuous_canvas"
+    if presentation_intent == "chart_runtime":
+        return "guided_focus"
+    if visual_type in {"process", "timeline"}:
+        return "stepwise_reveal"
+    if visual_type in {"comparison", "architecture", "concept", "infographic", "chart"}:
+        return "guided_focus"
+    return "static"
+
+
+def _infer_scene_pedagogy_arc(
+    *,
+    presentation_intent: str,
+    visual_type: str,
+    summary: str,
+    claim: str,
+) -> dict[str, str]:
+    headline = claim or summary or _default_visual_title(visual_type)
+    if presentation_intent == "chart_runtime":
+        return {
+            "opening": "Orient the learner with scale, units, and what to compare.",
+            "focus": headline,
+            "closing": "Land one concise takeaway from the pattern, not just the picture.",
+        }
+    if presentation_intent == "code_studio_app" and visual_type == "simulation":
+        return {
+            "opening": "Set the opening scene before motion starts.",
+            "focus": headline,
+            "closing": "Use readouts and a short reflection to connect interaction back to understanding.",
+        }
+    return {
+        "opening": "Set context quickly and make the visual claim obvious.",
+        "focus": headline,
+        "closing": "End with one takeaway the learner can reuse.",
+    }
+
+
+def _infer_scene_state_model(
+    *,
+    presentation_intent: str,
+    visual_type: str,
+    render_surface: str,
+) -> dict[str, Any]:
+    if visual_type == "simulation" or render_surface == "canvas":
+        return {
+            "kind": "continuous_state",
+            "driver": "animation_loop",
+            "patchable": True,
+        }
+    if presentation_intent == "chart_runtime":
+        return {
+            "kind": "declarative_chart",
+            "driver": "chart_spec",
+            "patchable": True,
+        }
+    if presentation_intent == "article_figure":
+        return {
+            "kind": "semantic_svg_scene",
+            "driver": "figure_spec",
+            "patchable": True,
+        }
+    return {
+        "kind": "artifact_state",
+        "driver": "html_runtime",
+        "patchable": True,
+    }
+
+
+def _infer_scene_narrative_voice(presentation_intent: str) -> dict[str, Any]:
+    mode = _runtime_living_expression_mode() or ("expressive" if presentation_intent == "article_figure" else "subtle")
+    return {
+        "mode": mode,
+        "stance": "guide",
+        "character_forward": True,
+        "tone": "clear_vivid" if mode == "expressive" else "clear_precise",
+    }
+
+
+def _enrich_scene_contract(
+    *,
+    scene: dict[str, Any],
+    visual_type: str,
+    renderer_kind: str,
+    presentation_intent: str,
+    pedagogical_role: str,
+    summary: str,
+    claim: str,
+) -> dict[str, Any]:
+    enriched = dict(scene)
+    enriched["kind"] = str(enriched.get("kind") or visual_type)
+    render_surface = _infer_scene_render_surface(renderer_kind, visual_type)
+    enriched["render_surface"] = enriched.get("render_surface") or render_surface
+    enriched["motion_profile"] = enriched.get("motion_profile") or _infer_scene_motion_profile(
+        visual_type=visual_type,
+        presentation_intent=presentation_intent,
+        render_surface=render_surface,
+    )
+    enriched["pedagogy_arc"] = enriched.get("pedagogy_arc") or _infer_scene_pedagogy_arc(
+        presentation_intent=presentation_intent,
+        visual_type=visual_type,
+        summary=summary,
+        claim=claim,
+    )
+    enriched["state_model"] = enriched.get("state_model") or _infer_scene_state_model(
+        presentation_intent=presentation_intent,
+        visual_type=visual_type,
+        render_surface=render_surface,
+    )
+    enriched["narrative_voice"] = enriched.get("narrative_voice") or _infer_scene_narrative_voice(presentation_intent)
+    if "focus_states" not in enriched:
+        enriched["focus_states"] = [{
+            "id": "default",
+            "claim": claim or summary,
+            "pedagogical_role": pedagogical_role or "overview",
+        }]
+    return enriched
+
+
 def _resolve_fallback_html(
     visual_type: str,
     spec: dict[str, Any],
@@ -1193,10 +2766,6 @@ def _resolve_fallback_html(
         value = spec.get(key)
         if isinstance(value, str) and value.strip():
             return value
-    if visual_type == "react_app":
-        code = spec.get("code")
-        if isinstance(code, str) and code.strip():
-            return _build_react_app_html(spec, title)
     return None
 
 
@@ -1250,7 +2819,7 @@ def _normalize_visual_payload(
         spec,
     )
     resolved_subtitle = subtitle.strip() or None
-    resolved_renderer_kind = _infer_renderer_kind(visual_type, spec, renderer_kind)
+    resolved_renderer_kind = _resolve_renderer_kind(visual_type, spec, renderer_kind)
     resolved_runtime = runtime.strip() or _infer_runtime(resolved_renderer_kind, visual_type, spec)
     resolved_shell_variant = _infer_shell_variant(resolved_renderer_kind, shell_variant)
     resolved_patch_strategy = _infer_patch_strategy(resolved_renderer_kind, patch_strategy)
@@ -1277,13 +2846,102 @@ def _normalize_visual_payload(
             "tone": "accent",
         }]
     lifecycle_event = "visual_patch" if operation == "patch" else "visual_open"
-    resolved_metadata = {
-        "contract_version": "visual_payload_v3",
-        "source_tool": "tool_generate_visual",
-        "figure_group_id": figure_group_id.strip() or spec.get("figure_group_id") or "",
-        "pedagogical_role": resolved_pedagogical_role,
-        **(metadata or {}),
-    }
+    metadata = metadata or {}
+    metadata_presentation_intent = _metadata_text(metadata, "presentation_intent", "")
+    resolved_presentation_intent = _runtime_presentation_intent() or metadata_presentation_intent
+    if not resolved_presentation_intent or resolved_presentation_intent == "text":
+        if resolved_renderer_kind == "app":
+            resolved_presentation_intent = "code_studio_app"
+        elif visual_type == "chart":
+            resolved_presentation_intent = "chart_runtime"
+        else:
+            resolved_presentation_intent = "article_figure"
+    resolved_renderer_contract = _runtime_renderer_contract() or _metadata_text(metadata, "renderer_contract", "")
+    if not resolved_renderer_contract:
+        resolved_renderer_contract = "host_shell" if resolved_renderer_kind == "app" else (
+            "chart_runtime" if resolved_presentation_intent == "chart_runtime" else "article_figure"
+        )
+    resolved_quality_profile = _metadata_text(metadata, "quality_profile", _runtime_quality_profile()) or "standard"
+    resolved_studio_lane = _runtime_studio_lane() or _metadata_text(metadata, "studio_lane", "") or None
+    resolved_artifact_kind = _runtime_artifact_kind() or _metadata_text(metadata, "artifact_kind", "") or None
+    resolved_preferred_render_surface = _metadata_text(
+        metadata,
+        "preferred_render_surface",
+        _runtime_preferred_render_surface(),
+    ) or _infer_scene_render_surface(resolved_renderer_kind, visual_type)
+    resolved_planning_profile = _metadata_text(
+        metadata,
+        "planning_profile",
+        _runtime_planning_profile(),
+    ) or ("simulation_canvas" if visual_type == "simulation" else "article_svg")
+    resolved_thinking_floor = _metadata_text(
+        metadata,
+        "thinking_floor",
+        _runtime_thinking_floor(),
+    ) or "medium"
+    resolved_critic_policy = _metadata_text(
+        metadata,
+        "critic_policy",
+        _runtime_critic_policy(),
+    ) or "standard"
+    resolved_living_expression_mode = _metadata_text(
+        metadata,
+        "living_expression_mode",
+        _runtime_living_expression_mode(),
+    ) or ("expressive" if resolved_presentation_intent == "article_figure" else "subtle")
+    runtime_metadata = _get_runtime_visual_metadata()
+    raw_figure_budget = runtime_metadata.get("figure_budget", metadata.get("figure_budget", figure_total or 1))
+    try:
+        resolved_figure_budget = max(1, min(3, int(raw_figure_budget or 1)))
+    except Exception:
+        resolved_figure_budget = max(1, min(3, int(figure_total or 1)))
+    resolved_metadata = dict(metadata)
+    resolved_metadata["contract_version"] = "visual_payload_v3"
+    resolved_metadata["source_tool"] = str(resolved_metadata.get("source_tool") or "tool_generate_visual")
+    resolved_metadata["figure_group_id"] = figure_group_id.strip() or spec.get("figure_group_id") or ""
+    resolved_metadata["pedagogical_role"] = resolved_pedagogical_role
+    resolved_metadata["presentation_intent"] = resolved_presentation_intent
+    resolved_metadata["figure_budget"] = resolved_figure_budget
+    resolved_metadata["quality_profile"] = resolved_quality_profile
+    resolved_metadata["renderer_contract"] = resolved_renderer_contract
+    resolved_metadata["preferred_render_surface"] = resolved_preferred_render_surface
+    resolved_metadata["planning_profile"] = resolved_planning_profile
+    resolved_metadata["thinking_floor"] = resolved_thinking_floor
+    resolved_metadata["critic_policy"] = resolved_critic_policy
+    resolved_metadata["living_expression_mode"] = resolved_living_expression_mode
+    if resolved_studio_lane:
+        resolved_metadata["studio_lane"] = resolved_studio_lane
+    else:
+        resolved_metadata.pop("studio_lane", None)
+    if resolved_artifact_kind:
+        resolved_metadata["artifact_kind"] = resolved_artifact_kind
+    else:
+        resolved_metadata.pop("artifact_kind", None)
+    artifact_handoff = _build_artifact_handoff(
+        presentation_intent=resolved_presentation_intent,
+        visual_type=visual_type,
+        title=resolved_title,
+        summary=resolved_summary,
+    )
+    resolved_metadata["artifact_handoff_available"] = artifact_handoff["available"]
+    resolved_metadata["artifact_handoff_mode"] = artifact_handoff["mode"]
+    if artifact_handoff["label"]:
+        resolved_metadata["artifact_handoff_label"] = artifact_handoff["label"]
+    else:
+        resolved_metadata.pop("artifact_handoff_label", None)
+    if artifact_handoff["prompt"]:
+        resolved_metadata["artifact_handoff_prompt"] = artifact_handoff["prompt"]
+    else:
+        resolved_metadata.pop("artifact_handoff_prompt", None)
+    resolved_scene = _enrich_scene_contract(
+        scene=resolved_scene,
+        visual_type=visual_type,
+        renderer_kind=resolved_renderer_kind,
+        presentation_intent=resolved_presentation_intent,
+        pedagogical_role=resolved_pedagogical_role,
+        summary=resolved_summary,
+        claim=resolved_claim,
+    )
     return VisualPayloadV1(
         id=f"visual-{uuid.uuid4().hex[:12]}",
         visual_session_id=visual_session_id.strip() or _generate_visual_session_id(visual_type),
@@ -1297,6 +2955,12 @@ def _normalize_visual_payload(
         pedagogical_role=resolved_pedagogical_role,  # type: ignore[arg-type]
         chrome_mode=resolved_chrome_mode,  # type: ignore[arg-type]
         claim=resolved_claim,
+        presentation_intent=resolved_presentation_intent,  # type: ignore[arg-type]
+        figure_budget=resolved_figure_budget,
+        quality_profile=resolved_quality_profile,  # type: ignore[arg-type]
+        renderer_contract=resolved_renderer_contract,  # type: ignore[arg-type]
+        studio_lane=resolved_studio_lane,  # type: ignore[arg-type]
+        artifact_kind=resolved_artifact_kind,  # type: ignore[arg-type]
         narrative_anchor=narrative_anchor.strip() or str(spec.get("narrative_anchor") or "after-lead"),
         runtime=resolved_runtime,  # type: ignore[arg-type]
         title=resolved_title,
@@ -1316,6 +2980,10 @@ def _normalize_visual_payload(
             spec=spec,
             provided=runtime_manifest,
         ),
+        artifact_handoff_available=artifact_handoff["available"],
+        artifact_handoff_mode=artifact_handoff["mode"],  # type: ignore[arg-type]
+        artifact_handoff_label=artifact_handoff["label"],
+        artifact_handoff_prompt=artifact_handoff["prompt"],
         metadata=resolved_metadata,
     )
 
@@ -1337,7 +3005,7 @@ def _coerce_visual_payload_data(data: dict[str, Any]) -> dict[str, Any]:
     coerced["visual_session_id"] = str(
         data.get("visual_session_id") or _generate_visual_session_id(visual_type)
     )
-    coerced["renderer_kind"] = _infer_renderer_kind(
+    coerced["renderer_kind"] = _resolve_renderer_kind(
         visual_type,
         spec,
         str(data.get("renderer_kind") or ""),
@@ -1404,6 +3072,20 @@ def _coerce_visual_payload_data(data: dict[str, Any]) -> dict[str, Any]:
         spec=spec,
         provided=data.get("runtime_manifest") if isinstance(data.get("runtime_manifest"), dict) else None,
     )
+    coerced["artifact_handoff_available"] = bool(
+        data.get("artifact_handoff_available", metadata.get("artifact_handoff_available", False))
+    )
+    coerced["artifact_handoff_mode"] = str(
+        data.get("artifact_handoff_mode")
+        or metadata.get("artifact_handoff_mode")
+        or ("followup_prompt" if coerced["artifact_handoff_available"] else "none")
+    )
+    coerced["artifact_handoff_label"] = (
+        str(data.get("artifact_handoff_label") or metadata.get("artifact_handoff_label") or "").strip() or None
+    )
+    coerced["artifact_handoff_prompt"] = (
+        str(data.get("artifact_handoff_prompt") or metadata.get("artifact_handoff_prompt") or "").strip() or None
+    )
     coerced["metadata"] = metadata
     return coerced
 
@@ -1417,7 +3099,11 @@ def _apply_runtime_patch_defaults(
     runtime = get_current_tool_runtime_context()
     metadata = runtime.metadata if runtime and isinstance(runtime.metadata, dict) else {}
     preferred_operation = str(metadata.get("preferred_visual_operation") or "").strip()
-    preferred_session_id = str(metadata.get("preferred_visual_session_id") or "").strip()
+    preferred_session_id = str(
+        metadata.get("preferred_visual_session_id")
+        or metadata.get("preferred_code_studio_session_id")
+        or ""
+    ).strip()
 
     resolved_session_id = visual_session_id.strip()
     resolved_operation = operation.strip() or "open"
@@ -1463,7 +3149,7 @@ def _build_multi_figure_payloads(
                 builder_html = builder(figure_spec, figure_title)
             except Exception as exc:
                 logger.warning("Structured visual fallback HTML failed for grouped type=%s: %s", figure_visual_type, exc)
-        resolved_renderer_kind = _infer_renderer_kind(
+        resolved_renderer_kind = _resolve_renderer_kind(
             figure_visual_type,
             figure_spec,
             str(figure.get("renderer_kind") or raw_group.get("renderer_kind") or ""),
@@ -1621,8 +3307,8 @@ def _esc(s: str) -> str:
 
 def _wrap_html(body_css: str, body_html: str, title: str = "", subtitle: str = "") -> str:
     """Wrap visual content in full HTML document with design system."""
-    title_html = f'<div class="widget-title">{_esc(title)}</div>' if title else ""
-    subtitle_html = f'<div class="widget-subtitle">{_esc(subtitle)}</div>' if subtitle else ""
+    title_html = f'<div class="wiii-frame-title widget-title">{_esc(title)}</div>' if title else ""
+    subtitle_html = f'<div class="wiii-frame-subtitle widget-subtitle">{_esc(subtitle)}</div>' if subtitle else ""
     return f"""<!DOCTYPE html>
 <html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -2069,377 +3755,6 @@ def _build_infographic_html(spec: dict, title: str) -> str:
 
 
 # =============================================================================
-# SIMULATION — Interactive Canvas with controls (physics, math, animations)
-# =============================================================================
-
-def _build_simulation_html(spec: dict, title: str) -> str:
-    """Interactive simulation with Canvas, sliders, and live state."""
-    variables = spec.get("variables", [])  # [{name, label, min, max, value, step}]
-    setup_code = spec.get("setup", "")     # JS: initialize state
-    draw_code = spec.get("draw", "")       # JS: draw frame (receives ctx, canvas, vars, t)
-    update_code = spec.get("update", "")   # JS: update state each frame
-    description = spec.get("description", "")
-    fps = spec.get("fps", 60)
-    canvas_height = spec.get("height", 300)
-
-    css = f"""
-canvas#sim {{ width:100%; height:{canvas_height}px; border-radius:8px; background:var(--bg2); display:block; cursor:crosshair; border:0.5px solid var(--border); }}
-.sim-controls {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; align-items:center; }}
-.sim-control {{ flex:1; min-width:140px; }}
-.sim-control label {{ font-size:11px; font-weight:500; color:var(--text3); display:block; margin-bottom:2px; }}
-.sim-control input[type=range] {{ width:100%; accent-color:var(--text3); height:3px; }}
-.sim-value {{ font-size:10px; color:var(--text3); font-family:monospace; }}
-.sim-desc {{ font-size:11px; color:var(--text3); margin-top:8px; }}
-.sim-btns {{ display:flex; gap:6px; margin-top:6px; }}
-.sim-btn {{
-  padding:4px 12px; border-radius:6px; border:0.5px solid var(--border);
-  background:transparent; color:var(--text2); font-size:11px; cursor:pointer;
-  transition: background 0.15s, transform 0.1s;
-}}
-.sim-btn:hover {{ background:var(--bg2); }}
-.sim-btn:active {{ transform:scale(0.98); }}
-.sim-btn.active {{ background:transparent; color:var(--accent); border-color:var(--accent); }}
-"""
-
-    # Build slider controls
-    controls_html = ""
-    vars_init = "const vars = {};\n"
-    for v in variables:
-        vname = _esc(v.get("name", "x"))
-        vlabel = _esc(v.get("label", vname))
-        vmin = v.get("min", 0)
-        vmax = v.get("max", 100)
-        vval = v.get("value", 50)
-        vstep = v.get("step", 1)
-        controls_html += f"""<div class="sim-control">
-  <label>{vlabel}: <span class="sim-value" id="val_{vname}">{vval}</span></label>
-  <input type="range" id="sl_{vname}" min="{vmin}" max="{vmax}" value="{vval}" step="{vstep}"
-    oninput="vars.{vname}=+this.value;document.getElementById('val_{vname}').textContent=this.value">
-</div>\n"""
-        vars_init += f"vars.{vname} = {vval};\n"
-
-    desc_html = f'<div class="sim-desc">{_esc(description)}</div>' if description else ""
-
-    body = f"""<canvas id="sim" width="800" height="{canvas_height}"></canvas>
-<div class="sim-btns">
-  <button class="sim-btn active" id="btnPlay" onclick="togglePlay()">⏸ Pause</button>
-  <button class="sim-btn" onclick="resetSim()">↺ Reset</button>
-</div>
-<div class="sim-controls">{controls_html}</div>
-{desc_html}
-<script>
-const canvas = document.getElementById('sim');
-const ctx = canvas.getContext('2d');
-{vars_init}
-let t = 0, running = true, animId = null;
-function resizeCanvas() {{
-  canvas.width = canvas.offsetWidth * (window.devicePixelRatio || 1);
-  canvas.height = {canvas_height} * (window.devicePixelRatio || 1);
-  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
-}}
-resizeCanvas();
-function emitSimulationFeedback(eventName) {{
-  if (!window.WiiiVisualBridge || typeof window.WiiiVisualBridge.reportResult !== 'function') return;
-  const payload = {{
-    event: eventName,
-    running: running,
-    time: Number(t.toFixed(2)),
-    variables: Object.assign({{}}, vars),
-  }};
-  const summary = 'Mô phỏng đang ' + (running ? 'chạy' : 'tạm dừng') + ' | t=' + payload.time;
-  window.WiiiVisualBridge.reportResult('simulation_state', payload, summary, running ? 'active' : 'paused');
-}}
-/* USER SETUP */
-{setup_code}
-/* ANIMATION LOOP */
-function frame() {{
-  if (!running) return;
-  ctx.clearRect(0, 0, canvas.offsetWidth, {canvas_height});
-  /* USER UPDATE */
-  {update_code}
-  /* USER DRAW */
-  {draw_code}
-  t += 1/{fps};
-  animId = requestAnimationFrame(frame);
-}}
-function togglePlay() {{
-  running = !running;
-  document.getElementById('btnPlay').textContent = running ? '⏸ Pause' : '▶ Play';
-  document.getElementById('btnPlay').classList.toggle('active', running);
-  emitSimulationFeedback(running ? 'resume' : 'pause');
-  if (running) frame();
-}}
-function resetSim() {{
-  t = 0;
-  {setup_code}
-  if (!running) {{ running = true; document.getElementById('btnPlay').textContent = '⏸ Pause'; document.getElementById('btnPlay').classList.add('active'); }}
-  emitSimulationFeedback('reset');
-  frame();
-}}
-document.querySelectorAll('.sim-control input[type=range]').forEach((input) => {{
-  input.addEventListener('change', function () {{
-    emitSimulationFeedback('control_change');
-  }});
-}});
-emitSimulationFeedback('init');
-frame();
-</script>"""
-
-    return _wrap_html(css, body, title)
-
-
-# =============================================================================
-# QUIZ — Multiple choice with instant feedback
-# =============================================================================
-
-def _build_quiz_html(spec: dict, title: str) -> str:
-    questions = spec.get("questions", [])
-    # [{question, options: [{text, correct: bool}], explanation}]
-
-    css = """
-.quiz { display:flex; flex-direction:column; gap:16px; }
-.q-card { background:var(--bg2); border-radius:var(--radius); padding:16px; border:1.5px solid var(--border); }
-.q-text { font-size:14px; font-weight:600; color:var(--text); margin-bottom:10px; }
-.q-options { display:flex; flex-direction:column; gap:6px; }
-.q-opt {
-  padding:10px 14px; border-radius:var(--radius-sm); border:1.5px solid var(--border);
-  background:var(--bg); cursor:pointer; font-size:13px; color:var(--text); transition:all 0.2s;
-  display:flex; align-items:center; gap:8px;
-}
-.q-opt:hover:not(.disabled) { border-color:var(--accent); background:var(--accent-bg); }
-.q-opt.correct { border-color:var(--green); background:var(--green-bg); color:var(--green); }
-.q-opt.wrong { border-color:var(--red); background:var(--red-bg); color:var(--red); }
-.q-opt.disabled { cursor:default; opacity:0.7; }
-.q-opt .q-icon { width:20px; text-align:center; }
-.q-explain { margin-top:10px; padding:10px; border-radius:var(--radius-sm); background:var(--accent-bg); font-size:12px; color:var(--text2); display:none; }
-.q-explain.show { display:block; }
-.q-score { text-align:center; font-size:15px; font-weight:700; color:var(--accent); padding:12px; background:var(--accent-bg); border-radius:var(--radius); }
-"""
-
-    q_cards = []
-    for i, q in enumerate(questions):
-        q_text = _esc(q.get("question", ""))
-        explanation = _esc(q.get("explanation", ""))
-        options = q.get("options", [])
-
-        opts_html = ""
-        for j, opt in enumerate(options):
-            opt_text = _esc(opt.get("text", ""))
-            is_correct = "true" if opt.get("correct", False) else "false"
-            opts_html += f'<div class="q-opt" id="q{i}o{j}" onclick="checkAnswer({i},{j},{is_correct})">'
-            opts_html += f'<span class="q-icon" id="q{i}o{j}i">○</span> {opt_text}</div>\n'
-
-        explain_html = f'<div class="q-explain" id="q{i}exp">{explanation}</div>' if explanation else ""
-
-        q_cards.append(f"""<div class="q-card">
-  <div class="q-text">Câu {i + 1}: {q_text}</div>
-  <div class="q-options">{opts_html}</div>
-  {explain_html}
-</div>""")
-
-    total = len(questions)
-    body = f"""<div class="quiz">
-  {"".join(q_cards)}
-  <div class="q-score" id="scoreBoard" style="display:none"></div>
-</div>
-<script>
-let score = 0, answered = 0, total = {total};
-function reportQuizResult(status, detail) {{
-  if (!window.WiiiVisualBridge || typeof window.WiiiVisualBridge.reportResult !== 'function') return;
-  const percentage = total > 0 ? Math.round(score / total * 100) : 0;
-  const payload = Object.assign({{
-    score: score,
-    correct_count: score,
-    total_count: total,
-    answered_count: answered,
-    percentage: percentage
-  }}, detail || {{}});
-  const summary = answered === total
-    ? 'Bạn đúng ' + score + '/' + total + ' câu (' + percentage + '%)'
-    : 'Đã trả lời ' + answered + '/' + total + ' câu';
-  window.WiiiVisualBridge.reportResult('quiz_result', payload, summary, status);
-}}
-function checkAnswer(qi, oi, correct) {{
-  const opts = document.querySelectorAll('[id^="q'+qi+'o"]');
-  if (opts[0] && opts[0].classList.contains('disabled')) return;
-  opts.forEach((el, idx) => {{
-    el.classList.add('disabled');
-    const isCorrect = el.getAttribute('onclick').includes('true');
-    if (idx === oi) {{
-      el.classList.add(correct ? 'correct' : 'wrong');
-      document.getElementById('q'+qi+'o'+oi+'i').textContent = correct ? '✓' : '✗';
-    }} else if (isCorrect) {{
-      el.classList.add('correct');
-      el.querySelector('.q-icon').textContent = '✓';
-    }}
-  }});
-  const exp = document.getElementById('q'+qi+'exp');
-  if (exp) exp.classList.add('show');
-  if (correct) score++;
-  answered++;
-  reportQuizResult(answered === total ? 'completed' : 'in_progress', {{
-    question_index: qi,
-    selected_index: oi,
-    is_correct: !!correct
-  }});
-  if (answered === total) {{
-    const board = document.getElementById('scoreBoard');
-    board.style.display = 'block';
-    board.textContent = 'Kết quả: ' + score + '/' + total + ' (' + Math.round(score/total*100) + '%)';
-  }}
-}}
-reportQuizResult('ready', {{}});
-</script>"""
-
-    return _wrap_html(css, body, title)
-
-
-# =============================================================================
-# INTERACTIVE TABLE — Sortable, filterable, clickable
-# =============================================================================
-
-def _build_interactive_table_html(spec: dict, title: str) -> str:
-    headers = spec.get("headers", [])
-    rows = spec.get("rows", [])  # 2D array
-    searchable = spec.get("searchable", True)
-    sortable = spec.get("sortable", True)
-    row_click = spec.get("row_click", "")  # JS template: receives rowData array
-
-    css = """
-.itbl-search {
-  width:100%; padding:8px 12px; border-radius:var(--radius-sm); border:1.5px solid var(--border);
-  background:var(--bg); color:var(--text); font-size:13px; margin-bottom:12px; outline:none;
-}
-.itbl-search:focus { border-color:var(--accent); }
-.itbl-wrap { overflow-x:auto; border-radius:var(--radius); border:1px solid var(--border); }
-table.itbl { width:100%; border-collapse:collapse; font-size:13px; }
-.itbl th {
-  padding:10px 12px; text-align:left; font-weight:600; font-size:11px; text-transform:uppercase;
-  letter-spacing:0.5px; color:var(--text2); background:var(--bg2); border-bottom:2px solid var(--border);
-  cursor:pointer; user-select:none; white-space:nowrap;
-}
-.itbl th:hover { color:var(--accent); }
-.itbl th .sort-icon { margin-left:4px; font-size:10px; }
-.itbl td { padding:8px 12px; border-bottom:1px solid var(--border); color:var(--text); }
-.itbl tr:hover td { background:var(--accent-bg); }
-.itbl tr { transition:background 0.15s; cursor:default; }
-.itbl-count { font-size:11px; color:var(--text3); margin-top:6px; text-align:right; }
-"""
-
-    headers_json = json.dumps(headers, ensure_ascii=False)
-    rows_json = json.dumps(rows, ensure_ascii=False)
-
-    search_html = '<input class="itbl-search" id="tblSearch" placeholder="Tìm kiếm..." oninput="filterTable()">' if searchable else ""
-
-    body = f"""{search_html}
-<div class="itbl-wrap"><table class="itbl" id="dataTable">
-  <thead><tr id="tblHead"></tr></thead>
-  <tbody id="tblBody"></tbody>
-</table></div>
-<div class="itbl-count" id="tblCount"></div>
-<script>
-const headers = {headers_json};
-const allRows = {rows_json};
-let sortCol = -1, sortAsc = true;
-
-function renderHead() {{
-  const head = document.getElementById('tblHead');
-  head.innerHTML = '';
-  headers.forEach((h, i) => {{
-    const th = document.createElement('th');
-    const icon = sortCol === i ? (sortAsc ? ' ▲' : ' ▼') : '';
-    th.innerHTML = h + '<span class="sort-icon">' + icon + '</span>';
-    th.onclick = () => {{ sortCol = sortCol === i && sortAsc ? i : i; sortAsc = sortCol === i ? !sortAsc : true; sortCol = i; render(); }};
-    head.appendChild(th);
-  }});
-}}
-
-function render() {{
-  const q = (document.getElementById('tblSearch') || {{}}).value || '';
-  let filtered = allRows.filter(r => !q || r.some(c => String(c).toLowerCase().includes(q.toLowerCase())));
-  if (sortCol >= 0) {{
-    filtered.sort((a, b) => {{
-      const va = a[sortCol], vb = b[sortCol];
-      const na = parseFloat(va), nb = parseFloat(vb);
-      if (!isNaN(na) && !isNaN(nb)) return sortAsc ? na - nb : nb - na;
-      return sortAsc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
-    }});
-  }}
-  const body = document.getElementById('tblBody');
-  body.innerHTML = '';
-  filtered.forEach(r => {{
-    const tr = document.createElement('tr');
-    r.forEach(c => {{ const td = document.createElement('td'); td.textContent = c; tr.appendChild(td); }});
-    body.appendChild(tr);
-  }});
-  document.getElementById('tblCount').textContent = filtered.length + '/' + allRows.length + ' dòng';
-  renderHead();
-}}
-
-function filterTable() {{ render(); }}
-render();
-</script>"""
-
-    return _wrap_html(css, body, title)
-
-
-# =============================================================================
-# REACT APP — Full React component (Claude-level architecture)
-# Uses React 18 + Tailwind Play CDN + Recharts + Lucide in sandboxed iframe.
-# AI writes JSX component code → tool wraps in runtime shell → rendered live.
-# =============================================================================
-
-_REACT_RUNTIME_SHELL = """<!DOCTYPE html>
-<html lang="vi">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.min.js"></script>
-<script src="https://cdn.tailwindcss.com"></script>
-<script>
-// Expose Recharts components globally for JSX
-if (window.Recharts) {
-  Object.keys(window.Recharts).forEach(k => window[k] = window.Recharts[k]);
-}
-</script>
-<style>
-body { margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
-</style>
-</head>
-<body>
-<div id="root"></div>
-<script type="text/babel">
-%COMPONENT_CODE%
-
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
-</script>
-</body>
-</html>"""
-
-
-def _build_react_app_html(spec: dict, title: str) -> str:
-    """Render a React component in full Claude-like runtime environment."""
-    component_code = spec.get("code", "")
-    if not component_code:
-        return _wrap_html("", "<p>Error: no React component code provided</p>", title)
-
-    # Insert component code into runtime shell
-    # Note: we do NOT escape the code — it's JS, expected to contain JSX/HTML
-    html = _REACT_RUNTIME_SHELL.replace("%COMPONENT_CODE%", component_code)
-
-    # Inject title if provided
-    if title:
-        title_html = f'<h2 style="text-align:center;font-size:17px;font-weight:700;margin-bottom:12px">{_esc(title)}</h2>'
-        html = html.replace('<div id="root"></div>', f'{title_html}<div id="root"></div>')
-
-    return html
-
-
-# =============================================================================
 # CHART — SVG bar/line chart (lightweight, no JS dependency)
 # =============================================================================
 
@@ -2655,10 +3970,6 @@ _BUILDERS = {
     "chart": _build_chart_html,
     "timeline": _build_timeline_html,
     "map_lite": _build_map_lite_html,
-    "simulation": _build_simulation_html,
-    "quiz": _build_quiz_html,
-    "interactive_table": _build_interactive_table_html,
-    "react_app": _build_react_app_html,
 }
 
 
@@ -2685,8 +3996,8 @@ def tool_generate_visual(
     - inline_html: bespoke HTML/CSS/JS visuals inside Wiii shell
     - app: MCP-style iframe app runtime for simulations and mini tools
 
-    Unlike tool_generate_rich_visual, this tool returns JSON payload data for the
-    frontend visual renderer. Do NOT copy this payload verbatim into prose.
+    This tool returns JSON payload data for the frontend visual renderer.
+    Do NOT copy this payload verbatim into prose.
 
     IMPORTANT — Spec Quality Rules:
     - LUÔN cung cấp description/content cho mỗi layer/step/branch. KHÔNG để trống.
@@ -2713,10 +4024,13 @@ def tool_generate_visual(
       ]}
 
     code_html (optional, khi được bật):
-      Viết HTML/CSS/SVG trực tiếp — mỗi visual unique, custom-designed.
+      Đây là lane LLM-first cho article figure và chart runtime khi cần HTML/SVG trực tiếp.
+      Ưu tiên SVG-first cho article_figure/chart_runtime; dùng Canvas/JS khi và chỉ khi runtime thực sự là simulation/app.
+      Structured spec vẫn được giữ như fail-safe fallback, không còn là đường chính cho visual giai thích/charts.
       Dùng CSS variables có sẵn: --bg, --bg2, --bg3, --text, --text2, --text3,
       --accent, --green, --purple, --amber, --teal, --pink, --border, --radius.
       Dark mode tự động qua CSS variables. KHÔNG dùng JavaScript trừ khi cần animation.
+      Giữ host-owned shell, spacing tinh gọn, và tránh cảm giác detached widget/card.
       Ví dụ:
         code_html='<style>.flow{display:flex;gap:12px;align-items:center}.node{padding:14px 20px;
         border-radius:var(--radius);border:1.5px solid var(--border);background:var(--bg2);
@@ -2726,7 +4040,7 @@ def tool_generate_visual(
         <span class="arrow">→</span><div class="node">Process</div>
         <span class="arrow">→</span><div class="node">Output</div></div>'
     """
-    valid_types = CORE_STRUCTURED_VISUAL_TYPES + LEGACY_SANDBOX_VISUAL_TYPES
+    valid_types = CORE_STRUCTURED_VISUAL_TYPES
     if visual_type not in valid_types:
         valid = ", ".join(valid_types)
         return f"Error: visual_type '{visual_type}' không hợp lệ cho visual runtime. Chọn một trong: {valid}"
@@ -2802,10 +4116,11 @@ def tool_generate_visual(
         except Exception as exc:
             logger.warning("Structured visual fallback HTML failed for type=%s: %s", visual_type, exc)
 
-    # code_html forces inline_html renderer
+    if resolved_code_html and _should_keep_structured_renderer(renderer_kind):
+        resolved_code_html = None
     if resolved_code_html:
         renderer_kind = "inline_html"
-    resolved_renderer_kind = _infer_renderer_kind(visual_type, spec, renderer_kind)
+    resolved_renderer_kind = _resolve_renderer_kind(visual_type, spec, renderer_kind)
     resolved_visual_session_id, resolved_operation = _apply_runtime_patch_defaults(
         visual_session_id=visual_session_id,
         operation=operation,
@@ -2881,172 +4196,18 @@ def tool_generate_visual(
 
 
 @tool
-def tool_generate_rich_visual(
-    visual_type: str,
-    spec_json: str,
-    title: str = "",
-) -> str:
-    """Generate a rich interactive visual widget (HTML+CSS+JS) rendered INLINE in chat.
-
-    Creates Claude-level interactive widgets: comparisons, simulations, quizzes,
-    interactive tables, architecture diagrams, and more. Returns a ```widget
-    code block that the frontend renders as a fully interactive visual.
-
-    PRIORITY: Use this only as a legacy/fallback sandbox runtime for simulation,
-    quiz, interactive_table, react_app, or highly bespoke HTML/JS cases.
-    For explanatory visuals, comparisons, article-style charts, and inline figures,
-    prefer tool_generate_visual.
-    Use tool_generate_interactive_chart only for standalone numeric dashboard charts.
-    Use tool_generate_mermaid for simple FLOWCHARTS and SEQUENCE diagrams.
-
-    Args:
-        visual_type: One of: comparison, process, matrix, architecture, concept,
-                     infographic, simulation, quiz, interactive_table, react_app
-        spec_json: JSON object describing the visual content. Structure depends on visual_type:
-
-            comparison: {
-              "left": {"title": "A", "subtitle": "...", "items": ["item1", ...], "color": "#ef4444", "bg": "#fef2f2"},
-              "right": {"title": "B", "subtitle": "...", "items": ["item1", ...], "color": "#14b8a6", "bg": "#f0fdfa"},
-              "note": "Optional bottom note"
-            }
-
-            process: {
-              "steps": [{"title": "Step 1", "description": "...", "icon": "1"}, ...],
-              "direction": "horizontal" or "vertical"
-            }
-
-            matrix: {
-              "rows": ["Row1", "Row2"], "cols": ["Col1", "Col2"],
-              "cells": [[0.9, 0.3], [0.1, 0.8]],
-              "row_label": "Queries", "col_label": "Keys",
-              "color": "#ef4444", "show_values": true,
-              "caption": "Hover to see values"
-            }
-
-            architecture: {
-              "layers": [{"name": "Layer Name", "components": ["Comp1", "Comp2"]}, ...]
-            }
-
-            concept: {
-              "center": {"title": "Main Idea", "description": "..."},
-              "branches": [{"title": "Branch 1", "items": ["detail1", ...]}, ...]
-            }
-
-            infographic: {
-              "stats": [{"value": "95%", "label": "Accuracy"}, ...],
-              "sections": [{"title": "Key Finding", "content": "..."}, ...]
-            }
-
-            simulation: {
-              "variables": [{"name": "speed", "label": "Tốc độ", "min": 1, "max": 100, "value": 50, "step": 1}],
-              "setup": "// JS: initialize state (runs once)",
-              "update": "// JS: update physics each frame (has vars, t)",
-              "draw": "// JS: draw on canvas (has ctx, canvas, vars, t)",
-              "fps": 60, "height": 300,
-              "description": "Mô phỏng vật lý tương tác"
-            }
-
-            quiz: {
-              "questions": [
-                {
-                  "question": "Câu hỏi?",
-                  "options": [
-                    {"text": "Đáp án A", "correct": false},
-                    {"text": "Đáp án B", "correct": true}
-                  ],
-                  "explanation": "Giải thích đáp án đúng"
-                }
-              ]
-            }
-
-            interactive_table: {
-              "headers": ["Tên", "Giá trị", "Ghi chú"],
-              "rows": [["Item 1", 100, "OK"], ["Item 2", 200, "Good"]],
-              "searchable": true, "sortable": true
-            }
-
-            react_app: {
-              "code": "function App() { const [count, setCount] = React.useState(0); return (<div className='p-4'><h1 className='text-2xl font-bold'>Count: {count}</h1><button className='mt-2 px-4 py-2 bg-blue-500 text-white rounded' onClick={() => setCount(c => c+1)}>+1</button></div>); }"
-            }
-            NOTE: react_app has React 18 + Tailwind CSS + Recharts available.
-            Write a function App() component. Use Tailwind classes for styling.
-            Use Recharts components (BarChart, LineChart, PieChart, etc.) for data viz.
-            BEST FOR: Complex interactive UIs, dashboards, multi-component layouts.
-
-        title: Visual title in Vietnamese (displayed above the diagram).
-
-    Returns:
-        A ```widget code block. Include this DIRECTLY in your response.
-    """
-    builder = _BUILDERS.get(visual_type)
-    if not builder:
-        valid = ", ".join(sorted(_BUILDERS.keys()))
-        return f"Error: visual_type '{visual_type}' không hợp lệ. Chọn một trong: {valid}"
-
-    try:
-        spec = json.loads(spec_json)
-        if not isinstance(spec, dict):
-            return "Error: spec_json phải là một JSON object."
-    except json.JSONDecodeError as e:
-        return f"Error: JSON không hợp lệ: {e}"
-
-    try:
-        html = builder(spec, title)
-    except Exception as e:
-        logger.exception("Rich visual generation failed for type=%s", visual_type)
-        return f"Error: Không thể tạo visual: {e}"
-
-    return (
-        f"Visual đã tạo thành công! Include đoạn code block sau TRỰC TIẾP trong response:\n\n"
-        f"```widget\n{html}\n```\n\n"
-        f"Giải thích nội dung bằng tiếng Việt bên ngoài widget."
-    )
-
-
-@tool
 def tool_create_visual_code(
     code_html: str,
     title: str = "",
     subtitle: str = "",
     visual_session_id: str = "",
 ) -> str:
-    """Tạo visual bằng HTML/CSS/SVG/JS trực tiếp — giống Claude Artifacts.
+    """Create Code Studio app/widget/artifact markup for host-governed runtimes.
 
-    ĐÂY LÀ TOOL CHÍNH cho visual. LUÔN dùng tool này thay vì tool_generate_visual.
-
-    code_html là NỘI DUNG BẮT BUỘC — viết HTML/CSS/SVG/JS trực tiếp:
-    - Dùng <style> cho CSS, HTML cho cấu trúc, <script> cho JS
-    - CSS vars có sẵn: --bg, --bg2, --bg3, --text, --text2, --text3,
-      --accent, --green, --purple, --amber, --teal, --pink, --border, --radius
-    - Dark mode TỰ ĐỘNG qua CSS vars — KHÔNG cần media query
-    - Font-family đã có sẵn — không cần khai báo
-    - KHÔNG viết <!DOCTYPE>, <html>, <head>, <body> — chỉ viết body content
-
-    Quy tắc chất lượng:
-    - MỌI visual PHẢI có đồ họa thật (SVG shapes, Canvas, animation)
-    - KHÔNG BAO GIỜ trả visual chỉ có text — phải có visual elements
-    - Mô phỏng: PHẢI có sliders, stats realtime, nút đặt lại/tạm dừng
-    - Sơ đồ: PHẢI có màu phân biệt, mô tả, hover effect
-    - So sánh: PHẢI có 2+ cột, highlight, responsive
-
-    Ví dụ code_html cho sơ đồ flow:
-        code_html='<style>.flow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-        .node{padding:14px 20px;border-radius:var(--radius);border:1.5px solid var(--border);
-        background:var(--bg2);font-size:13px;font-weight:600;color:var(--text);min-width:100px;text-align:center}
-        .arrow{color:var(--text3);font-size:20px}
-        .highlight{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent);color:var(--accent)}
-        </style><div class="flow"><div class="node highlight">Input</div>
-        <span class="arrow">→</span><div class="node">Process</div>
-        <span class="arrow">→</span><div class="node highlight">Output</div></div>'
-
-    Args:
-        code_html: HTML/CSS/SVG/JS code — NỘI DUNG BẮT BUỘC, phải có đồ họa thật
-        title: Tiêu đề visual (tiếng Việt)
-        subtitle: Phụ đề (tùy chọn)
-        visual_session_id: ID session để patch visual sau này
-
-    Returns:
-        JSON payload cho frontend renderer (iframe sandbox).
+    Use this only for `code_studio_app` or `artifact` lanes such as simulations,
+    quiz widgets, search/code widgets, mini tools, and embeddable HTML apps.
+    Ordinary explanatory figures and chart runtime outputs should stay on
+    `tool_generate_visual`.
     """
     raw = code_html.strip() if isinstance(code_html, str) else ""
     if not raw:
@@ -3069,6 +4230,46 @@ def tool_create_visual_code(
     if not getattr(get_settings(), "enable_llm_code_gen_visuals", False):
         return "Error: Visual code generation chưa được bật (enable_llm_code_gen_visuals=False)."
 
+    presentation_intent = _runtime_presentation_intent()
+    if presentation_intent in {"article_figure", "chart_runtime"}:
+        return (
+            "Error: tool_create_visual_code khong phai lane dung cho article figure/chart runtime. "
+            "Hay dung tool_generate_visual de tao figure giai thich hoac chart runtime chuan."
+        )
+
+    studio_lane = _runtime_studio_lane() or "app"
+    artifact_kind = _runtime_artifact_kind() or "html_app"
+    requested_visual_type = _runtime_metadata_text("visual_requested_type", "concept")
+    resolved_visual_type = requested_visual_type if requested_visual_type in {
+        "comparison", "process", "matrix", "architecture", "concept",
+        "infographic", "chart", "timeline", "map_lite", "simulation",
+        "quiz", "interactive_table", "react_app",
+    } else "concept"
+    resolved_renderer_kind = "app" if studio_lane in {"app", "widget"} else "inline_html"
+    resolved_shell_variant = "immersive" if resolved_renderer_kind == "app" else "editorial"
+    resolved_patch_strategy = "app_state" if resolved_renderer_kind == "app" else "replace_html"
+    quality_profile = _runtime_quality_profile()
+
+    raw = _maybe_upgrade_code_studio_output(
+        raw,
+        title=title,
+        subtitle=subtitle,
+        requested_visual_type=resolved_visual_type,
+        studio_lane=studio_lane,
+        artifact_kind=artifact_kind,
+        quality_profile=quality_profile,
+    )
+
+    quality_error = _validate_code_studio_output(
+        raw,
+        requested_visual_type=resolved_visual_type,
+        studio_lane=studio_lane,
+        artifact_kind=artifact_kind,
+        quality_profile=quality_profile,
+    )
+    if quality_error:
+        return quality_error
+
     # Wrap in design system if not a full HTML document
     if raw.lstrip().lower().startswith("<!doctype") or raw.lstrip().lower().startswith("<html"):
         final_html = raw
@@ -3090,19 +4291,34 @@ def tool_create_visual_code(
     )
 
     payload = _normalize_visual_payload(
-        visual_type="concept",
+        visual_type=resolved_visual_type,
         spec={},
         title=safe_title,
         summary=safe_summary,
         subtitle=subtitle,
         visual_session_id=resolved_visual_session_id,
         operation=resolved_operation,
-        renderer_kind="inline_html",
-        shell_variant="editorial",
-        patch_strategy="replace_html",
+        renderer_kind=resolved_renderer_kind,
+        shell_variant=resolved_shell_variant,
+        patch_strategy=resolved_patch_strategy,
         narrative_anchor="after-lead",
         fallback_html=final_html,
-        runtime_manifest=None,
+        runtime_manifest={
+            "ui_runtime": "html",
+            "storage": False,
+            "mcp_access": False,
+            "file_export": studio_lane == "artifact",
+            "shareability": "session" if studio_lane == "app" else "artifact",
+        } if resolved_renderer_kind == "app" else None,
+        metadata={
+            "source_tool": "tool_create_visual_code",
+            "presentation_intent": presentation_intent or "code_studio_app",
+            "studio_lane": studio_lane,
+            "artifact_kind": artifact_kind,
+            "quality_profile": quality_profile,
+            "renderer_contract": "host_shell",
+            **({"code_studio_version": _runtime_code_studio_version()} if _runtime_code_studio_version() > 0 else {}),
+        },
     )
     _log_visual_telemetry(
         "tool_create_visual_code",
@@ -3112,6 +4328,13 @@ def tool_create_visual_code(
         has_code_html=True,
     )
     return json.dumps(payload.model_dump(mode="json"), ensure_ascii=False)
+
+tool_create_visual_code.description = (
+    "Create app/widget/artifact UI with raw HTML/CSS/SVG/JS for Code Studio. "
+    "Use only for code_studio_app or artifact lanes such as simulation, quiz, "
+    "search/code widget, mini tool, or HTML app. Do not use as the default path "
+    "for ordinary explanatory visuals or normal charts when tool_generate_visual is sufficient."
+)
 
 
 def get_visual_tools() -> list:
@@ -3129,5 +4352,4 @@ def get_visual_tools() -> list:
     # tool_create_visual_code: tool riêng cho LLM code-gen visuals
     if getattr(settings, "enable_llm_code_gen_visuals", False):
         tools.append(tool_create_visual_code)
-    tools.append(tool_generate_rich_visual)
     return tools
