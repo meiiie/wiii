@@ -993,135 +993,18 @@ def _build_code_studio_tools_context(
 
     sections = ["## CODE STUDIO TOOLKIT:", *tool_hints, "", *priority_rules]
 
-    # Append visual Skills cho code-gen
+    # Append visual skills — only essential lane guidance
     if getattr(settings_obj, "enable_llm_code_gen_visuals", False):
-        # CRITICAL: Output rules + skeleton go FIRST (Gemini attention bias = start + end)
-        # Quality markers — assertive anchor at top, then checklist
         sections.append("")
-        sections.append("## OUTPUT FORMAT — 3 RULES BAT BUOC")
         sections.append(
-            "**Rule 1 — FRAGMENT ONLY**: Dong dau tien cua code_html PHAI la `<!--` (planning block) "
-            "hoac `<style>`. TUYET DOI KHONG bat dau bang `<!DOCTYPE`, `<html>`, `<head>`, `<body>`. "
-            "Host iframe da cung cap cac the nay. Vi pham rule nay = output bi reject.\n\n"
-            "**Rule 2 — PLANNING BLOCK**: Dong dau tien PHAI la:\n"
-            "```\n"
-            "<!--\n"
-            "  STATE MODEL: [list state variables]\n"
-            "  RENDER SURFACE: Canvas 2D | SVG | HTML\n"
-            "  CONTROLS: [list controls]\n"
-            "  READOUTS: [list live readouts]\n"
-            "  FEEDBACK: WiiiVisualBridge.reportResult\n"
-            "-->\n"
-            "```\n"
-            "Roi tiep theo la `<style>`, roi HTML, roi `<script>` cuoi cung.\n\n"
-            "**Rule 3 — STRUCTURE**: `<style>` → HTML → `<script>`. Khong dao thu tu."
+            "## CODE FORMAT cho tool_create_visual_code:\n"
+            "code_html bat dau bang `<!-- STATE MODEL: ... RENDER SURFACE: ... CONTROLS: ... READOUTS: ... -->` "
+            "roi `<style>` voi CSS variables (--bg, --fg, --accent, --surface, --border), "
+            "roi HTML content, roi `<script>` cuoi cung.\n"
+            "KHONG dung DOCTYPE, html, head, body tags. Fragment only.\n"
+            "Simulation can: Canvas + requestAnimationFrame + deltaTime + controls (sliders) + readouts (live values) + WiiiVisualBridge.reportResult().\n"
+            "Chat luong se duoc cham diem tu dong. Score < 6/10 se bi tu choi va yeu cau viet lai."
         )
-
-        sections.append("")
-        sections.append("## QUALITY MARKERS — Visual chat luong cao")
-        sections.append(
-            "1. **CSS variables** cho moi mau sac (--bg, --fg, --accent, --surface, --border, --text-secondary). "
-            "Ho tro dark/light qua `prefers-color-scheme`.\n"
-            "2. **Render surface phu hop**: Canvas cho simulation (rAF + deltaTime), SVG cho diagram, HTML cho widget.\n"
-            "3. **Controls tuong tac**: Toi thieu 2-3 slider/button/input de user dieu chinh tham so.\n"
-            "4. **Readouts song**: Hien thi gia tri tinh toan real-time (goc, van toc, ket qua...) — khong chi hien canvas.\n"
-            "5. **Layout responsive**: CSS Grid hoac Flexbox. Canvas/SVG ben trai (~65%), controls ben phai (~35%). "
-            "Stack doc tren man hinh hep.\n"
-            "6. **WiiiVisualBridge**: Goi `window.WiiiVisualBridge.reportResult(kind, payload, summary, status)` "
-            "khi user tuong tac.\n"
-            "7. **Khong AI slop**: Khong gradient, shadow, blur, glow, neon. Font-weight chi 400 va 500.\n"
-            "8. **Do sau**: Simulation thuong 300-600 dong. Widget thuong 200-400 dong. "
-            "Day la HUONG DAN — Wiii tu quyet dinh complexity phu hop voi noi dung."
-        )
-
-        # Structure template — give LLM a concrete skeleton to follow
-        sections.append("")
-        sections.append("## SKELETON STRUCTURE — code_html phai theo thu tu nay")
-        sections.append(
-            "```html\n"
-            "<!--\n"
-            "  STATE MODEL: [khai bao state variables]\n"
-            "  RENDER SURFACE: Canvas 2D | SVG | HTML\n"
-            "  CONTROLS: [list controls]\n"
-            "  READOUTS: [list live readouts]\n"
-            "  FEEDBACK: WiiiVisualBridge.reportResult\n"
-            "-->\n"
-            "<style>\n"
-            "  :root {\n"
-            "    --bg: #0f172a; --fg: #e2e8f0; --accent: #38bdf8;\n"
-            "    --surface: #1e293b; --border: #475569; --text-secondary: #94a3b8;\n"
-            "  }\n"
-            "  @media (prefers-color-scheme: light) {\n"
-            "    :root { --bg: #f8fafc; --fg: #0f172a; --accent: #0284c7; --surface: #fff; --border: #cbd5e1; }\n"
-            "  }\n"
-            "  * { margin: 0; padding: 0; box-sizing: border-box; }\n"
-            "  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); }\n"
-            "  .layout { display: grid; grid-template-columns: 1fr 320px; gap: 16px; padding: 16px; }\n"
-            "  @media (max-width: 768px) { .layout { grid-template-columns: 1fr; } }\n"
-            "  /* ... them CSS cho controls, readouts, canvas ... */\n"
-            "</style>\n\n"
-            "<div class=\"layout\">\n"
-            "  <div class=\"canvas-area\">\n"
-            "    <canvas id=\"sim\" width=\"640\" height=\"480\"></canvas>\n"
-            "  </div>\n"
-            "  <div class=\"controls\">\n"
-            "    <!-- sliders, buttons -->\n"
-            "  </div>\n"
-            "</div>\n"
-            "<div class=\"readouts\">\n"
-            "  <!-- live values -->\n"
-            "</div>\n\n"
-            "<script>\n"
-            "(function() {\n"
-            "  const canvas = document.getElementById('sim');\n"
-            "  const ctx = canvas.getContext('2d');\n"
-            "  let lastTime = 0;\n"
-            "  // State variables\n"
-            "  // Physics update function\n"
-            "  // Render function\n"
-            "  // Animation loop with rAF + deltaTime\n"
-            "  function loop(now) {\n"
-            "    const dt = Math.min((now - lastTime) / 1000, 0.1);\n"
-            "    lastTime = now;\n"
-            "    // update(dt); draw(); updateReadouts();\n"
-            "    requestAnimationFrame(loop);\n"
-            "  }\n"
-            "  requestAnimationFrame(loop);\n"
-            "  // WiiiVisualBridge\n"
-            "  function report(k,p,s,st) { window.WiiiVisualBridge?.reportResult?.(k,p,s,st); }\n"
-            "})();\n"
-            "</script>\n"
-            "```\n"
-            "Dien noi dung that vao skeleton nay. KHONG bo qua phan nao."
-        )
-
-        # On-demand few-shot example based on visual_type (Claude-style guideline loading)
-        vtype = visual_decision.visual_type if visual_decision else ""
-        example = _load_code_studio_example(vtype) if vtype else None
-        if example:
-            sections.append("")
-            sections.append(f"## REFERENCE EXAMPLE ({vtype})")
-            sections.append(
-                "Day la ma mau chat luong cao — hoc theo do chi tiet va physics accuracy."
-            )
-            sections.append("```html")
-            sections.append(example)
-            sections.append("```")
-
-        # VISUAL_CODE_GEN.md guidelines — only load section 10 (checklist) to save tokens
-        # Full guidelines moved to bottom to avoid drowning critical rules
-        for skill_content in _load_code_studio_visual_skills():
-            if skill_content:
-                # Extract only the short checklist (section 10) instead of full 200+ lines
-                import re as _skill_re
-                checklist_match = _skill_re.search(
-                    r'(## 10\. Short checklist.*?)(?=## \d|$)',
-                    skill_content,
-                    _skill_re.DOTALL,
-                )
-                if checklist_match:
-                    sections.append("")
-                    sections.append(checklist_match.group(1).strip())
 
     return "\n".join(sections)
 

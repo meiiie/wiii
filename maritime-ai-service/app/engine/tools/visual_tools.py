@@ -1559,6 +1559,98 @@ def _postprocess_visual_html(raw: str) -> str:
     return raw
 
 
+def _quality_score_visual_output(raw_html: str, visual_type: str = "") -> tuple[int, list[str]]:
+    """Score visual output 0-10 and return list of specific deficiency messages."""
+    score = 0
+    deficiencies: list[str] = []
+    html_lower = raw_html.lower()
+
+    # 1. CSS variables
+    if "--bg" in raw_html and "--accent" in raw_html:
+        score += 1
+    else:
+        deficiencies.append("Thieu CSS variables. Them :root { --bg: #0f172a; --fg: #e2e8f0; --accent: #38bdf8; --surface: #1e293b; --border: #475569; }")
+
+    # 2. Dark/light mode
+    if "prefers-color-scheme" in raw_html:
+        score += 1
+    else:
+        deficiencies.append("Thieu dark/light mode. Them @media (prefers-color-scheme: light) { :root { --bg: #f8fafc; --fg: #0f172a; } }")
+
+    # 3. Appropriate render surface
+    is_simulation = visual_type in ("simulation", "physics", "animation")
+    has_canvas = "<canvas" in html_lower
+    has_svg = "<svg" in html_lower
+    if is_simulation and has_canvas:
+        score += 1
+    elif not is_simulation and (has_canvas or has_svg or "<div" in html_lower):
+        score += 1
+    else:
+        surface = "Canvas voi getContext('2d')" if is_simulation else "SVG hoac HTML"
+        deficiencies.append(f"Thieu render surface phu hop. Simulation can {surface}.")
+
+    # 4. Interactive controls
+    range_count = html_lower.count('type="range"') + html_lower.count("type='range'")
+    button_count = html_lower.count("<button")
+    input_count = html_lower.count("<input")
+    if range_count >= 2 or (range_count >= 1 and button_count >= 1) or input_count >= 2:
+        score += 1
+    else:
+        deficiencies.append("Thieu controls tuong tac. Them it nhat 2 slider (type='range') hoac buttons de user dieu chinh tham so.")
+
+    # 5. Live readouts
+    has_readout = "readout" in html_lower or "aria-live" in raw_html or html_lower.count("<span id=") >= 2
+    if has_readout:
+        score += 1
+    else:
+        deficiencies.append("Thieu readouts song. Them cac phan tu hien thi gia tri tinh toan real-time (dung <span> voi aria-live='polite').")
+
+    # 6. Animation/state engine (for simulations)
+    has_raf = "requestanimationframe" in html_lower
+    has_delta = "deltatime" in html_lower or "dt " in raw_html or "delta" in html_lower
+    if is_simulation:
+        if has_raf and has_delta:
+            score += 1
+        elif has_raf:
+            score += 1  # Still good, just missing deltaTime
+            if not has_delta:
+                deficiencies.append("Them deltaTime cho physics frame-rate-independent: const dt = Math.min((now - lastTime) / 1000, 0.1);")
+        else:
+            deficiencies.append("Thieu animation loop. Dung requestAnimationFrame voi deltaTime cho simulation muot 60fps.")
+    else:
+        score += 1  # Non-simulation doesn't need rAF
+
+    # 7. Feedback bridge
+    if "wiiiVisualBridge" in html_lower or "wiiivisualbridge" in html_lower:
+        score += 1
+    else:
+        deficiencies.append("Thieu WiiiVisualBridge. Them: function report(k,p,s,st){window.WiiiVisualBridge?.reportResult?.(k,p,s,st);}")
+
+    # 8. Code depth
+    line_count = raw_html.count("\n") + 1
+    min_lines = 150 if is_simulation else 80
+    if line_count >= min_lines:
+        score += 1
+    else:
+        deficiencies.append(f"Code qua ngan ({line_count} dong). Simulation chat luong thuong co {min_lines}+ dong voi physics engine, controls, readouts day du.")
+
+    # 9. No placeholder/demo markers
+    has_placeholder = any(marker in html_lower for marker in ["todo", "lorem ipsum", "placeholder", "// ...", "/* ... */"])
+    if not has_placeholder:
+        score += 1
+    else:
+        deficiencies.append("Code chua hoan chinh — con chua TODO/placeholder. Viet day du, khong de trong.")
+
+    # 10. Responsive layout
+    has_responsive = "grid" in html_lower or ("flex" in html_lower and ("@media" in raw_html or "max-width" in html_lower))
+    if has_responsive:
+        score += 1
+    else:
+        deficiencies.append("Thieu responsive layout. Dung CSS Grid hoac Flexbox voi @media (max-width: 768px) de ho tro man hinh nho.")
+
+    return score, deficiencies
+
+
 def _looks_like_pendulum_simulation(raw_html: str, title: str, query: str) -> bool:
     haystack = " ".join(part for part in (raw_html, title, query) if part).lower()
     return any(
@@ -4347,6 +4439,26 @@ def tool_create_visual_code(
     )
     if quality_error:
         return quality_error
+
+    # Quality scoring gate — only for code_studio_app/artifact lanes
+    # Use raw runtime values to avoid triggering on default fallbacks in tests
+    _raw_intent = presentation_intent  # already resolved from _runtime_presentation_intent()
+    _raw_lane = _runtime_studio_lane()  # raw value, "" if not set
+    _gate_applies = (
+        _raw_intent in {"code_studio_app", "artifact"}
+        or _raw_lane in {"app", "artifact"}
+    )
+    if _gate_applies:
+        # Skip quality gate if pendulum scaffold will be applied
+        _is_pendulum = _looks_like_pendulum_simulation(raw, title, _runtime_visual_user_query())
+        if not _is_pendulum:
+            _q_score, _q_deficiencies = _quality_score_visual_output(raw, resolved_visual_type)
+            if _q_score < 6 and _q_deficiencies:
+                return (
+                    f"Quality score {_q_score}/10 — chua dat. Hay sua cac van de sau:\n"
+                    + "\n".join(f"- {d}" for d in _q_deficiencies)
+                    + "\n\nViet lai code_html hoan chinh hon."
+                )
 
     # Wrap in design system if not a full HTML document
     if raw.lstrip().lower().startswith("<!doctype") or raw.lstrip().lower().startswith("<html"):

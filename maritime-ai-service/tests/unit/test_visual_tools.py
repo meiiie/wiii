@@ -1367,9 +1367,51 @@ class TestCreateVisualCodeTool:
             },
         )
 
+        # Quality-gate-compliant HTML (score >= 6/10): CSS vars, dark/light,
+        # controls, readouts, bridge, grid layout, sufficient depth
+        _rich_html = "\n".join([
+            "<style>",
+            ":root { --bg: #0f172a; --fg: #e2e8f0; --accent: #38bdf8; --surface: #1e293b; --border: #475569; }",
+            "@media (prefers-color-scheme: light) { :root { --bg: #f8fafc; --fg: #0f172a; } }",
+            ".layout { display: grid; grid-template-columns: 1fr 300px; gap: 16px; padding: 16px; }",
+            "@media (max-width: 768px) { .layout { grid-template-columns: 1fr; } }",
+            ".box { padding: 20px; background: var(--surface); border-radius: 8px; }",
+            ".readout { color: var(--accent); font-variant-numeric: tabular-nums; }",
+            "</style>",
+            '<div class="layout">',
+            '  <div class="box">',
+            "    <h2>Container Speed Explorer</h2>",
+            "    <p>Comparison app with custom interaction surface and enough detail for validation.</p>",
+            '    <div class="readout"><span id="val-a">0</span> vs <span id="val-b">0</span></div>',
+            "  </div>",
+            '  <div class="box">',
+            '    <label>Speed A <input type="range" min="0" max="100" value="50" id="speed-a"></label>',
+            '    <label>Speed B <input type="range" min="0" max="100" value="50" id="speed-b"></label>',
+            "    <button id=\"reset\">Reset</button>",
+            "  </div>",
+            "</div>",
+            "<script>",
+            "(function() {",
+            "  const a = document.getElementById('speed-a');",
+            "  const b = document.getElementById('speed-b');",
+            "  const va = document.getElementById('val-a');",
+            "  const vb = document.getElementById('val-b');",
+            "  function update() { va.textContent = a.value; vb.textContent = b.value; }",
+            "  a.addEventListener('input', update);",
+            "  b.addEventListener('input', update);",
+            "  document.getElementById('reset').addEventListener('click', function() {",
+            "    a.value = 50; b.value = 50; update();",
+            "    window.WiiiVisualBridge?.reportResult?.('reset', {a:50,b:50}, 'Reset done', 'ok');",
+            "  });",
+            "  update();",
+        ] + [f"  // line {i}" for i in range(80)] + [
+            "})();",
+            "</script>",
+        ])
+
         with tool_runtime_scope(runtime):
             result = tool_create_visual_code.invoke({
-                "code_html": '<style>.box{padding:20px;background:var(--bg2);border-radius:var(--radius)}</style><div class="box">Comparison app with custom interaction surface and enough detail for validation.</div>',
+                "code_html": _rich_html,
                 "title": "Container Speed Explorer",
             })
 
@@ -1400,9 +1442,48 @@ class TestCreateVisualCodeTool:
             },
         )
 
+        # Quality-gate-compliant HTML (score >= 6/10)
+        _rich_html = "\n".join([
+            "<style>",
+            ":root { --bg: #0f172a; --fg: #e2e8f0; --accent: #38bdf8; --surface: #1e293b; --border: #475569; }",
+            "@media (prefers-color-scheme: light) { :root { --bg: #f8fafc; --fg: #0f172a; } }",
+            ".layout { display: grid; grid-template-columns: 1fr 300px; gap: 16px; padding: 16px; }",
+            "@media (max-width: 768px) { .layout { grid-template-columns: 1fr; } }",
+            ".box { padding: 20px; background: var(--surface); border-radius: 8px; }",
+            ".readout { color: var(--accent); }",
+            "</style>",
+            '<div class="layout">',
+            '  <div class="box">',
+            "    <h2>Embeddable HTML App</h2>",
+            "    <p>Artifact shell with embeddable inline HTML output and complete fallback payload.</p>",
+            '    <div class="readout" aria-live="polite"><span id="out">Ready</span></div>',
+            "  </div>",
+            '  <div class="box">',
+            '    <label>Param A <input type="range" min="0" max="100" value="50" id="pa"></label>',
+            '    <label>Param B <input type="range" min="0" max="100" value="50" id="pb"></label>',
+            "    <button id=\"go\">Apply</button>",
+            "  </div>",
+            "</div>",
+            "<script>",
+            "(function() {",
+            "  const pa = document.getElementById('pa');",
+            "  const pb = document.getElementById('pb');",
+            "  const out = document.getElementById('out');",
+            "  function update() { out.textContent = 'A=' + pa.value + ' B=' + pb.value; }",
+            "  pa.addEventListener('input', update);",
+            "  pb.addEventListener('input', update);",
+            "  document.getElementById('go').addEventListener('click', function() {",
+            "    window.WiiiVisualBridge?.reportResult?.('apply', {a: pa.value, b: pb.value}, 'Applied', 'ok');",
+            "  });",
+            "  update();",
+        ] + [f"  // padding line {i}" for i in range(80)] + [
+            "})();",
+            "</script>",
+        ])
+
         with tool_runtime_scope(runtime):
             result = tool_create_visual_code.invoke({
-                "code_html": '<style>.box{padding:20px;background:var(--bg2);border-radius:var(--radius)}</style><div class="box">Artifact shell with embeddable inline HTML output and complete fallback payload.</div>',
+                "code_html": _rich_html,
                 "title": "Embeddable HTML App",
             })
 
