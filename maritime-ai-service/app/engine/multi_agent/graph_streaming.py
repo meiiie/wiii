@@ -691,9 +691,10 @@ async def process_with_multi_agent_streaming(
             if ls_cb:
                 invoke_config.setdefault("callbacks", []).append(ls_cb)
 
-        # Timeout: max 5 min per graph node, 15 min total
-        GRAPH_NODE_TIMEOUT = 300
-        GRAPH_TOTAL_TIMEOUT = 900
+        # Timeout: max 10 min per graph node, 20 min total
+        # Code Studio + Gemini Pro deep thinking can take 3-5 min per generation
+        GRAPH_NODE_TIMEOUT = 600
+        GRAPH_TOTAL_TIMEOUT = 1200
 
         # Sprint 70: Concurrent merged-queue pattern for true interleaved streaming
         # Two event sources merged into one queue:

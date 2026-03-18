@@ -2989,7 +2989,35 @@ async def _execute_code_studio_tool_rounds(
     tool_call_events: list[dict] = []
     state = state or {}
 
-    llm_response = await llm_with_tools.ainvoke(messages)
+    # Emit progress events during LLM call (prevents merged_queue timeout
+    # and gives user visual feedback while Gemini Pro thinks)
+    _progress_messages = [
+        "Đang phân tích yêu cầu...",
+        "Đang lên kế hoạch code...",
+        "Đang viết mã nguồn...",
+        "Đang tối ưu logic...",
+        "Đang hoàn thiện chi tiết...",
+    ]
+
+    async def _llm_call():
+        return await llm_with_tools.ainvoke(messages)
+
+    _llm_task = asyncio.create_task(_llm_call())
+    _progress_idx = 0
+    while not _llm_task.done():
+        try:
+            await asyncio.wait_for(asyncio.shield(_llm_task), timeout=20.0)
+        except asyncio.TimeoutError:
+            # LLM still working — emit progress event
+            _msg = _progress_messages[min(_progress_idx, len(_progress_messages) - 1)]
+            await push_event({
+                "type": "status",
+                "content": _msg,
+                "step": "code_generation",
+                "node": "code_studio_agent",
+            })
+            _progress_idx += 1
+    llm_response = _llm_task.result()
 
     for _tool_round in range(max_rounds):
         if not (tools and hasattr(llm_response, "tool_calls") and llm_response.tool_calls):

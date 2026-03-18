@@ -49,7 +49,7 @@ _DEFAULT_CONFIGS: Dict[str, AgentNodeConfig] = {
     "memory": AgentNodeConfig("memory", tier="light", temperature=0.5),
     "direct": AgentNodeConfig("direct", tier="light"),
     "code_studio_agent": AgentNodeConfig(
-        "code_studio_agent", tier="moderate", model="gemini-3.1-pro-preview",
+        "code_studio_agent", tier="deep", model="gemini-3.1-pro-preview",
         enable_agentic_loop=True,
     ),
     "synthesizer": AgentNodeConfig("synthesizer", tier="moderate"),
