@@ -416,6 +416,8 @@ class ReasoningNarrator:
                     HumanMessage(content=self._build_user_prompt(request, node_skill)),
                 ]
             )
+            if result is None:
+                raise ValueError("narrator returned None")
             fallback_result = self._fallback(request, node_skill)
             delta_chunks = _sanitize_chunks(list(result.delta_chunks or []))
             summary = _normalize_summary(result.summary, fallback_result.summary)
