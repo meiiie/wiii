@@ -4442,8 +4442,11 @@ def tool_create_visual_code(
 
     # Quality scoring gate — fires on non-trivial HTML (> 500 chars).
     # LLM output for simulations is typically 800-4000 chars before _wrap_html expansion.
-    if len(raw) > 500:
+    _raw_len = len(raw)
+    if _raw_len > 500:
         _q_score, _q_deficiencies = _quality_score_visual_output(raw, resolved_visual_type)
+        logger.info("[QUALITY_GATE] raw=%d chars, score=%d/10, type=%s, deficiencies=%d",
+                    _raw_len, _q_score, resolved_visual_type, len(_q_deficiencies))
         if _q_score < 6 and _q_deficiencies:
             return (
                 f"Quality score {_q_score}/10 — chua dat. Hay sua cac van de sau:\n"
