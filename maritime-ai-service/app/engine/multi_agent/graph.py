@@ -3103,33 +3103,46 @@ async def _execute_code_studio_tool_rounds(
         ]
         _round_cue = _infer_code_studio_reasoning_cue(query, _round_tool_names)
         _round_phase = "verify" if _tool_round > 0 else "ground"
-        _round_beat = await _render_reasoning(
-            state=state,
-            node="code_studio_agent",
-            phase=_round_phase,
-            cue=_round_cue,
-            tool_names=_round_tool_names,
-            next_action="Mo cong cu can thiet roi xac minh output co the dung that.",
-            observations=[f"Sap goi {len(_round_tool_names)} cong cu trong vong nay."],
-            style_tags=["code-studio", "tooling"],
-        )
-        await push_event({
-            "type": "thinking_start",
-            "content": _round_beat.label,
-            "node": "code_studio_agent",
-            "summary": _round_beat.summary,
-            "details": {"phase": _round_beat.phase},
-        })
-        for _chunk in _code_studio_delta_chunks(_round_beat):
+        try:
+            _round_beat = await _render_reasoning(
+                state=state,
+                node="code_studio_agent",
+                phase=_round_phase,
+                cue=_round_cue,
+                tool_names=_round_tool_names,
+                next_action="Mo cong cu can thiet roi xac minh output co the dung that.",
+                observations=[f"Sap goi {len(_round_tool_names)} cong cu trong vong nay."],
+                style_tags=["code-studio", "tooling"],
+            )
+        except Exception as _rr_err:
+            logger.debug("[CODE_STUDIO] _render_reasoning failed: %s", _rr_err)
+            _round_beat = None
+
+        if _round_beat is not None:
             await push_event({
-                "type": "thinking_delta",
-                "content": _chunk,
+                "type": "thinking_start",
+                "content": getattr(_round_beat, "label", "Đang xử lý..."),
                 "node": "code_studio_agent",
+                "summary": getattr(_round_beat, "summary", ""),
+                "details": {"phase": getattr(_round_beat, "phase", _round_phase)},
             })
-        if _round_beat.action_text:
+            for _chunk in _code_studio_delta_chunks(_round_beat):
+                await push_event({
+                    "type": "thinking_delta",
+                    "content": _chunk,
+                    "node": "code_studio_agent",
+                })
+            if getattr(_round_beat, "action_text", None):
+                await push_event({
+                    "type": "action_text",
+                    "content": _round_beat.action_text,
+                    "node": "code_studio_agent",
+                })
+        else:
             await push_event({
-                "type": "action_text",
-                "content": _round_beat.action_text,
+                "type": "status",
+                "content": "Đang tạo mã nguồn...",
+                "step": "code_generation",
                 "node": "code_studio_agent",
             })
 
