@@ -6,7 +6,7 @@
  *   2. Streaming — has code → live code editor + plan checklist
  *   3. Complete — collapsed card with "Xem code" / "Xem preview" buttons
  */
-import { memo, useRef, useEffect, useMemo } from "react";
+import { memo, useRef, useEffect, useMemo, useCallback } from "react";
 import { CheckCircle2, Code2, Eye, Loader2 } from "lucide-react";
 import { useCodeStudioStore } from "@/stores/code-studio-store";
 import { useUIStore } from "@/stores/ui-store";
@@ -47,20 +47,18 @@ export const CodeStudioCard = memo(function CodeStudioCard({
     return () => cancelAnimationFrame(rafId);
   }, [isStreaming, hasCode, session?.code?.length]);
 
+  const handleOpen = useCallback(() => {
+    setActiveSession(sessionId);
+    openCodeStudio();
+  }, [sessionId, setActiveSession, openCodeStudio]);
+
+  const handlePreview = useCallback(() => {
+    setActiveSession(sessionId);
+    useCodeStudioStore.getState().setRequestedView(sessionId, "preview");
+    openCodeStudio();
+  }, [sessionId, setActiveSession, openCodeStudio]);
+
   if (!session) return null;
-
-  const handleOpen = () => {
-    setActiveSession(sessionId);
-    openCodeStudio();
-  };
-
-  const handlePreview = () => {
-    setActiveSession(sessionId);
-    if (session.visualSessionId) {
-      useCodeStudioStore.getState().setRequestedView(sessionId, "preview");
-    }
-    openCodeStudio();
-  };
 
   // Phase 1: Planning (streaming, no code yet)
   if (isStreaming && !hasCode) {
