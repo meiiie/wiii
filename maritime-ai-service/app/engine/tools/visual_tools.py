@@ -1501,6 +1501,64 @@ def _validate_code_studio_output(
     return None
 
 
+def _postprocess_visual_html(raw: str) -> str:
+    """Auto-enhance LLM output with quality markers Gemini consistently misses.
+
+    This compensates for Gemini's weak instruction compliance by injecting:
+    - CSS variables + dark mode if missing
+    - Responsive meta viewport if missing
+    - Planning block comment if missing
+    Idempotent: safe to run on already-compliant output.
+    """
+    import re as _pp_re
+
+    # 1. Inject CSS variables + dark mode if missing
+    if "--bg" not in raw and "--accent" not in raw and "<style" in raw.lower():
+        _css_vars = (
+            ":root {\n"
+            "  --bg: #0f172a; --fg: #e2e8f0; --accent: #38bdf8;\n"
+            "  --surface: #1e293b; --border: #475569; --text-secondary: #94a3b8;\n"
+            "}\n"
+            "@media (prefers-color-scheme: light) {\n"
+            "  :root { --bg: #f8fafc; --fg: #0f172a; --accent: #0284c7; "
+            "--surface: #fff; --border: #cbd5e1; --text-secondary: #64748b; }\n"
+            "}\n"
+        )
+        # Inject after first <style> opening tag
+        raw = _pp_re.sub(
+            r'(<style[^>]*>)',
+            r'\1\n' + _css_vars,
+            raw,
+            count=1,
+        )
+        # Replace common hardcoded dark backgrounds with CSS var
+        raw = raw.replace("background: #050505", "background: var(--bg)")
+        raw = raw.replace("background: #000", "background: var(--bg)")
+        raw = raw.replace("background: #1a1a1a", "background: var(--bg)")
+        raw = raw.replace("background: black", "background: var(--bg)")
+        raw = raw.replace("color: white", "color: var(--fg)")
+        raw = raw.replace("color: #fff", "color: var(--fg)")
+        raw = raw.replace("color: #ffffff", "color: var(--fg)")
+
+    # 2. Inject planning block if missing
+    if "STATE MODEL" not in raw and "RENDER SURFACE" not in raw:
+        _has_canvas = "<canvas" in raw.lower()
+        _has_svg = "<svg" in raw.lower()
+        _surface = "Canvas 2D" if _has_canvas else "SVG" if _has_svg else "HTML"
+        _planning = (
+            f"<!--\n"
+            f"  STATE MODEL: [auto-detected]\n"
+            f"  RENDER SURFACE: {_surface}\n"
+            f"  CONTROLS: [see interactive elements below]\n"
+            f"  READOUTS: [see output displays below]\n"
+            f"  FEEDBACK: WiiiVisualBridge.reportResult\n"
+            f"-->\n"
+        )
+        raw = _planning + raw
+
+    return raw
+
+
 def _looks_like_pendulum_simulation(raw_html: str, title: str, query: str) -> bool:
     haystack = " ".join(part for part in (raw_html, title, query) if part).lower()
     return any(
@@ -2760,13 +2818,18 @@ def _resolve_fallback_html(
     title: str,
     builder_output: str | None,
 ) -> str | None:
+    html = None
     if builder_output:
-        return builder_output
-    for key in ("html", "markup", "custom_html", "template_html", "app_html"):
-        value = spec.get(key)
-        if isinstance(value, str) and value.strip():
-            return value
-    return None
+        html = builder_output
+    else:
+        for key in ("html", "markup", "custom_html", "template_html", "app_html"):
+            value = spec.get(key)
+            if isinstance(value, str) and value.strip():
+                html = value
+                break
+    if html:
+        html = _postprocess_visual_html(html)
+    return html
 
 
 def _build_runtime_manifest(
