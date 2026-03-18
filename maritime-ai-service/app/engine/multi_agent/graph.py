@@ -1292,8 +1292,11 @@ async def _maybe_emit_visual_event(
             payload_dict = payload.model_dump(mode="json")
 
             # Code Studio streaming: emit chunked code events before visual_open
+            # Skip fake chunking if real streaming already delivered tokens
+            _skip_fake_chunk = getattr(settings, "enable_real_code_streaming", False)
             if (
                 settings.enable_code_studio_streaming
+                and not _skip_fake_chunk
                 and payload.fallback_html
                 and str((payload.metadata or {}).get("presentation_intent") or "") in {"code_studio_app", "artifact"}
             ):
@@ -2988,36 +2991,106 @@ async def _execute_code_studio_tool_rounds(
 
     tool_call_events: list[dict] = []
     state = state or {}
+    _code_open_emitted = False
+    _stream_session_id = ""
+    _stream_chunk_index = 0
 
-    # Emit progress events during LLM call (prevents merged_queue timeout
-    # and gives user visual feedback while Gemini Pro thinks)
-    _progress_messages = [
-        "Đang phân tích yêu cầu...",
-        "Đang lên kế hoạch code...",
-        "Đang viết mã nguồn...",
-        "Đang tối ưu logic...",
-        "Đang hoàn thiện chi tiết...",
-    ]
+    from app.core.config import get_settings as _get_settings
+    _use_real_streaming = getattr(_get_settings(), "enable_real_code_streaming", False)
 
-    async def _llm_call():
-        return await llm_with_tools.ainvoke(messages)
+    if _use_real_streaming:
+        # Real token-by-token streaming via astream
+        from app.engine.multi_agent.tool_call_stream_parser import ToolCallCodeHtmlStreamer
 
-    _llm_task = asyncio.create_task(_llm_call())
-    _progress_idx = 0
-    while not _llm_task.done():
+        _code_streamer = ToolCallCodeHtmlStreamer()
+        _stream_session_id = f"vs-stream-{uuid.uuid4().hex[:12]}"
+
+        await push_event({
+            "type": "status",
+            "content": "Đang phân tích yêu cầu...",
+            "step": "code_generation",
+            "node": "code_studio_agent",
+        })
+
+        llm_response = None
         try:
-            await asyncio.wait_for(asyncio.shield(_llm_task), timeout=20.0)
-        except asyncio.TimeoutError:
-            # LLM still working — emit progress event
-            _msg = _progress_messages[min(_progress_idx, len(_progress_messages) - 1)]
-            await push_event({
-                "type": "status",
-                "content": _msg,
-                "step": "code_generation",
-                "node": "code_studio_agent",
-            })
-            _progress_idx += 1
-    llm_response = _llm_task.result()
+            async for chunk in llm_with_tools.astream(messages):
+                if llm_response is None:
+                    llm_response = chunk
+                else:
+                    llm_response = llm_response + chunk
+
+                if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
+                    for tc_chunk in chunk.tool_call_chunks:
+                        tc_args = tc_chunk.get("args") or ""
+                        if tc_args:
+                            delta = _code_streamer.feed(tc_args)
+
+                            if delta and not _code_open_emitted and _code_streamer.is_code_html_started:
+                                await push_event({
+                                    "type": "code_open",
+                                    "content": {
+                                        "session_id": _stream_session_id,
+                                        "title": query[:60] if query else "Code Studio",
+                                        "language": "html",
+                                        "version": 1,
+                                        "studio_lane": "app",
+                                        "artifact_kind": "html_app",
+                                    },
+                                    "node": "code_studio_agent",
+                                })
+                                _code_open_emitted = True
+
+                            if delta and _code_open_emitted:
+                                await push_event({
+                                    "type": "code_delta",
+                                    "content": {
+                                        "session_id": _stream_session_id,
+                                        "chunk": delta,
+                                        "chunk_index": _stream_chunk_index,
+                                        "total_bytes": 0,
+                                    },
+                                    "node": "code_studio_agent",
+                                })
+                                _stream_chunk_index += 1
+
+        except Exception as _stream_err:
+            logger.warning("[CODE_STUDIO] astream failed, falling back to ainvoke: %s", _stream_err)
+            llm_response = await llm_with_tools.ainvoke(messages)
+            _code_open_emitted = False
+
+        if llm_response is None:
+            from langchain_core.messages import AIMessage as _AM
+            llm_response = _AM(content="")
+
+    else:
+        # Existing path: ainvoke + periodic progress events
+        _progress_messages = [
+            "Đang phân tích yêu cầu...",
+            "Đang lên kế hoạch code...",
+            "Đang viết mã nguồn...",
+            "Đang tối ưu logic...",
+            "Đang hoàn thiện chi tiết...",
+        ]
+
+        async def _llm_call():
+            return await llm_with_tools.ainvoke(messages)
+
+        _llm_task = asyncio.create_task(_llm_call())
+        _progress_idx = 0
+        while not _llm_task.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(_llm_task), timeout=20.0)
+            except asyncio.TimeoutError:
+                _msg = _progress_messages[min(_progress_idx, len(_progress_messages) - 1)]
+                await push_event({
+                    "type": "status",
+                    "content": _msg,
+                    "step": "code_generation",
+                    "node": "code_studio_agent",
+                })
+                _progress_idx += 1
+        llm_response = _llm_task.result()
 
     for _tool_round in range(max_rounds):
         if not (tools and hasattr(llm_response, "tool_calls") and llm_response.tool_calls):
@@ -3115,6 +3188,26 @@ async def _execute_code_studio_tool_rounds(
                 tool_call_events=tool_call_events,
                 previous_visual_session_ids=active_visual_session_ids,
             )
+            # Emit code_complete when real streaming was used
+            if _code_open_emitted and _tc_name == "tool_create_visual_code" and _emitted_visual_session_ids:
+                try:
+                    from app.engine.tools.visual_tools import parse_visual_payloads as _pvp
+                    _vps = _pvp(result)
+                    if _vps:
+                        await push_event({
+                            "type": "code_complete",
+                            "content": {
+                                "session_id": _stream_session_id,
+                                "full_code": _vps[0].fallback_html or "",
+                                "language": "html",
+                                "version": 1,
+                                "visual_payload": _vps[0].model_dump(mode="json"),
+                            },
+                            "node": "code_studio_agent",
+                        })
+                except Exception as _cc_err:
+                    logger.debug("[CODE_STUDIO] code_complete emission failed: %s", _cc_err)
+
             if _emitted_visual_session_ids:
                 visual_session_ids.extend(_emitted_visual_session_ids)
                 active_visual_session_ids = list(dict.fromkeys(_emitted_visual_session_ids))

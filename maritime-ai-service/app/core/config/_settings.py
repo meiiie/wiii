@@ -167,6 +167,10 @@ class Settings(BaseSettings):
         default=False,
         description="Emit chunked code_delta SSE events for Code Studio streaming display",
     )
+    enable_real_code_streaming: bool = Field(
+        default=False,
+        description="Use astream for real token-by-token code generation (replaces fake chunking)",
+    )
 
     @property
     def postgres_url(self) -> str:
