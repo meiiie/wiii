@@ -4440,13 +4440,14 @@ def tool_create_visual_code(
     if quality_error:
         return quality_error
 
-    # Quality scoring gate — only for code_studio_app/artifact lanes
-    # Use raw runtime values to avoid triggering on default fallbacks in tests
-    _raw_intent = presentation_intent  # already resolved from _runtime_presentation_intent()
-    _raw_lane = _runtime_studio_lane()  # raw value, "" if not set
-    _gate_applies = (
-        _raw_intent in {"code_studio_app", "artifact"}
+    # Quality scoring gate — applies when tool is called in a real agent context
+    # (runtime scope has presentation_intent or studio_lane set).
+    # Tests without runtime scope are exempt.
+    _raw_lane = _runtime_studio_lane()
+    _gate_applies = bool(
+        presentation_intent in {"code_studio_app", "artifact"}
         or _raw_lane in {"app", "artifact"}
+        or _runtime_visual_user_query()  # has a real user query = real agent context
     )
     if _gate_applies:
         # Skip quality gate if pendulum scaffold will be applied
