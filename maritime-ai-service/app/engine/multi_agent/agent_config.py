@@ -168,8 +168,7 @@ class AgentConfigRegistry:
                 "light": ThinkingTier.LIGHT,
             }
             tier = tier_map.get(config.tier, ThinkingTier.MODERATE)
-            pool = LLMPool.get_instance()
-            llm = pool.create_llm_with_model(config.model, tier)
+            llm = LLMPool.create_llm_with_model(config.model, tier)
             if llm:
                 cls._model_llm_cache[cache_key] = llm
                 logger.info(
