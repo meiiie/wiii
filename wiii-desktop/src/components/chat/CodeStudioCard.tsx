@@ -1,13 +1,29 @@
 /**
  * CodeStudioCard — compact inline card in the chat rail during/after code generation.
  *
- * During streaming: progress bar + line count + "Dang tao..."
+ * During streaming: progress bar + contextual phase message + code preview
  * After complete: title + "Mo Code Studio" button
  */
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { Code2, Loader2, ExternalLink } from "lucide-react";
 import { useCodeStudioStore } from "@/stores/code-studio-store";
 import { useUIStore } from "@/stores/ui-store";
+
+const LOADING_MESSAGES = [
+  { threshold: 0, message: "Dang len ke hoach..." },
+  { threshold: 15, message: "Dang thiet ke giao dien..." },
+  { threshold: 35, message: "Dang viet logic xu ly..." },
+  { threshold: 55, message: "Dang them controls tuong tac..." },
+  { threshold: 75, message: "Dang kiem tra chat luong..." },
+  { threshold: 90, message: "Sap xong roi..." },
+];
+
+function getLoadingMessage(progress: number): string {
+  for (let i = LOADING_MESSAGES.length - 1; i >= 0; i--) {
+    if (progress >= LOADING_MESSAGES[i].threshold) return LOADING_MESSAGES[i].message;
+  }
+  return LOADING_MESSAGES[0].message;
+}
 
 interface CodeStudioCardProps {
   sessionId: string;
@@ -28,6 +44,11 @@ export const CodeStudioCard = memo(function CodeStudioCard({
     isStreaming && session.totalBytes > 0
       ? Math.round((session.code.length / session.totalBytes) * 100)
       : 100;
+
+  const previewLines = useMemo(() => {
+    if (!isStreaming || !session.code) return [];
+    return session.code.split("\n").filter((l) => l.trim()).slice(-3);
+  }, [isStreaming, session.code]);
 
   const handleOpen = () => {
     setActiveSession(sessionId);
@@ -54,9 +75,14 @@ export const CodeStudioCard = memo(function CodeStudioCard({
         </div>
 
         {isStreaming ? (
-          <div className="flex items-center gap-1.5 text-[var(--accent)]">
-            <Loader2 size={14} className="animate-spin" />
-            <span className="text-[10px]">{lineCount} dong</span>
+          <div className="text-right shrink-0">
+            <div className="flex items-center gap-1.5 text-[var(--accent)]">
+              <Loader2 size={14} className="animate-spin" />
+              <span className="text-[11px]">{getLoadingMessage(progress)}</span>
+            </div>
+            <div className="text-[9px] text-text-tertiary mt-0.5">
+              {lineCount} dong · {progress}%
+            </div>
           </div>
         ) : (
           <button
@@ -78,6 +104,15 @@ export const CodeStudioCard = memo(function CodeStudioCard({
               style={{ width: `${progress}%` }}
             />
           </div>
+        </div>
+      )}
+
+      {/* Code preview snippet during streaming */}
+      {isStreaming && previewLines.length > 0 && (
+        <div className="mx-3 mb-2 rounded bg-surface-tertiary/50 px-2 py-1.5 font-mono text-[10px] text-text-tertiary leading-tight overflow-hidden max-h-[3.6em]">
+          {previewLines.map((line, i) => (
+            <div key={i} className="truncate">{line}</div>
+          ))}
         </div>
       )}
     </article>

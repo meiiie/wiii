@@ -5,7 +5,7 @@
  * Shows Code tab (streaming code display) and Preview tab (InlineVisualFrame).
  * Version bar for navigating between iterations.
  */
-import { memo, useCallback, useState, useEffect, useRef } from "react";
+import { memo, useCallback, useState, useEffect, useRef, useMemo } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { X, Copy, Check, Code2, Eye, Loader2, Download } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
@@ -82,6 +82,17 @@ const CodeStudioContent = memo(function CodeStudioContent({
     [session.sessionId, setRequestedView],
   );
 
+  const planItems = useMemo(() => {
+    const code = session.code.toLowerCase();
+    return [
+      { label: "Thiet ke giao dien", done: code.includes("<style") || code.includes("css") },
+      { label: "Canvas / SVG", done: code.includes("<canvas") || code.includes("<svg") },
+      { label: "Logic xu ly", done: code.includes("<script") || code.includes("function") },
+      { label: "Controls tuong tac", done: code.includes('type="range"') || code.includes("<button") },
+      { label: "Ket noi Wiii Bridge", done: code.includes("wiiivisualbridge") || code.includes("reportresult") },
+    ];
+  }, [session.code]);
+
   return (
     <>
       {/* Header */}
@@ -112,6 +123,17 @@ const CodeStudioContent = memo(function CodeStudioContent({
           <X size={16} />
         </button>
       </div>
+
+      {/* Plan checklist during streaming */}
+      {isStreaming && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 px-4 py-2 border-b border-border/50 text-[10px]">
+          {planItems.map((item) => (
+            <span key={item.label} className={item.done ? "text-[var(--green)]" : "text-text-tertiary/50"}>
+              {item.done ? "\u2713" : "\u25CB"} {item.label}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Tab bar */}
       <div className="flex border-b border-border shrink-0">
