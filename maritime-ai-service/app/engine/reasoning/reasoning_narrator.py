@@ -18,8 +18,11 @@ logger = logging.getLogger(__name__)
 _NODE_LLM_MAP = {
     "supervisor": "supervisor",
     "direct": "direct",
-    "code_studio_agent": "code_studio_agent",
-    "code_studio": "code_studio_agent",
+    # Narrator uses default model (flash-lite) for code_studio, NOT the Pro
+    # model override. Pro is for code generation quality; narrator just needs
+    # to produce short thinking text which flash-lite handles perfectly.
+    "code_studio_agent": "direct",
+    "code_studio": "direct",
     "rag_agent": "rag_agent",
     "rag": "rag_agent",
     "tutor_agent": "tutor_agent",
