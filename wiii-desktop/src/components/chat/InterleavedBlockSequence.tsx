@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import type {
   ArtifactBlockData,
   ContentBlock,
@@ -23,6 +23,26 @@ import { PreviewGroup } from "./PreviewGroup";
 import { ArtifactCard } from "./ArtifactCard";
 import { VisualBlock } from "./VisualBlock";
 import { useCodeStudioStore } from "@/stores/code-studio-store";
+
+function BlockErrorFallback({ blockType }: { blockType: string }) {
+  return (
+    <div className="rounded-lg border border-border/40 bg-surface-secondary/30 px-3 py-2 text-xs text-text-tertiary">
+      Khong the hien thi noi dung ({blockType})
+    </div>
+  );
+}
+
+class BlockErrorBoundary extends React.Component<
+  { children: React.ReactNode; blockType: string },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  render() {
+    if (this.state.hasError) return <BlockErrorFallback blockType={this.props.blockType} />;
+    return this.props.children;
+  }
+}
 
 type ArticleFigureComposition = {
   visualId: string;
@@ -813,26 +833,39 @@ export function InterleavedBlockSequence({
             (candidate) => candidate.type === "thinking" && candidate.groupId === block.id,
           ) as ThinkingBlockData[];
           return (
-            <SubagentGroup
-              key={block.id}
-              group={block as SubagentGroupBlockData}
-              childBlocks={childBlocks}
-              isStreaming={isStreaming}
-              thinkingLevel={thinkingLevel}
-            />
+            <BlockErrorBoundary key={block.id} blockType="subagent_group">
+              <SubagentGroup
+                group={block as SubagentGroupBlockData}
+                childBlocks={childBlocks}
+                isStreaming={isStreaming}
+                thinkingLevel={thinkingLevel}
+              />
+            </BlockErrorBoundary>
           );
         }
 
         if (block.type === "screenshot") {
-          return <ScreenshotBlock key={block.id} block={block as ScreenshotBlockData} />;
+          return (
+            <BlockErrorBoundary key={block.id} blockType="screenshot">
+              <ScreenshotBlock block={block as ScreenshotBlockData} />
+            </BlockErrorBoundary>
+          );
         }
 
         if (block.type === "preview") {
-          return <PreviewGroup key={block.id} block={block as PreviewBlockData} />;
+          return (
+            <BlockErrorBoundary key={block.id} blockType="preview">
+              <PreviewGroup block={block as PreviewBlockData} />
+            </BlockErrorBoundary>
+          );
         }
 
         if (block.type === "artifact") {
-          return <ArtifactCard key={block.id} artifact={(block as ArtifactBlockData).artifact} />;
+          return (
+            <BlockErrorBoundary key={block.id} blockType="artifact">
+              <ArtifactCard artifact={(block as ArtifactBlockData).artifact} />
+            </BlockErrorBoundary>
+          );
         }
 
         if (block.type === "visual") {
@@ -840,10 +873,18 @@ export function InterleavedBlockSequence({
           const vsId = (block as VisualBlockData).visual.visual_session_id;
           if (vsId && codeStudioVisualIds.has(vsId)) return null;
           if (editorialComposition?.entryId === block.id) {
-            return renderEditorialFlow(editorialComposition, visibleBlocks, isStreaming, onSuggestedQuestion);
+            return (
+              <BlockErrorBoundary key={block.id} blockType="visual">
+                {renderEditorialFlow(editorialComposition, visibleBlocks, isStreaming, onSuggestedQuestion)}
+              </BlockErrorBoundary>
+            );
           }
           if (editorialComposition?.figureIds.includes(block.id)) return null;
-          return <VisualBlock key={block.id} block={block as VisualBlockData} onSuggestedQuestion={onSuggestedQuestion} />;
+          return (
+            <BlockErrorBoundary key={block.id} blockType="visual">
+              <VisualBlock block={block as VisualBlockData} onSuggestedQuestion={onSuggestedQuestion} />
+            </BlockErrorBoundary>
+          );
         }
 
         if (block.type === "answer") {
@@ -851,18 +892,23 @@ export function InterleavedBlockSequence({
           if (!answerContent) return null;
 
           if (editorialComposition?.entryId === block.id) {
-            return renderEditorialFlow(editorialComposition, visibleBlocks, isStreaming, onSuggestedQuestion);
+            return (
+              <BlockErrorBoundary key={block.id} blockType="answer">
+                {renderEditorialFlow(editorialComposition, visibleBlocks, isStreaming, onSuggestedQuestion)}
+              </BlockErrorBoundary>
+            );
           }
           if (editorialComposition?.answerIds.includes(block.id)) return null;
 
           const isLastAnswer = !visibleBlocks.slice(index + 1).some((candidate) => candidate.type === "answer");
 
           return (
-            <AnswerSurface
-              key={block.id}
-              content={answerContent}
-              showCursor={isStreaming && isLastAnswer}
-            />
+            <BlockErrorBoundary key={block.id} blockType="answer">
+              <AnswerSurface
+                content={answerContent}
+                showCursor={isStreaming && isLastAnswer}
+              />
+            </BlockErrorBoundary>
           );
         }
 

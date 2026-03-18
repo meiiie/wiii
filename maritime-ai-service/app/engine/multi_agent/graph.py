@@ -993,6 +993,17 @@ def _build_code_studio_tools_context(
 
     sections = ["## CODE STUDIO TOOLKIT:", *tool_hints, "", *priority_rules]
 
+    # Wiii's pedagogical voice in visuals
+    sections.append("")
+    sections.append(
+        "## WIII CHARACTER trong visual:\n"
+        "Visual cua Wiii khong chi la code — ma la cong cu day hoc. "
+        "Mo dau bang scene giup nguoi hoc 'cam' duoc co che truoc khi hieu ly thuyet. "
+        "Readouts khong chi hien so — ma kem ghi chu ngan giup nguoi hoc doc gia tri. "
+        "Controls cho phep nguoi hoc tu kham pha, khong phai chi xem. "
+        "Ngon ngu Tieng Viet trong UI: labels, tooltips, readout names."
+    )
+
     # Append visual skills — only essential lane guidance
     if getattr(settings_obj, "enable_llm_code_gen_visuals", False):
         sections.append("")
