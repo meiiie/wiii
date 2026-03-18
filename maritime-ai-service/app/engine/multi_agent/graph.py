@@ -1000,11 +1000,30 @@ def _build_code_studio_tools_context(
                 sections.append("")
                 sections.append(skill_content)
 
-        # Quality markers — explicit checklist injected BEFORE example
+        # Quality markers — assertive anchor at top, then checklist
         sections.append("")
-        sections.append("## QUALITY MARKERS — Bat buoc cho moi visual output")
+        sections.append("## OUTPUT FORMAT — 3 RULES BAT BUOC")
         sections.append(
-            "Mot visual chat luong cao PHAI co tat ca cac yeu to sau:\n"
+            "**Rule 1 — FRAGMENT ONLY**: Dong dau tien cua code_html PHAI la `<!--` (planning block) "
+            "hoac `<style>`. TUYET DOI KHONG bat dau bang `<!DOCTYPE`, `<html>`, `<head>`, `<body>`. "
+            "Host iframe da cung cap cac the nay. Vi pham rule nay = output bi reject.\n\n"
+            "**Rule 2 — PLANNING BLOCK**: Dong dau tien PHAI la:\n"
+            "```\n"
+            "<!--\n"
+            "  STATE MODEL: [list state variables]\n"
+            "  RENDER SURFACE: Canvas 2D | SVG | HTML\n"
+            "  CONTROLS: [list controls]\n"
+            "  READOUTS: [list live readouts]\n"
+            "  FEEDBACK: WiiiVisualBridge.reportResult\n"
+            "-->\n"
+            "```\n"
+            "Roi tiep theo la `<style>`, roi HTML, roi `<script>` cuoi cung.\n\n"
+            "**Rule 3 — STRUCTURE**: `<style>` → HTML → `<script>`. Khong dao thu tu."
+        )
+
+        sections.append("")
+        sections.append("## QUALITY MARKERS — Visual chat luong cao")
+        sections.append(
             "1. **CSS variables** cho moi mau sac (--bg, --fg, --accent, --surface, --border, --text-secondary). "
             "Ho tro dark/light qua `prefers-color-scheme`.\n"
             "2. **Render surface phu hop**: Canvas cho simulation (rAF + deltaTime), SVG cho diagram, HTML cho widget.\n"
@@ -1014,13 +1033,9 @@ def _build_code_studio_tools_context(
             "Stack doc tren man hinh hep.\n"
             "6. **WiiiVisualBridge**: Goi `window.WiiiVisualBridge.reportResult(kind, payload, summary, status)` "
             "khi user tuong tac.\n"
-            "7. **Fragment only**: KHONG co DOCTYPE, html, head, body. Chi `<style>` truoc, HTML giua, `<script>` cuoi.\n"
-            "8. **Khong AI slop**: Khong gradient, shadow, blur, glow, neon. Font-weight chi 400 va 500. "
-            "Khong comment trong code (tru planning block dau file).\n"
-            "9. **Planning block** o dau file: `<!-- STATE MODEL: ... RENDER SURFACE: ... CONTROLS: ... "
-            "READOUTS: ... FEEDBACK: ... -->`\n"
-            "10. **Do sau**: Simulation thuong 300-600 dong. Widget thuong 200-400 dong. "
-            "Day la HUONG DAN, khong phai bat buoc — Wiii tu quyet dinh complexity phu hop voi noi dung."
+            "7. **Khong AI slop**: Khong gradient, shadow, blur, glow, neon. Font-weight chi 400 va 500.\n"
+            "8. **Do sau**: Simulation thuong 300-600 dong. Widget thuong 200-400 dong. "
+            "Day la HUONG DAN — Wiii tu quyet dinh complexity phu hop voi noi dung."
         )
 
         # On-demand few-shot example based on visual_type (Claude-style guideline loading)

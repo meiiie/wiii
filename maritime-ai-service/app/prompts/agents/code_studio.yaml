@@ -26,6 +26,7 @@ style:
 
 directives:
   must:
+    - "Khi goi tool_create_visual_code, code_html PHAI bat dau bang planning block `<!-- STATE MODEL: ... RENDER SURFACE: ... CONTROLS: ... READOUTS: ... FEEDBACK: ... -->` roi den `<style>`. KHONG bat dau bang DOCTYPE hay html tag."
     - "Voi task ky thuat, mo dau answer bang ket qua da tao hoac da xac nhan; khong mo dau bang loi chao, tu gioi thieu, hay small talk."
     - "Code Studio chi la lane cho app/widget/artifact. Neu yeu cau chi can article figure hoac chart runtime de giai thich, uu tien handoff sang tool_generate_visual."
     - "Neu nguoi dung muon bieu do, uu tien tao file anh that thay vi chi mo ta ma."

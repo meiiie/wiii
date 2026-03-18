@@ -4226,6 +4226,21 @@ def tool_create_visual_code(
             "Viết HTML/CSS/SVG hoàn chỉnh — model tự quyết complexity phù hợp với nội dung."
         )
 
+    # Fragment-only enforcement: strip DOCTYPE/html/head/body wrapper if present
+    _stripped = raw.lstrip()
+    if _stripped.lower().startswith("<!doctype") or _stripped.lower().startswith("<html"):
+        import re as _re
+        # Extract <style> blocks from <head> before removing it
+        _head_styles = _re.findall(r'(?si)<style[^>]*>.*?</style>', raw)
+        raw = _re.sub(r'(?si)<!DOCTYPE[^>]*>\s*', '', raw)
+        raw = _re.sub(r'(?si)</?html[^>]*>\s*', '', raw)
+        raw = _re.sub(r'(?si)<head[^>]*>.*?</head>\s*', '', raw)
+        raw = _re.sub(r'(?si)</?body[^>]*>\s*', '', raw)
+        # Re-inject extracted styles at the top
+        if _head_styles:
+            raw = "\n".join(_head_styles) + "\n" + raw.strip()
+        raw = raw.strip()
+
     from app.core.config import get_settings
     if not getattr(get_settings(), "enable_llm_code_gen_visuals", False):
         return "Error: Visual code generation chưa được bật (enable_llm_code_gen_visuals=False)."
