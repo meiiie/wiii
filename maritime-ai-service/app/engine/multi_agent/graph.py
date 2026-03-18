@@ -1108,11 +1108,20 @@ def _build_code_studio_tools_context(
             sections.append(example)
             sections.append("```")
 
-        # VISUAL_CODE_GEN.md guidelines go AFTER rules + skeleton (less critical, more context)
+        # VISUAL_CODE_GEN.md guidelines — only load section 10 (checklist) to save tokens
+        # Full guidelines moved to bottom to avoid drowning critical rules
         for skill_content in _load_code_studio_visual_skills():
             if skill_content:
-                sections.append("")
-                sections.append(skill_content)
+                # Extract only the short checklist (section 10) instead of full 200+ lines
+                import re as _skill_re
+                checklist_match = _skill_re.search(
+                    r'(## 10\. Short checklist.*?)(?=## \d|$)',
+                    skill_content,
+                    _skill_re.DOTALL,
+                )
+                if checklist_match:
+                    sections.append("")
+                    sections.append(checklist_match.group(1).strip())
 
     return "\n".join(sections)
 
