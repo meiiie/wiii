@@ -333,9 +333,13 @@ export function ToolExecutionStrip({ block }: ToolExecutionStripProps) {
 
 /** Visual tool strip — renders CodeStudioCard if session exists, otherwise VisualArtifactCard. */
 function VisualToolStrip({ block }: ToolExecutionStripProps) {
-  const vsId = typeof block.tool.args?.visual_session_id === "string" && block.tool.args.visual_session_id.trim()
+  const csSessionId = typeof block.tool.args?._code_studio_session_id === "string"
+    ? block.tool.args._code_studio_session_id.trim()
+    : "";
+  const visual_session_id = typeof block.tool.args?.visual_session_id === "string" && block.tool.args.visual_session_id.trim()
     ? block.tool.args.visual_session_id.trim()
     : extractVisualSessionIdFromResult(block.tool.result);
+  const vsId = visual_session_id || csSessionId;
   const hasCodeStudioSession = useCodeStudioStore(
     (s) => vsId ? Boolean(s.sessions[vsId]) : false,
   );

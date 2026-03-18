@@ -50,8 +50,47 @@ describe("ToolExecutionStrip", () => {
 
     render(<ToolExecutionStrip block={block} />);
 
-    expect(screen.getByText("Code Studio")).toBeTruthy();
     expect(screen.getByText("Pendulum App")).toBeTruthy();
+    expect(screen.getByText("Xem code")).toBeTruthy();
+  });
+
+  it("renders CodeStudioCard via _code_studio_session_id injected by SSE handler", () => {
+    useCodeStudioStore.setState({
+      activeSessionId: "cs_abc",
+      sessions: {
+        cs_abc: {
+          sessionId: "cs_abc",
+          title: "Wave Simulation",
+          language: "html",
+          status: "streaming",
+          code: "<div>streaming...</div>",
+          versions: [],
+          activeVersion: 1,
+          chunkCount: 3,
+          totalBytes: 22,
+          createdAt: Date.now(),
+          metadata: {},
+        },
+      },
+    });
+
+    const block: ToolExecutionBlockData = {
+      type: "tool_execution",
+      id: "tool-code-2",
+      status: "pending",
+      tool: {
+        id: "tool-code-2",
+        name: "tool_create_visual_code",
+        args: {
+          title: "Wave Simulation",
+          _code_studio_session_id: "cs_abc",
+        },
+      },
+    };
+
+    render(<ToolExecutionStrip block={block} />);
+
+    expect(screen.getByText("Wave Simulation")).toBeTruthy();
   });
 
   it("hides raw python code and filesystem paths by default", () => {

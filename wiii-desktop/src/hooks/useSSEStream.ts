@@ -14,7 +14,6 @@ import { useCharacterStore } from "@/stores/character-store";
 import { usePageContextStore } from "@/stores/page-context-store";
 import { useHostContextStore } from "@/stores/host-context-store";
 import { useCodeStudioStore } from "@/stores/code-studio-store";
-import { useUIStore } from "@/stores/ui-store";
 import { StreamBuffer } from "@/lib/stream-buffer";
 import { trackVisualTelemetry } from "@/lib/visual-telemetry";
 import type { SSEEventHandler } from "@/api/sse";
@@ -340,11 +339,12 @@ export function useSSEStream() {
           _thinkToolIds.add(data.content.id);
           return;
         }
-        // When code_open was emitted, CodeStudioCard handles tool_create_visual_code
-        // display — skip creating a duplicate ToolExecutionStrip.
+        // Inject CodeStudio session ID so VisualToolStrip can find it
         if (data.content.name === "tool_create_visual_code" && codeOpenActiveRef.current) {
-          _thinkToolIds.add(data.content.id);
-          return;
+          const activeSessionId = useCodeStudioStore.getState().activeSessionId;
+          if (activeSessionId) {
+            data.content.args = { ...(data.content.args || {}), _code_studio_session_id: activeSessionId };
+          }
         }
         // Sprint 150: Drain thinking buffer before tool card
         thinkingBufferRef.current?.drain();
@@ -609,7 +609,6 @@ export function useSSEStream() {
               requestedView: data.content.requested_view,
             },
           );
-          useUIStore.getState().openCodeStudio();
         },
       onCodeDelta: (data) => {
         traceEvent("code_delta", { session: data.content.session_id, idx: data.content.chunk_index });
