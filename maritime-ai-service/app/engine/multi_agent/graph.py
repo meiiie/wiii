@@ -3014,15 +3014,27 @@ async def _execute_code_studio_tool_rounds(
 
         llm_response = None
         _CHUNK_TIMEOUT = 90  # seconds — max wait between chunks
+        _CODE_DONE_TIMEOUT = 15  # seconds after code_html complete → break early
+        _code_html_done_at: float | None = None
         try:
             _astream_iter = llm_with_tools.astream(messages).__aiter__()
             while True:
+                # Early break: if code_html is fully extracted, don't wait for
+                # remaining LLM output (text content can take 5+ minutes).
+                if _code_html_done_at and (time.time() - _code_html_done_at) > _CODE_DONE_TIMEOUT:
+                    logger.info("[CODE_STUDIO] code_html complete, breaking astream after %ds", _CODE_DONE_TIMEOUT)
+                    break
+
                 try:
-                    chunk = await asyncio.wait_for(_astream_iter.__anext__(), timeout=_CHUNK_TIMEOUT)
+                    _timeout = _CODE_DONE_TIMEOUT if _code_html_done_at else _CHUNK_TIMEOUT
+                    chunk = await asyncio.wait_for(_astream_iter.__anext__(), timeout=_timeout)
                 except StopAsyncIteration:
                     break
                 except asyncio.TimeoutError:
-                    logger.warning("[CODE_STUDIO] astream chunk timeout after %ds, proceeding with accumulated response", _CHUNK_TIMEOUT)
+                    if _code_html_done_at:
+                        logger.info("[CODE_STUDIO] code_html already complete, proceeding to tool execution")
+                    else:
+                        logger.warning("[CODE_STUDIO] astream chunk timeout after %ds", _CHUNK_TIMEOUT)
                     break
 
                 if llm_response is None:
@@ -3071,6 +3083,11 @@ async def _execute_code_studio_tool_rounds(
                                     if _ci + _STREAM_CHUNK_SIZE < len(delta):
                                         await asyncio.sleep(0.02)
 
+                            # Track when code_html extraction is complete
+                            if _code_streamer.is_code_html_complete and not _code_html_done_at:
+                                _code_html_done_at = time.time()
+                                logger.info("[CODE_STUDIO] code_html fully extracted: %d chars", len(_code_streamer.full_code_html))
+
         except Exception as _stream_err:
             logger.warning("[CODE_STUDIO] astream failed, falling back to ainvoke: %s", _stream_err)
             llm_response = await llm_with_tools.ainvoke(messages)
@@ -3109,8 +3126,14 @@ async def _execute_code_studio_tool_rounds(
                 _progress_idx += 1
         llm_response = _llm_task.result()
 
+    _total_tool_calls = 0
+    _MAX_TOTAL_TOOL_CALLS = 6  # absolute cap across all rounds
+
     for _tool_round in range(max_rounds):
         if not (tools and hasattr(llm_response, "tool_calls") and llm_response.tool_calls):
+            break
+        if _total_tool_calls >= _MAX_TOTAL_TOOL_CALLS:
+            logger.warning("[CODE_STUDIO] Total tool call cap reached (%d), stopping retry loop", _MAX_TOTAL_TOOL_CALLS)
             break
 
         _round_tool_names = [
@@ -3168,6 +3191,10 @@ async def _execute_code_studio_tool_rounds(
         visual_session_ids: list[str] = []
         active_visual_session_ids = _collect_active_visual_session_ids(state)
         for tc in llm_response.tool_calls:
+            _total_tool_calls += 1
+            if _total_tool_calls > _MAX_TOTAL_TOOL_CALLS:
+                logger.warning("[CODE_STUDIO] Skipping tool call %d (cap %d)", _total_tool_calls, _MAX_TOTAL_TOOL_CALLS)
+                break
             _tc_id = tc.get("id", f"tc_{_tool_round}")
             _tc_name = tc.get("name", "unknown")
             await push_event({
