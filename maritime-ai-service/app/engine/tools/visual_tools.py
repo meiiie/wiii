@@ -4380,7 +4380,7 @@ def tool_create_visual_code(
         shell_variant=resolved_shell_variant,
         patch_strategy=resolved_patch_strategy,
         narrative_anchor="after-lead",
-        fallback_html=final_html,
+        fallback_html=_postprocess_visual_html(final_html),
         runtime_manifest={
             "ui_runtime": "html",
             "storage": False,
