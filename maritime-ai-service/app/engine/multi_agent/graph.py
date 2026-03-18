@@ -1038,6 +1038,67 @@ def _build_code_studio_tools_context(
             "Day la HUONG DAN — Wiii tu quyet dinh complexity phu hop voi noi dung."
         )
 
+        # Structure template — give LLM a concrete skeleton to follow
+        sections.append("")
+        sections.append("## SKELETON STRUCTURE — code_html phai theo thu tu nay")
+        sections.append(
+            "```html\n"
+            "<!--\n"
+            "  STATE MODEL: [khai bao state variables]\n"
+            "  RENDER SURFACE: Canvas 2D | SVG | HTML\n"
+            "  CONTROLS: [list controls]\n"
+            "  READOUTS: [list live readouts]\n"
+            "  FEEDBACK: WiiiVisualBridge.reportResult\n"
+            "-->\n"
+            "<style>\n"
+            "  :root {\n"
+            "    --bg: #0f172a; --fg: #e2e8f0; --accent: #38bdf8;\n"
+            "    --surface: #1e293b; --border: #475569; --text-secondary: #94a3b8;\n"
+            "  }\n"
+            "  @media (prefers-color-scheme: light) {\n"
+            "    :root { --bg: #f8fafc; --fg: #0f172a; --accent: #0284c7; --surface: #fff; --border: #cbd5e1; }\n"
+            "  }\n"
+            "  * { margin: 0; padding: 0; box-sizing: border-box; }\n"
+            "  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); }\n"
+            "  .layout { display: grid; grid-template-columns: 1fr 320px; gap: 16px; padding: 16px; }\n"
+            "  @media (max-width: 768px) { .layout { grid-template-columns: 1fr; } }\n"
+            "  /* ... them CSS cho controls, readouts, canvas ... */\n"
+            "</style>\n\n"
+            "<div class=\"layout\">\n"
+            "  <div class=\"canvas-area\">\n"
+            "    <canvas id=\"sim\" width=\"640\" height=\"480\"></canvas>\n"
+            "  </div>\n"
+            "  <div class=\"controls\">\n"
+            "    <!-- sliders, buttons -->\n"
+            "  </div>\n"
+            "</div>\n"
+            "<div class=\"readouts\">\n"
+            "  <!-- live values -->\n"
+            "</div>\n\n"
+            "<script>\n"
+            "(function() {\n"
+            "  const canvas = document.getElementById('sim');\n"
+            "  const ctx = canvas.getContext('2d');\n"
+            "  let lastTime = 0;\n"
+            "  // State variables\n"
+            "  // Physics update function\n"
+            "  // Render function\n"
+            "  // Animation loop with rAF + deltaTime\n"
+            "  function loop(now) {\n"
+            "    const dt = Math.min((now - lastTime) / 1000, 0.1);\n"
+            "    lastTime = now;\n"
+            "    // update(dt); draw(); updateReadouts();\n"
+            "    requestAnimationFrame(loop);\n"
+            "  }\n"
+            "  requestAnimationFrame(loop);\n"
+            "  // WiiiVisualBridge\n"
+            "  function report(k,p,s,st) { window.WiiiVisualBridge?.reportResult?.(k,p,s,st); }\n"
+            "})();\n"
+            "</script>\n"
+            "```\n"
+            "Dien noi dung that vao skeleton nay. KHONG bo qua phan nao."
+        )
+
         # On-demand few-shot example based on visual_type (Claude-style guideline loading)
         vtype = visual_decision.visual_type if visual_decision else ""
         example = _load_code_studio_example(vtype) if vtype else None
@@ -1045,8 +1106,7 @@ def _build_code_studio_tools_context(
             sections.append("")
             sections.append(f"## REFERENCE EXAMPLE ({vtype})")
             sections.append(
-                "Day la ma mau chat luong cao — hoc theo cau truc, design system, va do chi tiet. "
-                "KHONG copy y het, ma dung lam tham chieu chat luong."
+                "Day la ma mau chat luong cao — hoc theo do chi tiet va physics accuracy."
             )
             sections.append("```html")
             sections.append(example)
@@ -1126,8 +1186,8 @@ def _load_code_studio_example(visual_type: str) -> str | None:
     try:
         raw = example_path.read_text(encoding="utf-8")
         lines = raw.split("\n")
-        if len(lines) > 600:
-            truncated = "\n".join(lines[:600]) + "\n<!-- ... truncated for brevity -->"
+        if len(lines) > 250:
+            truncated = "\n".join(lines[:250]) + "\n<!-- ... truncated — see full example in examples/ folder -->"
         else:
             truncated = raw
         _CODE_STUDIO_EXAMPLES_CACHE[filename] = truncated
