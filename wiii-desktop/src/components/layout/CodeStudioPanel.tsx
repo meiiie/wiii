@@ -85,11 +85,11 @@ const CodeStudioContent = memo(function CodeStudioContent({
   const planItems = useMemo(() => {
     const code = session.code.toLowerCase();
     return [
-      { label: "Thiet ke giao dien", done: code.includes("<style") || code.includes("css") },
+      { label: "Thiết kế giao diện", done: code.includes("<style") || code.includes("css") },
       { label: "Canvas / SVG", done: code.includes("<canvas") || code.includes("<svg") },
-      { label: "Logic xu ly", done: code.includes("<script") || code.includes("function") },
-      { label: "Controls tuong tac", done: code.includes('type="range"') || code.includes("<button") },
-      { label: "Ket noi Wiii Bridge", done: code.includes("wiiivisualbridge") || code.includes("reportresult") },
+      { label: "Logic xử lý", done: code.includes("<script") || code.includes("function") },
+      { label: "Controls tương tác", done: code.includes('type="range"') || code.includes("<button") },
+      { label: "Kết nối Wiii Bridge", done: code.includes("wiiivisualbridge") || code.includes("reportresult") },
     ];
   }, [session.code]);
 
@@ -107,18 +107,18 @@ const CodeStudioContent = memo(function CodeStudioContent({
             {isStreaming && (
               <span className="flex items-center gap-1 text-[var(--accent)]">
                 <Loader2 size={10} className="animate-spin" />
-                Dang tao...
+                Đang tạo...
               </span>
             )}
             {!isStreaming && (
-              <span className="text-[var(--green)]">Da xong</span>
+              <span className="text-[var(--green)]">Đã xong</span>
             )}
           </div>
         </div>
         <button
           onClick={onClose}
           className="p-1.5 rounded-md hover:bg-surface-tertiary text-text-tertiary hover:text-text transition-colors"
-          aria-label="Dong Code Studio"
+          aria-label="Đóng Code Studio"
         >
           <X size={16} />
         </button>
@@ -261,7 +261,7 @@ function CodeTab({ session }: { session: CodeStudioSession }) {
       {/* Toolbar */}
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/50 shrink-0">
         <span className="text-[10px] text-text-tertiary">
-          {lineCount} dong · {session.code.length} bytes
+          {lineCount} dòng · {session.code.length} bytes
           {isStreaming && session.totalBytes > 0 && (
             <> · {Math.round((session.code.length / session.totalBytes) * 100)}%</>
           )}
@@ -271,7 +271,7 @@ function CodeTab({ session }: { session: CodeStudioSession }) {
             onClick={handleCopy}
             disabled={isStreaming}
             className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-surface-tertiary hover:bg-border text-text-secondary transition-colors disabled:opacity-40"
-            title="Sao chep"
+            title="Sao chép"
           >
             {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
             {copied ? "Da chep" : "Copy"}
@@ -306,7 +306,7 @@ function PreviewTab({ session }: { session: CodeStudioSession }) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-text-tertiary py-16">
         <Loader2 size={32} className="mb-3 animate-spin opacity-50" />
-        <p className="text-sm">Dang tao code, preview se hien sau khi hoan thanh.</p>
+        <p className="text-sm">Đang tạo code, preview sẽ hiện sau khi hoàn thành.</p>
       </div>
     );
   }

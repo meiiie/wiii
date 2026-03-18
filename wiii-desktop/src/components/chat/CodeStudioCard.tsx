@@ -10,12 +10,12 @@ import { useCodeStudioStore } from "@/stores/code-studio-store";
 import { useUIStore } from "@/stores/ui-store";
 
 const LOADING_MESSAGES = [
-  { threshold: 0, message: "Dang len ke hoach..." },
-  { threshold: 15, message: "Dang thiet ke giao dien..." },
-  { threshold: 35, message: "Dang viet logic xu ly..." },
-  { threshold: 55, message: "Dang them controls tuong tac..." },
-  { threshold: 75, message: "Dang kiem tra chat luong..." },
-  { threshold: 90, message: "Sap xong roi..." },
+  { threshold: 0, message: "Đang lên kế hoạch..." },
+  { threshold: 15, message: "Đang thiết kế giao diện..." },
+  { threshold: 35, message: "Đang viết logic xử lý..." },
+  { threshold: 55, message: "Đang thêm controls tương tác..." },
+  { threshold: 75, message: "Đang kiểm tra chất lượng..." },
+  { threshold: 90, message: "Sắp xong rồi..." },
 ];
 
 function getLoadingMessage(progress: number): string {
@@ -81,7 +81,7 @@ export const CodeStudioCard = memo(function CodeStudioCard({
               <span className="text-[11px]">{getLoadingMessage(progress)}</span>
             </div>
             <div className="text-[9px] text-text-tertiary mt-0.5">
-              {lineCount} dong · {progress}%
+              {lineCount} dòng · {progress}%
             </div>
           </div>
         ) : (
