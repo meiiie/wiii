@@ -458,7 +458,6 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
             if visual_decision.force_tool and visual_decision.mode in {"template", "inline_html", "app", "mermaid"}:
                 preferred_tool_names = required_visual_tool_names(
                     visual_decision,
-                    structured_visuals_enabled=True,
                 )
                 preferred_tool_label = preferred_tool_names[0] if preferred_tool_names else preferred_visual_tool_name(True)
                 # Conditionally append code_html instruction
@@ -571,7 +570,6 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                 must_include.extend(
                     required_visual_tool_names(
                         visual_decision,
-                        structured_visuals_enabled=getattr(settings, "enable_structured_visuals", False),
                     )
                 )
                 selected_tools = select_runtime_tools(
