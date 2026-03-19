@@ -122,7 +122,7 @@ class RAGAgentNode:
 
         except Exception as e:
             logger.error("[RAG_AGENT] Error: %s", e)
-            state["rag_output"] = "Xin lỗi, đã xảy ra lỗi khi tra cứu. Vui lòng thử lại."
+            state["rag_output"] = "Wiii tìm kiếm bị trục trặc rồi. Bạn thử hỏi lại mình nhé!"
             state["error"] = "rag_error"
             state["evidence_images"] = []
 

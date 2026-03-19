@@ -42,25 +42,25 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Sprint 165: Map error types to Vietnamese-specific messages. */
+/** Sprint 165: Map error types to Wiii-character Vietnamese messages. */
 function _getVietnameseErrorMessage(err: unknown): string {
   if (err instanceof TypeError && err.message.includes("fetch")) {
-    return "Mất kết nối với máy chủ. Vui lòng kiểm tra kết nối mạng.";
+    return "Ôi, Wiii mất kết nối với máy chủ rồi. Bạn kiểm tra mạng giúp mình nhé!";
   }
   if (err instanceof DOMException && err.name === "TimeoutError") {
-    return "Phản hồi quá lâu. Vui lòng thử lại.";
+    return "Wiii suy nghĩ hơi lâu quá... Bạn thử hỏi lại mình nhé!";
   }
   if (err instanceof DOMException && err.name === "AbortError") {
-    return "Đã hủy yêu cầu.";
+    return "Đã hủy yêu cầu rồi nha.";
   }
   const msg = err instanceof Error ? err.message : String(err);
   if (msg.includes("500") || msg.includes("Internal")) {
-    return "Lỗi xử lý nội bộ. Wiii đang khắc phục...";
+    return "Wiii bị trục trặc bên trong rồi. Mình đang cố khắc phục...";
   }
   if (msg.includes("429") || msg.includes("rate")) {
-    return "Quá nhiều yêu cầu. Vui lòng đợi một chút.";
+    return "Bạn ơi, hỏi nhanh quá, Wiii chưa kịp thở. Đợi mình một chút nhé!";
   }
-  return "Mất kết nối. Vui lòng thử lại.";
+  return "Wiii bị mất kết nối rồi. Bạn thử lại giúp mình nhé!";
 }
 
 /**

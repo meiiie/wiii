@@ -650,7 +650,7 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
             
         except Exception as e:
             logger.error("[TUTOR_AGENT] Error: %s", e)
-            state["tutor_output"] = "Xin lỗi, đã xảy ra lỗi. Vui lòng thử lại."
+            state["tutor_output"] = "Ôi, Wiii vấp rồi! Mình đang cố lại nhé... Bạn thử hỏi lại mình được không?"
             state["error"] = "tutor_error"
             state["sources"] = []
             state["tools_used"] = []
@@ -1238,13 +1238,13 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                         final_response, llm_thinking = self._extract_content_with_thinking(final_msg.content)
                         _answer_streamed_via_bus = True  # Sprint 74: answer already streamed
                     else:
-                        final_response = "Đã xảy ra lỗi khi tạo câu trả lời."
+                        final_response = "Hmm, có gì đó trục trặc rồi. Bạn thử hỏi lại mình nhé!"
                 else:
                     final_msg = await self._llm.ainvoke(messages)
                     final_response, llm_thinking = self._extract_content_with_thinking(final_msg.content)
             except Exception as e:
                 logger.error("[TUTOR_AGENT] Final generation error: %s", e)
-                final_response = "Đã xảy ra lỗi khi tạo câu trả lời."
+                final_response = "Hmm, có gì đó trục trặc rồi. Bạn thử hỏi lại mình nhé!"
         
         # Get sources from tool calls
         sources = get_last_retrieved_sources()
