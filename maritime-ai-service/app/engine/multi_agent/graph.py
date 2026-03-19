@@ -3159,12 +3159,39 @@ async def _execute_code_studio_tool_rounds(
             "Đang hoàn thiện chi tiết...",
         ]
 
+        _LLM_HARD_TIMEOUT = 240  # 4 minutes max for ainvoke
+
         async def _llm_call():
             return await llm_with_tools.ainvoke(messages)
 
         _llm_task = asyncio.create_task(_llm_call())
         _progress_idx = 0
+        _llm_start = time.time()
         while not _llm_task.done():
+            # Hard timeout — cancel if LLM takes too long
+            if time.time() - _llm_start > _LLM_HARD_TIMEOUT:
+                _llm_task.cancel()
+                logger.warning("[CODE_STUDIO] ainvoke hard timeout after %ds", _LLM_HARD_TIMEOUT)
+                await push_event({
+                    "type": "status",
+                    "content": "Đang thử lại với cấu hình nhẹ hơn...",
+                    "step": "code_generation",
+                    "node": "code_studio_agent",
+                })
+                # Retry with moderate tier (faster)
+                try:
+                    from app.engine.llm_pool import get_llm_moderate
+                    _fallback_llm = get_llm_moderate()
+                    if tools:
+                        _fallback_llm = _fallback_llm.bind_tools(tools)
+                    llm_response = await asyncio.wait_for(
+                        _fallback_llm.ainvoke(messages), timeout=120.0
+                    )
+                except Exception as _fb_err:
+                    logger.warning("[CODE_STUDIO] Fallback ainvoke also failed: %s", _fb_err)
+                    from langchain_core.messages import AIMessage as _AM
+                    llm_response = _AM(content="Xin lỗi, mình cần thêm thời gian để tạo mô phỏng này. Hãy thử lại nhé.")
+                break
             try:
                 await asyncio.wait_for(asyncio.shield(_llm_task), timeout=20.0)
             except asyncio.TimeoutError:
