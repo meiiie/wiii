@@ -1974,11 +1974,9 @@ html.dark .shiki span {
   opacity: 0.9;
 }
 
-/* Live interval: visual anchor with left accent */
+/* Live interval: subtle emphasis, no border */
 .reasoning-interval--live {
   margin: 0.15rem 0 0.3rem;
-  padding-left: 0.65rem;
-  border-left: 2px solid var(--accent-orange);
 }
 
 .reasoning-interval__rail {
