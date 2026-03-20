@@ -1964,14 +1964,22 @@ html.dark .shiki span {
   min-width: 0;
 }
 
-/* Completed intervals: ultra-compact receipt-style */
+/* Completed intervals: merge visually — no separate header, content flows */
 .reasoning-interval--complete {
-  margin: 0 0 0.1rem;
-  opacity: 0.7;
+  margin: 0;
+  opacity: 0.8;
   transition: opacity 200ms;
 }
 .reasoning-interval--complete:hover {
-  opacity: 0.9;
+  opacity: 1;
+}
+/* Hide header on completed intervals that follow another interval (visual merge) */
+.reasoning-interval--complete + .reasoning-interval--complete .reasoning-interval__header-btn {
+  display: none;
+}
+/* Also hide header on completed intervals after live (same timeline) */
+.reasoning-interval--live + .reasoning-interval--complete .reasoning-interval__header-btn {
+  display: none;
 }
 
 /* Live interval: subtle emphasis, no border */
@@ -2073,7 +2081,7 @@ html.dark .shiki span {
   min-width: 0;
 }
 
-/* Section divider: dashed line between thinking and tool operations (spec Phần 1.3) */
+/* Section divider: dashed line above tool operations (spec Phần 1.3) */
 .reasoning-interval__segment--operation {
   position: relative;
   margin-top: 12px;
@@ -2093,6 +2101,47 @@ html.dark .shiki span {
     transparent 4px,
     transparent 8px
   );
+}
+
+/* Tool operations: BLACK text, always visible, not collapsible (spec feedback) */
+/* "chữ xám = Wiii nói với chính mình, chữ đen = Wiii báo cho user" */
+.reasoning-op-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.reasoning-op-row__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  min-width: 18px;
+  padding-top: 2px;
+  color: var(--text-secondary);
+}
+.reasoning-op-row__body {
+  min-width: 0;
+  flex: 1;
+}
+.reasoning-op-row__label {
+  display: none; /* Hide technical label — text body is self-explanatory */
+}
+.reasoning-op-row__text {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.reasoning-op-row--success .reasoning-op-row__icon {
+  color: var(--accent-green, #16a34a);
+}
+.reasoning-op-row--pending .reasoning-op-row__icon {
+  color: var(--accent-orange);
+  animation: thinking-journey-pulse 1.2s ease-in-out infinite;
 }
 
 /* Phase2: Collapsible header — word-wrap fix + readable sizing */
@@ -2225,24 +2274,7 @@ html.dark .shiki span {
   opacity: 0.4;
 }
 
-/* Shimmer on routing/pending operation labels when live */
-.reasoning-interval--live .reasoning-op-row--default .reasoning-op-row__label,
-.reasoning-interval--live .reasoning-op-row--pending .reasoning-op-row__label {
-  --_op-base: color-mix(in srgb, var(--accent-orange) 72%, var(--text-secondary));
-  background: linear-gradient(
-    90deg,
-    var(--_op-base) 0%,
-    var(--_op-base) 35%,
-    var(--accent-orange) 50%,
-    var(--_op-base) 65%,
-    var(--_op-base) 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: thinking-shimmer 2.5s ease-in-out infinite;
-}
+/* Op-row label hidden (display:none above) — shimmer removed */
 .reasoning-interval__collapse {
   display: grid;
   transition: grid-template-rows 300ms ease-out;
@@ -2389,58 +2421,7 @@ html.dark .shiki span {
   animation: thinking-preview-blink 1s ease-in-out infinite;
 }
 
-.reasoning-op-row {
-  display: grid;
-  grid-template-columns: 1rem minmax(0, 1fr);
-  column-gap: 0.65rem;
-  align-items: start;
-}
-
-.reasoning-op-row__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1rem;
-  min-width: 1rem;
-  color: color-mix(in srgb, var(--accent-orange) 70%, var(--text-secondary));
-  padding-top: 0.16rem;
-}
-
-.reasoning-op-row__body {
-  min-width: 0;
-  display: grid;
-  gap: 0.15rem;
-}
-
-.reasoning-op-row__label {
-  color: color-mix(in srgb, var(--accent-orange) 60%, var(--text-tertiary));
-  font-size: 0.58rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.reasoning-op-row__text {
-  color: var(--text-tertiary);
-  font-size: 0.8rem;
-  line-height: 1.55;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.reasoning-op-row--success .reasoning-op-row__icon,
-.reasoning-op-row--success .reasoning-op-row__label {
-  color: color-mix(in srgb, var(--accent-green) 68%, var(--text-secondary));
-}
-
-.reasoning-op-row--pending .reasoning-op-row__icon,
-.reasoning-op-row--pending .reasoning-op-row__label {
-  color: color-mix(in srgb, var(--accent-orange) 76%, var(--text-secondary));
-}
+/* Old reasoning-op-row duplicate removed — defined in segment--operation section above */
 
 .reasoning-inspector__backdrop {
   position: fixed;
