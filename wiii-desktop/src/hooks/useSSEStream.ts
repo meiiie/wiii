@@ -353,15 +353,10 @@ export function useSSEStream() {
       onToolCall: (data) => {
         traceEvent("tool_call", { name: data.content.name, node: data.node });
         const store = useChatStore.getState();
-        // Sprint 147: Think tool — redirect thought content into thinking block
+        // Phase2: tool_think is LLM internal planning — skip from visible UI entirely.
+        // Narrated thinking (from reasoning_narrator) provides the user-facing thinking text.
+        // Raw planning ("Người dùng muốn...", "Tôi cần...") should never be shown to users.
         if (data.content.name === "tool_think") {
-          const thought = String(data.content.args?.thought || "");
-          if (thought) {
-            // Sprint 150: Push to thinking buffer instead of direct update
-            thinkingNodeRef.current = data.node;
-            thinkingBufferRef.current?.push(thought);
-          }
-          // Track the ID so onToolResult can skip it
           _thinkToolIds.add(data.content.id);
           return;
         }
