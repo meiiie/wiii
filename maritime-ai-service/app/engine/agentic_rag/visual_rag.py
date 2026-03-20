@@ -39,7 +39,7 @@ YÊU CẦU:
 6. Trả lời bằng tiếng Việt. Giữ nguyên thuật ngữ chuyên ngành bằng tiếng Anh.
 7. CHỈ mô tả, KHÔNG trả lời câu hỏi.
 
-Trả lời ngắn gọn, tối đa 200 từ."""
+Trả lời ngắn gọn, súc tích."""
 
 
 @dataclass

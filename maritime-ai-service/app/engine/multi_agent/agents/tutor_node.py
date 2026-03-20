@@ -486,7 +486,7 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
 ## Yêu cầu:
 {query}
 
-## QUY TẮC ĐỘ DÀI: Trả lời tối đa 400 từ. Nếu cần dài hơn, chia thành các phần ngắn gọn.
+## ĐỘ DÀI: Trả lời vừa đủ — ngắn gọn khi câu hỏi đơn giản, chi tiết khi câu hỏi phức tạp. Không giới hạn cứng.
 """
         
         # Phase2-F: Always inject thinking instruction so LLM wraps reasoning in <thinking> tags

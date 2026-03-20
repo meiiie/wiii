@@ -141,7 +141,7 @@ QUY TẮC:
 - Trả lời trực tiếp cho học viên, KHÔNG viết ở ngôi thứ nhất về quá trình suy nghĩ
 - KHÔNG bao gồm "tôi đang phân tích", "tôi nhận thấy", "tôi đang xem xét"
 - KHÔNG bao gồm <thinking> tags hoặc nội dung suy luận nội bộ
-- Giữ ngắn gọn (tối đa 500 từ), tự nhiên, thân thiện
+- Giữ tự nhiên, thân thiện — độ dài vừa đủ cho nội dung, không giới hạn cứng
 - Trả lời bằng tiếng Việt
 - KHÔNG bắt đầu bằng "Chào bạn", "Chào" hoặc lời chào nếu đây là cuộc trò chuyện đang diễn ra
 
