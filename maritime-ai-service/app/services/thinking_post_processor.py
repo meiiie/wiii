@@ -1,19 +1,20 @@
 """
-Centralized Thinking Post-Processor (CHỈ THỊ SỐ 29 v8)
+Centralized Thinking Post-Processor (v9 — Gemini Native First)
 
-SOTA Pattern: Response Post-Processor Middleware
-- Single point for all thinking extraction/normalization
-- Handles both <thinking> tags and Gemini native format
-- Priority: text-based tags (Vietnamese) over native (English)
+SOTA Pattern: API-level thinking separation (Anthropic/OpenAI/Gemini 2026)
+
+Priority:
+1. Gemini native format {'type': 'thinking', 'thinking': '...'}  (PRIMARY)
+2. Text-based <thinking>...</thinking> tags                       (FALLBACK)
+
+Rationale: Native API-level separation is more robust than regex parsing.
+Regex is kept as fallback for non-Gemini providers (Ollama, OpenAI).
 
 Usage:
     from app.services.thinking_post_processor import get_thinking_processor
-    
+
     processor = get_thinking_processor()
     text, thinking = processor.process(response.content)
-
-**Pattern:** Post-Processor Middleware (LangChain 2025 SOTA)
-**Spec:** CHỈ THỊ SỐ 29 v8
 """
 
 import re
@@ -28,187 +29,147 @@ logger = logging.getLogger(__name__)
 class ThinkingResult:
     """Standardized thinking extraction result."""
     text: str                     # Main response content (cleaned)
-    thinking: Optional[str]       # Extracted thinking (Vietnamese preferred)
-    source: str                   # 'text_tags' | 'gemini_native' | 'none'
+    thinking: Optional[str]       # Extracted thinking
+    source: str                   # 'gemini_native' | 'text_tags' | 'none'
 
 
 class ThinkingPostProcessor:
     """
     Centralized thinking extraction and normalization.
-    
-    SOTA Pattern: Single point of processing for all LLM responses.
-    
-    Handles (in priority order):
-    1. Text-based <thinking>...</thinking> tags (preferred - Vietnamese)
-    2. Gemini native format {'type': 'thinking', 'thinking': '...'}
+
+    Priority (v9 — Gemini Native First):
+    1. Gemini native format blocks (API-level separation — PREFERRED)
+    2. Text-based <thinking>...</thinking> tags (fallback for non-Gemini)
     3. Plain text responses (no thinking)
-    
-    The text-based format is preferred because:
-    - Model writes in Vietnamese (follows system prompt language)
-    - Works consistently across all agents (multi-agent graph nodes)
-    
-    Example:
-        >>> processor = ThinkingPostProcessor()
-        >>> text, thinking = processor.process(response.content)
-        >>> if thinking:
-        ...     print(f"Thinking: {thinking[:100]}...")
+
+    The native format is preferred because:
+    - API-level separation is 100% reliable (no regex, no tag parsing)
+    - No risk of LLM forgetting to use tags
+    - Works with Gemini's encrypted thought signatures for multi-turn
     """
-    
-    # Pattern to extract <thinking>...</thinking> from text
-    # Case-insensitive, handles multiline content
+
     THINKING_PATTERN = re.compile(
         r'<thinking>(.*?)</thinking>',
         re.DOTALL | re.IGNORECASE
     )
 
-    VIETNAMESE_CHAR_PATTERN = re.compile(
-        r"[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩị"
-        r"òóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]",
-        re.IGNORECASE,
-    )
-    
     def process(self, content: Any) -> Tuple[str, Optional[str]]:
         """
         Process LLM response and extract thinking content.
-        
-        This is the main entry point. It handles all response formats
-        and returns a normalized (text, thinking) tuple.
-        
+
         Args:
-            content: Raw LLM response content
-                     - str: Plain text (check for <thinking> tags)
-                     - list: Gemini native format with content blocks
-                     - other: Converted to string
-                     
+            content: Raw LLM response content (str, list, or other)
+
         Returns:
             Tuple of (cleaned_text, thinking_content)
-            - cleaned_text: Response with <thinking> tags removed
-            - thinking_content: Extracted thinking or None
         """
         result = self._extract(content)
-        
+
         if result.thinking:
             logger.debug(
-                f"[THINKING] Source: {result.source}, "
-                f"Length: {len(result.thinking)} chars"
+                "[THINKING] Source: %s, Length: %d chars",
+                result.source, len(result.thinking),
             )
-        
+
         return result.text, result.thinking
-    
+
     def _extract(self, content: Any) -> ThinkingResult:
         """
-        Internal extraction logic with format detection.
-        
-        Priority:
-        1. Check for <thinking> tags in text (Vietnamese - preferred)
-        2. Check Gemini native format blocks
-        3. Return plain text with no thinking
+        Internal extraction logic.
+
+        Priority: native blocks → text tags → plain text
         """
-        # Case 1: String - check for <thinking> tags first
-        if isinstance(content, str):
-            return self._extract_from_text(content)
-        
-        # Case 2: List (Gemini native format)
+        # Case 1: List (Gemini native format) — check FIRST
         if isinstance(content, list):
             return self._extract_from_list(content)
-        
-        # Case 3: Unknown format - convert to string and try
+
+        # Case 2: String — check for <thinking> tags (fallback)
+        if isinstance(content, str):
+            return self._extract_from_text(content)
+
+        # Case 3: Unknown format — convert to string
         text = str(content)
         return self._extract_from_text(text)
-    
+
+    def _extract_from_list(self, blocks: list) -> ThinkingResult:
+        """
+        Extract from Gemini native format (PRIMARY path).
+
+        Gemini response format when include_thoughts=True:
+        [
+            {'type': 'thinking', 'thinking': '...'},  # Reasoning trace
+            {'type': 'text', 'text': '...'}            # Final answer
+        ]
+        """
+        text_parts = []
+        native_thinking_parts = []
+
+        for block in blocks:
+            if isinstance(block, dict):
+                block_type = block.get('type', '')
+
+                if block_type == 'thinking':
+                    native_thinking = block.get('thinking', '')
+                    if native_thinking:
+                        native_thinking_parts.append(native_thinking)
+
+                elif block_type == 'text':
+                    text_content = block.get('text', '')
+                    if text_content:
+                        text_parts.append(text_content)
+
+            elif isinstance(block, str):
+                text_parts.append(block)
+
+        combined_text = '\n'.join(text_parts)
+
+        # PRIMARY: Use Gemini native thinking blocks
+        if native_thinking_parts:
+            native_thinking = '\n'.join(native_thinking_parts)
+            if native_thinking.strip() and len(native_thinking.strip()) > 10:
+                # Clean any leftover <thinking> tags from the answer text
+                clean_text = self.THINKING_PATTERN.sub('', combined_text).strip()
+                clean_text = re.sub(r'\n{3,}', '\n\n', clean_text)
+                return ThinkingResult(
+                    text=clean_text,
+                    thinking=native_thinking,
+                    source='gemini_native'
+                )
+
+        # FALLBACK: Check for <thinking> tags in text
+        text_result = self._extract_from_text(combined_text)
+        if text_result.thinking:
+            return text_result
+
+        return ThinkingResult(text=combined_text, thinking=None, source='none')
+
     def _extract_from_text(self, text: str) -> ThinkingResult:
         """
-        Extract <thinking> tags from text response.
-        
-        This is the PREFERRED format because:
-        - Model writes thinking in Vietnamese (follows system prompt)
-        - Works consistently across multi-agent graph nodes
+        Extract <thinking> tags from text (FALLBACK for non-Gemini providers).
         """
         match = self.THINKING_PATTERN.search(text)
-        
+
         if match:
             thinking = match.group(1).strip()
-            # Remove thinking tags from visible text
             clean_text = self.THINKING_PATTERN.sub('', text).strip()
-            
-            # Also clean up any extra whitespace left behind
             clean_text = re.sub(r'\n{3,}', '\n\n', clean_text)
-            
+
             return ThinkingResult(
                 text=clean_text,
                 thinking=thinking,
                 source='text_tags'
             )
-        
-        return ThinkingResult(text=text, thinking=None, source='none')
-    
-    def _extract_from_list(self, blocks: list) -> ThinkingResult:
-        """
-        Extract from Gemini native format.
-        
-        Gemini response format when thinking is enabled:
-        [
-            {'type': 'thinking', 'thinking': '...'},  # Reasoning trace
-            {'type': 'text', 'text': '...'}           # Final answer
-        ]
-        
-        NOTE: This format often outputs in English regardless of prompt.
-        We check for <thinking> tags in the combined text first.
-        """
-        text_parts = []
-        native_thinking_parts = []
-        
-        for block in blocks:
-            if isinstance(block, dict):
-                block_type = block.get('type', '')
-                
-                if block_type == 'thinking':
-                    native_thinking = block.get('thinking', '')
-                    if native_thinking:
-                        native_thinking_parts.append(native_thinking)
-                        
-                elif block_type == 'text':
-                    text_content = block.get('text', '')
-                    if text_content:
-                        text_parts.append(text_content)
-                        
-            elif isinstance(block, str):
-                # Plain string in list
-                text_parts.append(block)
-        
-        combined_text = '\n'.join(text_parts)
-        
-        # PRIORITY: Check for <thinking> tags in text first (Vietnamese)
-        text_result = self._extract_from_text(combined_text)
-        if text_result.thinking:
-            return text_result
-        
-        # FALLBACK: Use Gemini native thinking (may be English)
-        if native_thinking_parts:
-            native_thinking = '\n'.join(native_thinking_parts)
-            if not self._should_surface_native_thinking(native_thinking):
-                logger.info(
-                    "[THINKING] Suppressed native Gemini reasoning for user-facing UX"
-                )
-                return ThinkingResult(
-                    text=combined_text,
-                    thinking=None,
-                    source='none'
-                )
-            return ThinkingResult(
-                text=combined_text,
-                thinking=native_thinking,
-                source='gemini_native'
-            )
-        
-        # No thinking found
-        return ThinkingResult(text=combined_text, thinking=None, source='none')
 
-    def _should_surface_native_thinking(self, thinking: str) -> bool:
-        """Only surface native reasoning when it matches Wiii's Vietnamese UX."""
-        if not thinking or len(thinking) < 20:
-            return False
-        return bool(self.VIETNAMESE_CHAR_PATTERN.search(thinking))
+        return ThinkingResult(text=text, thinking=None, source='none')
+
+
+# =============================================================================
+# Convenience function (backward compat)
+# =============================================================================
+
+def extract_thinking_from_response(content: Any) -> Tuple[str, Optional[str]]:
+    """Extract thinking from LLM response. Returns (text, thinking)."""
+    return get_thinking_processor().process(content)
 
 
 # =============================================================================

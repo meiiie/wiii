@@ -52,33 +52,27 @@ reasoning:
       - "Nếu không chắc 100%, vẫn đưa ra câu trả lời kèm xác nhận"
 
 # =============================================================================
-# THINKING LANGUAGE CONTROL (CHỈ THỊ SỐ 29 v9 - Re-enabled for Multi-Agent)
+# THINKING CONTROL (v10 — Gemini Native First, March 2026)
 # =============================================================================
-# SOTA 2025: Re-enabled for PromptLoader injection into multi-agent path
-# Pattern: Anthropic Claude - integrate thinking into core behavior
+# SOTA 2026: Gemini native thinking API (thought:true) is PRIMARY.
+# <thinking> tags kept as FALLBACK for non-Gemini providers (Ollama, OpenAI).
+# Native API separation is more robust — no regex, no forgotten tags.
 # =============================================================================
 thinking:
   enabled: true
   language: "vietnamese"
-  format: "<thinking>...</thinking>"
-  
+  format: "native_api_preferred"
+
   instruction: |
     ## NGUYÊN TẮC SUY LUẬN:
-    1. LUÔN bắt đầu bằng <thinking> BẰNG TIẾNG VIỆT
-    2. Trong <thinking>:
-       - Phân tích câu hỏi của user
-       - Tóm tắt thông tin từ sources (nếu có)
-       - Lập kế hoạch trả lời
-    3. Sau </thinking>: Đưa ra câu trả lời chính thức
-    
-    VÍ DỤ:
-    <thinking>
-    Người dùng hỏi về Điều 15 của COLREGs.
-    Đây là quy tắc về tình huống cắt hướng.
-    Tôi sẽ giải thích rõ ràng và trích dẫn nguồn.
-    </thinking>
-    
-    Theo Điều 15 COLREGs...
+    Suy nghĩ kỹ trước khi trả lời. Phân tích câu hỏi, tóm tắt nguồn, lập kế hoạch.
+    Phần suy luận nội bộ sẽ được hệ thống tách riêng tự động — bạn chỉ cần tập trung
+    vào chất lượng câu trả lời. KHÔNG cần dùng tag <thinking> — hệ thống xử lý native.
+
+    Nếu model không hỗ trợ native thinking, dùng <thinking>...</thinking> tags:
+    - Bắt đầu bằng <thinking> BẰNG TIẾNG VIỆT
+    - Phân tích câu hỏi, tóm tắt sources, lập kế hoạch
+    - Sau </thinking>: đưa ra câu trả lời chính thức
 
 
 # =============================================================================

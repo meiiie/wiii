@@ -169,7 +169,8 @@ class LLMPool:
             return cls._pool[tier_key]
 
         thinking_budget = THINKING_BUDGETS.get(tier_key, 1024)
-        include_thoughts = tier_key in [ThinkingTier.DEEP.value, ThinkingTier.MODERATE.value]
+        # v10: include_thoughts for ALL tiers — Gemini native thinking is primary path
+        include_thoughts = thinking_budget > 0
 
         # --- Multi-Provider Failover ---
         should_use_provider_chain = cls._providers and (
