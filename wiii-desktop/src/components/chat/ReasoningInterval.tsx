@@ -67,11 +67,20 @@ function getNodeLabel(node?: string) {
   return NODE_LABELS[normalizeNode(node)] || node || "Đang suy luận";
 }
 
-function getIntervalTitle(interval: ReasoningIntervalViewModel) {
-  return interval.summary?.trim()
-    || interval.label?.trim()
-    || (interval.phase ? PHASE_LABELS[interval.phase] : "")
-    || getNodeLabel(interval.node);
+/** Short label for header (max ~60 chars). Full summary goes to body. */
+function getIntervalHeaderLabel(interval: ReasoningIntervalViewModel) {
+  // Priority: phase label > custom label > node label > fallback
+  if (interval.phase && PHASE_LABELS[interval.phase]) return PHASE_LABELS[interval.phase];
+  if (interval.label?.trim()) {
+    const label = interval.label.trim();
+    return label.length <= 60 ? label : `${label.slice(0, 57)}...`;
+  }
+  return getNodeLabel(interval.node);
+}
+
+/** Full summary for the expanded body preview. */
+function getIntervalSummary(interval: ReasoningIntervalViewModel) {
+  return interval.summary?.trim() || interval.label?.trim() || "";
 }
 
 function buildPreviewLine(block: PreviewBlockData) {
@@ -339,15 +348,9 @@ export function ReasoningInterval({
   thinkingLevel: ThinkingLevel;
   onOpenInspector: () => void;
 }) {
-  const title = getIntervalTitle(interval);
-  const phaseLabel = interval.phase ? PHASE_LABELS[interval.phase] : undefined;
-  const statusBadge = interval.isLive ? "Đang suy luận" : "Đã ghi lại";
+  const headerLabel = getIntervalHeaderLabel(interval);
+  void getIntervalSummary; // Available for future use (body preview)
   const durationText = interval.durationSeconds ? `${interval.durationSeconds}s` : "";
-  const showExtendedMeta = thinkingLevel === "detailed";
-  void phaseLabel;
-  void statusBadge;
-  void durationText;
-  void showExtendedMeta;
 
   // Sprint V5: Claude-pattern collapsible — header is clickable, body toggles
   const [expanded, setExpanded] = useState(false);
@@ -388,7 +391,10 @@ export function ReasoningInterval({
               {getNodeLabel(interval.node)}
             </span>
           )}
-          <span className="reasoning-interval__header-label">{title}</span>
+          <span className="reasoning-interval__header-label">{headerLabel}</span>
+          {durationText && !interval.isLive && (
+            <span className="reasoning-interval__header-duration">{durationText}</span>
+          )}
           <svg
             width="12" height="12" viewBox="0 0 20 20" fill="currentColor"
             className={`reasoning-interval__chevron ${showBody ? "reasoning-interval__chevron--open" : ""}`}
@@ -396,7 +402,7 @@ export function ReasoningInterval({
             <path d="M14.128 7.16482C14.3126 6.95983 14.6298 6.94336 14.835 7.12771C15.0402 7.31242 15.0567 7.62952 14.8721 7.83477L10.372 12.835C10.1755 13.0551 9.82445 13.0551 9.62788 12.835L5.12778 7.83477C4.94317 7.62952 4.95963 7.31242 5.16489 7.12771C5.37015 6.94336 5.68741 6.95983 5.87193 7.16482L9.99995 11.7519L14.128 7.16482Z" />
           </svg>
         </button>
-        <span className="sr-only" role="status" aria-live="polite">{title}</span>
+        <span className="sr-only" role="status" aria-live="polite">{headerLabel}</span>
 
         {/* Claude pattern: Body with left rail (vertical line + content) */}
         <div

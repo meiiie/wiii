@@ -495,37 +495,75 @@ def _is_pipeline_summary(text: str) -> bool:
     return False
 
 
+_LABEL_PATTERN = re.compile(r"<label>(.*?)</label>", re.DOTALL | re.IGNORECASE)
+
+# Hybrid tier 2: Wiii-voice fallback labels when LLM doesn't emit <label> tags
+_WIII_FALLBACK_LABELS = [
+    "Wiii đang suy nghĩ~ (˶˃ ᵕ ˂˶)",
+    "Hmm chờ Wiii chút nha...",
+    "Để Wiii kiểm tra lại~",
+    "Ồ, Wiii vừa nảy ra ý tưởng!",
+    "Sắp xong rồi nè ≽^•⩊•^≼",
+]
+
+
+def _extract_thinking_label(thinking_text: str) -> str:
+    """Extract the LAST <label> from thinking text (Hybrid tier 1)."""
+    matches = _LABEL_PATTERN.findall(thinking_text)
+    if matches:
+        label = matches[-1].strip()
+        if label and len(label) <= 80:
+            return label
+    return ""
+
+
 def _extract_thinking_content(node_output: dict) -> str:
     """
     Extract actual AI reasoning for the thinking display block.
-
-    Sprint 140b: Follows Claude Code pattern — thinking = model reasoning,
-    status = pipeline progress.  Pipeline step summaries from ReasoningTracer
-    are filtered out; those belong in status events / StreamingIndicator.
+    Also cleans <label> tags from returned text (labels go to header, not body).
 
     Priority:
-    1. ``thinking`` — native model reasoning (Gemini extended thinking,
-       Claude thinking, Qwen <think> blocks).  May be English.
-    2. ``thinking_content`` — from <thinking> tags in agent prompts.
-       Only used if it's NOT a pipeline summary.
+    1. ``thinking`` — native model reasoning (Gemini extended thinking)
+    2. ``thinking_content`` — from <thinking> tags (fallback)
 
-    Returns empty string when no genuine AI reasoning is available,
-    which correctly results in no thinking block being created.
+    Returns empty string when no genuine AI reasoning is available.
     """
-    # 1. Native AI reasoning (preferred — actual model thought process)
+    # 1. Native AI reasoning (preferred)
     thinking = node_output.get("thinking", "")
     if thinking and len(thinking) > 20:
         if not _is_pipeline_summary(thinking):
-            return thinking
+            # Clean <label> tags — they go to header, not body
+            clean = _LABEL_PATTERN.sub("", thinking).strip()
+            return re.sub(r"\n{3,}", "\n\n", clean) if clean else thinking
 
     # 2. Structured thinking from <thinking> tags (fallback)
-    #    Skip if it's a ReasoningTracer pipeline dump
     thinking_content = node_output.get("thinking_content", "")
     if thinking_content and len(thinking_content) > 20:
         if not _is_pipeline_summary(thinking_content):
-            return thinking_content
+            clean = _LABEL_PATTERN.sub("", thinking_content).strip()
+            return re.sub(r"\n{3,}", "\n\n", clean) if clean else thinking_content
 
     return ""
+
+
+def _extract_thinking_with_label(node_output: dict) -> tuple:
+    """Extract thinking content AND a short label for the UI header.
+
+    Returns: (thinking_text, label)
+    - label from <label> tags (tier 1) or fallback pool (tier 2)
+    """
+    thinking = _extract_thinking_content(node_output)
+    if not thinking:
+        return "", ""
+
+    # Tier 1: Extract <label> from thinking text
+    label = _extract_thinking_label(thinking)
+
+    # Clean <label> tags from the thinking text shown in body
+    clean_thinking = _LABEL_PATTERN.sub("", thinking).strip()
+    clean_thinking = re.sub(r"\n{3,}", "\n\n", clean_thinking)
+
+    return clean_thinking, label
 
 
 async def process_with_multi_agent_streaming(
