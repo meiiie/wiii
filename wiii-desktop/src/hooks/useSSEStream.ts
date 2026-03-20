@@ -353,10 +353,15 @@ export function useSSEStream() {
       onToolCall: (data) => {
         traceEvent("tool_call", { name: data.content.name, node: data.node });
         const store = useChatStore.getState();
-        // Phase2: tool_think is LLM internal planning — skip from visible UI entirely.
-        // Narrated thinking (from reasoning_narrator) provides the user-facing thinking text.
-        // Raw planning ("Người dùng muốn...", "Tôi cần...") should never be shown to users.
+        // Phase2: tool_think — extract persona_label for header, skip raw thought from UI.
+        // Raw planning ("Người dùng muốn...", "Tôi cần...") stays hidden.
+        // But persona_label ("Hmm để Wiii xem~") goes to thinking block header.
         if (data.content.name === "tool_think") {
+          const personaLabel = String(data.content.args?.persona_label || "").trim();
+          if (personaLabel) {
+            // Update the current thinking block's label with Wiii-voice persona label
+            useChatStore.getState().setStreamingThinkingLabel(personaLabel);
+          }
           _thinkToolIds.add(data.content.id);
           return;
         }

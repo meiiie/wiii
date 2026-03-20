@@ -9,6 +9,9 @@ about complex decisions. The thought content is streamed as thinking_delta event
 The tool itself is a no-op — it just records that reasoning occurred.
 The real work happens in the agent node, which intercepts tool_think calls
 and routes the thought content to the thinking display pipeline.
+
+Phase2: Added persona_label field — short cute Wiii-voice label for the UI header.
+LLM fills this as part of the structured tool call (works with Function Calling).
 """
 
 import logging
@@ -18,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 @tool("tool_think")
-def tool_think(thought: str) -> str:
+def tool_think(thought: str, persona_label: str = "") -> str:
     """Use this tool to think step-by-step about complex problems.
 
     Record your reasoning, analyze evidence, consider alternatives, verify your
@@ -33,10 +36,17 @@ def tool_think(thought: str) -> str:
 
     Args:
         thought: Your reasoning, analysis, or reflection.
+        persona_label: A SHORT cute label (<10 words) in Wiii's voice to show
+            the user what Wiii is doing. Examples:
+            "Hmm để Wiii xem nào~"
+            "Ồ, Wiii tìm thấy rồi nè!"
+            "Để Wiii kiểm tra lại~"
+            "Wiii đang phân tích đây ≽^•⩊•^≼"
 
     Returns:
         Acknowledgment that the thought was recorded.
     """
     char_count = len(thought)
-    logger.debug("[THINK_TOOL] Thought recorded: %d chars", char_count)
+    label_info = f", label='{persona_label}'" if persona_label else ""
+    logger.debug("[THINK_TOOL] Thought recorded: %d chars%s", char_count, label_info)
     return f"[Thought recorded: {char_count} chars]"

@@ -134,6 +134,7 @@ interface ChatState {
   startStreaming: () => void;
   appendStreamingContent: (chunk: string) => void;
   setStreamingThinking: (thinking: string) => void;
+  setStreamingThinkingLabel: (label: string) => void;
   setStreamingStep: (step: string) => void;
   setStreamingSources: (sources: SourceInfo[]) => void;
   addStreamingStep: (label: string, node?: string) => void;
@@ -841,6 +842,19 @@ export const useChatStore = create<ChatState>()(
             toolCalls: [],
             startTime: Date.now(),
           });
+        }
+      });
+    },
+
+    // Phase2: Update the latest thinking block's label with Wiii persona label
+    setStreamingThinkingLabel: (label) => {
+      set((state) => {
+        for (let i = state.streamingBlocks.length - 1; i >= 0; i--) {
+          const block = state.streamingBlocks[i];
+          if (block.type === "thinking") {
+            (block as { label?: string }).label = label;
+            break;
+          }
         }
       });
     },
