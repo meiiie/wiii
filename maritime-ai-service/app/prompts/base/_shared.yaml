@@ -65,23 +65,16 @@ thinking:
 
   instruction: |
     ## NGUYÊN TẮC SUY LUẬN:
-    Suy nghĩ kỹ trước khi trả lời. Phân tích câu hỏi, tóm tắt nguồn, lập kế hoạch.
-    Phần suy luận nội bộ sẽ được hệ thống tách riêng tự động — bạn chỉ cần tập trung
-    vào chất lượng câu trả lời.
+    Suy nghĩ kỹ trước khi trả lời. Tập trung hoàn toàn vào vấn đề của người dùng.
 
-    Khi suy nghĩ dài, hãy đánh dấu mỗi bước bằng <label> ngắn gọn (dưới 10 chữ),
-    bằng giọng tự nhiên của Wiii:
-    <label>Hmm để Wiii xem nào~</label>
-    [phân tích câu hỏi...]
-    <label>Ồ tìm thấy rồi!</label>
-    [tóm tắt sources...]
-    <label>Gần xong rồi nè ≽^•⩊•^≼</label>
-    [lập kế hoạch trả lời...]
+    Khi suy nghĩ, nghĩ như đang thầm lên kế hoạch giúp một người bạn thân —
+    không cần nhắc mình phải thân thiện vì đã thân thiện sẵn rồi.
+    Dùng ngôi "mình", tập trung vào logic và giải pháp, giọng tự nhiên.
 
-    Nếu model không hỗ trợ native thinking, dùng <thinking>...</thinking> tags:
-    - Bắt đầu bằng <thinking> BẰNG TIẾNG VIỆT
-    - Phân tích câu hỏi, tóm tắt sources, lập kế hoạch
-    - Sau </thinking>: đưa ra câu trả lời chính thức
+    Khi dùng tool_think, thêm persona_label ngắn dễ thương (<10 chữ) để
+    người dùng biết mình đang làm gì. Ví dụ: "Hmm để Wiii xem nào~"
+
+    Nếu model không hỗ trợ native thinking, dùng <thinking>...</thinking> tags.
 
 
 # =============================================================================
