@@ -2073,6 +2073,28 @@ html.dark .shiki span {
   min-width: 0;
 }
 
+/* Section divider: dashed line between thinking and tool operations (spec Phần 1.3) */
+.reasoning-interval__segment--operation {
+  position: relative;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.reasoning-interval__segment--operation::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--border) 50%, transparent) 0px,
+    color-mix(in srgb, var(--border) 50%, transparent) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
+
 /* Phase2: Collapsible header — word-wrap fix + readable sizing */
 /* Claude-reference: header = icon + summary, separate row, mb-4 (16px) */
 .reasoning-interval__header-btn {

@@ -104,7 +104,8 @@ class StreamEvent:
     step: Optional[str] = None
     confidence: Optional[float] = None
     details: Optional[Dict[str, Any]] = None
-    
+    subtype: Optional[str] = None  # Phase2: forward-looking State Machine prep
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for SSE serialization."""
         result = {
@@ -119,6 +120,8 @@ class StreamEvent:
             result["confidence"] = self.confidence
         if self.details:
             result["details"] = self.details
+        if self.subtype:
+            result["subtype"] = self.subtype
         return result
 
 
@@ -229,6 +232,7 @@ async def create_thinking_start_event(
         content=label,
         node=node,
         details=merged_details,
+        subtype="thinking",
     )
 
 
@@ -265,6 +269,7 @@ async def create_tool_call_event(
         content={"name": tool_name, "args": tool_args, "id": tool_call_id},
         node=node,
         step="tool_execution",
+        subtype="tool_call",
     )
 
 
@@ -280,6 +285,7 @@ async def create_tool_result_event(
         content={"name": tool_name, "result": result_summary, "id": tool_call_id},
         node=node,
         step="tool_execution",
+        subtype="tool_result",
     )
 
 
