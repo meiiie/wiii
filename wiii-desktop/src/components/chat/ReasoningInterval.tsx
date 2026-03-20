@@ -26,7 +26,7 @@ import type {
   VisualBlockData,
 } from "@/api/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import { NODE_LABELS, PHASE_LABELS } from "@/lib/reasoning-labels";
+import { NODE_LABELS } from "@/lib/reasoning-labels";
 import {
   ToolExecutionStrip,
   summarizeToolExecutionBlock,
@@ -67,15 +67,34 @@ function getNodeLabel(node?: string) {
   return NODE_LABELS[normalizeNode(node)] || node || "Đang suy luận";
 }
 
-/** Short label for header (max ~60 chars). Full summary goes to body. */
+// Wiii-voice fallback labels (Tier 2) — used when LLM doesn't emit <label>
+const WIII_FALLBACK_LABELS = [
+  "Wiii đang suy nghĩ~ (˶˃ ᵕ ˂˶)",
+  "Hmm chờ Wiii chút nha...",
+  "Để Wiii kiểm tra lại~",
+];
+
+/**
+ * Header label: ONLY persona labels, NEVER node/technical labels.
+ *
+ * Priority (Hybrid 3-tier):
+ * 1. LLM-emitted label (from thinking stream, parsed by backend)
+ * 2. Wiii-voice fallback from pool
+ * NEVER: "ĐIỀU HƯỚNG", "TRỰC TIẾP", "GIẢI THÍCH" (those are body tags)
+ */
 function getIntervalHeaderLabel(interval: ReasoningIntervalViewModel) {
-  // Priority: phase label > custom label > node label > fallback
-  if (interval.phase && PHASE_LABELS[interval.phase]) return PHASE_LABELS[interval.phase];
+  // Tier 1: LLM-emitted label (arrives via interval.label from backend <label> parsing)
   if (interval.label?.trim()) {
     const label = interval.label.trim();
-    return label.length <= 60 ? label : `${label.slice(0, 57)}...`;
+    // Only use if it looks like a persona label (short, not a technical node name)
+    if (label.length <= 60 && !Object.values(NODE_LABELS).includes(label)) {
+      return label;
+    }
   }
-  return getNodeLabel(interval.node);
+
+  // Tier 2: Wiii-voice fallback
+  if (interval.isLive) return WIII_FALLBACK_LABELS[0];
+  return WIII_FALLBACK_LABELS[Math.floor(Math.random() * WIII_FALLBACK_LABELS.length)];
 }
 
 /** Full summary for the expanded body preview. */
@@ -379,6 +398,7 @@ export function ReasoningInterval({
           onClick={() => setExpanded(!expanded)}
           aria-expanded={showBody}
         >
+          {/* Icon: sparkle when live, clock when complete */}
           {interval.isLive ? (
             <span className="reasoning-interval__live-dot" />
           ) : (
@@ -386,11 +406,7 @@ export function ReasoningInterval({
               <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
             </svg>
           )}
-          {interval.node && (
-            <span className="reasoning-interval__agent-chip">
-              {getNodeLabel(interval.node)}
-            </span>
-          )}
+          {/* Persona label only — NO technical node tags ("ĐIỀU HƯỚNG") here */}
           <span className="reasoning-interval__header-label">{headerLabel}</span>
           {durationText && !interval.isLive && (
             <span className="reasoning-interval__header-duration">{durationText}</span>
