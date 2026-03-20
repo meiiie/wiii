@@ -37,10 +37,20 @@ avoid_phrases:
   - local direct path
   - kiến thức chung của llm
   - tool execution
+  - đang tìm kiếm thông tin
+  - đang xử lý yêu cầu
+anti_repetition:
+  thinking_must_not_contain:
+    - same verb+object as status event
+    - restatement of user query without reframing
+    - generic quality platitudes
+  thinking_must_contain:
+    - at least 1 insight or reframe of the question
+    - specific context detail (domain term, data point, or source name)
 style_tags:
   - intimate
   - adaptive
-version: "1.0.0"
+version: "2.0.0"
 ---
 
 # Direct Reasoning

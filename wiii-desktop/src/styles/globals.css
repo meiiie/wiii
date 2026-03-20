@@ -1467,6 +1467,16 @@ html.dark .shiki span {
   animation: thinking-journey-pulse 1.2s ease-in-out infinite;
 }
 
+/* Phase2-I2: Shimmer on active journey chip label */
+.thinking-journey__chip--active > span:last-child {
+  background: linear-gradient(90deg, var(--accent-orange) 0%, var(--accent-orange) 35%, #f0d080 50%, var(--accent-orange) 65%, var(--accent-orange) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 2.5s ease-in-out infinite;
+}
+
 .thinking-journey__chip--overflow {
   color: var(--text-tertiary);
 }
@@ -1680,6 +1690,23 @@ html.dark .shiki span {
   letter-spacing: -0.02em;
 }
 
+/* Phase2-I: Shimmer on streaming thinking block title */
+.thinking-block--streaming .thinking-block__title {
+  background: linear-gradient(
+    90deg,
+    var(--accent, #ff643b) 0%,
+    var(--accent, #ff643b) 35%,
+    #f0d080 50%,
+    var(--accent, #ff643b) 65%,
+    var(--accent, #ff643b) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 2.5s ease-in-out infinite;
+}
+
 .thinking-block__duration {
   color: var(--text-tertiary);
   font-size: 11px;
@@ -1743,6 +1770,9 @@ html.dark .shiki span {
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface-secondary) 84%, white) 0%, var(--surface) 100%);
   box-shadow: 0 10px 22px rgba(15, 23, 42, 0.035);
+  /* D2: CSS containment to prevent layout shift during streaming */
+  contain: layout;
+  will-change: height;
 }
 
 .thinking-block__content-note {

@@ -112,6 +112,9 @@ class AgentState(TypedDict, total=False):
     host_context: Optional[Dict[str, Any]]  # Raw HostContext from request
     host_context_prompt: Optional[str]  # Formatted prompt block (graph-level injection)
     widget_feedback_prompt: Optional[str]  # Formatted widget/app result context
+    living_context_prompt: Optional[str]  # Formatted LivingContextBlockV1 prompt
+    memory_block_context: Optional[str]  # MemoryBlockV1 section extracted for prompt reuse
+    reasoning_policy: Optional[Dict[str, Any]]  # ReasoningPolicyV1 metadata for this turn
 
     # Sprint 163 Phase 4: Parallel dispatch + aggregator
     subagent_reports: Optional[List[Dict[str, Any]]]  # List[SubagentReport.model_dump()]

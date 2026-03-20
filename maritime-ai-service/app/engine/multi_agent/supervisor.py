@@ -27,6 +27,7 @@ from enum import Enum
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core.config import settings
 from app.core.resilience import retry_on_transient
 from app.engine.character.character_card import (
     build_supervisor_card_prompt,
@@ -183,6 +184,19 @@ PERSONAL_KEYWORDS = [
     "tuổi tôi", "tuổi mình", "nghề của tôi",
 ]
 
+FAST_WEB_KEYWORDS = [
+    "tim tren web", "tim tren mang", "tim tren internet",
+    "search", "tin tuc", "moi nhat", "hom nay",
+    "nghi dinh", "thong tu", "van ban phap luat",
+    "maritime news", "shipping news",
+]
+
+FAST_PRODUCT_KEYWORDS = [
+    "shopee", "lazada", "tiktok shop", "facebook marketplace",
+    "google shopping", "mua", "tim san pham", "so sanh gia",
+    "gia re nhat", "mua o dau",
+]
+
 CODE_STUDIO_KEYWORDS = [
     "python", "code", "viet code", "chay code", "chay python",
     "javascript", "js", "typescript", "ts", "html", "css", "react",
@@ -230,10 +244,15 @@ def _normalize_router_text(text: str) -> str:
 
 def _needs_code_studio(query: str) -> bool:
     """Detect requests that should route to the code studio capability."""
+    normalized = _normalize_router_text(query)
     decision = resolve_visual_intent(query)
     if decision.presentation_intent in {"code_studio_app", "artifact"}:
+        if "quiz" in normalized and not any(
+            keyword in normalized
+            for keyword in ("widget", "app", "html", "interactive", "artifact", "javascript", "canvas", "svg", "mini tool")
+        ):
+            return False
         return True
-    normalized = _normalize_router_text(query)
     narrowed_keywords = (
         "python",
         "code",
@@ -262,6 +281,82 @@ def _needs_code_studio(query: str) -> bool:
         "browser sandbox",
     )
     return any(kw in normalized for kw in narrowed_keywords)
+
+
+def _looks_clear_social(normalized: str) -> bool:
+    if len(normalized.split()) > 6:
+        return False
+    if any(marker in normalized for marker in ("giai thich", "quy dinh", "mo phong", "ve bieu do")):
+        return False
+    return any(
+        normalized == keyword or normalized.startswith(f"{keyword} ")
+        for keyword in SOCIAL_KEYWORDS
+    )
+
+
+def _looks_clear_web_intent(normalized: str) -> bool:
+    if any(marker in normalized for marker in ("quiz", "giai thich", "on bai", "mo phong")):
+        return False
+    return any(keyword in normalized for keyword in FAST_WEB_KEYWORDS)
+
+
+def _looks_clear_product_intent(normalized: str) -> bool:
+    if any(marker in normalized for marker in ("code", "html", "svg", "canvas", "python")):
+        return False
+    return any(keyword in normalized for keyword in FAST_PRODUCT_KEYWORDS)
+
+
+def _looks_clear_learning_turn(normalized: str) -> bool:
+    if any(
+        marker in normalized
+        for marker in (
+            "widget",
+            "mini app",
+            "mini tool",
+            "interactive quiz",
+            "quiz widget",
+            "quiz app",
+            "html quiz",
+            "artifact",
+            "canvas",
+            "svg",
+            "javascript",
+            "react",
+            "python",
+            "code",
+        )
+    ):
+        return False
+    return any(
+        marker in normalized
+        for marker in (
+            "quiz",
+            "quizz",
+            "trac nghiem",
+            "luyen tap",
+            "on tap",
+            "flashcard",
+            "bai tap",
+            "practice",
+            "learn",
+            "hoc ",
+            "giai thich",
+            "day minh",
+            "day toi",
+            "huong dan",
+        )
+    )
+
+
+_VISUAL_LEARNING_CUES = (
+    "giai thich",
+    "explain",
+    "how it works",
+    "step by step",
+    "in charts",
+    "with charts",
+    "visual",
+)
 
 
 class SupervisorAgent:
@@ -309,6 +404,18 @@ class SupervisorAgent:
         query = state.get("query", "")
         context = state.get("context", {})
         domain_config = state.get("domain_config", {})
+
+        if settings.enable_conservative_fast_routing:
+            fast_result = self._conservative_fast_route(query, context, domain_config)
+            if fast_result is not None:
+                agent, intent, confidence, reasoning = fast_result
+                state["routing_metadata"] = {
+                    "intent": intent,
+                    "confidence": confidence,
+                    "reasoning": reasoning,
+                    "method": "conservative_fast_path",
+                }
+                return agent
 
         if not self._llm:
             result = self._rule_based_route(query, domain_config)
@@ -485,6 +592,48 @@ class SupervisorAgent:
 
         return chosen_agent
 
+    def _conservative_fast_route(self, query: str, context: dict, domain_config: dict) -> Optional[tuple[str, str, float, str]]:
+        """Route only the most obvious turns without invoking the supervisor LLM."""
+        normalized = _normalize_router_text(query)
+        visual_decision = resolve_visual_intent(query)
+        domain_keywords = [kw for kw in self._get_domain_keywords(domain_config) if kw]
+        has_domain_signal = any(keyword in normalized for keyword in domain_keywords)
+
+        if _looks_clear_social(normalized):
+            return (AgentType.DIRECT.value, "social", 1.0, "obvious social turn")
+
+        if any(kw in normalized for kw in PERSONAL_KEYWORDS):
+            return None
+
+        if _looks_clear_product_intent(normalized):
+            if settings.enable_product_search:
+                return (AgentType.PRODUCT_SEARCH.value, "product_search", 0.93, "obvious product search turn")
+            return (AgentType.DIRECT.value, "off_topic", 0.85, "product intent but product search is disabled")
+
+        if _looks_clear_web_intent(normalized):
+            return (AgentType.DIRECT.value, "web_search", 0.92, "obvious web or legal lookup turn")
+
+        if (
+            visual_decision.presentation_intent in {"code_studio_app", "artifact"}
+            or _needs_code_studio(query)
+        ):
+            return (AgentType.CODE_STUDIO.value, "code_execution", 0.95, "obvious code, simulation, or artifact turn")
+
+        if _looks_clear_learning_turn(normalized) and not has_domain_signal:
+            return (AgentType.DIRECT.value, "learning", 0.9, "obvious learning turn without app or domain signals")
+
+        if visual_decision.presentation_intent in {"article_figure", "chart_runtime"}:
+            if not has_domain_signal:
+                intent = "learning" if any(cue in normalized for cue in _VISUAL_LEARNING_CUES) else "lookup"
+                return (
+                    AgentType.DIRECT.value,
+                    intent,
+                    0.91,
+                    f"obvious inline visual turn ({visual_decision.presentation_intent})",
+                )
+
+        return None
+
     def _validate_domain_routing(self, query: str, chosen_agent: str,
                                    domain_config: dict = None) -> str:
         """Sprint 80: Post-routing validation — ensure RAG/TUTOR queries have domain signal.
@@ -625,6 +774,8 @@ class SupervisorAgent:
             # Sprint 222: Include host context in synthesis
             _host_prompt = state.get("host_context_prompt", "")
             _host_suffix = f"\n\nHost Context:\n{_host_prompt}" if _host_prompt else ""
+            _living_prompt = state.get("living_context_prompt", "")
+            _living_suffix = f"\n\nLiving Context:\n{_living_prompt}" if _living_prompt else ""
             _widget_feedback_prompt = state.get("widget_feedback_prompt", "")
             _widget_suffix = (
                 f"\n\nWidget Feedback Context:\n{_widget_feedback_prompt}"
@@ -636,7 +787,7 @@ class SupervisorAgent:
                 HumanMessage(content=_synth_prompt.format(
                     query=state.get("query", ""),
                     outputs=output_text
-                ) + _host_suffix + _widget_suffix)
+                ) + _host_suffix + _living_suffix + _widget_suffix)
             ]
 
             response = await self._llm.ainvoke(messages)

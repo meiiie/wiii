@@ -277,7 +277,7 @@ _NODE_LABELS = {
     "supervisor": "Phân tích câu hỏi",
     "rag_agent": "Tra cứu tri thức",
     "tutor_agent": "Soạn bài giảng",
-    "grader": "Kiểm tra chất lượng",
+    # Sprint 233: grader removed from pipeline
     "synthesizer": "Tổng hợp câu trả lời",
     "memory_agent": "Truy xuất bộ nhớ",
     "direct": "Suy nghĩ câu trả lời",
@@ -626,18 +626,30 @@ async def process_with_multi_agent_streaming(
         # Sprint 222/231: Graph-level host + visual context injection (sync/stream parity)
         from app.engine.multi_agent.graph import (
             _inject_host_context,
+            _inject_living_context,
             _inject_visual_context,
+            _inject_visual_cognition_context,
             _inject_widget_feedback_context,
+            _inject_code_studio_context,
         )
         _host_prompt = _inject_host_context(initial_state)
         if _host_prompt:
             initial_state["host_context_prompt"] = _host_prompt
+        _living_prompt = _inject_living_context(initial_state)
+        if _living_prompt:
+            initial_state["living_context_prompt"] = _living_prompt
         _visual_prompt = _inject_visual_context(initial_state)
         if _visual_prompt:
             initial_state["visual_context_prompt"] = _visual_prompt
+        _visual_cognition_prompt = _inject_visual_cognition_context(initial_state)
+        if _visual_cognition_prompt:
+            initial_state["visual_cognition_prompt"] = _visual_cognition_prompt
         _widget_feedback_prompt = _inject_widget_feedback_context(initial_state)
         if _widget_feedback_prompt:
             initial_state["widget_feedback_prompt"] = _widget_feedback_prompt
+        _code_studio_prompt = _inject_code_studio_context(initial_state)
+        if _code_studio_prompt:
+            initial_state["code_studio_context_prompt"] = _code_studio_prompt
 
         answer_emitted = False
         partial_answer_emitted = False
@@ -1192,23 +1204,7 @@ async def process_with_multi_agent_streaming(
                         partial_answer_emitted = True
                         final_state = node_output
 
-                # ---- GRADER NODE ----
-                # Sprint 145: Demoted to status-only (quality check feedback, not deep thinking)
-                elif node_name == "grader":
-                    score = node_output.get("grader_score", 0)
-                    feedback = node_output.get("grader_feedback", "")
-
-                    if score > 0:
-                        status_icon = "✅" if score >= 6 else "⚠️"
-                        _status_msg = f"{status_icon} Độ chắc hiện tại: {score:.1f}/10"
-                        if feedback and len(feedback) > 10:
-                            _status_msg += f" — {feedback[:80]}"
-                        yield await create_status_event(_status_msg, "grader")
-                    else:
-                        yield await create_status_event(
-                            "Đang rà soát độ chắc chắn...",
-                            "grader",
-                        )
+                # Sprint 233: grader node removed from pipeline
 
                 # ---- SYNTHESIZER NODE (FINAL) ----
                 elif node_name == "synthesizer":

@@ -28,10 +28,18 @@ avoid_phrases:
   - fact extraction
   - save memory
   - vector memory
+  - đang tìm kiếm thông tin
+anti_repetition:
+  thinking_must_not_contain:
+    - same verb+object as status event
+    - generic memory descriptions
+  thinking_must_contain:
+    - domain connection with user's info (what it means, how it helps future interactions)
+    - warmth without over-familiarity
 style_tags:
   - personal
   - attentive
-version: "1.0.0"
+version: "2.0.0"
 ---
 
 # Memory Reasoning

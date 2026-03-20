@@ -1,0 +1,282 @@
+<!--
+  STATE MODEL: paths[]{d,color,dashOffset,morphTarget}, animState('playing'|'paused'), progress(0-1), speed
+  RENDER SURFACE: Inline SVG — path morphing, dash-offset animation, CSS transition chains
+  CONTROLS: play/pause button, speed slider, timeline scrubber, reset
+  READOUTS: current progress %, animation state, active effect name
+  FEEDBACK: WiiiVisualBridge.reportResult on play/pause and scrub
+-->
+<style>
+:root {
+  --bg: #0f172a;
+  --fg: #e2e8f0;
+  --accent: #38bdf8;
+  --accent-hover: #7dd3fc;
+  --surface: #1e293b;
+  --surface-alt: #334155;
+  --border: #475569;
+  --text-secondary: #94a3b8;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --radius: 8px;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc; --fg: #0f172a; --accent: #0284c7;
+    --accent-hover: #0369a1;
+    --surface: #ffffff; --surface-alt: #f1f5f9;
+    --border: #cbd5e1; --text-secondary: #64748b;
+    --success: #16a34a; --warning: #d97706; --danger: #dc2626;
+  }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--fg); }
+.motion-root {
+  max-width: 700px; margin: 0 auto; padding: 20px 16px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.motion-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+.motion-title { font-size: 16px; font-weight: 500; }
+.motion-subtitle { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.canvas-wrap {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px; overflow: hidden;
+}
+.canvas-wrap svg { display: block; width: 100%; height: auto; }
+.controls-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 16px;
+}
+.ctrl-btn {
+  width: 36px; height: 36px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--surface);
+  color: var(--fg); cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+}
+.ctrl-btn:hover { background: var(--surface-alt); }
+.ctrl-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ctrl-btn.active { background: var(--accent); color: #0f172a; border-color: var(--accent); }
+.timeline {
+  flex: 1; min-width: 120px; height: 6px;
+  -webkit-appearance: none; appearance: none;
+  background: var(--border); border-radius: 3px; cursor: pointer;
+}
+.timeline::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--accent); border: 2px solid var(--surface);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.speed-label { font-size: 11px; color: var(--text-secondary); min-width: 36px; text-align: center; }
+.progress-label { font-size: 12px; color: var(--accent); font-weight: 500; font-variant-numeric: tabular-nums; min-width: 40px; }
+.readout {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 16px;
+  font-size: 12px; color: var(--text-secondary);
+  display: flex; gap: 20px; flex-wrap: wrap;
+}
+.readout-item { display: flex; flex-direction: column; gap: 2px; }
+.readout-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; }
+.readout-value { font-size: 14px; font-weight: 500; color: var(--fg); }
+</style>
+
+<div class="motion-root">
+  <div class="motion-header">
+    <div>
+      <div class="motion-title">SVG Path Animation</div>
+      <div class="motion-subtitle">Dash-offset draw, morph, va glow — timeline control</div>
+    </div>
+  </div>
+  <div class="canvas-wrap">
+    <svg id="motion-svg" viewBox="0 0 600 300" preserveAspectRatio="xMidYMid meet" role="img" aria-label="SVG animation voi path morphing va dash-offset"></svg>
+  </div>
+  <div class="controls-bar">
+    <button class="ctrl-btn" id="btn-play" aria-label="Play/Pause">&#9654;</button>
+    <button class="ctrl-btn" id="btn-reset" aria-label="Reset">&#8635;</button>
+    <input type="range" class="timeline" id="timeline" min="0" max="1000" value="0" aria-label="Timeline">
+    <span class="progress-label" id="progress-label">0%</span>
+    <span class="speed-label">Toc do</span>
+    <input type="range" class="timeline" id="speed-slider" min="25" max="300" value="100" style="max-width:80px;" aria-label="Speed">
+    <span class="speed-label" id="speed-val">1.0x</span>
+  </div>
+  <div class="readout">
+    <div class="readout-item"><span class="readout-label">Trang thai</span><span class="readout-value" id="ro-state">Dung</span></div>
+    <div class="readout-item"><span class="readout-label">Hieu ung</span><span class="readout-value" id="ro-effect">Draw</span></div>
+    <div class="readout-item"><span class="readout-label">Tien trinh</span><span class="readout-value" id="ro-progress">0%</span></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var SHIP_PATH = 'M80,200 Q120,180 180,190 Q240,200 280,180 Q320,160 360,170 Q400,180 440,160 Q480,140 520,160';
+  var WAVE_PATH = 'M80,200 Q140,160 200,200 Q260,240 320,200 Q380,160 440,200 Q500,240 520,200';
+  var STAR_PATH = 'M300,60 L320,120 L380,120 L330,160 L350,220 L300,180 L250,220 L270,160 L220,120 L280,120 Z';
+  var CIRCLE_PATH = 'M300,100 A60,60 0 1,1 299.9,100 Z';
+
+  var PHASES = [
+    { name: 'Draw', start: 0, end: 0.3 },
+    { name: 'Morph', start: 0.3, end: 0.6 },
+    { name: 'Glow', start: 0.6, end: 0.85 },
+    { name: 'Fade', start: 0.85, end: 1 }
+  ];
+
+  var svg = document.getElementById('motion-svg');
+  var timelineEl = document.getElementById('timeline');
+  var speedSlider = document.getElementById('speed-slider');
+  var progressLabel = document.getElementById('progress-label');
+  var speedVal = document.getElementById('speed-val');
+  var roState = document.getElementById('ro-state');
+  var roEffect = document.getElementById('ro-effect');
+  var roProgress = document.getElementById('ro-progress');
+  var btnPlay = document.getElementById('btn-play');
+  var btnReset = document.getElementById('btn-reset');
+  var NS = 'http://www.w3.org/2000/svg';
+
+  var state = { playing: false, progress: 0, speed: 1, rafId: null, lastTime: 0 };
+
+  function report(k, p, s, st) {
+    if (window.WiiiVisualBridge && window.WiiiVisualBridge.reportResult)
+      window.WiiiVisualBridge.reportResult(k, p, s, st);
+  }
+  function el(tag, attrs) {
+    var n = document.createElementNS(NS, tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+    return n;
+  }
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function getPhase(p) {
+    for (var i = 0; i < PHASES.length; i++) {
+      if (p >= PHASES[i].start && p < PHASES[i].end) return PHASES[i];
+    }
+    return PHASES[PHASES.length - 1];
+  }
+
+  function render() {
+    svg.innerHTML = '';
+    var p = state.progress;
+    var phase = getPhase(p);
+
+    var bg = el('rect', { width: '600', height: '300', fill: 'none' });
+    svg.appendChild(bg);
+
+    var mainPath, pathLen = 800;
+
+    if (p < 0.3) {
+      var drawT = p / 0.3;
+      mainPath = el('path', {
+        d: SHIP_PATH, fill: 'none', stroke: 'var(--accent)',
+        'stroke-width': '3', 'stroke-linecap': 'round',
+        'stroke-dasharray': pathLen,
+        'stroke-dashoffset': pathLen * (1 - drawT)
+      });
+      svg.appendChild(mainPath);
+      var dot = el('circle', { cx: '80', cy: '200', r: '4', fill: 'var(--accent)', opacity: String(drawT) });
+      svg.appendChild(dot);
+    } else if (p < 0.6) {
+      var morphT = (p - 0.3) / 0.3;
+      mainPath = el('path', {
+        d: morphT < 0.5 ? SHIP_PATH : WAVE_PATH,
+        fill: 'none', stroke: 'var(--warning)', 'stroke-width': '3',
+        'stroke-linecap': 'round', opacity: String(0.5 + morphT * 0.5)
+      });
+      svg.appendChild(mainPath);
+      var morphShape = el('path', {
+        d: morphT < 0.5 ? STAR_PATH : CIRCLE_PATH,
+        fill: 'none', stroke: 'var(--success)', 'stroke-width': '2',
+        'stroke-dasharray': '8,6', opacity: String(morphT)
+      });
+      svg.appendChild(morphShape);
+    } else if (p < 0.85) {
+      var glowT = (p - 0.6) / 0.25;
+      var defs = el('defs', {});
+      var filter = el('filter', { id: 'glow' });
+      var blur = el('feGaussianBlur', { stdDeviation: String(2 + glowT * 6), result: 'blur' });
+      var merge = el('feMerge', {});
+      var mn1 = el('feMergeNode', { in: 'blur' });
+      var mn2 = el('feMergeNode', { in: 'SourceGraphic' });
+      merge.appendChild(mn1); merge.appendChild(mn2);
+      filter.appendChild(blur); filter.appendChild(merge);
+      defs.appendChild(filter); svg.appendChild(defs);
+
+      mainPath = el('path', {
+        d: WAVE_PATH, fill: 'none', stroke: 'var(--accent)',
+        'stroke-width': '3', 'stroke-linecap': 'round', filter: 'url(#glow)'
+      });
+      svg.appendChild(mainPath);
+      var orbR = 20 + glowT * 10;
+      var orbAngle = glowT * Math.PI * 4;
+      var orbX = 300 + orbR * 2 * Math.cos(orbAngle);
+      var orbY = 150 + orbR * Math.sin(orbAngle);
+      svg.appendChild(el('circle', { cx: orbX, cy: orbY, r: String(4 + glowT * 4), fill: 'var(--warning)', opacity: String(0.6 + glowT * 0.4), filter: 'url(#glow)' }));
+    } else {
+      var fadeT = (p - 0.85) / 0.15;
+      mainPath = el('path', {
+        d: WAVE_PATH, fill: 'none', stroke: 'var(--accent)',
+        'stroke-width': '3', 'stroke-linecap': 'round',
+        opacity: String(1 - fadeT * 0.7)
+      });
+      svg.appendChild(mainPath);
+      for (var pi = 0; pi < 8; pi++) {
+        var px = 100 + pi * 60;
+        var py = 150 + Math.sin(pi + fadeT * 6) * 40;
+        svg.appendChild(el('circle', {
+          cx: px, cy: py, r: String(2 + Math.random() * 3),
+          fill: 'var(--accent)', opacity: String((1 - fadeT) * 0.6)
+        }));
+      }
+    }
+
+    roEffect.textContent = phase.name;
+    roProgress.textContent = Math.round(p * 100) + '%';
+    progressLabel.textContent = Math.round(p * 100) + '%';
+    timelineEl.value = Math.round(p * 1000);
+  }
+
+  function tick(ts) {
+    if (!state.playing) return;
+    if (state.lastTime === 0) state.lastTime = ts;
+    var dt = (ts - state.lastTime) / 1000;
+    state.lastTime = ts;
+    state.progress = Math.min(1, state.progress + dt * 0.15 * state.speed);
+    render();
+    if (state.progress >= 1) { stop(); return; }
+    state.rafId = requestAnimationFrame(tick);
+  }
+
+  function play() {
+    if (state.progress >= 1) state.progress = 0;
+    state.playing = true; state.lastTime = 0;
+    btnPlay.innerHTML = '&#9646;&#9646;'; btnPlay.classList.add('active');
+    roState.textContent = 'Dang chay';
+    state.rafId = requestAnimationFrame(tick);
+    report('play', { progress: state.progress }, 'Play', 'info');
+  }
+  function stop() {
+    state.playing = false;
+    if (state.rafId) cancelAnimationFrame(state.rafId);
+    btnPlay.innerHTML = '&#9654;'; btnPlay.classList.remove('active');
+    roState.textContent = state.progress >= 1 ? 'Hoan thanh' : 'Tam dung';
+    report('pause', { progress: state.progress }, Math.round(state.progress * 100) + '%', 'info');
+  }
+  function reset() {
+    stop(); state.progress = 0; render();
+    roState.textContent = 'Dung';
+  }
+
+  btnPlay.addEventListener('click', function () { state.playing ? stop() : play(); });
+  btnReset.addEventListener('click', reset);
+  timelineEl.addEventListener('input', function () {
+    state.progress = parseInt(this.value) / 1000; render();
+  });
+  speedSlider.addEventListener('input', function () {
+    state.speed = parseInt(this.value) / 100;
+    speedVal.textContent = state.speed.toFixed(1) + 'x';
+  });
+
+  render();
+})();
+</script>

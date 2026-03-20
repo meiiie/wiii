@@ -378,6 +378,9 @@ class TutorAgentNode:
         _host_prompt = context.get("host_context_prompt", "")
         if _host_prompt:
             base_prompt = base_prompt + "\n\n" + _host_prompt
+        _living_prompt = context.get("living_context_prompt", "")
+        if _living_prompt:
+            base_prompt = base_prompt + "\n\n" + _living_prompt
         _widget_feedback_prompt = context.get("widget_feedback_prompt", "")
         if _widget_feedback_prompt:
             base_prompt = base_prompt + "\n\n" + _widget_feedback_prompt
@@ -542,6 +545,9 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
             _host_ctx = state.get("host_context_prompt", "")
             if _host_ctx:
                 merged_context["host_context_prompt"] = _host_ctx
+            _living_ctx = state.get("living_context_prompt", "")
+            if _living_ctx:
+                merged_context["living_context_prompt"] = _living_ctx
             _widget_feedback_ctx = state.get("widget_feedback_prompt", "")
             if _widget_feedback_ctx:
                 merged_context["widget_feedback_prompt"] = _widget_feedback_ctx

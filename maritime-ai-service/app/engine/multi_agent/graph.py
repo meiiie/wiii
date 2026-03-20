@@ -16,6 +16,7 @@ import json
 import logging
 from pathlib import Path
 import re
+import time
 import uuid
 from typing import Any, Dict, Optional, Literal
 
@@ -33,9 +34,13 @@ from app.engine.multi_agent.supervisor import get_supervisor_agent
 from app.engine.multi_agent.agents.rag_node import get_rag_agent_node
 from app.engine.multi_agent.agents.tutor_node import get_tutor_agent_node
 from app.engine.multi_agent.agents.memory_agent import get_memory_agent_node
-from app.engine.multi_agent.agents.grader_agent import get_grader_agent_node
+# Sprint 233: Grader removed from pipeline — CRAG confidence is sufficient
 from app.engine.reasoning import ReasoningRenderRequest, get_reasoning_narrator
 from app.engine.reasoning.reasoning_narrator import build_tool_context_summary
+from app.engine.character.living_context import (
+    compile_living_context_block,
+    format_living_context_prompt,
+)
 from app.engine.multi_agent.visual_intent_resolver import (
     detect_visual_patch_request,
     filter_tools_for_visual_intent,
@@ -114,6 +119,9 @@ def _build_turn_local_state_defaults(context: Optional[dict] = None) -> dict:
         "evidence_images": [],
         "conversation_phase": ctx.get("conversation_phase"),
         "host_context": ctx.get("host_context"),
+        "living_context_prompt": None,
+        "memory_block_context": None,
+        "reasoning_policy": None,
         "subagent_reports": [],
         "_aggregator_action": None,
         "_aggregator_reasoning": None,
@@ -253,6 +261,12 @@ async def supervisor_node(state: AgentState) -> AgentState:
                 "colleague_consult": "medium",
             }
             result_state["thinking_effort"] = _effort_map.get(_intent, "medium")
+            _reasoning_policy = result_state.get("reasoning_policy")
+            if isinstance(_reasoning_policy, dict):
+                result_state["thinking_effort"] = merge_thinking_effort(
+                    result_state.get("thinking_effort"),
+                    _reasoning_policy.get("deliberation_level"),
+                )
 
         if not explicit_effort:
             upgraded_effort = recommended_visual_thinking_effort(
@@ -378,34 +392,8 @@ async def product_search_node(state: AgentState) -> AgentState:
         return result_state
 
 
-async def grader_node(state: AgentState) -> AgentState:
-    """
-    Grader agent node - quality control.
-    
-    CHỈ THỊ SỐ 30: Adds QUALITY_CHECK step to reasoning trace.
-    """
-    registry = get_agent_registry()
-    
-    # CHỈ THỊ SỐ 30: Universal tracing
-    tracer = _get_or_create_tracer(state)
-    tracer.start_step(StepNames.QUALITY_CHECK, "Kiểm tra chất lượng câu trả lời")
-    
-    with registry.tracer.span("grader_agent", "process"):
-        grader_agent = get_grader_agent_node()
-        result_state = await grader_agent.process(state)
-        
-        # End step with grader result
-        score = result_state.get("grader_score", 0)
-        tracer.end_step(
-            result=f"Điểm chất lượng: {score}/10",
-            confidence=score / 10,
-            details={"score": score, "passed": score >= 6}
-        )
-        
-        # Propagate trace_id (tracer lives in _TRACERS dict)
-        result_state["_trace_id"] = state.get("_trace_id")
-
-        return result_state
+# Sprint 233: grader_node removed — CRAG pipeline provides confidence directly.
+# grader_agent.py kept for reference but no longer wired into graph.
 
 
 # Sprint 78c: Greeting sentence starters to detect (case-insensitive, diacritic-aware)
@@ -661,11 +649,65 @@ _LMS_INTENT_KEYWORDS: list[str] = [
     "diem so", "diem cua toi", "ket qua hoc tap", "bang diem",
     "bai tap", "deadline", "han nop", "sap den han",
     "mon hoc", "khoa hoc", "tien do hoc",
-    "kiem tra", "bai kiem tra", "quiz",
     "nguy co", "sinh vien yeu", "hoc kem",
     "lop hoc", "tong quan lop",
     "grade", "assignment", "course", "enrollment",
 ]
+
+_LMS_ASSESSMENT_KEYWORDS: tuple[str, ...] = (
+    "quiz",
+    "kiem tra",
+    "bai kiem tra",
+    "test",
+    "exam",
+)
+
+_LMS_CONTEXT_HINTS: tuple[str, ...] = (
+    "diem",
+    "ket qua",
+    "bang diem",
+    "deadline",
+    "han nop",
+    "sap den han",
+    "mon hoc",
+    "khoa hoc",
+    "lop hoc",
+    "tien do hoc",
+    "tien do",
+    "module",
+    "assignment",
+    "course",
+    "enrollment",
+    "lms",
+    "cua toi",
+    "cua em",
+    "cua minh",
+)
+
+_PLAIN_QUIZ_LEARNING_CUES: tuple[str, ...] = (
+    "quiz",
+    "quizz",
+    "trac nghiem",
+    "luyen tap",
+    "on tap",
+    "flashcard",
+    "cau hoi",
+)
+
+_EXPLICIT_VISUAL_APP_CUES: tuple[str, ...] = (
+    "widget",
+    "app",
+    "html",
+    "interactive",
+    "tuong tac",
+    "canvas",
+    "svg",
+    "javascript",
+    "mini app",
+    "mini tool",
+    "artifact",
+    "embed",
+)
 
 
 def _needs_lms_query(query: str) -> bool:
@@ -674,7 +716,24 @@ def _needs_lms_query(query: str) -> bool:
     if not _s.enable_lms_integration:
         return False
     normalized = _normalize_for_intent(query)
-    return any(kw in normalized for kw in _LMS_INTENT_KEYWORDS)
+    if any(kw in normalized for kw in _LMS_INTENT_KEYWORDS):
+        return True
+    return (
+        any(kw in normalized for kw in _LMS_ASSESSMENT_KEYWORDS)
+        and any(hint in normalized for hint in _LMS_CONTEXT_HINTS)
+    )
+
+
+def _should_strip_visual_tools_from_direct(query: str, visual_decision) -> bool:
+    """Keep plain quiz/study turns in direct prose unless the user explicitly asks for an app/widget."""
+    if visual_decision.presentation_intent != "text":
+        return False
+
+    normalized = _normalize_for_intent(query)
+    if not any(cue in normalized for cue in _PLAIN_QUIZ_LEARNING_CUES):
+        return False
+
+    return not any(cue in normalized for cue in _EXPLICIT_VISUAL_APP_CUES)
 
 
 def _build_direct_tools_context(
@@ -1054,6 +1113,28 @@ _CODE_STUDIO_EXAMPLE_MAP: dict[str, str] = {
     "tool": "widget_maritime_calculator.html",
     "quiz": "widget_maritime_calculator.html",
     "calculator": "widget_maritime_calculator.html",
+    # Phase2-H: Radar/spider chart
+    "radar": "svg_radar_chart.html",
+    "spider": "svg_radar_chart.html",
+    # Vertical bar / column chart
+    "bar_chart": "svg_vertical_bar_chart.html",
+    "column": "svg_vertical_bar_chart.html",
+    "vertical_bar": "svg_vertical_bar_chart.html",
+    # Pie / donut chart
+    "pie": "svg_pie_donut_chart.html",
+    "donut": "svg_pie_donut_chart.html",
+    "doughnut": "svg_pie_donut_chart.html",
+    # Line chart
+    "line_chart": "svg_line_chart.html",
+    "line": "svg_line_chart.html",
+    # SVG motion animation
+    "svg_motion": "svg_motion_animation.html",
+    "motion": "svg_motion_animation.html",
+    "morph": "svg_motion_animation.html",
+    # Canvas particle system
+    "particle": "canvas_particle_system.html",
+    "particles": "canvas_particle_system.html",
+    "effect": "canvas_particle_system.html",
 }
 
 
@@ -1482,10 +1563,48 @@ def _collect_direct_tools(query: str, user_role: str = "student"):
         visual_decision,
         structured_visuals_enabled=getattr(settings, "enable_structured_visuals", False),
     )
+    if _should_strip_visual_tools_from_direct(query, visual_decision):
+        _direct_tools = [
+            tool for tool in _direct_tools
+            if str(getattr(tool, "name", "") or getattr(tool, "__name__", "") or "")
+            not in {
+                "tool_create_visual_code",
+                "tool_generate_visual",
+                "tool_generate_mermaid",
+                "tool_generate_interactive_chart",
+            }
+        ]
+    # Clear inline article/chart requests should stay tightly on the visual lane.
+    # If there is no competing web/legal/news/datetime/LMS intent, bind only the
+    # preferred visual tool so the first tool call is deterministic and the
+    # direct lane does not waste latency on unrelated tool options.
+    if (
+        visual_decision.force_tool
+        and visual_decision.preferred_tool
+        and visual_decision.presentation_intent in {"article_figure", "chart_runtime"}
+        and not (
+            _needs_web_search(query)
+            or _needs_datetime(query)
+            or _needs_news_search(query)
+            or _needs_legal_search(query)
+            or _needs_lms_query(query)
+        )
+    ):
+        preferred_name = visual_decision.preferred_tool
+        preferred_tools = [
+            tool
+            for tool in _direct_tools
+            if str(getattr(tool, "name", "") or getattr(tool, "__name__", "") or "") == preferred_name
+        ]
+        if preferred_tools:
+            _direct_tools = preferred_tools
     _needs_visual_tool = (
-        not _needs_analysis_tool(query)
-        and visual_decision.force_tool
+        visual_decision.force_tool
         and visual_decision.mode in {"template", "inline_html", "app", "mermaid"}
+        and (
+            visual_decision.presentation_intent in {"article_figure", "chart_runtime"}
+            or not _needs_analysis_tool(query)
+        )
     )
     if _needs_visual_tool:
         _log_visual_telemetry(
@@ -1908,6 +2027,9 @@ def _build_direct_system_messages(
     )
 
     # Sprint 222: Append graph-level host context (replaces per-agent injection)
+    _living_prompt = state.get("living_context_prompt", "")
+    if _living_prompt:
+        system_prompt = system_prompt + "\n\n" + _living_prompt
     _host_prompt = state.get("host_context_prompt", "")
     if _host_prompt:
         system_prompt = system_prompt + "\n\n" + _host_prompt
@@ -1928,6 +2050,12 @@ def _build_direct_system_messages(
         system_prompt = system_prompt + "\n\n## Capability Handbook\n" + _capability_prompt
     if role_name == "code_studio_agent":
         system_prompt = system_prompt + "\n\n" + _build_code_studio_delivery_contract(query)
+
+    # Sprint Phase2-F: Inject thinking instruction so LLM wraps reasoning in <thinking> tags
+    # Without this, direct node outputs chain-of-thought inline (thinking leak)
+    thinking_instruction = loader.get_thinking_instruction()
+    if thinking_instruction:
+        system_prompt = f"{system_prompt}\n\n{thinking_instruction}"
 
     messages = [SystemMessage(content=system_prompt)]
     lc_messages = ctx.get("langchain_messages", [])
@@ -2595,6 +2723,73 @@ _PENDULUM_FAST_PATH_HTML = """
 """.strip()
 
 
+_COLREG_RULE15_FAST_PATH_HTML = """
+<style>
+:root{--bg:#020617;--fg:#e2e8f0;--accent:#38bdf8;--danger:#ef4444;--safe:#22c55e;--surface:#0f172a;--border:#334155}
+@media (prefers-color-scheme: light){:root{--bg:#eff6ff;--fg:#0f172a;--accent:#0369a1;--danger:#dc2626;--safe:#059669;--surface:#ffffff;--border:#cbd5e1}}
+body{margin:0;font:14px/1.5 system-ui;background:var(--bg);color:var(--fg)}
+.layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.9fr);gap:12px;align-items:start}
+canvas{width:100%;height:320px;background:linear-gradient(180deg,#082f49,#0f172a);border:1px solid var(--border);border-radius:18px}
+.panel{padding:14px;border:1px solid var(--border);border-radius:18px;background:color-mix(in srgb,var(--surface) 92%,transparent)}
+.controls,.telemetry{display:grid;gap:10px}.actions{display:flex;gap:8px;flex-wrap:wrap}button,input{font:inherit}
+button{padding:10px 12px;border:none;border-radius:999px;background:var(--accent);color:white;cursor:pointer}
+input[type=range]{width:100%}.ship{display:inline-flex;align-items:center;gap:6px;font-size:12px}.dot{width:10px;height:10px;border-radius:999px;display:inline-block}
+@media (max-width:720px){.layout{grid-template-columns:1fr}canvas{height:280px}}
+</style>
+<div class="layout">
+  <canvas id="sea" width="640" height="320" aria-label="COLREG Rule 15 simulation canvas"></canvas>
+  <section class="panel">
+    <h2 style="margin:0 0 6px">COLREG Rule 15</h2>
+    <p style="margin:0 0 12px;color:color-mix(in srgb,var(--fg) 68%,transparent)">Tàu đỏ là give-way vessel, tàu xanh là stand-on vessel trong tình huống cắt hướng.</p>
+    <div class="controls">
+      <label><strong>Avoidance offset</strong><input id="avoidance" type="range" min="0" max="1" step="0.01" value="0.34" aria-label="Avoidance offset" /></label>
+      <div class="actions">
+        <button id="toggle" type="button">Tạm dừng</button>
+        <button id="avoid" type="button">Hành động tránh va</button>
+      </div>
+    </div>
+    <div class="telemetry" aria-live="polite" style="margin-top:12px">
+      <div><span class="ship"><span class="dot" style="background:var(--danger)"></span>Ship A</span> <strong id="status">Give-way</strong></div>
+      <div>Bearing angle: <strong id="bearing">0.0 deg</strong></div>
+      <div>Relative velocity: <strong id="velocity">0.0 kn</strong></div>
+      <div>Situation: <strong id="summary">Crossing from starboard</strong></div>
+    </div>
+  </section>
+</div>
+<script>
+const sea=document.getElementById('sea'),ctx=sea.getContext('2d'),bearing=document.getElementById('bearing'),velocity=document.getElementById('velocity'),statusEl=document.getElementById('status'),summary=document.getElementById('summary'),avoidance=document.getElementById('avoidance'),toggle=document.getElementById('toggle'),avoid=document.getElementById('avoid');
+const shipA={x:132,y:238,vx:34,vy:-12,color:'#ef4444'},shipB={x:430,y:84,vx:0,vy:38,color:'#22c55e'}; let theta=0,omega=0,last=performance.now(),running=true,avoidanceBias=0.34;
+const reportResult=(status,payload)=>window.WiiiVisualBridge?.reportResult?.('simulation',{rule:'COLREG15',status,avoidance:avoidanceBias,...payload},'COLREG Rule 15','completed');
+function drawShip(s,label){ctx.save();ctx.translate(s.x,s.y);ctx.fillStyle=s.color;ctx.fillRect(-18,-8,36,16);ctx.fillStyle='#e2e8f0';ctx.fillRect(10,-2,8,4);ctx.restore();ctx.fillStyle='#e2e8f0';ctx.fillText(label,s.x-18,s.y-14);}
+function draw(){ctx.clearRect(0,0,sea.width,sea.height);ctx.strokeStyle='rgba(255,255,255,.08)';for(let x=0;x<sea.width;x+=64){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,sea.height);ctx.stroke()}for(let y=0;y<sea.height;y+=64){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(sea.width,y);ctx.stroke()}ctx.strokeStyle='rgba(56,189,248,.35)';ctx.beginPath();ctx.moveTo(shipA.x,shipA.y);ctx.lineTo(shipB.x,shipB.y);ctx.stroke();drawShip(shipA,'A');drawShip(shipB,'B');}
+function tick(now){const dt=Math.min((now-last)/1000,0.05);last=now;if(running){shipB.y+=shipB.vx*dt;shipB.y+=shipB.vy*dt;shipA.x+=(shipA.vx+avoidanceBias*18)*dt;shipA.y+=(shipA.vy-avoidanceBias*8)*dt;theta=Math.atan2(shipB.y-shipA.y,shipB.x-shipA.x);omega=(omega*0.86)+(avoidanceBias*0.04);}bearing.textContent=(theta*57.2958).toFixed(1)+' deg';velocity.textContent=Math.hypot(shipA.vx,shipA.vy).toFixed(1)+' kn';statusEl.textContent=avoidanceBias>0.55?'Give-way maneuvering':'Give-way';summary.textContent=avoidanceBias>0.55?'Ship A turning to pass astern':'Crossing from starboard';draw();requestAnimationFrame(tick)}
+avoidance.addEventListener('input',e=>{avoidanceBias=Number(e.target.value)||0.34;reportResult('adjusted',{theta,omega})});
+toggle.addEventListener('click',()=>{running=!running;toggle.textContent=running?'Tạm dừng':'Tiếp tục';reportResult(running?'running':'paused',{theta,omega})});
+avoid.addEventListener('click',()=>{avoidanceBias=Math.max(avoidanceBias,0.76);avoidance.value=String(avoidanceBias);reportResult('give_way_action',{theta,omega})});
+requestAnimationFrame(tick);
+</script>
+""".strip()
+
+
+_ARTIFACT_FAST_PATH_HTML = """
+<style>
+:root{--bg:#f8fafc;--fg:#0f172a;--accent:#0f766e;--surface:#ffffff;--border:#cbd5e1}
+@media (prefers-color-scheme: dark){:root{--bg:#0f172a;--fg:#e2e8f0;--accent:#2dd4bf;--surface:#111827;--border:#334155}}
+body{margin:0;font:14px/1.5 system-ui;background:var(--bg);color:var(--fg)}.card{max-width:420px;margin:0 auto;padding:18px;border:1px solid var(--border);border-radius:20px;background:var(--surface)}button{padding:10px 14px;border:none;border-radius:999px;background:var(--accent);color:#fff;cursor:pointer}
+@media (max-width:640px){.card{padding:14px;border-radius:16px}}
+</style>
+<section class="card">
+  <h2 style="margin:0 0 6px">Mini HTML App</h2>
+  <p style="margin:0 0 12px">Một scaffold embeddable gọn nhẹ để bạn nhúng, chỉnh màu, và mở rộng tiếp trong Artifact.</p>
+  <button id="cta" type="button">Thử tương tác</button>
+  <p id="state" aria-live="polite" style="margin:12px 0 0">Ready to embed</p>
+</section>
+<script>
+const state=document.getElementById('state');document.getElementById('cta')?.addEventListener('click',()=>{state.textContent='Clicked once - artifact scaffold is alive';window.WiiiVisualBridge?.reportResult?.('artifact',{clicked:true},'Mini HTML app ready','completed')});
+</script>
+""".strip()
+
+
 def _active_code_studio_session(state: Optional["AgentState"]) -> dict[str, Any]:
     ctx = ((state or {}).get("context") or {}) if isinstance(state, dict) else {}
     if not isinstance(ctx, dict):
@@ -2604,6 +2799,246 @@ def _active_code_studio_session(state: Optional["AgentState"]) -> dict[str, Any]
         return {}
     active_session = raw_studio.get("active_session")
     return active_session if isinstance(active_session, dict) else {}
+
+
+def _active_visual_context(state: Optional["AgentState"]) -> dict[str, Any]:
+    ctx = ((state or {}).get("context") or {}) if isinstance(state, dict) else {}
+    if not isinstance(ctx, dict):
+        return {}
+    raw_visual = ctx.get("visual_context")
+    return raw_visual if isinstance(raw_visual, dict) else {}
+
+
+def _last_inline_visual_title(state: Optional["AgentState"]) -> str:
+    visual_ctx = _active_visual_context(state)
+    last_title = str(visual_ctx.get("last_visual_title") or "").strip()
+    if last_title:
+        return last_title
+
+    active_items = visual_ctx.get("active_inline_visuals")
+    if isinstance(active_items, list):
+        for item in active_items:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or item.get("visual_title") or "").strip()
+            if title:
+                return title
+    return ""
+
+
+def _ground_simulation_query_from_visual_context(
+    query: str,
+    state: Optional["AgentState"] = None,
+) -> str:
+    if not _looks_like_ambiguous_simulation_request(query, state):
+        return ""
+
+    last_title = _last_inline_visual_title(state)
+    if not last_title:
+        return ""
+
+    return (
+        f"Hay tao mot mo phong tuong tac inline bang canvas cho `{last_title}`. "
+        "Day la follow-up tu visual ngay truoc do, vi vay hay bam sat chu de nay thay vi hoi lai. "
+        "Mo phong can co state model ro rang, controls toi thieu, live readout, va note ngan giai thich "
+        "dieu gi dang thay doi theo thoi gian. Uu tien mo phong that hon la animation demo."
+    )
+
+
+def _build_code_studio_progress_messages(
+    query: str,
+    state: Optional["AgentState"] = None,
+) -> list[str]:
+    visual_decision = resolve_visual_intent(query)
+    last_title = _last_inline_visual_title(state)
+    subject = f" cho `{last_title}`" if last_title else ""
+
+    if visual_decision.visual_type == "simulation":
+        return [
+            f"Minh dang phac state model cho mo phong{subject}...",
+            f"Minh dang dung canvas loop va chuyen dong chinh{subject}...",
+            "Minh dang noi controls, readout, va cau truc patch tiep theo...",
+            "Minh dang ra soat de mo phong nay la he thong song, khong chi la animation demo...",
+            "Minh van dang lam viec va se bao ngay khi preview that su san sang...",
+        ]
+
+    if visual_decision.presentation_intent == "artifact":
+        return [
+            "Minh dang len bo khung artifact va quy uoc nhung...",
+            "Minh dang viet ma nguon va kiem tra bo cuc chinh...",
+            "Minh dang lam sach scaffold de ban co the patch tiep...",
+            "Minh van dang hoan thien artifact nay...",
+        ]
+
+    return [
+        "Minh dang phan tich yeu cau ky thuat...",
+        "Minh dang len ke hoach code...",
+        "Minh dang viet ma nguon...",
+        "Minh dang toi uu logic...",
+        "Minh dang hoan thien chi tiet...",
+    ]
+
+
+def _format_code_studio_progress_message(message: str, elapsed_seconds: float) -> str:
+    if elapsed_seconds <= 0:
+        return message
+    elapsed = int(max(1, round(elapsed_seconds)))
+    return f"{message} (da {elapsed}s)"
+
+
+def _build_code_studio_retry_status(
+    query: str,
+    state: Optional["AgentState"] = None,
+    *,
+    elapsed_seconds: float = 0.0,
+) -> str:
+    visual_decision = resolve_visual_intent(query)
+    if visual_decision.visual_type == "simulation":
+        base = (
+            "Luot dung dau tien dang cham hon du kien. "
+            "Minh van dang tiep tuc va thu lai voi cau hinh nhe hon de lay preview that"
+        )
+    else:
+        base = "Luot dung dau tien dang cham hon du kien. Minh dang thu lai voi cau hinh nhe hon"
+    return _format_code_studio_progress_message(base + "...", elapsed_seconds)
+
+
+def _looks_like_ambiguous_simulation_request(query: str, state: Optional["AgentState"] = None) -> bool:
+    visual_decision = resolve_visual_intent(query)
+    if visual_decision.presentation_intent != "code_studio_app":
+        return False
+    if visual_decision.visual_type != "simulation":
+        return False
+    if _active_code_studio_session(state):
+        return False
+
+    normalized_query = _normalize_for_intent(query)
+    if not normalized_query:
+        return False
+    if any(
+        token in normalized_query
+        for token in ("show code", "xem code", "xem ma", "view code", "hien code")
+    ):
+        return False
+    if any(
+        token in normalized_query
+        for token in (
+            "pendulum",
+            "con lac",
+            "dao dong",
+            "colreg",
+            "quy tac 15",
+            "rule 15",
+            "crossing situation",
+            "cat huong",
+            "drag",
+            "keo tha",
+            "gravity",
+            "trong luc",
+            "damping",
+            "ma sat",
+            "friction",
+            "particle",
+            "field",
+            "timeline",
+            "tau",
+            "ship",
+            "kimi",
+            "linear attention",
+        )
+    ):
+        return False
+
+    generic_tokens = {
+        "wiii",
+        "tao",
+        "lam",
+        "dung",
+        "build",
+        "create",
+        "cho",
+        "minh",
+        "duoc",
+        "chu",
+        "khong",
+        "nhe",
+        "nha",
+        "voi",
+        "giup",
+        "co",
+        "the",
+        "mot",
+        "duocchu",
+        "simulation",
+        "simulate",
+        "simulator",
+        "mo",
+        "phong",
+    }
+    remaining_tokens = [
+        token
+        for token in re.findall(r"[a-z0-9]+", normalized_query)
+        if token and token not in generic_tokens
+    ]
+    return len(remaining_tokens) == 0 and any(
+        token in normalized_query for token in ("mo phong", "simulation", "simulate", "simulator")
+    )
+
+
+def _build_ambiguous_simulation_clarifier(state: Optional["AgentState"] = None) -> str:
+    last_title = _last_inline_visual_title(state)
+    if last_title:
+        return (
+            f"Minh dung duoc mo phong. O cau nay, minh can chot la cau muon mo phong "
+            f"`{last_title}` vua roi hay mot hien tuong khac. Neu muon bam theo chu de vua roi, "
+            f"chi can nhan `Mo phong {last_title}` la minh mo canvas ngay."
+        )
+    return (
+        "Minh dung duoc mo phong, nhung cau nay chua noi ro hien tuong nao. "
+        "Cau chi can go ten co che hoac chu de, minh se mo canvas ngay."
+    )
+
+
+def _build_code_studio_missing_tool_response(
+    query: str,
+    state: Optional["AgentState"] = None,
+    *,
+    timed_out: bool = False,
+) -> str:
+    visual_decision = resolve_visual_intent(query)
+    if visual_decision.presentation_intent == "code_studio_app" and visual_decision.visual_type == "simulation":
+        if _looks_like_ambiguous_simulation_request(query, state):
+            return _build_ambiguous_simulation_clarifier(state)
+
+        last_title = _last_inline_visual_title(state)
+        if timed_out and last_title:
+            return (
+                f"Minh da vao dung lane mo phong, nhung turn nay model chua dung kip app that. "
+                f"De khoi treo lai, cau hay noi ro hon, vi du `Mo phong {last_title}`."
+            )
+        if timed_out:
+            return (
+                "Minh da vao dung lane mo phong, nhung turn nay model chua dung kip app that. "
+                "Cau hay noi ro hien tuong can mo phong, minh se mo canvas theo dung chu de do."
+            )
+        return (
+            "Minh mo dung lane mo phong roi, nhung o turn nay model moi chi mo ta y dinh "
+            "ma chua dung app that. Cau hay noi ro hien tuong hoac co che can mo phong, "
+            "minh se vao canvas ngay."
+        )
+
+    return _build_code_studio_terminal_failure_response(query)
+
+
+def _requires_code_studio_visual_delivery(query: str, tools: list) -> bool:
+    visual_decision = resolve_visual_intent(query)
+    if not visual_decision.force_tool:
+        return False
+    if visual_decision.preferred_tool != "tool_create_visual_code":
+        return False
+
+    tool_names = {_tool_name(tool) for tool in tools}
+    return "tool_create_visual_code" in tool_names
 
 
 def _should_use_pendulum_code_studio_fast_path(query: str, state: Optional["AgentState"] = None) -> bool:
@@ -2651,6 +3086,50 @@ def _infer_pendulum_fast_path_title(query: str, state: Optional["AgentState"] = 
     if "con lac" in normalized_query:
         return "Mo phong con lac"
     return "Mini Pendulum Physics App"
+
+
+def _should_use_colreg_code_studio_fast_path(query: str, state: Optional["AgentState"] = None) -> bool:
+    visual_decision = resolve_visual_intent(query)
+    if visual_decision.presentation_intent != "code_studio_app":
+        return False
+    if str(visual_decision.preferred_tool or "") != "tool_create_visual_code":
+        return False
+    normalized_query = _normalize_for_intent(query)
+    return any(
+        token in normalized_query
+        for token in ("colreg", "quy tac 15", "rule 15", "crossing situation", "cat huong")
+    )
+
+
+def _infer_colreg_fast_path_title(query: str, state: Optional["AgentState"] = None) -> str:
+    active_session = _active_code_studio_session(state)
+    active_title = str(active_session.get("title") or "").strip()
+    if active_title:
+        return active_title
+    return "COLREGs Rule 15 Simulation"
+
+
+def _should_use_artifact_code_studio_fast_path(query: str, state: Optional["AgentState"] = None) -> bool:
+    visual_decision = resolve_visual_intent(query)
+    if visual_decision.presentation_intent != "artifact":
+        return False
+    if str(visual_decision.preferred_tool or "") != "tool_create_visual_code":
+        return False
+    normalized_query = _normalize_for_intent(query)
+    if any(token in normalized_query for token in ("show code", "xem code", "view code")):
+        return False
+    return any(
+        token in normalized_query
+        for token in ("mini app", "html app", "nhung", "embed", "landing page", "microsite")
+    )
+
+
+def _infer_artifact_fast_path_title(query: str, state: Optional["AgentState"] = None) -> str:
+    active_session = _active_code_studio_session(state)
+    active_title = str(active_session.get("title") or "").strip()
+    if active_title:
+        return active_title
+    return "Mini HTML App"
 
 
 def _sanitize_code_studio_response(
@@ -3151,13 +3630,7 @@ async def _execute_code_studio_tool_rounds(
 
     else:
         # Existing path: ainvoke + periodic progress events
-        _progress_messages = [
-            "Đang phân tích yêu cầu...",
-            "Đang lên kế hoạch code...",
-            "Đang viết mã nguồn...",
-            "Đang tối ưu logic...",
-            "Đang hoàn thiện chi tiết...",
-        ]
+        _progress_messages = _build_code_studio_progress_messages(query, state)
 
         _LLM_HARD_TIMEOUT = 240  # 4 minutes max for ainvoke
 
@@ -3167,14 +3640,28 @@ async def _execute_code_studio_tool_rounds(
         _llm_task = asyncio.create_task(_llm_call())
         _progress_idx = 0
         _llm_start = time.time()
+        _timed_out = False
+        llm_response = None
+        await push_event({
+            "type": "status",
+            "content": _format_code_studio_progress_message(_progress_messages[0], 0),
+            "step": "code_generation",
+            "node": "code_studio_agent",
+        })
+        _progress_idx = 1
         while not _llm_task.done():
             # Hard timeout — cancel if LLM takes too long
             if time.time() - _llm_start > _LLM_HARD_TIMEOUT:
+                _timed_out = True
                 _llm_task.cancel()
                 logger.warning("[CODE_STUDIO] ainvoke hard timeout after %ds", _LLM_HARD_TIMEOUT)
                 await push_event({
                     "type": "status",
-                    "content": "Đang thử lại với cấu hình nhẹ hơn...",
+                    "content": _build_code_studio_retry_status(
+                        query,
+                        state,
+                        elapsed_seconds=time.time() - _llm_start,
+                    ),
                     "step": "code_generation",
                     "node": "code_studio_agent",
                 })
@@ -3198,12 +3685,26 @@ async def _execute_code_studio_tool_rounds(
                 _msg = _progress_messages[min(_progress_idx, len(_progress_messages) - 1)]
                 await push_event({
                     "type": "status",
-                    "content": _msg,
+                    "content": _format_code_studio_progress_message(
+                        _msg,
+                        time.time() - _llm_start,
+                    ),
                     "step": "code_generation",
                     "node": "code_studio_agent",
                 })
                 _progress_idx += 1
-        llm_response = _llm_task.result()
+        if llm_response is None:
+            llm_response = _llm_task.result()
+
+    _has_initial_tool_calls = bool(llm_response and getattr(llm_response, "tool_calls", None))
+    if not _has_initial_tool_calls and _requires_code_studio_visual_delivery(query, tools):
+        llm_response = _AM(
+            content=_build_code_studio_missing_tool_response(
+                query,
+                state,
+                timed_out=bool(locals().get("_timed_out", False)),
+            )
+        )
 
     _total_tool_calls = 0
     _MAX_TOTAL_TOOL_CALLS = 6  # absolute cap across all rounds
@@ -3466,19 +3967,61 @@ async def _execute_pendulum_code_studio_fast_path(
     push_event,
     runtime_context_base,
 ) -> dict[str, Any] | None:
-    if not _should_use_pendulum_code_studio_fast_path(query, state):
-        return None
-
     matched = get_tool_by_name(tools, "tool_create_visual_code")
     if not matched:
+        return None
+    recipe: dict[str, str] | None = None
+    if _should_use_pendulum_code_studio_fast_path(query, state):
+        recipe = {
+            "code_html": _PENDULUM_FAST_PATH_HTML,
+            "title": _infer_pendulum_fast_path_title(query, state),
+            "call_id_prefix": "fast_pendulum",
+            "response": (
+                "Minh da dung Code Studio de tao mo phong con lac inline. "
+                "Ban co the keo qua nang, xem preview, va patch tiep tren cung session nay."
+            ),
+            "thinking_content": (
+                "Minh di theo scaffold con lac host-owned de uu tien preview on dinh, patch duoc, "
+                "va giu cung session Code Studio."
+            ),
+        }
+    elif _should_use_colreg_code_studio_fast_path(query, state):
+        recipe = {
+            "code_html": _COLREG_RULE15_FAST_PATH_HTML,
+            "title": _infer_colreg_fast_path_title(query, state),
+            "call_id_prefix": "fast_colreg15",
+            "response": (
+                "Minh da dung Code Studio de mo phong tinh huong cat huong theo Quy tac 15 COLREGs. "
+                "Ban co the xem canvas, dieu chinh muc tranh va, va tiep tuc patch tren cung session nay."
+            ),
+            "thinking_content": (
+                "Minh chon scaffold canvas cho COLREG de khoi dong nhanh, co telemetry ro rang, "
+                "va de ban nhin thay ngay give-way / stand-on thay vi chi doc ly thuyet."
+            ),
+        }
+    elif _should_use_artifact_code_studio_fast_path(query, state):
+        recipe = {
+            "code_html": _ARTIFACT_FAST_PATH_HTML,
+            "title": _infer_artifact_fast_path_title(query, state),
+            "call_id_prefix": "fast_artifact",
+            "response": (
+                "Minh da dung Code Studio de tao bo khung mini HTML app embeddable. "
+                "Ban co the mo preview ngay, roi mo thanh Artifact de chinh sua sau."
+            ),
+            "thinking_content": (
+                "Minh di bang scaffold artifact nhe de ban co mot bo khung HTML tu chua ngay lap tuc, "
+                "roi moi patch va mo rong tiep theo nhu cau that."
+            ),
+        }
+    if not recipe:
         return None
 
     tool_name = str(getattr(matched, "name", "") or getattr(matched, "__name__", "") or "tool_create_visual_code")
     tool_args = {
-        "code_html": _PENDULUM_FAST_PATH_HTML,
-        "title": _infer_pendulum_fast_path_title(query, state),
+        "code_html": recipe["code_html"],
+        "title": recipe["title"],
     }
-    tool_call_id = f"fast_pendulum_{uuid.uuid4().hex[:10]}"
+    tool_call_id = f"{recipe['call_id_prefix']}_{uuid.uuid4().hex[:10]}"
 
     try:
         result = await invoke_tool_with_runtime(
@@ -3492,11 +4035,15 @@ async def _execute_pendulum_code_studio_fast_path(
             run_sync_in_thread=True,
         )
     except Exception as exc:
-        logger.warning("[CODE_STUDIO] Pendulum fast path failed: %s", exc)
+        logger.warning("[CODE_STUDIO] Recipe fast path failed (%s): %s", recipe["call_id_prefix"], exc)
         return None
 
     if isinstance(result, str) and result.strip().lower().startswith("error:"):
-        logger.debug("[CODE_STUDIO] Pendulum fast path returned tool error: %s", result[:180])
+        logger.debug(
+            "[CODE_STUDIO] Recipe fast path returned tool error (%s): %s",
+            recipe["call_id_prefix"],
+            result[:180],
+        )
         return None
 
     tool_call_events: list[dict[str, Any]] = [
@@ -3542,23 +4089,12 @@ async def _execute_pendulum_code_studio_fast_path(
         tool_call_events=tool_call_events,
     )
 
-    response = _sanitize_code_studio_response(
-        (
-            "Minh da dung Code Studio de tao mo phong con lac inline. "
-            "Ban co the keo qua nang, xem preview, va patch tiep tren cung session nay."
-        ),
-        tool_call_events,
-        state,
-    )
-    thinking_content = (
-        "Minh di theo scaffold con lac host-owned de uu tien preview on dinh, patch duoc, "
-        "va giu cung session Code Studio."
-    )
     return {
-        "response": response,
-        "thinking_content": thinking_content,
+        "response": _sanitize_code_studio_response(recipe["response"], tool_call_events, state),
+        "thinking_content": recipe["thinking_content"],
         "tool_call_events": tool_call_events,
         "tools_used": [matched],
+        "fast_path": recipe["call_id_prefix"],
     }
 
 
@@ -3872,6 +4408,7 @@ async def direct_response_node(state: AgentState) -> AgentState:
 async def code_studio_node(state: AgentState) -> AgentState:
     """Capability subagent for Python, chart, HTML, and file-generation tasks."""
     query = state.get("query", "")
+    effective_query = query
 
     _event_queue = None
     _bus_id = state.get("_event_bus_id")
@@ -3902,8 +4439,40 @@ async def code_studio_node(state: AgentState) -> AgentState:
         from app.engine.multi_agent.agent_config import AgentConfigRegistry
 
         _ctx = state.get("context", {})
-        thinking_effort = state.get("thinking_effort")
-        llm = AgentConfigRegistry.get_llm("code_studio_agent", effort_override=thinking_effort)
+        response = ""
+        if _looks_like_ambiguous_simulation_request(query, state):
+            grounded_query = _ground_simulation_query_from_visual_context(query, state)
+            if grounded_query:
+                effective_query = grounded_query
+                state["thinking_content"] = (
+                    "Minh dang bam theo visual hien tai de tiep tuc mo phong, "
+                    "vi turn nay tuy ngan nhung da co du ngu canh de khong can hoi lai."
+                )
+                await _push_event({
+                    "type": "status",
+                    "content": f"Minh dang noi mo phong vao chu de hien tai: `{_last_inline_visual_title(state)}`...",
+                    "step": "code_generation",
+                    "node": "code_studio_agent",
+                })
+                llm = AgentConfigRegistry.get_llm(
+                    "code_studio_agent",
+                    effort_override=state.get("thinking_effort"),
+                )
+            else:
+                response = _build_ambiguous_simulation_clarifier(state)
+                state["thinking_content"] = (
+                    "Minh can chot ro chu de mo phong truoc khi mo canvas, "
+                    "de khoi dung sai hien tuong hoac tao mot app lech muc tieu."
+                )
+                tracer.end_step(
+                    result="Code studio clarification before build",
+                    confidence=0.9,
+                    details={"response_type": "clarify", "reason": "ambiguous_simulation_request"},
+                )
+                llm = None
+        else:
+            thinking_effort = state.get("thinking_effort")
+            llm = AgentConfigRegistry.get_llm("code_studio_agent", effort_override=thinking_effort)
 
         if llm and getattr(settings, "enable_natural_conversation", False) is True:
             _pp = getattr(settings, "llm_presence_penalty", 0.0)
@@ -3915,18 +4484,18 @@ async def code_studio_node(state: AgentState) -> AgentState:
                     pass
 
         if llm:
-            tools, force_tools = _collect_code_studio_tools(query, _ctx.get("user_role", "student"))
+            tools, force_tools = _collect_code_studio_tools(effective_query, _ctx.get("user_role", "student"))
             try:
                 from app.engine.skills.skill_recommender import select_runtime_tools
 
                 selected_tools = select_runtime_tools(
                     tools,
-                    query=query,
+                    query=effective_query,
                     intent=(state.get("routing_metadata") or {}).get("intent"),
                     user_role=_ctx.get("user_role", "student"),
                     max_tools=min(len(tools), 8),
                     must_include=_code_studio_required_tool_names(
-                        query,
+                        effective_query,
                         _ctx.get("user_role", "student"),
                     ),
                 )
@@ -3942,13 +4511,13 @@ async def code_studio_node(state: AgentState) -> AgentState:
             llm_with_tools, llm_auto = _bind_direct_tools(llm, tools, force_tools)
             messages = _build_direct_system_messages(
                 state,
-                query,
+                effective_query,
                 domain_name_vi,
                 role_name="code_studio_agent",
                 tools_context_override=_build_code_studio_tools_context(
                     settings,
                     _ctx.get("user_role", "student"),
-                    query,
+                    effective_query,
                 ),
             )
             runtime_context_base = build_tool_runtime_context(
@@ -3960,12 +4529,12 @@ async def code_studio_node(state: AgentState) -> AgentState:
                 user_role=_ctx.get("user_role", "student"),
                 node="code_studio_agent",
                 source="agentic_loop",
-                metadata=_build_visual_tool_runtime_metadata(state, query),
+                metadata=_build_visual_tool_runtime_metadata(state, effective_query),
             )
 
             fast_path_result = await _execute_pendulum_code_studio_fast_path(
                 state=state,
-                query=query,
+                query=effective_query,
                 tools=tools,
                 push_event=_push_event,
                 runtime_context_base=runtime_context_base,
@@ -3977,13 +4546,13 @@ async def code_studio_node(state: AgentState) -> AgentState:
                 state["tool_call_events"] = fast_path_result["tool_call_events"]
                 state["tools_used"] = fast_path_result["tools_used"]
                 tracer.end_step(
-                    result="Code studio fast path: pendulum scaffold",
+                    result=f"Code studio fast path: {fast_path_result.get('fast_path', 'recipe_scaffold')}",
                     confidence=0.91,
                     details={
                         "response_type": "capability_generated",
                         "tools_bound": len(tools),
                         "force_tools": force_tools,
-                        "fast_path": "pendulum_scaffold",
+                        "fast_path": fast_path_result.get("fast_path", "recipe_scaffold"),
                     },
                 )
             else:
@@ -3994,7 +4563,7 @@ async def code_studio_node(state: AgentState) -> AgentState:
                     tools,
                     _push_event,
                     runtime_context_base=runtime_context_base,
-                    query=query,
+                    query=effective_query,
                     state=state,
                 )
 
@@ -4005,7 +4574,7 @@ async def code_studio_node(state: AgentState) -> AgentState:
                 response = _sanitize_code_studio_response(response, _tc_events, state)
 
                 _safe_thinking = await _build_code_studio_reasoning_summary(
-                    query,
+                    effective_query,
                     state,
                     _direct_tool_names(tools_used),
                 )
@@ -4024,7 +4593,7 @@ async def code_studio_node(state: AgentState) -> AgentState:
                         "force_tools": force_tools,
                     },
                 )
-        else:
+        elif not response:
             response = "Mình chưa khởi động được Code Studio lúc này. Bạn thử lại sau nhé."
             tracer.end_step(
                 result="Fallback (code studio unavailable)",
@@ -4417,51 +4986,9 @@ def route_decision(state: AgentState) -> str:
     return "direct"
 
 
-# =============================================================================
-# P1 SOTA Early Exit: Skip Quality Check at High Confidence
-# Saves ~7.8s when CRAG confidence is high
-# =============================================================================
-
-def should_skip_grader(state: AgentState) -> Literal["grader", "synthesizer"]:
-    """
-    Determine if quality check can be skipped based on confidence.
-
-    SOTA 2025 Pattern: Self-RAG Early Exit
-    - If CRAG pipeline returned high confidence, skip expensive grader LLM call
-    - Saves ~7.8s per request
-    - Threshold configurable via settings.quality_skip_threshold
-
-    Args:
-        state: Current agent state with potential CRAG trace
-
-    Returns:
-        "synthesizer" if skip, "grader" if quality check needed
-    """
-    threshold = settings.quality_skip_threshold
-
-    # Check for CRAG trace with confidence
-    reasoning_trace = state.get("reasoning_trace")
-
-    if reasoning_trace and hasattr(reasoning_trace, 'final_confidence'):
-        confidence = reasoning_trace.final_confidence
-        if confidence >= threshold:
-            logger.info(
-                "[P1 EARLY EXIT] Skipping quality_check: confidence=%.2f >= %s",
-                confidence, threshold,
-            )
-            return "synthesizer"
-
-    # Also check state-level confidence from CRAG
-    crag_confidence = state.get("crag_confidence", 0)
-    if crag_confidence >= threshold:
-        logger.info(
-            "[P1 EARLY EXIT] Skipping quality_check: crag_confidence=%.2f >= %s",
-            crag_confidence, threshold,
-        )
-        return "synthesizer"
-
-    # Default: run quality check
-    return "grader"
+# Sprint 233: should_skip_grader removed — grader node eliminated from pipeline.
+# CRAG confidence (reasoning_trace.final_confidence) is the sole confidence source.
+# Fallback: grader_score from rag_node CRAG grading, then default 0.6.
 
 
 # =============================================================================
@@ -4628,7 +5155,7 @@ def build_multi_agent_graph(checkpointer=None):
     workflow.add_node("memory_agent", memory_node)
     workflow.add_node("direct", direct_response_node)
     workflow.add_node("code_studio_agent", code_studio_node)
-    workflow.add_node("grader", grader_node)
+    # Sprint 233: grader node removed — RAG goes directly to synthesizer
     workflow.add_node("synthesizer", synthesizer_node)
     # Sprint 215: Colleague agent (cross-soul consultation, feature-gated)
     if settings.enable_cross_soul_query and settings.enable_soul_bridge:
@@ -4688,18 +5215,8 @@ def build_multi_agent_graph(checkpointer=None):
         _routing_map,
     )
     
-    # All agents → Grader (with conditional skip)
-    # P1 SOTA: Use conditional edges for tutor and rag - skip grader at high confidence
-    workflow.add_conditional_edges(
-        "rag_agent",
-        should_skip_grader,
-        {
-            "grader": "grader",
-            "synthesizer": "synthesizer"
-        }
-    )
-    # Sprint 75: Tutor skips grader — pedagogical responses don't need
-    # knowledge accuracy grading. ReAct loop self-corrects. Saves ~6s.
+    # All agents → Synthesizer (Sprint 233: grader removed from pipeline)
+    workflow.add_edge("rag_agent", "synthesizer")
     workflow.add_edge("tutor_agent", "synthesizer")
     # Sprint 72: Memory agent skips grader — responses are conversational
     # acknowledgments, not knowledge retrieval. Grading is meaningless here.
@@ -4725,9 +5242,6 @@ def build_multi_agent_graph(checkpointer=None):
             aggregator_route,
             {"synthesizer": "synthesizer", "supervisor": "supervisor"},
         )
-    
-    # Grader → Synthesizer
-    workflow.add_edge("grader", "synthesizer")
     
     # Synthesizer → END
     workflow.add_edge("synthesizer", END)
@@ -4873,6 +5387,52 @@ def _inject_host_context(state: dict) -> str:
             logger.warning("[GRAPH] Legacy page_context format failed: %s", e)
 
     return ""
+
+
+def _inject_living_context(state: dict) -> str:
+    """Compile a living context block for subtle, cognition-first prompt grounding."""
+    if not any(
+        (
+            getattr(settings, "enable_living_core_contract", False),
+            getattr(settings, "enable_memory_blocks", False),
+            getattr(settings, "enable_deliberate_reasoning", False),
+            getattr(settings, "enable_living_visual_cognition", False),
+        )
+    ):
+        return ""
+
+    query = str(state.get("query") or "").strip()
+    if not query:
+        return ""
+
+    ctx = state.get("context", {}) or {}
+    try:
+        block = compile_living_context_block(
+            query,
+            context=ctx,
+            user_id=str(state.get("user_id") or "__global__"),
+            organization_id=state.get("organization_id") or ctx.get("organization_id"),
+            domain_id=state.get("domain_id"),
+        )
+    except Exception as exc:
+        logger.warning("[GRAPH] living context compile failed: %s", exc)
+        return ""
+
+    state["reasoning_policy"] = block.reasoning_policy.model_dump()
+    if getattr(settings, "enable_memory_blocks", False):
+        memory_lines = ["## Memory Blocks V1"]
+        for memory_block in block.memory_blocks:
+            memory_lines.append(f"### {memory_block.namespace}")
+            memory_lines.append(f"- summary: {memory_block.summary}")
+            for item in memory_block.items[:4]:
+                memory_lines.append(f"- {item}")
+        state["memory_block_context"] = "\n".join(memory_lines)
+
+    return format_living_context_prompt(
+        block,
+        include_memory_blocks=getattr(settings, "enable_memory_blocks", False),
+        include_visual_cognition=getattr(settings, "enable_living_visual_cognition", False),
+    )
 
 
 def _inject_visual_context(state: dict) -> str:
@@ -5209,6 +5769,9 @@ async def process_with_multi_agent(
     _host_prompt = _inject_host_context(initial_state)
     if _host_prompt:
         initial_state["host_context_prompt"] = _host_prompt
+    _living_prompt = _inject_living_context(initial_state)
+    if _living_prompt:
+        initial_state["living_context_prompt"] = _living_prompt
     _visual_prompt = _inject_visual_context(initial_state)
     if _visual_prompt:
         initial_state["visual_context_prompt"] = _visual_prompt

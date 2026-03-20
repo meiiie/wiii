@@ -34,6 +34,7 @@ class ReasoningSkill:
     fallback_actions: dict[str, str] = field(default_factory=dict)
     action_style: str = ""
     avoid_phrases: tuple[str, ...] = field(default_factory=tuple)
+    anti_repetition: dict[str, list[str]] = field(default_factory=dict)
     style_tags: tuple[str, ...] = field(default_factory=tuple)
     content: str = ""
     path: Optional[Path] = None
@@ -78,6 +79,14 @@ class ReasoningSkillLoader:
         fallback_summaries = frontmatter.get("fallback_summaries", {}) or {}
         fallback_actions = frontmatter.get("fallback_actions", {}) or {}
         action_style = str(frontmatter.get("action_style", "") or "")
+        anti_repetition_raw = frontmatter.get("anti_repetition", {}) or {}
+        anti_repetition = {}
+        if isinstance(anti_repetition_raw, dict):
+            for key, value in anti_repetition_raw.items():
+                if isinstance(value, list):
+                    anti_repetition[str(key)] = [str(v) for v in value]
+                elif isinstance(value, str):
+                    anti_repetition[str(key)] = [value]
         avoid_phrases = frontmatter.get("avoid_phrases", []) or []
         if isinstance(avoid_phrases, str):
             avoid_phrases = [avoid_phrases]
@@ -98,6 +107,7 @@ class ReasoningSkillLoader:
             fallback_summaries={str(k): str(v) for k, v in fallback_summaries.items()},
             fallback_actions={str(k): str(v) for k, v in fallback_actions.items()},
             action_style=action_style,
+            anti_repetition=anti_repetition,
             avoid_phrases=tuple(str(item) for item in avoid_phrases),
             style_tags=tuple(str(item) for item in style_tags),
             content=parts[2].strip(),

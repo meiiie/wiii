@@ -55,6 +55,11 @@ export class StreamBuffer {
   private _running = false;
   private _frameCount = 0;
   private _streamEnded = false;
+  // SOTA 2026: Intl.Segmenter for Vietnamese word boundary detection
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _segmenter = typeof Intl !== "undefined" && (Intl as any).Segmenter
+    ? new (Intl as any).Segmenter("vi", { granularity: "word" })
+    : null;
 
   constructor(opts: StreamBufferOptions) {
     this._onFlush = opts.onFlush;
@@ -212,12 +217,31 @@ export class StreamBuffer {
   };
 
   /**
-   * Snap flush count to nearest word boundary (space, newline, punctuation).
-   * Searches ±6 chars from target with bias toward flushing more.
+   * Snap flush count to nearest word boundary.
+   * SOTA 2026: Uses Intl.Segmenter("vi") for Vietnamese/CJK-aware word breaks.
+   * Falls back to ASCII punctuation scan when Segmenter unavailable.
    */
   private _snapToWordBoundary(count: number): number {
     if (count >= this._buffer.length) return count;
 
+    // Try Intl.Segmenter first — handles Vietnamese diacritics correctly
+    if (this._segmenter) {
+      const slice = this._buffer.slice(0, Math.min(this._buffer.length, count + 8));
+      const segments = this._segmenter.segment(slice);
+      let bestPos = count;
+      let pos = 0;
+      for (const seg of segments) {
+        pos += seg.segment.length;
+        // Find the segment boundary closest to (and preferably >= ) count
+        if (pos >= count) {
+          bestPos = pos;
+          break;
+        }
+      }
+      return Math.max(1, Math.min(bestPos, this._buffer.length));
+    }
+
+    // Fallback: ASCII punctuation scan ±6 chars
     const SEARCH_RANGE = 6;
     const searchStart = Math.max(1, count - SEARCH_RANGE);
     const searchEnd = Math.min(this._buffer.length, count + SEARCH_RANGE);

@@ -2,10 +2,17 @@
 Tests for GraderAgentNode - Quality Control Specialist.
 
 Tests LLM grading, rule-based fallback, JSON parsing, and state wiring.
+
+Sprint 233: Grader node removed from pipeline. These tests are skipped but
+kept for reference — the GraderAgentNode class still exists in grader_agent.py.
 """
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
+
+pytestmark = pytest.mark.skip(
+    reason="Sprint 233: Grader removed from pipeline — node no longer wired"
+)
 
 
 # ---------------------------------------------------------------------------

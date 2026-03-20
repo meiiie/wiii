@@ -144,8 +144,8 @@ class TestGuardianSingleton:
 # ============================================================================
 
 
-class TestTutorSkipsGrader:
-    """Sprint 75: Tutor routes directly to synthesizer, bypassing grader."""
+class TestGraderRemovedFromPipeline:
+    """Sprint 233: Grader removed from pipeline. All agents route to synthesizer."""
 
     @staticmethod
     def _get_graph_edges():
@@ -170,37 +170,30 @@ class TestTutorSkipsGrader:
 
         return nodes, edges
 
-    def test_graph_has_tutor_to_synthesizer_direct_edge(self):
-        """build_multi_agent_graph() should have tutor_agent → synthesizer edge."""
+    def test_grader_node_not_in_graph(self):
+        """Sprint 233: grader node should no longer exist in compiled graph."""
+        nodes, _edges = self._get_graph_edges()
+        assert "grader" not in nodes, "grader node should be removed (Sprint 233)"
+
+    def test_rag_routes_directly_to_synthesizer(self):
+        """Sprint 233: RAG agent routes directly to synthesizer, no grader."""
         nodes, edges = self._get_graph_edges()
 
-        assert "tutor_agent" in nodes
-        assert "synthesizer" in nodes
-
-        # Tutor should go to synthesizer directly
-        assert ("tutor_agent", "synthesizer") in edges, (
-            f"Expected tutor_agent→synthesizer edge, got edges: {edges}"
-        )
-
-        # Tutor should NOT go to grader
-        assert ("tutor_agent", "grader") not in edges, (
-            "tutor_agent should NOT have edge to grader (Sprint 75)"
-        )
-
-    def test_rag_still_has_conditional_grader(self):
-        """RAG agent should still use conditional should_skip_grader edge."""
-        nodes, edges = self._get_graph_edges()
-
-        # RAG should still connect to both grader and synthesizer (conditional)
         assert "rag_agent" in nodes
-        assert "grader" in nodes
+        assert "synthesizer" in nodes
+        assert ("rag_agent", "synthesizer") in edges, (
+            f"Expected rag_agent→synthesizer edge, got edges: {edges}"
+        )
 
-    def test_memory_still_skips_grader(self):
-        """Memory agent should still skip grader (Sprint 72 behavior preserved)."""
-        nodes, edges = self._get_graph_edges()
+    def test_tutor_routes_to_synthesizer(self):
+        """Tutor agent routes directly to synthesizer."""
+        _nodes, edges = self._get_graph_edges()
+        assert ("tutor_agent", "synthesizer") in edges
 
+    def test_memory_routes_to_synthesizer(self):
+        """Memory agent routes directly to synthesizer."""
+        _nodes, edges = self._get_graph_edges()
         assert ("memory_agent", "synthesizer") in edges
-        assert ("memory_agent", "grader") not in edges
 
 
 # ============================================================================

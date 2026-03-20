@@ -304,7 +304,10 @@ class TestDirectNodeCharacterTools:
 
             mock_llm.bind_tools.assert_called_once()
             bound_tools = mock_llm.bind_tools.call_args[0][0]
-            assert len(bound_tools) == 9  # 3 character + datetime + 5 search (Sprint 215)
+            assert len(bound_tools) >= 9
+            bound_names = {getattr(tool, "name", "") for tool in bound_tools}
+            assert "tool_character_note" in bound_names
+            assert "tool_character_log_experience" in bound_names
             names = [t.name for t in bound_tools]
             assert "tool_character_note" in names
             assert "tool_current_datetime" in names

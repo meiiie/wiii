@@ -920,6 +920,28 @@ class Settings(BaseSettings):
     # Identity Core (Sprint 207)
     enable_identity_core: bool = Field(default=False, description="Self-evolving identity layer — Wiii learns about itself from reflections (requires enable_living_agent)")
 
+    # Conservative Evolution (2026-03-19)
+    enable_living_core_contract: bool = Field(
+        default=False,
+        description="Compile and inject LivingContextBlockV1 across agents without rewriting the graph",
+    )
+    enable_memory_blocks: bool = Field(
+        default=False,
+        description="Expose MemoryBlockV1 taxonomy in prompt context for living-memory turns",
+    )
+    enable_deliberate_reasoning: bool = Field(
+        default=False,
+        description="Apply ReasoningPolicyV1 deliberation floors before agent execution",
+    )
+    enable_living_visual_cognition: bool = Field(
+        default=False,
+        description="Add living visual cognition guidance for SVG-first figures and Canvas-first simulations",
+    )
+    enable_conservative_fast_routing: bool = Field(
+        default=False,
+        description="Allow obvious social/web/product/code turns to skip supervisor LLM with narrow guardrails",
+    )
+
     # SoulBridge (Sprint 213)
     enable_soul_bridge: bool = Field(default=False, description="Enable cross-service soul-to-soul communication bridge (WebSocket + HTTP)")
     soul_bridge_peers: str = Field(default="", description="Comma-separated peer entries: 'peer_id=url' or 'url' (e.g., 'bro=http://localhost:8001')")

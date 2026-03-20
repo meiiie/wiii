@@ -1,0 +1,286 @@
+<!--
+  STATE MODEL: particles[]{x,y,vx,vy,life,maxLife,size,color}, emitter{x,y,rate,type}, config{gravity,wind,fade}
+  RENDER SURFACE: Canvas 2D — requestAnimationFrame loop, deltaTime, object pooling
+  CONTROLS: type selector (rain/fire/stars/snow), rate slider, gravity slider, wind slider, reset
+  READOUTS: live particle count, FPS, emitter position
+  FEEDBACK: WiiiVisualBridge.reportResult on type change and config update
+-->
+<style>
+:root {
+  --bg: #0f172a;
+  --fg: #e2e8f0;
+  --accent: #38bdf8;
+  --accent-hover: #7dd3fc;
+  --surface: #1e293b;
+  --surface-alt: #334155;
+  --border: #475569;
+  --text-secondary: #94a3b8;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --radius: 8px;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc; --fg: #0f172a; --accent: #0284c7;
+    --accent-hover: #0369a1;
+    --surface: #ffffff; --surface-alt: #f1f5f9;
+    --border: #cbd5e1; --text-secondary: #64748b;
+    --success: #16a34a; --warning: #d97706; --danger: #dc2626;
+  }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--fg); }
+.particle-root {
+  max-width: 700px; margin: 0 auto; padding: 20px 16px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.particle-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+.particle-title { font-size: 16px; font-weight: 500; }
+.particle-subtitle { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.canvas-wrap {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden; position: relative;
+}
+canvas { display: block; width: 100%; height: 340px; cursor: crosshair; }
+.controls-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.ctrl-group { display: flex; flex-direction: column; gap: 4px; }
+.ctrl-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.3px; display: flex; justify-content: space-between; }
+.ctrl-value { font-weight: 500; color: var(--fg); }
+.ctrl-range {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 4px;
+  background: var(--border); border-radius: 2px; cursor: pointer;
+}
+.ctrl-range::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--accent); border: 2px solid var(--surface);
+}
+.type-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.type-btn {
+  padding: 6px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--text-secondary); font: 400 12px var(--font);
+  cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.type-btn:hover { color: var(--fg); background: var(--surface-alt); }
+.type-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.type-btn[aria-pressed="true"] { background: var(--accent); color: #0f172a; border-color: var(--accent); font-weight: 500; }
+.readout-bar {
+  display: flex; gap: 20px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 16px; font-size: 12px;
+}
+.ro-item { display: flex; flex-direction: column; gap: 2px; }
+.ro-label { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.3px; }
+.ro-value { font-size: 14px; font-weight: 500; color: var(--fg); font-variant-numeric: tabular-nums; }
+</style>
+
+<div class="particle-root">
+  <div class="particle-header">
+    <div>
+      <div class="particle-title">He thong hat (Particle System)</div>
+      <div class="particle-subtitle">Canvas rAF + deltaTime + object pooling</div>
+    </div>
+  </div>
+  <div class="canvas-wrap">
+    <canvas id="particle-canvas" aria-label="Canvas particle effect"></canvas>
+  </div>
+  <div class="type-btns">
+    <button class="type-btn" id="btn-rain" aria-pressed="true">Mua</button>
+    <button class="type-btn" id="btn-fire" aria-pressed="false">Lua</button>
+    <button class="type-btn" id="btn-stars" aria-pressed="false">Sao</button>
+    <button class="type-btn" id="btn-snow" aria-pressed="false">Tuyet</button>
+  </div>
+  <div class="controls-grid">
+    <div class="ctrl-group">
+      <div class="ctrl-label">So luong/s <span class="ctrl-value" id="rate-val">60</span></div>
+      <input type="range" class="ctrl-range" id="rate-slider" min="10" max="200" value="60">
+    </div>
+    <div class="ctrl-group">
+      <div class="ctrl-label">Trong luc <span class="ctrl-value" id="gravity-val">100</span></div>
+      <input type="range" class="ctrl-range" id="gravity-slider" min="0" max="400" value="100">
+    </div>
+    <div class="ctrl-group">
+      <div class="ctrl-label">Gio <span class="ctrl-value" id="wind-val">0</span></div>
+      <input type="range" class="ctrl-range" id="wind-slider" min="-200" max="200" value="0">
+    </div>
+  </div>
+  <div class="readout-bar">
+    <div class="ro-item"><span class="ro-label">Hat</span><span class="ro-value" id="ro-count">0</span></div>
+    <div class="ro-item"><span class="ro-label">FPS</span><span class="ro-value" id="ro-fps">0</span></div>
+    <div class="ro-item"><span class="ro-label">Loai</span><span class="ro-value" id="ro-type">Mua</span></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var canvas = document.getElementById('particle-canvas');
+  var ctx = canvas.getContext('2d');
+  var MAX_POOL = 2000;
+  var pool = [];
+  var active = [];
+
+  var PRESETS = {
+    rain: { name: 'Mua', gravity: 300, vx: [-10, 10], vy: [200, 400], life: [0.5, 1.2], size: [1, 2.5], colors: ['#38bdf8', '#7dd3fc', '#bae6fd'], spawnY: -10, fade: true },
+    fire: { name: 'Lua', gravity: -150, vx: [-30, 30], vy: [-200, -80], life: [0.4, 1.0], size: [2, 5], colors: ['#fbbf24', '#f87171', '#fb923c', '#fef08a'], spawnY: 340, fade: true },
+    stars: { name: 'Sao', gravity: 0, vx: [-20, 20], vy: [-20, 20], life: [1, 3], size: [1, 3], colors: ['#e2e8f0', '#fbbf24', '#38bdf8', '#a78bfa'], spawnY: -1, fade: true },
+    snow: { name: 'Tuyet', gravity: 40, vx: [-25, 25], vy: [30, 80], life: [2, 5], size: [2, 4], colors: ['#e2e8f0', '#f1f5f9', '#cbd5e1'], spawnY: -10, fade: true }
+  };
+
+  var state = { type: 'rain', rate: 60, gravity: 100, wind: 0, mouseX: -1, mouseY: -1 };
+  var lastTime = 0, fpsCounter = 0, fpsTime = 0, fpsDisplay = 0;
+
+  function report(k, p, s, st) {
+    if (window.WiiiVisualBridge && window.WiiiVisualBridge.reportResult)
+      window.WiiiVisualBridge.reportResult(k, p, s, st);
+  }
+
+  function rand(min, max) { return min + Math.random() * (max - min); }
+
+  function getParticle() {
+    return pool.length > 0 ? pool.pop() : {};
+  }
+  function recycleParticle(p) {
+    if (pool.length < MAX_POOL) pool.push(p);
+  }
+
+  function spawnOne() {
+    var preset = PRESETS[state.type];
+    var p = getParticle();
+    if (preset.spawnY === -1) {
+      p.x = rand(0, canvas.width);
+      p.y = rand(0, canvas.height);
+    } else {
+      p.x = state.mouseX >= 0 ? state.mouseX : rand(0, canvas.width);
+      p.y = preset.spawnY;
+    }
+    p.vx = rand(preset.vx[0], preset.vx[1]) + state.wind;
+    p.vy = rand(preset.vy[0], preset.vy[1]);
+    p.life = rand(preset.life[0], preset.life[1]);
+    p.maxLife = p.life;
+    p.size = rand(preset.size[0], preset.size[1]);
+    p.color = preset.colors[Math.floor(Math.random() * preset.colors.length)];
+    active.push(p);
+  }
+
+  function resize() {
+    var rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = 340;
+  }
+
+  function update(dt) {
+    var preset = PRESETS[state.type];
+    var grav = state.gravity * (preset.gravity / 100);
+    var spawnCount = state.rate * dt;
+    var whole = Math.floor(spawnCount);
+    var frac = spawnCount - whole;
+    for (var s = 0; s < whole; s++) spawnOne();
+    if (Math.random() < frac) spawnOne();
+
+    for (var i = active.length - 1; i >= 0; i--) {
+      var p = active[i];
+      p.life -= dt;
+      if (p.life <= 0 || p.y > canvas.height + 20 || p.y < -20 || p.x < -20 || p.x > canvas.width + 20) {
+        recycleParticle(p);
+        active.splice(i, 1);
+        continue;
+      }
+      p.vy += grav * dt;
+      p.vx += state.wind * 0.1 * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (var i = 0; i < active.length; i++) {
+      var p = active[i];
+      var alpha = p.life / p.maxLife;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      if (state.type === 'rain') {
+        ctx.fillRect(p.x, p.y, p.size * 0.5, p.size * 4);
+      } else if (state.type === 'snow') {
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+      } else if (state.type === 'fire') {
+        var s = p.size * (0.5 + alpha * 0.5);
+        ctx.beginPath(); ctx.arc(p.x, p.y, s, 0, Math.PI * 2); ctx.fill();
+      } else {
+        var s2 = p.size * (0.3 + alpha * 0.7);
+        ctx.beginPath();
+        for (var j = 0; j < 5; j++) {
+          var a = (j * 4 * Math.PI / 5) - Math.PI / 2;
+          var r = j % 2 === 0 ? s2 : s2 * 0.4;
+          ctx[j === 0 ? 'moveTo' : 'lineTo'](p.x + r * Math.cos(a), p.y + r * Math.sin(a));
+        }
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function loop(ts) {
+    if (lastTime === 0) lastTime = ts;
+    var dt = Math.min((ts - lastTime) / 1000, 0.05);
+    lastTime = ts;
+    fpsCounter++;
+    if (ts - fpsTime >= 500) {
+      fpsDisplay = Math.round(fpsCounter / ((ts - fpsTime) / 1000));
+      fpsCounter = 0; fpsTime = ts;
+      document.getElementById('ro-fps').textContent = fpsDisplay;
+    }
+    update(dt); draw();
+    document.getElementById('ro-count').textContent = active.length;
+    requestAnimationFrame(loop);
+  }
+
+  function setType(type) {
+    state.type = type;
+    active.forEach(recycleParticle); active.length = 0;
+    ['rain', 'fire', 'stars', 'snow'].forEach(function (t) {
+      document.getElementById('btn-' + t).setAttribute('aria-pressed', t === type);
+    });
+    document.getElementById('ro-type').textContent = PRESETS[type].name;
+    var g = PRESETS[type].gravity;
+    state.gravity = Math.abs(g);
+    document.getElementById('gravity-slider').value = Math.abs(g);
+    document.getElementById('gravity-val').textContent = Math.abs(g);
+    report('type_change', { type: type }, PRESETS[type].name, 'info');
+  }
+
+  document.getElementById('btn-rain').addEventListener('click', function () { setType('rain'); });
+  document.getElementById('btn-fire').addEventListener('click', function () { setType('fire'); });
+  document.getElementById('btn-stars').addEventListener('click', function () { setType('stars'); });
+  document.getElementById('btn-snow').addEventListener('click', function () { setType('snow'); });
+
+  document.getElementById('rate-slider').addEventListener('input', function () {
+    state.rate = parseInt(this.value);
+    document.getElementById('rate-val').textContent = state.rate;
+  });
+  document.getElementById('gravity-slider').addEventListener('input', function () {
+    state.gravity = parseInt(this.value);
+    document.getElementById('gravity-val').textContent = state.gravity;
+  });
+  document.getElementById('wind-slider').addEventListener('input', function () {
+    state.wind = parseInt(this.value);
+    document.getElementById('wind-val').textContent = state.wind;
+  });
+
+  canvas.addEventListener('mousemove', function (e) {
+    var r = canvas.getBoundingClientRect();
+    state.mouseX = e.clientX - r.left;
+    state.mouseY = e.clientY - r.top;
+  });
+  canvas.addEventListener('mouseleave', function () { state.mouseX = -1; });
+
+  window.addEventListener('resize', resize);
+  resize();
+  requestAnimationFrame(loop);
+})();
+</script>

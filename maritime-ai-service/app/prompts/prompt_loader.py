@@ -1166,7 +1166,10 @@ class PromptLoader:
 
             # Sprint 206: Inject narrative context (Letta/Nomi pattern)
             try:
-                if getattr(_nc_settings, "enable_narrative_context", False) is True:
+                if (
+                    getattr(_nc_settings, "enable_narrative_context", False) is True
+                    and getattr(_nc_settings, "enable_living_core_contract", False) is not True
+                ):
                     from app.engine.living_agent.narrative_synthesizer import get_brief_context
                     _narrative = get_brief_context()
                     if _narrative:
@@ -1176,7 +1179,10 @@ class PromptLoader:
 
             # Sprint 207: Inject identity self-knowledge (Layer 2 of Three-Layer Identity)
             try:
-                if getattr(_nc_settings, "enable_identity_core", False) is True:
+                if (
+                    getattr(_nc_settings, "enable_identity_core", False) is True
+                    and getattr(_nc_settings, "enable_living_core_contract", False) is not True
+                ):
                     from app.engine.living_agent.identity_core import get_identity_core
                     _identity = get_identity_core().get_identity_context()
                     if _identity:

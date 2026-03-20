@@ -1,0 +1,218 @@
+<!--
+  STATE MODEL: series[]{label,color,data[]}, visibleSeries[], hoveredPoint{seriesIdx,dataIdx}, tooltip
+  RENDER SURFACE: Inline SVG — multi-line chart with data points, axes, gridlines
+  CONTROLS: series toggles, hover tooltip
+  READOUTS: tooltip with exact values, legend with series visibility
+  FEEDBACK: WiiiVisualBridge.reportResult on point click and series toggle
+-->
+<style>
+:root {
+  --bg: #0f172a;
+  --fg: #e2e8f0;
+  --accent: #38bdf8;
+  --accent-hover: #7dd3fc;
+  --surface: #1e293b;
+  --surface-alt: #334155;
+  --border: #475569;
+  --text-secondary: #94a3b8;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --radius: 8px;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc; --fg: #0f172a; --accent: #0284c7;
+    --accent-hover: #0369a1;
+    --surface: #ffffff; --surface-alt: #f1f5f9;
+    --border: #cbd5e1; --text-secondary: #64748b;
+    --success: #16a34a; --warning: #d97706; --danger: #dc2626;
+  }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--fg); }
+.line-root {
+  max-width: 780px; margin: 0 auto; padding: 20px 16px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.line-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+.line-title { font-size: 16px; font-weight: 500; }
+.line-subtitle { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.controls { display: flex; gap: 6px; flex-wrap: wrap; }
+.toggle-btn {
+  padding: 6px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--text-secondary); font: 400 12px var(--font);
+  cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.toggle-btn:hover { color: var(--fg); background: var(--surface-alt); }
+.toggle-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toggle-btn[aria-pressed="true"] { background: var(--accent); color: #0f172a; border-color: var(--accent); font-weight: 500; }
+.chart-container { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 16px 12px; overflow: hidden; position: relative; }
+.chart-container svg { display: block; width: 100%; height: auto; }
+.tooltip {
+  position: absolute; pointer-events: none; background: var(--surface-alt);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px;
+  font-size: 12px; color: var(--fg); box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  display: none; z-index: 10; white-space: nowrap;
+}
+.tooltip-label { font-weight: 600; margin-bottom: 4px; }
+.tooltip-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.tooltip-dot { width: 8px; height: 8px; border-radius: 50%; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--text-secondary); }
+.legend-item { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: var(--radius); transition: background 0.15s; }
+.legend-item:hover { background: var(--surface-alt); }
+.legend-item.disabled { opacity: 0.4; }
+.legend-swatch { width: 12px; height: 4px; border-radius: 2px; }
+.data-point { cursor: pointer; transition: r 0.15s; }
+@keyframes line-draw { from { stroke-dashoffset: 2000; } to { stroke-dashoffset: 0; } }
+</style>
+
+<div class="line-root">
+  <div class="line-header">
+    <div>
+      <div class="line-title">Luong hang qua cang theo thang</div>
+      <div class="line-subtitle">Trieu tan — 12 thang gan nhat</div>
+    </div>
+  </div>
+  <div class="chart-container" id="chart-wrap">
+    <svg id="line-svg" viewBox="0 0 720 380" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Bieu do duong luong hang theo thang"></svg>
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+  <div class="legend" id="legend"></div>
+</div>
+
+<script>
+(function () {
+  var MONTHS = ['T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12'];
+  var SERIES = [
+    { label: 'Hai Phong', color: 'var(--accent)', data: [42,45,38,50,55,48,52,58,54,60,63,58] },
+    { label: 'TP.HCM', color: 'var(--warning)', data: [78,82,75,88,92,85,90,95,88,98,102,96] },
+    { label: 'Da Nang', color: 'var(--success)', data: [18,20,16,22,25,21,24,26,23,28,30,27] }
+  ];
+  var state = { visible: [true, true, true], hoverCol: -1 };
+  var svg = document.getElementById('line-svg');
+  var tooltipEl = document.getElementById('tooltip');
+  var legendEl = document.getElementById('legend');
+  var wrap = document.getElementById('chart-wrap');
+  var NS = 'http://www.w3.org/2000/svg';
+
+  var LEFT = 52, RIGHT = 690, TOP = 20, BOTTOM = 330;
+  var W = RIGHT - LEFT, H = BOTTOM - TOP;
+
+  function report(k, p, s, st) {
+    if (window.WiiiVisualBridge && window.WiiiVisualBridge.reportResult)
+      window.WiiiVisualBridge.reportResult(k, p, s, st);
+  }
+  function el(tag, attrs) {
+    var n = document.createElementNS(NS, tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+    return n;
+  }
+
+  function getMax() {
+    var m = 0;
+    SERIES.forEach(function (s, i) { if (state.visible[i]) s.data.forEach(function (v) { if (v > m) m = v; }); });
+    return Math.ceil(m / 20) * 20 + 10;
+  }
+
+  function xFor(i) { return LEFT + (i / (MONTHS.length - 1)) * W; }
+  function yFor(v, max) { return BOTTOM - (v / max) * H; }
+
+  function render() {
+    svg.innerHTML = '';
+    var maxVal = getMax();
+    if (maxVal === 0) maxVal = 100;
+
+    var steps = [];
+    for (var v = 0; v <= maxVal; v += 20) steps.push(v);
+    steps.forEach(function (v) {
+      var y = yFor(v, maxVal);
+      svg.appendChild(el('line', { x1: LEFT, y1: y, x2: RIGHT, y2: y, stroke: 'var(--border)', 'stroke-width': '0.5', opacity: '0.5' }));
+      svg.appendChild(el('text', { x: LEFT - 8, y: y + 3, 'text-anchor': 'end', fill: 'var(--text-secondary)', 'font-size': '10', 'font-family': 'var(--font)' })).textContent = v;
+    });
+
+    MONTHS.forEach(function (m, i) {
+      var x = xFor(i);
+      svg.appendChild(el('text', { x: x, y: BOTTOM + 18, 'text-anchor': 'middle', fill: 'var(--text-secondary)', 'font-size': '10', 'font-family': 'var(--font)' })).textContent = m;
+    });
+
+    svg.appendChild(el('line', { x1: LEFT, y1: BOTTOM, x2: RIGHT, y2: BOTTOM, stroke: 'var(--border)', 'stroke-width': '1' }));
+    svg.appendChild(el('line', { x1: LEFT, y1: TOP, x2: LEFT, y2: BOTTOM, stroke: 'var(--border)', 'stroke-width': '1' }));
+
+    SERIES.forEach(function (s, si) {
+      if (!state.visible[si]) return;
+      var pts = s.data.map(function (v, i) { return xFor(i) + ',' + yFor(v, maxVal); }).join(' ');
+      var areaPts = xFor(0) + ',' + BOTTOM + ' ' + pts + ' ' + xFor(s.data.length - 1) + ',' + BOTTOM;
+      svg.appendChild(el('polygon', { points: areaPts, fill: s.color, opacity: '0.06' }));
+      var line = el('polyline', { points: pts, fill: 'none', stroke: s.color, 'stroke-width': '2.5', 'stroke-linejoin': 'round', 'stroke-linecap': 'round', 'stroke-dasharray': '2000', 'stroke-dashoffset': '0', style: 'animation: line-draw 1s ease-out backwards; animation-delay: ' + (si * 0.2) + 's' });
+      svg.appendChild(line);
+      s.data.forEach(function (v, di) {
+        var cx = xFor(di), cy = yFor(v, maxVal);
+        var isHov = state.hoverCol === di;
+        var dot = el('circle', { cx: cx, cy: cy, r: isHov ? '5' : '3', fill: s.color, stroke: 'var(--surface)', 'stroke-width': '2', class: 'data-point' });
+        svg.appendChild(dot);
+      });
+    });
+
+    if (state.hoverCol >= 0) {
+      var x = xFor(state.hoverCol);
+      svg.appendChild(el('line', { x1: x, y1: TOP, x2: x, y2: BOTTOM, stroke: 'var(--fg)', 'stroke-width': '0.5', opacity: '0.3', 'stroke-dasharray': '4,4' }));
+    }
+
+    MONTHS.forEach(function (m, i) {
+      var hit = el('rect', { x: xFor(i) - W / MONTHS.length / 2, y: TOP, width: W / MONTHS.length, height: H + 20, fill: 'transparent', 'pointer-events': 'all', cursor: 'crosshair' });
+      (function (idx) {
+        hit.addEventListener('mouseenter', function (e) { state.hoverCol = idx; render(); showTooltip(e, idx); });
+        hit.addEventListener('mousemove', function (e) { moveTooltip(e); });
+        hit.addEventListener('mouseleave', function () { state.hoverCol = -1; render(); tooltipEl.style.display = 'none'; });
+        hit.addEventListener('click', function () {
+          var vals = {};
+          SERIES.forEach(function (s, si) { if (state.visible[si]) vals[s.label] = s.data[idx]; });
+          report('point_click', { month: MONTHS[idx], values: vals }, MONTHS[idx], 'info');
+        });
+      })(i);
+      svg.appendChild(hit);
+    });
+  }
+
+  function showTooltip(e, idx) {
+    var html = '<div class="tooltip-label">' + MONTHS[idx] + '</div>';
+    SERIES.forEach(function (s, si) {
+      if (!state.visible[si]) return;
+      html += '<div class="tooltip-row"><span class="tooltip-dot" style="background:' + s.color + '"></span>' + s.label + ': <strong>' + s.data[idx] + '</strong> trieu tan</div>';
+    });
+    tooltipEl.innerHTML = html;
+    tooltipEl.style.display = 'block';
+    moveTooltip(e);
+  }
+
+  function moveTooltip(e) {
+    var rect = wrap.getBoundingClientRect();
+    var x = e.clientX - rect.left + 14;
+    var y = e.clientY - rect.top - 10;
+    if (x + 180 > rect.width) x = x - 190;
+    tooltipEl.style.left = x + 'px';
+    tooltipEl.style.top = y + 'px';
+  }
+
+  function buildLegend() {
+    legendEl.innerHTML = '';
+    SERIES.forEach(function (s, i) {
+      var item = document.createElement('div');
+      item.className = 'legend-item' + (state.visible[i] ? '' : ' disabled');
+      var sw = document.createElement('span'); sw.className = 'legend-swatch'; sw.style.background = s.color;
+      var lbl = document.createElement('span'); lbl.textContent = s.label;
+      item.appendChild(sw); item.appendChild(lbl);
+      item.addEventListener('click', function () {
+        state.visible[i] = !state.visible[i];
+        render(); buildLegend();
+        report('series_toggle', { series: s.label, visible: state.visible[i] }, s.label + ': ' + (state.visible[i] ? 'on' : 'off'), 'info');
+      });
+      legendEl.appendChild(item);
+    });
+  }
+
+  render(); buildLegend();
+})();
+</script>

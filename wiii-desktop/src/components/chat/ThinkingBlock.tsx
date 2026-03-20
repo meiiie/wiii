@@ -51,11 +51,12 @@ const PREVIEW_TOOL_REPLACEMENTS: Array<[RegExp, string]> = [
   [/tool_[a-z0-9_]+/gi, "mot cong cu phu hop"],
 ];
 
-function clampPreviewText(value: string, maxLength = 160): string {
+// Sprint 234: Increased from 160→280 to match backend adaptive thinking (no hardcoded summary limit)
+function clampPreviewText(value: string, maxLength = 280): string {
   if (value.length <= maxLength) return value;
   const sliced = value.slice(0, maxLength);
   const lastSpace = sliced.lastIndexOf(" ");
-  return `${(lastSpace > 80 ? sliced.slice(0, lastSpace) : sliced).trim()}...`;
+  return `${(lastSpace > 120 ? sliced.slice(0, lastSpace) : sliced).trim()}...`;
 }
 
 function sanitizePreviewLine(line: string): string {
@@ -108,7 +109,7 @@ function buildPreviewText(content: string, fallback?: string): string {
   }
 
   if (!fallback) return "";
-  return clampPreviewText(sanitizePreviewLine(fallback), 160);
+  return clampPreviewText(sanitizePreviewLine(fallback), 280);
 }
 
 function chooseCollapsedPreview(options: {
@@ -192,6 +193,8 @@ export function ThinkingBlock({
   const [copied, setCopied] = useState(false);
   const startTimeRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // D1: Track if block was ever completed — used to detect re-activation
+  const wasCompletedRef = useRef(false);
 
   const handleCopy = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -228,12 +231,21 @@ export function ThinkingBlock({
       if (timerRef.current) clearInterval(timerRef.current);
       setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
       startTimeRef.current = null;
+      wasCompletedRef.current = true;
       if (thinkingLevel !== "detailed") {
         const contentLen = content?.length ?? 0;
         const collapseDelay = Math.min(Math.max(1200, contentLen * 3), 4500);
         const collapseTimer = setTimeout(() => setExpanded(false), collapseDelay);
+        // Cancel collapse if block re-activates (becomes streaming again)
         return () => clearTimeout(collapseTimer);
       }
+    }
+
+    // D1: Re-expand only on RE-ACTIVATION (block was completed, then becomes live again)
+    // Don't change initial expand behavior for balanced/minimal levels
+    if (isStreaming && wasCompletedRef.current) {
+      wasCompletedRef.current = false;
+      setExpanded(true);
     }
 
     return () => {

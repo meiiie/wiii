@@ -215,6 +215,7 @@ export const useCodeStudioStore = create<CodeStudioState>((set, get) => ({
           requested_view: session.metadata.requestedView,
           has_preview: Boolean(session.visualPayload),
         },
+        requested_view: session.metadata.requestedView,
       };
     },
 

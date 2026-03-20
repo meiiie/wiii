@@ -14,6 +14,7 @@ import { useCharacterStore } from "@/stores/character-store";
 import { usePageContextStore } from "@/stores/page-context-store";
 import { useHostContextStore } from "@/stores/host-context-store";
 import { useCodeStudioStore } from "@/stores/code-studio-store";
+import { useUIStore } from "@/stores/ui-store";
 import { StreamBuffer } from "@/lib/stream-buffer";
 import { trackVisualTelemetry } from "@/lib/visual-telemetry";
 import type { SSEEventHandler } from "@/api/sse";
@@ -78,6 +79,31 @@ export function _parseParallelTargets(content: string): string[] {
     .map((s) => s.trim())
     .filter((s) => s.length > 0 && /^[a-z_]+$/i.test(s));
   return names;
+}
+
+function _normalizePromptIntent(text: string): string {
+  return (text || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim();
+}
+
+function _inferCodeStudioRequestedView(prompt: string): "code" | "preview" | undefined {
+  const normalized = _normalizePromptIntent(prompt);
+  if (!normalized) return undefined;
+  if (
+    /(^|[\s,])((xem|hien|mo|show|view)\s+code|(xem|hien)\s+ma)\b/.test(normalized)
+    || normalized.includes("source code")
+  ) {
+    return "code";
+  }
+  if (
+    /(^|[\s,])((xem|mo|show|view)\s+(preview|ban xem truoc)|xem demo)\b/.test(normalized)
+  ) {
+    return "preview";
+  }
+  return undefined;
 }
 
 function toDisplayMeta(
@@ -262,6 +288,12 @@ export function useSSEStream() {
       easeInFrames: 10,
     });
 
+    // D3: Consistent buffer flush helper — drain both buffers before any block boundary
+    const flushBothBuffers = () => {
+      answerBufferRef.current?.drain();
+      thinkingBufferRef.current?.drain();
+    };
+
     const handlers: SSEEventHandler = {
       onThinking: (data) => {
         traceEvent("thinking", { node: data.node });
@@ -346,8 +378,8 @@ export function useSSEStream() {
             data.content.args = { ...(data.content.args || {}), _code_studio_session_id: activeSessionId };
           }
         }
-        // Sprint 150: Drain thinking buffer before tool card
-        thinkingBufferRef.current?.drain();
+        // D3: Flush both buffers before tool card
+        flushBothBuffers();
         const tc = {
           id: data.content.id,
           name: data.content.name,
@@ -415,8 +447,8 @@ export function useSSEStream() {
       },
       onThinkingStart: (data) => {
         traceEvent("thinking_start", { node: data.node, phase: data.phase });
-        // Sprint 150: Drain thinking buffer before opening new block
-        thinkingBufferRef.current?.drain();
+        // D3: Flush both buffers before opening new thinking block
+        flushBothBuffers();
         thinkingMetaRef.current = undefined;
         const store = useChatStore.getState();
         // Sprint 164: Pass node for workerNode tagging inside subagent groups
@@ -440,8 +472,8 @@ export function useSSEStream() {
       },
       onThinkingEnd: (data) => {
         traceEvent("thinking_end", { node: data.node });
-        // Sprint 150: Drain thinking buffer before closing block
-        thinkingBufferRef.current?.drain();
+        // D3: Flush both buffers before closing thinking block
+        flushBothBuffers();
         const store = useChatStore.getState();
         store.closeThinkingBlock(data.duration_ms);
         store.closeActivePhase(data.duration_ms);
@@ -470,18 +502,16 @@ export function useSSEStream() {
       },
       onActionText: (data) => {
         traceEvent("action_text", { node: data.node });
-        // Sprint 150: Drain both buffers before action text block
-        answerBufferRef.current?.drain();
-        thinkingBufferRef.current?.drain();
+        // D3: Flush both buffers before action text block
+        flushBothBuffers();
         // Sprint 147: Bold action text between thinking blocks
         // Sprint 149: Pass node for agent attribution
         useChatStore.getState().appendActionText(data.content, data.node, toDisplayMeta(data));
       },
       onBrowserScreenshot: (data) => {
         traceEvent("browser_screenshot", { url: data.content.url, node: data.node });
-        // Sprint 153: Browser screenshot — visual transparency during search
-        answerBufferRef.current?.drain();
-        thinkingBufferRef.current?.drain();
+        // D3: Flush both buffers before screenshot block
+        flushBothBuffers();
         useChatStore.getState().appendScreenshot({
           url: data.content.url,
           image: data.content.image,
@@ -491,9 +521,8 @@ export function useSSEStream() {
       },
       onPreview: (data) => {
         traceEvent("preview", { id: data.content.preview_id, node: data.node });
-        // Sprint 166: Rich preview cards
-        answerBufferRef.current?.drain();
-        thinkingBufferRef.current?.drain();
+        // D3: Flush both buffers before preview card
+        flushBothBuffers();
         const previewSettings = useSettingsStore.getState().settings;
         if (previewSettings.show_previews === false) return;
         useChatStore.getState().addPreviewItem({
@@ -503,9 +532,8 @@ export function useSSEStream() {
       },
       onArtifact: (data) => {
         traceEvent("artifact", { id: data.content.artifact_id, node: data.node });
-        // Sprint 167: Interactive artifacts (code, HTML, data)
-        answerBufferRef.current?.drain();
-        thinkingBufferRef.current?.drain();
+        // D3: Flush both buffers before artifact block
+        flushBothBuffers();
         const artifactSettings = useSettingsStore.getState().settings;
         if (artifactSettings.show_artifacts === false) return;
         useChatStore.getState().addArtifact({
@@ -515,8 +543,7 @@ export function useSSEStream() {
       },
       onVisual: (data) => {
         traceEvent("visual", { id: data.content.id, type: data.content.type, node: data.node });
-        answerBufferRef.current?.drain();
-        thinkingBufferRef.current?.drain();
+        flushBothBuffers();
         try {
           useChatStore.getState().openVisualSession(data.content, data.node, toDisplayMeta(data));
           trackVisualTelemetry("visual_opened", {
@@ -538,8 +565,7 @@ export function useSSEStream() {
       },
       onVisualOpen: (data) => {
         traceEvent("visual_open", { id: data.content.id, session: data.content.visual_session_id, node: data.node });
-        answerBufferRef.current?.drain();
-        thinkingBufferRef.current?.drain();
+        flushBothBuffers();
         useChatStore.getState().openVisualSession(data.content, data.node, toDisplayMeta(data));
         trackVisualTelemetry("visual_opened", {
           visual_id: data.content.id,
@@ -550,8 +576,7 @@ export function useSSEStream() {
       },
       onVisualPatch: (data) => {
         traceEvent("visual_patch", { id: data.content.id, session: data.content.visual_session_id, node: data.node });
-        answerBufferRef.current?.drain();
-        thinkingBufferRef.current?.drain();
+        flushBothBuffers();
         useChatStore.getState().patchVisualSession(data.content, data.node, toDisplayMeta(data));
         trackVisualTelemetry("visual_patched", {
           visual_id: data.content.id,
@@ -591,11 +616,11 @@ export function useSSEStream() {
             });
         }
       },
-        onCodeOpen: (data) => {
+      onCodeOpen: (data) => {
           traceEvent("code_open", { session: data.content.session_id, title: data.content.title });
           codeOpenActiveRef.current = true;
-          answerBufferRef.current?.drain();
-          thinkingBufferRef.current?.drain();
+          // D3: Flush both buffers before code studio session
+          flushBothBuffers();
           useCodeStudioStore.getState().openSession(
           data.content.session_id,
           data.content.title,
@@ -609,6 +634,8 @@ export function useSSEStream() {
               requestedView: data.content.requested_view,
             },
           );
+          useCodeStudioStore.getState().setActiveSession(data.content.session_id);
+          useUIStore.getState().openCodeStudio();
         },
       onCodeDelta: (data) => {
         traceEvent("code_delta", { session: data.content.session_id, idx: data.content.chunk_index });
@@ -693,6 +720,13 @@ export function useSSEStream() {
       }
       return undefined;
     };
+
+    const requestedViewHint = _inferCodeStudioRequestedView(content);
+    const activeCodeStudioSessionId = useCodeStudioStore.getState().activeSessionId;
+    if (requestedViewHint && activeCodeStudioSessionId) {
+      useCodeStudioStore.getState().setRequestedView(activeCodeStudioSessionId, requestedViewHint);
+      useUIStore.getState().openCodeStudio();
+    }
 
     const request = {
       user_id: settings.user_id,

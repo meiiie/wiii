@@ -142,6 +142,68 @@ _SIMULATION_APP_CUES = (
 )
 
 
+_QUIZ_WIDGET_CUES = (
+    "quiz widget",
+    "quiz app",
+    "interactive quiz",
+    "quiz interactive",
+    "trac nghiem tuong tac",
+    "bai quiz tuong tac",
+    "widget quiz",
+    "html quiz",
+    "mini quiz app",
+)
+
+_QUIZ_CREATION_CUES = (
+    "tao",
+    "lam",
+    "dung",
+    "xay",
+    "soan",
+    "thiet ke",
+    "build",
+    "create",
+    "generate",
+)
+
+_QUIZ_REQUEST_CUES = (
+    "quiz",
+    "quizz",
+    "trac nghiem",
+    "bai quiz",
+    "bo quiz",
+)
+
+_QUIZ_CREATION_RAW_CUES = (
+    "tạo",
+    "làm",
+    "dựng",
+    "xây",
+    "soạn",
+    "thiết kế",
+    "build",
+    "create",
+    "generate",
+)
+
+_QUIZ_REQUEST_RAW_CUES = (
+    "quiz",
+    "quizz",
+    "trắc nghiệm",
+    "bài quiz",
+    "bộ quiz",
+)
+
+
+def _looks_like_quiz_app_request(query: str, normalized: str) -> bool:
+    if not query and not normalized:
+        return False
+    raw_lower = query.lower().strip()
+    has_quiz_request = _contains_any(normalized, _QUIZ_REQUEST_CUES) or _contains_any(raw_lower, _QUIZ_REQUEST_RAW_CUES)
+    has_creation_intent = _contains_any(normalized, _QUIZ_CREATION_CUES) or _contains_any(raw_lower, _QUIZ_CREATION_RAW_CUES)
+    return has_quiz_request and has_creation_intent
+
+
 def _looks_like_recipe_backed_simulation(normalized: str) -> bool:
     return _contains_any(normalized, _SIMULATION_APP_CUES + _SIMULATION_PATCH_CUES)
 
@@ -498,10 +560,9 @@ def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
             "mo phong vat ly",
             "keo tha",
             "drag and drop",
-            "quiz",
             "interactive table",
         ),
-    ) or (
+    ) or _contains_any(normalized, _QUIZ_WIDGET_CUES) or _looks_like_quiz_app_request(query, normalized) or (
         "app" in normalized
         and _contains_any(normalized, _SIMULATION_APP_CUES)
     ):

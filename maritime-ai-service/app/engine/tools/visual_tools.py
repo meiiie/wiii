@@ -3913,11 +3913,90 @@ def _build_infographic_html(spec: dict, title: str) -> str:
 # CHART — SVG bar/line chart (lightweight, no JS dependency)
 # =============================================================================
 
+def _normalize_chart_spec(spec: dict[str, Any], title: str = "") -> dict[str, Any]:
+    """Accept common chart payload shapes and coerce them into labels + datasets."""
+    normalized_spec = dict(spec or {})
+    chart_type = str(
+        normalized_spec.get("chart_type")
+        or normalized_spec.get("style")
+        or normalized_spec.get("chart_style")
+        or normalized_spec.get("type")
+        or "bar"
+    ).strip().lower()
+    if chart_type not in {"bar", "line", "area"}:
+        chart_type = "bar"
+
+    labels = normalized_spec.get("labels")
+    datasets = normalized_spec.get("datasets")
+
+    if not isinstance(labels, list):
+        labels = []
+    if not isinstance(datasets, list):
+        datasets = []
+
+    raw_data = normalized_spec.get("data")
+    if (not labels or not datasets) and isinstance(raw_data, list):
+        if raw_data and all(isinstance(item, dict) for item in raw_data):
+            row_labels: list[str] = []
+            row_values: list[float] = []
+            row_colors: list[str] = []
+            for index, item in enumerate(raw_data):
+                label = str(
+                    item.get("label")
+                    or item.get("name")
+                    or item.get("x")
+                    or item.get("category")
+                    or f"Item {index + 1}"
+                )
+                raw_value = item.get("value", item.get("y"))
+                if isinstance(raw_value, (int, float)):
+                    value = float(raw_value)
+                else:
+                    try:
+                        value = float(str(raw_value).strip())
+                    except Exception:
+                        value = 0.0
+                row_labels.append(label)
+                row_values.append(value)
+                color = item.get("color")
+                if isinstance(color, str) and color.strip():
+                    row_colors.append(color.strip())
+            labels = row_labels
+            datasets = [{
+                "label": str(
+                    normalized_spec.get("series_label")
+                    or normalized_spec.get("dataset_label")
+                    or normalized_spec.get("title")
+                    or title
+                    or "Du lieu"
+                ),
+                "data": row_values,
+                **({"colors": row_colors} if row_colors else {}),
+            }]
+        elif raw_data and all(isinstance(item, (int, float)) for item in raw_data):
+            labels = [f"Item {index + 1}" for index, _ in enumerate(raw_data)]
+            datasets = [{
+                "label": str(
+                    normalized_spec.get("series_label")
+                    or normalized_spec.get("dataset_label")
+                    or normalized_spec.get("title")
+                    or title
+                    or "Du lieu"
+                ),
+                "data": [float(item) for item in raw_data],
+            }]
+
+    normalized_spec["chart_type"] = chart_type
+    normalized_spec["labels"] = labels
+    normalized_spec["datasets"] = datasets
+    return normalized_spec
+
 def _build_chart_html(spec: dict, title: str) -> str:
-    chart_type = spec.get("chart_type", "bar")
-    labels = spec.get("labels", [])
-    datasets = spec.get("datasets", [])
-    caption = spec.get("caption", "")
+    normalized_spec = _normalize_chart_spec(spec, title)
+    chart_type = normalized_spec.get("chart_type", "bar")
+    labels = normalized_spec.get("labels", [])
+    datasets = normalized_spec.get("datasets", [])
+    caption = normalized_spec.get("caption", "")
     colors = ["var(--accent)", "var(--green)", "var(--purple)", "var(--amber)", "var(--teal)", "var(--pink)"]
 
     css = """
@@ -3968,6 +4047,7 @@ def _build_chart_html(spec: dict, title: str) -> str:
     n_datasets = len(datasets)
 
     for ds_idx, ds in enumerate(datasets):
+        ds_colors = ds.get("colors") if isinstance(ds.get("colors"), list) else []
         color = ds.get("color", colors[ds_idx % len(colors)])
         data = ds.get("data", [])
         points = []
@@ -3989,7 +4069,8 @@ def _build_chart_html(spec: dict, title: str) -> str:
                 bx = x - (n_datasets * bw / 2) + ds_idx * bw
                 base_y = pad_top + plot_h - ((0 - min_val) / val_range) * plot_h
                 bar_h = base_y - y
-                svg_parts.append(f'<rect x="{bx:.1f}" y="{y:.1f}" width="{bw:.1f}" height="{bar_h:.1f}" fill="{color}" rx="2" opacity="0.85"/>')
+                bar_color = ds_colors[i] if i < len(ds_colors) and isinstance(ds_colors[i], str) and ds_colors[i].strip() else color
+                svg_parts.append(f'<rect x="{bx:.1f}" y="{y:.1f}" width="{bw:.1f}" height="{bar_h:.1f}" fill="{bar_color}" rx="2" opacity="0.85"/>')
 
     # X labels
     for i, label in enumerate(labels):

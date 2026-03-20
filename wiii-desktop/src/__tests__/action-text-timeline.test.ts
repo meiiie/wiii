@@ -79,6 +79,17 @@ describe("appendActionText store action", () => {
     expect(actionBlock.content).toBe("Action without node");
     expect(actionBlock.node).toBeUndefined();
   });
+
+  it("dedupes consecutive identical action text from narrator fallback", () => {
+    const store = useChatStore.getState();
+    store.appendActionText("Để mình chuẩn bị một phòng luyện tập nhỏ cho bạn nhé!", "code_studio_agent");
+    store.appendActionText("Để mình chuẩn bị một phòng luyện tập nhỏ cho bạn nhé!", "code_studio_agent");
+
+    const blocks = useChatStore.getState().streamingBlocks;
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.type).toBe("action_text");
+    expect((blocks[0] as ActionTextBlockData).content).toBe("Để mình chuẩn bị một phòng luyện tập nhỏ cho bạn nhé!");
+  });
 });
 
 describe("BlockRenderer segmentation logic", () => {

@@ -37,10 +37,18 @@ avoid_phrases:
   - listing count
   - crawl result
   - shopping bot
+  - đang tìm kiếm thông tin
+anti_repetition:
+  thinking_must_not_contain:
+    - same verb+object as status event
+    - listing platform names without judgment
+  thinking_must_contain:
+    - market judgment (price anomalies, source reliability)
+    - specific product/price context
 style_tags:
   - market-aware
   - comparative
-version: "1.0.0"
+version: "2.0.0"
 ---
 
 # Product Search Reasoning

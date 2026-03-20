@@ -278,7 +278,7 @@ export function DiagramNodeCard({
   return (
     <article
       className={cx(
-        "relative overflow-hidden rounded-[28px] border px-5 py-5 shadow-[var(--shadow-md)] transition-[opacity,transform] duration-300",
+        "relative overflow-clip rounded-[28px] border px-5 py-5 shadow-[var(--shadow-md)] transition-[opacity,transform] duration-300",
         className,
       )}
       style={{

@@ -634,10 +634,47 @@ function Concept({ spec, focusId }: { spec: Record<string, unknown>; focusId: st
   </div>;
 }
 
+function normalizeChartSpec(spec: Record<string, unknown>) {
+  const labels = asList(spec.labels).map((value) => asText(value)).filter(Boolean);
+  const datasets = asList(spec.datasets).map((value) => asRecord(value));
+  if (labels.length > 0 && datasets.length > 0) {
+    return { labels, datasets };
+  }
+
+  const rows = asList(spec.data)
+    .map((value) => asRecord(value))
+    .filter((row) => Object.keys(row).length > 0);
+
+  if (rows.length > 0) {
+    return {
+      labels: rows.map((row, index) => asText(row.label, asText(row.name, asText(row.x, asText(row.category, `Item ${index + 1}`))))),
+      datasets: [
+        {
+          label: asText(spec.series_label, asText(spec.dataset_label, asText(spec.title, "Du lieu"))),
+          data: rows.map((row) => asNumber(row.value ?? row.y, 0)),
+          colors: rows.map((row) => asText(row.color)),
+        },
+      ],
+    };
+  }
+
+  const rawValues = asList(spec.data);
+  return {
+    labels: rawValues.map((_, index) => `Item ${index + 1}`),
+    datasets: [
+      {
+        label: asText(spec.series_label, asText(spec.dataset_label, asText(spec.title, "Du lieu"))),
+        data: rawValues.map((value) => asNumber(value, 0)),
+      },
+    ],
+  };
+}
+
 function Chart({ spec, style }: { spec: Record<string, unknown>; style: string }) {
-  const labels = asList(spec.labels).map((value) => asText(value));
-  const dataset = asRecord(asList(spec.datasets)[0]);
-  const values = (dataset.data ? asList(dataset.data) : asList(spec.data)).map((value) => asNumber(value, 0));
+  const normalized = normalizeChartSpec(spec);
+  const labels = normalized.labels;
+  const dataset = asRecord(normalized.datasets[0]);
+  const values = asList(dataset.data).map((value) => asNumber(value, 0));
   const max = Math.max(...values, 1);
   const min = Math.min(...values, 0);
   const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
@@ -725,7 +762,7 @@ function Chart({ spec, style }: { spec: Record<string, unknown>; style: string }
                   width="28"
                   height={184 - point.y}
                   rx="10"
-                  fill={index === peakIndex ? secondary.accent : primary.accent}
+                  fill={asText(asList(dataset.colors)[index], index === peakIndex ? secondary.accent : primary.accent)}
                 />
               ))
             )}
@@ -1112,24 +1149,9 @@ export function VisualBlock({
   const codeStudioPanelOpen = useUIStore((s) => s.codeStudioPanelOpen);
   const codeStudioActiveSessionId = useCodeStudioStore((s) => s.activeSessionId);
   const hasCodeStudioSessionForThis = useCodeStudioStore((s) => Boolean(s.sessions[sessionId]));
-  if (codeStudioPanelOpen && hasCodeStudioSessionForThis && codeStudioActiveSessionId === sessionId) {
-    return (
-      <figure data-testid="visual-block" className="my-4">
-        <button
-          type="button"
-          className="flex items-center gap-2.5 w-full rounded-xl border border-border/60 bg-surface-secondary/40 px-4 py-3 text-left text-sm text-text-secondary hover:bg-surface-secondary transition-colors"
-          onClick={() => {
-            useCodeStudioStore.getState().setActiveSession(sessionId);
-            useUIStore.getState().openCodeStudio();
-          }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--accent)]"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-          <span className="truncate font-medium">{visual.title}</span>
-          <span className="ml-auto text-xs text-text-tertiary shrink-0">Đang mở trong Code Studio</span>
-        </button>
-      </figure>
-    );
-  }
+  const delegateToCodeStudioPanel = codeStudioPanelOpen
+    && hasCodeStudioSessionForThis
+    && codeStudioActiveSessionId === sessionId;
 
   let renderError: string | null = null;
   let usedFallback = false;
@@ -1367,6 +1389,25 @@ export function VisualBlock({
     embedded ? "visual-block-shell--embedded" : "",
     embedded ? "" : "my-6",
   ].filter(Boolean).join(" ");
+
+  if (delegateToCodeStudioPanel) {
+    return (
+      <figure data-testid="visual-block" className="my-4">
+        <button
+          type="button"
+          className="flex items-center gap-2.5 w-full rounded-xl border border-border/60 bg-surface-secondary/40 px-4 py-3 text-left text-sm text-text-secondary hover:bg-surface-secondary transition-colors"
+          onClick={() => {
+            useCodeStudioStore.getState().setActiveSession(sessionId);
+            useUIStore.getState().openCodeStudio();
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--accent)]"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <span className="truncate font-medium">{visual.title}</span>
+          <span className="ml-auto text-xs text-text-tertiary shrink-0">Đang mở trong Code Studio</span>
+        </button>
+      </figure>
+    );
+  }
 
   return <figure
     ref={figureRef}

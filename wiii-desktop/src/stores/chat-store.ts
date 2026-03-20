@@ -59,6 +59,18 @@ function getStoreKey(): string {
   return BASE_STORE_KEY;
 }
 
+function normalizeNarrativeText(value: string | undefined): string {
+  return (value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function getLastNarrativeLine(value: string | undefined): string {
+  const segments = (value || "")
+    .split("\n")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  return segments.length > 0 ? segments[segments.length - 1] || "" : "";
+}
+
 interface ChatState {
   // Data
   conversations: Conversation[];
@@ -798,13 +810,24 @@ export const useChatStore = create<ChatState>()(
 
     setStreamingThinking: (thinking) => {
       set((state) => {
+        const normalizedThinking = normalizeNarrativeText(thinking);
+        if (!normalizedThinking) return;
+
+        const lastNarrativeLine = normalizeNarrativeText(getLastNarrativeLine(state.streamingThinking));
+        const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
+        const lastBlockLine = lastBlock?.type === "thinking"
+          ? normalizeNarrativeText(getLastNarrativeLine(lastBlock.content))
+          : "";
+        if (normalizedThinking === lastNarrativeLine && normalizedThinking === lastBlockLine) {
+          return;
+        }
+
         // Flat field — backward compat
         state.streamingThinking = state.streamingThinking
           ? state.streamingThinking + "\n" + thinking
           : thinking;
 
         // Block-based: append to last thinking block, or create new one
-        const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
         if (lastBlock?.type === "thinking") {
           lastBlock.content = lastBlock.content
             ? lastBlock.content + "\n" + thinking
@@ -919,6 +942,14 @@ export const useChatStore = create<ChatState>()(
     appendActionText: (text, node, meta) => {
       set((state) => {
         closeLastThinkingBlockDraft(state.streamingBlocks);
+        const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
+        if (
+          lastBlock?.type === "action_text"
+          && normalizeNarrativeText(lastBlock.content) === normalizeNarrativeText(text)
+          && (lastBlock.node || "") === (node || "")
+        ) {
+          return;
+        }
         state.streamingBlocks.push(
           applyDisplayMeta(
             {

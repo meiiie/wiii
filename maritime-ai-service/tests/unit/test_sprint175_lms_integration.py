@@ -465,6 +465,20 @@ class TestLMSIntentDetection:
         assert _needs_lms_query("Nấu cơm thế nào?") is False
 
 
+class TestLMSIntentDetectionEdgeCases:
+    @patch("app.core.config.settings")
+    def test_needs_lms_query_does_not_treat_plain_quiz_generation_as_lms(self, mock_settings):
+        mock_settings.enable_lms_integration = True
+        from app.engine.multi_agent.graph import _needs_lms_query
+        assert _needs_lms_query("Tao cho minh quiz 30 cau tieng Trung de luyen tap") is False
+
+    @patch("app.core.config.settings")
+    def test_needs_lms_query_keeps_quiz_with_grade_context(self, mock_settings):
+        mock_settings.enable_lms_integration = True
+        from app.engine.multi_agent.graph import _needs_lms_query
+        assert _needs_lms_query("Diem quiz cua minh trong khoa hoc nay la bao nhieu?") is True
+
+
 # =============================================================================
 # Phase 3: Teacher Dashboard Tests
 # =============================================================================

@@ -37,10 +37,21 @@ avoid_phrases:
   - top k
   - chunk
   - reasoning trace
+  - đang tìm kiếm thông tin
+  - đang tra cứu
+anti_repetition:
+  thinking_must_not_contain:
+    - same verb+object as status event (status nói 'Tra cứu X' thì thinking nói insight về X)
+    - restatement of user query without reframing
+    - generic quality platitudes (đảm bảo chính xác, có cái nhìn tốt nhất)
+  thinking_must_contain:
+    - at least 1 specific domain term (tên quy định, số điều khoản, thuật ngữ chuyên ngành)
+    - at least 1 judgment call or trade-off (chọn nguồn nào, tại sao, so sánh)
+    - decision with specific reason
 style_tags:
   - grounded
   - evidence-first
-version: "1.0.0"
+version: "2.0.0"
 ---
 
 # RAG Reasoning
@@ -60,3 +71,5 @@ không phải đang đọc log truy xuất.
 - Cho thấy nhịp kiểm chứng.
 - Không khoe số liệu nội bộ.
 - Không kể lể quy trình máy móc.
+- Dùng domain terms cụ thể (tên quy định, số điều, thuật ngữ chuyên ngành) thay vì mô tả chung.
+- Action text phải là preamble cụ thể: "Tra Điều 15 COLREGs từ nguồn quy tắc phòng ngừa va chạm" thay vì "Đang tìm kiếm".

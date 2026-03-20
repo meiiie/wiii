@@ -178,6 +178,29 @@ class TestInfographicVisual:
         assert "info-stat" in html
 
 
+class TestChartVisual:
+    """Test chart visual generation."""
+
+    def test_chart_accepts_row_data_shape(self):
+        from app.engine.tools.visual_tools import _build_chart_html
+
+        spec = {
+            "type": "bar",
+            "data": [
+                {"label": "Feeder", "value": 15},
+                {"label": "Panamax", "value": 20},
+                {"label": "ULCV", "value": 18},
+            ],
+            "caption": "Toc do khai thac trung binh.",
+        }
+        html = _build_chart_html(spec, "Container speed")
+        assert "No chart data provided" not in html
+        assert "Feeder" in html
+        assert "Panamax" in html
+        assert "ULCV" in html
+        assert "Toc do khai thac trung binh." in html
+
+
 # =============================================================================
 # Tool integration tests
 # =============================================================================

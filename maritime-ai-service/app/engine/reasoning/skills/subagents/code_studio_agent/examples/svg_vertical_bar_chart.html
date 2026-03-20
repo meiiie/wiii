@@ -1,0 +1,239 @@
+<!--
+  STATE MODEL: categories[]{label,values[]}, series[]{name,color}, hoveredBar, sortOrder, activeSeriesIdx
+  RENDER SURFACE: Inline SVG — vertical bars with Y-axis, gridlines, value labels, grouped bars
+  CONTROLS: series toggle buttons, sort toggle (value / alphabetical)
+  READOUTS: hovered category, value, rank
+  FEEDBACK: WiiiVisualBridge.reportResult on bar click and series toggle
+-->
+<style>
+:root {
+  --bg: #0f172a;
+  --fg: #e2e8f0;
+  --accent: #38bdf8;
+  --accent-hover: #7dd3fc;
+  --surface: #1e293b;
+  --surface-alt: #334155;
+  --border: #475569;
+  --text-secondary: #94a3b8;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --radius: 8px;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc; --fg: #0f172a; --accent: #0284c7;
+    --accent-hover: #0369a1;
+    --surface: #ffffff; --surface-alt: #f1f5f9;
+    --border: #cbd5e1; --text-secondary: #64748b;
+    --success: #16a34a; --warning: #d97706; --danger: #dc2626;
+  }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--fg); }
+.chart-root {
+  max-width: 780px; margin: 0 auto; padding: 20px 16px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.chart-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+.chart-title { font-size: 16px; font-weight: 500; }
+.chart-subtitle { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.controls { display: flex; gap: 6px; flex-wrap: wrap; }
+.toggle-btn {
+  padding: 6px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--text-secondary); font: 400 12px var(--font);
+  cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.toggle-btn:hover { color: var(--fg); background: var(--surface-alt); }
+.toggle-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toggle-btn[aria-pressed="true"] { background: var(--accent); color: #0f172a; border-color: var(--accent); font-weight: 500; }
+.chart-container { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 16px 12px; overflow: hidden; }
+.chart-container svg { display: block; width: 100%; height: auto; }
+.legend { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-swatch { width: 12px; height: 4px; border-radius: 2px; }
+.detail-bar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 20px; align-items: center; min-height: 48px; }
+.detail-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.3px; }
+.detail-value { font-size: 15px; font-weight: 500; color: var(--fg); }
+.detail-value.accent { color: var(--accent); }
+.detail-empty { font-size: 13px; color: var(--text-secondary); }
+.detail-metric { display: flex; flex-direction: column; gap: 2px; }
+.bar-group { cursor: pointer; }
+.bar-group:focus { outline: none; }
+.bar-group:focus-visible rect { stroke: var(--fg); stroke-width: 2; }
+@keyframes bar-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@media (max-width: 520px) { .chart-header { flex-direction: column; } }
+</style>
+
+<div class="chart-root">
+  <div class="chart-header">
+    <div>
+      <div class="chart-title">San luong hang hoa qua cac cang</div>
+      <div class="chart-subtitle">Trieu tan / nam — so sanh xuat khau va nhap khau</div>
+    </div>
+    <div class="controls">
+      <button class="toggle-btn" id="btn-export" aria-pressed="true" aria-label="Xuat khau">Xuat khau</button>
+      <button class="toggle-btn" id="btn-import" aria-pressed="true" aria-label="Nhap khau">Nhap khau</button>
+      <button class="toggle-btn" id="btn-sort" aria-pressed="false" aria-label="Sap xep">Sap xep</button>
+    </div>
+  </div>
+  <div class="chart-container">
+    <svg id="chart-svg" viewBox="0 0 700 380" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Bieu do cot san luong hang hoa"></svg>
+  </div>
+  <div class="legend" id="legend">
+    <div class="legend-item"><span class="legend-swatch" style="background:var(--accent)"></span>Xuat khau</div>
+    <div class="legend-item" id="legend-import"><span class="legend-swatch" style="background:var(--warning)"></span>Nhap khau</div>
+  </div>
+  <div class="detail-bar" id="detail-bar" role="status" aria-live="polite">
+    <span class="detail-empty" id="detail-empty">Nhan vao cot de xem chi tiet</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var PORTS = [
+    { name: 'Hai Phong', ex: 58, im: 45 },
+    { name: 'TP.HCM', ex: 92, im: 88 },
+    { name: 'Da Nang', ex: 22, im: 18 },
+    { name: 'Vung Tau', ex: 35, im: 42 },
+    { name: 'Quy Nhon', ex: 15, im: 12 },
+    { name: 'Can Tho', ex: 10, im: 8 }
+  ];
+  var SERIES = [
+    { key: 'ex', label: 'Xuat khau', color: 'var(--accent)' },
+    { key: 'im', label: 'Nhap khau', color: 'var(--warning)' }
+  ];
+  var state = { showExport: true, showImport: true, sorted: false, hovered: -1 };
+  var svg = document.getElementById('chart-svg');
+  var detailBar = document.getElementById('detail-bar');
+  var detailEmpty = document.getElementById('detail-empty');
+  var NS = 'http://www.w3.org/2000/svg';
+
+  function report(k, p, s, st) {
+    if (window.WiiiVisualBridge && window.WiiiVisualBridge.reportResult)
+      window.WiiiVisualBridge.reportResult(k, p, s, st);
+  }
+  function el(tag, attrs) {
+    var n = document.createElementNS(NS, tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+    return n;
+  }
+  function getOrdered() {
+    var list = PORTS.slice();
+    if (state.sorted) {
+      var key = state.showExport ? 'ex' : 'im';
+      list.sort(function (a, b) { return b[key] - a[key]; });
+    }
+    return list;
+  }
+
+  function render() {
+    svg.innerHTML = '';
+    var ports = getOrdered();
+    var nSeries = (state.showExport ? 1 : 0) + (state.showImport ? 1 : 0);
+    if (nSeries === 0) return;
+
+    var maxVal = 0;
+    ports.forEach(function (p) {
+      if (state.showExport && p.ex > maxVal) maxVal = p.ex;
+      if (state.showImport && p.im > maxVal) maxVal = p.im;
+    });
+    maxVal = Math.ceil(maxVal / 20) * 20 + 10;
+
+    var left = 52, right = 680, top = 20, bottom = 330;
+    var chartH = bottom - top, chartW = right - left;
+    var groupW = chartW / ports.length;
+    var barW = nSeries === 2 ? groupW * 0.32 : groupW * 0.5;
+    var barGap = nSeries === 2 ? 4 : 0;
+
+    var steps = [];
+    for (var v = 0; v <= maxVal; v += 20) steps.push(v);
+    steps.forEach(function (v) {
+      var y = bottom - (v / maxVal) * chartH;
+      svg.appendChild(el('line', { x1: left, y1: y, x2: right, y2: y, stroke: 'var(--border)', 'stroke-width': '0.5', opacity: '0.5' }));
+      svg.appendChild(el('text', { x: left - 8, y: y + 3, 'text-anchor': 'end', fill: 'var(--text-secondary)', 'font-size': '10', 'font-family': 'var(--font)' })).textContent = v;
+    });
+    svg.appendChild(el('text', { x: 14, y: top + chartH / 2, 'text-anchor': 'middle', fill: 'var(--text-secondary)', 'font-size': '10', 'font-family': 'var(--font)', transform: 'rotate(-90 14 ' + (top + chartH / 2) + ')' })).textContent = 'Trieu tan';
+
+    ports.forEach(function (port, i) {
+      var gx = left + i * groupW + groupW / 2;
+      var g = el('g', { class: 'bar-group', tabindex: '0', role: 'button', 'aria-label': port.name + ': XK ' + port.ex + ', NK ' + port.im + ' trieu tan' });
+
+      var lbl = el('text', { x: gx, y: bottom + 18, 'text-anchor': 'middle', fill: 'var(--fg)', 'font-size': '11', 'font-weight': '400', 'font-family': 'var(--font)' });
+      lbl.textContent = port.name;
+      g.appendChild(lbl);
+
+      var sIdx = 0;
+      function drawBar(val, color, seriesOffset) {
+        var h = (val / maxVal) * chartH;
+        var bx = nSeries === 2 ? gx - barW - barGap / 2 + seriesOffset * (barW + barGap) : gx - barW / 2;
+        var by = bottom - h;
+        var bar = el('rect', { x: bx, y: by, width: barW, height: h, rx: '3', fill: color, opacity: '0.85', style: 'transform-origin: ' + bx + 'px ' + bottom + 'px; animation: bar-grow 0.5s cubic-bezier(0.23,1,0.32,1) ' + (i * 0.06 + seriesOffset * 0.03) + 's backwards' });
+        g.appendChild(bar);
+        var vl = el('text', { x: bx + barW / 2, y: by - 5, 'text-anchor': 'middle', fill: color, 'font-size': '10', 'font-weight': '500', 'font-family': 'var(--font)' });
+        vl.textContent = val;
+        g.appendChild(vl);
+      }
+      if (state.showExport) { drawBar(port.ex, 'var(--accent)', sIdx); sIdx++; }
+      if (state.showImport) { drawBar(port.im, 'var(--warning)', sIdx); }
+
+      var hit = el('rect', { x: left + i * groupW, y: top, width: groupW, height: chartH + 30, fill: 'transparent', 'pointer-events': 'all' });
+      g.insertBefore(hit, g.firstChild);
+
+      (function (idx, p) {
+        g.addEventListener('mouseenter', function () { highlight(idx); });
+        g.addEventListener('mouseleave', function () { clearHighlight(); });
+        g.addEventListener('click', function () { showDetail(p); report('bar_click', { port: p.name, ex: p.ex, im: p.im }, p.name, 'info'); });
+        g.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showDetail(p); } });
+      })(i, port);
+      svg.appendChild(g);
+    });
+
+    svg.appendChild(el('line', { x1: left, y1: bottom, x2: right, y2: bottom, stroke: 'var(--border)', 'stroke-width': '1' }));
+    svg.appendChild(el('line', { x1: left, y1: top, x2: left, y2: bottom, stroke: 'var(--border)', 'stroke-width': '1' }));
+    document.getElementById('legend-import').style.display = state.showImport ? '' : 'none';
+  }
+
+  function highlight(idx) {
+    svg.querySelectorAll('.bar-group').forEach(function (g, j) { if (j !== idx) g.setAttribute('opacity', '0.35'); });
+  }
+  function clearHighlight() {
+    svg.querySelectorAll('.bar-group').forEach(function (g) { g.removeAttribute('opacity'); });
+  }
+  function showDetail(port) {
+    detailEmpty.style.display = 'none';
+    detailBar.querySelectorAll('.detail-metric').forEach(function (el) { el.remove(); });
+    var add = function (l, v, c) {
+      var m = document.createElement('div'); m.className = 'detail-metric';
+      var lb = document.createElement('span'); lb.className = 'detail-label'; lb.textContent = l;
+      var vl = document.createElement('span'); vl.className = 'detail-value' + (c ? ' accent' : ''); vl.textContent = v;
+      m.appendChild(lb); m.appendChild(vl); detailBar.appendChild(m);
+    };
+    add('Cang', port.name, false);
+    add('Xuat khau', port.ex + ' trieu tan', true);
+    add('Nhap khau', port.im + ' trieu tan', false);
+    add('Tong', (port.ex + port.im) + ' trieu tan', false);
+  }
+
+  document.getElementById('btn-export').addEventListener('click', function () {
+    state.showExport = !state.showExport;
+    this.setAttribute('aria-pressed', state.showExport);
+    render();
+    report('toggle', { series: 'export', active: state.showExport }, 'Xuat khau: ' + (state.showExport ? 'on' : 'off'), 'info');
+  });
+  document.getElementById('btn-import').addEventListener('click', function () {
+    state.showImport = !state.showImport;
+    this.setAttribute('aria-pressed', state.showImport);
+    render();
+    report('toggle', { series: 'import', active: state.showImport }, 'Nhap khau: ' + (state.showImport ? 'on' : 'off'), 'info');
+  });
+  document.getElementById('btn-sort').addEventListener('click', function () {
+    state.sorted = !state.sorted;
+    this.setAttribute('aria-pressed', state.sorted);
+    render();
+    report('sort', { sorted: state.sorted }, state.sorted ? 'Da sap xep' : 'Mac dinh', 'info');
+  });
+  render();
+})();
+</script>

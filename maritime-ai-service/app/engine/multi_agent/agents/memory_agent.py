@@ -418,6 +418,9 @@ class MemoryAgentNode:
             _host_prompt = state.get("host_context_prompt", "")
             if _host_prompt:
                 context_parts.append(_host_prompt)
+            _living_prompt = state.get("living_context_prompt", "")
+            if _living_prompt:
+                context_parts.append(_living_prompt)
             _widget_feedback_prompt = state.get("widget_feedback_prompt", "")
             if _widget_feedback_prompt:
                 context_parts.append(_widget_feedback_prompt)

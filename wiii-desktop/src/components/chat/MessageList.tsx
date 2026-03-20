@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { motion } from "motion/react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown } from "lucide-react";
 import type { ContentBlock, Message } from "@/api/types";
@@ -162,13 +162,13 @@ export function MessageList({
                   onSuggestedQuestion={onSuggestedQuestion}
                 />
 
-                {/* Sprint V5: Minimal-clean thinking indicator — only before ANY content arrives */}
-                {!visibleStreamingBlocks.length && !streamingContent && (
-                  <div className="thinking-indicator" aria-live="polite">
-                    <span className="thinking-indicator__spinner" />
-                    <span className="thinking-indicator__text">Đang suy nghĩ...</span>
-                  </div>
-                )}
+                {/* E1+E2: Thinking indicator with 800ms delay (skip shimmer for fast responses)
+                   and AnimatePresence fade-out for smooth transition */}
+                <AnimatePresence>
+                  {!visibleStreamingBlocks.length && !streamingContent && (
+                    <ThinkingIndicatorDelayed key="thinking-indicator" />
+                  )}
+                </AnimatePresence>
 
                 {streamingStartTime && (
                   <StreamingTimer startTime={streamingStartTime} />
@@ -203,6 +203,38 @@ export function MessageList({
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * E2: Delayed thinking indicator — skip spinner for responses < 800ms (AWS Cloudscape pattern).
+ * E1: AnimatePresence fade-out when content arrives.
+ */
+function ThinkingIndicatorDelayed() {
+  const [visible, setVisible] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    timerRef.current = setTimeout(() => setVisible(true), 800);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.25 }}
+      className="thinking-indicator"
+      aria-live="polite"
+    >
+      <span className="thinking-indicator__spinner" />
+      <span className="thinking-indicator__text">Đang suy nghĩ...</span>
+    </motion.div>
   );
 }
 

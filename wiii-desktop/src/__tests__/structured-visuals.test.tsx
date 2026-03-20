@@ -3,6 +3,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { VisualPayload } from "@/api/types";
 import { VisualBlock } from "@/components/chat/VisualBlock";
 import { useChatStore } from "@/stores/chat-store";
+import { useCodeStudioStore } from "@/stores/code-studio-store";
+import { useUIStore } from "@/stores/ui-store";
 
 vi.mock("@/components/common/InlineHtmlWidget", () => ({
   default: ({ code }: { code: string }) => <div data-testid="inline-widget">{code}</div>,
@@ -151,6 +153,13 @@ beforeEach(() => {
     _activeSubagentGroupId: null,
     streamError: "",
     streamCompletedAt: null,
+  });
+  useCodeStudioStore.setState({
+    activeSessionId: null,
+    sessions: {},
+  });
+  useUIStore.setState({
+    codeStudioPanelOpen: false,
   });
 });
 
@@ -391,6 +400,58 @@ describe("Structured visuals", () => {
     });
   });
 
+  it("does not crash when an app visual is delegated into the Code Studio panel", async () => {
+    const visual = makeVisual({
+      type: "simulation",
+      renderer_kind: "app",
+      shell_variant: "immersive",
+      patch_strategy: "app_state",
+      runtime: "sandbox_html",
+      fallback_html: "<div>Quiz runtime</div>",
+      controls: [],
+      annotations: [],
+    });
+
+    render(<VisualBlock block={{ type: "visual", id: visual.id, visual }} />);
+    expect(screen.getByTestId("embedded-app-frame").textContent).toContain("Quiz runtime");
+
+    act(() => {
+      useCodeStudioStore.setState({
+        activeSessionId: "vs-1",
+        sessions: {
+          "vs-1": {
+            sessionId: "vs-1",
+            title: "Quiz",
+            language: "html",
+            status: "complete",
+            code: "<div>Quiz runtime</div>",
+            versions: [
+              {
+                version: 1,
+                code: "<div>Quiz runtime</div>",
+                title: "Quiz",
+                timestamp: Date.now(),
+                visualPayload: visual,
+              },
+            ],
+            activeVersion: 1,
+            chunkCount: 1,
+            totalBytes: 24,
+            visualPayload: visual,
+            visualSessionId: "vs-1",
+            createdAt: Date.now(),
+            metadata: {},
+          },
+        },
+      });
+      useUIStore.setState({ codeStudioPanelOpen: true });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Đang mở trong Code Studio/i })).toBeTruthy();
+    });
+  });
+
   it("renders architecture visuals as connected layers", () => {
     const visual = makeVisual({
       type: "architecture",
@@ -508,6 +569,44 @@ describe("Structured visuals", () => {
     expect(screen.getAllByText("Average").length).toBeGreaterThan(0);
     expect(screen.getByText("Giá trị cao nhất")).toBeTruthy();
     expect(screen.getByText("Do tre tang manh o quy cuoi.")).toBeTruthy();
+  });
+
+  it("renders chart visuals when data is provided as label/value rows", () => {
+    const visual = makeVisual({
+      type: "chart",
+      title: "Container vessel speed",
+      summary: "Chart summary",
+      spec: {
+        title: "Toc do thiet ke trung binh cua tau container",
+        data: [
+          { label: "Feeder", value: 15 },
+          { label: "Panamax", value: 20 },
+          { label: "ULCV", value: 18 },
+        ],
+        caption: "Toc do thiet ke trung binh theo phan khuc tau.",
+      },
+      controls: [
+        {
+          id: "chart_style",
+          type: "chips",
+          label: "Chart style",
+          value: "bar",
+          options: [
+            { value: "bar", label: "Bar" },
+            { value: "line", label: "Line" },
+          ],
+        },
+      ],
+      annotations: [],
+    });
+
+    render(<VisualBlock block={{ type: "visual", id: visual.id, visual }} />);
+
+    expect(screen.getAllByText("Feeder").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Panamax").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("ULCV").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Series").length).toBeGreaterThan(0);
+    expect(screen.getByText("Toc do thiet ke trung binh theo phan khuc tau.")).toBeTruthy();
   });
 
   it("renders timeline visuals with an active milestone callout", () => {

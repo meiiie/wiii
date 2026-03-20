@@ -1,0 +1,230 @@
+<!--
+  STATE MODEL: segments[]{label,value,color}, mode('pie'|'donut'), hoveredIndex, selectedIndex
+  RENDER SURFACE: Inline SVG — pie/donut arcs with percentage labels, center stat, legend
+  CONTROLS: pie/donut toggle, segment click to select
+  READOUTS: selected segment name, value, percentage, center total
+  FEEDBACK: WiiiVisualBridge.reportResult on segment click and mode toggle
+-->
+<style>
+:root {
+  --bg: #0f172a;
+  --fg: #e2e8f0;
+  --accent: #38bdf8;
+  --accent-hover: #7dd3fc;
+  --surface: #1e293b;
+  --surface-alt: #334155;
+  --border: #475569;
+  --text-secondary: #94a3b8;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --radius: 8px;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc; --fg: #0f172a; --accent: #0284c7;
+    --accent-hover: #0369a1;
+    --surface: #ffffff; --surface-alt: #f1f5f9;
+    --border: #cbd5e1; --text-secondary: #64748b;
+    --success: #16a34a; --warning: #d97706; --danger: #dc2626;
+  }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--fg); }
+.pie-root {
+  max-width: 700px; margin: 0 auto; padding: 20px 16px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.pie-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+.pie-title { font-size: 16px; font-weight: 500; }
+.pie-subtitle { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.controls { display: flex; gap: 6px; }
+.toggle-btn {
+  padding: 6px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--text-secondary); font: 400 12px var(--font);
+  cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.toggle-btn:hover { color: var(--fg); background: var(--surface-alt); }
+.toggle-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toggle-btn[aria-pressed="true"] { background: var(--accent); color: #0f172a; border-color: var(--accent); font-weight: 500; }
+.chart-container { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; overflow: hidden; }
+.chart-container svg { display: block; width: 100%; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--text-secondary); }
+.legend-item { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: var(--radius); transition: background 0.15s; }
+.legend-item:hover { background: var(--surface-alt); }
+.legend-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.detail-bar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 20px; align-items: center; min-height: 48px; }
+.detail-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.3px; }
+.detail-value { font-size: 15px; font-weight: 500; color: var(--fg); }
+.detail-value.accent { color: var(--accent); }
+.detail-empty { font-size: 13px; color: var(--text-secondary); }
+.detail-metric { display: flex; flex-direction: column; gap: 2px; }
+.slice { cursor: pointer; transition: transform 0.2s ease; }
+.slice:hover { filter: brightness(1.15); }
+</style>
+
+<div class="pie-root">
+  <div class="pie-header">
+    <div>
+      <div class="pie-title">Co cau doi tau hang hai Viet Nam</div>
+      <div class="pie-subtitle">Phan bo theo loai tau — 2025</div>
+    </div>
+    <div class="controls">
+      <button class="toggle-btn" id="btn-pie" aria-pressed="true" aria-label="Bieu do tron">Pie</button>
+      <button class="toggle-btn" id="btn-donut" aria-pressed="false" aria-label="Bieu do donut">Donut</button>
+    </div>
+  </div>
+  <div class="chart-container">
+    <svg id="pie-svg" viewBox="0 0 500 400" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Bieu do tron co cau doi tau"></svg>
+  </div>
+  <div class="legend" id="legend"></div>
+  <div class="detail-bar" id="detail-bar" role="status" aria-live="polite">
+    <span class="detail-empty" id="detail-empty">Nhan vao phan de xem chi tiet</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var DATA = [
+    { label: 'Tau hang roi', value: 420, color: 'var(--accent)' },
+    { label: 'Tau container', value: 185, color: 'var(--warning)' },
+    { label: 'Tau dau', value: 150, color: 'var(--success)' },
+    { label: 'Tau du lich', value: 65, color: 'var(--danger)' },
+    { label: 'Tau keo', value: 95, color: '#a78bfa' },
+    { label: 'Khac', value: 45, color: 'var(--text-secondary)' }
+  ];
+  var TOTAL = DATA.reduce(function (s, d) { return s + d.value; }, 0);
+  var CX = 250, CY = 200, R = 150, IR = 85;
+  var state = { mode: 'pie', hovered: -1, selected: -1 };
+  var svg = document.getElementById('pie-svg');
+  var legendEl = document.getElementById('legend');
+  var detailBar = document.getElementById('detail-bar');
+  var detailEmpty = document.getElementById('detail-empty');
+  var NS = 'http://www.w3.org/2000/svg';
+
+  function report(k, p, s, st) {
+    if (window.WiiiVisualBridge && window.WiiiVisualBridge.reportResult)
+      window.WiiiVisualBridge.reportResult(k, p, s, st);
+  }
+  function el(tag, attrs) {
+    var n = document.createElementNS(NS, tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+    return n;
+  }
+
+  function describeArc(cx, cy, r, startAngle, endAngle) {
+    var s = { x: cx + r * Math.cos(startAngle), y: cy + r * Math.sin(startAngle) };
+    var e = { x: cx + r * Math.cos(endAngle), y: cy + r * Math.sin(endAngle) };
+    var large = endAngle - startAngle > Math.PI ? 1 : 0;
+    return 'M ' + s.x + ' ' + s.y + ' A ' + r + ' ' + r + ' 0 ' + large + ' 1 ' + e.x + ' ' + e.y;
+  }
+
+  function render() {
+    svg.innerHTML = '';
+    var isDonut = state.mode === 'donut';
+    var startAngle = -Math.PI / 2;
+
+    DATA.forEach(function (seg, i) {
+      var frac = seg.value / TOTAL;
+      var endAngle = startAngle + frac * Math.PI * 2;
+      var midAngle = startAngle + frac * Math.PI;
+      var isHov = state.hovered === i || state.selected === i;
+
+      var outerR = isHov ? R + 8 : R;
+      var innerR = isDonut ? (isHov ? IR - 2 : IR) : 0;
+
+      var d;
+      if (isDonut) {
+        var outerArc = describeArc(CX, CY, outerR, startAngle, endAngle);
+        var innerArc = describeArc(CX, CY, innerR, endAngle, startAngle);
+        d = outerArc + ' L ' + (CX + innerR * Math.cos(endAngle)) + ' ' + (CY + innerR * Math.sin(endAngle)) + ' ' + innerArc.replace('M', 'L') + ' Z';
+      } else {
+        d = 'M ' + CX + ' ' + CY + ' L ' + (CX + outerR * Math.cos(startAngle)) + ' ' + (CY + outerR * Math.sin(startAngle)) + ' A ' + outerR + ' ' + outerR + ' 0 ' + (frac > 0.5 ? 1 : 0) + ' 1 ' + (CX + outerR * Math.cos(endAngle)) + ' ' + (CY + outerR * Math.sin(endAngle)) + ' Z';
+      }
+
+      var path = el('path', {
+        d: d, fill: seg.color, opacity: isHov ? '1' : '0.85',
+        class: 'slice', 'data-idx': i, stroke: 'var(--surface)', 'stroke-width': '2',
+        role: 'button', tabindex: '0',
+        'aria-label': seg.label + ': ' + seg.value + ' (' + Math.round(frac * 100) + '%)'
+      });
+
+      (function (idx) {
+        path.addEventListener('mouseenter', function () { state.hovered = idx; render(); });
+        path.addEventListener('mouseleave', function () { state.hovered = -1; render(); });
+        path.addEventListener('click', function () { state.selected = state.selected === idx ? -1 : idx; render(); showDetail(idx); report('slice_click', { label: DATA[idx].label, value: DATA[idx].value }, DATA[idx].label, 'info'); });
+        path.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); state.selected = state.selected === idx ? -1 : idx; render(); showDetail(idx); } });
+      })(i);
+      svg.appendChild(path);
+
+      if (frac >= 0.05) {
+        var lr = outerR + 18;
+        var lx = CX + lr * Math.cos(midAngle);
+        var ly = CY + lr * Math.sin(midAngle);
+        var txt = el('text', {
+          x: lx, y: ly, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+          fill: 'var(--text-secondary)', 'font-size': '11', 'font-weight': '500',
+          'font-family': 'var(--font)', 'pointer-events': 'none'
+        });
+        txt.textContent = Math.round(frac * 100) + '%';
+        svg.appendChild(txt);
+      }
+
+      startAngle = endAngle;
+    });
+
+    if (isDonut) {
+      var totalTxt = el('text', { x: CX, y: CY - 8, 'text-anchor': 'middle', fill: 'var(--fg)', 'font-size': '24', 'font-weight': '600', 'font-family': 'var(--font)' });
+      totalTxt.textContent = TOTAL;
+      svg.appendChild(totalTxt);
+      var unitTxt = el('text', { x: CX, y: CY + 14, 'text-anchor': 'middle', fill: 'var(--text-secondary)', 'font-size': '11', 'font-family': 'var(--font)' });
+      unitTxt.textContent = 'tong so tau';
+      svg.appendChild(unitTxt);
+    }
+  }
+
+  function showDetail(idx) {
+    detailEmpty.style.display = 'none';
+    detailBar.querySelectorAll('.detail-metric').forEach(function (el) { el.remove(); });
+    var seg = DATA[idx]; var pct = Math.round(seg.value / TOTAL * 100);
+    var add = function (l, v, c) {
+      var m = document.createElement('div'); m.className = 'detail-metric';
+      var lb = document.createElement('span'); lb.className = 'detail-label'; lb.textContent = l;
+      var vl = document.createElement('span'); vl.className = 'detail-value' + (c ? ' accent' : ''); vl.textContent = v;
+      m.appendChild(lb); m.appendChild(vl); detailBar.appendChild(m);
+    };
+    add('Loai tau', seg.label, false);
+    add('So luong', seg.value + ' chiec', true);
+    add('Ty le', pct + '%', false);
+    add('Tong', TOTAL + ' chiec', false);
+  }
+
+  function buildLegend() {
+    legendEl.innerHTML = '';
+    DATA.forEach(function (seg, i) {
+      var item = document.createElement('div'); item.className = 'legend-item';
+      var sw = document.createElement('span'); sw.className = 'legend-swatch'; sw.style.background = seg.color;
+      var lbl = document.createElement('span'); lbl.textContent = seg.label + ' (' + seg.value + ')';
+      item.appendChild(sw); item.appendChild(lbl);
+      item.addEventListener('click', function () { state.selected = state.selected === i ? -1 : i; render(); showDetail(i); });
+      legendEl.appendChild(item);
+    });
+  }
+
+  document.getElementById('btn-pie').addEventListener('click', function () {
+    state.mode = 'pie';
+    this.setAttribute('aria-pressed', 'true');
+    document.getElementById('btn-donut').setAttribute('aria-pressed', 'false');
+    render(); report('mode', { mode: 'pie' }, 'Pie', 'info');
+  });
+  document.getElementById('btn-donut').addEventListener('click', function () {
+    state.mode = 'donut';
+    this.setAttribute('aria-pressed', 'true');
+    document.getElementById('btn-pie').setAttribute('aria-pressed', 'false');
+    render(); report('mode', { mode: 'donut' }, 'Donut', 'info');
+  });
+
+  render(); buildLegend();
+})();
+</script>

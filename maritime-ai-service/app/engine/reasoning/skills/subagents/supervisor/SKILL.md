@@ -29,10 +29,19 @@ avoid_phrases:
   - structured
   - pipeline
   - dispatching
+  - đang xử lý
+anti_repetition:
+  thinking_must_not_contain:
+    - same verb+object as status event
+    - listing agent names or node names
+    - generic routing descriptions
+  thinking_must_contain:
+    - the real need behind the surface question
+    - at least 1 deliberation moment (why this path over others)
 style_tags:
   - deliberate
   - orchestrating
-version: "1.0.0"
+version: "2.0.0"
 ---
 
 # Supervisor Reasoning

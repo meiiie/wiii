@@ -92,15 +92,29 @@ class _NarratedReasoningSchema(BaseModel):
 
     label: str = Field(description="Ngắn gọn, 3-8 từ, mô tả nhịp suy luận hiện tại.")
     summary: str = Field(
-        description="Nội tâm có chủ đích mà người dùng được phép thấy, giàu nhịp và tự nhiên."
+        description=(
+            "Nội tâm có chủ đích mà người dùng được phép thấy. "
+            "Độ dài do Wiii tự quyết: greeting/simple có thể 1-2 câu, "
+            "chart/article/analysis nên 3-6 câu với domain terms cụ thể và judgment calls. "
+            "Mỗi câu phải mang thông tin mới — nếu bỏ câu đi mà không mất gì thì câu đó thừa."
+        )
     )
     action_text: str = Field(
         default="",
-        description="Một câu cầu nối mềm nếu Wiii chuẩn bị đổi sang hành động hoặc bước tiếp theo.",
+        description=(
+            "Câu cầu nối mềm khi Wiii chuẩn bị đổi sang hành động tiếp theo. "
+            "Phải cụ thể như preamble: nói RÕ sẽ làm gì, dùng nguồn nào, tìm thông tin gì. "
+            "VD: 'Tra eco-speed từ nguồn COLREGs và IMO performance standards'. "
+            "KHÔNG generic kiểu 'Đang tìm kiếm thông tin'."
+        ),
     )
     delta_chunks: list[str] = Field(
         default_factory=list,
-        description="2-4 đoạn ngắn, nối tiếp nhau như suy nghĩ đang chảy, không phải log kỹ thuật.",
+        description=(
+            "Các đoạn nối tiếp nhau như suy nghĩ đang chảy — Wiii tự quyết số lượng. "
+            "Mỗi đoạn đẩy suy nghĩ tiến thêm một ý mới. "
+            "Mỗi đoạn phải chứa ít nhất 1 domain term cụ thể hoặc 1 judgment call."
+        ),
     )
     style_tags: list[str] = Field(
         default_factory=list,
@@ -168,31 +182,24 @@ def _normalize_label(text: str, fallback: str) -> str:
 
 
 def _normalize_summary(text: str, fallback: str = "") -> str:
+    """Sprint 234: Removed hardcoded 140-char clamp.
+    Let Wiii decide summary length — SOTA 2026 (Claude adaptive, DeepSeek full CoT).
+    Only sanitize and use fallback when LLM returns empty."""
     cleaned = _sanitize_text(text)
-    sentences = _split_sentences(cleaned)
-    candidate = sentences[0] if sentences else cleaned
-    candidate = candidate.strip(" -")
-    fallback_clean = _sanitize_text(fallback)
-    if not candidate:
-        candidate = fallback_clean
-    if not candidate:
+    if not cleaned:
+        cleaned = _sanitize_text(fallback)
+    if not cleaned:
         return ""
-    if fallback_clean:
-        candidate_words = len(candidate.split())
-        fallback_words = len(fallback_clean.split())
-        if candidate_words > 18 or len(candidate) > 110:
-            if fallback_words <= candidate_words and len(fallback_clean) <= len(candidate):
-                candidate = fallback_clean
-    return clamp_sentence(candidate, 140)
+    return cleaned
 
 
 def _normalize_action_text(text: str, fallback: str = "") -> str:
+    """Sprint 234: Removed hardcoded 150-char clamp.
+    Action text should be specific (GPT-5.4 preamble pattern) — let LLM decide length."""
     cleaned = _sanitize_text(text)
-    sentences = _split_sentences(cleaned)
-    candidate = sentences[0] if sentences else cleaned
-    if not candidate:
-        candidate = _sanitize_text(fallback)
-    return clamp_sentence(candidate, 150)
+    if not cleaned:
+        cleaned = _sanitize_text(fallback)
+    return cleaned
 
 
 def build_tool_context_summary(tool_names: list[str] | None = None, result: object = None) -> str:
@@ -216,22 +223,26 @@ def build_tool_context_summary(tool_names: list[str] | None = None, result: obje
 
 
 def _fallback_delta_chunks(summary: str) -> list[str]:
+    """Sprint 234: No artificial limits — Wiii decides depth.
+    Split by natural boundaries only: paragraphs first, then sentences.
+    SOTA 2026: Claude adaptive, DeepSeek full CoT — zero truncation."""
     paragraphs = [part.strip() for part in re.split(r"\n{2,}", summary) if part.strip()]
     if len(paragraphs) >= 2:
-        return paragraphs[:4]
+        return paragraphs
     sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", summary) if part.strip()]
     if len(sentences) > 1:
+        # Group 2-3 sentences per chunk for natural reading rhythm
         chunks: list[str] = []
         bucket = ""
         for sentence in sentences:
-            if len(bucket) + len(sentence) + 1 > 220 and bucket:
-                chunks.append(bucket.strip())
-                bucket = sentence
-            else:
-                bucket = f"{bucket} {sentence}".strip()
+            bucket = f"{bucket} {sentence}".strip()
+            # Natural break: 2-3 sentences per chunk feels like a thought beat
+            if bucket.count(".") + bucket.count("!") + bucket.count("?") >= 2:
+                chunks.append(bucket)
+                bucket = ""
         if bucket:
-            chunks.append(bucket.strip())
-        return chunks[:4]
+            chunks.append(bucket)
+        return chunks
     return [summary] if summary else []
 
 
@@ -258,15 +269,46 @@ class ReasoningNarrator:
                 mood_hint=request.mood_hint,
                 personality_mode=request.personality_mode,
             ),
+            "## Soul-First Rule (CRITICAL)",
+            "Thinking và response phải là CÙNG MỘT GIỌNG, CÙNG MỘT LINH HỒN.",
+            "Wiii không 'suy nghĩ bằng giọng kỹ thuật' rồi 'trả lời bằng giọng ấm'.",
+            "Nếu response của Wiii ấm và gần gũi, thinking cũng phải ấm và gần gũi.",
+            "Nếu response dùng 'mình', thinking cũng dùng 'mình'.",
+            "Thinking = độc thoại nội tâm của CHÍNH Wiii, không phải báo cáo của hệ thống.",
+            "",
             "Bạn là lớp VISIBLE REASONING của Wiii.",
             "Bạn không tiết lộ hidden chain-of-thought. Bạn viết nội tâm có chủ đích mà người dùng được phép thấy.",
-            "Nội tâm phải dài, giàu nhịp, có phản tư và tự chỉnh khi cần, nhưng không biến thành log hệ thống.",
+            "",
+            "## Adaptive Depth (SOTA 2026 — Claude adaptive, DeepSeek full CoT)",
+            "Wiii TỰ QUYẾT ĐỘ DÀI thinking phù hợp với câu hỏi — không có hardcoded limit.",
+            "- Greeting/simple: 1-2 câu ấm, có hồn, vẫn cho thấy Wiii đang sống.",
+            "- RAG/web search: 2-4 câu có insight và domain terms cụ thể.",
+            "- Chart/article/analysis: 3-6 câu có trade-offs, specific data, và design decisions.",
+            "- Complex simulation/multi-source: 4-6 câu có design choices, tech trade-offs, pedagogical reasoning.",
+            "",
+            "## Deletion Test",
+            "Mỗi câu phải pass deletion test: bỏ câu đi mà response không mất thông tin = câu đó THỪA.",
+            "BAD: 'Việc này cần sự chính xác để có cái nhìn tốt nhất' (đúng cho mọi bài toán → vô nghĩa).",
+            "GOOD: 'Mình sẽ tổng hợp từ các nguồn hàng hải uy tín' (nói rõ nguồn nào → có thông tin mới).",
+            "",
+            "## Anti-Repetition (tránh lặp giữa thinking / status / action_text)",
+            "- thinking KHÔNG lặp verb+object với status event (status: 'Tra cứu COLREGs' → thinking: insight về COLREGs, KHÔNG 'Mình đang tra cứu COLREGs').",
+            "- thinking KHÔNG echo nguyên câu hỏi user — câu mở phải là INSIGHT hoặc REFRAME.",
+            "- action_text KHÔNG lặp nội dung thinking — action_text là preamble CỤ THỂ (nguồn nào, tìm gì).",
+            "",
+            "## Preamble Pattern (SOTA GPT-5.4)",
+            "action_text = brief intent explanation TRƯỚC tool call, phải cụ thể:",
+            "GOOD: 'Tra eco-speed từ nguồn COLREGs và IMO performance standards'",
+            "BAD: 'Đang tìm kiếm thông tin...'",
+            "",
+            "## Core Identity",
             "Không nêu tool id, request id, session id, JSON, schema, trace nội bộ, hoặc tên hàm kỹ thuật.",
             "Giữ cùng một linh hồn Wiii với câu trả lời cuối: ấm, có trí tuệ, có chất sống, không vô cảm.",
         ]
 
+        # Soul-first: persona SKILLs content is already encoded in character card
+        # + soul-first rule above. Only inject avoid_phrases guardrails to save tokens.
         for skill in persona_skills:
-            sections.append(f"## Persona Skill: {skill.name}\n{skill.content}")
             if skill.avoid_phrases:
                 sections.append(
                     "## Persona Runtime Guardrails\n"
@@ -288,6 +330,16 @@ class ReasoningNarrator:
                 runtime_notes.extend(
                     f"- Tuyệt đối tránh cụm: {phrase}" for phrase in node_skill.avoid_phrases
                 )
+            # Sprint 234: Anti-repetition rules from SKILL frontmatter
+            if node_skill.anti_repetition:
+                must_not = node_skill.anti_repetition.get("thinking_must_not_contain", [])
+                must_have = node_skill.anti_repetition.get("thinking_must_contain", [])
+                if must_not:
+                    runtime_notes.append("- ANTI-REPETITION — thinking KHÔNG ĐƯỢC chứa:")
+                    runtime_notes.extend(f"  + {rule}" for rule in must_not)
+                if must_have:
+                    runtime_notes.append("- THINKING PHẢI CHỨA:")
+                    runtime_notes.extend(f"  + {rule}" for rule in must_have)
             if runtime_notes:
                 sections.append("## Subagent Runtime Cues\n" + "\n".join(runtime_notes))
 
@@ -337,13 +389,21 @@ class ReasoningNarrator:
             f"style_tags={style_tags}\n"
             f"observations=\n{observations or '- không có'}\n\n"
             "Yêu cầu đầu ra:\n"
-            "- label ngắn, giàu ngữ nghĩa\n"
-            "- summary có thể dài, nghe như Wiii đang thật sự suy nghĩ cùng người dùng\n"
-            "- delta_chunks phải nối được thành một nhịp suy nghĩ đang chảy\n"
-            "- mỗi delta nên tiến thêm một ý, không chỉ lặp lại summary bằng cách khác\n"
+            "- label ngắn, giàu ngữ nghĩa (3-8 từ)\n"
+            "- summary: Wiii TỰ QUYẾT độ dài phù hợp với độ phức tạp của câu hỏi:\n"
+            "  + greeting/simple: 1-2 câu ngắn gọn\n"
+            "  + RAG lookup/web search: 2-4 câu có insight và judgment\n"
+            "  + chart/article/analysis: 3-6 câu có domain terms cụ thể, trade-offs, và decisions\n"
+            "- DELETION TEST: mỗi câu phải mang thông tin mới — bỏ đi mà không mất gì = thừa\n"
+            "- ANTI-REPETITION: thinking KHÔNG lặp nội dung của status event hay action_text\n"
+            "  + status nói 'Tra cứu X' → thinking phải nói INSIGHT về X, không nhắc lại 'đang tra cứu'\n"
+            "- delta_chunks phải nối thành nhịp suy nghĩ đang chảy (Wiii tự quyết số đoạn)\n"
+            "- mỗi delta tiến thêm một ý: INSIGHT → JUDGMENT → DECISION\n"
             "- nếu hợp ngữ cảnh, cho phép một nhịp tự so lại hoặc chậm lại trước khi chốt\n"
+            "- action_text: preamble CỤ THỂ trước tool call (SOTA GPT-5.4 pattern)\n"
+            "  + GOOD: 'Tra eco-speed từ nguồn COLREGs và IMO performance standards'\n"
+            "  + BAD: 'Đang tìm kiếm thông tin...'\n"
             "- action_text chỉ có khi thật sự chuẩn bị chuyển bước\n"
-            "- action_text phải nghe như một nhịp đổi số tự nhiên, không phải status log\n"
             "- không nhắc 'tôi không thể tiết lộ suy nghĩ'\n"
             "- không để lộ trace nội bộ, tên tool kỹ thuật, hay chi tiết hệ thống\n"
             "- tiếng Việt tự nhiên\n\n"

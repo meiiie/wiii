@@ -105,7 +105,8 @@ function summarizeContent(value?: string): string | undefined {
     .map((line) => cleanSentence(line))
     .find((line) => line.length > 0);
   if (!firstLine) return undefined;
-  return truncateText(firstLine, 108);
+  // Sprint 234: Increased from 108→180 to match backend adaptive thinking depth
+  return truncateText(firstLine, 180);
 }
 
 function getNodeCopy(node?: string) {
@@ -231,7 +232,8 @@ function buildJourney(blocks: ContentBlock[], phases: ThinkingPhase[], fallbackL
 
   const activeStep = [...steps].reverse().find((step) => step.status === "active") || steps[steps.length - 1];
   const completedCount = steps.filter((step) => step.status === "completed").length;
-  const visibleLabels = Array.from(new Set(steps.map((step) => step.label))).slice(0, 4);
+  // Sprint 234: Increased from 4→6 for complex multi-tool thinking flows
+  const visibleLabels = Array.from(new Set(steps.map((step) => step.label))).slice(0, 6);
   const lowerLabels = visibleLabels.map((label) => toSentenceCase(label));
   const headline = isStreaming
     ? `Wiii dang ${toSentenceCase(activeStep?.label || "xu ly yeu cau")}`
@@ -318,7 +320,8 @@ export function ThinkingJourneyBanner({
 
       {journey.steps.length > 0 && (
         <div className="thinking-journey__chips">
-          {journey.steps.slice(0, 4).map((step) => (
+          {/* Sprint 234: 4→6 for multi-tool thinking */}
+          {journey.steps.slice(0, 6).map((step) => (
             <span
               key={step.id}
               className={`thinking-journey__chip ${

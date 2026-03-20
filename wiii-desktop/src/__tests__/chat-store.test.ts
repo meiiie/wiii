@@ -192,6 +192,18 @@ describe("Chat Store — Streaming", () => {
     );
   });
 
+  it("should dedupe identical streaming thinking lines when narrator repeats itself", () => {
+    useChatStore.getState().startStreaming();
+
+    useChatStore.getState().setStreamingThinking("Mình đang nghe xem câu này thực sự cần gì.");
+    useChatStore.getState().setStreamingThinking("Mình đang nghe xem câu này thực sự cần gì.");
+
+    const state = useChatStore.getState();
+    expect(state.streamingThinking).toBe("Mình đang nghe xem câu này thực sự cần gì.");
+    expect(state.streamingBlocks).toHaveLength(1);
+    expect(state.streamingBlocks[0]?.type).toBe("thinking");
+  });
+
   it("should set streaming step", () => {
     useChatStore.getState().startStreaming();
     useChatStore.getState().setStreamingStep("retrieval");

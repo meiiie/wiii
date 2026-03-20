@@ -65,7 +65,7 @@ test.describe("code studio runtime", () => {
     await expect
       .poll(async () => {
         const doneText = await panel.innerText();
-        return doneText.includes("Da xong");
+        return /da xong|đã xong/i.test(doneText);
       }, {
         timeout: 120_000,
         intervals: [1_000, 1_500, 2_000],
@@ -73,7 +73,7 @@ test.describe("code studio runtime", () => {
       .toBe(true);
 
     await expect(panel.locator("iframe").first()).toBeVisible({ timeout: 120_000 });
-    await expect(inlineCard).toContainText("Code Studio");
+    await expect(inlineCard.getByRole("button", { name: /xem code/i })).toBeVisible();
 
     await sendPrompt(page, FOLLOWUP_PROMPT);
 
@@ -92,7 +92,7 @@ test.describe("code studio runtime", () => {
       .toEqual(["v1", "v2"]);
 
     await expect(panel.locator("iframe").first()).toBeVisible({ timeout: 120_000 });
-    await expect(inlineCard).toContainText("Code Studio");
+    await expect(inlineCard.getByRole("button", { name: /xem code/i })).toBeVisible();
 
     await page.screenshot({
       path: testInfo.outputPath("code-studio-runtime.png"),
@@ -111,7 +111,7 @@ test.describe("code studio runtime", () => {
     await sendPrompt(page, VN_INITIAL_PROMPT);
     await expect(panel).toBeVisible({ timeout: 120_000 });
     await expect
-      .poll(async () => (await panel.innerText()).includes("Da xong"), {
+      .poll(async () => /da xong|đã xong/i.test(await panel.innerText()), {
         timeout: 120_000,
         intervals: [1_000, 1_500, 2_000],
       })

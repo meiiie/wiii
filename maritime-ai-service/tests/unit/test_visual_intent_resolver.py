@@ -165,6 +165,31 @@ def test_resolves_embeddable_html_app_as_artifact():
     assert decision.thinking_floor == "high"
 
 
+def test_quiz_creation_request_routes_to_code_studio():
+    decision = resolve_visual_intent("Tao cho minh quizz gom 30 cau hoi ve tieng Trung de luyen tap")
+    assert decision.mode == "app"
+    assert decision.force_tool is True
+    assert decision.presentation_intent == "code_studio_app"
+    assert decision.preferred_tool == "tool_create_visual_code"
+    assert decision.studio_lane == "app"
+
+
+def test_plain_quiz_request_without_creation_verbs_stays_text():
+    decision = resolve_visual_intent("Cho minh bo quiz tieng Trung de on tap")
+    assert decision.mode == "text"
+    assert decision.force_tool is False
+    assert decision.presentation_intent == "text"
+
+
+def test_interactive_quiz_widget_request_routes_to_code_studio():
+    decision = resolve_visual_intent("Tao mot interactive quiz widget HTML tuong tac trong chat")
+    assert decision.mode == "app"
+    assert decision.force_tool is True
+    assert decision.presentation_intent == "code_studio_app"
+    assert decision.preferred_tool == "tool_create_visual_code"
+    assert decision.studio_lane == "app"
+
+
 def test_ignores_false_positive_visual_terms():
     decision = resolve_visual_intent("Visual Studio Code khac Visual Basic the nao?")
     assert decision.mode == "text"
