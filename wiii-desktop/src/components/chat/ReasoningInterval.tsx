@@ -379,6 +379,11 @@ export function ReasoningInterval({
           {interval.isLive && (
             <span className="reasoning-interval__live-dot" />
           )}
+          {interval.node && (
+            <span className="reasoning-interval__agent-chip">
+              {getNodeLabel(interval.node)}
+            </span>
+          )}
           <span className="reasoning-interval__header-label">{title}</span>
           <svg
             width="12" height="12" viewBox="0 0 20 20" fill="currentColor"

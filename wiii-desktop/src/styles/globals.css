@@ -2061,9 +2061,97 @@ html.dark .shiki span {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent);
-  animation: pulse-dot 1.5s infinite;
+  background: var(--accent-orange);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-orange) 15%, transparent);
+  animation: thinking-journey-pulse 1.2s ease-in-out infinite;
   flex-shrink: 0;
+}
+
+/* Phase2: Shimmer on live header label text — shows active agent thinking */
+.reasoning-interval--live .reasoning-interval__header-label {
+  --_label-base: color-mix(in srgb, var(--text-secondary) 82%, var(--text-tertiary));
+  background: linear-gradient(
+    90deg,
+    var(--_label-base) 0%,
+    var(--_label-base) 35%,
+    var(--accent-orange, #AE5630) 50%,
+    var(--_label-base) 65%,
+    var(--_label-base) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 2.5s ease-in-out infinite;
+}
+
+/* Phase2: Agent handoff chip — shows which agent is processing */
+.reasoning-interval__agent-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  white-space: nowrap;
+  border: 1px solid color-mix(in srgb, var(--accent-orange) 18%, transparent);
+  background: color-mix(in srgb, var(--accent-orange) 6%, transparent);
+  color: var(--accent-orange);
+  transition: background 300ms, border-color 300ms;
+}
+
+/* Shimmer on agent chip when live */
+.reasoning-interval--live .reasoning-interval__agent-chip {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-orange) 6%, transparent) 0%,
+    color-mix(in srgb, var(--accent-orange) 6%, transparent) 35%,
+    color-mix(in srgb, var(--accent-orange) 16%, transparent) 50%,
+    color-mix(in srgb, var(--accent-orange) 6%, transparent) 65%,
+    color-mix(in srgb, var(--accent-orange) 6%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: thinking-shimmer 2.5s ease-in-out infinite;
+}
+
+/* Completed agent chip — muted */
+.reasoning-interval--complete .reasoning-interval__agent-chip {
+  opacity: 0.6;
+}
+
+/* Shimmer bar under active operation segments (agent handoff indicator) */
+.reasoning-interval--live .reasoning-interval__segment--operation:last-child::after {
+  content: '';
+  display: block;
+  height: 1.5px;
+  margin-top: 8px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-orange, #AE5630), transparent);
+  background-size: 200% 100%;
+  animation: thinking-shimmer 2s ease-in-out infinite;
+  opacity: 0.4;
+}
+
+/* Shimmer on routing/pending operation labels when live */
+.reasoning-interval--live .reasoning-op-row--default .reasoning-op-row__label,
+.reasoning-interval--live .reasoning-op-row--pending .reasoning-op-row__label {
+  --_op-base: color-mix(in srgb, var(--accent-orange) 72%, var(--text-secondary));
+  background: linear-gradient(
+    90deg,
+    var(--_op-base) 0%,
+    var(--_op-base) 35%,
+    var(--accent-orange) 50%,
+    var(--_op-base) 65%,
+    var(--_op-base) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 2.5s ease-in-out infinite;
 }
 .reasoning-interval__collapse {
   display: grid;
