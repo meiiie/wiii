@@ -405,8 +405,11 @@ export function ReasoningInterval({
         >
           <div className="reasoning-interval__collapse-inner">
             <div className="reasoning-interval__rail-layout">
-              {/* Left rail: vertical line */}
+              {/* Left rail: clock node icon + vertical line (Claude pattern) */}
               <div className="reasoning-interval__rail-track" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-tertiary)', opacity: 0.5 }}>
+                  <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                </svg>
                 <div className="reasoning-interval__rail-line" />
               </div>
               {/* Right: thinking content */}

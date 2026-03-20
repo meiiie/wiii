@@ -2076,34 +2076,35 @@ html.dark .shiki span {
 }
 
 /* Phase2: Collapsible header — word-wrap fix + readable sizing */
+/* Claude-reference: header = icon + summary, separate row, mb-4 (16px) */
 .reasoning-interval__header-btn {
   display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  width: 100%;
-  padding: 3px 0;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: 100%;
+  padding: 0;
+  margin-bottom: 16px;
   background: none;
   border: none;
   cursor: pointer;
   text-align: left;
-  color: var(--text-tertiary);
-  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 500;
   line-height: 1.5;
   transition: color 150ms;
 }
 .reasoning-interval__header-btn:hover {
-  color: var(--text-secondary);
+  color: var(--text);
 }
 .reasoning-interval__header-btn:disabled {
   cursor: default;
 }
-/* Live interval header: slightly larger, use secondary color */
 .reasoning-interval--live .reasoning-interval__header-btn {
-  font-size: 0.85rem;
-  color: color-mix(in srgb, var(--text-secondary) 82%, var(--text-tertiary));
-  padding: 4px 0;
+  color: color-mix(in srgb, var(--text-secondary) 85%, var(--text));
 }
-/* Fix #1: Text overflow — label wraps properly, no single-line clipping */
+/* Header label: 2-line clamp, proper wrap */
 .reasoning-interval__header-label {
   flex: 1;
   min-width: 0;
@@ -2226,51 +2227,75 @@ html.dark .shiki span {
   min-width: 0;
 }
 
-/* Claude pattern: Rail layout — vertical line on left, content on right */
+/* Claude-reference: flex gap-4, left rail w-5 (20px), right content flex-1 */
 .reasoning-interval__rail-layout {
   display: flex;
-  gap: 14px;
+  gap: 16px;
 }
 .reasoning-interval__rail-track {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 2px;
+  width: 20px;
   flex-shrink: 0;
-  padding-top: 2px;
 }
+/* Clock icon node on the rail — bg-white to cut through the line */
+.reasoning-interval__rail-track > svg {
+  position: relative;
+  z-index: 1;
+  background: var(--surface);
+  padding: 2px 0;
+}
+/* Vertical line: 2px bg-gray-200, starts below icon, runs to bottom */
 .reasoning-interval__rail-line {
+  position: absolute;
+  top: 24px;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
   width: 2px;
-  flex: 1;
-  min-height: 16px;
   border-radius: 1px;
-  background: color-mix(in srgb, var(--border) 60%, transparent);
+  background: color-mix(in srgb, var(--border) 50%, transparent);
 }
 .reasoning-interval--live .reasoning-interval__rail-line {
-  background: color-mix(in srgb, var(--accent-orange) 30%, var(--border));
+  background: color-mix(in srgb, var(--accent-orange) 25%, var(--border));
 }
+/* Right content: flex-1, pb-6 pt-1 (matching Claude reference) */
 .reasoning-interval__rail-content {
   flex: 1;
   min-width: 0;
-  padding-bottom: 8px;
+  padding-top: 4px;
+  padding-bottom: 24px;
 }
 
-/* Header clock icon for completed intervals */
+/* Header icon: clock for completed, sparkle/live-dot for streaming */
 .reasoning-interval__header-icon {
   flex-shrink: 0;
-  color: var(--text-tertiary);
-  opacity: 0.6;
+  color: var(--accent-orange);
+  opacity: 0.7;
 }
 
-/* Phase2: Thinking text — distinct from answer but readable (sans-serif, secondary color) */
+/* Claude-reference: text-[15px] text-gray-700 leading-[1.6] — readable, breathing room */
 .reasoning-interval__thinking {
-  color: var(--text-secondary);
+  color: color-mix(in srgb, var(--text) 82%, var(--text-secondary));
   font-family: var(--font-body);
-  font-size: 0.9rem;
-  line-height: 1.625;
+  font-size: 15px;
+  line-height: 1.6;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+/* Claude-reference: inline code = bg-red-50 text-[#A03A3A] border-red-100 */
+.reasoning-interval__thinking code {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  color: color-mix(in srgb, var(--accent) 75%, var(--text));
+  border: 1px solid color-mix(in srgb, var(--accent) 15%, transparent);
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  font-weight: 400;
 }
 
 /* Shimmer on thinking text while streaming — "dòng điện tư duy" effect */
@@ -2300,8 +2325,9 @@ html.dark .shiki span {
   animation: none;
 }
 
+/* Claude-reference: mb-4 (16px) between paragraphs — clear step-by-step feel */
 .reasoning-interval__thinking p {
-  margin-bottom: 0.75rem;
+  margin-bottom: 16px;
 }
 
 .reasoning-interval__thinking p:last-child {
