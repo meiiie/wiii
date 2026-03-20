@@ -67,34 +67,35 @@ function getNodeLabel(node?: string) {
   return NODE_LABELS[normalizeNode(node)] || node || "Đang suy luận";
 }
 
-// Wiii-voice fallback labels (Tier 2) — used when LLM doesn't emit <label>
-const WIII_FALLBACK_LABELS = [
-  "Wiii đang suy nghĩ~ (˶˃ ᵕ ˂˶)",
-  "Hmm chờ Wiii chút nha...",
-  "Để Wiii kiểm tra lại~",
+// Wiii-voice fallback labels (Tier 2) — used when no persona_label received
+const WIII_FALLBACK_LABELS_LIVE = "Wiii đang suy nghĩ~ (˶˃ ᵕ ˂˶)";
+const WIII_FALLBACK_LABELS_DONE = [
+  "Wiii đã nghĩ xong~ (˶˃ ᵕ ˂˶)",
+  "Hmm Wiii suy nghĩ rồi nè~",
+  "Wiii đã xem xong ≽^•⩊•^≼",
 ];
 
+// Detect genuine Wiii persona labels (contain kaomoji, ~, Wiii, emoji patterns)
+const PERSONA_MARKER = /[~≽˶╥⊙¬ᕙ•̀ᴗ•́و\u{1F600}-\u{1F64F}\u{2728}\u{1F31F}]|Wiii/u;
+
 /**
- * Header label: ONLY persona labels, NEVER node/technical labels.
+ * Header label: ONLY Wiii persona labels from tool_think's persona_label field.
+ * Everything else (phase names, node names, technical text) → fallback.
  *
- * Priority (Hybrid 3-tier):
- * 1. LLM-emitted label (from thinking stream, parsed by backend)
- * 2. Wiii-voice fallback from pool
- * NEVER: "ĐIỀU HƯỚNG", "TRỰC TIẾP", "GIẢI THÍCH" (those are body tags)
+ * Rule: If it doesn't SOUND like Wiii, it doesn't go on the header.
  */
 function getIntervalHeaderLabel(interval: ReasoningIntervalViewModel) {
-  // Tier 1: LLM-emitted label (arrives via interval.label from backend <label> parsing)
+  // Tier 1: Only accept labels that are genuine persona labels from tool_think
   if (interval.label?.trim()) {
     const label = interval.label.trim();
-    // Only use if it looks like a persona label (short, not a technical node name)
-    if (label.length <= 60 && !Object.values(NODE_LABELS).includes(label)) {
+    if (PERSONA_MARKER.test(label)) {
       return label;
     }
   }
 
-  // Tier 2: Wiii-voice fallback
-  if (interval.isLive) return WIII_FALLBACK_LABELS[0];
-  return WIII_FALLBACK_LABELS[Math.floor(Math.random() * WIII_FALLBACK_LABELS.length)];
+  // Tier 2: Wiii-voice fallback (ALWAYS cute, never technical)
+  if (interval.isLive) return WIII_FALLBACK_LABELS_LIVE;
+  return WIII_FALLBACK_LABELS_DONE[Math.floor(Math.random() * WIII_FALLBACK_LABELS_DONE.length)];
 }
 
 /** Full summary for the expanded body preview. */
