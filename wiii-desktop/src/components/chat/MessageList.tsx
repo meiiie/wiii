@@ -171,7 +171,10 @@ export function MessageList({
                 </AnimatePresence>
 
                 {streamingStartTime && (
-                  <StreamingTimer startTime={streamingStartTime} />
+                  <StreamingTimer
+                    startTime={streamingStartTime}
+                    hasAnswer={Boolean(streamingContent?.trim())}
+                  />
                 )}
 
                 {streamingSources && streamingSources.length > 0 && (
@@ -238,7 +241,7 @@ function ThinkingIndicatorDelayed() {
   );
 }
 
-function StreamingTimer({ startTime }: { startTime: number }) {
+function StreamingTimer({ startTime, hasAnswer }: { startTime: number; hasAnswer?: boolean }) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -249,13 +252,25 @@ function StreamingTimer({ startTime }: { startTime: number }) {
     return () => clearInterval(timer);
   }, [startTime]);
 
+  const timeStr = elapsed >= 60
+    ? `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`
+    : `${elapsed}s`;
+
+  // Phase2: When answer content is already visible, show reassuring "received" state
+  // instead of ambiguous pulsing timer that looks like the system is stuck
+  if (hasAnswer) {
+    return (
+      <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-text-tertiary">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500/70" />
+        <span>Đã nhận phản hồi</span>
+        <span className="tabular-nums opacity-60">{timeStr}</span>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-text-tertiary animate-pulse">
-      <span className="tabular-nums">
-        {elapsed >= 60
-          ? `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`
-          : `${elapsed}s`}
-      </span>
+      <span className="tabular-nums">{timeStr}</span>
     </div>
   );
 }

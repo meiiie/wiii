@@ -31,7 +31,9 @@ import type {
 const MAX_SSE_RETRIES = 3;
 const SSE_BACKOFF_MS = 1000; // 1s, 2s, 4s
 const SSE_IDLE_TIMEOUT_MS = 30_000;
+const SSE_HARD_MAX_TIMEOUT_MS = 180_000; // Phase2: 3-min hard cap — force-finalize safety net
 const IDLE_TIMEOUT_ABORT_REASON = "stream_idle_timeout";
+const HARD_TIMEOUT_ABORT_REASON = "stream_hard_timeout";
 const STREAM_RESTART_ABORT_REASON = "stream_restart";
 const USER_CANCEL_ABORT_REASON = "user_cancel";
 const TRACE_SSE = import.meta.env.DEV;
@@ -133,6 +135,7 @@ export function useSSEStream() {
   const thinkingNodeRef = useRef<string | undefined>(undefined);
   const thinkingMetaRef = useRef<DisplayPresentationMeta | undefined>(undefined);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const eventOrderRef = useRef<string[]>([]);
   // Track whether code_open was emitted this turn — used to suppress
   // duplicate ToolExecutionStrip for tool_create_visual_code.
@@ -142,6 +145,10 @@ export function useSSEStream() {
     if (idleTimerRef.current) {
       clearTimeout(idleTimerRef.current);
       idleTimerRef.current = null;
+    }
+    if (hardTimerRef.current) {
+      clearTimeout(hardTimerRef.current);
+      hardTimerRef.current = null;
     }
   }, []);
 
@@ -190,7 +197,11 @@ export function useSSEStream() {
   }, [clearIdleGuard, hasStreamingOutput]);
 
   const scheduleIdleGuard = useCallback(() => {
-    clearIdleGuard();
+    // Clear only the idle timer (not the hard timer)
+    if (idleTimerRef.current) {
+      clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = null;
+    }
     if (!abortRef.current) return;
 
     idleTimerRef.current = setTimeout(() => {
@@ -204,7 +215,23 @@ export function useSSEStream() {
       abortRef.current.abort(IDLE_TIMEOUT_ABORT_REASON);
       finalizeFromTransport("idle_timeout");
     }, SSE_IDLE_TIMEOUT_MS);
-  }, [clearIdleGuard, finalizeFromTransport]);
+
+    // Phase2: Hard max timeout — one-shot, never resets. Force-finalize after 3 minutes
+    // even if events are still arriving (prevents UI stuck indefinitely)
+    if (!hardTimerRef.current) {
+      hardTimerRef.current = setTimeout(() => {
+        if (!abortRef.current || abortRef.current.signal.aborted) return;
+        if (!useChatStore.getState().isStreaming) return;
+
+        if (TRACE_SSE) {
+          console.debug("[SSE] hard-timeout", { eventOrder: [...eventOrderRef.current] });
+        }
+
+        abortRef.current.abort(HARD_TIMEOUT_ABORT_REASON);
+        finalizeFromTransport("done");
+      }, SSE_HARD_MAX_TIMEOUT_MS);
+    }
+  }, [finalizeFromTransport]);
 
   const traceEvent = useCallback((eventType: string, payload?: unknown) => {
     eventOrderRef.current.push(eventType);
