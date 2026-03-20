@@ -1916,13 +1916,30 @@ html.dark .shiki span {
 }
 
 /* ===== Sprint 240: Interleaved reasoning UI ===== */
-/* Sprint V5: Claude-like thin interval — no rail dot, just label + chevron */
+/* Sprint V5 → Phase2: Claude/ChatGPT-pattern — progressive disclosure, collapsed by default */
 .reasoning-interval {
   position: relative;
-  margin: 0.1rem 0 0.4rem;
-  padding-left: 0.5rem;
+  margin: 0 0 0.2rem;
+  padding-left: 0;
   overflow: hidden;
   min-width: 0;
+}
+
+/* Completed intervals: ultra-compact receipt-style */
+.reasoning-interval--complete {
+  margin: 0 0 0.1rem;
+  opacity: 0.7;
+  transition: opacity 200ms;
+}
+.reasoning-interval--complete:hover {
+  opacity: 0.9;
+}
+
+/* Live interval: visual anchor with left accent */
+.reasoning-interval--live {
+  margin: 0.15rem 0 0.3rem;
+  padding-left: 0.65rem;
+  border-left: 2px solid var(--accent-orange);
 }
 
 .reasoning-interval__rail {
@@ -1964,7 +1981,7 @@ html.dark .shiki span {
 .reasoning-interval__main {
   min-width: 0;
   display: grid;
-  gap: 0.45rem;
+  gap: 0.2rem;
 }
 
 .reasoning-interval__meta {
@@ -2019,19 +2036,19 @@ html.dark .shiki span {
   min-width: 0;
 }
 
-/* Sprint V5: Claude-pattern collapsible thinking interval */
+/* Phase2: Claude-pattern collapsible header — compact for completed, prominent for live */
 .reasoning-interval__header-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   width: 100%;
-  padding: 4px 0;
+  padding: 2px 0;
   background: none;
   border: none;
   cursor: pointer;
   text-align: left;
-  color: color-mix(in srgb, var(--text-secondary) 82%, var(--text-tertiary));
-  font-size: 0.8rem;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
   line-height: 1.4;
   transition: color 150ms;
 }
@@ -2040,6 +2057,12 @@ html.dark .shiki span {
 }
 .reasoning-interval__header-btn:disabled {
   cursor: default;
+}
+/* Live interval header: slightly larger, use secondary color */
+.reasoning-interval--live .reasoning-interval__header-btn {
+  font-size: 0.78rem;
+  color: color-mix(in srgb, var(--text-secondary) 82%, var(--text-tertiary));
+  padding: 3px 0;
 }
 .reasoning-interval__header-label {
   flex: 1;
@@ -2052,10 +2075,13 @@ html.dark .shiki span {
   flex-shrink: 0;
   transition: transform 200ms ease-out;
   transform: rotate(-90deg);
-  opacity: 0.6;
+  opacity: 0.35;
 }
 .reasoning-interval__chevron--open {
   transform: rotate(0deg);
+}
+.reasoning-interval--live .reasoning-interval__chevron {
+  opacity: 0.5;
 }
 .reasoning-interval__live-dot {
   width: 6px;
@@ -2085,41 +2111,36 @@ html.dark .shiki span {
   animation: thinking-shimmer 2.5s ease-in-out infinite;
 }
 
-/* Phase2: Agent handoff chip — shows which agent is processing */
+/* Phase2: Agent chip — ONLY visible on live intervals (Claude pattern: minimal clutter) */
 .reasoning-interval__agent-chip {
+  display: none; /* Hidden by default — progressive disclosure */
+}
+
+/* Show agent chip only on live intervals */
+.reasoning-interval--live .reasoning-interval__agent-chip {
   display: inline-flex;
   align-items: center;
-  padding: 1px 7px;
+  padding: 1px 6px;
   border-radius: 999px;
-  font-size: 0.56rem;
+  font-size: 0.54rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   flex-shrink: 0;
   white-space: nowrap;
-  border: 1px solid color-mix(in srgb, var(--accent-orange) 18%, transparent);
-  background: color-mix(in srgb, var(--accent-orange) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-orange) 22%, transparent);
+  background: color-mix(in srgb, var(--accent-orange) 8%, transparent);
   color: var(--accent-orange);
-  transition: background 300ms, border-color 300ms;
-}
-
-/* Shimmer on agent chip when live */
-.reasoning-interval--live .reasoning-interval__agent-chip {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent-orange) 6%, transparent) 0%,
-    color-mix(in srgb, var(--accent-orange) 6%, transparent) 35%,
-    color-mix(in srgb, var(--accent-orange) 16%, transparent) 50%,
-    color-mix(in srgb, var(--accent-orange) 6%, transparent) 65%,
-    color-mix(in srgb, var(--accent-orange) 6%, transparent) 100%
-  );
-  background-size: 200% 100%;
   animation: thinking-shimmer 2.5s ease-in-out infinite;
-}
-
-/* Completed agent chip — muted */
-.reasoning-interval--complete .reasoning-interval__agent-chip {
-  opacity: 0.6;
+  background-size: 200% 100%;
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-orange) 8%, transparent) 0%,
+    color-mix(in srgb, var(--accent-orange) 8%, transparent) 35%,
+    color-mix(in srgb, var(--accent-orange) 18%, transparent) 50%,
+    color-mix(in srgb, var(--accent-orange) 8%, transparent) 65%,
+    color-mix(in srgb, var(--accent-orange) 8%, transparent) 100%
+  );
 }
 
 /* Shimmer bar under active operation segments (agent handoff indicator) */
@@ -2162,10 +2183,12 @@ html.dark .shiki span {
   min-width: 0;
 }
 
+/* Phase2: Thinking text — clearly distinct from answer (smaller, sans-serif, muted) */
 .reasoning-interval__thinking {
-  color: color-mix(in srgb, var(--text) 82%, var(--text-tertiary));
-  font-size: 0.92rem;
-  line-height: 1.78;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  line-height: 1.65;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -2232,19 +2255,22 @@ html.dark .shiki span {
 }
 
 .reasoning-op-row__label {
-  color: color-mix(in srgb, var(--accent-orange) 72%, var(--text-secondary));
-  font-size: 0.62rem;
+  color: color-mix(in srgb, var(--accent-orange) 60%, var(--text-tertiary));
+  font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .reasoning-op-row__text {
-  color: var(--text-secondary);
-  font-size: 0.81rem;
-  line-height: 1.65;
+  color: var(--text-tertiary);
+  font-size: 0.74rem;
+  line-height: 1.55;
   overflow-wrap: anywhere;
   word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .reasoning-op-row--success .reasoning-op-row__icon,
