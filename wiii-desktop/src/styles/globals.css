@@ -2226,6 +2226,43 @@ html.dark .shiki span {
   min-width: 0;
 }
 
+/* Claude pattern: Rail layout — vertical line on left, content on right */
+.reasoning-interval__rail-layout {
+  display: flex;
+  gap: 14px;
+}
+.reasoning-interval__rail-track {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 2px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+.reasoning-interval__rail-line {
+  width: 2px;
+  flex: 1;
+  min-height: 16px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--border) 60%, transparent);
+}
+.reasoning-interval--live .reasoning-interval__rail-line {
+  background: color-mix(in srgb, var(--accent-orange) 30%, var(--border));
+}
+.reasoning-interval__rail-content {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 8px;
+}
+
+/* Header clock icon for completed intervals */
+.reasoning-interval__header-icon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
 /* Phase2: Thinking text — distinct from answer but readable (sans-serif, secondary color) */
 .reasoning-interval__thinking {
   color: var(--text-secondary);
@@ -2264,7 +2301,7 @@ html.dark .shiki span {
 }
 
 .reasoning-interval__thinking p {
-  margin-bottom: 0.48rem;
+  margin-bottom: 0.75rem;
 }
 
 .reasoning-interval__thinking p:last-child {

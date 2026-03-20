@@ -370,14 +370,18 @@ export function ReasoningInterval({
       data-step-id={interval.stepId || ""}
     >
       <div className="reasoning-interval__main">
-        {/* Claude pattern: clickable header with chevron — always collapsible */}
+        {/* Claude pattern: Header row — separated from body, acts as anchor point */}
         <button
           className="reasoning-interval__header-btn"
           onClick={() => setExpanded(!expanded)}
           aria-expanded={showBody}
         >
-          {interval.isLive && (
+          {interval.isLive ? (
             <span className="reasoning-interval__live-dot" />
+          ) : (
+            <svg className="reasoning-interval__header-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+            </svg>
           )}
           {interval.node && (
             <span className="reasoning-interval__agent-chip">
@@ -394,29 +398,38 @@ export function ReasoningInterval({
         </button>
         <span className="sr-only" role="status" aria-live="polite">{title}</span>
 
-        {/* Collapsible body — grid-template-rows animation */}
+        {/* Claude pattern: Body with left rail (vertical line + content) */}
         <div
           className="reasoning-interval__collapse"
           style={{ gridTemplateRows: showBody ? "1fr" : "0fr" }}
         >
           <div className="reasoning-interval__collapse-inner">
-            {visibleItems.map((item) => {
-              if (item.kind === "thinking") {
-                const isLastThinking = interval.isLive && interval.items[interval.items.length - 1]?.id === item.id;
-                return (
-                  <div key={item.id} className="reasoning-interval__segment">
-                    {renderThinkingMarkdown(item.block, isLastThinking)}
-                  </div>
-                );
-              }
-              const operation = renderOperationItem(item, thinkingLevel);
-              if (!operation) return null;
-              return (
-                <div key={item.id} className="reasoning-interval__segment reasoning-interval__segment--operation">
-                  {operation}
-                </div>
-              );
-            })}
+            <div className="reasoning-interval__rail-layout">
+              {/* Left rail: vertical line */}
+              <div className="reasoning-interval__rail-track" aria-hidden="true">
+                <div className="reasoning-interval__rail-line" />
+              </div>
+              {/* Right: thinking content */}
+              <div className="reasoning-interval__rail-content">
+                {visibleItems.map((item) => {
+                  if (item.kind === "thinking") {
+                    const isLastThinking = interval.isLive && interval.items[interval.items.length - 1]?.id === item.id;
+                    return (
+                      <div key={item.id} className="reasoning-interval__segment">
+                        {renderThinkingMarkdown(item.block, isLastThinking)}
+                      </div>
+                    );
+                  }
+                  const operation = renderOperationItem(item, thinkingLevel);
+                  if (!operation) return null;
+                  return (
+                    <div key={item.id} className="reasoning-interval__segment reasoning-interval__segment--operation">
+                      {operation}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       </div>
