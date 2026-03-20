@@ -2075,20 +2075,20 @@ html.dark .shiki span {
   min-width: 0;
 }
 
-/* Phase2: Claude-pattern collapsible header — compact for completed, prominent for live */
+/* Phase2: Collapsible header — word-wrap fix + readable sizing */
 .reasoning-interval__header-btn {
   display: flex;
-  align-items: center;
-  gap: 5px;
+  align-items: flex-start;
+  gap: 6px;
   width: 100%;
-  padding: 2px 0;
+  padding: 3px 0;
   background: none;
   border: none;
   cursor: pointer;
   text-align: left;
   color: var(--text-tertiary);
-  font-size: 0.72rem;
-  line-height: 1.4;
+  font-size: 0.8rem;
+  line-height: 1.5;
   transition: color 150ms;
 }
 .reasoning-interval__header-btn:hover {
@@ -2099,16 +2099,20 @@ html.dark .shiki span {
 }
 /* Live interval header: slightly larger, use secondary color */
 .reasoning-interval--live .reasoning-interval__header-btn {
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   color: color-mix(in srgb, var(--text-secondary) 82%, var(--text-tertiary));
-  padding: 3px 0;
+  padding: 4px 0;
 }
+/* Fix #1: Text overflow — label wraps properly, no single-line clipping */
 .reasoning-interval__header-label {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .reasoning-interval__chevron {
   flex-shrink: 0;
@@ -2222,14 +2226,41 @@ html.dark .shiki span {
   min-width: 0;
 }
 
-/* Phase2: Thinking text — clearly distinct from answer (smaller, sans-serif, muted) */
+/* Phase2: Thinking text — distinct from answer but readable (sans-serif, secondary color) */
 .reasoning-interval__thinking {
   color: var(--text-secondary);
   font-family: var(--font-body);
-  font-size: 0.82rem;
-  line-height: 1.65;
+  font-size: 0.9rem;
+  line-height: 1.625;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+/* Shimmer on thinking text while streaming — "dòng điện tư duy" effect */
+.reasoning-interval--live .reasoning-interval__thinking {
+  --_think-base: var(--text-secondary);
+  background: linear-gradient(
+    90deg,
+    var(--_think-base) 0%,
+    var(--_think-base) 40%,
+    color-mix(in srgb, var(--accent-orange) 65%, var(--text-secondary)) 50%,
+    var(--_think-base) 60%,
+    var(--_think-base) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 3s ease-in-out infinite;
+}
+
+/* Remove shimmer once completed — static text */
+.reasoning-interval--complete .reasoning-interval__thinking {
+  background: none;
+  -webkit-background-clip: unset;
+  background-clip: unset;
+  -webkit-text-fill-color: unset;
+  animation: none;
 }
 
 .reasoning-interval__thinking p {
@@ -2303,13 +2334,14 @@ html.dark .shiki span {
 
 .reasoning-op-row__text {
   color: var(--text-tertiary);
-  font-size: 0.74rem;
+  font-size: 0.8rem;
   line-height: 1.55;
   overflow-wrap: anywhere;
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .reasoning-op-row--success .reasoning-op-row__icon,
