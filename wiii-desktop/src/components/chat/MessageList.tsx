@@ -256,21 +256,13 @@ function StreamingTimer({ startTime, hasAnswer }: { startTime: number; hasAnswer
     ? `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`
     : `${elapsed}s`;
 
-  // Phase2: When answer content is already visible, show reassuring "received" state
-  // instead of ambiguous pulsing timer that looks like the system is stuck
-  if (hasAnswer) {
-    return (
-      <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-text-tertiary">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500/70" />
-        <span>Đã nhận phản hồi</span>
-        <span className="tabular-nums opacity-60">{timeStr}</span>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-text-tertiary animate-pulse">
-      <span className="tabular-nums">{timeStr}</span>
+    <div className="streaming-timer mt-1.5">
+      <span className="streaming-timer__dot" />
+      <span className="streaming-timer__label">
+        {hasAnswer ? "Wiii đang hoàn thiện" : "Wiii đang suy nghĩ"}
+      </span>
+      <span className="streaming-timer__time">{timeStr}</span>
     </div>
   );
 }

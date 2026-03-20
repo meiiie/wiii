@@ -1915,6 +1915,45 @@ html.dark .shiki span {
   100% { background-position: -100% 0; }
 }
 
+/* Phase2: Streaming timer — shimmer text shows Wiii is alive */
+.streaming-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+}
+.streaming-timer__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-orange, #AE5630);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-orange) 15%, transparent);
+  animation: thinking-journey-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.streaming-timer__label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  background: linear-gradient(
+    90deg,
+    var(--accent, #ff643b) 0%,
+    var(--accent, #ff643b) 35%,
+    #f0d080 50%,
+    var(--accent, #ff643b) 65%,
+    var(--accent, #ff643b) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 2.5s ease-in-out infinite;
+}
+.streaming-timer__time {
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ===== Sprint 240: Interleaved reasoning UI ===== */
 /* Sprint V5 → Phase2: Claude/ChatGPT-pattern — progressive disclosure, collapsed by default */
 .reasoning-interval {
