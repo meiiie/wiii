@@ -1072,6 +1072,8 @@ def _build_code_studio_tools_context(
             "roi `<style>` voi CSS variables (--bg, --fg, --accent, --surface, --border), "
             "roi HTML content, roi `<script>` cuoi cung.\n"
             "KHONG dung DOCTYPE, html, head, body tags. Fragment only.\n"
+            "LUON embed data truc tiep trong code. KHONG BAO GIO dung placeholder nhu 'No data provided' hay de trong.\n"
+            "KHONG dung overflow:hidden voi border-radius tren text container — se cat chu. Dung overflow:clip hoac overflow:visible.\n"
             "Simulation can: Canvas + requestAnimationFrame + deltaTime + controls (sliders) + readouts (live values) + WiiiVisualBridge.reportResult().\n"
             "Chat luong se duoc cham diem tu dong. Score < 6/10 se bi tu choi va yeu cau viet lai."
         )

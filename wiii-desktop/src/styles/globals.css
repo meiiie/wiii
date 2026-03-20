@@ -1921,6 +1921,8 @@ html.dark .shiki span {
   position: relative;
   margin: 0.1rem 0 0.4rem;
   padding-left: 0.5rem;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .reasoning-interval__rail {
@@ -2076,6 +2078,8 @@ html.dark .shiki span {
   color: color-mix(in srgb, var(--text) 82%, var(--text-tertiary));
   font-size: 0.92rem;
   line-height: 1.78;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .reasoning-interval__thinking p {
@@ -2151,6 +2155,8 @@ html.dark .shiki span {
   color: var(--text-secondary);
   font-size: 0.81rem;
   line-height: 1.65;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .reasoning-op-row--success .reasoning-op-row__icon,

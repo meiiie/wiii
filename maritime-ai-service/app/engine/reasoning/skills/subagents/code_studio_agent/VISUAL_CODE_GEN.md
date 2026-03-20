@@ -85,11 +85,12 @@ Every Code Studio output must pass these checks:
 - If the task is an explanatory figure or chart, stop and route back to SVG-first structured runtime.
 
 ### Visual quality
-- No placeholder UI.
+- No placeholder UI. No "No data provided" fallbacks — ALWAYS embed real data directly in the code.
 - No generic "AI slop" card stacks.
 - No purple-for-the-sake-of-purple.
 - No low-effort `div bar chart` for real chart requests.
 - If building a chart-like widget, use `SVG`, `Canvas`, or a chart library such as `Chart.js`.
+- Never use `overflow: hidden` with `border-radius` on text containers — text at corners will be clipped. Use `overflow: clip` or `overflow: visible` instead.
 
 ### Accessibility
 - Keyboard reachable controls.
