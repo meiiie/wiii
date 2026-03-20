@@ -2077,10 +2077,9 @@ html.dark .shiki span {
 /* Claude-reference: header = icon + summary, separate row, mb-4 (16px) */
 .reasoning-interval__header-btn {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
-  width: max-content;
-  max-width: 100%;
+  width: 100%;
   padding: 0;
   margin-bottom: 16px;
   background: none;
