@@ -489,7 +489,14 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
 ## QUY TẮC ĐỘ DÀI: Trả lời tối đa 400 từ. Nếu cần dài hơn, chia thành các phần ngắn gọn.
 """
         
-        # Sprint 148: Append thinking chain instruction for complex queries
+        # Phase2-F: Always inject thinking instruction so LLM wraps reasoning in <thinking> tags
+        # Without this, chain-of-thought planning leaks into user-facing response
+        from app.prompts.prompt_loader import get_prompt_loader
+        _thinking_instr = get_prompt_loader().get_thinking_instruction()
+        if _thinking_instr:
+            full_prompt += f"\n\n{_thinking_instr}"
+
+        # Sprint 148: Append thinking chain instruction for complex queries (additional)
         thinking_effort = context.get("thinking_effort", "")
         if thinking_effort in ("high", "max") and settings.enable_thinking_chain:
             full_prompt += "\n" + THINKING_CHAIN_INSTRUCTION

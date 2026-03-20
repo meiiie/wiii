@@ -477,6 +477,10 @@ class SupervisorAgent:
         # Sprint 215: Extract user_role for colleague routing
         user_role = (context or {}).get("user_role") or (context or {}).get("role") or "student"
 
+        # Phase2-F: Inject thinking instruction so supervisor wraps reasoning in <thinking> tags
+        from app.prompts.prompt_loader import get_prompt_loader
+        _thinking_instr = get_prompt_loader().get_thinking_instruction()
+
         messages = [
             SystemMessage(content=build_supervisor_card_prompt()),
             SystemMessage(content="You are a query router. Analyze the query step by step, classify intent, choose agent, and provide confidence."),
@@ -485,6 +489,7 @@ class SupervisorAgent:
                 "should stay on DIRECT or TUTOR so those agents can call article-figure/chart tools. "
                 "Reserve CODE_STUDIO_AGENT for code execution, app/widget generation, simulations, artifacts, files, or browser sandbox work."
             )),
+            *([SystemMessage(content=_thinking_instr)] if _thinking_instr else []),
             HumanMessage(content=ROUTING_PROMPT_TEMPLATE.format(
                 domain_name=domain_name,
                 rag_description=rag_desc,
