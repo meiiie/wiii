@@ -816,12 +816,50 @@ export function InterleavedBlockSequence({
     <>
       {renderItems.map((item, index) => {
         if (item.kind === "interval") {
+          // Phase2: Merge consecutive intervals into ONE visual timeline.
+          // Skip if this interval is part of a merged group (rendered by first in group).
+          const prevItem = renderItems[index - 1];
+          if (prevItem?.kind === "interval") {
+            return null; // Already rendered as part of merged group
+          }
+
+          // Collect all consecutive intervals
+          const mergedIntervals = [item.interval];
+          let nextIdx = index + 1;
+          while (nextIdx < renderItems.length && renderItems[nextIdx].kind === "interval") {
+            mergedIntervals.push((renderItems[nextIdx] as typeof item).interval);
+            nextIdx++;
+          }
+
+          if (mergedIntervals.length === 1) {
+            return (
+              <ReasoningInterval
+                key={item.id}
+                interval={item.interval}
+                thinkingLevel={thinkingLevel}
+                onOpenInspector={() => setInspectorIntervalId(item.interval.id)}
+              />
+            );
+          }
+
+          // Merge multiple intervals into ONE unified interval
+          const mergedInterval: ReasoningIntervalViewModel = {
+            ...mergedIntervals[0],
+            id: `merged-${mergedIntervals[0].id}`,
+            isLive: mergedIntervals.some((iv) => iv.isLive),
+            items: mergedIntervals.flatMap((iv) => iv.items),
+            rawBlocks: mergedIntervals.flatMap((iv) => iv.rawBlocks),
+            durationSeconds: mergedIntervals.reduce(
+              (sum, iv) => sum + (iv.durationSeconds || 0), 0
+            ) || undefined,
+          };
+
           return (
             <ReasoningInterval
-              key={item.id}
-              interval={item.interval}
+              key={mergedInterval.id}
+              interval={mergedInterval}
               thinkingLevel={thinkingLevel}
-              onOpenInspector={() => setInspectorIntervalId(item.interval.id)}
+              onOpenInspector={() => setInspectorIntervalId(mergedIntervals[0].id)}
             />
           );
         }

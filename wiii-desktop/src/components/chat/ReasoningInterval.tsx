@@ -372,19 +372,26 @@ export function ReasoningInterval({
   void getIntervalSummary; // Available for future use (body preview)
   const durationText = interval.durationSeconds ? `${interval.durationSeconds}s` : "";
 
-  // Sprint V5: Claude-pattern collapsible — header is clickable, body toggles
-  const [expanded, setExpanded] = useState(false);
-  const isBalanced = thinkingLevel === "balanced";
-  void isBalanced;
+  // Phase2: Auto-expand while streaming, auto-collapse when done (Claude pattern)
+  const [userToggled, setUserToggled] = useState(false);
+  const [userExpanded, setUserExpanded] = useState(false);
   const allItems = interval.items;
   const visibleItems = useMemo(
     () => selectVisibleItems(allItems, thinkingLevel, interval.isLive),
     [allItems, thinkingLevel, interval.isLive],
   );
-  // In balanced mode: collapsed by default, show body on click
-  // In detailed mode: always expanded
-  // While live: always show body (streaming)
-  const showBody = thinkingLevel === "detailed" || interval.isLive || expanded;
+
+  // Streaming → auto expanded. Done → auto collapsed. User click → manual override.
+  const showBody = userToggled
+    ? userExpanded
+    : (interval.isLive || thinkingLevel === "detailed");
+
+  const handleToggle = () => {
+    setUserToggled(true);
+    setUserExpanded(!showBody);
+  };
+
+  // Items render inline — thinking collapsible, operations always visible
 
   return (
     <section
@@ -393,13 +400,12 @@ export function ReasoningInterval({
       data-step-id={interval.stepId || ""}
     >
       <div className="reasoning-interval__main">
-        {/* Claude pattern: Header row — separated from body, acts as anchor point */}
+        {/* ONE header — Wiii persona label + chevron toggle */}
         <button
           className="reasoning-interval__header-btn"
-          onClick={() => setExpanded(!expanded)}
+          onClick={handleToggle}
           aria-expanded={showBody}
         >
-          {/* Icon: sparkle when live, clock when complete */}
           {interval.isLive ? (
             <span className="reasoning-interval__live-dot" />
           ) : (
@@ -407,7 +413,6 @@ export function ReasoningInterval({
               <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
             </svg>
           )}
-          {/* Persona label only — NO technical node tags ("ĐIỀU HƯỚNG") here */}
           <span className="reasoning-interval__header-label">{headerLabel}</span>
           {durationText && !interval.isLive && (
             <span className="reasoning-interval__header-duration">{durationText}</span>
@@ -421,42 +426,50 @@ export function ReasoningInterval({
         </button>
         <span className="sr-only" role="status" aria-live="polite">{headerLabel}</span>
 
-        {/* Claude pattern: Body with left rail (vertical line + content) */}
-        <div
-          className="reasoning-interval__collapse"
-          style={{ gridTemplateRows: showBody ? "1fr" : "0fr" }}
-        >
-          <div className="reasoning-interval__collapse-inner">
-            <div className="reasoning-interval__rail-layout">
-              {/* Left rail: clock node icon + vertical line (Claude pattern) */}
-              <div className="reasoning-interval__rail-track" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-tertiary)', opacity: 0.5 }}>
-                  <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-                </svg>
-                <div className="reasoning-interval__rail-line" />
-              </div>
-              {/* Right: thinking content */}
-              <div className="reasoning-interval__rail-content">
-                {visibleItems.map((item) => {
-                  if (item.kind === "thinking") {
-                    const isLastThinking = interval.isLive && interval.items[interval.items.length - 1]?.id === item.id;
-                    return (
-                      <div key={item.id} className="reasoning-interval__segment">
-                        {renderThinkingMarkdown(item.block, isLastThinking)}
-                      </div>
-                    );
-                  }
-                  const operation = renderOperationItem(item, thinkingLevel);
-                  if (!operation) return null;
+        {/* Unified timeline: thinking (collapsible) + operations (always visible) */}
+        <div className="reasoning-interval__timeline">
+          {/* Rail layout for ALL content */}
+          <div className="reasoning-interval__rail-layout">
+            <div className="reasoning-interval__rail-track" aria-hidden="true">
+              <div className="reasoning-interval__rail-line" />
+            </div>
+            <div className="reasoning-interval__rail-content">
+              {visibleItems.map((item) => {
+                if (item.kind === "thinking") {
+                  const isLastThinking = interval.isLive && interval.items[interval.items.length - 1]?.id === item.id;
+                  // Thinking: COLLAPSIBLE (gray text, inside collapse)
                   return (
-                    <div key={item.id} className="reasoning-interval__segment reasoning-interval__segment--operation">
-                      {operation}
+                    <div
+                      key={item.id}
+                      className="reasoning-interval__segment"
+                      style={{ display: showBody ? "block" : "none" }}
+                    >
+                      {renderThinkingMarkdown(item.block, isLastThinking)}
                     </div>
                   );
-                })}
-              </div>
+                }
+                // Operations: ALWAYS VISIBLE (black text, outside collapse)
+                const operation = renderOperationItem(item, thinkingLevel);
+                if (!operation) return null;
+                return (
+                  <div key={item.id} className="reasoning-interval__segment reasoning-interval__segment--operation">
+                    {operation}
+                  </div>
+                );
+              })}
             </div>
           </div>
+
+          {/* Terminal label — shown when thinking is complete */}
+          {!interval.isLive && (
+            <div className="reasoning-interval__terminal">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
+              </svg>
+              <span>Wiii đã xem xong ≽^•⩊•^≼</span>
+              {durationText && <span className="reasoning-interval__header-duration">{durationText}</span>}
+            </div>
+          )}
         </div>
       </div>
     </section>

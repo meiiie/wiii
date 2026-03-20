@@ -2318,12 +2318,32 @@ html.dark .shiki span {
 .reasoning-interval--live .reasoning-interval__rail-line {
   background: color-mix(in srgb, var(--accent-orange) 25%, var(--border));
 }
-/* Right content: flex-1, pb-6 pt-1 (matching Claude reference) */
+/* Right content */
 .reasoning-interval__rail-content {
   flex: 1;
   min-width: 0;
   padding-top: 4px;
-  padding-bottom: 24px;
+  padding-bottom: 16px;
+}
+
+/* Terminal label — "Wiii đã xem xong ≽^•⩊•^≼" */
+.reasoning-interval__terminal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 4px;
+  margin-left: 36px; /* Align with rail-content */
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.reasoning-interval__terminal svg {
+  color: var(--accent-green, #16a34a);
+  flex-shrink: 0;
+}
+
+/* Timeline wrapper replaces old collapse div */
+.reasoning-interval__timeline {
+  overflow: hidden;
 }
 
 /* Header icon: clock for completed, sparkle/live-dot for streaming */
