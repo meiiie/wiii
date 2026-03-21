@@ -2,13 +2,15 @@
  * PreviewGroup — Horizontal scrollable carousel of PreviewCards.
  * Sprint 166: Initial grid layout.
  * Sprint 200: Upgraded to horizontal snap-scroll carousel with nav arrows.
+ * Sprint 233: Web search results → Claude-style compact search widget.
  *
  * Product previews → horizontal carousel (220px cards).
- * Document/web previews → original 2-col grid.
+ * Web/link previews → compact scrollable search widget.
+ * Document/other previews → original 2-col grid.
  * Keyboard: ArrowLeft/Right to navigate, Enter to open panel.
  */
 import { useRef, useCallback, useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Globe } from "lucide-react";
 import type { PreviewBlockData } from "@/api/types";
 import { useUIStore } from "@/stores/ui-store";
 import { PreviewCard } from "./PreviewCard";
@@ -16,6 +18,16 @@ import { PreviewCard } from "./PreviewCard";
 interface PreviewGroupProps {
   block: PreviewBlockData;
   onPreviewClick?: (previewId: string) => void;
+}
+
+/** Extract domain from URL, fallback to raw string. */
+function extractDomain(url?: string): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }
 
 export function PreviewGroup({ block, onPreviewClick }: PreviewGroupProps) {
@@ -28,6 +40,13 @@ export function PreviewGroup({ block, onPreviewClick }: PreviewGroupProps) {
   const isProductCarousel =
     block.items.length > 0 &&
     block.items.every((item) => item.preview_type === "product");
+
+  // Determine if this is a web search widget (all items are web or link type)
+  const isWebSearch =
+    block.items.length > 0 &&
+    block.items.every(
+      (item) => item.preview_type === "web" || item.preview_type === "link",
+    );
 
   // Track scroll state for arrow visibility
   const updateScrollState = useCallback(() => {
@@ -85,6 +104,87 @@ export function PreviewGroup({ block, onPreviewClick }: PreviewGroupProps) {
   );
 
   if (!block.items || block.items.length === 0) return null;
+
+  // Web search widget layout (Claude-style compact list)
+  if (isWebSearch) {
+    return (
+      <div className="search-widget my-2" role="region" aria-label="Kết quả tìm kiếm">
+        {/* Header */}
+        <div className="search-widget__header">
+          <Globe size={16} className="search-widget__icon" />
+          <span className="search-widget__query">
+            {(block as PreviewBlockData & { query?: string }).query || "Tìm kiếm"}
+          </span>
+          <span className="search-widget__count">
+            {block.items.length} kết quả
+          </span>
+        </div>
+
+        {/* Scrollable results list */}
+        <div className="search-widget__list" role="list">
+          {block.items.map((item) => {
+            const domain = extractDomain(item.url);
+            const faviconUrl = domain
+              ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
+              : null;
+
+            return (
+              <a
+                key={item.preview_id}
+                className="search-widget__item"
+                role="listitem"
+                tabIndex={0}
+                onClick={() => {
+                  if (item.url) {
+                    window.open(item.url, "_blank", "noopener,noreferrer");
+                  }
+                  onPreviewClick?.(item.preview_id);
+                  openPreview(item.preview_id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    if (item.url) {
+                      window.open(item.url, "_blank", "noopener,noreferrer");
+                    }
+                    onPreviewClick?.(item.preview_id);
+                    openPreview(item.preview_id);
+                  }
+                }}
+                title={item.title}
+              >
+                {faviconUrl ? (
+                  <img
+                    src={faviconUrl}
+                    alt=""
+                    width={16}
+                    height={16}
+                    className="search-widget__favicon"
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                      // Show fallback globe via next sibling
+                      const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                      if (fallback) fallback.style.display = "flex";
+                    }}
+                  />
+                ) : null}
+                <span
+                  className="search-widget__favicon-fallback"
+                  style={{ display: faviconUrl ? "none" : "flex" }}
+                >
+                  <Globe size={12} />
+                </span>
+                <span className="search-widget__title">{item.title}</span>
+                {domain && (
+                  <span className="search-widget__domain">{domain}</span>
+                )}
+              </a>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   // Product carousel layout
   if (isProductCarousel) {
@@ -152,7 +252,7 @@ export function PreviewGroup({ block, onPreviewClick }: PreviewGroupProps) {
     );
   }
 
-  // Default grid layout for document/web previews
+  // Default grid layout for document/other previews
   return (
     <div
       ref={containerRef}

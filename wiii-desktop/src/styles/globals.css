@@ -3426,3 +3426,208 @@ html.dark .shiki span {
     margin-left: 1.35rem;
   }
 }
+
+/* ===== Search Widget (Sprint 233 — Claude-style inline search results) ===== */
+
+.search-widget {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.search-widget__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--surface-secondary) 50%, var(--surface));
+  border-bottom: 1px solid var(--border);
+}
+
+.search-widget__icon {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.search-widget__query {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-widget__count {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.search-widget__list {
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+/* Thin custom scrollbar for the results list */
+.search-widget__list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.search-widget__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.search-widget__list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.search-widget__list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-quaternary);
+}
+
+.search-widget__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s var(--ease-default);
+  text-decoration: none;
+  user-select: none;
+}
+
+.search-widget__item:hover {
+  background: var(--surface-secondary);
+}
+
+.search-widget__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.search-widget__favicon {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.search-widget__favicon-fallback {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-quaternary);
+}
+
+.search-widget__title {
+  font-size: 14px;
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.search-widget__domain {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ===== Source Citation (Sprint 233 — compact numbered list) ===== */
+
+.source-citation {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 16px;
+}
+
+.source-citation__header {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.source-citation__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.source-citation__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.15s var(--ease-default);
+}
+
+.source-citation__item:hover {
+  background: var(--surface-secondary);
+}
+
+.source-citation__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.source-citation__index {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  flex-shrink: 0;
+  min-width: 20px;
+}
+
+.source-citation__title {
+  font-size: 13px;
+  color: var(--text-secondary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-citation__page {
+  font-size: 11px;
+  color: var(--text-quaternary);
+  flex-shrink: 0;
+}
+
+.source-citation__expand {
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  margin-top: 4px;
+  padding: 2px 8px;
+  background: transparent;
+  border: none;
+  transition: color 0.15s;
+}
+
+.source-citation__expand:hover {
+  color: var(--accent-hover);
+}
