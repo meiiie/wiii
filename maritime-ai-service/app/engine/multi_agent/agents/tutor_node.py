@@ -473,9 +473,9 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                 visual_tool_section = f"""
 {STRUCTURED_VISUAL_TOOL_INSTRUCTION}{code_gen_section}
 
-[Gợi ý trực quan] Câu hỏi này phù hợp với biểu đồ dạng "{visual_decision.visual_type or 'chart'}".
-Wiii nên cân nhắc dùng {preferred_tool_label} với code_html để tạo biểu đồ minh họa inline
-— một biểu đồ thường giúp người đọc hiểu nhanh hơn nhiều so với text thuần.
+[Yêu cầu trực quan] Wiii HÃY dùng {preferred_tool_label} với code_html để tạo biểu đồ
+dạng "{visual_decision.visual_type or 'chart'}" minh họa cho câu trả lời này.
+Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp hiểu nhanh hơn text thuần.
 """
 
         # Append tool instruction, skill context, core memory, and user context

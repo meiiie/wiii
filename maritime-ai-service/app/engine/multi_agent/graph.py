@@ -2062,9 +2062,9 @@ def _build_direct_system_messages(
         vtype = getattr(visual_decision, "visual_type", "chart") or "chart"
         system_prompt = (
             system_prompt + "\n\n"
-            f'[Gợi ý trực quan] Câu hỏi này phù hợp với biểu đồ dạng "{vtype}". '
-            f"Wiii nên cân nhắc dùng tool_generate_visual với code_html để tạo biểu đồ minh họa inline "
-            f"— một biểu đồ thường giúp người đọc hiểu nhanh hơn nhiều so với text thuần."
+            f'[Yêu cầu trực quan] Wiii HÃY dùng tool_generate_visual với code_html '
+            f'để tạo biểu đồ dạng "{vtype}" minh họa cho câu trả lời này. '
+            f"Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp hiểu nhanh hơn text thuần."
         )
 
     # Sprint Phase2-F: Inject thinking instruction so LLM wraps reasoning in <thinking> tags

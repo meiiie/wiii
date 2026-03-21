@@ -4181,8 +4181,8 @@ _BUILDERS = {
 
 @tool
 def tool_generate_visual(
-    visual_type: str,
-    spec_json: str,
+    visual_type: str = "chart",
+    spec_json: str = "{}",
     title: str = "",
     summary: str = "",
     subtitle: str = "",
@@ -4195,19 +4195,15 @@ def tool_generate_visual(
     runtime_manifest_json: str = "",
     code_html: str = "",
 ) -> str:
-    """Generate a structured visual payload for inline visuals or app runtime.
+    """Tạo biểu đồ hoặc minh họa inline trong chat.
 
-    Use this as the PRIMARY path for Wiii Visual Runtime V3:
-    - template: native React + SVG/CSS explanatory visuals
-    - inline_html: bespoke HTML/CSS/JS visuals inside Wiii shell
-    - app: MCP-style iframe app runtime for simulations and mini tools
+    Wiii dùng tool này để tạo visual giúp người đọc hiểu nhanh hơn.
+    Visual hiện trực tiếp trong chat — không cần mở app khác.
 
-    This tool returns JSON payload data for the frontend visual renderer.
-    Do NOT copy this payload verbatim into prose.
-
-    IMPORTANT — Spec Quality Rules:
-    - LUÔN cung cấp description/content cho mỗi layer/step/branch. KHÔNG để trống.
-    - Mỗi item phải có title VÀ description hoặc content.
+    CÁCH DÙNG ĐƠN GIẢN NHẤT:
+    - Chỉ cần gửi code_html (HTML fragment) — đây là param duy nhất cần thiết
+    - visual_type và spec_json tự động có default, không bắt buộc
+    - Ví dụ: tool_generate_visual(code_html="<style>...</style><div>...</div>")
 
     Example specs for rich output:
 
