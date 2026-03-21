@@ -288,10 +288,12 @@ function ToolIntervalSection({
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="reasoning-interval__segment reasoning-interval__segment--operation">
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         className="reasoning-interval__tool-toggle"
         onClick={() => setExpanded(!expanded)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded(!expanded); } }}
         aria-expanded={expanded}
       >
         <svg
@@ -301,7 +303,7 @@ function ToolIntervalSection({
           <path d="M7.16 14.13C6.96 14.31 6.94 14.63 7.13 14.84 7.31 15.04 7.63 15.06 7.84 14.87L12.84 10.37C13.06 10.18 13.06 9.82 12.84 9.63L7.84 5.13C7.63 4.94 7.31 4.96 7.13 5.17 6.94 5.37 6.96 5.69 7.16 5.87L11.75 10 7.16 14.13Z" />
         </svg>
         {children}
-      </button>
+      </div>
     </div>
   );
 }
