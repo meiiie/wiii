@@ -1182,7 +1182,23 @@ export function VisualBlock({
     const isRechartsVisual = visual.renderer_kind === "recharts"
       || (typeof asRecord(visual.spec).chart_type === "string" && visual.renderer_kind !== "app" && visual.renderer_kind !== "inline_html");
 
-    if (isRechartsVisual) {
+    // Priority: inline_html FIRST (clean SVG/HTML), then Recharts, then template fallback
+    const isInlineHtml = visual.renderer_kind === "inline_html" && htmlPayload;
+
+    if (isInlineHtml) {
+      body = (
+        <InlineVisualFrame
+          html={htmlPayload}
+          title={visual.title}
+          summary={visual.summary}
+          sessionId={sessionId}
+          shellVariant={visual.shell_variant}
+          frameKind="inline_html"
+          showFrameIntro={false}
+          hostShellMode="force"
+        />
+      );
+    } else if (isRechartsVisual) {
       body = (
         <div className={`visual-block-shell__canvas ${embedded ? "visual-block-shell__canvas--embedded" : ""}`.trim()}>
           <RechartsRenderer spec={asRecord(visual.spec)} />
@@ -1417,6 +1433,24 @@ export function VisualBlock({
         </button>
       </figure>
     );
+  }
+
+  // Inline HTML charts: render directly without shell header/badge/artifact chrome
+  if (visual.renderer_kind === "inline_html" && body) {
+    return <figure
+      ref={figureRef}
+      data-testid="visual-block"
+      className={figureClassName}
+      aria-labelledby={titleId}
+      data-visual-status={status}
+      data-visual-lifecycle={visual.lifecycle_event}
+      data-visual-embedded={embedded ? "true" : "false"}
+    >
+      <div className={`visual-block-shell__body ${embedded ? "visual-block-shell__body--embedded" : ""}`.trim()}>
+        {body}
+      </div>
+      <figcaption className="sr-only">{visual.summary || visual.title}</figcaption>
+    </figure>;
   }
 
   return <figure
