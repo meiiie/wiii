@@ -3479,95 +3479,61 @@ def _wrap_html(body_css: str, body_html: str, title: str = "", subtitle: str = "
 # =============================================================================
 
 def _build_comparison_html(spec: dict, title: str) -> str:
+    """Clean horizontal bar comparison — matching demo benchmark."""
     left = spec.get("left", {})
     right = spec.get("right", {})
-    left_color = left.get("color", "var(--red)")
-    right_color = right.get("color", "var(--teal)")
-    left_bg = left.get("bg", "var(--red-bg)")
-    right_bg = right.get("bg", "var(--teal-bg)")
 
-    def _render_items(items: list) -> str:
-        parts = []
-        for item in items:
-            if isinstance(item, str):
-                parts.append(f'<li>{_esc(item)}</li>')
-            elif isinstance(item, dict):
-                label = _esc(item.get("label", ""))
-                value = _esc(item.get("value", ""))
-                icon = _esc(item.get("icon", ""))
-                parts.append(f'<li><span class="item-icon">{icon}</span> <strong>{label}</strong>: {value}</li>')
-        return "\n".join(parts)
+    # Extract items from both sides for bar comparison
+    COLORS = ["#D97757", "#85CDCA", "#FFD166", "#C9B1FF", "#E8A87C"]
+    bars_html = []
 
-    def _render_side(side: dict, color: str, bg: str) -> str:
+    def _add_bars(side: dict, color_idx: int) -> None:
         side_title = _esc(side.get("title", ""))
-        side_sub = _esc(side.get("subtitle", ""))
         items = side.get("items", [])
-        svg_content = _esc(side.get("svg", ""))  # escaped for safety
-        desc = _esc(side.get("description", ""))
+        for item in items:
+            label = ""
+            if isinstance(item, str):
+                label = item
+            elif isinstance(item, dict):
+                label = item.get("label", item.get("value", ""))
+            if label:
+                bars_html.append((side_title, _esc(str(label)), COLORS[color_idx % 5]))
 
-        items_html = f'<ul class="side-items">{_render_items(items)}</ul>' if items else ""
-        svg_html = f'<div class="side-svg">{svg_content}</div>' if svg_content else ""
-        desc_html = f'<p class="side-desc">{desc}</p>' if desc else ""
+    _add_bars(left, 0)
+    _add_bars(right, 1)
 
-        return f"""<div class="side" style="--side-color:{color}">
-  <div class="side-header">
-    <h3 class="side-title">{side_title}</h3>
-    {f'<span class="side-sub">{side_sub}</span>' if side_sub else ''}
-  </div>
-  {svg_html}{items_html}{desc_html}
-</div>"""
+    # Build clean horizontal bars
+    bar_rows = []
+    for side_name, label, color in bars_html:
+        bar_rows.append(
+            f'<div class="bar-row">'
+            f'<div class="bar-label">{label[:40]}</div>'
+            f'<div class="bar-track"><div class="bar-fill" style="width:75%;background:linear-gradient(90deg,{color},{color}cc)"></div></div>'
+            f'</div>'
+        )
 
-    note = spec.get("note", "")
-    note_html = f'<div class="comp-note">{_esc(note)}</div>' if note else ""
-    highlight = spec.get("highlight", "")
-    highlight_html = f'<div class="comp-highlight">{_esc(highlight)}</div>' if highlight else ""
+    subtitle = _esc(spec.get("note", spec.get("highlight", "")))
 
     css = """
-.comparison { display: grid; grid-template-columns: 1fr 1px 1fr; gap: 0; align-items: start; }
-.side { background: transparent; padding: 0 16px; transition: background 0.15s; }
-.side:hover { background: color-mix(in srgb, var(--side-color) 4%, transparent); }
-.side:first-child { padding-left: 0; }
-.side-header { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid color-mix(in srgb, var(--side-color) 30%, transparent); }
-.side-title { font-size: 14px; font-weight: 700; color: var(--text); }
-.side-sub { font-size: 11px; color: var(--text3); display: block; margin-top: 3px; }
-.side-items { list-style: none; padding: 0; }
-.side-items li {
-  position: relative; padding: 6px 0 6px 14px; font-size: 13px; color: var(--text2); line-height: 1.6;
-}
-.side-items li::before {
-  content: ""; position: absolute; left: 0; top: 12px;
-  width: 5px; height: 5px; border-radius: 50%;
-  background: color-mix(in srgb, var(--side-color) 40%, var(--text3));
-}
-.side-items li:last-child { border-bottom: none; }
-.item-icon { font-size: 14px; }
-.side-svg { display: flex; justify-content: center; margin: 12px 0; }
-.side-svg svg { max-width: 100%; height: auto; }
-.side-desc { font-size: 12px; color: var(--text3); margin-top: 8px; font-style: italic; }
-.comp-sep { background: color-mix(in srgb, var(--border) 35%, transparent); margin: 0 4px; }
-.comp-highlight {
-  grid-column: 1 / -1; font-size: 12px; font-weight: 600; color: var(--accent);
-  padding: 8px 12px; background: color-mix(in srgb, var(--accent) 8%, transparent);
-  border-radius: var(--radius); margin-top: 12px;
-}
-.comp-note {
-  grid-column: 1 / -1; font-size: 11px; color: var(--text3);
-  margin-top: 14px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--border) 25%, transparent);
-}
-@media (max-width: 500px) {
-  .comparison { grid-template-columns: 1fr; }
-  .comp-sep { display: none; }
-  .side { padding: 0 0 12px; }
-  .side:first-child { margin-bottom: 8px; border-bottom: 1px solid color-mix(in srgb, var(--border) 30%, transparent); }
-}"""
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:system-ui,-apple-system,sans-serif; background:transparent; color:#333; }
+.root { max-width:600px; margin:0 auto; padding:16px 0; }
+.title { font-size:15px; font-weight:600; margin-bottom:4px; }
+.subtitle { font-size:13px; color:#999; margin-bottom:20px; }
+.bar-rows { display:flex; flex-direction:column; gap:10px; }
+.bar-row { display:flex; align-items:center; gap:12px; }
+.bar-label { width:140px; font-size:13px; color:#555; text-align:right; font-weight:500; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bar-track { flex:1; height:28px; background:#f5f2ef; border-radius:6px; overflow:hidden; }
+.bar-fill { height:100%; border-radius:6px; }
+"""
 
-    body = f"""<div class="comparison">
-  {_render_side(left, left_color, left_bg)}
-  <div class="comp-sep"></div>
-  {_render_side(right, right_color, right_bg)}
-  {highlight_html}
-  {note_html}
-</div>"""
+    body = f'<div class="root">'
+    body += f'<div class="title">{_esc(title)}</div>'
+    if subtitle:
+        body += f'<div class="subtitle">{subtitle}</div>'
+    body += '<div class="bar-rows">'
+    body += "\n".join(bar_rows)
+    body += '</div></div>'
 
     return _wrap_html(css, body, title)
 
@@ -3994,26 +3960,28 @@ def _normalize_chart_spec(spec: dict[str, Any], title: str = "") -> dict[str, An
     return normalized_spec
 
 def _build_chart_html(spec: dict, title: str) -> str:
+    """Clean horizontal bar chart — matching demo benchmark. No sidebar, no tabs."""
     normalized_spec = _normalize_chart_spec(spec, title)
-    chart_type = normalized_spec.get("chart_type", "bar")
     labels = normalized_spec.get("labels", [])
     datasets = normalized_spec.get("datasets", [])
     caption = normalized_spec.get("caption", "")
-    colors = ["var(--accent)", "var(--green)", "var(--purple)", "var(--amber)", "var(--teal)", "var(--pink)"]
+    COLORS = ["#D97757", "#85CDCA", "#FFD166", "#C9B1FF", "#E8A87C"]
 
     css = """
-.chart-container { width: 100%; overflow-x: auto; }
-.chart-svg { width: 100%; height: auto; }
-.chart-legend { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 10px; }
-.chart-legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text2); }
-.chart-legend-dot { width: 8px; height: 8px; border-radius: 2px; }
-.chart-caption { text-align: center; font-size: 11px; color: var(--text3); margin-top: 8px; }
-.chart-label { font-size: 10px; fill: var(--text3); }
-.chart-axis { stroke: var(--border); stroke-width: 1; }
-.chart-gridline { stroke: var(--border); stroke-width: 0.5; opacity: 0.4; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:system-ui,-apple-system,sans-serif; background:transparent; color:#333; }
+.root { max-width:600px; margin:0 auto; padding:16px 0; }
+.title { font-size:15px; font-weight:600; margin-bottom:4px; }
+.subtitle { font-size:13px; color:#999; margin-bottom:20px; }
+.bar-rows { display:flex; flex-direction:column; gap:12px; }
+.bar-row { display:flex; align-items:center; gap:12px; }
+.bar-label { width:72px; font-size:13px; color:#555; text-align:right; font-weight:500; flex-shrink:0; }
+.bar-track { flex:1; height:28px; background:#f5f2ef; border-radius:6px; overflow:hidden; }
+.bar-fill { height:100%; border-radius:6px; }
+.bar-value { font-size:12px; font-weight:600; color:#555; min-width:48px; }
 """
     if not labels or not datasets:
-        body = '<div style="text-align:center;color:var(--text3);padding:20px">No chart data provided</div>'
+        body = '<div style="text-align:center;color:#999;padding:20px;font-size:14px">Không đủ dữ liệu để vẽ biểu đồ.</div>'
         return _wrap_html(css, body, title)
 
     # Collect all values for scaling
@@ -4021,28 +3989,6 @@ def _build_chart_html(spec: dict, title: str) -> str:
     for ds in datasets:
         all_values.extend(v for v in ds.get("data", []) if isinstance(v, (int, float)))
     max_val = max(all_values) if all_values else 1
-    min_val = min(0, min(all_values) if all_values else 0)
-    val_range = max_val - min_val or 1
-
-    # Chart dimensions
-    pad_left, pad_right, pad_top, pad_bottom = 50, 20, 20, 40
-    chart_w = max(400, len(labels) * 60)
-    chart_h = 220
-    plot_w = chart_w - pad_left - pad_right
-    plot_h = chart_h - pad_top - pad_bottom
-
-    svg_parts = [f'<svg class="chart-svg" viewBox="0 0 {chart_w} {chart_h}" xmlns="http://www.w3.org/2000/svg">']
-
-    # Grid lines (5 lines)
-    for i in range(6):
-        y = pad_top + plot_h - (i / 5) * plot_h
-        val = min_val + (i / 5) * val_range
-        svg_parts.append(f'<line x1="{pad_left}" y1="{y}" x2="{chart_w - pad_right}" y2="{y}" class="chart-gridline"/>')
-        svg_parts.append(f'<text x="{pad_left - 6}" y="{y + 3}" text-anchor="end" class="chart-label">{val:.0f}</text>')
-
-    # Axis
-    svg_parts.append(f'<line x1="{pad_left}" y1="{pad_top}" x2="{pad_left}" y2="{chart_h - pad_bottom}" class="chart-axis"/>')
-    svg_parts.append(f'<line x1="{pad_left}" y1="{chart_h - pad_bottom}" x2="{chart_w - pad_right}" y2="{chart_h - pad_bottom}" class="chart-axis"/>')
 
     n_labels = len(labels)
     bar_group_w = plot_w / n_labels if n_labels else plot_w
@@ -4074,27 +4020,29 @@ def _build_chart_html(spec: dict, title: str) -> str:
                 bar_color = ds_colors[i] if i < len(ds_colors) and isinstance(ds_colors[i], str) and ds_colors[i].strip() else color
                 svg_parts.append(f'<rect x="{bx:.1f}" y="{y:.1f}" width="{bw:.1f}" height="{bar_h:.1f}" fill="{bar_color}" rx="2" opacity="0.85"/>')
 
-    # X labels
+    # Build clean horizontal bars from first dataset
+    bar_rows = []
+    ds = datasets[0] if datasets else {}
+    data_values = ds.get("data", [])
     for i, label in enumerate(labels):
-        x = pad_left + (i + 0.5) * bar_group_w
-        svg_parts.append(f'<text x="{x:.1f}" y="{chart_h - pad_bottom + 16}" text-anchor="middle" class="chart-label">{_esc(str(label))}</text>')
+        val = data_values[i] if i < len(data_values) else 0
+        pct = int((val / max_val) * 100) if max_val else 0
+        color = COLORS[i % len(COLORS)]
+        bar_rows.append(
+            f'<div class="bar-row">'
+            f'<div class="bar-label">{_esc(str(label))}</div>'
+            f'<div class="bar-track"><div class="bar-fill" style="width:{pct}%;background:linear-gradient(90deg,{color},{color}cc)"></div></div>'
+            f'<div class="bar-value">{val:,.0f}</div>'
+            f'</div>'
+        )
 
-    svg_parts.append('</svg>')
+    caption_html = f'<div class="subtitle">{_esc(caption)}</div>' if caption else ""
 
-    # Legend
-    legend_parts = []
-    for ds_idx, ds in enumerate(datasets):
-        color = ds.get("color", colors[ds_idx % len(colors)])
-        label = _esc(ds.get("label", f"Series {ds_idx + 1}"))
-        legend_parts.append(f'<div class="chart-legend-item"><div class="chart-legend-dot" style="background:{color}"></div>{label}</div>')
-
-    caption_html = f'<div class="chart-caption">{_esc(caption)}</div>' if caption else ""
-
-    body = f"""<div class="chart-container">
-  {"".join(svg_parts)}
-  <div class="chart-legend">{"".join(legend_parts)}</div>
-  {caption_html}
-</div>"""
+    body = f'<div class="root">'
+    body += f'<div class="title">{_esc(title)}</div>'
+    body += caption_html
+    body += '<div class="bar-rows">' + "\n".join(bar_rows) + '</div>'
+    body += '</div>'
 
     return _wrap_html(css, body, title)
 
