@@ -1,0 +1,334 @@
+<!-- STATE MODEL: { title: string, subtitle?: string, source?: string, left: {name: string, tagline: string, color: string}, right: {name: string, tagline: string, color: string}, rows: [{attr: string, left: string, right: string, winner?: "left"|"right"|"tie"}], verdict?: string } -->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: transparent; color: #2a2520; }
+
+  .cmp { --cam: #D97757; --mint: #85CDCA; --text2: #777; --text3: #aaa; max-width: 620px; padding: 20px 0; }
+
+  /* ═══ Header ═══ */
+  .cmp__head { margin-bottom: 20px; }
+  .cmp__title { font-size: 16px; font-weight: 700; color: #1a1714; letter-spacing: -0.01em; }
+  .cmp__sub { font-size: 13px; color: var(--text2); margin-top: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .cmp__sub-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text3); }
+
+  /* ═══ Table ═══ */
+  .cmp__table { width: 100%; border-collapse: separate; border-spacing: 0; }
+
+  /* ── Column headers (sticky-like feel) ── */
+  .cmp__cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 6px; position: sticky; top: 0; z-index: 2; }
+  .cmp__col-head {
+    padding: 14px 16px; border-radius: 12px;
+    text-align: center; position: relative; overflow: hidden;
+  }
+  .cmp__col-head--left { background: #faf5f2; }
+  .cmp__col-head--right { background: #f2f9f8; }
+  .cmp__col-name { font-size: 15px; font-weight: 700; color: #1a1714; }
+  .cmp__col-tag { font-size: 11.5px; color: var(--text2); margin-top: 2px; }
+  /* Accent bar top */
+  .cmp__col-head::before {
+    content: ''; position: absolute; top: 0; left: 16px; right: 16px; height: 3px;
+    border-radius: 0 0 3px 3px;
+  }
+  .cmp__col-head--left::before { background: var(--cam); }
+  .cmp__col-head--right::before { background: var(--mint); }
+
+  /* ── Attribute rows ── */
+  .cmp__rows { display: flex; flex-direction: column; gap: 2px; }
+
+  .cmp__row {
+    display: grid; grid-template-columns: 1fr auto 1fr;
+    align-items: stretch; gap: 0;
+    border-radius: 10px;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+    cursor: default; position: relative;
+    min-height: 52px;
+  }
+  .cmp__row:hover {
+    background: #faf9f7;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+  }
+
+  /* Cell */
+  .cmp__cell {
+    padding: 10px 14px;
+    font-size: 13px; color: #444; line-height: 1.45;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .cmp__cell--left { text-align: right; padding-right: 18px; }
+  .cmp__cell--right { text-align: left; padding-left: 18px; }
+
+  .cmp__cell-val { font-weight: 500; }
+  .cmp__cell-detail { font-size: 11px; color: #aaa; margin-top: 2px; }
+
+  /* Winner highlight */
+  .cmp__cell.winner .cmp__cell-val { font-weight: 650; }
+  .cmp__cell.winner--left .cmp__cell-val { color: var(--cam); }
+  .cmp__cell.winner--right .cmp__cell-val { color: #5bb8b4; }
+
+  /* Advantage badge */
+  .cmp__badge {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 9.5px; font-weight: 600; padding: 1px 6px;
+    border-radius: 4px; margin-top: 3px; width: fit-content;
+  }
+  .cmp__badge--left { background: #fef3ef; color: var(--cam); margin-left: auto; }
+  .cmp__badge--right { background: #eefbf9; color: #3a9e99; }
+
+  /* ── Center divider + attribute label ── */
+  .cmp__attr-col {
+    width: 120px; min-width: 120px;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  /* Vertical line through center */
+  .cmp__attr-col::before {
+    content: ''; position: absolute; top: 0; bottom: 0;
+    left: 50%; width: 1px; background: #eeebe7;
+    transform: translateX(-50%);
+  }
+  .cmp__attr-label {
+    position: relative; z-index: 1;
+    font-size: 10.5px; font-weight: 600; color: #999;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    text-align: center; line-height: 1.3;
+    background: white; padding: 3px 8px; border-radius: 4px;
+    border: 1px solid #f0ece7;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .cmp__row:hover .cmp__attr-label {
+    border-color: #e0dbd5; color: #666;
+  }
+
+  /* ── Winner dot (subtle) ── */
+  .cmp__dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    position: absolute; bottom: 6px;
+    opacity: 0; transition: opacity 0.2s ease;
+  }
+  .cmp__dot--left { right: calc(50% + 24px); background: var(--cam); }
+  .cmp__dot--right { left: calc(50% + 24px); background: var(--mint); }
+  .cmp__row:hover .cmp__dot { opacity: 0.6; }
+
+  /* ═══ Summary ═══ */
+  .cmp__summary {
+    display: grid; grid-template-columns: 1fr auto 1fr;
+    gap: 0; margin-top: 16px; align-items: center;
+  }
+  .cmp__score {
+    text-align: center; padding: 14px;
+    border-radius: 10px;
+  }
+  .cmp__score--left { background: #faf5f2; }
+  .cmp__score--right { background: #f2f9f8; }
+  .cmp__score-num { font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .cmp__score-num--left { color: var(--cam); }
+  .cmp__score-num--right { color: var(--mint); }
+  .cmp__score-label { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+  .cmp__vs {
+    width: 44px; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: #ccc;
+  }
+
+  .cmp__verdict {
+    margin-top: 12px; text-align: center;
+    font-size: 12px; color: var(--text2); font-weight: 500;
+    padding: 8px 16px; border-radius: 8px;
+    background: #f8f6f4; border: 1px solid #f0ece7;
+  }
+
+  /* ═══ Footer ═══ */
+  .cmp__foot {
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid #f0ece7;
+    display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+  }
+  .cmp__source { font-size: 11px; color: var(--text3); line-height: 1.6; }
+  .cmp__source em { font-style: italic; }
+  .cmp__source-warn { display: inline-flex; align-items: center; gap: 3px; color: #c49a40; font-weight: 500; font-style: normal; }
+
+  /* ═══ Entrance animation ═══ */
+  .cmp__row { opacity: 0; animation: rowSlide 0.35s ease forwards; }
+  .cmp__row:nth-child(1) { animation-delay: 0.10s; }
+  .cmp__row:nth-child(2) { animation-delay: 0.16s; }
+  .cmp__row:nth-child(3) { animation-delay: 0.22s; }
+  .cmp__row:nth-child(4) { animation-delay: 0.28s; }
+  .cmp__row:nth-child(5) { animation-delay: 0.34s; }
+  .cmp__row:nth-child(6) { animation-delay: 0.40s; }
+  .cmp__row:nth-child(7) { animation-delay: 0.46s; }
+  @keyframes rowSlide {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .cmp__summary { opacity: 0; animation: rowSlide 0.4s ease 0.55s forwards; }
+  .cmp__verdict { opacity: 0; animation: rowSlide 0.4s ease 0.65s forwards; }
+</style>
+
+<div class="cmp">
+
+  <div class="cmp__head">
+    <div class="cmp__title">Tàu Container vs Tàu Dầu (Tanker)</div>
+    <div class="cmp__sub">
+      <span>So sánh đặc điểm vận hành</span>
+      <span class="cmp__sub-dot"></span>
+      <span>7 tiêu chí chính</span>
+    </div>
+  </div>
+
+  <!-- Column headers -->
+  <div class="cmp__cols">
+    <div class="cmp__col-head cmp__col-head--left">
+      <div class="cmp__col-name">Tàu Container</div>
+      <div class="cmp__col-tag">Vận chuyển hàng đóng gói</div>
+    </div>
+    <div class="cmp__col-head cmp__col-head--right">
+      <div class="cmp__col-name">Tàu Dầu (Tanker)</div>
+      <div class="cmp__col-tag">Vận chuyển chất lỏng khối lượng lớn</div>
+    </div>
+  </div>
+
+  <!-- Rows -->
+  <div class="cmp__rows">
+
+    <!-- Hàng hóa -->
+    <div class="cmp__row">
+      <div class="cmp__cell cmp__cell--left">
+        <div class="cmp__cell-val">Container TEU/FEU</div>
+        <div class="cmp__cell-detail">Đa dạng hàng hóa, tiêu chuẩn hóa</div>
+      </div>
+      <div class="cmp__attr-col">
+        <div class="cmp__attr-label">Hàng hóa</div>
+      </div>
+      <div class="cmp__cell cmp__cell--right">
+        <div class="cmp__cell-val">Dầu thô, xăng, hóa chất</div>
+        <div class="cmp__cell-detail">Chuyên biệt chất lỏng khối lượng lớn</div>
+      </div>
+    </div>
+
+    <!-- Cấu trúc -->
+    <div class="cmp__row">
+      <div class="cmp__cell cmp__cell--left">
+        <div class="cmp__cell-val">Nhiều khoang mở, cell guides</div>
+        <div class="cmp__cell-detail">Crane trên tàu (tùy loại)</div>
+      </div>
+      <div class="cmp__attr-col">
+        <div class="cmp__attr-label">Cấu trúc</div>
+      </div>
+      <div class="cmp__cell cmp__cell--right">
+        <div class="cmp__cell-val">Khoang kín (tanks), hệ thống bơm</div>
+        <div class="cmp__cell-detail">Double hull bắt buộc từ MARPOL</div>
+      </div>
+    </div>
+
+    <!-- Tốc độ -->
+    <div class="cmp__row">
+      <div class="cmp__cell cmp__cell--left winner winner--left">
+        <div class="cmp__cell-val">20–25 knots</div>
+        <span class="cmp__badge cmp__badge--left">✦ Nhanh hơn</span>
+      </div>
+      <div class="cmp__attr-col">
+        <div class="cmp__attr-label">Tốc độ</div>
+        <div class="cmp__dot cmp__dot--left"></div>
+      </div>
+      <div class="cmp__cell cmp__cell--right">
+        <div class="cmp__cell-val">12–16 knots</div>
+        <div class="cmp__cell-detail">Ưu tiên ổn định hơn tốc độ</div>
+      </div>
+    </div>
+
+    <!-- Trọng tải -->
+    <div class="cmp__row">
+      <div class="cmp__cell cmp__cell--left">
+        <div class="cmp__cell-val">10,000 – 24,000 TEU</div>
+        <div class="cmp__cell-detail">Ultra Large: &gt;20,000 TEU</div>
+      </div>
+      <div class="cmp__attr-col">
+        <div class="cmp__attr-label">Trọng tải</div>
+        <div class="cmp__dot cmp__dot--right"></div>
+      </div>
+      <div class="cmp__cell cmp__cell--right winner winner--right">
+        <div class="cmp__cell-val">80,000 – 320,000 DWT</div>
+        <span class="cmp__badge cmp__badge--right">✦ Tải trọng lớn hơn</span>
+      </div>
+    </div>
+
+    <!-- An toàn -->
+    <div class="cmp__row">
+      <div class="cmp__cell cmp__cell--left">
+        <div class="cmp__cell-val">SOLAS, ISM Code</div>
+        <div class="cmp__cell-detail">Rủi ro: mất container, nghiêng tàu</div>
+      </div>
+      <div class="cmp__attr-col">
+        <div class="cmp__attr-label">An toàn</div>
+        <div class="cmp__dot cmp__dot--right"></div>
+      </div>
+      <div class="cmp__cell cmp__cell--right winner winner--right">
+        <div class="cmp__cell-val">SOLAS + MARPOL + ISGOTT</div>
+        <span class="cmp__badge cmp__badge--right">✦ Quy định nghiêm hơn</span>
+      </div>
+    </div>
+
+    <!-- Cảng -->
+    <div class="cmp__row">
+      <div class="cmp__cell cmp__cell--left winner winner--left">
+        <div class="cmp__cell-val">Cần cẩu container chuyên dụng</div>
+        <span class="cmp__badge cmp__badge--left">✦ Nhiều cảng hơn</span>
+      </div>
+      <div class="cmp__attr-col">
+        <div class="cmp__attr-label">Cảng</div>
+        <div class="cmp__dot cmp__dot--left"></div>
+      </div>
+      <div class="cmp__cell cmp__cell--right">
+        <div class="cmp__cell-val">Cần hệ thống đường ống + bến chuyên dụng</div>
+        <div class="cmp__cell-detail">Ít cảng tiếp nhận được</div>
+      </div>
+    </div>
+
+    <!-- Chi phí -->
+    <div class="cmp__row">
+      <div class="cmp__cell cmp__cell--left">
+        <div class="cmp__cell-val">$100–200M (Panamax–ULCV)</div>
+        <div class="cmp__cell-detail">Phụ thuộc cỡ tàu và đóng mới/cũ</div>
+      </div>
+      <div class="cmp__attr-col">
+        <div class="cmp__attr-label">Giá tàu</div>
+      </div>
+      <div class="cmp__cell cmp__cell--right">
+        <div class="cmp__cell-val">$50–120M (Aframax–VLCC)</div>
+        <div class="cmp__cell-detail">VLCC đắt nhất do double hull</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Summary scores -->
+  <div class="cmp__summary">
+    <div class="cmp__score cmp__score--left">
+      <div class="cmp__score-num cmp__score-num--left">2</div>
+      <div class="cmp__score-label">lợi thế</div>
+    </div>
+    <div class="cmp__vs">vs</div>
+    <div class="cmp__score cmp__score--right">
+      <div class="cmp__score-num cmp__score-num--right">2</div>
+      <div class="cmp__score-label">lợi thế</div>
+    </div>
+  </div>
+
+  <div class="cmp__verdict">Cân bằng — Container linh hoạt hơn, Tanker chuyên biệt hơn. Mỗi loại tối ưu cho mục đích riêng.</div>
+
+  <div class="cmp__foot">
+    <div class="cmp__source">
+      Nguồn: <em>Tổng hợp từ IMO, Clarkson Research, DNV GL</em><br>
+      Thông số trung bình cho tàu tiêu chuẩn
+      <span class="cmp__source-warn">⚠ Thay đổi theo loại tàu cụ thể</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+if (typeof WiiiVisualBridge !== 'undefined') {
+  WiiiVisualBridge.reportResult({ type: 'comparison', rows: 7, version: 'v2-row-aligned' });
+}
+</script>

@@ -1,0 +1,486 @@
+<!-- STATE MODEL: { title: string, subtitle?: string, source?: string, axes: [{label: string, maxLabel?: string}], datasets: [{name: string, values: [0-100], color: string}] } -->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: transparent; color: #2a2520; }
+
+  /* ═══ Root ═══ */
+  .radar {
+    --cam: #D97757; --cam-20: rgba(217,119,87,0.18); --cam-08: rgba(217,119,87,0.08);
+    --mint: #85CDCA; --mint-20: rgba(133,205,202,0.18); --mint-08: rgba(133,205,202,0.08);
+    --vang: #FFD166; --vang-20: rgba(255,209,102,0.18);
+    --grid: #e8e4df; --grid-light: #f0ece7; --grid-lighter: #f5f2ef; --grid-faint: #f8f6f3;
+    --text2: #777; --text3: #aaa;
+    max-width: 540px; padding: 20px 0;
+  }
+
+  /* ═══ Header ═══ */
+  .radar__head { margin-bottom: 8px; }
+  .radar__title {
+    font-size: 16px; font-weight: 700; color: #1a1714;
+    letter-spacing: -0.01em; line-height: 1.3;
+  }
+  .radar__sub {
+    font-size: 13px; color: var(--text2); margin-top: 3px;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  }
+  .radar__sub-dot {
+    width: 3px; height: 3px; border-radius: 50%;
+    background: var(--text3); flex-shrink: 0;
+  }
+
+  /* ═══ Legend (interactive toggle) ═══ */
+  .radar__legend {
+    display: flex; gap: 6px; margin: 14px 0 8px;
+  }
+  .radar__legend-btn {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 12.5px; font-weight: 500; color: #555;
+    padding: 5px 14px; border-radius: 20px;
+    border: 1.5px solid #e8e4df; background: #fff;
+    cursor: pointer; transition: all 0.2s ease;
+    user-select: none;
+  }
+  .radar__legend-btn:hover { border-color: #d0ccc6; background: #faf9f7; }
+  .radar__legend-btn.active { border-color: currentColor; }
+  .radar__legend-btn.active[data-ds="0"] { color: var(--cam); background: rgba(217,119,87,0.06); border-color: var(--cam); }
+  .radar__legend-btn.active[data-ds="1"] { color: var(--mint); background: rgba(133,205,202,0.06); border-color: var(--mint); }
+  .radar__legend-dot {
+    width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0;
+    transition: transform 0.15s ease;
+  }
+  .radar__legend-btn:hover .radar__legend-dot { transform: scale(1.15); }
+  .radar__legend-btn.inactive { opacity: 0.35; }
+  .radar__legend-btn.inactive .radar__legend-dot { transform: scale(0.85); }
+
+  /* ═══ Chart ═══ */
+  .radar__chart { position: relative; }
+  .radar__chart svg { display: block; overflow: visible; }
+
+  /* ═══ Polygon animations ═══ */
+  .poly-anim {
+    stroke-dasharray: 900;
+    stroke-dashoffset: 900;
+    animation: polyDraw 1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  .poly-anim-d0 { animation-delay: 0.15s; }
+  .poly-anim-d1 { animation-delay: 0.40s; }
+  @keyframes polyDraw {
+    to { stroke-dashoffset: 0; }
+  }
+
+  .fill-anim {
+    opacity: 0;
+    animation: fillFade 0.5s ease forwards;
+  }
+  .fill-anim-d0 { animation-delay: 0.6s; }
+  .fill-anim-d1 { animation-delay: 0.85s; }
+  @keyframes fillFade {
+    to { opacity: 1; }
+  }
+
+  /* Vertex dots */
+  .vtx {
+    opacity: 0; transform-origin: center;
+    animation: vtxPop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+  .vtx-0-0 { animation-delay: 0.65s; }
+  .vtx-0-1 { animation-delay: 0.72s; }
+  .vtx-0-2 { animation-delay: 0.79s; }
+  .vtx-0-3 { animation-delay: 0.86s; }
+  .vtx-0-4 { animation-delay: 0.93s; }
+  .vtx-0-5 { animation-delay: 1.00s; }
+  .vtx-1-0 { animation-delay: 0.90s; }
+  .vtx-1-1 { animation-delay: 0.97s; }
+  .vtx-1-2 { animation-delay: 1.04s; }
+  .vtx-1-3 { animation-delay: 1.11s; }
+  .vtx-1-4 { animation-delay: 1.18s; }
+  .vtx-1-5 { animation-delay: 1.25s; }
+  @keyframes vtxPop {
+    0%   { opacity: 0; transform: scale(0); }
+    70%  { opacity: 1; transform: scale(1.4); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+
+  /* ═══ Axis hover zones ═══ */
+  .axis-zone { cursor: pointer; }
+  .axis-zone:hover .axis-label { font-weight: 700; fill: #1a1714; }
+  .axis-zone:hover .axis-line { stroke: #ccc; stroke-width: 1; }
+
+  /* Axis highlight band on hover */
+  .axis-highlight {
+    opacity: 0; transition: opacity 0.2s ease;
+  }
+  .axis-zone:hover .axis-highlight { opacity: 1; }
+
+  /* Vertex enlarge on axis hover */
+  .axis-zone:hover ~ .ds-group .vtx-on-axis {
+    r: 5.5;
+  }
+
+  /* ═══ Tooltip ═══ */
+  .radar__tip {
+    position: absolute;
+    background: #1a1714; color: #ede8e3;
+    font-size: 11.5px; font-weight: 500;
+    padding: 8px 14px; border-radius: 8px;
+    line-height: 1.5;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    z-index: 10;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    max-width: 200px; white-space: normal;
+  }
+  .radar__tip::after {
+    content: '';
+    position: absolute; top: 100%; left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #1a1714;
+  }
+  .radar__tip.active {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  .radar__tip-axis {
+    font-size: 10px; color: #9a9590; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    margin-bottom: 3px;
+  }
+  .radar__tip-row {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 2px;
+  }
+  .radar__tip-dot {
+    width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0;
+  }
+  .radar__tip-name { color: #ccc; }
+  .radar__tip-val { font-weight: 700; color: #fff; margin-left: auto; }
+
+  /* ═══ Score summary cards ═══ */
+  .radar__scores {
+    display: flex; gap: 10px; margin-top: 14px;
+  }
+  .radar__score {
+    flex: 1; padding: 10px 14px;
+    border-radius: 10px; border: 1px solid #f0ece7;
+    text-align: center;
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+  .radar__score:hover { background: #faf9f7; }
+  .radar__score-label {
+    font-size: 11px; color: var(--text3); font-weight: 500;
+    margin-bottom: 2px;
+  }
+  .radar__score-val {
+    font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .radar__score-sub {
+    font-size: 10px; color: var(--text3); margin-top: 1px;
+  }
+
+  /* ═══ Footer ═══ */
+  .radar__foot {
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid #f0ece7;
+    display: flex; justify-content: space-between;
+    align-items: flex-end; gap: 16px; flex-wrap: wrap;
+  }
+  .radar__source {
+    font-size: 11px; color: var(--text3); line-height: 1.6;
+  }
+  .radar__source em { font-style: italic; }
+  .radar__source-warn {
+    display: inline-flex; align-items: center; gap: 3px;
+    color: #c49a40; font-weight: 500; font-style: normal;
+  }
+  .radar__verdict {
+    font-size: 11px; color: var(--text2); font-weight: 500;
+    padding: 4px 12px; border-radius: 20px;
+    background: #f5f2ef; white-space: nowrap;
+  }
+</style>
+
+<div class="radar">
+
+  <!-- Header -->
+  <div class="radar__head">
+    <div class="radar__title">Tàu Container vs Tàu Dầu (Tanker)</div>
+    <div class="radar__sub">
+      <span>So sánh 6 tiêu chí vận hành</span>
+      <span class="radar__sub-dot"></span>
+      <span>Thang điểm 0–100</span>
+    </div>
+  </div>
+
+  <!-- Legend toggle -->
+  <div class="radar__legend">
+    <button class="radar__legend-btn active" data-ds="0" id="togDs0">
+      <div class="radar__legend-dot" style="background:#D97757"></div>
+      Tàu Container
+    </button>
+    <button class="radar__legend-btn active" data-ds="1" id="togDs1">
+      <div class="radar__legend-dot" style="background:#85CDCA"></div>
+      Tàu Dầu (Tanker)
+    </button>
+  </div>
+
+  <!-- Chart -->
+  <div class="radar__chart" id="chartWrap">
+    <svg viewBox="0 0 440 380" width="100%" id="radarSvg">
+      <defs>
+        <filter id="glowCam" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="glowMint" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+
+      <g transform="translate(220, 185)">
+
+        <!-- ═══ Grid rings ═══ -->
+        <!-- 100% ring -->
+        <polygon points="0,-140 121.2,-70 121.2,70 0,140 -121.2,70 -121.2,-70"
+                 fill="none" stroke="var(--grid)" stroke-width="1"/>
+        <!-- 75% -->
+        <polygon points="0,-105 90.9,-52.5 90.9,52.5 0,105 -90.9,52.5 -90.9,-52.5"
+                 fill="none" stroke="var(--grid-light)" stroke-width="0.7"/>
+        <!-- 50% -->
+        <polygon points="0,-70 60.6,-35 60.6,35 0,70 -60.6,35 -60.6,-35"
+                 fill="none" stroke="var(--grid-lighter)" stroke-width="0.7"/>
+        <!-- 25% -->
+        <polygon points="0,-35 30.3,-17.5 30.3,17.5 0,35 -30.3,17.5 -30.3,-17.5"
+                 fill="none" stroke="var(--grid-faint)" stroke-width="0.5"/>
+
+        <!-- Grid % labels (right side only, subtle) -->
+        <text x="4" y="-142" text-anchor="start" font-size="8.5" fill="#ccc" font-family="system-ui">100</text>
+        <text x="4" y="-107" text-anchor="start" font-size="8.5" fill="#ccc" font-family="system-ui">75</text>
+        <text x="4" y="-72" text-anchor="start" font-size="8.5" fill="#ccc" font-family="system-ui">50</text>
+        <text x="4" y="-37" text-anchor="start" font-size="8.5" fill="#ccc" font-family="system-ui">25</text>
+
+        <!-- ═══ Axes ═══ -->
+        <!--
+          6 axes at 60° intervals:
+          0: top          (0, -R)
+          1: top-right    (R*sin60, -R*cos60) = (0.866R, -0.5R)
+          2: bottom-right (0.866R, 0.5R)
+          3: bottom       (0, R)
+          4: bottom-left  (-0.866R, 0.5R)
+          5: top-left     (-0.866R, -0.5R)
+        -->
+
+        <!-- Axis 0: Tốc độ -->
+        <g class="axis-zone" data-axis="0" data-label="Tốc độ">
+          <line class="axis-line" x1="0" y1="0" x2="0" y2="-140" stroke="var(--grid-light)" stroke-width="0.5"/>
+          <polygon class="axis-highlight" points="0,0 -12,-140 12,-140" fill="#D97757" opacity="0.04"/>
+          <line x1="0" y1="0" x2="0" y2="-150" stroke="transparent" stroke-width="24"/>
+          <text class="axis-label" x="0" y="-152" text-anchor="middle" font-size="12" fill="#444" font-weight="600" font-family="system-ui">Tốc độ</text>
+        </g>
+
+        <!-- Axis 1: Sức chứa -->
+        <g class="axis-zone" data-axis="1" data-label="Sức chứa">
+          <line class="axis-line" x1="0" y1="0" x2="121.2" y2="-70" stroke="var(--grid-light)" stroke-width="0.5"/>
+          <line x1="0" y1="0" x2="131" y2="-76" stroke="transparent" stroke-width="24"/>
+          <text class="axis-label" x="134" y="-72" text-anchor="start" font-size="12" fill="#444" font-weight="600" font-family="system-ui">Sức chứa</text>
+        </g>
+
+        <!-- Axis 2: Tiết kiệm NL -->
+        <g class="axis-zone" data-axis="2" data-label="Tiết kiệm NL">
+          <line class="axis-line" x1="0" y1="0" x2="121.2" y2="70" stroke="var(--grid-light)" stroke-width="0.5"/>
+          <line x1="0" y1="0" x2="131" y2="76" stroke="transparent" stroke-width="24"/>
+          <text class="axis-label" x="134" y="76" text-anchor="start" font-size="12" fill="#444" font-weight="600" font-family="system-ui">Tiết kiệm NL</text>
+        </g>
+
+        <!-- Axis 3: An toàn -->
+        <g class="axis-zone" data-axis="3" data-label="An toàn">
+          <line class="axis-line" x1="0" y1="0" x2="0" y2="140" stroke="var(--grid-light)" stroke-width="0.5"/>
+          <line x1="0" y1="0" x2="0" y2="150" stroke="transparent" stroke-width="24"/>
+          <text class="axis-label" x="0" y="162" text-anchor="middle" font-size="12" fill="#444" font-weight="600" font-family="system-ui">An toàn</text>
+        </g>
+
+        <!-- Axis 4: Ổn định -->
+        <g class="axis-zone" data-axis="4" data-label="Ổn định">
+          <line class="axis-line" x1="0" y1="0" x2="-121.2" y2="70" stroke="var(--grid-light)" stroke-width="0.5"/>
+          <line x1="0" y1="0" x2="-131" y2="76" stroke="transparent" stroke-width="24"/>
+          <text class="axis-label" x="-134" y="76" text-anchor="end" font-size="12" fill="#444" font-weight="600" font-family="system-ui">Ổn định</text>
+        </g>
+
+        <!-- Axis 5: Linh hoạt -->
+        <g class="axis-zone" data-axis="5" data-label="Linh hoạt">
+          <line class="axis-line" x1="0" y1="0" x2="-121.2" y2="-70" stroke="var(--grid-light)" stroke-width="0.5"/>
+          <line x1="0" y1="0" x2="-131" y2="-76" stroke="transparent" stroke-width="24"/>
+          <text class="axis-label" x="-134" y="-72" text-anchor="end" font-size="12" fill="#444" font-weight="600" font-family="system-ui">Linh hoạt</text>
+        </g>
+
+        <!-- ═══ Dataset 0: Container [85, 70, 55, 60, 50, 90] ═══ -->
+        <g class="ds-group" id="ds0">
+          <!-- Fill -->
+          <polygon class="fill-anim fill-anim-d0"
+                   points="0,-119 84.8,-42 66.8,53.9 0,84 -60.6,35 -108.9,-63"
+                   fill="var(--cam-08)"/>
+          <!-- Stroke -->
+          <polygon class="poly-anim poly-anim-d0"
+                   points="0,-119 84.8,-42 66.8,53.9 0,84 -60.6,35 -108.9,-63"
+                   fill="none" stroke="var(--cam)" stroke-width="2.2" stroke-linejoin="round"/>
+          <!-- Vertices -->
+          <circle class="vtx vtx-0-0" cx="0"      cy="-119"  r="4" fill="var(--cam)" filter="url(#glowCam)"/>
+          <circle class="vtx vtx-0-1" cx="84.8"   cy="-42"   r="4" fill="var(--cam)"/>
+          <circle class="vtx vtx-0-2" cx="66.8"   cy="53.9"  r="4" fill="var(--cam)"/>
+          <circle class="vtx vtx-0-3" cx="0"      cy="84"    r="4" fill="var(--cam)"/>
+          <circle class="vtx vtx-0-4" cx="-60.6"  cy="35"    r="4" fill="var(--cam)"/>
+          <circle class="vtx vtx-0-5" cx="-108.9" cy="-63"   r="4" fill="var(--cam)" filter="url(#glowCam)"/>
+        </g>
+
+        <!-- ═══ Dataset 1: Tanker [50, 85, 75, 90, 80, 40] ═══ -->
+        <g class="ds-group" id="ds1">
+          <!-- Fill -->
+          <polygon class="fill-anim fill-anim-d1"
+                   points="0,-70 103,-42.4 90.9,52.5 0,126 -96.9,56 -48.5,-28"
+                   fill="var(--mint-08)"/>
+          <!-- Stroke -->
+          <polygon class="poly-anim poly-anim-d1"
+                   points="0,-70 103,-42.4 90.9,52.5 0,126 -96.9,56 -48.5,-28"
+                   fill="none" stroke="var(--mint)" stroke-width="2.2" stroke-linejoin="round"/>
+          <!-- Vertices -->
+          <circle class="vtx vtx-1-0" cx="0"      cy="-70"   r="4" fill="var(--mint)"/>
+          <circle class="vtx vtx-1-1" cx="103"    cy="-42.4" r="4" fill="var(--mint)" filter="url(#glowMint)"/>
+          <circle class="vtx vtx-1-2" cx="90.9"   cy="52.5"  r="4" fill="var(--mint)"/>
+          <circle class="vtx vtx-1-3" cx="0"      cy="126"   r="4" fill="var(--mint)" filter="url(#glowMint)"/>
+          <circle class="vtx vtx-1-4" cx="-96.9"  cy="56"    r="4" fill="var(--mint)"/>
+          <circle class="vtx vtx-1-5" cx="-48.5"  cy="-28"   r="4" fill="var(--mint)"/>
+        </g>
+
+      </g>
+    </svg>
+
+    <!-- Tooltip -->
+    <div class="radar__tip" id="tip">
+      <div class="radar__tip-axis" id="tipAxis"></div>
+      <div class="radar__tip-row" id="tipRow0">
+        <div class="radar__tip-dot" style="background:#D97757"></div>
+        <span class="radar__tip-name">Container</span>
+        <span class="radar__tip-val" id="tipVal0"></span>
+      </div>
+      <div class="radar__tip-row" id="tipRow1">
+        <div class="radar__tip-dot" style="background:#85CDCA"></div>
+        <span class="radar__tip-name">Tanker</span>
+        <span class="radar__tip-val" id="tipVal1"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Score summary -->
+  <div class="radar__scores">
+    <div class="radar__score" style="border-color: rgba(217,119,87,0.3);">
+      <div class="radar__score-label">Container</div>
+      <div class="radar__score-val" style="color:var(--cam)">68.3</div>
+      <div class="radar__score-sub">điểm TB / 100</div>
+    </div>
+    <div class="radar__score" style="border-color: rgba(133,205,202,0.3);">
+      <div class="radar__score-label">Tanker</div>
+      <div class="radar__score-val" style="color:var(--mint)">70.0</div>
+      <div class="radar__score-sub">điểm TB / 100</div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="radar__foot">
+    <div class="radar__source">
+      Nguồn: <em>Tổng hợp từ IMO Performance Standards</em><br>
+      Điểm đánh giá tương đối
+      <span class="radar__source-warn">⚠ Thay đổi theo loại tàu cụ thể</span>
+    </div>
+    <div class="radar__verdict">Mỗi loại tàu tối ưu cho mục đích riêng</div>
+  </div>
+
+</div>
+
+<script>
+  (function () {
+    /* ── Data ── */
+    var ds = [
+      { name: 'Container', values: [85, 70, 55, 60, 50, 90], color: '#D97757' },
+      { name: 'Tanker',    values: [50, 85, 75, 90, 80, 40], color: '#85CDCA' }
+    ];
+    var axes = ['Tốc độ', 'Sức chứa', 'Tiết kiệm NL', 'An toàn', 'Ổn định', 'Linh hoạt'];
+
+    /* ── Tooltip on axis hover ── */
+    var wrap = document.getElementById('chartWrap');
+    var tip  = document.getElementById('tip');
+    var tipAxis = document.getElementById('tipAxis');
+    var tipVal0 = document.getElementById('tipVal0');
+    var tipVal1 = document.getElementById('tipVal1');
+    var tipRow0 = document.getElementById('tipRow0');
+    var tipRow1 = document.getElementById('tipRow1');
+
+    var zones = document.querySelectorAll('.axis-zone');
+    zones.forEach(function (z) {
+      z.addEventListener('mouseenter', function (e) {
+        var idx = parseInt(z.getAttribute('data-axis'));
+        var label = z.getAttribute('data-label');
+
+        tipAxis.textContent = label;
+        tipVal0.textContent = ds[0].values[idx] + '/100';
+        tipVal1.textContent = ds[1].values[idx] + '/100';
+
+        // Highlight winner
+        if (ds[0].values[idx] > ds[1].values[idx]) {
+          tipVal0.style.color = '#fff';
+          tipVal1.style.color = '#999';
+        } else if (ds[1].values[idx] > ds[0].values[idx]) {
+          tipVal0.style.color = '#999';
+          tipVal1.style.color = '#fff';
+        } else {
+          tipVal0.style.color = '#fff';
+          tipVal1.style.color = '#fff';
+        }
+
+        // Show/hide rows based on toggle state
+        tipRow0.style.display = ds0Visible ? 'flex' : 'none';
+        tipRow1.style.display = ds1Visible ? 'flex' : 'none';
+
+        tip.classList.add('active');
+
+        // Position near axis label
+        var lbl = z.querySelector('.axis-label');
+        if (lbl && wrap) {
+          var r = lbl.getBoundingClientRect();
+          var wr = wrap.getBoundingClientRect();
+          tip.style.left = (r.left + r.width / 2 - wr.left) + 'px';
+          tip.style.top  = (r.top - wr.top - 12) + 'px';
+        }
+      });
+      z.addEventListener('mouseleave', function () {
+        tip.classList.remove('active');
+      });
+    });
+
+    /* ── Dataset toggle ── */
+    var ds0Visible = true, ds1Visible = true;
+    var ds0El = document.getElementById('ds0');
+    var ds1El = document.getElementById('ds1');
+    var tog0  = document.getElementById('togDs0');
+    var tog1  = document.getElementById('togDs1');
+
+    tog0.addEventListener('click', function () {
+      ds0Visible = !ds0Visible;
+      ds0El.style.opacity = ds0Visible ? '1' : '0.07';
+      tog0.classList.toggle('active', ds0Visible);
+      tog0.classList.toggle('inactive', !ds0Visible);
+    });
+    tog1.addEventListener('click', function () {
+      ds1Visible = !ds1Visible;
+      ds1El.style.opacity = ds1Visible ? '1' : '0.07';
+      tog1.classList.toggle('active', ds1Visible);
+      tog1.classList.toggle('inactive', !ds1Visible);
+    });
+  })();
+
+  if (typeof WiiiVisualBridge !== 'undefined') {
+    WiiiVisualBridge.reportResult({ type: 'radar', datasets: 2, axes: 6, version: 'v2-pro' });
+  }
+</script>

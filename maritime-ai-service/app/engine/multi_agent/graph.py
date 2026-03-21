@@ -1098,36 +1098,36 @@ _CODE_STUDIO_EXAMPLE_MAP: dict[str, str] = {
     # SVG interactive diagram (ships, architecture, process)
     "diagram": "svg_ship_encounter.html",
     "architecture": "svg_ship_encounter.html",
-    # Clean inline charts (Phase2 — no wrapper, no sidebar)
-    "comparison": "svg_horizontal_bar_clean.html",
+    # Expert UX examples (v2-pro — professional quality)
+    "comparison": "html_comparison_clean.html",
     "chart": "svg_horizontal_bar_clean.html",
     "benchmark": "svg_horizontal_bar_clean.html",
     "statistics": "svg_horizontal_bar_clean.html",
     "horizontal_bar": "svg_horizontal_bar_clean.html",
-    # SVG flow diagram (process, workflow, steps)
-    "process": "svg_flow_diagram.html",
-    "workflow": "svg_flow_diagram.html",
-    "timeline": "svg_flow_diagram.html",
-    # Interactive dashboard (data viz, metrics, KPI)
+    # Process/flow diagram (expert)
+    "process": "html_process_flow_clean.html",
+    "workflow": "html_process_flow_clean.html",
+    "timeline": "html_process_flow_clean.html",
+    # Interactive dashboard
     "dashboard": "dashboard_metrics.html",
     "metrics": "dashboard_metrics.html",
     "overview": "dashboard_metrics.html",
-    # HTML/CSS/JS widget (tools, calculators, quizzes)
+    # HTML/CSS/JS widget
     "tool": "widget_maritime_calculator.html",
     "quiz": "widget_maritime_calculator.html",
     "calculator": "widget_maritime_calculator.html",
-    # Phase2-H: Radar/spider chart
-    "radar": "svg_radar_chart.html",
-    "spider": "svg_radar_chart.html",
-    # Vertical bar / column chart
-    "bar_chart": "svg_vertical_bar_chart.html",
-    "column": "svg_vertical_bar_chart.html",
-    "vertical_bar": "svg_vertical_bar_chart.html",
-    # Pie / donut chart (clean version)
+    # Radar/spider chart (expert)
+    "radar": "svg_radar_clean.html",
+    "spider": "svg_radar_clean.html",
+    # Vertical bar chart (expert)
+    "bar_chart": "svg_vertical_bar_clean.html",
+    "column": "svg_vertical_bar_clean.html",
+    "vertical_bar": "svg_vertical_bar_clean.html",
+    # Donut chart (expert)
     "pie": "svg_donut_clean.html",
     "donut": "svg_donut_clean.html",
     "doughnut": "svg_donut_clean.html",
-    # Line chart (clean version)
+    # Line chart (expert)
     "line_chart": "svg_line_clean.html",
     "line": "svg_line_clean.html",
     # SVG motion animation

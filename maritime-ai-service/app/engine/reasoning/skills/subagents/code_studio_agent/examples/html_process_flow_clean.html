@@ -1,0 +1,328 @@
+<!-- STATE MODEL: { title: string, subtitle?: string, source?: string, totalTime?: string, steps: [{title: string, desc: string, duration?: string, who?: string, status: "done"|"active"|"upcoming", detail?: string}] } -->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: transparent; color: #2a2520; }
+  .flow { --cam: #D97757; --mint: #85CDCA; --vang: #FFD166; --text2: #777; --text3: #aaa; --done: #3a9e7e; --done-bg: #eefbf5; --active-bg: #fef8f5; --upcoming-bg: #faf9f7; max-width: 560px; padding: 20px 0; }
+
+  /* ═══ Header ═══ */
+  .flow__head { margin-bottom: 20px; }
+  .flow__title { font-size: 16px; font-weight: 700; color: #1a1714; letter-spacing: -0.01em; }
+  .flow__sub { font-size: 13px; color: var(--text2); margin-top: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .flow__sub-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text3); }
+  .flow__meta { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .flow__meta-tag { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+  .flow__meta-tag--steps { color: var(--cam); background: #fef3ef; }
+  .flow__meta-tag--time { color: var(--done); background: var(--done-bg); }
+
+  /* ═══ Timeline ═══ */
+  .flow__timeline { position: relative; padding-left: 40px; }
+
+  /* Connector line (animated) */
+  .flow__line {
+    position: absolute; left: 17px; top: 20px; bottom: 20px;
+    width: 2px; background: #eeebe7; border-radius: 1px;
+    overflow: hidden;
+  }
+  .flow__line-fill {
+    width: 100%; background: var(--done);
+    border-radius: 1px;
+    transition: height 1s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* ═══ Step ═══ */
+  .flow__step {
+    position: relative; margin-bottom: 4px;
+    opacity: 0; animation: stepIn 0.4s ease forwards;
+  }
+  .flow__step:nth-child(1) { animation-delay: 0.10s; }
+  .flow__step:nth-child(2) { animation-delay: 0.20s; }
+  .flow__step:nth-child(3) { animation-delay: 0.30s; }
+  .flow__step:nth-child(4) { animation-delay: 0.40s; }
+  .flow__step:nth-child(5) { animation-delay: 0.50s; }
+  .flow__step:nth-child(6) { animation-delay: 0.60s; }
+  @keyframes stepIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Node (circle on timeline) ── */
+  .flow__node {
+    position: absolute; left: -40px; top: 16px;
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+    z-index: 2;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .flow__step:hover .flow__node {
+    transform: scale(1.1);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .flow__node--done {
+    background: var(--done); color: #fff;
+    border: 2px solid var(--done);
+  }
+  .flow__node--active {
+    background: #fff; color: var(--cam);
+    border: 2.5px solid var(--cam);
+    box-shadow: 0 0 0 4px rgba(217,119,87,0.12);
+  }
+  /* Pulse for active */
+  .flow__node--active::after {
+    content: ''; position: absolute; inset: -6px;
+    border-radius: 50%; border: 2px solid var(--cam);
+    opacity: 0;
+    animation: nodePulse 2s ease-in-out infinite;
+  }
+  @keyframes nodePulse {
+    0%, 100% { opacity: 0; transform: scale(0.9); }
+    50%      { opacity: 0.25; transform: scale(1.15); }
+  }
+  .flow__node--upcoming {
+    background: #fff; color: #ccc;
+    border: 2px solid #e0dbd5;
+  }
+  /* Checkmark for done */
+  .flow__node--done::before { content: '✓'; }
+
+  /* ── Card ── */
+  .flow__card {
+    padding: 14px 16px; border-radius: 10px;
+    border: 1px solid #f0ece7; background: #fff;
+    cursor: default;
+    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  }
+  .flow__step:hover .flow__card {
+    border-color: #e0dbd5;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+  }
+  .flow__card--done { border-left: 3px solid var(--done); background: var(--done-bg); }
+  .flow__card--active { border-left: 3px solid var(--cam); background: var(--active-bg); }
+  .flow__card--upcoming { border-left: 3px solid #e0dbd5; background: var(--upcoming-bg); }
+  .flow__step:hover .flow__card--done { background: #e5f8f0; }
+  .flow__step:hover .flow__card--active { background: #fdf3ee; }
+  .flow__step:hover .flow__card--upcoming { background: #f5f3f0; }
+
+  /* Card header row */
+  .flow__card-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .flow__card-title {
+    font-size: 14px; font-weight: 600; color: #1a1714; flex: 1;
+    transition: color 0.15s ease;
+  }
+  .flow__card--done .flow__card-title { color: var(--done); }
+
+  /* Badges */
+  .flow__badge {
+    font-size: 10px; font-weight: 600; padding: 2px 8px;
+    border-radius: 4px; white-space: nowrap;
+  }
+  .flow__badge--duration { background: #f5f2ef; color: #888; }
+  .flow__badge--who { background: #eef0ff; color: #6670a0; }
+  .flow__badge--status-done { background: var(--done-bg); color: var(--done); }
+  .flow__badge--status-active { background: #fef3ef; color: var(--cam); }
+
+  /* Description */
+  .flow__card-desc {
+    font-size: 12.5px; color: #666; line-height: 1.5; margin-top: 6px;
+  }
+
+  /* Detail (expand on hover) */
+  .flow__card-detail {
+    max-height: 0; overflow: hidden; opacity: 0;
+    transition: max-height 0.3s ease, opacity 0.25s ease, margin 0.3s ease;
+    margin-top: 0;
+  }
+  .flow__step:hover .flow__card-detail {
+    max-height: 80px; opacity: 1; margin-top: 8px;
+  }
+  .flow__card-detail-inner {
+    font-size: 11.5px; color: #999; line-height: 1.5;
+    padding-top: 8px; border-top: 1px dashed #e8e4df;
+  }
+
+  /* ═══ Connector arrow between steps ═══ */
+  .flow__arrow {
+    display: flex; justify-content: center;
+    padding: 2px 0; margin-left: -40px;
+  }
+  .flow__arrow-icon {
+    width: 36px; text-align: center;
+    font-size: 10px; color: #d0ccc6;
+    line-height: 1;
+  }
+
+  /* ═══ Summary ═══ */
+  .flow__summary {
+    margin-top: 18px; padding: 14px 16px;
+    border-radius: 10px; background: #f8f6f4;
+    border: 1px solid #f0ece7;
+    display: flex; align-items: center; gap: 12px;
+    opacity: 0; animation: stepIn 0.4s ease 0.75s forwards;
+  }
+  .flow__summary-icon {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--done-bg); color: var(--done);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  .flow__summary-text { flex: 1; }
+  .flow__summary-title { font-size: 13px; font-weight: 600; color: #1a1714; }
+  .flow__summary-desc { font-size: 11.5px; color: var(--text2); margin-top: 1px; }
+
+  /* ═══ Footer ═══ */
+  .flow__foot {
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid #f0ece7;
+    font-size: 11px; color: var(--text3); line-height: 1.6;
+  }
+  .flow__foot em { font-style: italic; }
+  .flow__foot-warn { display: inline-flex; align-items: center; gap: 3px; color: #c49a40; font-weight: 500; font-style: normal; }
+</style>
+
+<div class="flow">
+
+  <div class="flow__head">
+    <div class="flow__title">Quy trình xử lý tàu vào cảng</div>
+    <div class="flow__sub">
+      <span>Từ đăng ký đến hoàn thành nhập cảng</span>
+      <span class="flow__sub-dot"></span>
+      <span>5 bước chính</span>
+    </div>
+    <div class="flow__meta">
+      <span class="flow__meta-tag flow__meta-tag--steps">5 bước</span>
+      <span class="flow__meta-tag flow__meta-tag--time">~4–8 tiếng tổng</span>
+    </div>
+  </div>
+
+  <div class="flow__timeline">
+    <!-- Animated connector line -->
+    <div class="flow__line"><div class="flow__line-fill" id="lineFill" style="height: 0%"></div></div>
+
+    <!-- Step 1: DONE -->
+    <div class="flow__step">
+      <div class="flow__node flow__node--done"></div>
+      <div class="flow__card flow__card--done">
+        <div class="flow__card-top">
+          <div class="flow__card-title">Đăng ký trước</div>
+          <span class="flow__badge flow__badge--duration">~30 phút</span>
+          <span class="flow__badge flow__badge--who">Đại lý tàu</span>
+        </div>
+        <div class="flow__card-desc">Gửi thông tin tàu, hàng hóa, danh sách thuyền viên qua hệ thống cảng vụ điện tử trước 24h.</div>
+        <div class="flow__card-detail"><div class="flow__card-detail-inner">Bao gồm: Giấy phép rời cảng trước, Manifest hàng hóa, Crew list, Dangerous Goods declaration (nếu có). Phải gửi qua VTS hoặc Port EDI.</div></div>
+      </div>
+    </div>
+
+    <div class="flow__arrow"><div class="flow__arrow-icon">↓</div></div>
+
+    <!-- Step 2: DONE -->
+    <div class="flow__step">
+      <div class="flow__node flow__node--done"></div>
+      <div class="flow__card flow__card--done">
+        <div class="flow__card-top">
+          <div class="flow__card-title">Phê duyệt cảng vụ</div>
+          <span class="flow__badge flow__badge--duration">1–4 tiếng</span>
+          <span class="flow__badge flow__badge--who">Cảng vụ hàng hải</span>
+        </div>
+        <div class="flow__card-desc">Kiểm tra giấy tờ, xác nhận vị trí cầu bến khả dụng, phân luồng hàng hải, cấp lệnh điều động.</div>
+        <div class="flow__card-detail"><div class="flow__card-detail-inner">Cảng vụ kiểm tra: Giấy chứng nhận đăng kiểm còn hạn, ISM/ISPS compliance, thuyền viên đủ bằng cấp. Nếu tàu chở hàng nguy hiểm cần thêm phê duyệt PCCC.</div></div>
+      </div>
+    </div>
+
+    <div class="flow__arrow"><div class="flow__arrow-icon">↓</div></div>
+
+    <!-- Step 3: ACTIVE -->
+    <div class="flow__step">
+      <div class="flow__node flow__node--active">3</div>
+      <div class="flow__card flow__card--active">
+        <div class="flow__card-top">
+          <div class="flow__card-title">Hoa tiêu dẫn tàu</div>
+          <span class="flow__badge flow__badge--duration">1–3 tiếng</span>
+          <span class="flow__badge flow__badge--who">Hoa tiêu</span>
+          <span class="flow__badge flow__badge--status-active">Đang thực hiện</span>
+        </div>
+        <div class="flow__card-desc">Hoa tiêu lên tàu tại điểm đón, phối hợp VTS dẫn tàu qua luồng hàng hải vào vị trí cầu bến đã chỉ định.</div>
+        <div class="flow__card-detail"><div class="flow__card-detail-inner">Tàu lớn (&gt;200m LOA) cần 2 hoa tiêu. Điểm đón hoa tiêu thường cách cảng 5–15 hải lý. Phụ thuộc thủy triều — một số luồng chỉ cho tàu lớn vào khi triều cao.</div></div>
+      </div>
+    </div>
+
+    <div class="flow__arrow"><div class="flow__arrow-icon">↓</div></div>
+
+    <!-- Step 4: UPCOMING -->
+    <div class="flow__step">
+      <div class="flow__node flow__node--upcoming">4</div>
+      <div class="flow__card flow__card--upcoming">
+        <div class="flow__card-top">
+          <div class="flow__card-title">Cập cầu & buộc dây</div>
+          <span class="flow__badge flow__badge--duration">30–60 phút</span>
+          <span class="flow__badge flow__badge--who">Tàu lai + Đội buộc</span>
+        </div>
+        <div class="flow__card-desc">Tàu lai hỗ trợ cập cầu an toàn, đội buộc dây cố định tàu tại vị trí bằng dây cáp và bollards.</div>
+        <div class="flow__card-detail"><div class="flow__card-detail-inner">Số tàu lai phụ thuộc cỡ tàu: 1–2 tàu lai cho Handysize, 2–3 cho Panamax, 3–4 cho Post-Panamax trở lên. Cập mạn trái hoặc phải tùy hướng gió và dòng chảy.</div></div>
+      </div>
+    </div>
+
+    <div class="flow__arrow"><div class="flow__arrow-icon">↓</div></div>
+
+    <!-- Step 5: UPCOMING -->
+    <div class="flow__step">
+      <div class="flow__node flow__node--upcoming">5</div>
+      <div class="flow__card flow__card--upcoming">
+        <div class="flow__card-top">
+          <div class="flow__card-title">Kiểm tra & thông quan</div>
+          <span class="flow__badge flow__badge--duration">1–2 tiếng</span>
+          <span class="flow__badge flow__badge--who">Biên phòng + Hải quan + Kiểm dịch</span>
+        </div>
+        <div class="flow__card-desc">Ba lực lượng lên tàu kiểm tra đồng thời: biên phòng (xuất nhập cảnh), hải quan (hàng hóa), kiểm dịch (y tế). Hoàn thành thủ tục nhập cảng.</div>
+        <div class="flow__card-detail"><div class="flow__card-detail-inner">Nếu tàu đến từ vùng có dịch bệnh: kiểm dịch ưu tiên trước, có thể cách ly 24h. Hàng hóa nguy hiểm cần thêm giám sát PCCC suốt quá trình xếp dỡ.</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Summary -->
+  <div class="flow__summary">
+    <div class="flow__summary-icon">⚓</div>
+    <div class="flow__summary-text">
+      <div class="flow__summary-title">Tổng thời gian: 4–8 tiếng</div>
+      <div class="flow__summary-desc">Phụ thuộc cỡ tàu, loại hàng, thủy triều và mật độ giao thông hàng hải tại cảng</div>
+    </div>
+  </div>
+
+  <div class="flow__foot">
+    Nguồn: <em>Quy trình tiêu chuẩn Cảng vụ Hàng hải Hải Phòng</em><br>
+    Áp dụng cho tàu biển quốc tế
+    <span class="flow__foot-warn">⚠ Thời gian thực tế có thể thay đổi theo điều kiện cụ thể</span>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  /* ── Animate connector line fill based on step status ── */
+  // 2 done + 1 active out of 5 steps → ~50% filled
+  var fill = document.getElementById('lineFill');
+  if (fill) {
+    setTimeout(function () {
+      fill.style.height = '48%';
+    }, 400);
+  }
+
+  /* ── Step hover: subtle expand arrow rotation ── */
+  var steps = document.querySelectorAll('.flow__step');
+  steps.forEach(function (step) {
+    step.addEventListener('mouseenter', function () {
+      // Add subtle scale to node
+      var node = step.querySelector('.flow__node');
+      if (node) node.style.transform = 'scale(1.1)';
+    });
+    step.addEventListener('mouseleave', function () {
+      var node = step.querySelector('.flow__node');
+      if (node) node.style.transform = '';
+    });
+  });
+})();
+
+if (typeof WiiiVisualBridge !== 'undefined') {
+  WiiiVisualBridge.reportResult({ type: 'process_flow', steps: 5, version: 'v2-pro' });
+}
+</script>

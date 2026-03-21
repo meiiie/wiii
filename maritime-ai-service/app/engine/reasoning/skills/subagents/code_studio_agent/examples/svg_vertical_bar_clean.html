@@ -1,0 +1,363 @@
+<!-- STATE MODEL: { title: string, subtitle?: string, source?: string, items: [{label: string, value: number, delta?: string}], yUnit?: string, showAverage?: boolean } -->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: transparent; color: #2a2520; }
+
+  /* ═══ Root ═══ */
+  .vbar {
+    --cam: #D97757; --cam-light: #e89a7c;
+    --mint: #85CDCA; --mint-light: #a8ddd8;
+    --vang: #FFD166; --vang-light: #ffe09a;
+    --tim: #C9B1FF; --tim-light: #ddd0ff;
+    --be: #E8A87C; --be-light: #f0c4a8;
+    --grid: #ece8e3; --grid-light: #f5f2ee;
+    --text2: #777; --text3: #aaa;
+    max-width: 600px; padding: 20px 0;
+  }
+
+  /* ═══ Header ═══ */
+  .vbar__head { margin-bottom: 20px; }
+  .vbar__title {
+    font-size: 16px; font-weight: 700; color: #1a1714;
+    letter-spacing: -0.01em; line-height: 1.3;
+  }
+  .vbar__sub {
+    font-size: 13px; color: var(--text2); margin-top: 3px;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  }
+  .vbar__sub-dot {
+    width: 3px; height: 3px; border-radius: 50%;
+    background: var(--text3); flex-shrink: 0;
+  }
+
+  /* ═══ SVG Chart ═══ */
+  .vbar__chart { position: relative; }
+
+  .vbar__chart svg { display: block; overflow: visible; }
+
+  /* ── Bar interactivity ── */
+  .bar-group { cursor: default; }
+  .bar-group rect.bar-fill {
+    transition: filter 0.2s ease, transform 0.15s ease;
+    transform-origin: bottom center;
+  }
+  .bar-group:hover rect.bar-fill {
+    filter: brightness(1.08) saturate(1.15);
+    transform: scaleX(1.06);
+  }
+
+  /* ── Shimmer on hover ── */
+  .bar-group rect.bar-shimmer {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  .bar-group:hover rect.bar-shimmer { opacity: 1; }
+
+  /* ── Value labels ── */
+  .bar-group .bar-val {
+    transition: font-weight 0.15s ease;
+  }
+  .bar-group:hover .bar-val { font-weight: 700; }
+
+  /* ── Highlight ring on hover ── */
+  .bar-group .bar-ring {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .bar-group:hover .bar-ring { opacity: 1; }
+
+  /* ═══ Tooltip ═══ */
+  .vbar__tip {
+    position: absolute;
+    background: #1a1714; color: #ede8e3;
+    font-size: 11.5px; font-weight: 500;
+    padding: 7px 12px; border-radius: 7px;
+    white-space: nowrap; line-height: 1.4;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    z-index: 10;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+  }
+  .vbar__tip::after {
+    content: '';
+    position: absolute; top: 100%; left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #1a1714;
+  }
+  .vbar__tip.active {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* ═══ Bar entrance animation ═══ */
+  @keyframes barRise {
+    from { transform: scaleY(0); opacity: 0.3; }
+    to   { transform: scaleY(1); opacity: 1; }
+  }
+  .bar-fill {
+    transform-origin: bottom center;
+    animation: barRise 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .bar-fill-d0 { animation-delay: 0.06s; }
+  .bar-fill-d1 { animation-delay: 0.14s; }
+  .bar-fill-d2 { animation-delay: 0.22s; }
+  .bar-fill-d3 { animation-delay: 0.30s; }
+  .bar-fill-d4 { animation-delay: 0.38s; }
+  .bar-fill-d5 { animation-delay: 0.46s; }
+  .bar-fill-d6 { animation-delay: 0.54s; }
+
+  @keyframes valDrop {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .bar-val {
+    animation: valDrop 0.3s ease both;
+  }
+  .bar-val-d0 { animation-delay: 0.40s; }
+  .bar-val-d1 { animation-delay: 0.48s; }
+  .bar-val-d2 { animation-delay: 0.56s; }
+  .bar-val-d3 { animation-delay: 0.64s; }
+  .bar-val-d4 { animation-delay: 0.72s; }
+
+  /* ═══ Delta badges ═══ */
+  .vbar__deltas {
+    display: flex; justify-content: center; gap: 0;
+    margin-top: 6px; padding-left: 54px;
+  }
+  .vbar__delta-slot {
+    flex: 1; display: flex; justify-content: center;
+  }
+  .vbar__delta {
+    font-size: 10px; font-weight: 600;
+    padding: 2px 6px; border-radius: 4px;
+    white-space: nowrap;
+    opacity: 0;
+    animation: valDrop 0.3s ease both;
+  }
+  .vbar__delta:nth-child(1) { animation-delay: 0.50s; }
+  .vbar__delta:nth-child(2) { animation-delay: 0.58s; }
+  .vbar__delta:nth-child(3) { animation-delay: 0.66s; }
+  .vbar__delta:nth-child(4) { animation-delay: 0.74s; }
+  .vbar__delta--up   { color: #c44;    background: #fef2f0; }
+  .vbar__delta--down { color: #16864a; background: #eefbf2; }
+  .vbar__delta--neutral { color: #888; background: #f5f3f0; }
+
+  /* ═══ Footer ═══ */
+  .vbar__foot {
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid #f0ece7;
+    display: flex; justify-content: space-between;
+    align-items: flex-end; gap: 16px; flex-wrap: wrap;
+  }
+  .vbar__source {
+    font-size: 11px; color: var(--text3); line-height: 1.6;
+  }
+  .vbar__source em { font-style: italic; }
+  .vbar__source-warn {
+    display: inline-flex; align-items: center; gap: 3px;
+    color: #c49a40; font-weight: 500; font-style: normal;
+  }
+  .vbar__trend {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 600;
+    padding: 4px 12px; border-radius: 20px;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .vbar__trend--up   { color: #16864a; background: #eefbf2; }
+  .vbar__trend--down { color: #c44;    background: #fef2f0; }
+</style>
+
+<div class="vbar">
+
+  <!-- Header -->
+  <div class="vbar__head">
+    <div class="vbar__title">Lưu lượng hàng qua cảng Hải Phòng</div>
+    <div class="vbar__sub">
+      <span>Triệu tấn/năm</span>
+      <span class="vbar__sub-dot"></span>
+      <span>2019 – 2023</span>
+    </div>
+  </div>
+
+  <!-- SVG Chart -->
+  <div class="vbar__chart" id="chartWrap">
+    <svg viewBox="0 0 500 260" width="100%" id="chartSvg">
+      <defs>
+        <linearGradient id="gCam" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#D97757"/>
+          <stop offset="100%" stop-color="#e89a7c"/>
+        </linearGradient>
+        <linearGradient id="gMint" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#85CDCA"/>
+          <stop offset="100%" stop-color="#a8ddd8"/>
+        </linearGradient>
+        <linearGradient id="gVang" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#FFD166"/>
+          <stop offset="100%" stop-color="#ffe09a"/>
+        </linearGradient>
+        <!-- Shimmer overlay -->
+        <linearGradient id="shimmer" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="rgba(255,255,255,0.22)"/>
+          <stop offset="50%" stop-color="rgba(255,255,255,0.05)"/>
+          <stop offset="100%" stop-color="rgba(255,255,255,0.18)"/>
+        </linearGradient>
+      </defs>
+
+      <!-- Grid lines (horizontal) -->
+      <line x1="54" y1="200" x2="480" y2="200" stroke="#d8d4cf" stroke-width="1"/>
+      <line x1="54" y1="160" x2="480" y2="160" stroke="#f0ece7" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="54" y1="120" x2="480" y2="120" stroke="#f0ece7" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="54" y1="80"  x2="480" y2="80"  stroke="#f0ece7" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="54" y1="40"  x2="480" y2="40"  stroke="#f0ece7" stroke-width="1" stroke-dasharray="3,3"/>
+
+      <!-- Y axis -->
+      <line x1="54" y1="38" x2="54" y2="200" stroke="#e8e4df" stroke-width="1"/>
+      <text x="48" y="204" text-anchor="end" font-size="10.5" fill="#b0a89f" font-family="system-ui">0</text>
+      <text x="48" y="164" text-anchor="end" font-size="10.5" fill="#b0a89f" font-family="system-ui">50</text>
+      <text x="48" y="124" text-anchor="end" font-size="10.5" fill="#b0a89f" font-family="system-ui">100</text>
+      <text x="48" y="84"  text-anchor="end" font-size="10.5" fill="#b0a89f" font-family="system-ui">150</text>
+      <text x="48" y="44"  text-anchor="end" font-size="10.5" fill="#b0a89f" font-family="system-ui">200</text>
+
+      <!-- ═══ BAR: 2019 — 98M ═══ -->
+      <g class="bar-group" data-idx="0" data-val="98" data-tip="98 triệu tấn · Trước đại dịch">
+        <rect class="bar-fill bar-fill-d0" x="84" y="122" width="52" height="78" rx="5" ry="5" fill="url(#gCam)"/>
+        <rect class="bar-shimmer" x="84" y="122" width="52" height="78" rx="5" ry="5" fill="url(#shimmer)"/>
+        <circle class="bar-ring" cx="110" cy="122" r="3" fill="none" stroke="#D97757" stroke-width="1.5" opacity="0"/>
+        <text class="bar-val bar-val-d0" x="110" y="114" text-anchor="middle" font-size="12" font-weight="600" fill="#D97757" font-family="system-ui">98</text>
+        <text x="110" y="218" text-anchor="middle" font-size="12" fill="#777" font-family="system-ui">2019</text>
+      </g>
+
+      <!-- ═══ BAR: 2020 — 112M ═══ -->
+      <g class="bar-group" data-idx="1" data-val="112" data-tip="112 triệu tấn · Tăng 14.3% YoY">
+        <rect class="bar-fill bar-fill-d1" x="166" y="110" width="52" height="90" rx="5" ry="5" fill="url(#gCam)"/>
+        <rect class="bar-shimmer" x="166" y="110" width="52" height="90" rx="5" ry="5" fill="url(#shimmer)"/>
+        <circle class="bar-ring" cx="192" cy="110" r="3" fill="none" stroke="#D97757" stroke-width="1.5" opacity="0"/>
+        <text class="bar-val bar-val-d1" x="192" y="102" text-anchor="middle" font-size="12" font-weight="600" fill="#D97757" font-family="system-ui">112</text>
+        <text x="192" y="218" text-anchor="middle" font-size="12" fill="#777" font-family="system-ui">2020</text>
+      </g>
+
+      <!-- ═══ BAR: 2021 — 128M ═══ -->
+      <g class="bar-group" data-idx="2" data-val="128" data-tip="128 triệu tấn · Tăng mạnh 14.3%">
+        <rect class="bar-fill bar-fill-d2" x="248" y="97" width="52" height="103" rx="5" ry="5" fill="url(#gMint)"/>
+        <rect class="bar-shimmer" x="248" y="97" width="52" height="103" rx="5" ry="5" fill="url(#shimmer)"/>
+        <circle class="bar-ring" cx="274" cy="97" r="3" fill="none" stroke="#85CDCA" stroke-width="1.5" opacity="0"/>
+        <text class="bar-val bar-val-d2" x="274" y="89" text-anchor="middle" font-size="12" font-weight="600" fill="#5bb8b4" font-family="system-ui">128</text>
+        <text x="274" y="218" text-anchor="middle" font-size="12" fill="#777" font-family="system-ui">2021</text>
+      </g>
+
+      <!-- ═══ BAR: 2022 — 142M ═══ -->
+      <g class="bar-group" data-idx="3" data-val="142" data-tip="142 triệu tấn · Tăng trưởng ổn định">
+        <rect class="bar-fill bar-fill-d3" x="330" y="86" width="52" height="114" rx="5" ry="5" fill="url(#gMint)"/>
+        <rect class="bar-shimmer" x="330" y="86" width="52" height="114" rx="5" ry="5" fill="url(#shimmer)"/>
+        <circle class="bar-ring" cx="356" cy="86" r="3" fill="none" stroke="#85CDCA" stroke-width="1.5" opacity="0"/>
+        <text class="bar-val bar-val-d3" x="356" y="78" text-anchor="middle" font-size="12" font-weight="600" fill="#5bb8b4" font-family="system-ui">142</text>
+        <text x="356" y="218" text-anchor="middle" font-size="12" fill="#777" font-family="system-ui">2022</text>
+      </g>
+
+      <!-- ═══ BAR: 2023 — 155M ═══ -->
+      <g class="bar-group" data-idx="4" data-val="155" data-tip="155 triệu tấn · Kỷ lục mới 🎉">
+        <rect class="bar-fill bar-fill-d4" x="412" y="76" width="52" height="124" rx="5" ry="5" fill="url(#gVang)"/>
+        <rect class="bar-shimmer" x="412" y="76" width="52" height="124" rx="5" ry="5" fill="url(#shimmer)"/>
+        <circle class="bar-ring" cx="438" cy="76" r="3" fill="none" stroke="#FFD166" stroke-width="1.5" opacity="0"/>
+        <text class="bar-val bar-val-d4" x="438" y="68" text-anchor="middle" font-size="12" font-weight="600" fill="#d4a830" font-family="system-ui">155</text>
+        <text x="438" y="218" text-anchor="middle" font-size="12" fill="#777" font-family="system-ui">2023</text>
+      </g>
+
+      <!-- ═══ Average line ═══ -->
+      <line id="avgLine" x1="54" y1="0" x2="480" y2="0"
+            stroke="#b0a89f" stroke-width="1" stroke-dasharray="4,3"
+            opacity="0.7" display="none"/>
+      <text id="avgLabel" x="0" y="0" font-size="10" fill="#999"
+            font-weight="600" font-family="system-ui" display="none"></text>
+
+    </svg>
+
+    <!-- Tooltip (HTML, positioned by JS) -->
+    <div class="vbar__tip" id="tip"></div>
+  </div>
+
+  <!-- Delta badges row -->
+  <div class="vbar__deltas">
+    <div class="vbar__delta-slot"><span class="vbar__delta vbar__delta--neutral">—</span></div>
+    <div class="vbar__delta-slot"><span class="vbar__delta vbar__delta--up">+14.3%</span></div>
+    <div class="vbar__delta-slot"><span class="vbar__delta vbar__delta--up">+14.3%</span></div>
+    <div class="vbar__delta-slot"><span class="vbar__delta vbar__delta--up">+10.9%</span></div>
+    <div class="vbar__delta-slot"><span class="vbar__delta vbar__delta--up">+9.2%</span></div>
+  </div>
+
+  <!-- Footer -->
+  <div class="vbar__foot">
+    <div class="vbar__source">
+      Nguồn: <em>Cục Hàng hải Việt Nam</em><br>
+      Dữ liệu đến 12/2023
+      <span class="vbar__source-warn">⚠ Có thể chưa phản ánh tình hình hiện tại</span>
+    </div>
+    <div class="vbar__trend vbar__trend--up">
+      <span>↑</span> +58.2% trong 5 năm
+    </div>
+  </div>
+
+</div>
+
+<script>
+  (function () {
+    /* ── Average reference line ── */
+    var vals = [98, 112, 128, 142, 155];
+    var avg  = vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;   // 127
+    var maxY = 200;  // y-axis max in SVG units
+    var yBottom = 200, yTop = 40, dataMax = 200; // matching SVG grid
+    var avgY = yBottom - ((avg / dataMax) * (yBottom - yTop));
+
+    var avgLine = document.getElementById('avgLine');
+    var avgLabel = document.getElementById('avgLabel');
+    if (avgLine) {
+      avgLine.setAttribute('y1', avgY);
+      avgLine.setAttribute('y2', avgY);
+      avgLine.setAttribute('display', 'inline');
+    }
+    if (avgLabel) {
+      avgLabel.setAttribute('x', 484);
+      avgLabel.setAttribute('y', avgY - 4);
+      avgLabel.textContent = 'TB ' + Math.round(avg);
+      avgLabel.setAttribute('display', 'inline');
+    }
+
+    /* ── Tooltip logic ── */
+    var wrap  = document.getElementById('chartWrap');
+    var tip   = document.getElementById('tip');
+    var svg   = document.getElementById('chartSvg');
+    var groups = document.querySelectorAll('.bar-group');
+
+    groups.forEach(function (g) {
+      g.addEventListener('mouseenter', function (e) {
+        var text = g.getAttribute('data-tip');
+        if (!text || !tip || !svg) return;
+
+        tip.textContent = text;
+        tip.classList.add('active');
+
+        // Position tooltip above bar
+        var bar  = g.querySelector('.bar-fill');
+        var rect = bar.getBoundingClientRect();
+        var wrapRect = wrap.getBoundingClientRect();
+
+        var cx = rect.left + rect.width / 2 - wrapRect.left;
+        var cy = rect.top - wrapRect.top - 10;
+
+        tip.style.left = cx + 'px';
+        tip.style.top  = cy + 'px';
+      });
+
+      g.addEventListener('mouseleave', function () {
+        if (tip) tip.classList.remove('active');
+      });
+    });
+  })();
+
+  if (typeof WiiiVisualBridge !== 'undefined') {
+    WiiiVisualBridge.reportResult({ type: 'vertical_bar', items: 5, version: 'v2-pro' });
+  }
+</script>
