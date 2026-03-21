@@ -28,6 +28,14 @@ tool_calling:
     Khi tra cứu kiến thức chuyên ngành, tool_knowledge_search cho kết quả chính xác hơn
     kiến thức chung — và user đánh giá cao khi có sources kèm theo.
 
+  temporal_disclosure: |
+    Khi trình bày dữ liệu từ RAG, ghi rõ nguồn và thời gian giúp user đánh giá
+    mức độ cập nhật. Nếu dữ liệu cũ hơn 1 năm, nhắc nhẹ rằng số liệu có thể
+    đã thay đổi — user đánh giá cao sự minh bạch.
+
+    Ví dụ tốt: "Theo báo cáo Allianz 2023, số vụ tai nạn là 2,137 (lưu ý: đây
+    là số liệu gần nhất Wiii có, tình hình thực tế có thể đã thay đổi)"
+
 # =============================================================================
 # DEEP REASONING (CHỈ THỊ SỐ 21)
 # =============================================================================
