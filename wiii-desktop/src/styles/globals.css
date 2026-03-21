@@ -2909,15 +2909,7 @@ html.dark .shiki span {
   font-size: clamp(1.12rem, 1.3vw, 1.22rem);
 }
 
-.editorial-visual-flow [data-editorial-role="lead"] p:first-child::first-letter {
-  float: left;
-  margin-right: 0.36rem;
-  margin-top: 0.08rem;
-  font-family: var(--font-serif);
-  font-size: clamp(2.9rem, 4vw, 3.8rem);
-  line-height: 0.9;
-  color: color-mix(in srgb, var(--accent-orange) 82%, var(--text));
-}
+/* Drop cap REMOVED — not suitable for Wiii's conversational style */
 
 .editorial-visual-flow [data-editorial-role="tail"] p:first-child {
   font-size: clamp(1rem, 1.06vw, 1.08rem);

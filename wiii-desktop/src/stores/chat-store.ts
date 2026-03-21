@@ -795,7 +795,9 @@ export const useChatStore = create<ChatState>()(
           .replace(/<!-- WiiiVisualBridge:visual-[a-f0-9]+ -->/gi, "")
           .replace(/\[Biểu đồ[^\]]*\]/gi, "")
           .replace(/\[Chart[^\]]*\]/gi, "")
-          .replace(/\[Visual[^\]]*\]/gi, "");
+          .replace(/\[Visual[^\]]*\]/gi, "")
+          .replace(/\(Visuals?[^)]*hiển thị[^)]*\)/gi, "")
+          .replace(/\(Visual[^)]*displayed[^)]*\)/gi, "");
         if (!clean) return; // Skip if chunk was only a visual marker
 
         // Flat field — backward compat
