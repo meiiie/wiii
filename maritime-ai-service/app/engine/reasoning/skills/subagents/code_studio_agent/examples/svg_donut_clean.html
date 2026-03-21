@@ -1,0 +1,61 @@
+<!--
+  STATE MODEL: segments[]{label,value,color}, total
+  RENDER SURFACE: SVG donut with stroke-dasharray + HTML legend
+  CONTROLS: none (static chart)
+  READOUTS: center total + legend with percentages
+  FEEDBACK: WiiiVisualBridge.reportResult on render
+-->
+<style>
+:root {
+  --bg: transparent;
+  --fg: #333;
+  --text-muted: #999;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--fg); }
+.chart-root { max-width: 500px; margin: 0 auto; padding: 16px 0; }
+.chart-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.chart-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+.donut-layout { display: flex; align-items: center; gap: 32px; justify-content: center; }
+.legend { display: flex; flex-direction: column; gap: 8px; }
+.legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #555; }
+.legend-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+</style>
+
+<div class="chart-root">
+  <div class="chart-title">Nguyên nhân tai nạn hàng hải</div>
+  <div class="chart-subtitle">Theo phân loại IMO 2023</div>
+  <div class="donut-layout">
+    <svg viewBox="0 0 200 200" width="180">
+      <circle cx="100" cy="100" r="70" fill="none" stroke="#D97757" stroke-width="28"
+              stroke-dasharray="175.9 263.9" stroke-dashoffset="0" transform="rotate(-90 100 100)"/>
+      <circle cx="100" cy="100" r="70" fill="none" stroke="#85CDCA" stroke-width="28"
+              stroke-dasharray="110 329.9" stroke-dashoffset="-175.9" transform="rotate(-90 100 100)"/>
+      <circle cx="100" cy="100" r="70" fill="none" stroke="#FFD166" stroke-width="28"
+              stroke-dasharray="66 373.9" stroke-dashoffset="-285.9" transform="rotate(-90 100 100)"/>
+      <circle cx="100" cy="100" r="70" fill="none" stroke="#C9B1FF" stroke-width="28"
+              stroke-dasharray="44 395.9" stroke-dashoffset="-351.9" transform="rotate(-90 100 100)"/>
+      <circle cx="100" cy="100" r="70" fill="none" stroke="#E8A87C" stroke-width="28"
+              stroke-dasharray="44 395.9" stroke-dashoffset="-395.9" transform="rotate(-90 100 100)"/>
+      <circle cx="100" cy="100" r="52" fill="#fff"/>
+      <text x="100" y="96" text-anchor="middle" font-size="22" font-weight="700" fill="#333">2,137</text>
+      <text x="100" y="114" text-anchor="middle" font-size="11" fill="#999">tổng vụ</text>
+    </svg>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#D97757"></div>Lỗi con người — 40%</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#85CDCA"></div>Thiết bị hỏng — 25%</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#FFD166"></div>Thời tiết — 15%</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#C9B1FF"></div>Va chạm — 10%</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#E8A87C"></div>Khác — 10%</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  if (window.WiiiVisualBridge && window.WiiiVisualBridge.reportResult) {
+    window.WiiiVisualBridge.reportResult('chart_rendered', { type: 'donut', segments: 5 }, 'Donut chart', 'completed');
+  }
+})();
+</script>

@@ -1098,11 +1098,12 @@ _CODE_STUDIO_EXAMPLE_MAP: dict[str, str] = {
     # SVG interactive diagram (ships, architecture, process)
     "diagram": "svg_ship_encounter.html",
     "architecture": "svg_ship_encounter.html",
-    # SVG comparison chart (bar charts, comparisons)
-    "comparison": "svg_comparison_chart.html",
-    "chart": "svg_comparison_chart.html",
-    "benchmark": "svg_comparison_chart.html",
-    "statistics": "svg_comparison_chart.html",
+    # Clean inline charts (Phase2 — no wrapper, no sidebar)
+    "comparison": "svg_horizontal_bar_clean.html",
+    "chart": "svg_horizontal_bar_clean.html",
+    "benchmark": "svg_horizontal_bar_clean.html",
+    "statistics": "svg_horizontal_bar_clean.html",
+    "horizontal_bar": "svg_horizontal_bar_clean.html",
     # SVG flow diagram (process, workflow, steps)
     "process": "svg_flow_diagram.html",
     "workflow": "svg_flow_diagram.html",
@@ -1122,13 +1123,13 @@ _CODE_STUDIO_EXAMPLE_MAP: dict[str, str] = {
     "bar_chart": "svg_vertical_bar_chart.html",
     "column": "svg_vertical_bar_chart.html",
     "vertical_bar": "svg_vertical_bar_chart.html",
-    # Pie / donut chart
-    "pie": "svg_pie_donut_chart.html",
-    "donut": "svg_pie_donut_chart.html",
-    "doughnut": "svg_pie_donut_chart.html",
-    # Line chart
-    "line_chart": "svg_line_chart.html",
-    "line": "svg_line_chart.html",
+    # Pie / donut chart (clean version)
+    "pie": "svg_donut_clean.html",
+    "donut": "svg_donut_clean.html",
+    "doughnut": "svg_donut_clean.html",
+    # Line chart (clean version)
+    "line_chart": "svg_line_clean.html",
+    "line": "svg_line_clean.html",
     # SVG motion animation
     "svg_motion": "svg_motion_animation.html",
     "motion": "svg_motion_animation.html",

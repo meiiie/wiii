@@ -1,0 +1,70 @@
+<!--
+  STATE MODEL: points[]{label,value}, annotations
+  RENDER SURFACE: SVG — line path with area fill, data labels, axis
+  CONTROLS: none (static chart)
+  READOUTS: data labels on each point
+  FEEDBACK: WiiiVisualBridge.reportResult on render
+-->
+<style>
+:root {
+  --bg: transparent;
+  --fg: #333;
+  --text-muted: #999;
+  --grid: #f5f2ef;
+  --accent: #D97757;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--fg); }
+.chart-root { max-width: 620px; margin: 0 auto; padding: 16px 0; }
+.chart-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.chart-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; }
+</style>
+
+<div class="chart-root">
+  <div class="chart-title">Lưu lượng tàu qua kênh đào Suez</div>
+  <div class="chart-subtitle">Nghìn lượt/năm, 2019–2024</div>
+  <svg viewBox="0 0 600 200" width="100%">
+    <!-- Grid -->
+    <line x1="50" y1="170" x2="570" y2="170" stroke="#e5e0db" stroke-width="1"/>
+    <line x1="50" y1="120" x2="570" y2="120" stroke="#f5f2ef" stroke-width="1" stroke-dasharray="4"/>
+    <line x1="50" y1="70" x2="570" y2="70" stroke="#f5f2ef" stroke-width="1" stroke-dasharray="4"/>
+    <line x1="50" y1="20" x2="570" y2="20" stroke="#f5f2ef" stroke-width="1" stroke-dasharray="4"/>
+    <!-- Y axis -->
+    <text x="44" y="174" text-anchor="end" font-size="11" fill="#aaa">15k</text>
+    <text x="44" y="124" text-anchor="end" font-size="11" fill="#aaa">18k</text>
+    <text x="44" y="74" text-anchor="end" font-size="11" fill="#aaa">21k</text>
+    <text x="44" y="24" text-anchor="end" font-size="11" fill="#aaa">24k</text>
+    <!-- Area -->
+    <path d="M 100,80 L 204,60 L 308,130 L 412,110 L 516,50 L 516,170 L 100,170 Z" fill="#D97757" fill-opacity="0.08"/>
+    <!-- Line -->
+    <path d="M 100,80 L 204,60 L 308,130 L 412,110 L 516,50" fill="none" stroke="#D97757" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Dots -->
+    <circle cx="100" cy="80" r="4" fill="#D97757"/>
+    <circle cx="204" cy="60" r="4" fill="#D97757"/>
+    <circle cx="308" cy="130" r="5" fill="#fff" stroke="#D97757" stroke-width="2.5"/>
+    <circle cx="412" cy="110" r="4" fill="#D97757"/>
+    <circle cx="516" cy="50" r="4" fill="#D97757"/>
+    <!-- Labels -->
+    <text x="100" y="72" text-anchor="middle" font-size="11" font-weight="600" fill="#D97757">20.1k</text>
+    <text x="204" y="52" text-anchor="middle" font-size="11" font-weight="600" fill="#D97757">21.6k</text>
+    <text x="308" y="148" text-anchor="middle" font-size="11" font-weight="600" fill="#c44">17.2k</text>
+    <text x="308" y="162" text-anchor="middle" font-size="9" fill="#c44">COVID + Ever Given</text>
+    <text x="412" y="102" text-anchor="middle" font-size="11" font-weight="600" fill="#D97757">18.8k</text>
+    <text x="516" y="42" text-anchor="middle" font-size="11" font-weight="600" fill="#16a34a">22.8k</text>
+    <!-- X axis -->
+    <text x="100" y="188" text-anchor="middle" font-size="12" fill="#999">2019</text>
+    <text x="204" y="188" text-anchor="middle" font-size="12" fill="#999">2020</text>
+    <text x="308" y="188" text-anchor="middle" font-size="12" fill="#999">2021</text>
+    <text x="412" y="188" text-anchor="middle" font-size="12" fill="#999">2022</text>
+    <text x="516" y="188" text-anchor="middle" font-size="12" fill="#999">2024</text>
+  </svg>
+</div>
+
+<script>
+(function () {
+  if (window.WiiiVisualBridge && window.WiiiVisualBridge.reportResult) {
+    window.WiiiVisualBridge.reportResult('chart_rendered', { type: 'line', points: 5 }, 'Line chart', 'completed');
+  }
+})();
+</script>

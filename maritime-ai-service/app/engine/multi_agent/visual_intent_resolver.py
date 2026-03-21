@@ -723,7 +723,7 @@ def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
             thinking_floor="high",
             critic_policy="standard",
             living_expression_mode="subtle",
-            renderer_kind_hint="recharts",
+            # Default: inline SVG/HTML. Recharts only for "interactive"/"dashboard" keywords.
         )
 
     if _contains_any(normalized, ("so sanh", "compare", "vs ", "khac nhau", "uu nhuoc diem")):
@@ -731,7 +731,7 @@ def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
             mode="inline_html",
             force_tool=True,
             visual_type="chart",
-            reason="comparison_as_chart",
+            reason="comparison_as_inline_chart",
             presentation_intent="chart_runtime",
             preferred_tool="tool_generate_visual",
             figure_budget=_infer_figure_budget(
@@ -745,7 +745,6 @@ def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
             thinking_floor="high",
             critic_policy="standard",
             living_expression_mode="expressive",
-            renderer_kind_hint="recharts",
         )
 
     if _contains_any(normalized, ("quy trinh", "cac buoc", "step by step", "how it works", "process")):

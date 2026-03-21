@@ -1,0 +1,69 @@
+<!--
+  STATE MODEL: items[]{label,value}, maxValue, colorIndex
+  RENDER SURFACE: HTML/CSS — horizontal bar rows with gradient fills
+  CONTROLS: none (static chart)
+  READOUTS: label + bar + value per row
+  FEEDBACK: WiiiVisualBridge.reportResult on render
+-->
+<style>
+:root {
+  --bg: transparent;
+  --fg: #333;
+  --text-secondary: #555;
+  --text-muted: #999;
+  --track: #f5f2ef;
+  --radius: 6px;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--fg); }
+.chart-root { max-width: 600px; margin: 0 auto; padding: 16px 0; }
+.chart-title { font-size: 15px; font-weight: 600; color: var(--fg); margin-bottom: 4px; }
+.chart-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+.bar-rows { display: flex; flex-direction: column; gap: 12px; }
+.bar-row { display: flex; align-items: center; gap: 12px; }
+.bar-label { width: 72px; font-size: 13px; color: var(--text-secondary); text-align: right; font-weight: 500; flex-shrink: 0; }
+.bar-track { flex: 1; height: 28px; background: var(--track); border-radius: var(--radius); overflow: hidden; }
+.bar-fill { height: 100%; border-radius: var(--radius); }
+.bar-fill.c0 { background: linear-gradient(90deg, #D97757, #e89a7c); }
+.bar-fill.c1 { background: linear-gradient(90deg, #85CDCA, #a8ddd8); }
+.bar-fill.c2 { background: linear-gradient(90deg, #FFD166, #ffe09a); }
+.bar-fill.c3 { background: linear-gradient(90deg, #C9B1FF, #ddd0ff); }
+.bar-fill.c4 { background: linear-gradient(90deg, #E8A87C, #f0c4a8); }
+.bar-value { font-size: 12px; font-weight: 600; color: var(--text-secondary); min-width: 48px; }
+</style>
+
+<div class="chart-root">
+  <div class="chart-title">Tai nạn hàng hải nghiêm trọng toàn cầu</div>
+  <div class="chart-subtitle">Số vụ theo năm, nguồn: IMO Annual Report</div>
+  <div class="bar-rows" id="bars"></div>
+</div>
+
+<script>
+(function () {
+  var DATA = [
+    { label: '2019', value: 2698 },
+    { label: '2020', value: 2934 },
+    { label: '2021', value: 2578 },
+    { label: '2022', value: 2401 },
+    { label: '2023', value: 2137 }
+  ];
+  var max = Math.max.apply(null, DATA.map(function (d) { return d.value; }));
+  var container = document.getElementById('bars');
+
+  DATA.forEach(function (item, i) {
+    var pct = Math.round(item.value / max * 100);
+    var row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML =
+      '<div class="bar-label">' + item.label + '</div>' +
+      '<div class="bar-track"><div class="bar-fill c' + (i % 5) + '" style="width:' + pct + '%"></div></div>' +
+      '<div class="bar-value">' + item.value.toLocaleString() + '</div>';
+    container.appendChild(row);
+  });
+
+  if (window.WiiiVisualBridge && window.WiiiVisualBridge.reportResult) {
+    window.WiiiVisualBridge.reportResult('chart_rendered', { type: 'horizontal_bar', items: DATA.length }, 'Bar chart', 'completed');
+  }
+})();
+</script>
