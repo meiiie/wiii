@@ -472,9 +472,10 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
                     code_gen_section = LLM_CODE_GEN_VISUAL_INSTRUCTION
                 visual_tool_section = f"""
 {STRUCTURED_VISUAL_TOOL_INSTRUCTION}{code_gen_section}
-## UU TIEN CHO YEU CAU NAY:
-- Query hien tai dang nghieng ve `{visual_decision.mode}`.
-- Uu tien goi `{preferred_tool_label}` thay vi widget/chart legacy.
+
+[Gợi ý trực quan] Câu hỏi này phù hợp với biểu đồ dạng "{visual_decision.visual_type or 'chart'}".
+Wiii nên cân nhắc dùng {preferred_tool_label} với code_html để tạo biểu đồ minh họa inline
+— một biểu đồ thường giúp người đọc hiểu nhanh hơn nhiều so với text thuần.
 """
 
         # Append tool instruction, skill context, core memory, and user context

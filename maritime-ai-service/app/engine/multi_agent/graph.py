@@ -1994,6 +1994,7 @@ def _build_direct_system_messages(
     *,
     role_name: str = "direct_agent",
     tools_context_override: Optional[str] = None,
+    visual_decision=None,
 ):
     """Build system prompt and message list for direct-style nodes.
 
@@ -2055,6 +2056,16 @@ def _build_direct_system_messages(
         system_prompt = system_prompt + "\n\n## Capability Handbook\n" + _capability_prompt
     if role_name == "code_studio_agent":
         system_prompt = system_prompt + "\n\n" + _build_code_studio_delivery_contract(query)
+
+    # Visual Intelligence: inject hint when resolver detects visual intent
+    if visual_decision and getattr(visual_decision, "force_tool", False):
+        vtype = getattr(visual_decision, "visual_type", "chart") or "chart"
+        system_prompt = (
+            system_prompt + "\n\n"
+            f'[Gợi ý trực quan] Câu hỏi này phù hợp với biểu đồ dạng "{vtype}". '
+            f"Wiii nên cân nhắc dùng tool_generate_visual với code_html để tạo biểu đồ minh họa inline "
+            f"— một biểu đồ thường giúp người đọc hiểu nhanh hơn nhiều so với text thuần."
+        )
 
     # Sprint Phase2-F: Inject thinking instruction so LLM wraps reasoning in <thinking> tags
     # Without this, direct node outputs chain-of-thought inline (thinking leak)
@@ -4309,8 +4320,11 @@ async def direct_response_node(state: AgentState) -> AgentState:
                     logger.warning("[DIRECT] Forced tool_choice='any' (web=%s, datetime=%s)",
                                 _needs_web_search(query), _needs_datetime(query))
 
-                # Phase 3: Build messages
-                messages = _build_direct_system_messages(state, query, domain_name_vi)
+                # Phase 3: Build messages (with visual hint if resolver detected intent)
+                messages = _build_direct_system_messages(
+                    state, query, domain_name_vi,
+                    visual_decision=visual_decision,
+                )
                 runtime_context_base = build_tool_runtime_context(
                     event_bus_id=_bus_id,
                     request_id=_bus_id or state.get("session_id"),
