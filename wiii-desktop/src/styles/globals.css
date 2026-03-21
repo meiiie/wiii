@@ -2346,11 +2346,11 @@ html.dark .shiki span {
   overflow: hidden;
 }
 
-/* Header icon: clock for completed, sparkle/live-dot for streaming */
+/* Header icon: green check for completed, live-dot for streaming */
 .reasoning-interval__header-icon {
   flex-shrink: 0;
-  color: var(--accent-orange);
-  opacity: 0.7;
+  color: var(--accent-green, #16a34a);
+  opacity: 0.8;
 }
 
 /* Claude-reference: text-[15px] text-gray-700 leading-[1.6] — readable, breathing room */

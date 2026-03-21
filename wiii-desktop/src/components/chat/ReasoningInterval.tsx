@@ -368,8 +368,9 @@ export function ReasoningInterval({
   thinkingLevel: ThinkingLevel;
   onOpenInspector: () => void;
 }) {
+  // Header label changes: "đang suy nghĩ" (live) → "đã suy nghĩ xong" (done)
   const headerLabel = getIntervalHeaderLabel(interval);
-  void getIntervalSummary; // Available for future use (body preview)
+  void getIntervalSummary;
   const durationText = interval.durationSeconds ? `${interval.durationSeconds}s` : "";
 
   // Phase2: Auto-expand while streaming, auto-collapse when done (Claude pattern)
@@ -406,15 +407,16 @@ export function ReasoningInterval({
           onClick={handleToggle}
           aria-expanded={showBody}
         >
+          {/* Icon: animated sparkle when live, static check when done */}
           {interval.isLive ? (
             <span className="reasoning-interval__live-dot" />
           ) : (
             <svg className="reasoning-interval__header-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
             </svg>
           )}
           <span className="reasoning-interval__header-label">{headerLabel}</span>
-          {durationText && !interval.isLive && (
+          {durationText && (
             <span className="reasoning-interval__header-duration">{durationText}</span>
           )}
           <svg
@@ -434,17 +436,19 @@ export function ReasoningInterval({
               <div className="reasoning-interval__rail-line" />
             </div>
             <div className="reasoning-interval__rail-content">
-              {visibleItems.map((item) => {
+              {visibleItems.map((item, idx) => {
                 if (item.kind === "thinking") {
-                  const isLastThinking = interval.isLive && interval.items[interval.items.length - 1]?.id === item.id;
-                  // Thinking: COLLAPSIBLE (gray text, inside collapse)
+                  // Cursor: ONLY on the very last thinking item AND only while streaming
+                  const isLastVisible = idx === visibleItems.length - 1 || visibleItems.slice(idx + 1).every((i) => i.kind !== "thinking");
+                  const showCursor = interval.isLive && isLastVisible;
+                  // Thinking: COLLAPSIBLE (gray text)
                   return (
                     <div
                       key={item.id}
                       className="reasoning-interval__segment"
                       style={{ display: showBody ? "block" : "none" }}
                     >
-                      {renderThinkingMarkdown(item.block, isLastThinking)}
+                      {renderThinkingMarkdown(item.block, showCursor)}
                     </div>
                   );
                 }
