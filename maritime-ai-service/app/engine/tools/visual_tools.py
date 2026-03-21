@@ -4224,21 +4224,10 @@ def tool_generate_visual(
         {"title": "Xử lý", "description": "Service xử lý business logic và trả kết quả", "icon": "3", "signals": ["Business Logic", "Response"]}
       ]}
 
-    code_html (ưu tiên cho chart/comparison):
-      Khi tạo chart hoặc comparison, ưu tiên viết HTML/CSS trực tiếp trong code_html
-      vì cho output đẹp và linh hoạt hơn spec_json — bạn kiểm soát được layout, màu sắc,
-      và spacing chính xác.
-
-      Nếu dùng code_html:
-      - Font: system-ui. Màu: #D97757 (cam), #85CDCA (mint), #FFD166 (vàng), #C9B1FF (tím nhạt), #E8A87C (cam nhạt)
-      - Title nhỏ (15px font-weight:600), subtitle nhỏ hơn (13px color:#999)
-      - Background: transparent. Warm tones, rounded corners (6-8px)
-      - Chart tĩnh thường không cần JavaScript
-
-      spec_json vẫn có thể dùng khi:
-      - Data đã structured sẵn từ tool khác
-      - Chart rất đơn giản (1-2 data points)
-      - Cần fallback reliable
+    code_html:
+      HTML/CSS trực tiếp cho visual. Font: system-ui.
+      Màu: #D97757 (cam), #85CDCA (mint), #FFD166 (vàng), #C9B1FF (tím nhạt), #E8A87C (cam nhạt).
+      Title nhỏ (15px font-weight:600), background transparent, rounded corners (6-8px).
 
       Ví dụ horizontal bar chart:
         code_html='<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui,sans-serif;background:transparent;color:#333}.root{max-width:600px;padding:16px 0}.title{font-size:15px;font-weight:600;margin-bottom:4px}.sub{font-size:13px;color:#999;margin-bottom:20px}.rows{display:flex;flex-direction:column;gap:12px}.row{display:flex;align-items:center;gap:12px}.lbl{width:72px;font-size:13px;color:#555;text-align:right;font-weight:500}.track{flex:1;height:28px;background:#f5f2ef;border-radius:6px;overflow:hidden}.fill{height:100%;border-radius:6px}.val{font-size:12px;font-weight:600;color:#555;min-width:48px}</style><div class="root"><div class="title">Tai nạn hàng hải theo năm</div><div class="sub">Số vụ, nguồn IMO</div><div class="rows"><div class="row"><div class="lbl">2019</div><div class="track"><div class="fill" style="width:92%;background:linear-gradient(90deg,#D97757,#e89a7c)"></div></div><div class="val">2,698</div></div><div class="row"><div class="lbl">2020</div><div class="track"><div class="fill" style="width:100%;background:linear-gradient(90deg,#D97757,#e89a7c)"></div></div><div class="val">2,934</div></div><div class="row"><div class="lbl">2021</div><div class="track"><div class="fill" style="width:88%;background:linear-gradient(90deg,#85CDCA,#a8ddd8)"></div></div><div class="val">2,578</div></div><div class="row"><div class="lbl">2022</div><div class="track"><div class="fill" style="width:82%;background:linear-gradient(90deg,#85CDCA,#a8ddd8)"></div></div><div class="val">2,401</div></div><div class="row"><div class="lbl">2023</div><div class="track"><div class="fill" style="width:73%;background:linear-gradient(90deg,#FFD166,#ffe09a)"></div></div><div class="val">2,137</div></div></div></div>'
