@@ -226,6 +226,7 @@ class VisualIntentDecision:
     thinking_floor: ThinkingEffort = "medium"
     critic_policy: CriticPolicy = "standard"
     living_expression_mode: LivingExpressionMode = "expressive"
+    renderer_kind_hint: str = ""
 
 
 def _normalize(text: str) -> str:
@@ -722,6 +723,7 @@ def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
             thinking_floor="high",
             critic_policy="standard",
             living_expression_mode="subtle",
+            renderer_kind_hint="recharts",
         )
 
     if _contains_any(normalized, ("so sanh", "compare", "vs ", "khac nhau", "uu nhuoc diem")):

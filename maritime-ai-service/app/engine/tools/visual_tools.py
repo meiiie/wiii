@@ -49,7 +49,7 @@ class VisualPayloadV1(BaseModel):
     id: str = Field(min_length=1)
     visual_session_id: str = Field(min_length=1)
     type: str = Field(min_length=1)
-    renderer_kind: Literal["template", "inline_html", "app"] = "template"
+    renderer_kind: Literal["template", "inline_html", "app", "recharts"] = "template"
     shell_variant: Literal["editorial", "compact", "immersive"] = "editorial"
     patch_strategy: Literal["spec_merge", "replace_html", "app_state"] = "spec_merge"
     figure_group_id: str = Field(min_length=1)
@@ -1249,6 +1249,8 @@ def _infer_renderer_kind(visual_type: str, spec: dict[str, Any], requested: str 
 
 
 def _infer_runtime(renderer_kind: str, visual_type: str, spec: dict[str, Any]) -> str:
+    if renderer_kind == "recharts":
+        return "svg"
     if renderer_kind == "template":
         return "svg"
     if renderer_kind == "app":
@@ -1259,7 +1261,7 @@ def _infer_runtime(renderer_kind: str, visual_type: str, spec: dict[str, Any]) -
 
 def _resolve_renderer_kind(visual_type: str, spec: dict[str, Any], requested: str = "") -> str:
     candidate = requested.strip()
-    if candidate in {"template", "inline_html", "app"}:
+    if candidate in {"template", "inline_html", "app", "recharts"}:
         return candidate
     if _should_keep_structured_renderer(candidate):
         return "template"
@@ -4206,6 +4208,7 @@ _BUILDERS = {
     "chart": _build_chart_html,
     "timeline": _build_timeline_html,
     "map_lite": _build_map_lite_html,
+    "recharts_chart": lambda spec, title: "",
 }
 
 
@@ -4351,6 +4354,12 @@ def tool_generate_visual(
             builder_html = builder(spec, title)
         except Exception as exc:
             logger.warning("Structured visual fallback HTML failed for type=%s: %s", visual_type, exc)
+
+    # Apply renderer_kind_hint from visual intent resolver (e.g. "recharts" for chart queries)
+    if not renderer_kind.strip():
+        hint = _runtime_metadata_text("renderer_kind_hint", "")
+        if hint:
+            renderer_kind = hint
 
     if resolved_code_html and _should_keep_structured_renderer(renderer_kind):
         resolved_code_html = None

@@ -16,6 +16,7 @@ import { staggerContainer, staggerItem } from "@/lib/animations";
 import InlineHtmlWidget from "@/components/common/InlineHtmlWidget";
 import { InlineVisualFrame } from "@/components/common/InlineVisualFrame";
 import { EmbeddedAppFrame } from "@/components/common/EmbeddedAppFrame";
+import { RechartsRenderer } from "./RechartsRenderer";
 import {
   DiagramAnnotationChip,
   DiagramCalloutPanel,
@@ -1178,7 +1179,16 @@ export function VisualBlock({
   };
 
   try {
-    if (isTemplateVisual) {
+    const isRechartsVisual = visual.renderer_kind === "recharts"
+      || (typeof asRecord(visual.spec).chart_type === "string" && visual.renderer_kind !== "app" && visual.renderer_kind !== "inline_html");
+
+    if (isRechartsVisual) {
+      body = (
+        <div className={`visual-block-shell__canvas ${embedded ? "visual-block-shell__canvas--embedded" : ""}`.trim()}>
+          <RechartsRenderer spec={asRecord(visual.spec)} />
+        </div>
+      );
+    } else if (isTemplateVisual) {
       const structuredBody = renderStructured(visual, session, reduced);
       if (!structuredBody) throw new Error(`Unsupported structured visual type: ${visual.type}`);
       body = (

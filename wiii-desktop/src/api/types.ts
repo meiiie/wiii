@@ -580,7 +580,7 @@ export type VisualType =
   | "react_app";
 
 export type VisualRuntime = "svg" | "sandbox_html" | "sandbox_react";
-export type VisualRendererKind = "template" | "inline_html" | "app";
+export type VisualRendererKind = "template" | "inline_html" | "app" | "recharts";
 export type VisualShellVariant = "editorial" | "compact" | "immersive";
 export type VisualPatchStrategy = "spec_merge" | "replace_html" | "app_state";
 export type VisualInteractionMode = "static" | "guided" | "explorable" | "scrubbable" | "filterable";

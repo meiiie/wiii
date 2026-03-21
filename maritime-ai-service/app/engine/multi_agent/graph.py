@@ -1863,6 +1863,8 @@ def _build_visual_tool_runtime_metadata(state: dict, query: str) -> dict[str, An
             metadata["artifact_kind"] = visual_decision.artifact_kind
         if visual_decision.renderer_contract:
             metadata["renderer_contract"] = visual_decision.renderer_contract
+        if visual_decision.renderer_kind_hint:
+            metadata["renderer_kind_hint"] = visual_decision.renderer_kind_hint
 
     if not detect_visual_patch_request(query):
         return metadata or None
