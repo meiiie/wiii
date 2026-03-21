@@ -105,22 +105,33 @@ export function PreviewGroup({ block, onPreviewClick }: PreviewGroupProps) {
 
   if (!block.items || block.items.length === 0) return null;
 
-  // Web search widget layout (Claude-style compact list)
+  // Web search widget layout — collapsed by default, answer first
+  const [widgetExpanded, setWidgetExpanded] = useState(false);
+
   if (isWebSearch) {
     return (
       <div className="search-widget my-2" role="region" aria-label="Kết quả tìm kiếm">
-        {/* Header */}
-        <div className="search-widget__header">
-          <Globe size={16} className="search-widget__icon" />
+        {/* Header — clickable toggle */}
+        <button
+          type="button"
+          className="search-widget__header"
+          onClick={() => setWidgetExpanded(!widgetExpanded)}
+          aria-expanded={widgetExpanded}
+        >
+          <Globe size={14} className="search-widget__icon" />
           <span className="search-widget__query">
-            {(block as PreviewBlockData & { query?: string }).query || "Tìm kiếm"}
+            {block.items.length} nguồn tham khảo
           </span>
-          <span className="search-widget__count">
-            {block.items.length} kết quả
-          </span>
-        </div>
+          <svg
+            width="12" height="12" viewBox="0 0 20 20" fill="currentColor"
+            className={`search-widget__chevron ${widgetExpanded ? "search-widget__chevron--open" : ""}`}
+          >
+            <path d="M7.16 14.13C6.96 14.31 6.94 14.63 7.13 14.84 7.31 15.04 7.63 15.06 7.84 14.87L12.84 10.37C13.06 10.18 13.06 9.82 12.84 9.63L7.84 5.13C7.63 4.94 7.31 4.96 7.13 5.17 6.94 5.37 6.96 5.69 7.16 5.87L11.75 10 7.16 14.13Z" />
+          </svg>
+        </button>
 
-        {/* Scrollable results list */}
+        {/* Scrollable results list — only when expanded */}
+        {widgetExpanded && (
         <div className="search-widget__list" role="list">
           {block.items.map((item) => {
             const domain = extractDomain(item.url);
@@ -182,6 +193,7 @@ export function PreviewGroup({ block, onPreviewClick }: PreviewGroupProps) {
             );
           })}
         </div>
+        )}
       </div>
     );
   }

@@ -895,11 +895,9 @@ export function InterleavedBlockSequence({
         }
 
         if (block.type === "preview") {
-          return (
-            <BlockErrorBoundary key={block.id} blockType="preview">
-              <PreviewGroup block={block as PreviewBlockData} />
-            </BlockErrorBoundary>
-          );
+          // Preview/search results render at BOTTOM (after answer), not inline.
+          // Answer first, sources second — user reads answer then verifies sources.
+          return null;
         }
 
         if (block.type === "artifact") {
@@ -955,6 +953,18 @@ export function InterleavedBlockSequence({
         }
 
         return null;
+      })}
+
+      {/* Preview/search results — rendered AFTER answer (answer first, sources second) */}
+      {renderItems.flatMap((item) => {
+        if (item.kind !== "block") return [];
+        const block = item.block;
+        if (block.type !== "preview") return [];
+        return [(
+          <BlockErrorBoundary key={`bottom-${block.id}`} blockType="preview">
+            <PreviewGroup block={block as PreviewBlockData} />
+          </BlockErrorBoundary>
+        )];
       })}
 
       {showReasoningRail && thinkingLevel === "detailed" && inspectorBlocks.length > 0 ? (

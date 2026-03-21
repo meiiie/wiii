@@ -3441,9 +3441,25 @@ html.dark .shiki span {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 8px 14px;
   background: color-mix(in srgb, var(--surface-secondary) 50%, var(--surface));
-  border-bottom: 1px solid var(--border);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.search-widget__header:hover {
+  background: color-mix(in srgb, var(--surface-secondary) 80%, var(--surface));
+}
+.search-widget__chevron {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: transform 150ms ease;
+}
+.search-widget__chevron--open {
+  transform: rotate(90deg);
 }
 
 .search-widget__icon {
