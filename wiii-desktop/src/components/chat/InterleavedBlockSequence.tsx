@@ -832,11 +832,13 @@ export function InterleavedBlockSequence({
           }
 
           if (mergedIntervals.length === 1) {
+            // Fix: Use stable key (index-based) to prevent React remount
             return (
               <ReasoningInterval
-                key={item.id}
+                key={`ri-${index}`}
                 interval={item.interval}
                 thinkingLevel={thinkingLevel}
+                isResponseComplete={!isStreaming}
                 onOpenInspector={() => setInspectorIntervalId(item.interval.id)}
               />
             );
@@ -845,7 +847,7 @@ export function InterleavedBlockSequence({
           // Merge multiple intervals into ONE unified interval
           const mergedInterval: ReasoningIntervalViewModel = {
             ...mergedIntervals[0],
-            id: `merged-${mergedIntervals[0].id}`,
+            id: `merged-${index}`,
             isLive: mergedIntervals.some((iv) => iv.isLive),
             items: mergedIntervals.flatMap((iv) => iv.items),
             rawBlocks: mergedIntervals.flatMap((iv) => iv.rawBlocks),
@@ -854,11 +856,13 @@ export function InterleavedBlockSequence({
             ) || undefined,
           };
 
+          // Fix: Stable key based on render position, not generated ID
           return (
             <ReasoningInterval
-              key={mergedInterval.id}
+              key={`ri-${index}`}
               interval={mergedInterval}
               thinkingLevel={thinkingLevel}
+              isResponseComplete={!isStreaming}
               onOpenInspector={() => setInspectorIntervalId(mergedIntervals[0].id)}
             />
           );

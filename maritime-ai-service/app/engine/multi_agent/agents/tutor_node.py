@@ -60,13 +60,18 @@ logger = logging.getLogger(__name__)
 TOOL_INSTRUCTION_DEFAULT = """
 ## QUY TẮC TOOL (CRITICAL - RAG-First Pattern):
 
-1. **LUÔN LUÔN** sử dụng tool `tool_knowledge_search` để tìm kiếm kiến thức **TRƯỚC KHI** trả lời bất kỳ câu hỏi nào về kiến thức chuyên ngành.
+1. **HÀNH ĐỘNG ĐẦU TIÊN** khi nhận câu hỏi chuyên ngành: GỌI `tool_knowledge_search` NGAY LẬP TỨC.
+   - KHÔNG dùng `tool_think` trước khi search. Search TRƯỚC, suy nghĩ SAU.
+   - KHÔNG trả lời từ kiến thức riêng mà không tìm kiếm trước.
 
-2. **KHÔNG BAO GIỜ** trả lời từ kiến thức riêng mà không tìm kiếm trước.
+2. **THỨ TỰ BẮT BUỘC**: `tool_knowledge_search` → (đọc kết quả) → trả lời dựa trên nguồn.
+   - Nếu cần suy nghĩ thêm, dùng `tool_think` SAU KHI đã có kết quả search.
 
 3. Sau khi tìm kiếm, giảng dạy **DỰA TRÊN** kết quả tìm được.
 
 4. **TRÍCH DẪN nguồn** trong câu trả lời.
+
+5. **CHỈ BỎ QUA search** khi câu hỏi rõ ràng là chào hỏi, tâm sự, hoặc không liên quan đến kiến thức.
 
 ## TOOL BỔ SUNG:
 - `tool_calculator`: Tính toán số học (cộng, trừ, nhân, chia, sqrt, sin, cos, log, v.v.)
@@ -115,11 +120,11 @@ THINKING_CHAIN_INSTRUCTION = """
 
 Khi xử lý câu hỏi phức tạp, hãy chia quá trình thành nhiều giai đoạn:
 
-1. **Phân tích** → Dùng tool_think để suy nghĩ về câu hỏi
+1. **Tìm kiếm** → Dùng tool_knowledge_search để tra cứu TRƯỚC TIÊN
 2. **Báo cáo tiến độ** → Dùng tool_report_progress để thông báo cho người dùng
-3. **Tìm kiếm** → Dùng tool_knowledge_search để tra cứu
+3. **Phân tích** → Dùng tool_think để suy nghĩ dựa trên kết quả tìm được
 4. **Báo cáo kết quả** → Dùng tool_report_progress
-5. **Tổng hợp** → Trả lời cuối cùng
+5. **Tổng hợp** → Trả lời cuối cùng dựa trên nguồn tìm được
 
 Ví dụ gọi tool_report_progress:
 - Sau khi phân tích xong: message="Wiii đã hiểu câu hỏi. Đang tìm kiếm tài liệu...", phase_label="Tra cứu tri thức"
@@ -249,8 +254,8 @@ class TutorAgentNode:
         self._llm_with_tools = None
         self._config = TUTOR_AGENT_CONFIG
         self._tools = [
-            tool_knowledge_search, tool_calculator, tool_current_datetime,
-            tool_web_search, tool_think, tool_report_progress,
+            tool_knowledge_search, tool_web_search, tool_calculator,
+            tool_current_datetime, tool_report_progress, tool_think,
         ]
 
         # Sprint 95: Conditionally add character tools
@@ -742,7 +747,7 @@ KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
             messages.append(HumanMessage(content=query))
         
         tools_used = []
-        max_iterations = 2  # Sprint 103b: 3 → 2 (most queries resolve in 1-2 iterations)
+        max_iterations = 4  # Sprint 103b→fix: 2 → 4 (need room for think + search + generate)
         final_response = ""
         llm_thinking = None  # Thinking from final LLM response
         _answer_streamed_via_bus = False  # Sprint 74: Track if answer was streamed via bus

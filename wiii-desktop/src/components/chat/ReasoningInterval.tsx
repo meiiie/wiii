@@ -294,14 +294,19 @@ function selectVisibleItems(
 export function ReasoningInterval({
   interval,
   thinkingLevel,
+  isResponseComplete = false,
   onOpenInspector: _onOpenInspector,
 }: {
   interval: ReasoningIntervalViewModel;
   thinkingLevel: ThinkingLevel;
+  isResponseComplete?: boolean;
   onOpenInspector: () => void;
 }) {
-  // Header label changes: "đang suy nghĩ" (live) → "đã suy nghĩ xong" (done)
-  const headerLabel = getIntervalHeaderLabel(interval);
+  // Use isResponseComplete as robust "done" signal (not dependent on isLive flag)
+  const isDone = isResponseComplete || !interval.isLive;
+  // Header: "đang suy nghĩ" (streaming) → "đã suy nghĩ xong" (done)
+  const effectiveInterval = { ...interval, isLive: !isDone };
+  const headerLabel = getIntervalHeaderLabel(effectiveInterval);
   void getIntervalSummary;
   const durationText = interval.durationSeconds ? `${interval.durationSeconds}s` : "";
 
@@ -317,7 +322,7 @@ export function ReasoningInterval({
   // Streaming → auto expanded. Done → auto collapsed. User click → manual override.
   const showBody = userToggled
     ? userExpanded
-    : (interval.isLive || thinkingLevel === "detailed");
+    : (!isDone || thinkingLevel === "detailed");
 
   const handleToggle = () => {
     setUserToggled(true);
@@ -328,7 +333,7 @@ export function ReasoningInterval({
 
   return (
     <section
-      className={`reasoning-interval reasoning-interval--${interval.isLive ? "live" : "complete"}`}
+      className={`reasoning-interval reasoning-interval--${isDone ? "complete" : "live"}`}
       data-testid="reasoning-interval"
       data-step-id={interval.stepId || ""}
     >
@@ -339,8 +344,8 @@ export function ReasoningInterval({
           onClick={handleToggle}
           aria-expanded={showBody}
         >
-          {/* Icon: animated sparkle when live, static check when done */}
-          {interval.isLive ? (
+          {/* Icon: animated sparkle when streaming, static check when done */}
+          {!isDone ? (
             <span className="reasoning-interval__live-dot" />
           ) : (
             <svg className="reasoning-interval__header-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -372,7 +377,7 @@ export function ReasoningInterval({
                 if (item.kind === "thinking") {
                   // Cursor: ONLY on the very last thinking item AND only while streaming
                   const isLastVisible = idx === visibleItems.length - 1 || visibleItems.slice(idx + 1).every((i) => i.kind !== "thinking");
-                  const showCursor = interval.isLive && isLastVisible;
+                  const showCursor = !isDone && isLastVisible;
                   // Thinking: COLLAPSIBLE (gray text)
                   return (
                     <div
@@ -397,7 +402,7 @@ export function ReasoningInterval({
           </div>
 
           {/* Terminal label — shown when thinking is complete */}
-          {!interval.isLive && (
+          {isDone && (
             <div className="reasoning-interval__terminal">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
