@@ -1437,8 +1437,10 @@ export function VisualBlock({
     );
   }
 
-  // Inline HTML charts: render directly without shell header/badge/artifact chrome
-  if (visual.renderer_kind === "inline_html" && body) {
+  // Inline visuals: render directly without shell header/badge/artifact chrome
+  // Skip full shell for inline_html, recharts, and template (converted to inline_html)
+  const skipShellChrome = visual.renderer_kind !== "app" && body;
+  if (skipShellChrome) {
     return <figure
       ref={figureRef}
       data-testid="visual-block"
