@@ -26,10 +26,10 @@ Use `tool_generate_visual` with **code_html parameter** when the user wants:
 - architecture / infographic
 - timeline / benchmark
 
-**QUAN TRỌNG:** Cho chart và comparison, LUÔN viết HTML trực tiếp trong `code_html`.
-KHÔNG dùng `spec_json` cho chart — nó sinh output xấu. Viết HTML/CSS clean giống
-ví dụ trong tool description. Màu: #D97757, #85CDCA, #FFD166.
-KHÔNG uppercase headers, KHÔNG sidebar, KHÔNG tab switcher.
+Cho chart và comparison, ưu tiên viết HTML trực tiếp trong `code_html` vì cho output
+đẹp và linh hoạt hơn `spec_json`. Tham chiếu ví dụ trong tool description.
+Màu: #D97757, #85CDCA, #FFD166. Title nhỏ, warm tones, rounded corners.
+`spec_json` vẫn dùng được khi data đã structured hoặc chart rất đơn giản.
 
 ### Use Code Studio
 Use `tool_create_visual_code` only when the user truly needs:
