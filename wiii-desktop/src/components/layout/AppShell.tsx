@@ -3,8 +3,10 @@
  * Sprint 106: Disconnected banner above main content.
  * Sprint 107: SourcesPanel side panel.
  * Sprint 192: View routing — chat, system-admin, org-admin, settings.
+ * Sprint 233: Resizable split-panel layout — artifacts/preview push chat left.
  */
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { Group, Panel, Separator } from "react-resizable-panels";
 import { AnimatePresence, motion } from "motion/react";
 import { WifiOff, RefreshCw, Menu } from "lucide-react";
 import { TitleBar } from "./TitleBar";
@@ -78,9 +80,29 @@ function ViewFallback({ label }: { label: string }) {
   );
 }
 
+/** Detect mobile viewport for full-screen overlay fallback */
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", handler);
+      return () => mq.removeEventListener("change", handler);
+    }
+    mq.addListener(handler);
+    return () => mq.removeListener(handler);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 export function AppShell() {
   const { sidebarOpen, activeView, setSidebarOpen, toggleSidebar } = useUIStore();
+  const hasRightPanel = useUIStore((s) => s.hasRightPanel());
   const { status, checkHealth } = useConnectionStore();
+  const isMobile = useIsMobile();
 
   const showDisconnected = status === "disconnected";
 
@@ -168,17 +190,51 @@ export function AppShell() {
           </AnimatePresence>
           {/* Sprint 192: View routing */}
           {/* Sprint 211: SourcesPanel push-aside — chat compresses when panel opens (Claude.ai/ChatGPT pattern) */}
+          {/* Sprint 233: Resizable split-panel — artifact/code-studio/preview push chat to the left */}
           {activeView === "chat" ? (
-            <div className="flex-1 flex overflow-hidden min-h-0">
-              <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                <Suspense fallback={<ViewFallback label="Wiii dang mo cuoc tro chuyen..." />}>
-                  <ChatView />
-                </Suspense>
-              </div>
-              <Suspense fallback={null}>
-                <SourcesPanel />
-              </Suspense>
-            </div>
+            <Group
+              orientation="horizontal"
+              id="wiii-main-layout"
+              className="flex-1 min-h-0"
+            >
+              {/* Left: Chat + SourcesPanel */}
+              <Panel
+                id="chat-panel"
+                defaultSize={hasRightPanel ? 45 : 100}
+                minSize={25}
+              >
+                <div className="h-full flex overflow-hidden">
+                  <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                    <Suspense fallback={<ViewFallback label="Wiii dang mo cuoc tro chuyen..." />}>
+                      <ChatView />
+                    </Suspense>
+                  </div>
+                  <Suspense fallback={null}>
+                    <SourcesPanel />
+                  </Suspense>
+                </div>
+              </Panel>
+
+              {/* Right: Artifact / CodeStudio / Preview (resizable) */}
+              {hasRightPanel && !isMobile && (
+                <>
+                  <Separator className="wiii-resize-handle" />
+                  <Panel
+                    id="right-panel"
+                    defaultSize={55}
+                    minSize={30}
+                  >
+                    <div className="h-full flex flex-col overflow-hidden">
+                      <Suspense fallback={null}>
+                        <ArtifactPanel inline />
+                        <CodeStudioPanel inline />
+                        <PreviewPanel inline />
+                      </Suspense>
+                    </div>
+                  </Panel>
+                </>
+              )}
+            </Group>
           ) : (
             <Suspense fallback={<ViewFallback label="Wiii dang mo khong gian nay..." />}>
               {activeView === "system-admin" && <SystemAdminView />}
@@ -189,14 +245,19 @@ export function AppShell() {
           )}
         </main>
       </div>
-      {/* Side panels — chat-only (fixed overlays for non-push-aside panels) */}
+      {/* Side panels — chat-only overlays for context/character + mobile fallback */}
       {activeView === "chat" && (
         <Suspense fallback={null}>
           <ContextPanel />
           <CharacterPanel />
-          <PreviewPanel />
-          <ArtifactPanel />
-          <CodeStudioPanel />
+          {/* Mobile fallback: panels render as fixed overlays on small screens */}
+          {isMobile && (
+            <>
+              <PreviewPanel />
+              <ArtifactPanel />
+              <CodeStudioPanel />
+            </>
+          )}
         </Suspense>
       )}
       <StatusBar />

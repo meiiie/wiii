@@ -13,7 +13,73 @@ import { LazyImage } from "@/components/chat/PreviewCard";
 import { slideInRight } from "@/lib/animations";
 import type { PreviewItemData } from "@/api/types";
 
-export function PreviewPanel() {
+/** Shared content for both inline and overlay modes */
+function PreviewPanelContent({
+  previews,
+  selected,
+  selectedPreviewId,
+  closePreview,
+}: {
+  previews: PreviewItemData[];
+  selected: PreviewItemData | null;
+  selectedPreviewId: string | null;
+  closePreview: () => void;
+}) {
+  return (
+    <>
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 preview-panel-shell__header">
+        <div className="flex items-center gap-2">
+          <Eye size={16} className="text-[var(--accent)]" />
+          <span className="font-medium text-sm text-text">
+            Xem trước
+          </span>
+          <span className="text-xs text-text-tertiary">
+            ({previews.length})
+          </span>
+        </div>
+        <button
+          onClick={closePreview}
+          className="p-1.5 rounded-md hover:bg-surface-tertiary text-text-secondary transition-colors"
+          aria-label="Đóng panel xem trước"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      {/* Selected preview detail */}
+      {selected ? (
+        <ExpandedPreview item={selected} />
+      ) : (
+        <div className="flex flex-col items-center justify-center flex-1 text-text-tertiary text-sm p-4">
+          <Eye size={32} className="mb-2 opacity-40" />
+          <p>Chọn một thẻ xem trước để xem chi tiết.</p>
+        </div>
+      )}
+
+      {/* Preview list */}
+      {previews.length > 1 && (
+        <div className="border-t border-border p-2 max-h-[35vh] overflow-y-auto">
+          <div className="text-xs text-text-tertiary px-2 py-1 mb-1">
+            Tất cả xem trước
+          </div>
+          <div className="space-y-1">
+            {previews.map((p) => (
+              <PreviewListItem
+                key={p.preview_id}
+                item={p}
+                isSelected={selectedPreviewId === p.preview_id}
+                onSelect={() => useUIStore.getState().openPreview(p.preview_id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export function PreviewPanel({ inline }: { inline?: boolean }) {
   const { previewPanelOpen, selectedPreviewId, closePreview } = useUIStore();
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -43,9 +109,23 @@ export function PreviewPanel() {
   }, [previewPanelOpen, closePreview]);
 
   const selected = selectedPreviewId
-    ? previews.find((p) => p.preview_id === selectedPreviewId)
+    ? previews.find((p) => p.preview_id === selectedPreviewId) ?? null
     : null;
 
+  if (!previewPanelOpen) return null;
+
+  const contentProps = { previews, selected, selectedPreviewId, closePreview };
+
+  // Sprint 233: Inline mode — render directly inside resizable split panel
+  if (inline) {
+    return (
+      <div ref={panelRef} className="h-full flex flex-col preview-panel-shell" role="complementary" aria-label="Xem trước nội dung">
+        <PreviewPanelContent {...contentProps} />
+      </div>
+    );
+  }
+
+  // Mobile / overlay fallback — original fixed positioning
   return (
     <AnimatePresence>
       {previewPanelOpen && (
@@ -59,54 +139,7 @@ export function PreviewPanel() {
           role="complementary"
           aria-label="Xem trước nội dung"
         >
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 preview-panel-shell__header">
-            <div className="flex items-center gap-2">
-              <Eye size={16} className="text-[var(--accent)]" />
-              <span className="font-medium text-sm text-text">
-                Xem trước
-              </span>
-              <span className="text-xs text-text-tertiary">
-                ({previews.length})
-              </span>
-            </div>
-            <button
-              onClick={closePreview}
-              className="p-1.5 rounded-md hover:bg-surface-tertiary text-text-secondary transition-colors"
-              aria-label="Đóng panel xem trước"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          {/* Selected preview detail */}
-          {selected ? (
-            <ExpandedPreview item={selected} />
-          ) : (
-            <div className="flex flex-col items-center justify-center flex-1 text-text-tertiary text-sm p-4">
-              <Eye size={32} className="mb-2 opacity-40" />
-              <p>Chọn một thẻ xem trước để xem chi tiết.</p>
-            </div>
-          )}
-
-          {/* Preview list */}
-          {previews.length > 1 && (
-            <div className="border-t border-border p-2 max-h-[35vh] overflow-y-auto">
-              <div className="text-xs text-text-tertiary px-2 py-1 mb-1">
-                Tất cả xem trước
-              </div>
-              <div className="space-y-1">
-                {previews.map((p) => (
-                  <PreviewListItem
-                    key={p.preview_id}
-                    item={p}
-                    isSelected={selectedPreviewId === p.preview_id}
-                    onSelect={() => useUIStore.getState().openPreview(p.preview_id)}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+          <PreviewPanelContent {...contentProps} />
         </motion.div>
       )}
     </AnimatePresence>

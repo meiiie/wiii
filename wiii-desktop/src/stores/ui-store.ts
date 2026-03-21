@@ -31,6 +31,9 @@ interface UIState {
   /** Code Studio panel */
   codeStudioPanelOpen: boolean;
 
+  /** Whether any right-side split panel is open (artifact, code studio, or preview) */
+  hasRightPanel: () => boolean;
+
   // Actions
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
@@ -68,7 +71,7 @@ interface UIState {
   closeAll: () => void;
 }
 
-export const useUIStore = create<UIState>((set) => ({
+export const useUIStore = create<UIState>((set, get) => ({
   activeView: "chat" as ActiveView,
   sidebarOpen: true,
   sourcesPanelOpen: false,
@@ -84,6 +87,11 @@ export const useUIStore = create<UIState>((set) => ({
   _ephemeralArtifact: null,
   orgManagerTargetOrgId: null,
   codeStudioPanelOpen: false,
+
+  hasRightPanel: () => {
+    const s = get();
+    return s.artifactPanelOpen || s.codeStudioPanelOpen || s.previewPanelOpen;
+  },
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),

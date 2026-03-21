@@ -1099,6 +1099,50 @@ html.dark .shiki span {
   51%, 100% { opacity: 0; }
 }
 
+/* ===== Sprint 233: Resizable Split Panel Handle ===== */
+/* react-resizable-panels v4 uses `data-separator` attribute for active state */
+.wiii-resize-handle {
+  width: 6px;
+  background: transparent;
+  cursor: col-resize;
+  transition: background 150ms ease;
+  position: relative;
+  z-index: 10;
+}
+
+.wiii-resize-handle:hover,
+.wiii-resize-handle[data-state="drag"] {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* Visible drag indicator — vertical pill in center */
+.wiii-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 4px;
+  height: 36px;
+  border-radius: 2px;
+  background: var(--border);
+  opacity: 0;
+  transition: opacity 150ms ease, background 150ms ease;
+}
+
+.wiii-resize-handle:hover::after,
+.wiii-resize-handle[data-state="drag"]::after {
+  opacity: 1;
+  background: var(--accent);
+}
+
+/* Mobile: hide resize handle, panels stay as fixed overlays */
+@media (max-width: 767px) {
+  .wiii-resize-handle {
+    display: none;
+  }
+}
+
 /* ===== Code Studio Card (inline in chat rail) ===== */
 /* Matches visual-artifact-card pattern — inline transparent, hòa vào nền */
 .code-studio-card {

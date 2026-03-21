@@ -15,7 +15,7 @@ import { InlineVisualFrame } from "@/components/common/InlineVisualFrame";
 
 type StudioTab = "code" | "preview";
 
-export const CodeStudioPanel = memo(function CodeStudioPanel() {
+export const CodeStudioPanel = memo(function CodeStudioPanel({ inline }: { inline?: boolean }) {
   const codeStudioPanelOpen = useUIStore((s) => s.codeStudioPanelOpen);
   const closeCodeStudio = useUIStore((s) => s.closeCodeStudio);
   const session = useCodeStudioStore((s) =>
@@ -24,6 +24,16 @@ export const CodeStudioPanel = memo(function CodeStudioPanel() {
 
   if (!codeStudioPanelOpen || !session) return null;
 
+  // Sprint 233: Inline mode — render directly inside resizable split panel
+  if (inline) {
+    return (
+      <div className="h-full flex flex-col code-studio-panel">
+        <CodeStudioContent session={session} onClose={closeCodeStudio} />
+      </div>
+    );
+  }
+
+  // Mobile / overlay fallback — original fixed positioning
   return (
     <AnimatePresence>
       <motion.div

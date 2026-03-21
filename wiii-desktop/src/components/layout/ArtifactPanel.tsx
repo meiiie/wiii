@@ -86,7 +86,99 @@ function getDefaultArtifactTab(artifact: ArtifactData): ArtifactTabId {
   return artifact.artifact_type === "code" ? "code" : "preview";
 }
 
-export const ArtifactPanel = memo(function ArtifactPanel() {
+/** Shared content for both inline and overlay modes */
+function ArtifactPanelContent({
+  artifact,
+  tabs,
+  artifactActiveTab,
+  setArtifactTab,
+  closeArtifact,
+  resolvedFileUrl,
+  fileDescription,
+  HeaderIcon,
+}: {
+  artifact: ArtifactData;
+  tabs: ArtifactTabConfig[];
+  artifactActiveTab: ArtifactTabId;
+  setArtifactTab: (tab: ArtifactTabId) => void;
+  closeArtifact: () => void;
+  resolvedFileUrl: string | null;
+  fileDescription: string | null;
+  HeaderIcon: typeof Code2;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border shrink-0 artifact-panel-shell__header">
+        <div className="w-9 h-9 rounded-xl bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center shrink-0">
+          <HeaderIcon size={17} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-text truncate">{artifact.title}</div>
+          <div className="flex items-center gap-2 mt-1 text-[11px] text-text-tertiary">
+            <span className="uppercase tracking-[0.08em]">{artifact.artifact_type}</span>
+            {fileDescription && <span className="truncate">{fileDescription}</span>}
+            {artifact.language && <span className="font-mono">{artifact.language}</span>}
+          </div>
+        </div>
+        {resolvedFileUrl && (
+          <a
+            href={resolvedFileUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-surface-tertiary text-text-tertiary hover:text-text transition-colors text-xs"
+            title="Mo hoac tai file da tao"
+          >
+            <Download size={14} />
+            Tai file
+          </a>
+        )}
+        <button
+          onClick={closeArtifact}
+          className="p-1.5 rounded-md hover:bg-surface-tertiary text-text-tertiary hover:text-text transition-colors"
+          aria-label="Dong panel artifact"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="flex border-b border-border shrink-0 artifact-panel-shell__tabs">
+        {tabs.map((tab) => {
+          const TabIcon = tab.icon;
+          const isActive = artifactActiveTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setArtifactTab(tab.id)}
+              data-active={isActive ? "true" : "false"}
+              className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors ${
+                isActive
+                  ? "text-[var(--accent)]"
+                  : "text-text-tertiary hover:text-text-secondary"
+              } artifact-panel-shell__tab`}
+            >
+              <TabIcon size={14} />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex-1 overflow-auto">
+        {artifactActiveTab === "preview" && <PreviewTab artifact={artifact} />}
+        {artifactActiveTab === "code" && (
+          artifact.artifact_type === "code" ||
+          artifact.artifact_type === "html" ||
+          artifact.artifact_type === "react"
+            ? <CodeTab artifact={artifact} />
+            : <DetailsTab artifact={artifact} resolvedFileUrl={resolvedFileUrl} />
+        )}
+        {artifactActiveTab === "output" && <OutputTab artifact={artifact} />}
+      </div>
+    </>
+  );
+}
+
+export const ArtifactPanel = memo(function ArtifactPanel({ inline }: { inline?: boolean }) {
   const {
     artifactPanelOpen,
     selectedArtifactId,
@@ -140,6 +232,27 @@ export const ArtifactPanel = memo(function ArtifactPanel() {
 
   if (!artifactPanelOpen || !artifact) return null;
 
+  const contentProps = {
+    artifact,
+    tabs,
+    artifactActiveTab,
+    setArtifactTab,
+    closeArtifact,
+    resolvedFileUrl,
+    fileDescription,
+    HeaderIcon,
+  };
+
+  // Sprint 233: Inline mode — render directly inside resizable split panel
+  if (inline) {
+    return (
+      <div className="h-full flex flex-col artifact-panel-shell">
+        <ArtifactPanelContent {...contentProps} />
+      </div>
+    );
+  }
+
+  // Mobile / overlay fallback — original fixed positioning
   return (
     <AnimatePresence>
       <motion.div
@@ -150,72 +263,7 @@ export const ArtifactPanel = memo(function ArtifactPanel() {
         transition={{ type: "spring", damping: 25, stiffness: 200 }}
         className="fixed right-0 top-[var(--titlebar-height,32px)] bottom-[var(--statusbar-height,24px)] w-[52vw] max-w-[860px] min-w-[420px] border-l border-border z-40 flex flex-col shadow-xl artifact-panel-shell"
       >
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-border shrink-0 artifact-panel-shell__header">
-          <div className="w-9 h-9 rounded-xl bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center shrink-0">
-            <HeaderIcon size={17} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-text truncate">{artifact.title}</div>
-            <div className="flex items-center gap-2 mt-1 text-[11px] text-text-tertiary">
-              <span className="uppercase tracking-[0.08em]">{artifact.artifact_type}</span>
-              {fileDescription && <span className="truncate">{fileDescription}</span>}
-              {artifact.language && <span className="font-mono">{artifact.language}</span>}
-            </div>
-          </div>
-          {resolvedFileUrl && (
-            <a
-              href={resolvedFileUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-surface-tertiary text-text-tertiary hover:text-text transition-colors text-xs"
-              title="Mo hoac tai file da tao"
-            >
-              <Download size={14} />
-              Tai file
-            </a>
-          )}
-          <button
-            onClick={closeArtifact}
-            className="p-1.5 rounded-md hover:bg-surface-tertiary text-text-tertiary hover:text-text transition-colors"
-            aria-label="Dong panel artifact"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="flex border-b border-border shrink-0 artifact-panel-shell__tabs">
-          {tabs.map((tab) => {
-            const TabIcon = tab.icon;
-            const isActive = artifactActiveTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setArtifactTab(tab.id)}
-                data-active={isActive ? "true" : "false"}
-                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors ${
-                  isActive
-                    ? "text-[var(--accent)]"
-                    : "text-text-tertiary hover:text-text-secondary"
-                } artifact-panel-shell__tab`}
-              >
-                <TabIcon size={14} />
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex-1 overflow-auto">
-          {artifactActiveTab === "preview" && <PreviewTab artifact={artifact} />}
-          {artifactActiveTab === "code" && (
-            artifact.artifact_type === "code" ||
-            artifact.artifact_type === "html" ||
-            artifact.artifact_type === "react"
-              ? <CodeTab artifact={artifact} />
-              : <DetailsTab artifact={artifact} resolvedFileUrl={resolvedFileUrl} />
-          )}
-          {artifactActiveTab === "output" && <OutputTab artifact={artifact} />}
-        </div>
+        <ArtifactPanelContent {...contentProps} />
       </motion.div>
     </AnimatePresence>
   );
