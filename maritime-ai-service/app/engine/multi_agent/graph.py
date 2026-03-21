@@ -4324,10 +4324,13 @@ async def direct_response_node(state: AgentState) -> AgentState:
                 # Visual Intelligence: force tool calling when resolver detects visual intent
                 _vd = resolve_visual_intent(query)
                 if _vd.force_tool and not force_tools:
-                    force_tools = True
-                    # Keep only visual tool to force specific tool call
-                    tools = [t for t in tools if _tool_name(t) == "tool_generate_visual"] or tools
-                    logger.info("[DIRECT] Visual intent → force tool_choice='any' for tool_generate_visual")
+                    # Ensure tool_generate_visual is in the tools list
+                    has_visual_tool = any(_tool_name(t) == "tool_generate_visual" for t in tools)
+                    if has_visual_tool:
+                        force_tools = True
+                        logger.info("[DIRECT] Visual intent → force tool_choice='any' (visual_type=%s)", _vd.visual_type)
+                    else:
+                        logger.warning("[DIRECT] Visual intent detected but tool_generate_visual not in tools list")
 
                 # Phase 2: Bind tools to LLM
                 llm_with_tools, llm_auto = _bind_direct_tools(llm, tools, force_tools)
