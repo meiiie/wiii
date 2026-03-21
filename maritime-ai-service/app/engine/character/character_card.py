@@ -45,6 +45,7 @@ class WiiiCharacterCard(BaseModel):
     anti_drift: List[str] = Field(default_factory=list)
     example_dialogues: List[Dict[str, str]] = Field(default_factory=list)
     identity_anchor: str = ""
+    visual_disposition: str = ""
 
 
 def _load_yaml(path: Path) -> Dict[str, Any]:
@@ -129,6 +130,7 @@ def get_wiii_character_card() -> WiiiCharacterCard:
             if isinstance(item, dict)
         ],
         identity_anchor=str(identity_root.get("identity_anchor", "")),
+        visual_disposition=str(identity_root.get("visual_disposition", "")),
     )
 
 
@@ -268,6 +270,11 @@ def build_wiii_runtime_prompt(
             sections.append(_time_awareness.strip())
     except Exception:
         pass
+
+    if card.visual_disposition:
+        sections.append("")
+        sections.append("TRỰC QUAN HÓA:")
+        sections.append(card.visual_disposition.strip())
 
     if card.anti_drift:
         sections.append("")

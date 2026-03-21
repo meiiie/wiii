@@ -4269,6 +4269,13 @@ async def direct_response_node(state: AgentState) -> AgentState:
 
             _ctx = state.get("context", {})
             thinking_effort = state.get("thinking_effort")
+
+            # Visual Intelligence: upgrade to DEEP tier when visual intent detected
+            _vd_tier = resolve_visual_intent(query)
+            if _vd_tier.force_tool and not thinking_effort:
+                thinking_effort = "high"
+                logger.info("[DIRECT] Visual intent detected → upgrade to high effort")
+
             llm = AgentConfigRegistry.get_llm("direct", effort_override=thinking_effort)
 
             # Sprint 203: Diversity params for response variation

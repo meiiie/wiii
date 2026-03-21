@@ -532,6 +532,13 @@ Wiii nên cân nhắc dùng {preferred_tool_label} với code_html để tạo b
             # Sprint 66: Per-request thinking effort override
             thinking_effort = state.get("thinking_effort")
             llm_for_request = self._llm
+
+            # Visual Intelligence: upgrade to DEEP tier when visual intent detected
+            visual_decision = resolve_visual_intent(query)
+            if visual_decision.force_tool and not thinking_effort:
+                thinking_effort = "high"
+                logger.info("[TUTOR_AGENT] Visual intent detected → upgrade to high effort")
+
             if thinking_effort:
                 llm_for_request = AgentConfigRegistry.get_llm("tutor_agent", effort_override=thinking_effort)
                 logger.info("[TUTOR_AGENT] Thinking effort override: %s", thinking_effort)
