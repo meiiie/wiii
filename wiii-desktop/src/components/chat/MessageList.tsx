@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { useState, useEffect, useCallback } from "react";
+import { motion } from "motion/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown } from "lucide-react";
 import type { ContentBlock, Message } from "@/api/types";
@@ -42,7 +42,7 @@ interface MessageListProps {
 export function MessageList({
   messages,
   onSuggestedQuestion,
-  onCancel,
+  onCancel: _onCancel,
   onRegenerate,
   onEditMessage,
 }: MessageListProps) {
@@ -162,32 +162,16 @@ export function MessageList({
                   onSuggestedQuestion={onSuggestedQuestion}
                 />
 
-                {/* E1+E2: Thinking indicator with 800ms delay (skip shimmer for fast responses)
-                   and AnimatePresence fade-out for smooth transition */}
-                <AnimatePresence>
-                  {!visibleStreamingBlocks.length && !streamingContent && (
-                    <ThinkingIndicatorDelayed key="thinking-indicator" />
-                  )}
-                </AnimatePresence>
-
-                {streamingStartTime && (
+                {/* Streaming timer — only show when no thinking blocks visible yet */}
+                {streamingStartTime && !visibleStreamingBlocks.length && !streamingContent && (
                   <StreamingTimer
                     startTime={streamingStartTime}
-                    hasAnswer={Boolean(streamingContent?.trim())}
+                    hasAnswer={false}
                   />
                 )}
 
                 {streamingSources && streamingSources.length > 0 && (
                   <SourceCitation sources={streamingSources} />
-                )}
-
-                {onCancel && (
-                  <button
-                    onClick={onCancel}
-                    className="mt-2 px-3 py-1 rounded-lg border border-border text-xs text-text-secondary hover:bg-surface-tertiary transition-colors"
-                  >
-                    ■ Dừng Wiii
-                  </button>
                 )}
               </div>
             </div>
@@ -209,37 +193,7 @@ export function MessageList({
   );
 }
 
-/**
- * E2: Delayed thinking indicator — skip spinner for responses < 800ms (AWS Cloudscape pattern).
- * E1: AnimatePresence fade-out when content arrives.
- */
-function ThinkingIndicatorDelayed() {
-  const [visible, setVisible] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    timerRef.current = setTimeout(() => setVisible(true), 800);
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  if (!visible) return null;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.25 }}
-      className="thinking-indicator"
-      aria-live="polite"
-    >
-      <span className="thinking-indicator__spinner" />
-      <span className="thinking-indicator__text">Đang suy nghĩ...</span>
-    </motion.div>
-  );
-}
+// ThinkingIndicatorDelayed removed — StreamingTimer handles this now
 
 function StreamingTimer({ startTime, hasAnswer }: { startTime: number; hasAnswer?: boolean }) {
   const [elapsed, setElapsed] = useState(0);
