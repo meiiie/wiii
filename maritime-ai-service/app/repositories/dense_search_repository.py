@@ -57,7 +57,10 @@ class DenseSearchResult:
     section_hierarchy: dict = None  # article, clause, point, rule
     # Source highlighting (Feature: source-highlight-citation)
     bounding_boxes: list = None  # Normalized coordinates for text highlighting
-    
+    # Temporal metadata (Feature: temporal-metadata)
+    published_date: str = None
+    source_name: str = None
+
     def __post_init__(self):
         # Ensure similarity is in valid range
         self.similarity = max(0.0, min(1.0, self.similarity))
@@ -265,7 +268,11 @@ class DenseSearchRepository:
                             metadata = {}
                     
                     section_hierarchy = metadata.get("section_hierarchy", {})
-                    
+
+                    # Extract temporal metadata from JSONB
+                    published_date = metadata.get("published_date")
+                    source_name = metadata.get("source_name")
+
                     # Parse bounding_boxes from JSONB
                     bounding_boxes = row.get("bounding_boxes")
                     if isinstance(bounding_boxes, str):
@@ -276,7 +283,7 @@ class DenseSearchRepository:
                             bounding_boxes = []
                     elif bounding_boxes is None:
                         bounding_boxes = []
-                    
+
                     results.append(DenseSearchResult(
                         node_id=row["node_id"],
                         similarity=float(row["similarity"]),
@@ -289,7 +296,9 @@ class DenseSearchRepository:
                         document_id=row.get("document_id") or "",
                         domain_id=row.get("domain_id") or "",
                         section_hierarchy=section_hierarchy,
-                        bounding_boxes=bounding_boxes
+                        bounding_boxes=bounding_boxes,
+                        published_date=published_date,
+                        source_name=source_name
                     ))
                 
                 logger.info("Dense search returned %d results", len(results))

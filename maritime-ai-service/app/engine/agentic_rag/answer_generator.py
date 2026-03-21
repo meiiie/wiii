@@ -85,7 +85,18 @@ class AnswerGenerator:
         for node in nodes[:3]:  # Top 3 most relevant
             context_parts.append(f"### {node.title}\n{node.content}")
             if node.source:
-                sources.append(f"- {node.title} ({node.source})")
+                # Extract temporal metadata for richer citations
+                source_name = ""
+                published = ""
+                if hasattr(node, 'metadata') and isinstance(node.metadata, dict):
+                    source_name = node.metadata.get("source_name", "") or ""
+                    published = node.metadata.get("published_date", "") or ""
+                citation = node.title
+                if source_name:
+                    citation += f" — {source_name}"
+                if published:
+                    citation += f" ({published})"
+                sources.append(f"- {citation}")
 
         context = "\n\n".join(context_parts)
 

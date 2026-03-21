@@ -148,7 +148,8 @@ class VisionProcessor:
         page_number: int,
         pdf_page: Optional["fitz.Page"] = None,
         domain_id: Optional[str] = None,
-        organization_id: Optional[str] = None
+        organization_id: Optional[str] = None,
+        source_name: Optional[str] = None
     ):
         """
         Process a single page through the pipeline with semantic chunking.
@@ -243,7 +244,9 @@ class VisionProcessor:
             'image_url': image_url,
             'processing_timestamp': datetime.now(timezone.utc).isoformat(),
             'source_type': 'pdf',
-            'extraction_method': extraction_method  # Feature: hybrid-text-vision
+            'extraction_method': extraction_method,  # Feature: hybrid-text-vision
+            'published_date': None,  # Temporal metadata — filled via API or post-ingestion
+            'source_name': source_name or document_id,  # Temporal metadata — filename fallback
         }
 
         try:

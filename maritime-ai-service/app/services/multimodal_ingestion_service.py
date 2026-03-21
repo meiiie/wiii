@@ -273,7 +273,8 @@ class MultimodalIngestionService:
         page_number: int,
         pdf_page=None,
         domain_id: Optional[str] = None,
-        organization_id: Optional[str] = None
+        organization_id: Optional[str] = None,
+        source_name: Optional[str] = None
     ) -> PageResult:
         """
         Process a single page through the pipeline with semantic chunking.
@@ -286,7 +287,8 @@ class MultimodalIngestionService:
             page_number=page_number,
             pdf_page=pdf_page,
             domain_id=domain_id or settings.default_domain,
-            organization_id=organization_id
+            organization_id=organization_id,
+            source_name=source_name
         )
 
     async def _store_chunk_in_database(
@@ -354,7 +356,8 @@ class MultimodalIngestionService:
         start_page: Optional[int] = None,
         end_page: Optional[int] = None,
         domain_id: Optional[str] = None,
-        organization_id: Optional[str] = None
+        organization_id: Optional[str] = None,
+        source_name: Optional[str] = None
     ) -> IngestionResult:
         """
         Full ingestion pipeline: PDF -> Images -> Vision -> Database.
@@ -489,7 +492,8 @@ class MultimodalIngestionService:
                     page_number=page_num + 1,  # 1-indexed
                     pdf_page=pdf_page,
                     domain_id=domain_id,
-                    organization_id=organization_id
+                    organization_id=organization_id,
+                    source_name=source_name
                 )
 
                 if result.success:

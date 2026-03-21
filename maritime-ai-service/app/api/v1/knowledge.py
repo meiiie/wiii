@@ -144,7 +144,8 @@ async def ingest_multimodal_document(
             max_pages=max_pages,
             start_page=start_page,
             end_page=end_page,
-            organization_id=organization_id
+            organization_id=organization_id,
+            source_name=file.filename
         )
         
         logger.info(
