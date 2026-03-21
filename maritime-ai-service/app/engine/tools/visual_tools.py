@@ -4356,10 +4356,12 @@ def tool_generate_visual(
             logger.warning("Structured visual fallback HTML failed for type=%s: %s", visual_type, exc)
 
     # Apply renderer_kind_hint from visual intent resolver (e.g. "recharts" for chart queries)
-    if not renderer_kind.strip():
-        hint = _runtime_metadata_text("renderer_kind_hint", "")
-        if hint:
-            renderer_kind = hint
+    # Hint OVERRIDES LLM's renderer_kind for chart types (LLM defaults to "template" which is old)
+    hint = _runtime_metadata_text("renderer_kind_hint", "")
+    if hint == "recharts" and visual_type in ("chart", "comparison", "infographic"):
+        renderer_kind = "recharts"
+    elif not renderer_kind.strip() and hint:
+        renderer_kind = hint
 
     if resolved_code_html and _should_keep_structured_renderer(renderer_kind):
         resolved_code_html = None

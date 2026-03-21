@@ -431,6 +431,112 @@ Donut is the same as Pie with `innerRadius` set in config.
 
 ---
 
+## 4b. Complete output examples (LLM reference — realistic data, no placeholders)
+
+### Example 1: Bar chart — Sản lượng hàng qua cảng
+
+```json
+{
+  "chart_type": "bar",
+  "title": "Sản lượng hàng qua các cảng lớn (triệu tấn, 2024)",
+  "data": [
+    { "name": "TP.HCM", "xuat_khau": 92, "nhap_khau": 88 },
+    { "name": "Hải Phòng", "xuat_khau": 58, "nhap_khau": 45 },
+    { "name": "Đà Nẵng", "xuat_khau": 22, "nhap_khau": 18 },
+    { "name": "Vũng Tàu", "xuat_khau": 35, "nhap_khau": 42 },
+    { "name": "Quy Nhơn", "xuat_khau": 15, "nhap_khau": 12 }
+  ],
+  "series": [
+    { "dataKey": "xuat_khau", "name": "Xuất khẩu" },
+    { "dataKey": "nhap_khau", "name": "Nhập khẩu" }
+  ]
+}
+```
+
+### Example 2: Line chart — Xu hướng tai nạn
+
+```json
+{
+  "chart_type": "line",
+  "title": "Xu hướng tai nạn hàng hải giai đoạn 2019-2024",
+  "data": [
+    { "name": "2019", "tong_vu": 2847, "tu_vong": 342 },
+    { "name": "2020", "tong_vu": 2453, "tu_vong": 289 },
+    { "name": "2021", "tong_vu": 2691, "tu_vong": 315 },
+    { "name": "2022", "tong_vu": 2234, "tu_vong": 267 },
+    { "name": "2023", "tong_vu": 2102, "tu_vong": 241 },
+    { "name": "2024", "tong_vu": 1987, "tu_vong": 218 }
+  ],
+  "series": [
+    { "dataKey": "tong_vu", "name": "Tổng vụ" },
+    { "dataKey": "tu_vong", "name": "Tử vong" }
+  ]
+}
+```
+
+### Example 3: Radar chart — So sánh đa chiều
+
+```json
+{
+  "chart_type": "radar",
+  "title": "So sánh tàu container vs tàu dầu",
+  "data": [
+    { "name": "Tốc độ", "container": 24, "dau": 15 },
+    { "name": "Tải trọng", "container": 75, "dau": 90 },
+    { "name": "An toàn", "container": 85, "dau": 78 },
+    { "name": "Tiết kiệm NL", "container": 60, "dau": 45 },
+    { "name": "Độ bền", "container": 70, "dau": 85 },
+    { "name": "Thân thiện MT", "container": 55, "dau": 40 }
+  ],
+  "series": [
+    { "dataKey": "container", "name": "Tàu container" },
+    { "dataKey": "dau", "name": "Tàu dầu" }
+  ]
+}
+```
+
+### Example 4: Pie chart — Phân bố nguyên nhân
+
+```json
+{
+  "chart_type": "pie",
+  "title": "Nguyên nhân tai nạn hàng hải (IMO, 2023)",
+  "data": [
+    { "name": "Lỗi con người", "value": 80 },
+    { "name": "Hỏng thiết bị", "value": 8 },
+    { "name": "Thời tiết", "value": 6 },
+    { "name": "Cấu trúc tàu", "value": 4 },
+    { "name": "Khác", "value": 2 }
+  ],
+  "series": [{ "dataKey": "value", "name": "Tỷ lệ %" }]
+}
+```
+
+### Example 5: Horizontal bar — Xếp hạng
+
+```json
+{
+  "chart_type": "horizontal_bar",
+  "title": "Top 5 quốc gia sở hữu đội tàu lớn nhất (nghìn chiếc)",
+  "data": [
+    { "name": "Hy Lạp", "value": 5514 },
+    { "name": "Nhật Bản", "value": 4301 },
+    { "name": "Trung Quốc", "value": 3987 },
+    { "name": "Đức", "value": 2861 },
+    { "name": "Singapore", "value": 2543 }
+  ],
+  "series": [{ "dataKey": "value", "name": "Số tàu" }]
+}
+```
+
+**Quy tắc data:**
+- LUÔN dùng tên thật (cảng, năm, quốc gia) — KHÔNG BAO GIỜ "Item 1", "Item 2"
+- Số liệu phải hợp lý (dùng data từ RAG khi có, ước tính khi không có)
+- Đơn vị phải có trong title hoặc series name
+- Title tiếng Việt tự nhiên, không uppercase, không "BÁO CÁO", "THỐNG KÊ"
+
+---
+
 ## 5. Antipatterns
 
 ### Deprecated structured primitives
