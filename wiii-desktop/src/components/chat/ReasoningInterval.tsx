@@ -144,12 +144,10 @@ function resolveOperationIcon(kind: ReasoningIntervalItem["kind"], toolName?: st
   return Wrench;
 }
 
-function normalizeInlineText(value: string | undefined) {
-  return (value || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
+function _normalizeInlineText(value: string | undefined) {
+  return (value || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
+void _normalizeInlineText;
 
 function renderThinkingMarkdown(
   block: ThinkingBlockData,
@@ -278,85 +276,19 @@ function renderOperationItem(
   return null;
 }
 
-function compactBalancedItems(items: ReasoningIntervalItem[], isLive: boolean) {
-  const thinkingItems = items.filter((item) => item.kind === "thinking");
-  const operationItems = items.filter((item) => (
-    item.kind === "action" || item.kind === "tool" || item.kind === "status"
-  ));
-
-  const compactThinkingItems = (() => {
-    if (thinkingItems.length <= 1) return thinkingItems;
-
-    const addUniqueThinkingItem = (
-      selected: ReasoningIntervalItem[],
-      candidate?: ReasoningIntervalItem,
-    ) => {
-      if (!candidate || candidate.kind !== "thinking") return selected;
-      const candidateText = normalizeInlineText(candidate.block.summary || candidate.block.content);
-      if (!candidateText) return selected;
-      const alreadyExists = selected.some((item) => (
-        item.kind === "thinking"
-        && normalizeInlineText(item.block.summary || item.block.content) === candidateText
-      ));
-      if (alreadyExists) return selected;
-      return [...selected, candidate];
-    };
-
-    const openingThinking = thinkingItems[0];
-    const latestThinking = thinkingItems[thinkingItems.length - 1];
-
-    let selected: ReasoningIntervalItem[] = [];
-    if (!isLive && thinkingItems.length === 2) {
-      selected = addUniqueThinkingItem(selected, openingThinking);
-      selected = addUniqueThinkingItem(selected, latestThinking);
-      return selected.length > 0 ? selected : [latestThinking];
-    }
-
-    const summaryAnchor = thinkingItems.find((item) => (
-      normalizeInlineText(item.block.summary).length > 0
-    )) || openingThinking;
-
-    selected = addUniqueThinkingItem(selected, summaryAnchor);
-    selected = addUniqueThinkingItem(selected, latestThinking);
-
-    return selected.length > 0 ? selected : [latestThinking];
-  })();
-
-  if (operationItems.length === 0) return compactThinkingItems;
-
-  const findLastMatching = (
-    predicate: (item: typeof operationItems[number]) => boolean,
-  ) => {
-    for (let index = operationItems.length - 1; index >= 0; index -= 1) {
-      const candidate = operationItems[index];
-      if (candidate && predicate(candidate)) return candidate;
-    }
-    return undefined;
-  };
-
-  const primaryOperation = (
-    findLastMatching((item) => item.kind === "tool" && item.block.status === "pending")
-    || findLastMatching((item) => item.kind === "status" && normalizeInlineText(item.content).startsWith("dang "))
-    || findLastMatching((item) => item.kind === "tool")
-    || (isLive ? findLastMatching((item) => item.kind === "action") : undefined)
-    || operationItems[0]
-  );
-
-  return primaryOperation ? [...compactThinkingItems, primaryOperation] : compactThinkingItems;
-}
-
 function selectVisibleItems(
   items: ReasoningIntervalItem[],
   thinkingLevel: ThinkingLevel,
-  isLive: boolean,
+  _isLive: boolean,
 ) {
-  if (thinkingLevel === "detailed") return items;
-
-  if (thinkingLevel === "balanced") {
-    return compactBalancedItems(items, isLive);
+  // Phase2: Keep ALL items in merged timeline — don't drop middle thinking blocks.
+  // compactBalancedItems was causing Bug #3: text appears then disappears when
+  // isLive flips from true to false (balanced mode drops middle items).
+  // The collapse/expand mechanism already handles information density.
+  if (thinkingLevel === "minimal") {
+    return items.filter((item) => item.kind !== "thinking");
   }
-
-  return items.filter((item) => item.kind === "thinking");
+  return items;
 }
 
 export function ReasoningInterval({
