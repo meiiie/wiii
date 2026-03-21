@@ -4321,9 +4321,10 @@ async def direct_response_node(state: AgentState) -> AgentState:
                                 _needs_web_search(query), _needs_datetime(query))
 
                 # Phase 3: Build messages (with visual hint if resolver detected intent)
+                _vd = resolve_visual_intent(query)
                 messages = _build_direct_system_messages(
                     state, query, domain_name_vi,
-                    visual_decision=visual_decision,
+                    visual_decision=_vd,
                 )
                 runtime_context_base = build_tool_runtime_context(
                     event_bus_id=_bus_id,
