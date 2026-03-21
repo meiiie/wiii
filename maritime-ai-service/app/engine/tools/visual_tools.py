@@ -4355,12 +4355,12 @@ def tool_generate_visual(
         except Exception as exc:
             logger.warning("Structured visual fallback HTML failed for type=%s: %s", visual_type, exc)
 
-    # Apply renderer_kind_hint from visual intent resolver (e.g. "recharts" for chart queries)
-    # Hint OVERRIDES LLM's renderer_kind for chart types (LLM defaults to "template" which is old)
+    # FORCE inline_html for chart/comparison types — template path is REMOVED
+    if visual_type in ("chart", "comparison", "infographic") and renderer_kind in ("template", ""):
+        renderer_kind = "inline_html"
+    # Apply renderer_kind_hint from visual intent resolver
     hint = _runtime_metadata_text("renderer_kind_hint", "")
-    if hint == "recharts" and visual_type in ("chart", "comparison", "infographic"):
-        renderer_kind = "recharts"
-    elif not renderer_kind.strip() and hint:
+    if hint and not renderer_kind.strip():
         renderer_kind = hint
 
     if resolved_code_html and _should_keep_structured_renderer(renderer_kind):

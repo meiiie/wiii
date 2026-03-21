@@ -1134,7 +1134,8 @@ export function VisualBlock({
       ? srSummaryId
       : undefined;
   const status = session?.status || block.status || "committed";
-  const isTemplateVisual = visual.renderer_kind === "template";
+  // Template path REMOVED — all visuals go through inline_html or recharts
+  const isTemplateVisual = false; // was: visual.renderer_kind === "template"
   const formulaChips = getFormulaChips(visual);
   const artifactHandoffPrompt = typeof visual.artifact_handoff_prompt === "string"
     ? visual.artifact_handoff_prompt.trim()
