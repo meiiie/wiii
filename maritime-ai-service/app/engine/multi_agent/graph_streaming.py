@@ -504,6 +504,11 @@ _METADATA_TAG_PATTERN = re.compile(
 )
 # Strip <answer> tags that leak into RAG results
 _ANSWER_TAG_PATTERN = re.compile(r"</?answer>|‹/?answer›", re.IGNORECASE)
+# Strip visual reference markers that LLM puts in answer text
+_VISUAL_REF_PATTERN = re.compile(
+    r"\{visual-[a-f0-9]+\}|<!-- WiiiVisualBridge:visual-[a-f0-9]+ -->",
+    re.IGNORECASE,
+)
 
 # Hybrid tier 2: Wiii-voice fallback labels when LLM doesn't emit <label> tags
 _WIII_FALLBACK_LABELS = [
@@ -526,10 +531,11 @@ def _extract_thinking_label(thinking_text: str) -> str:
 
 
 def _clean_thinking_text(text: str) -> str:
-    """Strip <label>, metadata, and <answer> tags from thinking/response text."""
+    """Strip <label>, metadata, <answer>, and visual reference tags."""
     clean = _LABEL_PATTERN.sub("", text)
     clean = _METADATA_TAG_PATTERN.sub("", clean)
     clean = _ANSWER_TAG_PATTERN.sub("", clean)
+    clean = _VISUAL_REF_PATTERN.sub("", clean)
     clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
     return clean
 

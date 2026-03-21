@@ -730,21 +730,22 @@ def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
         return VisualIntentDecision(
             mode="inline_html",
             force_tool=True,
-            visual_type="comparison",
-            reason="comparison",
-            presentation_intent="article_figure",
+            visual_type="chart",
+            reason="comparison_as_chart",
+            presentation_intent="chart_runtime",
             preferred_tool="tool_generate_visual",
             figure_budget=_infer_figure_budget(
                 normalized,
-                visual_type="comparison",
-                presentation_intent="article_figure",
+                visual_type="chart",
+                presentation_intent="chart_runtime",
             ),
-            renderer_contract="article_figure",
+            renderer_contract="chart_runtime",
             preferred_render_surface="svg",
-            planning_profile="article_svg",
+            planning_profile="chart_svg",
             thinking_floor="high",
             critic_policy="standard",
             living_expression_mode="expressive",
+            renderer_kind_hint="recharts",
         )
 
     if _contains_any(normalized, ("quy trinh", "cac buoc", "step by step", "how it works", "process")):

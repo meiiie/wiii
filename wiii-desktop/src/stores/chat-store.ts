@@ -789,19 +789,25 @@ export const useChatStore = create<ChatState>()(
 
     appendStreamingContent: (chunk) => {
       set((state) => {
+        // Strip visual reference markers that LLM puts in answer text
+        const clean = chunk
+          .replace(/\{visual-[a-f0-9]+\}/gi, "")
+          .replace(/<!-- WiiiVisualBridge:visual-[a-f0-9]+ -->/gi, "");
+        if (!clean) return; // Skip if chunk was only a visual marker
+
         // Flat field — backward compat
-        state.streamingContent += chunk;
+        state.streamingContent += clean;
 
         // Block-based: append to last answer block, or create new one
         const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
         if (lastBlock?.type === "answer") {
-          lastBlock.content += chunk;
+          lastBlock.content += clean;
         } else {
           closeLastThinkingBlockDraft(state.streamingBlocks);
           state.streamingBlocks.push({
             type: "answer",
             id: uuidv4(),
-            content: chunk,
+            content: clean,
             displayRole: "answer",
             presentation: "compact",
           });
