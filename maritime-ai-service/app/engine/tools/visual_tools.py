@@ -3528,7 +3528,7 @@ body { font-family:system-ui,-apple-system,sans-serif; background:transparent; c
 .subtitle { font-size:13px; color:#999; margin-bottom:20px; }
 .bar-rows { display:flex; flex-direction:column; gap:10px; }
 .bar-row { display:flex; align-items:center; gap:12px; }
-.bar-label { width:140px; font-size:13px; color:#555; text-align:right; font-weight:500; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bar-label { min-width:140px; max-width:200px; font-size:13px; color:#555; text-align:right; font-weight:500; flex-shrink:0; word-wrap:break-word; }
 .bar-track { flex:1; height:28px; background:#f5f2ef; border-radius:6px; overflow:hidden; }
 .bar-fill { height:100%; border-radius:6px; }
 """
@@ -3989,7 +3989,7 @@ body { font-family:system-ui,-apple-system,sans-serif; background:transparent; c
 .subtitle { font-size:13px; color:#999; margin-bottom:20px; }
 .bar-rows { display:flex; flex-direction:column; gap:12px; }
 .bar-row { display:flex; align-items:center; gap:12px; }
-.bar-label { width:72px; font-size:13px; color:#555; text-align:right; font-weight:500; flex-shrink:0; }
+.bar-label { min-width:140px; max-width:200px; font-size:13px; color:#555; text-align:right; font-weight:500; flex-shrink:0; word-wrap:break-word; }
 .bar-track { flex:1; height:28px; background:#f5f2ef; border-radius:6px; overflow:hidden; }
 .bar-fill { height:100%; border-radius:6px; }
 .bar-value { font-size:12px; font-weight:600; color:#555; min-width:48px; }
@@ -4049,6 +4049,11 @@ body { font-family:system-ui,-apple-system,sans-serif; background:transparent; c
             f'<div class="bar-value">{val:,.0f}</div>'
             f'</div>'
         )
+
+    # Fallback: if no bars generated, show a text summary instead of blank
+    if not bar_rows:
+        body = f'<div style="padding:20px;font-size:14px;color:#555;">{_esc(title)}<br><span style="color:#999;font-size:13px;">Dữ liệu chưa đủ để vẽ biểu đồ — xem nội dung text bên trên.</span></div>'
+        return _wrap_html(css, body, title)
 
     caption_html = f'<div class="subtitle">{_esc(caption)}</div>' if caption else ""
 
