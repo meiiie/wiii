@@ -258,6 +258,17 @@ def build_wiii_runtime_prompt(
         for quirk in card.quirks[:4]:
             sections.append(f"- {quirk}")
 
+    # Time awareness guidance — how Wiii uses time context naturally
+    try:
+        _id_yaml = _load_yaml(_IDENTITY_FILE).get("identity", {})
+        _time_awareness = _id_yaml.get("time_awareness", "")
+        if _time_awareness:
+            sections.append("")
+            sections.append("NHẬN THỨC THỜI GIAN:")
+            sections.append(_time_awareness.strip())
+    except Exception:
+        pass
+
     if card.anti_drift:
         sections.append("")
         sections.append("CHỐNG DRIFT:")

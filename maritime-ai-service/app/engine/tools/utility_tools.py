@@ -131,17 +131,42 @@ def tool_calculator(expression: str) -> str:
         return f"Không thể tính: {e}"
 
 
+_VN_DAY_NAMES = [
+    "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm",
+    "Thứ Sáu", "Thứ Bảy", "Chủ Nhật",
+]
+
+
+def _vn_time_of_day(hour: int) -> str:
+    """Return Vietnamese time-of-day label."""
+    if 6 <= hour < 12:
+        return "buổi sáng"
+    elif 12 <= hour < 14:
+        return "buổi trưa"
+    elif 14 <= hour < 18:
+        return "buổi chiều"
+    elif 18 <= hour < 22:
+        return "buổi tối"
+    elif 22 <= hour or hour < 2:
+        return "khuya"
+    return "rất khuya"
+
+
 @tool(description="Lấy ngày giờ hiện tại (UTC+7 Việt Nam). Hữu ích khi cần biết thời gian hiện tại, ngày hết hạn, thời hạn.")
 def tool_current_datetime() -> str:
     """Get current date and time in Vietnam timezone (UTC+7)."""
     vn_tz = timezone(timedelta(hours=7))
     now = datetime.now(vn_tz)
 
+    day_name = _VN_DAY_NAMES[now.weekday()]
+    time_label = _vn_time_of_day(now.hour)
+
     return (
         f"Ngày giờ hiện tại (UTC+7): {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
         f"Ngày: {now.strftime('%d/%m/%Y')}\n"
-        f"Thứ: {['Hai', 'Ba', 'Tư', 'Năm', 'Sáu', 'Bảy', 'Chủ nhật'][now.weekday()]}\n"
-        f"Giờ: {now.strftime('%H:%M')}"
+        f"Thứ: {day_name}\n"
+        f"Giờ: {now.strftime('%H:%M')}\n"
+        f"Buổi: {time_label}"
     )
 
 

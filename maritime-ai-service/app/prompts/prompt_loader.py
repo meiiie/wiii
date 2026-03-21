@@ -17,12 +17,67 @@ CHỈ THỊ KỸ THUẬT SỐ 20: PRONOUN ADAPTATION
 
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
 import yaml
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# TIME CONTEXT — Vietnamese datetime for system prompt injection
+# =============================================================================
+
+_VN_TZ = timezone(timedelta(hours=7))
+
+_VN_DAY_NAMES = [
+    "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm",
+    "Thứ Sáu", "Thứ Bảy", "Chủ Nhật",
+]
+
+
+def _get_time_of_day_label(hour: int) -> tuple[str, str]:
+    """Return (Vietnamese time-of-day label, care hint) based on hour.
+
+    Returns:
+        Tuple of (label, hint). Hint is an optional gentle suggestion
+        for the AI to use naturally, empty string when not applicable.
+    """
+    if 6 <= hour < 12:
+        return "buổi sáng", ""
+    elif 12 <= hour < 14:
+        return "buổi trưa", ""
+    elif 14 <= hour < 18:
+        return "buổi chiều", ""
+    elif 18 <= hour < 22:
+        return "buổi tối", ""
+    elif 22 <= hour or hour < 2:
+        return "khuya", "nếu user vẫn đang học/làm việc, có thể nhắc nhẹ nghỉ ngơi khi phù hợp"
+    else:  # 2 <= hour < 6
+        return "rất khuya", "user thức rất khuya — quan tâm nhẹ khi phù hợp, không ép"
+
+
+def build_time_context() -> str:
+    """Build Vietnamese time context string for system prompt injection.
+
+    Format:
+        Thời gian hiện tại: 22:30 Thứ Sáu, 21/03/2026 (giờ Việt Nam UTC+7)
+        Buổi: khuya — nếu user vẫn đang học/làm việc, có thể nhắc nhẹ nghỉ ngơi khi phù hợp.
+    """
+    now = datetime.now(_VN_TZ)
+    day_name = _VN_DAY_NAMES[now.weekday()]
+    time_str = now.strftime("%H:%M")
+    date_str = now.strftime("%d/%m/%Y")
+    label, hint = _get_time_of_day_label(now.hour)
+
+    line1 = f"Thời gian hiện tại: {time_str} {day_name}, {date_str} (giờ Việt Nam UTC+7)"
+    if hint:
+        line2 = f"Buổi: {label} — {hint}."
+    else:
+        line2 = f"Buổi: {label}"
+
+    return f"{line1}\n{line2}"
 
 
 # =============================================================================
@@ -608,6 +663,16 @@ class PromptLoader:
                 sections.append(persona['description'])
         
         # ============================================================
+        # TIME CONTEXT — Current Vietnamese datetime for natural greetings
+        # Injected early so all downstream sections can reference time.
+        # ============================================================
+        try:
+            _time_ctx = build_time_context()
+            sections.append(f"\n--- THỜI GIAN ---\n{_time_ctx}")
+        except Exception:
+            pass  # Clock not available — skip silently
+
+        # ============================================================
         # WIII CHARACTER CARD — unified runtime contract
         # Inspired by AIRI-style "character card as architecture":
         # identity + soul + living state + current mood are compiled into
@@ -656,6 +721,11 @@ class PromptLoader:
                 sections.append("\nNÉT RIÊNG:")
                 for q in quirks:
                     sections.append(f"- {q}")
+
+            # Time awareness — disposition for natural time-based greetings
+            time_awareness = identity.get("time_awareness", "")
+            if time_awareness:
+                sections.append(f"\nNHẬN THỨC THỜI GIAN:\n{time_awareness.strip()}")
 
             # Sprint 93: Catchphrases — Wiii's signature expressions
             catchphrases = identity.get("catchphrases", [])
