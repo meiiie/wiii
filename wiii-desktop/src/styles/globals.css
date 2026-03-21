@@ -2103,21 +2103,23 @@ html.dark .shiki span {
   );
 }
 
-/* Tool interval: clickable toggle with own expand/collapse */
+/* Tool interval: card-like appearance (mockup reference) */
 .reasoning-interval__tool-toggle {
   display: flex;
-  align-items: flex-start;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
   width: 100%;
-  padding: 0;
-  border: none;
-  background: none;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-secondary) 50%, var(--surface));
   cursor: pointer;
   text-align: left;
   color: inherit;
+  transition: background 0.15s;
 }
 .reasoning-interval__tool-toggle:hover {
-  opacity: 0.85;
+  background: color-mix(in srgb, var(--surface-secondary) 80%, var(--surface));
 }
 .reasoning-interval__tool-chevron {
   flex-shrink: 0;
@@ -2322,6 +2324,7 @@ html.dark .shiki span {
   align-items: center;
   width: 20px;
   flex-shrink: 0;
+  overflow: hidden; /* Line stays within thinking block */
 }
 /* Clock icon node on the rail — bg-white to cut through the line */
 .reasoning-interval__rail-track > svg {
@@ -2367,8 +2370,9 @@ html.dark .shiki span {
   flex-shrink: 0;
 }
 
-/* Timeline wrapper replaces old collapse div */
+/* Timeline wrapper — line ONLY inside this block, NOT leaking to response */
 .reasoning-interval__timeline {
+  position: relative;
   overflow: hidden;
 }
 
