@@ -1,69 +1,325 @@
-<!--
-  STATE MODEL: items[]{label,value}, maxValue, colorIndex
-  RENDER SURFACE: HTML/CSS — horizontal bar rows with gradient fills
-  CONTROLS: none (static chart)
-  READOUTS: label + bar + value per row
-  FEEDBACK: WiiiVisualBridge.reportResult on render
--->
+<!-- STATE MODEL: { title: string, subtitle?: string, source?: string, items: [{label: string, value: number, delta?: string}], unit?: string, showAverage?: boolean } -->
 <style>
-:root {
-  --bg: transparent;
-  --fg: #333;
-  --text-secondary: #555;
-  --text-muted: #999;
-  --track: #f5f2ef;
-  --radius: 6px;
-  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
-}
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: var(--font); background: var(--bg); color: var(--fg); }
-.chart-root { max-width: 600px; margin: 0 auto; padding: 16px 0; }
-.chart-title { font-size: 15px; font-weight: 600; color: var(--fg); margin-bottom: 4px; }
-.chart-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
-.bar-rows { display: flex; flex-direction: column; gap: 12px; }
-.bar-row { display: flex; align-items: center; gap: 12px; }
-.bar-label { width: 72px; font-size: 13px; color: var(--text-secondary); text-align: right; font-weight: 500; flex-shrink: 0; }
-.bar-track { flex: 1; height: 28px; background: var(--track); border-radius: var(--radius); overflow: hidden; }
-.bar-fill { height: 100%; border-radius: var(--radius); }
-.bar-fill.c0 { background: linear-gradient(90deg, #D97757, #e89a7c); }
-.bar-fill.c1 { background: linear-gradient(90deg, #85CDCA, #a8ddd8); }
-.bar-fill.c2 { background: linear-gradient(90deg, #FFD166, #ffe09a); }
-.bar-fill.c3 { background: linear-gradient(90deg, #C9B1FF, #ddd0ff); }
-.bar-fill.c4 { background: linear-gradient(90deg, #E8A87C, #f0c4a8); }
-.bar-value { font-size: 12px; font-weight: 600; color: var(--text-secondary); min-width: 48px; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: transparent; color: #2a2520; }
+
+  /* ═══ Root ═══ */
+  .hbar {
+    --cam: #D97757; --cam-light: #e89a7c; --cam-bg: #fef8f5;
+    --mint: #85CDCA; --mint-light: #a8ddd8; --mint-bg: #f2faf9;
+    --vang: #FFD166; --vang-light: #ffe09a; --vang-bg: #fefdf5;
+    --tim: #C9B1FF; --tim-light: #ddd0ff;
+    --be: #E8A87C; --be-light: #f0c4a8;
+    --track: #f3f0ec; --text2: #777; --text3: #aaa;
+    max-width: 640px; padding: 20px 0;
+  }
+
+  /* ═══ Header ═══ */
+  .hbar__head { margin-bottom: 20px; }
+  .hbar__title {
+    font-size: 16px; font-weight: 700; color: #1a1714;
+    letter-spacing: -0.01em; line-height: 1.3;
+  }
+  .hbar__sub {
+    font-size: 13px; color: var(--text2); margin-top: 3px;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  }
+  .hbar__sub-dot {
+    width: 3px; height: 3px; border-radius: 50%;
+    background: var(--text3); flex-shrink: 0;
+  }
+
+  /* ═══ Rows ═══ */
+  .hbar__rows { display: flex; flex-direction: column; gap: 6px; }
+
+  .hbar__row {
+    display: grid;
+    grid-template-columns: 140px 1fr 80px;
+    align-items: center; gap: 12px;
+    padding: 7px 10px 7px 0;
+    border-radius: 8px;
+    transition: background 0.2s ease;
+    cursor: default;
+    position: relative;
+  }
+  .hbar__row:hover { background: #faf8f6; }
+
+  /* ── Label ── */
+  .hbar__label {
+    font-size: 13px; color: #444; font-weight: 500;
+    text-align: right; line-height: 1.35;
+    padding-right: 4px;
+    transition: color 0.2s ease;
+  }
+  .hbar__row:hover .hbar__label { color: #1a1714; font-weight: 600; }
+
+  /* ── Track + Fill ── */
+  .hbar__track {
+    height: 28px; background: var(--track);
+    border-radius: 6px; overflow: visible;
+    position: relative;
+  }
+  .hbar__fill {
+    height: 100%; border-radius: 6px;
+    position: relative; min-width: 2px;
+    transform-origin: left center;
+    animation: barGrow 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+    transition: filter 0.2s ease, transform 0.15s ease;
+  }
+  .hbar__row:hover .hbar__fill {
+    filter: brightness(1.06) saturate(1.1);
+    transform: scaleY(1.08);
+  }
+
+  /* Shimmer highlight on fill */
+  .hbar__fill::after {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    border-radius: 6px;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  .hbar__row:hover .hbar__fill::after { opacity: 1; }
+
+  /* Fill color variants */
+  .hbar__fill--0 { background: linear-gradient(90deg, var(--cam), var(--cam-light)); }
+  .hbar__fill--1 { background: linear-gradient(90deg, var(--cam), var(--cam-light)); }
+  .hbar__fill--2 { background: linear-gradient(90deg, var(--mint), var(--mint-light)); }
+  .hbar__fill--3 { background: linear-gradient(90deg, var(--mint), var(--mint-light)); }
+  .hbar__fill--4 { background: linear-gradient(90deg, var(--vang), var(--vang-light)); }
+  .hbar__fill--5 { background: linear-gradient(90deg, var(--tim), var(--tim-light)); }
+  .hbar__fill--6 { background: linear-gradient(90deg, var(--be), var(--be-light)); }
+
+  /* Staggered entrance */
+  .hbar__row:nth-child(1) .hbar__fill { animation-delay: 0.05s; }
+  .hbar__row:nth-child(2) .hbar__fill { animation-delay: 0.12s; }
+  .hbar__row:nth-child(3) .hbar__fill { animation-delay: 0.19s; }
+  .hbar__row:nth-child(4) .hbar__fill { animation-delay: 0.26s; }
+  .hbar__row:nth-child(5) .hbar__fill { animation-delay: 0.33s; }
+  .hbar__row:nth-child(6) .hbar__fill { animation-delay: 0.40s; }
+  .hbar__row:nth-child(7) .hbar__fill { animation-delay: 0.47s; }
+
+  @keyframes barGrow {
+    from { transform: scaleX(0); opacity: 0.4; }
+    to   { transform: scaleX(1); opacity: 1; }
+  }
+
+  /* ── Value + Delta ── */
+  .hbar__val {
+    font-size: 13px; font-weight: 600; color: #444;
+    text-align: left; font-variant-numeric: tabular-nums;
+    display: flex; align-items: center; gap: 5px;
+    opacity: 0;
+    animation: valFadeIn 0.3s ease both;
+  }
+  .hbar__row:nth-child(1) .hbar__val { animation-delay: 0.40s; }
+  .hbar__row:nth-child(2) .hbar__val { animation-delay: 0.47s; }
+  .hbar__row:nth-child(3) .hbar__val { animation-delay: 0.54s; }
+  .hbar__row:nth-child(4) .hbar__val { animation-delay: 0.61s; }
+  .hbar__row:nth-child(5) .hbar__val { animation-delay: 0.68s; }
+
+  @keyframes valFadeIn {
+    from { opacity: 0; transform: translateX(-4px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  .hbar__delta {
+    font-size: 10px; font-weight: 600; padding: 1px 5px;
+    border-radius: 4px; white-space: nowrap;
+    letter-spacing: 0.01em;
+  }
+  .hbar__delta--up   { color: #c44;    background: #fef2f0; }
+  .hbar__delta--down { color: #16864a; background: #eefbf2; }
+
+  /* ═══ Tooltip ═══ */
+  .hbar__tip {
+    position: absolute; bottom: calc(100% + 8px); left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    background: #1a1714; color: #ede8e3;
+    font-size: 11.5px; font-weight: 500;
+    padding: 6px 12px; border-radius: 7px;
+    white-space: nowrap; line-height: 1.4;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    z-index: 10;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  }
+  .hbar__tip::after {
+    content: '';
+    position: absolute; top: 100%; left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #1a1714;
+  }
+  .hbar__row:hover .hbar__tip {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* ═══ Average reference line ═══ */
+  .hbar__avg {
+    position: absolute; top: -2px; bottom: -2px;
+    width: 1.5px;
+    background: repeating-linear-gradient(
+      to bottom, #b0a89f 0, #b0a89f 3px, transparent 3px, transparent 6px
+    );
+    z-index: 2; pointer-events: none;
+  }
+  .hbar__avg-tag {
+    position: absolute; top: -20px;
+    transform: translateX(-50%);
+    font-size: 10px; color: #999; font-weight: 600;
+    white-space: nowrap; letter-spacing: 0.02em;
+    background: rgba(255,255,255,0.85);
+    padding: 0 4px; border-radius: 3px;
+  }
+
+  /* ═══ Footer ═══ */
+  .hbar__foot {
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid #f0ece7;
+    display: flex; justify-content: space-between;
+    align-items: flex-end; gap: 16px; flex-wrap: wrap;
+  }
+  .hbar__source {
+    font-size: 11px; color: var(--text3);
+    line-height: 1.6;
+  }
+  .hbar__source em { font-style: italic; }
+  .hbar__source-warn {
+    display: inline-flex; align-items: center; gap: 3px;
+    color: #c49a40; font-weight: 500; font-style: normal;
+  }
+
+  .hbar__trend {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 600;
+    padding: 4px 12px; border-radius: 20px;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .hbar__trend--down { color: #16864a; background: #eefbf2; }
+  .hbar__trend--up   { color: #c44;    background: #fef2f0; }
 </style>
 
-<div class="chart-root">
-  <div class="chart-title">Tai nạn hàng hải nghiêm trọng toàn cầu</div>
-  <div class="chart-subtitle">Số vụ theo năm, nguồn: IMO Annual Report</div>
-  <div class="bar-rows" id="bars"></div>
+<div class="hbar">
+
+  <!-- Header -->
+  <div class="hbar__head">
+    <div class="hbar__title">Tai nạn hàng hải nghiêm trọng toàn cầu</div>
+    <div class="hbar__sub">
+      <span>Số vụ theo năm</span>
+      <span class="hbar__sub-dot"></span>
+      <span>Tàu trên 100 GT</span>
+      <span class="hbar__sub-dot"></span>
+      <span>2019 – 2023</span>
+    </div>
+  </div>
+
+  <!-- Chart body -->
+  <div class="hbar__rows" id="chartBody" style="position:relative">
+
+    <div class="hbar__row">
+      <div class="hbar__label">2019</div>
+      <div class="hbar__track">
+        <div class="hbar__fill hbar__fill--0" style="width:92%" data-v="2698"></div>
+        <div class="hbar__tip">2,698 vụ · Mức nền trước đại dịch</div>
+      </div>
+      <div class="hbar__val">2,698</div>
+    </div>
+
+    <div class="hbar__row">
+      <div class="hbar__label">2020</div>
+      <div class="hbar__track">
+        <div class="hbar__fill hbar__fill--1" style="width:100%" data-v="2934"></div>
+        <div class="hbar__tip">2,934 vụ · Đỉnh điểm — tăng 8.7% YoY</div>
+      </div>
+      <div class="hbar__val">
+        2,934
+        <span class="hbar__delta hbar__delta--up">+8.7%</span>
+      </div>
+    </div>
+
+    <div class="hbar__row">
+      <div class="hbar__label">2021</div>
+      <div class="hbar__track">
+        <div class="hbar__fill hbar__fill--2" style="width:88%" data-v="2578"></div>
+        <div class="hbar__tip">2,578 vụ · Bắt đầu xu hướng giảm</div>
+      </div>
+      <div class="hbar__val">
+        2,578
+        <span class="hbar__delta hbar__delta--down">−12.1%</span>
+      </div>
+    </div>
+
+    <div class="hbar__row">
+      <div class="hbar__label">2022</div>
+      <div class="hbar__track">
+        <div class="hbar__fill hbar__fill--3" style="width:82%" data-v="2401"></div>
+        <div class="hbar__tip">2,401 vụ · Giảm liên tiếp năm thứ 2</div>
+      </div>
+      <div class="hbar__val">
+        2,401
+        <span class="hbar__delta hbar__delta--down">−6.9%</span>
+      </div>
+    </div>
+
+    <div class="hbar__row">
+      <div class="hbar__label">2023</div>
+      <div class="hbar__track">
+        <div class="hbar__fill hbar__fill--4" style="width:73%" data-v="2137"></div>
+        <div class="hbar__tip">2,137 vụ · Thấp nhất trong 5 năm 📉</div>
+      </div>
+      <div class="hbar__val">
+        2,137
+        <span class="hbar__delta hbar__delta--down">−11.0%</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <div class="hbar__foot">
+    <div class="hbar__source">
+      Nguồn: <em>Allianz Safety &amp; Shipping Review 2023</em><br>
+      Dữ liệu đến 12/2023
+      <span class="hbar__source-warn">⚠ Có thể chưa phản ánh tình hình hiện tại</span>
+    </div>
+    <div class="hbar__trend hbar__trend--down">
+      <span>↓</span> −20.8% so với đỉnh 2020
+    </div>
+  </div>
+
 </div>
 
 <script>
-(function () {
-  var DATA = [
-    { label: '2019', value: 2698 },
-    { label: '2020', value: 2934 },
-    { label: '2021', value: 2578 },
-    { label: '2022', value: 2401 },
-    { label: '2023', value: 2137 }
-  ];
-  var max = Math.max.apply(null, DATA.map(function (d) { return d.value; }));
-  var container = document.getElementById('bars');
+  /* ── Draw average reference line across all tracks ── */
+  (function () {
+    var vals = [2698, 2934, 2578, 2401, 2137];
+    var max  = Math.max.apply(null, vals);
+    var avg  = vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+    var pct  = (avg / max * 100).toFixed(1) + '%';
 
-  DATA.forEach(function (item, i) {
-    var pct = Math.round(item.value / max * 100);
-    var row = document.createElement('div');
-    row.className = 'bar-row';
-    row.innerHTML =
-      '<div class="bar-label">' + item.label + '</div>' +
-      '<div class="bar-track"><div class="bar-fill c' + (i % 5) + '" style="width:' + pct + '%"></div></div>' +
-      '<div class="bar-value">' + item.value.toLocaleString() + '</div>';
-    container.appendChild(row);
-  });
+    var tracks = document.querySelectorAll('#chartBody .hbar__track');
+    tracks.forEach(function (track, i) {
+      var line = document.createElement('div');
+      line.className = 'hbar__avg';
+      line.style.left = pct;
+      track.appendChild(line);
 
-  if (window.WiiiVisualBridge && window.WiiiVisualBridge.reportResult) {
-    window.WiiiVisualBridge.reportResult('chart_rendered', { type: 'horizontal_bar', items: DATA.length }, 'Bar chart', 'completed');
+      // Label only on first track
+      if (i === 0) {
+        var tag = document.createElement('div');
+        tag.className = 'hbar__avg-tag';
+        tag.style.left = pct;
+        tag.textContent = 'TB ' + Math.round(avg).toLocaleString('vi-VN');
+        track.appendChild(tag);
+      }
+    });
+  })();
+
+  if (typeof WiiiVisualBridge !== 'undefined') {
+    WiiiVisualBridge.reportResult({ type: 'horizontal_bar', items: 5, version: 'v2-pro' });
   }
-})();
 </script>

@@ -1,61 +1,161 @@
-<!--
-  STATE MODEL: segments[]{label,value,color}, total
-  RENDER SURFACE: SVG donut with stroke-dasharray + HTML legend
-  CONTROLS: none (static chart)
-  READOUTS: center total + legend with percentages
-  FEEDBACK: WiiiVisualBridge.reportResult on render
--->
+<!-- STATE MODEL: { title: string, subtitle?: string, source?: string, total: number, totalLabel: string, segments: [{label: string, value: number, percent: number, color: string, note?: string}] } -->
 <style>
-:root {
-  --bg: transparent;
-  --fg: #333;
-  --text-muted: #999;
-  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
-}
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: var(--font); background: var(--bg); color: var(--fg); }
-.chart-root { max-width: 500px; margin: 0 auto; padding: 16px 0; }
-.chart-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-.chart-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
-.donut-layout { display: flex; align-items: center; gap: 32px; justify-content: center; }
-.legend { display: flex; flex-direction: column; gap: 8px; }
-.legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #555; }
-.legend-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: transparent; color: #2a2520; }
+  .donut { --text2: #777; --text3: #aaa; max-width: 540px; padding: 20px 0; }
+  .donut__head { margin-bottom: 18px; }
+  .donut__title { font-size: 16px; font-weight: 700; color: #1a1714; letter-spacing: -0.01em; }
+  .donut__sub { font-size: 13px; color: var(--text2); margin-top: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .donut__sub-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text3); }
+  .donut__body { display: flex; align-items: center; gap: 32px; justify-content: center; }
+  .donut__svg-wrap { position: relative; flex-shrink: 0; width: 200px; height: 200px; }
+  .donut-ring { stroke: #f0ece7; }
+  .donut-seg { cursor: pointer; transition: opacity 0.25s ease, filter 0.2s ease, stroke-width 0.2s ease; }
+  .donut-seg:hover { filter: brightness(1.08) saturate(1.15) drop-shadow(0 0 3px rgba(0,0,0,0.1)); }
+  .donut-segments:hover .donut-seg { opacity: 0.35; }
+  .donut-segments:hover .donut-seg:hover { opacity: 1; }
+  .donut__center-val { font-variant-numeric: tabular-nums; transition: all 0.25s ease; }
+  .donut__tip { position: absolute; background: #1a1714; color: #ede8e3; padding: 10px 16px; border-radius: 10px; pointer-events: none; opacity: 0; transform: translate(-50%, -100%) translateY(-12px); transition: opacity 0.15s ease, transform 0.15s ease; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,0.18); min-width: 170px; max-width: 230px; white-space: normal; line-height: 1.5; }
+  .donut__tip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: #1a1714; }
+  .donut__tip.show { opacity: 1; transform: translate(-50%, -100%) translateY(-16px); }
+  .donut__tip-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .donut__tip-dot { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
+  .donut__tip-name { font-size: 13px; font-weight: 700; color: #fff; }
+  .donut__tip-pct { font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 2px; }
+  .donut__tip-count { font-size: 11.5px; color: #999; }
+  .donut__tip-note { font-size: 11px; color: #807a74; margin-top: 4px; border-top: 1px solid #333; padding-top: 4px; }
+  .donut__legend { display: flex; flex-direction: column; gap: 4px; }
+  .donut__leg { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-radius: 8px; cursor: pointer; transition: background 0.15s ease, opacity 0.2s ease; position: relative; overflow: hidden; }
+  .donut__leg:hover { background: #f8f6f4; }
+  .donut__leg.active { background: #f5f2ef; }
+  .donut__leg-bar { position: absolute; bottom: 0; left: 0; height: 2px; border-radius: 0 1px 0 0; transition: width 0.6s cubic-bezier(0.22,1,0.36,1); width: 0; }
+  .donut__leg-dot { width: 14px; height: 14px; border-radius: 4px; flex-shrink: 0; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+  .donut__leg:hover .donut__leg-dot { transform: scale(1.18); box-shadow: 0 0 0 3px rgba(0,0,0,0.04); }
+  .donut__leg-info { flex: 1; min-width: 0; }
+  .donut__leg-name { font-size: 13px; font-weight: 500; color: #333; transition: font-weight 0.15s, color 0.15s; }
+  .donut__leg:hover .donut__leg-name, .donut__leg.active .donut__leg-name { font-weight: 600; color: #1a1714; }
+  .donut__leg-count { font-size: 11px; color: #aaa; margin-top: 1px; }
+  .donut__leg-pct { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 42px; text-align: right; }
+  .donut__foot { margin-top: 20px; padding-top: 14px; border-top: 1px solid #f0ece7; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+  .donut__source { font-size: 11px; color: var(--text3); line-height: 1.6; }
+  .donut__source em { font-style: italic; }
+  .donut__source-warn { display: inline-flex; align-items: center; gap: 3px; color: #c49a40; font-weight: 500; font-style: normal; }
+  .donut__insight { font-size: 11px; color: var(--text2); font-weight: 500; padding: 4px 12px; border-radius: 20px; background: #fef8f5; border: 1px solid rgba(217,119,87,0.15); white-space: nowrap; }
 </style>
 
-<div class="chart-root">
-  <div class="chart-title">Nguyên nhân tai nạn hàng hải</div>
-  <div class="chart-subtitle">Theo phân loại IMO 2023</div>
-  <div class="donut-layout">
-    <svg viewBox="0 0 200 200" width="180">
-      <circle cx="100" cy="100" r="70" fill="none" stroke="#D97757" stroke-width="28"
-              stroke-dasharray="175.9 263.9" stroke-dashoffset="0" transform="rotate(-90 100 100)"/>
-      <circle cx="100" cy="100" r="70" fill="none" stroke="#85CDCA" stroke-width="28"
-              stroke-dasharray="110 329.9" stroke-dashoffset="-175.9" transform="rotate(-90 100 100)"/>
-      <circle cx="100" cy="100" r="70" fill="none" stroke="#FFD166" stroke-width="28"
-              stroke-dasharray="66 373.9" stroke-dashoffset="-285.9" transform="rotate(-90 100 100)"/>
-      <circle cx="100" cy="100" r="70" fill="none" stroke="#C9B1FF" stroke-width="28"
-              stroke-dasharray="44 395.9" stroke-dashoffset="-351.9" transform="rotate(-90 100 100)"/>
-      <circle cx="100" cy="100" r="70" fill="none" stroke="#E8A87C" stroke-width="28"
-              stroke-dasharray="44 395.9" stroke-dashoffset="-395.9" transform="rotate(-90 100 100)"/>
-      <circle cx="100" cy="100" r="52" fill="#fff"/>
-      <text x="100" y="96" text-anchor="middle" font-size="22" font-weight="700" fill="#333">2,137</text>
-      <text x="100" y="114" text-anchor="middle" font-size="11" fill="#999">tổng vụ</text>
-    </svg>
-    <div class="legend">
-      <div class="legend-item"><div class="legend-dot" style="background:#D97757"></div>Lỗi con người — 40%</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#85CDCA"></div>Thiết bị hỏng — 25%</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#FFD166"></div>Thời tiết — 15%</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#C9B1FF"></div>Va chạm — 10%</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#E8A87C"></div>Khác — 10%</div>
+<div class="donut">
+  <div class="donut__head">
+    <div class="donut__title">Nguyên nhân tai nạn hàng hải</div>
+    <div class="donut__sub">
+      <span>Phân loại theo IMO</span><span class="donut__sub-dot"></span>
+      <span>Năm 2023</span><span class="donut__sub-dot"></span>
+      <span>2,137 vụ</span>
     </div>
+  </div>
+
+  <div class="donut__body">
+    <div class="donut__svg-wrap" id="svgWrap">
+      <svg width="200" height="200" viewBox="0 0 42 42">
+        <circle class="donut-ring" cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke-width="4.5"/>
+        <g class="donut-segments" id="segments">
+          <circle class="donut-seg" data-i="0" cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="#D97757" stroke-width="4.5" stroke-dasharray="0 100" stroke-dashoffset="25"/>
+          <circle class="donut-seg" data-i="1" cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="#85CDCA" stroke-width="4.5" stroke-dasharray="0 100" stroke-dashoffset="25"/>
+          <circle class="donut-seg" data-i="2" cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="#FFD166" stroke-width="4.5" stroke-dasharray="0 100" stroke-dashoffset="25"/>
+          <circle class="donut-seg" data-i="3" cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="#C9B1FF" stroke-width="4.5" stroke-dasharray="0 100" stroke-dashoffset="25"/>
+          <circle class="donut-seg" data-i="4" cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="#E8A87C" stroke-width="4.5" stroke-dasharray="0 100" stroke-dashoffset="25"/>
+        </g>
+        <circle cx="21" cy="21" r="13" fill="white"/>
+        <text class="donut__center-val" id="centerVal" x="21" y="20.5" text-anchor="middle" font-size="5.2" font-weight="800" fill="#1a1714" font-family="system-ui">2,137</text>
+        <text id="centerLabel" x="21" y="24" text-anchor="middle" font-size="2.3" fill="#999" font-family="system-ui">tổng vụ</text>
+      </svg>
+      <div class="donut__tip" id="tip">
+        <div class="donut__tip-head"><div class="donut__tip-dot" id="tipDot"></div><div class="donut__tip-name" id="tipName"></div></div>
+        <div class="donut__tip-pct" id="tipPct"></div>
+        <div class="donut__tip-count" id="tipCount"></div>
+        <div class="donut__tip-note" id="tipNote"></div>
+      </div>
+    </div>
+
+    <div class="donut__legend" id="legend">
+      <div class="donut__leg" data-i="0"><div class="donut__leg-dot" style="background:#D97757"></div><div class="donut__leg-info"><div class="donut__leg-name">Lỗi con người</div><div class="donut__leg-count">855 vụ</div></div><div class="donut__leg-pct" style="color:#D97757">40%</div><div class="donut__leg-bar" style="background:#D97757"></div></div>
+      <div class="donut__leg" data-i="1"><div class="donut__leg-dot" style="background:#85CDCA"></div><div class="donut__leg-info"><div class="donut__leg-name">Thiết bị hỏng</div><div class="donut__leg-count">534 vụ</div></div><div class="donut__leg-pct" style="color:#5bb8b4">25%</div><div class="donut__leg-bar" style="background:#85CDCA"></div></div>
+      <div class="donut__leg" data-i="2"><div class="donut__leg-dot" style="background:#FFD166"></div><div class="donut__leg-info"><div class="donut__leg-name">Thời tiết</div><div class="donut__leg-count">321 vụ</div></div><div class="donut__leg-pct" style="color:#d4a830">15%</div><div class="donut__leg-bar" style="background:#FFD166"></div></div>
+      <div class="donut__leg" data-i="3"><div class="donut__leg-dot" style="background:#C9B1FF"></div><div class="donut__leg-info"><div class="donut__leg-name">Va chạm</div><div class="donut__leg-count">214 vụ</div></div><div class="donut__leg-pct" style="color:#a990ff">10%</div><div class="donut__leg-bar" style="background:#C9B1FF"></div></div>
+      <div class="donut__leg" data-i="4"><div class="donut__leg-dot" style="background:#E8A87C"></div><div class="donut__leg-info"><div class="donut__leg-name">Khác</div><div class="donut__leg-count">213 vụ</div></div><div class="donut__leg-pct" style="color:#d08a5c">10%</div><div class="donut__leg-bar" style="background:#E8A87C"></div></div>
+    </div>
+  </div>
+
+  <div class="donut__foot">
+    <div class="donut__source">Nguồn: <em>IMO Maritime Safety Report 2023</em><br>Dữ liệu đến 12/2023 <span class="donut__source-warn">⚠ Có thể chưa phản ánh tình hình hiện tại</span></div>
+    <div class="donut__insight">Lỗi con người = 40% — yếu tố chi phối nhất</div>
   </div>
 </div>
 
 <script>
 (function () {
-  if (window.WiiiVisualBridge && window.WiiiVisualBridge.reportResult) {
-    window.WiiiVisualBridge.reportResult('chart_rendered', { type: 'donut', segments: 5 }, 'Donut chart', 'completed');
+  var DATA = [
+    { label: 'Lỗi con người', pct: 40, val: 855, color: '#D97757', note: 'Sai sót điều hướng, vi phạm quy trình, mệt mỏi thuyền viên' },
+    { label: 'Thiết bị hỏng', pct: 25, val: 534, color: '#85CDCA', note: 'Hỏng máy chính, hệ thống lái, thiết bị cứu sinh' },
+    { label: 'Thời tiết',     pct: 15, val: 321, color: '#FFD166', note: 'Bão, sóng lớn, tầm nhìn hạn chế' },
+    { label: 'Va chạm',       pct: 10, val: 214, color: '#C9B1FF', note: 'Tàu-tàu, tàu-cầu cảng, vật thể trôi nổi' },
+    { label: 'Khác',          pct: 10, val: 213, color: '#E8A87C', note: 'Cháy nổ, mắc cạn, chìm, chưa xác định' }
+  ];
+  var TOTAL = 2137;
+  var segs = document.querySelectorAll('.donut-seg');
+  var legs = document.querySelectorAll('.donut__leg');
+  var centerVal = document.getElementById('centerVal');
+  var centerLbl = document.getElementById('centerLabel');
+  var tip = document.getElementById('tip');
+  var tipDot = document.getElementById('tipDot');
+  var tipName = document.getElementById('tipName');
+  var tipPct = document.getElementById('tipPct');
+  var tipCount = document.getElementById('tipCount');
+  var tipNote = document.getElementById('tipNote');
+
+  // ═══ Animate segments ═══
+  // Magic radius: circumference = 100
+  // dasharray = "pct (100-pct)", dashoffset = 100 - cumulative + 25
+  var cum = 0;
+  segs.forEach(function (seg, i) {
+    var d = DATA[i];
+    var da = d.pct + ' ' + (100 - d.pct);
+    var doff = 100 - cum + 25;
+    setTimeout(function () {
+      seg.style.transition = 'stroke-dasharray 0.6s cubic-bezier(0.22,1,0.36,1), stroke-width 0.2s ease';
+      seg.setAttribute('stroke-dasharray', da);
+      seg.setAttribute('stroke-dashoffset', doff);
+    }, 80 + i * 130);
+    setTimeout(function () {
+      var bar = legs[i] && legs[i].querySelector('.donut__leg-bar');
+      if (bar) bar.style.width = d.pct + '%';
+    }, 250 + i * 130);
+    cum += d.pct;
+  });
+
+  // ═══ Hover ═══
+  function on(idx) {
+    var d = DATA[idx];
+    centerVal.textContent = d.val.toLocaleString('vi-VN');
+    centerVal.setAttribute('fill', d.color);
+    centerLbl.textContent = d.label;
+    tipDot.style.background = d.color;
+    tipName.textContent = d.label;
+    tipPct.textContent = d.pct + '%';
+    tipCount.textContent = d.val.toLocaleString('vi-VN') + ' vụ trên tổng ' + TOTAL.toLocaleString('vi-VN');
+    tipNote.textContent = d.note;
+    tip.classList.add('show');
+    tip.style.left = '50%'; tip.style.top = '8px';
+    legs.forEach(function (l, i) { l.classList.toggle('active', i === idx); l.style.opacity = i === idx ? '' : '0.4'; });
+    segs.forEach(function (s, i) { s.setAttribute('stroke-width', i === idx ? '5.5' : '4.5'); });
   }
+  function off() {
+    centerVal.textContent = '2,137'; centerVal.setAttribute('fill', '#1a1714'); centerLbl.textContent = 'tổng vụ';
+    tip.classList.remove('show');
+    legs.forEach(function (l) { l.classList.remove('active'); l.style.opacity = ''; });
+    segs.forEach(function (s) { s.setAttribute('stroke-width', '4.5'); });
+  }
+  segs.forEach(function (s) { s.addEventListener('mouseenter', function () { on(+s.getAttribute('data-i')); }); s.addEventListener('mouseleave', off); });
+  legs.forEach(function (l) { l.addEventListener('mouseenter', function () { on(+l.getAttribute('data-i')); }); l.addEventListener('mouseleave', off); });
 })();
+if (typeof WiiiVisualBridge !== 'undefined') WiiiVisualBridge.reportResult({ type: 'donut', segments: 5, version: 'v3' });
 </script>

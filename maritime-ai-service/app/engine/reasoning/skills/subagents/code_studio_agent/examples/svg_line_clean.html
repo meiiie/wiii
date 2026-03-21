@@ -1,70 +1,475 @@
-<!--
-  STATE MODEL: points[]{label,value}, annotations
-  RENDER SURFACE: SVG — line path with area fill, data labels, axis
-  CONTROLS: none (static chart)
-  READOUTS: data labels on each point
-  FEEDBACK: WiiiVisualBridge.reportResult on render
--->
+<!-- STATE MODEL: { title: string, subtitle?: string, source?: string, points: [{x: string, y: number, note?: string}], yUnit?: string, showAverage?: boolean, annotation?: {index: number, text: string, type: "drop"|"peak"} } -->
 <style>
-:root {
-  --bg: transparent;
-  --fg: #333;
-  --text-muted: #999;
-  --grid: #f5f2ef;
-  --accent: #D97757;
-  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
-}
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: var(--font); background: var(--bg); color: var(--fg); }
-.chart-root { max-width: 620px; margin: 0 auto; padding: 16px 0; }
-.chart-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-.chart-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: transparent; color: #2a2520; }
+
+  /* ═══ Root ═══ */
+  .lc {
+    --cam: #D97757; --cam-20: rgba(217,119,87,0.20); --cam-05: rgba(217,119,87,0.05);
+    --mint: #85CDCA; --mint-20: rgba(133,205,202,0.20);
+    --vang: #FFD166;
+    --red: #c44; --red-bg: #fef2f0;
+    --green: #16864a; --green-bg: #eefbf2;
+    --grid: #ece8e3; --grid-light: #f5f2ee;
+    --text2: #777; --text3: #aaa;
+    max-width: 620px; padding: 20px 0;
+    position: relative;
+  }
+
+  /* ═══ Header ═══ */
+  .lc__head { margin-bottom: 20px; }
+  .lc__title {
+    font-size: 16px; font-weight: 700; color: #1a1714;
+    letter-spacing: -0.01em; line-height: 1.3;
+  }
+  .lc__sub {
+    font-size: 13px; color: var(--text2); margin-top: 3px;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  }
+  .lc__sub-dot {
+    width: 3px; height: 3px; border-radius: 50%;
+    background: var(--text3); flex-shrink: 0;
+  }
+
+  /* ═══ Chart wrapper ═══ */
+  .lc__chart { position: relative; cursor: crosshair; }
+  .lc__chart svg { display: block; overflow: visible; }
+
+  /* ═══ SVG animations ═══ */
+
+  /* Line draw animation */
+  .lc-path-anim {
+    stroke-dasharray: 1200;
+    stroke-dashoffset: 1200;
+    animation: lineDraw 1.2s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
+  }
+  @keyframes lineDraw {
+    to { stroke-dashoffset: 0; }
+  }
+
+  /* Area fade in */
+  .lc-area-anim {
+    opacity: 0;
+    animation: areaFade 0.6s ease 0.7s forwards;
+  }
+  @keyframes areaFade {
+    to { opacity: 1; }
+  }
+
+  /* Dot pop in */
+  .lc-dot {
+    transform-origin: center;
+    opacity: 0;
+    animation: dotPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+  .lc-dot-d0 { animation-delay: 0.30s; }
+  .lc-dot-d1 { animation-delay: 0.50s; }
+  .lc-dot-d2 { animation-delay: 0.70s; }
+  .lc-dot-d3 { animation-delay: 0.90s; }
+  .lc-dot-d4 { animation-delay: 1.10s; }
+  .lc-dot-d5 { animation-delay: 1.30s; }
+  @keyframes dotPop {
+    0%   { opacity: 0; transform: scale(0); }
+    70%  { opacity: 1; transform: scale(1.3); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+
+  /* Value label fade */
+  .lc-val {
+    opacity: 0;
+    animation: valUp 0.3s ease forwards;
+  }
+  .lc-val-d0 { animation-delay: 0.40s; }
+  .lc-val-d1 { animation-delay: 0.60s; }
+  .lc-val-d2 { animation-delay: 0.80s; }
+  .lc-val-d3 { animation-delay: 1.00s; }
+  .lc-val-d4 { animation-delay: 1.20s; }
+  .lc-val-d5 { animation-delay: 1.40s; }
+  @keyframes valUp {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Annotation pulse for special points */
+  .lc-pulse {
+    animation: pulse 2s ease-in-out infinite;
+    transform-origin: center;
+  }
+  @keyframes pulse {
+    0%, 100% { r: 14; opacity: 0.12; }
+    50%      { r: 20; opacity: 0.04; }
+  }
+
+  /* ═══ Hover dots (larger hit area) ═══ */
+  .lc-hit { cursor: pointer; }
+  .lc-hit:hover .lc-dot-inner {
+    r: 5.5;
+    filter: brightness(1.1);
+  }
+  .lc-dot-inner {
+    transition: r 0.15s ease, filter 0.15s ease;
+  }
+
+  /* ═══ Crosshair ═══ */
+  .lc__cross {
+    position: absolute; top: 0; pointer-events: none;
+    width: 1px; background: rgba(0,0,0,0.08);
+    display: none; z-index: 2;
+  }
+
+  /* ═══ Tooltip ═══ */
+  .lc__tip {
+    position: absolute;
+    background: #1a1714; color: #ede8e3;
+    font-size: 11.5px; font-weight: 500;
+    padding: 8px 14px; border-radius: 8px;
+    white-space: nowrap; line-height: 1.5;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+    transition: opacity 0.15s ease, transform 0.15s ease, left 0.08s ease, top 0.08s ease;
+    z-index: 10;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    max-width: 220px;
+  }
+  .lc__tip::after {
+    content: '';
+    position: absolute; top: 100%; left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #1a1714;
+  }
+  .lc__tip.active {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  .lc__tip-year {
+    font-size: 10px; color: #9a9590; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    margin-bottom: 2px;
+  }
+  .lc__tip-val {
+    font-size: 14px; font-weight: 700; color: #fff;
+  }
+  .lc__tip-note {
+    font-size: 10.5px; color: #b5afa8; margin-top: 3px;
+    white-space: normal;
+  }
+
+  /* ═══ Legend ═══ */
+  .lc__legend {
+    display: flex; gap: 16px; margin-top: 12px; flex-wrap: wrap;
+  }
+  .lc__legend-item {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11.5px; color: #666;
+  }
+  .lc__legend-line {
+    width: 16px; height: 2.5px; border-radius: 2px;
+  }
+  .lc__legend-dash {
+    width: 16px; height: 0; border-top: 1.5px dashed #b0a89f;
+  }
+
+  /* ═══ Footer ═══ */
+  .lc__foot {
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid #f0ece7;
+    display: flex; justify-content: space-between;
+    align-items: flex-end; gap: 16px; flex-wrap: wrap;
+  }
+  .lc__source {
+    font-size: 11px; color: var(--text3); line-height: 1.6;
+  }
+  .lc__source em { font-style: italic; }
+  .lc__source-warn {
+    display: inline-flex; align-items: center; gap: 3px;
+    color: #c49a40; font-weight: 500; font-style: normal;
+  }
+  .lc__trend {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 600;
+    padding: 4px 12px; border-radius: 20px;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .lc__trend--up   { color: #16864a; background: #eefbf2; }
+  .lc__trend--down { color: #c44; background: #fef2f0; }
 </style>
 
-<div class="chart-root">
-  <div class="chart-title">Lưu lượng tàu qua kênh đào Suez</div>
-  <div class="chart-subtitle">Nghìn lượt/năm, 2019–2024</div>
-  <svg viewBox="0 0 600 200" width="100%">
-    <!-- Grid -->
-    <line x1="50" y1="170" x2="570" y2="170" stroke="#e5e0db" stroke-width="1"/>
-    <line x1="50" y1="120" x2="570" y2="120" stroke="#f5f2ef" stroke-width="1" stroke-dasharray="4"/>
-    <line x1="50" y1="70" x2="570" y2="70" stroke="#f5f2ef" stroke-width="1" stroke-dasharray="4"/>
-    <line x1="50" y1="20" x2="570" y2="20" stroke="#f5f2ef" stroke-width="1" stroke-dasharray="4"/>
-    <!-- Y axis -->
-    <text x="44" y="174" text-anchor="end" font-size="11" fill="#aaa">15k</text>
-    <text x="44" y="124" text-anchor="end" font-size="11" fill="#aaa">18k</text>
-    <text x="44" y="74" text-anchor="end" font-size="11" fill="#aaa">21k</text>
-    <text x="44" y="24" text-anchor="end" font-size="11" fill="#aaa">24k</text>
-    <!-- Area -->
-    <path d="M 100,80 L 204,60 L 308,130 L 412,110 L 516,50 L 516,170 L 100,170 Z" fill="#D97757" fill-opacity="0.08"/>
-    <!-- Line -->
-    <path d="M 100,80 L 204,60 L 308,130 L 412,110 L 516,50" fill="none" stroke="#D97757" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-    <!-- Dots -->
-    <circle cx="100" cy="80" r="4" fill="#D97757"/>
-    <circle cx="204" cy="60" r="4" fill="#D97757"/>
-    <circle cx="308" cy="130" r="5" fill="#fff" stroke="#D97757" stroke-width="2.5"/>
-    <circle cx="412" cy="110" r="4" fill="#D97757"/>
-    <circle cx="516" cy="50" r="4" fill="#D97757"/>
-    <!-- Labels -->
-    <text x="100" y="72" text-anchor="middle" font-size="11" font-weight="600" fill="#D97757">20.1k</text>
-    <text x="204" y="52" text-anchor="middle" font-size="11" font-weight="600" fill="#D97757">21.6k</text>
-    <text x="308" y="148" text-anchor="middle" font-size="11" font-weight="600" fill="#c44">17.2k</text>
-    <text x="308" y="162" text-anchor="middle" font-size="9" fill="#c44">COVID + Ever Given</text>
-    <text x="412" y="102" text-anchor="middle" font-size="11" font-weight="600" fill="#D97757">18.8k</text>
-    <text x="516" y="42" text-anchor="middle" font-size="11" font-weight="600" fill="#16a34a">22.8k</text>
-    <!-- X axis -->
-    <text x="100" y="188" text-anchor="middle" font-size="12" fill="#999">2019</text>
-    <text x="204" y="188" text-anchor="middle" font-size="12" fill="#999">2020</text>
-    <text x="308" y="188" text-anchor="middle" font-size="12" fill="#999">2021</text>
-    <text x="412" y="188" text-anchor="middle" font-size="12" fill="#999">2022</text>
-    <text x="516" y="188" text-anchor="middle" font-size="12" fill="#999">2024</text>
-  </svg>
+<div class="lc">
+
+  <!-- Header -->
+  <div class="lc__head">
+    <div class="lc__title">Lưu lượng tàu qua kênh đào Suez</div>
+    <div class="lc__sub">
+      <span>Nghìn lượt/năm</span>
+      <span class="lc__sub-dot"></span>
+      <span>2018 – 2024</span>
+    </div>
+  </div>
+
+  <!-- Chart -->
+  <div class="lc__chart" id="chartWrap">
+
+    <!-- Crosshair vertical line -->
+    <div class="lc__cross" id="cross"></div>
+
+    <svg viewBox="0 0 560 250" width="100%" id="chartSvg">
+      <defs>
+        <!-- Area gradient -->
+        <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stop-color="#D97757" stop-opacity="0.18"/>
+          <stop offset="60%"  stop-color="#D97757" stop-opacity="0.06"/>
+          <stop offset="100%" stop-color="#D97757" stop-opacity="0"/>
+        </linearGradient>
+        <!-- Glow filter for special dots -->
+        <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+          <feMerge>
+            <feMergeNode in="blur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+
+      <!-- ═══ Grid ═══ -->
+      <!-- Y axis -->
+      <line x1="52" y1="24" x2="52" y2="195" stroke="#e8e4df" stroke-width="1"/>
+      <!-- X baseline -->
+      <line x1="52" y1="195" x2="536" y2="195" stroke="#d8d4cf" stroke-width="1"/>
+      <!-- Horizontal grid -->
+      <line x1="52" y1="155" x2="536" y2="155" stroke="#f0ece7" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="52" y1="115" x2="536" y2="115" stroke="#f0ece7" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="52" y1="75"  x2="536" y2="75"  stroke="#f0ece7" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="52" y1="35"  x2="536" y2="35"  stroke="#f0ece7" stroke-width="1" stroke-dasharray="3,3"/>
+
+      <!-- Y labels (15k → 25k) -->
+      <text x="46" y="199" text-anchor="end" font-size="10.5" fill="#b0a89f" font-family="system-ui">15k</text>
+      <text x="46" y="159" text-anchor="end" font-size="10.5" fill="#b0a89f" font-family="system-ui">17.5k</text>
+      <text x="46" y="119" text-anchor="end" font-size="10.5" fill="#b0a89f" font-family="system-ui">20k</text>
+      <text x="46" y="79"  text-anchor="end" font-size="10.5" fill="#b0a89f" font-family="system-ui">22.5k</text>
+      <text x="46" y="39"  text-anchor="end" font-size="10.5" fill="#b0a89f" font-family="system-ui">25k</text>
+
+      <!-- ═══ Average band ═══ -->
+      <!-- avg ≈ 19.8k → y ≈ 126, show ±0.5k band -->
+      <rect x="52" y="122" width="484" height="8" fill="#D97757" opacity="0.04" rx="2"/>
+      <line x1="52" y1="126" x2="536" y2="126" stroke="#b0a89f" stroke-width="1" stroke-dasharray="5,4" opacity="0.5"/>
+      <text x="540" y="130" text-anchor="start" font-size="9.5" fill="#b0a89f" font-weight="600" font-family="system-ui">TB 19.8k</text>
+
+      <!-- ═══ Area fill ═══ -->
+      <!--
+        Data points (x, y mapped):
+        2018: 18.2k → x=82,  y=137
+        2019: 19.0k → x=154, y=131
+        2020: 20.1k → x=226, y=122
+        2021: 17.2k → x=298, y=145
+        2022: 18.8k → x=370, y=132
+        2023: 21.6k → x=442, y=110
+        2024: 23.4k → x=514, y= 95
+      -->
+      <path class="lc-area-anim"
+            d="M 82,137 L 154,131 L 226,122 L 298,145 L 370,132 L 442,110 L 514,95
+               L 514,195 L 82,195 Z"
+            fill="url(#areaGrad)"/>
+
+      <!-- ═══ Main line ═══ -->
+      <path class="lc-path-anim"
+            d="M 82,137 L 154,131 L 226,122 L 298,145 L 370,132 L 442,110 L 514,95"
+            fill="none" stroke="#D97757" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round"/>
+
+      <!-- ═══ Data points ═══ -->
+
+      <!-- 2018: 18.2k — normal -->
+      <g class="lc-hit" data-year="2018" data-val="18,200" data-note="Mức nền ổn định">
+        <circle cx="82" cy="137" r="16" fill="transparent"/>
+        <circle class="lc-dot lc-dot-d0 lc-dot-inner" cx="82" cy="137" r="4" fill="#D97757"/>
+      </g>
+
+      <!-- 2019: 19.0k — normal -->
+      <g class="lc-hit" data-year="2019" data-val="19,000" data-note="Tăng nhẹ 4.4%">
+        <circle cx="154" cy="131" r="16" fill="transparent"/>
+        <circle class="lc-dot lc-dot-d1 lc-dot-inner" cx="154" cy="131" r="4" fill="#D97757"/>
+      </g>
+
+      <!-- 2020: 20.1k — normal -->
+      <g class="lc-hit" data-year="2020" data-val="20,100" data-note="Tăng trưởng trước sự cố">
+        <circle cx="226" cy="122" r="16" fill="transparent"/>
+        <circle class="lc-dot lc-dot-d2 lc-dot-inner" cx="226" cy="122" r="4" fill="#D97757"/>
+      </g>
+
+      <!-- 2021: 17.2k — DROP (special) -->
+      <g class="lc-hit" data-year="2021" data-val="17,200" data-note="Sụt giảm mạnh — COVID + sự cố Ever Given chặn kênh 6 ngày">
+        <circle class="lc-pulse" cx="298" cy="145" r="14" fill="#c44" opacity="0.12"/>
+        <circle cx="298" cy="145" r="16" fill="transparent"/>
+        <circle class="lc-dot lc-dot-d3" cx="298" cy="145" r="5.5"
+                fill="#fff" stroke="#c44" stroke-width="2.5"/>
+      </g>
+      <!-- Drop annotation -->
+      <g class="lc-val lc-val-d3">
+        <text x="298" y="163" text-anchor="middle" font-size="11" font-weight="600" fill="#c44" font-family="system-ui">17.2k</text>
+        <text x="298" y="175" text-anchor="middle" font-size="9" fill="#c44" font-family="system-ui" opacity="0.8">COVID + Ever Given</text>
+      </g>
+
+      <!-- 2022: 18.8k — recovery -->
+      <g class="lc-hit" data-year="2022" data-val="18,800" data-note="Phục hồi — tăng 9.3% YoY">
+        <circle cx="370" cy="132" r="16" fill="transparent"/>
+        <circle class="lc-dot lc-dot-d4 lc-dot-inner" cx="370" cy="132" r="4" fill="#D97757"/>
+      </g>
+
+      <!-- 2023: 21.6k — strong -->
+      <g class="lc-hit" data-year="2023" data-val="21,600" data-note="Phục hồi mạnh — vượt mức trước sự cố">
+        <circle cx="442" cy="110" r="16" fill="transparent"/>
+        <circle class="lc-dot lc-dot-d5 lc-dot-inner" cx="442" cy="110" r="4.5" fill="#D97757"/>
+      </g>
+
+      <!-- 2024: 23.4k — PEAK (special) -->
+      <g class="lc-hit" data-year="2024*" data-val="23,400" data-note="Ước tính — Kỷ lục mới · *Số liệu sơ bộ">
+        <circle class="lc-pulse" cx="514" cy="95" r="14" fill="#16864a" opacity="0.10"/>
+        <circle cx="514" cy="95" r="16" fill="transparent"/>
+        <circle class="lc-dot lc-dot-d5" cx="514" cy="95" r="5.5"
+                fill="#fff" stroke="#16864a" stroke-width="2.5" filter="url(#glow)"/>
+      </g>
+      <!-- Peak annotation -->
+      <g class="lc-val lc-val-d5">
+        <text x="514" y="85" text-anchor="middle" font-size="11" font-weight="700" fill="#16864a" font-family="system-ui">23.4k</text>
+        <text x="514" y="225" text-anchor="middle" font-size="9" fill="#16864a" font-family="system-ui" opacity="0.7">*sơ bộ</text>
+      </g>
+
+      <!-- Non-annotated value labels (show on subtle position) -->
+      <text class="lc-val lc-val-d0" x="82"  y="129" text-anchor="middle" font-size="10.5" font-weight="600" fill="#D97757" font-family="system-ui">18.2k</text>
+      <text class="lc-val lc-val-d2" x="226" y="114" text-anchor="middle" font-size="10.5" font-weight="600" fill="#D97757" font-family="system-ui">20.1k</text>
+      <text class="lc-val lc-val-d4" x="370" y="124" text-anchor="middle" font-size="10.5" font-weight="600" fill="#D97757" font-family="system-ui">18.8k</text>
+      <text class="lc-val lc-val-d5" x="442" y="102" text-anchor="middle" font-size="10.5" font-weight="600" fill="#D97757" font-family="system-ui">21.6k</text>
+
+      <!-- X axis labels -->
+      <text x="82"  y="213" text-anchor="middle" font-size="11" fill="#888" font-family="system-ui">2018</text>
+      <text x="154" y="213" text-anchor="middle" font-size="11" fill="#888" font-family="system-ui">2019</text>
+      <text x="226" y="213" text-anchor="middle" font-size="11" fill="#888" font-family="system-ui">2020</text>
+      <text x="298" y="213" text-anchor="middle" font-size="11" fill="#c44" font-weight="600" font-family="system-ui">2021</text>
+      <text x="370" y="213" text-anchor="middle" font-size="11" fill="#888" font-family="system-ui">2022</text>
+      <text x="442" y="213" text-anchor="middle" font-size="11" fill="#888" font-family="system-ui">2023</text>
+      <text x="514" y="213" text-anchor="middle" font-size="11" fill="#16864a" font-weight="600" font-family="system-ui">2024*</text>
+
+    </svg>
+
+    <!-- HTML Tooltip -->
+    <div class="lc__tip" id="tip">
+      <div class="lc__tip-year" id="tipYear"></div>
+      <div class="lc__tip-val" id="tipVal"></div>
+      <div class="lc__tip-note" id="tipNote"></div>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="lc__legend">
+    <div class="lc__legend-item">
+      <div class="lc__legend-line" style="background:#D97757"></div>
+      Lưu lượng thực tế
+    </div>
+    <div class="lc__legend-item">
+      <div class="lc__legend-dash"></div>
+      Trung bình 7 năm
+    </div>
+    <div class="lc__legend-item">
+      <svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="#fff" stroke="#c44" stroke-width="2"/></svg>
+      Sự kiện đặc biệt
+    </div>
+    <div class="lc__legend-item">
+      <svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="#fff" stroke="#16864a" stroke-width="2"/></svg>
+      Đỉnh mới
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="lc__foot">
+    <div class="lc__source">
+      Nguồn: <em>Suez Canal Authority · Statista 2024</em><br>
+      2024* = ước tính sơ bộ
+      <span class="lc__source-warn">⚠ Có thể chưa phản ánh tình hình hiện tại</span>
+    </div>
+    <div class="lc__trend lc__trend--up">
+      <span>↑</span> +36.0% phục hồi từ đáy 2021
+    </div>
+  </div>
+
 </div>
 
 <script>
-(function () {
-  if (window.WiiiVisualBridge && window.WiiiVisualBridge.reportResult) {
-    window.WiiiVisualBridge.reportResult('chart_rendered', { type: 'line', points: 5 }, 'Line chart', 'completed');
+  (function () {
+    var wrap  = document.getElementById('chartWrap');
+    var tip   = document.getElementById('tip');
+    var tipY  = document.getElementById('tipYear');
+    var tipV  = document.getElementById('tipVal');
+    var tipN  = document.getElementById('tipNote');
+    var cross = document.getElementById('cross');
+    var hits  = document.querySelectorAll('.lc-hit');
+
+    if (!wrap || !tip) return;
+
+    /* ── Tooltip on data points ── */
+    hits.forEach(function (g) {
+      g.addEventListener('mouseenter', function () {
+        var year = g.getAttribute('data-year');
+        var val  = g.getAttribute('data-val');
+        var note = g.getAttribute('data-note');
+
+        tipY.textContent = year;
+        tipV.textContent = val + ' lượt';
+        tipN.textContent = note || '';
+        tipN.style.display = note ? 'block' : 'none';
+        tip.classList.add('active');
+
+        // Position
+        var dot  = g.querySelector('circle:nth-child(2)') || g.querySelector('.lc-dot-inner') || g.querySelector('circle');
+        if (!dot) return;
+        var rect = dot.getBoundingClientRect();
+        var wRect = wrap.getBoundingClientRect();
+        tip.style.left = (rect.left + rect.width / 2 - wRect.left) + 'px';
+        tip.style.top  = (rect.top - wRect.top - 14) + 'px';
+
+        // Crosshair
+        if (cross) {
+          var svgRect = document.getElementById('chartSvg').getBoundingClientRect();
+          cross.style.display = 'block';
+          cross.style.left = (rect.left + rect.width / 2 - wRect.left) + 'px';
+          cross.style.top = '0';
+          cross.style.height = (svgRect.height) + 'px';
+        }
+      });
+
+      g.addEventListener('mouseleave', function () {
+        tip.classList.remove('active');
+        if (cross) cross.style.display = 'none';
+      });
+    });
+
+    /* ── Crosshair follows mouse across chart (subtle) ── */
+    var svg = document.getElementById('chartSvg');
+    if (svg && cross) {
+      svg.addEventListener('mousemove', function (e) {
+        var wRect = wrap.getBoundingClientRect();
+        var x = e.clientX - wRect.left;
+        // Only show between data area
+        if (x > 60 && x < wRect.width - 20) {
+          cross.style.display = 'block';
+          cross.style.left = x + 'px';
+          cross.style.top = '0';
+          cross.style.height = svg.getBoundingClientRect().height + 'px';
+        }
+      });
+      svg.addEventListener('mouseleave', function () {
+        // Don't hide if hovering a dot (handled by dot events)
+        setTimeout(function () {
+          if (!tip.classList.contains('active')) {
+            cross.style.display = 'none';
+          }
+        }, 50);
+      });
+    }
+  })();
+
+  if (typeof WiiiVisualBridge !== 'undefined') {
+    WiiiVisualBridge.reportResult({ type: 'line_area', points: 7, version: 'v2-pro' });
   }
-})();
 </script>
