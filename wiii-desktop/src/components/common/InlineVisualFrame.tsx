@@ -517,15 +517,15 @@ export const InlineVisualFrame = memo(function InlineVisualFrame({
   if (!blobUrl) return null;
 
   // Sprint V5: editorial = transparent + no card chrome (Claude-like seamless figure)
-  // Phase2-G: overflow-clip instead of overflow-hidden to prevent text clipping at rounded edges
+  // Phase2: overflow-visible for editorial (prevent text clip), overflow-clip for cards
   const wrapperClassName = frameKind === "legacy"
     ? (
         shellVariant === "editorial"
-          ? "overflow-clip bg-transparent"
+          ? "overflow-visible bg-transparent"
           : "overflow-clip rounded-2xl border border-[var(--border)] bg-[rgba(255,255,255,0.92)] shadow-[var(--shadow-md)]"
       )
     : shellVariant === "editorial"
-      ? "overflow-clip bg-transparent"
+      ? "overflow-visible bg-transparent"
       : "overflow-clip rounded-2xl bg-transparent";
 
   return (
