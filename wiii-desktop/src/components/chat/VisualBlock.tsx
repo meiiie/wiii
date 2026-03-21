@@ -1137,7 +1137,7 @@ export function VisualBlock({
   const status = session?.status || block.status || "committed";
   // Template path REMOVED — all visuals go through inline_html or recharts
   const isTemplateVisual = false; // was: visual.renderer_kind === "template"
-  const formulaChips = getFormulaChips(visual);
+  void getFormulaChips; // Available but badges removed from UI
   const artifactHandoffPrompt = typeof visual.artifact_handoff_prompt === "string"
     ? visual.artifact_handoff_prompt.trim()
     : "";
@@ -1468,14 +1468,7 @@ export function VisualBlock({
   >
     <div className={`visual-block-shell__header ${embedded ? "visual-block-shell__header--embedded" : ""}`.trim()}>
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <DiagramSectionPill tone="neutral">
-            {visual.pedagogical_role.replace(/_/g, " ")}
-          </DiagramSectionPill>
-          {formulaChips.map((chip) => (
-            <DiagramMetricPill key={chip} label="Formula" value={chip} />
-          ))}
-        </div>
+        {/* Badge/pill removed — visual_type/pedagogical_role are internal metadata */}
         <div className="space-y-2">
           <h3 id={titleId} className="font-serif text-[clamp(1.55rem,4vw,2.25rem)] leading-tight text-text">
             {visual.title}
