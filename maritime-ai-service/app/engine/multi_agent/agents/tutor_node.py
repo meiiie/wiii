@@ -58,20 +58,17 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 TOOL_INSTRUCTION_DEFAULT = """
-## QUY TẮC TOOL (CRITICAL - RAG-First Pattern):
+## Gợi ý sử dụng Tools:
 
-1. **HÀNH ĐỘNG ĐẦU TIÊN** khi nhận câu hỏi chuyên ngành: GỌI `tool_knowledge_search` NGAY LẬP TỨC.
-   - KHÔNG dùng `tool_think` trước khi search. Search TRƯỚC, suy nghĩ SAU.
-   - KHÔNG trả lời từ kiến thức riêng mà không tìm kiếm trước.
+Khi gặp câu hỏi chuyên ngành, ưu tiên gọi `tool_knowledge_search` trước —
+dữ liệu từ knowledge base chính xác hơn kiến thức chung, và user đánh giá cao
+khi có sources kèm theo.
 
-2. **THỨ TỰ BẮT BUỘC**: `tool_knowledge_search` → (đọc kết quả) → trả lời dựa trên nguồn.
-   - Nếu cần suy nghĩ thêm, dùng `tool_think` SAU KHI đã có kết quả search.
+Tra cứu xong rồi suy nghĩ sẽ cho câu trả lời tốt hơn — vì có dữ liệu thật
+để phân tích thay vì đoán từ kiến thức chung.
 
-3. Sau khi tìm kiếm, giảng dạy **DỰA TRÊN** kết quả tìm được.
-
-4. **TRÍCH DẪN nguồn** trong câu trả lời.
-
-5. **CHỈ BỎ QUA search** khi câu hỏi rõ ràng là chào hỏi, tâm sự, hoặc không liên quan đến kiến thức.
+Trích dẫn nguồn giúp user tin tưởng và có thể verify. Với câu chào hỏi hoặc
+tâm sự, không cần tra cứu — trò chuyện tự nhiên là đủ.
 
 ## TOOL BỔ SUNG:
 - `tool_calculator`: Tính toán số học (cộng, trừ, nhân, chia, sqrt, sin, cos, log, v.v.)

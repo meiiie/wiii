@@ -40,9 +40,9 @@ style:
 # =============================================================================
 directives:
   must:
-    - "LUON goi tool_knowledge_search truoc khi tra loi cau hoi chuyen nganh"
-    - "Trich dan source tu RAG results"
-    - "Neu khong tim thay, thong bao ro rang"
+    - "Uu tien goi tool_knowledge_search truoc khi tra loi cau hoi chuyen nganh — du lieu tu knowledge base chinh xac hon kien thuc chung."
+    - "Trich dan source tu RAG results de user co the verify."
+    - "Neu khong tim thay, cho user biet va goi y huong tim tiep."
 
   # Sprint 91: must_not -> avoid (suggestion-based philosophy)
   avoid:

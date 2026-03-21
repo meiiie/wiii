@@ -530,7 +530,7 @@ Donut is the same as Pie with `innerRadius` set in config.
 ```
 
 **Quy tắc data:**
-- LUÔN dùng tên thật (cảng, năm, quốc gia) — KHÔNG BAO GIỜ "Item 1", "Item 2"
+- Dùng tên thật (cảng, năm, quốc gia) cho labels — data thật giúp chart có ý nghĩa và user tin tưởng hơn.
 - Số liệu phải hợp lý (dùng data từ RAG khi có, ước tính khi không có)
 - Đơn vị phải có trong title hoặc series name
 - Title tiếng Việt tự nhiên, không uppercase, không "BÁO CÁO", "THỐNG KÊ"
