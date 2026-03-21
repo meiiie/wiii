@@ -276,24 +276,27 @@ function renderOperationItem(
   return null;
 }
 
-/** Tool interval with its own expand/collapse toggle */
+/** Tool interval: clickable header + collapsible thinking body (mockup pattern) */
 function ToolIntervalSection({
   children,
-  showParentBody,
+  thinkingAfter,
 }: {
   children: ReactNode;
-  showParentBody?: boolean;
+  thinkingAfter?: ReactNode;
 }) {
-  void showParentBody; // Reserved for future nested visibility control
   const [expanded, setExpanded] = useState(false);
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Don't trigger parent thinking block toggle
+    setExpanded(!expanded);
+  };
   return (
-    <div className="reasoning-interval__segment reasoning-interval__segment--operation">
+    <div className="reasoning-interval__tool-interval">
       <div
         role="button"
         tabIndex={0}
-        className="reasoning-interval__tool-toggle"
-        onClick={() => setExpanded(!expanded)}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded(!expanded); } }}
+        className="reasoning-interval__tool-header"
+        onClick={handleClick}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleClick(e as unknown as React.MouseEvent); } }}
         aria-expanded={expanded}
       >
         <svg
@@ -304,6 +307,11 @@ function ToolIntervalSection({
         </svg>
         {children}
       </div>
+      {expanded && thinkingAfter && (
+        <div className="reasoning-interval__tool-body">
+          {thinkingAfter}
+        </div>
+      )}
     </div>
   );
 }
@@ -397,40 +405,48 @@ export function ReasoningInterval({
         </button>
         <span className="sr-only" role="status" aria-live="polite">{headerLabel}</span>
 
-        {/* Unified timeline: thinking (collapsible) + operations (always visible) */}
-        <div className="reasoning-interval__timeline">
-          {/* Rail layout for ALL content */}
-          <div className="reasoning-interval__rail-layout">
-            <div className="reasoning-interval__rail-track" aria-hidden="true">
-              <div className="reasoning-interval__rail-line" />
-            </div>
-            <div className="reasoning-interval__rail-content">
-              {visibleItems.map((item, idx) => {
-                if (item.kind === "thinking") {
-                  const isLastVisible = idx === visibleItems.length - 1 || visibleItems.slice(idx + 1).every((i) => i.kind !== "thinking");
-                  const showCursor = !isDone && isLastVisible;
-                  // Thinking: shown when parent header is expanded
-                  return (
-                    <div
-                      key={item.id}
-                      className="reasoning-interval__segment"
-                      style={{ display: showBody ? "block" : "none" }}
-                    >
-                      {renderThinkingMarkdown(item.block, showCursor)}
-                    </div>
-                  );
-                }
-                // Operations: ALWAYS VISIBLE + own expand/collapse for adjacent thinking
-                const operation = renderOperationItem(item, thinkingLevel);
-                if (!operation) return null;
-                return (
-                  <ToolIntervalSection key={item.id} showParentBody={showBody}>
-                    {operation}
-                  </ToolIntervalSection>
+        {/* Thinking body: timeline line via ::before, contained here */}
+        <div
+          className={`reasoning-interval__thinking-body ${showBody ? "reasoning-interval__thinking-body--expanded" : "reasoning-interval__thinking-body--collapsed"}`}
+        >
+          {(() => {
+            // Group items: thinking shown inline, operations get their following thinking as expandable body
+            const elements: React.ReactElement[] = [];
+            for (let idx = 0; idx < visibleItems.length; idx++) {
+              const item = visibleItems[idx];
+
+              if (item.kind === "thinking") {
+                const isLast = idx === visibleItems.length - 1 || visibleItems.slice(idx + 1).every((i) => i.kind !== "thinking");
+                const showCursor = !isDone && isLast;
+                elements.push(
+                  <div key={item.id} className="reasoning-interval__segment">
+                    {renderThinkingMarkdown(item.block, showCursor)}
+                  </div>
                 );
-              })}
-            </div>
-          </div>
+                continue;
+              }
+
+              // Operation: collect the NEXT thinking item as its expandable body
+              const operation = renderOperationItem(item, thinkingLevel);
+              if (!operation) continue;
+
+              let thinkingAfterNode: ReactNode = null;
+              if (idx + 1 < visibleItems.length && visibleItems[idx + 1].kind === "thinking") {
+                const nextThinking = visibleItems[idx + 1];
+                thinkingAfterNode = renderThinkingMarkdown(
+                  (nextThinking as { block: ThinkingBlockData }).block, false
+                );
+                idx++; // Skip the thinking item — it's rendered inside the tool section
+              }
+
+              elements.push(
+                <ToolIntervalSection key={item.id} thinkingAfter={thinkingAfterNode}>
+                  {operation}
+                </ToolIntervalSection>
+              );
+            }
+            return elements;
+          })()}
 
           {/* Terminal label — shown when thinking is complete */}
           {isDone && (

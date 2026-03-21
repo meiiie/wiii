@@ -502,6 +502,8 @@ _METADATA_TAG_PATTERN = re.compile(
     r"Điều hướng|Giải thích|Tra cứu|Trực tiếp|Tổng hợp|Đánh giá)\s*$",
     re.MULTILINE | re.IGNORECASE,
 )
+# Strip <answer> tags that leak into RAG results
+_ANSWER_TAG_PATTERN = re.compile(r"</?answer>|‹/?answer›", re.IGNORECASE)
 
 # Hybrid tier 2: Wiii-voice fallback labels when LLM doesn't emit <label> tags
 _WIII_FALLBACK_LABELS = [
@@ -524,9 +526,10 @@ def _extract_thinking_label(thinking_text: str) -> str:
 
 
 def _clean_thinking_text(text: str) -> str:
-    """Strip <label> tags and metadata tags from thinking text."""
+    """Strip <label>, metadata, and <answer> tags from thinking/response text."""
     clean = _LABEL_PATTERN.sub("", text)
     clean = _METADATA_TAG_PATTERN.sub("", clean)
+    clean = _ANSWER_TAG_PATTERN.sub("", clean)
     clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
     return clean
 

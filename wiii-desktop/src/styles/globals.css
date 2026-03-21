@@ -2103,32 +2103,42 @@ html.dark .shiki span {
   );
 }
 
-/* Tool interval: card-like appearance (mockup reference) */
-.reasoning-interval__tool-toggle {
+/* Tool interval: INLINE style — no box, just chevron + text (mockup) */
+.reasoning-interval__tool-interval {
+  margin: 8px 0;
+}
+.reasoning-interval__tool-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
-  width: 100%;
-  padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface-secondary) 50%, var(--surface));
+  padding: 4px 0;
+  border: none;
+  background: none;
   cursor: pointer;
   text-align: left;
-  color: inherit;
-  transition: background 0.15s;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+  transition: color 0.15s;
 }
-.reasoning-interval__tool-toggle:hover {
-  background: color-mix(in srgb, var(--surface-secondary) 80%, var(--surface));
+.reasoning-interval__tool-header:hover {
+  color: var(--text-secondary);
 }
 .reasoning-interval__tool-chevron {
   flex-shrink: 0;
-  margin-top: 3px;
+  margin-top: 4px;
   color: var(--text-tertiary);
   transition: transform 150ms ease;
 }
 .reasoning-interval__tool-chevron--open {
   transform: rotate(90deg);
+}
+/* Expandable thinking body inside tool interval */
+.reasoning-interval__tool-body {
+  padding: 8px 0 8px 18px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
 }
 
 /* Tool operations: BLACK text, always visible */
@@ -2312,48 +2322,7 @@ html.dark .shiki span {
   min-width: 0;
 }
 
-/* Claude-reference: flex gap-4, left rail w-5 (20px), right content flex-1 */
-.reasoning-interval__rail-layout {
-  display: flex;
-  gap: 16px;
-}
-.reasoning-interval__rail-track {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 20px;
-  flex-shrink: 0;
-  overflow: hidden; /* Line stays within thinking block */
-}
-/* Clock icon node on the rail — bg-white to cut through the line */
-.reasoning-interval__rail-track > svg {
-  position: relative;
-  z-index: 1;
-  background: var(--surface);
-  padding: 2px 0;
-}
-/* Vertical line: 2px bg-gray-200, starts below icon, runs to bottom */
-.reasoning-interval__rail-line {
-  position: absolute;
-  top: 24px;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 2px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--border) 50%, transparent);
-}
-.reasoning-interval--live .reasoning-interval__rail-line {
-  background: color-mix(in srgb, var(--accent-orange) 25%, var(--border));
-}
-/* Right content */
-.reasoning-interval__rail-content {
-  flex: 1;
-  min-width: 0;
-  padding-top: 4px;
-  padding-bottom: 16px;
-}
+/* Old rail-layout removed — replaced by thinking-body ::before pattern */
 
 /* Terminal label — "Wiii đã xem xong ≽^•⩊•^≼" */
 .reasoning-interval__terminal {
@@ -2370,10 +2339,36 @@ html.dark .shiki span {
   flex-shrink: 0;
 }
 
-/* Timeline wrapper — line ONLY inside this block, NOT leaking to response */
-.reasoning-interval__timeline {
+/* Thinking body — timeline line via ::before, contained here (mockup pattern) */
+.reasoning-interval__thinking-body {
   position: relative;
+  margin-left: 15px;
+  padding-left: 20px;
+  padding-top: 8px;
+  padding-bottom: 4px;
   overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.2s ease;
+}
+/* Timeline vertical line — ONLY inside thinking body, NOT leaking to response */
+.reasoning-interval__thinking-body::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: color-mix(in srgb, var(--border) 60%, transparent);
+  border-radius: 1px;
+}
+.reasoning-interval__thinking-body--collapsed {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.reasoning-interval__thinking-body--expanded {
+  max-height: 9999px;
+  opacity: 1;
 }
 
 /* Header icon: green check for completed, live-dot for streaming */
