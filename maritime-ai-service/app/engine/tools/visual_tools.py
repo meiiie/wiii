@@ -4224,22 +4224,19 @@ def tool_generate_visual(
         {"title": "Xử lý", "description": "Service xử lý business logic và trả kết quả", "icon": "3", "signals": ["Business Logic", "Response"]}
       ]}
 
-    code_html (optional, khi được bật):
-      Đây là lane LLM-first cho article figure và chart runtime khi cần HTML/SVG trực tiếp.
-      Ưu tiên SVG-first cho article_figure/chart_runtime; dùng Canvas/JS khi và chỉ khi runtime thực sự là simulation/app.
-      Structured spec vẫn được giữ như fail-safe fallback, không còn là đường chính cho visual giai thích/charts.
-      Dùng CSS variables có sẵn: --bg, --bg2, --bg3, --text, --text2, --text3,
-      --accent, --green, --purple, --amber, --teal, --pink, --border, --radius.
-      Dark mode tự động qua CSS variables. KHÔNG dùng JavaScript trừ khi cần animation.
-      Giữ host-owned shell, spacing tinh gọn, và tránh cảm giác detached widget/card.
-      Ví dụ:
-        code_html='<style>.flow{display:flex;gap:12px;align-items:center}.node{padding:14px 20px;
-        border-radius:var(--radius);border:1.5px solid var(--border);background:var(--bg2);
-        font-size:13px;font-weight:600;color:var(--text)}.arrow{color:var(--text3);font-size:18px}
-        .highlight{border-color:var(--accent);background:var(--accent-bg);color:var(--accent)}
-        </style><div class="flow"><div class="node highlight">Input</div>
-        <span class="arrow">→</span><div class="node">Process</div>
-        <span class="arrow">→</span><div class="node">Output</div></div>'
+    code_html (QUAN TRONG — ưu tiên dùng cho chart/comparison):
+      LUÔN dùng code_html cho chart và comparison. KHÔNG dùng spec_json cho chart.
+      LLM viết HTML/CSS trực tiếp, frontend render trong iframe.
+
+      Quy tắc:
+      - Font: system-ui. Màu: #D97757 (cam), #85CDCA (mint), #FFD166 (vàng), #C9B1FF (tím nhạt), #E8A87C (cam nhạt)
+      - KHÔNG uppercase headers, KHÔNG sidebar stats, KHÔNG tab switcher
+      - Title nhỏ (15px font-weight:600), subtitle nhỏ hơn (13px color:#999)
+      - Background: transparent
+      - KHÔNG dùng JavaScript cho chart tĩnh
+
+      Ví dụ horizontal bar chart:
+        code_html='<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui,sans-serif;background:transparent;color:#333}.root{max-width:600px;padding:16px 0}.title{font-size:15px;font-weight:600;margin-bottom:4px}.sub{font-size:13px;color:#999;margin-bottom:20px}.rows{display:flex;flex-direction:column;gap:12px}.row{display:flex;align-items:center;gap:12px}.lbl{width:72px;font-size:13px;color:#555;text-align:right;font-weight:500}.track{flex:1;height:28px;background:#f5f2ef;border-radius:6px;overflow:hidden}.fill{height:100%;border-radius:6px}.val{font-size:12px;font-weight:600;color:#555;min-width:48px}</style><div class="root"><div class="title">Tai nạn hàng hải theo năm</div><div class="sub">Số vụ, nguồn IMO</div><div class="rows"><div class="row"><div class="lbl">2019</div><div class="track"><div class="fill" style="width:92%;background:linear-gradient(90deg,#D97757,#e89a7c)"></div></div><div class="val">2,698</div></div><div class="row"><div class="lbl">2020</div><div class="track"><div class="fill" style="width:100%;background:linear-gradient(90deg,#D97757,#e89a7c)"></div></div><div class="val">2,934</div></div><div class="row"><div class="lbl">2021</div><div class="track"><div class="fill" style="width:88%;background:linear-gradient(90deg,#85CDCA,#a8ddd8)"></div></div><div class="val">2,578</div></div><div class="row"><div class="lbl">2022</div><div class="track"><div class="fill" style="width:82%;background:linear-gradient(90deg,#85CDCA,#a8ddd8)"></div></div><div class="val">2,401</div></div><div class="row"><div class="lbl">2023</div><div class="track"><div class="fill" style="width:73%;background:linear-gradient(90deg,#FFD166,#ffe09a)"></div></div><div class="val">2,137</div></div></div></div>'
     """
     valid_types = CORE_STRUCTURED_VISUAL_TYPES
     if visual_type not in valid_types:

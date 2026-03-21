@@ -19,18 +19,17 @@ That means:
 ## 1. Choose the right lane first
 
 ### Use article figure / chart runtime
-Use `tool_generate_visual` when the user wants:
+Use `tool_generate_visual` with **code_html parameter** when the user wants:
 - explanation in charts
 - comparison
 - process / step flow
-- architecture
-- concept map
-- infographic
-- timeline
-- benchmark / metric comparison
+- architecture / infographic
+- timeline / benchmark
 
-These outputs should feel like inline figures inside the answer, not like a mini app.
-Default medium here is `inline_html + SVG-first`, with structured fallback only as a fail-safe.
+**QUAN TRỌNG:** Cho chart và comparison, LUÔN viết HTML trực tiếp trong `code_html`.
+KHÔNG dùng `spec_json` cho chart — nó sinh output xấu. Viết HTML/CSS clean giống
+ví dụ trong tool description. Màu: #D97757, #85CDCA, #FFD166.
+KHÔNG uppercase headers, KHÔNG sidebar, KHÔNG tab switcher.
 
 ### Use Code Studio
 Use `tool_create_visual_code` only when the user truly needs:
