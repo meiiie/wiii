@@ -617,11 +617,22 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
                 logger.debug("[TUTOR_AGENT] Runtime tool selection skipped: %s", selection_err)
             llm_with_tools_for_request = None
             if llm_for_request:
-                llm_with_tools_for_request = (
-                    llm_for_request.bind_tools(active_tools)
-                    if active_tools
-                    else llm_for_request
-                )
+                # Visual Intelligence: force tool calling when resolver detects visual intent
+                if visual_decision.force_tool:
+                    visual_tools_only = [t for t in active_tools if getattr(t, "name", "") == "tool_generate_visual"]
+                    if visual_tools_only:
+                        llm_with_tools_for_request = llm_for_request.bind_tools(
+                            visual_tools_only, tool_choice="any"
+                        )
+                        logger.info("[TUTOR_AGENT] Visual intent → force tool_choice='any' for tool_generate_visual")
+                    else:
+                        llm_with_tools_for_request = llm_for_request.bind_tools(active_tools)
+                else:
+                    llm_with_tools_for_request = (
+                        llm_for_request.bind_tools(active_tools)
+                        if active_tools
+                        else llm_for_request
+                    )
             runtime_context_base = build_tool_runtime_context(
                 event_bus_id=bus_id,
                 request_id=bus_id or state.get("session_id"),

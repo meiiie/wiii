@@ -702,6 +702,12 @@ def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
             "kpi",
             "explain in charts",
             "explain with charts",
+            "nguyen nhan",
+            "top ",
+            "lon nhat",
+            "xep hang",
+            "ty le",
+            "ranking",
         ),
     ):
         return VisualIntentDecision(

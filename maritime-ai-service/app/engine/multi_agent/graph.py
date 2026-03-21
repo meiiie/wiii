@@ -4321,14 +4321,21 @@ async def direct_response_node(state: AgentState) -> AgentState:
                             _needs_web_search(query), _needs_datetime(query),
                             query[:60])
 
+                # Visual Intelligence: force tool calling when resolver detects visual intent
+                _vd = resolve_visual_intent(query)
+                if _vd.force_tool and not force_tools:
+                    force_tools = True
+                    # Keep only visual tool to force specific tool call
+                    tools = [t for t in tools if _tool_name(t) == "tool_generate_visual"] or tools
+                    logger.info("[DIRECT] Visual intent → force tool_choice='any' for tool_generate_visual")
+
                 # Phase 2: Bind tools to LLM
                 llm_with_tools, llm_auto = _bind_direct_tools(llm, tools, force_tools)
                 if force_tools:
-                    logger.warning("[DIRECT] Forced tool_choice='any' (web=%s, datetime=%s)",
-                                _needs_web_search(query), _needs_datetime(query))
+                    logger.info("[DIRECT] Forced tool_choice (web=%s, dt=%s, visual=%s)",
+                                _needs_web_search(query), _needs_datetime(query), _vd.force_tool)
 
-                # Phase 3: Build messages (with visual hint if resolver detected intent)
-                _vd = resolve_visual_intent(query)
+                # Phase 3: Build messages (with visual hint)
                 messages = _build_direct_system_messages(
                     state, query, domain_name_vi,
                     visual_decision=_vd,
