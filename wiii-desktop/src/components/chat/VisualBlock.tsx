@@ -1064,8 +1064,9 @@ function Details({
 
 function getHtmlPayload(visual: VisualPayload): string | null {
   if (visual.fallback_html) return visual.fallback_html;
+  // Also check code_html in spec (LLM may pass it there)
   const spec = asRecord(visual.spec);
-  for (const key of ["html", "markup", "custom_html", "template_html", "app_html"]) {
+  for (const key of ["code_html", "html", "markup", "custom_html", "template_html", "app_html"]) {
     const value = spec[key];
     if (typeof value === "string" && value.trim()) return value;
   }

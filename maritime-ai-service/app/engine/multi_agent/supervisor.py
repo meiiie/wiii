@@ -543,11 +543,9 @@ class SupervisorAgent:
             visual_decision.presentation_intent in {"article_figure", "chart_runtime"}
             and chosen_agent == AgentType.CODE_STUDIO.value
         ):
-            fallback_agent = (
-                AgentType.TUTOR.value
-                if result.intent == "learning"
-                else AgentType.DIRECT.value
-            )
+            # Always use DIRECT for chart visuals — it properly emits visual events.
+            # Tutor agent processes tools internally and doesn't emit visuals via SSE.
+            fallback_agent = AgentType.DIRECT.value
             logger.info(
                 "[SUPERVISOR] Visual lane override: code_studio_agent -> %s (%s)",
                 fallback_agent,
@@ -561,8 +559,14 @@ class SupervisorAgent:
             chosen_agent = AgentType.CODE_STUDIO.value
             method = "structured+capability_override"
 
-        # LLM-first visual: no more routing override — direct/tutor/code_studio all have
-        # tool_create_visual_code bound via get_visual_tools(). The LLM decides when to use it.
+        # Chart visuals must go through DIRECT (it emits visual events via SSE properly)
+        if (
+            visual_decision.presentation_intent == "chart_runtime"
+            and chosen_agent == AgentType.TUTOR.value
+        ):
+            logger.info("[SUPERVISOR] Chart visual override: tutor -> direct (SSE emission)")
+            chosen_agent = AgentType.DIRECT.value
+            method = "structured+chart_visual_override"
 
         # Sprint 148: Product search feature gate — fallback to DIRECT if disabled
         if chosen_agent == AgentType.PRODUCT_SEARCH.value:
