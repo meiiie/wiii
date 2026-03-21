@@ -560,13 +560,18 @@ class SupervisorAgent:
             method = "structured+capability_override"
 
         # Chart visuals must go through DIRECT (it emits visual events via SSE properly)
+        # Also override when resolver detects any visual intent (force_tool=True)
         if (
-            visual_decision.presentation_intent == "chart_runtime"
-            and chosen_agent == AgentType.TUTOR.value
+            chosen_agent == AgentType.TUTOR.value
+            and (
+                visual_decision.presentation_intent == "chart_runtime"
+                or visual_decision.force_tool
+            )
         ):
-            logger.info("[SUPERVISOR] Chart visual override: tutor -> direct (SSE emission)")
+            logger.info("[SUPERVISOR] Visual override: tutor -> direct (force_tool=%s, intent=%s)",
+                        visual_decision.force_tool, visual_decision.presentation_intent)
             chosen_agent = AgentType.DIRECT.value
-            method = "structured+chart_visual_override"
+            method = "structured+visual_override"
 
         # Sprint 148: Product search feature gate — fallback to DIRECT if disabled
         if chosen_agent == AgentType.PRODUCT_SEARCH.value:
