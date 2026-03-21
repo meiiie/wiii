@@ -504,9 +504,10 @@ _METADATA_TAG_PATTERN = re.compile(
 )
 # Strip <answer> tags that leak into RAG results
 _ANSWER_TAG_PATTERN = re.compile(r"</?answer>|‹/?answer›", re.IGNORECASE)
-# Strip visual reference markers that LLM puts in answer text
+# Strip visual reference markers and placeholders that LLM puts in answer text
 _VISUAL_REF_PATTERN = re.compile(
-    r"\{visual-[a-f0-9]+\}|<!-- WiiiVisualBridge:visual-[a-f0-9]+ -->",
+    r"\{visual-[a-f0-9]+\}|<!-- WiiiVisualBridge:visual-[a-f0-9]+ -->|"
+    r"\[Biểu đồ[^\]]*\]|\[Chart[^\]]*\]|\[Visual[^\]]*\]",
     re.IGNORECASE,
 )
 

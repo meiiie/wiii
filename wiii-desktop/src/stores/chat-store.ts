@@ -792,7 +792,10 @@ export const useChatStore = create<ChatState>()(
         // Strip visual reference markers that LLM puts in answer text
         const clean = chunk
           .replace(/\{visual-[a-f0-9]+\}/gi, "")
-          .replace(/<!-- WiiiVisualBridge:visual-[a-f0-9]+ -->/gi, "");
+          .replace(/<!-- WiiiVisualBridge:visual-[a-f0-9]+ -->/gi, "")
+          .replace(/\[Biểu đồ[^\]]*\]/gi, "")
+          .replace(/\[Chart[^\]]*\]/gi, "")
+          .replace(/\[Visual[^\]]*\]/gi, "");
         if (!clean) return; // Skip if chunk was only a visual marker
 
         // Flat field — backward compat

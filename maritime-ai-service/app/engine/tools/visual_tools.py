@@ -3480,6 +3480,12 @@ def _wrap_html(body_css: str, body_html: str, title: str = "", subtitle: str = "
 
 def _build_comparison_html(spec: dict, title: str) -> str:
     """Clean horizontal bar comparison — matching demo benchmark."""
+    logger.info("[COMPARISON_BUILDER] Input spec keys: %s", list(spec.keys()) if spec else "None")
+
+    # If spec has data array (chart format), delegate to chart builder
+    if "data" in spec and isinstance(spec.get("data"), list) and "left" not in spec:
+        return _build_chart_html(spec, title)
+
     left = spec.get("left", {})
     right = spec.get("right", {})
 
@@ -3961,11 +3967,19 @@ def _normalize_chart_spec(spec: dict[str, Any], title: str = "") -> dict[str, An
 
 def _build_chart_html(spec: dict, title: str) -> str:
     """Clean horizontal bar chart — matching demo benchmark. No sidebar, no tabs."""
+    logger.info("[CHART_BUILDER] Input spec keys: %s", list(spec.keys()) if spec else "None")
+
+    # Try comparison format first (left/right → extract items as bars)
+    if "left" in spec or "right" in spec:
+        return _build_comparison_html(spec, title)
+
     normalized_spec = _normalize_chart_spec(spec, title)
     labels = normalized_spec.get("labels", [])
     datasets = normalized_spec.get("datasets", [])
     caption = normalized_spec.get("caption", "")
     COLORS = ["#D97757", "#85CDCA", "#FFD166", "#C9B1FF", "#E8A87C"]
+
+    logger.info("[CHART_BUILDER] After normalize: labels=%d, datasets=%d", len(labels), len(datasets))
 
     css = """
 * { margin:0; padding:0; box-sizing:border-box; }
