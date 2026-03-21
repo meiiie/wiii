@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { createPortal } from "react-dom";
 import {
@@ -276,6 +276,36 @@ function renderOperationItem(
   return null;
 }
 
+/** Tool interval with its own expand/collapse toggle */
+function ToolIntervalSection({
+  children,
+  showParentBody,
+}: {
+  children: ReactNode;
+  showParentBody?: boolean;
+}) {
+  void showParentBody; // Reserved for future nested visibility control
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="reasoning-interval__segment reasoning-interval__segment--operation">
+      <button
+        type="button"
+        className="reasoning-interval__tool-toggle"
+        onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+      >
+        <svg
+          width="10" height="10" viewBox="0 0 20 20" fill="currentColor"
+          className={`reasoning-interval__tool-chevron ${expanded ? "reasoning-interval__tool-chevron--open" : ""}`}
+        >
+          <path d="M7.16 14.13C6.96 14.31 6.94 14.63 7.13 14.84 7.31 15.04 7.63 15.06 7.84 14.87L12.84 10.37C13.06 10.18 13.06 9.82 12.84 9.63L7.84 5.13C7.63 4.94 7.31 4.96 7.13 5.17 6.94 5.37 6.96 5.69 7.16 5.87L11.75 10 7.16 14.13Z" />
+        </svg>
+        {children}
+      </button>
+    </div>
+  );
+}
+
 function selectVisibleItems(
   items: ReasoningIntervalItem[],
   thinkingLevel: ThinkingLevel,
@@ -375,10 +405,9 @@ export function ReasoningInterval({
             <div className="reasoning-interval__rail-content">
               {visibleItems.map((item, idx) => {
                 if (item.kind === "thinking") {
-                  // Cursor: ONLY on the very last thinking item AND only while streaming
                   const isLastVisible = idx === visibleItems.length - 1 || visibleItems.slice(idx + 1).every((i) => i.kind !== "thinking");
                   const showCursor = !isDone && isLastVisible;
-                  // Thinking: COLLAPSIBLE (gray text)
+                  // Thinking: shown when parent header is expanded
                   return (
                     <div
                       key={item.id}
@@ -389,13 +418,13 @@ export function ReasoningInterval({
                     </div>
                   );
                 }
-                // Operations: ALWAYS VISIBLE (black text, outside collapse)
+                // Operations: ALWAYS VISIBLE + own expand/collapse for adjacent thinking
                 const operation = renderOperationItem(item, thinkingLevel);
                 if (!operation) return null;
                 return (
-                  <div key={item.id} className="reasoning-interval__segment reasoning-interval__segment--operation">
+                  <ToolIntervalSection key={item.id} showParentBody={showBody}>
                     {operation}
-                  </div>
+                  </ToolIntervalSection>
                 );
               })}
             </div>

@@ -2103,7 +2103,33 @@ html.dark .shiki span {
   );
 }
 
-/* Tool operations: BLACK text, always visible, not collapsible (spec feedback) */
+/* Tool interval: clickable toggle with own expand/collapse */
+.reasoning-interval__tool-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+.reasoning-interval__tool-toggle:hover {
+  opacity: 0.85;
+}
+.reasoning-interval__tool-chevron {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--text-tertiary);
+  transition: transform 150ms ease;
+}
+.reasoning-interval__tool-chevron--open {
+  transform: rotate(90deg);
+}
+
+/* Tool operations: BLACK text, always visible */
 /* "chữ xám = Wiii nói với chính mình, chữ đen = Wiii báo cho user" */
 .reasoning-op-row {
   display: flex;
