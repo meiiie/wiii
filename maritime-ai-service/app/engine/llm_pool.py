@@ -755,8 +755,11 @@ async def ainvoke_with_failover(
 ):
     """Invoke LLM with automatic runtime failover on rate-limit errors.
 
-    When the primary provider returns 429/RESOURCE_EXHAUSTED, retries once
-    with the pre-created fallback instance from LLMPool — no 60s SDK wait.
+    Two-layer defense:
+    1. **Circuit breaker fast-path** — if primary is already known to be
+       down (CB open after 3 failures), skip directly to fallback (0ms).
+    2. **Catch-and-switch** — if primary raises 429, record failure
+       (updating CB for future requests) then retry on fallback.
 
     Args:
         llm: Primary LLM (may be wrapped, e.g. via with_structured_output).
@@ -774,14 +777,41 @@ async def ainvoke_with_failover(
         Original exception when the error is not rate-limit related
         or no fallback provider is available.
     """
+
+    def _prepare_fallback(tier_key):
+        fallback_llm = LLMPool.get_fallback(tier_key)
+        if fallback_llm is None:
+            return None
+        if on_fallback is not None:
+            fallback_llm = on_fallback(fallback_llm)
+        return fallback_llm
+
+    # ── Fast path: circuit breaker open → skip primary entirely ──
+    cb = LLMPool.get_circuit_breaker()
+    if cb is not None and not cb.is_available():
+        fb = _prepare_fallback(tier)
+        if fb is not None:
+            logger.info(
+                "[LLM_FAILOVER] CB open — direct fallback (tier=%s)", tier,
+            )
+            return await fb.ainvoke(messages)
+
+    # ── Normal path: try primary, failover on 429 ──
     try:
-        return await llm.ainvoke(messages)
+        result = await llm.ainvoke(messages)
+        if cb is not None:
+            await LLMPool.record_success()
+        return result
     except Exception as exc:
         if not is_rate_limit_error(exc):
             raise
 
-        fallback_llm = LLMPool.get_fallback(tier)
-        if fallback_llm is None:
+        # Record failure → trips CB after threshold (3 failures)
+        if cb is not None:
+            await LLMPool.record_failure()
+
+        fb = _prepare_fallback(tier)
+        if fb is None:
             raise
 
         primary = LLMPool.get_active_provider() or "unknown"
@@ -791,10 +821,7 @@ async def ainvoke_with_failover(
             primary, type(exc).__name__, fallback_name, tier,
         )
 
-        if on_fallback is not None:
-            fallback_llm = on_fallback(fallback_llm)
-
-        return await fallback_llm.ainvoke(messages)
+        return await fb.ainvoke(messages)
 
 
 # Re-export get_thinking_budget from llm_factory for convenience

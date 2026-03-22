@@ -2139,51 +2139,72 @@ async def _ainvoke_with_fallback(
 ):
     """Invoke LLM with automatic runtime fallback on rate-limit errors.
 
-    When primary provider returns 429/RESOURCE_EXHAUSTED, immediately
-    retries with the pre-created fallback LLM from LLMPool instead of
-    waiting for the SDK's exponential backoff (60+ seconds).
+    Two-layer defense (same as ``ainvoke_with_failover`` in llm_pool):
+    1. Circuit breaker fast-path — if CB open, skip to fallback (0ms).
+    2. Catch-and-switch — on 429, record failure + retry on fallback.
 
-    Emits a ``model_switch`` SSE event so the frontend can notify
-    the user which model is serving their request — transparent,
-    not silent (Claude/ChatGPT pattern).
+    Graph-specific extras: SSE ``model_switch`` event + tool re-binding
+    with provider-aware ``tool_choice`` translation.
     """
-    try:
-        return await llm.ainvoke(messages)
-    except Exception as exc:
-        from app.engine.llm_pool import LLMPool, is_rate_limit_error
-        if not is_rate_limit_error(exc):
-            raise
+    from app.engine.llm_pool import LLMPool, is_rate_limit_error
 
+    def _prepare_fallback(fallback_llm, fallback_provider):
+        """Re-bind tools on fallback LLM with provider-aware tool_choice."""
+        if tools:
+            if tool_choice:
+                translated = _resolve_tool_choice(True, tools, provider=fallback_provider)
+                return fallback_llm.bind_tools(tools, tool_choice=translated or tool_choice)
+            return fallback_llm.bind_tools(tools)
+        return fallback_llm
+
+    async def _do_failover(exc_or_reason):
         fallback_llm = LLMPool.get_fallback(tier)
         if fallback_llm is None:
-            raise
+            return None
 
         primary = LLMPool.get_active_provider() or "google"
-        fallback = LLMPool._fallback_provider or "zhipu"
+        fallback_name = LLMPool._fallback_provider or "zhipu"
 
+        reason = type(exc_or_reason).__name__ if isinstance(exc_or_reason, Exception) else exc_or_reason
         logger.warning(
-            "[RUNTIME_FAILOVER] %s rate-limited (%s), switching to %s",
-            primary, type(exc).__name__, fallback,
+            "[RUNTIME_FAILOVER] %s → %s (%s)", primary, fallback_name, reason,
         )
 
-        # Emit SSE event so frontend can show user a notification
         if push_event:
             await push_event({
                 "type": "model_switch",
                 "from_provider": primary,
-                "to_provider": fallback,
+                "to_provider": fallback_name,
                 "reason": "rate_limit",
             })
 
-        # Re-bind tools on fallback LLM — translate tool_choice for new provider
-        if tools:
-            if tool_choice:
-                translated = _resolve_tool_choice(True, tools, provider=fallback)
-                fallback_llm = fallback_llm.bind_tools(tools, tool_choice=translated or tool_choice)
-            else:
-                fallback_llm = fallback_llm.bind_tools(tools)
+        return _prepare_fallback(fallback_llm, fallback_name)
 
-        return await fallback_llm.ainvoke(messages)
+    # ── Fast path: circuit breaker open → skip primary entirely ──
+    cb = LLMPool.get_circuit_breaker()
+    if cb is not None and not cb.is_available():
+        fb = await _do_failover("circuit_breaker_open")
+        if fb is not None:
+            return await fb.ainvoke(messages)
+
+    # ── Normal path: try primary, failover on 429 ──
+    try:
+        result = await llm.ainvoke(messages)
+        if cb is not None:
+            await LLMPool.record_success()
+        return result
+    except Exception as exc:
+        if not is_rate_limit_error(exc):
+            raise
+
+        if cb is not None:
+            await LLMPool.record_failure()
+
+        fb = await _do_failover(exc)
+        if fb is None:
+            raise
+
+        return await fb.ainvoke(messages)
 
 
 async def _execute_direct_tool_rounds(
