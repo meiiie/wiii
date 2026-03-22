@@ -358,7 +358,7 @@ def _build_group_search_tool(adapter, circuit_breaker):
         except Exception as e:
             circuit_breaker.record_failure(platform_id)
             return json.dumps(
-                {"error": f"Loi tim kiem {display_name}: {str(e)[:200]}"},
+                {"error": f"Lỗi tìm kiếm {display_name}: {str(e)[:200]}"},
                 ensure_ascii=False,
             )
 

@@ -490,7 +490,7 @@ class ProductSearchAgentNode:
             (response_text, tools_used, thinking_content, answer_streamed_via_bus)
         """
         if not self._llm:
-            return "Xin lỗi, hệ thống tìm kiếm sản phẩm chưa sẵn sàng.", [], None, False
+            return "Xin lỗi, mình chưa sẵn sàng tìm kiếm sản phẩm lúc này nha~", [], None, False
 
         # Start from the full role-filtered tool pool; planner-aware selection
         # narrows it later once we understand the query better.
@@ -645,10 +645,15 @@ class ProductSearchAgentNode:
             logger.debug("[PRODUCT_SEARCH] Runtime tool selection skipped: %s", selection_err)
 
         llm_to_use = self._llm.bind_tools(active_tools) if self._llm and active_tools else self._llm_with_tools
-        if thinking_effort and self._llm:
+        provider_override = state.get("provider")
+        if (thinking_effort or (provider_override and provider_override != "auto")) and self._llm:
             try:
                 from app.engine.multi_agent.agent_config import AgentConfigRegistry
-                llm_override = AgentConfigRegistry.get_llm("product_search", effort_override=thinking_effort)
+                llm_override = AgentConfigRegistry.get_llm(
+                    "product_search",
+                    effort_override=thinking_effort,
+                    provider_override=provider_override,
+                )
                 if llm_override and active_tools:
                     llm_to_use = llm_override.bind_tools(active_tools)
             except Exception:

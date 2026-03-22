@@ -41,14 +41,14 @@ class TrafficLawDomain(YamlDomainPlugin):
 
     def get_hyde_templates(self) -> Dict[str, str]:
         return {
-            "vi": """Ban la chuyen gia ve luat giao thong duong bo Viet Nam.
+            "vi": """Bạn là chuyên gia về luật giao thông đường bộ Việt Nam.
 
-Hay viet mot doan van ngan (100-200 tu) tra loi cau hoi sau.
-Viet nhu the day la trich doan tu van ban phap luat giao thong chinh thuc.
+Hãy viết một đoạn văn ngắn (100-200 từ) trả lời câu hỏi sau.
+Viết như thể đây là trích đoạn từ văn bản pháp luật giao thông chính thức.
 
-Cau hoi: {question}
+Câu hỏi: {question}
 
-Doan van:""",
+Đoạn văn:""",
             "en": """You are an expert in Vietnamese traffic law and road regulations.
 
 Write a short paragraph (100-200 words) answering the following question.

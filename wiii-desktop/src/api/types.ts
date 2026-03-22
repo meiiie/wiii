@@ -110,6 +110,7 @@ export interface ChatRequest {
   organization_id?: string;
   images?: ImageInput[];
   user_context?: ChatUserContext;
+  provider?: "auto" | "google" | "zhipu" | "ollama";
 }
 
 // ===== Chat Response =====
@@ -1178,6 +1179,8 @@ export interface AppSettings {
   show_previews?: boolean;
   /** Sprint 167: Show interactive artifacts */
   show_artifacts?: boolean;
+  /** Per-request model provider selection (persisted across reloads) */
+  model_provider?: "auto" | "google" | "zhipu" | "ollama";
 }
 
 export interface LlmRuntimeConfig {

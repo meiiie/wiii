@@ -79,10 +79,10 @@ def tool_character_note(note: str, block: str = "self_notes") -> str:
                 block, user_id, remaining,
             )
             return f"Đã ghi nhận vào {block}. Còn {remaining} ký tự."
-        return "Không thể ghi nhận (DB chưa sẵn sàng)."
+        return "Mình chưa ghi nhận được lúc này nha~"
     except Exception as e:
         logger.error("tool_character_note failed: %s", e)
-        return f"Loi: {e}"
+        return f"Lỗi: {e}"
 
 
 def tool_character_replace(block: str, new_content: str) -> str:
@@ -114,10 +114,10 @@ def tool_character_replace(block: str, new_content: str) -> str:
                 block, user_id, result.version,
             )
             return f"Đã cập nhật {block} (version {result.version})."
-        return "Không thể cập nhật (DB chưa sẵn sàng)."
+        return "Mình chưa cập nhật được lúc này nha~"
     except Exception as e:
         logger.error("tool_character_replace failed: %s", e)
-        return f"Loi: {e}"
+        return f"Lỗi: {e}"
 
 
 @tool(description="""Ghi trai nghiem dang nho cua Wiii.
@@ -163,10 +163,10 @@ def tool_character_log_experience(
         if result:
             logger.info("Experience logged: [%s] %s", experience_type, content[:50])
             return f"Đã ghi nhận trải nghiệm [{experience_type}]."
-        return "Không thể ghi nhận (DB chưa sẵn sàng)."
+        return "Mình chưa ghi nhận được lúc này nha~"
     except Exception as e:
         logger.error("tool_character_log_experience failed: %s", e)
-        return f"Loi: {e}"
+        return f"Lỗi: {e}"
 
 
 @tool(description="""Doc noi dung mot block trong bo nho song cua Wiii.
@@ -196,7 +196,7 @@ def tool_character_read(block: str = "self_notes") -> str:
         return "(Chưa có ghi chú nào trong block này)"
     except Exception as e:
         logger.error("tool_character_read failed: %s", e)
-        return f"Loi: {e}"
+        return f"Lỗi: {e}"
 
 
 def get_character_tools() -> list:

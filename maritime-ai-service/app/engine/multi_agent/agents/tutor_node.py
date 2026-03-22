@@ -539,9 +539,14 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
                 thinking_effort = "high"
                 logger.info("[TUTOR_AGENT] Visual intent detected → upgrade to high effort")
 
-            if thinking_effort:
-                llm_for_request = AgentConfigRegistry.get_llm("tutor_agent", effort_override=thinking_effort)
-                logger.info("[TUTOR_AGENT] Thinking effort override: %s", thinking_effort)
+            provider_override = state.get("provider")
+            if thinking_effort or (provider_override and provider_override != "auto"):
+                llm_for_request = AgentConfigRegistry.get_llm(
+                    "tutor_agent",
+                    effort_override=thinking_effort,
+                    provider_override=provider_override,
+                )
+                logger.info("[TUTOR_AGENT] LLM override: effort=%s provider=%s", thinking_effort, provider_override)
 
             # Sprint 69: Get event bus queue for intra-node streaming
             event_queue = None
@@ -621,10 +626,12 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
                 if visual_decision.force_tool:
                     visual_tools_only = [t for t in active_tools if getattr(t, "name", "") == "tool_generate_visual"]
                     if visual_tools_only:
+                        from app.engine.multi_agent.graph import _resolve_tool_choice
+                        forced_choice = _resolve_tool_choice(True, visual_tools_only, provider=provider_override)
                         llm_with_tools_for_request = llm_for_request.bind_tools(
-                            visual_tools_only, tool_choice="any"
+                            visual_tools_only, tool_choice=forced_choice,
                         )
-                        logger.info("[TUTOR_AGENT] Visual intent → force tool_choice='any' for tool_generate_visual")
+                        logger.info("[TUTOR_AGENT] Visual intent → force tool_choice=%r for tool_generate_visual", forced_choice)
                     else:
                         llm_with_tools_for_request = llm_for_request.bind_tools(active_tools)
                 else:

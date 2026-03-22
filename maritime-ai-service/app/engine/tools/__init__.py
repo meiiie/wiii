@@ -235,7 +235,22 @@ def _init_extended_tools():
         try:
             from app.engine.tools.lms_tools import register_lms_tools
             register_lms_tools()
-            logger.info("LMS tools registered (gate: enable_lms_integration)")
+            # Course generation tools (design spec v2.0, 2026-03-22)
+            from app.engine.tools.course_generation_tool import (
+                tool_generate_course_outline,
+                tool_approve_course_outline,
+            )
+            registry.register(
+                tool_generate_course_outline, ToolCategory.LMS, ToolAccess.WRITE,
+                description="Generate course outline from uploaded document",
+                roles=["teacher", "admin"],
+            )
+            registry.register(
+                tool_approve_course_outline, ToolCategory.LMS, ToolAccess.WRITE,
+                description="Approve outline and start content generation",
+                roles=["teacher", "admin"],
+            )
+            logger.info("LMS tools registered (gate: enable_lms_integration) + course generation tools")
         except Exception as e:
             logger.warning("LMS tools init failed: %s", e)
 

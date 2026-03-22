@@ -69,6 +69,12 @@ pymupdf>=1.26.0  # CHỈ THỊ 26: PDF to image (no external deps, replaces pdf2
 pdf2image>=1.16.3  # Fallback for Poppler-based PDF rendering (pymupdf is primary)
 Pillow>=10.0.0  # CHỈ THỊ 26: Image processing
 
+# Document Conversion (Course Generation — design spec v2.0, optional)
+# Install: pip install docling  (requires 3-4GB for DocLayNet + TableFormer models)
+# Or use Docling Serve: docker pull doclingproject/docling-serve
+# Feature-gated: USE_DOCLING_FOR_COURSE_GEN=true
+# docling>=2.30.0  # Uncomment when ready to deploy Docling
+
 # Object Storage (MinIO SDK)
 minio>=7.2.0
 

@@ -1043,7 +1043,7 @@ class CorrectiveRAG:
             Tuple of (answer, documents, native_thinking)
         """
         if not self._rag:
-            return "Không thể tạo câu trả lời do thiếu cấu hình.", documents, None
+            return "Xin lỗi, mình chưa sẵn sàng trả lời câu này nha~ (˶˃ ᵕ ˂˶)", documents, None
 
         if not documents:
             # Fall back to LLM general knowledge instead of static error
@@ -1080,7 +1080,7 @@ class CorrectiveRAG:
 
         except Exception as e:
             logger.error("[CRAG] Generation failed: %s", e)
-            return "Xin lỗi, không thể tạo câu trả lời lúc này.", documents, None
+            return "Xin lỗi, mình chưa tạo được câu trả lời lúc này nha~ ≽^•⩊•^≼", documents, None
     
     # =========================================================================
     # V3 SOTA: Full CRAG Pipeline + True Token Streaming
@@ -1265,7 +1265,7 @@ class CorrectiveRAG:
                 yield {"type": "status", "content": "Dùng kiến thức tổng quát...", "step": "llm_fallback"}
                 fallback_answer = await self._generate_fallback(query, context or {})
                 if not fallback_answer:
-                    fallback_answer = "Xin lỗi, hiện tại tôi chưa có thông tin về chủ đề này."
+                    fallback_answer = "Xin lỗi, mình chưa có thông tin về chủ đề này nha~ ≽^•⩊•^≼"
                 yield {"type": "answer", "content": fallback_answer}
                 yield {"type": "result", "data": CorrectiveRAGResult(
                     answer=fallback_answer,
@@ -1371,7 +1371,7 @@ class CorrectiveRAG:
         full_answer_parts = []  # Sprint 144: Accumulate answer tokens for result
 
         if not self._rag:
-            yield {"type": "answer", "content": "Không thể tạo câu trả lời do thiếu cấu hình."}
+            yield {"type": "answer", "content": "Xin lỗi, mình chưa sẵn sàng trả lời câu này nha~ (˶˃ ᵕ ˂˶)"}
             yield {"type": "done", "content": ""}
             return
 
@@ -1470,7 +1470,7 @@ class CorrectiveRAG:
             
         except Exception as e:
             logger.error("[CRAG-V3] Generation failed: %s", e)
-            _error_msg = "Xin lỗi, không thể tạo câu trả lời lúc này."
+            _error_msg = "Xin lỗi, mình chưa tạo được câu trả lời lúc này nha~ ≽^•⩊•^≼"
             yield {"type": "answer", "content": _error_msg}
             full_answer_parts.append(_error_msg)  # Sprint 189b: capture in result
 

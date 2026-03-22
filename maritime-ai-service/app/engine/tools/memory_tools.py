@@ -136,7 +136,7 @@ async def tool_save_user_info(key: str, value: str) -> str:
 
     except Exception as e:
         logger.error("Save user info error: %s", e)
-        return f"Loi khi luu thong tin: {str(e)}"
+        return f"Lỗi khi lưu thông tin: {str(e)}"
 
 
 @tool(description="""
@@ -173,7 +173,7 @@ async def tool_get_user_info(key: str = "all") -> str:
 
     except Exception as e:
         logger.error("Get user info error: %s", e)
-        return f"Loi khi lay thong tin: {str(e)}"
+        return f"Lỗi khi lấy thông tin: {str(e)}"
 
 
 # =============================================================================
@@ -242,7 +242,7 @@ async def tool_remember(information: str, category: str = "general") -> str:
 
     except Exception as e:
         logger.error("Remember error: %s", e)
-        return f"Loi khi ghi nho: {str(e)}"
+        return f"Lỗi khi ghi nhớ: {str(e)}"
 
 
 @tool(description="""
@@ -305,7 +305,7 @@ async def tool_forget(information_keyword: str) -> str:
 
     except Exception as e:
         logger.error("Forget error: %s", e)
-        return f"Loi khi xoa: {str(e)}"
+        return f"Lỗi khi xóa: {str(e)}"
 
 
 @tool(description="""
@@ -362,7 +362,7 @@ async def tool_list_memories() -> str:
 
     except Exception as e:
         logger.error("List memories error: %s", e)
-        return f"Loi khi liet ke: {str(e)}"
+        return f"Lỗi khi liệt kê: {str(e)}"
 
 
 @tool(description="""
@@ -407,7 +407,7 @@ async def tool_clear_all_memories() -> str:
 
     except Exception as e:
         logger.error("Clear all error: %s", e)
-        return f"Loi: {str(e)}"
+        return f"Lỗi: {str(e)}"
 
 
 # =============================================================================

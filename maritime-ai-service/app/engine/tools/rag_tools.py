@@ -111,7 +111,7 @@ async def tool_knowledge_search(query: str) -> str:
     from app.engine.agentic_rag.corrective_rag import get_corrective_rag
 
     if not _rag_agent:
-        return "Lỗi: RAG Agent không khả dụng. Không thể tra cứu kiến thức."
+        return "Xin lỗi, mình chưa tra cứu được kiến thức lúc này nha~ ≽^•⩊•^≼"
 
     # Get per-request state (async-safe via contextvars)
     state = _get_state()

@@ -111,16 +111,21 @@ class AgentConfigRegistry:
         return cls._configs.get(node_id, AgentNodeConfig(node_id))
 
     @classmethod
-    def get_llm(cls, node_id: str, effort_override: Optional[str] = None):
+    def get_llm(
+        cls,
+        node_id: str,
+        effort_override: Optional[str] = None,
+        provider_override: Optional[str] = None,
+    ):
         """
         Get a LangChain LLM for the given node based on its config.
 
+        If provider_override is provided (and not "auto"), routes to the
+        requested provider via get_llm_for_provider().
         If effort_override is provided, uses get_llm_for_effort() instead
         (Sprint 66 per-request thinking effort).
         """
-        from app.engine.llm_pool import (
-            get_llm_deep, get_llm_moderate, get_llm_light,
-        )
+        from app.engine.llm_pool import get_llm_deep, get_llm_moderate, get_llm_light
 
         config = cls.get_config(node_id)
 
@@ -128,26 +133,29 @@ class AgentConfigRegistry:
         if config.model:
             return cls._get_or_create_model_llm(config)
 
+        # Shared tier resolution (used by both provider and effort paths)
+        from app.engine.llm_factory import ThinkingTier
+        _TIER = {
+            "deep": ThinkingTier.DEEP,
+            "moderate": ThinkingTier.MODERATE,
+            "light": ThinkingTier.LIGHT,
+        }
+        default_tier = _TIER.get(config.tier, ThinkingTier.MODERATE)
+
+        # Per-request provider override takes priority
+        if provider_override and provider_override != "auto":
+            from app.engine.llm_pool import get_llm_for_provider
+            return get_llm_for_provider(
+                provider_override, effort=effort_override, default_tier=default_tier,
+            )
+
         if effort_override:
             from app.engine.llm_pool import get_llm_for_effort
-            from app.engine.llm_factory import ThinkingTier
-            tier_default_map = {
-                "deep": ThinkingTier.DEEP,
-                "moderate": ThinkingTier.MODERATE,
-                "light": ThinkingTier.LIGHT,
-            }
-            default_tier = tier_default_map.get(
-                config.tier, ThinkingTier.MODERATE,
-            )
             return get_llm_for_effort(effort_override, default_tier=default_tier)
 
-        tier_map = {
-            "deep": get_llm_deep,
-            "moderate": get_llm_moderate,
-            "light": get_llm_light,
-        }
-        get_llm_fn = tier_map.get(config.tier, get_llm_moderate)
-        return get_llm_fn()
+        return {"deep": get_llm_deep, "moderate": get_llm_moderate, "light": get_llm_light}.get(
+            config.tier, get_llm_moderate,
+        )()
 
     _model_llm_cache: Dict[str, object] = {}
 

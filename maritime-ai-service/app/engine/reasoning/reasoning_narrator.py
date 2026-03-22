@@ -74,6 +74,7 @@ class ReasoningRenderRequest(BaseModel):
     mood_hint: Optional[str] = None
     observations: list[str] = Field(default_factory=list)
     style_tags: list[str] = Field(default_factory=list)
+    provider: Optional[str] = None  # Per-request provider override
 
 
 class ReasoningRenderResult(BaseModel):
@@ -464,7 +465,11 @@ class ReasoningNarrator:
         llm_node = _NODE_LLM_MAP.get(request.node, "direct")
 
         try:
-            llm = AgentConfigRegistry.get_llm(llm_node, effort_override=request.visibility_mode if request.visibility_mode in {"low", "medium", "high", "max"} else None)
+            llm = AgentConfigRegistry.get_llm(
+                llm_node,
+                effort_override=request.visibility_mode if request.visibility_mode in {"low", "medium", "high", "max"} else None,
+                provider_override=request.provider,
+            )
         except Exception as exc:
             logger.warning("[REASONING_NARRATOR] LLM unavailable for %s: %s", llm_node, exc)
             return self._fallback(request, node_skill)

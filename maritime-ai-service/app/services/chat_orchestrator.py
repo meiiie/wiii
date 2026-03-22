@@ -102,6 +102,7 @@ class MultiAgentExecutionInput:
     context: dict
     domain_id: str
     thinking_effort: str | None = None
+    provider: str | None = None
 
 
 # =============================================================================
@@ -449,6 +450,7 @@ class ChatOrchestrator:
         prepared_turn: PreparedTurn,
         include_streaming_fields: bool = False,
         thinking_effort: str | None = None,
+        provider: str | None = None,
     ) -> MultiAgentExecutionInput:
         """Build the authoritative graph invocation payload for this turn."""
         context = prepared_turn.chat_context
@@ -480,6 +482,7 @@ class ChatOrchestrator:
             context=graph_context,
             domain_id=prepared_turn.request_scope.domain_id or settings.default_domain,
             thinking_effort=thinking_effort,
+            provider=provider,
         )
 
     def build_minimal_multi_agent_execution_input(
@@ -488,6 +491,7 @@ class ChatOrchestrator:
         request: ChatRequest,
         prepared_turn: PreparedTurn,
         thinking_effort: str | None = None,
+        provider: str | None = None,
     ) -> MultiAgentExecutionInput:
         """Build a minimal but valid graph invocation payload for degraded paths."""
         return MultiAgentExecutionInput(
@@ -503,6 +507,7 @@ class ChatOrchestrator:
             },
             domain_id=prepared_turn.request_scope.domain_id or settings.default_domain,
             thinking_effort=thinking_effort,
+            provider=provider,
         )
 
     async def prepare_turn(
@@ -890,6 +895,7 @@ class ChatOrchestrator:
             context=execution_input.context,
             domain_id=execution_input.domain_id,
             thinking_effort=execution_input.thinking_effort,
+            provider=execution_input.provider,
         )
         
         response_text = result.get("response", "")

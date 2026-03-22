@@ -155,7 +155,7 @@ class GuardianAgent:
         logger.info("GuardianAgent initialized")
     
     def _init_llm(self):
-        """Initialize Gemini LLM from shared pool for validation."""
+        """Initialize default LLM from shared pool for validation."""
         if not self._config.enable_llm:
             logger.info("GuardianAgent: LLM disabled by config")
             return
@@ -173,12 +173,33 @@ class GuardianAgent:
 
         except Exception as e:
             logger.error("GuardianAgent: Failed to initialize LLM: %s", e)
+
+    def _get_llm_for_provider(self, provider: Optional[str] = None):
+        """Get LLM respecting per-request provider override.
+
+        Falls back to fresh AgentConfigRegistry lookup (not cached
+        self._llm which may be stale/dead after 429).
+        """
+        if provider and provider != "auto":
+            try:
+                from app.engine.multi_agent.agent_config import AgentConfigRegistry
+                return AgentConfigRegistry.get_llm(
+                    "guardian", provider_override=provider,
+                )
+            except Exception:
+                pass
+        try:
+            from app.engine.multi_agent.agent_config import AgentConfigRegistry
+            return AgentConfigRegistry.get_llm("guardian")
+        except Exception:
+            return self._llm
     
     async def validate_message(
         self,
         message: str,
         context: Optional[str] = None,
-        domain_id: Optional[str] = None
+        domain_id: Optional[str] = None,
+        provider: Optional[str] = None,
     ) -> GuardianDecision:
         """
         Validate user message using LLM.
@@ -210,10 +231,11 @@ class GuardianAgent:
             )
             return decision
 
-        # Step 3: LLM validation
-        if self._llm and self._config.enable_llm:
+        # Step 3: LLM validation (per-request provider-aware)
+        llm = self._get_llm_for_provider(provider) if provider else self._llm
+        if llm and self._config.enable_llm:
             try:
-                decision = await self._validate_with_llm(message, context)
+                decision = await self._validate_with_llm(message, context, llm=llm)
                 decision.latency_ms = int((time.time() - start_time) * 1000)
 
                 # Cache the decision
@@ -337,7 +359,9 @@ class GuardianAgent:
     async def _validate_with_llm(
         self,
         message: str,
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        *,
+        llm=None,
     ) -> GuardianDecision:
         """
         Validate message using LLM.
@@ -353,20 +377,20 @@ class GuardianAgent:
             # Sprint 67: Structured Outputs — constrained decoding for Guardian
             from app.core.config import settings as _settings
             if getattr(_settings, 'enable_structured_outputs', False):
-                return await self._validate_structured(prompt)
+                return await self._validate_structured(prompt, llm=llm)
 
-            return await self._validate_legacy(prompt)
+            return await self._validate_legacy(prompt, llm=llm)
 
         except Exception as e:
             logger.error("GuardianAgent: LLM call failed: %s", e)
             raise
 
     @retry_on_transient()
-    async def _validate_structured(self, prompt: str) -> GuardianDecision:
+    async def _validate_structured(self, prompt: str, *, llm=None) -> GuardianDecision:
         """Validate using structured output (constrained decoding)."""
         from app.engine.structured_schemas import GuardianLLMResult
 
-        structured_llm = self._llm.with_structured_output(GuardianLLMResult)
+        structured_llm = (llm or self._llm).with_structured_output(GuardianLLMResult)
         result = await structured_llm.ainvoke(prompt)
 
         # Convert structured result to GuardianDecision
@@ -386,9 +410,9 @@ class GuardianAgent:
         )
 
     @retry_on_transient()
-    async def _validate_legacy(self, prompt: str) -> GuardianDecision:
+    async def _validate_legacy(self, prompt: str, *, llm=None) -> GuardianDecision:
         """Validate using legacy JSON parsing."""
-        response = await self._llm.ainvoke(prompt)
+        response = await (llm or self._llm).ainvoke(prompt)
 
         # SOTA FIX: Handle Gemini 2.5 Flash content block format
         from app.services.output_processor import extract_thinking_from_response

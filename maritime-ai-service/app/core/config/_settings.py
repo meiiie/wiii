@@ -138,6 +138,16 @@ class Settings(BaseSettings):
     lms_service_token: Optional[str] = Field(default=None, description="Service account token for LMS API (single-LMS compat)")
     lms_webhook_secret: Optional[str] = Field(default=None, description="HMAC-SHA256 secret for incoming webhooks (single-LMS compat)")
     lms_api_timeout: int = Field(default=10, ge=3, le=60, description="LMS API call timeout (seconds)")
+
+    # Course Generation (design spec v2.0, 2026-03-22)
+    use_docling_for_course_gen: bool = Field(default=False, description="Use Docling for document conversion (requires pip install docling)")
+    docling_vlm_backend: str = Field(default="none", description="VLM backend for scanned pages: 'gemini', 'ollama', 'none'")
+    docling_vlm_api_url: Optional[str] = Field(default=None, description="VLM API URL for Docling scanned page extraction")
+    docling_vlm_api_key: Optional[str] = Field(default=None, description="VLM API key for Docling")
+    docling_vlm_model: str = Field(default="gemini-3.1-flash-lite", description="VLM model for Docling scanned pages")
+    course_gen_max_concurrent_chapters: int = Field(default=3, ge=1, le=10, description="Max parallel chapter expansions")
+    course_gen_chapter_timeout_seconds: int = Field(default=120, ge=30, le=600, description="Timeout per chapter expansion")
+
     # Sprint 155b: Multi-LMS connector list (JSON array — takes precedence over flat fields above)
     lms_connectors: str = Field(
         default="[]",
@@ -338,9 +348,18 @@ class Settings(BaseSettings):
         description="Models supporting thinking mode via Ollama (matched by prefix)"
     )
 
+    # LLM Settings - Zhipu AI / GLM-5 (cloud fallback)
+    zhipu_api_key: Optional[str] = Field(default=None, description="Zhipu AI (GLM-5) API key")
+    zhipu_base_url: str = Field(
+        default="https://open.bigmodel.cn/api/paas/v4",
+        description="Zhipu AI API base URL (OpenAI-compatible)",
+    )
+    zhipu_model: str = Field(default="glm-5", description="Zhipu model for general tasks")
+    zhipu_model_advanced: str = Field(default="glm-5", description="Zhipu model for complex tasks")
+
     # Multi-Provider Failover (Sprint 11: OpenClaw-inspired)
     llm_failover_chain: list[str] = Field(
-        default=["ollama", "google", "openrouter"],
+        default=["ollama", "google", "zhipu", "openrouter"],
         description="LLM provider failover chain (try in order)"
     )
     enable_llm_failover: bool = Field(default=True, description="Enable automatic LLM provider failover")

@@ -107,7 +107,7 @@ async def tool_start_lesson(topic: str) -> str:
     if not _tutor_agent:
         init_tutor_tools(state.user_id)
         if not _tutor_agent:
-            return "Loi: TutorAgent khong kha dung."
+            return "Lỗi: TutorAgent không khả dụng."
 
     try:
         user_id = state.user_id
@@ -125,7 +125,7 @@ async def tool_start_lesson(topic: str) -> str:
 
     except Exception as e:
         logger.error("Start lesson error: %s", e)
-        return f"Loi khi bat dau buoi hoc: {str(e)}"
+        return f"Lỗi khi bắt đầu buổi học: {str(e)}"
 
 
 @tool(description="""
@@ -140,10 +140,10 @@ async def tool_continue_lesson(user_input: str) -> str:
     state = _get_state()
 
     if not _tutor_agent:
-        return "Loi: Chua co buoi hoc nao duoc bat dau. Hay dung 'Day toi ve...' truoc."
+        return "Lỗi: Chưa có buổi học nào được bắt đầu. Hãy dùng 'Dạy tôi về...' trước."
 
     if not state.session_id:
-        return "Loi: Khong co buoi hoc dang hoat dong. Hay bat dau buoi hoc moi."
+        return "Lỗi: Không có buổi học đang hoạt động. Hãy bắt đầu buổi học mới."
 
     try:
         logger.info("[TOOL] Continuing lesson, input: '%s...'", user_input[:50])
@@ -167,7 +167,7 @@ async def tool_continue_lesson(user_input: str) -> str:
 
     except Exception as e:
         logger.error("Continue lesson error: %s", e)
-        return f"Loi: {str(e)}"
+        return f"Lỗi: {str(e)}"
 
 
 @tool(description="""

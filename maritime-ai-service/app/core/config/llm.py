@@ -31,3 +31,7 @@ class LLMConfig(BaseModel):
     ollama_model: str = "qwen3:4b-instruct-2507-q4_K_M"
     ollama_keep_alive: Optional[str] = "30m"
     ollama_thinking_models: list[str] = ["qwen3", "deepseek-r1", "qwq"]
+    zhipu_api_key: Optional[str] = None
+    zhipu_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
+    zhipu_model: str = "glm-5"
+    zhipu_model_advanced: str = "glm-5"

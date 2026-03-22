@@ -21,6 +21,7 @@ from app.api.v1.feedback import router as feedback_router  # Sprint 107: Feedbac
 from app.api.v1.character import router as character_router  # Sprint 120: Character State
 from app.api.v1.mood import router as mood_router  # Sprint 120: Mood/Emotional State
 from app.api.v1.generated_files import router as generated_files_router  # Generated artifacts
+from app.api.v1.llm_status import router as llm_status_router  # LLM Provider Status
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ router.include_router(feedback_router)  # Sprint 107: Feedback
 router.include_router(character_router)  # Sprint 120: Character State
 router.include_router(mood_router)  # Sprint 120: Mood/Emotional State
 router.include_router(generated_files_router)
+router.include_router(llm_status_router)  # GET /llm/status
 
 # Sprint 158: User profile + admin endpoints (always included, JWT-enforced)
 from app.auth.user_router import router as user_router
@@ -91,7 +93,9 @@ try:
         router.include_router(lms_data_router)
         from app.api.v1.lms_dashboard import router as lms_dashboard_router
         router.include_router(lms_dashboard_router)
-        logger.info("[OK] LMS Integration routers registered (3 routers)")
+        from app.api.v1.course_generation import router as course_gen_router
+        router.include_router(course_gen_router)
+        logger.info("[OK] LMS Integration routers registered (4 routers, incl. course generation)")
 except Exception as e:
     logger.error("[FAIL] LMS Integration router registration failed: %s", e)
 

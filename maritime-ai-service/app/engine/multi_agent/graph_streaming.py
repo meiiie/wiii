@@ -264,6 +264,21 @@ async def _convert_bus_event(event: dict) -> StreamEvent:
             renderer_contract=str(_cs.get("renderer_contract", "") or "") or None,
             node=node,
         )
+    elif etype == "model_switch":
+        # Runtime failover: notify frontend which model is serving
+        _from = event.get("from_provider", "")
+        _to = event.get("to_provider", "")
+        _reason = event.get("reason", "rate_limit")
+        return await create_status_event(
+            f"Đang chuyển sang {_to} (do {_from} tạm bận)",
+            node="system",
+            details={
+                "subtype": "model_switch",
+                "from_provider": _from,
+                "to_provider": _to,
+                "reason": _reason,
+            },
+        )
     else:
         return await create_status_event(
             str(event.get("content", "")),
@@ -382,6 +397,7 @@ async def _render_fallback_narration(
             mood_hint=(context or {}).get("mood_hint"),
             visibility_mode="rich",
             style_tags=style_tags or [],
+            provider=initial_state.get("provider") if initial_state else None,
         )
     )
 
@@ -597,6 +613,7 @@ async def process_with_multi_agent_streaming(
     context: dict = None,
     domain_id: Optional[str] = None,
     thinking_effort: Optional[str] = None,
+    provider: Optional[str] = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     """
     Process with Multi-Agent graph with token-level streaming.
@@ -679,6 +696,7 @@ async def process_with_multi_agent_streaming(
             "domain_id": domain_id,
             "domain_config": domain_config,
             "thinking_effort": thinking_effort,
+            "provider": provider,
             "routing_metadata": None,  # Sprint 189b-R5: parity with sync (graph.py:1643)
             "organization_id": (context or {}).get("organization_id"),  # Sprint 170c
             "_event_bus_id": bus_id,
@@ -960,6 +978,7 @@ async def process_with_multi_agent_streaming(
                             mood_hint=(context or {}).get("mood_hint"),
                             visibility_mode="rich",
                             style_tags=["routing", "visible_reasoning"],
+                            provider=initial_state.get("provider") if initial_state else None,
                         )
                     )
 

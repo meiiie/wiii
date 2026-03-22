@@ -11,6 +11,7 @@ import { useUIStore } from "@/stores/ui-store";
 import { MAX_MESSAGE_LENGTH } from "@/lib/constants";
 import { getWelcomePlaceholder } from "@/lib/greeting";
 import { DomainSelector } from "./DomainSelector";
+import { ModelSelector } from "./ModelSelector";
 import type { ImageInput } from "@/api/types";
 
 /** Sprint 179: Attached image before upload */
@@ -199,6 +200,7 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
                   <Paperclip size={16} />
                 </button>
                 <DomainSelector compact />
+                <ModelSelector compact />
               </div>
               <div className="flex items-center gap-2">
                 {showCharCount && (
@@ -306,6 +308,7 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
                   <Paperclip size={14} />
                 </button>
                 <DomainSelector />
+                <ModelSelector />
                 <span className="text-[10px] text-text-tertiary">
                   Enter gửi · Shift+Enter xuống dòng
                 </span>

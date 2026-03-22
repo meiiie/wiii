@@ -208,6 +208,8 @@ async def generate_stream_v3_events(
                 )
             return
 
+        _provider = getattr(chat_request, "provider", None)
+
         try:
             execution_input = await (
                 orchestrator.build_multi_agent_execution_input(
@@ -219,6 +221,7 @@ async def generate_stream_v3_events(
                         "thinking_effort",
                         None,
                     ),
+                    provider=_provider,
                 )
             )
         except Exception as ctx_err:
@@ -235,6 +238,7 @@ async def generate_stream_v3_events(
                         "thinking_effort",
                         None,
                     ),
+                    provider=_provider,
                 )
             )
 
@@ -247,6 +251,7 @@ async def generate_stream_v3_events(
             context=execution_input.context,
             domain_id=execution_input.domain_id,
             thinking_effort=execution_input.thinking_effort,
+            provider=execution_input.provider,
         ):
             if event.type == "answer":
                 accumulated_answer.append(event.content)

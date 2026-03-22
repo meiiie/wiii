@@ -15,6 +15,8 @@ import { usePageContextStore } from "@/stores/page-context-store";
 import { useHostContextStore } from "@/stores/host-context-store";
 import { useCodeStudioStore } from "@/stores/code-studio-store";
 import { useUIStore } from "@/stores/ui-store";
+import { useToastStore } from "@/stores/toast-store";
+import { useModelStore } from "@/stores/model-store";
 import { StreamBuffer } from "@/lib/stream-buffer";
 import { trackVisualTelemetry } from "@/lib/visual-telemetry";
 import type { SSEEventHandler } from "@/api/sse";
@@ -406,6 +408,18 @@ export function useSSEStream() {
         const label = data.content || data.step;
         const store = useChatStore.getState();
 
+        // Runtime failover: model_switch notification from backend
+        const statusDetails = (data as unknown as Record<string, unknown>).details as Record<string, unknown> | undefined;
+        if (statusDetails?.subtype === "model_switch") {
+          const from = String(statusDetails.from_provider || "");
+          const to = String(statusDetails.to_provider || "");
+          useToastStore.getState().addToast(
+            "info",
+            `${from} đang bận — Wiii tự động chuyển sang ${to}`,
+            5000,
+          );
+        }
+
         // Sprint 164: Detect parallel dispatch → open subagent group
         if (data.node === "parallel_dispatch") {
           const agentNames = _parseParallelTargets(data.content);
@@ -728,6 +742,9 @@ export function useSSEStream() {
       useUIStore.getState().openCodeStudio();
     }
 
+    // Per-request provider selection
+    const selectedProvider = useModelStore.getState().activeProvider;
+
     const request = {
       user_id: settings.user_id,
       message: content,
@@ -739,6 +756,8 @@ export function useSSEStream() {
       images: images && images.length > 0 ? images : undefined,
       // Sprint 222: Host-aware context (with Sprint 221 backward compat)
       user_context: buildUserContext(),
+      // Per-request provider selection
+      provider: selectedProvider !== "auto" ? (selectedProvider as "google" | "zhipu") : undefined,
     };
 
     // Sprint 194b (H5): Facebook cookie now in secure storage, not settings

@@ -159,7 +159,7 @@ async def _generate_fallback_response(query: str, state: Dict[str, Any]) -> str:
     except Exception as exc:
         logger.warning("[RAG_SUBGRAPH] LLM fallback failed: %s", exc)
 
-    return "Xin lỗi, không tìm thấy tài liệu liên quan."
+    return "Xin lỗi, mình chưa tìm thấy tài liệu liên quan nha~ (˶˃ ᵕ ˂˶)"
 
 
 def build_rag_subgraph() -> StateGraph:

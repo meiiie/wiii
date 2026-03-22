@@ -51,11 +51,15 @@ class LLMPool:
     All components share these instances via BaseChatModel interface.
 
     Failover chain (configurable via settings.llm_failover_chain):
-        Google Gemini → OpenAI/OpenRouter → Ollama (local)
+        Google Gemini → Zhipu GLM-5 → OpenAI/OpenRouter → Ollama (local)
+
+    Runtime failover: When primary provider hits rate limits (429),
+    get_fallback(tier) returns a pre-created fallback instance from
+    the next available provider. No 60s SDK retry wait.
 
     Memory Impact:
     - Before: 15+ LLM instances = ~600MB
-    - After: 3 LLM instances = ~120MB
+    - After: 3+3 LLM instances = ~240MB (primary + fallback)
 
     Usage:
         from app.engine.llm_pool import LLMPool, get_llm_moderate
@@ -65,11 +69,16 @@ class LLMPool:
 
         # Get shared instance in components
         llm = get_llm_moderate()
+
+        # Runtime failover (in graph nodes)
+        fallback = LLMPool.get_fallback("moderate")
     """
 
     _pool: Dict[str, BaseChatModel] = {}
+    _fallback_pool: Dict[str, BaseChatModel] = {}
     _initialized: bool = False
     _active_provider: Optional[str] = None
+    _fallback_provider: Optional[str] = None
     _providers: Dict[str, "LLMProvider"] = {}
 
     @classmethod
@@ -142,11 +151,16 @@ class LLMPool:
         for tier in [ThinkingTier.DEEP, ThinkingTier.MODERATE, ThinkingTier.LIGHT]:
             cls._create_instance(tier)
 
+        # Pre-create fallback instances for runtime failover
+        cls._create_fallback_instances()
+
         cls._initialized = True
+        fallback_info = f", fallback={cls._fallback_provider}" if cls._fallback_provider else ""
         logger.info(
-            "[LLM_POOL] Initialized with 3 shared instances "
-            "(DEEP, MODERATE, LIGHT) -- provider=%s",
-            cls._active_provider,
+            "[LLM_POOL] Initialized with %d primary + %d fallback instances "
+            "(DEEP, MODERATE, LIGHT) -- provider=%s%s",
+            len(cls._pool), len(cls._fallback_pool),
+            cls._active_provider, fallback_info,
         )
 
     @classmethod
@@ -221,6 +235,87 @@ class LLMPool:
 
         # --- Legacy single-provider path (failover disabled) ---
         return cls._create_instance_legacy(tier_key, thinking_budget, include_thoughts)
+
+    @classmethod
+    def _create_fallback_instances(cls) -> None:
+        """
+        Pre-create fallback LLM instances from the next available provider.
+
+        Called during initialization. Creates 3 fallback instances (DEEP,
+        MODERATE, LIGHT) from the first provider after the active one.
+        These are used for runtime failover when the primary hits 429.
+        """
+        if not settings.enable_llm_failover or not cls._providers:
+            return
+
+        chain = cls._get_provider_chain()
+
+        for name in chain:
+            if name == cls._active_provider:
+                continue
+            provider = cls._providers.get(name)
+            if provider is None or not provider.is_available():
+                continue
+
+            created = 0
+            for tier in [ThinkingTier.DEEP, ThinkingTier.MODERATE, ThinkingTier.LIGHT]:
+                tier_key = tier.value
+                thinking_budget = THINKING_BUDGETS.get(tier_key, 1024)
+                include_thoughts = thinking_budget > 0
+                try:
+                    llm = provider.create_instance(
+                        tier=tier_key,
+                        thinking_budget=thinking_budget,
+                        include_thoughts=include_thoughts,
+                        temperature=0.5,
+                    )
+                    cls._attach_tracking_callback(llm, f"fallback_{tier_key}")
+                    cls._fallback_pool[tier_key] = llm
+                    created += 1
+                except Exception as e:
+                    logger.warning(
+                        "[LLM_POOL] Fallback %s/%s failed: %s", name, tier_key, e,
+                    )
+
+            if created > 0:
+                cls._fallback_provider = name
+                logger.info(
+                    "[LLM_POOL] Pre-created %d fallback instances via %s",
+                    created, name,
+                )
+                return  # Only need one fallback provider
+
+    @classmethod
+    def get_fallback(cls, tier=None) -> Optional[BaseChatModel]:
+        """
+        Get pre-created fallback LLM for runtime failover.
+
+        Use when primary provider returns 429/rate-limit errors.
+        Returns None if no fallback is available.
+
+        Args:
+            tier: ThinkingTier enum or string (default: MODERATE)
+
+        Usage in graph nodes:
+            try:
+                result = await llm.ainvoke(messages)
+            except Exception as e:
+                if is_rate_limit_error(e):
+                    fallback = LLMPool.get_fallback("moderate")
+                    if fallback:
+                        result = await fallback.ainvoke(messages)
+        """
+        if not cls._fallback_pool:
+            return None
+
+        if tier is None:
+            tier = ThinkingTier.MODERATE
+
+        tier_key = cls._resolve_tier(tier)
+        if tier_key in [ThinkingTier.MINIMAL.value, ThinkingTier.OFF.value]:
+            tier_key = ThinkingTier.LIGHT.value
+
+        return cls._fallback_pool.get(tier_key)
 
     @classmethod
     def _create_instance_legacy(
@@ -304,6 +399,13 @@ class LLMPool:
             logger.debug("[LLM_POOL] Token tracking callback not attached: %s", e)
 
     @classmethod
+    def get_provider_info(cls, name: str):
+        """Public API: get a registered provider by name."""
+        if not cls._providers:
+            cls._init_providers()
+        return cls._providers.get(name)
+
+    @classmethod
     def get(cls, tier=None) -> BaseChatModel:
         """
         Get a shared LLM instance for the specified tier.
@@ -354,8 +456,10 @@ class LLMPool:
         stats = {
             "initialized": cls._initialized,
             "instance_count": len(cls._pool),
+            "fallback_count": len(cls._fallback_pool),
             "tiers": list(cls._pool.keys()),
             "active_provider": cls._active_provider,
+            "fallback_provider": cls._fallback_provider,
             "failover_enabled": settings.enable_llm_failover,
             "provider_chain": cls._get_provider_chain(),
             "providers_registered": list(cls._providers.keys()),
@@ -476,9 +580,11 @@ class LLMPool:
         Clears all instances, providers, and resets initialization flag.
         """
         cls._pool.clear()
+        cls._fallback_pool.clear()
         cls._providers.clear()
         cls._initialized = False
         cls._active_provider = None
+        cls._fallback_provider = None
 
 
 # ============================================================================
@@ -562,6 +668,82 @@ def get_llm_for_effort(effort: Optional[str], default_tier: ThinkingTier = Think
     }
     tier = effort_to_tier.get(effort, default_tier)
     return LLMPool.get(tier)
+
+
+def get_llm_for_provider(
+    provider: Optional[str],
+    effort: Optional[str] = None,
+    default_tier: ThinkingTier = ThinkingTier.MODERATE,
+) -> BaseChatModel:
+    """
+    Get LLM instance routed to a specific provider.
+
+    Used for per-request provider selection (model switcher UI).
+    Reuses existing pool/fallback instances — no new LLM creation.
+
+    Args:
+        provider: "auto" | "google" | "zhipu" | None (= auto)
+        effort: Per-request thinking effort override.
+        default_tier: Fallback tier when effort is None.
+    """
+    # Resolve tier from effort
+    if effort:
+        effort_to_tier = {
+            "low": ThinkingTier.LIGHT,
+            "medium": ThinkingTier.MODERATE,
+            "high": ThinkingTier.DEEP,
+            "max": ThinkingTier.DEEP,
+        }
+        tier = effort_to_tier.get(effort, default_tier)
+    else:
+        tier = default_tier
+
+    if not provider or provider == "auto":
+        return LLMPool.get(tier)
+
+    # Requested provider is the active primary → use primary pool
+    if provider == LLMPool._active_provider:
+        return LLMPool.get(tier)
+
+    # Requested provider is the fallback → use fallback pool
+    if provider == LLMPool._fallback_provider:
+        tier_key = LLMPool._resolve_tier(tier)
+        fallback = LLMPool.get_fallback(tier_key)
+        if fallback:
+            return fallback
+
+    # Unknown provider or unavailable — graceful fallback to primary
+    return LLMPool.get(tier)
+
+
+def get_llm_fallback(tier: Optional[str] = "moderate") -> Optional[BaseChatModel]:
+    """
+    Get pre-created fallback LLM for runtime failover.
+
+    Returns None if no fallback is configured. Use in graph nodes:
+
+        try:
+            result = await llm.ainvoke(messages)
+        except Exception as e:
+            if is_rate_limit_error(e):
+                fb = get_llm_fallback("moderate")
+                if fb:
+                    result = await fb.ainvoke(messages)
+    """
+    return LLMPool.get_fallback(tier)
+
+
+def is_rate_limit_error(error: Exception) -> bool:
+    """Check if an exception is a rate-limit (429) error from any provider."""
+    err_str = str(error).lower()
+    return any(marker in err_str for marker in [
+        "429",
+        "resource_exhausted",
+        "rate_limit",
+        "rate limit",
+        "quota",
+        "too many requests",
+    ])
 
 
 # Re-export get_thinking_budget from llm_factory for convenience

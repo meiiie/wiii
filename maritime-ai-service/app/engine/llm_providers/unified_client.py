@@ -197,6 +197,31 @@ class UnifiedLLMClient:
                 thinking_param="think",
             )
 
+        elif name == "zhipu":
+            zhipu_key = getattr(settings, "zhipu_api_key", None)
+            if not zhipu_key:
+                logger.debug("Skipping zhipu unified client: no API key")
+                return None
+            base_url = getattr(
+                settings, "zhipu_base_url",
+                "https://open.bigmodel.cn/api/paas/v4",
+            )
+            model = getattr(settings, "zhipu_model", "glm-5")
+            model_adv = getattr(settings, "zhipu_model_advanced", "glm-5")
+            return ProviderConfig(
+                name="zhipu",
+                api_key=zhipu_key,
+                base_url=base_url,
+                default_model=model,
+                models={
+                    "deep": model_adv,
+                    "moderate": model,
+                    "light": model,
+                },
+                supports_thinking=False,
+                thinking_param="",
+            )
+
         else:
             logger.debug("Unknown provider for unified client: %s", name)
             return None

@@ -156,6 +156,64 @@ class LMSPushService:
         return False
 
 
+    # ── Course Generation (Design spec v2.0, 2026-03-22) ──
+
+    def push_course_shell(
+        self,
+        teacher_id: str,
+        category_id: str,
+        title: str,
+        description: str = "",
+        delivery_mode: str = "SELF_PACED",
+        price_type: str = "FREE",
+    ) -> Optional[dict]:
+        """Create an empty course shell in LMS. Returns { courseId } on success.
+
+        Called once when teacher approves outline — before chapter expansion.
+        """
+        data = {
+            "teacherId": teacher_id,
+            "categoryId": category_id,
+            "title": title,
+            "description": description,
+            "deliveryMode": delivery_mode,
+            "priceType": price_type,
+        }
+        result = self._post(f"{self._api_prefix}/courses/generate", data)
+        if result is not None:
+            course_id = result.get("data", {}).get("courseId") if isinstance(result.get("data"), dict) else None
+            logger.info("Created course shell: courseId=%s", course_id)
+            return result.get("data", result)
+        return None
+
+    def push_chapter_content(
+        self,
+        course_id: str,
+        chapter: dict,
+    ) -> Optional[dict]:
+        """Push one chapter with lessons + sections to LMS.
+
+        Per-chapter transaction on LMS side — if this fails,
+        other chapters are unaffected.
+
+        Args:
+            course_id: UUID of the course (from push_course_shell).
+            chapter: Full chapter content dict with nested lessons and sections.
+        """
+        result = self._post(
+            f"{self._api_prefix}/courses/generate/{course_id}/chapters",
+            chapter,
+        )
+        if result is not None:
+            logger.info(
+                "Pushed chapter '%s' to course %s",
+                chapter.get("title", "untitled"),
+                course_id,
+            )
+            return result.get("data", result)
+        return None
+
+
 def get_push_service(connector_id: str = "maritime-lms") -> Optional[LMSPushService]:
     """Get a push service instance for the given connector."""
     from app.integrations.lms.registry import get_lms_connector_registry

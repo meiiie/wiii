@@ -276,6 +276,13 @@ class ChatRequest(BaseModel):
                     "low=fast/cheap, medium=balanced (default), high=thorough, max=deepest reasoning."
     )
 
+    # v9.0: Per-Request Provider Selection
+    provider: Optional[Literal["auto", "google", "zhipu", "ollama"]] = Field(
+        default=None,
+        description="Provider for this request. 'auto'=system failover (default), "
+                    "'google'=Gemini, 'zhipu'=GLM-5, 'ollama'=local."
+    )
+
     # v6.0: Preview Configuration (Sprint 166)
     show_previews: Optional[bool] = Field(default=None, description="Enable preview cards in streaming")
     preview_types: Optional[list[str]] = Field(default=None, description="Allowed preview types (document, product, web, link, code)")

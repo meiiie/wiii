@@ -300,8 +300,8 @@ async def aggregator_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     if decision.action == "escalate":
         state["final_response"] = (
-            "Xin lỗi, tôi không thể xử lý yêu cầu này lúc này. "
-            "Vui lòng thử lại sau."
+            "Xin lỗi, mình chưa xử lý được lúc này. "
+            "Bạn thử lại giúp mình nhé~ ≽^•⩊•^≼"
         )
         state["agent_outputs"] = {"aggregator": state["final_response"]}
 

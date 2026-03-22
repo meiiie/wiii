@@ -7,6 +7,7 @@ SUPPORTED_PROVIDER_NAMES: tuple[str, ...] = (
     "openai",
     "openrouter",
     "ollama",
+    "zhipu",
 )
 SUPPORTED_PROVIDER_NAME_SET = frozenset(SUPPORTED_PROVIDER_NAMES)
 
@@ -29,12 +30,14 @@ def get_provider_class(name: str):
         )
 
     from app.engine.llm_providers import GeminiProvider, OllamaProvider, OpenAIProvider
+    from app.engine.llm_providers.zhipu_provider import ZhipuProvider
 
     provider_map = {
         "google": GeminiProvider,
         "openai": OpenAIProvider,
         "openrouter": OpenAIProvider,
         "ollama": OllamaProvider,
+        "zhipu": ZhipuProvider,
     }
     return provider_map[name]
 

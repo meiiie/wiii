@@ -149,7 +149,7 @@ def _run_python_subprocess(code: str) -> SandboxExecutionResult:
         logger.error("[CODE_EXEC] Error: %s", exc)
         return SandboxExecutionResult(
             success=False,
-            error=f"Loi chay code: {exc}",
+            error=f"Lỗi chạy code: {exc}",
         )
     finally:
         if temp_path:

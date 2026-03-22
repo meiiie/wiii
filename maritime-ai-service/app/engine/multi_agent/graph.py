@@ -204,6 +204,7 @@ async def _render_reasoning(
         mood_hint=ctx.get("mood_hint"),
         observations=[item for item in (observations or []) if item],
         style_tags=style_tags or [],
+        provider=state.get("provider"),
     )
     return await get_reasoning_narrator().render(request)
 
@@ -314,7 +315,11 @@ async def memory_node(state: AgentState) -> AgentState:
         from app.engine.multi_agent.agent_config import AgentConfigRegistry
         try:
             thinking_effort = state.get("thinking_effort")
-            llm = AgentConfigRegistry.get_llm("memory", effort_override=thinking_effort)
+            llm = AgentConfigRegistry.get_llm(
+                "memory",
+                effort_override=thinking_effort,
+                provider_override=state.get("provider"),
+            )
         except Exception as e:
             logger.warning("[MEMORY_NODE] Failed to get LLM: %s", e)
             llm = None
@@ -1960,10 +1965,37 @@ def _tool_name(tool: object) -> str:
     return str(getattr(tool, "name", "") or getattr(tool, "__name__", "") or "").strip()
 
 
-def _bind_direct_tools(llm, tools: list, force: bool):
+def _resolve_tool_choice(
+    force: bool, tools: list, provider: str | None = None,
+) -> str | None:
+    """Translate force_tool intent → provider-specific tool_choice value.
+
+    Single tool → exact name (works on all providers).
+    Multiple tools → provider-aware "force any":
+      - google/zhipu: "any"  (Gemini mode=ANY)
+      - openai:       "required"
+      - ollama:       "any"  (best-effort)
+    """
+    if not force:
+        return None
+    if len(tools) == 1:
+        name = _tool_name(tools[0])
+        if name:
+            return name
+    if not provider:
+        from app.engine.llm_pool import LLMPool
+        provider = LLMPool.get_active_provider() or "google"
+    if provider == "openai":
+        return "required"
+    return "any"
+
+
+def _bind_direct_tools(llm, tools: list, force: bool, provider: str | None = None):
     """Bind tools to LLM with optional forced calling.
 
     Sprint 154: Extracted from direct_response_node.
+    Provider-aware: translates force intent to correct tool_choice
+    for Gemini ("any"), OpenAI ("required"), etc.
 
     Returns:
         tuple: (llm_with_tools, llm_auto)
@@ -1972,12 +2004,8 @@ def _bind_direct_tools(llm, tools: list, force: bool):
     """
     if tools:
         llm_auto = llm.bind_tools(tools)
-        if force:
-            forced_choice = "any"
-            if len(tools) == 1:
-                exact_name = _tool_name(tools[0])
-                if exact_name:
-                    forced_choice = exact_name
+        forced_choice = _resolve_tool_choice(force, tools, provider)
+        if forced_choice:
             llm_with_tools = llm.bind_tools(tools, tool_choice=forced_choice)
         else:
             llm_with_tools = llm_auto
@@ -2105,6 +2133,59 @@ def _build_direct_system_messages(
     return messages
 
 
+async def _ainvoke_with_fallback(
+    llm, messages, tools=None, tool_choice=None, tier="moderate",
+    push_event=None,
+):
+    """Invoke LLM with automatic runtime fallback on rate-limit errors.
+
+    When primary provider returns 429/RESOURCE_EXHAUSTED, immediately
+    retries with the pre-created fallback LLM from LLMPool instead of
+    waiting for the SDK's exponential backoff (60+ seconds).
+
+    Emits a ``model_switch`` SSE event so the frontend can notify
+    the user which model is serving their request — transparent,
+    not silent (Claude/ChatGPT pattern).
+    """
+    try:
+        return await llm.ainvoke(messages)
+    except Exception as exc:
+        from app.engine.llm_pool import LLMPool, is_rate_limit_error
+        if not is_rate_limit_error(exc):
+            raise
+
+        fallback_llm = LLMPool.get_fallback(tier)
+        if fallback_llm is None:
+            raise
+
+        primary = LLMPool.get_active_provider() or "google"
+        fallback = LLMPool._fallback_provider or "zhipu"
+
+        logger.warning(
+            "[RUNTIME_FAILOVER] %s rate-limited (%s), switching to %s",
+            primary, type(exc).__name__, fallback,
+        )
+
+        # Emit SSE event so frontend can show user a notification
+        if push_event:
+            await push_event({
+                "type": "model_switch",
+                "from_provider": primary,
+                "to_provider": fallback,
+                "reason": "rate_limit",
+            })
+
+        # Re-bind tools on fallback LLM — translate tool_choice for new provider
+        if tools:
+            if tool_choice:
+                translated = _resolve_tool_choice(True, tools, provider=fallback)
+                fallback_llm = fallback_llm.bind_tools(tools, tool_choice=translated or tool_choice)
+            else:
+                fallback_llm = fallback_llm.bind_tools(tools)
+
+        return await fallback_llm.ainvoke(messages)
+
+
 async def _execute_direct_tool_rounds(
     llm_with_tools, llm_auto, messages: list, tools: list, push_event,
     runtime_context_base=None,
@@ -2148,7 +2229,7 @@ async def _execute_direct_tool_rounds(
         "node": "direct",
     })
 
-    llm_response = await llm_with_tools.ainvoke(messages)
+    llm_response = await _ainvoke_with_fallback(llm_with_tools, messages, tools=tools, push_event=push_event)
     _tc = getattr(llm_response, 'tool_calls', [])
     logger.warning("[DIRECT] LLM response: tool_calls=%d, content_len=%d",
                    len(_tc) if _tc else 0, len(str(llm_response.content)))
@@ -2276,7 +2357,7 @@ async def _execute_direct_tool_rounds(
             "content": "",
             "node": "direct",
         })
-        llm_response = await llm_auto.ainvoke(messages)
+        llm_response = await _ainvoke_with_fallback(llm_auto, messages, tools=tools, push_event=push_event)
         if tools and hasattr(llm_response, 'tool_calls') and llm_response.tool_calls:
             _transition = await _render_reasoning(
                 state=state,
@@ -3618,7 +3699,7 @@ async def _execute_code_studio_tool_rounds(
 
         except Exception as _stream_err:
             logger.warning("[CODE_STUDIO] astream failed, falling back to ainvoke: %s", _stream_err)
-            llm_response = await llm_with_tools.ainvoke(messages)
+            llm_response = await _ainvoke_with_fallback(llm_with_tools, messages, tools=tools, push_event=push_event)
             _code_open_emitted = False
 
         if llm_response is None:
@@ -3651,7 +3732,7 @@ async def _execute_code_studio_tool_rounds(
         _LLM_HARD_TIMEOUT = 240  # 4 minutes max for ainvoke
 
         async def _llm_call():
-            return await llm_with_tools.ainvoke(messages)
+            return await _ainvoke_with_fallback(llm_with_tools, messages, tools=tools, push_event=push_event)
 
         _llm_task = asyncio.create_task(_llm_call())
         _progress_idx = 0
@@ -3904,7 +3985,7 @@ async def _execute_code_studio_tool_rounds(
                 content=_build_code_studio_terminal_failure_response(query, tool_call_events)
             )
             break
-        llm_response = await llm_auto.ainvoke(messages)
+        llm_response = await _ainvoke_with_fallback(llm_auto, messages, tools=tools, push_event=push_event)
         if tools and hasattr(llm_response, "tool_calls") and llm_response.tool_calls:
             _transition = await _render_reasoning(
                 state=state,
@@ -4276,7 +4357,11 @@ async def direct_response_node(state: AgentState) -> AgentState:
                 thinking_effort = "high"
                 logger.info("[DIRECT] Visual intent detected → upgrade to high effort")
 
-            llm = AgentConfigRegistry.get_llm("direct", effort_override=thinking_effort)
+            llm = AgentConfigRegistry.get_llm(
+                "direct",
+                effort_override=thinking_effort,
+                provider_override=state.get("provider"),
+            )
 
             # Sprint 203: Diversity params for response variation
             if llm and getattr(settings, "enable_natural_conversation", False) is True:
@@ -4333,7 +4418,7 @@ async def direct_response_node(state: AgentState) -> AgentState:
                         logger.warning("[DIRECT] Visual intent detected but tool_generate_visual not in tools list")
 
                 # Phase 2: Bind tools to LLM
-                llm_with_tools, llm_auto = _bind_direct_tools(llm, tools, force_tools)
+                llm_with_tools, llm_auto = _bind_direct_tools(llm, tools, force_tools, provider=state.get("provider"))
                 if force_tools:
                     logger.info("[DIRECT] Forced tool_choice (web=%s, dt=%s, visual=%s)",
                                 _needs_web_search(query), _needs_datetime(query), _vd.force_tool)
@@ -4494,6 +4579,7 @@ async def code_studio_node(state: AgentState) -> AgentState:
                 llm = AgentConfigRegistry.get_llm(
                     "code_studio_agent",
                     effort_override=state.get("thinking_effort"),
+                    provider_override=state.get("provider"),
                 )
             else:
                 response = _build_ambiguous_simulation_clarifier(state)
@@ -4509,7 +4595,11 @@ async def code_studio_node(state: AgentState) -> AgentState:
                 llm = None
         else:
             thinking_effort = state.get("thinking_effort")
-            llm = AgentConfigRegistry.get_llm("code_studio_agent", effort_override=thinking_effort)
+            llm = AgentConfigRegistry.get_llm(
+                "code_studio_agent",
+                effort_override=thinking_effort,
+                provider_override=state.get("provider"),
+            )
 
         if llm and getattr(settings, "enable_natural_conversation", False) is True:
             _pp = getattr(settings, "llm_presence_penalty", 0.0)
@@ -4545,7 +4635,7 @@ async def code_studio_node(state: AgentState) -> AgentState:
             except Exception as _selection_err:
                 logger.debug("[CODE_STUDIO] Runtime tool selection skipped: %s", _selection_err)
 
-            llm_with_tools, llm_auto = _bind_direct_tools(llm, tools, force_tools)
+            llm_with_tools, llm_auto = _bind_direct_tools(llm, tools, force_tools, provider=state.get("provider"))
             messages = _build_direct_system_messages(
                 state,
                 effective_query,
@@ -5065,7 +5155,10 @@ async def guardian_node(state: AgentState) -> AgentState:
     try:
         guardian = _get_guardian()
         domain_id = state.get("domain_id")
-        decision = await guardian.validate_message(query, context="education", domain_id=domain_id)
+        decision = await guardian.validate_message(
+            query, context="education", domain_id=domain_id,
+            provider=state.get("provider"),
+        )
 
         if decision.action == "BLOCK":
             logger.warning("[GUARDIAN] Blocked: %s", decision.reason)
@@ -5735,7 +5828,8 @@ async def process_with_multi_agent(
     session_id: str = "",
     context: dict = None,
     domain_id: Optional[str] = None,
-    thinking_effort: Optional[str] = None
+    thinking_effort: Optional[str] = None,
+    provider: Optional[str] = None,
 ) -> dict:
     """
     High-level function to process query with multi-agent system.
@@ -5747,6 +5841,7 @@ async def process_with_multi_agent(
         context: Additional context
         domain_id: Domain plugin ID for domain-aware processing
         thinking_effort: Per-request thinking effort (low/medium/high/max)
+        provider: Per-request provider selection (auto/google/zhipu)
 
     Returns:
         Dict with final_response, sources, trace info, etc.
@@ -5797,6 +5892,7 @@ async def process_with_multi_agent(
         "domain_id": domain_id,
         "domain_config": domain_config,
         "thinking_effort": thinking_effort,
+        "provider": provider,
         "routing_metadata": None,  # Sprint 103: Initialize for API exposure
         "organization_id": (context or {}).get("organization_id"),  # Sprint 160
         **_build_turn_local_state_defaults(context),

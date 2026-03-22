@@ -380,7 +380,7 @@ class SupervisorAgent:
         logger.info("SupervisorAgent initialized")
 
     def _init_llm(self):
-        """Initialize LLM from shared pool for routing decisions."""
+        """Initialize default LLM from shared pool for routing decisions."""
         try:
             # Sprint 69: Use AgentConfigRegistry for per-node LLM config
             self._llm = AgentConfigRegistry.get_llm("supervisor")
@@ -388,6 +388,27 @@ class SupervisorAgent:
         except Exception as e:
             logger.error("Failed to initialize Supervisor LLM: %s", e)
             self._llm = None
+
+    def _get_llm_for_state(self, state: AgentState):
+        """Get LLM respecting per-request provider override.
+
+        When user explicitly selects a provider (e.g. "zhipu"), ALL nodes
+        including supervisor should use it — avoids 429 cascading when
+        primary is rate-limited. Falls back to fresh AgentConfigRegistry
+        lookup (not cached self._llm which may be stale/dead).
+        """
+        provider = state.get("provider") if state else None
+        if provider and provider != "auto":
+            try:
+                return AgentConfigRegistry.get_llm(
+                    "supervisor", provider_override=provider,
+                )
+            except Exception:
+                pass
+        try:
+            return AgentConfigRegistry.get_llm("supervisor")
+        except Exception:
+            return self._llm
 
     async def route(self, state: AgentState) -> str:
         """
@@ -417,7 +438,10 @@ class SupervisorAgent:
                 }
                 return agent
 
-        if not self._llm:
+        # Per-request provider-aware LLM resolution
+        llm = self._get_llm_for_state(state)
+
+        if not llm:
             result = self._rule_based_route(query, domain_config)
             state["routing_metadata"] = {
                 "intent": "unknown",
@@ -434,7 +458,7 @@ class SupervisorAgent:
 
         try:
             # Sprint 103: Always use structured routing (no feature flag check)
-            return await self._route_structured(query, context, domain_name, rag_desc, tutor_desc, domain_config, state)
+            return await self._route_structured(query, context, domain_name, rag_desc, tutor_desc, domain_config, state, llm=llm)
 
         except Exception as e:
             logger.warning("LLM routing failed: %s", e)
@@ -450,11 +474,12 @@ class SupervisorAgent:
     @retry_on_transient()
     async def _route_structured(self, query: str, context: dict, domain_name: str,
                                  rag_desc: str, tutor_desc: str, domain_config: dict,
-                                 state: AgentState) -> str:
+                                 state: AgentState, *, llm=None) -> str:
         """Route using structured output with CoT and confidence gate (Sprint 71)."""
         from app.engine.structured_schemas import RoutingDecision
 
-        structured_llm = self._llm.with_structured_output(RoutingDecision)
+        _llm = llm or self._llm
+        structured_llm = _llm.with_structured_output(RoutingDecision)
 
         # Sprint 77+78: Give supervisor last 3 exchanges + running summary for routing
         lc_messages = (context or {}).get("langchain_messages", [])
@@ -500,7 +525,18 @@ class SupervisorAgent:
             ))
         ]
 
-        result = await structured_llm.ainvoke(messages)
+        try:
+            result = await structured_llm.ainvoke(messages)
+        except Exception as _route_exc:
+            from app.engine.llm_pool import LLMPool, is_rate_limit_error
+            if not is_rate_limit_error(_route_exc):
+                raise
+            _fb = LLMPool.get_fallback("light")
+            if _fb is None:
+                raise
+            logger.warning("[SUPERVISOR] Rate-limited, using fallback for routing")
+            _fb_structured = _fb.with_structured_output(RoutingDecision)
+            result = await _fb_structured.ainvoke(messages)
 
         agent_map = {
             "RAG_AGENT": AgentType.RAG.value,
@@ -764,10 +800,11 @@ class SupervisorAgent:
 
         # If no outputs, return error
         if not outputs:
-            return "Xin lỗi, tôi không thể xử lý yêu cầu này."
+            return "Xin lỗi, mình chưa xử lý được yêu cầu này nha~ (˶˃ ᵕ ˂˶)"
 
         # Synthesize multiple outputs
-        if not self._llm:
+        llm = self._get_llm_for_state(state)
+        if not llm:
             # Simple concatenation
             return "\n\n".join(outputs.values())
 
@@ -804,7 +841,17 @@ class SupervisorAgent:
                 ) + _host_suffix + _living_suffix + _widget_suffix)
             ]
 
-            response = await self._llm.ainvoke(messages)
+            try:
+                response = await llm.ainvoke(messages)
+            except Exception as _synth_exc:
+                from app.engine.llm_pool import LLMPool, is_rate_limit_error
+                if not is_rate_limit_error(_synth_exc):
+                    raise
+                _fb = LLMPool.get_fallback("moderate")
+                if _fb is None:
+                    raise
+                logger.warning("[SUPERVISOR] Rate-limited, using fallback for synthesis")
+                response = await _fb.ainvoke(messages)
 
             # SOTA FIX: Handle Gemini 2.5 Flash content block format
             from app.services.output_processor import extract_thinking_from_response

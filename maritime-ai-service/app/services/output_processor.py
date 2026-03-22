@@ -267,7 +267,7 @@ class OutputProcessor:
         class AgentType(str, Enum):
             CHAT = "chat"
         
-        message = refusal_message or "Xin lỗi, tôi không thể xử lý yêu cầu này."
+        message = refusal_message or "Xin lỗi, mình chưa xử lý được yêu cầu này nha~ (˶˃ ᵕ ˂˶)"
         if self._guardrails:
             message = self._guardrails.get_refusal_message()
         

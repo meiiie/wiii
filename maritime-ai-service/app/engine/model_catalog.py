@@ -151,6 +151,22 @@ OPENROUTER_CHAT_MODELS: dict[str, ChatModelMetadata] = {
     ),
 }
 
+ZHIPU_CHAT_MODELS: dict[str, ChatModelMetadata] = {
+    "glm-5": ChatModelMetadata(
+        provider="zhipu",
+        model_name="glm-5",
+        display_name="GLM-5 (Zhipu AI)",
+        status="current",
+        released_on="2026-03",
+    ),
+    "glm-4.7": ChatModelMetadata(
+        provider="zhipu",
+        model_name="glm-4.7",
+        display_name="GLM-4.7 (Zhipu AI)",
+        status="legacy",
+    ),
+}
+
 OLLAMA_KNOWN_MODELS: dict[str, ChatModelMetadata] = {
     "qwen3:4b-instruct-2507-q4_K_M": ChatModelMetadata(
         provider="ollama",
@@ -177,6 +193,7 @@ def get_all_static_chat_models() -> dict[str, dict[str, ChatModelMetadata]]:
         "google": dict(GOOGLE_CHAT_MODELS),
         "openrouter": dict(OPENROUTER_CHAT_MODELS),
         "ollama": dict(OLLAMA_KNOWN_MODELS),
+        "zhipu": dict(ZHIPU_CHAT_MODELS),
     }
 
 

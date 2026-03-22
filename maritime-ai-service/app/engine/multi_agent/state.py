@@ -80,6 +80,9 @@ class AgentState(TypedDict, total=False):
     # Maps to provider params: Claude effort, OpenAI reasoning_effort, Gemini thinking_level
     thinking_effort: Optional[str]  # "low" | "medium" | "high" | "max"
 
+    # Per-Request Provider Selection: user-chosen LLM provider for this turn
+    provider: Optional[str]  # "auto" | "google" | "zhipu" | None (= auto)
+
     # Sprint 69: Event bus ID for intra-node real-time streaming
     # String key into module-level _EVENT_QUEUES dict (avoids serialization issues)
     _event_bus_id: Optional[str]
