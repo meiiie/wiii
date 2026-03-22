@@ -2180,28 +2180,37 @@ async def _ainvoke_with_fallback(
 
         return _prepare_fallback(fallback_llm, fallback_name)
 
-    # ── Fast path: circuit breaker open → skip primary entirely ──
+    # ── Layer 1: Circuit breaker fast-path ──
     cb = LLMPool.get_circuit_breaker()
     if cb is not None and not cb.is_available():
         fb = await _do_failover("circuit_breaker_open")
         if fb is not None:
             return await fb.ainvoke(messages)
 
-    # ── Normal path: try primary, failover on 429 ──
+    # ── Layer 2+3: Primary with timeout → catch-and-switch ──
+    import asyncio
+    from app.engine.llm_pool import _PRIMARY_TIMEOUT
+
     try:
-        result = await llm.ainvoke(messages)
+        result = await asyncio.wait_for(llm.ainvoke(messages), timeout=_PRIMARY_TIMEOUT)
         if cb is not None:
             await LLMPool.record_success()
         return result
-    except Exception as exc:
-        if not is_rate_limit_error(exc):
+    except (asyncio.TimeoutError, Exception) as exc:
+        is_timeout = isinstance(exc, asyncio.TimeoutError)
+        if not is_timeout and not is_rate_limit_error(exc):
             raise
 
         if cb is not None:
             await LLMPool.record_failure()
 
-        fb = await _do_failover(exc)
+        reason = f"timeout_{_PRIMARY_TIMEOUT}s" if is_timeout else exc
+        fb = await _do_failover(reason)
         if fb is None:
+            if is_timeout:
+                raise TimeoutError(
+                    f"Primary LLM timed out after {_PRIMARY_TIMEOUT}s, no fallback"
+                )
             raise
 
         return await fb.ainvoke(messages)

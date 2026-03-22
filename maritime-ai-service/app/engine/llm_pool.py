@@ -746,20 +746,28 @@ def is_rate_limit_error(error: Exception) -> bool:
     ])
 
 
+_PRIMARY_TIMEOUT: float = 12.0  # seconds — caps SDK internal retry loop
+
+
 async def ainvoke_with_failover(
     llm,
     messages,
     *,
     tier: str = "moderate",
     on_fallback: Optional[callable] = None,
+    primary_timeout: Optional[float] = None,
 ):
     """Invoke LLM with automatic runtime failover on rate-limit errors.
 
-    Two-layer defense:
+    Three-layer defense (Google SRE / Netflix Hystrix pattern):
+
     1. **Circuit breaker fast-path** — if primary is already known to be
        down (CB open after 3 failures), skip directly to fallback (0ms).
-    2. **Catch-and-switch** — if primary raises 429, record failure
-       (updating CB for future requests) then retry on fallback.
+    2. **Primary timeout** — caps SDK internal retry loop to
+       ``primary_timeout`` seconds (default 12s).  Prevents the 31s+
+       worst-case from Gemini SDK exponential backoff (1+2+4+8+16s).
+    3. **Catch-and-switch** — if primary raises 429 or times out, record
+       failure (updating CB for future requests) then retry on fallback.
 
     Args:
         llm: Primary LLM (may be wrapped, e.g. via with_structured_output).
@@ -769,6 +777,8 @@ async def ainvoke_with_failover(
                      before retry.  Receives BaseChatModel, returns a
                      ready-to-invoke LLM.
                      Example: ``lambda fb: fb.with_structured_output(MySchema)``
+        primary_timeout: Max seconds to wait for primary before failover.
+                         None = use module default (12s).  Set 0 to disable.
 
     Returns:
         LLM response (same type as ``llm.ainvoke``).
@@ -777,6 +787,9 @@ async def ainvoke_with_failover(
         Original exception when the error is not rate-limit related
         or no fallback provider is available.
     """
+    import asyncio
+
+    timeout = primary_timeout if primary_timeout is not None else _PRIMARY_TIMEOUT
 
     def _prepare_fallback(tier_key):
         fallback_llm = LLMPool.get_fallback(tier_key)
@@ -786,41 +799,50 @@ async def ainvoke_with_failover(
             fallback_llm = on_fallback(fallback_llm)
         return fallback_llm
 
-    # ── Fast path: circuit breaker open → skip primary entirely ──
+    def _failover_log(reason: str):
+        primary = LLMPool.get_active_provider() or "unknown"
+        fallback_name = LLMPool._fallback_provider or "unknown"
+        logger.warning(
+            "[LLM_FAILOVER] %s → %s (%s, tier=%s)",
+            primary, fallback_name, reason, tier,
+        )
+
+    # ── Layer 1: Circuit breaker fast-path ──
     cb = LLMPool.get_circuit_breaker()
     if cb is not None and not cb.is_available():
         fb = _prepare_fallback(tier)
         if fb is not None:
-            logger.info(
-                "[LLM_FAILOVER] CB open — direct fallback (tier=%s)", tier,
-            )
+            _failover_log("circuit_breaker_open")
             return await fb.ainvoke(messages)
 
-    # ── Normal path: try primary, failover on 429 ──
+    # ── Layer 2+3: Primary with timeout → catch-and-switch ──
     try:
-        result = await llm.ainvoke(messages)
+        if timeout and timeout > 0:
+            result = await asyncio.wait_for(llm.ainvoke(messages), timeout=timeout)
+        else:
+            result = await llm.ainvoke(messages)
         if cb is not None:
             await LLMPool.record_success()
         return result
-    except Exception as exc:
-        if not is_rate_limit_error(exc):
+    except (asyncio.TimeoutError, Exception) as exc:
+        is_timeout = isinstance(exc, asyncio.TimeoutError)
+        if not is_timeout and not is_rate_limit_error(exc):
             raise
 
-        # Record failure → trips CB after threshold (3 failures)
+        # Record failure → trips CB after threshold
         if cb is not None:
             await LLMPool.record_failure()
 
         fb = _prepare_fallback(tier)
         if fb is None:
+            if is_timeout:
+                raise TimeoutError(
+                    f"Primary LLM timed out after {timeout}s, no fallback available"
+                )
             raise
 
-        primary = LLMPool.get_active_provider() or "unknown"
-        fallback_name = LLMPool._fallback_provider or "unknown"
-        logger.warning(
-            "[LLM_FAILOVER] %s rate-limited (%s), failing over to %s (tier=%s)",
-            primary, type(exc).__name__, fallback_name, tier,
-        )
-
+        reason = f"timeout_{timeout}s" if is_timeout else type(exc).__name__
+        _failover_log(reason)
         return await fb.ainvoke(messages)
 
 
