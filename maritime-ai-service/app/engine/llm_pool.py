@@ -746,5 +746,56 @@ def is_rate_limit_error(error: Exception) -> bool:
     ])
 
 
+async def ainvoke_with_failover(
+    llm,
+    messages,
+    *,
+    tier: str = "moderate",
+    on_fallback: Optional[callable] = None,
+):
+    """Invoke LLM with automatic runtime failover on rate-limit errors.
+
+    When the primary provider returns 429/RESOURCE_EXHAUSTED, retries once
+    with the pre-created fallback instance from LLMPool — no 60s SDK wait.
+
+    Args:
+        llm: Primary LLM (may be wrapped, e.g. via with_structured_output).
+        messages: Messages to send.
+        tier: Tier key for fallback selection ("deep" | "moderate" | "light").
+        on_fallback: Optional callback to prepare the raw fallback LLM
+                     before retry.  Receives BaseChatModel, returns a
+                     ready-to-invoke LLM.
+                     Example: ``lambda fb: fb.with_structured_output(MySchema)``
+
+    Returns:
+        LLM response (same type as ``llm.ainvoke``).
+
+    Raises:
+        Original exception when the error is not rate-limit related
+        or no fallback provider is available.
+    """
+    try:
+        return await llm.ainvoke(messages)
+    except Exception as exc:
+        if not is_rate_limit_error(exc):
+            raise
+
+        fallback_llm = LLMPool.get_fallback(tier)
+        if fallback_llm is None:
+            raise
+
+        primary = LLMPool.get_active_provider() or "unknown"
+        fallback_name = LLMPool._fallback_provider or "unknown"
+        logger.warning(
+            "[LLM_FAILOVER] %s rate-limited (%s), failing over to %s (tier=%s)",
+            primary, type(exc).__name__, fallback_name, tier,
+        )
+
+        if on_fallback is not None:
+            fallback_llm = on_fallback(fallback_llm)
+
+        return await fallback_llm.ainvoke(messages)
+
+
 # Re-export get_thinking_budget from llm_factory for convenience
 # (already imported at top of file)
