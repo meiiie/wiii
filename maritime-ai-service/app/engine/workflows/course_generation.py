@@ -223,7 +223,7 @@ async def expand_single_chapter(state: CourseGenState) -> CourseGenState:
             }],
         }
 
-    response = push_service.push_chapter_content(course_id, chapter_dict)
+    response = await push_service.push_chapter_content_async(course_id, chapter_dict)
 
     if response is None:
         logger.error("course_gen.push_failed",
@@ -386,6 +386,8 @@ async def run_course_generation(
             "phase": "OUTLINE_READY",
             "outline": state["outline"],
             "page_count": state.get("page_count", 0),
+            "markdown": state.get("markdown", ""),
+            "section_map": state.get("section_map", {}),
         }
 
     # Phase 2: EXPAND approved chapters

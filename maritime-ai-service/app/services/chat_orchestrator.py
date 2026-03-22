@@ -630,6 +630,7 @@ class ChatOrchestrator:
 
         # Sprint 66: thinking effort for multi-agent processing
         thinking_effort = getattr(request, 'thinking_effort', None)
+        provider = getattr(request, 'provider', None)
 
         session = prepared_turn.session
         session_id = prepared_turn.session_id
@@ -647,7 +648,7 @@ class ChatOrchestrator:
         
         # Option A: Multi-Agent System (SOTA 2025)
         if self._use_multi_agent:
-            result = await self._process_with_multi_agent(context, session, domain_id, thinking_effort)
+            result = await self._process_with_multi_agent(context, session, domain_id, thinking_effort, provider)
 
         # Option B: Fallback to direct RAG mode
         else:
@@ -855,6 +856,7 @@ class ChatOrchestrator:
         session: SessionContext,
         domain_id: str | None = None,
         thinking_effort: str | None = None,
+        provider: str | None = None,
     ) -> ProcessingResult:
         """
         Process with Multi-Agent System (LangGraph).
@@ -886,6 +888,7 @@ class ChatOrchestrator:
             ),
             prepared_turn=prepared_turn,
             thinking_effort=thinking_effort,
+            provider=provider,
         )
 
         result = await process_with_multi_agent(
