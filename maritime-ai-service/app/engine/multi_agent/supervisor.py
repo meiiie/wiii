@@ -1013,11 +1013,21 @@ class SupervisorAgent:
     def _resolve_house_routing_provider(self, state: AgentState) -> Optional[str]:
         """Pick the best currently-runnable provider for house routing.
 
-        Simple strategy: use the configured primary provider directly.
-        No selectability probing — the provider is already validated
-        during LLMPool initialization.
+        Runtime-aware: tries configured primary, falls back to first
+        available provider in the chain if primary is unavailable.
         """
-        return str(settings.llm_provider or "google").strip().lower()
+        from app.engine.llm_pool import LLMPool
+
+        primary = str(settings.llm_provider or "google").strip().lower()
+        provider = LLMPool._providers.get(primary)
+        if provider and provider.is_available():
+            return primary
+        for name in LLMPool._get_provider_chain():
+            p = LLMPool._providers.get(name)
+            if p and p.is_available():
+                logger.info("[SUPERVISOR] Primary %s unavailable, using %s", primary, name)
+                return name
+        return primary
 
     async def route(self, state: AgentState) -> str:
         """

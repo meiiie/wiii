@@ -3253,11 +3253,6 @@ async def _execute_direct_tool_rounds(
         "summary": _opening_beat.summary,
         "details": {"phase": _opening_beat.phase},
     })
-    await push_event({
-        "type": "thinking_delta",
-        "content": _opening_beat.summary,
-        "node": "direct",
-    })
 
     streamed_direct_answer = False
     _initial_heartbeat = asyncio.create_task(
@@ -3568,11 +3563,6 @@ async def _execute_direct_tool_rounds(
             "details": {"phase": _synthesis_beat.phase},
         })
         await push_event({
-            "type": "thinking_delta",
-            "content": _synthesis_beat.summary,
-            "node": "direct",
-        })
-        await push_event({
             "type": "thinking_end",
             "content": "",
             "node": "direct",
@@ -3589,11 +3579,6 @@ async def _execute_direct_tool_rounds(
             "node": "direct",
             "summary": _synthesis_beat.summary,
             "details": {"phase": _synthesis_beat.phase},
-        })
-        await push_event({
-            "type": "thinking_delta",
-            "content": _synthesis_beat.summary,
-            "node": "direct",
         })
         await push_event({
             "type": "thinking_end",
@@ -6543,11 +6528,6 @@ async def _run_rag_subagent(state: dict, **kwargs) -> "SubagentResult":
         "details": {"phase": rag_opening.phase},
     })
     _emit_subagent_event(state, {
-        "type": "thinking_delta",
-        "content": rag_opening.summary,
-        "node": "rag",
-    })
-    _emit_subagent_event(state, {
         "type": "status",
         "content": "Tìm kiếm trong kho tri thức...",
         "node": "rag",
@@ -6633,11 +6613,6 @@ async def _run_tutor_subagent(state: dict, **kwargs) -> "SubagentResult":
         "details": {"phase": tutor_opening.phase},
     })
     _emit_subagent_event(state, {
-        "type": "thinking_delta",
-        "content": tutor_opening.summary,
-        "node": "tutor",
-    })
-    _emit_subagent_event(state, {
         "type": "status",
         "content": "Đang chuẩn bị phần giải thích...",
         "node": "tutor",
@@ -6714,11 +6689,6 @@ async def _run_search_subagent(state: dict, **kwargs) -> "SubagentResult":
         "node": "search",
         "summary": search_opening.summary,
         "details": {"phase": search_opening.phase},
-    })
-    _emit_subagent_event(state, {
-        "type": "thinking_delta",
-        "content": search_opening.summary,
-        "node": "search",
     })
 
     try:

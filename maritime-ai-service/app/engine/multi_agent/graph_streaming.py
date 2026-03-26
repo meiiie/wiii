@@ -1203,10 +1203,9 @@ async def process_with_multi_agent_streaming(
                             summary=_rag_narration.summary if _rag_narration else None,
                             details={"phase": "retrieve"} if _rag_narration else None,
                         )
-                        yield await create_thinking_delta_event(
-                            thinking_content or _collapse_narration(_rag_narration),
-                            "rag_agent",
-                        )
+                        if thinking_content:
+
+                            yield await create_thinking_delta_event(thinking_content, "rag_agent")
                         yield await create_thinking_end_event(
                             "rag_agent",
                             duration_ms=int((time.time() - node_start) * 1000),
@@ -1313,10 +1312,9 @@ async def process_with_multi_agent_streaming(
                             summary=_tutor_narration.summary if _tutor_narration else None,
                             details={"phase": "synthesize"} if _tutor_narration else None,
                         )
-                        yield await create_thinking_delta_event(
-                            thinking_content or _collapse_narration(_tutor_narration),
-                            "tutor_agent",
-                        )
+                        if thinking_content:
+
+                            yield await create_thinking_delta_event(thinking_content, "tutor_agent")
                         yield await create_thinking_end_event(
                             "tutor_agent",
                             duration_ms=int((time.time() - node_start) * 1000),
@@ -1425,10 +1423,9 @@ async def process_with_multi_agent_streaming(
                             summary=_memory_narration.summary if _memory_narration else None,
                             details={"phase": "retrieve"} if _memory_narration else None,
                         )
-                        yield await create_thinking_delta_event(
-                            thinking_content or _collapse_narration(_memory_narration),
-                            "memory_agent",
-                        )
+                        if thinking_content:
+
+                            yield await create_thinking_delta_event(thinking_content, "memory_agent")
                         yield await create_thinking_end_event(
                             "memory_agent",
                             duration_ms=int((time.time() - node_start) * 1000),
@@ -1656,10 +1653,9 @@ async def process_with_multi_agent_streaming(
                             summary=_code_narration.summary if _code_narration else None,
                             details={"phase": "synthesize"} if _code_narration else None,
                         )
-                        yield await create_thinking_delta_event(
-                            thinking_content or _collapse_narration(_code_narration),
-                            "code_studio_agent",
-                        )
+                        if thinking_content:
+
+                            yield await create_thinking_delta_event(thinking_content, "code_studio_agent")
                         yield await create_thinking_end_event(
                             "code_studio_agent",
                             duration_ms=int((time.time() - node_start) * 1000),

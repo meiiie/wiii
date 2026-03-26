@@ -143,8 +143,6 @@ class MemoryAgentNode:
                 )
             )
             await _push({"type": "thinking_start", "content": _retrieve_narration.label, "node": "memory_agent", "summary": _retrieve_narration.summary, "details": {"phase": _retrieve_narration.phase}})
-            if _retrieve_narration.summary:
-                await _push({"type": "thinking_delta", "content": _retrieve_narration.summary, "node": "memory_agent"})
             existing_facts_list = await self._retrieve_facts(user_id)
             existing_facts_dict = {f["type"]: f["content"] for f in existing_facts_list}
             if existing_facts_list:
@@ -262,8 +260,6 @@ class MemoryAgentNode:
                 )
             )
             await _push({"type": "thinking_start", "content": _synthesis_narration.label, "node": "memory_agent", "summary": _synthesis_narration.summary, "details": {"phase": _synthesis_narration.phase}})
-            if _synthesis_narration.summary:
-                await _push({"type": "thinking_delta", "content": _synthesis_narration.summary, "node": "memory_agent"})
             response = await self._generate_response(
                 llm, query, existing_facts_list, new_facts, changes_summary, state,
             )
@@ -418,6 +414,12 @@ class MemoryAgentNode:
             _host_prompt = state.get("host_context_prompt", "")
             if _host_prompt:
                 context_parts.append(_host_prompt)
+            _host_capabilities_prompt = state.get("host_capabilities_prompt", "")
+            if _host_capabilities_prompt:
+                context_parts.append(_host_capabilities_prompt)
+            _operator_prompt = state.get("operator_context_prompt", "")
+            if _operator_prompt:
+                context_parts.append(_operator_prompt)
             _living_prompt = state.get("living_context_prompt", "")
             if _living_prompt:
                 context_parts.append(_living_prompt)
