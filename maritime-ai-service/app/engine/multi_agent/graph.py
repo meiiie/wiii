@@ -485,6 +485,22 @@ async def _stream_openai_compatible_answer_with_route(
     return None, False
 
 
+def _get_effective_provider(state: AgentState) -> Optional[str]:
+    """Get the effective LLM provider for agent nodes.
+
+    Priority: user request → supervisor house decision → None (use pool default).
+    This ensures agent nodes use the same provider the supervisor selected,
+    instead of falling through to the failover chain.
+    """
+    user = str(state.get("provider") or "").strip().lower()
+    if user and user != "auto":
+        return user
+    house = str(state.get("_house_routing_provider") or "").strip().lower()
+    if house and house != "auto":
+        return house
+    return None
+
+
 async def _render_reasoning(
     *,
     state: AgentState,
@@ -5970,13 +5986,7 @@ async def direct_response_node(state: AgentState) -> AgentState:
                         thinking_effort,
                     )
 
-            user_selected_provider = state.get("provider")
-            requested_provider = str(user_selected_provider or "").strip().lower()
-            explicit_provider = (
-                requested_provider
-                if requested_provider and requested_provider != "auto"
-                else None
-            )
+            explicit_provider = _get_effective_provider(state)
             use_house_voice_direct = (
                 routing_intent in {"social", "personal", "off_topic"}
                 and not _needs_web_search(query)
@@ -6234,8 +6244,7 @@ async def code_studio_node(state: AgentState) -> AgentState:
         from app.engine.multi_agent.agent_config import AgentConfigRegistry
 
         _ctx = state.get("context", {})
-        requested_provider = str(state.get("provider") or "").strip().lower()
-        explicit_provider = requested_provider if requested_provider and requested_provider != "auto" else None
+        explicit_provider = _get_effective_provider(state)
         response = ""
         if _looks_like_ambiguous_simulation_request(query, state):
             grounded_query = _ground_simulation_query_from_visual_context(query, state)

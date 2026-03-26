@@ -1011,27 +1011,13 @@ class SupervisorAgent:
             return self._llm
 
     def _resolve_house_routing_provider(self, state: AgentState) -> Optional[str]:
-        """Pick the best currently-runnable provider for house routing."""
-        try:
-            from app.engine.llm_pool import LLMPool
-            from app.services.llm_selectability_service import choose_best_runtime_provider
+        """Pick the best currently-runnable provider for house routing.
 
-            group_profiles = AgentConfigRegistry.get_group_profiles()
-            preferred = str(
-                group_profiles.get("routing", {}).get("default_provider")
-                or settings.llm_provider
-                or "google"
-            ).strip().lower()
-            best = choose_best_runtime_provider(
-                preferred_provider=preferred,
-                provider_order=LLMPool._get_request_provider_chain(),
-                allow_degraded_fallback=True,
-            )
-            if best and best.provider in {"google", "zhipu", "openai", "openrouter", "ollama"}:
-                return best.provider
-        except Exception as exc:
-            logger.debug("[SUPERVISOR] Failed to resolve house routing provider: %s", exc)
-        return None
+        Simple strategy: use the configured primary provider directly.
+        No selectability probing — the provider is already validated
+        during LLMPool initialization.
+        """
+        return str(settings.llm_provider or "google").strip().lower()
 
     async def route(self, state: AgentState) -> str:
         """

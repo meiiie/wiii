@@ -380,6 +380,12 @@ class TutorAgentNode:
         _host_prompt = context.get("host_context_prompt", "")
         if _host_prompt:
             base_prompt = base_prompt + "\n\n" + _host_prompt
+        _host_capabilities_prompt = context.get("host_capabilities_prompt", "")
+        if _host_capabilities_prompt:
+            base_prompt = base_prompt + "\n\n" + _host_capabilities_prompt
+        _operator_prompt = context.get("operator_context_prompt", "")
+        if _operator_prompt:
+            base_prompt = base_prompt + "\n\n" + _operator_prompt
         _living_prompt = context.get("living_context_prompt", "")
         if _living_prompt:
             base_prompt = base_prompt + "\n\n" + _living_prompt
@@ -539,8 +545,9 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
                 thinking_effort = "high"
                 logger.info("[TUTOR_AGENT] Visual intent detected → upgrade to high effort")
 
-            provider_override = state.get("provider")
-            if thinking_effort or (provider_override and provider_override != "auto"):
+            from app.engine.multi_agent.graph import _get_effective_provider
+            provider_override = _get_effective_provider(state)
+            if thinking_effort or provider_override:
                 llm_for_request = AgentConfigRegistry.get_llm(
                     "tutor_agent",
                     effort_override=thinking_effort,

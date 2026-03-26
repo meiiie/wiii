@@ -645,8 +645,9 @@ class ProductSearchAgentNode:
             logger.debug("[PRODUCT_SEARCH] Runtime tool selection skipped: %s", selection_err)
 
         llm_to_use = self._llm.bind_tools(active_tools) if self._llm and active_tools else self._llm_with_tools
-        provider_override = state.get("provider")
-        if (thinking_effort or (provider_override and provider_override != "auto")) and self._llm:
+        from app.engine.multi_agent.graph import _get_effective_provider
+        provider_override = _get_effective_provider(state)
+        if (thinking_effort or provider_override) and self._llm:
             try:
                 from app.engine.multi_agent.agent_config import AgentConfigRegistry
                 llm_override = AgentConfigRegistry.get_llm(
