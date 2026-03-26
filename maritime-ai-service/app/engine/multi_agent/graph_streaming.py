@@ -82,6 +82,11 @@ from app.engine.multi_agent.stream_utils import (
 
 logger = logging.getLogger(__name__)
 
+# Phase 0 Surface Contract: pipeline/runtime status events are hidden from
+# the visible thinking rail.  Frontend checks details.visibility == "status_only"
+# and skips rendering.  Only genuine Wiii inner-voice events reach the gray rail.
+_PIPELINE_STATUS_DETAILS: dict = {"visibility": "status_only"}
+
 # Token streaming config — simulate natural typing speed
 TOKEN_CHUNK_SIZE = 40          # ~8-10 words per chunk (Sprint 103b: was 12)
 TOKEN_DELAY_SEC = 0.008        # 8ms between chunks (Sprint 103b: was 18ms, ~125 tokens/sec)
@@ -368,6 +373,10 @@ async def _render_fallback_narration(
             f"Đang giữ lại {len(sources)} nguồn hoặc mảnh chứng cứ liên quan."
         )
 
+    # LLM-first narration: narrator.render() calls LLM for domain-rich thinking.
+    # Falls back to skill frontmatter if LLM unavailable.
+    # This is called AFTER node completion (events already flowing),
+    # so it won't cause frontend idle timeout.
     return await get_reasoning_narrator().render(
         ReasoningRenderRequest(
             node=node,
@@ -648,8 +657,8 @@ async def process_with_multi_agent_streaming(
     try:
         graph_cm = open_multi_agent_graph()
         graph = await graph_cm.__aenter__()
-        # Yield initial status
-        yield await create_status_event("Đang bắt đầu lượt xử lý...", None)
+        # Yield initial status (pipeline — hidden from thinking rail)
+        yield await create_status_event("Đang bắt đầu lượt xử lý...", None, details=_PIPELINE_STATUS_DETAILS)
 
         # Build domain config for streaming
         domain_config = _build_domain_config(domain_id)
@@ -730,6 +739,53 @@ async def process_with_multi_agent_streaming(
         _code_studio_prompt = _inject_code_studio_context(initial_state)
         if _code_studio_prompt:
             initial_state["code_studio_context_prompt"] = _code_studio_prompt
+
+        supervisor_thinking_open = False
+        supervisor_status_emitted = False
+
+        if event_queue is None:
+            try:
+                _narrator = get_reasoning_narrator()
+                _req = ReasoningRenderRequest(
+                    node="supervisor",
+                    phase="route",
+                    user_goal=query,
+                    conversation_context=str((context or {}).get("conversation_summary", "")),
+                    capability_context=str(initial_state.get("capability_context") or ""),
+                    user_id=user_id,
+                    organization_id=(context or {}).get("organization_id"),
+                    personality_mode=(context or {}).get("personality_mode"),
+                    mood_hint=(context or {}).get("mood_hint"),
+                    visibility_mode="rich",
+                    style_tags=["routing", "visible_reasoning", "attuning"],
+                )
+                _prelude = _narrator._fallback(_req, _narrator._resolve_node_skill("supervisor"))
+                yield await create_status_event(
+                    NODE_DESCRIPTIONS.get("supervisor", "Dang canh lai huong xu ly..."),
+                    "supervisor",
+                    details=_PIPELINE_STATUS_DETAILS,
+                )
+                supervisor_status_emitted = True
+                yield await create_thinking_start_event(
+                    _prelude.label,
+                    "supervisor",
+                    summary=_prelude.summary,
+                    details={
+                        "phase": _prelude.phase,
+                        "style_tags": _prelude.style_tags,
+                        "step_id": "supervisor-step-prelude",
+                    },
+                )
+                _prelude_chunks = list(_prelude.delta_chunks or [])
+                if _prelude_chunks:
+                    for chunk in _prelude_chunks:
+                        yield await create_thinking_delta_event(
+                            chunk,
+                            "supervisor",
+                        )
+                    supervisor_thinking_open = True
+            except Exception as _prelude_exc:
+                logger.debug("[STREAM] Supervisor prelude skipped: %s", _prelude_exc)
 
         answer_emitted = False
         partial_answer_emitted = False
@@ -903,6 +959,14 @@ async def process_with_multi_agent_streaming(
                         if cc:
                             yield await create_answer_event(cc)
 
+                if payload.get("node") == "supervisor":
+                    if payload.get("type") == "status":
+                        supervisor_status_emitted = True
+                    elif payload.get("type") == "thinking_start":
+                        supervisor_thinking_open = True
+                    elif payload.get("type") == "thinking_end":
+                        supervisor_thinking_open = False
+
                 yield await _convert_bus_event(payload)
                 continue
             elif msg_type == "error":
@@ -953,73 +1017,81 @@ async def process_with_multi_agent_streaming(
                     _intent = _routing_meta.get("intent", "") if isinstance(_routing_meta, dict) else ""
                     _confidence = _routing_meta.get("confidence", 0.0) if isinstance(_routing_meta, dict) else 0.0
                     _reasoning = _routing_meta.get("reasoning", "") if isinstance(_routing_meta, dict) else ""
-                    _supervisor_narration = await get_reasoning_narrator().render(
-                        ReasoningRenderRequest(
-                            node="supervisor",
-                            phase="route",
-                            intent=_intent,
-                            cue=next_agent,
-                            user_goal=query,
-                            conversation_context=str((context or {}).get("conversation_summary", "")),
-                            capability_context=str(
-                                node_output.get("capability_context")
-                                or initial_state.get("capability_context")
-                                or ""
-                            ),
-                            confidence=float(_confidence or 0.0),
-                            next_action=f"Chuyển sang {next_agent}" if next_agent else "",
-                            observations=[
-                                _reasoning,
-                                _extract_thinking_content(node_output),
-                            ],
-                            user_id=user_id,
-                            organization_id=(context or {}).get("organization_id"),
-                            personality_mode=(context or {}).get("personality_mode"),
-                            mood_hint=(context or {}).get("mood_hint"),
-                            visibility_mode="rich",
-                            style_tags=["routing", "visible_reasoning"],
-                            provider=initial_state.get("provider") if initial_state else None,
+                    # Skip supervisor thinking — agent nodes produce their own
+                    # thinking via astream() + narrator.render(). Supervisor
+                    # thinking would duplicate agent content.
+                    logger.info("[STREAM] Supervisor thinking SKIPPED (agent nodes handle it)")
+                    continue
+                    if not supervisor_status_emitted:
+                        yield await create_status_event(
+                            NODE_DESCRIPTIONS.get("supervisor", "Dang canh lai huong xu ly..."),
+                            "supervisor",
+                            details=_PIPELINE_STATUS_DETAILS,
                         )
+                        supervisor_status_emitted = True
+                    _sn = get_reasoning_narrator()
+                    _sr = ReasoningRenderRequest(
+                        node="supervisor",
+                        phase="route",
+                        intent=_intent,
+                        cue=next_agent,
+                        user_goal=query,
+                        conversation_context=str((context or {}).get("conversation_summary", "")),
+                        capability_context=str(
+                            node_output.get("capability_context")
+                            or initial_state.get("capability_context")
+                            or ""
+                        ),
+                        confidence=float(_confidence or 0.0),
+                        next_action=f"Chuyển sang {next_agent}" if next_agent else "",
+                        observations=[
+                            _reasoning,
+                            _extract_thinking_content(node_output),
+                        ],
+                        user_id=user_id,
+                        organization_id=(context or {}).get("organization_id"),
+                        personality_mode=(context or {}).get("personality_mode"),
+                        mood_hint=(context or {}).get("mood_hint"),
+                        visibility_mode="rich",
+                        style_tags=["routing", "visible_reasoning"],
                     )
-
-                    yield await create_status_event(
-                        NODE_DESCRIPTIONS.get("supervisor", "Đang canh lại hướng xử lý..."),
-                        "supervisor",
-                    )
+                    _supervisor_narration = _sn._fallback(_sr, _sn._resolve_node_skill("supervisor"))
 
                     # Thinking lifecycle: open → content → close
-                    yield await create_thinking_start_event(
-                        _supervisor_narration.label,
-                        "supervisor",
-                        summary=_supervisor_narration.summary,
-                        details={
-                            "phase": _supervisor_narration.phase,
-                            "style_tags": _supervisor_narration.style_tags,
-                        },
-                    )
-
-                    _routing_parts = list(_supervisor_narration.delta_chunks or [])
-                    if not _routing_parts:
-                        _routing_parts.append(_supervisor_narration.summary)
-
-                    if _routing_parts:
-                        yield await create_thinking_delta_event(
-                            "\n".join(_routing_parts),
+                    if not supervisor_thinking_open:
+                        yield await create_thinking_start_event(
+                            _supervisor_narration.label,
                             "supervisor",
+                            summary=_supervisor_narration.summary,
+                            details={
+                                "phase": _supervisor_narration.phase,
+                                "style_tags": _supervisor_narration.style_tags,
+                            },
                         )
 
-                    # Also emit status for pipeline indicator
+                    _routing_parts = list(_supervisor_narration.delta_chunks or [])
+
+                    if _routing_parts:
+                        for chunk in _routing_parts:
+                            yield await create_thinking_delta_event(
+                                chunk,
+                                "supervisor",
+                            )
+
+                    # Also emit status for pipeline indicator (hidden from thinking rail)
                     if next_agent:
                         desc = _NODE_LABELS.get(next_agent, next_agent)
                         yield await create_status_event(
                             f"Chuyển sang {desc}",
                             "supervisor",
+                            details=_PIPELINE_STATUS_DETAILS,
                         )
 
                     yield await create_thinking_end_event(
                         "supervisor",
                         duration_ms=int((time.time() - node_start) * 1000),
                     )
+                    supervisor_thinking_open = False
 
                     _action_text = _supervisor_narration.action_text
                     if _action_text:
@@ -1033,6 +1105,7 @@ async def process_with_multi_agent_streaming(
                     yield await create_status_event(
                         NODE_DESCRIPTIONS.get("rag_agent", "Đang tiếp tục tra cứu..."),
                         "rag_agent",
+                        details=_PIPELINE_STATUS_DETAILS,
                     )
 
                     # Sprint 64 fix: Tool calls OUTSIDE thinking block
@@ -1059,7 +1132,7 @@ async def process_with_multi_agent_streaming(
                                     node="rag_agent",
                                 )
 
-                    # Emit pipeline status for tools/sources (always visible)
+                    # Emit pipeline status for tools/sources (hidden from thinking rail)
                     tools_used = node_output.get("tools_used", [])
                     sources = node_output.get("sources", [])
                     if tools_used:
@@ -1070,11 +1143,13 @@ async def process_with_multi_agent_streaming(
                         yield await create_status_event(
                             f"Đã tra cứu: {', '.join(tool_names)}",
                             "rag_agent",
+                            details=_PIPELINE_STATUS_DETAILS,
                         )
                     if sources:
                         yield await create_status_event(
                             f"Tìm thấy {len(sources)} nguồn tham khảo",
                             "rag_agent",
+                            details=_PIPELINE_STATUS_DETAILS,
                         )
 
                     # Sprint 166: Emit document preview cards for RAG sources
@@ -1170,6 +1245,7 @@ async def process_with_multi_agent_streaming(
                     yield await create_status_event(
                         NODE_DESCRIPTIONS.get("tutor_agent", "Đang tiếp tục giải thích..."),
                         "tutor_agent",
+                        details=_PIPELINE_STATUS_DETAILS,
                     )
 
                     # Tool calls OUTSIDE thinking block (same pattern as RAG)
@@ -1193,12 +1269,13 @@ async def process_with_multi_agent_streaming(
                                     node="tutor_agent",
                                 )
 
-                    # Emit pipeline status for tools (always visible)
+                    # Emit pipeline status for tools (hidden from thinking rail)
                     tools_used = node_output.get("tools_used", [])
                     if tools_used:
                         yield await create_status_event(
                             f"Đã đối chiếu {len(tools_used)} nguồn",
                             "tutor_agent",
+                            details=_PIPELINE_STATUS_DETAILS,
                         )
 
                     # Thinking lifecycle: open → content → close (AFTER tool calls)
@@ -1292,6 +1369,7 @@ async def process_with_multi_agent_streaming(
                     yield await create_status_event(
                         NODE_DESCRIPTIONS.get("synthesizer", "Đang khâu lại phản hồi..."),
                         "synthesizer",
+                        details=_PIPELINE_STATUS_DETAILS,
                     )
 
                     # Token-stream the final response
@@ -1317,6 +1395,7 @@ async def process_with_multi_agent_streaming(
                     yield await create_status_event(
                         NODE_DESCRIPTIONS.get("memory_agent", "Đang gọi lại ngữ cảnh..."),
                         "memory_agent",
+                        details=_PIPELINE_STATUS_DETAILS,
                     )
 
                     # Sprint 72: Emit thinking content if available
@@ -1377,6 +1456,7 @@ async def process_with_multi_agent_streaming(
                     yield await create_status_event(
                         NODE_DESCRIPTIONS.get("direct", "Đang tiếp tục trả lời..."),
                         "direct",
+                        details=_PIPELINE_STATUS_DETAILS,
                     )
 
                     _direct_already_streamed = "direct" in _bus_streamed_nodes
@@ -1548,6 +1628,7 @@ async def process_with_multi_agent_streaming(
                     yield await create_status_event(
                         NODE_DESCRIPTIONS.get("code_studio_agent", "Dang che tac dau ra ky thuat..."),
                         "code_studio_agent",
+                        details=_PIPELINE_STATUS_DETAILS,
                     )
 
                     _code_already_streamed = "code_studio_agent" in _bus_streamed_nodes
@@ -1596,6 +1677,7 @@ async def process_with_multi_agent_streaming(
                     yield await create_status_event(
                         NODE_DESCRIPTIONS.get("product_search_agent", "Đang tiếp tục đối chiếu..."),
                         "product_search_agent",
+                        details=_PIPELINE_STATUS_DETAILS,
                     )
 
                     _product_already_streamed = "product_search_agent" in _bus_streamed_nodes
@@ -1716,7 +1798,7 @@ async def process_with_multi_agent_streaming(
                     guardian_passed = node_output.get("guardian_passed")
                     logger.debug("[STREAM] Guardian passed: %s", guardian_passed)
                     if not guardian_passed:
-                        # Blocked — show reason as status
+                        # Blocked — show reason as status (visible — user needs to see rejection)
                         guardian_reason = (
                             node_output.get("guardian_reason", "")
                             or node_output.get("final_response", "")
@@ -1727,9 +1809,11 @@ async def process_with_multi_agent_streaming(
                             "guardian",
                         )
                     else:
+                        # Passed — pipeline status, hidden from thinking rail
                         yield await create_status_event(
                             "✓ Kiểm tra an toàn — Cho phép xử lý",
                             "guardian",
+                            details=_PIPELINE_STATUS_DETAILS,
                         )
 
           # Safety net: if no answer was emitted by any node, extract from final_state
@@ -1830,7 +1914,17 @@ async def process_with_multi_agent_streaming(
               except Exception:
                   pass
 
-              runtime_llm = resolve_runtime_llm_metadata(final_state)
+              runtime_llm = resolve_runtime_llm_metadata(
+                  final_state,
+                  allow_fallback=False,
+              )
+              _request_id = str((context or {}).get("request_id") or "").strip() or None
+              _routing_metadata = final_state.get("routing_metadata") or {}
+              _agent_type = (
+                  _routing_metadata.get("final_agent")
+                  or final_state.get("next_agent")
+                  or "rag_agent"
+              )
 
               yield await create_metadata_event(
                   reasoning_trace=reasoning_dict,
@@ -1838,10 +1932,11 @@ async def process_with_multi_agent_streaming(
                   confidence=final_state.get("grader_score", 0) / 10,
                   model=runtime_llm["model"],
                   provider=runtime_llm["provider"],
+                  runtime_authoritative=runtime_llm["runtime_authoritative"],
                   doc_count=len(sources),
                   thinking=final_state.get("thinking"),
                   thinking_content=final_state.get("thinking_content"),  # Sprint 189b-R5
-                  agent_type=final_state.get("next_agent", "rag_agent"),
+                  agent_type=_agent_type,
                   mood=_mood_data,
                   # Sprint 121b: Include session_id so frontend can reuse it
                   session_id=final_state.get("session_id", session_id),
@@ -1849,6 +1944,8 @@ async def process_with_multi_agent_streaming(
                   evidence_images=final_state.get("evidence_images", []),
                   # Sprint 225: Thread ID for cross-platform conversation sync
                   thread_id=_meta_thread_id,
+                  routing_metadata=_routing_metadata,
+                  request_id=_request_id,
               )
 
           # Done signal

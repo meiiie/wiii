@@ -21,7 +21,9 @@ Sprint 71: SOTA Routing (foundation)
 **Integrated with agents/ framework for config and tracing.**
 """
 
+import asyncio
 import logging
+import re
 from typing import Optional
 from enum import Enum
 
@@ -31,6 +33,7 @@ from app.core.config import settings
 from app.core.resilience import retry_on_transient
 from app.engine.character.character_card import (
     build_supervisor_card_prompt,
+    build_supervisor_micro_card_prompt,
     build_synthesis_card_prompt,
 )
 from app.engine.multi_agent.agent_config import AgentConfigRegistry
@@ -74,10 +77,10 @@ ROUTING_PROMPT_TEMPLATE = """Bạn là Supervisor Agent cho hệ thống {domain
 - RAG_AGENT: intent=lookup VÀ CÓ domain keyword RÕ RÀNG → tra cứu quy định, luật, mức phạt. {rag_description}
 - TUTOR_AGENT: intent=learning VÀ CÓ domain keyword → giải thích, quiz, ôn bài, dạy kiến thức. {tutor_description}
 - MEMORY_AGENT: intent=personal → lịch sử học, preferences, nhớ thông tin
-- CODE_STUDIO_AGENT: intent=code_execution → viết/chạy code, tạo biểu đồ/chart, tạo file (HTML/Excel/Word/PDF), chụp trang web, xử lý dữ liệu, tạo artifact kỹ thuật
+- CODE_STUDIO_AGENT: intent=code_execution → viết/chạy code, tạo app/widget/mô phỏng, tạo file (HTML/Excel/Word/PDF), chụp trang web, xử lý artifact kỹ thuật
 - PRODUCT_SEARCH_AGENT: intent=product_search → tìm kiếm sản phẩm, so sánh giá, mua hàng trên sàn TMĐT (Shopee, Lazada, TikTok Shop, Google Shopping, Facebook Marketplace)
 - COLLEAGUE_AGENT: intent=colleague_consult VÀ user_role=admin → hỏi ý kiến Bro về trading, crypto, rủi ro thị trường, liquidation
-- DIRECT: intent=social HOẶC intent=off_topic HOẶC intent=web_search → chào hỏi, cảm ơn, tạm biệt, câu NGOÀI chuyên môn, tìm kiếm web/tin tức/pháp luật. DIRECT KHÔNG tạo file, KHÔNG chạy code, KHÔNG vẽ biểu đồ — những việc đó thuộc CODE_STUDIO_AGENT
+- DIRECT: intent=social HOẶC intent=off_topic HOẶC intent=web_search → chào hỏi, cảm ơn, tạm biệt, câu NGOÀI chuyên môn, tìm kiếm web/tin tức/pháp luật, và các visual/chart inline để nhìn nhanh khi không cần app hay file. DIRECT KHÔNG tạo file kỹ thuật hoặc app hoàn chỉnh
 
 ## Quy tắc QUAN TRỌNG:
 - "quiz/giải thích/dạy/ôn bài" + domain keyword → TUTOR_AGENT (NOT RAG_AGENT)
@@ -120,15 +123,39 @@ ROUTING_PROMPT_TEMPLATE = """Bạn là Supervisor Agent cho hệ thống {domain
 - "Bro ơi, thị trường crypto hôm nay sao?" → intent=colleague_consult, agent=COLLEAGUE_AGENT, confidence=0.95 (CHỈ khi user_role=admin)
 - "Bro đánh giá rủi ro thế nào?" → intent=colleague_consult, agent=COLLEAGUE_AGENT, confidence=0.90 (CHỈ khi user_role=admin)
 - "Viết code Python tính diện tích tam giác" → intent=code_execution, agent=CODE_STUDIO_AGENT, confidence=0.95
-- "Tạo biểu đồ so sánh doanh thu" → intent=code_execution, agent=CODE_STUDIO_AGENT, confidence=0.95
+- "Tạo biểu đồ so sánh doanh thu" → intent=off_topic, agent=DIRECT, confidence=0.90
 - "Xuất file Excel danh sách" → intent=code_execution, agent=CODE_STUDIO_AGENT, confidence=0.95
 - "Tạo báo cáo Word" → intent=code_execution, agent=CODE_STUDIO_AGENT, confidence=0.90
 - "Chụp trang web https://example.com" → intent=code_execution, agent=CODE_STUDIO_AGENT, confidence=0.95
-- "Vẽ chart thống kê" → intent=code_execution, agent=CODE_STUDIO_AGENT, confidence=0.95
+- "Vẽ chart thống kê" → intent=off_topic, agent=DIRECT, confidence=0.90
 
 **Query:** {query}
 
 **User Context:** {context}"""
+
+COMPACT_ROUTING_PROMPT_TEMPLATE = """Ban la Supervisor Agent cua Wiii.
+
+Nhiem vu: nghe mot turn ngan hoac cau tham do nhanh, roi chon lane xu ly dung nhat.
+
+Chon 1 agent:
+- DIRECT: chao hoi, bat nhip, tra loi truc tiep, thac mac ngan, visual/chart inline de nhin nhanh
+- CODE_STUDIO_AGENT: user dang goi mot thu co the dung/chay/hien ra duoc theo dang app/widget/mo phong/artifact/file
+- RAG_AGENT: tra cuu tri thuc/domain cu the
+- TUTOR_AGENT: giai thich/day hoc/quiz
+- MEMORY_AGENT: goi lai boi canh ca nhan
+- PRODUCT_SEARCH_AGENT: tim/so sanh san pham
+- COLLEAGUE_AGENT: hoi Bro, chi khi dung ngu canh admin
+
+Quy tac:
+- Vi day la turn ngan, dung nghe nhip cau noi thay vi khop keyword co hoc.
+- Neu cau noi dang tham do xem Wiii co the mo phong/dung/hien ra duoc khong theo dang app/widget/mo phong, nghieng ve CODE_STUDIO_AGENT.
+- Neu cau noi nghieng ve chart/visual de nhin nhanh, nghieng ve DIRECT de con dung lane visual inline.
+- Neu cau noi chi la mot nhip giao tiep hoac cam than, nghieng ve DIRECT.
+- Chua du tin hieu domain thi khong ep sang RAG/TUTOR.
+
+Query: {query}
+Recent context: {context}
+Routing hints: {routing_hints}"""
 
 SYNTHESIS_PROMPT = """Tổng hợp các outputs từ agents thành câu trả lời cuối cùng cho HỌC VIÊN:
 
@@ -214,6 +241,131 @@ CODE_STUDIO_KEYWORDS = [
 # LLM structured routing (_route_structured) handles all nuanced decisions.
 # Only SOCIAL_KEYWORDS and PERSONAL_KEYWORDS kept as guardrails.
 
+_NORMALIZED_SOCIAL_PREFIXES = (
+    "xin chao",
+    "chao",
+    "hello",
+    "hi",
+    "hey",
+    "cam on",
+    "thanks",
+    "thank",
+    "thank you",
+    "tam biet",
+    "bye",
+    "goodbye",
+    "hen gap lai",
+)
+
+_SOCIAL_LAUGH_TOKENS = {
+    "he",
+    "hehe",
+    "hehehe",
+    "ha",
+    "haha",
+    "hahaha",
+    "hi",
+    "hihi",
+    "hihihi",
+    "hoho",
+    "kk",
+    "kkk",
+    "keke",
+    "alo",
+    "alooo",
+}
+
+_REACTION_TOKENS = {
+    "wow",
+    "woah",
+    "whoa",
+    "oa",
+    "oaa",
+    "oi",
+    "oii",
+    "ui",
+    "uii",
+    "uay",
+    "uayy",
+    "ah",
+    "a",
+    "oh",
+    "hmm",
+    "hm",
+    "uh",
+    "umm",
+    "um",
+    "uhm",
+}
+
+_VAGUE_BANTER_PHRASES = {
+    "gi do",
+    "cai gi do",
+    "gi ay",
+    "cai gi ay",
+}
+
+_IDENTITY_PROBE_MARKERS = (
+    "ban la ai",
+    "ban ten gi",
+    "ten gi",
+    "ten cua ban",
+    "wiii la ai",
+    "wiii ten gi",
+    "cuoc song the nao",
+    "cuoc song cua ban",
+    "song the nao",
+    "gioi thieu ve ban",
+)
+
+_FAST_CHATTER_BLOCKERS = (
+    "tai sao",
+    "la gi",
+    "the nao",
+    "giai thich",
+    "huong dan",
+    "tra cuu",
+    "quy dinh",
+    "tin tuc",
+    "search",
+    "tim",
+    "mo phong",
+    "simulation",
+    "canvas",
+    "chart",
+    "code",
+    "python",
+    "javascript",
+    "html",
+    "css",
+    "react",
+    "excel",
+    "word",
+    "pdf",
+    "bao nhieu",
+    "o dau",
+    "nhu nao",
+)
+
+_ROUTING_ARTIFACT_MARKERS = (
+    "```",
+    "<!doctype",
+    "<html",
+    "<body",
+    "<div",
+    "<svg",
+    "function ",
+    "const ",
+    "let ",
+    "class ",
+    "import ",
+    "export ",
+    "visual_session_id",
+    '"type": "visual"',
+)
+
+_SUPERVISOR_HEARTBEAT_INTERVAL_SEC = 6.0
+
 # Confidence threshold for rule-based override
 CONFIDENCE_THRESHOLD = 0.7
 
@@ -288,10 +440,380 @@ def _looks_clear_social(normalized: str) -> bool:
         return False
     if any(marker in normalized for marker in ("giai thich", "quy dinh", "mo phong", "ve bieu do")):
         return False
+    normalized = re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", normalized)).strip()
+    letters_only = re.sub(r"[^a-z]", "", normalized)
+    tokens = [token for token in normalized.split() if token]
+    if tokens and len(tokens) <= 4 and all(token in _SOCIAL_LAUGH_TOKENS for token in tokens):
+        return True
+    if letters_only and re.fullmatch(r"(he|ha|hi|ho|kk|alo){1,6}", letters_only):
+        return True
+    if letters_only.startswith(
+        (
+            "xinch",
+            "chao",
+            "hello",
+            "hi",
+            "hey",
+            "cam",
+            "thank",
+            "thanks",
+            "tambiet",
+            "bye",
+            "goodbye",
+            "hengaplai",
+        )
+    ):
+        return True
     return any(
         normalized == keyword or normalized.startswith(f"{keyword} ")
-        for keyword in SOCIAL_KEYWORDS
+        for keyword in _NORMALIZED_SOCIAL_PREFIXES
     )
+
+
+def is_obvious_social_turn(query: str) -> bool:
+    """Return True for very short greeting/thanks/goodbye turns.
+
+    Keep this intentionally narrow so we can skip heavyweight routing
+    without misclassifying substantive questions.
+    """
+    normalized = _normalize_router_text(query)
+    return _looks_clear_social(normalized)
+
+
+def classify_fast_chatter_turn(query: str) -> tuple[str, str] | None:
+    """Return a lightweight chatter classification for ultra-short turns.
+
+    This intentionally stays narrow and shape-based so only tiny, low-information
+    chatter skips the heavyweight structured routing + direct LLM path.
+    """
+    normalized = _normalize_router_text(query)
+    if not normalized:
+        return None
+
+    if any(marker in normalized for marker in _FAST_CHATTER_BLOCKERS):
+        return None
+
+    if _looks_clear_social(normalized):
+        return ("social", "social")
+
+    tokens = [token for token in re.sub(r"[^\w\s]", " ", normalized).split() if token]
+    if tokens and len(tokens) <= 3 and all(token in _REACTION_TOKENS for token in tokens):
+        return ("social", "reaction")
+
+    if normalized in _VAGUE_BANTER_PHRASES:
+        return ("off_topic", "vague_banter")
+    return None
+
+
+def _looks_identity_probe(query: str) -> bool:
+    normalized = _normalize_router_text(query)
+    if not normalized:
+        return False
+    if any(marker in normalized for marker in _IDENTITY_PROBE_MARKERS):
+        return True
+    tokens = [token for token in re.sub(r"[^\w\s]", " ", normalized).split() if token]
+    return bool(tokens) and len(tokens) <= 8 and normalized in {
+        "ban la ai",
+        "ten gi",
+        "ten cua ban",
+        "wiii la ai",
+        "wiii ten gi",
+        "cuoc song the nao",
+    }
+
+
+def _looks_short_capability_probe(query: str) -> bool:
+    normalized = _normalize_router_text(query)
+    tokens = [token for token in normalized.split() if token]
+    if not tokens or len(tokens) > 10:
+        return False
+    if not any(marker in normalized for marker in ("duoc", "khong", "co the", "chua", "sao", "mo phong", "simulation", "canvas", "widget", "app", "artifact")):
+        return False
+    return _needs_code_studio(query) or any(
+        marker in normalized
+        for marker in ("mo phong", "simulation", "canvas", "widget", "app", "artifact")
+    )
+
+
+def _looks_like_visual_data_request(query: str) -> bool:
+    """Detect chart/data visual turns that should stay on DIRECT.
+
+    These requests need the data/search + inline-visual lane, not the
+    app/artifact lane reserved for Code Studio.
+    """
+    normalized = _normalize_router_text(query)
+    if not normalized:
+        return False
+
+    visual_markers = (
+        "visual",
+        "bieu do",
+        "chart",
+        "do thi",
+        "thong ke",
+        "so lieu",
+        "du lieu",
+        "xu huong",
+    )
+    data_markers = (
+        "gia ",
+        "gia dau",
+        "hien tai",
+        "hom nay",
+        "moi nhat",
+        "ngay gan day",
+        "gan day",
+        "recent",
+        "latest",
+        "trend",
+        "so sanh",
+    )
+    blockers = (
+        "mo phong",
+        "simulation",
+        "canvas",
+        "widget",
+        "app",
+        "artifact",
+        "html",
+        "excel",
+        "word",
+        "pdf",
+        "python",
+        "javascript",
+        "typescript",
+        "file",
+        "xuat file",
+        "tai file",
+    )
+    if any(marker in normalized for marker in blockers):
+        return False
+    return any(marker in normalized for marker in visual_markers) and any(
+        marker in normalized for marker in data_markers
+    )
+
+
+def _looks_like_short_natural_question(query: str) -> bool:
+    normalized = _normalize_router_text(query)
+    tokens = [token for token in normalized.split() if token]
+    if not tokens or len(tokens) > 10:
+        return False
+
+    question_markers = (
+        "?",
+        "co the",
+        "duoc khong",
+        "duoc ko",
+        "khong",
+        "sao",
+        "the nao",
+        "tai sao",
+        "lam sao",
+        "nen khong",
+        "co nen",
+        "co phai",
+        "hay khong",
+        "co the nao",
+        "nen",
+        "neu",
+    )
+    return any(marker in normalized for marker in question_markers)
+
+
+def _should_use_compact_routing_prompt(
+    query: str,
+    fast_chatter_hint: tuple[str, str] | None,
+) -> bool:
+    normalized = _normalize_router_text(query)
+    token_count = len([token for token in normalized.split() if token])
+    if fast_chatter_hint is not None:
+        return True
+    if _looks_short_capability_probe(query):
+        return True
+    if _looks_like_short_natural_question(query):
+        return False
+    return 0 < token_count <= 4
+
+
+def _apply_routing_hint(state: AgentState, query: str) -> dict[str, str]:
+    """Capture lightweight shape hints without bypassing LLM-first routing."""
+    if _looks_identity_probe(query):
+        hint = {
+            "kind": "identity_probe",
+            "intent": "selfhood",
+            "shape": "identity",
+        }
+        state["_routing_hint"] = hint
+        return hint
+
+    fast_chatter = classify_fast_chatter_turn(query)
+    if fast_chatter is not None:
+        hint = {
+            "kind": "fast_chatter",
+            "intent": fast_chatter[0],
+            "shape": fast_chatter[1],
+        }
+        state["_routing_hint"] = hint
+        return hint
+
+    if _looks_short_capability_probe(query):
+        hint = {
+            "kind": "capability_probe",
+            "intent": "code_execution" if _needs_code_studio(query) else "unknown",
+            "shape": "short_probe",
+        }
+        state["_routing_hint"] = hint
+        return hint
+
+    state.pop("_routing_hint", None)
+    return {}
+
+
+def _looks_like_artifact_payload(text: str) -> bool:
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return False
+    if len(normalized) > 320 and normalized.count("\n") >= 8:
+        return True
+    return any(marker in normalized for marker in _ROUTING_ARTIFACT_MARKERS)
+
+
+def _summarize_routing_turn_content(content: object, *, speaker: str, limit: int) -> str:
+    raw = str(content or "").strip()
+    if not raw:
+        return ""
+    normalized = " ".join(raw.split())
+    lowered = normalized.lower()
+
+    if _looks_like_artifact_payload(raw):
+        if speaker == "user":
+            if any(marker in lowered for marker in ("mo phong", "simulation", "canvas", "widget", "artifact", "<svg")):
+                return "[Người dùng vừa nhắc hoặc dán một yêu cầu visual/mô phỏng.]"
+            return "[Người dùng vừa đưa một nội dung kỹ thuật hoặc đoạn mã khá dài.]"
+        if any(marker in lowered for marker in ("mo phong", "simulation", "canvas", "widget", "artifact", "<svg", "visual")):
+            return "[AI vừa mở hoặc bàn về một visual/mô phỏng liên quan.]"
+        return "[AI vừa tạo một đầu ra kỹ thuật hoặc artifact có mã dài.]"
+
+    if len(normalized) > limit:
+        return f"{normalized[: max(0, limit - 1)].rstrip()}…"
+    return normalized
+
+
+def _build_recent_turns_for_routing(lc_messages: list, *, turn_window: int, turn_limit: int) -> str:
+    lines: list[str] = []
+    for message in lc_messages[-turn_window:]:
+        is_user = getattr(message, "type", "") == "human"
+        speaker = "User" if is_user else "AI"
+        summarized = _summarize_routing_turn_content(
+            getattr(message, "content", ""),
+            speaker="user" if is_user else "assistant",
+            limit=turn_limit,
+        )
+        if summarized:
+            lines.append(f"{speaker}: {summarized}")
+    return "\n".join(lines)
+
+
+def _quote_query_for_visible_reasoning(query: str, max_len: int = 84) -> str:
+    compact = " ".join((query or "").split())
+    lowered = compact.lower()
+    if not compact:
+        return "câu này"
+    if any(marker in lowered for marker in ("mô phỏng", "mo phong", "simulation", "canvas", "widget", "artifact")):
+        return "yêu cầu mô phỏng này"
+    if any(marker in lowered for marker in ("visual", "biểu đồ", "bieu do", "chart", "thống kê", "thong ke")):
+        return "yêu cầu trực quan này"
+    if len(compact.split()) <= 8:
+        return "nhịp này"
+    if len(compact) > max_len:
+        compact = f"{compact[: max_len - 1].rstrip()}…"
+    return "điều bạn vừa hỏi"
+
+
+def _get_supervisor_stream_queue(state: AgentState):
+    bus_id = state.get("_event_bus_id")
+    if not bus_id:
+        return None
+    try:
+        from app.engine.multi_agent.graph_streaming import _get_event_queue
+
+        return _get_event_queue(str(bus_id))
+    except Exception as exc:
+        logger.debug("[SUPERVISOR] Event queue unavailable: %s", exc)
+        return None
+
+
+def _push_supervisor_stream_event(queue, event: dict) -> None:
+    if queue is None:
+        return
+    try:
+        queue.put_nowait(event)
+    except Exception as exc:
+        logger.debug("[SUPERVISOR] Event queue push failed: %s", exc)
+
+
+def _clean_supervisor_visible_reasoning(text: object, *, limit: int = 280) -> str:
+    cleaned = " ".join(str(text or "").split()).strip()
+    if not cleaned:
+        return ""
+    if len(cleaned) <= limit:
+        return cleaned
+    # Truncate at sentence or word boundary, never mid-word
+    truncated = cleaned[:limit]
+    for end in [". ", ".\n", "? ", "! "]:
+        pos = truncated.rfind(end)
+        if pos > limit * 0.6:
+            return truncated[: pos + 1]
+    last_space = truncated.rfind(" ")
+    if last_space > limit * 0.5:
+        return cleaned[:last_space]
+    return cleaned[:limit]
+
+
+def _render_supervisor_visible_reasoning(
+    state: AgentState,
+    *,
+    intent: str = "",
+    cue: str = "",
+    confidence: float = 0.0,
+    next_action: str = "",
+    observations: Optional[list[str]] = None,
+):
+    from app.engine.reasoning import ReasoningRenderRequest, get_reasoning_narrator
+
+    query = state.get("query", "")
+    context = state.get("context", {}) or {}
+    routing_hint = state.get("_routing_hint") if isinstance(state.get("_routing_hint"), dict) else {}
+    resolved_intent = intent or str(routing_hint.get("intent") or "")
+    resolved_cue = cue
+    if not resolved_cue and (
+        routing_hint.get("kind") == "capability_probe" or _needs_code_studio(query)
+    ):
+        resolved_cue = AgentType.CODE_STUDIO.value
+
+    _n = get_reasoning_narrator()
+    _req = ReasoningRenderRequest(
+        node="supervisor",
+        phase="route",
+        intent=resolved_intent,
+        cue=resolved_cue,
+        user_goal=query,
+        conversation_context=str((context or {}).get("conversation_summary", "")),
+        capability_context=str(state.get("capability_context") or ""),
+        confidence=float(confidence or 0.0),
+        next_action=next_action,
+        observations=[item for item in (observations or []) if item],
+        user_id=str(state.get("user_id") or ""),
+        organization_id=(context or {}).get("organization_id"),
+        personality_mode=(context or {}).get("personality_mode"),
+        mood_hint=(context or {}).get("mood_hint"),
+        visibility_mode="rich",
+        style_tags=["routing", "visible_reasoning", "attuning", "house"],
+    )
+    return _n._fallback(_req, _n._resolve_node_skill("supervisor"))
+
+
+# Supervisor heartbeat removed — thinking comes from agent nodes, not supervisor.
 
 
 def _looks_clear_web_intent(normalized: str) -> bool:
@@ -359,6 +881,89 @@ _VISUAL_LEARNING_CUES = (
 )
 
 
+def _finalize_routing_reasoning(
+    *,
+    raw_reasoning: str,
+    method: str,
+    chosen_agent: str,
+    intent: str,
+    query: str,
+) -> str:
+    """Return user-facing routing reasoning that matches the final chosen lane.
+
+    Keep the raw LLM reasoning for observability, but avoid surfacing a mismatch
+    where the raw structured classifier leans one way and deterministic overrides
+    send the turn somewhere else.
+    """
+    cleaned_raw = " ".join((raw_reasoning or "").split()).strip()
+    normalized_method = str(method or "").strip().lower()
+    normalized_intent = str(intent or "").strip().lower()
+    normalized_query = _normalize_router_text(query)
+
+    if normalized_method == "structured+capability_override":
+        if chosen_agent == AgentType.CODE_STUDIO.value:
+            return (
+                "Câu này vẫn đang mang tín hiệu mô phỏng hoặc lane dựng app/visual, "
+                "nên mình giữ nó ở Code Studio để Wiii có thể mở đúng không gian sáng tạo "
+                "thay vì đáp tạm bằng lời."
+            )
+        if chosen_agent == AgentType.DIRECT.value:
+            return (
+                "Phần intent thô ban đầu còn lửng, nhưng lane xử lý phù hợp nhất lúc này "
+                "vẫn là trả lời trực tiếp để chốt thêm ý trước khi mở nhánh sâu hơn."
+            )
+
+    if normalized_method == "structured+visual_lane_override":
+        return (
+            "Đây nghiêng về một visual giải thích hoặc chart inline hơn là app hoàn chỉnh, "
+            "nên mình giữ nó ở lane trực tiếp để Wiii còn phát visual đúng cách trong stream."
+        )
+
+    if normalized_method == "structured+visual_override":
+        return (
+            "Câu này cần một nhịp minh hoạ trực quan hơn là giảng bài thuần chữ, "
+            "nên mình chuyển về direct lane để gọi visual đúng chỗ."
+        )
+
+    if normalized_method == "structured+intent_override":
+        if chosen_agent == AgentType.CODE_STUDIO.value:
+            return (
+                "Ý chính ở đây là tạo hoặc dựng một thứ có thể chạy/hiện ra được, "
+                "nên mình chốt route sang Code Studio thay vì để nó trôi ở lane trò chuyện."
+            )
+        if chosen_agent == AgentType.DIRECT.value and normalized_intent in {"off_topic", "web_search"}:
+            return (
+                "Câu này không cần kéo vào lane tri thức chuyên biệt; "
+                "trả lời trực tiếp sẽ giữ nhịp trò chuyện đúng hơn."
+            )
+
+    if normalized_method == "structured+domain_validation":
+        return (
+            "Mình không thấy đủ tín hiệu domain chuyên biệt trong câu này, "
+            "nên không ép sang lane tra cứu/giảng dạy nặng."
+        )
+
+    if normalized_method == "structured+rule_override":
+        return (
+            "Phần phân loại ban đầu chưa đủ chắc, nên mình chốt lại theo guardrail an toàn hơn "
+            "để tránh kéo bạn vào nhánh xử lý lệch."
+        )
+
+    if normalized_method == "always_on_social_fast_path":
+        return "Đây là một nhịp xã giao rất rõ, nên mình đáp ngay để giữ cuộc trò chuyện tự nhiên."
+
+    if normalized_method == "always_on_chatter_fast_path":
+        return "Đây là một nhịp trò chuyện rất ngắn và ít thông tin, nên mình giữ nó ở lane đáp trực tiếp."
+
+    if normalized_intent == "social" and len(normalized_query.split()) <= 6:
+        return (
+            "Nhịp này thiên về xã giao hoặc bắt nhịp cảm xúc hơn là cần mở một lane xử lý nặng, "
+            "nên mình giữ nó ngắn và gần."
+        )
+
+    return cleaned_raw
+
+
 class SupervisorAgent:
     """
     Supervisor Agent - Coordinates specialized agents.
@@ -390,25 +995,43 @@ class SupervisorAgent:
             self._llm = None
 
     def _get_llm_for_state(self, state: AgentState):
-        """Get LLM respecting per-request provider override.
+        """Resolve the house routing model instead of the user-selected generator.
 
-        When user explicitly selects a provider (e.g. "zhipu"), ALL nodes
-        including supervisor should use it — avoids 429 cascading when
-        primary is rate-limited. Falls back to fresh AgentConfigRegistry
-        lookup (not cached self._llm which may be stale/dead).
+        Wiii's supervisor is the conductor of the conversation, so we keep it on
+        the admin-managed routing profile to preserve routing quality, visible
+        reasoning tone, and house identity.
         """
-        provider = state.get("provider") if state else None
-        if provider and provider != "auto":
-            try:
-                return AgentConfigRegistry.get_llm(
-                    "supervisor", provider_override=provider,
-                )
-            except Exception:
-                pass
         try:
+            provider_override = self._resolve_house_routing_provider(state)
+            if provider_override:
+                state["_house_routing_provider"] = provider_override
+                return AgentConfigRegistry.get_llm("supervisor", provider_override=provider_override)
             return AgentConfigRegistry.get_llm("supervisor")
         except Exception:
             return self._llm
+
+    def _resolve_house_routing_provider(self, state: AgentState) -> Optional[str]:
+        """Pick the best currently-runnable provider for house routing."""
+        try:
+            from app.engine.llm_pool import LLMPool
+            from app.services.llm_selectability_service import choose_best_runtime_provider
+
+            group_profiles = AgentConfigRegistry.get_group_profiles()
+            preferred = str(
+                group_profiles.get("routing", {}).get("default_provider")
+                or settings.llm_provider
+                or "google"
+            ).strip().lower()
+            best = choose_best_runtime_provider(
+                preferred_provider=preferred,
+                provider_order=LLMPool._get_request_provider_chain(),
+                allow_degraded_fallback=True,
+            )
+            if best and best.provider in {"google", "zhipu", "openai", "openrouter", "ollama"}:
+                return best.provider
+        except Exception as exc:
+            logger.debug("[SUPERVISOR] Failed to resolve house routing provider: %s", exc)
+        return None
 
     async def route(self, state: AgentState) -> str:
         """
@@ -426,15 +1049,26 @@ class SupervisorAgent:
         context = state.get("context", {})
         domain_config = state.get("domain_config", {})
 
-        if settings.enable_conservative_fast_routing:
+        _apply_routing_hint(state, query)
+
+        if settings.enable_conservative_fast_routing and not state.get("_routing_hint"):
             fast_result = self._conservative_fast_route(query, context, domain_config)
             if fast_result is not None:
                 agent, intent, confidence, reasoning = fast_result
+                method = "conservative_fast_path"
                 state["routing_metadata"] = {
                     "intent": intent,
                     "confidence": confidence,
-                    "reasoning": reasoning,
-                    "method": "conservative_fast_path",
+                    "reasoning": _finalize_routing_reasoning(
+                        raw_reasoning=reasoning,
+                        method=method,
+                        chosen_agent=agent,
+                        intent=intent,
+                        query=query,
+                    ),
+                    "llm_reasoning": "",
+                    "method": method,
+                    "final_agent": agent,
                 }
                 return agent
 
@@ -477,66 +1111,96 @@ class SupervisorAgent:
                                  state: AgentState, *, llm=None) -> str:
         """Route using structured output with CoT and confidence gate (Sprint 71)."""
         from app.engine.structured_schemas import RoutingDecision
+        from app.services.structured_invoke_service import StructuredInvokeService
 
         _llm = llm or self._llm
-        structured_llm = _llm.with_structured_output(RoutingDecision)
 
-        # Sprint 77+78: Give supervisor last 3 exchanges + running summary for routing
+        routing_hint = state.get("_routing_hint") if isinstance(state.get("_routing_hint"), dict) else {}
+        fast_chatter_hint = None
+        if routing_hint.get("kind") == "fast_chatter":
+            fast_chatter_hint = (
+                str(routing_hint.get("intent") or ""),
+                str(routing_hint.get("shape") or ""),
+            )
+        use_compact_prompt = _should_use_compact_routing_prompt(query, fast_chatter_hint)
+
+        # Sprint 77+78: Give supervisor recent context, but keep it compact on
+        # short turns so routing can still be LLM-first without carrying the
+        # full house stack on every "wow/hehe/mo phong duoc chu?" beat.
         lc_messages = (context or {}).get("langchain_messages", [])
         conv_summary = (context or {}).get("conversation_summary", "")
         if lc_messages:
-            recent_turns = "\n".join(
-                f"{'User' if getattr(m, 'type', '') == 'human' else 'AI'}: {m.content[:200]}"
-                for m in lc_messages[-6:]
+            turn_window = 2 if use_compact_prompt else 6
+            turn_limit = 88 if use_compact_prompt else 200
+            recent_turns = _build_recent_turns_for_routing(
+                lc_messages,
+                turn_window=turn_window,
+                turn_limit=turn_limit,
             )
             context_str = f"Recent conversation:\n{recent_turns}"
             if conv_summary:
-                context_str = f"Summary of earlier conversation:\n{conv_summary[:300]}\n\n{context_str}"
+                summary_limit = 96 if use_compact_prompt else 300
+                context_str = f"Summary of earlier conversation:\n{conv_summary[:summary_limit]}\n\n{context_str}"
         else:
-            context_str = str(context)[:500]
+            context_str = str(context)[:160 if use_compact_prompt else 500]
 
         capability_context = state.get("capability_context", "")
         if capability_context:
-            context_str = f"{context_str}\n\n{capability_context}"
+            cap_limit = 120 if use_compact_prompt else len(capability_context)
+            context_str = f"{context_str}\n\n{capability_context[:cap_limit]}"
 
         # Sprint 215: Extract user_role for colleague routing
         user_role = (context or {}).get("user_role") or (context or {}).get("role") or "student"
 
-        # Phase2-F: Inject thinking instruction so supervisor wraps reasoning in <thinking> tags
-        from app.prompts.prompt_loader import get_prompt_loader
-        _thinking_instr = get_prompt_loader().get_thinking_instruction()
+        routing_hints: list[str] = []
+        if fast_chatter_hint is not None:
+            routing_hints.append(
+                f"short_{fast_chatter_hint[1]} -> intent={fast_chatter_hint[0]}"
+            )
+        if routing_hint.get("kind") == "capability_probe":
+            routing_hints.append("short_capability_probe")
+        if _needs_code_studio(query):
+            routing_hints.append("code_studio_signal")
+        house_provider = state.get("_house_routing_provider")
+        if house_provider:
+            routing_hints.append(f"house_provider={house_provider}")
+        routing_hints_text = ", ".join(routing_hints) or "none"
 
-        messages = [
-            SystemMessage(content=build_supervisor_card_prompt()),
-            SystemMessage(content="You are a query router. Analyze the query step by step, classify intent, choose agent, and provide confidence."),
-            SystemMessage(content=(
-                "Visual policy: explanatory charts, comparisons, process diagrams, architecture diagrams, and concept visuals "
-                "should stay on DIRECT or TUTOR so those agents can call article-figure/chart tools. "
-                "Reserve CODE_STUDIO_AGENT for code execution, app/widget generation, simulations, artifacts, files, or browser sandbox work."
-            )),
-            *([SystemMessage(content=_thinking_instr)] if _thinking_instr else []),
-            HumanMessage(content=ROUTING_PROMPT_TEMPLATE.format(
-                domain_name=domain_name,
-                rag_description=rag_desc,
-                tutor_description=tutor_desc,
-                query=query,
-                context=context_str,
-                user_role=user_role,
-            ))
-        ]
+        if use_compact_prompt:
+            messages = [
+                SystemMessage(content=build_supervisor_micro_card_prompt()),
+                HumanMessage(content=COMPACT_ROUTING_PROMPT_TEMPLATE.format(
+                    query=query,
+                    context=context_str,
+                    routing_hints=routing_hints_text,
+                )),
+            ]
+        else:
+            messages = [
+                SystemMessage(content=build_supervisor_card_prompt()),
+                SystemMessage(content="You are a query router. Analyze the query step by step, classify intent, choose agent, and provide confidence."),
+                SystemMessage(content=(
+                    "Visual policy: explanatory charts, comparisons, process diagrams, architecture diagrams, and concept visuals "
+                    "should stay on DIRECT or TUTOR so those agents can call article-figure/chart tools. "
+                    "Reserve CODE_STUDIO_AGENT for code execution, app/widget generation, simulations, artifacts, files, or browser sandbox work."
+                )),
+                HumanMessage(content=ROUTING_PROMPT_TEMPLATE.format(
+                    domain_name=domain_name,
+                    rag_description=rag_desc,
+                    tutor_description=tutor_desc,
+                    query=query,
+                    context=context_str,
+                    user_role=user_role,
+                )),
+            ]
 
-        try:
-            result = await structured_llm.ainvoke(messages)
-        except Exception as _route_exc:
-            from app.engine.llm_pool import LLMPool, is_rate_limit_error
-            if not is_rate_limit_error(_route_exc):
-                raise
-            _fb = LLMPool.get_fallback("light")
-            if _fb is None:
-                raise
-            logger.warning("[SUPERVISOR] Rate-limited, using fallback for routing")
-            _fb_structured = _fb.with_structured_output(RoutingDecision)
-            result = await _fb_structured.ainvoke(messages)
+        result = await StructuredInvokeService.ainvoke(
+            llm=_llm,
+            schema=RoutingDecision,
+            payload=messages,
+            tier="light",
+            provider=house_provider,
+        )
 
         agent_map = {
             "RAG_AGENT": AgentType.RAG.value,
@@ -575,25 +1239,28 @@ class SupervisorAgent:
             chosen_agent = AgentType.CODE_STUDIO.value
             method = "structured+intent_override"
 
-        if (
-            visual_decision.presentation_intent in {"article_figure", "chart_runtime"}
-            and chosen_agent == AgentType.CODE_STUDIO.value
-        ):
-            # Always use DIRECT for chart visuals — it properly emits visual events.
-            # Tutor agent processes tools internally and doesn't emit visuals via SSE.
-            fallback_agent = AgentType.DIRECT.value
-            logger.info(
-                "[SUPERVISOR] Visual lane override: code_studio_agent -> %s (%s)",
-                fallback_agent,
-                visual_decision.presentation_intent,
-            )
-            chosen_agent = fallback_agent
-            method = "structured+visual_lane_override"
-
         if _needs_code_studio(query) and chosen_agent in (AgentType.DIRECT.value, AgentType.TUTOR.value):
             logger.info("[SUPERVISOR] Capability override: %s -> code_studio_agent", chosen_agent)
             chosen_agent = AgentType.CODE_STUDIO.value
             method = "structured+capability_override"
+
+        if (
+            (
+                (
+                    visual_decision.presentation_intent in {"article_figure", "chart_runtime"}
+                    and not _needs_code_studio(query)
+                )
+                or _looks_like_visual_data_request(query)
+            )
+            and chosen_agent != AgentType.DIRECT.value
+        ):
+            logger.info(
+                "[SUPERVISOR] Visual lane override: %s -> direct (%s)",
+                chosen_agent,
+                visual_decision.presentation_intent or "visual_data_request",
+            )
+            chosen_agent = AgentType.DIRECT.value
+            method = "structured+visual_lane_override"
 
         # Chart visuals must go through DIRECT (it emits visual events via SSE properly)
         # Also override when resolver detects any visual intent (force_tool=True)
@@ -636,8 +1303,18 @@ class SupervisorAgent:
         state["routing_metadata"] = {
             "intent": result.intent,
             "confidence": result.confidence,
-            "reasoning": result.reasoning,
+            "reasoning": _finalize_routing_reasoning(
+                raw_reasoning=result.reasoning,
+                method=method,
+                chosen_agent=chosen_agent,
+                intent=result.intent,
+                query=query,
+            ),
+            "llm_reasoning": result.reasoning,
             "method": method,
+            "final_agent": chosen_agent,
+            "house_provider": house_provider,
+            "compact_prompt": use_compact_prompt,
         }
 
         return chosen_agent
@@ -645,42 +1322,19 @@ class SupervisorAgent:
     def _conservative_fast_route(self, query: str, context: dict, domain_config: dict) -> Optional[tuple[str, str, float, str]]:
         """Route only the most obvious turns without invoking the supervisor LLM."""
         normalized = _normalize_router_text(query)
-        visual_decision = resolve_visual_intent(query)
-        domain_keywords = [kw for kw in self._get_domain_keywords(domain_config) if kw]
-        has_domain_signal = any(keyword in normalized for keyword in domain_keywords)
+
+        fast_chatter = classify_fast_chatter_turn(query)
+        if fast_chatter is not None:
+            intent, chatter_kind = fast_chatter
+            reasoning = (
+                "obvious social turn"
+                if chatter_kind == "social"
+                else f"obvious {chatter_kind.replace('_', ' ')} turn"
+            )
+            return (AgentType.DIRECT.value, intent, 1.0, reasoning)
 
         if _looks_clear_social(normalized):
             return (AgentType.DIRECT.value, "social", 1.0, "obvious social turn")
-
-        if any(kw in normalized for kw in PERSONAL_KEYWORDS):
-            return None
-
-        if _looks_clear_product_intent(normalized):
-            if settings.enable_product_search:
-                return (AgentType.PRODUCT_SEARCH.value, "product_search", 0.93, "obvious product search turn")
-            return (AgentType.DIRECT.value, "off_topic", 0.85, "product intent but product search is disabled")
-
-        if _looks_clear_web_intent(normalized):
-            return (AgentType.DIRECT.value, "web_search", 0.92, "obvious web or legal lookup turn")
-
-        if (
-            visual_decision.presentation_intent in {"code_studio_app", "artifact"}
-            or _needs_code_studio(query)
-        ):
-            return (AgentType.CODE_STUDIO.value, "code_execution", 0.95, "obvious code, simulation, or artifact turn")
-
-        if _looks_clear_learning_turn(normalized) and not has_domain_signal:
-            return (AgentType.DIRECT.value, "learning", 0.9, "obvious learning turn without app or domain signals")
-
-        if visual_decision.presentation_intent in {"article_figure", "chart_runtime"}:
-            if not has_domain_signal:
-                intent = "learning" if any(cue in normalized for cue in _VISUAL_LEARNING_CUES) else "lookup"
-                return (
-                    AgentType.DIRECT.value,
-                    intent,
-                    0.91,
-                    f"obvious inline visual turn ({visual_decision.presentation_intent})",
-                )
 
         return None
 
@@ -740,7 +1394,7 @@ class SupervisorAgent:
         query_lower = query.lower()
 
         # 1. Social intent → DIRECT
-        if any(kw in query_lower for kw in SOCIAL_KEYWORDS):
+        if is_obvious_social_turn(query):
             return AgentType.DIRECT.value
 
         # 2. Personal intent → MEMORY
@@ -825,6 +1479,13 @@ class SupervisorAgent:
             # Sprint 222: Include host context in synthesis
             _host_prompt = state.get("host_context_prompt", "")
             _host_suffix = f"\n\nHost Context:\n{_host_prompt}" if _host_prompt else ""
+            _host_capabilities_prompt = state.get("host_capabilities_prompt", "")
+            _host_capabilities_suffix = (
+                f"\n\nHost Capabilities:\n{_host_capabilities_prompt}"
+                if _host_capabilities_prompt else ""
+            )
+            _operator_prompt = state.get("operator_context_prompt", "")
+            _operator_suffix = f"\n\nOperator Context:\n{_operator_prompt}" if _operator_prompt else ""
             _living_prompt = state.get("living_context_prompt", "")
             _living_suffix = f"\n\nLiving Context:\n{_living_prompt}" if _living_prompt else ""
             _widget_feedback_prompt = state.get("widget_feedback_prompt", "")
@@ -838,7 +1499,7 @@ class SupervisorAgent:
                 HumanMessage(content=_synth_prompt.format(
                     query=state.get("query", ""),
                     outputs=output_text
-                ) + _host_suffix + _living_suffix + _widget_suffix)
+                ) + _host_suffix + _host_capabilities_suffix + _operator_suffix + _living_suffix + _widget_suffix)
             ]
 
             try:
@@ -896,9 +1557,13 @@ class SupervisorAgent:
         Returns:
             Updated state with routing decision, skill context, and routing metadata
         """
+        event_queue = _get_supervisor_stream_queue(state)
+
         # Skill Activation: match query against domain skills (progressive disclosure)
         domain_id = state.get("domain_id", "")
         query = state.get("query", "")
+        if query:
+            _apply_routing_hint(state, query)
         if domain_id and query:
             try:
                 from app.domains.registry import get_domain_registry
@@ -925,61 +1590,73 @@ class SupervisorAgent:
             except Exception as e:
                 logger.debug("Capability handbook summary skipped: %s", e)
 
-        # Route to appropriate agent (also sets routing_metadata in state)
-        next_agent = await self.route(state)
+        # Supervisor does NOT push thinking bus events (matches production GitHub code).
+        # All visible thinking comes from agent nodes via astream() + narrator.render().
 
         try:
-            from app.engine.skills.skill_handbook import get_skill_handbook
+            # Route to appropriate agent (also sets routing_metadata in state)
+            next_agent = await self.route(state)
 
-            routed_intent = (state.get("routing_metadata") or {}).get("intent")
-            capability_context = get_skill_handbook().summarize_for_query(
-                query,
-                intent=routed_intent,
-                max_entries=3,
+            try:
+                from app.engine.skills.skill_handbook import get_skill_handbook
+
+                routed_intent = (state.get("routing_metadata") or {}).get("intent")
+                capability_context = get_skill_handbook().summarize_for_query(
+                        query,
+                    intent=routed_intent,
+                    max_entries=3,
+                )
+                if capability_context:
+                    _store_capability_context(state, capability_context)
+            except Exception as e:
+                logger.debug("Post-routing capability handbook summary skipped: %s", e)
+
+            # Sprint 163 Phase 4: Parallel dispatch for complex queries
+            try:
+                from app.core.config import settings as _settings
+
+                if (
+                    _settings.enable_subagent_architecture
+                    and next_agent in (
+                        AgentType.RAG.value,
+                        AgentType.TUTOR.value,
+                        AgentType.PRODUCT_SEARCH.value,
+                    )
+                    and self._is_complex_query(query, state.get("routing_metadata") or {})
+                ):
+                    from app.engine.multi_agent.orchestration_planner import plan_parallel_targets
+
+                    planned_targets = plan_parallel_targets(
+                        query,
+                        next_agent,
+                        intent=(state.get("routing_metadata") or {}).get("intent"),
+                        max_targets=2,
+                    )
+                    if len(planned_targets) > 1:
+                        logger.info(
+                            "[SUPERVISOR] Complex query detected -> parallel_dispatch %s",
+                            planned_targets,
+                        )
+                        next_agent = "parallel_dispatch"
+                        state["_parallel_targets"] = planned_targets
+            except Exception as e:
+                logger.debug("Parallel dispatch check failed: %s", e)
+
+            state["next_agent"] = next_agent
+            state["current_agent"] = "supervisor"
+
+            metadata = state.get("routing_metadata", {}) or {}
+            logger.info(
+                "[SUPERVISOR] Routing to: %s (method=%s, intent=%s, conf=%.2f)",
+                next_agent,
+                metadata.get("method", "unknown"),
+                metadata.get("intent", "unknown"),
+                metadata.get("confidence", 0.0),
             )
-            if capability_context:
-                _store_capability_context(state, capability_context)
-        except Exception as e:
-            logger.debug("Post-routing capability handbook summary skipped: %s", e)
 
-        # Sprint 163 Phase 4: Parallel dispatch for complex queries
-        try:
-            from app.core.config import settings as _settings
-            if (
-                _settings.enable_subagent_architecture
-                and next_agent in (
-                    AgentType.RAG.value,
-                    AgentType.TUTOR.value,
-                    AgentType.PRODUCT_SEARCH.value,
-                )
-                and self._is_complex_query(query, state.get("routing_metadata") or {})
-            ):
-                from app.engine.multi_agent.orchestration_planner import plan_parallel_targets
-
-                planned_targets = plan_parallel_targets(
-                    query,
-                    next_agent,
-                    intent=(state.get("routing_metadata") or {}).get("intent"),
-                    max_targets=2,
-                )
-                if len(planned_targets) > 1:
-                    logger.info("[SUPERVISOR] Complex query detected → parallel_dispatch %s", planned_targets)
-                    next_agent = "parallel_dispatch"
-                    state["_parallel_targets"] = planned_targets
-        except Exception as e:
-            logger.debug("Parallel dispatch check failed: %s", e)
-
-        state["next_agent"] = next_agent
-        state["current_agent"] = "supervisor"
-
-        metadata = state.get("routing_metadata", {})
-        logger.info("[SUPERVISOR] Routing to: %s (method=%s, intent=%s, conf=%.2f)",
-                     next_agent,
-                     metadata.get("method", "unknown"),
-                     metadata.get("intent", "unknown"),
-                     metadata.get("confidence", 0.0))
-
-        return state
+            return state
+        except Exception:
+            raise
 
     def is_available(self) -> bool:
         """Check if LLM is available."""

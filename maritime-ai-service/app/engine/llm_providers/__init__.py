@@ -10,6 +10,7 @@ from app.engine.llm_providers.gemini_provider import GeminiProvider
 from app.engine.llm_providers.openai_provider import OpenAIProvider
 from app.engine.llm_providers.ollama_provider import OllamaProvider
 from app.engine.llm_providers.zhipu_provider import ZhipuProvider
+from app.engine.llm_providers.vertex_provider import VertexAIProvider
 from app.engine.llm_providers.unified_client import UnifiedLLMClient, ProviderConfig
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "OpenAIProvider",
     "OllamaProvider",
     "ZhipuProvider",
+    "VertexAIProvider",
     "UnifiedLLMClient",
     "ProviderConfig",
 ]

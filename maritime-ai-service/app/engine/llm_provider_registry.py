@@ -4,6 +4,7 @@ from __future__ import annotations
 
 SUPPORTED_PROVIDER_NAMES: tuple[str, ...] = (
     "google",
+    "vertex",
     "openai",
     "openrouter",
     "ollama",
@@ -31,9 +32,11 @@ def get_provider_class(name: str):
 
     from app.engine.llm_providers import GeminiProvider, OllamaProvider, OpenAIProvider
     from app.engine.llm_providers.zhipu_provider import ZhipuProvider
+    from app.engine.llm_providers.vertex_provider import VertexAIProvider
 
     provider_map = {
         "google": GeminiProvider,
+        "vertex": VertexAIProvider,
         "openai": OpenAIProvider,
         "openrouter": OpenAIProvider,
         "ollama": OllamaProvider,

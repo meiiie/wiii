@@ -16,8 +16,17 @@ from typing import Optional
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.engine.llm_timeout_policy import loads_timeout_provider_overrides
 from app.engine.llm_provider_registry import get_supported_provider_names
-from app.engine.model_catalog import DEFAULT_EMBEDDING_MODEL, GOOGLE_DEFAULT_MODEL, get_embedding_dimensions
+from app.engine.model_catalog import (
+    DEFAULT_EMBEDDING_MODEL,
+    GOOGLE_DEFAULT_MODEL,
+    OPENAI_DEFAULT_MODEL,
+    OPENAI_DEFAULT_MODEL_ADVANCED,
+    ZHIPU_DEFAULT_MODEL,
+    ZHIPU_DEFAULT_MODEL_ADVANCED,
+    get_embedding_dimensions,
+)
 
 from app.core.config.database import DatabaseConfig
 from app.core.config.llm import LLMConfig
@@ -282,8 +291,8 @@ class Settings(BaseSettings):
     # LLM Settings - OpenAI/OpenRouter (legacy)
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
     openai_base_url: Optional[str] = Field(default=None, description="OpenAI-compatible API base URL (e.g., OpenRouter)")
-    openai_model: str = Field(default="gpt-4o-mini", description="OpenAI model for general tasks")
-    openai_model_advanced: str = Field(default="gpt-4o", description="OpenAI model for complex tasks")
+    openai_model: str = Field(default=OPENAI_DEFAULT_MODEL, description="OpenAI model for general tasks")
+    openai_model_advanced: str = Field(default=OPENAI_DEFAULT_MODEL_ADVANCED, description="OpenAI model for complex tasks")
     openrouter_model_fallbacks: list[str] = Field(
         default_factory=list,
         description="Ordered fallback models for OpenRouter requests",
@@ -327,7 +336,7 @@ class Settings(BaseSettings):
         default=GOOGLE_DEFAULT_MODEL,
         description="Google Gemini model (default: gemini-3.1-flash-lite-preview, current March 2026 default)",
     )
-    llm_provider: str = Field(default="ollama", description="LLM provider: google, openai, openrouter, ollama")
+    llm_provider: str = Field(default="google", description="LLM provider: google, zhipu, openai, openrouter, ollama")
 
     # LLM Settings - Ollama (local/self-hosted)
     ollama_api_key: Optional[str] = Field(
@@ -348,21 +357,80 @@ class Settings(BaseSettings):
         description="Models supporting thinking mode via Ollama (matched by prefix)"
     )
 
-    # LLM Settings - Zhipu AI / GLM-5 (cloud fallback)
-    zhipu_api_key: Optional[str] = Field(default=None, description="Zhipu AI (GLM-5) API key")
+    # LLM Settings - Zhipu AI / GLM (cloud fallback)
+    # Vertex AI (separate from Google AI Studio — independent quota)
+    vertex_api_key: Optional[str] = Field(default=None, description="Vertex AI API key (format: AQ.xxx)")
+    vertex_model: Optional[str] = Field(default=None, description="Vertex AI model (defaults to google_model if not set)")
+
+    zhipu_api_key: Optional[str] = Field(default=None, description="Zhipu AI (GLM) API key")
     zhipu_base_url: str = Field(
         default="https://open.bigmodel.cn/api/paas/v4",
         description="Zhipu AI API base URL (OpenAI-compatible)",
     )
-    zhipu_model: str = Field(default="glm-5", description="Zhipu model for general tasks")
-    zhipu_model_advanced: str = Field(default="glm-5", description="Zhipu model for complex tasks")
+    zhipu_model: str = Field(default=ZHIPU_DEFAULT_MODEL, description="Zhipu model for general tasks")
+    zhipu_model_advanced: str = Field(default=ZHIPU_DEFAULT_MODEL_ADVANCED, description="Zhipu model for complex tasks")
 
     # Multi-Provider Failover (Sprint 11: OpenClaw-inspired)
     llm_failover_chain: list[str] = Field(
-        default=["ollama", "google", "zhipu", "openrouter"],
+        default=["google", "zhipu", "ollama", "openrouter"],
         description="LLM provider failover chain (try in order)"
     )
     enable_llm_failover: bool = Field(default=True, description="Enable automatic LLM provider failover")
+    llm_primary_timeout_light_seconds: float = Field(
+        default=12.0,
+        ge=0,
+        le=600,
+        description="First-response timeout for LIGHT interactive LLM calls (0 disables timeout)",
+    )
+    llm_primary_timeout_moderate_seconds: float = Field(
+        default=25.0,
+        ge=0,
+        le=900,
+        description="First-response timeout for MODERATE interactive LLM calls (0 disables timeout)",
+    )
+    llm_primary_timeout_deep_seconds: float = Field(
+        default=45.0,
+        ge=0,
+        le=1800,
+        description="First-response timeout for DEEP interactive LLM calls (0 disables timeout)",
+    )
+    llm_primary_timeout_structured_seconds: float = Field(
+        default=60.0,
+        ge=0,
+        le=1800,
+        description="First-response timeout for structured-output calls (0 disables timeout)",
+    )
+    llm_primary_timeout_background_seconds: float = Field(
+        default=0.0,
+        ge=0,
+        le=3600,
+        description="First-response timeout for background workflows such as long course generation (0 disables timeout)",
+    )
+    llm_stream_keepalive_interval_seconds: float = Field(
+        default=15.0,
+        ge=1,
+        le=300,
+        description="SSE keepalive heartbeat interval in seconds",
+    )
+    llm_stream_idle_timeout_seconds: float = Field(
+        default=0.0,
+        ge=0,
+        le=3600,
+        description="Abort stalled SSE streams after this many seconds without inner chunks (0 disables idle timeout)",
+    )
+    llm_timeout_provider_overrides: str = Field(
+        default="{}",
+        description='JSON provider-specific timeout overrides: {"google": {"light_seconds": 12}}',
+    )
+    llm_runtime_audit_refresh_interval_seconds: float = Field(
+        default=300.0,
+        ge=0,
+        le=86400,
+        description=(
+            "Periodic background refresh interval for request-selectable "
+            "LLM runtime audit snapshots (0 disables periodic refresh)"
+        ),
+    )
 
     # Semantic Memory Settings (v0.3 - Vector Embeddings)
     embedding_model: str = Field(
@@ -609,6 +677,10 @@ class Settings(BaseSettings):
     agent_provider_configs: str = Field(
         default="{}",
         description='JSON per-node overrides: {"tutor_agent": {"tier": "moderate", "provider": "google"}}'
+    )
+    agent_runtime_profiles: str = Field(
+        default="{}",
+        description='JSON grouped runtime profiles: {"routing": {"default_provider": "google", "tier": "light", "provider_models": {}}}',
     )
 
     # Neo4j (Legacy — reserved for future Learning Graph)
@@ -867,7 +939,7 @@ class Settings(BaseSettings):
             "Empty = provider default. "
             "Google options: gemini-3.1-flash-lite-preview (default, latest 3.1 preview), "
             "gemini-3-flash-preview (3.0 general), gemini-3-pro-preview (3.0 quality). "
-            "OpenAI options: gpt-4o (default), gpt-4o-mini."
+            "OpenAI options: gpt-5.4-mini (default), gpt-5.4."
         ),
     )
 
@@ -1463,6 +1535,16 @@ class Settings(BaseSettings):
             provider=self.llm_provider,
             failover_chain=self.llm_failover_chain,
             enable_failover=self.enable_llm_failover,
+            primary_timeout_light_seconds=self.llm_primary_timeout_light_seconds,
+            primary_timeout_moderate_seconds=self.llm_primary_timeout_moderate_seconds,
+            primary_timeout_deep_seconds=self.llm_primary_timeout_deep_seconds,
+            primary_timeout_structured_seconds=self.llm_primary_timeout_structured_seconds,
+            primary_timeout_background_seconds=self.llm_primary_timeout_background_seconds,
+            stream_keepalive_interval_seconds=self.llm_stream_keepalive_interval_seconds,
+            stream_idle_timeout_seconds=self.llm_stream_idle_timeout_seconds,
+            timeout_provider_overrides=loads_timeout_provider_overrides(
+                getattr(self, "llm_timeout_provider_overrides", "{}")
+            ),
             google_api_key=self.google_api_key,
             google_model=self.google_model,
             openai_api_key=self.openai_api_key,
@@ -1483,6 +1565,10 @@ class Settings(BaseSettings):
             ollama_model=self.ollama_model,
             ollama_keep_alive=self.ollama_keep_alive,
             ollama_thinking_models=self.ollama_thinking_models,
+            zhipu_api_key=self.zhipu_api_key,
+            zhipu_base_url=self.zhipu_base_url,
+            zhipu_model=self.zhipu_model,
+            zhipu_model_advanced=self.zhipu_model_advanced,
         ))
         object.__setattr__(self, "rag", RAGConfig(
             enable_corrective_rag=self.enable_corrective_rag,

@@ -5,6 +5,7 @@ Tests LLM routing, rule-based fallback, response synthesis,
 skill activation, and state wiring.
 """
 
+import asyncio
 import sys
 import types
 import pytest
@@ -46,6 +47,29 @@ def _make_supervisor(llm=None):
         return SupervisorAgent()
 
 
+def _mock_structured_route(
+    agent_name: str,
+    *,
+    intent: str = "lookup",
+    confidence: float = 0.95,
+    reasoning: str = "structured route",
+):
+    """Patch StructuredInvokeService so supervisor tests follow the real contract."""
+    from app.engine.structured_schemas import RoutingDecision
+
+    return patch(
+        "app.services.structured_invoke_service.StructuredInvokeService.ainvoke",
+        new=AsyncMock(
+            return_value=RoutingDecision(
+                agent=agent_name,
+                intent=intent,
+                confidence=confidence,
+                reasoning=reasoning,
+            )
+        ),
+    )
+
+
 @pytest.fixture
 def mock_llm():
     llm = MagicMock()
@@ -79,47 +103,138 @@ class TestSupervisorRoute:
     """Sprint 103: route() always uses structured output (_route_structured)."""
 
     @pytest.mark.asyncio
+    async def test_route_obvious_social_turn_sets_house_hint_and_keeps_llm_first(self, mock_llm):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "query": "Xin chào hảo hán",
+            "context": {},
+            "domain_config": {},
+        }
+
+        with patch.object(sup, "_route_structured", new=AsyncMock(return_value="direct")) as mock_route:
+            result = await sup.route(state)
+
+        assert result == "direct"
+        assert state["_routing_hint"] == {
+            "kind": "fast_chatter",
+            "intent": "social",
+            "shape": "social",
+        }
+        mock_route.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_route_laughter_social_turn_sets_house_hint_and_keeps_llm_first(self, mock_llm):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "query": "hẹ hẹ",
+            "context": {},
+            "domain_config": {},
+        }
+
+        with patch.object(sup, "_route_structured", new=AsyncMock(return_value="direct")) as mock_route:
+            result = await sup.route(state)
+
+        assert result == "direct"
+        assert state["_routing_hint"] == {
+            "kind": "fast_chatter",
+            "intent": "social",
+            "shape": "social",
+        }
+        mock_route.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_route_reaction_turn_sets_house_hint_and_keeps_llm_first(self, mock_llm):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "query": "wow",
+            "context": {},
+            "domain_config": {},
+        }
+
+        mock_route = AsyncMock(return_value="direct")
+        with patch.object(sup, "_route_structured", new=mock_route):
+            result = await sup.route(state)
+
+        assert result == "direct"
+        assert state["_routing_hint"] == {
+            "kind": "fast_chatter",
+            "intent": "social",
+            "shape": "reaction",
+        }
+        mock_route.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_route_identity_probe_sets_house_hint_and_keeps_llm_first(self, mock_llm):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "query": "ban la ai",
+            "context": {},
+            "domain_config": {},
+        }
+
+        mock_route = AsyncMock(return_value="direct")
+        with patch.object(sup, "_route_structured", new=mock_route):
+            result = await sup.route(state)
+
+        assert result == "direct"
+        assert state["_routing_hint"] == {
+            "kind": "identity_probe",
+            "intent": "selfhood",
+            "shape": "identity",
+        }
+        mock_route.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_route_vague_banter_turn_sets_house_hint_and_keeps_llm_first(self, mock_llm):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "query": "gì đó",
+            "context": {},
+            "domain_config": {},
+        }
+
+        mock_route = AsyncMock(return_value="direct")
+        with patch.object(sup, "_route_structured", new=mock_route):
+            result = await sup.route(state)
+
+        assert result == "direct"
+        assert state["_routing_hint"] == {
+            "kind": "fast_chatter",
+            "intent": "off_topic",
+            "shape": "vague_banter",
+        }
+        mock_route.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_route_to_rag(self, mock_llm, base_state):
-        from app.engine.structured_schemas import RoutingDecision
-        mock_structured = MagicMock()
-        mock_structured.ainvoke = AsyncMock(return_value=RoutingDecision(agent="RAG_AGENT"))
-        mock_llm.with_structured_output.return_value = mock_structured
         sup = _make_supervisor(mock_llm)
 
-        result = await sup.route(base_state)
+        with _mock_structured_route("RAG_AGENT", intent="lookup"):
+            result = await sup.route(base_state)
         assert result == "rag_agent"
 
     @pytest.mark.asyncio
     async def test_route_to_tutor(self, mock_llm, base_state):
-        from app.engine.structured_schemas import RoutingDecision
-        mock_structured = MagicMock()
-        mock_structured.ainvoke = AsyncMock(return_value=RoutingDecision(agent="TUTOR_AGENT"))
-        mock_llm.with_structured_output.return_value = mock_structured
         sup = _make_supervisor(mock_llm)
 
-        result = await sup.route(base_state)
+        with _mock_structured_route("TUTOR_AGENT", intent="learning"):
+            result = await sup.route(base_state)
         assert result == "tutor_agent"
 
     @pytest.mark.asyncio
     async def test_route_to_memory(self, mock_llm, base_state):
-        from app.engine.structured_schemas import RoutingDecision
-        mock_structured = MagicMock()
-        mock_structured.ainvoke = AsyncMock(return_value=RoutingDecision(agent="MEMORY_AGENT"))
-        mock_llm.with_structured_output.return_value = mock_structured
         sup = _make_supervisor(mock_llm)
 
-        result = await sup.route(base_state)
+        with _mock_structured_route("MEMORY_AGENT", intent="personal"):
+            result = await sup.route(base_state)
         assert result == "memory_agent"
 
     @pytest.mark.asyncio
     async def test_route_to_direct(self, mock_llm, base_state):
-        from app.engine.structured_schemas import RoutingDecision
-        mock_structured = MagicMock()
-        mock_structured.ainvoke = AsyncMock(return_value=RoutingDecision(agent="DIRECT"))
-        mock_llm.with_structured_output.return_value = mock_structured
         sup = _make_supervisor(mock_llm)
 
-        result = await sup.route(base_state)
+        with _mock_structured_route("DIRECT", intent="off_topic"):
+            result = await sup.route(base_state)
         assert result == "direct"
 
     def test_code_studio_keywords_route_to_code_studio(self):
@@ -129,17 +244,23 @@ class TestSupervisorRoute:
 
     @pytest.mark.asyncio
     async def test_route_to_code_studio(self, mock_llm, base_state):
-        from app.engine.structured_schemas import RoutingDecision
-        mock_structured = MagicMock()
-        mock_structured.ainvoke = AsyncMock(
-            return_value=RoutingDecision(agent="CODE_STUDIO_AGENT", intent="code_execution")
-        )
-        mock_llm.with_structured_output.return_value = mock_structured
         sup = _make_supervisor(mock_llm)
         base_state["query"] = "Ve bieu do bang python va tao file PNG"
 
-        result = await sup.route(base_state)
+        with _mock_structured_route("CODE_STUDIO_AGENT", intent="code_execution"):
+            result = await sup.route(base_state)
         assert result == "code_studio_agent"
+
+    @pytest.mark.asyncio
+    async def test_short_simulation_turn_overrides_to_code_studio(self, mock_llm, base_state):
+        sup = _make_supervisor(mock_llm)
+        base_state["query"] = "mô phỏng được chứ?"
+
+        with _mock_structured_route("DIRECT", intent="off_topic", confidence=0.82):
+            result = await sup.route(base_state)
+
+        assert result == "code_studio_agent"
+        assert base_state["routing_metadata"]["method"] == "structured+capability_override"
 
     @pytest.mark.asyncio
     async def test_route_llm_unavailable_falls_back(self, base_state):
@@ -151,12 +272,49 @@ class TestSupervisorRoute:
 
     @pytest.mark.asyncio
     async def test_route_llm_error_falls_back(self, mock_llm, base_state):
-        mock_llm.with_structured_output.side_effect = Exception("API error")
         sup = _make_supervisor(mock_llm)
         base_state["query"] = "COLREGs Rule 13 là gì?"
-        result = await sup.route(base_state)
+        with patch(
+            "app.services.structured_invoke_service.StructuredInvokeService.ainvoke",
+            new=AsyncMock(side_effect=Exception("API error")),
+        ):
+            result = await sup.route(base_state)
         # Should fall back to rule-based without crashing
         assert isinstance(result, str)
+
+
+    @pytest.mark.asyncio
+    async def test_visual_data_request_stays_on_direct_lane(self, mock_llm, base_state):
+        sup = _make_supervisor(mock_llm)
+        base_state["query"] = "Visual cho minh xem thong ke du lieu hien tai gia dau may ngay gan day"
+
+        with _mock_structured_route("CODE_STUDIO_AGENT", intent="code_execution", confidence=0.94):
+            result = await sup.route(base_state)
+
+        assert result == "direct"
+        assert base_state["routing_metadata"]["method"] == "structured+visual_lane_override"
+
+
+class TestSupervisorCompactRoutingPrompt:
+    @pytest.mark.parametrize(
+        ("query", "fast_chatter_hint", "expected"),
+        [
+            ("co the uong ruou thuong trang khong ?", None, False),
+            ("Wiii co the uong ruou thuong trang khong ?", None, False),
+            ("uong ruou thuong trang duoc khong", None, False),
+            ("hehe", ("social", "social"), True),
+            ("mo phong duoc chua?", ("unknown", "short_probe"), True),
+        ],
+    )
+    def test_short_natural_questions_do_not_use_compact_prompt(
+        self,
+        query,
+        fast_chatter_hint,
+        expected,
+    ):
+        from app.engine.multi_agent.supervisor import _should_use_compact_routing_prompt
+
+        assert _should_use_compact_routing_prompt(query, fast_chatter_hint) is expected
 
 
 # ---------------------------------------------------------------------------
@@ -245,8 +403,9 @@ class TestSupervisorSynthesize:
             "agent_outputs": {"rag": "RAG output", "memory": "Memory output"},
         }
 
-        with patch(EXTRACT_THINKING_PATCH, return_value=("Synthesized answer", None)):
-            result = await sup.synthesize(state)
+        with patch.object(sup, "_get_llm_for_state", return_value=mock_llm):
+            with patch(EXTRACT_THINKING_PATCH, return_value=("Synthesized answer", None)):
+                result = await sup.synthesize(state)
 
         assert result == "Synthesized answer"
 
@@ -257,7 +416,8 @@ class TestSupervisorSynthesize:
             "query": "test",
             "agent_outputs": {"rag": "RAG output", "memory": "Memory output"},
         }
-        result = await sup.synthesize(state)
+        with patch.object(sup, "_get_llm_for_state", return_value=None):
+            result = await sup.synthesize(state)
         assert "RAG output" in result
         assert "Memory output" in result
 
@@ -269,7 +429,8 @@ class TestSupervisorSynthesize:
             "query": "test",
             "agent_outputs": {"rag": "RAG output", "tutor": "Tutor output"},
         }
-        result = await sup.synthesize(state)
+        with patch.object(sup, "_get_llm_for_state", return_value=mock_llm):
+            result = await sup.synthesize(state)
         # Returns first output on error
         assert result in ("RAG output", "Tutor output")
 
@@ -282,26 +443,64 @@ class TestSupervisorProcess:
     """Sprint 103: process() uses structured routing (RoutingDecision)."""
 
     def _setup_structured_mock(self, mock_llm, agent_name):
-        """Helper to set up structured output mock for route()."""
-        from app.engine.structured_schemas import RoutingDecision
-        mock_structured = MagicMock()
-        mock_structured.ainvoke = AsyncMock(return_value=RoutingDecision(agent=agent_name))
-        mock_llm.with_structured_output.return_value = mock_structured
+        """Helper to patch structured route via StructuredInvokeService."""
+        intent_map = {
+            "RAG_AGENT": "lookup",
+            "TUTOR_AGENT": "learning",
+            "MEMORY_AGENT": "personal",
+            "DIRECT": "off_topic",
+            "PRODUCT_SEARCH_AGENT": "product_search",
+            "CODE_STUDIO_AGENT": "code_execution",
+        }
+        return _mock_structured_route(
+            agent_name,
+            intent=intent_map.get(agent_name, "lookup"),
+        )
 
     @pytest.mark.asyncio
     async def test_process_sets_next_agent(self, mock_llm, base_state):
-        self._setup_structured_mock(mock_llm, "RAG_AGENT")
         sup = _make_supervisor(mock_llm)
 
-        with patch(DOMAIN_REGISTRY_PATCH, side_effect=Exception("skip")):
-            result = await sup.process(base_state)
+        with self._setup_structured_mock(mock_llm, "RAG_AGENT"):
+            with patch(DOMAIN_REGISTRY_PATCH, side_effect=Exception("skip")):
+                result = await sup.process(base_state)
 
         assert result["next_agent"] == "rag_agent"
         assert result["current_agent"] == "supervisor"
 
     @pytest.mark.asyncio
+    async def test_process_does_not_push_supervisor_thinking_events(self, mock_llm, base_state):
+        """Supervisor does NOT push thinking bus events — thinking comes from agent nodes."""
+        sup = _make_supervisor(mock_llm)
+
+        from app.engine.multi_agent import graph_streaming
+
+        bus_id = "test-supervisor-no-thinking"
+        queue: asyncio.Queue = asyncio.Queue()
+        graph_streaming._EVENT_QUEUES[bus_id] = queue
+        graph_streaming._EVENT_QUEUE_CREATED[bus_id] = 0.0
+        state = dict(base_state)
+        state["_event_bus_id"] = bus_id
+
+        try:
+            with self._setup_structured_mock(mock_llm, "DIRECT"):
+                with patch(DOMAIN_REGISTRY_PATCH, side_effect=Exception("skip")):
+                    result = await sup.process(state)
+
+            events = []
+            while not queue.empty():
+                events.append(queue.get_nowait())
+
+            event_types = [event.get("type") for event in events if isinstance(event, dict)]
+            assert result["next_agent"] == "direct"
+            assert "thinking_start" not in event_types
+            assert "thinking_delta" not in event_types
+        finally:
+            graph_streaming._EVENT_QUEUES.pop(bus_id, None)
+            graph_streaming._EVENT_QUEUE_CREATED.pop(bus_id, None)
+
+    @pytest.mark.asyncio
     async def test_process_skill_activation(self, mock_llm, base_state):
-        self._setup_structured_mock(mock_llm, "TUTOR_AGENT")
         sup = _make_supervisor(mock_llm)
 
         mock_domain = MagicMock()
@@ -313,14 +512,14 @@ class TestSupervisorProcess:
         mock_registry = MagicMock()
         mock_registry.get.return_value = mock_domain
 
-        with patch(DOMAIN_REGISTRY_PATCH, return_value=mock_registry):
-            result = await sup.process(base_state)
+        with self._setup_structured_mock(mock_llm, "TUTOR_AGENT"):
+            with patch(DOMAIN_REGISTRY_PATCH, return_value=mock_registry):
+                result = await sup.process(base_state)
 
         assert result["skill_context"] == "## COLREGs Overview\nContent here..."
 
     @pytest.mark.asyncio
     async def test_process_keeps_capability_context_separate(self, mock_llm, base_state):
-        self._setup_structured_mock(mock_llm, "TUTOR_AGENT")
         sup = _make_supervisor(mock_llm)
 
         mock_domain = MagicMock()
@@ -332,25 +531,26 @@ class TestSupervisorProcess:
         mock_registry = MagicMock()
         mock_registry.get.return_value = mock_domain
 
-        with patch(DOMAIN_REGISTRY_PATCH, return_value=mock_registry):
-            with patch(
-                "app.engine.skills.skill_handbook.get_skill_handbook",
-                return_value=MagicMock(
-                    summarize_for_query=MagicMock(return_value="Capability handbook phù hợp lúc này:\n- tool_knowledge_search")
-                ),
-            ):
-                result = await sup.process(base_state)
+        with self._setup_structured_mock(mock_llm, "TUTOR_AGENT"):
+            with patch(DOMAIN_REGISTRY_PATCH, return_value=mock_registry):
+                with patch(
+                    "app.engine.skills.skill_handbook.get_skill_handbook",
+                    return_value=MagicMock(
+                        summarize_for_query=MagicMock(return_value="Capability handbook phù hợp lúc này:\n- tool_knowledge_search")
+                    ),
+                ):
+                    result = await sup.process(base_state)
 
         assert result["skill_context"] == "## COLREGs Overview\nContent here..."
         assert result["capability_context"].startswith("Capability handbook phù hợp")
 
     @pytest.mark.asyncio
     async def test_process_skill_activation_error_doesnt_crash(self, mock_llm, base_state):
-        self._setup_structured_mock(mock_llm, "RAG_AGENT")
         sup = _make_supervisor(mock_llm)
 
-        with patch(DOMAIN_REGISTRY_PATCH, side_effect=Exception("Registry error")):
-            result = await sup.process(base_state)
+        with self._setup_structured_mock(mock_llm, "RAG_AGENT"):
+            with patch(DOMAIN_REGISTRY_PATCH, side_effect=Exception("Registry error")):
+                result = await sup.process(base_state)
 
         # Should still route successfully despite skill error
         assert result["next_agent"] == "rag_agent"
@@ -358,50 +558,50 @@ class TestSupervisorProcess:
     @pytest.mark.asyncio
     async def test_process_no_domain_id_skips_skills(self, mock_llm):
         state = {"query": "hello there test", "context": {}, "domain_id": "", "domain_config": {}}
-        self._setup_structured_mock(mock_llm, "DIRECT")
         sup = _make_supervisor(mock_llm)
 
-        result = await sup.process(state)
+        with self._setup_structured_mock(mock_llm, "DIRECT"):
+            result = await sup.process(state)
 
         assert "skill_context" not in result
 
     @pytest.mark.asyncio
     async def test_process_uses_parallel_dispatch_for_complex_learning_query(self, mock_llm, base_state):
-        self._setup_structured_mock(mock_llm, "TUTOR_AGENT")
         sup = _make_supervisor(mock_llm)
         base_state["query"] = (
             "Giải thích thật chi tiết quy tắc 13 COLREG, "
             "đưa ví dụ thực tế và đối chiếu với tài liệu gốc giúp tôi nhé."
         )
 
-        with patch("app.core.config.settings.enable_subagent_architecture", True):
-            with patch.object(sup, "_is_complex_query", return_value=True):
-                with patch(
-                    "app.engine.multi_agent.orchestration_planner.plan_parallel_targets",
-                    return_value=["tutor", "rag"],
-                ):
-                    result = await sup.process(base_state)
+        with self._setup_structured_mock(mock_llm, "TUTOR_AGENT"):
+            with patch("app.core.config.settings.enable_subagent_architecture", True):
+                with patch.object(sup, "_is_complex_query", return_value=True):
+                    with patch(
+                        "app.engine.multi_agent.orchestration_planner.plan_parallel_targets",
+                        return_value=["tutor", "rag"],
+                    ):
+                        result = await sup.process(base_state)
 
         assert result["next_agent"] == "parallel_dispatch"
         assert result["_parallel_targets"] == ["tutor", "rag"]
 
     @pytest.mark.asyncio
     async def test_process_uses_parallel_dispatch_for_complex_product_query(self, mock_llm, base_state):
-        self._setup_structured_mock(mock_llm, "PRODUCT_SEARCH_AGENT")
         sup = _make_supervisor(mock_llm)
         base_state["query"] = (
             "Tìm iPhone 17 Pro Max rẻ nhất, so giá trên nhiều nguồn "
             "và phân tích giúp tôi nguồn nào đáng tin nhất."
         )
 
-        with patch("app.core.config.settings.enable_product_search", True):
-            with patch("app.core.config.settings.enable_subagent_architecture", True):
-                with patch.object(sup, "_is_complex_query", return_value=True):
-                    with patch(
-                        "app.engine.multi_agent.orchestration_planner.plan_parallel_targets",
-                        return_value=["search", "rag"],
-                    ):
-                        result = await sup.process(base_state)
+        with self._setup_structured_mock(mock_llm, "PRODUCT_SEARCH_AGENT"):
+            with patch("app.core.config.settings.enable_product_search", True):
+                with patch("app.core.config.settings.enable_subagent_architecture", True):
+                    with patch.object(sup, "_is_complex_query", return_value=True):
+                        with patch(
+                            "app.engine.multi_agent.orchestration_planner.plan_parallel_targets",
+                            return_value=["search", "rag"],
+                        ):
+                            result = await sup.process(base_state)
 
         assert result["next_agent"] == "parallel_dispatch"
         assert result["_parallel_targets"] == ["search", "rag"]
@@ -419,6 +619,10 @@ class TestSupervisorIsAvailable:
     def test_not_available_without_llm(self):
         sup = _make_supervisor(None)
         assert sup.is_available() is False
+
+
+# TestSupervisorVisibleReasoningContract removed — LLM-first:
+# Wiii tự quyết thinking content via ReasoningNarrator, no hardcoded templates to test.
 
 
 # ---------------------------------------------------------------------------

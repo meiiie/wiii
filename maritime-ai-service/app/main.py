@@ -4,6 +4,7 @@ by The Wiii Lab
 
 Clean Architecture + Agentic RAG + Long-term Memory + Domain Plugins
 """
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -174,6 +175,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         logger.info("Skipping auto-migration (set RUN_MIGRATIONS=true to enable)")
 
+    # Restore persisted admin-managed runtime policy before LLM components warm up.
+    try:
+        from app.services.llm_runtime_policy_service import apply_persisted_llm_runtime_policy
+
+        persisted_runtime = apply_persisted_llm_runtime_policy()
+        if persisted_runtime and persisted_runtime.payload:
+            logger.info(
+                "Persisted LLM runtime policy restored from DB%s",
+                (
+                    f" (updated_at={persisted_runtime.updated_at.isoformat()})"
+                    if persisted_runtime.updated_at
+                    else ""
+                ),
+            )
+        else:
+            logger.info("No persisted LLM runtime policy override found")
+    except Exception as e:
+        logger.warning("Persisted LLM runtime policy restore failed: %s", e)
+
     # =========================================================================
     # LMS CONNECTOR BOOTSTRAP (Sprint 220c: Moved early in lifespan)
     # Must run before pre-warming to ensure registry is populated for prompts.
@@ -209,10 +229,47 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # 1a. Initialize Per-Agent Config Registry (Sprint 69)
     try:
         from app.engine.multi_agent.agent_config import AgentConfigRegistry
-        AgentConfigRegistry.initialize(settings.agent_provider_configs)
+        AgentConfigRegistry.initialize(
+            settings.agent_provider_configs,
+            getattr(settings, "agent_runtime_profiles", "{}"),
+        )
         logger.info("[OK] AgentConfigRegistry initialized (per-node LLM config)")
     except Exception as e:
         logger.warning("[WARN] AgentConfigRegistry initialization failed: %s", e)
+
+    _runtime_audit_task = None
+    _runtime_audit_loop_task = None
+    try:
+        from app.services.llm_runtime_audit_service import (
+            background_refresh_request_selectable_runtime_audit,
+        )
+
+        # Defer live probes to avoid exhausting API quota at startup.
+        # Discovery only (no live API calls) — probes run on-demand via admin API.
+        _runtime_audit_task = asyncio.create_task(
+            background_refresh_request_selectable_runtime_audit(run_live_probe=False)
+        )
+        logger.info("[OK] Scheduled background LLM runtime audit (discovery only, no live probes)")
+
+        _audit_interval = float(
+            getattr(settings, "llm_runtime_audit_refresh_interval_seconds", 0.0)
+            or 0.0
+        )
+        # Minimum 1 hour between audit refreshes to avoid quota exhaustion
+        if _audit_interval > 0:
+            _audit_interval = max(_audit_interval, 3600.0)
+            async def _runtime_audit_loop() -> None:
+                while True:
+                    await asyncio.sleep(_audit_interval)
+                    await background_refresh_request_selectable_runtime_audit(run_live_probe=False)
+
+            _runtime_audit_loop_task = asyncio.create_task(_runtime_audit_loop())
+            logger.info(
+                "[OK] Scheduled periodic LLM runtime audit every %ss (discovery only)",
+                int(_audit_interval),
+            )
+    except Exception as e:
+        logger.warning("[WARN] Could not schedule LLM runtime audit refresh: %s", e)
 
     # 1b. Initialize Unified LLM Client (Sprint 55: AsyncOpenAI SDK)
     if settings.enable_unified_client:
@@ -278,6 +335,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Startup health check: %s", health.status.value)
     except Exception as e:
         logger.warning("Startup health check skipped: %s", e)
+
+    # Recover in-flight AI course generation jobs after restart.
+    if settings.enable_lms_integration:
+        try:
+            from app.api.v1.course_generation import recover_course_generation_jobs
+
+            recovered_jobs = await recover_course_generation_jobs()
+            if recovered_jobs:
+                logger.info("Recovered %d course generation job(s) on startup", recovered_jobs)
+        except Exception as e:
+            logger.warning("Course generation recovery skipped: %s", e)
 
     # MCP Client (Sprint 56: Connect to external MCP servers)
     if settings.enable_mcp_client:
@@ -376,6 +444,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.warning("Executor shutdown failed: %s", e)
 
+    for _task_name, _task in (
+        ("runtime audit refresh", _runtime_audit_task),
+        ("runtime audit loop", _runtime_audit_loop_task),
+    ):
+        if _task is None:
+            continue
+        _task.cancel()
+        try:
+            await _task
+        except asyncio.CancelledError:
+            logger.info("%s task cancelled", _task_name)
+        except Exception as e:
+            logger.warning("%s shutdown failed: %s", _task_name, e)
+
     # Stop Living Agent heartbeat (Sprint 170)
     if _heartbeat:
         try:
@@ -423,6 +505,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await close_pool()
     except Exception as e:
         logger.warning("Sources pool close failed: %s", e)
+
+    # Close course generation asyncpg pool
+    try:
+        from app.repositories.course_generation_repository import get_course_gen_repo
+
+        await get_course_gen_repo().close()
+        logger.info("Course generation pool closed")
+    except Exception as e:
+        logger.debug("Course generation pool close skipped: %s", e)
 
     # Close Dense/Sparse search asyncpg pools (audit fix: resource leak)
     try:

@@ -6,6 +6,7 @@ import time
 from typing import AsyncGenerator, Mapping
 
 from app.core.config import settings
+from app.core.exceptions import ProviderUnavailableError
 from app.engine.llm_runtime_metadata import resolve_runtime_llm_metadata
 
 
@@ -42,6 +43,7 @@ async def generate_stream_v3_events(
     from app.engine.multi_agent.stream_utils import (
         create_answer_event,
         create_done_event,
+        create_error_event,
         create_metadata_event,
         create_sources_event,
         create_status_event,
@@ -58,6 +60,7 @@ async def generate_stream_v3_events(
             "content": "Đang chuẩn bị lượt trả lời...",
             "step": "preparing",
             "node": "system",
+            "details": {"visibility": "status_only"},
         },
         event_id=event_counter,
     )
@@ -71,6 +74,13 @@ async def generate_stream_v3_events(
         set_facebook_cookie(fb_cookie)
 
     try:
+        request_id = str(request_headers.get("X-Request-ID") or request_headers.get("x-request-id") or "").strip() or None
+        requested_provider = getattr(chat_request, "provider", None)
+        if requested_provider and requested_provider != "auto":
+            from app.services.llm_selectability_service import ensure_provider_is_selectable
+
+            ensure_provider_is_selectable(requested_provider)
+
         if stream_fn is None:
             from app.engine.multi_agent.graph import (
                 process_with_multi_agent_streaming,
@@ -136,6 +146,8 @@ async def generate_stream_v3_events(
                     "streaming_version",
                     "thinking",
                     "thinking_content",
+                    "routing_metadata",
+                    "request_id",
                 }
             }
 
@@ -166,6 +178,8 @@ async def generate_stream_v3_events(
                         thinking=fallback_result.thinking,
                         thinking_content=fallback_result.thinking,
                         streaming_version=f"v3-{fallback_meta.get('mode', 'fallback')}",
+                        request_id=request_id,
+                        routing_metadata=fallback_meta.get("routing_metadata"),
                         **extra_meta,
                     ),
                     await create_done_event(processing_time),
@@ -208,7 +222,7 @@ async def generate_stream_v3_events(
                 )
             return
 
-        _provider = getattr(chat_request, "provider", None)
+        _provider = requested_provider
 
         try:
             execution_input = await (
@@ -222,6 +236,7 @@ async def generate_stream_v3_events(
                         None,
                     ),
                     provider=_provider,
+                    request_id=request_id,
                 )
             )
         except Exception as ctx_err:
@@ -239,6 +254,7 @@ async def generate_stream_v3_events(
                         None,
                     ),
                     provider=_provider,
+                    request_id=request_id,
                 )
             )
 
@@ -308,6 +324,32 @@ async def generate_stream_v3_events(
             processing_time,
         )
 
+    except ProviderUnavailableError as exc:
+        logger.warning(
+            "[STREAM-V3] Requested provider unavailable: provider=%s reason=%s",
+            exc.provider,
+            exc.reason_code,
+        )
+        error_event = await create_error_event(exc.message)
+        error_event.content["provider"] = exc.provider
+        error_event.content["reason_code"] = exc.reason_code
+        error_chunks, event_counter, _ = serialize_stream_event(
+            event=error_event,
+            event_counter=event_counter,
+            enable_artifacts=settings.enable_artifacts,
+            presentation_state=presentation_state,
+        )
+        for chunk in error_chunks:
+            yield chunk
+        done_event = await create_done_event(time.time() - start_time)
+        done_chunks, _, _ = serialize_stream_event(
+            event=done_event,
+            event_counter=event_counter + 1,
+            enable_artifacts=settings.enable_artifacts,
+            presentation_state=presentation_state,
+        )
+        for chunk in done_chunks:
+            yield chunk
     except Exception as exc:
         import traceback
 

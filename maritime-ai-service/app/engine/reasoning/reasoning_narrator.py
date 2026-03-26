@@ -91,43 +91,49 @@ class ReasoningRenderResult(BaseModel):
 class _NarratedReasoningSchema(BaseModel):
     """Structured output schema for the narrator LLM."""
 
-    label: str = Field(description="Ngắn gọn, 3-8 từ, mô tả nhịp suy luận hiện tại.")
+    label: str = Field(description="Brief label, 3-8 words, describing the current reasoning beat.")
     summary: str = Field(
         description=(
-            "Nội tâm có chủ đích mà người dùng được phép thấy. "
-            "Độ dài do Wiii tự quyết: greeting/simple có thể 1-2 câu, "
-            "chart/article/analysis nên 3-6 câu với domain terms cụ thể và judgment calls. "
-            "Mỗi câu phải mang thông tin mới — nếu bỏ câu đi mà không mất gì thì câu đó thừa."
+            "User-visible inner thinking. Length self-determined by complexity. "
+            "Each sentence must add new information — if removing it loses nothing, it is redundant."
         )
     )
     action_text: str = Field(
         default="",
         description=(
-            "Câu cầu nối mềm khi Wiii chuẩn bị đổi sang hành động tiếp theo. "
-            "Phải cụ thể như preamble: nói RÕ sẽ làm gì, dùng nguồn nào, tìm thông tin gì. "
-            "VD: 'Tra eco-speed từ nguồn COLREGs và IMO performance standards'. "
-            "KHÔNG generic kiểu 'Đang tìm kiếm thông tin'."
+            "Soft transition before the next action. Must be specific: "
+            "state WHAT will be done and WHICH sources. Never generic."
         ),
     )
     delta_chunks: list[str] = Field(
         default_factory=list,
         description=(
-            "Các đoạn nối tiếp nhau như suy nghĩ đang chảy — Wiii tự quyết số lượng. "
-            "Mỗi đoạn đẩy suy nghĩ tiến thêm một ý mới. "
-            "Mỗi đoạn phải chứa ít nhất 1 domain term cụ thể hoặc 1 judgment call."
+            "Consecutive thought segments like flowing reasoning. "
+            "Each segment advances one new idea with specific domain terms."
         ),
     )
     style_tags: list[str] = Field(
         default_factory=list,
-        description="Các nhãn phong cách ngắn như reflective, grounded, warm, decisive.",
+        description="Short style labels like reflective, grounded, warm, decisive.",
     )
 
 
 def _sanitize_text(text: str) -> str:
-    sanitized = _TOOL_NAME_RE.sub("một công cụ phù hợp", text or "")
-    sanitized = _UUID_RE.sub("[id nội bộ]", sanitized)
+    sanitized = _TOOL_NAME_RE.sub("", text or "")
+    sanitized = _UUID_RE.sub("", sanitized)
     sanitized = sanitized.replace("```", "")
+    sanitized = re.sub(r"<!--.*?-->", "", sanitized, flags=re.DOTALL)
     return sanitized.strip()
+
+
+def sanitize_visible_reasoning_text(text: str, user_goal: str = "") -> str:
+    """Public API: sanitize text for visible reasoning display."""
+    return _sanitize_text(text)
+
+
+def sanitize_visible_reasoning_chunks(chunks: list[str], user_goal: str = "") -> list[str]:
+    """Public API: sanitize chunk list for visible reasoning display."""
+    return _sanitize_chunks(chunks)
 
 
 def _sanitize_chunks(chunks: list[str]) -> list[str]:
@@ -475,14 +481,18 @@ class ReasoningNarrator:
             return self._fallback(request, node_skill)
 
         try:
-            structured_llm = llm.with_structured_output(_NarratedReasoningSchema)
+            from app.services.structured_invoke_service import StructuredInvokeService
             from langchain_core.messages import HumanMessage, SystemMessage
 
-            result = await structured_llm.ainvoke(
-                [
+            result = await StructuredInvokeService.ainvoke(
+                llm=llm,
+                schema=_NarratedReasoningSchema,
+                payload=[
                     SystemMessage(content=self._build_system_prompt(request, node_skill)),
                     HumanMessage(content=self._build_user_prompt(request, node_skill)),
-                ]
+                ],
+                tier="moderate",
+                provider=request.provider,
             )
             if result is None:
                 raise ValueError("narrator returned None")
