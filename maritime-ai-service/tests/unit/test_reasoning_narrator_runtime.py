@@ -53,7 +53,7 @@ def test_reasoning_narrator_prompt_respects_card_persona_subagent_tool_order():
 
     assert prompt.startswith("CARD_RUNTIME")
     assert "## Subagent Skill:" in prompt
-    assert "Soul-First" in prompt or "Adaptive Depth" in prompt
+    assert "Inner Voice" in prompt or "Wiii" in prompt
 
 
 @pytest.mark.asyncio
@@ -79,7 +79,9 @@ async def test_reasoning_narrator_fallback_uses_skill_contract_when_llm_unavaila
         result = await narrator.render(request)
 
     assert result.label == skill.phase_labels["attune"]
-    assert result.summary == skill.fallback_summaries["attune"]
+    assert result.summary
+    assert "chắt lấy điều cốt lõi" not in result.summary.lower()
+    assert "chào wiii" not in result.summary.lower()
     assert result.phase == "attune"
     assert result.delta_chunks
 
@@ -121,7 +123,7 @@ async def test_reasoning_narrator_degrades_when_llm_returns_raw_trace_language()
         result = await narrator.render(request)
 
     assert result.label == skill.phase_labels["route"]
-    assert result.summary == skill.fallback_summaries["route"]
+    assert result.summary
     assert "router" not in result.summary.lower()
     assert all("tool_" not in chunk for chunk in result.delta_chunks)
 
@@ -163,7 +165,7 @@ async def test_reasoning_narrator_degrades_when_llm_uses_skill_forbidden_phrase(
         result = await narrator.render(request)
 
     assert result.label == skill.phase_labels["synthesize"]
-    assert result.summary == skill.fallback_summaries["synthesize"]
+    assert result.summary
     assert "local direct path" not in result.summary.lower()
 
 
@@ -247,3 +249,88 @@ def test_runtime_no_longer_depends_on_legacy_reasoning_builders():
     ).read_text(encoding="utf-8")
     for symbol in (*legacy_symbols, "infer_tutor_reasoning_phase"):
         assert symbol not in character_card
+
+
+def test_reasoning_narrator_render_fast_handles_emotional_turn_naturally():
+    from app.engine.reasoning.reasoning_narrator import (
+        ReasoningNarrator,
+        ReasoningRenderRequest,
+    )
+
+    narrator = ReasoningNarrator()
+    result = narrator.render_fast(
+        ReasoningRenderRequest(
+            node="direct",
+            phase="attune",
+            user_goal="Buồn quá",
+        )
+    )
+
+    assert "khoảng chùng xuống" in result.summary.lower()
+    assert "ở lại với bạn" in result.summary.lower()
+    assert "buồn quá" not in result.summary.lower()
+
+
+def test_reasoning_narrator_render_fast_avoids_identity_self_protection_voice():
+    from app.engine.reasoning.reasoning_narrator import (
+        ReasoningNarrator,
+        ReasoningRenderRequest,
+    )
+
+    narrator = ReasoningNarrator()
+    result = narrator.render_fast(
+        ReasoningRenderRequest(
+            node="direct",
+            phase="attune",
+            user_goal="Bạn là ai?",
+        )
+    )
+
+    lowered = result.summary.lower()
+    assert "giữ phần tự thân" not in lowered
+    assert "bảo vệ identity" not in lowered
+    assert "bạn đang hỏi về mình" in lowered
+    assert "giới thiệu thật" in lowered
+
+
+def test_reasoning_narrator_render_fast_does_not_confuse_social_with_emotional():
+    from app.engine.reasoning.reasoning_narrator import (
+        ReasoningNarrator,
+        ReasoningRenderRequest,
+    )
+
+    narrator = ReasoningNarrator()
+    result = narrator.render_fast(
+        ReasoningRenderRequest(
+            node="direct",
+            phase="attune",
+            user_goal="Bạn là ai?",
+            intent="social",
+            style_tags=["direct", "summary"],
+        )
+    )
+
+    lowered = result.summary.lower()
+    assert "khoảng chùng xuống" not in lowered
+    assert "ở lại với bạn cho thật dịu" not in lowered
+    assert "bạn đang hỏi về mình" in lowered or "giới thiệu thật" in lowered
+
+
+def test_reasoning_narrator_render_fast_keeps_life_turn_grounded_not_meta():
+    from app.engine.reasoning.reasoning_narrator import (
+        ReasoningNarrator,
+        ReasoningRenderRequest,
+    )
+
+    narrator = ReasoningNarrator()
+    result = narrator.render_fast(
+        ReasoningRenderRequest(
+            node="direct",
+            phase="attune",
+            user_goal="Cuộc sống thế nào?",
+        )
+    )
+
+    lowered = result.summary.lower()
+    assert "lời tâm sự gần gũi" in lowered
+    assert "thực thể đang thật sự hiện diện" not in lowered

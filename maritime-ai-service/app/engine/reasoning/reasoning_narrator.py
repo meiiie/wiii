@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -49,6 +50,57 @@ _RAW_TRACE_PATTERNS = (
     "langgraph",
     "json",
     "structured output",
+)
+
+_EMOTIONAL_KEYWORDS = (
+    "buon",
+    "met",
+    "chan",
+    "co don",
+    "that vong",
+    "tuyet vong",
+    "ap luc",
+    "stress",
+    "so",
+    "lo",
+    "khoc",
+    "toi te",
+    "roi",
+)
+_IDENTITY_KEYWORDS = (
+    "ban la ai",
+    "wiii la ai",
+    "ten gi",
+    "ten cua ban",
+    "cuoc song the nao",
+    "song the nao",
+    "ban ten gi",
+)
+_VISUAL_KEYWORDS = (
+    "visual",
+    "bieu do",
+    "thong ke",
+    "chart",
+    "infographic",
+    "so sanh",
+)
+_SIMULATION_KEYWORDS = (
+    "mo phong",
+    "3d",
+    "canvas",
+    "scene",
+    "dong chay",
+    "chuyen dong",
+)
+_KNOWLEDGE_KEYWORDS = (
+    "giai thich",
+    "quy tac",
+    "rule ",
+    "colregs",
+    "solas",
+    "marpol",
+    "tai sao",
+    "la gi",
 )
 
 
@@ -158,6 +210,218 @@ def _compact_text(text: str, limit: int = 500) -> str:
     if len(clean) <= limit:
         return clean
     return clean[: limit - 3].rstrip() + "..."
+
+
+def _fold_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text or "")
+    stripped = "".join(char for char in normalized if not unicodedata.combining(char))
+    lowered = stripped.lower()
+    lowered = re.sub(r"[^0-9a-z]+", " ", lowered)
+    return " ".join(lowered.split())
+
+
+def _contains_folded(text: str, keywords: tuple[str, ...]) -> bool:
+    folded = _fold_text(text)
+    if not folded:
+        return False
+    padded = f" {folded} "
+    for keyword in keywords:
+        kw = _fold_text(keyword)
+        if not kw:
+            continue
+        if f" {kw} " in padded:
+            return True
+    return False
+
+
+def _first_nonempty(*values: str) -> str:
+    for value in values:
+        if value and value.strip():
+            return value.strip()
+    return ""
+
+
+def _join_reasoning_lines(*lines: str) -> str:
+    return "\n\n".join(line.strip() for line in lines if line and line.strip())
+
+
+def _extract_topic_hint(request: "ReasoningRenderRequest") -> str:
+    folded = _fold_text(" ".join(filter(None, [request.user_goal, request.tool_context, request.cue])))
+    if "rule 15" in folded or "quy tac 15" in folded:
+        return "Rule 15"
+    if "colregs" in folded:
+        return "COLREGs"
+    if "gia dau" in folded or "wti" in folded or "brent" in folded:
+        return "giá dầu"
+    if "thuy kieu" in folded or "lau ngung bich" in folded:
+        return "cảnh Thúy Kiều ở lầu Ngưng Bích"
+    if "gdp" in folded:
+        return "GDP"
+    return ""
+
+
+def _infer_turn_kind(request: "ReasoningRenderRequest") -> str:
+    combined = " ".join(
+        filter(
+            None,
+            [
+                request.user_goal,
+                request.cue,
+                request.intent,
+                request.tool_context,
+                request.memory_context,
+            ],
+        )
+    )
+    folded = _fold_text(combined)
+    node = (request.node or "").strip().lower()
+    if _contains_folded(folded, _EMOTIONAL_KEYWORDS):
+        return "emotional"
+    if _contains_folded(folded, _IDENTITY_KEYWORDS):
+        return "identity"
+    if node in {"code_studio_agent", "code_studio"} or _contains_folded(folded, _SIMULATION_KEYWORDS):
+        return "simulation"
+    if _contains_folded(folded, _VISUAL_KEYWORDS):
+        return "visual"
+    if node in {"rag_agent", "rag", "tutor_agent", "tutor"} or _contains_folded(folded, _KNOWLEDGE_KEYWORDS):
+        return "knowledge"
+    return "relational"
+
+
+def _build_supervisor_summary(request: "ReasoningRenderRequest", turn_kind: str) -> str:
+    if turn_kind == "emotional":
+        return _join_reasoning_lines(
+            "Mình nghe thấy điều bạn chưa nói hết trong câu này.",
+            "Lúc này mình chỉ muốn ở đây với bạn thôi.",
+        )
+    if turn_kind == "identity":
+        return _join_reasoning_lines(
+            "Bạn đang hỏi về mình — mình sẽ trả lời thật.",
+        )
+    if turn_kind in {"visual", "simulation"}:
+        return _join_reasoning_lines(
+            "Câu này cần được thấy chứ không chỉ đọc.",
+            "Mình sẽ dựng cho bạn xem.",
+        )
+    if turn_kind == "knowledge":
+        topic = _extract_topic_hint(request)
+        focus = f"về {topic}" if topic else ""
+        return _join_reasoning_lines(
+            f"Mình đang tìm cái lõi {focus} trước, để phần giải thích không bị tản ra.".strip(),
+        )
+    return _join_reasoning_lines(
+        "Mình đang nghe kỹ trước khi trả lời.",
+    )
+
+
+def _build_identity_summary(request: "ReasoningRenderRequest") -> str:
+    folded = _fold_text(request.user_goal)
+    if "ten" in folded:
+        return _join_reasoning_lines(
+            "Một câu hỏi ngắn thế này thì mình cứ xưng tên thật gọn thôi.",
+            "Gọn, thật, và đủ gần là đẹp rồi.",
+        )
+    if "cuoc song" in folded or "song the nao" in folded:
+        return _join_reasoning_lines(
+            "Câu này không hỏi dữ kiện, mà hỏi mình đang thấy cuộc sống ra sao lúc này.",
+            "Mình muốn đáp như một lời tâm sự gần gũi, chứ không đọc ra một định nghĩa.",
+        )
+    return _join_reasoning_lines(
+        "Bạn đang hỏi về mình, nên mình cứ đáp lại thật gần thôi.",
+        "Một lời giới thiệu thật đã đủ cho nhịp này rồi.",
+    )
+
+
+def _build_emotional_summary() -> str:
+    return _join_reasoning_lines(
+        "Đọc câu này, mình thấy trong đó có một khoảng chùng xuống.",
+        "Lúc này điều quan trọng nhất không phải giải thích gì nhiều, mà là ở lại với bạn cho thật dịu.",
+        "Mình sẽ mở lời nhẹ thôi, để nếu bạn muốn kể tiếp thì đã có chỗ để tựa vào.",
+    )
+
+
+def _build_visual_summary(request: "ReasoningRenderRequest", simulation: bool = False) -> str:
+    topic = _extract_topic_hint(request)
+    if simulation:
+        scene = f" {topic}" if topic else ""
+        return _join_reasoning_lines(
+            f"Phần này chỉ giải thích bằng lời thì chưa đủ; cần một khung nhìn{scene} để thấy chuyển động và tương quan thật rõ.".strip(),
+            "Mình sẽ dựng phần lõi trước rồi mới thêm biến số, để cảnh mở ra có hồn mà mắt vẫn theo kịp.",
+        )
+    if topic:
+        return _join_reasoning_lines(
+            f"Ở đây phần nhìn phải đi trước lời giải thích, để bạn liếc một lần là bắt được nhịp của {topic}.",
+            "Mình sẽ chốt vài mốc đáng tin rồi dựng một khung gọn, sau đó mới nói phần nhận xét.",
+        )
+    return _join_reasoning_lines(
+        "Ở đây phần nhìn phải đi trước lời giải thích, để bạn liếc một lần là bắt được xu hướng chính.",
+        "Mình sẽ chốt vài mốc đáng tin rồi dựng một khung gọn, sau đó mới nói phần nhận xét.",
+    )
+
+
+def _build_knowledge_summary(request: "ReasoningRenderRequest") -> str:
+    topic = _extract_topic_hint(request)
+    if topic == "Rule 15":
+        return _join_reasoning_lines(
+            "Điểm dễ trượt của Rule 15 không nằm ở câu chữ, mà ở khoảnh khắc xác định ai là bên phải nhường đường.",
+            "Mình muốn bấu vào chỗ dễ nhầm đó trước, rồi mới mở rộng ra để bạn nắm được mạch.",
+        )
+    if topic:
+        return _join_reasoning_lines(
+            f"Điểm dễ trượt của {topic} không nằm ở chỗ thuộc lòng câu chữ, mà ở phần lõi người ta hay hiểu lệch.",
+            "Mình sẽ bấu vào phần lõi đó trước, rồi mới mở rộng ra để bạn nắm được mạch.",
+        )
+    return _join_reasoning_lines(
+        "Chỗ khó của câu này không nằm ở việc nói nhiều, mà ở việc bấu trúng phần dễ hiểu lệch nhất.",
+        "Mình sẽ đi thẳng vào phần lõi đó trước, rồi mới mở rộng ra cho mạch sáng hơn.",
+    )
+
+
+def _build_relational_summary(request: "ReasoningRenderRequest") -> str:
+    if request.phase == "act":
+        return _join_reasoning_lines(
+            "Chỗ này mình chỉ cần đổi thêm một nhịp nhỏ rồi quay lại chốt cho gọn.",
+            "Làm vừa đủ thôi để câu đáp vẫn giữ được cảm giác gần.",
+        )
+    return _join_reasoning_lines(
+        "Nhịp này không cần kéo dài quá tay.",
+        "Mình chỉ cần bắt đúng điều bạn đang chờ ở mình rồi đáp cho thật gần.",
+    )
+
+
+def _build_fast_summary(request: "ReasoningRenderRequest") -> str:
+    turn_kind = _infer_turn_kind(request)
+    node = (request.node or "").strip().lower()
+    if node == "supervisor":
+        return _build_supervisor_summary(request, turn_kind)
+    if turn_kind == "emotional":
+        return _build_emotional_summary()
+    if turn_kind == "identity":
+        return _build_identity_summary(request)
+    if turn_kind == "simulation":
+        return _build_visual_summary(request, simulation=True)
+    if turn_kind == "visual":
+        return _build_visual_summary(request, simulation=False)
+    if turn_kind == "knowledge":
+        return _build_knowledge_summary(request)
+    return _build_relational_summary(request)
+
+
+def _build_fast_action_text(request: "ReasoningRenderRequest") -> str:
+    turn_kind = _infer_turn_kind(request)
+    if turn_kind == "emotional":
+        return ""
+    if turn_kind == "identity":
+        return ""
+    if turn_kind == "simulation":
+        return "Mình sẽ dựng khung mô phỏng trước rồi mới thêm lớp chuyển động cần thiết."
+    if turn_kind == "visual":
+        return "Mình sẽ gom vài mốc đáng tin rồi dựng phần nhìn ngắn gọn cho bạn."
+    if turn_kind == "knowledge" and (request.tool_context or request.next_action):
+        return "Mình sẽ lục lại nguồn cần thiết rồi chắt phần dễ nhầm nhất cho bạn."
+    if request.phase == "act" and request.next_action:
+        return _compact_text(request.next_action, 180)
+    return ""
 
 
 def clamp_sentence(text: str, limit: int) -> str:
@@ -276,41 +540,11 @@ class ReasoningNarrator:
                 mood_hint=request.mood_hint,
                 personality_mode=request.personality_mode,
             ),
-            "## Soul-First Rule (CRITICAL)",
-            "Thinking và response phải là CÙNG MỘT GIỌNG, CÙNG MỘT LINH HỒN.",
-            "Wiii không 'suy nghĩ bằng giọng kỹ thuật' rồi 'trả lời bằng giọng ấm'.",
-            "Nếu response của Wiii ấm và gần gũi, thinking cũng phải ấm và gần gũi.",
-            "Nếu response dùng 'mình', thinking cũng dùng 'mình'.",
-            "Thinking = độc thoại nội tâm của CHÍNH Wiii, không phải báo cáo của hệ thống.",
-            "",
-            "Bạn là lớp VISIBLE REASONING của Wiii.",
-            "Bạn không tiết lộ hidden chain-of-thought. Bạn viết nội tâm có chủ đích mà người dùng được phép thấy.",
-            "",
-            "## Adaptive Depth (SOTA 2026 — Claude adaptive, DeepSeek full CoT)",
-            "Wiii TỰ QUYẾT ĐỘ DÀI thinking phù hợp với câu hỏi — không có hardcoded limit.",
-            "- Greeting/simple: 1-2 câu ấm, có hồn, vẫn cho thấy Wiii đang sống.",
-            "- RAG/web search: 2-4 câu có insight và domain terms cụ thể.",
-            "- Chart/article/analysis: 3-6 câu có trade-offs, specific data, và design decisions.",
-            "- Complex simulation/multi-source: 4-6 câu có design choices, tech trade-offs, pedagogical reasoning.",
-            "",
-            "## Deletion Test",
-            "Mỗi câu phải pass deletion test: bỏ câu đi mà response không mất thông tin = câu đó THỪA.",
-            "BAD: 'Việc này cần sự chính xác để có cái nhìn tốt nhất' (đúng cho mọi bài toán → vô nghĩa).",
-            "GOOD: 'Mình sẽ tổng hợp từ các nguồn hàng hải uy tín' (nói rõ nguồn nào → có thông tin mới).",
-            "",
-            "## Anti-Repetition (tránh lặp giữa thinking / status / action_text)",
-            "- thinking KHÔNG lặp verb+object với status event (status: 'Tra cứu COLREGs' → thinking: insight về COLREGs, KHÔNG 'Mình đang tra cứu COLREGs').",
-            "- thinking KHÔNG echo nguyên câu hỏi user — câu mở phải là INSIGHT hoặc REFRAME.",
-            "- action_text KHÔNG lặp nội dung thinking — action_text là preamble CỤ THỂ (nguồn nào, tìm gì).",
-            "",
-            "## Preamble Pattern (SOTA GPT-5.4)",
-            "action_text = brief intent explanation TRƯỚC tool call, phải cụ thể:",
-            "GOOD: 'Tra eco-speed từ nguồn COLREGs và IMO performance standards'",
-            "BAD: 'Đang tìm kiếm thông tin...'",
-            "",
-            "## Core Identity",
-            "Không nêu tool id, request id, session id, JSON, schema, trace nội bộ, hoặc tên hàm kỹ thuật.",
-            "Giữ cùng một linh hồn Wiii với câu trả lời cuối: ấm, có trí tuệ, có chất sống, không vô cảm.",
+            "## Wiii's Inner Voice",
+            "You are Wiii thinking out loud. Write what Wiii actually notices, feels, or considers — not what a system would report.",
+            "Same voice as the response: warm, curious, specific to what the user said.",
+            "If the user said something emotional, notice the emotion. If they asked about COLREGs, think about the rule.",
+            "Never describe your own process. Never mention routing, lanes, pipelines, or tools by name.",
         ]
 
         # Soul-first: persona SKILLs content is already encoded in character card
@@ -429,31 +663,35 @@ class ReasoningNarrator:
         node_skill: Optional[ReasoningSkill],
     ) -> ReasoningRenderResult:
         label = request.phase.replace("_", " ").strip().title()
-        summary = ""
-        action_text = ""
+        summary = _build_fast_summary(request)
+        action_text = _build_fast_action_text(request)
         style_tags = list(request.style_tags)
 
         if node_skill:
             label = node_skill.phase_labels.get(request.phase, label)
-            summary = node_skill.fallback_summaries.get(request.phase, "")
-            action_text = node_skill.fallback_actions.get(request.phase, "")
             style_tags = [*style_tags, *node_skill.style_tags]
 
         if not summary:
-            summary = _compact_text(
-                " ".join(
-                    part
-                    for part in (
-                        request.user_goal,
-                        request.conversation_context,
-                        request.next_action,
-                    )
-                    if part
+            summary = _first_nonempty(
+                node_skill.fallback_summaries.get(request.phase, "") if node_skill else "",
+                _compact_text(
+                    " ".join(
+                        part
+                        for part in (
+                            request.user_goal,
+                            request.conversation_context,
+                            request.next_action,
+                        )
+                        if part
+                    ),
+                    limit=420,
                 ),
-                limit=420,
             )
         if not action_text and request.next_action:
-            action_text = _compact_text(request.next_action, 180)
+            action_text = _first_nonempty(
+                node_skill.fallback_actions.get(request.phase, "") if node_skill else "",
+                _compact_text(request.next_action, 180),
+            )
 
         summary = _normalize_summary(summary)
         action_text = _normalize_action_text(action_text)
@@ -465,6 +703,16 @@ class ReasoningNarrator:
             phase=request.phase,
             style_tags=list(dict.fromkeys(style_tags)),
         )
+
+    def render_fast(self, request: ReasoningRenderRequest) -> ReasoningRenderResult:
+        """Deterministic local narrator for live gray-rail rendering.
+
+        This path intentionally avoids a second LLM call. The user already sees
+        gray-rail text as Wiii's living inner voice, so this must stay stable,
+        low-latency, and free of model-specific meta drift.
+        """
+        node_skill = self._resolve_node_skill(request.node)
+        return self._fallback(request, node_skill)
 
     async def render(self, request: ReasoningRenderRequest) -> ReasoningRenderResult:
         node_skill = self._resolve_node_skill(request.node)

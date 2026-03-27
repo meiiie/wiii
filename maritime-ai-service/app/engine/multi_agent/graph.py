@@ -130,6 +130,7 @@ def _build_turn_local_state_defaults(context: Optional[dict] = None) -> dict:
         "reasoning_trace": None,
         "thinking_content": None,
         "thinking": None,
+        "_public_thinking_fragments": [],
         "_trace_id": None,
         "guardian_passed": None,
         "skill_context": None,
@@ -501,6 +502,21 @@ def _get_effective_provider(state: AgentState) -> Optional[str]:
     return None
 
 
+def _get_explicit_user_provider(state: AgentState) -> Optional[str]:
+    """Return only the user's explicit provider pin.
+
+    House routing should influence the preferred primary runtime, but auto-mode
+    requests must still keep failover enabled. Treating the supervisor's house
+    provider like an explicit user pin makes direct turns brittle: once that
+    provider slows down, the turn has no legal fallback path and collapses into
+    a generic answer.
+    """
+    user = str(state.get("provider") or "").strip().lower()
+    if user and user != "auto":
+        return user
+    return None
+
+
 async def _render_reasoning(
     *,
     state: AgentState,
@@ -584,12 +600,12 @@ async def _render_reasoning_fast(
     # Fall back to skill frontmatter if LLM unavailable.
     try:
         import asyncio
-        loop = asyncio.get_running_loop()
-        return await get_reasoning_narrator().render(request)
+        asyncio.get_running_loop()
+        return get_reasoning_narrator().render_fast(request)
     except RuntimeError:
         # No event loop — sync fallback
         _n = get_reasoning_narrator()
-        return _n._fallback(request, _n._resolve_node_skill(request.node))
+        return _n.render_fast(request)
 
 
 # =============================================================================
@@ -2913,6 +2929,50 @@ def _compact_visible_query(query: str, max_len: int = 72) -> str:
     return "điều bạn vừa hỏi"
 
 
+def _build_direct_wait_heartbeat_text(
+    *,
+    query: str,
+    phase: str,
+    cue: str,
+    beat_index: int,
+    elapsed_sec: float,
+    tool_names: Optional[list[str]] = None,
+) -> str:
+    """Return a compact Wiii-like wait beat without leaking raw query or tool trace."""
+    del phase, beat_index, elapsed_sec, tool_names
+
+    normalized_query = _normalize_for_intent(query)
+    if cue == "identity" or _looks_identity_selfhood_turn(query):
+        return "M\u00ecnh gi\u1eef c\u00e2u n\u00e0y th\u1eadt g\u1ea7n \u0111\u1ec3 \u0111\u00e1p l\u1ea1i th\u00e0nh th\u1eadt, kh\u00f4ng v\u00f2ng vo hay m\u00e0u m\u00e8."
+    if cue in {"social", "personal", "off_topic"}:
+        if any(token in normalized_query for token in ("buon", "met", "co don", "khoc", "tuyet vong")):
+            return "M\u00ecnh \u0111ang \u1edf l\u1ea1i v\u1edbi b\u1ea1n cho th\u1eadt d\u1ecbu, \u0111\u1ec3 n\u1ebfu b\u1ea1n mu\u1ed1n n\u00f3i ti\u1ebfp th\u00ec \u0111\u00e3 c\u00f3 ch\u1ed7 \u0111\u1ec3 t\u1ef1a v\u00e0o."
+        return "M\u00ecnh \u0111ang gi\u1eef nh\u1ecbp th\u1eadt g\u1ea7n, \u0111\u1ec3 c\u00e2u \u0111\u00e1p ra t\u1ef1 nhi\u00ean v\u00e0 \u0111\u00fang v\u1edbi b\u1ea1n h\u01a1n."
+    if cue in {"visual", "web", "news", "legal", "analysis", "operator"}:
+        return "M\u00ecnh \u0111ang gom v\u00e0i m\u1ed1c \u0111\u00e1ng tin r\u1ed3i g\u1ea1n l\u1ea1i th\u00e0nh m\u1ed9t h\u00ecnh nh\u00ecn ng\u1eafn g\u1ecdn cho b\u1ea1n."
+    if cue in {"datetime", "memory", "lms"}:
+        return "M\u00ecnh \u0111ang ch\u1ed1t l\u1ea1i v\u1ebf s\u1ef1 vi\u1ec7c c\u00f3 th\u1ec3 x\u00e1c minh \u0111\u01b0\u1ee3c, \u0111\u1ec3 c\u00e2u tr\u1ea3 l\u1eddi ra v\u1eeba ch\u1eafc v\u1eeba g\u1ea7n."
+    return "M\u00ecnh \u0111ang g\u1ea1n l\u1ea1i \u0111i\u1ec1u ch\u00ednh y\u1ebfu, \u0111\u1ec3 c\u00e2u tr\u1ea3 l\u1eddi ra g\u1ea7n v\u00e0 \u0111\u1ee7."
+
+
+def _build_code_studio_wait_heartbeat_text(
+    *,
+    query: str,
+    beat_index: int,
+    elapsed_sec: float,
+    state: Optional[dict] = None,
+) -> str:
+    """Return a compact scene-minded wait beat for Code Studio turns."""
+    del beat_index, elapsed_sec, state
+
+    normalized_query = _normalize_for_intent(query)
+    if any(token in normalized_query for token in ("mo phong", "3d", "canvas", "scene", "simulation")):
+        return "M\u00ecnh \u0111ang d\u1ef1ng khung m\u00f4 ph\u1ecfng v\u00e0 canvas tr\u01b0\u1edbc, \u0111\u1ec3 khi m\u1edf ra b\u1ea1n nh\u00ecn l\u00e0 th\u1ea5y chuy\u1ec3n \u0111\u1ed9ng ngay."
+    if any(token in normalized_query for token in ("visual", "chart", "bieu do", "thong ke", "so sanh")):
+        return "M\u00ecnh \u0111ang d\u1ef1ng ph\u1ea7n nh\u00ecn tr\u01b0\u1edbc, \u0111\u1ec3 c\u00e1c con s\u1ed1 v\u00e0 \u00fd ch\u00ednh \u0111i c\u00f9ng nhau thay v\u00ec b\u1ecb v\u1ee1 ra."
+    return "M\u00ecnh \u0111ang l\u00ean khung cho m\u1ed9t artifact c\u00f3 th\u1ec3 m\u1edf ra d\u00f9ng \u0111\u01b0\u1ee3c ngay, r\u1ed3i m\u1edbi g\u1ecdt ti\u1ebfp nh\u1eefng chi ti\u1ebft sau."
+
+
 async def _push_status_only_progress(
     push_event,
     *,
@@ -2946,6 +3006,14 @@ def _contains_wait_marker(text: str, markers: tuple[str, ...]) -> bool:
 
 
 
+_VISIBLE_PERSONA_LABEL_MARKERS: tuple[str, ...] = (
+    "Wiii suy nghĩ",
+    "Wiii đang nghĩ",
+    "Wiii đã nghĩ",
+    "Hmm Wiii",
+)
+
+
 def _thinking_start_label(value: str) -> str:
     text = str(value or "").strip()
     if not text:
@@ -2965,9 +3033,7 @@ async def _stream_direct_wait_heartbeats(
     interval_sec: float = 6.0,
     stop_signal: Optional[asyncio.Event] = None,
 ) -> None:
-    """LLM-first heartbeat: narrator generates thinking, no templates."""
-    loop = asyncio.get_running_loop()
-    started_at = loop.time()
+    """Emit hidden wait heartbeats so direct turns keep progress without public duplicate thinking."""
     beat_index = 0
     while True:
         if stop_signal is not None:
@@ -2983,15 +3049,12 @@ async def _stream_direct_wait_heartbeats(
         beat_index += 1
         if beat_index > 2:
             return
-        # First beat = thinking_delta (visible), rest = status_only (hidden)
-        _hb_type = "thinking_delta" if beat_index == 1 else "status"
         _hb_event: dict = {
-            "type": _hb_type,
-            "content": "",
+            "type": "status",
+            "content": "Đang giữ nhịp xử lý...",
             "node": "direct",
+            "details": {"visibility": "status_only"},
         }
-        if beat_index > 1:
-            _hb_event["details"] = {"visibility": "status_only"}
         await push_event(_hb_event)
 
 
@@ -3003,9 +3066,7 @@ async def _stream_code_studio_wait_heartbeats(
     interval_sec: float = 8.0,
     stop_signal: Optional[asyncio.Event] = None,
 ) -> None:
-    """LLM-first heartbeat: narrator generates thinking, no templates."""
-    loop = asyncio.get_running_loop()
-    started_at = loop.time()
+    """Emit hidden wait heartbeats so code studio progress stays separate from public thinking."""
     beat_index = 0
     while True:
         if stop_signal is not None:
@@ -3021,14 +3082,12 @@ async def _stream_code_studio_wait_heartbeats(
         beat_index += 1
         if beat_index > 2:
             return
-        _hb_type = "thinking_delta" if beat_index == 1 else "status"
         _hb_event: dict = {
-            "type": _hb_type,
-            "content": "",
+            "type": "status",
+            "content": "Đang dựng tiếp...",
             "node": "code_studio_agent",
+            "details": {"visibility": "status_only"},
         }
-        if beat_index > 1:
-            _hb_event["details"] = {"visibility": "status_only"}
         await push_event(_hb_event)
 
 
@@ -3045,6 +3104,7 @@ async def _stream_answer_with_fallback(
     node: str = "direct",
     thinking_stop_signal: Optional[asyncio.Event] = None,
     state: Optional[AgentState] = None,
+    timeout_profile: str | None = None,
 ) -> tuple[object, bool]:
     """Stream answer text deltas for provider-backed lanes when no tools are needed."""
     from app.engine.llm_pool import FAILOVER_MODE_AUTO, FAILOVER_MODE_PINNED, LLMPool
@@ -3147,6 +3207,7 @@ async def _stream_answer_with_fallback(
         resolved_provider=resolved_provider,
         failover_mode=failover_mode,
         push_event=push_event,
+        timeout_profile=timeout_profile,
         state=state,
     )
     return fallback_response, False
@@ -3162,6 +3223,7 @@ async def _stream_direct_answer_with_fallback(
     failover_mode: str | None = None,
     thinking_stop_signal: Optional[asyncio.Event] = None,
     state: Optional[AgentState] = None,
+    timeout_profile: str | None = None,
 ) -> tuple[object, bool]:
     return await _stream_answer_with_fallback(
         llm,
@@ -3173,7 +3235,37 @@ async def _stream_direct_answer_with_fallback(
         node="direct",
         thinking_stop_signal=thinking_stop_signal,
         state=state,
+        timeout_profile=timeout_profile,
     )
+
+
+def _resolve_direct_answer_timeout_profile(
+    *,
+    provider_name: str | None,
+    is_identity_turn: bool,
+    is_short_house_chatter: bool,
+    use_house_voice_direct: bool,
+    tools_bound: bool,
+) -> str | None:
+    """Give short/direct Wiii turns more room on slow-but-healthy providers.
+
+    Local runtime frequently ends up on Zhipu GLM-5 when Gemini is busy. Those
+    tiny identity/social turns are quality-sensitive and should not collapse
+    into the generic fallback just because the default light/moderate timeout
+    is too aggressive for the remaining provider.
+    """
+    if tools_bound:
+        return None
+
+    normalized_provider = str(provider_name or "").strip().lower()
+    if normalized_provider != "zhipu":
+        return None
+
+    if is_identity_turn or is_short_house_chatter or use_house_voice_direct:
+        from app.engine.llm_pool import TIMEOUT_PROFILE_STRUCTURED
+
+        return TIMEOUT_PROFILE_STRUCTURED
+    return None
 
 
 async def _execute_direct_tool_rounds(
@@ -3185,6 +3277,7 @@ async def _execute_direct_tool_rounds(
     provider: str | None = None,
     forced_tool_choice: str | None = None,
     llm_base=None,
+    direct_answer_timeout_profile: str | None = None,
 ):
     """Execute multi-round tool calling loop for direct response.
 
@@ -3253,6 +3346,12 @@ async def _execute_direct_tool_rounds(
         "summary": _opening_beat.summary,
         "details": {"phase": _opening_beat.phase},
     })
+    for _chunk in _public_reasoning_delta_chunks(_opening_beat):
+        await push_event({
+            "type": "thinking_delta",
+            "content": _chunk,
+            "node": "direct",
+        })
 
     streamed_direct_answer = False
     _initial_heartbeat = asyncio.create_task(
@@ -3298,6 +3397,7 @@ async def _execute_direct_tool_rounds(
                 failover_mode=_request_failover_mode,
                 thinking_stop_signal=_direct_thinking_stop,
                 state=state,
+                timeout_profile=direct_answer_timeout_profile,
             )
     finally:
         _direct_thinking_stop.set()
@@ -3562,29 +3662,22 @@ async def _execute_direct_tool_rounds(
             "summary": _synthesis_beat.summary,
             "details": {"phase": _synthesis_beat.phase},
         })
+        for _chunk in _public_reasoning_delta_chunks(_synthesis_beat):
+            await push_event({
+                "type": "thinking_delta",
+                "content": _chunk,
+                "node": "direct",
+            })
         await push_event({
             "type": "thinking_end",
             "content": "",
             "node": "direct",
         })
     else:
-        await push_event({
-            "type": "action_text",
-            "content": _synthesis_beat.action_text or _synthesis_beat.summary,
-            "node": "direct",
-        })
-        await push_event({
-            "type": "thinking_start",
-            "content": _thinking_start_label(_synthesis_beat.label),
-            "node": "direct",
-            "summary": _synthesis_beat.summary,
-            "details": {"phase": _synthesis_beat.phase},
-        })
-        await push_event({
-            "type": "thinking_end",
-            "content": "",
-            "node": "direct",
-        })
+        # No tools used — simple turn. Skip second thinking block entirely.
+        # Opening thinking block already gave the user Wiii's inner voice.
+        # A second block for "synthesis" would duplicate without adding value.
+        pass
 
     # Legacy widget fallback: only auto-inject for non-structured turns.
     llm_response = _inject_widget_blocks_from_tool_results(
@@ -4900,19 +4993,91 @@ def _normalize_reasoning_text(value: str) -> str:
     return " ".join((value or "").lower().split())
 
 
-def _code_studio_delta_chunks(beat) -> list[str]:
-    summary_norm = _normalize_reasoning_text(getattr(beat, "summary", ""))
+_PUBLIC_THINKING_INTERNAL_MARKERS: tuple[str, ...] = (
+    "pipeline",
+    "router",
+    "reasoning_trace",
+    "tool_call_id",
+    "request_id",
+    "session_id",
+    "organization_id",
+    "langgraph",
+    "iteration=",
+)
+
+
+def _public_reasoning_delta_chunks(beat) -> list[str]:
     chunks: list[str] = []
     for chunk in getattr(beat, "delta_chunks", []) or []:
         if not chunk:
             continue
-        chunk_norm = _normalize_reasoning_text(chunk)
-        if summary_norm and (chunk_norm == summary_norm or chunk_norm in summary_norm or summary_norm in chunk_norm):
+        clean_chunk = sanitize_visible_reasoning_text(str(chunk)).strip()
+        if not clean_chunk:
+            continue
+        chunk_norm = _normalize_reasoning_text(clean_chunk)
+        if any(marker in chunk_norm for marker in _PUBLIC_THINKING_INTERNAL_MARKERS):
             continue
         if chunks and _normalize_reasoning_text(chunks[-1]) == chunk_norm:
             continue
-        chunks.append(chunk)
+        chunks.append(clean_chunk)
     return chunks
+
+
+def _code_studio_delta_chunks(beat) -> list[str]:
+    return _public_reasoning_delta_chunks(beat)
+
+
+def _append_public_thinking_fragment(state: AgentState, content: str) -> None:
+    clean = sanitize_visible_reasoning_text(str(content or "")).strip()
+    if len(clean) < 12:
+        return
+
+    normalized = _normalize_reasoning_text(clean)
+    if not normalized:
+        return
+    if any(marker in normalized for marker in _PUBLIC_THINKING_INTERNAL_MARKERS):
+        return
+
+    fragments = list(state.get("_public_thinking_fragments") or [])
+    if fragments:
+        recent_norm = [_normalize_reasoning_text(item) for item in fragments[-4:]]
+        if normalized in recent_norm:
+            return
+    fragments.append(clean)
+    state["_public_thinking_fragments"] = fragments[-12:]
+
+
+def _capture_public_thinking_event(state: AgentState, event: dict) -> None:
+    if not isinstance(event, dict):
+        return
+    if str(event.get("type") or "").strip().lower() != "thinking_delta":
+        return
+    _append_public_thinking_fragment(state, str(event.get("content") or ""))
+
+
+def _resolve_public_thinking_content(
+    state: AgentState,
+    *,
+    fallback: str = "",
+) -> str:
+    fragments = [
+        sanitize_visible_reasoning_text(str(fragment)).strip()
+        for fragment in (state.get("_public_thinking_fragments") or [])
+        if str(fragment or "").strip()
+    ]
+    fragments = [fragment for fragment in fragments if fragment]
+    if fragments:
+        return "\n\n".join(fragments)
+
+    current = sanitize_visible_reasoning_text(str(state.get("thinking_content") or "")).strip()
+    if current:
+        return current
+
+    public_native = sanitize_visible_reasoning_text(str(state.get("thinking") or "")).strip()
+    if public_native:
+        return public_native
+
+    return sanitize_visible_reasoning_text(str(fallback or "")).strip()
 
 
 async def _build_code_studio_tool_reflection(
@@ -5851,6 +6016,7 @@ async def direct_response_node(state: AgentState) -> AgentState:
         _event_queue = _get_event_queue(_bus_id)
 
     async def _push_event(event: dict):
+        _capture_public_thinking_event(state, event)
         if _event_queue:
             try:
                 _event_queue.put_nowait(event)
@@ -5971,18 +6137,15 @@ async def direct_response_node(state: AgentState) -> AgentState:
                         thinking_effort,
                     )
 
-            explicit_provider = _get_effective_provider(state)
+            preferred_provider = _get_effective_provider(state)
+            explicit_user_provider = _get_explicit_user_provider(state)
             use_house_voice_direct = (
                 routing_intent in {"social", "personal", "off_topic"}
                 and not _needs_web_search(query)
                 and not _needs_datetime(query)
                 and not resolve_visual_intent(query).force_tool
             )
-            direct_provider_override = (
-                explicit_provider
-                if explicit_provider
-                else user_selected_provider
-            )
+            direct_provider_override = preferred_provider
 
             llm = AgentConfigRegistry.get_llm(
                 "direct",
@@ -6060,6 +6223,13 @@ async def direct_response_node(state: AgentState) -> AgentState:
                 if bound_model:
                     state["_execution_model"] = str(bound_model)
                     state["model"] = str(bound_model)
+                direct_answer_timeout_profile = _resolve_direct_answer_timeout_profile(
+                    provider_name=bound_provider or direct_provider_override or preferred_provider,
+                    is_identity_turn=is_identity_turn,
+                    is_short_house_chatter=is_short_house_chatter,
+                    use_house_voice_direct=use_house_voice_direct,
+                    tools_bound=bool(tools),
+                )
                 llm_with_tools, llm_auto, forced_tool_choice = _bind_direct_tools(
                     llm,
                     tools,
@@ -6100,9 +6270,10 @@ async def direct_response_node(state: AgentState) -> AgentState:
                     runtime_context_base=runtime_context_base,
                     query=query,
                     state=state,
-                    provider=user_selected_provider,
+                    provider=explicit_user_provider or state.get("provider"),
                     forced_tool_choice=forced_tool_choice,
                     llm_base=llm,
+                    direct_answer_timeout_profile=direct_answer_timeout_profile,
                 )
 
                 # Sprint 166: Store tool_call_events for preview extraction
@@ -6126,8 +6297,6 @@ async def direct_response_node(state: AgentState) -> AgentState:
                     _safe_direct_thinking,
                     query=query,
                 )
-                if _safe_direct_thinking:
-                    state["thinking_content"] = _safe_direct_thinking
 
                 if _should_surface_direct_thinking(thinking_content):
                     state["thinking"] = _sanitize_wiii_house_text(
@@ -6161,13 +6330,17 @@ async def direct_response_node(state: AgentState) -> AgentState:
             )
 
     if not state.get("thinking_content"):
-        state["thinking_content"] = _sanitize_wiii_house_text(
+        _fallback_direct_thinking = _sanitize_wiii_house_text(
             await _build_direct_reasoning_summary(
-            query,
-            state,
-            _direct_tool_names(state.get("tools_used", [])),
+                query,
+                state,
+                _direct_tool_names(state.get("tools_used", [])),
             ),
             query=query,
+        )
+        state["thinking_content"] = _resolve_public_thinking_content(
+            state,
+            fallback=_fallback_direct_thinking,
         )
 
     state["final_response"] = response
@@ -6207,6 +6380,7 @@ async def code_studio_node(state: AgentState) -> AgentState:
         _event_queue = _get_event_queue(_bus_id)
 
     async def _push_event(event: dict):
+        _capture_public_thinking_event(state, event)
         if _event_queue:
             try:
                 _event_queue.put_nowait(event)
@@ -6440,7 +6614,10 @@ async def code_studio_node(state: AgentState) -> AgentState:
                     _direct_tool_names(tools_used),
                 )
                 if _safe_thinking:
-                    state["thinking_content"] = _safe_thinking
+                    state["thinking_content"] = _resolve_public_thinking_content(
+                        state,
+                        fallback=_safe_thinking,
+                    )
 
                 if tools_used:
                     state["tools_used"] = tools_used
@@ -6472,10 +6649,13 @@ async def code_studio_node(state: AgentState) -> AgentState:
         )
 
     if not state.get("thinking_content"):
-        state["thinking_content"] = await _build_code_studio_reasoning_summary(
-            query,
+        state["thinking_content"] = _resolve_public_thinking_content(
             state,
-            _direct_tool_names(state.get("tools_used", [])),
+            fallback=await _build_code_studio_reasoning_summary(
+                query,
+                state,
+                _direct_tool_names(state.get("tools_used", [])),
+            ),
         )
 
     state["final_response"] = response
@@ -6495,6 +6675,7 @@ async def code_studio_node(state: AgentState) -> AgentState:
 
 def _emit_subagent_event(state: dict, event: dict) -> None:
     """Emit an SSE event from a subagent adapter via the event bus."""
+    _capture_public_thinking_event(state, event)
     bus_id = state.get("_event_bus_id")
     if not bus_id:
         return
@@ -7922,7 +8103,10 @@ async def process_with_multi_agent(
         # CHỈ THỊ SỐ 29: Native thinking from Gemini (SOTA 2025)
         "thinking": result.get("thinking"),  # Priority: native Gemini thinking
         # CHỈ THỊ SỐ 28: Structured summary (fallback)
-        "thinking_content": result.get("thinking_content"),
+        "thinking_content": _resolve_public_thinking_content(
+            result,
+            fallback=result.get("thinking_content") or "",
+        ),
         # Sprint 80b: Domain notice for off-domain content
         "domain_notice": result.get("domain_notice"),
         # Sprint 103: Expose routing metadata (intent, confidence, reasoning) for API
