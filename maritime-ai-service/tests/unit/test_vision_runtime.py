@@ -34,6 +34,8 @@ def test_resolve_provider_order_infers_zhipu_for_ocr_specialist(monkeypatch):
     monkeypatch.setattr(vr.settings, "llm_failover_chain", ["ollama"], raising=False)
     monkeypatch.setattr(vr.settings, "vision_ocr_provider", "auto", raising=False)
     monkeypatch.setattr(vr.settings, "vision_ocr_model", "glm-ocr", raising=False)
+    vr.reset_vision_runtime_caches()
+    monkeypatch.setattr(vr, "_load_recent_audit_demoted_providers", lambda capability: set())
 
     order = vr._resolve_provider_order(
         capability=vr.VisionCapability.OCR_EXTRACT,

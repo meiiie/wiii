@@ -296,7 +296,10 @@ OUTPUT FORMAT:
             ExtractionResult with analysis metadata
         """
         # Check for Markdown tables
-        has_tables = bool(re.search(r'\|.*\|.*\|', text) and re.search(r'\|[-:]+\|', text))
+        has_tables = bool(
+            re.search(r"\|.*\|.*\|", text)
+            and re.search(r"\|(?:\s*[-:]+\s*\|)+", text)
+        )
         
         # Check for diagram descriptions
         diagram_keywords = ['đèn', 'đỏ', 'xanh', 'trắng', 'vàng', 'mũi', 'lái', 'cột', 'mạn', 'hình']

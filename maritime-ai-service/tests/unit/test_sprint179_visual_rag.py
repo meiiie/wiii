@@ -15,6 +15,7 @@ Tests for visual context enrichment in the RAG pipeline:
 import asyncio
 import base64
 from dataclasses import dataclass
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
@@ -299,22 +300,18 @@ class TestAnalyzeImageWithVision:
     async def test_successful_analysis(self):
         from app.engine.agentic_rag.visual_rag import _analyze_image_with_vision
 
-        mock_response = MagicMock()
-        mock_response.text = "Bảng so sánh COLREGs Rule 15 và Rule 16"
-
-        mock_client = MagicMock()
-        mock_client.models.generate_content = MagicMock(return_value=mock_response)
-
-        mock_settings = MagicMock()
-        mock_settings.google_api_key = "test-key"
-        mock_settings.google_model = "gemini-3.1-flash-lite-preview"
-
         fake_b64 = base64.b64encode(b"fake image data").decode()
 
-        # Patch at google.genai source module (lazy import inside function)
-        with patch("google.genai.Client", return_value=mock_client), \
-             patch("app.core.config.get_settings", return_value=mock_settings):
-
+        with patch(
+            "app.engine.agentic_rag.visual_rag.analyze_image_for_query",
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    success=True,
+                    text="Bảng so sánh COLREGs Rule 15 và Rule 16",
+                    error=None,
+                )
+            ),
+        ):
             result = await _analyze_image_with_vision(fake_b64, "Rule 15 là gì?")
             assert result is not None
             assert "COLREGs" in result
@@ -323,19 +320,16 @@ class TestAnalyzeImageWithVision:
     async def test_empty_response(self):
         from app.engine.agentic_rag.visual_rag import _analyze_image_with_vision
 
-        mock_response = MagicMock()
-        mock_response.text = ""
-
-        mock_client = MagicMock()
-        mock_client.models.generate_content = MagicMock(return_value=mock_response)
-
-        mock_settings = MagicMock()
-        mock_settings.google_api_key = "key"
-        mock_settings.google_model = "model"
-
-        with patch("google.genai.Client", return_value=mock_client), \
-             patch("app.core.config.get_settings", return_value=mock_settings):
-
+        with patch(
+            "app.engine.agentic_rag.visual_rag.analyze_image_for_query",
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    success=True,
+                    text="",
+                    error=None,
+                )
+            ),
+        ):
             result = await _analyze_image_with_vision(
                 base64.b64encode(b"data").decode(), "test"
             )
@@ -345,13 +339,16 @@ class TestAnalyzeImageWithVision:
     async def test_api_error(self):
         from app.engine.agentic_rag.visual_rag import _analyze_image_with_vision
 
-        mock_settings = MagicMock()
-        mock_settings.google_api_key = "key"
-        mock_settings.google_model = "model"
-
-        with patch("google.genai.Client", side_effect=Exception("API error")), \
-             patch("app.core.config.get_settings", return_value=mock_settings):
-
+        with patch(
+            "app.engine.agentic_rag.visual_rag.analyze_image_for_query",
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    success=False,
+                    text="",
+                    error="API error",
+                )
+            ),
+        ):
             result = await _analyze_image_with_vision(
                 base64.b64encode(b"data").decode(), "test"
             )
@@ -361,21 +358,18 @@ class TestAnalyzeImageWithVision:
     async def test_query_truncation(self):
         from app.engine.agentic_rag.visual_rag import _analyze_image_with_vision
 
-        mock_response = MagicMock()
-        mock_response.text = "Description"
-
-        mock_client = MagicMock()
-        mock_client.models.generate_content = MagicMock(return_value=mock_response)
-
-        mock_settings = MagicMock()
-        mock_settings.google_api_key = "key"
-        mock_settings.google_model = "model"
-
         long_query = "x" * 1000
 
-        with patch("google.genai.Client", return_value=mock_client), \
-             patch("app.core.config.get_settings", return_value=mock_settings):
-
+        with patch(
+            "app.engine.agentic_rag.visual_rag.analyze_image_for_query",
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    success=True,
+                    text="Description",
+                    error=None,
+                )
+            ),
+        ):
             result = await _analyze_image_with_vision(
                 base64.b64encode(b"data").decode(), long_query
             )

@@ -18,6 +18,7 @@ import asyncio
 import base64
 import hashlib
 from datetime import datetime, timezone, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -425,12 +426,6 @@ class TestStoreImageMemory:
         mock_settings = MagicMock()
         mock_settings.enable_visual_memory = True
 
-        mock_response = MagicMock()
-        mock_response.text = "Bảng dữ liệu tốc độ gió biển"
-
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = mock_response
-
         mock_embeddings = MagicMock()
         mock_embeddings.aembed_documents = AsyncMock(return_value=[[0.1] * 768])
 
@@ -438,7 +433,16 @@ class TestStoreImageMemory:
         mock_repo.save_memory.return_value = MagicMock(id=uuid4())
 
         with patch("app.core.config.get_settings", return_value=mock_settings), \
-             patch("google.genai.Client", return_value=mock_client), \
+             patch(
+                 "app.engine.semantic_memory.visual_memory.describe_image_content",
+                 new=AsyncMock(
+                     return_value=SimpleNamespace(
+                         success=True,
+                         text="Bảng dữ liệu tốc độ gió biển",
+                         error=None,
+                     )
+                 ),
+             ), \
              patch("app.engine.semantic_memory.visual_memory.get_embedding_backend", return_value=mock_embeddings), \
              patch("app.repositories.semantic_memory_repository.SemanticMemoryRepository", return_value=mock_repo):
             entry = await mgr.store_image_memory(

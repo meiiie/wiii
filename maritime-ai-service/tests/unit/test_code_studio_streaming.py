@@ -11,7 +11,7 @@ from app.engine.multi_agent.stream_utils import (
     create_code_delta_event,
     create_code_complete_event,
 )
-from app.engine.multi_agent.graph import (
+from app.engine.multi_agent.visual_events import (
     CODE_CHUNK_SIZE,
     CODE_CHUNK_DELAY_SEC,
     _maybe_emit_code_studio_events,
