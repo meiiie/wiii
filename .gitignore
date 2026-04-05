@@ -112,3 +112,5 @@ AGENTS.md
 .Codex/reports/*.json
 .Codex/reports/*.txt
 .Codex/reports/*.png
+.Codex/reports/*.html
+!.Codex/reports/thinking-review-latest.html
