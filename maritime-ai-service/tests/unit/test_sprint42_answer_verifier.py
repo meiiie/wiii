@@ -78,9 +78,11 @@ class TestAnswerVerifierEdgeCases:
     @pytest.fixture
     def verifier_no_llm(self):
         """Create verifier with no LLM (triggers rule-based fallback)."""
-        with patch("app.engine.agentic_rag.answer_verifier.get_llm_moderate", side_effect=Exception("No LLM")):
+        with patch("app.engine.agentic_rag.answer_verifier.get_llm_moderate", side_effect=Exception("No LLM")), \
+             patch("app.engine.agentic_rag.runtime_llm_socket.get_llm_for_provider", return_value=None):
             from app.engine.agentic_rag.answer_verifier import AnswerVerifier
             v = AnswerVerifier()
+            v._resolve_runtime_llm = MagicMock(return_value=None)
             assert v._llm is None
             return v
 
@@ -131,9 +133,12 @@ class TestRuleBasedVerification:
     @pytest.fixture
     def verifier(self):
         """Create verifier with no LLM."""
-        with patch("app.engine.agentic_rag.answer_verifier.get_llm_moderate", side_effect=Exception("No LLM")):
+        with patch("app.engine.agentic_rag.answer_verifier.get_llm_moderate", side_effect=Exception("No LLM")), \
+             patch("app.engine.agentic_rag.runtime_llm_socket.get_llm_for_provider", return_value=None):
             from app.engine.agentic_rag.answer_verifier import AnswerVerifier
-            return AnswerVerifier()
+            v = AnswerVerifier()
+            v._resolve_runtime_llm = MagicMock(return_value=None)
+            return v
 
     @pytest.mark.asyncio
     async def test_high_overlap_passes(self, verifier):
@@ -180,9 +185,11 @@ class TestLLMBasedVerification:
     def verifier_with_llm(self):
         """Create verifier with mocked LLM."""
         mock_llm = AsyncMock()
-        with patch("app.engine.agentic_rag.answer_verifier.get_llm_moderate", return_value=mock_llm):
+        with patch("app.engine.agentic_rag.answer_verifier.get_llm_moderate", return_value=mock_llm), \
+             patch("app.engine.agentic_rag.runtime_llm_socket.get_llm_for_provider", return_value=mock_llm):
             from app.engine.agentic_rag.answer_verifier import AnswerVerifier
             v = AnswerVerifier()
+            v._resolve_runtime_llm = MagicMock(return_value=mock_llm)
             return v, mock_llm
 
     @pytest.mark.asyncio

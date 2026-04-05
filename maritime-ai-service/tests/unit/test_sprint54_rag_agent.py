@@ -261,6 +261,22 @@ class TestRAGAgentResponses:
         agent._hybrid_search.is_available.return_value = True
         assert agent.is_available() is True
 
+    def test_generate_response_uses_runtime_socket_llm(self):
+        agent = _make_rag_agent()
+        runtime_llm = MagicMock()
+        node = MagicMock()
+        node.title = "Rule 15"
+        node.content = "Crossing"
+        node.source = "COLREGs"
+
+        with patch.object(agent, "_resolve_runtime_llm", return_value=runtime_llm), \
+             patch("app.engine.agentic_rag.rag_agent.AnswerGenerator.generate_response", return_value=("ok", None)) as mock_generate:
+            answer, thinking = agent._generate_response("What is Rule 15?", [node])
+
+        assert answer == "ok"
+        assert thinking is None
+        assert mock_generate.call_args.kwargs["llm"] is runtime_llm
+
         agent._hybrid_search.is_available.return_value = False
         assert agent.is_available() is False
 

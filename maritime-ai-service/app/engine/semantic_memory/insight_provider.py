@@ -12,6 +12,7 @@ Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 3.1, 5.1, 5.2, 5.3, 5.4
 import logging
 from typing import List, Optional
 
+from app.engine.embedding_runtime import EmbeddingBackendProtocol
 from app.models.semantic_memory import (
     Insight,
     InsightCategory,
@@ -19,7 +20,6 @@ from app.models.semantic_memory import (
     SemanticMemoryCreate,
 )
 from app.repositories.semantic_memory_repository import SemanticMemoryRepository
-from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +44,14 @@ class InsightProvider:
 
     def __init__(
         self,
-        embeddings: GeminiOptimizedEmbeddings,
+        embeddings: EmbeddingBackendProtocol,
         repository: SemanticMemoryRepository,
     ):
         """
         Initialize InsightProvider.
 
         Args:
-            embeddings: GeminiOptimizedEmbeddings instance
+            embeddings: Semantic embedding backend instance
             repository: SemanticMemoryRepository instance
         """
         self._embeddings = embeddings

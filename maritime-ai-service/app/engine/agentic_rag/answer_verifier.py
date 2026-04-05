@@ -17,6 +17,11 @@ from typing import List, Optional, Dict, Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.singleton import singleton_factory
+from app.engine.agentic_rag.runtime_llm_socket import (
+    ainvoke_agentic_rag_llm,
+    resolve_agentic_rag_llm,
+)
+from app.engine.llm_factory import ThinkingTier
 from app.engine.llm_pool import get_llm_moderate  # SOTA: Shared LLM Pool
 
 logger = logging.getLogger(__name__)
@@ -91,11 +96,23 @@ class AnswerVerifier:
         """Initialize Gemini LLM from shared pool for verification."""
         try:
             # SOTA: Use shared LLM from pool (memory optimized)
-            self._llm = get_llm_moderate()
+            self._llm = self._resolve_runtime_llm()
             logger.info("AnswerVerifier initialized with shared MODERATE tier LLM")
         except Exception as e:
             logger.error("Failed to initialize AnswerVerifier LLM: %s", e)
             self._llm = None
+
+    def _resolve_runtime_llm(self):
+        """Resolve the request-time MODERATE-tier verifier LLM."""
+        llm = resolve_agentic_rag_llm(
+            tier=ThinkingTier.MODERATE,
+            cached_llm=self._llm,
+            fallback_factory=get_llm_moderate,
+            component="AnswerVerifier",
+        )
+        if llm is not None:
+            self._llm = llm
+        return llm
     
     async def verify(
         self,
@@ -129,7 +146,8 @@ class AnswerVerifier:
                 warning="Câu trả lời có thể không chính xác do thiếu nguồn tham khảo"
             )
         
-        if not self._llm:
+        llm = self._resolve_runtime_llm()
+        if not llm:
             return self._rule_based_verify(answer, sources)
         
         try:
@@ -147,7 +165,12 @@ class AnswerVerifier:
                 ))
             ]
             
-            response = await self._llm.ainvoke(messages)
+            response = await ainvoke_agentic_rag_llm(
+                llm=llm,
+                messages=messages,
+                tier=ThinkingTier.MODERATE,
+                component="AnswerVerifier",
+            )
             
             # SOTA FIX: Handle Gemini 2.5 Flash content block format
             from app.services.output_processor import extract_thinking_from_response

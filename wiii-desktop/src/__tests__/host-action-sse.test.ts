@@ -20,4 +20,46 @@ describe("Host Action SSE + PostMessage Integration (Sprint 222b)", () => {
     const eventType = "host_action";
     expect(eventType).toBe("host_action");
   });
+
+  it("preserves backend-provided request ids for host_action SSE flow", async () => {
+    useHostContextStore.getState().clear();
+    const store = useHostContextStore.getState();
+    const promise = store.requestAction(
+      "authoring.generate_lesson",
+      { course_id: "course-1" },
+      "req-backend-42",
+    );
+
+    expect(useHostContextStore.getState().pendingActions.has("req-backend-42")).toBe(true);
+    store.resolveAction("req-backend-42", { success: true, data: { opened: true } });
+
+    const result = await promise;
+    expect(result.success).toBe(true);
+    expect(result.data?.opened).toBe(true);
+  });
+
+  it("host_action SSE flow keeps preview feedback available for follow-up apply turns", async () => {
+    useHostContextStore.getState().clear();
+    const store = useHostContextStore.getState();
+    const promise = store.requestAction(
+      "assessment.preview_quiz_commit",
+      { lesson_id: "lesson-1" },
+      "req-backend-preview-1",
+    );
+
+    store.resolveAction("req-backend-preview-1", {
+      success: true,
+      data: {
+        preview_token: "quiz-preview-123",
+        preview_kind: "quiz_commit",
+        summary: "Quiz preview ready.",
+      },
+    });
+
+    await promise;
+
+    const feedback = useHostContextStore.getState().getActionFeedbackForRequest();
+    expect(feedback?.last_action_result?.data?.preview_kind).toBe("quiz_commit");
+    expect(feedback?.last_action_result?.summary).toBe("Quiz preview ready.");
+  });
 });

@@ -1,13 +1,22 @@
 /**
- * Model store — per-request LLM provider selection.
- *
- * Tracks available providers (fetched from /llm/status) and
- * the user's active choice ("auto" | "google" | "zhipu" | "ollama").
- * Persists activeProvider via settings-store so it survives page reloads.
+ * Provider/runtime selector store for per-request chat routing.
  */
 import { create } from "zustand";
+import type {
+  AppSettings,
+  LlmStatusProvider,
+  LlmStatusResponse,
+  ProviderDisabledReasonCode,
+  ProviderSelectabilityState,
+} from "@/api/types";
 import { getClient } from "@/api/client";
 import { useSettingsStore } from "@/stores/settings-store";
+
+export type RequestModelProvider = NonNullable<AppSettings["model_provider"]>;
+export interface RequestModelSelection {
+  provider: RequestModelProvider;
+  model: string | null;
+}
 
 export interface ProviderInfo {
   id: string;
@@ -15,51 +24,183 @@ export interface ProviderInfo {
   available: boolean;
   isPrimary: boolean;
   isFallback: boolean;
+  state: ProviderSelectabilityState;
+  reasonCode?: ProviderDisabledReasonCode | null;
+  reasonLabel?: string | null;
+  selectedModel?: string | null;
+  strictPin: boolean;
+  verifiedAt?: string | null;
 }
 
 interface ModelState {
-  activeProvider: string; // "auto" | "google" | "zhipu" | "ollama"
+  activeProvider: RequestModelProvider;
+  nextTurnProvider: RequestModelProvider | null;
   providers: ProviderInfo[];
   isLoading: boolean;
+  lastFetchedAt: number | null;
 
-  setActiveProvider: (id: string) => void;
-  fetchProviders: () => Promise<void>;
+  setActiveProvider: (id: RequestModelProvider) => void;
+  setNextTurnProvider: (id: RequestModelProvider | null) => void;
+  consumeProviderForRequest: () => RequestModelProvider;
+  consumeSelectionForRequest: () => RequestModelSelection;
+  fetchProviders: (options?: { force?: boolean }) => Promise<void>;
+  refreshIfStale: (maxAgeMs?: number) => Promise<void>;
 }
 
-export const useModelStore = create<ModelState>((set) => ({
-  activeProvider: useSettingsStore.getState().settings.model_provider || "auto",
+function normalizeModelProvider(
+  value?: AppSettings["model_provider"] | null,
+): RequestModelProvider {
+  return value || "auto";
+}
+
+function mapProvider(provider: LlmStatusProvider): ProviderInfo {
+  return {
+    id: provider.id,
+    displayName: provider.display_name,
+    available: provider.available,
+    isPrimary: provider.is_primary,
+    isFallback: provider.is_fallback,
+    state: provider.state,
+    reasonCode: provider.reason_code ?? null,
+    reasonLabel: provider.reason_label ?? null,
+    selectedModel: provider.selected_model ?? null,
+    strictPin: provider.strict_pin,
+    verifiedAt: provider.verified_at ?? null,
+  };
+}
+
+function resolveConfiguredModelForProvider(
+  provider: RequestModelProvider,
+  settings: AppSettings,
+): string | null {
+  switch (provider) {
+    case "google":
+      return settings.google_model?.trim() || null;
+    case "zhipu":
+      return settings.zhipu_model?.trim() || null;
+    case "openai":
+      return settings.openai_model?.trim() || null;
+    case "openrouter":
+      return settings.openrouter_model?.trim() || null;
+    case "ollama":
+      return settings.ollama_model?.trim() || null;
+    default:
+      return null;
+  }
+}
+
+export function resolveSelectedModelForProvider(
+  provider: RequestModelProvider,
+  providers: ProviderInfo[],
+  settings: AppSettings,
+): string | null {
+  if (provider === "auto") {
+    return null;
+  }
+  const providerInfo = providers.find((item) => item.id === provider);
+  const runtimeSelectedModel = providerInfo?.selectedModel?.trim();
+  if (runtimeSelectedModel) {
+    return runtimeSelectedModel;
+  }
+  return resolveConfiguredModelForProvider(provider, settings);
+}
+
+export const useModelStore = create<ModelState>((set, get) => ({
+  activeProvider: normalizeModelProvider(
+    useSettingsStore.getState().settings.model_provider,
+  ),
+  nextTurnProvider: null,
   providers: [],
   isLoading: false,
+  lastFetchedAt: null,
 
   setActiveProvider: (id) => {
-    set({ activeProvider: id });
-    useSettingsStore.getState().updateSettings({ model_provider: id as "auto" | "google" | "zhipu" | "ollama" });
+    const provider = get().providers.find((item) => item.id === id);
+    if (id !== "auto" && provider && provider.state !== "selectable") {
+      return;
+    }
+    set({ activeProvider: id, nextTurnProvider: null });
+    void useSettingsStore.getState().updateSettings({ model_provider: id });
   },
 
-  fetchProviders: async () => {
+  setNextTurnProvider: (id) => {
+    set({ nextTurnProvider: id });
+  },
+
+  consumeProviderForRequest: () => {
+    const nextTurnProvider = get().nextTurnProvider;
+    if (nextTurnProvider) {
+      set({ nextTurnProvider: null });
+      return nextTurnProvider;
+    }
+    return get().activeProvider;
+  },
+
+  consumeSelectionForRequest: () => {
+    const nextTurnProvider = get().nextTurnProvider;
+    const provider = nextTurnProvider || get().activeProvider;
+    if (nextTurnProvider) {
+      set({ nextTurnProvider: null });
+    }
+    return {
+      provider,
+      model: resolveSelectedModelForProvider(
+        provider,
+        get().providers,
+        useSettingsStore.getState().settings,
+      ),
+    };
+  },
+
+  fetchProviders: async ({ force = false } = {}) => {
+    if (!force && get().isLoading) return;
     set({ isLoading: true });
     try {
       const client = getClient();
-      const data = await client.get<{
-        providers: Array<{
-          id: string;
-          display_name: string;
-          available: boolean;
-          is_primary: boolean;
-          is_fallback: boolean;
-        }>;
-      }>("/api/v1/llm/status");
-      const providers: ProviderInfo[] = (data.providers || []).map((p) => ({
-        id: p.id,
-        displayName: p.display_name,
-        available: p.available,
-        isPrimary: p.is_primary,
-        isFallback: p.is_fallback,
-      }));
-      set({ providers, isLoading: false });
+      const data = await client.get<LlmStatusResponse>("/api/v1/llm/status");
+      const providers = (data.providers || []).map(mapProvider);
+      const activeProvider = get().activeProvider;
+      const nextTurnProvider = get().nextTurnProvider;
+      const activeSelection = providers.find((item) => item.id === activeProvider);
+      const nextTurnSelection = nextTurnProvider
+        ? providers.find((item) => item.id === nextTurnProvider)
+        : undefined;
+      const shouldResetToAuto =
+        activeProvider !== "auto"
+        && (!activeSelection || activeSelection.state !== "selectable");
+      const shouldClearNextTurn =
+        Boolean(nextTurnProvider)
+        && nextTurnProvider !== "auto"
+        && (!nextTurnSelection || nextTurnSelection.state !== "selectable");
+
+      set({
+        providers,
+        isLoading: false,
+        lastFetchedAt: Date.now(),
+        activeProvider: shouldResetToAuto ? "auto" : activeProvider,
+        nextTurnProvider: shouldClearNextTurn ? null : nextTurnProvider,
+      });
+
+      if (shouldResetToAuto) {
+        void useSettingsStore.getState().updateSettings({ model_provider: "auto" });
+      }
     } catch (err) {
       console.warn("[Model] Failed to fetch providers:", err);
       set({ isLoading: false });
     }
   },
+
+  refreshIfStale: async (maxAgeMs = 30_000) => {
+    const lastFetchedAt = get().lastFetchedAt;
+    if (!lastFetchedAt || Date.now() - lastFetchedAt > maxAgeMs) {
+      await get().fetchProviders({ force: true });
+    }
+  },
 }));
+
+useSettingsStore.subscribe((state) => {
+  const nextProvider = normalizeModelProvider(state.settings.model_provider);
+  if (useModelStore.getState().activeProvider !== nextProvider) {
+    useModelStore.setState({ activeProvider: nextProvider });
+  }
+});

@@ -5,6 +5,8 @@
 
 // ===== Enums =====
 export type UserRole = "student" | "teacher" | "admin";
+export type PlatformRole = "user" | "platform_admin";
+export type OrganizationRole = "member" | "org_admin" | "owner" | "admin";
 
 // ===== Sprint 179: Multimodal Vision Input =====
 export interface ImageInput {
@@ -93,6 +95,8 @@ export interface ChatUserContext {
   student_state?: unknown | null;
   available_actions?: unknown[] | null;
   host_context?: unknown | null;
+  host_capabilities?: unknown | null;
+  host_action_feedback?: unknown | null;
   visual_context?: ChatVisualContext | null;
   widget_feedback?: ChatWidgetFeedbackContext | null;
   code_studio_context?: ChatCodeStudioContext | null;
@@ -110,7 +114,8 @@ export interface ChatRequest {
   organization_id?: string;
   images?: ImageInput[];
   user_context?: ChatUserContext;
-  provider?: "auto" | "google" | "zhipu" | "ollama";
+  provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  model?: string;
 }
 
 // ===== Chat Response =====
@@ -151,10 +156,86 @@ export interface ReasoningTrace {
   steps: ReasoningStep[];
 }
 
+export interface ThinkingLifecycleSegment {
+  segment_id: string;
+  turn_id: string;
+  node: string;
+  step_id?: string | null;
+  sequence_id?: number | null;
+  phase: "pre_tool" | "tool_continuation" | "post_tool" | "final_snapshot";
+  provenance: "live_native" | "tool_continuation" | "final_snapshot" | "aligned_cleanup";
+  status: "live" | "completed";
+  display_role?: string | null;
+  presentation?: string | null;
+  label?: string | null;
+  summary?: string | null;
+  content: string;
+  content_length: number;
+  started_at?: number | null;
+  ended_at?: number | null;
+}
+
+export interface ThinkingLifecycleSnapshot {
+  version: number;
+  turn_id: string;
+  final_text: string;
+  final_length: number;
+  live_text: string;
+  live_length: number;
+  segment_count: number;
+  has_tool_continuation: boolean;
+  phases: Array<ThinkingLifecycleSegment["phase"]>;
+  provenance_mix: Array<ThinkingLifecycleSegment["provenance"]>;
+  segments: ThinkingLifecycleSegment[];
+}
+
+export interface FailoverRouteEvent {
+  from_provider?: string | null;
+  to_provider?: string | null;
+  reason_code?: string | null;
+  reason_category?: string | null;
+  reason_label?: string | null;
+  raw_reason?: string | null;
+  error_type?: string | null;
+  detail?: string | null;
+  timeout_seconds?: number | null;
+}
+
+export interface FailoverMetadata {
+  switched: boolean;
+  switch_count: number;
+  initial_provider?: string | null;
+  final_provider?: string | null;
+  last_reason_code?: string | null;
+  last_reason_category?: string | null;
+  last_reason_label?: string | null;
+  route: FailoverRouteEvent[];
+}
+
+export interface ModelSwitchPromptOption {
+  provider: "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  label: string;
+  selected_model?: string | null;
+}
+
+export interface ModelSwitchPrompt {
+  trigger: string;
+  reason_code?: string | null;
+  current_provider?: string | null;
+  title: string;
+  message: string;
+  recommended_provider?: string | null;
+  options: ModelSwitchPromptOption[];
+  allow_retry_once: boolean;
+  allow_session_switch: boolean;
+}
+
 export interface ChatResponseMetadata {
   processing_time: number;
+  provider?: string;
   model: string;
-  agent_type: "chat" | "rag" | "tutor";
+  runtime_authoritative?: boolean;
+  agent_type: "chat" | "rag" | "tutor" | "direct" | "memory" | "code_studio";
   session_id?: string;
   /** Sprint 225: Composite thread ID for cross-platform sync */
   thread_id?: string;
@@ -162,6 +243,9 @@ export interface ChatResponseMetadata {
   reasoning_trace?: ReasoningTrace;
   thinking_content?: string;
   thinking?: string;
+  thinking_lifecycle?: ThinkingLifecycleSnapshot;
+  failover?: FailoverMetadata | null;
+  model_switch_prompt?: ModelSwitchPrompt | null;
   topics_accessed?: string[];
   confidence_score?: number;
   document_ids_used?: string[];
@@ -222,6 +306,9 @@ export interface SSEMetadataEvent {
   reasoning_trace?: ReasoningTrace;
   thinking?: string;
   thinking_content?: string;
+  thinking_lifecycle?: ThinkingLifecycleSnapshot;
+  failover?: FailoverMetadata | null;
+  model_switch_prompt?: ModelSwitchPrompt | null;
   /** Sprint 120: Mood state from backend emotional state machine */
   mood?: {
     positivity: number;
@@ -238,11 +325,15 @@ export interface SSEMetadataEvent {
 
 export interface SSEErrorEvent {
   message: string;
+  provider?: string;
+  reason_code?: ProviderDisabledReasonCode | string | null;
+  model_switch_prompt?: ModelSwitchPrompt | null;
   display_role?: DisplayRole;
   sequence_id?: number;
   step_id?: string;
   step_state?: StepState;
   presentation?: PresentationMode;
+  [key: string]: unknown;
 }
 
 export interface SSEToolCallEvent {
@@ -352,6 +443,8 @@ export interface SSEThinkingStartEvent {
   block_id?: string;
   /** Sprint 145: One-line summary for Claude-like collapsed header */
   summary?: string;
+  /** Whether summary is only metadata/header, not visible body fallback */
+  summary_mode?: ThinkingSummaryMode;
   /** Runtime reasoning phase from backend contract */
   phase?: string;
   display_role?: DisplayRole;
@@ -409,6 +502,7 @@ export interface ToolCallInfo {
 export type DisplayRole = "thinking" | "tool" | "action" | "answer" | "artifact";
 export type StepState = "live" | "completed";
 export type PresentationMode = "compact" | "expanded" | "technical";
+export type ThinkingSummaryMode = "header_only" | "body_fallback";
 
 export interface DisplayPresentationMeta {
   displayRole?: DisplayRole;
@@ -436,6 +530,7 @@ export interface ThinkingBlockData extends DisplayPresentationMeta {
   label?: string;
   /** Sprint 145: One-line summary for Claude-like collapsed header */
   summary?: string;
+  summaryMode?: ThinkingSummaryMode;
   /** Backend node that produced this thinking block */
   node?: string;
   /** Runtime reasoning phase from backend contract */
@@ -757,7 +852,7 @@ export interface VisualSessionState {
 }
 
 // ===== Preview System (Sprint 166) =====
-export type PreviewType = "document" | "product" | "web" | "link" | "code";
+export type PreviewType = "document" | "product" | "web" | "link" | "code" | "host_action";
 
 export interface PreviewItemData {
   preview_type: PreviewType;
@@ -869,6 +964,7 @@ export interface ThinkingPhase {
   stepId?: string;            // Stable SSE step_id / block_id for interval grouping
   phase?: string;             // Backend reasoning phase label
   summary?: string;           // One-line summary from thinking_start
+  summaryMode?: ThinkingSummaryMode;
   status: "active" | "completed";
   startTime: number;
   endTime?: number;
@@ -947,6 +1043,9 @@ export interface OrgSettings {
 export interface OrgPermissionsResponse {
   permissions: string[];
   role: string;
+  permission_role?: string;
+  legacy_role?: string;
+  platform_role?: PlatformRole | string;
   organization_id: string;
   org_role?: string | null;  // Sprint 215: member | admin | owner
 }
@@ -1072,9 +1171,37 @@ export interface UserProfile {
   name?: string;
   avatar_url?: string;
   role: string;
+  legacy_role?: string;
+  platform_role?: PlatformRole;
+  organization_role?: OrganizationRole | string;
+  host_role?: string;
+  role_source?: string;
+  active_organization_id?: string;
+  connector_id?: string;
+  identity_version?: string;
+  connected_workspaces_count?: number;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface ConnectedWorkspace {
+  id: string;
+  connector_id: string;
+  grant_key: string;
+  host_type: string;
+  host_name?: string;
+  host_user_id?: string;
+  host_workspace_id?: string;
+  host_organization_id?: string;
+  organization_id?: string;
+  granted_capabilities: Record<string, unknown>;
+  auth_metadata: Record<string, unknown>;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+  last_connected_at?: string;
+  last_used_at?: string;
 }
 
 export interface UserIdentity {
@@ -1140,11 +1267,17 @@ export type ThinkingLevel = "minimal" | "balanced" | "detailed";
 export interface AppSettings {
   server_url: string;
   api_key: string;
-  llm_provider?: "google" | "openai" | "openrouter" | "ollama";
+  llm_provider?: "google" | "zhipu" | "openai" | "openrouter" | "ollama";
   google_model?: string;
   openai_base_url?: string;
   openai_model?: string;
   openai_model_advanced?: string;
+  openrouter_base_url?: string;
+  openrouter_model?: string;
+  openrouter_model_advanced?: string;
+  zhipu_base_url?: string;
+  zhipu_model?: string;
+  zhipu_model_advanced?: string;
   openrouter_model_fallbacks?: string[];
   openrouter_provider_order?: string[];
   openrouter_allowed_providers?: string[];
@@ -1180,16 +1313,22 @@ export interface AppSettings {
   /** Sprint 167: Show interactive artifacts */
   show_artifacts?: boolean;
   /** Per-request model provider selection (persisted across reloads) */
-  model_provider?: "auto" | "google" | "zhipu" | "ollama";
+  model_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
 }
 
 export interface LlmRuntimeConfig {
-  provider: "google" | "openai" | "openrouter" | "ollama";
+  provider: "google" | "zhipu" | "openai" | "openrouter" | "ollama";
   use_multi_agent: boolean;
   google_model: string;
   openai_base_url?: string | null;
   openai_model: string;
   openai_model_advanced: string;
+  openrouter_base_url?: string | null;
+  openrouter_model: string;
+  openrouter_model_advanced: string;
+  zhipu_base_url?: string | null;
+  zhipu_model: string;
+  zhipu_model_advanced: string;
   openrouter_model_fallbacks: string[];
   openrouter_provider_order: string[];
   openrouter_allowed_providers: string[];
@@ -1204,26 +1343,353 @@ export interface LlmRuntimeConfig {
   ollama_keep_alive?: string | null;
   google_api_key_configured: boolean;
   openai_api_key_configured: boolean;
+  openrouter_api_key_configured: boolean;
+  zhipu_api_key_configured: boolean;
   ollama_api_key_configured: boolean;
   enable_llm_failover: boolean;
   llm_failover_chain: string[];
   active_provider?: string | null;
   providers_registered: string[];
+  request_selectable_providers: string[];
+  provider_status: ProviderRuntimeStatus[];
+  agent_profiles: Record<string, AgentRuntimeProfileConfig>;
+  timeout_profiles: LlmTimeoutProfilesConfig;
+  timeout_provider_overrides: Record<string, LlmTimeoutProviderOverride>;
+  vision_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  vision_describe_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  vision_describe_model?: string | null;
+  vision_ocr_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  vision_ocr_model?: string | null;
+  vision_grounded_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  vision_grounded_model?: string | null;
+  vision_failover_chain?: string[];
+  vision_timeout_seconds: number;
+  vision_provider_status?: VisionProviderRuntimeStatus[];
+  vision_audit_updated_at?: string | null;
+  vision_last_live_probe_at?: string | null;
+  vision_audit_persisted?: boolean;
+  vision_audit_warnings?: string[];
+  embedding_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  embedding_failover_chain?: string[];
+  embedding_model: string;
+  embedding_dimensions: number;
+  embedding_status: string;
+  embedding_provider_status?: EmbeddingProviderRuntimeStatus[];
+  embedding_space_status?: EmbeddingSpaceStatusSummary | null;
+  embedding_migration_previews?: EmbeddingMigrationPreview[];
+  runtime_policy_persisted: boolean;
+  runtime_policy_updated_at?: string | null;
+  warnings: string[];
+}
+
+export interface ProviderRuntimeStatus {
+  provider: string;
+  display_name: string;
+  configured: boolean;
+  available: boolean;
+  registered: boolean;
+  request_selectable: boolean;
+  in_failover_chain: boolean;
+  is_default: boolean;
+  is_active: boolean;
+  configurable_via_admin: boolean;
+  reason_code?: ProviderDisabledReasonCode | string | null;
+  reason_label?: string | null;
+}
+
+export interface EmbeddingProviderRuntimeStatus {
+  provider: string;
+  display_name: string;
+  configured: boolean;
+  available: boolean;
+  in_failover_chain: boolean;
+  is_default: boolean;
+  is_active: boolean;
+  selected_model?: string | null;
+  selected_dimensions?: number | null;
+  supports_dimension_override: boolean;
+  reason_code?: string | null;
+  reason_label?: string | null;
+}
+
+export interface VisionCapabilityRuntimeStatus {
+  capability: string;
+  display_name: string;
+  available: boolean;
+  selected_model?: string | null;
+  lane_fit?: string | null;
+  lane_fit_label?: string | null;
+  reason_code?: string | null;
+  reason_label?: string | null;
+  resolved_base_url?: string | null;
+  last_probe_attempt_at?: string | null;
+  last_probe_success_at?: string | null;
+  last_probe_error?: string | null;
+  live_probe_note?: string | null;
+  last_runtime_observation_at?: string | null;
+  last_runtime_success_at?: string | null;
+  last_runtime_error?: string | null;
+  last_runtime_note?: string | null;
+  last_runtime_source?: string | null;
+  recovered?: boolean;
+  recovered_label?: string | null;
+}
+
+export interface VisionProviderRuntimeStatus {
+  provider: string;
+  display_name: string;
+  configured: boolean;
+  available: boolean;
+  in_failover_chain: boolean;
+  is_default: boolean;
+  is_active: boolean;
+  selected_model?: string | null;
+  reason_code?: string | null;
+  reason_label?: string | null;
+  last_probe_attempt_at?: string | null;
+  last_probe_success_at?: string | null;
+  last_probe_error?: string | null;
+  last_runtime_observation_at?: string | null;
+  last_runtime_success_at?: string | null;
+  last_runtime_error?: string | null;
+  last_runtime_note?: string | null;
+  last_runtime_source?: string | null;
+  degraded?: boolean;
+  degraded_reasons?: string[];
+  recovered?: boolean;
+  recovered_reasons?: string[];
+  capabilities: VisionCapabilityRuntimeStatus[];
+}
+
+export interface EmbeddingSpaceContractSummary {
+  provider: string;
+  model: string;
+  dimensions: number;
+  fingerprint: string;
+  label: string;
+}
+
+export interface EmbeddingSpaceTableSummary {
+  table_name: string;
+  embedded_row_count: number;
+  tracked_row_count: number;
+  untracked_row_count: number;
+  fingerprints: Record<string, number>;
+}
+
+export interface EmbeddingMigrationPreview {
+  target_model: string;
+  target_provider: string;
+  target_dimensions: number;
+  target_label: string;
+  target_status: string;
+  same_space: boolean;
+  allowed: boolean;
+  requires_reembed: boolean;
+  target_backend_constructible: boolean;
+  maintenance_required: boolean;
+  embedded_row_count: number;
+  blocking_tables: string[];
+  mixed_tables: string[];
+  warnings: string[];
+  recommended_steps: string[];
+  detail?: string | null;
+}
+
+export interface EmbeddingSpaceStatusSummary {
+  audit_available: boolean;
+  policy_contract?: EmbeddingSpaceContractSummary | null;
+  active_contract?: EmbeddingSpaceContractSummary | null;
+  active_matches_policy?: boolean | null;
+  total_embedded_rows: number;
+  total_tracked_rows: number;
+  total_untracked_rows: number;
+  tables: EmbeddingSpaceTableSummary[];
+  warnings: string[];
+  error?: string | null;
+}
+
+export interface EmbeddingSpaceMigrationTablePlanSummary {
+  table_name: string;
+  candidate_rows: number;
+  embedded_rows: number;
+  tracked_rows: number;
+  untracked_rows: number;
+}
+
+export interface EmbeddingSpaceMigrationPlanRequest {
+  target_model: string;
+  target_dimensions?: number;
+  tables?: string[];
+}
+
+export interface EmbeddingSpaceMigrationPlanResponse {
+  current_contract_fingerprint?: string | null;
+  target_contract_fingerprint?: string | null;
+  current_contract_label?: string | null;
+  target_contract_label?: string | null;
+  same_space: boolean;
+  transition_allowed: boolean;
+  target_backend_constructible: boolean;
+  maintenance_required: boolean;
+  total_candidate_rows: number;
+  total_embedded_rows: number;
+  tables: EmbeddingSpaceMigrationTablePlanSummary[];
+  warnings: string[];
+  recommended_steps: string[];
+  detail?: string | null;
+}
+
+export interface EmbeddingSpaceMigrationTableResultSummary {
+  table_name: string;
+  candidate_rows: number;
+  updated_rows: number;
+  skipped_rows: number;
+  failed_rows: number;
+}
+
+export interface EmbeddingSpaceMigrationRunRequest {
+  target_model: string;
+  target_dimensions?: number;
+  dry_run?: boolean;
+  batch_size?: number;
+  limit_per_table?: number;
+  tables?: string[];
+  acknowledge_maintenance_window?: boolean;
+}
+
+export interface EmbeddingSpaceMigrationRunResponse {
+  dry_run: boolean;
+  maintenance_acknowledged: boolean;
+  current_contract_fingerprint?: string | null;
+  target_contract_fingerprint?: string | null;
+  target_backend_constructible: boolean;
+  tables: EmbeddingSpaceMigrationTableResultSummary[];
+  warnings: string[];
+  detail?: string | null;
+  recommended_next_steps: string[];
+}
+
+export interface EmbeddingSpaceMigrationPromoteRequest {
+  target_model: string;
+  target_dimensions?: number;
+  tables?: string[];
+  acknowledge_maintenance_window?: boolean;
+}
+
+export interface AgentRuntimeProfileConfig {
+  default_provider: "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  tier: "deep" | "moderate" | "light";
+  provider_models: Record<string, string>;
+}
+
+export interface LlmTimeoutProfilesConfig {
+  light_seconds: number;
+  moderate_seconds: number;
+  deep_seconds: number;
+  structured_seconds: number;
+  background_seconds: number;
+  stream_keepalive_interval_seconds: number;
+  stream_idle_timeout_seconds: number;
+}
+
+export interface LlmTimeoutProviderOverride {
+  light_seconds?: number | null;
+  moderate_seconds?: number | null;
+  deep_seconds?: number | null;
+  structured_seconds?: number | null;
+  background_seconds?: number | null;
+}
+
+export interface ModelCatalogEntry {
+  provider: string;
+  model_name: string;
+  display_name: string;
+  status: string;
+  released_on?: string | null;
+  is_default: boolean;
+}
+
+export interface ProviderCatalogCapability {
+  provider: string;
+  display_name: string;
+  configured: boolean;
+  available: boolean;
+  request_selectable: boolean;
+  configurable_via_admin: boolean;
+  supports_runtime_discovery: boolean;
+  runtime_discovery_enabled: boolean;
+  runtime_discovery_succeeded: boolean;
+  catalog_source: "static" | "runtime" | "mixed";
+  model_count: number;
+  discovered_model_count: number;
+  selected_model?: string | null;
+  selected_model_in_catalog: boolean;
+  selected_model_advanced?: string | null;
+  selected_model_advanced_in_catalog: boolean;
+  last_discovery_attempt_at?: string | null;
+  last_discovery_success_at?: string | null;
+  last_live_probe_attempt_at?: string | null;
+  last_live_probe_success_at?: string | null;
+  last_live_probe_error?: string | null;
+  live_probe_note?: string | null;
+  last_runtime_observation_at?: string | null;
+  last_runtime_success_at?: string | null;
+  last_runtime_error?: string | null;
+  last_runtime_note?: string | null;
+  last_runtime_source?: string | null;
+  degraded: boolean;
+  degraded_reasons: string[];
+  recovered: boolean;
+  recovered_reasons: string[];
+  tool_calling_supported?: boolean | null;
+  tool_calling_source?: string | null;
+  structured_output_supported?: boolean | null;
+  structured_output_source?: string | null;
+  streaming_supported?: boolean | null;
+  streaming_source?: string | null;
+  context_window_tokens?: number | null;
+  context_window_source?: string | null;
+  max_output_tokens?: number | null;
+  max_output_source?: string | null;
+}
+
+export interface ModelCatalogResponse {
+  providers: Record<string, ModelCatalogEntry[]>;
+  embedding_models: ModelCatalogEntry[];
+  provider_capabilities: Record<string, ProviderCatalogCapability>;
+  ollama_discovered: boolean;
+  audit_updated_at?: string | null;
+  last_live_probe_at?: string | null;
+  degraded_providers: string[];
+  audit_persisted: boolean;
+  audit_warnings: string[];
+  timestamp: string;
 }
 
 export interface LlmRuntimeUpdateBody {
-  provider?: "google" | "openai" | "openrouter" | "ollama";
+  provider?: "google" | "zhipu" | "openai" | "openrouter" | "ollama";
   use_multi_agent?: boolean;
   google_api_key?: string;
   clear_google_api_key?: boolean;
   google_model?: string;
   openai_api_key?: string;
   clear_openai_api_key?: boolean;
+  openrouter_api_key?: string;
+  clear_openrouter_api_key?: boolean;
+  zhipu_api_key?: string;
+  clear_zhipu_api_key?: boolean;
   ollama_api_key?: string;
   clear_ollama_api_key?: boolean;
   openai_base_url?: string;
   openai_model?: string;
   openai_model_advanced?: string;
+  openrouter_base_url?: string;
+  openrouter_model?: string;
+  openrouter_model_advanced?: string;
+  zhipu_base_url?: string;
+  zhipu_model?: string;
+  zhipu_model_advanced?: string;
   openrouter_model_fallbacks?: string[];
   openrouter_provider_order?: string[];
   openrouter_allowed_providers?: string[];
@@ -1238,6 +1704,56 @@ export interface LlmRuntimeUpdateBody {
   ollama_keep_alive?: string;
   enable_llm_failover?: boolean;
   llm_failover_chain?: string[];
+  agent_profiles?: Record<string, AgentRuntimeProfileConfig>;
+  timeout_profiles?: LlmTimeoutProfilesConfig;
+  timeout_provider_overrides?: Record<string, LlmTimeoutProviderOverride>;
+  vision_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  vision_describe_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  vision_describe_model?: string;
+  vision_ocr_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  vision_ocr_model?: string;
+  vision_grounded_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  vision_grounded_model?: string;
+  vision_failover_chain?: string[];
+  vision_timeout_seconds?: number;
+  embedding_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  embedding_failover_chain?: string[];
+  embedding_model?: string;
+}
+
+export type ProviderSelectabilityState = "selectable" | "disabled" | "hidden";
+export type ProviderDisabledReasonCode =
+  | "busy"
+  | "rate_limit"
+  | "auth_error"
+  | "host_down"
+  | "model_missing"
+  | "capability_missing"
+  | "provider_unavailable"
+  | "server_error"
+  | "timeout"
+  | "verifying";
+
+export interface LlmStatusProvider {
+  id: string;
+  display_name: string;
+  available: boolean;
+  is_primary: boolean;
+  is_fallback: boolean;
+  state: ProviderSelectabilityState;
+  reason_code?: ProviderDisabledReasonCode | null;
+  reason_label?: string | null;
+  selected_model?: string | null;
+  strict_pin: boolean;
+  verified_at?: string | null;
+}
+
+export interface LlmStatusResponse {
+  providers: LlmStatusProvider[];
+}
+
+export interface LlmRuntimeAuditRefreshBody {
+  providers?: Array<"google" | "zhipu" | "openai" | "openrouter" | "ollama">;
 }
 
 // ===== Sprint 170: Living Agent Types =====
@@ -1403,6 +1919,14 @@ export interface AdminContext {
   is_org_admin: boolean;
   admin_org_ids: string[];
   enable_org_admin: boolean;
+  platform_role?: PlatformRole;
+  organization_role?: OrganizationRole | string;
+  host_role?: string;
+  role_source?: string;
+  active_organization_id?: string;
+  connector_id?: string;
+  identity_version?: string;
+  legacy_role?: string;
 }
 
 /** GET /admin/dashboard */
@@ -1424,6 +1948,8 @@ export interface AdminUser {
   email: string;
   name: string;
   role: string;
+  legacy_role?: string;
+  platform_role?: PlatformRole;
   is_active: boolean;
   created_at: string | null;
   organization_count: number;
@@ -1434,6 +1960,7 @@ export interface AdminUserSearchParams {
   q?: string;
   email?: string;
   role?: string;
+  platform_role?: PlatformRole | string;
   org_id?: string;
   status?: string;
   sort?: string;
@@ -1520,6 +2047,9 @@ export interface UserAnalytics {
   active_users_period: number;
   user_growth: UserGrowthPoint[];
   role_distribution: Record<string, number>;
+  legacy_role_distribution?: Record<string, number>;
+  platform_role_distribution?: Record<string, number>;
+  organization_role_distribution?: Record<string, number>;
   top_active_users: { user_id: string; sessions: number }[];
 }
 

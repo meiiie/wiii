@@ -615,6 +615,43 @@ class TestLLMUsageLogger:
         assert len(records) == 2
 
     @pytest.mark.asyncio
+    async def test_log_batch_accepts_dataclass_calls(self):
+        """log_llm_usage_batch accepts TokenTracker LLMCall dataclasses too."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+        mock_conn.executemany.return_value = None
+
+        from app.core.token_tracker import LLMCall
+
+        calls = [
+            LLMCall(
+                model="qwen/qwen3.6-plus:free",
+                tier="openrouter_light",
+                input_tokens=80,
+                output_tokens=24,
+                duration_ms=123.0,
+                component="supervisor",
+            )
+        ]
+
+        with (
+            patch("app.core.config.settings.enable_admin_module", True),
+            patch(_POOL_PATCH, async_pool_fn, create=True),
+        ):
+            from app.services.llm_usage_logger import log_llm_usage_batch
+            await log_llm_usage_batch(
+                request_id="req-dataclass",
+                user_id="user-1",
+                session_id="sess-1",
+                calls=calls,
+            )
+
+        mock_conn.executemany.assert_called_once()
+        _, records = mock_conn.executemany.call_args[0]
+        assert records[0][4] == "qwen/qwen3.6-plus:free"
+        assert records[0][5] == "openrouter"
+        assert records[0][6] == "light"
+
+    @pytest.mark.asyncio
     async def test_never_raises(self):
         """Exception in DB does not propagate — function swallows errors."""
         async_pool_fn, mock_conn = _mock_pool_and_conn()
@@ -925,6 +962,7 @@ class TestUserAnalytics:
         mock_conn.fetch.side_effect = [
             [{"date": "2026-02-20", "new_users": 3}, {"date": "2026-02-21", "new_users": 7}],
             [{"role": "student", "count": 40}, {"role": "teacher", "count": 10}],
+            [{"platform_role": "user", "count": 50}],
             [],  # top_active
         ]
 
@@ -944,7 +982,7 @@ class TestUserAnalytics:
 
     @pytest.mark.asyncio
     async def test_role_distribution(self):
-        """Returns role_distribution dict with per-role counts."""
+        """Returns both canonical and compatibility role distributions."""
         async_pool_fn, mock_conn = _mock_pool_and_conn()
         mock_conn.fetchval.side_effect = [100, 20, 15]
         mock_conn.fetch.side_effect = [
@@ -953,6 +991,10 @@ class TestUserAnalytics:
                 {"role": "student", "count": 85},
                 {"role": "teacher", "count": 12},
                 {"role": "admin", "count": 3},
+            ],
+            [
+                {"platform_role": "user", "count": 97},
+                {"platform_role": "platform_admin", "count": 3},
             ],
             [],  # top_active
         ]
@@ -967,9 +1009,14 @@ class TestUserAnalytics:
             )
 
         assert "role_distribution" in result
+        assert "legacy_role_distribution" in result
+        assert "platform_role_distribution" in result
         assert isinstance(result["role_distribution"], dict)
         assert result["role_distribution"].get("student") == 85
         assert result["role_distribution"].get("teacher") == 12
+        assert result["legacy_role_distribution"].get("admin") == 3
+        assert result["platform_role_distribution"].get("user") == 97
+        assert result["platform_role_distribution"].get("platform_admin") == 3
 
     @pytest.mark.asyncio
     async def test_top_active(self):
@@ -979,6 +1026,7 @@ class TestUserAnalytics:
         mock_conn.fetch.side_effect = [
             [],  # user_growth
             [],  # role_distribution
+            [],  # platform_role_distribution
             [
                 {"user_id": "power-user", "sessions": 42},
                 {"user_id": "regular-user", "sessions": 7},
@@ -1004,7 +1052,7 @@ class TestUserAnalytics:
         """Returns new_users_period count and total_users for the period."""
         async_pool_fn, mock_conn = _mock_pool_and_conn()
         mock_conn.fetchval.side_effect = [200, 15, 10]  # total, new, active
-        mock_conn.fetch.side_effect = [[], [], []]
+        mock_conn.fetch.side_effect = [[], [], [], []]
 
         with patch(_POOL_PATCH, async_pool_fn, create=True):
             from app.api.v1.admin_analytics import analytics_users
@@ -1017,3 +1065,31 @@ class TestUserAnalytics:
 
         assert result["new_users_period"] == 15
         assert result["total_users"] == 200
+
+    @pytest.mark.asyncio
+    async def test_org_filtered_user_analytics_include_org_role_distribution(self):
+        """Org-scoped analytics return organization role distribution separately."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+        mock_conn.fetchval.side_effect = [24, 6, 5]  # total, new, active
+        mock_conn.fetch.side_effect = [
+            [],  # user_growth
+            [{"role": "teacher", "count": 10}, {"role": "student", "count": 14}],
+            [{"platform_role": "user", "count": 24}],
+            [{"role": "org_admin", "count": 2}, {"role": "member", "count": 22}],
+            [],  # top_active
+        ]
+
+        with patch(_POOL_PATCH, async_pool_fn, create=True):
+            from app.api.v1.admin_analytics import analytics_users
+            result = await analytics_users(
+                auth=_ADMIN_USER,
+                from_date=None,
+                to_date=None,
+                org_id="org-lms",
+            )
+
+        assert result["total_users"] == 24
+        assert result["legacy_role_distribution"]["teacher"] == 10
+        assert result["platform_role_distribution"]["user"] == 24
+        assert result["organization_role_distribution"]["org_admin"] == 2
+        assert result["organization_role_distribution"]["member"] == 22

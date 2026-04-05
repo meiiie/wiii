@@ -24,6 +24,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+import unicodedata
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -105,6 +107,44 @@ Wiii responded: "{ai_response}"
 
 Analyze the user's emotional state and this exchange's importance to Wiii."""
 
+_MICRO_BANTER_EXACT = {
+    "hehe",
+    "he he",
+    "haha",
+    "ha ha",
+    "hihi",
+    "hi hi",
+    "wow",
+    "woa",
+    "wao",
+    "gi do",
+    "gi vay",
+    "ok",
+    "alo",
+    "uay",
+    "ui",
+    "oi",
+}
+
+
+def _normalize_micro_text(text: str) -> str:
+    lowered = unicodedata.normalize("NFKD", str(text or "").lower())
+    stripped = "".join(ch for ch in lowered if not unicodedata.combining(ch))
+    stripped = re.sub(r"[^a-z0-9\s!?]", " ", stripped)
+    return re.sub(r"\s+", " ", stripped).strip()
+
+
+def _looks_like_micro_banter(text: str) -> bool:
+    normalized = _normalize_micro_text(text)
+    if not normalized:
+        return False
+    if len(normalized) > 24 or len(normalized.split()) > 3:
+        return False
+    if normalized in _MICRO_BANTER_EXACT:
+        return True
+    collapsed = normalized.replace(" ", "")
+    return bool(re.fullmatch(r"(he|ha|hi|huhu|hic|wow|woa|wao|ok|alo|uay|ui|oi)+", collapsed))
+
 
 # ---------------------------------------------------------------------------
 # Analyzer
@@ -131,6 +171,9 @@ class SentimentAnalyzer:
         user_id: str = "unknown",
     ) -> SentimentResult:
         """Analyze sentiment using LLM. Returns SentimentResult always."""
+        fast_path = self._fast_path_result(user_message, user_id)
+        if fast_path is not None:
+            return fast_path
         try:
             return await asyncio.wait_for(
                 self._analyze_llm(user_message, ai_response, user_id),
@@ -158,15 +201,21 @@ class SentimentAnalyzer:
 
         # Try structured output first
         try:
-            structured_llm = llm.with_structured_output(SentimentResult)
-            result = await structured_llm.ainvoke([
-                SystemMessage(content=_SYSTEM_PROMPT),
-                HumanMessage(content=_USER_TEMPLATE.format(
-                    user_id=user_id,
-                    user_message=user_message[:500],
-                    ai_response=(ai_response or "")[:500],
-                )),
-            ])
+            from app.services.structured_invoke_service import StructuredInvokeService
+
+            result = await StructuredInvokeService.ainvoke(
+                llm=llm,
+                schema=SentimentResult,
+                payload=[
+                    SystemMessage(content=_SYSTEM_PROMPT),
+                    HumanMessage(content=_USER_TEMPLATE.format(
+                        user_id=user_id,
+                        user_message=user_message[:500],
+                        ai_response=(ai_response or "")[:500],
+                    )),
+                ],
+                tier="light",
+            )
             if isinstance(result, SentimentResult):
                 logger.debug(
                     "[SENTIMENT] LLM result: sentiment=%s intensity=%.2f importance=%.2f",
@@ -204,8 +253,13 @@ class SentimentAnalyzer:
     def _get_llm(self):
         """Get the lightest available LLM."""
         try:
-            from app.engine.llm_pool import get_llm_light
-            return get_llm_light()
+            from app.engine.llm_pool import ThinkingTier, get_llm_for_provider
+
+            return get_llm_for_provider(
+                "auto",
+                default_tier=ThinkingTier.LIGHT,
+                strict_pin=False,
+            )
         except Exception:
             pass
         try:
@@ -216,6 +270,38 @@ class SentimentAnalyzer:
         return None
 
     @staticmethod
+    def _fast_path_result(user_message: str, user_id: str) -> Optional[SentimentResult]:
+        normalized = _normalize_micro_text(user_message)
+        if not _looks_like_micro_banter(user_message):
+            return None
+
+        if normalized in {"wow", "woa", "wao"}:
+            return SentimentResult(
+                user_sentiment="excited",
+                intensity=0.28,
+                life_event_type="USER_CONVERSATION",
+                importance=0.1,
+                episode_summary="Người dùng vừa buông một tiếng reo ngắn để bắt nhịp với mình.",
+            )
+
+        if normalized in {"gi do", "gi vay"}:
+            return SentimentResult(
+                user_sentiment="curious",
+                intensity=0.22,
+                life_event_type="USER_CONVERSATION",
+                importance=0.1,
+                episode_summary="Người dùng vừa thả một nhịp nửa đùa nửa gợi mở để mình nối câu chuyện tiếp.",
+            )
+
+        return SentimentResult(
+            user_sentiment="positive",
+            intensity=0.16,
+            life_event_type="USER_CONVERSATION",
+            importance=0.08,
+            episode_summary="Người dùng vừa gửi cho mình một nhịp xã giao rất ngắn và nhẹ.",
+        )
+
+    @staticmethod
     def _default_result(user_message: str, user_id: str) -> SentimentResult:
         """Safe default when LLM is unavailable."""
         return SentimentResult(
@@ -223,7 +309,7 @@ class SentimentAnalyzer:
             intensity=0.3,
             life_event_type="USER_CONVERSATION",
             importance=0.3,
-            episode_summary=f"User {user_id} had a conversation.",
+            episode_summary=f"Mình vừa có một cuộc trò chuyện với {user_id}.",
         )
 
 

@@ -9,7 +9,7 @@ Tests LLM-based answer generation including:
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 # ============================================================================
@@ -360,3 +360,37 @@ class TestStreamingGeneration:
         ):
             chunks.append(chunk)
         assert any("Rule 15" in c for c in chunks)
+
+    @pytest.mark.asyncio
+    async def test_streaming_uses_buffered_failover_when_native_stream_dies(self):
+        from app.engine.agentic_rag.answer_generator import AnswerGenerator
+
+        class FakeLLM:
+            async def astream(self, _messages):
+                raise RuntimeError("403 PERMISSION_DENIED")
+                yield  # pragma: no cover
+
+        mock_loader = MagicMock()
+        mock_loader.build_system_prompt.return_value = "System"
+        mock_loader.get_thinking_instruction.return_value = "Think"
+
+        recovered = MagicMock(content="Recovered answer from fallback")
+        chunks = []
+        with patch(
+            "app.engine.agentic_rag.answer_generator.ainvoke_agentic_rag_llm",
+            AsyncMock(return_value=recovered),
+        ), patch(
+            "app.services.output_processor.extract_thinking_from_response",
+            return_value=("Recovered answer from fallback", None),
+        ):
+            async for chunk in AnswerGenerator.generate_response_streaming(
+                llm=FakeLLM(),
+                prompt_loader=mock_loader,
+                question="What is Rule 16?",
+                nodes=[self._make_node(title="Rule 16", content="Take early and substantial action")],
+            ):
+                chunks.append(chunk)
+
+        combined = "".join(chunks)
+        assert "Recovered answer from fallback" in combined
+        assert "Internal processing error" not in combined

@@ -1,0 +1,17 @@
+name: lms-teacher-doc-to-course
+host_type: lms
+page_types: [course_editor]
+roles: [teacher, admin]
+workflow_stages: [authoring]
+description: "Teacher flow for document-to-course generation"
+priority: 0.96
+
+prompt_addition: |
+  Nếu người dùng muốn tạo course, chapter, hoặc lesson từ Word/PDF/DOCX:
+  - Ưu tiên mở đúng flow authoring hoặc course-generation action của host trước.
+  - Tách rõ các bước: ingest tài liệu, outline, review, expand, patch lesson, preview, publish.
+  - Tôn trọng pipeline Docling/course-generation đang có; điều phối và bám contract hiện tại thay vì phát minh flow mới.
+  - Khi giải thích tiến độ, hãy nói như Wiii đang đồng hành cùng teacher chứ không biến thành log máy móc.
+
+tools:
+  - tool_generate_visual

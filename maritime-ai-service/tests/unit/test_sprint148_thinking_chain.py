@@ -9,9 +9,9 @@ Tests:
 5. tool_report_progress emits phase transition events via bus
 6. tool_think emits thinking_delta via bus
 7. After tool_report_progress, iteration end doesn't emit extra thinking_end
-8. THINKING_CHAIN_INSTRUCTION added when effort=high + flag=True
-9. THINKING_CHAIN_INSTRUCTION skipped when effort=low/medium
-10. Feature flag gates prompt injection (enable_thinking_chain=False)
+8. THINKING_CHAIN_INSTRUCTION remains defined for legacy compatibility
+9. Live tutor prompt does not append chain steering, even at high effort
+10. Feature flag no longer changes live prompt injection
 11. _convert_bus_event handles action_text events
 12. Phase transition rate limit (max 4)
 """
@@ -243,7 +243,7 @@ class TestNoDoubleThinkingEnd:
 # =============================================================================
 
 class TestThinkingChainInstruction:
-    """Test conditional system prompt injection."""
+    """Test legacy chain prompt stays defined but inactive on live tutor path."""
 
     def test_instruction_constant_exists(self):
         """THINKING_CHAIN_INSTRUCTION constant is defined."""
@@ -254,8 +254,8 @@ class TestThinkingChainInstruction:
     @patch("app.engine.multi_agent.agents.tutor_node.settings")
     @patch("app.engine.multi_agent.agents.tutor_node.AgentConfigRegistry")
     @patch("app.engine.multi_agent.agents.tutor_node.get_prompt_loader")
-    def test_instruction_added_when_effort_high(self, mock_loader, mock_registry, mock_settings):
-        """Instruction appended when thinking_effort=high and flag=True."""
+    def test_instruction_not_added_when_effort_high(self, mock_loader, mock_registry, mock_settings):
+        """Live tutor prompt should stay native-thinking-first even at high effort."""
         mock_settings.enable_thinking_chain = True
         mock_settings.enable_character_tools = False
         mock_settings.default_domain = "maritime"
@@ -272,13 +272,13 @@ class TestThinkingChainInstruction:
             {"thinking_effort": "high"},
             "test query",
         )
-        assert "PHONG CÁCH TƯ DUY" in prompt
+        assert "PHONG CÁCH TƯ DUY" not in prompt
 
     @patch("app.engine.multi_agent.agents.tutor_node.settings")
     @patch("app.engine.multi_agent.agents.tutor_node.AgentConfigRegistry")
     @patch("app.engine.multi_agent.agents.tutor_node.get_prompt_loader")
-    def test_instruction_skipped_when_effort_medium(self, mock_loader, mock_registry, mock_settings):
-        """Instruction NOT added when thinking_effort=medium."""
+    def test_instruction_still_skipped_when_effort_medium(self, mock_loader, mock_registry, mock_settings):
+        """Medium effort should also keep the live prompt free of chain steering."""
         mock_settings.enable_thinking_chain = True
         mock_settings.enable_character_tools = False
         mock_settings.default_domain = "maritime"
@@ -300,8 +300,8 @@ class TestThinkingChainInstruction:
     @patch("app.engine.multi_agent.agents.tutor_node.settings")
     @patch("app.engine.multi_agent.agents.tutor_node.AgentConfigRegistry")
     @patch("app.engine.multi_agent.agents.tutor_node.get_prompt_loader")
-    def test_feature_flag_gates_instruction(self, mock_loader, mock_registry, mock_settings):
-        """Instruction NOT added when enable_thinking_chain=False even with high effort."""
+    def test_feature_flag_no_longer_changes_live_prompt(self, mock_loader, mock_registry, mock_settings):
+        """Disabling the feature flag still leaves the live prompt without chain steering."""
         mock_settings.enable_thinking_chain = False
         mock_settings.enable_character_tools = False
         mock_settings.default_domain = "maritime"

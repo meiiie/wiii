@@ -3,7 +3,7 @@
  * Wraps GET/PATCH /users/me, GET/DELETE /users/me/identities.
  */
 import { getClient } from "./client";
-import type { UserProfile, UserIdentity } from "./types";
+import type { ConnectedWorkspace, UserProfile, UserIdentity } from "./types";
 
 /** Fetch current user profile. */
 export async function fetchProfile(): Promise<UserProfile> {
@@ -20,6 +20,11 @@ export async function updateProfile(
 /** Fetch linked provider identities. */
 export async function fetchIdentities(): Promise<UserIdentity[]> {
   return getClient().get<UserIdentity[]>("/api/v1/users/me/identities");
+}
+
+/** Fetch durable connected workspaces / connector grants. */
+export async function fetchConnectedWorkspaces(): Promise<ConnectedWorkspace[]> {
+  return getClient().get<ConnectedWorkspace[]>("/api/v1/users/me/connected-workspaces");
 }
 
 /** Unlink a provider identity (must keep >= 1). */

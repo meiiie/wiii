@@ -266,9 +266,10 @@ def test_reasoning_narrator_render_fast_handles_emotional_turn_naturally():
         )
     )
 
-    assert "khoảng chùng xuống" in result.summary.lower()
-    assert "ở lại với bạn" in result.summary.lower()
-    assert "buồn quá" not in result.summary.lower()
+    lowered = result.summary.lower()
+    assert "khoảng chùng xuống" not in lowered
+    assert "ở lại với bạn" not in lowered
+    assert "nhịp đáp chậm" in lowered or "mở lời vừa đủ dịu" in lowered
 
 
 def test_reasoning_narrator_render_fast_avoids_identity_self_protection_voice():
@@ -334,3 +335,123 @@ def test_reasoning_narrator_render_fast_keeps_life_turn_grounded_not_meta():
     lowered = result.summary.lower()
     assert "lời tâm sự gần gũi" in lowered
     assert "thực thể đang thật sự hiện diện" not in lowered
+
+
+def test_reasoning_narrator_render_fast_gives_social_turn_a_livelier_inner_voice():
+    from app.engine.reasoning.reasoning_narrator import (
+        ReasoningNarrator,
+        ReasoningRenderRequest,
+    )
+
+    narrator = ReasoningNarrator()
+    result = narrator.render_fast(
+        ReasoningRenderRequest(
+            node="direct",
+            phase="attune",
+            user_goal="hehe",
+        )
+    )
+
+    lowered = result.summary.lower()
+    assert "nhịp này không cần kéo dài quá tay" not in lowered
+    assert "cú chạm nhịp nhỏ" in lowered
+    assert "câu đùa tiếp theo" in lowered or "rủ mình cười cùng" in lowered
+
+
+def test_reasoning_narrator_render_fast_uses_market_analysis_frame_for_oil_turn():
+    from app.engine.reasoning.reasoning_narrator import (
+        ReasoningNarrator,
+        ReasoningRenderRequest,
+    )
+
+    narrator = ReasoningNarrator()
+    result = narrator.render_fast(
+        ReasoningRenderRequest(
+            node="direct",
+            phase="attune",
+            user_goal="phân tích giá dầu",
+            thinking_mode="analytical_market",
+            topic_hint="giá dầu",
+            analytical_axes=[
+                "OPEC+ và sản lượng",
+                "tồn kho và nhịp cung cầu",
+                "Brent/WTI",
+            ],
+            evidence_plan=[
+                "đối chiếu Brent và WTI",
+                "tách OPEC+ khỏi yếu tố nhu cầu",
+            ],
+        )
+    )
+
+    lowered = result.summary.lower()
+    assert "nhịp này không cần kéo dài quá tay" not in lowered
+    assert "opec+" in lowered or "brent/wti" in lowered or "tồn kho" in lowered
+    assert "giá dầu" in lowered
+    assert "lực giữ mặt bằng giá" in lowered or "nhiễu ngắn hạn" in lowered
+    assert "thật gần" not in lowered
+
+
+def test_reasoning_narrator_render_fast_uses_math_analysis_frame_for_pendulum_turn():
+    from app.engine.reasoning.reasoning_narrator import (
+        ReasoningNarrator,
+        ReasoningRenderRequest,
+    )
+
+    narrator = ReasoningNarrator()
+    result = narrator.render_fast(
+        ReasoningRenderRequest(
+            node="direct",
+            phase="attune",
+            user_goal="Phân tích về toán học con lắc đơn",
+            thinking_mode="analytical_math",
+            topic_hint="con lắc đơn",
+            analytical_axes=[
+                "mô hình lý tưởng",
+                "giả định góc nhỏ",
+                "phương trình dao động",
+            ],
+            evidence_plan=[
+                "chốt mô hình con lắc lý tưởng",
+                "tách trường hợp góc nhỏ",
+            ],
+        )
+    )
+
+    lowered = result.summary.lower()
+    assert "nhịp này không cần kéo dài quá tay" not in lowered
+    assert "con lắc đơn" in lowered
+    assert "mô hình" in lowered or "góc nhỏ" in lowered or "phương trình" in lowered
+    assert "mô hình sai" in lowered or "giả định" in lowered
+    assert "thật gần" not in lowered
+
+
+def test_reasoning_narrator_render_fast_market_synthesize_emphasizes_market_balance_and_turning_variables():
+    from app.engine.reasoning.reasoning_narrator import (
+        ReasoningNarrator,
+        ReasoningRenderRequest,
+    )
+
+    narrator = ReasoningNarrator()
+    result = narrator.render_fast(
+        ReasoningRenderRequest(
+            node="direct",
+            phase="synthesize",
+            user_goal="phân tích giá dầu",
+            thinking_mode="analytical_market",
+            topic_hint="giá dầu",
+            analytical_axes=[
+                "OPEC+ và sản lượng",
+                "tồn kho và nhịp cung cầu",
+                "địa chính trị",
+            ],
+            evidence_plan=[
+                "đối chiếu Brent và WTI",
+                "tách OPEC+ khỏi yếu tố nhu cầu",
+            ],
+        )
+    )
+
+    lowered = result.summary.lower()
+    assert "cân bằng mong manh" in lowered
+    assert "bẻ hướng" in lowered

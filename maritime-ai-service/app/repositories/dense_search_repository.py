@@ -15,6 +15,16 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from app.core.config import settings
+from app.repositories.dense_search_repository_runtime import (
+    close_pool_impl,
+    count_embeddings_impl,
+    delete_embedding_impl,
+    get_embedding_impl,
+    store_document_chunk_impl,
+    store_embedding_impl,
+    upsert_embedding_impl,
+)
+from app.services.embedding_space_registry_service import get_active_embedding_read_space
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +202,7 @@ class DenseSearchRepository:
             async with pool.acquire() as conn:
                 # Sprint 170b: Set HNSW ef_search for better recall
                 await conn.execute("SET LOCAL hnsw.ef_search = 100")
+                active_space = get_active_embedding_read_space("knowledge_embeddings")
 
                 # Build query with optional filters
                 # Note: Schema uses 'id' (UUID) not 'node_id'
@@ -202,26 +213,51 @@ class DenseSearchRepository:
                 # Convert embedding list to pgvector string format
                 embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
 
-                query = f"""
-                    SELECT
-                        id::text as node_id,
-                        content,
-                        content_type,
-                        confidence_score,
-                        page_number,
-                        chunk_index,
-                        image_url,
-                        document_id,
-                        {'domain_id,' if _has_domain_col else "'' as domain_id,"}
-                        metadata,
-                        bounding_boxes,
-                        1 - (embedding <=> $1::vector) as similarity
-                    FROM knowledge_embeddings
-                    WHERE embedding IS NOT NULL
-                """
-                # Pass embedding as pgvector string (not float8[])
-                params = [embedding_str]
-                param_idx = 2
+                if active_space is not None and active_space.storage_kind == "shadow":
+                    safe_dims = max(1, int(active_space.dimensions))
+                    query = f"""
+                        SELECT
+                            ke.id::text as node_id,
+                            ke.content,
+                            ke.content_type,
+                            ke.confidence_score,
+                            ke.page_number,
+                            ke.chunk_index,
+                            ke.image_url,
+                            ke.document_id,
+                            {'ke.domain_id,' if _has_domain_col else "'' as domain_id,"}
+                            ke.metadata,
+                            ke.bounding_boxes,
+                            1 - ((kev.embedding::vector({safe_dims})) <=> $1::vector({safe_dims})) as similarity
+                        FROM knowledge_embeddings ke
+                        JOIN knowledge_embedding_vectors kev
+                          ON kev.knowledge_embedding_id = ke.id
+                         AND kev.space_fingerprint = $2
+                         AND kev.dimensions = {safe_dims}
+                        WHERE 1=1
+                    """
+                    params = [embedding_str, active_space.space_fingerprint]
+                    param_idx = 3
+                else:
+                    query = f"""
+                        SELECT
+                            id::text as node_id,
+                            content,
+                            content_type,
+                            confidence_score,
+                            page_number,
+                            chunk_index,
+                            image_url,
+                            document_id,
+                            {'domain_id,' if _has_domain_col else "'' as domain_id,"}
+                            metadata,
+                            bounding_boxes,
+                            1 - (embedding <=> $1::vector) as similarity
+                        FROM knowledge_embeddings
+                        WHERE embedding IS NOT NULL
+                    """
+                    params = [embedding_str]
+                    param_idx = 2
 
                 # Sprint 136: Cross-domain search — soft boost instead of hard filter
                 # Sprint 165: Only filter if domain_id column exists in DB
@@ -248,8 +284,15 @@ class DenseSearchRepository:
                     params.append(min_confidence)
                     param_idx += 1
                 
+                if active_space is not None and active_space.storage_kind == "shadow":
+                    order_expr = (
+                        f"(kev.embedding::vector({active_space.dimensions})) <=> "
+                        f"$1::vector({active_space.dimensions})"
+                    )
+                else:
+                    order_expr = "embedding <=> $1::vector"
                 query += f"""
-                    ORDER BY embedding <=> $1::vector
+                    ORDER BY {order_expr}
                     LIMIT ${param_idx}
                 """
                 params.append(limit)
@@ -329,61 +372,12 @@ class DenseSearchRepository:
 
         Requirements: 6.1, 6.2
         """
-        if not self._available:
-            logger.warning("Dense search not available for storing")
-            return False
-
-        if len(embedding) != 768:
-            logger.error("Invalid embedding dimensions: %d, expected 768", len(embedding))
-            return False
-
-        try:
-            pool = await self._get_pool()
-
-            # Convert embedding to pgvector format
-            embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
-
-            # Sprint 170c: Resolve effective org_id
-            from app.core.org_filter import get_effective_org_id
-            eff_org_id = get_effective_org_id() or organization_id
-
-            async with pool.acquire() as conn:
-                # Sprint 170c: Include organization_id if column exists
-                if eff_org_id and await self._has_column(conn, 'knowledge_embeddings', 'organization_id'):
-                    await conn.execute(
-                        """
-                        INSERT INTO knowledge_embeddings (node_id, embedding, organization_id)
-                        VALUES ($1, $2::vector, $3)
-                        ON CONFLICT (node_id)
-                        DO UPDATE SET
-                            embedding = EXCLUDED.embedding,
-                            organization_id = COALESCE(EXCLUDED.organization_id, knowledge_embeddings.organization_id),
-                            updated_at = NOW()
-                        """,
-                        node_id,
-                        embedding_str,
-                        eff_org_id,
-                    )
-                else:
-                    await conn.execute(
-                        """
-                        INSERT INTO knowledge_embeddings (node_id, embedding)
-                        VALUES ($1, $2::vector)
-                        ON CONFLICT (node_id)
-                        DO UPDATE SET
-                            embedding = EXCLUDED.embedding,
-                            updated_at = NOW()
-                        """,
-                        node_id,
-                        embedding_str,
-                    )
-
-                logger.debug("Stored embedding for node: %s", node_id)
-                return True
-
-        except Exception as e:
-            logger.error("Failed to store embedding for %s: %s", node_id, e)
-            return False
+        return await store_embedding_impl(
+            self,
+            node_id=node_id,
+            embedding=embedding,
+            organization_id=organization_id,
+        )
     
     async def upsert_embedding(
         self,
@@ -406,64 +400,13 @@ class DenseSearchRepository:
 
         Requirements: 6.1, 6.2
         """
-        if not self._available:
-            logger.warning("Dense search not available for storing")
-            return False
-
-        if len(embedding) != 768:
-            logger.error("Invalid embedding dimensions: %d, expected 768", len(embedding))
-            return False
-
-        try:
-            pool = await self._get_pool()
-
-            # Convert embedding to pgvector format
-            embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
-
-            # Sprint 170c: Resolve effective org_id
-            from app.core.org_filter import get_effective_org_id
-            eff_org_id = get_effective_org_id() or organization_id
-
-            async with pool.acquire() as conn:
-                if eff_org_id and await self._has_column(conn, 'knowledge_embeddings', 'organization_id'):
-                    await conn.execute(
-                        """
-                        INSERT INTO knowledge_embeddings (node_id, content, embedding, organization_id)
-                        VALUES ($1, $2, $3::vector, $4)
-                        ON CONFLICT (node_id)
-                        DO UPDATE SET
-                            content = EXCLUDED.content,
-                            embedding = EXCLUDED.embedding,
-                            organization_id = COALESCE(EXCLUDED.organization_id, knowledge_embeddings.organization_id),
-                            updated_at = NOW()
-                        """,
-                        node_id,
-                        content[:500],
-                        embedding_str,
-                        eff_org_id,
-                    )
-                else:
-                    await conn.execute(
-                        """
-                        INSERT INTO knowledge_embeddings (node_id, content, embedding)
-                        VALUES ($1, $2, $3::vector)
-                        ON CONFLICT (node_id)
-                        DO UPDATE SET
-                            content = EXCLUDED.content,
-                            embedding = EXCLUDED.embedding,
-                            updated_at = NOW()
-                        """,
-                        node_id,
-                        content[:500],
-                        embedding_str,
-                    )
-
-                logger.debug("Upserted embedding for node: %s", node_id)
-                return True
-
-        except Exception as e:
-            logger.error("Failed to upsert embedding for %s: %s", node_id, e)
-            return False
+        return await upsert_embedding_impl(
+            self,
+            node_id=node_id,
+            content=content,
+            embedding=embedding,
+            organization_id=organization_id,
+        )
 
     async def store_document_chunk(
         self,
@@ -502,111 +445,21 @@ class DenseSearchRepository:
         Requirements: 8.1, 8.2, 8.3
         **Feature: semantic-chunking**
         """
-        if not self._available:
-            logger.warning("Dense search not available for storing")
-            return False
-
-        if len(embedding) != 768:
-            logger.error("Invalid embedding dimensions: %d, expected 768", len(embedding))
-            return False
-
-        try:
-            pool = await self._get_pool()
-
-            # Convert embedding to pgvector format
-            embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
-
-            # Convert metadata to JSON
-            metadata_json = json.dumps(metadata) if metadata else '{}'
-            bounding_boxes_json = json.dumps(bounding_boxes, ensure_ascii=False) if bounding_boxes else None
-
-            # Sprint 170c: Resolve effective org_id
-            from app.core.org_filter import get_effective_org_id
-            eff_org_id = get_effective_org_id() or organization_id
-
-            async with pool.acquire() as conn:
-                if eff_org_id and await self._has_column(conn, 'knowledge_embeddings', 'organization_id'):
-                    await conn.execute(
-                        """
-                        INSERT INTO knowledge_embeddings (
-                            node_id, content, embedding, document_id, page_number,
-                            chunk_index, content_type, confidence_score, image_url, metadata,
-                            organization_id, bounding_boxes
-                        )
-                        VALUES ($1, $2, $3::vector, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12::jsonb)
-                        ON CONFLICT (node_id)
-                        DO UPDATE SET
-                            content = EXCLUDED.content,
-                            embedding = EXCLUDED.embedding,
-                            document_id = EXCLUDED.document_id,
-                            page_number = EXCLUDED.page_number,
-                            chunk_index = EXCLUDED.chunk_index,
-                            content_type = EXCLUDED.content_type,
-                            confidence_score = EXCLUDED.confidence_score,
-                            image_url = EXCLUDED.image_url,
-                            metadata = EXCLUDED.metadata,
-                            organization_id = COALESCE(EXCLUDED.organization_id, knowledge_embeddings.organization_id),
-                            bounding_boxes = EXCLUDED.bounding_boxes,
-                            updated_at = NOW()
-                        """,
-                        node_id,
-                        content[:2000],
-                        embedding_str,
-                        document_id,
-                        page_number,
-                        chunk_index,
-                        content_type,
-                        confidence_score,
-                        image_url,
-                        metadata_json,
-                        eff_org_id,
-                        bounding_boxes_json,
-                    )
-                else:
-                    await conn.execute(
-                        """
-                        INSERT INTO knowledge_embeddings (
-                            node_id, content, embedding, document_id, page_number,
-                            chunk_index, content_type, confidence_score, image_url, metadata,
-                            bounding_boxes
-                        )
-                        VALUES ($1, $2, $3::vector, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb)
-                        ON CONFLICT (node_id)
-                        DO UPDATE SET
-                            content = EXCLUDED.content,
-                            embedding = EXCLUDED.embedding,
-                            document_id = EXCLUDED.document_id,
-                            page_number = EXCLUDED.page_number,
-                            chunk_index = EXCLUDED.chunk_index,
-                            content_type = EXCLUDED.content_type,
-                            confidence_score = EXCLUDED.confidence_score,
-                            image_url = EXCLUDED.image_url,
-                            metadata = EXCLUDED.metadata,
-                            bounding_boxes = EXCLUDED.bounding_boxes,
-                            updated_at = NOW()
-                        """,
-                        node_id,
-                        content[:2000],
-                        embedding_str,
-                        document_id,
-                        page_number,
-                        chunk_index,
-                        content_type,
-                        confidence_score,
-                        image_url,
-                        metadata_json,
-                        bounding_boxes_json,
-                    )
-
-                logger.debug(
-                    "Stored chunk: %s, type=%s, "
-                    "confidence=%s, page=%d", node_id, content_type, confidence_score, page_number
-                )
-                return True
-
-        except Exception as e:
-            logger.error("Failed to store chunk %s: %s", node_id, e)
-            return False
+        return await store_document_chunk_impl(
+            self,
+            node_id=node_id,
+            content=content,
+            embedding=embedding,
+            document_id=document_id,
+            page_number=page_number,
+            chunk_index=chunk_index,
+            content_type=content_type,
+            confidence_score=confidence_score,
+            image_url=image_url,
+            metadata=metadata,
+            organization_id=organization_id,
+            bounding_boxes=bounding_boxes,
+        )
 
     async def delete_embedding(self, node_id: str, organization_id: Optional[str] = None) -> bool:
         """
@@ -621,32 +474,11 @@ class DenseSearchRepository:
 
         Requirements: 6.3
         """
-        if not self._available:
-            logger.warning("Dense search not available for deletion")
-            return False
-
-        try:
-            pool = await self._get_pool()
-
-            # Sprint 170c: Org-scoped deletion
-            from app.core.org_filter import get_effective_org_id, org_where_positional
-            eff_org_id = get_effective_org_id() or organization_id
-
-            async with pool.acquire() as conn:
-                query = "DELETE FROM knowledge_embeddings WHERE node_id = $1"
-                params = [node_id]
-                query += org_where_positional(eff_org_id, params, allow_null=True)
-
-                result = await conn.execute(query, *params)
-
-                # result format: "DELETE n"
-                deleted = int(result.split()[-1]) if result else 0
-                logger.debug("Deleted %d embedding(s) for node: %s", deleted, node_id)
-                return True
-
-        except Exception as e:
-            logger.error("Failed to delete embedding for %s: %s", node_id, e)
-            return False
+        return await delete_embedding_impl(
+            self,
+            node_id=node_id,
+            organization_id=organization_id,
+        )
     
     async def get_embedding(self, node_id: str, organization_id: Optional[str] = None) -> Optional[List[float]]:
         """
@@ -659,63 +491,19 @@ class DenseSearchRepository:
         Returns:
             Embedding vector if exists, None otherwise
         """
-        if not self._available:
-            return None
-
-        try:
-            pool = await self._get_pool()
-
-            # Sprint 170c: Org-scoped read
-            from app.core.org_filter import get_effective_org_id, org_where_positional
-            eff_org_id = get_effective_org_id() or organization_id
-
-            async with pool.acquire() as conn:
-                query = "SELECT embedding FROM knowledge_embeddings WHERE node_id = $1"
-                params = [node_id]
-                query += org_where_positional(eff_org_id, params, allow_null=True)
-
-                row = await conn.fetchrow(query, *params)
-
-                if row and row["embedding"]:
-                    # pgvector returns string like "[0.1,0.2,...]"
-                    embedding_str = str(row["embedding"])
-                    # Parse the vector string
-                    values = embedding_str.strip("[]").split(",")
-                    return [float(v) for v in values]
-
-                return None
-
-        except Exception as e:
-            logger.error("Failed to get embedding for %s: %s", node_id, e)
-            return None
+        return await get_embedding_impl(
+            self,
+            node_id=node_id,
+            organization_id=organization_id,
+        )
     
     async def count_embeddings(self, organization_id: Optional[str] = None) -> int:
         """Get total count of stored embeddings (org-scoped when multi-tenant)."""
-        if not self._available:
-            return 0
-
-        try:
-            pool = await self._get_pool()
-
-            # Sprint 170c: Org-scoped count
-            from app.core.org_filter import get_effective_org_id, org_where_positional
-            eff_org_id = get_effective_org_id() or organization_id
-
-            async with pool.acquire() as conn:
-                query = "SELECT COUNT(*) as count FROM knowledge_embeddings WHERE 1=1"
-                params = []
-                query += org_where_positional(eff_org_id, params, allow_null=True)
-
-                row = await conn.fetchrow(query, *params)
-                return row["count"] if row else 0
-
-        except Exception as e:
-            logger.error("Failed to count embeddings: %s", e)
-            return 0
+        return await count_embeddings_impl(
+            self,
+            organization_id=organization_id,
+        )
     
     async def close(self):
         """Close connection pool."""
-        if self._pool:
-            await self._pool.close()
-            self._pool = None
-            logger.info("Closed DenseSearchRepository connection pool")
+        await close_pool_impl(self)

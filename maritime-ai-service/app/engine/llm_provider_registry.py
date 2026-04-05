@@ -48,4 +48,6 @@ def get_provider_class(name: str):
 def create_provider(name: str):
     """Instantiate a provider by canonical provider name."""
     provider_cls = get_provider_class(name)
+    if name in {"openai", "openrouter"}:
+        return provider_cls(provider_alias=name)
     return provider_cls()

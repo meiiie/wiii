@@ -7,6 +7,7 @@ import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { InterleavedBlockSequence } from "./InterleavedBlockSequence";
+import { ModelSwitchPromptCard } from "./ModelSwitchPromptCard";
 import { SourceCitation } from "./SourceCitation";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useChatStore } from "@/stores/chat-store";
@@ -35,6 +36,29 @@ interface MessageBubbleProps {
   onSuggestedQuestion?: (q: string) => void;
   onRegenerate?: () => void;
   onEditMessage?: (content: string) => void;
+}
+
+function getRoutingMethod(message: Message): string {
+  const metadata = message.metadata;
+  if (!metadata || typeof metadata !== "object") return "";
+  const routingMetadata = (metadata as Record<string, unknown>).routing_metadata;
+  if (!routingMetadata || typeof routingMetadata !== "object") return "";
+  const method = (routingMetadata as Record<string, unknown>).method;
+  return typeof method === "string" ? method.trim() : "";
+}
+
+function isLocalSocialFastPath(message: Message): boolean {
+  const method = getRoutingMethod(message);
+  return method === "always_on_social_fast_path" || method === "always_on_chatter_fast_path";
+}
+
+function shouldShowRuntimeModelBadge(message: Message): boolean {
+  if (!message.metadata || typeof message.metadata !== "object") return false;
+  if (isLocalSocialFastPath(message)) return false;
+  const runtimeAuthoritative = (message.metadata as Record<string, unknown>).runtime_authoritative;
+  if (runtimeAuthoritative === false) return false;
+  const model = (message.metadata as Record<string, unknown>).model;
+  return typeof model === "string" && model.trim().length > 0;
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -124,6 +148,9 @@ export const MessageBubble = memo(function MessageBubble({
   const hasInlineVisualBlock = Boolean(
     message.blocks?.some((block) => block.type === "visual"),
   );
+  const isSocialFastPath = isLocalSocialFastPath(message);
+  const showThinkingForMessage = show_thinking;
+  const showReasoningTraceForMessage = show_reasoning_trace && !isSocialFastPath;
   const metadataAgentLabel = resolveAgentLabel(
     typeof message.metadata?.agent_type === "string" ? (message.metadata.agent_type as string) : undefined,
     hasBlocks,
@@ -154,13 +181,13 @@ export const MessageBubble = memo(function MessageBubble({
         {hasBlocks ? (
           <BlockRenderer
             blocks={message.blocks as ContentBlock[]}
-            showThinking={show_thinking}
+            showThinking={showThinkingForMessage}
             thinkingLevel={thinking_level}
             onSuggestedQuestion={onSuggestedQuestion}
             message={message}
           />
         ) : (
-          <LegacyRenderer message={message} showThinking={show_thinking} />
+          <LegacyRenderer message={message} showThinking={showThinkingForMessage} />
         )}
 
         {message.sources && message.sources.length > 0 && (
@@ -174,11 +201,18 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         )}
 
-        {show_reasoning_trace && message.reasoning_trace && (
+        {showReasoningTraceForMessage && message.reasoning_trace && (
           <Suspense fallback={null}>
             <ReasoningTrace trace={message.reasoning_trace} />
           </Suspense>
         )}
+
+        {isLastAssistant ? (
+          <ModelSwitchPromptCard
+            metadata={message.metadata}
+            onRetryOnce={onRegenerate}
+          />
+        ) : null}
 
         <div className="mt-2 flex items-center gap-2">
           {message.metadata && !hasInlineVisualBlock && (
@@ -189,9 +223,9 @@ export const MessageBubble = memo(function MessageBubble({
                 </span>
               )}
               {typeof message.metadata.processing_time === "number" && (
-                <span>{(message.metadata.processing_time as number).toFixed(1)}s</span>
+                <span>Tổng {(message.metadata.processing_time as number).toFixed(1)}s</span>
               )}
-              {typeof message.metadata.model === "string" && (
+              {shouldShowRuntimeModelBadge(message) && typeof message.metadata.model === "string" && (
                 <span>{message.metadata.model as string}</span>
               )}
             </div>

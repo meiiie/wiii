@@ -208,6 +208,7 @@ class TestBuildChatResponse:
             chat_request=request,
             internal_response=internal_response,
             processing_time=1.2345,
+            provider_name="zhipu",
             model_name="agentic-rag-v3",
         )
 
@@ -217,6 +218,7 @@ class TestBuildChatResponse:
         assert response.data.sources[0].title == "COLREG Rule 5"
         assert response.metadata.session_id == "session-1"
         assert response.metadata.processing_time == 1.234
+        assert response.metadata.provider == "zhipu"
         assert response.metadata.query_type == "factual"
         assert response.metadata.tools_used[0].description == "Tra cứu: Rule 5"
         assert response.metadata.topics_accessed == ["COLREG Rule 5"]
@@ -242,6 +244,7 @@ class TestBuildChatResponse:
             chat_request=request,
             internal_response=internal_response,
             processing_time=0.5,
+            provider_name=None,
             model_name="agentic-rag-v3",
         )
 
@@ -378,7 +381,17 @@ class TestChatEndpointPresenter:
             message="World",
             agent_type=SimpleNamespace(value="rag"),
             sources=[],
-            metadata={},
+            metadata={
+                "reasoning_trace": {
+                    "steps": [
+                        {
+                            "step_name": "direct_response",
+                            "result": "Fallback (LLM generation error)",
+                            "details": {"response_type": "fallback"},
+                        }
+                    ]
+                }
+            },
         )
 
         with patch(
@@ -389,12 +402,15 @@ class TestChatEndpointPresenter:
             return_value=SimpleNamespace(
                 metadata=SimpleNamespace(reasoning_trace=None, thinking=None),
             ),
-        ) as mock_build:
+        ) as mock_build, patch(
+            "app.api.v1.chat_endpoint_presenter.record_llm_runtime_observation",
+        ) as mock_record:
             response = build_chat_completion_success_response(
                 logger=logger,
                 chat_request=chat_request,
                 internal_response=internal_response,
                 start_time=98.5,
+                provider_name="zhipu",
                 model_name="gemini-test",
             )
 
@@ -403,12 +419,23 @@ class TestChatEndpointPresenter:
             chat_request=chat_request,
             internal_response=internal_response,
             processing_time=1.5,
+            provider_name="zhipu",
             model_name="gemini-test",
+            runtime_authoritative=True,
         )
         logger.info.assert_called_once_with(
             "Chat response generated in %.3fs (agent: %s)",
             1.5,
             "rag",
+        )
+        mock_record.assert_called_once_with(
+            provider="zhipu",
+            success=True,
+            model_name="gemini-test",
+            note=None,
+            source="chat_sync",
+            failover=None,
+            degraded_reason="fallback response (LLM generation error)",
         )
 
     def test_build_chat_completion_error_response_maps_wiii_exception(self):
@@ -490,6 +517,7 @@ class TestChatCompletionEndpointSupport:
         )
 
         chat_request = MagicMock()
+        chat_request.provider = None
         background_save = MagicMock()
         mock_chat_service = MagicMock()
         mock_chat_service.process_message = AsyncMock(return_value="response")
@@ -694,7 +722,7 @@ class TestChatHistoryEndpointSupport:
         payload = json.loads(response.body)
         assert payload["error"] == "permission_denied"
 
-    def test_ensure_delete_chat_history_allowed_rejects_invalid_role(self):
+    def test_ensure_delete_chat_history_allowed_allows_own_history_even_with_unknown_role(self):
         from app.api.v1.chat_history_endpoint_support import (
             ensure_delete_chat_history_allowed,
         )
@@ -706,10 +734,7 @@ class TestChatHistoryEndpointSupport:
             user_id="user-1",
         )
 
-        assert response is not None
-        assert response.status_code == 403
-        payload = json.loads(response.body)
-        assert payload["error"] == "invalid_role"
+        assert response is None
 
     def test_build_chat_history_operation_error_response_logs_and_builds_payload(self):
         from app.api.v1.chat_history_endpoint_support import (
@@ -977,7 +1002,7 @@ class TestDeleteChatHistory:
         assert result.status == "deleted"
 
     @pytest.mark.asyncio
-    async def test_unknown_role_returns_403(self):
+    async def test_unknown_role_can_delete_own_history(self):
         from app.api.v1.chat import delete_chat_history
 
         mock_auth = MagicMock()
@@ -985,9 +1010,12 @@ class TestDeleteChatHistory:
         mock_auth.user_id = "user-1"
 
         mock_request = MagicMock()
+        mock_repo = MagicMock()
+        mock_repo.delete_user_history.return_value = 2
 
-        result = await delete_chat_history("user-1", mock_request, auth=mock_auth)
-        assert result.status_code == 403
+        with patch("app.repositories.chat_history_repository.get_chat_history_repository", return_value=mock_repo):
+            result = await delete_chat_history("user-1", mock_request, auth=mock_auth)
+        assert result.status == "deleted"
 
     @pytest.mark.asyncio
     async def test_auth_param_exists(self):

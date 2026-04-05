@@ -1,40 +1,40 @@
 /**
- * SystemAdminView — Sprint 192: Full-page system admin.
- *
- * Full-page system admin view. Reuses all existing tab components
- * inside the FullPageView layout.
+ * SystemAdminView - shared full-page system admin shell.
  */
 import { useEffect } from "react";
 import {
-  LayoutDashboard,
-  Users,
+  BarChart3,
   Building2,
   Flag,
-  BarChart3,
+  LayoutDashboard,
   ScrollText,
+  Server,
   Shield,
+  Users,
 } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
 import { useAdminStore } from "@/stores/admin-store";
 import type { AdminTab } from "@/stores/admin-store";
 import { FullPageView } from "@/components/layout/FullPageView";
 import type { FullPageTab } from "@/components/layout/FullPageView";
-import { DashboardTab } from "./DashboardTab";
-import { UsersTab } from "./UsersTab";
-import { OrganizationsTab } from "./OrganizationsTab";
-import { FeatureFlagsTab } from "./FeatureFlagsTab";
+import { AdminToast } from "./AdminToast";
 import { AnalyticsTab } from "./AnalyticsTab";
 import { AuditLogsTab } from "./AuditLogsTab";
+import { DashboardTab } from "./DashboardTab";
+import { FeatureFlagsTab } from "./FeatureFlagsTab";
 import { GdprTab } from "./GdprTab";
-import { AdminToast } from "./AdminToast";
+import { LlmRuntimeTab } from "./LlmRuntimeTab";
+import { OrganizationsTab } from "./OrganizationsTab";
+import { UsersTab } from "./UsersTab";
 
 const TABS: (FullPageTab & { id: AdminTab })[] = [
-  { id: "dashboard", label: "Tổng quan", icon: <LayoutDashboard size={16} /> },
-  { id: "users", label: "Người dùng", icon: <Users size={16} /> },
-  { id: "organizations", label: "Tổ chức", icon: <Building2 size={16} /> },
+  { id: "dashboard", label: "Tong quan", icon: <LayoutDashboard size={16} /> },
+  { id: "runtime", label: "Runtime", icon: <Server size={16} /> },
+  { id: "users", label: "Nguoi dung", icon: <Users size={16} /> },
+  { id: "organizations", label: "To chuc", icon: <Building2 size={16} /> },
   { id: "flags", label: "Feature Flags", icon: <Flag size={16} /> },
-  { id: "analytics", label: "Phân tích", icon: <BarChart3 size={16} /> },
-  { id: "audit", label: "Nhật ký", icon: <ScrollText size={16} /> },
+  { id: "analytics", label: "Phan tich", icon: <BarChart3 size={16} /> },
+  { id: "audit", label: "Nhat ky", icon: <ScrollText size={16} /> },
   { id: "gdpr", label: "GDPR", icon: <Shield size={16} /> },
 ];
 
@@ -43,7 +43,7 @@ export function SystemAdminView() {
   const { activeTab, setActiveTab, fetchDashboard, reset } = useAdminStore();
 
   useEffect(() => {
-    fetchDashboard();
+    void fetchDashboard();
   }, [fetchDashboard]);
 
   useEffect(() => {
@@ -53,7 +53,7 @@ export function SystemAdminView() {
   return (
     <>
       <FullPageView
-        title="Quản trị hệ thống"
+        title="Quan tri he thong"
         icon={<Shield size={20} />}
         tabs={TABS}
         activeTab={activeTab}
@@ -61,6 +61,7 @@ export function SystemAdminView() {
         onClose={navigateToChat}
       >
         {activeTab === "dashboard" && <DashboardTab />}
+        {activeTab === "runtime" && <LlmRuntimeTab />}
         {activeTab === "users" && <UsersTab />}
         {activeTab === "organizations" && <OrganizationsTab />}
         {activeTab === "flags" && <FeatureFlagsTab />}

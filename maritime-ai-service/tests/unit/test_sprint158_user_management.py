@@ -21,7 +21,13 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
-def _make_user(user_id=None, email="test@example.com", name="Test", role="student"):
+def _make_user(
+    user_id=None,
+    email="test@example.com",
+    name="Test",
+    role="student",
+    platform_role="user",
+):
     """Create a mock user dict."""
     return {
         "id": user_id or str(uuid.uuid4()),
@@ -29,6 +35,7 @@ def _make_user(user_id=None, email="test@example.com", name="Test", role="studen
         "name": name,
         "avatar_url": None,
         "role": role,
+        "platform_role": platform_role,
         "is_active": True,
     }
 
@@ -141,13 +148,14 @@ class TestUserCRUD:
         pool, conn = _make_pool()
         conn.fetchrow.return_value = {
             "id": "u1", "email": "a@b.com", "name": "A", "avatar_url": None,
-            "role": "student", "is_active": True, "created_at": now, "updated_at": now,
+            "role": "student", "platform_role": "user", "is_active": True, "created_at": now, "updated_at": now,
         }
         with patch("app.auth.user_service._get_pool", new_callable=AsyncMock, return_value=pool):
             from app.auth.user_service import get_user
             result = await get_user("u1")
             assert result is not None
             assert result["id"] == "u1"
+            assert result["platform_role"] == "user"
             assert isinstance(result["created_at"], str)  # converted to ISO
 
     @pytest.mark.asyncio
@@ -170,7 +178,7 @@ class TestUserCRUD:
             patch("app.auth.user_service._get_pool", new_callable=AsyncMock, return_value=pool),
             patch("app.auth.user_service.get_user", new_callable=AsyncMock, return_value={
                 "id": "u1", "email": "a@b.com", "name": "New Name", "avatar_url": None,
-                "role": "student", "is_active": True, "created_at": now.isoformat(), "updated_at": now.isoformat(),
+                "role": "student", "platform_role": "user", "is_active": True, "created_at": now.isoformat(), "updated_at": now.isoformat(),
             }),
         ):
             from app.auth.user_service import update_user
@@ -195,7 +203,7 @@ class TestUserCRUD:
         conn.execute.return_value = "UPDATE 1"
         with (
             patch("app.auth.user_service._get_pool", new_callable=AsyncMock, return_value=pool),
-            patch("app.auth.user_service.get_user", new_callable=AsyncMock, return_value=_make_user(role="teacher")),
+            patch("app.auth.user_service.get_user", new_callable=AsyncMock, return_value=_make_user(role="teacher", platform_role="user")),
         ):
             from app.auth.user_service import update_user_role
             result = await update_user_role("u1", "teacher")
@@ -203,11 +211,59 @@ class TestUserCRUD:
             assert result["role"] == "teacher"
 
     @pytest.mark.asyncio
+    async def test_platform_role_valid(self):
+        """update_user_role can update platform_role independently."""
+        pool, conn = _make_pool()
+        conn.execute.return_value = "UPDATE 1"
+        with (
+            patch("app.auth.user_service._get_pool", new_callable=AsyncMock, return_value=pool),
+            patch(
+                "app.auth.user_service.get_user",
+                new_callable=AsyncMock,
+                return_value=_make_user(role="teacher", platform_role="platform_admin"),
+            ),
+        ):
+            from app.auth.user_service import update_user_role
+            result = await update_user_role("u1", platform_role="platform_admin")
+            assert result is not None
+            assert result["platform_role"] == "platform_admin"
+
+    @pytest.mark.asyncio
     async def test_role_invalid_raises(self):
         """update_user_role raises ValueError for invalid roles."""
         from app.auth.user_service import update_user_role
         with pytest.raises(ValueError, match="Invalid role"):
             await update_user_role("u1", "superadmin")
+
+    @pytest.mark.asyncio
+    async def test_platform_role_invalid_raises(self):
+        """update_user_role raises ValueError for invalid platform_role."""
+        from app.auth.user_service import update_user_role
+        with pytest.raises(ValueError, match="Invalid platform_role"):
+            await update_user_role("u1", platform_role="root")
+
+    @pytest.mark.asyncio
+    async def test_platform_role_legacy_fallback_promotes_admin(self):
+        """When DB lacks platform_role column, platform_admin falls back to legacy admin role."""
+        pool, conn = _make_pool()
+        conn.execute.side_effect = [
+            Exception('column "platform_role" of relation "users" does not exist'),
+            "UPDATE 1",
+        ]
+        with (
+            patch("app.auth.user_service._get_pool", new_callable=AsyncMock, return_value=pool),
+            patch(
+                "app.auth.user_service.get_user",
+                new_callable=AsyncMock,
+                return_value=_make_user(role="admin", platform_role="platform_admin"),
+            ),
+        ):
+            from app.auth.user_service import update_user_role
+            result = await update_user_role("u1", platform_role="platform_admin")
+            assert result is not None
+            fallback_sql_args = conn.execute.await_args_list[1][0]
+            assert "role = $1" in fallback_sql_args[0]
+            assert fallback_sql_args[1] == "admin"
 
     @pytest.mark.asyncio
     async def test_deactivate_user(self):
@@ -234,14 +290,15 @@ class TestUserCRUD:
         now = datetime.now(timezone.utc)
         conn.fetchval.return_value = 25
         conn.fetch.return_value = [
-            {"id": "u1", "email": "a@b.com", "name": "A", "avatar_url": None, "role": "student", "is_active": True, "created_at": now},
-            {"id": "u2", "email": "c@d.com", "name": "B", "avatar_url": None, "role": "teacher", "is_active": True, "created_at": now},
+            {"id": "u1", "email": "a@b.com", "name": "A", "avatar_url": None, "role": "student", "platform_role": "user", "is_active": True, "created_at": now},
+            {"id": "u2", "email": "c@d.com", "name": "B", "avatar_url": None, "role": "teacher", "platform_role": "platform_admin", "is_active": True, "created_at": now},
         ]
         with patch("app.auth.user_service._get_pool", new_callable=AsyncMock, return_value=pool):
             from app.auth.user_service import list_users
             users, total = await list_users(limit=10, offset=0)
             assert total == 25
             assert len(users) == 2
+            assert users[1]["platform_role"] == "platform_admin"
 
 
 # ===========================================================================

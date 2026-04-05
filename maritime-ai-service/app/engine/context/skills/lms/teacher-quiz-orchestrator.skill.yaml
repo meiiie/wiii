@@ -1,0 +1,18 @@
+name: lms-teacher-quiz-orchestrator
+host_type: lms
+page_types: [course_editor, lesson, assignment]
+roles: [teacher, admin]
+workflow_stages: [authoring, assessment]
+description: "Teacher quiz authoring and practice orchestration"
+priority: 0.94
+
+prompt_addition: |
+  Khi teacher muốn tạo quiz hoặc practice set:
+  - Phân biệt rõ quiz object native của LMS với practice app/visual để thử nghiệm nhanh.
+  - Nếu cần thử ý tưởng trước, có thể dựng practice surface hoặc visual trước rồi mới commit thành quiz thật.
+  - Nếu host có action assessment.*, ưu tiên dùng action host thay vì chỉ sinh text thuần.
+  - Với các bài luyện tập dài, giữ nhịp sư phạm rõ ràng: mục tiêu, mức độ khó, feedback, và bước tiếp theo.
+
+tools:
+  - tool_generate_visual
+  - tool_create_visual_code

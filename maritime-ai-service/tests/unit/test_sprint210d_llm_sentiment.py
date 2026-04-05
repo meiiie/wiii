@@ -97,11 +97,9 @@ class TestSentimentAnalyzerLLM:
             episode_summary="User thanked Wiii.",
         )
         mock_llm = MagicMock()
-        mock_structured = MagicMock()
-        mock_structured.ainvoke = AsyncMock(return_value=mock_result)
-        mock_llm.with_structured_output = MagicMock(return_value=mock_structured)
 
-        with patch.object(analyzer, '_get_llm', return_value=mock_llm):
+        with patch.object(analyzer, '_get_llm', return_value=mock_llm), \
+             patch("app.services.structured_invoke_service.StructuredInvokeService.ainvoke", new=AsyncMock(return_value=mock_result)):
             result = await analyzer.analyze("cam on nhieu lam!", "Khong co gi!", "admin")
 
         assert isinstance(result, SentimentResult)
@@ -155,6 +153,26 @@ class TestSentimentAnalyzerLLM:
 
         assert isinstance(result, SentimentResult)
         assert result.user_sentiment == "neutral"
+
+    @pytest.mark.asyncio
+    async def test_analyze_short_banter_skips_llm(self, analyzer):
+        """Tiny banter should not spend an extra LLM call in the background."""
+        with patch.object(analyzer, "_get_llm") as mock_get_llm:
+            result = await analyzer.analyze("hẹ hẹ", "He he~", "user1")
+
+        assert result.user_sentiment == "positive"
+        assert result.importance == pytest.approx(0.08)
+        mock_get_llm.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_analyze_short_reaction_uses_fast_path(self, analyzer):
+        """Short reactions should map to a lightweight heuristic sentiment result."""
+        with patch.object(analyzer, "_get_llm") as mock_get_llm:
+            result = await analyzer.analyze("wow", "Woa~", "user1")
+
+        assert result.user_sentiment == "excited"
+        assert result.importance == pytest.approx(0.1)
+        mock_get_llm.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_analyze_raw_json_fallback(self, analyzer):

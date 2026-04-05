@@ -686,11 +686,18 @@ class TestGoogleOAuthRoleInCallback:
 
     @pytest.mark.asyncio
     async def test_callback_params_include_role(self, mock_settings):
-        """The desktop redirect should include role from user DB."""
+        """The desktop redirect should include both legacy and platform role semantics."""
         from urllib.parse import urlencode, parse_qs
 
         # Simulate the params construction
-        user = {"id": "user-1", "email": "test@test.com", "name": "Test", "avatar_url": "", "role": "teacher"}
+        user = {
+            "id": "user-1",
+            "email": "test@test.com",
+            "name": "Test",
+            "avatar_url": "",
+            "role": "teacher",
+            "platform_role": "user",
+        }
         params = urlencode({
             "access_token": "token",
             "refresh_token": "refresh",
@@ -700,9 +707,15 @@ class TestGoogleOAuthRoleInCallback:
             "name": user.get("name", ""),
             "avatar_url": user.get("avatar_url", ""),
             "role": user.get("role", "student"),
+            "legacy_role": user.get("role", "student"),
+            "platform_role": user.get("platform_role", "user"),
+            "role_source": "platform",
         })
         parsed = parse_qs(params)
         assert parsed["role"] == ["teacher"]
+        assert parsed["legacy_role"] == ["teacher"]
+        assert parsed["platform_role"] == ["user"]
+        assert parsed["role_source"] == ["platform"]
 
 
 class TestLogoutJTIDeny:

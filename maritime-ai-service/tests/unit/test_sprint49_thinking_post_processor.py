@@ -93,6 +93,63 @@ class TestProcessString:
         assert text == ""
         assert thinking is None
 
+    def test_extracts_visible_thinking_block_prefix(self):
+        from app.services.thinking_post_processor import ThinkingPostProcessor
+        p = ThinkingPostProcessor()
+        content = (
+            "*Visible Thinking: Mình muốn hỏi thăm nhẹ thôi, không ép bạn phải nói ngay.*\n\n"
+            "Ôi, nghe bạn nói mà mình thấy lo quá."
+        )
+        text, thinking = p.process(content)
+        assert thinking == "Mình muốn hỏi thăm nhẹ thôi, không ép bạn phải nói ngay."
+        assert text == "Ôi, nghe bạn nói mà mình thấy lo quá."
+
+    def test_strips_internal_visible_thinking_label_but_keeps_natural_body(self):
+        from app.services.thinking_post_processor import ThinkingPostProcessor
+        p = ThinkingPostProcessor()
+        content = (
+            "*Suy nghĩ của Wiii: * Thấy thương quá. Mình chỉ muốn ngồi cạnh nghe thôi."
+        )
+        text, thinking = p.process(content)
+        assert thinking is None
+        assert text.startswith("Thấy thương quá.")
+        assert "Suy nghĩ của Wiii" not in text
+
+    def test_strips_nghi_tham_label_but_keeps_woven_thought(self):
+        from app.services.thinking_post_processor import ThinkingPostProcessor
+        p = ThinkingPostProcessor()
+        content = "*Nghĩ thầm: Mình chỉ muốn hỏi nhẹ thôi.* Ôi, sao thế?"
+        text, thinking = p.process(content)
+        assert thinking is None
+        assert text.startswith("*Mình chỉ muốn hỏi nhẹ thôi.*")
+        assert "Nghĩ thầm" not in text
+
+    def test_strips_suy_nghi_label_but_keeps_woven_thought(self):
+        from app.services.thinking_post_processor import ThinkingPostProcessor
+        p = ThinkingPostProcessor()
+        content = "*Suy nghĩ: Người dùng bắt nhịp ngắn quá.* Oke nè!"
+        text, thinking = p.process(content)
+        assert thinking is None
+        assert text.startswith("*Người dùng bắt nhịp ngắn quá.*")
+        assert "Suy nghĩ:" not in text
+
+    def test_strips_parenthetical_visible_thinking_label_but_keeps_body(self):
+        from app.services.thinking_post_processor import ThinkingPostProcessor
+        p = ThinkingPostProcessor()
+        content = "(Visible Thinking: *Mình phải thật nhẹ nhàng thôi.*)\n\nỪ, kể mình nghe nhé."
+        text, thinking = p.process(content)
+        assert thinking is None
+        assert text.startswith("*Mình phải thật nhẹ nhàng thôi.*")
+        assert "Visible Thinking" not in text
+
+    def test_does_not_erase_answer_when_visible_thinking_block_has_no_real_tail(self):
+        from app.services.thinking_post_processor import ThinkingPostProcessor
+        p = ThinkingPostProcessor()
+        content = "*Visible Thinking: Mình cảm nhận được sự mệt mỏi trong câu nói của cậu.*"
+        text, thinking = p.process(content)
+        assert thinking is None
+        assert "Mình cảm nhận được sự mệt mỏi" in text
+
 
 # ============================================================================
 # process — list input (Gemini native format)

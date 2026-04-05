@@ -263,6 +263,44 @@ class TestRefreshFamily:
             assert "family_id" in sql
 
     @pytest.mark.asyncio
+    async def test_identity_snapshot_persisted_with_refresh_token(self):
+        """Refresh-token row stores additive Identity V2 context."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        with patch("app.auth.token_service.settings") as mock_settings, \
+             patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            mock_settings.jwt_expire_minutes = 30
+            mock_settings.jwt_secret_key = "test-secret-key-12345"
+            mock_settings.jwt_algorithm = "HS256"
+            mock_settings.jwt_refresh_expire_days = 30
+            mock_settings.jwt_audience = "wiii"
+
+            from app.auth.token_service import create_token_pair
+            await create_token_pair(
+                user_id="user-1",
+                role="teacher",
+                platform_role="user",
+                organization_role="org_admin",
+                host_role="teacher",
+                role_source="lms_host",
+                active_organization_id="org-lms",
+                connector_id="maritime-lms",
+                identity_version="2",
+            )
+
+            sql = mock_conn.execute.call_args[0][0]
+            args = mock_conn.execute.call_args[0]
+            assert "identity_snapshot" in sql
+            assert args[7] == "org-lms"
+            snapshot = json.loads(args[8])
+            assert snapshot["role"] == "teacher"
+            assert snapshot["platform_role"] == "user"
+            assert snapshot["organization_role"] == "org_admin"
+            assert snapshot["host_role"] == "teacher"
+            assert snapshot["connector_id"] == "maritime-lms"
+            assert snapshot["identity_version"] == "2"
+
+    @pytest.mark.asyncio
     async def test_db_failure_still_returns_pair(self):
         """Token pair is still returned even if DB fails."""
         failing_pool_fn = AsyncMock(side_effect=Exception("DB down"))
@@ -279,6 +317,33 @@ class TestRefreshFamily:
             pair = await create_token_pair(user_id="user-1")
             assert pair.access_token
             assert pair.refresh_token
+
+    @pytest.mark.asyncio
+    async def test_identity_snapshot_insert_falls_back_to_legacy_schema(self):
+        """Missing Identity V2 columns should not break refresh-token storage."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+        mock_conn.execute.side_effect = [
+            Exception('column "identity_snapshot" of relation "refresh_tokens" does not exist'),
+            None,
+        ]
+
+        with patch("app.auth.token_service.settings") as mock_settings, \
+             patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            mock_settings.jwt_expire_minutes = 30
+            mock_settings.jwt_secret_key = "test-secret-key-12345"
+            mock_settings.jwt_algorithm = "HS256"
+            mock_settings.jwt_refresh_expire_days = 30
+            mock_settings.jwt_audience = "wiii"
+
+            from app.auth.token_service import create_token_pair
+            pair = await create_token_pair(user_id="user-1", role="teacher")
+
+            assert pair.access_token
+            assert pair.refresh_token
+            assert mock_conn.execute.await_count == 2
+            fallback_sql = mock_conn.execute.await_args_list[1][0][0]
+            assert "identity_snapshot" not in fallback_sql
+            assert "family_id" in fallback_sql
 
 
 # ============================================================================
@@ -404,6 +469,59 @@ class TestReplayDetection:
             assert len(insert_calls) > 0
 
     @pytest.mark.asyncio
+    async def test_refresh_preserves_identity_snapshot(self):
+        """Rotated tokens keep additive Identity V2 claims from refresh storage."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+
+        mock_conn.fetchrow.return_value = {
+            "id": "token-1",
+            "user_id": "user-1",
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=30),
+            "revoked_at": None,
+            "auth_method": "lms",
+            "family_id": "family-xyz",
+            "organization_id": "org-lms",
+            "identity_snapshot": {
+                "role": "teacher",
+                "platform_role": "user",
+                "organization_role": "org_admin",
+                "host_role": "org_admin",
+                "role_source": "lms_host",
+                "active_organization_id": "org-lms",
+                "connector_id": "maritime-lms",
+                "identity_version": "2",
+            },
+            "email": "a@b.com",
+            "name": "Test",
+            "role": "student",
+        }
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn), \
+             patch("app.auth.token_service.create_token_pair", new_callable=AsyncMock) as mock_create, \
+             patch("app.auth.auth_audit.log_auth_event", new_callable=AsyncMock):
+            mock_create.return_value = MagicMock(
+                access_token="at",
+                refresh_token="rt",
+                token_type="bearer",
+                expires_in=1800,
+            )
+
+            from app.auth.token_service import refresh_access_token
+            result = await refresh_access_token("valid-refresh-token")
+
+            assert result is not None
+            kwargs = mock_create.call_args.kwargs
+            assert kwargs["role"] == "teacher"
+            assert kwargs["platform_role"] == "user"
+            assert kwargs["organization_role"] == "org_admin"
+            assert kwargs["host_role"] == "org_admin"
+            assert kwargs["role_source"] == "lms_host"
+            assert kwargs["active_organization_id"] == "org-lms"
+            assert kwargs["connector_id"] == "maritime-lms"
+            assert kwargs["identity_version"] == "2"
+            assert kwargs["family_id"] == "family-xyz"
+
+    @pytest.mark.asyncio
     async def test_not_found_returns_none(self):
         """Token not found returns None."""
         async_pool_fn, mock_conn = _mock_pool_and_conn()
@@ -413,6 +531,80 @@ class TestReplayDetection:
             from app.auth.token_service import refresh_access_token
             result = await refresh_access_token("nonexistent-token")
             assert result is None
+
+    @pytest.mark.asyncio
+    async def test_refresh_lookup_falls_back_when_identity_columns_missing(self):
+        """Legacy refresh_tokens schema should still support refresh rotation."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+        mock_conn.fetchrow.side_effect = [
+            Exception('column "identity_snapshot" does not exist'),
+            {
+                "id": "token-1",
+                "user_id": "user-1",
+                "expires_at": datetime.now(timezone.utc) + timedelta(days=30),
+                "revoked_at": None,
+                "auth_method": "google",
+                "family_id": "family-legacy",
+                "email": "a@b.com",
+                "name": "Test",
+                "role": "student",
+            },
+        ]
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn), \
+             patch("app.auth.token_service.create_token_pair", new_callable=AsyncMock) as mock_create, \
+             patch("app.auth.auth_audit.log_auth_event", new_callable=AsyncMock):
+            mock_create.return_value = MagicMock(
+                access_token="at",
+                refresh_token="rt",
+                token_type="bearer",
+                expires_in=1800,
+            )
+
+            from app.auth.token_service import refresh_access_token
+            result = await refresh_access_token("legacy-refresh-token")
+
+            assert result is not None
+            kwargs = mock_create.call_args.kwargs
+            assert kwargs["role"] == "student"
+            assert kwargs["family_id"] == "family-legacy"
+
+    @pytest.mark.asyncio
+    async def test_refresh_uses_persisted_platform_role_when_snapshot_missing(self):
+        """Migrated users still recover platform_role even if refresh snapshot is absent."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+        mock_conn.fetchrow.return_value = {
+            "id": "token-1",
+            "user_id": "user-1",
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=30),
+            "revoked_at": None,
+            "auth_method": "google",
+            "family_id": "family-xyz",
+            "organization_id": None,
+            "identity_snapshot": None,
+            "email": "a@b.com",
+            "name": "Test",
+            "role": "admin",
+            "platform_role": "platform_admin",
+        }
+
+        with patch(_POOL_PATCH, create=True, new=async_pool_fn), \
+             patch("app.auth.token_service.create_token_pair", new_callable=AsyncMock) as mock_create, \
+             patch("app.auth.auth_audit.log_auth_event", new_callable=AsyncMock):
+            mock_create.return_value = MagicMock(
+                access_token="at",
+                refresh_token="rt",
+                token_type="bearer",
+                expires_in=1800,
+            )
+
+            from app.auth.token_service import refresh_access_token
+            result = await refresh_access_token("persisted-platform-role")
+
+            assert result is not None
+            kwargs = mock_create.call_args.kwargs
+            assert kwargs["role"] == "admin"
+            assert kwargs["platform_role"] == "platform_admin"
 
 
 # ============================================================================

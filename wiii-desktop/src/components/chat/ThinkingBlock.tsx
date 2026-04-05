@@ -4,7 +4,7 @@ import { ChevronDown, Check, Copy, Clock, CheckCircle, Search, Globe, BookOpen, 
 import type { ToolCallInfo } from "@/api/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 
-import type { ThinkingLevel } from "@/api/types";
+import type { ThinkingLevel, ThinkingSummaryMode } from "@/api/types";
 import { TOOL_LABELS, PHASE_LABELS } from "@/lib/reasoning-labels";
 
 interface ThinkingBlockProps {
@@ -15,6 +15,7 @@ interface ThinkingBlockProps {
   toolCalls?: ToolCallInfo[];
   label?: string;
   summary?: string;
+  summaryMode?: ThinkingSummaryMode;
   phase?: string;
   thinkingLevel?: ThinkingLevel;
   continuation?: boolean;
@@ -184,6 +185,7 @@ export function ThinkingBlock({
   toolCalls,
   label: customLabel,
   summary,
+  summaryMode = "header_only",
   phase,
   thinkingLevel = "balanced",
   continuation = false,
@@ -262,14 +264,14 @@ export function ThinkingBlock({
   const contentForDisplay = content
     ? stripLeadingDuplicateParagraph(content, [summaryText, titleSeed, phaseHeader])
     : "";
-  const previewContent = !expanded && contentForDisplay ? buildPreviewText(contentForDisplay, summary || customLabel) : "";
+  const previewContent = !expanded && contentForDisplay ? buildPreviewText(contentForDisplay) : "";
   const expandedHeaderText = phaseHeader || titleSeed || defaultTitle;
   const collapsedHeaderText = titleSeed || phaseHeader || summaryText || defaultTitle;
   const headerText = expanded ? expandedHeaderText : collapsedHeaderText;
   const durationText = duration > 0 ? `${duration}s` : "";
   const collapsedPreview = chooseCollapsedPreview({
     header: collapsedHeaderText,
-    summary: summaryText,
+    summary: summaryMode === "body_fallback" ? summaryText : undefined,
     derived: previewContent.trim(),
   });
   const showPreviewLine = Boolean(

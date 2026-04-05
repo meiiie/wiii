@@ -22,33 +22,70 @@ export interface HostPage {
 export interface HostContext {
   host_type: string;
   host_name?: string;
+  connector_id?: string;
+  host_user_id?: string;
+  host_workspace_id?: string;
+  host_organization_id?: string;
   resource_uri?: string;
   page: HostPage;
+  user_role?: string;
+  workflow_stage?: string;
+  selection?: Record<string, unknown> | null;
+  editable_scope?: Record<string, unknown> | null;
+  entity_refs?: Array<Record<string, unknown>> | null;
   user_state?: Record<string, unknown> | null;
   content?: { snippet?: string; structured?: unknown } | null;
   available_actions?: Array<{
-    action: string;
+    action?: string;
+    name?: string;
     label: string;
     input_schema?: unknown;
     roles?: string[];
+    permission?: string;
+    required_permissions?: string[];
+    requires_confirmation?: boolean;
+    mutates_state?: boolean;
+    surface?: string;
+    result_schema?: unknown;
   }> | null;
 }
 
 export interface HostCapabilities {
   host_type: string;
   host_name?: string;
+  connector_id?: string;
+  host_workspace_id?: string;
+  host_organization_id?: string;
+  version?: string;
   resources: string[];
+  surfaces?: string[];
   tools: Array<{
     name: string;
     description: string;
     input_schema?: unknown;
     roles?: string[];
+    permission?: string;
+    required_permissions?: string[];
+    requires_confirmation?: boolean;
+    mutates_state?: boolean;
+    surface?: string;
+    result_schema?: unknown;
   }>;
 }
 
 interface LegacyPageContext {
   page_type?: string;
   page_title?: string;
+  connector_id?: string;
+  host_user_id?: string;
+  host_workspace_id?: string;
+  host_organization_id?: string;
+  action?: string;
+  user_role?: string;
+  workflow_stage?: string;
+  selection?: Record<string, unknown> | null;
+  editable_scope?: Record<string, unknown> | null;
+  entity_refs?: Array<Record<string, unknown>> | null;
   course_id?: string;
   course_name?: string;
   lesson_id?: string;
@@ -70,11 +107,24 @@ export interface ActionResult {
   error?: string;
 }
 
+export interface HostActionFeedbackItem {
+  request_id: string;
+  action: string;
+  params?: Record<string, unknown>;
+  success: boolean;
+  summary?: string;
+  error?: string;
+  data?: Record<string, unknown>;
+  timestamp: string;
+}
+
 // ── Store ──
 
 interface HostContextState {
   capabilities: HostCapabilities | null;
   currentContext: HostContext | null;
+  lastActionResult: HostActionFeedbackItem | null;
+  recentActionResults: HostActionFeedbackItem[];
   setCapabilities: (caps: HostCapabilities) => void;
   updateContext: (ctx: HostContext) => void;
   setLegacyPageContext: (
@@ -84,14 +134,24 @@ interface HostContextState {
   ) => void;
   clear: () => void;
   getContextForRequest: () => HostContext | null;
+  getActionFeedbackForRequest: () => {
+    last_action_result?: HostActionFeedbackItem;
+    recent_action_results?: HostActionFeedbackItem[];
+  } | null;
 
   // Sprint 222b Phase 5: Bidirectional Actions
   pendingActions: Map<string, {
+    action: string;
+    params: Record<string, unknown>;
     resolve: (result: ActionResult) => void;
     reject: (error: Error) => void;
     timeout: ReturnType<typeof setTimeout>;
   }>;
-  requestAction: (action: string, params: Record<string, unknown>) => Promise<ActionResult>;
+  requestAction: (
+    action: string,
+    params: Record<string, unknown>,
+    requestId?: string,
+  ) => Promise<ActionResult>;
   resolveAction: (requestId: string, result: ActionResult) => void;
 }
 
@@ -115,6 +175,8 @@ function legacyToHostContext(
 ): HostContext {
   const metadata: Record<string, unknown> = {};
   const metaKeys = [
+    "action",
+    "workflow_stage",
     "course_id",
     "course_name",
     "lesson_id",
@@ -134,11 +196,20 @@ function legacyToHostContext(
 
   return {
     host_type: "lms",
+    connector_id: legacy.connector_id,
+    host_user_id: legacy.host_user_id,
+    host_workspace_id: legacy.host_workspace_id,
+    host_organization_id: legacy.host_organization_id,
     page: {
       type: legacy.page_type || "unknown",
       title: legacy.page_title,
       metadata,
     },
+    user_role: legacy.user_role || undefined,
+    workflow_stage: legacy.workflow_stage || undefined,
+    selection: legacy.selection || null,
+    editable_scope: legacy.editable_scope || null,
+    entity_refs: legacy.entity_refs || null,
     user_state: studentState || null,
     content: (legacy.content_snippet || legacy.structured)
       ? {
@@ -154,6 +225,8 @@ function legacyToHostContext(
 export const useHostContextStore = create<HostContextState>((set, get) => ({
   capabilities: null,
   currentContext: null,
+  lastActionResult: null,
+  recentActionResults: [],
 
   setCapabilities: (caps) => set({ capabilities: caps }),
 
@@ -170,32 +243,50 @@ export const useHostContextStore = create<HostContextState>((set, get) => ({
     for (const entry of pending.values()) {
       clearTimeout(entry.timeout);
     }
-    set({ capabilities: null, currentContext: null, pendingActions: new Map() });
+    set({
+      capabilities: null,
+      currentContext: null,
+      lastActionResult: null,
+      recentActionResults: [],
+      pendingActions: new Map(),
+    });
   },
 
   getContextForRequest: () => get().currentContext,
 
+  getActionFeedbackForRequest: () => {
+    const last = get().lastActionResult;
+    const recent = get().recentActionResults;
+    if (!last && recent.length === 0) {
+      return null;
+    }
+    return {
+      last_action_result: last || undefined,
+      recent_action_results: recent.length > 0 ? recent : undefined,
+    };
+  },
+
   pendingActions: new Map(),
 
-  requestAction: (action, params) => {
+  requestAction: (action, params, requestId) => {
     return new Promise<ActionResult>((resolve, reject) => {
-      const requestId = `req-${Math.random().toString(36).slice(2, 14)}`;
+      const finalRequestId = requestId || `req-${Math.random().toString(36).slice(2, 14)}`;
       const timeout = setTimeout(() => {
         const pending = get().pendingActions;
-        pending.delete(requestId);
+        pending.delete(finalRequestId);
         set({ pendingActions: new Map(pending) });
-        reject(new Error(`Action timeout: ${action} (${requestId})`));
+        reject(new Error(`Action timeout: ${action} (${finalRequestId})`));
       }, 30000);
 
       const pending = get().pendingActions;
-      pending.set(requestId, { resolve, reject, timeout });
+      pending.set(finalRequestId, { action, params, resolve, reject, timeout });
       set({ pendingActions: new Map(pending) });
 
       // Send PostMessage to host
       if (window.parent !== window) {
         window.parent.postMessage({
           type: "wiii:action-request",
-          id: requestId,
+          id: finalRequestId,
           action,
           params,
         }, "*");
@@ -209,7 +300,29 @@ export const useHostContextStore = create<HostContextState>((set, get) => ({
     if (entry) {
       clearTimeout(entry.timeout);
       pending.delete(requestId);
-      set({ pendingActions: new Map(pending) });
+      const data = result.data || undefined;
+      const summary =
+        typeof data?.summary === "string" && data.summary.trim().length > 0
+          ? data.summary.trim()
+          : result.success
+            ? `Host action ${entry.action} completed.`
+            : (result.error || `Host action ${entry.action} failed.`);
+      const feedback: HostActionFeedbackItem = {
+        request_id: requestId,
+        action: entry.action,
+        params: entry.params,
+        success: result.success,
+        summary,
+        error: result.error,
+        data,
+        timestamp: new Date().toISOString(),
+      };
+      const recent = [feedback, ...get().recentActionResults].slice(0, 6);
+      set({
+        pendingActions: new Map(pending),
+        lastActionResult: feedback,
+        recentActionResults: recent,
+      });
       entry.resolve(result);
     }
   },

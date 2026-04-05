@@ -14,6 +14,31 @@ import asyncpg
 logger = logging.getLogger(__name__)
 
 _VALID_ROLES = {"student", "teacher", "admin"}
+_VALID_PLATFORM_ROLES = {"user", "platform_admin"}
+
+
+def _derive_platform_role(legacy_role: Optional[str], platform_role: Optional[str] = None) -> str:
+    """Normalize persisted platform role with a safe legacy fallback."""
+    if isinstance(platform_role, str):
+        normalized = platform_role.strip().lower()
+        if normalized in _VALID_PLATFORM_ROLES:
+            return normalized
+    if isinstance(legacy_role, str) and legacy_role.strip().lower() == "admin":
+        return "platform_admin"
+    return "user"
+
+
+def _format_user_row(row: dict) -> dict:
+    """Normalize user rows returned from SQL queries."""
+    result = dict(row)
+    result["platform_role"] = _derive_platform_role(
+        result.get("role"),
+        result.get("platform_role"),
+    )
+    for key in ("created_at", "updated_at"):
+        if result.get(key) and hasattr(result[key], "isoformat"):
+            result[key] = result[key].isoformat()
+    return result
 
 
 async def _get_pool() -> asyncpg.Pool:
@@ -34,17 +59,32 @@ async def find_user_by_provider(
     """
     pool = await _get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT u.id, u.email, u.name, u.avatar_url, u.role, u.is_active
-            FROM user_identities ui
-            JOIN users u ON u.id = ui.user_id
-            WHERE ui.provider = $1
-              AND ui.provider_sub = $2
-              AND (ui.provider_issuer = $3 OR ($3 IS NULL AND ui.provider_issuer IS NULL))
-            """,
-            provider, provider_sub, provider_issuer,
-        )
+        try:
+            row = await conn.fetchrow(
+                """
+                SELECT u.id, u.email, u.name, u.avatar_url, u.role, u.platform_role, u.is_active
+                FROM user_identities ui
+                JOIN users u ON u.id = ui.user_id
+                WHERE ui.provider = $1
+                  AND ui.provider_sub = $2
+                  AND (ui.provider_issuer = $3 OR ($3 IS NULL AND ui.provider_issuer IS NULL))
+                """,
+                provider, provider_sub, provider_issuer,
+            )
+        except Exception as e:
+            if "platform_role" not in str(e):
+                raise
+            row = await conn.fetchrow(
+                """
+                SELECT u.id, u.email, u.name, u.avatar_url, u.role, u.is_active
+                FROM user_identities ui
+                JOIN users u ON u.id = ui.user_id
+                WHERE ui.provider = $1
+                  AND ui.provider_sub = $2
+                  AND (ui.provider_issuer = $3 OR ($3 IS NULL AND ui.provider_issuer IS NULL))
+                """,
+                provider, provider_sub, provider_issuer,
+            )
         if row:
             # Update last_used_at
             await conn.execute(
@@ -55,7 +95,7 @@ async def find_user_by_provider(
                 """,
                 provider, provider_sub, provider_issuer,
             )
-            return dict(row)
+            return _format_user_row(dict(row))
     return None
 
 
@@ -63,11 +103,19 @@ async def find_user_by_email(email: str) -> Optional[dict]:
     """Find a user by email (case-insensitive)."""
     pool = await _get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT id, email, name, avatar_url, role, is_active FROM users WHERE LOWER(email) = LOWER($1)",
-            email,
-        )
-        return dict(row) if row else None
+        try:
+            row = await conn.fetchrow(
+                "SELECT id, email, name, avatar_url, role, platform_role, is_active FROM users WHERE LOWER(email) = LOWER($1)",
+                email,
+            )
+        except Exception as e:
+            if "platform_role" not in str(e):
+                raise
+            row = await conn.fetchrow(
+                "SELECT id, email, name, avatar_url, role, is_active FROM users WHERE LOWER(email) = LOWER($1)",
+                email,
+            )
+        return _format_user_row(dict(row)) if row else None
 
 
 async def create_user(
@@ -75,21 +123,42 @@ async def create_user(
     name: Optional[str],
     avatar_url: Optional[str] = None,
     role: str = "student",
+    platform_role: Optional[str] = None,
 ) -> dict:
     """Create a new Wiii user. Returns user dict with id."""
     user_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
+    effective_platform_role = _derive_platform_role(role, platform_role)
     pool = await _get_pool()
     async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO users (id, email, name, avatar_url, role, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, true, $6, $6)
-            """,
-            user_id, email, name, avatar_url, role, now,
-        )
+        try:
+            await conn.execute(
+                """
+                INSERT INTO users (id, email, name, avatar_url, role, platform_role, is_active, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, true, $7, $7)
+                """,
+                user_id, email, name, avatar_url, role, effective_platform_role, now,
+            )
+        except Exception as e:
+            if "platform_role" not in str(e):
+                raise
+            await conn.execute(
+                """
+                INSERT INTO users (id, email, name, avatar_url, role, is_active, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, true, $6, $6)
+                """,
+                user_id, email, name, avatar_url, role, now,
+            )
     logger.info("Created user %s (email=%s)", user_id, email)
-    return {"id": user_id, "email": email, "name": name, "avatar_url": avatar_url, "role": role, "is_active": True}
+    return {
+        "id": user_id,
+        "email": email,
+        "name": name,
+        "avatar_url": avatar_url,
+        "role": role,
+        "platform_role": effective_platform_role,
+        "is_active": True,
+    }
 
 
 async def link_identity(
@@ -238,17 +307,20 @@ async def get_user(user_id: str) -> Optional[dict]:
     """Get a user by ID. Returns full user dict or None."""
     pool = await _get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT id, email, name, avatar_url, role, is_active, created_at, updated_at FROM users WHERE id = $1",
-            user_id,
-        )
+        try:
+            row = await conn.fetchrow(
+                "SELECT id, email, name, avatar_url, role, platform_role, is_active, created_at, updated_at FROM users WHERE id = $1",
+                user_id,
+            )
+        except Exception as e:
+            if "platform_role" not in str(e):
+                raise
+            row = await conn.fetchrow(
+                "SELECT id, email, name, avatar_url, role, is_active, created_at, updated_at FROM users WHERE id = $1",
+                user_id,
+            )
         if row:
-            result = dict(row)
-            # Convert datetimes to ISO strings for JSON serialization
-            for key in ("created_at", "updated_at"):
-                if result.get(key) and hasattr(result[key], "isoformat"):
-                    result[key] = result[key].isoformat()
-            return result
+            return _format_user_row(dict(row))
     return None
 
 
@@ -288,17 +360,74 @@ async def update_user(user_id: str, name: Optional[str] = None, avatar_url: Opti
     return await get_user(user_id)
 
 
-async def update_user_role(user_id: str, new_role: str) -> Optional[dict]:
-    """Update user role. Validates against whitelist. Returns updated user or None."""
-    if new_role not in _VALID_ROLES:
+async def update_user_role(
+    user_id: str,
+    new_role: Optional[str] = None,
+    platform_role: Optional[str] = None,
+) -> Optional[dict]:
+    """Update compatibility role and/or platform role for a user."""
+    if new_role is None and platform_role is None:
+        raise ValueError("At least one of role or platform_role is required")
+    if new_role is not None and new_role not in _VALID_ROLES:
         raise ValueError(f"Invalid role '{new_role}'. Must be one of: {', '.join(sorted(_VALID_ROLES))}")
+    if platform_role is not None:
+        normalized_platform_role = platform_role.strip().lower()
+        if normalized_platform_role not in _VALID_PLATFORM_ROLES:
+            raise ValueError(
+                f"Invalid platform_role '{platform_role}'. Must be one of: {', '.join(sorted(_VALID_PLATFORM_ROLES))}"
+            )
+        platform_role = normalized_platform_role
+
+    sets = []
+    params = []
+    idx = 1
+
+    if new_role is not None:
+        sets.append(f"role = ${idx}")
+        params.append(new_role)
+        idx += 1
+    if platform_role is not None:
+        sets.append(f"platform_role = ${idx}")
+        params.append(platform_role)
+        idx += 1
+
+    sets.append(f"updated_at = ${idx}")
+    params.append(datetime.now(timezone.utc))
+    idx += 1
+    params.append(user_id)
 
     pool = await _get_pool()
     async with pool.acquire() as conn:
-        result = await conn.execute(
-            "UPDATE users SET role = $1, updated_at = $2 WHERE id = $3",
-            new_role, datetime.now(timezone.utc), user_id,
-        )
+        try:
+            result = await conn.execute(
+                f"UPDATE users SET {', '.join(sets)} WHERE id = ${idx}",
+                *params,
+            )
+        except Exception as e:
+            if "platform_role" not in str(e) or platform_role is None:
+                raise
+            if new_role is None:
+                if platform_role == "platform_admin":
+                    new_role = "admin"
+                else:
+                    raise ValueError(
+                        "Legacy schema requires an explicit compatibility role when platform_role='user'"
+                    )
+            legacy_sets = []
+            legacy_params = []
+            legacy_idx = 1
+            if new_role is not None:
+                legacy_sets.append(f"role = ${legacy_idx}")
+                legacy_params.append(new_role)
+                legacy_idx += 1
+            legacy_sets.append(f"updated_at = ${legacy_idx}")
+            legacy_params.append(datetime.now(timezone.utc))
+            legacy_idx += 1
+            legacy_params.append(user_id)
+            result = await conn.execute(
+                f"UPDATE users SET {', '.join(legacy_sets)} WHERE id = ${legacy_idx}",
+                *legacy_params,
+            )
         if result == "UPDATE 0":
             return None
     return await get_user(user_id)
@@ -467,33 +596,58 @@ async def list_users(
                 """,
                 org_id,
             )
-            rows = await conn.fetch(
-                """
-                SELECT u.id, u.email, u.name, u.avatar_url, u.role, u.is_active, u.created_at
-                FROM users u
-                JOIN user_organizations uo ON uo.user_id = u.id
-                WHERE uo.organization_id = $1
-                ORDER BY u.created_at DESC
-                LIMIT $2 OFFSET $3
-                """,
-                org_id, limit, offset,
-            )
+            try:
+                rows = await conn.fetch(
+                    """
+                    SELECT u.id, u.email, u.name, u.avatar_url, u.role, u.platform_role, u.is_active, u.created_at
+                    FROM users u
+                    JOIN user_organizations uo ON uo.user_id = u.id
+                    WHERE uo.organization_id = $1
+                    ORDER BY u.created_at DESC
+                    LIMIT $2 OFFSET $3
+                    """,
+                    org_id, limit, offset,
+                )
+            except Exception as e:
+                if "platform_role" not in str(e):
+                    raise
+                rows = await conn.fetch(
+                    """
+                    SELECT u.id, u.email, u.name, u.avatar_url, u.role, u.is_active, u.created_at
+                    FROM users u
+                    JOIN user_organizations uo ON uo.user_id = u.id
+                    WHERE uo.organization_id = $1
+                    ORDER BY u.created_at DESC
+                    LIMIT $2 OFFSET $3
+                    """,
+                    org_id, limit, offset,
+                )
         else:
             total = await conn.fetchval("SELECT COUNT(*) FROM users")
-            rows = await conn.fetch(
-                """
-                SELECT id, email, name, avatar_url, role, is_active, created_at
-                FROM users
-                ORDER BY created_at DESC
-                LIMIT $1 OFFSET $2
-                """,
-                limit, offset,
-            )
+            try:
+                rows = await conn.fetch(
+                    """
+                    SELECT id, email, name, avatar_url, role, platform_role, is_active, created_at
+                    FROM users
+                    ORDER BY created_at DESC
+                    LIMIT $1 OFFSET $2
+                    """,
+                    limit, offset,
+                )
+            except Exception as e:
+                if "platform_role" not in str(e):
+                    raise
+                rows = await conn.fetch(
+                    """
+                    SELECT id, email, name, avatar_url, role, is_active, created_at
+                    FROM users
+                    ORDER BY created_at DESC
+                    LIMIT $1 OFFSET $2
+                    """,
+                    limit, offset,
+                )
 
         users = []
         for row in rows:
-            d = dict(row)
-            if d.get("created_at") and hasattr(d["created_at"], "isoformat"):
-                d["created_at"] = d["created_at"].isoformat()
-            users.append(d)
+            users.append(_format_user_row(dict(row)))
         return users, total

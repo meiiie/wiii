@@ -34,7 +34,28 @@ describe("ReasoningInterval", () => {
     resetStores();
   });
 
-  it("renders a Code Studio strip inline for tool_create_visual_code in balanced mode", () => {
+  it("renders fractional duration text without inflating sub-second intervals", () => {
+    const interval: ReasoningIntervalViewModel = {
+      id: "interval-fractional",
+      label: "Wiii đang suy nghĩ~",
+      isLive: false,
+      durationSeconds: 0.7,
+      items: [],
+      rawBlocks: [],
+    };
+
+    render(
+      <ReasoningInterval
+        interval={interval}
+        thinkingLevel="balanced"
+        onOpenInspector={() => {}}
+      />,
+    );
+
+    expect(screen.getAllByText("Nhịp 0.7s").length).toBeGreaterThan(0);
+  });
+
+  it("keeps Code Studio tool trace out of the main reasoning body in balanced mode", () => {
     useCodeStudioStore.getState().openSession(
       "vs-code-1",
       "Pendulum App",
@@ -106,9 +127,132 @@ describe("ReasoningInterval", () => {
         has_preview: false,
       },
     });
-    expect(document.querySelector(".code-studio-card")).toBeTruthy();
-    expect(screen.getByText("Pendulum App")).toBeTruthy();
-    expect(screen.queryByText(/html_app/i)).toBeNull();
-    expect(screen.queryByText(/premium/i)).toBeNull();
+    expect(document.querySelector(".code-studio-card")).toBeNull();
+    expect(screen.getByText("Minh dang khau lai app tuong tac nay cho that muot.")).toBeTruthy();
+    expect(screen.queryByText("Pendulum App")).toBeNull();
+  });
+
+  it("keeps long balanced turns expanded so living thought stays visible after completion", () => {
+    const interval: ReasoningIntervalViewModel = {
+      id: "interval-long-balanced",
+      label: "Wiii dang suy nghi~",
+      isLive: false,
+      durationSeconds: 18.4,
+      items: [
+        {
+          kind: "thinking",
+          id: "thinking-a",
+          block: {
+            type: "thinking",
+            id: "thinking-a",
+            content: "Minh dang gom lai cach hieu truoc khi noi tiep.",
+            toolCalls: [],
+          },
+        },
+        {
+          kind: "thinking",
+          id: "thinking-b",
+          block: {
+            type: "thinking",
+            id: "thinking-b",
+            content: "Minh dang doi chieu nhung gi vua thay de khong lech y.",
+            toolCalls: [],
+          },
+        },
+        {
+          kind: "thinking",
+          id: "thinking-c",
+          block: {
+            type: "thinking",
+            id: "thinking-c",
+            content: "Minh dang khau lai thanh mot mach noi de ban bat duoc y chinh.",
+            toolCalls: [],
+          },
+        },
+      ],
+      rawBlocks: [],
+    };
+
+    render(
+      <ReasoningInterval
+        interval={interval}
+        thinkingLevel="balanced"
+        onOpenInspector={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Minh dang gom lai cach hieu truoc khi noi tiep.")).toBeTruthy();
+    expect(screen.getByText("Minh dang doi chieu nhung gi vua thay de khong lech y.")).toBeTruthy();
+    expect(screen.getByText("Minh dang khau lai thanh mot mach noi de ban bat duoc y chinh.")).toBeTruthy();
+  });
+
+  it("keeps a collapsed preview visible after completion for short balanced turns", () => {
+    const interval: ReasoningIntervalViewModel = {
+      id: "interval-collapsed-preview",
+      label: "Wiii da nghi xong~",
+      isLive: false,
+      durationSeconds: 4.2,
+      items: [
+        {
+          kind: "thinking",
+          id: "thinking-only",
+          block: {
+            type: "thinking",
+            id: "thinking-only",
+            content: "Minh dang gom lai vai moc dang tin roi moi dung phan nhin.",
+            toolCalls: [],
+          },
+        },
+      ],
+      rawBlocks: [],
+    };
+
+    render(
+      <ReasoningInterval
+        interval={interval}
+        thinkingLevel="balanced"
+        onOpenInspector={() => {}}
+      />,
+    );
+
+    expect(screen.getAllByText("Minh dang gom lai vai moc dang tin roi moi dung phan nhin.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Wiii da nghi xong~").length).toBeGreaterThan(0);
+  });
+
+  it("keeps summary-only intervals header-only when no delta body was streamed", () => {
+    const interval: ReasoningIntervalViewModel = {
+      id: "interval-summary-preview",
+      label: "Wiii da nghi xong~",
+      summary: "Minh dang gom vai moc dang tin truoc khi chot cau tra loi.",
+      isLive: false,
+      durationSeconds: 3.1,
+      items: [
+        {
+          kind: "thinking",
+          id: "thinking-empty",
+          block: {
+            type: "thinking",
+            id: "thinking-empty",
+            content: "",
+            summary: "",
+            toolCalls: [],
+          },
+        },
+      ],
+      rawBlocks: [],
+    };
+
+    render(
+      <ReasoningInterval
+        interval={interval}
+        thinkingLevel="balanced"
+        onOpenInspector={() => {}}
+      />,
+    );
+
+    expect(screen.getAllByText("Wiii da nghi xong~").length).toBeGreaterThan(0);
+    expect(
+      screen.queryByText("Minh dang gom vai moc dang tin truoc khi chot cau tra loi."),
+    ).toBeNull();
   });
 });

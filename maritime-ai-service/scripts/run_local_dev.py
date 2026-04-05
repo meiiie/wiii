@@ -88,7 +88,7 @@ def check_dependencies():
     try:
         import fastapi
         import sqlalchemy
-        import google.generativeai
+        from google import genai  # noqa: F401
         print_success("Core dependencies installed")
         return True
     except ImportError as e:

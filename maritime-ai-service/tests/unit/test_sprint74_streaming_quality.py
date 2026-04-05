@@ -6,8 +6,8 @@ Tests:
 2. Guardian fast-path — expanded _should_skip_llm()
 3. Graph streaming — empty thinking block suppression for Guardian/Grader
 4. Graph streaming — answer_delta bus event handling
-5. Tutor node — answer_delta streaming, _push_answer_deltas, length control
-6. Graph streaming — skip duplicate answer when bus already streamed
+5. Tutor node — stream mode keeps thinking/tool bus events while synthesizer owns final answer
+6. Graph streaming — skip duplicate answer when another lane already streamed it via bus
 """
 
 import sys
@@ -307,12 +307,12 @@ class TestAnswerDeltaBusEvent:
 
 
 # ============================================================================
-# 5. Tutor Node — answer_delta + length control
+# 5. Tutor Node — stream compatibility without early answer emission
 # ============================================================================
 
 
 class TestTutorAnswerDelta:
-    """Sprint 74: Tutor node streams final generation as answer_delta."""
+    """Tutor keeps thinking/tool bus events, but synthesizer owns final answer streaming."""
 
     def _make_tutor(self, llm=None, llm_with_tools=None):
         with patch.object(AgentConfigRegistry, "get_llm", return_value=llm):
@@ -322,12 +322,13 @@ class TestTutorAnswerDelta:
             node._llm_with_tools = llm_with_tools
             return node
 
-    def test_system_prompt_has_length_control(self):
-        """System prompt includes 400-word limit."""
+    def test_system_prompt_has_flexible_length_guidance(self):
+        """System prompt should prefer adaptive length instead of a hard 400-word cap."""
         mock_llm = MagicMock()
         tutor = self._make_tutor(llm=mock_llm)
         prompt = tutor._build_system_prompt({"user_role": "student"}, "test query")
-        assert "400 từ" in prompt
+        assert "Trả lời vừa đủ" in prompt
+        assert "Không giới hạn cứng" in prompt
 
     @pytest.mark.asyncio
     async def test_react_loop_returns_5_tuple(self):
@@ -358,8 +359,8 @@ class TestTutorAnswerDelta:
         assert answer_streamed is False  # No event_queue → no bus streaming
 
     @pytest.mark.asyncio
-    async def test_react_loop_with_bus_sets_streamed_flag(self):
-        """When event_queue is provided, answer_streamed_via_bus should be True."""
+    async def test_react_loop_with_bus_keeps_answer_flag_false(self):
+        """Tutor should not mark final answer as bus-streamed just because stream mode is active."""
         mock_llm = MagicMock()
         mock_llm_tools = MagicMock()
 
@@ -390,7 +391,7 @@ class TestTutorAnswerDelta:
             result = await tutor._react_loop("test query", {}, event_queue=event_queue)
 
         _, _, _, _, answer_streamed = result
-        assert answer_streamed is True  # Bus was used for streaming
+        assert answer_streamed is False
 
         # Verify events were pushed to queue
         events = []
@@ -401,8 +402,8 @@ class TestTutorAnswerDelta:
         assert "thinking_end" in event_types
 
     @pytest.mark.asyncio
-    async def test_process_sets_answer_streamed_flag_on_state(self):
-        """process() should set state['_answer_streamed_via_bus'] when bus is used."""
+    async def test_process_ignores_legacy_answer_streamed_flag(self):
+        """Tutor process should not surface the legacy answer-streamed flag into shared state."""
         mock_llm = MagicMock()
         mock_llm_tools = MagicMock()
 
@@ -423,7 +424,7 @@ class TestTutorAnswerDelta:
         with patch("app.engine.multi_agent.agents.tutor_node.get_last_reasoning_trace", return_value=None):
             result = await tutor.process(state)
 
-        assert result.get("_answer_streamed_via_bus") is True
+        assert "_answer_streamed_via_bus" not in result
 
     @pytest.mark.asyncio
     async def test_process_no_flag_when_not_streamed(self):
@@ -459,12 +460,12 @@ class TestTutorAnswerDelta:
 
 
 # ============================================================================
-# 6. Tutor Node — Final generation answer_delta (not thinking_delta)
+# 6. Tutor Node — Final generation waits for synthesizer
 # ============================================================================
 
 
 class TestTutorFinalGenerationAnswerDelta:
-    """Sprint 74: Final generation after tool calls streams as answer_delta."""
+    """Tutor final generation should not emit answer_delta directly after tool use."""
 
     def _make_tutor(self, llm=None, llm_with_tools=None):
         with patch.object(AgentConfigRegistry, "get_llm", return_value=llm):
@@ -475,8 +476,8 @@ class TestTutorFinalGenerationAnswerDelta:
             return node
 
     @pytest.mark.asyncio
-    async def test_final_gen_emits_answer_delta_not_thinking(self):
-        """When tool calls exhaust iterations, final generation should push answer_delta."""
+    async def test_final_gen_does_not_emit_answer_delta(self):
+        """When tool calls exhaust iterations, tutor should leave answer emission to synthesizer."""
         mock_llm = MagicMock()
         mock_llm_tools = MagicMock()
 
@@ -523,11 +524,8 @@ class TestTutorFinalGenerationAnswerDelta:
             events.append(event_queue.get_nowait())
 
         event_types = [e.get("type") for e in events]
-
-        # The final generation should use answer_delta (not thinking_delta for final gen)
-        # Note: ReAct iteration uses thinking_delta, but final generation uses answer_delta
-        # The answer_streamed flag should be True since either the ReAct exit or final gen used bus
-        assert answer_streamed is True
+        assert "answer_delta" not in event_types
+        assert answer_streamed is False
 
 
 # ============================================================================
@@ -536,7 +534,7 @@ class TestTutorFinalGenerationAnswerDelta:
 
 
 class TestSkipDuplicateAnswer:
-    """Sprint 74: Skip post-hoc answer emission when bus already streamed."""
+    """Legacy bus-answer flag remains valid for other lanes that still stream answers directly."""
 
     def test_answer_streamed_via_bus_flag_in_output(self):
         """Verify the _answer_streamed_via_bus flag is checked in graph_streaming."""

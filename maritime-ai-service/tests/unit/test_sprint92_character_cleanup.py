@@ -329,15 +329,16 @@ class TestMaritimeOverlayInheritsPlatform:
         examples = persona.get("examples", [])
         assert len(examples) >= 2, "Maritime tutor should inherit platform examples"
 
-    def test_maritime_tutor_overrides_agent_identity(self):
-        """Maritime tutor should override agent section."""
+    def test_maritime_tutor_keeps_platform_identity(self):
+        """Maritime overlay can add tools/domain workflow but must not replace Wiii's core role."""
         loader = PromptLoader(
             domain_prompts_dir=str(MARITIME_DIR)
         )
         persona = loader.get_persona("student")
         agent = persona.get("agent", {})
-        # Maritime overlay sets role to "Senior Maritime Mentor"
-        assert "Maritime" in agent.get("role", "")
+        assert agent.get("name") == "Wiii"
+        assert "Learning Mentor" in agent.get("role", "")
+        assert "Maritime" not in agent.get("role", "")
 
     def test_maritime_tutor_has_maritime_tools(self):
         """Maritime tutor should have tool_maritime_search (not tool_knowledge_search)."""

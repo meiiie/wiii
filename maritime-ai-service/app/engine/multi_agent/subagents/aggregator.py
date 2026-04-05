@@ -121,7 +121,12 @@ async def _llm_decision(
         from app.engine.multi_agent.agent_config import AgentConfigRegistry
 
         thinking_effort = state.get("thinking_effort")
-        llm = AgentConfigRegistry.get_llm("supervisor", effort_override=thinking_effort)
+        llm = AgentConfigRegistry.get_llm(
+            "supervisor",
+            effort_override=thinking_effort,
+            provider_override=state.get("provider"),
+            requested_model=state.get("model"),
+        )
 
         if not llm:
             return _fallback_decision(reports)
@@ -140,8 +145,14 @@ async def _llm_decision(
         ]
 
         from app.engine.structured_schemas import AggregatorDecisionSchema
-        structured_llm = llm.with_structured_output(AggregatorDecisionSchema)
-        result = await structured_llm.ainvoke(messages)
+        from app.services.structured_invoke_service import StructuredInvokeService
+
+        result = await StructuredInvokeService.ainvoke(
+            llm=llm,
+            schema=AggregatorDecisionSchema,
+            payload=messages,
+            tier="moderate",
+        )
 
         return AggregatorDecision(
             action=result.action,
@@ -209,7 +220,7 @@ async def aggregator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     _bus_id = state.get("_event_bus_id")
     if _bus_id:
         try:
-            from app.engine.multi_agent.graph_streaming import _get_event_queue
+            from app.engine.multi_agent.graph_event_bus import _get_event_queue
             queue = _get_event_queue(_bus_id)
             if queue:
                 queue.put_nowait({
@@ -262,7 +273,7 @@ async def aggregator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # Sprint 164: Emit aggregation decision details for desktop UI
     if _bus_id:
         try:
-            from app.engine.multi_agent.graph_streaming import _get_event_queue
+            from app.engine.multi_agent.graph_event_bus import _get_event_queue
             queue = _get_event_queue(_bus_id)
             if queue:
                 queue.put_nowait({

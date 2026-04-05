@@ -171,6 +171,7 @@ async def google_callback(request: Request):
         email=user.get("email"),
         name=user.get("name"),
         role=user.get("role", "student"),
+        platform_role=user.get("platform_role"),
         auth_method="google",
     )
 
@@ -200,6 +201,10 @@ async def google_callback(request: Request):
         "name": user.get("name", ""),
         "avatar_url": user.get("avatar_url", ""),
         "role": user.get("role", "student"),  # Sprint 192: role from backend
+        "legacy_role": user.get("role", "student"),
+        "platform_role": user.get("platform_role", "user"),
+        "role_source": "platform",
+        "active_organization_id": assigned_org_id,
         "organization_id": assigned_org_id,  # Sprint 193b: org context for frontend
     })
 
@@ -246,6 +251,10 @@ async def google_callback(request: Request):
             "name": user.get("name"),
             "avatar_url": user.get("avatar_url"),
             "role": user.get("role", "student"),
+            "legacy_role": user.get("role", "student"),
+            "platform_role": user.get("platform_role"),
+            "role_source": "platform",
+            "active_organization_id": assigned_org_id,
         },
     })
 
@@ -322,7 +331,7 @@ async def get_current_user(
         pool = await get_asyncpg_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, email, name, avatar_url, role, is_active, created_at FROM users WHERE id = $1",
+                "SELECT id, email, name, avatar_url, role, platform_role, is_active, created_at FROM users WHERE id = $1",
                 auth.user_id,
             )
             if not row:
@@ -335,6 +344,14 @@ async def get_current_user(
                 "name": row["name"],
                 "avatar_url": row["avatar_url"],
                 "role": row["role"],
+                "legacy_role": row["role"],
+                "platform_role": auth.platform_role or row.get("platform_role"),
+                "organization_role": auth.organization_role,
+                "host_role": auth.host_role,
+                "role_source": auth.role_source,
+                "active_organization_id": auth.organization_id,
+                "connector_id": auth.connector_id,
+                "identity_version": auth.identity_version,
                 "is_active": row["is_active"],
                 "created_at": row["created_at"].isoformat() if row["created_at"] else None,
             })
@@ -345,4 +362,12 @@ async def get_current_user(
         return JSONResponse({
             "id": auth.user_id,
             "role": auth.role,
+            "legacy_role": auth.role,
+            "platform_role": auth.platform_role,
+            "organization_role": auth.organization_role,
+            "host_role": auth.host_role,
+            "role_source": auth.role_source,
+            "active_organization_id": auth.organization_id,
+            "connector_id": auth.connector_id,
+            "identity_version": auth.identity_version,
         })

@@ -4,6 +4,7 @@ from fastapi import status
 from fastapi.responses import JSONResponse
 
 from app.api.v1 import chat_endpoint_presenter as _chat_endpoint_presenter
+from app.core.security import is_platform_admin
 
 build_chat_api_error_response = _chat_endpoint_presenter.build_chat_api_error_response
 
@@ -24,7 +25,7 @@ def ensure_chat_history_access_allowed(
     user_id: str,
 ) -> JSONResponse | None:
     """Return a standard error response when history access is not allowed."""
-    if auth.role != "admin" and auth.user_id != user_id:
+    if not is_platform_admin(auth) and auth.user_id != user_id:
         return build_chat_api_error_response(
             status_code=status.HTTP_403_FORBIDDEN,
             error="permission_denied",
@@ -39,25 +40,17 @@ def ensure_delete_chat_history_allowed(
     user_id: str,
 ) -> JSONResponse | None:
     """Return a standard error response when history deletion is not allowed."""
-    if auth.role == "admin":
+    if is_platform_admin(auth):
         return None
-
-    if auth.role in ["student", "teacher"]:
-        if auth.user_id != user_id:
-            return build_chat_api_error_response(
-                status_code=status.HTTP_403_FORBIDDEN,
-                error="permission_denied",
-                message=(
-                    "Permission denied. Users can only delete their own "
-                    "chat history."
-                ),
-            )
+    if auth.user_id == user_id:
         return None
-
     return build_chat_api_error_response(
         status_code=status.HTTP_403_FORBIDDEN,
-        error="invalid_role",
-        message="Permission denied. Invalid role.",
+        error="permission_denied",
+        message=(
+            "Permission denied. Users can only delete their own "
+            "chat history."
+        ),
     )
 
 

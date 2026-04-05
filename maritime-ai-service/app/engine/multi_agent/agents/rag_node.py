@@ -17,6 +17,85 @@ from app.engine.reasoning import ReasoningRenderRequest, get_reasoning_narrator
 
 logger = logging.getLogger(__name__)
 
+_RAG_STATUS_ONLY_STEPS = {
+    "analysis",
+    "adaptive_rag",
+    "visual_rag",
+    "graph_rag",
+    "grading",
+    "rewrite",
+    "generation",
+}
+
+_RAG_STATUS_ONLY_MESSAGES = {
+    "analysis": "Đang canh lại hướng tra cứu.",
+    "adaptive_rag": "Đang chọn cách tìm phù hợp.",
+    "visual_rag": "Đang rà thêm ngữ cảnh hình ảnh.",
+    "graph_rag": "Đang nối thêm ngữ cảnh liên quan.",
+    "grading": "Đang cân độ chắc của nguồn.",
+    "rewrite": "Đang tinh lại cách tra cứu.",
+    "generation": "Đang khâu lại phần trả lời.",
+}
+
+_RAG_TELEMETRY_MARKERS = (
+    "độ phức tạp:",
+    "do phuc tap:",
+    "chủ đề:",
+    "chu de:",
+    "knowledge base",
+    "độ tin cậy phân tích",
+    "do tin cay phan tich",
+    "chiến lược tìm kiếm:",
+    "chien luoc tim kiem:",
+    "điểm chất lượng:",
+    "diem chat luong:",
+    "tài liệu liên quan:",
+    "tai lieu lien quan:",
+    "ngưỡng yêu cầu:",
+    "nguong yeu cau:",
+    "câu gốc:",
+    "cau goc:",
+    "câu mới:",
+    "cau moi:",
+    "đồ thị tri thức:",
+    "do thi tri thuc:",
+    "hình ảnh từ tài liệu",
+    "hinh anh tu tai lieu",
+)
+
+
+def _sanitize_visible_rag_text(content: object, *, step: str = "") -> str:
+    text = " ".join(str(content or "").split()).strip()
+    if not text:
+        return text
+
+    lowered = text.lower()
+    if step == "retrieval":
+        if any(marker in lowered for marker in ("0 tài liệu", "không tìm thấy tài liệu", "khong tim thay tai lieu", "0 documents", "no documents")):
+            return "Mình chưa thấy nguồn nào thật sự khớp, nên chuyển sang cách đáp trực tiếp."
+        return "Mình đang rà nguồn phù hợp trước khi chốt câu trả lời."
+
+    if any(marker in lowered for marker in ("0 tài liệu", "không tìm thấy tài liệu", "khong tim thay tai lieu", "0 documents", "no documents")):
+        return "Mình chưa thấy nguồn nào thật sự khớp, nên chuyển sang cách đáp trực tiếp."
+
+    return text
+
+
+def _looks_like_rag_telemetry(content: object) -> bool:
+    normalized = " ".join(str(content or "").lower().split())
+    if not normalized:
+        return False
+    return any(marker in normalized for marker in _RAG_TELEMETRY_MARKERS)
+
+
+def _sanitize_public_rag_state_text(content: object) -> str:
+    clean = _sanitize_visible_rag_text(content).strip()
+    if not clean:
+        return ""
+    if _looks_like_rag_telemetry(clean):
+        return ""
+    return clean
+
 
 class RAGAgentNode:
     """
@@ -79,6 +158,12 @@ class RAGAgentNode:
         _host_ctx = state.get("host_context_prompt", "")
         if _host_ctx:
             context["host_context_prompt"] = _host_ctx
+        _host_caps_ctx = state.get("host_capabilities_prompt", "")
+        if _host_caps_ctx:
+            context["host_capabilities_prompt"] = _host_caps_ctx
+        _operator_ctx = state.get("operator_context_prompt", "")
+        if _operator_ctx:
+            context["operator_context_prompt"] = _operator_ctx
         _living_ctx = state.get("living_context_prompt", "")
         if _living_ctx:
             context["living_context_prompt"] = _living_ctx
@@ -89,7 +174,7 @@ class RAGAgentNode:
         bus_id = state.get("_event_bus_id")
         event_queue = None
         if bus_id:
-            from app.engine.multi_agent.graph_streaming import _get_event_queue
+            from app.engine.multi_agent.graph_event_bus import _get_event_queue
 
             event_queue = _get_event_queue(bus_id)
 
@@ -116,10 +201,16 @@ class RAGAgentNode:
                 state["reasoning_trace"] = result.reasoning_trace
 
             if result.thinking_content:
-                state["thinking_content"] = result.thinking_content
+                public_thinking_content = _sanitize_public_rag_state_text(
+                    result.thinking_content,
+                )
+                if public_thinking_content:
+                    state["thinking_content"] = public_thinking_content
 
             if result.thinking:
-                state["thinking"] = result.thinking
+                public_native_thinking = _sanitize_public_rag_state_text(result.thinking)
+                if public_native_thinking:
+                    state["thinking"] = public_native_thinking
 
             logger.info("[RAG_AGENT] Processed query with confidence=%.0f%%", result.confidence)
 
@@ -152,7 +243,19 @@ class RAGAgentNode:
                 })
             elif etype == "thinking":
                 step = str(event.get("step", "analysis"))
+                if step in _RAG_STATUS_ONLY_STEPS:
+                    event_queue.put_nowait({
+                        "type": "status",
+                        "content": _RAG_STATUS_ONLY_MESSAGES.get(step, "Đang rà lại ngữ cảnh."),
+                        "node": "rag_agent",
+                        "details": {"visibility": "status_only", "rag_step": step},
+                    })
+                    continue
+
                 phase, cue = self._STEP_BEATS.get(step, ("clarify", "general"))
+                surface_content = _sanitize_visible_rag_text(content, step=step)
+                if not surface_content or _looks_like_rag_telemetry(surface_content):
+                    continue
                 beat = await get_reasoning_narrator().render(
                     ReasoningRenderRequest(
                         node="rag_agent",
@@ -162,7 +265,7 @@ class RAGAgentNode:
                         conversation_context=str(context.get("conversation_summary", "")),
                         capability_context=str(context.get("capability_context", "")),
                         next_action="Tiếp tục kéo các đoạn tài liệu đáng tin nhất lên trước.",
-                        observations=[str(content or "")],
+                        observations=[surface_content],
                         user_id=str(context.get("user_id", "__global__")),
                         organization_id=context.get("organization_id"),
                         personality_mode=context.get("personality_mode"),
@@ -180,7 +283,7 @@ class RAGAgentNode:
                 })
                 event_queue.put_nowait({
                     "type": "thinking_delta",
-                    "content": content or beat.summary,
+                    "content": surface_content or beat.summary,
                     "node": "rag_agent",
                 })
                 event_queue.put_nowait({

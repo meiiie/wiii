@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { usePageContextStore } from "@/stores/page-context-store";
 
-describe("page-context-store (Sprint 221)", () => {
+describe("page-context-store (Sprint 221/234)", () => {
   beforeEach(() => {
     usePageContextStore.getState().clear();
   });
@@ -14,12 +14,16 @@ describe("page-context-store (Sprint 221)", () => {
   it("sets page context from postMessage payload", () => {
     usePageContextStore.getState().setPageContext({
       page_type: "lesson",
-      page_title: "Áp suất khí quyển",
-      course_name: "Khí Tượng Hải Dương",
-      content_snippet: "Áp suất tiêu chuẩn...",
+      page_title: "Ap suat khi quyen",
+      course_name: "Khi tuong Hai Duong",
+      content_snippet: "Ap suat tieu chuan...",
+      user_role: "student",
+      workflow_stage: "learning",
     });
     expect(usePageContextStore.getState().pageContext?.page_type).toBe("lesson");
-    expect(usePageContextStore.getState().pageContext?.page_title).toBe("Áp suất khí quyển");
+    expect(usePageContextStore.getState().pageContext?.page_title).toBe("Ap suat khi quyen");
+    expect(usePageContextStore.getState().pageContext?.user_role).toBe("student");
+    expect(usePageContextStore.getState().pageContext?.workflow_stage).toBe("learning");
   });
 
   it("sets student state separately", () => {
@@ -32,7 +36,7 @@ describe("page-context-store (Sprint 221)", () => {
 
   it("sets available actions", () => {
     usePageContextStore.getState().setAvailableActions([
-      { action: "navigate", label: "Bài tiếp theo", target: "/lessons/43" },
+      { action: "navigate", label: "Bai tiep theo", target: "/lessons/43" },
     ]);
     expect(usePageContextStore.getState().availableActions).toHaveLength(1);
   });
@@ -40,7 +44,7 @@ describe("page-context-store (Sprint 221)", () => {
   it("clear resets all fields", () => {
     usePageContextStore.getState().setPageContext({ page_type: "quiz" });
     usePageContextStore.getState().setStudentState({ quiz_attempts: 2 });
-    usePageContextStore.getState().setAvailableActions([{ action: "hint", label: "Gợi ý" }]);
+    usePageContextStore.getState().setAvailableActions([{ action: "hint", label: "Goi y" }]);
     usePageContextStore.getState().clear();
     const state = usePageContextStore.getState();
     expect(state.pageContext).toBeNull();
@@ -59,12 +63,33 @@ describe("page-context-store (Sprint 221)", () => {
     expect(snippet!.length).toBeLessThanOrEqual(2000);
   });
 
+  it("preserves operator-oriented page fields", () => {
+    usePageContextStore.getState().setPageContext({
+      page_type: "course_editor",
+      page_title: "Curriculum",
+      user_role: "teacher",
+      workflow_stage: "authoring",
+      selection: { type: "lesson_block", label: "Intro" },
+      editable_scope: { type: "course", allowed_operations: ["quiz"] },
+      entity_refs: [{ type: "course", id: "c-1", title: "COLREGs" }],
+    });
+
+    const ctx = usePageContextStore.getState().pageContext;
+    expect(ctx?.selection).toEqual({ type: "lesson_block", label: "Intro" });
+    expect(ctx?.editable_scope).toEqual({ type: "course", allowed_operations: ["quiz"] });
+    expect(ctx?.entity_refs).toEqual([{ type: "course", id: "c-1", title: "COLREGs" }]);
+  });
+
   it("getPageContextForRequest() returns merged object", () => {
     usePageContextStore.getState().setPageContext({
-      page_type: "lesson", page_title: "Bài 1", course_name: "Môn A",
+      page_type: "lesson",
+      page_title: "Bai 1",
+      course_name: "Mon A",
+      user_role: "student",
+      workflow_stage: "learning",
     });
     usePageContextStore.getState().setStudentState({ scroll_percent: 50 });
-    usePageContextStore.getState().setAvailableActions([{ action: "navigate", label: "Tiếp" }]);
+    usePageContextStore.getState().setAvailableActions([{ action: "navigate", label: "Tiep" }]);
     const req = usePageContextStore.getState().getPageContextForRequest();
     expect(req).not.toBeNull();
     expect(req?.page_context.page_type).toBe("lesson");
@@ -77,7 +102,7 @@ describe("page-context-store (Sprint 221)", () => {
   });
 });
 
-describe("EmbedApp wiii:page-context handler (Sprint 221)", () => {
+describe("EmbedApp wiii:page-context handler", () => {
   beforeEach(() => {
     usePageContextStore.getState().clear();
   });
@@ -85,12 +110,12 @@ describe("EmbedApp wiii:page-context handler (Sprint 221)", () => {
   it("processes wiii:page-context message into store", () => {
     const payload = {
       page_type: "quiz",
-      page_title: "Quiz Chương 3",
-      course_name: "Khí Tượng",
-      quiz_question: "Câu hỏi?",
+      page_title: "Quiz Chuong 3",
+      course_name: "Khi tuong",
+      quiz_question: "Cau hoi?",
       quiz_options: ["A", "B", "C"],
       student_state: { quiz_attempts: 2, last_answer: "A", is_correct: false },
-      available_actions: [{ action: "request_hint", label: "Xem gợi ý" }],
+      available_actions: [{ action: "request_hint", label: "Xem goi y" }],
     };
     const { student_state, available_actions, ...pageCtx } = payload;
     usePageContextStore.getState().setPageContext(pageCtx);
@@ -99,7 +124,7 @@ describe("EmbedApp wiii:page-context handler (Sprint 221)", () => {
 
     const state = usePageContextStore.getState();
     expect(state.pageContext?.page_type).toBe("quiz");
-    expect(state.pageContext?.quiz_question).toBe("Câu hỏi?");
+    expect(state.pageContext?.quiz_question).toBe("Cau hoi?");
     expect(state.studentState?.quiz_attempts).toBe(2);
     expect(state.availableActions).toHaveLength(1);
   });
@@ -114,7 +139,7 @@ describe("EmbedApp wiii:page-context handler (Sprint 221)", () => {
   });
 });
 
-describe("useSSEStream page context merge (Sprint 221)", () => {
+describe("useSSEStream page context merge", () => {
   beforeEach(() => {
     usePageContextStore.getState().clear();
   });
@@ -122,9 +147,11 @@ describe("useSSEStream page context merge (Sprint 221)", () => {
   it("getPageContextForRequest merges into user_context shape", () => {
     usePageContextStore.getState().setPageContext({
       page_type: "lesson",
-      page_title: "Bài 1",
-      course_name: "Môn A",
-      content_snippet: "Nội dung bài học...",
+      page_title: "Bai 1",
+      course_name: "Mon A",
+      content_snippet: "Noi dung bai hoc...",
+      user_role: "student",
+      workflow_stage: "learning",
     });
     usePageContextStore.getState().setStudentState({
       time_on_page_ms: 60000,
@@ -137,13 +164,13 @@ describe("useSSEStream page context merge (Sprint 221)", () => {
       throw new Error("Expected page context data");
     }
 
-    // Simulate what useSSEStream does
     const userContext = {
       display_name: "Minh",
       role: "student",
       ...pageData,
     };
     expect(userContext.page_context?.page_type).toBe("lesson");
+    expect(userContext.page_context?.workflow_stage).toBe("learning");
     expect(userContext.student_state?.time_on_page_ms).toBe(60000);
   });
 });

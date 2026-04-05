@@ -59,9 +59,9 @@ async def _extract_query_entities(query: str) -> List[EntityInfo]:
         List of extracted EntityInfo objects.
     """
     try:
-        from app.engine.multi_agent.agents.kg_builder_agent import get_kg_builder_agent
+        from app.engine.kg_builder_service import get_kg_builder_service
 
-        builder = get_kg_builder_agent()
+        builder = get_kg_builder_service()
         if not builder.is_available():
             logger.debug("[GraphRAG-R] KG Builder unavailable, skipping entity extraction")
             return []

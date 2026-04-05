@@ -9,12 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
 
 from app.core.config import settings
-
-if TYPE_CHECKING:
-    from app.services.living_continuity import PostResponseContinuityContext
+from app.services.living_continuity_contracts import (
+    PostResponseContinuityContext,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,7 @@ __all__ = ["schedule_lms_insight_push"]
 
 
 def schedule_lms_insight_push(
-    context: "PostResponseContinuityContext",
+    context: PostResponseContinuityContext,
     *,
     include_lms_insights: bool,
 ) -> bool:

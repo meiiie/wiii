@@ -137,21 +137,20 @@ class TestCurateWithLLM:
             total_evaluated=5,
         )
 
-        mock_llm = MagicMock()
-        mock_structured = MagicMock()
-        mock_structured.ainvoke = AsyncMock(return_value=mock_selection)
-        mock_llm.with_structured_output = MagicMock(return_value=mock_structured)
-
         products = _make_products(5)
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg:
-            mock_reg.get_llm.return_value = mock_llm
+        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg, patch(
+            "app.services.structured_invoke_service.StructuredInvokeService.ainvoke",
+            new=AsyncMock(return_value=mock_selection),
+        ) as mock_invoke:
+            mock_reg.get_llm.return_value = MagicMock(_wiii_provider_name="zhipu")
             result = await curate_with_llm("test query", products, max_curated=8)
 
         assert result is not None
         assert len(result.selected) == 2
         assert result.selected[0].index == 0
         assert result.total_evaluated == 5
+        assert mock_invoke.await_args.kwargs["timeout_profile"] == "structured"
 
     @pytest.mark.asyncio
     async def test_curate_empty_products(self):
@@ -164,13 +163,11 @@ class TestCurateWithLLM:
     async def test_curate_llm_failure(self):
         from app.engine.multi_agent.subagents.search.curation import curate_with_llm
 
-        mock_llm = MagicMock()
-        mock_structured = MagicMock()
-        mock_structured.ainvoke = AsyncMock(side_effect=RuntimeError("LLM error"))
-        mock_llm.with_structured_output = MagicMock(return_value=mock_structured)
-
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg:
-            mock_reg.get_llm.return_value = mock_llm
+        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg, patch(
+            "app.services.structured_invoke_service.StructuredInvokeService.ainvoke",
+            new=AsyncMock(side_effect=RuntimeError("LLM error")),
+        ):
+            mock_reg.get_llm.return_value = MagicMock(_wiii_provider_name="zhipu")
             result = await curate_with_llm("test", _make_products(5))
 
         assert result is None
@@ -193,15 +190,13 @@ class TestCurateWithLLM:
             total_evaluated=5,
         )
 
-        mock_llm = MagicMock()
-        mock_structured = MagicMock()
-        mock_structured.ainvoke = AsyncMock(return_value=mock_selection)
-        mock_llm.with_structured_output = MagicMock(return_value=mock_structured)
-
         products = _make_products(5)
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg:
-            mock_reg.get_llm.return_value = mock_llm
+        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg, patch(
+            "app.services.structured_invoke_service.StructuredInvokeService.ainvoke",
+            new=AsyncMock(return_value=mock_selection),
+        ):
+            mock_reg.get_llm.return_value = MagicMock(_wiii_provider_name="zhipu")
             result = await curate_with_llm("test", products)
 
         assert result is not None
@@ -224,13 +219,11 @@ class TestCurateWithLLM:
             total_evaluated=3,
         )
 
-        mock_llm = MagicMock()
-        mock_structured = MagicMock()
-        mock_structured.ainvoke = AsyncMock(return_value=mock_selection)
-        mock_llm.with_structured_output = MagicMock(return_value=mock_structured)
-
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg:
-            mock_reg.get_llm.return_value = mock_llm
+        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg, patch(
+            "app.services.structured_invoke_service.StructuredInvokeService.ainvoke",
+            new=AsyncMock(return_value=mock_selection),
+        ):
+            mock_reg.get_llm.return_value = MagicMock(_wiii_provider_name="zhipu")
             result = await curate_with_llm("test", _make_products(3))
 
         assert result is None

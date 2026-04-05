@@ -24,6 +24,11 @@ import logging
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Tuple
 
+from app.engine.agentic_rag.runtime_llm_socket import (
+    ainvoke_agentic_rag_llm,
+    resolve_agentic_rag_llm,
+)
+from app.engine.llm_factory import ThinkingTier
 from app.engine.llm_pool import get_llm_light
 
 logger = logging.getLogger(__name__)
@@ -93,10 +98,15 @@ class MiniJudgeGrader:
             "timeout=%ss)", self._config.max_parallel, self._config.timeout_seconds
         )
     
-    def _ensure_llm(self):
+    def _ensure_llm(self, *, refresh: bool = False):
         """Lazily initialize LLM."""
-        if not self._initialized:
-            self._llm = get_llm_light()
+        if refresh or not self._initialized:
+            self._llm = resolve_agentic_rag_llm(
+                tier=ThinkingTier.LIGHT,
+                cached_llm=self._llm,
+                fallback_factory=get_llm_light,
+                component="MiniJudgeGrader",
+            )
             self._initialized = True
     
     def _build_prompt(self, query: str, doc_content: str) -> str:
@@ -139,8 +149,13 @@ Answer:"""
             
             # Add timeout
             response = await asyncio.wait_for(
-                self._llm.ainvoke(prompt),
-                timeout=self._config.timeout_seconds
+                ainvoke_agentic_rag_llm(
+                    llm=self._llm,
+                    messages=prompt,
+                    tier=ThinkingTier.LIGHT,
+                    component="MiniJudgeGrader",
+                ),
+                timeout=self._config.timeout_seconds,
             )
             
             # CHỈ THỊ SỐ 31 v4: Handle Gemini 3 response.content types
@@ -243,7 +258,7 @@ Answer:"""
         if not documents:
             return []
         
-        self._ensure_llm()
+        self._ensure_llm(refresh=True)
         
         import time
         start_time = time.time()

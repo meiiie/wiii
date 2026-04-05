@@ -16,6 +16,7 @@ Covers:
 """
 
 import pytest
+import json
 from unittest.mock import patch, MagicMock, PropertyMock
 from uuid import uuid4
 from datetime import datetime, timezone
@@ -111,7 +112,7 @@ class TestSaveMemory:
         mock_row.created_at = datetime.now(timezone.utc)
         mock_row.updated_at = None
 
-        _mock_session(repo, fetchone=mock_row)
+        mock_session = _mock_session(repo, fetchone=mock_row)
 
         from app.models.semantic_memory import SemanticMemoryCreate
         memory = SemanticMemoryCreate(
@@ -125,6 +126,9 @@ class TestSaveMemory:
         result = repo.save_memory(memory)
         assert result is not None
         assert result.user_id == "user-1"
+        params = mock_session.execute.call_args[0][1]
+        metadata_payload = json.loads(params["metadata"])
+        assert metadata_payload["embedding_space_fingerprint"] == "google:models/gemini-embedding-001:768"
 
     def test_returns_none_on_error(self):
         repo = _make_repo()
@@ -141,6 +145,38 @@ class TestSaveMemory:
         )
         result = repo.save_memory(memory)
         assert result is None
+
+    def test_empty_embedding_uses_null_vector(self):
+        repo = _make_repo()
+
+        mock_row = MagicMock()
+        mock_row.id = uuid4()
+        mock_row.user_id = "user-1"
+        mock_row.content = "test"
+        mock_row.memory_type = "message"
+        mock_row.importance = 0.5
+        mock_row.metadata = {}
+        mock_row.session_id = None
+        mock_row.created_at = datetime.now(timezone.utc)
+        mock_row.updated_at = None
+
+        mock_session = _mock_session(repo, fetchone=mock_row)
+
+        from app.models.semantic_memory import SemanticMemoryCreate
+        memory = SemanticMemoryCreate(
+            user_id="user-1",
+            content="test",
+            embedding=[],
+            memory_type=MemoryType.MESSAGE,
+            importance=0.5,
+        )
+
+        result = repo.save_memory(memory)
+        assert result is not None
+        query = mock_session.execute.call_args[0][0]
+        params = mock_session.execute.call_args[0][1]
+        assert "NULL" in query.text
+        assert "embedding" not in params
 
 
 # =============================================================================

@@ -57,14 +57,19 @@ class TestSemanticFactRetrievalConfig:
 class TestEmbeddingsModule:
     """Test the new embeddings module."""
 
-    @patch("app.engine.semantic_memory.embeddings.GeminiOptimizedEmbeddings", create=True)
-    def test_embedding_generator_creation(self, mock_emb_class):
+    @patch("app.engine.embedding_runtime.get_semantic_embedding_backend")
+    def test_embedding_generator_creation(self, mock_get_backend):
         """Test EmbeddingGenerator can be created."""
         # Reset singleton
         import app.engine.semantic_memory.embeddings as mod
         mod._generator_instance = None
 
-        mock_emb_class.return_value = MagicMock()
+        backend = MagicMock()
+        backend.is_available.return_value = True
+        backend.provider = "openai"
+        backend.model_name = "text-embedding-3-small"
+        backend.dimensions = 768
+        mock_get_backend.return_value = backend
         from app.engine.semantic_memory.embeddings import get_embedding_generator
 
         gen = get_embedding_generator()
@@ -93,7 +98,7 @@ class TestEmbeddingsModule:
         import app.engine.semantic_memory.embeddings as mod
         mod._generator_instance = None
 
-        with patch.dict("sys.modules", {"app.engine.gemini_embedding": None}):
+        with patch("app.engine.embedding_runtime.get_semantic_embedding_backend", side_effect=RuntimeError("no backend")):
             gen = mod.EmbeddingGenerator()
             assert gen.is_available() is False
             assert gen.generate("test") == []

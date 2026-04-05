@@ -302,10 +302,26 @@ class CharacterReflectionEngine:
     async def _call_llm(self, prompt: str) -> Optional[str]:
         """Call LLM with the reflection prompt. Uses LIGHT tier."""
         try:
-            from app.engine.llm_pool import get_llm_light
+            from app.engine.llm_factory import ThinkingTier
+            from app.engine.llm_pool import get_llm_for_provider, get_llm_light
             from langchain_core.messages import HumanMessage
 
-            llm = get_llm_light()
+            llm = None
+            try:
+                # Background reflection should not pin itself to a provider that is
+                # already marked busy on the hot path. Prefer the current auto-mode
+                # runtime truth, then fall back to the legacy shared light instance.
+                llm = get_llm_for_provider(
+                    "auto",
+                    default_tier=ThinkingTier.LIGHT,
+                    strict_pin=False,
+                )
+            except Exception:
+                llm = None
+
+            if llm is None:
+                llm = get_llm_light()
+
             result = await llm.ainvoke([HumanMessage(content=prompt)])
 
             # Extract text content

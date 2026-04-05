@@ -227,6 +227,7 @@ async def create_thinking_start_event(
             merged_details["block_id"] = block_id
         if summary:
             merged_details["summary"] = summary
+            merged_details.setdefault("summary_mode", "header_only")
     return StreamEvent(
         type=StreamEventType.THINKING_START,
         content=label,

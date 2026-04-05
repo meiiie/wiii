@@ -9,7 +9,7 @@ Tests:
 """
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.engine.agentic_rag.query_rewriter import QueryRewriter
 
@@ -21,9 +21,11 @@ from app.engine.agentic_rag.query_rewriter import QueryRewriter
 @pytest.fixture
 def rewriter():
     """Create QueryRewriter with mocked LLM (tests rule-based only)."""
-    with patch("app.engine.agentic_rag.query_rewriter.get_llm_light", return_value=None):
+    with patch("app.engine.agentic_rag.query_rewriter.get_llm_light", return_value=None), \
+         patch("app.engine.agentic_rag.runtime_llm_socket.get_llm_for_provider", return_value=None):
         qr = QueryRewriter()
         qr._llm = None
+        qr._resolve_runtime_llm = MagicMock(return_value=None)
         return qr
 
 
@@ -149,6 +151,22 @@ class TestAsyncFallback:
 
     def test_is_available_false_without_llm(self, rewriter):
         assert rewriter.is_available() is False
+
+
+class TestRuntimeSocket:
+    @pytest.mark.asyncio
+    async def test_rewrite_prefers_runtime_socket_llm(self):
+        mock_runtime_llm = AsyncMock()
+        mock_runtime_llm.ainvoke.return_value = MagicMock(content="rewritten query")
+
+        with patch("app.engine.agentic_rag.runtime_llm_socket.get_llm_for_provider", return_value=mock_runtime_llm), \
+             patch("app.services.output_processor.extract_thinking_from_response", return_value=("rewritten query", None)):
+            rewriter = QueryRewriter()
+            rewriter._llm = None
+            result = await rewriter.rewrite("old query", "documents were weak")
+
+        assert result == "rewritten query"
+        mock_runtime_llm.ainvoke.assert_awaited()
 
 
 # =============================================================================

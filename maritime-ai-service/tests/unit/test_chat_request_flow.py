@@ -33,6 +33,7 @@ def _make_request(**overrides):
         "session_id": None,
         "organization_id": None,
         "domain_id": None,
+        "model": None,
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -45,6 +46,7 @@ def _make_session(total_responses: int = 0):
             is_first_message=False,
             pronoun_style=None,
             update_pronoun_style=MagicMock(),
+            update_response_language=MagicMock(),
             total_responses=total_responses,
             name_usage_count=2,
             recent_phrases=["xin chao"],
@@ -231,6 +233,28 @@ async def test_build_multi_agent_context_uses_shared_contract_fields():
         }
     }
     assert multi_agent_context["images"] == [{"kind": "image"}]
+    assert multi_agent_context["is_follow_up"] is True
+
+
+@pytest.mark.asyncio
+async def test_build_multi_agent_context_does_not_mark_first_turn_as_follow_up():
+    orchestrator = _make_orchestrator()
+    context = _make_chat_context()
+    session = _make_session(total_responses=0)
+
+    with patch.object(
+        orchestrator,
+        "resolve_lms_identity",
+        new=AsyncMock(return_value=("lms-user-1", "maritime-lms")),
+    ):
+        multi_agent_context = await orchestrator.build_multi_agent_context(
+            context,
+            session,
+        )
+
+    assert context.history_list  # current request may already be in history
+    assert multi_agent_context["is_follow_up"] is False
+    assert multi_agent_context["conversation_phase"] == "opening"
 
 
 @pytest.mark.asyncio
@@ -248,6 +272,7 @@ async def test_build_multi_agent_execution_input_for_streaming_adds_transport_fi
         show_previews=True,
         preview_types=["tool", "product"],
         preview_max_count=3,
+        model="qwen/qwen3.6-plus:free",
     )
 
     with patch.object(
@@ -260,6 +285,7 @@ async def test_build_multi_agent_execution_input_for_streaming_adds_transport_fi
             prepared_turn=prepared_turn,
             include_streaming_fields=True,
             thinking_effort="high",
+            request_id="req-stream-123",
         )
 
     assert execution_input.query == "Explain COLREG Rule 5"
@@ -267,11 +293,13 @@ async def test_build_multi_agent_execution_input_for_streaming_adds_transport_fi
     assert execution_input.session_id == "session-1"
     assert execution_input.domain_id == "maritime"
     assert execution_input.thinking_effort == "high"
+    assert execution_input.model == "qwen/qwen3.6-plus:free"
     assert execution_input.context["user_facts"] == []
     assert execution_input.context["history_list"] == [{"role": "user", "content": "Hi"}]
     assert execution_input.context["show_previews"] is True
     assert execution_input.context["preview_types"] == ["tool", "product"]
     assert execution_input.context["preview_max_count"] == 3
+    assert execution_input.context["request_id"] == "req-stream-123"
 
 
 def test_build_minimal_multi_agent_execution_input_uses_degraded_contract():
@@ -280,12 +308,17 @@ def test_build_minimal_multi_agent_execution_input_uses_degraded_contract():
         request_scope=RequestScope("org-1", "maritime"),
         session_id="session-1",
     )
-    request = _make_request(organization_id="org-1", domain_id="maritime")
+    request = _make_request(
+        organization_id="org-1",
+        domain_id="maritime",
+        model="qwen/qwen3.6-plus:free",
+    )
 
     execution_input = orchestrator.build_minimal_multi_agent_execution_input(
         request=request,
         prepared_turn=prepared_turn,
         thinking_effort="low",
+        request_id="req-minimal-123",
     )
 
     assert execution_input.query == "Explain COLREG Rule 5"
@@ -293,12 +326,15 @@ def test_build_minimal_multi_agent_execution_input_uses_degraded_contract():
     assert execution_input.session_id == "session-1"
     assert execution_input.domain_id == "maritime"
     assert execution_input.thinking_effort == "low"
+    assert execution_input.model == "qwen/qwen3.6-plus:free"
     assert execution_input.context == {
         "user_id": "user-1",
         "user_role": UserRole.STUDENT.value,
         "user_name": None,
         "conversation_history": "",
         "organization_id": "org-1",
+        "response_language": "vi",
+        "request_id": "req-minimal-123",
     }
 
 
@@ -350,8 +386,13 @@ async def test_prepare_turn_builds_shared_session_and_context_contract():
     session.state.is_first_message = True
     session.session_id = "session-1"
     chat_context = _make_chat_context()
+    recent_history_fallback = [
+        {"role": "user", "content": "Giải thích Quy tắc 15 COLREGs"},
+        {"role": "assistant", "content": "Để mình giải thích rõ nhé."},
+    ]
 
     orchestrator._session_manager.get_or_create_session.return_value = session
+    orchestrator._session_manager.get_recent_messages.return_value = recent_history_fallback
     orchestrator._input_processor.build_context = AsyncMock(return_value=chat_context)
     orchestrator._input_processor.extract_user_name.return_value = "Minh"
     orchestrator._input_processor.validate_pronoun_request = AsyncMock(return_value=None)
@@ -402,6 +443,17 @@ async def test_prepare_turn_builds_shared_session_and_context_contract():
         user_id="user-1",
         background_save=mock_persist_message.call_args.kwargs["background_save"],
         immediate=True,
+    )
+    orchestrator._session_manager.append_message.assert_called_once_with(
+        session_id="session-1",
+        role="user",
+        content="Explain COLREG Rule 5",
+    )
+    orchestrator._input_processor.build_context.assert_awaited_once_with(
+        request=request,
+        session_id="session-1",
+        user_name=session.user_name,
+        recent_history_fallback=recent_history_fallback,
     )
     orchestrator._session_manager.update_user_name.assert_called_once_with(
         "session-1",
@@ -492,6 +544,11 @@ def test_finalize_response_turn_runs_authoritative_post_response_contract():
         phrase="Minh, Rule 5 requires proper lookout.",
         used_name=True,
     )
+    orchestrator._session_manager.append_message.assert_called_once_with(
+        session_id="session-1",
+        role="assistant",
+        content="Minh, Rule 5 requires proper lookout.",
+    )
     background_save.assert_called_once_with(
         orchestrator._chat_history.save_message,
         "session-1",
@@ -569,6 +626,11 @@ def test_finalize_response_turn_can_persist_immediately_for_streaming():
         "Streaming answer",
         "user-1",
     )
+    orchestrator._session_manager.append_message.assert_called_once_with(
+        session_id="session-1",
+        role="assistant",
+        content="Streaming answer",
+    )
     assert mock_schedule_continuity.call_args.kwargs == {
         "include_lms_insights": False,
     }
@@ -576,3 +638,49 @@ def test_finalize_response_turn_can_persist_immediately_for_streaming():
     assert log_payload["transport_type"] == "stream"
     assert log_payload["response_persistence"] == "immediate"
     assert log_payload["scheduled_hooks"] == ["living_continuity"]
+
+
+@pytest.mark.asyncio
+async def test_process_with_multi_agent_preserves_runtime_provider_metadata():
+    orchestrator = _make_orchestrator()
+    context = _make_chat_context()
+    session = _make_session()
+    execution_input = SimpleNamespace(
+        query=context.message,
+        user_id=context.user_id,
+        session_id=str(context.session_id),
+        context={"history": []},
+        domain_id="maritime",
+        thinking_effort=None,
+        provider="zhipu",
+    )
+
+    orchestrator.build_multi_agent_execution_input = AsyncMock(
+        return_value=execution_input
+    )
+
+    with patch(
+        "app.engine.multi_agent.graph.process_with_multi_agent",
+        new=AsyncMock(
+            return_value={
+                "response": "He thong dang hoat dong binh thuong.",
+                "sources": [],
+                "tools_used": [],
+                "grader_score": 0.0,
+                "agent_outputs": {},
+                "current_agent": "direct",
+                "next_agent": "direct",
+                "provider": "zhipu",
+            }
+        ),
+    ):
+        result = await orchestrator._process_with_multi_agent(
+            context=context,
+            session=session,
+            domain_id="maritime",
+            thinking_effort=None,
+            provider="zhipu",
+        )
+
+    assert result.metadata["provider"] == "zhipu"
+    assert str(result.metadata["model"]).startswith("glm-")

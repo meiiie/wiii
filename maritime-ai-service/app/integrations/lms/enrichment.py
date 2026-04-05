@@ -13,6 +13,7 @@ import logging
 import threading
 from typing import List, Optional
 
+from app.engine.embedding_runtime import get_semantic_embedding_backend
 from app.integrations.lms.models import (
     AssignmentSubmittedPayload,
     AttendanceMarkedPayload,
@@ -46,11 +47,10 @@ class LMSEnrichmentService:
         if _extractor_singleton is None:
             with _extractor_lock:
                 if _extractor_singleton is None:
-                    from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
                     from app.engine.semantic_memory.extraction import FactExtractor
                     from app.repositories.semantic_memory_repository import SemanticMemoryRepository
 
-                    embeddings = GeminiOptimizedEmbeddings()
+                    embeddings = get_semantic_embedding_backend()
                     repository = SemanticMemoryRepository()
                     _extractor_singleton = FactExtractor(embeddings, repository)
                     logger.info("LMS FactExtractor initialized")

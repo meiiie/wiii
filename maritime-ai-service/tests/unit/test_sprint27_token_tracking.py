@@ -101,6 +101,30 @@ class TestTokenTrackingCallback:
         # Cleanup
         _current_tracker.set(None)
 
+    def test_on_llm_end_infers_provider_from_prefixed_tier(self):
+        """Provider-prefixed tracking tiers should normalize into provider+tier."""
+        cb = TokenTrackingCallback(tier="openrouter_light")
+
+        tracker = start_tracking("test-req-provider")
+
+        mock_response = MagicMock()
+        mock_response.generations = [[]]
+        mock_response.llm_output = {
+            "usage": {
+                "prompt_tokens": 40,
+                "completion_tokens": 15,
+            },
+            "model_name": "qwen/qwen3.6-plus:free",
+        }
+
+        cb.on_llm_end(mock_response)
+
+        assert tracker.total_calls == 1
+        assert tracker.calls[0].provider == "openrouter"
+        assert tracker.calls[0].tier == "light"
+
+        _current_tracker.set(None)
+
     def test_on_llm_end_ignores_zero_tokens(self):
         """Should not record a call when both input and output tokens are 0."""
         cb = TokenTrackingCallback(tier="light")

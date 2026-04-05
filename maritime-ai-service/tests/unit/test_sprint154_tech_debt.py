@@ -9,6 +9,7 @@ Tests for:
 """
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
+from types import SimpleNamespace
 
 
 # =========================================================================
@@ -227,6 +228,31 @@ class TestDirectAnalysisTools:
             _, force = _collect_direct_tools("chay Python de ve bieu do demo")
             # After WAVE-001: direct does not force-call tools for Python queries.
             assert force is False
+
+
+class TestWiiiHouseTextSanitizer:
+    """Guardrail for accidental mixed-script drift in direct lane."""
+
+    def test_removes_accidental_cjk_fragments_when_query_is_vietnamese(self):
+        from app.engine.multi_agent.graph import _sanitize_wiii_house_text
+
+        value = "À, mình là Wiii đây. Còn bạn呢, mình gọi là gì đây? Mình đang在这里."
+
+        cleaned = _sanitize_wiii_house_text(value, query="bạn là ai")
+
+        assert "呢" not in cleaned
+        assert "在" not in cleaned
+        assert "Wiii đây" in cleaned
+        assert "Còn bạn nhỉ" in cleaned
+
+    def test_keeps_cjk_when_user_explicitly_asks_for_it(self):
+        from app.engine.multi_agent.graph import _sanitize_wiii_house_text
+
+        value = "中文 là cách viết của tiếng Trung."
+
+        cleaned = _sanitize_wiii_house_text(value, query="dịch sang tiếng Trung giúp mình")
+
+        assert cleaned == value
 
     def test_python_query_requires_execute_python(self):
         # WAVE-001: execute_python is no longer a required tool for direct.
@@ -587,6 +613,26 @@ class TestCodeStudioWave002:
         assert "<style>" not in response
         assert "<div" not in response
 
+    def test_sanitize_code_studio_response_collapses_visual_code_dump_without_session_context(self):
+        """Raw visual code should still stay out of chat even before Code Studio session context hydrates."""
+        from app.engine.multi_agent.graph import _sanitize_code_studio_response
+
+        response = _sanitize_code_studio_response(
+            "Mình sẽ tạo visual này cho bạn.\n\n```html\n<div class='scene'>Moon</div>\n```",
+            [
+                {
+                    "type": "result",
+                    "name": "tool_create_visual_code",
+                    "result": "{\"ok\": true}",
+                }
+            ],
+            {"context": {}},
+        )
+
+        assert "Code Studio" in response or "phần trực quan" in response
+        assert "```html" not in response
+        assert "<div" not in response
+
     def test_visual_runtime_metadata_reuses_active_code_studio_session_for_vietnamese_patch(self):
         """Follow-up app edits should anchor to the current Code Studio session instead of opening a new one."""
         from app.engine.multi_agent.graph import _build_visual_tool_runtime_metadata
@@ -835,6 +881,264 @@ class TestExecuteDirectToolRounds:
         assert tool_events == []
         llm_auto.ainvoke.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_visual_intent_keeps_forcing_followup_until_visual_tool_emits(self):
+        """Chart/visual turns should not drop to prose-only right after web search."""
+        from app.engine.multi_agent.graph import _execute_direct_tool_rounds
+
+        llm_with_tools = MagicMock(name="llm_with_tools")
+        llm_auto = MagicMock(name="llm_auto")
+        llm_base = MagicMock(name="llm_base")
+        llm_visual_only = MagicMock(name="llm_visual_only")
+        llm_base.bind_tools.return_value = llm_visual_only
+        llm_with_tools._wiii_provider_name = "zhipu"
+        llm_with_tools._wiii_model_name = "glm-4.5-air"
+        llm_base._wiii_provider_name = "zhipu"
+        llm_base._wiii_model_name = "glm-5"
+
+        first_response = MagicMock()
+        first_response.content = ""
+        first_response.tool_calls = [
+            {"id": "tc-1", "name": "tool_web_search", "args": {"query": "gia dau Brent WTI"}}
+        ]
+
+        second_response = MagicMock()
+        second_response.content = ""
+        second_response.tool_calls = [
+            {"id": "tc-2", "name": "tool_generate_visual", "args": {"type": "chart"}}
+        ]
+
+        final_response = MagicMock()
+        final_response.content = "Da dung xong visual."
+        final_response.tool_calls = []
+
+        calls = []
+
+        async def fake_ainvoke(llm, messages, **kwargs):
+            calls.append(
+                {
+                    "llm": llm,
+                    "tool_choice": kwargs.get("tool_choice"),
+                    "tools": kwargs.get("tools"),
+                    "timeout_profile": kwargs.get("timeout_profile"),
+                }
+            )
+            if len(calls) == 1:
+                return first_response
+            if len(calls) == 2:
+                return second_response
+            return final_response
+
+        async def noop_push(_event):
+            return None
+
+        async def fake_emit_visual_event(**kwargs):
+            tool_name = kwargs.get("tool_name")
+            if tool_name == "tool_generate_visual":
+                return ["vs-1"], []
+            return [], []
+
+        state = {"query": "Visual cho minh xem thong ke gia dau may ngay gan day"}
+
+        with patch("app.engine.multi_agent.graph._ainvoke_with_fallback", side_effect=fake_ainvoke), \
+             patch("app.engine.multi_agent.graph.invoke_tool_with_runtime", new=AsyncMock(side_effect=["search-result", "visual-result"])), \
+             patch("app.engine.multi_agent.graph.get_tool_by_name", side_effect=lambda tools, name: next((tool for tool in tools if tool.name == name), None)), \
+             patch("app.engine.multi_agent.graph._emit_visual_commit_events", new=AsyncMock()), \
+             patch("app.engine.multi_agent.graph._maybe_emit_visual_event", new=AsyncMock(side_effect=fake_emit_visual_event)), \
+             patch("app.engine.multi_agent.graph._maybe_emit_host_action_event", new=AsyncMock()), \
+             patch("app.engine.multi_agent.graph._build_direct_tool_reflection", new=AsyncMock(return_value="")), \
+             patch("app.engine.multi_agent.graph._stream_direct_wait_heartbeats", new=AsyncMock()), \
+             patch("app.engine.multi_agent.graph._render_reasoning_fast", return_value=SimpleNamespace(label="Dang can", summary="Dang can", action_text="", phase="act")):
+            result, _msgs, tool_events = await _execute_direct_tool_rounds(
+                llm_with_tools=llm_with_tools,
+                llm_auto=llm_auto,
+                messages=[],
+                tools=[
+                    SimpleNamespace(name="tool_web_search"),
+                    SimpleNamespace(name="tool_generate_visual"),
+                ],
+                push_event=noop_push,
+                query="Visual cho minh xem thong ke gia dau may ngay gan day",
+                state=state,
+                provider="zhipu",
+                forced_tool_choice="any",
+                llm_base=llm_base,
+            )
+
+        assert result is final_response
+        assert [entry["llm"] for entry in calls] == [llm_with_tools, llm_visual_only, llm_auto]
+        assert calls[1]["tool_choice"] == "tool_generate_visual"
+        assert [tool.name for tool in calls[1]["tools"]] == ["tool_generate_visual"]
+        assert [entry["timeout_profile"] for entry in calls] == ["structured", "background", "background"]
+        assert any(event.get("name") == "tool_generate_visual" for event in tool_events if event.get("type") == "call")
+        assert state["_execution_provider"] == "zhipu"
+        assert state["_execution_model"] == "glm-5"
+
+    @pytest.mark.asyncio
+    async def test_direct_tool_followup_uses_structured_timeout_for_non_visual_queries(self):
+        from app.engine.multi_agent.graph import _execute_direct_tool_rounds
+
+        llm_with_tools = MagicMock(name="llm_with_tools")
+        llm_auto = MagicMock(name="llm_auto")
+        llm_base = MagicMock(name="llm_base")
+        llm_with_tools._wiii_provider_name = "zhipu"
+        llm_with_tools._wiii_model_name = "glm-4.5-air"
+        llm_auto._wiii_provider_name = "zhipu"
+        llm_auto._wiii_model_name = "glm-5"
+        llm_base._wiii_provider_name = "zhipu"
+        llm_base._wiii_model_name = "glm-5"
+
+        first_response = MagicMock()
+        first_response.content = ""
+        first_response.tool_calls = [
+            {"id": "tc-1", "name": "tool_web_search", "args": {"query": "gia xang Viet Nam hom nay"}}
+        ]
+
+        final_response = MagicMock()
+        final_response.content = "Day la cau tra loi sau khi da xem gia xang."
+        final_response.tool_calls = []
+
+        calls = []
+
+        async def fake_ainvoke(llm, messages, **kwargs):
+            calls.append(
+                {
+                    "llm": llm,
+                    "timeout_profile": kwargs.get("timeout_profile"),
+                    "provider": kwargs.get("provider"),
+                    "resolved_provider": kwargs.get("resolved_provider"),
+                }
+            )
+            if len(calls) == 1:
+                return first_response
+            return final_response
+
+        async def noop_push(_event):
+            return None
+
+        state = {"query": "theo gia Viet Nam thi sao, co nen do xang gio luon khong?"}
+
+        with patch("app.engine.multi_agent.graph._ainvoke_with_fallback", side_effect=fake_ainvoke), \
+             patch("app.engine.multi_agent.graph.invoke_tool_with_runtime", new=AsyncMock(return_value="search-result")), \
+             patch("app.engine.multi_agent.graph.get_tool_by_name", side_effect=lambda tools, name: next((tool for tool in tools if tool.name == name), None)), \
+             patch("app.engine.multi_agent.graph._emit_visual_commit_events", new=AsyncMock()), \
+             patch("app.engine.multi_agent.graph._maybe_emit_visual_event", new=AsyncMock(return_value=([], []))), \
+             patch("app.engine.multi_agent.graph._maybe_emit_host_action_event", new=AsyncMock()), \
+             patch("app.engine.multi_agent.graph._build_direct_tool_reflection", new=AsyncMock(return_value="")), \
+             patch("app.engine.multi_agent.graph._stream_direct_wait_heartbeats", new=AsyncMock()), \
+             patch("app.engine.multi_agent.graph._render_reasoning_fast", return_value=SimpleNamespace(label="Dang can", summary="Dang can", action_text="", phase="act")):
+            result, _msgs, tool_events = await _execute_direct_tool_rounds(
+                llm_with_tools=llm_with_tools,
+                llm_auto=llm_auto,
+                messages=[],
+                tools=[SimpleNamespace(name="tool_web_search")],
+                push_event=noop_push,
+                query="theo gia Viet Nam thi sao, co nen do xang gio luon khong?",
+                state=state,
+                provider="auto",
+                llm_base=llm_base,
+            )
+
+        assert result is final_response
+        assert [entry["timeout_profile"] for entry in calls] == [None, "structured"]
+        assert calls[1]["resolved_provider"] == "zhipu"
+        assert any(event.get("name") == "tool_web_search" for event in tool_events if event.get("type") == "call")
+
+    @pytest.mark.asyncio
+    async def test_direct_tool_rounds_force_final_synthesis_when_tool_loop_hits_cap(self):
+        from app.engine.multi_agent.graph import _execute_direct_tool_rounds
+
+        llm_with_tools = MagicMock(name="llm_with_tools")
+        llm_auto = MagicMock(name="llm_auto")
+        llm_base = MagicMock(name="llm_base")
+        llm_with_tools._wiii_provider_name = "google"
+        llm_with_tools._wiii_model_name = "gemini-3.1-flash-lite-preview"
+        llm_auto._wiii_provider_name = "google"
+        llm_auto._wiii_model_name = "gemini-3.1-flash-lite-preview"
+        llm_base._wiii_provider_name = "google"
+        llm_base._wiii_model_name = "gemini-3.1-flash-lite-preview"
+
+        def _tool_response(idx: int):
+            resp = MagicMock(name=f"tool_response_{idx}")
+            resp.content = ""
+            resp.tool_calls = [
+                {
+                    "id": f"tc-{idx}",
+                    "name": "tool_web_search",
+                    "args": {"query": f"gia dau round {idx}"},
+                }
+            ]
+            return resp
+
+        first_response = _tool_response(1)
+        second_response = _tool_response(2)
+        third_response = _tool_response(3)
+        fourth_response = _tool_response(4)
+
+        final_response = MagicMock(name="final_response")
+        final_response.content = "Day la cau tra loi cuoi cung sau khi da dung tool."
+        final_response.tool_calls = []
+
+        responses = [
+            first_response,
+            second_response,
+            third_response,
+            fourth_response,
+            final_response,
+        ]
+        calls = []
+
+        async def fake_ainvoke(llm, messages, **kwargs):
+            calls.append(
+                {
+                    "llm": llm,
+                    "messages": list(messages),
+                    "tools": kwargs.get("tools"),
+                    "timeout_profile": kwargs.get("timeout_profile"),
+                }
+            )
+            return responses[len(calls) - 1]
+
+        async def noop_push(_event):
+            return None
+
+        state = {"query": "phan tich gia dau"}
+
+        with patch("app.engine.multi_agent.graph._ainvoke_with_fallback", side_effect=fake_ainvoke), \
+             patch("app.engine.multi_agent.graph.invoke_tool_with_runtime", new=AsyncMock(return_value="search-result")), \
+             patch("app.engine.multi_agent.graph.get_tool_by_name", side_effect=lambda tools, name: next((tool for tool in tools if tool.name == name), None)), \
+             patch("app.engine.multi_agent.graph._emit_visual_commit_events", new=AsyncMock()), \
+             patch("app.engine.multi_agent.graph._maybe_emit_visual_event", new=AsyncMock(return_value=([], []))), \
+             patch("app.engine.multi_agent.graph._maybe_emit_host_action_event", new=AsyncMock()), \
+             patch("app.engine.multi_agent.graph._build_direct_tool_reflection", new=AsyncMock(return_value="")), \
+             patch("app.engine.multi_agent.graph._stream_direct_wait_heartbeats", new=AsyncMock()), \
+             patch("app.engine.multi_agent.graph._render_reasoning_fast", return_value=SimpleNamespace(label="Dang can", summary="Dang can", action_text="", phase="synthesize")):
+            result, msgs, tool_events = await _execute_direct_tool_rounds(
+                llm_with_tools=llm_with_tools,
+                llm_auto=llm_auto,
+                messages=[],
+                tools=[SimpleNamespace(name="tool_web_search")],
+                push_event=noop_push,
+                query="phan tich gia dau",
+                state=state,
+                provider="auto",
+                llm_base=llm_base,
+            )
+
+        assert result is final_response
+        assert len(calls) == 5
+        assert [entry["llm"] for entry in calls] == [
+            llm_with_tools,
+            llm_auto,
+            llm_auto,
+            llm_auto,
+            llm_base,
+        ]
+        assert calls[-1]["tools"] is None
+        assert "Khong goi them cong cu" in calls[-1]["messages"][-1].content
+        assert any(event.get("name") == "tool_web_search" for event in tool_events if event.get("type") == "call")
+        assert msgs[-1].content.startswith("Du lieu da du cho luot nay.")
+
 
 # =========================================================================
 # 4. Shared Test Fixture Validation
@@ -888,9 +1192,9 @@ class TestNestedConfigModels:
     def test_llm_config_defaults(self):
         from app.core.config import LLMConfig
         llm = LLMConfig()
-        assert llm.provider == "ollama"
+        assert llm.provider == "google"
         assert llm.ollama_model == "qwen3:4b-instruct-2507-q4_K_M"
-        assert len(llm.failover_chain) == 3
+        assert llm.failover_chain == ["google", "zhipu", "ollama", "openrouter"]
 
     def test_rag_config_defaults(self):
         from app.core.config import RAGConfig

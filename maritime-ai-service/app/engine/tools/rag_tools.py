@@ -93,6 +93,16 @@ def clear_retrieved_sources():
     _rag_tool_state.set(RAGToolState())
 
 
+def _sanitize_direct_rag_answer(text: str) -> str:
+    normalized = " ".join(str(text or "").split()).strip()
+    if not normalized:
+        return "Mình chưa thấy nguồn nội bộ thật sự khớp, nên mình chuyển sang cách đáp trực tiếp nhé."
+    lowered = normalized.lower()
+    if any(marker in lowered for marker in ("xin lỗi", "khong co thong tin", "không có thông tin", "không thể trả lời", "khong the tra loi")):
+        return "Mình chưa thấy nguồn nội bộ thật sự khớp, nên mình chuyển sang cách đáp trực tiếp nhé."
+    return normalized
+
+
 # =============================================================================
 # RAG TOOLS
 # =============================================================================
@@ -126,7 +136,7 @@ async def tool_knowledge_search(query: str) -> str:
         _ctx = {"organization_id": _org_id} if _org_id else {}
         crag_result = await crag.process(query, context=_ctx)
 
-        result = crag_result.answer
+        result = _sanitize_direct_rag_answer(crag_result.answer)
 
         # Normalize confidence from 0-100 (CRAG internal) to 0-1 (config thresholds)
         from app.core.config import settings

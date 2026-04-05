@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 from app.core.rate_limit import limiter
-from app.core.security import AuthenticatedUser, require_auth
+from app.core.security import AuthenticatedUser, is_platform_admin, require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ async def _require_org_member_viz(auth: AuthenticatedUser, org_id: str) -> str:
         )
 
     # Platform admin bypass
-    if auth.role == "admin":
+    if is_platform_admin(auth):
         return auth.user_id
 
     # Check org membership

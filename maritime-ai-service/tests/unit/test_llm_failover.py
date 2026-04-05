@@ -13,7 +13,17 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 from langchain_core.language_models import BaseChatModel
 
-from app.engine.llm_pool import LLMPool, ThinkingTier
+from app.engine.llm_pool import (
+    FAILOVER_MODE_AUTO,
+    FAILOVER_MODE_PINNED,
+    LLMPool,
+    ProviderUnavailableError,
+    ResolvedLLMRoute,
+    ThinkingTier,
+    ainvoke_with_failover,
+    get_llm_for_provider,
+    resolve_primary_timeout_seconds,
+)
 from app.engine.llm_providers.base import LLMProvider
 
 
@@ -313,3 +323,741 @@ class TestIsAvailableMultiProvider:
         mock_settings.enable_llm_failover = False
         LLMPool._providers = {}
         assert LLMPool.is_available() is True
+
+
+class _FakeAsyncLLM:
+    def __init__(
+        self,
+        *,
+        result=None,
+        error: Exception | None = None,
+        sleep_seconds: float = 0.0,
+    ):
+        self._result = result
+        self._error = error
+        self._sleep_seconds = sleep_seconds
+
+    async def ainvoke(self, _messages):
+        if self._sleep_seconds > 0:
+            import asyncio
+
+            await asyncio.sleep(self._sleep_seconds)
+        if self._error is not None:
+            raise self._error
+        return self._result
+
+
+class TestPrimaryTimeoutProfiles:
+    @patch("app.engine.llm_pool.settings")
+    def test_resolve_primary_timeout_seconds_uses_tier_settings(self, mock_settings):
+        mock_settings.llm_primary_timeout_light_seconds = 11.0
+        mock_settings.llm_primary_timeout_moderate_seconds = 26.0
+        mock_settings.llm_primary_timeout_deep_seconds = 51.0
+
+        assert resolve_primary_timeout_seconds(tier="light") == 11.0
+        assert resolve_primary_timeout_seconds(tier="moderate") == 26.0
+        assert resolve_primary_timeout_seconds(tier=ThinkingTier.DEEP.value) == 51.0
+
+    @patch("app.engine.llm_pool.settings")
+    def test_resolve_primary_timeout_seconds_honors_profiles(self, mock_settings):
+        mock_settings.llm_primary_timeout_structured_seconds = 64.0
+        mock_settings.llm_primary_timeout_background_seconds = 0.0
+        mock_settings.llm_timeout_provider_overrides = "{}"
+
+        assert resolve_primary_timeout_seconds(timeout_profile="structured") == 64.0
+        assert resolve_primary_timeout_seconds(timeout_profile="background") is None
+
+    @patch("app.engine.llm_pool.settings")
+    def test_resolve_primary_timeout_seconds_honors_provider_override(self, mock_settings):
+        mock_settings.llm_primary_timeout_deep_seconds = 45.0
+        mock_settings.llm_timeout_provider_overrides = '{"google":{"deep_seconds":88}}'
+
+        assert resolve_primary_timeout_seconds(
+            tier="deep",
+            provider="google",
+        ) == 88.0
+
+    @pytest.mark.asyncio
+    @patch("app.engine.llm_pool.settings")
+    async def test_ainvoke_with_failover_uses_structured_timeout_profile(self, mock_settings):
+        mock_settings.llm_primary_timeout_structured_seconds = 77.0
+        mock_settings.llm_timeout_provider_overrides = "{}"
+        llm = _FakeAsyncLLM(result="ok")
+        route = ResolvedLLMRoute(provider="google", llm=llm)
+        observed: dict[str, float] = {}
+
+        async def fake_wait_for(awaitable, timeout):
+            observed["timeout"] = timeout
+            return await awaitable
+
+        with (
+            patch.object(LLMPool, "resolve_runtime_route", return_value=route),
+            patch.object(LLMPool, "record_success_for_provider", new=AsyncMock()),
+            patch("asyncio.wait_for", new=fake_wait_for),
+        ):
+            result = await ainvoke_with_failover(
+                llm,
+                ["hello"],
+                timeout_profile="structured",
+            )
+
+        assert result == "ok"
+        assert observed["timeout"] == 77.0
+
+    @pytest.mark.asyncio
+    @patch("app.engine.llm_pool.settings")
+    async def test_ainvoke_with_failover_background_profile_disables_wait_for(self, mock_settings):
+        mock_settings.llm_primary_timeout_background_seconds = 0.0
+        mock_settings.llm_timeout_provider_overrides = "{}"
+        llm = _FakeAsyncLLM(result="ok")
+        route = ResolvedLLMRoute(provider="google", llm=llm)
+
+        async def fail_wait_for(*_args, **_kwargs):
+            raise AssertionError("wait_for should not be used for background timeout profile")
+
+        with (
+            patch.object(LLMPool, "resolve_runtime_route", return_value=route),
+            patch.object(LLMPool, "record_success_for_provider", new=AsyncMock()),
+            patch("asyncio.wait_for", new=fail_wait_for),
+        ):
+            result = await ainvoke_with_failover(
+                llm,
+                ["hello"],
+                timeout_profile="background",
+            )
+
+        assert result == "ok"
+
+
+class TestRequestScopedRouting:
+    @pytest.mark.asyncio
+    @patch("app.engine.llm_pool.settings")
+    async def test_pinned_provider_failure_updates_only_requested_provider(self, mock_settings):
+        mock_settings.enable_llm_failover = True
+        mock_settings.llm_failover_chain = ["google", "zhipu"]
+        mock_settings.llm_provider = "google"
+
+        google = _make_mock_provider("google")
+        zhipu = _make_mock_provider("zhipu")
+
+        google_llm = _FakeAsyncLLM(result="google-fallback")
+        zhipu_llm = _FakeAsyncLLM(error=TimeoutError("zhipu timeout"))
+
+        google.create_instance.return_value = google_llm
+        zhipu.create_instance.return_value = zhipu_llm
+
+        LLMPool._providers = {"google": google, "zhipu": zhipu}
+        LLMPool._active_provider = "google"
+
+        with pytest.raises(TimeoutError):
+            await ainvoke_with_failover(
+                zhipu_llm,
+                ["hello"],
+                tier="moderate",
+                provider="zhipu",
+                failover_mode=FAILOVER_MODE_PINNED,
+            )
+
+        zhipu.record_failure.assert_awaited_once()
+        google.record_failure.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @patch("app.engine.llm_pool.settings")
+    async def test_auto_mode_still_cross_provider_fails_over(self, mock_settings):
+        mock_settings.enable_llm_failover = True
+        mock_settings.llm_failover_chain = ["google", "zhipu"]
+        mock_settings.llm_provider = "google"
+
+        google = _make_mock_provider("google")
+        zhipu = _make_mock_provider("zhipu")
+
+        google_llm = _FakeAsyncLLM(result="google-fallback")
+        zhipu_llm = _FakeAsyncLLM(error=TimeoutError("zhipu timeout"))
+
+        google.create_instance.return_value = google_llm
+        zhipu.create_instance.return_value = zhipu_llm
+
+        LLMPool._providers = {"google": google, "zhipu": zhipu}
+        LLMPool._active_provider = "google"
+
+        result = await ainvoke_with_failover(
+            zhipu_llm,
+            ["hello"],
+            tier="moderate",
+            provider="zhipu",
+        )
+
+        assert result == "google-fallback"
+        zhipu.record_failure.assert_awaited_once()
+        google.record_failure.assert_not_awaited()
+
+    @patch("app.engine.llm_pool.settings")
+    def test_get_llm_for_provider_creates_requested_provider_instance(self, mock_settings):
+        mock_settings.enable_llm_failover = True
+        mock_settings.llm_failover_chain = ["google", "zhipu", "ollama"]
+        mock_settings.llm_provider = "google"
+
+        google = _make_mock_provider("google")
+        zhipu = _make_mock_provider("zhipu")
+        ollama = _make_mock_provider("ollama")
+
+        LLMPool._providers = {"google": google, "zhipu": zhipu, "ollama": ollama}
+        LLMPool._active_provider = "google"
+        LLMPool._pool = {"moderate": google.create_instance.return_value}
+
+        result = get_llm_for_provider("ollama", default_tier=ThinkingTier.MODERATE)
+
+        assert result is ollama.create_instance.return_value
+        google.create_instance.assert_not_called()
+        ollama.create_instance.assert_called_once()
+
+    @patch("app.engine.llm_pool.settings")
+    def test_request_selectable_providers_hide_openai_in_openrouter_mode(self, mock_settings):
+        mock_settings.enable_llm_failover = True
+        mock_settings.llm_failover_chain = ["google", "openai", "openrouter"]
+        mock_settings.llm_provider = "google"
+        mock_settings.openai_base_url = "https://openrouter.ai/api/v1"
+
+        google = _make_mock_provider("google")
+        openai = _make_mock_provider("openai")
+        openrouter = _make_mock_provider("openrouter")
+
+        LLMPool._providers = {
+            "google": google,
+            "openai": openai,
+            "openrouter": openrouter,
+        }
+
+        providers = LLMPool.get_request_selectable_providers()
+
+        assert "google" in providers
+        assert "openrouter" in providers
+        assert "openai" not in providers
+
+    @patch("app.engine.llm_pool.settings")
+    def test_resolve_runtime_route_pinned_has_no_fallback(self, mock_settings):
+        mock_settings.enable_llm_failover = True
+        mock_settings.llm_failover_chain = ["google", "zhipu"]
+        mock_settings.llm_provider = "google"
+
+        google = _make_mock_provider("google")
+        zhipu = _make_mock_provider("zhipu")
+
+        LLMPool._providers = {"google": google, "zhipu": zhipu}
+
+        route = LLMPool.resolve_runtime_route(
+            "zhipu",
+            ThinkingTier.MODERATE,
+            failover_mode=FAILOVER_MODE_PINNED,
+        )
+
+        assert route.provider == "zhipu"
+        assert route.fallback_provider is None
+        assert route.fallback_llm is None
+
+    @patch("app.services.llm_selectability_service.get_llm_selectability_snapshot")
+    @patch("app.engine.llm_pool.settings")
+    def test_resolve_runtime_route_auto_prefers_selectable_provider(
+        self,
+        mock_settings,
+        mock_selectability,
+    ):
+        from app.services.llm_selectability_service import ProviderSelectability
+
+        mock_settings.enable_llm_failover = True
+        mock_settings.llm_failover_chain = ["google", "zhipu", "ollama"]
+        mock_settings.llm_provider = "google"
+        mock_settings.openai_base_url = None
+
+        google = _make_mock_provider("google", available=True)
+        zhipu = _make_mock_provider("zhipu", available=True)
+        ollama = _make_mock_provider("ollama", available=False)
+
+        LLMPool._providers = {"google": google, "zhipu": zhipu, "ollama": ollama}
+        LLMPool._active_provider = "google"
+
+        mock_selectability.return_value = [
+            ProviderSelectability(
+                provider="google",
+                display_name="Gemini",
+                state="disabled",
+                reason_code="busy",
+                reason_label="busy",
+                selected_model="gemini-3.1-flash-lite-preview",
+                strict_pin=True,
+                verified_at="2026-03-23T10:00:00+00:00",
+                available=False,
+                configured=True,
+                request_selectable=True,
+                is_primary=True,
+                is_fallback=False,
+            ),
+            ProviderSelectability(
+                provider="zhipu",
+                display_name="GLM-5",
+                state="selectable",
+                reason_code=None,
+                reason_label=None,
+                selected_model="glm-5",
+                strict_pin=True,
+                verified_at="2026-03-23T10:00:00+00:00",
+                available=True,
+                configured=True,
+                request_selectable=True,
+                is_primary=False,
+                is_fallback=True,
+            ),
+        ]
+
+        route = LLMPool.resolve_runtime_route(None, ThinkingTier.MODERATE)
+
+        assert route.provider == "zhipu"
+        assert route.fallback_provider is None or route.fallback_provider != "google"
+
+    @patch("app.services.llm_selectability_service.get_llm_selectability_snapshot")
+    @patch("app.engine.llm_pool.settings")
+    def test_resolve_runtime_route_auto_raises_when_no_provider_is_selectable(
+        self,
+        mock_settings,
+        mock_selectability,
+    ):
+        from app.services.llm_selectability_service import ProviderSelectability
+
+        mock_settings.enable_llm_failover = True
+        mock_settings.llm_failover_chain = ["google", "zhipu"]
+        mock_settings.llm_provider = "google"
+
+        google = _make_mock_provider("google", available=True)
+        zhipu = _make_mock_provider("zhipu", available=True)
+
+        LLMPool._providers = {"google": google, "zhipu": zhipu}
+        LLMPool._active_provider = "google"
+
+        mock_selectability.return_value = [
+            ProviderSelectability(
+                provider="google",
+                display_name="Gemini",
+                state="disabled",
+                reason_code="busy",
+                reason_label="busy",
+                selected_model="gemini-3.1-flash-lite-preview",
+                strict_pin=True,
+                verified_at="2026-03-25T09:00:00+00:00",
+                available=False,
+                configured=True,
+                request_selectable=True,
+                is_primary=True,
+                is_fallback=False,
+            ),
+            ProviderSelectability(
+                provider="zhipu",
+                display_name="Zhipu",
+                state="disabled",
+                reason_code="capability_missing",
+                reason_label="capability_missing",
+                selected_model="glm-4.5-air",
+                strict_pin=True,
+                verified_at="2026-03-25T09:00:00+00:00",
+                available=False,
+                configured=True,
+                request_selectable=True,
+                is_primary=False,
+                is_fallback=True,
+            ),
+        ]
+
+        with pytest.raises(ProviderUnavailableError) as exc_info:
+            LLMPool.resolve_runtime_route(None, ThinkingTier.MODERATE)
+
+        assert exc_info.value.provider == "auto"
+        assert exc_info.value.reason_code == "busy"
+
+    @patch("app.services.llm_selectability_service.get_llm_selectability_snapshot")
+    @patch("app.engine.llm_pool.settings")
+    def test_resolve_runtime_route_primary_prefers_selectable_fallback_when_requested(
+        self,
+        mock_settings,
+        mock_selectability,
+    ):
+        from app.services.llm_selectability_service import ProviderSelectability
+
+        mock_settings.enable_llm_failover = True
+        mock_settings.llm_failover_chain = ["zhipu", "google", "ollama"]
+        mock_settings.llm_provider = "google"
+        mock_settings.openai_base_url = None
+
+        zhipu = _make_mock_provider("zhipu", available=True)
+        google = _make_mock_provider("google", available=True)
+        ollama = _make_mock_provider("ollama", available=True)
+
+        LLMPool._providers = {"zhipu": zhipu, "google": google, "ollama": ollama}
+        LLMPool._active_provider = "google"
+
+        mock_selectability.return_value = [
+            ProviderSelectability(
+                provider="zhipu",
+                display_name="Zhipu",
+                state="selectable",
+                reason_code=None,
+                reason_label=None,
+                selected_model="glm-5",
+                strict_pin=True,
+                verified_at="2026-03-25T09:00:00+00:00",
+                available=True,
+                configured=True,
+                request_selectable=True,
+                is_primary=False,
+                is_fallback=True,
+            ),
+            ProviderSelectability(
+                provider="google",
+                display_name="Gemini",
+                state="disabled",
+                reason_code="busy",
+                reason_label="busy",
+                selected_model="gemini-3.1-flash-lite-preview",
+                strict_pin=True,
+                verified_at="2026-03-25T09:00:00+00:00",
+                available=False,
+                configured=True,
+                request_selectable=True,
+                is_primary=True,
+                is_fallback=False,
+            ),
+            ProviderSelectability(
+                provider="ollama",
+                display_name="Ollama",
+                state="disabled",
+                reason_code="host_down",
+                reason_label="host_down",
+                selected_model="qwen3:4b-instruct-2507-q4_K_M",
+                strict_pin=True,
+                verified_at="2026-03-25T09:00:00+00:00",
+                available=False,
+                configured=True,
+                request_selectable=True,
+                is_primary=False,
+                is_fallback=True,
+            ),
+        ]
+
+        route = LLMPool.resolve_runtime_route(
+            "zhipu",
+            ThinkingTier.MODERATE,
+            failover_mode=FAILOVER_MODE_AUTO,
+            prefer_selectable_fallback=True,
+        )
+
+        assert route.provider == "zhipu"
+        assert route.fallback_provider is None
+        assert route.fallback_llm is None
+
+    @patch("app.engine.llm_pool.settings")
+    def test_resolve_runtime_route_honors_allowed_fallback_providers(self, mock_settings):
+        mock_settings.enable_llm_failover = True
+        mock_settings.llm_failover_chain = ["zhipu", "openrouter", "ollama"]
+        mock_settings.llm_provider = "zhipu"
+        mock_settings.openai_base_url = "https://openrouter.ai/api/v1"
+
+        zhipu = _make_mock_provider("zhipu", available=True)
+        openrouter = _make_mock_provider("openrouter", available=True)
+        ollama = _make_mock_provider("ollama", available=True)
+
+        LLMPool._providers = {
+            "zhipu": zhipu,
+            "openrouter": openrouter,
+            "ollama": ollama,
+        }
+
+        route = LLMPool.resolve_runtime_route(
+            "zhipu",
+            ThinkingTier.DEEP,
+            failover_mode=FAILOVER_MODE_AUTO,
+            allowed_fallback_providers={"ollama"},
+        )
+
+        assert route.provider == "zhipu"
+        assert route.fallback_provider == "ollama"
+        assert route.fallback_llm is ollama.create_instance.return_value
+
+    @pytest.mark.asyncio
+    async def test_ainvoke_with_failover_uses_on_primary_for_auto_routed_provider(self):
+        google_llm = _FakeAsyncLLM(result="google")
+        zhipu_llm = _FakeAsyncLLM(result="zhipu")
+        wrapped_zhipu = _FakeAsyncLLM(result="wrapped-zhipu")
+
+        route = ResolvedLLMRoute(
+            provider="zhipu",
+            llm=zhipu_llm,
+            circuit_breaker=None,
+            fallback_provider=None,
+            fallback_llm=None,
+        )
+
+        with patch.object(LLMPool, "resolve_runtime_route", return_value=route):
+            result = await ainvoke_with_failover(
+                google_llm,
+                ["hello"],
+                tier="moderate",
+                on_primary=lambda primary: wrapped_zhipu,
+                primary_timeout=1.0,
+            )
+
+        assert result == "wrapped-zhipu"
+
+    @pytest.mark.asyncio
+    async def test_ainvoke_with_failover_falls_over_on_invalid_api_key_error(self):
+        google_llm = _FakeAsyncLLM(error=RuntimeError("401 invalid API key"))
+        zhipu_llm = _FakeAsyncLLM(result="glm-ok")
+
+        route = ResolvedLLMRoute(
+            provider="google",
+            llm=google_llm,
+            circuit_breaker=None,
+            fallback_provider="zhipu",
+            fallback_llm=zhipu_llm,
+        )
+
+        with (
+            patch.object(LLMPool, "resolve_runtime_route", return_value=route),
+            patch.object(LLMPool, "record_failure_for_provider", new=AsyncMock()) as mock_failure,
+            patch.object(LLMPool, "record_success_for_provider", new=AsyncMock()),
+        ):
+            result = await ainvoke_with_failover(
+                google_llm,
+                ["hello"],
+                tier="moderate",
+                provider="google",
+                primary_timeout=None,
+            )
+
+        assert result == "glm-ok"
+        mock_failure.assert_awaited_once_with("google")
+
+    @pytest.mark.asyncio
+    async def test_ainvoke_with_failover_reports_structured_auth_failover_event(self):
+        google_llm = _FakeAsyncLLM(error=RuntimeError("401 invalid API key"))
+        zhipu_llm = _FakeAsyncLLM(result="glm-ok")
+        failover_events: list[dict[str, object]] = []
+
+        route = ResolvedLLMRoute(
+            provider="google",
+            llm=google_llm,
+            circuit_breaker=None,
+            fallback_provider="zhipu",
+            fallback_llm=zhipu_llm,
+        )
+
+        async def _capture_failover(event: dict[str, object]) -> None:
+            failover_events.append(event)
+
+        with (
+            patch.object(LLMPool, "resolve_runtime_route", return_value=route),
+            patch.object(LLMPool, "record_failure_for_provider", new=AsyncMock()),
+            patch.object(LLMPool, "record_success_for_provider", new=AsyncMock()),
+        ):
+            result = await ainvoke_with_failover(
+                google_llm,
+                ["hello"],
+                tier="moderate",
+                provider="google",
+                on_failover=_capture_failover,
+                primary_timeout=None,
+            )
+
+        assert result == "glm-ok"
+        assert len(failover_events) == 1
+        assert failover_events[0]["from_provider"] == "google"
+        assert failover_events[0]["to_provider"] == "zhipu"
+        assert failover_events[0]["reason_code"] == "auth_error"
+        assert failover_events[0]["reason_category"] == "auth_error"
+        assert failover_events[0]["reason_label"] == "Xac thuc provider that bai."
+
+    @pytest.mark.asyncio
+    async def test_ainvoke_with_failover_reports_timeout_failover_event(self):
+        google_llm = _FakeAsyncLLM(sleep_seconds=0.05, result="slow-google")
+        zhipu_llm = _FakeAsyncLLM(result="glm-ok")
+        failover_events: list[dict[str, object]] = []
+
+        route = ResolvedLLMRoute(
+            provider="google",
+            llm=google_llm,
+            circuit_breaker=None,
+            fallback_provider="zhipu",
+            fallback_llm=zhipu_llm,
+        )
+
+        async def _capture_failover(event: dict[str, object]) -> None:
+            failover_events.append(event)
+
+        with (
+            patch.object(LLMPool, "resolve_runtime_route", return_value=route),
+            patch.object(LLMPool, "record_failure_for_provider", new=AsyncMock()),
+            patch.object(LLMPool, "record_success_for_provider", new=AsyncMock()),
+        ):
+            result = await ainvoke_with_failover(
+                google_llm,
+                ["hello"],
+                tier="moderate",
+                provider="google",
+                on_failover=_capture_failover,
+                primary_timeout=0.001,
+            )
+
+        assert result == "glm-ok"
+        assert len(failover_events) == 1
+        assert failover_events[0]["reason_code"] == "timeout"
+        assert failover_events[0]["reason_category"] == "timeout"
+        assert failover_events[0]["timeout_seconds"] == pytest.approx(0.001)
+
+    @pytest.mark.asyncio
+    async def test_ainvoke_with_failover_uses_same_provider_model_fallback_before_cross_provider(self):
+        zhipu_primary = _FakeAsyncLLM(sleep_seconds=0.05, result="slow-glm5")
+        setattr(zhipu_primary, "model_name", "glm-5")
+        zhipu_fast = _FakeAsyncLLM(result="glm-air-ok")
+        openrouter_llm = _FakeAsyncLLM(result="openrouter-ok")
+        failover_events: list[dict[str, object]] = []
+
+        route = ResolvedLLMRoute(
+            provider="zhipu",
+            llm=zhipu_primary,
+            circuit_breaker=None,
+            fallback_provider="openrouter",
+            fallback_llm=openrouter_llm,
+        )
+
+        async def _capture_failover(event: dict[str, object]) -> None:
+            failover_events.append(event)
+
+        with (
+            patch.object(LLMPool, "resolve_runtime_route", return_value=route),
+            patch.object(
+                LLMPool,
+                "resolve_same_provider_model_fallback",
+                return_value={
+                    "provider": "zhipu",
+                    "from_model": "glm-5",
+                    "to_model": "glm-4.5-air",
+                    "from_tier": "deep",
+                    "to_tier": "moderate",
+                },
+            ),
+            patch.object(
+                LLMPool,
+                "create_llm_with_model_for_provider",
+                return_value=zhipu_fast,
+            ) as mock_create_fallback,
+            patch.object(LLMPool, "record_failure_for_provider", new=AsyncMock()),
+            patch.object(LLMPool, "record_success_for_provider", new=AsyncMock()),
+        ):
+            result = await ainvoke_with_failover(
+                zhipu_primary,
+                ["hello"],
+                tier="deep",
+                provider="zhipu",
+                on_failover=_capture_failover,
+                primary_timeout=0.001,
+            )
+
+        assert result == "glm-air-ok"
+        mock_create_fallback.assert_called_once_with(
+            "zhipu",
+            "glm-4.5-air",
+            ThinkingTier.MODERATE,
+        )
+        assert len(failover_events) == 1
+        assert failover_events[0]["fallback_scope"] == "same_provider_model"
+        assert failover_events[0]["from_provider"] == "zhipu"
+        assert failover_events[0]["to_provider"] == "zhipu"
+        assert failover_events[0]["from_model"] == "glm-5"
+        assert failover_events[0]["to_model"] == "glm-4.5-air"
+
+    @pytest.mark.asyncio
+    async def test_ainvoke_with_failover_falls_back_cross_provider_when_same_provider_model_fails(self):
+        zhipu_primary = _FakeAsyncLLM(sleep_seconds=0.05, result="slow-glm5")
+        setattr(zhipu_primary, "model_name", "glm-5")
+        zhipu_fast = _FakeAsyncLLM(error=RuntimeError("429 RESOURCE_EXHAUSTED"))
+        openrouter_llm = _FakeAsyncLLM(result="openrouter-ok")
+
+        route = ResolvedLLMRoute(
+            provider="zhipu",
+            llm=zhipu_primary,
+            circuit_breaker=None,
+            fallback_provider="openrouter",
+            fallback_llm=openrouter_llm,
+        )
+
+        with (
+            patch.object(LLMPool, "resolve_runtime_route", return_value=route),
+            patch.object(
+                LLMPool,
+                "resolve_same_provider_model_fallback",
+                return_value={
+                    "provider": "zhipu",
+                    "from_model": "glm-5",
+                    "to_model": "glm-4.5-air",
+                    "from_tier": "deep",
+                    "to_tier": "moderate",
+                },
+            ),
+            patch.object(
+                LLMPool,
+                "create_llm_with_model_for_provider",
+                return_value=zhipu_fast,
+            ),
+            patch.object(LLMPool, "record_failure_for_provider", new=AsyncMock()),
+            patch.object(LLMPool, "record_success_for_provider", new=AsyncMock()),
+        ):
+            result = await ainvoke_with_failover(
+                zhipu_primary,
+                ["hello"],
+                tier="deep",
+                provider="zhipu",
+                primary_timeout=0.001,
+            )
+
+        assert result == "openrouter-ok"
+
+    @pytest.mark.asyncio
+    async def test_ainvoke_with_failover_reports_same_provider_failure_when_no_cross_provider_exists(self):
+        zhipu_primary = _FakeAsyncLLM(sleep_seconds=0.05, result="slow-glm5")
+        setattr(zhipu_primary, "model_name", "glm-5")
+        zhipu_fast = _FakeAsyncLLM(error=TimeoutError("glm air timeout"))
+
+        route = ResolvedLLMRoute(
+            provider="zhipu",
+            llm=zhipu_primary,
+            circuit_breaker=None,
+            fallback_provider=None,
+            fallback_llm=None,
+        )
+
+        with (
+            patch.object(LLMPool, "resolve_runtime_route", return_value=route),
+            patch.object(
+                LLMPool,
+                "resolve_same_provider_model_fallback",
+                return_value={
+                    "provider": "zhipu",
+                    "from_model": "glm-5",
+                    "to_model": "glm-4.5-air",
+                    "from_tier": "deep",
+                    "to_tier": "moderate",
+                },
+            ),
+            patch.object(
+                LLMPool,
+                "create_llm_with_model_for_provider",
+                return_value=zhipu_fast,
+            ),
+            patch.object(LLMPool, "record_failure_for_provider", new=AsyncMock()),
+            patch.object(LLMPool, "record_success_for_provider", new=AsyncMock()),
+        ):
+            with pytest.raises(TimeoutError, match="same-provider fallback also failed"):
+                await ainvoke_with_failover(
+                    zhipu_primary,
+                    ["hello"],
+                    tier="deep",
+                    provider="zhipu",
+                    primary_timeout=0.001,
+                )

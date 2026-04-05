@@ -11,6 +11,12 @@ import { create } from "zustand";
 export interface PageContext {
   page_type?: string;
   page_title?: string;
+  action?: string;
+  user_role?: string;
+  workflow_stage?: string;
+  selection?: Record<string, unknown> | null;
+  editable_scope?: Record<string, unknown> | null;
+  entity_refs?: Array<Record<string, unknown>> | null;
   course_id?: string;
   course_name?: string;
   lesson_id?: string;

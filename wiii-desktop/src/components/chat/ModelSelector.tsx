@@ -1,22 +1,27 @@
 /**
- * ModelSelector — inline LLM provider picker dropdown.
- * Cloned from DomainSelector pattern. Pill button + upward dropdown.
+ * Provider selector for per-request chat routing.
  */
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Sparkles, Cpu, ChevronUp } from "lucide-react";
-import { useModelStore } from "@/stores/model-store";
+import { AlertCircle, ChevronUp, Cpu, Sparkles } from "lucide-react";
+import { useModelStore, type RequestModelProvider } from "@/stores/model-store";
 
 const PROVIDER_ICONS: Record<string, typeof Cpu> = {
   auto: Sparkles,
   google: Cpu,
   zhipu: Cpu,
+  openai: Cpu,
+  openrouter: Cpu,
+  ollama: Cpu,
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
-  auto: "Tự động",
+  auto: "Tu dong",
   google: "Gemini",
-  zhipu: "GLM-5",
+  zhipu: "Zhipu GLM",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  ollama: "Ollama",
 };
 
 interface ModelSelectorProps {
@@ -24,27 +29,50 @@ interface ModelSelectorProps {
 }
 
 export function ModelSelector({ compact: _compact }: ModelSelectorProps = {}) {
-  const { activeProvider, setActiveProvider, providers, fetchProviders } =
-    useModelStore();
+  const {
+    activeProvider,
+    setActiveProvider,
+    providers,
+    fetchProviders,
+    refreshIfStale,
+  } = useModelStore();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const fetchedRef = useRef(false);
 
-  // Fetch providers once on mount
   useEffect(() => {
     if (!fetchedRef.current) {
       fetchedRef.current = true;
-      fetchProviders();
+      void fetchProviders();
     }
   }, [fetchProviders]);
 
-  // Outside-click close
+  useEffect(() => {
+    if (open) {
+      void fetchProviders({ force: true });
+    }
+  }, [open, fetchProviders]);
+
+  useEffect(() => {
+    const refreshVisibleProviders = () => {
+      if (document.visibilityState === "visible") {
+        void refreshIfStale(10_000);
+      }
+    };
+    window.addEventListener("focus", refreshVisibleProviders);
+    document.addEventListener("visibilitychange", refreshVisibleProviders);
+    return () => {
+      window.removeEventListener("focus", refreshVisibleProviders);
+      document.removeEventListener("visibilitychange", refreshVisibleProviders);
+    };
+  }, [refreshIfStale]);
+
   const handleClickOutside = useCallback(
     (e: MouseEvent) => {
       if (
-        open &&
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
+        open
+        && containerRef.current
+        && !containerRef.current.contains(e.target as Node)
       ) {
         setOpen(false);
       }
@@ -57,7 +85,6 @@ export function ModelSelector({ compact: _compact }: ModelSelectorProps = {}) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [handleClickOutside]);
 
-  // Escape key close
   useEffect(() => {
     if (!open) return;
     const handleKey = (e: KeyboardEvent) => {
@@ -67,29 +94,39 @@ export function ModelSelector({ compact: _compact }: ModelSelectorProps = {}) {
     return () => document.removeEventListener("keydown", handleKey);
   }, [open]);
 
-  // Hide if only 1 provider (or none)
-  if (providers.length <= 1) return null;
+  const visibleProviders = useMemo(
+    () => providers.filter((provider) => provider.state !== "hidden"),
+    [providers],
+  );
 
+  if (visibleProviders.length === 0) return null;
+
+  const activeProviderInfo = visibleProviders.find((provider) => provider.id === activeProvider);
   const ActiveIcon = PROVIDER_ICONS[activeProvider] || Sparkles;
-  const activeLabel = PROVIDER_LABELS[activeProvider] || activeProvider;
+  const activeLabel =
+    activeProviderInfo?.displayName || PROVIDER_LABELS[activeProvider] || activeProvider;
 
-  // Build options: "auto" first, then real providers
   const options: Array<{
-    id: string;
+    id: RequestModelProvider;
     label: string;
     Icon: typeof Cpu;
-    available?: boolean;
+    disabled?: boolean;
+    reasonLabel?: string | null;
+    selectedModel?: string | null;
   }> = [
     { id: "auto", label: PROVIDER_LABELS.auto, Icon: PROVIDER_ICONS.auto },
-    ...providers.map((p) => ({
-      id: p.id,
-      label: PROVIDER_LABELS[p.id] || p.displayName,
-      Icon: PROVIDER_ICONS[p.id] || Cpu,
-      available: p.available,
+    ...visibleProviders.map((provider) => ({
+      id: provider.id as RequestModelProvider,
+      label: provider.displayName || PROVIDER_LABELS[provider.id] || provider.id,
+      Icon: PROVIDER_ICONS[provider.id] || Cpu,
+      disabled: provider.state !== "selectable",
+      reasonLabel: provider.reasonLabel,
+      selectedModel: provider.selectedModel,
     })),
   ];
 
-  const handleSelect = (id: string) => {
+  const handleSelect = (id: RequestModelProvider, disabled?: boolean) => {
+    if (disabled) return;
     setActiveProvider(id);
     setOpen(false);
   };
@@ -97,9 +134,9 @@ export function ModelSelector({ compact: _compact }: ModelSelectorProps = {}) {
   return (
     <div ref={containerRef} className="relative">
       <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs text-text-secondary hover:text-text hover:bg-surface-tertiary transition-colors"
-        aria-label="Chọn model"
+        onClick={() => setOpen((value) => !value)}
+        className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text"
+        aria-label="Chon provider"
         aria-expanded={open}
         data-testid="model-selector-trigger"
       >
@@ -121,46 +158,61 @@ export function ModelSelector({ compact: _compact }: ModelSelectorProps = {}) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 4 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
-            className="absolute bottom-full left-0 mb-1 min-w-[180px] rounded-xl border border-border bg-surface shadow-lg"
+            className="absolute bottom-full left-0 mb-1 min-w-[240px] rounded-xl border border-border bg-surface shadow-lg"
             style={{ zIndex: 50 }}
             role="listbox"
-            aria-label="Danh sách model"
+            aria-label="Danh sach provider"
             data-testid="model-selector-dropdown"
           >
             <div className="py-1">
-              {options.map(({ id, label, Icon, available }) => {
+              {options.map(({ id, label, Icon, disabled, reasonLabel, selectedModel }) => {
                 const isActive = id === activeProvider;
-                const isUnavailable = available === false;
                 return (
                   <button
                     key={id}
-                    onClick={() => handleSelect(id)}
+                    onClick={() => handleSelect(id, disabled)}
+                    disabled={disabled}
                     role="option"
                     aria-selected={isActive}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors ${
+                    aria-disabled={disabled}
+                    title={disabled ? reasonLabel ?? undefined : undefined}
+                    className={`flex w-full items-start gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
                       isActive
-                        ? "text-[var(--accent)] bg-[var(--accent-light)]"
-                        : isUnavailable
-                          ? "text-text-tertiary hover:bg-surface-secondary"
+                        ? "bg-[var(--accent-light)] text-[var(--accent)]"
+                        : disabled
+                          ? "cursor-not-allowed text-text-tertiary opacity-70"
                           : "text-text hover:bg-surface-secondary"
                     }`}
                   >
-                    <Icon size={15} />
-                    <span>{label}</span>
-                    {/* Availability dot */}
-                    {id !== "auto" && (
+                    <Icon size={15} className="mt-0.5 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span>{label}</span>
+                        {disabled && id !== "auto" ? (
+                          <AlertCircle size={13} className="text-amber-500" />
+                        ) : null}
+                      </div>
+                      {selectedModel && id !== "auto" ? (
+                        <div className="truncate text-[11px] text-text-tertiary">
+                          {selectedModel}
+                        </div>
+                      ) : null}
+                      {disabled && reasonLabel ? (
+                        <div className="mt-0.5 text-[11px] text-text-tertiary">
+                          {reasonLabel}
+                        </div>
+                      ) : null}
+                    </div>
+                    {id !== "auto" ? (
                       <span
-                        className={`ml-auto w-2 h-2 rounded-full ${
-                          isUnavailable ? "bg-yellow-400" : "bg-green-500"
+                        className={`mt-1 h-2 w-2 rounded-full ${
+                          disabled ? "bg-gray-400" : "bg-green-500"
                         }`}
-                        title={isUnavailable ? "Đang bận" : "Sẵn sàng"}
+                        title={disabled ? "Tam khoa" : "San sang"}
                       />
-                    )}
-                    {isActive && id === "auto" && (
-                      <span className="ml-auto text-[var(--accent)] text-xs">
-                        ✓
-                      </span>
-                    )}
+                    ) : isActive ? (
+                      <span className="ml-auto text-xs text-[var(--accent)]">✓</span>
+                    ) : null}
                   </button>
                 );
               })}

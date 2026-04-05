@@ -15,6 +15,11 @@ from typing import List, Optional
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.singleton import singleton_factory
+from app.engine.agentic_rag.runtime_llm_socket import (
+    ainvoke_agentic_rag_llm,
+    resolve_agentic_rag_llm,
+)
+from app.engine.llm_factory import ThinkingTier
 from app.engine.llm_pool import get_llm_light  # SOTA: Shared LLM Pool
 
 logger = logging.getLogger(__name__)
@@ -67,12 +72,25 @@ class QueryRewriter:
     def _init_llm(self):
         """Initialize Gemini LLM from shared pool."""
         try:
-            # SOTA: Use shared LLM from pool (memory optimized)
-            self._llm = get_llm_light()
+            # Prefer the currently-selectable runtime provider instead of pinning
+            # query rewriting to the default provider forever.
+            self._llm = self._resolve_runtime_llm()
             logger.info("QueryRewriter initialized with shared LIGHT tier LLM")
         except Exception as e:
             logger.error("Failed to initialize QueryRewriter LLM: %s", e)
             self._llm = None
+
+    def _resolve_runtime_llm(self):
+        """Resolve a request-time LIGHT-tier LLM from the shared provider socket."""
+        llm = resolve_agentic_rag_llm(
+            tier=ThinkingTier.LIGHT,
+            cached_llm=self._llm,
+            fallback_factory=get_llm_light,
+            component="QueryRewriter",
+        )
+        if llm is not None:
+            self._llm = llm
+        return llm
     
     async def rewrite(self, query: str, feedback: str = "") -> str:
         """
@@ -85,7 +103,8 @@ class QueryRewriter:
         Returns:
             Rewritten query
         """
-        if not self._llm:
+        llm = self._resolve_runtime_llm()
+        if not llm:
             return self._rule_based_rewrite(query)
         
         try:
@@ -97,7 +116,12 @@ class QueryRewriter:
                 ))
             ]
             
-            response = await self._llm.ainvoke(messages)
+            response = await ainvoke_agentic_rag_llm(
+                llm=llm,
+                messages=messages,
+                tier=ThinkingTier.LIGHT,
+                component="QueryRewriter",
+            )
             
             # SOTA FIX: Handle Gemini 2.5 Flash content block format
             from app.services.output_processor import extract_thinking_from_response
@@ -124,7 +148,8 @@ class QueryRewriter:
         Returns:
             Expanded query
         """
-        if not self._llm:
+        llm = self._resolve_runtime_llm()
+        if not llm:
             return self._add_domain_keywords(query)
         
         try:
@@ -132,7 +157,12 @@ class QueryRewriter:
                 HumanMessage(content=EXPAND_PROMPT.format(query=query))
             ]
             
-            response = await self._llm.ainvoke(messages)
+            response = await ainvoke_agentic_rag_llm(
+                llm=llm,
+                messages=messages,
+                tier=ThinkingTier.LIGHT,
+                component="QueryRewriterExpand",
+            )
             
             # SOTA FIX: Handle Gemini 2.5 Flash content block format
             from app.services.output_processor import extract_thinking_from_response
@@ -153,7 +183,8 @@ class QueryRewriter:
         Returns:
             List of simpler sub-queries
         """
-        if not self._llm:
+        llm = self._resolve_runtime_llm()
+        if not llm:
             return [query]  # Can't decompose without LLM
         
         try:
@@ -161,7 +192,12 @@ class QueryRewriter:
                 HumanMessage(content=DECOMPOSE_PROMPT.format(query=query))
             ]
             
-            response = await self._llm.ainvoke(messages)
+            response = await ainvoke_agentic_rag_llm(
+                llm=llm,
+                messages=messages,
+                tier=ThinkingTier.LIGHT,
+                component="QueryRewriterDecompose",
+            )
             
             # SOTA FIX: Handle Gemini 2.5 Flash content block format
             from app.services.output_processor import extract_thinking_from_response

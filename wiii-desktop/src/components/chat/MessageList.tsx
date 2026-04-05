@@ -18,7 +18,20 @@ import { SourceCitation } from "./SourceCitation";
 const VIRTUALIZATION_THRESHOLD = 50;
 const MESSAGE_GAP = 20;
 
-function getVisibleStreamingBlocks(
+function isHiddenTechnicalStreamingBlock(block: ContentBlock) {
+  return false;
+}
+
+function hasVisibleThinkingContent(block: ContentBlock) {
+  if (block.type !== "thinking") return true;
+  const content = typeof block.content === "string" ? block.content.trim() : "";
+  const summary = "summary" in block && typeof block.summary === "string"
+    ? block.summary.trim()
+    : "";
+  return Boolean(content || summary);
+}
+
+export function getVisibleStreamingBlocks(
   blocks: ContentBlock[],
   showThinking: boolean,
   thinkingLevel: string,
@@ -28,7 +41,14 @@ function getVisibleStreamingBlocks(
     showThinking,
     thinkingLevel as import("@/api/types").ThinkingLevel,
   );
-  return blocks.filter((block) => includeThinking || !["thinking", "action_text", "tool_execution"].includes(block.type));
+  return blocks.filter((block) => {
+    if (!hasVisibleThinkingContent(block)) return false;
+    return includeThinking || !["thinking", "action_text"].includes(block.type);
+  });
+}
+
+export function hasRenderableStreamingBlocks(blocks: ContentBlock[]): boolean {
+  return blocks.some((block) => hasVisibleThinkingContent(block) && !isHiddenTechnicalStreamingBlock(block));
 }
 
 interface MessageListProps {
@@ -52,15 +72,20 @@ export function MessageList({
     streamingPhases,
     streamingSources,
     streamingContent,
+    streamingStep,
     streamingStartTime,
   } = useChatStore();
 
   const { show_thinking, thinking_level } = useSettingsStore((s) => s.settings);
   const { state: avatarState, mood: avatarMood, soulEmotion } = useAvatarState();
   const visibleStreamingBlocks = getVisibleStreamingBlocks(streamingBlocks, show_thinking, thinking_level);
+  const shouldHideTimer = hasRenderableStreamingBlocks(visibleStreamingBlocks) || Boolean(streamingContent);
+  const scrollDependency = isStreaming
+    ? `${messages.length}:${streamingContent.length}:${streamingBlocks.length}:${streamingPhases.length}:${streamingStep ?? ""}`
+    : messages.length;
 
   const { containerRef, scrollToBottom, isAtBottom } = useAutoScroll(
-    isStreaming ? streamingContent : messages.length,
+    scrollDependency,
   );
 
   let lastAssistantIdx = -1;
@@ -163,10 +188,11 @@ export function MessageList({
                 />
 
                 {/* Streaming timer — only show when no thinking blocks visible yet */}
-                {streamingStartTime && !visibleStreamingBlocks.length && !streamingContent && (
+                {streamingStartTime && !shouldHideTimer && (
                   <StreamingTimer
                     startTime={streamingStartTime}
                     hasAnswer={false}
+                    statusText={streamingStep}
                   />
                 )}
 
@@ -195,7 +221,15 @@ export function MessageList({
 
 // ThinkingIndicatorDelayed removed — StreamingTimer handles this now
 
-function StreamingTimer({ startTime, hasAnswer }: { startTime: number; hasAnswer?: boolean }) {
+function StreamingTimer({
+  startTime,
+  hasAnswer,
+  statusText,
+}: {
+  startTime: number;
+  hasAnswer?: boolean;
+  statusText?: string;
+}) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -217,6 +251,11 @@ function StreamingTimer({ startTime, hasAnswer }: { startTime: number; hasAnswer
         {hasAnswer ? "Wiii đang hoàn thiện" : "Wiii đang suy nghĩ"}
       </span>
       <span className="streaming-timer__time">{timeStr}</span>
+      {statusText?.trim() ? (
+        <span className="streaming-timer__status ml-2 text-text-secondary">
+          {statusText.trim()}
+        </span>
+      ) : null}
     </div>
   );
 }

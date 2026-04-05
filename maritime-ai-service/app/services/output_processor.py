@@ -1,301 +1,97 @@
-"""
-Output Processor - Response Formatting and Validation
-
-Extracted from chat_service.py as part of Clean Architecture refactoring.
-Handles all output processing: formatting, validation, source merging.
-
-**Pattern:** Processor Service
-**Spec:** CHỈ THỊ KỸ THUẬT SỐ 25 - Project Restructure
-"""
+"""Output processor compatibility facade."""
 
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from app.core.constants import MAX_CONTENT_SNIPPET_LENGTH
 from app.models.schemas import InternalChatResponse, Source, UserRole
+from app.services.output_response_runtime import (
+    create_blocked_response as _create_blocked_response,
+)
+from app.services.output_response_runtime import (
+    create_clarification_response as _create_clarification_response,
+)
+from app.services.output_response_runtime import validate_and_format as _validate_and_format
+from app.services.output_source_runtime import (
+    coerce_source_mapping as _coerce_source_mapping,
+)
+from app.services.output_source_runtime import format_sources as _format_sources
+from app.services.output_source_runtime import (
+    merge_same_page_sources as _merge_same_page_sources,
+)
+from app.services.output_thinking_runtime import (
+    extract_thinking_from_response as _extract_thinking_from_response,
+)
 
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# DATA CLASSES
-# =============================================================================
-
 @dataclass
 class ProcessingResult:
     """Result of processing a chat request."""
+
     message: str
-    agent_type: Any  # AgentType enum
+    agent_type: Any
     sources: Optional[List[Source]] = None
     blocked: bool = False
     metadata: dict = None
-    thinking: Optional[str] = None  # CHỈ THỊ SỐ 28: Gemini thinking trace
+    thinking: Optional[str] = None
 
-
-# =============================================================================
-# THINKING EXTRACTION UTILITIES (CHỈ THỊ SỐ 29 v8 - Centralized)
-# =============================================================================
 
 def extract_thinking_from_response(content: Any) -> tuple[str, Optional[str]]:
-    """
-    Extract thinking trace and text from LLM response.
-    
-    CHỈ THỊ SỐ 29 v8: Now delegates to centralized ThinkingPostProcessor
-    which handles both formats:
-    1. Text-based <thinking> tags (preferred - Vietnamese)
-    2. Gemini native format {'type': 'thinking'}
-    
-    This is a backward-compatible wrapper - all existing code that calls
-    this function will automatically use the new centralized processor.
-    
-    Args:
-        content: Response content (str, list of content blocks, or other)
-        
-    Returns:
-        Tuple of (text_content, thinking_trace)
-        - text_content: The actual response text (with <thinking> removed)
-        - thinking_trace: The model's reasoning (if available)
-        
-    Example:
-        >>> text, thinking = extract_thinking_from_response(response.content)
-        >>> if thinking:
-        ...     logger.info(f"Model reasoning: {thinking[:100]}...")
-    """
-    # Import here to avoid circular imports
-    from app.services.thinking_post_processor import get_thinking_processor
-    
-    return get_thinking_processor().process(content)
+    """Backward-compatible wrapper for centralized thinking extraction."""
+    return _extract_thinking_from_response(content)
 
-
-# =============================================================================
-# OUTPUT PROCESSOR SERVICE
-# =============================================================================
 
 class OutputProcessor:
-    """
-    Handles all output processing for chat responses.
-    
-    Responsibilities:
-    - Output validation (Guardrails)
-    - Source merging (same-page sources)
-    - Response formatting
-    - Metadata building
-    
-    **Pattern:** Processor Service
-    """
-    
-    def __init__(
-        self,
-        guardrails=None,
-        response_builder=None
-    ):
-        """
-        Initialize with dependencies.
-        
-        Args:
-            guardrails: Guardrails for output validation
-            response_builder: ChatResponseBuilder for source merging
-        """
+    """Facade for response validation, source formatting, and metadata shaping."""
+
+    def __init__(self, guardrails=None, response_builder=None):
         self._guardrails = guardrails
         self._response_builder = response_builder
-        
         logger.info("OutputProcessor initialized")
-    
+
     async def validate_and_format(
         self,
         result: ProcessingResult,
         session_id: UUID,
         user_name: Optional[str] = None,
-        user_role: UserRole = UserRole.STUDENT
+        user_role: UserRole = UserRole.STUDENT,
     ) -> InternalChatResponse:
-        """
-        Validate and format the processing result into a response.
-        
-        Args:
-            result: ProcessingResult from agent processing
-            session_id: Session UUID
-            user_name: User's name for personalization
-            user_role: User's role
-            
-        Returns:
-            InternalChatResponse ready for API serialization
-        """
-        message = result.message
-        
-        # Step 1: Validate output
-        if self._guardrails:
-            from app.engine.guardrails import ValidationStatus
-            output_result = await self._guardrails.validate_output(message)
-            if output_result.status == ValidationStatus.FLAGGED:
-                message += "\n\n_Note: Please verify safety-critical information with official sources._"
-        
-        # Step 2: Build metadata
-        response_metadata = {
-            "session_id": str(session_id),
-            "user_name": user_name,
-            "user_role": user_role.value,
-            **(result.metadata or {})
-        }
-        
-        # CHỈ THỊ SỐ 28: Include thinking trace if available
-        if result.thinking:
-            response_metadata["thinking"] = result.thinking
-            logger.info("[THINKING] Included %d chars of reasoning in response", len(result.thinking))
-        
-        # Step 3: Create response
-        return InternalChatResponse(
-            response_id=uuid4(),
-            message=message,
-            agent_type=result.agent_type,
-            sources=result.sources,
-            metadata=response_metadata
+        return await _validate_and_format(
+            guardrails=self._guardrails,
+            logger=logger,
+            result=result,
+            session_id=session_id,
+            user_name=user_name,
+            user_role=user_role,
         )
-    
+
     def merge_same_page_sources(self, sources: List[Any]) -> List[Dict[str, Any]]:
-        """
-        Merge sources from the same page into single entries with combined bounding_boxes.
-        
-        Feature: source-highlight-citation
-        **Validates: Requirements 2.4**
-        
-        Args:
-            sources: List of source dictionaries or Pydantic citation models
-            
-        Returns:
-            Merged list of sources
-        """
-        normalized_sources = [self._coerce_source_mapping(source) for source in sources]
+        return _merge_same_page_sources(sources, response_builder=self._response_builder)
 
-        if self._response_builder:
-            return self._response_builder.merge_same_page_sources(normalized_sources)
-
-        # Fallback implementation if no response_builder
-        if not normalized_sources:
-            return []
-
-        # Group by (document_id, page_number)
-        page_groups: Dict[str, Dict[str, Any]] = {}
-
-        for source in normalized_sources:
-            doc_id = source.get("document_id")
-            page_num = source.get("page_number")
-            
-            if doc_id and page_num:
-                key = f"{doc_id}_{page_num}"
-                if key not in page_groups:
-                    page_groups[key] = {
-                        **source,
-                        "bounding_boxes": []
-                    }
-                
-                # Merge bounding_boxes
-                if source.get("bounding_boxes"):
-                    page_groups[key]["bounding_boxes"].extend(source["bounding_boxes"])
-            else:
-                # No doc_id/page_num, add as-is
-                key = source.get("node_id", str(len(page_groups)))
-                if key not in page_groups:
-                    page_groups[key] = source
-        
-        return list(page_groups.values())
-    
     @staticmethod
     def _coerce_source_mapping(source: Any) -> Dict[str, Any]:
-        """Normalize citations/source objects into plain dicts."""
-        if isinstance(source, Mapping):
-            return dict(source)
-        if hasattr(source, "model_dump"):
-            return source.model_dump(exclude_none=True)
-        if hasattr(source, "dict"):
-            return source.dict(exclude_none=True)
-        raise TypeError(f"Unsupported source type: {type(source)!r}")
+        return _coerce_source_mapping(source)
 
-    def format_sources(
-        self,
-        raw_sources: List[Any]
-    ) -> List[Source]:
-        """
-        Format raw source dictionaries into Source objects.
-        
-        Args:
-            raw_sources: List of raw source dictionaries
-            
-        Returns:
-            List of Source objects
-        """
-        if not raw_sources:
-            return []
+    def format_sources(self, raw_sources: List[Any]) -> List[Source]:
+        return _format_sources(raw_sources, response_builder=self._response_builder)
 
-        # First merge same-page sources
-        merged_sources = self.merge_same_page_sources(raw_sources)
-        
-        sources = []
-        for s in merged_sources:
-            sources.append(Source(
-                node_id=s.get("node_id", ""),
-                title=s.get("title", ""),
-                source_type="knowledge_graph",
-                content_snippet=s.get("content", "")[:MAX_CONTENT_SNIPPET_LENGTH],
-                image_url=s.get("image_url"),
-                page_number=s.get("page_number"),
-                document_id=s.get("document_id"),
-                bounding_boxes=s.get("bounding_boxes")
-            ))
-        
-        return sources
-    
     def create_blocked_response(
         self,
         issues: List[str],
-        refusal_message: Optional[str] = None
+        refusal_message: Optional[str] = None,
     ) -> InternalChatResponse:
-        """
-        Create response for blocked content.
-        
-        Args:
-            issues: List of issues that caused blocking
-            refusal_message: Custom refusal message
-            
-        Returns:
-            InternalChatResponse with blocked metadata
-        """
-        from enum import Enum
-        
-        class AgentType(str, Enum):
-            CHAT = "chat"
-        
-        message = refusal_message or "Xin lỗi, mình chưa xử lý được yêu cầu này nha~ (˶˃ ᵕ ˂˶)"
-        if self._guardrails:
-            message = self._guardrails.get_refusal_message()
-        
-        return InternalChatResponse(
-            response_id=uuid4(),
-            message=message,
-            agent_type=AgentType.CHAT,
-            metadata={"blocked": True, "issues": issues}
+        return _create_blocked_response(
+            guardrails=self._guardrails,
+            issues=issues,
+            refusal_message=refusal_message,
         )
-    
+
     def create_clarification_response(self, content: str) -> InternalChatResponse:
-        """Create response requesting clarification."""
-        from enum import Enum
-        
-        class AgentType(str, Enum):
-            CHAT = "chat"
-        
-        return InternalChatResponse(
-            response_id=uuid4(),
-            message=content,
-            agent_type=AgentType.CHAT,
-            metadata={"requires_clarification": True}
-        )
+        return _create_clarification_response(content)
 
-
-# =============================================================================
-# SINGLETON
-# =============================================================================
 
 _output_processor: Optional[OutputProcessor] = None
 
@@ -310,12 +106,12 @@ def get_output_processor() -> OutputProcessor:
 
 def init_output_processor(
     guardrails=None,
-    response_builder=None
+    response_builder=None,
 ) -> OutputProcessor:
     """Initialize OutputProcessor with dependencies."""
     global _output_processor
     _output_processor = OutputProcessor(
         guardrails=guardrails,
-        response_builder=response_builder
+        response_builder=response_builder,
     )
     return _output_processor

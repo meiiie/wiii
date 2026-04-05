@@ -1,248 +1,510 @@
-"""
-Tutor Agent Node - Teaching Specialist (SOTA ReAct Pattern)
+﻿"""Tutor agent node for teaching flows with ReAct + RAG-backed tools."""
 
-Handles educational interactions with tool-enabled RAG retrieval.
-
-**SOTA 2026 Pattern:**
-- Tool-Enabled Agent with ReAct Loop
-- RAG-First approach via system prompt
-- Utility tools: calculator, datetime, web search
-- Uses CorrectiveRAG internally via tool_knowledge_search
-
-**Integrated with agents/ framework for config and tracing.**
-"""
-
+import json
+import html
 import logging
+import re
 from typing import Optional, List, Dict, Any
 
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.config import settings
 from app.engine.multi_agent.agent_config import AgentConfigRegistry
-from app.engine.reasoning import ReasoningRenderRequest, get_reasoning_narrator
-from app.engine.reasoning.reasoning_narrator import build_tool_context_summary
 from app.services.output_processor import extract_thinking_from_response
 from app.engine.multi_agent.state import AgentState
 from app.engine.agents import TUTOR_AGENT_CONFIG
 from app.engine.tools.rag_tools import (
     tool_knowledge_search,
     get_last_retrieved_sources,
-    get_last_native_thinking,  # CHỈ THỊ SỐ 29 v9: Option B+ thinking propagation
-    get_last_reasoning_trace,  # CHỈ THỊ SỐ 31 v3: CRAG trace propagation
+    get_last_native_thinking,  # CH? TH? S? 29 v9: Option B+ thinking propagation
+    get_last_reasoning_trace,  # CH? TH? S? 31 v3: CRAG trace propagation
     get_last_confidence,  # SOTA 2025: Confidence-based early termination
-    clear_retrieved_sources
+    clear_retrieved_sources,
 )
 from app.engine.tools.utility_tools import tool_calculator, tool_current_datetime
 from app.engine.tools.web_search_tools import tool_web_search
 from app.engine.tools.think_tool import tool_think
 from app.engine.tools.progress_tool import tool_report_progress
 from app.engine.tools.invocation import get_tool_by_name, invoke_tool_with_runtime
-from app.engine.tools.runtime_context import (
-    build_tool_runtime_context,
-    filter_tools_for_role,
-)
 from app.engine.multi_agent.visual_intent_resolver import (
-    filter_tools_for_visual_intent,
     preferred_visual_tool_name,
     required_visual_tool_names,
     resolve_visual_intent,
 )
-# SOTA 2025: PromptLoader for YAML-driven persona (CrewAI pattern)
 from app.prompts.prompt_loader import get_prompt_loader
+from app.engine.multi_agent.agents.tutor_response import (
+    build_tutor_fallback_response,
+    collect_tutor_model_message,
+    extract_tutor_content_with_thinking,
+    looks_like_tutor_placeholder_answer,
+    normalize_tutor_answer_shape,
+    recover_tutor_answer_from_messages,
+)
+from app.engine.multi_agent.agents.tutor_request_runtime import (
+    build_tutor_tools,
+    prepare_tutor_request,
+)
+from app.engine.multi_agent.agents.tutor_runtime import initialize_tutor_llm
+from app.engine.multi_agent.agents.tutor_tool_dispatch_runtime import (
+    dispatch_tutor_tool_call,
+)
+from app.engine.multi_agent.graph_surface_runtime import (
+    get_effective_provider_impl as _get_effective_provider,
+)
+from app.engine.multi_agent.direct_prompts import (
+    _resolve_tool_choice,
+)
+from app.engine.reasoning import (
+    align_visible_thinking_language,
+    capture_thinking_lifecycle_event,
+    resolve_visible_thinking_from_lifecycle,
+    record_thinking_snapshot,
+    sanitize_public_tutor_thinking,
+)
+from app.prompts.prompt_context_utils import build_response_language_instruction
+from app.engine.multi_agent.agents.tutor_surface import (
+    LLM_CODE_GEN_VISUAL_INSTRUCTION,
+    STRUCTURED_VISUAL_TOOL_INSTRUCTION,
+    THINKING_CHAIN_INSTRUCTION,
+    TOOL_INSTRUCTION,
+    TOOL_INSTRUCTION_DEFAULT,
+    _MAX_PHASE_TRANSITIONS,
+    _infer_tutor_loop_phase,
+    _iteration_beat,
+    _iteration_label,
+    _tool_acknowledgment,
+    build_tutor_identity_grounding_prompt,
+    build_tutor_living_stream_cues,
+    build_tutor_system_prompt,
+)
+from app.engine.multi_agent.graph_runtime_helpers import _remember_runtime_target
 
 logger = logging.getLogger(__name__)
 
+_POST_TOOL_ADDRESS_MARKERS = (
+    "chào bạn",
+    "chao ban",
+    "để mình",
+    "de minh",
+    "mình sẽ",
+    "minh se",
+    "bạn có",
+    "ban co",
+    "nếu cần",
+    "neu can",
+    "cứ hỏi",
+    "cu hoi",
+    "takeaway",
+    "mẹo ghi nhớ",
+    "meo ghi nho",
+)
 
-# =============================================================================
-# TOOL INSTRUCTION (Appended to YAML-driven prompt)
-# =============================================================================
+_POST_TOOL_SOCIAL_MARKERS = (
+    "tuyệt vời",
+    "tuyet voi",
+    "rất ấn tượng",
+    "rat an tuong",
+    "đúng chuẩn",
+    "dung chuan",
+    "đúng không nào",
+    "dung khong nao",
+    "bạn biết đấy",
+    "ban biet day",
+    "wiii có thể giúp gì",
+    "wiii co the giup gi",
+    "hay là chúng ta",
+    "hay la chung ta",
+    "sẵn sàng đi sâu",
+    "san sang di sau",
+    "wiii đã sẵn sàng",
+    "wiii da san sang",
+    "muốn đi sâu",
+    "muon di sau",
+    "trò chuyện về việc đó",
+    "tro chuyen ve viec do",
+    "hoàn toàn chính xác",
+    "hoan toan chinh xac",
+    "màn mở đầu",
+    "man mo dau",
+    "bạn nhảy của nó",
+    "ban nhay cua no",
+)
 
-TOOL_INSTRUCTION_DEFAULT = """
-## Gợi ý sử dụng Tools:
+_POST_TOOL_FACT_HINTS = (
+    "áp dụng",
+    "ap dung",
+    "mạn phải",
+    "man phai",
+    "nhường đường",
+    "nhuong duong",
+    "tránh cắt",
+    "tranh cat",
+    "giữ hướng",
+    "giu huong",
+    "nguy cơ",
+    "nguy co",
+    "đâm va",
+    "dam va",
+    "hành động sớm",
+    "hanh dong som",
+    "điều kiện",
+    "dieu kien",
+    "stand-on",
+    "give-way",
+)
 
-Khi gặp câu hỏi chuyên ngành, ưu tiên gọi `tool_knowledge_search` trước —
-dữ liệu từ knowledge base chính xác hơn kiến thức chung, và user đánh giá cao
-khi có sources kèm theo.
-
-Tra cứu xong rồi suy nghĩ sẽ cho câu trả lời tốt hơn — vì có dữ liệu thật
-để phân tích thay vì đoán từ kiến thức chung.
-
-Trích dẫn nguồn giúp user tin tưởng và có thể verify. Với câu chào hỏi hoặc
-tâm sự, không cần tra cứu — trò chuyện tự nhiên là đủ.
-
-## TOOL BỔ SUNG:
-- `tool_calculator`: Tính toán số học (cộng, trừ, nhân, chia, sqrt, sin, cos, log, v.v.)
-- `tool_current_datetime`: Xem ngày giờ hiện tại (UTC+7)
-- `tool_web_search`: Tìm kiếm thông tin trên web khi cần thông tin mới nhất hoặc ngoài cơ sở dữ liệu nội bộ
-"""
-
-# Legacy alias
-TOOL_INSTRUCTION = TOOL_INSTRUCTION_DEFAULT
-
-STRUCTURED_VISUAL_TOOL_INSTRUCTION = """
-## CONG CU MINH HOA TRUC QUAN:
-- `tool_generate_visual`: Dung cho minh hoa inline trong chat.
-- Uu tien `tool_generate_visual` cho so sanh, quy trinh, kien truc, concept, infographic, chart, timeline, map_lite.
-- Với article figure/chart runtime, mac dinh sinh `code_html` truc tiep trong `tool_generate_visual`
-  voi renderer_kind=`inline_html`, SVG-first, va chi fallback sang structured spec khi that su can.
-- Khi can mo phong, canvas, slider, keo tha, hoac mini app, dung `tool_create_visual_code`
-  cho lane `code_studio_app`/`artifact`, khong day simulation vao article figure lane.
-- Khong chen payload JSON vao cau tra loi. Chi viet narrative + takeaway.
-- QUAN TRONG: Moi layer/step/branch PHAI co description chi tiet.
-  Khong chi ten, ma can giai thich vai tro, cach hoat dong, y nghia.
-  Vi du: thay vi chi "API Gateway", hay them description "Tiep nhan va phan phoi request, xac thuc JWT, rate limiting".
-"""
-
-# Appended when enable_llm_code_gen_visuals=True
-LLM_CODE_GEN_VISUAL_INSTRUCTION = """
-## CUSTOM VISUAL (code_html - CHI KHI THAT SU CAN):
-- Với article figure/chart runtime, `code_html` la lane mac dinh khi can visual/chat quality cao:
-  sinh HTML/SVG truc tiep, uu tien SVG-first, giai thich claim ro rang, va giu inline nhu mot phan cua bai viet.
-- `tool_create_visual_code` chi dung cho simulation, mini tool, widget, app, artifact, hoac interaction bespoke.
-- Dung CSS variables co san: --bg, --bg2, --bg3, --text, --text2, --text3,
-  --accent, --green, --purple, --amber, --teal, --pink, --border, --radius.
-- Dark mode tu dong qua CSS variables — KHONG can media query rieng.
-- Chi dung JavaScript khi that su can (animation, interaction, canvas loop). Uu tien SVG/CSS cho article figure.
-- Giu host-owned shell, hierarchy ro rang, va tranh cam giac widget card tach roi khoi bai viet.
-- PHAI co spec_json (du la {}) va visual_type hop le.
-- Vi du dung code_html: tao SVG diagram custom, chart benchmark, motion explainer, flowchart phuc tap,
-  so do mang luoi, visual hoa data doc dao, hoac app inline.
-"""
-
-_MAX_PHASE_TRANSITIONS = 4
-
-# Sprint 148: Multi-phase thinking instruction (appended when thinking_effort >= high)
-THINKING_CHAIN_INSTRUCTION = """
-## PHONG CÁCH TƯ DUY (Multi-Phase Thinking)
-
-Khi xử lý câu hỏi phức tạp, hãy chia quá trình thành nhiều giai đoạn:
-
-1. **Tìm kiếm** → Dùng tool_knowledge_search để tra cứu TRƯỚC TIÊN
-2. **Báo cáo tiến độ** → Dùng tool_report_progress để thông báo cho người dùng
-3. **Phân tích** → Dùng tool_think để suy nghĩ dựa trên kết quả tìm được
-4. **Báo cáo kết quả** → Dùng tool_report_progress
-5. **Tổng hợp** → Trả lời cuối cùng dựa trên nguồn tìm được
-
-Ví dụ gọi tool_report_progress:
-- Sau khi phân tích xong: message="Wiii đã hiểu câu hỏi. Đang tìm kiếm tài liệu...", phase_label="Tra cứu tri thức"
-- Sau khi tìm được tài liệu: message="Đã tìm được tài liệu liên quan! Đang phân tích chi tiết...", phase_label="Phân tích kết quả"
-- Sau khi phân tích: message="Phân tích xong. Đang soạn câu trả lời đầy đủ...", phase_label="Soạn câu trả lời"
-
-Chỉ dùng tool_report_progress khi thật sự chuyển sang giai đoạn mới, KHÔNG lạm dụng.
-"""
-
-
-def _iteration_label(iteration: int, tools_used: list) -> str:
-    """Sprint 146b: Context-aware thinking block label."""
-    if iteration == 0:
-        return "Phân tích câu hỏi"
-    if tools_used:
-        return "Soạn câu trả lời"
-    return f"Suy nghĩ (lần {iteration + 1})"
-
-
-def _infer_tutor_loop_phase(
-    *,
-    iteration: int = 0,
-    tools_used: Optional[List[Dict[str, Any]]] = None,
-    phase_label: str = "",
-) -> str:
-    """Infer the tutor beat phase from the current loop state."""
-    label = (phase_label or "").strip().lower()
-    if any(keyword in label for keyword in ("tra cứu", "tài liệu", "nguồn", "search")):
-        return "retrieve"
-    if any(keyword in label for keyword in ("phân tích", "kiểm", "đối chiếu", "so lại")):
-        return "verify"
-    if any(keyword in label for keyword in ("soạn", "giải thích", "trả lời", "tổng hợp")):
-        return "synthesize"
-    if tools_used:
-        return "explain"
-    if iteration <= 0:
-        return "attune"
-    return "verify"
+_POST_TOOL_TENSION_HINTS = (
+    "không",
+    "khong",
+    "tránh",
+    "tranh",
+    "đừng",
+    "dung",
+    "dễ",
+    "luu y",
+    "lưu ý",
+    "tuy nhiên",
+    "tuy nhien",
+    "nhưng",
+    "nhung",
+)
 
 
-async def _iteration_beat(
-    *,
-    query: str,
-    context: dict,
-    iteration: int,
-    tools_used: list,
-    phase_label: str = "",
-):
-    """Build a tutor reasoning beat for the current loop phase."""
-    phase = _infer_tutor_loop_phase(
-        iteration=iteration,
-        tools_used=tools_used,
-        phase_label=phase_label,
-    )
-    return await get_reasoning_narrator().render(
-        ReasoningRenderRequest(
-            node="tutor_agent",
-            phase=phase,
-            cue=(phase_label or "general"),
-            user_goal=query,
-            conversation_context=str(context.get("conversation_summary", "")),
-            capability_context=str(context.get("capability_context", "")),
-            next_action="Tiếp tục giảng giải theo nhịp người dùng đang cần.",
-            observations=[
-                f"iteration={iteration}",
-                f"tools_used={len(tools_used)}",
-                phase_label,
-            ],
-            user_id=str(context.get("user_id", "__global__")),
-            organization_id=context.get("organization_id"),
-            personality_mode=context.get("personality_mode"),
-            mood_hint=context.get("mood_hint"),
-            visibility_mode="rich",
-            style_tags=["tutor", phase],
+def _strip_post_tool_markup(text: str) -> str:
+    cleaned = str(text or "")
+    cleaned = re.sub(r"</?answer>", " ", cleaned, flags=re.I)
+    cleaned = re.sub(r"</?thinking>", " ", cleaned, flags=re.I)
+    cleaned = re.sub(r"<!--[\s\S]*?-->", " ", cleaned, flags=re.I)
+    cleaned = re.sub(r"`{3}[\s\S]*?`{3}", " ", cleaned)
+    cleaned = re.sub(r"`+", " ", cleaned)
+    cleaned = re.sub(r"[*_#>\[\]\{\}]", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
+def _split_post_tool_units(text: str) -> list[str]:
+    if not text:
+        return []
+    units = re.split(r"(?<=[\.\!\?])\s+|\n+|\s+•\s+|\s+\*\s+|\s+-\s+", text)
+    cleaned_units: list[str] = []
+    seen: set[str] = set()
+    for raw_unit in units:
+        unit = " ".join(str(raw_unit or "").split()).strip(" -•")
+        if len(unit) < 20:
+            continue
+        normalized = unit.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        cleaned_units.append(unit)
+    return cleaned_units
+
+
+def _looks_like_post_tool_address(unit: str) -> bool:
+    lowered = str(unit or "").lower().strip()
+    return any(marker in lowered for marker in _POST_TOOL_ADDRESS_MARKERS)
+
+
+def _looks_like_post_tool_social_or_decorative(unit: str) -> bool:
+    lowered = str(unit or "").lower().strip()
+    if any(marker in lowered for marker in _POST_TOOL_SOCIAL_MARKERS):
+        return True
+    if lowered.count("!") >= 2:
+        return True
+    if "?" in lowered and any(
+        marker in lowered
+        for marker in (
+            "ban",
+            "bạn",
+            "chung ta",
+            "chúng ta",
+            "wiii",
         )
+    ):
+        return True
+    return False
+
+
+def distill_post_tool_context(tool_result_text: str | None) -> str:
+    """Extract non-answer-shaped cues from a raw tool result."""
+
+    cleaned = _strip_post_tool_markup(str(tool_result_text or ""))
+    if not cleaned:
+        return ""
+
+    units = _split_post_tool_units(cleaned)
+    if not units:
+        return ""
+
+    factual_units: list[str] = []
+    tension_units: list[str] = []
+    fallback_units: list[str] = []
+
+    for unit in units:
+        lowered = unit.lower()
+        if _looks_like_post_tool_address(unit):
+            continue
+        if _looks_like_post_tool_social_or_decorative(unit):
+            continue
+        if any(marker in lowered for marker in _POST_TOOL_FACT_HINTS):
+            factual_units.append(unit)
+            continue
+        if any(marker in lowered for marker in _POST_TOOL_TENSION_HINTS):
+            tension_units.append(unit)
+            continue
+        fallback_units.append(unit)
+
+    selected_factual: list[str] = []
+    seen_factual: set[str] = set()
+    for unit in factual_units + fallback_units:
+        normalized = unit.lower()
+        if normalized in seen_factual:
+            continue
+        seen_factual.add(normalized)
+        selected_factual.append(unit)
+        if len(selected_factual) >= 3:
+            break
+
+    selected_tension: list[str] = []
+    for unit in tension_units:
+        normalized = unit.lower()
+        if normalized in seen_factual:
+            continue
+        if normalized in {item.lower() for item in selected_tension}:
+            continue
+        selected_tension.append(unit)
+        if len(selected_tension) >= 2:
+            break
+
+    lines: list[str] = []
+    if selected_factual:
+        lines.append("Tin hieu vua lo ra:")
+        lines.extend(f"- {unit}" for unit in selected_factual)
+    if selected_tension:
+        lines.append("Cho de nham hoac diem can canh:")
+        lines.extend(f"- {unit}" for unit in selected_tension)
+
+    return "\n".join(lines).strip()
+
+
+def _extract_visual_html_cues(code_html: str | None) -> list[str]:
+    raw_html = str(code_html or "").strip()
+    if not raw_html:
+        return []
+
+    text = html.unescape(re.sub(r"<[^>]+>", "\n", raw_html))
+    text = re.sub(r"\s+", " ", text)
+    candidates = re.split(r"(?<=[\.\!\?])\s+|(?<=:)\s+|\n+", text)
+    keyword_fragments = (
+        "quy tắc",
+        "quy tac",
+        "colreg",
+        "đối hướng",
+        "doi huong",
+        "cắt hướng",
+        "cat huong",
+        "mạn phải",
+        "man phai",
+        "nhường đường",
+        "nhuong duong",
+        "giữ hướng",
+        "giu huong",
+        "tránh cắt mũi",
+        "tranh cat mui",
     )
 
+    selected: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        line = " ".join(str(candidate or "").split()).strip(" -•")
+        if len(line) < 18 or len(line) > 220:
+            continue
+        lowered = line.lower()
+        if not any(fragment in lowered for fragment in keyword_fragments):
+            continue
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        selected.append(line)
+        if len(selected) >= 4:
+            break
+    return selected
 
-async def _tool_acknowledgment(
+
+def distill_visual_tool_context(
+    tool_result_text: str | None,
     *,
-    query: str,
-    context: dict,
+    tool_call_args: dict[str, Any] | None = None,
+) -> str:
+    """Extract compact visual signals from a structured visual tool result."""
+
+    raw_text = str(tool_result_text or "").strip()
+    tool_call_args = tool_call_args or {}
+    html_cues = _extract_visual_html_cues(tool_call_args.get("code_html"))
+
+    payload: dict[str, Any] | None = None
+    if raw_text:
+        try:
+            parsed = json.loads(raw_text)
+            if isinstance(parsed, dict):
+                payload = parsed
+        except Exception:
+            payload = None
+
+    def _pick(*keys: str) -> str:
+        if not payload:
+            return ""
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+
+    claim = _pick("claim")
+    title = _pick("title")
+    pedagogical_role = _pick("pedagogical_role")
+    visual_type = _pick("visual_type", "type")
+    renderer_kind = _pick("renderer_kind")
+    presentation_intent = _pick("presentation_intent")
+    title_hint = str(tool_call_args.get("title") or "").strip()
+    metadata_norm = " ".join(
+        part.lower()
+        for part in (claim, title, pedagogical_role, visual_type, renderer_kind, presentation_intent)
+        if part
+    )
+    metadata_looks_generic = any(
+        marker in metadata_norm
+        for marker in ("benchmark", "chart_runtime", "chart", "thời gian thực thi", "thoi gian thuc thi")
+    )
+
+    if html_cues and (metadata_looks_generic or not any((claim, title, pedagogical_role, visual_type, renderer_kind, presentation_intent))):
+        lines: list[str] = ["Tin hieu vua lo ra tu visual:"]
+        lines.extend(f"- {cue}" for cue in html_cues[:3])
+        if title_hint and title_hint.lower() not in {cue.lower() for cue in html_cues}:
+            lines.append(f"- Moc neo de tiep tuc giai thich: {title_hint}")
+        lines.append(
+            "- Sau khi co visual, visible thinking chi nen bam vao dieu nguoi hoc vua nhin ra duoc va cho de nham con lai."
+        )
+        return "\n".join(lines).strip()
+
+    if not any((claim, title, pedagogical_role, visual_type, renderer_kind, presentation_intent)):
+        return ""
+
+    lines: list[str] = ["Tin hieu vua lo ra tu visual:"]
+    if claim:
+        lines.append(f"- Claim chinh ma figure dang khoa lai: {claim}")
+    if title:
+        lines.append(f"- Tieu de hoac diem nhin cua figure: {title}")
+    visual_descriptor = ", ".join(
+        part
+        for part in (pedagogical_role, visual_type, presentation_intent, renderer_kind)
+        if part
+    )
+    if visual_descriptor:
+        lines.append(f"- Dang visual hien tai: {visual_descriptor}")
+    lines.append(
+        "- Sau khi co visual, phan giai thich tiep theo chi nen bam vao diem de nham nhat va dieu ma nguoi hoc se nhin ra ngay."
+    )
+    return "\n".join(lines).strip()
+
+
+def _extract_distilled_tool_signals(distilled_context: str | None) -> tuple[list[str], list[str]]:
+    factual: list[str] = []
+    tensions: list[str] = []
+    bucket = factual
+    for raw_line in str(distilled_context or "").splitlines():
+        line = str(raw_line or "").strip()
+        if not line:
+            continue
+        lowered = line.lower()
+        if lowered.startswith("tin hieu vua lo ra"):
+            bucket = factual
+            continue
+        if lowered.startswith("cho de nham") or lowered.startswith("diem can canh"):
+            bucket = tensions
+            continue
+        if line.startswith("-"):
+            cleaned = line.lstrip("-").strip()
+            if cleaned:
+                bucket.append(cleaned)
+    return factual, tensions
+
+
+def _ensure_sentence(text: str) -> str:
+    cleaned = " ".join(str(text or "").split()).strip()
+    if not cleaned:
+        return ""
+    if cleaned[-1] in ".!?":
+        return cleaned
+    return f"{cleaned}."
+
+
+def _build_post_tool_fallback_continuation(
+    *,
     tool_name: str,
-    result: object,
-    phase_label: str = "",
-) -> str:
-    """Narrate what a tool result means for the ongoing tutor flow."""
-    narration = await get_reasoning_narrator().render(
-        ReasoningRenderRequest(
-            node="tutor_agent",
-            phase="act",
-            cue=phase_label or tool_name,
-            user_goal=query,
-            conversation_context=str(context.get("conversation_summary", "")),
-            capability_context=str(context.get("capability_context", "")),
-            tool_context=build_tool_context_summary([tool_name], result=result),
-            next_action="Lồng kết quả vừa có vào mạch giải thích đang đi tiếp.",
-            observations=[f"tool={tool_name}", str(result)[:260]],
-            user_id=str(context.get("user_id", "__global__")),
-            organization_id=context.get("organization_id"),
-            personality_mode=context.get("personality_mode"),
-            mood_hint=context.get("mood_hint"),
-            visibility_mode="rich",
-            style_tags=["tutor", "tool_reflection"],
-        )
-    )
-    return narration.summary
+    distilled_context: str | None,
+) -> str | None:
+    factual, tensions = _extract_distilled_tool_signals(distilled_context)
+    if not factual and not tensions:
+        return None
 
+    lines: list[str] = []
+    if tool_name == "tool_generate_visual":
+        if factual:
+            lines.append(
+                _ensure_sentence(
+                    f"Visual vừa khóa lại khá rõ điều này: {factual[0]}"
+                )
+            )
+        if tensions:
+            lines.append(
+                _ensure_sentence(
+                    f"Chỗ vẫn dễ bị nhìn lướt qua là {tensions[0]}"
+                )
+            )
+        elif len(factual) > 1:
+            lines.append(
+                _ensure_sentence(
+                    f"Điểm nên neo tiếp theo là {factual[1]}"
+                )
+            )
+        lines.append(
+            "Nếu nối tiếp, mình nên giữ người học ở đúng mốc này rồi mới mở rộng."
+        )
+    else:
+        if factual:
+            lines.append(
+                _ensure_sentence(
+                    f"Kết quả vừa làm rõ một mốc rất đáng giữ: {factual[0]}"
+                )
+            )
+        if tensions:
+            lines.append(
+                _ensure_sentence(
+                    f"Chỗ người học còn dễ trượt là {tensions[0]}"
+                )
+            )
+        elif len(factual) > 1:
+            lines.append(
+                _ensure_sentence(
+                    f"Nếu giải thích tiếp, mình nên khóa thêm {factual[1]}"
+                )
+            )
+        if len(factual) > 2:
+            lines.append(
+                _ensure_sentence(
+                    f"Chỉ khi mốc này đủ rõ rồi mới mở tiếp sang {factual[2]}"
+                )
+            )
+
+    candidate = "\n\n".join(line for line in lines if line).strip()
+    candidate = sanitize_public_tutor_thinking(candidate) or ""
+    if len(candidate) < 40:
+        return None
+    return candidate or None
 
 class TutorAgentNode:
-    """
-    Tutor Agent - Teaching specialist with SOTA ReAct pattern.
-    
-    Responsibilities:
-    - Explain concepts clearly with RAG-backed knowledge
-    - Create quizzes and exercises
-    - Adapt to learner level
-    - Always cite sources
-    
-    SOTA Pattern: Tool-Enabled Agent with RAG-First approach
-    """
+    """Teaching specialist that explains, quizzes, and cites with tool support."""
     
     def __init__(self):
         """Initialize Tutor Agent with YAML-driven persona (SOTA 2025)."""
@@ -250,276 +512,48 @@ class TutorAgentNode:
         self._llm = None
         self._llm_with_tools = None
         self._config = TUTOR_AGENT_CONFIG
-        self._tools = [
+        base_tools = [
             tool_knowledge_search, tool_web_search, tool_calculator,
             tool_current_datetime, tool_report_progress, tool_think,
         ]
-
-        # Sprint 95: Conditionally add character tools
-        self._character_tools_enabled = False
-        try:
-            from app.core.config import settings as _settings
-            if _settings.enable_character_tools:
-                from app.engine.character.character_tools import get_character_tools
-                char_tools = get_character_tools()
-                self._tools.extend(char_tools)
-                self._character_tools_enabled = True
-                logger.info("[TUTOR_AGENT] Character tools enabled: %d tools", len(char_tools))
-        except Exception as e:
-            logger.debug("[TUTOR_AGENT] Character tools not available: %s", e)
-
-        # Sprint 179: Chart tools (feature-gated by enable_chart_tools)
-        try:
-            from app.engine.tools.chart_tools import get_chart_tools
-            chart_tools = get_chart_tools()
-            if chart_tools:
-                self._tools.extend(chart_tools)
-                logger.info("[TUTOR_AGENT] Chart tools enabled: %d tools", len(chart_tools))
-        except Exception as e:
-            logger.debug("[TUTOR_AGENT] Chart tools not available: %s", e)
-
-        try:
-            from app.engine.tools.visual_tools import get_visual_tools
-
-            visual_tools = get_visual_tools()
-            if visual_tools:
-                self._tools.extend(visual_tools)
-                logger.info("[TUTOR_AGENT] Visual tools enabled: %d tools", len(visual_tools))
-        except Exception as e:
-            logger.debug("[TUTOR_AGENT] Visual tools not available: %s", e)
-
-        try:
-            from app.engine.tools.output_generation_tools import get_output_generation_tools
-
-            output_tools = get_output_generation_tools()
-            if output_tools:
-                self._tools.extend(output_tools)
-                logger.info("[TUTOR_AGENT] Output generation tools enabled: %d tools", len(output_tools))
-        except Exception as e:
-            logger.debug("[TUTOR_AGENT] Output generation tools not available: %s", e)
-
-        try:
-            from app.core.config import settings as _settings
-
-            if (
-                _settings.enable_browser_agent
-                and _settings.enable_privileged_sandbox
-                and _settings.sandbox_provider == "opensandbox"
-                and _settings.sandbox_allow_browser_workloads
-            ):
-                from app.engine.tools.browser_sandbox_tools import get_browser_sandbox_tools
-
-                browser_tools = get_browser_sandbox_tools()
-                if browser_tools:
-                    self._tools.extend(browser_tools)
-                    logger.info("[TUTOR_AGENT] Browser sandbox tools enabled: %d tools", len(browser_tools))
-        except Exception as e:
-            logger.debug("[TUTOR_AGENT] Browser sandbox tools not available: %s", e)
+        self._tools, self._character_tools_enabled = build_tutor_tools(
+            base_tools=base_tools,
+            settings_obj=settings,
+            logger_obj=logger,
+        )
 
         self._init_llm()
         logger.info("TutorAgentNode initialized with YAML persona, tools: %d", len(self._tools))
     
     def _init_llm(self):
         """Initialize teaching LLM with tools and native thinking."""
-        try:
-            # Sprint 69: Use AgentConfigRegistry for per-node LLM config
-            self._llm = AgentConfigRegistry.get_llm("tutor_agent")
-            # Bind tools to LLM (SOTA pattern)
-            self._llm_with_tools = self._llm.bind_tools(self._tools)
-            logger.info("[TUTOR_AGENT] LLM bound with %d tools (via AgentConfigRegistry)", len(self._tools))
-        except Exception as e:
-            logger.error("Failed to initialize Tutor LLM: %s", e)
-            self._llm = None
-            self._llm_with_tools = None
+        self._llm, self._llm_with_tools = initialize_tutor_llm(
+            tools=self._tools,
+            logger=logger,
+        )
     
     def _build_system_prompt(self, context: dict, query: str) -> str:
-        """
-        Build dynamic system prompt from YAML persona (SOTA 2025).
-        
-        Pattern: CrewAI YAML → Runtime injection with PromptLoader
-        
-        Default pronouns: AI xưng "tôi", gọi user là "bạn"
-        (Changes only if user requests via Insights/Memory)
-        
-        Args:
-            context: Dict with user_name, user_role, etc.
-            query: User query
-            
-        Returns:
-            Complete system prompt string
-        """
-        user_name = context.get("user_name")
-        user_role = context.get("user_role", "student")
-        is_follow_up = context.get("is_follow_up", False)
-        recent_phrases = context.get("recent_phrases", [])
-        pronoun_style = context.get("pronoun_style")  # From SessionState
-        user_facts = context.get("user_facts", [])
-        
-        # Build base prompt from YAML
-        # Sprint 115: Forward total_responses + mood_hint for identity anchor + mood
-        base_prompt = self._prompt_loader.build_system_prompt(
-            role=user_role,
-            user_name=user_name,
-            user_facts=user_facts,
-            is_follow_up=is_follow_up,
-            recent_phrases=recent_phrases,
-            pronoun_style=pronoun_style,
-            total_responses=context.get("total_responses", 0),
-            name_usage_count=context.get("name_usage_count", 0),
-            mood_hint=context.get("mood_hint", ""),
-            # Sprint 124: Per-user character blocks
-            user_id=context.get("user_id", "__global__"),
-            # Sprint 174: Personality mode (soul vs professional)
-            personality_mode=context.get("personality_mode"),
-            # Sprint 220c: Resolved LMS external identity
-            lms_external_id=context.get("lms_external_id"),
-            lms_connector_id=context.get("lms_connector_id"),
+        """Build the tutor system prompt via the extracted tutor surface helper."""
+        return build_tutor_system_prompt(
+            prompt_loader=self._prompt_loader,
+            prompt_loader_factory=get_prompt_loader,
+            character_tools_enabled=self._character_tools_enabled,
+            settings_obj=settings,
+            resolve_visual_intent_fn=resolve_visual_intent,
+            required_visual_tool_names_fn=required_visual_tool_names,
+            preferred_visual_tool_name_fn=preferred_visual_tool_name,
+            context=context,
+            query=query,
+            logger=logger,
         )
 
-        # Sprint 222: Append graph-level host context (replaces per-agent injection)
-        _host_prompt = context.get("host_context_prompt", "")
-        if _host_prompt:
-            base_prompt = base_prompt + "\n\n" + _host_prompt
-        _host_capabilities_prompt = context.get("host_capabilities_prompt", "")
-        if _host_capabilities_prompt:
-            base_prompt = base_prompt + "\n\n" + _host_capabilities_prompt
-        _operator_prompt = context.get("operator_context_prompt", "")
-        if _operator_prompt:
-            base_prompt = base_prompt + "\n\n" + _operator_prompt
-        _living_prompt = context.get("living_context_prompt", "")
-        if _living_prompt:
-            base_prompt = base_prompt + "\n\n" + _living_prompt
-        _widget_feedback_prompt = context.get("widget_feedback_prompt", "")
-        if _widget_feedback_prompt:
-            base_prompt = base_prompt + "\n\n" + _widget_feedback_prompt
-
-        # Build context string for query
-        # Sprint 77: Exclude history fields — they're now in LangChain messages
-        _exclude_keys = {
-            "user_facts", "pronoun_style", "recent_phrases",
-            "conversation_history", "langchain_messages", "conversation_summary",
-        }
-        context_str = "\n".join([
-            f"- {k}: {v}" for k, v in context.items() if v and k not in _exclude_keys
-        ]) or "Không có thông tin bổ sung"
-        
-        # Load domain-specific tool instruction if available
-        tool_instruction = TOOL_INSTRUCTION_DEFAULT
-        try:
-            from app.domains.registry import get_domain_registry
-            registry = get_domain_registry()
-            domain_id = context.get("domain_id", settings.default_domain)
-            domain = registry.get(domain_id)
-            if domain:
-                tool_instruction = domain.get_tool_instruction()
-        except Exception as e:
-            logger.debug("Failed to load domain tool instruction: %s", e)
-
-        # Build skill context section if available (progressive disclosure)
-        skill_section = ""
-        skill_context = context.get("skill_context")
-        if skill_context:
-            skill_section = f"""
-## Tài liệu tham khảo (Skill Context):
-{skill_context}
-"""
-
-        capability_section = ""
-        capability_context = context.get("capability_context")
-        if capability_context:
-            capability_section = f"""
-## Capability Handbook:
-{capability_context}
-"""
-
-        # Sprint 122 (Bug F4): Removed core_memory_block injection.
-        # User facts now ONLY via build_system_prompt() → "THÔNG TIN NGƯỜI DÙNG".
-        core_memory_section = ""
-
-        # Sprint 97: Character tool instruction when enabled
-        character_tool_section = ""
-        if self._character_tools_enabled:
-            character_tool_section = """
-## CONG CU GHI NHO (Character Tools):
-- tool_character_note(note, block): Ghi chu khi hoc dieu moi, nhan ra pattern cua user, topic hay.
-  Block: learned_lessons | favorite_topics | user_patterns | self_notes
-- tool_character_log_experience(content, experience_type): Ghi trai nghiem dang nho.
-  Type: milestone | learning | funny | feedback
-KHI NAO GHI: User chia se thong tin moi, giai thich thanh cong, nhan feedback.
-KHI NAO KHONG: Cau hoi binh thuong, thong tin da biet.
-"""
-
-        browser_tool_section = ""
-        if (
-            user_role == "admin"
-            and getattr(settings, "enable_browser_agent", False)
-            and getattr(settings, "enable_privileged_sandbox", False)
-            and getattr(settings, "sandbox_provider", "") == "opensandbox"
-            and getattr(settings, "sandbox_allow_browser_workloads", False)
-        ):
-            browser_tool_section = """
-## CONG CU BROWSER SANDBOX:
-- tool_browser_snapshot_url(url): Mo mot URL cong khai trong browser sandbox va chup snapshot.
-  Dung khi can xac minh giao dien, trang thai trang web, bang bieu, hoac noi dung hien thi ma web search khong du.
-"""
-
-        visual_tool_section = ""
-        if getattr(settings, "enable_structured_visuals", False):
-            visual_decision = resolve_visual_intent(query)
-            if visual_decision.force_tool and visual_decision.mode in {"template", "inline_html", "app", "mermaid"}:
-                preferred_tool_names = required_visual_tool_names(
-                    visual_decision,
-                )
-                preferred_tool_label = preferred_tool_names[0] if preferred_tool_names else preferred_visual_tool_name(True)
-                # Conditionally append code_html instruction
-                code_gen_section = ""
-                from app.core.config import get_settings as _get_settings
-                if getattr(_get_settings(), "enable_llm_code_gen_visuals", False):
-                    code_gen_section = LLM_CODE_GEN_VISUAL_INSTRUCTION
-                visual_tool_section = f"""
-{STRUCTURED_VISUAL_TOOL_INSTRUCTION}{code_gen_section}
-
-[Yêu cầu trực quan] Wiii HÃY dùng {preferred_tool_label} với code_html để tạo biểu đồ
-dạng "{visual_decision.visual_type or 'chart'}" minh họa cho câu trả lời này.
-Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp hiểu nhanh hơn text thuần.
-"""
-
-        # Append tool instruction, skill context, core memory, and user context
-        full_prompt = f"""{base_prompt}
-
-{tool_instruction}
-{character_tool_section}{browser_tool_section}{visual_tool_section}{skill_section}{capability_section}{core_memory_section}
-## Ngữ cảnh học viên:
-{context_str}
-
-## Yêu cầu:
-{query}
-
-## ĐỘ DÀI: Trả lời vừa đủ — ngắn gọn khi câu hỏi đơn giản, chi tiết khi câu hỏi phức tạp. Không giới hạn cứng.
-"""
-        
-        # Phase2-F: Always inject thinking instruction so LLM wraps reasoning in <thinking> tags
-        # Without this, chain-of-thought planning leaks into user-facing response
-        from app.prompts.prompt_loader import get_prompt_loader
-        _thinking_instr = get_prompt_loader().get_thinking_instruction()
-        if _thinking_instr:
-            full_prompt += f"\n\n{_thinking_instr}"
-
-        # Sprint 148: Append thinking chain instruction for complex queries (additional)
-        thinking_effort = context.get("thinking_effort", "")
-        if thinking_effort in ("high", "max") and settings.enable_thinking_chain:
-            full_prompt += "\n" + THINKING_CHAIN_INSTRUCTION
-
-        logger.debug("[TUTOR_AGENT] Built dynamic prompt from YAML (%d chars)", len(full_prompt))
-        return full_prompt
-    
     async def process(self, state: AgentState) -> AgentState:
         """
         Process educational request with ReAct pattern.
         
-        SOTA Pattern: Think → Act → Observe → Repeat
+        SOTA Pattern: Think â†’ Act â†’ Observe â†’ Repeat
         
-        CHỈ THỊ SỐ 29 v9: Option B+ - Propagates thinking to state for API transparency.
+        CHá»ˆ THá»Š Sá» 29 v9: Option B+ - Propagates thinking to state for API transparency.
         Combines thinking from:
         1. RAG tool (via get_last_native_thinking)
         2. Tutor LLM response (extracted in _react_loop)
@@ -535,142 +569,40 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
         learning_context = state.get("learning_context", {})
 
         try:
-            # Sprint 66: Per-request thinking effort override
-            thinking_effort = state.get("thinking_effort")
-            llm_for_request = self._llm
-
-            # Visual Intelligence: upgrade to DEEP tier when visual intent detected
-            visual_decision = resolve_visual_intent(query)
-            if visual_decision.force_tool and not thinking_effort:
-                thinking_effort = "high"
-                logger.info("[TUTOR_AGENT] Visual intent detected → upgrade to high effort")
-
-            from app.engine.multi_agent.graph import _get_effective_provider
-            provider_override = _get_effective_provider(state)
-            if thinking_effort or provider_override:
-                llm_for_request = AgentConfigRegistry.get_llm(
-                    "tutor_agent",
-                    effort_override=thinking_effort,
-                    provider_override=provider_override,
-                )
-                logger.info("[TUTOR_AGENT] LLM override: effort=%s provider=%s", thinking_effort, provider_override)
-
             # Sprint 69: Get event bus queue for intra-node streaming
             event_queue = None
             bus_id = state.get("_event_bus_id")
             if bus_id:
-                from app.engine.multi_agent.graph_streaming import _get_event_queue
+                from app.engine.multi_agent.graph_event_bus import _get_event_queue
                 event_queue = _get_event_queue(bus_id)
 
-            # Merge context and inject skill_context from supervisor
-            merged_context = {**context, **learning_context}
-            skill_context = state.get("skill_context")
-            if skill_context:
-                merged_context["skill_context"] = skill_context
-            capability_context = state.get("capability_context")
-            if capability_context:
-                merged_context["capability_context"] = capability_context
-            # Sprint 222: Thread graph-level host context
-            _host_ctx = state.get("host_context_prompt", "")
-            if _host_ctx:
-                merged_context["host_context_prompt"] = _host_ctx
-            _living_ctx = state.get("living_context_prompt", "")
-            if _living_ctx:
-                merged_context["living_context_prompt"] = _living_ctx
-            _widget_feedback_ctx = state.get("widget_feedback_prompt", "")
-            if _widget_feedback_ctx:
-                merged_context["widget_feedback_prompt"] = _widget_feedback_ctx
-            # Sprint 148: Pass thinking_effort to context for prompt injection
-            if thinking_effort:
-                merged_context["thinking_effort"] = thinking_effort
-
-            visual_decision = resolve_visual_intent(query)
-            active_tools = filter_tools_for_role(
-                self._tools,
-                merged_context.get("user_role", "student"),
+            request_runtime = prepare_tutor_request(
+                state=state,
+                context=context,
+                learning_context=learning_context,
+                default_llm=self._llm,
+                base_tools=self._tools,
+                settings_obj=settings,
+                logger_obj=logger,
+                resolve_visual_intent_fn=resolve_visual_intent,
+                required_visual_tool_names_fn=required_visual_tool_names,
+                get_effective_provider_fn=_get_effective_provider,
+                get_llm_fn=AgentConfigRegistry.get_llm,
+                resolve_tool_choice_fn=_resolve_tool_choice,
             )
-            active_tools = filter_tools_for_visual_intent(
-                active_tools,
-                visual_decision,
-                structured_visuals_enabled=getattr(settings, "enable_structured_visuals", False),
-            )
-            try:
-                from app.engine.skills.skill_recommender import select_runtime_tools
-
-                must_include = [
-                    "tool_knowledge_search",
-                    "tool_think",
-                    "tool_report_progress",
-                ]
-                must_include.extend(
-                    required_visual_tool_names(
-                        visual_decision,
-                    )
-                )
-                selected_tools = select_runtime_tools(
-                    active_tools,
-                    query=query,
-                    intent=(state.get("routing_metadata") or {}).get("intent") or "learning",
-                    user_role=merged_context.get("user_role", "student"),
-                    max_tools=min(len(active_tools), 6),
-                    must_include=must_include,
-                )
-                if selected_tools:
-                    active_tools = filter_tools_for_visual_intent(
-                        selected_tools,
-                        visual_decision,
-                        structured_visuals_enabled=getattr(settings, "enable_structured_visuals", False),
-                    )
-                    logger.info(
-                        "[TUTOR_AGENT] Runtime-selected tools: %s",
-                        [getattr(tool, "name", getattr(tool, "__name__", "unknown")) for tool in active_tools],
-                    )
-            except Exception as selection_err:
-                logger.debug("[TUTOR_AGENT] Runtime tool selection skipped: %s", selection_err)
-            llm_with_tools_for_request = None
-            if llm_for_request:
-                # Visual Intelligence: force tool calling when resolver detects visual intent
-                if visual_decision.force_tool:
-                    visual_tools_only = [t for t in active_tools if getattr(t, "name", "") == "tool_generate_visual"]
-                    if visual_tools_only:
-                        from app.engine.multi_agent.graph import _resolve_tool_choice
-                        forced_choice = _resolve_tool_choice(True, visual_tools_only, provider=provider_override)
-                        llm_with_tools_for_request = llm_for_request.bind_tools(
-                            visual_tools_only, tool_choice=forced_choice,
-                        )
-                        logger.info("[TUTOR_AGENT] Visual intent → force tool_choice=%r for tool_generate_visual", forced_choice)
-                    else:
-                        llm_with_tools_for_request = llm_for_request.bind_tools(active_tools)
-                else:
-                    llm_with_tools_for_request = (
-                        llm_for_request.bind_tools(active_tools)
-                        if active_tools
-                        else llm_for_request
-                    )
-            runtime_context_base = build_tool_runtime_context(
-                event_bus_id=bus_id,
-                request_id=bus_id or state.get("session_id"),
-                session_id=state.get("session_id"),
-                organization_id=state.get("organization_id"),
-                user_id=state.get("user_id"),
-                user_role=merged_context.get("user_role", "student"),
-                node="tutor_agent",
-                source="agentic_loop",
-            )
+            _remember_runtime_target(state, request_runtime.llm_for_request)
+            _remember_runtime_target(state, request_runtime.llm_with_tools_for_request)
 
             # Execute ReAct loop - now returns thinking + bus streaming flag
-            response, sources, tools_used, thinking, answer_streamed = await self._react_loop(
+            response, sources, tools_used, thinking, _answer_streamed = await self._react_loop(
                 query=query,
-                context=merged_context,
+                context=request_runtime.merged_context,
                 event_queue=event_queue,
-                tools=active_tools,
-                llm_with_tools=llm_with_tools_for_request,
-                runtime_context_base=runtime_context_base,
+                tools=request_runtime.active_tools,
+                llm_with_tools=request_runtime.llm_with_tools_for_request,
+                runtime_context_base=request_runtime.runtime_context_base,
+                state=state,
             )
-
-            # Sprint 74: Signal to graph_streaming whether answer was already streamed via bus
-            if answer_streamed:
-                state["_answer_streamed_via_bus"] = True
 
             # Update state with results
             state["tutor_output"] = response
@@ -681,13 +613,28 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
             state["agent_outputs"]["tutor_tools_used"] = tools_used  # SOTA: Track tool usage
             state["current_agent"] = "tutor_agent"
             
-            # CHỈ THỊ SỐ 29 v9: Set thinking in state for SOTA reasoning transparency
+            # CHá»ˆ THá»Š Sá» 29 v9: Set thinking in state for SOTA reasoning transparency
             # This follows the same pattern as rag_node.py
             if thinking:
                 state["thinking"] = thinking
+                state["thinking_content"] = thinking
+                record_thinking_snapshot(
+                    state,
+                    thinking,
+                    node="tutor_agent",
+                    provenance="final_snapshot",
+                )
                 logger.info("[TUTOR_AGENT] Thinking propagated to state: %d chars", len(thinking))
+            else:
+                resolved_tutor_thinking = resolve_visible_thinking_from_lifecycle(
+                    state,
+                    fallback=state.get("thinking_content") or "",
+                    default_node="tutor_agent",
+                )
+                if resolved_tutor_thinking:
+                    state["thinking_content"] = resolved_tutor_thinking
             
-            # CHỈ THỊ SỐ 31 v3 SOTA: Propagate CRAG trace for synthesizer merge
+            # CHá»ˆ THá»Š Sá» 31 v3 SOTA: Propagate CRAG trace for synthesizer merge
             # This follows LangGraph shared state pattern
             crag_trace = get_last_reasoning_trace()
             if crag_trace:
@@ -698,7 +645,7 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
             
         except Exception as e:
             logger.error("[TUTOR_AGENT] Error: %s", e)
-            state["tutor_output"] = "Ôi, Wiii vấp rồi! Mình đang cố lại nhé... Bạn thử hỏi lại mình được không?"
+            state["tutor_output"] = "Ã”i, Wiii váº¥p rá»“i! MÃ¬nh Ä‘ang cá»‘ láº¡i nhÃ©... Báº¡n thá»­ há»i láº¡i mÃ¬nh Ä‘Æ°á»£c khÃ´ng?"
             state["error"] = "tutor_error"
             state["sources"] = []
             state["tools_used"] = []
@@ -713,13 +660,14 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
         tools=None,
         llm_with_tools=None,
         runtime_context_base=None,
+        state: AgentState | None = None,
     ) -> tuple[str, List[Dict[str, Any]], List[Dict[str, Any]], Optional[str], bool]:
         """
-        Execute ReAct loop: Think → Act → Observe.
+        Execute ReAct loop: Think â†’ Act â†’ Observe.
 
         SOTA Pattern from OpenAI Agents SDK / Anthropic Claude.
 
-        CHỉ THỊ SỐ 29 v9: Now returns thinking for SOTA reasoning transparency.
+        CHá»‰ THá»Š Sá» 29 v9: Now returns thinking for SOTA reasoning transparency.
         Combines thinking from:
         1. RAG tool (get_last_native_thinking)
         2. Tutor LLM final response (extract_thinking_from_response)
@@ -730,7 +678,9 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
             event_queue: Sprint 69 asyncio.Queue for intra-node streaming
 
         Returns:
-            Tuple of (response, sources, tools_used, thinking, answer_streamed_via_bus)
+            Tuple of (response, sources, tools_used, thinking, answer_streamed_via_bus).
+            The final answer is synthesized downstream for stream parity, so the
+            answer-streamed flag is retained only for compatibility.
         """
         llm_with_tools = llm_with_tools or self._llm_with_tools
 
@@ -741,11 +691,12 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
         
         # Clear previous sources (also clears thinking)
         clear_retrieved_sources()
+        response_language = context.get("response_language") or "vi"
         
         # SOTA 2025: Build dynamic prompt from YAML
         system_prompt = self._build_system_prompt(context, query)
 
-        # Initialize messages — Sprint 77: inject conversation history
+        # Initialize messages â€” Sprint 77: inject conversation history
         messages = [SystemMessage(content=system_prompt)]
         lc_messages = context.get("langchain_messages", [])
         if lc_messages:
@@ -777,35 +728,30 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
             messages.append(HumanMessage(content=query))
         
         tools_used = []
-        max_iterations = 4  # Sprint 103b→fix: 2 → 4 (need room for think + search + generate)
+        max_iterations = 4  # Sprint 103bâ†’fix: 2 â†’ 4 (need room for think + search + generate)
         final_response = ""
         llm_thinking = None  # Thinking from final LLM response
-        _answer_streamed_via_bus = False  # Sprint 74: Track if answer was streamed via bus
-
+        _answer_streamed_via_bus = False  # Legacy compatibility only; tutor no longer streams final answer
+        public_tutor_fragments: list[str] = []
+        native_tutor_thoughts: list[str] = []
+        last_tool_result_text: str | None = None
+        last_tool_args: dict[str, Any] | None = None
+        last_tool_name_seen: str = ""
         # Sprint 70: Sub-chunk size for smooth streaming (matches graph_streaming.py)
         _CHUNK_SIZE = 40  # ~8-10 words per sub-chunk (Sprint 103b: was 12)
         _CHUNK_DELAY = 0.008  # 8ms between sub-chunks (Sprint 103b: was 18ms)
 
         # Sprint 69: Helper for intra-node event push
         async def _push(evt):
+            if state is not None:
+                capture_thinking_lifecycle_event(state, evt, default_node="tutor_agent")
             if event_queue is not None:
                 try:
                     event_queue.put_nowait(evt)
                 except Exception as exc:
                     logger.warning("[TUTOR_AGENT] Bus push failed: %s", exc)
 
-        def _extract_chunk_text(content) -> str:
-            """Extract text from LLM chunk content (handles str and Gemini list format)."""
-            if isinstance(content, str):
-                return content
-            if isinstance(content, list):
-                return "".join(
-                    part.get("text", "") for part in content
-                    if isinstance(part, dict) and part.get("type") == "text"
-                )
-            return str(content) if content else ""
-
-        async def _push_thinking_deltas(text: str):
+        async def _push_thinking_deltas_raw(text: str):
             """Push thinking_delta events with sub-chunking for smooth streaming."""
             import asyncio
             for i in range(0, len(text), _CHUNK_SIZE):
@@ -818,35 +764,329 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
                 if i + _CHUNK_SIZE < len(text):
                     await asyncio.sleep(_CHUNK_DELAY)
 
-        async def _push_answer_deltas(text: str):
-            """Sprint 74: Push answer_delta events with sub-chunking for real-time answer streaming."""
-            import asyncio
-            for i in range(0, len(text), _CHUNK_SIZE):
-                sub = text[i:i + _CHUNK_SIZE]
-                await _push({
-                    "type": "answer_delta",
-                    "content": sub,
-                    "node": "tutor_agent",
-                })
-                if i + _CHUNK_SIZE < len(text):
-                    await asyncio.sleep(_CHUNK_DELAY)
+        async def _align_public_tutor_thinking(text: str | None) -> str | None:
+            raw_text = str(text or "").strip()
+            if not raw_text:
+                return None
+            public_text = raw_text.replace("<thinking>", "").replace("</thinking>", "").strip()
+            if not public_text:
+                return None
+            aligned_text = await align_visible_thinking_language(
+                public_text,
+                target_language=response_language,
+                llm=self._llm,
+            )
+            final_text = str(aligned_text or public_text).strip()
+            sanitized_text = sanitize_public_tutor_thinking(final_text)
+            return sanitized_text or None
 
-        _BULK_SIZE = 200  # Sprint 75: Large chunks for fast re-emission
+        async def _remember_public_tutor_thinking(text: str) -> str | None:
+            public_text = await _align_public_tutor_thinking(text)
+            if not public_text:
+                return None
+            normalized = " ".join(public_text.lower().split())
+            recent = {" ".join(item.lower().split()) for item in public_tutor_fragments[-6:]}
+            if normalized not in recent:
+                public_tutor_fragments.append(public_text)
+            return public_text
 
-        async def _push_answer_bulk(text: str):
-            """Sprint 75: Push answer content in large chunks with no delay.
+        def _looks_like_answer_or_prompt_spill(text: str) -> bool:
+            lowered = str(text or "").lower()
+            if not lowered.strip():
+                return True
 
-            Used when content was already shown via thinking_delta — the answer_delta
-            is just for populating the answer section, no need for smooth streaming.
-            Drops answer re-emission from ~7s to <0.5s.
-            """
-            for i in range(0, len(text), _BULK_SIZE):
-                sub = text[i:i + _BULK_SIZE]
-                await _push({
-                    "type": "answer_delta",
-                    "content": sub,
-                    "node": "tutor_agent",
-                })
+            obvious_markers = (
+                "<answer>",
+                "</answer>",
+                "<câu trả lời>",
+                "</câu trả lời>",
+                "## goi y dung tool",
+                "## wiii continuation mode",
+                "tool_generate_visual",
+                "tool_knowledge_search",
+                "tool_",
+                "payload json",
+                "wiii tutor",
+                "my wiii tutor",
+                "my approach",
+                "reviewing past responses",
+                "crafting the visual",
+                "generating the visual elements",
+                "structuring response now",
+                "i'll ",
+                "i will ",
+                "let's ",
+                "i'm now ",
+                "i am now ",
+                "**suy nghĩ của wiii",
+                "suy nghĩ của wiii về",
+                "wiii về quy tắc",
+                "wiii ve quy tac",
+            )
+            if any(marker in lowered for marker in obvious_markers):
+                return True
+
+            answer_draft_markers = (
+                "chào bạn",
+                "chao ban",
+                "để mình giải thích",
+                "de minh giai thich",
+                "mình xin giải thích",
+                "minh xin giai thich",
+                "chúng ta đã từng bàn",
+                "mình sẽ chào",
+                "mình sẽ giải thích",
+                "mình sẽ dùng",
+                "tôi sẽ chào",
+                "tôi sẽ giải thích",
+                "tôi sẽ dùng",
+                "người dùng đã có kiến thức",
+                "nguoi dung da co kien thuc",
+                "mình có thể giúp gì",
+                "minh co the giup gi",
+                "hay là chúng ta",
+                "hay la chung ta",
+                "sẵn sàng đi sâu",
+                "san sang di sau",
+                "wiii đã sẵn sàng",
+                "wiii da san sang",
+                "hoàn toàn chính xác",
+                "hoan toan chinh xac",
+                "đúng không nào",
+                "dung khong nao",
+                "bạn biết đấy",
+                "ban biet day",
+            )
+            return any(marker in lowered for marker in answer_draft_markers)
+
+        def _should_surface_native_tutor_thought(
+            text: str | None,
+            *,
+            stage: str,
+        ) -> bool:
+            candidate = str(text or "").strip()
+            if len(candidate) < 40:
+                return False
+            if _looks_like_answer_or_prompt_spill(candidate):
+                logger.debug(
+                    "[TUTOR_AGENT] Suppressing %s tutor thought due to prompt/answer spill",
+                    stage,
+                )
+                return False
+            return True
+
+        async def _push_public_tutor_thinking(text: str):
+            public_text = await _remember_public_tutor_thinking(text)
+            if not public_text:
+                return
+            await _push_thinking_deltas_raw(public_text)
+
+        async def _push_public_tutor_fragments(fragments) -> None:
+            if not fragments:
+                return
+            for fragment in fragments:
+                if fragment and str(fragment).strip():
+                    await _push_public_tutor_thinking(f"{str(fragment).strip()}\n\n")
+
+        async def _capture_native_tutor_thinking(
+            thinking_text: str | None,
+            *,
+            reopen_after_tool: bool = False,
+            phase_label: str = "",
+            stage: str = "captured_native",
+        ) -> bool:
+            if not thinking_text:
+                return False
+            if not _should_surface_native_tutor_thought(
+                str(thinking_text),
+                stage=stage,
+            ):
+                return False
+            native_tutor_thoughts.append(str(thinking_text))
+            public_text = await _align_public_tutor_thinking(str(thinking_text))
+            if not public_text:
+                return False
+            normalized = " ".join(public_text.lower().split())
+            recent = {" ".join(item.lower().split()) for item in public_tutor_fragments[-6:]}
+            if normalized in recent:
+                return False
+            if reopen_after_tool and event_queue is not None:
+                await _push({"type": "thinking_end", "content": "", "node": "tutor_agent"})
+                next_beat = await _iteration_beat_runtime(
+                    query=query,
+                    context=context,
+                    iteration=iteration,
+                    tools_used=tools_used,
+                    phase_label=phase_label or "Đối chiếu kết quả",
+                )
+                await _push(
+                    {
+                        "type": "thinking_start",
+                        "content": next_beat.label,
+                        "node": "tutor_agent",
+                        "summary": next_beat.summary,
+                        "details": {
+                            "phase": next_beat.phase,
+                            "tone_mode": getattr(next_beat, "tone_mode", ""),
+                        },
+                    }
+                )
+            public_tutor_fragments.append(public_text)
+            await _push_thinking_deltas_raw(public_text)
+            return True
+
+        async def _generate_post_tool_native_continuation(
+            *,
+            tool_name: str,
+            tool_result_text: str | None,
+            tool_call_args: dict[str, Any] | None = None,
+        ) -> str | None:
+            result_text = str(tool_result_text or "").strip()
+            if not result_text or result_text.lower().startswith("error:"):
+                return None
+
+            cleaned_result = re.sub(
+                r"\s*<!--\s*confidence:[\s\S]*?-->",
+                "",
+                result_text,
+                flags=re.I,
+            ).strip()
+            tool_turn_label = "ket qua tra cuu"
+            distilled_context = ""
+            if tool_name in ("tool_knowledge_search", "tool_maritime_search"):
+                cleaned_result = normalize_tutor_answer_shape(cleaned_result, query=query) or cleaned_result
+                distilled_context = distill_post_tool_context(cleaned_result)
+                tool_turn_label = "ket qua tra cuu"
+            elif tool_name == "tool_generate_visual":
+                distilled_context = distill_visual_tool_context(
+                    cleaned_result,
+                    tool_call_args=tool_call_args,
+                )
+                tool_turn_label = "visual vua duoc tao"
+            else:
+                return None
+
+            if not distilled_context:
+                return None
+            fallback_continuation = _build_post_tool_fallback_continuation(
+                tool_name=tool_name,
+                distilled_context=distilled_context,
+            )
+            conversation_summary = str(context.get("conversation_summary") or "").strip()
+            mood_hint = str(context.get("mood_hint") or "").strip()
+            language_contract = build_response_language_instruction(response_language)
+            identity_grounding_prompt = build_tutor_identity_grounding_prompt(
+                context=context,
+                logger_obj=logger,
+            )
+            living_stream_cues = build_tutor_living_stream_cues(context)
+            continuation_prompt = (
+                "Ban la Wiii.\n"
+                f"Day la luot tiep noi visible inner monologue sau khi vua xu ly {tool_turn_label}.\n\n"
+                f"{identity_grounding_prompt}\n\n"
+                f"{living_stream_cues}\n\n"
+                f"{language_contract}\n\n"
+                "## THONG NHAT DANH TINH WIII\n"
+                "- Khong co mot nhan vat rieng ten 'Wiii Tutor'. Day van la Wiii.\n"
+                "- Day hoc chi la cong viec hien tai cua Wiii trong turn nay, khong phai mot nhan cach moi.\n"
+                "- Giu cung mot soul, continuity, va chat song cua Wiii. Neu mot net rieng nhu Bong thoang qua, no phai tu nhien va tiet che.\n\n"
+                "## WIII CONTINUATION MODE\n"
+                "- Giu chat Wiii: am, co hon, co su hien dien, nhung khong san khau hoa va khong roleplay.\n"
+                "- Nhip cua Wiii o day nam o cach go roi, chot moc nhan thuc, va giu liem mach cho luot dang dien ra.\n"
+                "- KHONG ke thua huong dan tool hay huong dan viet cau tra loi tu prompt lon cua tutor.\n"
+                "- KHONG coi day la mot bai giang mini hay mot ban nhap answer.\n\n"
+                "## NHIEM VU DUY NHAT\n"
+                f"- Day la visible inner monologue cua Wiii ngay sau khi vua xu ly {tool_turn_label}.\n"
+                "- Du lieu dau vao ben duoi da la cac moc duoc rut gon, khong phai mot cau tra loi hoan chinh.\n"
+                f"- BAT BUOC nghi va viet bang ngon ngu cua user cho luot nay: response_language={response_language}.\n"
+                "- Ban KHONG duoc tra loi nguoi dung trong luot nay.\n"
+                "- Hay viet 2-4 doan ngan hoac 4-8 cau lien mach nhu mot dong suy nghi dang tiep dien.\n"
+                "- Chi bam vao 3 viec: dieu ket qua vua lam ro, cho de hieu nham con lai, va diem neo nen giu de giai thich tiep.\n"
+                "- Neu day la visual, uu tien noi dieu hinh vua giup nhin ra, cho nao van de bi nhin sot, va nhiet do giai thich tiep theo nen dat o dau.\n"
+                "- Neu ket qua vua co co loi chao, dong vien, mo bai, ket bai, hay giong day hoc user, xem do chi la lop vo ngoai cua ket qua va BO QUA.\n"
+                "- Khong chep lai nguyen van ket qua tra cuu.\n"
+                "- KHONG lap dan y cau tra loi.\n"
+                "- KHONG viet ke hoach kieu 'dau tien / sau do / cuoi cung', 'greeting', 'closing', 'drafting content', hay 'let's see the plan'.\n"
+                "- KHONG noi toi viec se chao user, se mo bai, se ket bai, se dua vi du, se nhac Rule 17, hay se viet the nao.\n"
+                "- KHONG dat tieu de markdown tieng Anh kieu '**My Approach...**'. Neu can nhan nhip, dung tieng Viet tu nhien.\n"
+                "- Khong nhac toi prompt, system, pipeline, json, ham, tool, routing, hay 'toi se goi tool'.\n"
+                "- Nhip cua Wiii o day nam o cach go roi va chot moc nhan thuc, khong nam o man san khau hoa hay tu bieu dien su de thuong.\n"
+                "- Neu dang co xu huong noi voi user bang 'ban', lui lai mot nhip va chuyen thanh doc thoai noi tam ve nguoi hoc, cho de nham, va diem neo can giu.\n"
+                "- Neu ban khong the giu dung dang inner monologue, dung tra ve gi khac ngoai mot <thinking> block that su inward.\n"
+                "\n## VI DU NHANH\n"
+                "Tot:\n"
+                "<thinking>\n"
+                "Nguoi hoc de truot o cho nham giua vi tri tiep can va quyen uu tien. Minh nen khoa lai moc 'man phai' truoc, roi moi noi toi hanh dong tranh va. Chat Wiii o day nam o nhip go roi nhe nha, khong nam o man vo ve.\n"
+                "</thinking>\n\n"
+                "Khong tot:\n"
+                "<thinking>\n"
+                "Ban dang to mo ve Rule 15 sao? De minh giai thich cho ban nhe! Dau tien minh se chao ban, roi minh noi tung muc mot cho de hieu.\n"
+                "</thinking>\n\n"
+                "Khong tot:\n"
+                "<thinking>\n"
+                "Day la Quy tac 15. Tau nao thay tau kia o man phai thi phai nhuong. Rule nay rat quan trong va ban can nho ky.\n"
+                "</thinking>\n\n"
+                "- Tra ve DUY NHAT mot khong gian suy nghi trong <thinking>...</thinking>."
+            )
+            continuation_messages = [
+                SystemMessage(content=continuation_prompt),
+                HumanMessage(
+                    content=(
+                        f"Cau hoi cua nguoi dung:\n{query}\n\n"
+                        f"Tom tat hoi thoai hien tai:\n{conversation_summary or '(khong co)'}\n\n"
+                        f"Mood hint hien tai:\n{mood_hint or '(khong co)'}\n\n"
+                        f"Cac tin hieu vua lo ra tu {tool_turn_label}:\n{distilled_context}\n\n"
+                        "Hay tiep tuc suy nghi noi tam cua Wiii ngay sau khi vua chot duoc cac tin hieu tren."
+                    )
+                ),
+            ]
+            try:
+                continuation_response, continuation_stream_text, _ = await collect_tutor_model_message(
+                    self._llm,
+                    continuation_messages,
+                    logger=logger,
+                )
+            except Exception as exc:
+                logger.debug("[TUTOR_AGENT] Post-tool continuation generation failed: %s", exc)
+                return fallback_continuation
+
+            if continuation_response is None:
+                return fallback_continuation
+
+            continuation_text, continuation_thinking = extract_thinking_from_response(
+                getattr(continuation_response, "content", ""),
+            )
+            candidate = str(continuation_thinking or continuation_text or "").strip()
+            if not candidate:
+                logger.debug(
+                    "[TUTOR_AGENT] Discarding post-tool continuation without native/<thinking> payload"
+                )
+                return fallback_continuation
+            candidate = sanitize_public_tutor_thinking(candidate) or ""
+            if not candidate:
+                return fallback_continuation
+            if len(candidate) < 40:
+                return fallback_continuation
+            if not _should_surface_native_tutor_thought(
+                candidate,
+                stage="post_tool_continuation",
+            ):
+                return fallback_continuation
+            return candidate
+
+        async def _iteration_beat_runtime(**kwargs):
+            return await _iteration_beat(
+                **kwargs,
+                llm=self._llm,
+                recent_fragments=list(public_tutor_fragments),
+            )
+
+        async def _tool_acknowledgment_runtime(**kwargs):
+            return await _tool_acknowledgment(
+                **kwargs,
+                llm=self._llm,
+                recent_fragments=list(public_tutor_fragments),
+            )
 
         # Sprint 148: Track phase transitions for rate limiting and double-close prevention
         _phase_transition_count = 0
@@ -857,11 +1097,11 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
             logger.info("[TUTOR_AGENT] ReAct iteration %d/%d", iteration + 1, max_iterations)
             _last_tool_was_progress = False  # Reset at start of each iteration
 
-            # THINK: LLM reasons and decides action
-            # Sprint 70: Stream LLM tokens for true interleaved thinking
+            # THINK: use one model-collection path for both sync and stream so
+            # transport does not change the answer semantics.
             if event_queue is not None:
                 # Sprint 146b: Context-aware label
-                _beat = await _iteration_beat(
+                _beat = await _iteration_beat_runtime(
                     query=query,
                     context=context,
                     iteration=iteration,
@@ -873,31 +1113,31 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
                     "content": _beat.label,
                     "node": "tutor_agent",
                     "summary": _beat.summary,
-                    "details": {"phase": _beat.phase},
+                    "details": {
+                        "phase": _beat.phase,
+                        "tone_mode": getattr(_beat, "tone_mode", ""),
+                    },
                 })
-                if _beat.summary:
-                    await _push_thinking_deltas(f"{_beat.summary}\n\n")
-                response = None
-                chunk_count = 0
-                pre_tool_stream_text = ""
-                async for chunk in llm_with_tools.astream(messages):
-                    chunk_count += 1
-                    if response is None:
-                        response = chunk
-                    else:
-                        response = response + chunk
-                    # Sprint 70: Extract text and sub-chunk for smooth streaming
-                    text = _extract_chunk_text(chunk.content)
-                    if text:
-                        pre_tool_stream_text += text
-                logger.debug("[TUTOR_AGENT] .astream() yielded %d chunks", chunk_count)
-                if response is None:
-                    # Empty response fallback
-                    from langchain_core.messages import AIMessage as _AIMsg
-                    response = _AIMsg(content="")
-                # Sprint 146b: DO NOT emit thinking_end here — keep block open for tool execution
-            else:
-                response = await llm_with_tools.ainvoke(messages)
+            response, pre_tool_stream_text, _used_streaming = await collect_tutor_model_message(
+                llm_with_tools,
+                messages,
+                logger=logger,
+            )
+            if response is None:
+                from langchain_core.messages import AIMessage as _AIMsg
+                response = _AIMsg(content="")
+
+            _raw_turn_text, raw_turn_thinking = extract_thinking_from_response(
+                getattr(response, "content", ""),
+            )
+            if raw_turn_thinking and _should_surface_native_tutor_thought(
+                raw_turn_thinking,
+                stage="pre_tool_native",
+            ):
+                await _capture_native_tutor_thinking(
+                    raw_turn_thinking,
+                    stage="pre_tool_native",
+                )
 
             # Check if LLM wants to call tools
             if not response.tool_calls:
@@ -905,20 +1145,36 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
                 if event_queue is not None:
                     await _push({"type": "thinking_end", "content": "", "node": "tutor_agent"})
                 # No tool calls = LLM is done, extract final response AND thinking
-                final_response, llm_thinking = self._extract_content_with_thinking(response.content)
-                # Keep public thinking compact: summary stays in the thinking lane,
-                # final prose only streams into the answer lane.
-                if event_queue is not None:
-                    _answer_streamed_via_bus = True
-                    if final_response:
-                        await _push_answer_bulk(final_response)
+                final_response, llm_thinking = self._extract_content_with_thinking(
+                    response.content,
+                    query=query,
+                )
+                if not llm_thinking:
+                    llm_thinking = raw_turn_thinking
                 logger.info("[TUTOR_AGENT] No more tool calls, generating final response")
                 break
 
             if event_queue is not None and pre_tool_stream_text.strip():
-                # If the model decided to call tools, surface the pre-tool draft as
-                # a single reasoning beat instead of duplicating it into the answer.
-                await _push_thinking_deltas(pre_tool_stream_text)
+                if raw_turn_thinking:
+                    logger.debug(
+                        "[TUTOR_AGENT] Keeping native tutor thought as authority over pre-tool text (%d chars suppressed)",
+                        len(pre_tool_stream_text),
+                    )
+                else:
+                    if _should_surface_native_tutor_thought(
+                        pre_tool_stream_text,
+                        stage="pre_tool_stream",
+                    ):
+                        public_pre_tool = await _remember_public_tutor_thinking(pre_tool_stream_text)
+                    else:
+                        public_pre_tool = None
+                    if public_pre_tool:
+                        await _push_thinking_deltas_raw(public_pre_tool)
+                    else:
+                        logger.debug(
+                            "[TUTOR_AGENT] Pre-tool text produced no visible raw thinking (%d chars)",
+                            len(pre_tool_stream_text),
+                        )
 
             # ACT: Execute tool calls
             for tool_call in response.tool_calls:
@@ -935,323 +1191,78 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
 
                 logger.info("[TUTOR_AGENT] Calling tool: %s with args: %s", tool_name, tool_args)
                 
+                dispatch_result = await dispatch_tutor_tool_call(
+                    tool_call=tool_call,
+                    query=query,
+                    context=context,
+                    iteration=iteration,
+                    tools_used=tools_used,
+                    tools=tools,
+                    messages=messages,
+                    runtime_context_base=runtime_context_base,
+                    push=_push,
+                    push_thinking_deltas=_push_public_tutor_thinking,
+                    iteration_beat_fn=_iteration_beat_runtime,
+                    tool_acknowledgment_fn=_tool_acknowledgment_runtime,
+                    get_tool_by_name_fn=get_tool_by_name,
+                    invoke_tool_with_runtime_fn=invoke_tool_with_runtime,
+                    get_last_confidence_fn=get_last_confidence,
+                    knowledge_tool=tool_knowledge_search,
+                    calculator_tool=tool_calculator,
+                    datetime_tool=tool_current_datetime,
+                    web_search_tool=tool_web_search,
+                    max_iterations=max_iterations,
+                    max_phase_transitions=_MAX_PHASE_TRANSITIONS,
+                    phase_transition_count=_phase_transition_count,
+                    logger_obj=logger,
+                )
+                _phase_transition_count = dispatch_result.phase_transition_count
+                _last_tool_was_progress = dispatch_result.last_tool_was_progress
+                last_tool_name_seen = str(tool_name or "")
+                last_tool_result_text = getattr(dispatch_result, "tool_result_text", None)
+                last_tool_args = getattr(dispatch_result, "tool_args", None)
                 if tool_name in ("tool_knowledge_search", "tool_maritime_search"):
-                    try:
-                        # Execute the tool
-                        search_query = tool_args.get("query", query)
-                        result = await invoke_tool_with_runtime(
-                            tool_knowledge_search,
-                            {"query": search_query},
-                            tool_name=tool_name,
-                            runtime_context_base=runtime_context_base,
-                            tool_call_id=tool_id,
-                            query_snippet=search_query,
+                    rag_tool_thought = get_last_native_thinking()
+                    if event_queue is not None:
+                        post_tool_emitted = await _capture_native_tutor_thinking(
+                            rag_tool_thought,
+                            reopen_after_tool=True,
+                            phase_label="Đối chiếu kết quả",
+                            stage="rag_tool_native",
                         )
-
-                        tools_used.append({
-                            "name": tool_name,
-                            "args": tool_args,
-                            "description": f"Tra cứu: {search_query[:60]}..." if len(search_query) > 60 else f"Tra cứu: {search_query}",
-                            "iteration": iteration + 1
-                        })
-
-                        # Sprint 69: Push tool_result event
-                        await _push({
-                            "type": "tool_result",
-                            "content": {
-                                "name": tool_name,
-                                "result": str(result)[:500],
-                                "id": tool_id,
-                            },
-                            "node": "tutor_agent",
-                        })
-
-                        # Sprint 146b: Post-tool acknowledgment
-                        _ack = await _tool_acknowledgment(
-                            query=query,
-                            context=context,
-                            tool_name=tool_name,
-                            result=result,
-                        )
-                        await _push_thinking_deltas(f"\n\n{_ack}")
-
-                        # OBSERVE: Add result to conversation
-                        messages.append(AIMessage(content="", tool_calls=[tool_call]))
-                        messages.append(ToolMessage(
-                            content=str(result),
-                            tool_call_id=tool_id
-                        ))
-
-                        logger.info("[TUTOR_AGENT] Tool result length: %d", len(str(result)))
-
-                        # ============================================================
-                        # SOTA 2025 Phase 2: Confidence-Based Early Termination
-                        # Pattern: Focused ReAct (arXiv Oct 2024) - exit on first success
-                        # Lowered threshold from 0.85 to 0.70 to match CRAG confidence
-                        # ============================================================
-                        confidence, is_complete = get_last_confidence()
-                        if is_complete and confidence >= 0.70:  # PHASE 2: 0.85 → 0.70
-                            logger.info("[TUTOR_AGENT] MEDIUM+ confidence (%.2f) - EARLY TERMINATION", confidence)
-                            logger.info("[TUTOR_AGENT] Skipping %d remaining iterations (Focused ReAct)", max_iterations - iteration - 1)
-                            break
-                        elif confidence >= 0.50:
-                            logger.info("[TUTOR_AGENT] LOW-MEDIUM confidence (%.2f) - one more try", confidence)
-                        else:
-                            logger.info("[TUTOR_AGENT] LOW confidence (%.2f) - will retry", confidence)
-
-                    except Exception as e:
-                        logger.error("[TUTOR_AGENT] Tool error: %s", e)
-                        messages.append(AIMessage(content="", tool_calls=[tool_call]))
-                        messages.append(ToolMessage(
-                            content=f"Error: {str(e)}",
-                            tool_call_id=tool_id
-                        ))
-                elif tool_name in ("tool_calculator", "tool_current_datetime", "tool_web_search"):
-                    try:
-                        # Execute utility/web tools
-                        if tool_name == "tool_calculator":
-                            tool_input = tool_args.get("expression", "")
-                            result = await invoke_tool_with_runtime(
-                                tool_calculator,
-                                tool_input,
+                        if not post_tool_emitted:
+                            continuation_thought = await _generate_post_tool_native_continuation(
                                 tool_name=tool_name,
-                                runtime_context_base=runtime_context_base,
-                                tool_call_id=tool_id,
-                                query_snippet=tool_input,
+                                tool_result_text=getattr(dispatch_result, "tool_result_text", None),
+                                tool_call_args=getattr(dispatch_result, "tool_args", None),
                             )
-                            desc = f"Tính toán: {tool_input[:60]}"
-                        elif tool_name == "tool_current_datetime":
-                            tool_input = tool_args.get("dummy", "")
-                            result = await invoke_tool_with_runtime(
-                                tool_current_datetime,
-                                tool_input,
-                                tool_name=tool_name,
-                                runtime_context_base=runtime_context_base,
-                                tool_call_id=tool_id,
-                            )
-                            desc = "Xem ngày giờ hiện tại"
-                        else:  # tool_web_search
-                            tool_input = tool_args.get("query", query)
-                            result = await invoke_tool_with_runtime(
-                                tool_web_search,
-                                tool_input,
-                                tool_name=tool_name,
-                                runtime_context_base=runtime_context_base,
-                                tool_call_id=tool_id,
-                                query_snippet=tool_input,
-                            )
-                            desc = f"Tìm web: {tool_input[:60]}"
-
-                        tools_used.append({
-                            "name": tool_name,
-                            "args": tool_args,
-                            "description": desc,
-                            "iteration": iteration + 1
-                        })
-
-                        # Sprint 69: Push tool_result event
-                        await _push({
-                            "type": "tool_result",
-                            "content": {
-                                "name": tool_name,
-                                "result": str(result)[:500],
-                                "id": tool_id,
-                            },
-                            "node": "tutor_agent",
-                        })
-
-                        # Sprint 146b: Post-tool acknowledgment
-                        _ack = await _tool_acknowledgment(
-                            query=query,
-                            context=context,
-                            tool_name=tool_name,
-                            result=result,
-                        )
-                        await _push_thinking_deltas(f"\n\n{_ack}")
-
-                        messages.append(AIMessage(content="", tool_calls=[tool_call]))
-                        messages.append(ToolMessage(
-                            content=str(result),
-                            tool_call_id=tool_id
-                        ))
-
-                        logger.info("[TUTOR_AGENT] %s result length: %d", tool_name, len(str(result)))
-
-                    except Exception as e:
-                        logger.error("[TUTOR_AGENT] %s error: %s", tool_name, e)
-                        messages.append(AIMessage(content="", tool_calls=[tool_call]))
-                        messages.append(ToolMessage(
-                            content=f"Error: {str(e)}",
-                            tool_call_id=tool_id
-                        ))
-
-                elif tool_name == "tool_think":
-                    # Sprint 148: Think tool → emit thought as thinking_delta, no tool card
-                    thought = tool_args.get("thought", "")
-                    if thought:
-                        await _push_thinking_deltas(f"\n\n{thought}")
-                    messages.append(AIMessage(content="", tool_calls=[tool_call]))
-                    messages.append(ToolMessage(
-                        content=f"[Thought recorded: {len(thought)} chars]",
-                        tool_call_id=tool_id,
-                    ))
-                    logger.info("[TUTOR_AGENT] Think tool: %d chars", len(thought))
-
-                elif tool_name == "tool_report_progress":
-                    # Sprint 148: Phase transition — close block → action_text → open new block
-                    progress_msg = tool_args.get("message", "")
-                    next_beat = await _iteration_beat(
-                        query=query,
-                        context=context,
-                        iteration=iteration,
-                        tools_used=tools_used,
-                        phase_label=tool_args.get("phase_label", ""),
-                    )
-                    next_label = tool_args.get("phase_label", "") or "Tiếp tục phân tích"
-
-                    # Rate-limit: max _MAX_PHASE_TRANSITIONS per request
-                    if _phase_transition_count < _MAX_PHASE_TRANSITIONS:
-                        if event_queue is not None:
-                            # 1. Close current thinking block
-                            await _push({"type": "thinking_end", "content": "", "node": "tutor_agent"})
-                            # 2. Emit bold narrative (action_text)
-                            if progress_msg:
-                                await _push({"type": "action_text", "content": progress_msg, "node": "tutor_agent"})
-                            # 3. Open new thinking block with next phase label
-                            await _push({
-                                "type": "thinking_start",
-                                "content": next_beat.label,
-                                "node": "tutor_agent",
-                                "summary": next_beat.summary,
-                                "details": {"phase": next_beat.phase},
-                            })
-                            if next_beat.summary:
-                                await _push_thinking_deltas(f"{next_beat.summary}\n\n")
-                        _phase_transition_count += 1
-                        _last_tool_was_progress = True
+                            if continuation_thought:
+                                await _capture_native_tutor_thinking(
+                                    continuation_thought,
+                                    reopen_after_tool=True,
+                                    phase_label="Đối chiếu kết quả",
+                                    stage="post_tool_continuation",
+                                )
                     else:
-                        logger.warning("[TUTOR_AGENT] Phase transition rate limit reached (%d)", _MAX_PHASE_TRANSITIONS)
-
-                    messages.append(AIMessage(content="", tool_calls=[tool_call]))
-                    messages.append(ToolMessage(
-                        content=f"[Progress reported. Next phase: {next_label}]",
-                        tool_call_id=tool_id,
-                    ))
-                    logger.info("[TUTOR_AGENT] Phase transition: '%s' -> '%s'", progress_msg, next_label)
-
-                elif tool_name in ("tool_character_note", "tool_character_read"):
-                    try:
-                        # Sprint 95: Find matching character tool
-                        char_tool = get_tool_by_name(tools, tool_name)
-                        if char_tool:
-                            result = await invoke_tool_with_runtime(
-                                char_tool,
-                                tool_args,
-                                tool_name=tool_name,
-                                runtime_context_base=runtime_context_base,
-                                tool_call_id=tool_id,
-                                run_sync_in_thread=True,
-                            )
-                            desc = f"Character: {tool_name.replace('tool_character_', '')}"
-                        else:
-                            result = f"Tool {tool_name} not available"
-                            desc = tool_name
-
-                        tools_used.append({
-                            "name": tool_name,
-                            "args": tool_args,
-                            "description": desc,
-                            "iteration": iteration + 1,
-                        })
-
-                        await _push({
-                            "type": "tool_result",
-                            "content": {
-                                "name": tool_name,
-                                "result": str(result)[:500],
-                                "id": tool_id,
-                            },
-                            "node": "tutor_agent",
-                        })
-
-                        # Sprint 146b: Post-tool acknowledgment
-                        _ack = await _tool_acknowledgment(
-                            query=query,
-                            context=context,
-                            tool_name=tool_name,
-                            result=result,
+                        await _capture_native_tutor_thinking(
+                            rag_tool_thought,
+                            stage="rag_tool_native",
                         )
-                        await _push_thinking_deltas(f"\n\n{_ack}")
-
-                        messages.append(AIMessage(content="", tool_calls=[tool_call]))
-                        messages.append(ToolMessage(
-                            content=str(result),
-                            tool_call_id=tool_id,
-                        ))
-
-                        logger.info("[TUTOR_AGENT] Character tool %s done", tool_name)
-
-                    except Exception as e:
-                        logger.error("[TUTOR_AGENT] Character tool %s error: %s", tool_name, e)
-                        messages.append(AIMessage(content="", tool_calls=[tool_call]))
-                        messages.append(ToolMessage(
-                            content=f"Error: {str(e)}",
-                            tool_call_id=tool_id,
-                        ))
-
-                else:
-                    try:
-                        matched_tool = get_tool_by_name(tools, tool_name)
-                        if matched_tool is None:
-                            raise ValueError(f"Tool {tool_name} not available")
-
-                        result = await invoke_tool_with_runtime(
-                            matched_tool,
-                            tool_args,
-                            tool_name=tool_name,
-                            runtime_context_base=runtime_context_base,
-                            tool_call_id=tool_id,
-                            run_sync_in_thread=True,
+                elif tool_name == "tool_generate_visual" and event_queue is not None:
+                    continuation_thought = await _generate_post_tool_native_continuation(
+                        tool_name=tool_name,
+                        tool_result_text=getattr(dispatch_result, "tool_result_text", None),
+                        tool_call_args=getattr(dispatch_result, "tool_args", None),
+                    )
+                    if continuation_thought:
+                        await _capture_native_tutor_thinking(
+                            continuation_thought,
+                            reopen_after_tool=True,
+                            phase_label="Nhìn lại visual",
+                            stage="post_visual_continuation",
                         )
-
-                        tools_used.append({
-                            "name": tool_name,
-                            "args": tool_args,
-                            "description": f"Tool: {tool_name}",
-                            "iteration": iteration + 1,
-                        })
-
-                        await _push({
-                            "type": "tool_result",
-                            "content": {
-                                "name": tool_name,
-                                "result": str(result)[:500],
-                                "id": tool_id,
-                            },
-                            "node": "tutor_agent",
-                        })
-
-                        _ack = await _tool_acknowledgment(
-                            query=query,
-                            context=context,
-                            tool_name=tool_name,
-                            result=result,
-                        )
-                        await _push_thinking_deltas(f"\n\n{_ack}")
-
-                        messages.append(AIMessage(content="", tool_calls=[tool_call]))
-                        messages.append(ToolMessage(
-                            content=str(result),
-                            tool_call_id=tool_id,
-                        ))
-                    except Exception as e:
-                        logger.error("[TUTOR_AGENT] Generic tool %s error: %s", tool_name, e)
-                        messages.append(AIMessage(content="", tool_calls=[tool_call]))
-                        messages.append(ToolMessage(
-                            content=f"Error: {str(e)}",
-                            tool_call_id=tool_id,
-                        ))
-
+                if dispatch_result.should_break_loop:
+                    break
             # Sprint 146b: Close thinking block after all tool executions
             # Sprint 148: Don't double-close if tool_report_progress already closed the block
             if event_queue is not None and not _last_tool_was_progress:
@@ -1269,98 +1280,132 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
             if event_queue is not None and _last_tool_was_progress:
                 await _push({"type": "thinking_end", "content": "", "node": "tutor_agent"})
             try:
-                # Sprint 74: Stream final generation as answer_delta (not thinking_delta)
-                # This gives real-time answer streaming — TTFT drops from ~36s to ~15s
-                if event_queue is not None:
-                    final_msg = None
-                    async for chunk in self._llm.astream(messages):
-                        if final_msg is None:
-                            final_msg = chunk
-                        else:
-                            final_msg = final_msg + chunk
-                        # Sprint 74: Stream as answer_delta for real-time answer display
-                        text = _extract_chunk_text(chunk.content)
-                        if text:
-                            await _push_answer_deltas(text)
-                    if final_msg is not None:
-                        final_response, llm_thinking = self._extract_content_with_thinking(final_msg.content)
-                        _answer_streamed_via_bus = True  # Sprint 74: answer already streamed
-                    else:
-                        final_response = "Hmm, có gì đó trục trặc rồi. Bạn thử hỏi lại mình nhé!"
+                final_msg, _ignored_text, _used_streaming = await collect_tutor_model_message(
+                    self._llm,
+                    messages,
+                    logger=logger,
+                )
+                if final_msg is not None:
+                    _raw_final_text, raw_final_thinking = extract_thinking_from_response(
+                        getattr(final_msg, "content", ""),
+                    )
+                    if raw_final_thinking and _should_surface_native_tutor_thought(
+                        raw_final_thinking,
+                        stage="final_native",
+                    ):
+                        await _capture_native_tutor_thinking(
+                            raw_final_thinking,
+                            stage="final_native",
+                        )
+                    final_response, llm_thinking = self._extract_content_with_thinking(
+                        final_msg.content,
+                        query=query,
+                    )
+                    if not llm_thinking:
+                        llm_thinking = raw_final_thinking
                 else:
-                    final_msg = await self._llm.ainvoke(messages)
-                    final_response, llm_thinking = self._extract_content_with_thinking(final_msg.content)
+                    final_response = "Hmm, cÃ³ gÃ¬ Ä‘Ã³ trá»¥c tráº·c rá»“i. Báº¡n thá»­ há»i láº¡i mÃ¬nh nhÃ©!"
             except Exception as e:
                 logger.error("[TUTOR_AGENT] Final generation error: %s", e)
-                final_response = "Hmm, có gì đó trục trặc rồi. Bạn thử hỏi lại mình nhé!"
-        
+                final_response = "Hmm, cÃ³ gÃ¬ Ä‘Ã³ trá»¥c tráº·c rá»“i. Báº¡n thá»­ há»i láº¡i mÃ¬nh nhÃ©!"
+
+        if tools_used and looks_like_tutor_placeholder_answer(final_response):
+            recovered_response = recover_tutor_answer_from_messages(
+                messages,
+                query=query,
+            )
+            if recovered_response:
+                logger.warning(
+                    "[TUTOR_AGENT] Recovered tutor answer from tool observation after placeholder final generation"
+                )
+                final_response = recovered_response
+
         # Get sources from tool calls
         sources = get_last_retrieved_sources()
-        
-        # CHỈ THỊ SỐ 29 v9: Get RAG thinking from tool (Option B+)
+
+        # CHá»ˆ THá»Š Sá» 29 v9: Get RAG thinking from tool (Option B+)
         rag_thinking = get_last_native_thinking()
-        
-        # Combine thinking: prioritize RAG thinking (deeper analysis) 
-        # but include LLM thinking if RAG thinking unavailable
+        if not _should_surface_native_tutor_thought(
+            rag_thinking,
+            stage="rag_tool_native",
+        ):
+            rag_thinking = None
+        if not _should_surface_native_tutor_thought(
+            llm_thinking,
+            stage="final_native",
+        ):
+            llm_thinking = None
+
+        public_tutor_thinking = await _align_public_tutor_thinking(
+            "\n\n".join(public_tutor_fragments).strip() or None
+        )
+        public_rag_thinking = await _align_public_tutor_thinking(rag_thinking)
+        public_llm_thinking = await _align_public_tutor_thinking(llm_thinking)
+
+        last_tool_name = ""
+        if tools_used:
+            last_tool_name = str((tools_used[-1] or {}).get("name", "") or "")
+
+        # Public thinking authority for sync metadata:
+        # 1) native thought fragments already surfaced during the real tutor loop
+        # 2) sanitized raw RAG/LLM native thinking as fallback only
+        # 3) no authored tutor prose fallback on the live path
         combined_thinking = None
-        if rag_thinking and llm_thinking:
-            combined_thinking = f"[RAG Analysis]\n{rag_thinking}\n\n[Teaching Process]\n{llm_thinking}"
-        elif rag_thinking:
-            combined_thinking = rag_thinking
-        elif llm_thinking:
-            combined_thinking = llm_thinking
-        
+        if public_tutor_thinking:
+            combined_thinking = public_tutor_thinking
+        elif public_rag_thinking and public_llm_thinking:
+            if public_rag_thinking == public_llm_thinking:
+                combined_thinking = public_rag_thinking
+            else:
+                combined_thinking = f"{public_rag_thinking}\n\n{public_llm_thinking}"
+        elif public_rag_thinking:
+            combined_thinking = public_rag_thinking
+        elif public_llm_thinking:
+            combined_thinking = public_llm_thinking
+
         if combined_thinking:
-            logger.info("[TUTOR_AGENT] Combined thinking: %d chars (rag=%s, llm=%s)", len(combined_thinking), bool(rag_thinking), bool(llm_thinking))
-        
+            combined_thinking = await _align_public_tutor_thinking(combined_thinking) or combined_thinking
+
+        if (
+            not combined_thinking
+            and last_tool_name_seen in ("tool_knowledge_search", "tool_maritime_search", "tool_generate_visual")
+            and last_tool_result_text
+        ):
+            fallback_continuation = await _generate_post_tool_native_continuation(
+                tool_name=last_tool_name_seen,
+                tool_result_text=last_tool_result_text,
+                tool_call_args=last_tool_args,
+            )
+            if fallback_continuation:
+                combined_thinking = await _align_public_tutor_thinking(fallback_continuation)
+
+        if combined_thinking:
+            logger.info(
+                "[TUTOR_AGENT] Combined thinking: %d chars (rag=%s, llm=%s)",
+                len(combined_thinking),
+                bool(rag_thinking),
+                bool(llm_thinking),
+            )
+
         return final_response, sources, tools_used, combined_thinking, _answer_streamed_via_bus
 
     def _fallback_response(self, query: str) -> str:
         """Fallback when LLM unavailable."""
-        return f"""Tôi sẽ giúp bạn với: "{query}"
+        return build_tutor_fallback_response(query)
 
-Để học hiệu quả, bạn nên:
-1. Đọc tài liệu gốc liên quan
-2. Xem các ví dụ thực tế
-3. Làm bài tập thực hành
-
-Bạn muốn tôi giải thích khái niệm nào cụ thể?"""
-    
-    def _extract_content_with_thinking(self, content) -> tuple[str, Optional[str]]:
-        """
-        Extract text AND thinking from LLM response content.
-
-        CHỈ THỊ SỐ 29 v9: Option B+ - Returns thinking for state propagation.
-        This is the SOTA pattern for reasoning transparency (Anthropic/OpenAI).
-
-        Sprint 64 fix: Gemini sometimes wraps entire response in <thinking> tags
-        or returns empty text with content only in native thinking blocks.
-        When text is empty but thinking is substantial, recover thinking as response.
-
-        Args:
-            content: Response content from LLM
-
-        Returns:
-            Tuple of (text, thinking) where thinking may be None
-        """
-        text, thinking = extract_thinking_from_response(content)
-        clean_text = text.strip() if text else ""
-
-        # Log thinking if extracted
-        if thinking:
-            logger.info("[TUTOR] Native thinking extracted: %d chars", len(thinking))
-
-        # Gemini quirk: Sometimes model wraps entire response in <thinking> tags
-        # or native thinking format returns empty text. Recover the response.
-        if not clean_text and thinking and len(thinking) > 50:
-            logger.warning(
-                "[TUTOR] Response empty but thinking has content (%d chars), "
-                "recovering thinking as response text",
-                len(thinking),
-            )
-            return thinking.strip(), None
-
-        return clean_text, thinking
+    def _extract_content_with_thinking(
+        self,
+        content,
+        *,
+        query: str = "",
+    ) -> tuple[str, Optional[str]]:
+        """Delegate response/thinking extraction to the shared tutor helper."""
+        return extract_tutor_content_with_thinking(
+            content,
+            logger=logger,
+            extractor=extract_thinking_from_response,
+            query=query,
+        )
     
     def is_available(self) -> bool:
         """Check if LLM is available."""
@@ -1376,3 +1421,4 @@ def get_tutor_agent_node() -> TutorAgentNode:
     if _tutor_node is None:
         _tutor_node = TutorAgentNode()
     return _tutor_node
+

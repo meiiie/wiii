@@ -18,6 +18,12 @@ import yaml
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SKILLS_DIR = Path(__file__).parent / "skills"
+_HOST_SKILL_BOUNDARY_BLOCK = (
+    "## Host Skill Overlay\n"
+    "- Day la lop huong dan cue bo cho host/workspace hien tai.\n"
+    "- Giu nguyen danh tinh, soul, story, continuity, va giong rieng cua Wiii.\n"
+    "- Chi dung cac skill nay de dieu chinh su chu y, hanh dong, va safety theo trang hien tai."
+)
 
 
 @dataclass
@@ -27,6 +33,8 @@ class ContextSkill:
     host_type: str
     page_types: list[str]
     description: str
+    roles: list[str] = field(default_factory=list)
+    workflow_stages: list[str] = field(default_factory=list)
     priority: float = 0.5
     prompt_addition: str = ""
     tools: list[str] = field(default_factory=list)
@@ -58,6 +66,8 @@ class ContextSkillLoader:
                     host_type=raw.get("host_type", "generic"),
                     page_types=raw.get("page_types", ["*"]),
                     description=raw.get("description", ""),
+                    roles=raw.get("roles", []),
+                    workflow_stages=raw.get("workflow_stages", []),
                     priority=float(raw.get("priority", 0.5)),
                     prompt_addition=raw.get("prompt_addition", ""),
                     tools=raw.get("tools", []),
@@ -67,9 +77,16 @@ class ContextSkillLoader:
             except Exception as e:
                 logger.warning("Failed to parse skill %s: %s", yaml_file, e)
 
-    def load_skills(self, host_type: str, page_type: str) -> list[ContextSkill]:
+    def load_skills(
+        self,
+        host_type: str,
+        page_type: str,
+        *,
+        user_role: str | None = None,
+        workflow_stage: str | None = None,
+    ) -> list[ContextSkill]:
         """Load skills matching host_type + page_type with fallback chain."""
-        cache_key = f"{host_type}:{page_type}"
+        cache_key = f"{host_type}:{page_type}:{user_role or '*'}:{workflow_stage or '*'}"
         if cache_key in self._cache:
             return self._cache[cache_key]
 
@@ -79,7 +96,20 @@ class ContextSkillLoader:
         host_default: list[ContextSkill] = []
         generic_default: list[ContextSkill] = []
 
+        def _matches_filters(skill: ContextSkill) -> bool:
+            if skill.roles and user_role and user_role not in skill.roles:
+                return False
+            if skill.roles and not user_role:
+                return False
+            if skill.workflow_stages and workflow_stage and workflow_stage not in skill.workflow_stages:
+                return False
+            if skill.workflow_stages and not workflow_stage:
+                return False
+            return True
+
         for skill in self._all_skills:
+            if not _matches_filters(skill):
+                continue
             if skill.host_type == host_type:
                 if page_type in skill.page_types:
                     exact.append(skill)
@@ -105,7 +135,9 @@ class ContextSkillLoader:
     def get_prompt_addition(skills: list[ContextSkill]) -> str:
         """Concatenate prompt additions from all matched skills."""
         parts = [s.prompt_addition for s in skills if s.prompt_addition]
-        return "\n\n".join(parts)
+        if not parts:
+            return ""
+        return "\n\n".join([_HOST_SKILL_BOUNDARY_BLOCK, *parts])
 
     @staticmethod
     def get_tool_ids(skills: list[ContextSkill]) -> list[str]:

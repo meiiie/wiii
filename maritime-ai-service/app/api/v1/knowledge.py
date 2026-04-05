@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from app.api.deps import RequireAdmin
 from app.core.rate_limit import limiter
+from app.engine.embedding_runtime import get_embedding_backend
 from app.services.multimodal_ingestion_service import get_ingestion_service
 
 logger = logging.getLogger(__name__)
@@ -303,7 +304,7 @@ async def ingest_text_document(
 
     Pipeline:
     1. Text → SemanticChunker (general + maritime patterns)
-    2. Chunks → Embedding (Gemini)
+    2. Chunks → Embedding (provider-agnostic runtime)
     3. Chunks + Embeddings → pgvector (knowledge_embeddings table)
 
     - **content**: Raw text or markdown content to ingest
@@ -328,11 +329,10 @@ async def ingest_text_document(
 
     try:
         from app.services.chunking_service import get_semantic_chunker
-        from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
         from app.repositories.dense_search_repository import get_dense_search_repository
 
         chunker = get_semantic_chunker()
-        embeddings = GeminiOptimizedEmbeddings()
+        embeddings = get_embedding_backend()
         dense_repo = get_dense_search_repository()
 
         # Chunk the text

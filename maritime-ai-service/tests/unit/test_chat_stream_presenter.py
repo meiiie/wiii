@@ -98,6 +98,36 @@ def test_serialize_stream_event_error_requests_stop():
     assert "stream_error" in chunks[0]
 
 
+def test_serialize_stream_event_error_preserves_provider_metadata():
+    from types import SimpleNamespace
+
+    presenter = _load_chat_stream_presenter()
+
+    event = SimpleNamespace(
+        type="error",
+        content={
+            "message": "Provider tam thoi ban hoac da cham gioi han.",
+            "provider": "google",
+            "reason_code": "busy",
+        },
+    )
+
+    chunks, counter, should_stop = presenter.serialize_stream_event(
+        event=event,
+        event_counter=3,
+        enable_artifacts=True,
+    )
+
+    assert counter == 4
+    assert should_stop is True
+    data_line = next(
+        line for line in chunks[0].split("\n") if line.startswith("data: ")
+    )
+    payload = json.loads(data_line[6:])
+    assert payload["provider"] == "google"
+    assert payload["reason_code"] == "busy"
+
+
 def test_serialize_stream_event_visual_emits_sse_chunk():
     from types import SimpleNamespace
 
@@ -266,3 +296,36 @@ def test_emit_internal_error_sse_events_supports_single_error_chunk():
     assert counter is None
     assert len(chunks) == 1
     assert "event: error" in chunks[0]
+
+
+def test_serialize_stream_event_thinking_start_marks_summary_as_header_only():
+    from types import SimpleNamespace
+
+    presenter = _load_chat_stream_presenter()
+
+    event = SimpleNamespace(
+        type="thinking_start",
+        content="Bat nhip cau hoi",
+        node="direct",
+        details={
+            "summary": "Minh dang gom vai moc dang tin truoc khi chot cau tra loi.",
+            "summary_mode": "header_only",
+            "phase": "attune",
+        },
+    )
+
+    chunks, counter, should_stop = presenter.serialize_stream_event(
+        event=event,
+        event_counter=9,
+        enable_artifacts=True,
+    )
+
+    assert counter == 10
+    assert should_stop is False
+    data_line = next(
+        line for line in chunks[0].split("\n") if line.startswith("data: ")
+    )
+    payload = json.loads(data_line[6:])
+    assert payload["summary"] == "Minh dang gom vai moc dang tin truoc khi chot cau tra loi."
+    assert payload["summary_mode"] == "header_only"
+    assert payload["phase"] == "attune"

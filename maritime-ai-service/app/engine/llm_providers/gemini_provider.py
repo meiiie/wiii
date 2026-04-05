@@ -16,6 +16,7 @@ from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
 from app.engine.llm_providers.base import LLMProvider
+from app.engine.model_catalog import GOOGLE_DEEP_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,14 @@ try:
     _gemini_cb = get_circuit_breaker("gemini", failure_threshold=3, recovery_timeout=30)
 except Exception:
     pass
+
+
+def _resolve_gemini_model_for_tier(tier: str, explicit_model: str | None = None) -> str:
+    if explicit_model:
+        return explicit_model
+    if str(tier or "").strip().lower() == "deep":
+        return getattr(settings, "google_model_advanced", GOOGLE_DEEP_MODEL)
+    return settings.google_model
 
 
 class GeminiProvider(LLMProvider):
@@ -60,20 +69,21 @@ class GeminiProvider(LLMProvider):
         temperature: float = 0.5,
         **kwargs: Any,
     ) -> BaseChatModel:
+        model_name = kwargs.get("model_name") or kwargs.get("model")
         if getattr(settings, "enable_unified_providers", False):
-            return self._create_unified(tier, thinking_budget, include_thoughts, temperature)
-        return self._create_legacy(tier, thinking_budget, include_thoughts, temperature)
+            return self._create_unified(tier, thinking_budget, include_thoughts, temperature, model_name=model_name)
+        return self._create_legacy(tier, thinking_budget, include_thoughts, temperature, model_name=model_name)
 
     # --------------------------------------------------------------------- #
     # Legacy path: ChatGoogleGenerativeAI
     # --------------------------------------------------------------------- #
     def _create_legacy(
-        self, tier: str, thinking_budget: int, include_thoughts: bool, temperature: float,
+        self, tier: str, thinking_budget: int, include_thoughts: bool, temperature: float, *, model_name: str | None = None,
     ) -> BaseChatModel:
         from langchain_google_genai import ChatGoogleGenerativeAI
 
         llm_kwargs: dict[str, Any] = {
-            "model": settings.google_model,
+            "model": _resolve_gemini_model_for_tier(tier, model_name),
             "google_api_key": settings.google_api_key,
             "temperature": temperature,
         }
@@ -94,12 +104,12 @@ class GeminiProvider(LLMProvider):
     # Unified path: ChatOpenAI → Gemini OpenAI-compat endpoint
     # --------------------------------------------------------------------- #
     def _create_unified(
-        self, tier: str, thinking_budget: int, include_thoughts: bool, temperature: float,
+        self, tier: str, thinking_budget: int, include_thoughts: bool, temperature: float, *, model_name: str | None = None,
     ) -> BaseChatModel:
         from langchain_openai import ChatOpenAI
 
         llm_kwargs: dict[str, Any] = {
-            "model": settings.google_model,
+            "model": _resolve_gemini_model_for_tier(tier, model_name),
             "api_key": settings.google_api_key,
             "base_url": settings.google_openai_compat_url,
             "temperature": temperature,

@@ -15,17 +15,76 @@ Reference: MEMORY_OVERFLOW_SOTA_ANALYSIS.md, OpenClaw architecture
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
 from app.core.exceptions import ProviderUnavailableError
+from app.engine.llm_runtime_state import register_llm_runtime_access
 from app.engine.llm_provider_registry import create_provider, is_supported_provider
 from app.engine.llm_timeout_policy import (
     TIMEOUT_PROFILE_BY_NAME,
     TIMEOUT_PROFILE_SETTINGS,
     loads_timeout_provider_overrides,
+)
+from app.engine.llm_failover_runtime import (
+    ainvoke_with_failover_impl,
+    is_failover_eligible_error_impl,
+    is_rate_limit_error_impl,
+    resolve_primary_timeout_seconds_impl,
+)
+from app.engine.llm_pool_support import (
+    get_provider_chain_impl,
+    get_request_provider_chain_impl,
+    get_selectable_provider_names_impl,
+    normalize_failover_mode_impl,
+    normalize_provider_impl,
+    normalize_tier_key_impl,
+    resolve_auto_primary_provider_impl,
+    tag_runtime_metadata_impl,
+    thinking_budget_for_tier_impl,
+)
+from app.engine.llm_pool_bootstrap_runtime import (
+    create_fallback_instances_impl,
+    create_primary_instance_impl,
+    create_provider_instance_impl,
+    get_provider_instance_impl,
+    init_providers_impl,
+)
+from app.engine.llm_pool_monitoring import (
+    get_circuit_breaker_for_provider_impl,
+    get_request_selectable_providers_impl,
+    get_stats_impl,
+    is_available_impl,
+    record_provider_failure_impl,
+    record_provider_success_impl,
+    reset_pool_state_impl,
+)
+from app.engine.openai_compatible_credentials import (
+    is_openrouter_legacy_slot_configured,
+)
+from app.engine.llm_route_runtime import (
+    get_fallback_for_provider_impl,
+    resolve_runtime_route_impl,
+)
+from app.engine.llm_pool_legacy_runtime import (
+    attach_tracking_callback_impl,
+    create_instance_legacy_impl,
+)
+from app.engine.llm_pool_custom_models import (
+    create_llm_with_model_for_provider_impl,
+)
+from app.engine.llm_same_provider_runtime import (
+    resolve_same_provider_model_fallback_impl,
+)
+from app.engine.llm_pool_facade_runtime import (
+    get_fallback_impl,
+    get_pool_llm_impl,
+    get_provider_info_impl,
+    get_stats_public_impl,
+    initialize_pool_impl,
+    is_available_public_impl,
 )
 
 try:
@@ -102,6 +161,7 @@ class LLMPool:
     _active_provider: Optional[str] = None
     _fallback_provider: Optional[str] = None
     _providers: Dict[str, "LLMProvider"] = {}
+    _thinking_tier = ThinkingTier
 
     @classmethod
     def _get_provider_chain(cls) -> list[str]:
@@ -110,16 +170,10 @@ class LLMPool:
             getattr(settings, "llm_failover_chain", ["google", "zhipu", "ollama", "openrouter"])
         )
         preferred = getattr(settings, "llm_provider", "google")
-
-        chain: list[str] = []
-        if preferred:
-            chain.append(preferred)
-
-        for provider_name in configured:
-            if provider_name not in chain:
-                chain.append(provider_name)
-
-        return chain
+        return get_provider_chain_impl(
+            preferred_provider=preferred,
+            configured_chain=configured,
+        )
 
     @classmethod
     def _resolve_tier(cls, tier) -> str:
@@ -131,27 +185,24 @@ class LLMPool:
     @classmethod
     def _normalize_provider(cls, provider: Optional[str]) -> Optional[str]:
         """Normalize request provider names and collapse ``auto`` to None."""
-        if not provider:
-            return None
-        normalized = str(provider).strip().lower()
-        if not normalized or normalized == "auto":
-            return None
-        return normalized
+        return normalize_provider_impl(provider)
 
     @classmethod
     def _normalize_failover_mode(cls, failover_mode: Optional[str]) -> str:
-        normalized = str(failover_mode or FAILOVER_MODE_AUTO).strip().lower()
-        if normalized == FAILOVER_MODE_PINNED:
-            return FAILOVER_MODE_PINNED
-        return FAILOVER_MODE_AUTO
+        return normalize_failover_mode_impl(
+            failover_mode,
+            auto_mode=FAILOVER_MODE_AUTO,
+            pinned_mode=FAILOVER_MODE_PINNED,
+        )
 
     @classmethod
     def _normalize_tier_key(cls, tier) -> str:
         """Map helper tiers to the shared pool keys."""
-        tier_key = cls._resolve_tier(tier)
-        if tier_key in [ThinkingTier.MINIMAL.value, ThinkingTier.OFF.value]:
-            return ThinkingTier.LIGHT.value
-        return tier_key
+        return normalize_tier_key_impl(
+            tier=tier,
+            resolve_tier=cls._resolve_tier,
+            thinking_tier=ThinkingTier,
+        )
 
     @classmethod
     def _resolve_auto_primary_provider(cls) -> Optional[str]:
@@ -161,52 +212,23 @@ class LLMPool:
         (for example Google quota exhaustion) instead of spending multiple
         node hops timing out before failover finally engages.
         """
-        try:
-            from app.services.llm_selectability_service import (
-                choose_best_runtime_provider,
-            )
-
-            best = choose_best_runtime_provider(
-                preferred_provider=getattr(settings, "llm_provider", None) or cls._active_provider,
-                provider_order=cls._get_request_provider_chain(),
-                allow_degraded_fallback=False,
-            )
-            provider = cls._normalize_provider(best.provider if best else None)
-            if provider:
-                return provider
-        except Exception as exc:
-            logger.debug("[LLM_POOL] Auto provider preselection skipped: %s", exc)
-
-        selectable_names = cls._get_selectable_provider_names()
-        chain = cls._get_request_provider_chain()
-        for provider_name in chain:
-            normalized_name = cls._normalize_provider(provider_name)
-            if selectable_names is not None and normalized_name not in selectable_names:
-                continue
-            provider = cls._ensure_provider(provider_name)
-            if provider is None or not provider.is_configured() or not provider.is_available():
-                continue
-            return provider_name
-        return None
+        return resolve_auto_primary_provider_impl(
+            preferred_provider=getattr(settings, "llm_provider", None),
+            active_provider=cls._active_provider,
+            normalize_provider=cls._normalize_provider,
+            get_request_provider_chain=cls._get_request_provider_chain,
+            get_selectable_provider_names=cls._get_selectable_provider_names,
+            ensure_provider=cls._ensure_provider,
+            logger_obj=logger,
+        )
 
     @classmethod
     def _get_selectable_provider_names(cls) -> Optional[set[str]]:
         """Return the current selectable providers from user-facing runtime truth."""
-        try:
-            from app.services.llm_selectability_service import (
-                get_llm_selectability_snapshot,
-            )
-
-            return {
-                provider
-                for item in get_llm_selectability_snapshot()
-                if item.state == "selectable"
-                for provider in [cls._normalize_provider(item.provider)]
-                if provider
-            }
-        except Exception as exc:
-            logger.debug("[LLM_POOL] Selectable provider lookup skipped: %s", exc)
-            return None
+        return get_selectable_provider_names_impl(
+            normalize_provider=cls._normalize_provider,
+            logger_obj=logger,
+        )
 
     @classmethod
     def _tag_runtime_metadata(
@@ -218,13 +240,13 @@ class LLMPool:
         requested_provider: Optional[str] = None,
     ) -> BaseChatModel:
         """Attach lightweight runtime metadata for downstream failover helpers."""
-        try:
-            setattr(llm, "_wiii_provider_name", provider_name)
-            setattr(llm, "_wiii_tier_key", tier_key)
-            setattr(llm, "_wiii_requested_provider", requested_provider)
-        except Exception:
-            logger.debug("[LLM_POOL] Could not tag runtime metadata for provider=%s", provider_name)
-        return llm
+        return tag_runtime_metadata_impl(
+            llm,
+            provider_name=provider_name,
+            tier_key=tier_key,
+            requested_provider=requested_provider,
+            logger_obj=logger,
+        )
 
     @classmethod
     def _ensure_provider(cls, provider_name: Optional[str]):
@@ -248,30 +270,21 @@ class LLMPool:
     @classmethod
     def _get_request_provider_chain(cls, provider: Optional[str] = None) -> list[str]:
         """Build request-scoped provider order with the requested provider first."""
-        configured: list[str] = []
-        for name in cls._get_provider_chain():
-            if cls._ensure_provider(name) is not None and name not in configured:
-                configured.append(name)
-
-        requested = cls._normalize_provider(provider)
-        primary = requested or cls._active_provider
-
-        chain: list[str] = []
-        if primary and cls._ensure_provider(primary) is not None:
-            chain.append(primary)
-
-        for name in configured:
-            if name not in chain:
-                chain.append(name)
-
-        return chain
+        return get_request_provider_chain_impl(
+            provider=provider,
+            active_provider=cls._active_provider,
+            get_provider_chain=cls._get_provider_chain,
+            ensure_provider=cls._ensure_provider,
+            normalize_provider=cls._normalize_provider,
+        )
 
     @classmethod
     def _thinking_budget_for_tier(cls, tier_key: str) -> tuple[int, bool]:
         """Return thinking budget + thought flag for one tier."""
-        thinking_budget = THINKING_BUDGETS.get(tier_key, 1024)
-        include_thoughts = thinking_budget > 0
-        return thinking_budget, include_thoughts
+        return thinking_budget_for_tier_impl(
+            thinking_budgets=THINKING_BUDGETS,
+            tier_key=tier_key,
+        )
 
     @classmethod
     def _create_provider_instance(
@@ -281,31 +294,12 @@ class LLMPool:
         *,
         requested_provider: Optional[str] = None,
     ) -> BaseChatModel | None:
-        """Create and cache a provider-specific LLM instance on demand."""
-        provider = cls._ensure_provider(provider_name)
-        if provider is None or not provider.is_configured():
-            return None
-
-        provider_cache = cls._provider_pools.setdefault(provider_name, {})
-        if tier_key in provider_cache:
-            return provider_cache[tier_key]
-
-        thinking_budget, include_thoughts = cls._thinking_budget_for_tier(tier_key)
-        llm = provider.create_instance(
-            tier=tier_key,
-            thinking_budget=thinking_budget,
-            include_thoughts=include_thoughts,
-            temperature=0.5,
-        )
-        cls._attach_tracking_callback(llm, f"{provider_name}_{tier_key}")
-        llm = cls._tag_runtime_metadata(
-            llm,
+        return create_provider_instance_impl(
+            cls_ref=cls,
             provider_name=provider_name,
             tier_key=tier_key,
             requested_provider=requested_provider,
         )
-        provider_cache[tier_key] = llm
-        return llm
 
     @classmethod
     def get_provider_instance(
@@ -316,406 +310,101 @@ class LLMPool:
         allow_unavailable: bool = False,
         requested_provider: Optional[str] = None,
     ) -> BaseChatModel | None:
-        """Return a provider-specific instance, creating one lazily when needed."""
-        normalized_provider = cls._normalize_provider(provider_name)
-        if not normalized_provider:
-            return None
-
-        tier_key = cls._normalize_tier_key(tier or ThinkingTier.MODERATE)
-        provider = cls._ensure_provider(normalized_provider)
-        if provider is None:
-            return None
-        if not allow_unavailable and not provider.is_available():
-            return None
-
-        if normalized_provider == cls._active_provider and tier_key in cls._pool:
-            llm = cls._pool[tier_key]
-            cls._provider_pools.setdefault(normalized_provider, {})[tier_key] = llm
-            return cls._tag_runtime_metadata(
-                llm,
-                provider_name=normalized_provider,
-                tier_key=tier_key,
-                requested_provider=requested_provider,
-            )
-
-        if normalized_provider == cls._fallback_provider and tier_key in cls._fallback_pool:
-            llm = cls._fallback_pool[tier_key]
-            cls._provider_pools.setdefault(normalized_provider, {})[tier_key] = llm
-            return cls._tag_runtime_metadata(
-                llm,
-                provider_name=normalized_provider,
-                tier_key=tier_key,
-                requested_provider=requested_provider,
-            )
-
-        try:
-            return cls._create_provider_instance(
-                normalized_provider,
-                tier_key,
-                requested_provider=requested_provider,
-            )
-        except Exception as exc:
-            logger.warning(
-                "[LLM_POOL] Provider-specific instance failed (%s/%s): %s",
-                normalized_provider,
-                tier_key,
-                exc,
-            )
-            return None
+        return get_provider_instance_impl(
+            cls_ref=cls,
+            provider_name=provider_name,
+            tier=tier,
+            allow_unavailable=allow_unavailable,
+            requested_provider=requested_provider,
+            logger_obj=logger,
+        )
 
     @classmethod
     def _init_providers(cls) -> None:
-        """
-        Initialize provider instances from the failover chain config.
-
-        Loads providers lazily — only instantiates providers that are
-        in the configured failover chain.
-        """
-        if cls._providers:
-            return
-
-        chain = cls._get_provider_chain()
-        logger.info("[LLM_POOL] Initializing provider chain: %s (preferred=%s, failover=%s)",
-                     chain, getattr(settings, 'llm_provider', '?'), getattr(settings, 'llm_failover_chain', '?'))
-        for name in chain:
-            if not is_supported_provider(name):
-                logger.warning("[LLM_POOL] Skipping unsupported provider in chain: %s", name)
-                continue
-            try:
-                cls._providers[name] = create_provider(name)
-                logger.info("[LLM_POOL] Registered provider: %s", name)
-            except Exception as e:
-                logger.warning("[LLM_POOL] Failed to register provider %s: %s", name, e)
-
-        logger.info(
-            "[LLM_POOL] Provider chain: %s (failover=%s)",
-            list(cls._providers.keys()),
-            'enabled' if settings.enable_llm_failover else 'disabled',
+        init_providers_impl(
+            cls_ref=cls,
+            settings_obj=settings,
+            is_supported_provider_fn=is_supported_provider,
+            create_provider_fn=create_provider,
+            logger_obj=logger,
         )
 
     @classmethod
     def initialize(cls) -> None:
-        """
-        Pre-warm all LLM tiers at application startup.
-
-        Called once in main.py lifespan.
-        Creates 3 shared instances: DEEP, MODERATE, LIGHT.
-        """
-        if cls._initialized:
-            logger.info("[LLM_POOL] Already initialized, skipping")
-            return
-
-        cls._init_providers()
-
-        for tier in [ThinkingTier.DEEP, ThinkingTier.MODERATE, ThinkingTier.LIGHT]:
-            cls._create_instance(tier)
-
-        # Pre-create fallback instances for runtime failover
-        cls._create_fallback_instances()
-
-        cls._initialized = True
-        fallback_info = f", fallback={cls._fallback_provider}" if cls._fallback_provider else ""
-        logger.info(
-            "[LLM_POOL] Initialized with %d primary + %d fallback instances "
-            "(DEEP, MODERATE, LIGHT) -- provider=%s%s",
-            len(cls._pool), len(cls._fallback_pool),
-            cls._active_provider, fallback_info,
+        """Pre-warm all LLM tiers at application startup."""
+        initialize_pool_impl(
+            cls_ref=cls,
+            settings_obj=settings,
+            logger_obj=logger,
+            thinking_tier=ThinkingTier,
         )
 
     @classmethod
     def _create_instance(cls, tier) -> BaseChatModel:
-        """
-        Create a single LLM instance for the specified tier.
-
-        Uses failover chain: tries each provider in order until one succeeds.
-        Falls back to direct Gemini creation if no providers work.
-
-        Args:
-            tier: ThinkingTier enum or string value
-
-        Returns:
-            BaseChatModel instance
-        """
-        tier_key = cls._resolve_tier(tier)
-
-        if tier_key in cls._pool:
-            return cls._pool[tier_key]
-
-        thinking_budget = THINKING_BUDGETS.get(tier_key, 1024)
-        # v10: include_thoughts for ALL tiers — Gemini native thinking is primary path
-        include_thoughts = thinking_budget > 0
-
-        # --- Multi-Provider Failover ---
-        should_use_provider_chain = cls._providers and (
-            settings.enable_llm_failover or settings.llm_provider != "google"
+        return create_primary_instance_impl(
+            cls_ref=cls,
+            tier=tier,
+            settings_obj=settings,
+            logger_obj=logger,
+            thinking_budgets=THINKING_BUDGETS,
         )
-
-        if should_use_provider_chain:
-            chain = cls._get_provider_chain()
-            errors = []
-
-            for provider_name in chain:
-                provider = cls._providers.get(provider_name)
-                if provider is None:
-                    continue
-                if not provider.is_available():
-                    logger.debug("[LLM_POOL] Provider %s not available, skipping", provider_name)
-                    continue
-
-                try:
-                    llm = provider.create_instance(
-                        tier=tier_key,
-                        thinking_budget=thinking_budget,
-                        include_thoughts=include_thoughts,
-                        temperature=0.5,
-                    )
-                    # Sprint 27: Attach token tracking callback
-                    cls._attach_tracking_callback(llm, tier_key)
-                    llm = cls._tag_runtime_metadata(
-                        llm,
-                        provider_name=provider_name,
-                        tier_key=tier_key,
-                    )
-                    cls._pool[tier_key] = llm
-                    cls._provider_pools.setdefault(provider_name, {})[tier_key] = llm
-                    cls._active_provider = provider_name
-                    logger.info(
-                        "[LLM_POOL] Created %s via %s (budget=%d, thoughts=%s)",
-                        tier_key.upper(), provider_name, thinking_budget, include_thoughts,
-                    )
-                    return llm
-                except Exception as e:
-                    errors.append(f"{provider_name}: {e}")
-                    logger.warning(
-                        "[LLM_POOL] Provider %s failed for %s: %s",
-                        provider_name, tier_key, e,
-                    )
-                    continue
-
-            # All providers failed — raise with details
-            error_detail = "; ".join(errors) if errors else "no providers available"
-            raise RuntimeError(
-                f"[LLM_POOL] All providers failed for tier {tier_key}: {error_detail}"
-            )
-
-        # --- Legacy single-provider path (failover disabled) ---
-        return cls._create_instance_legacy(tier_key, thinking_budget, include_thoughts)
 
     @classmethod
     def _create_fallback_instances(cls) -> None:
-        """
-        Pre-create fallback LLM instances from the next available provider.
-
-        Called during initialization. Creates 3 fallback instances (DEEP,
-        MODERATE, LIGHT) from the first provider after the active one.
-        These are used for runtime failover when the primary hits 429.
-        """
-        if not settings.enable_llm_failover or not cls._providers:
-            return
-
-        chain = cls._get_provider_chain()
-
-        for name in chain:
-            if name == cls._active_provider:
-                continue
-            provider = cls._providers.get(name)
-            if provider is None or not provider.is_available():
-                continue
-
-            created = 0
-            for tier in [ThinkingTier.DEEP, ThinkingTier.MODERATE, ThinkingTier.LIGHT]:
-                tier_key = tier.value
-                thinking_budget = THINKING_BUDGETS.get(tier_key, 1024)
-                include_thoughts = thinking_budget > 0
-                try:
-                    llm = provider.create_instance(
-                        tier=tier_key,
-                        thinking_budget=thinking_budget,
-                        include_thoughts=include_thoughts,
-                        temperature=0.5,
-                    )
-                    cls._attach_tracking_callback(llm, f"fallback_{tier_key}")
-                    llm = cls._tag_runtime_metadata(
-                        llm,
-                        provider_name=name,
-                        tier_key=tier_key,
-                    )
-                    cls._fallback_pool[tier_key] = llm
-                    cls._provider_pools.setdefault(name, {})[tier_key] = llm
-                    created += 1
-                except Exception as e:
-                    logger.warning(
-                        "[LLM_POOL] Fallback %s/%s failed: %s", name, tier_key, e,
-                    )
-
-            if created > 0:
-                cls._fallback_provider = name
-                logger.info(
-                    "[LLM_POOL] Pre-created %d fallback instances via %s",
-                    created, name,
-                )
-                return  # Only need one fallback provider
+        create_fallback_instances_impl(
+            cls_ref=cls,
+            settings_obj=settings,
+            logger_obj=logger,
+            thinking_tier=ThinkingTier,
+            thinking_budgets=THINKING_BUDGETS,
+        )
 
     @classmethod
     def get_fallback(cls, tier=None) -> Optional[BaseChatModel]:
-        """
-        Get pre-created fallback LLM for runtime failover.
-
-        Use when primary provider returns 429/rate-limit errors.
-        Returns None if no fallback is available.
-
-        Args:
-            tier: ThinkingTier enum or string (default: MODERATE)
-
-        Usage in graph nodes:
-            try:
-                result = await llm.ainvoke(messages)
-            except Exception as e:
-                if is_rate_limit_error(e):
-                    fallback = LLMPool.get_fallback("moderate")
-                    if fallback:
-                        result = await fallback.ainvoke(messages)
-        """
-        if not cls._fallback_pool:
-            return None
-
-        if tier is None:
-            tier = ThinkingTier.MODERATE
-
-        tier_key = cls._resolve_tier(tier)
-        if tier_key in [ThinkingTier.MINIMAL.value, ThinkingTier.OFF.value]:
-            tier_key = ThinkingTier.LIGHT.value
-
-        return cls._fallback_pool.get(tier_key)
+        """Get the pre-created fallback LLM for runtime failover."""
+        return get_fallback_impl(
+            cls_ref=cls,
+            tier=tier,
+            thinking_tier=ThinkingTier,
+        )
 
     @classmethod
     def _create_instance_legacy(
         cls, tier_key: str, thinking_budget: int, include_thoughts: bool
     ) -> BaseChatModel:
-        """
-        Legacy single-provider creation (Gemini-only).
-
-        Used when enable_llm_failover=False or as ultimate fallback.
-
-        Behind ``enable_unified_providers`` gate, delegates to
-        GeminiProvider (which picks ChatOpenAI or ChatGoogleGenerativeAI).
-        """
-        # Unified path: delegate to provider registry
-        if getattr(settings, "enable_unified_providers", False):
-            provider = create_provider("google")
-            try:
-                llm = provider.create_instance(
-                    tier=tier_key,
-                    thinking_budget=thinking_budget,
-                    include_thoughts=include_thoughts,
-                    temperature=0.5,
-                )
-                cls._attach_tracking_callback(llm, tier_key)
-                llm = cls._tag_runtime_metadata(
-                    llm,
-                    provider_name="google",
-                    tier_key=tier_key,
-                )
-                cls._pool[tier_key] = llm
-                cls._provider_pools.setdefault("google", {})[tier_key] = llm
-                cls._active_provider = "google"
-                logger.info(
-                    "[LLM_POOL] Created %s instance [unified] (budget=%d, thoughts=%s)",
-                    tier_key.upper(), thinking_budget, include_thoughts,
-                )
-                return llm
-            except Exception as e:
-                logger.error("[LLM_POOL] Failed to create %s instance [unified]: %s", tier_key, e)
-                raise
-
-        # Legacy direct ChatGoogleGenerativeAI path
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
-        llm_kwargs = {
-            "model": settings.google_model,
-            "google_api_key": settings.google_api_key,
-            "temperature": 0.5,
-        }
-
-        if settings.thinking_enabled and thinking_budget > 0:
-            llm_kwargs["thinking_budget"] = thinking_budget
-            if include_thoughts:
-                llm_kwargs["include_thoughts"] = True
-
-        try:
-            llm = ChatGoogleGenerativeAI(**llm_kwargs)
-            # Sprint 27: Attach token tracking callback
-            cls._attach_tracking_callback(llm, tier_key)
-            llm = cls._tag_runtime_metadata(
-                llm,
-                provider_name="google",
-                tier_key=tier_key,
-            )
-            cls._pool[tier_key] = llm
-            cls._provider_pools.setdefault("google", {})[tier_key] = llm
-            cls._active_provider = "google"
-            logger.info(
-                "[LLM_POOL] Created %s instance [legacy] (budget=%d, thoughts=%s)",
-                tier_key.upper(), thinking_budget, include_thoughts,
-            )
-            return llm
-        except Exception as e:
-            logger.error("[LLM_POOL] Failed to create %s instance: %s", tier_key, e)
-            raise
+        return create_instance_legacy_impl(
+            cls_ref=cls,
+            tier_key=tier_key,
+            thinking_budget=thinking_budget,
+            include_thoughts=include_thoughts,
+            settings_obj=settings,
+            create_provider_fn=create_provider,
+            logger_obj=logger,
+            attach_tracking_callback_fn=cls._attach_tracking_callback,
+        )
 
     @classmethod
     def _attach_tracking_callback(cls, llm: BaseChatModel, tier_key: str) -> None:
-        """
-        Attach token tracking callback to an LLM instance.
-
-        Sprint 27: Enables automatic per-request token usage accounting
-        via the ContextVar-based TokenTracker system.
-        """
-        try:
-            from app.core.token_tracker import TokenTrackingCallback
-            callback = TokenTrackingCallback(tier=tier_key)
-            if hasattr(llm, "callbacks") and llm.callbacks is not None:
-                llm.callbacks.append(callback)
-            else:
-                llm.callbacks = [callback]
-        except Exception as e:
-            logger.debug("[LLM_POOL] Token tracking callback not attached: %s", e)
+        attach_tracking_callback_impl(
+            llm=llm,
+            tier_key=tier_key,
+            logger_obj=logger,
+        )
 
     @classmethod
     def get_provider_info(cls, name: str):
         """Public API: get a registered provider by name."""
-        if not cls._providers:
-            cls._init_providers()
-        return cls._providers.get(name)
+        return get_provider_info_impl(cls_ref=cls, name=name)
 
     @classmethod
     def get(cls, tier=None) -> BaseChatModel:
-        """
-        Get a shared LLM instance for the specified tier.
-
-        Args:
-            tier: ThinkingTier enum or string value (default: MODERATE)
-
-        Returns:
-            Shared BaseChatModel instance (backward compatible with all consumers)
-        """
-        if tier is None:
-            tier = ThinkingTier.MODERATE
-
-        if not cls._initialized:
-            cls.initialize()
-
-        tier_key = cls._resolve_tier(tier)
-
-        # Map MINIMAL/OFF to LIGHT for memory efficiency
-        if tier_key in [ThinkingTier.MINIMAL.value, ThinkingTier.OFF.value]:
-            tier_key = ThinkingTier.LIGHT.value
-
-        if tier_key not in cls._pool:
-            logger.warning("[LLM_POOL] Tier %s not in pool, creating on-demand", tier_key)
-            cls._create_instance(tier_key)
-
-        return cls._pool[tier_key]
+        """Get a shared LLM instance for the specified tier."""
+        return get_pool_llm_impl(
+            cls_ref=cls,
+            tier=tier,
+            thinking_tier=ThinkingTier,
+            logger_obj=logger,
+        )
 
     @classmethod
     def is_initialized(cls) -> bool:
@@ -732,25 +421,12 @@ class LLMPool:
         """Return providers that should be exposed in request-level switchers."""
         if not cls._providers:
             cls._init_providers()
-
-        providers: list[str] = []
-        openrouter_mode = "openrouter.ai" in str(getattr(settings, "openai_base_url", "") or "").lower()
-
-        for name in cls._get_request_provider_chain():
-            provider = cls._ensure_provider(name)
-            if provider is None or not provider.is_configured():
-                continue
-
-            # OpenAI and OpenRouter currently share the OpenAI-compatible config
-            # surface, so expose only the truthy runtime mode.
-            if name == "openrouter" and not openrouter_mode:
-                continue
-            if name == "openai" and openrouter_mode:
-                continue
-            if name not in providers:
-                providers.append(name)
-
-        return providers
+        return get_request_selectable_providers_impl(
+            providers=cls._providers,
+            openrouter_legacy_slot=is_openrouter_legacy_slot_configured(settings),
+            get_request_provider_chain=cls._get_request_provider_chain,
+            ensure_provider=cls._ensure_provider,
+        )
 
     @classmethod
     def get_fallback_for_provider(
@@ -760,39 +436,35 @@ class LLMPool:
         *,
         failover_mode: str = FAILOVER_MODE_AUTO,
         prefer_selectable_only: bool = False,
+        allowed_fallback_providers: set[str] | list[str] | tuple[str, ...] | None = None,
     ) -> tuple[Optional[str], Optional[BaseChatModel]]:
         """Return the next available provider/LLM for one request route."""
-        if cls._normalize_failover_mode(failover_mode) == FAILOVER_MODE_PINNED:
-            return None, None
-        tier_key = cls._normalize_tier_key(tier or ThinkingTier.MODERATE)
-        primary = cls._normalize_provider(provider_name) or cls._active_provider
-        chain = cls._get_request_provider_chain(primary)
-        selectable_now = cls._get_selectable_provider_names() if prefer_selectable_only else None
-
-        seen_primary = primary is None
-        for candidate in chain:
-            if not seen_primary:
-                if candidate == primary:
-                    seen_primary = True
-                continue
-            if candidate == primary:
-                continue
-            if selectable_now is not None and candidate not in selectable_now:
-                continue
-            fallback_llm = cls.get_provider_instance(candidate, tier_key, allow_unavailable=False)
-            if fallback_llm is not None:
-                return candidate, fallback_llm
-
-        if (
-            provider_name is None
-            and cls._fallback_provider
-            and (selectable_now is None or cls._fallback_provider in selectable_now)
-        ):
-            fallback_llm = cls.get_provider_instance(cls._fallback_provider, tier_key, allow_unavailable=False)
-            if fallback_llm is not None:
-                return cls._fallback_provider, fallback_llm
-
-        return None, None
+        normalized_allowed_fallbacks: set[str] | None = None
+        if allowed_fallback_providers:
+            normalized_allowed_fallbacks = {
+                normalized
+                for raw_name in allowed_fallback_providers
+                for normalized in [cls._normalize_provider(raw_name)]
+                if normalized
+            } or None
+        return get_fallback_for_provider_impl(
+            provider_name=provider_name,
+            tier=tier,
+            failover_mode=failover_mode,
+            prefer_selectable_only=prefer_selectable_only,
+            allowed_fallback_providers=normalized_allowed_fallbacks,
+            auto_mode=FAILOVER_MODE_AUTO,
+            pinned_mode=FAILOVER_MODE_PINNED,
+            fallback_provider=cls._fallback_provider,
+            active_provider=cls._active_provider,
+            thinking_tier=ThinkingTier,
+            normalize_failover_mode=cls._normalize_failover_mode,
+            normalize_tier_key=cls._normalize_tier_key,
+            normalize_provider=cls._normalize_provider,
+            get_request_provider_chain=cls._get_request_provider_chain,
+            get_selectable_provider_names=cls._get_selectable_provider_names,
+            get_provider_instance=cls.get_provider_instance,
+        )
 
     @classmethod
     def resolve_runtime_route(
@@ -802,160 +474,91 @@ class LLMPool:
         *,
         failover_mode: str = FAILOVER_MODE_AUTO,
         prefer_selectable_fallback: bool = False,
+        allowed_fallback_providers: set[str] | list[str] | tuple[str, ...] | None = None,
     ) -> ResolvedLLMRoute:
         """Resolve a request-scoped primary/fallback route for failover helpers."""
-        tier_key = cls._normalize_tier_key(tier or ThinkingTier.MODERATE)
-        primary = cls._normalize_provider(provider_name)
-        normalized_mode = cls._normalize_failover_mode(failover_mode)
-
-        if primary:
-            primary_llm = cls.get_provider_instance(
-                primary,
-                tier_key,
-                allow_unavailable=True,
-                requested_provider=primary,
-            )
-            if primary_llm is None:
-                if normalized_mode == FAILOVER_MODE_PINNED:
-                    raise ProviderUnavailableError(
-                        provider=primary,
-                        reason_code="busy",
-                        message="Provider duoc chon hien khong san sang de xu ly yeu cau nay.",
-                    )
-                logger.warning(
-                    "[LLM_POOL] Requested provider %s unavailable, falling back to auto route",
-                    primary,
-                )
-                return cls.resolve_runtime_route(
-                    None,
-                    tier_key,
-                    failover_mode=FAILOVER_MODE_AUTO,
-                    prefer_selectable_fallback=prefer_selectable_fallback,
-                )
-            fallback_provider, fallback_llm = cls.get_fallback_for_provider(
-                primary,
-                tier_key,
-                failover_mode=normalized_mode,
-                prefer_selectable_only=prefer_selectable_fallback,
-            )
-            return ResolvedLLMRoute(
-                provider=primary,
-                llm=primary_llm,
-                circuit_breaker=cls.get_circuit_breaker_for_provider(primary),
-                fallback_provider=fallback_provider,
-                fallback_llm=fallback_llm,
-            )
-
-        auto_primary = cls._resolve_auto_primary_provider()
-        if auto_primary:
-            auto_llm = cls.get_provider_instance(
-                auto_primary,
-                tier_key,
-                allow_unavailable=False,
-            )
-            if auto_llm is not None:
-                fallback_provider, fallback_llm = cls.get_fallback_for_provider(
-                    auto_primary,
-                    tier_key,
-                    failover_mode=normalized_mode,
-                    prefer_selectable_only=True,
-                )
-                return ResolvedLLMRoute(
-                    provider=auto_primary,
-                    llm=auto_llm,
-                    circuit_breaker=cls.get_circuit_breaker_for_provider(auto_primary),
-                    fallback_provider=fallback_provider,
-                    fallback_llm=fallback_llm,
-                )
-
-        selectable_names = cls._get_selectable_provider_names()
-        if selectable_names is not None:
-            raise ProviderUnavailableError(
-                provider="auto",
-                reason_code="busy",
-                message="Hien khong co provider nao dang san sang cho che do Tu dong.",
-            )
-
-        llm = cls.get(tier_key)
-        active_provider = getattr(llm, "_wiii_provider_name", None) or cls._active_provider
-        fallback_provider, fallback_llm = cls.get_fallback_for_provider(
-            active_provider,
-            tier_key,
-            failover_mode=normalized_mode,
-        )
-        return ResolvedLLMRoute(
-            provider=active_provider,
-            llm=llm,
-            circuit_breaker=cls.get_circuit_breaker_for_provider(active_provider),
-            fallback_provider=fallback_provider,
-            fallback_llm=fallback_llm,
+        normalized_allowed_fallbacks: set[str] | None = None
+        if allowed_fallback_providers:
+            normalized_allowed_fallbacks = {
+                normalized
+                for raw_name in allowed_fallback_providers
+                for normalized in [cls._normalize_provider(raw_name)]
+                if normalized
+            } or None
+        return resolve_runtime_route_impl(
+            provider_name=provider_name,
+            tier=tier or ThinkingTier.MODERATE,
+            failover_mode=failover_mode,
+            prefer_selectable_fallback=prefer_selectable_fallback,
+            allowed_fallback_providers=normalized_allowed_fallbacks,
+            auto_mode=FAILOVER_MODE_AUTO,
+            resolved_route_cls=ResolvedLLMRoute,
+            provider_unavailable_error_cls=ProviderUnavailableError,
+            active_provider=cls._active_provider,
+            normalize_tier_key=cls._normalize_tier_key,
+            normalize_provider=cls._normalize_provider,
+            normalize_failover_mode=cls._normalize_failover_mode,
+            get_provider_instance=cls.get_provider_instance,
+            get_fallback_for_provider=cls.get_fallback_for_provider,
+            get_circuit_breaker_for_provider=cls.get_circuit_breaker_for_provider,
+            resolve_auto_primary_provider=cls._resolve_auto_primary_provider,
+            get_selectable_provider_names=cls._get_selectable_provider_names,
+            get_default_llm=cls.get,
+            logger_obj=logger,
         )
 
     @classmethod
     def get_stats(cls) -> dict:
         """Get pool statistics for monitoring."""
-        if not cls._providers:
-            try:
-                cls._init_providers()
-            except Exception as e:
-                logger.debug("[LLM_POOL] get_stats() could not init providers: %s", e)
+        return get_stats_public_impl(
+            cls_ref=cls,
+            settings_obj=settings,
+            gemini_cb=_gemini_cb,
+            logger_obj=logger,
+        )
 
-        stats = {
-            "initialized": cls._initialized,
-            "instance_count": len(cls._pool),
-            "fallback_count": len(cls._fallback_pool),
-            "tiers": list(cls._pool.keys()),
-            "active_provider": cls._active_provider,
-            "fallback_provider": cls._fallback_provider,
-            "failover_enabled": settings.enable_llm_failover,
-            "provider_chain": cls._get_provider_chain(),
-            "providers_registered": list(cls._providers.keys()),
-            "request_selectable_providers": (
-                cls.get_request_selectable_providers() if cls._providers else []
-            ),
-        }
-        # Include per-provider circuit breaker stats
-        cb_stats = {}
-        for name, provider in cls._providers.items():
-            cb = provider.get_circuit_breaker() if hasattr(provider, "get_circuit_breaker") else None
-            if cb is not None:
-                cb_stats[name] = cb.get_stats()
-        if cb_stats:
-            stats["circuit_breakers"] = cb_stats
-        # Legacy gemini CB
-        if _gemini_cb is not None and "circuit_breakers" not in stats:
-            stats["circuit_breaker"] = _gemini_cb.get_stats()
-        return stats
+    @classmethod
+    def _get_stats_core(cls, *, settings_obj, gemini_cb) -> dict:
+        return get_stats_impl(
+            initialized=cls._initialized,
+            pool=cls._pool,
+            fallback_pool=cls._fallback_pool,
+            active_provider=cls._active_provider,
+            fallback_provider=cls._fallback_provider,
+            failover_enabled=settings_obj.enable_llm_failover,
+            get_provider_chain=cls._get_provider_chain,
+            providers=cls._providers,
+            get_request_selectable_providers=cls.get_request_selectable_providers,
+            gemini_cb=gemini_cb,
+        )
 
     @classmethod
     def is_available(cls) -> bool:
-        """
-        Check if any LLM provider is likely available.
+        """Check if any LLM provider is likely available."""
+        return is_available_public_impl(
+            cls_ref=cls,
+            settings_obj=settings,
+            gemini_cb=_gemini_cb,
+        )
 
-        With failover enabled, returns True if ANY provider in the chain
-        has a non-open circuit breaker. Without failover, checks Gemini only.
-
-        Returns:
-            True if at least one provider is available
-        """
-        if settings.enable_llm_failover and cls._providers:
-            return any(p.is_available() for p in cls._providers.values())
-        # Legacy: check Gemini circuit breaker
-        if _gemini_cb is None:
-            return True
-        return _gemini_cb.is_available()
+    @classmethod
+    def _is_available_core(cls, *, failover_enabled: bool, gemini_cb) -> bool:
+        return is_available_impl(
+            failover_enabled=failover_enabled,
+            providers=cls._providers,
+            gemini_cb=gemini_cb,
+        )
 
     @classmethod
     async def record_success_for_provider(cls, provider_name: Optional[str]) -> None:
         """Record a successful call for a specific runtime provider."""
-        normalized = cls._normalize_provider(provider_name) or cls._active_provider
-        if normalized and normalized in cls._providers:
-            provider = cls._providers[normalized]
-            if hasattr(provider, "record_success"):
-                await provider.record_success()
-                return
-        if normalized in (None, "google") and _gemini_cb is not None:
-            await _gemini_cb.record_success()
+        await record_provider_success_impl(
+            provider_name=provider_name,
+            active_provider=cls._active_provider,
+            providers=cls._providers,
+            normalize_provider=cls._normalize_provider,
+            gemini_cb=_gemini_cb,
+        )
 
     @classmethod
     async def record_success(cls) -> None:
@@ -965,14 +568,13 @@ class LLMPool:
     @classmethod
     async def record_failure_for_provider(cls, provider_name: Optional[str]) -> None:
         """Record a failed call for a specific runtime provider."""
-        normalized = cls._normalize_provider(provider_name) or cls._active_provider
-        if normalized and normalized in cls._providers:
-            provider = cls._providers[normalized]
-            if hasattr(provider, "record_failure"):
-                await provider.record_failure()
-                return
-        if normalized in (None, "google") and _gemini_cb is not None:
-            await _gemini_cb.record_failure()
+        await record_provider_failure_impl(
+            provider_name=provider_name,
+            active_provider=cls._active_provider,
+            providers=cls._providers,
+            normalize_provider=cls._normalize_provider,
+            gemini_cb=_gemini_cb,
+        )
 
     @classmethod
     async def record_failure(cls) -> None:
@@ -982,14 +584,13 @@ class LLMPool:
     @classmethod
     def get_circuit_breaker_for_provider(cls, provider_name: Optional[str]):
         """Get the circuit breaker associated with a specific provider."""
-        normalized = cls._normalize_provider(provider_name) or cls._active_provider
-        if normalized:
-            provider = cls._ensure_provider(normalized)
-            if provider is not None and hasattr(provider, "get_circuit_breaker"):
-                return provider.get_circuit_breaker()
-        if normalized in (None, "google"):
-            return _gemini_cb
-        return None
+        return get_circuit_breaker_for_provider_impl(
+            provider_name=provider_name,
+            active_provider=cls._active_provider,
+            normalize_provider=cls._normalize_provider,
+            ensure_provider=cls._ensure_provider,
+            gemini_cb=_gemini_cb,
+        )
 
     @classmethod
     def get_circuit_breaker(cls):
@@ -1013,58 +614,42 @@ class LLMPool:
         Used for grouped admin profiles and per-agent model overrides.
         Caches by provider + model + tier to avoid re-creation.
         """
-        normalized_provider = cls._normalize_provider(provider_name)
-        if not normalized_provider:
-            return None
-
-        cache_key = f"_custom_{normalized_provider}_{model_name}_{tier.value}"
-        if cache_key in cls._pool:
-            return cls._pool[cache_key]
-
-        thinking_budget = THINKING_BUDGETS.get(tier.value, 4096)
-        include_thoughts = tier in (ThinkingTier.DEEP, ThinkingTier.MODERATE)
-
-        try:
-            provider = cls._ensure_provider(normalized_provider)
-            if provider is None or not provider.is_configured():
-                return None
-
-            llm = provider.create_instance(
-                tier=tier.value,
-                thinking_budget=thinking_budget,
-                include_thoughts=include_thoughts,
-                temperature=0.5,
-                model_name=model_name,
-            )
-            cls._attach_tracking_callback(llm, cache_key)
-            llm = cls._tag_runtime_metadata(
-                llm,
-                provider_name=normalized_provider,
-                tier_key=tier.value,
-                requested_provider=normalized_provider,
-            )
-            cls._pool[cache_key] = llm
-            logger.info(
-                "[LLM_POOL] Created custom model LLM: provider=%s model=%s tier=%s budget=%d",
-                normalized_provider,
-                model_name,
-                tier.value,
-                thinking_budget,
-            )
-            return llm
-        except Exception as exc:
-            logger.warning(
-                "[LLM_POOL] Custom model %s/%s failed: %s",
-                normalized_provider,
-                model_name,
-                exc,
-            )
-            return None
+        return create_llm_with_model_for_provider_impl(
+            provider_name=provider_name,
+            model_name=model_name,
+            tier=tier,
+            pool=cls._pool,
+            thinking_budgets=THINKING_BUDGETS,
+            thinking_tier_cls=ThinkingTier,
+            normalize_provider=cls._normalize_provider,
+            ensure_provider=cls._ensure_provider,
+            attach_tracking_callback=cls._attach_tracking_callback,
+            tag_runtime_metadata=cls._tag_runtime_metadata,
+            logger_obj=logger,
+        )
 
     @classmethod
     def create_llm_with_model(cls, model_name: str, tier: ThinkingTier) -> BaseChatModel | None:
         """Backward-compatible helper for Google-only custom model overrides."""
         return cls.create_llm_with_model_for_provider("google", model_name, tier)
+
+    @classmethod
+    def resolve_same_provider_model_fallback(
+        cls,
+        provider_name: Optional[str],
+        tier,
+        *,
+        current_model_name: Optional[str] = None,
+    ) -> dict[str, str] | None:
+        """Return a lower-latency same-provider fallback plan when safe."""
+        return resolve_same_provider_model_fallback_impl(
+            provider_name=provider_name,
+            tier_key=cls._normalize_tier_key(tier),
+            current_model_name=current_model_name,
+            settings_obj=settings,
+            thinking_tier_cls=ThinkingTier,
+            normalize_provider=cls._normalize_provider,
+        )
 
     @classmethod
     def reset(cls) -> None:
@@ -1073,10 +658,12 @@ class LLMPool:
 
         Clears all instances, providers, and resets initialization flag.
         """
-        cls._pool.clear()
-        cls._fallback_pool.clear()
-        cls._provider_pools.clear()
-        cls._providers.clear()
+        reset_pool_state_impl(
+            pool=cls._pool,
+            fallback_pool=cls._fallback_pool,
+            provider_pools=cls._provider_pools,
+            providers=cls._providers,
+        )
         cls._initialized = False
         cls._active_provider = None
         cls._fallback_provider = None
@@ -1085,103 +672,53 @@ class LLMPool:
 # ============================================================================
 # CONVENIENCE FUNCTIONS
 # ============================================================================
-# These are the primary interface for components to get LLM instances.
-# Use these instead of create_llm() to ensure singleton pattern.
-# Return type: BaseChatModel (backward compat — all consumers use .ainvoke/.astream)
+_PRIMARY_TIMEOUT = 12.0
+
+TIMEOUT_PROFILE_STRUCTURED = "structured"
+TIMEOUT_PROFILE_BACKGROUND = "background"
+
+
+def _effort_to_tier(effort: Optional[str], default_tier):
+    mapping = {
+        "low": ThinkingTier.LIGHT,
+        "medium": ThinkingTier.MODERATE,
+        "high": ThinkingTier.DEEP,
+        "max": ThinkingTier.DEEP,
+    }
+    return mapping.get(effort or "", default_tier)
+
 
 def get_llm_deep() -> BaseChatModel:
-    """
-    Get shared DEEP tier LLM (8192 tokens thinking).
-
-    Use for:
-    - TutorAgent (teaching, explanations)
-    - Student-facing responses requiring full explanation
-    """
     return LLMPool.get(ThinkingTier.DEEP)
 
 
 def get_llm_moderate() -> BaseChatModel:
-    """
-    Get shared MODERATE tier LLM (4096 tokens thinking).
-
-    Use for:
-    - RAGAgent (synthesis)
-    - RetrievalGrader (document grading)
-    - AnswerVerifier (verification)
-    - GraderAgent (quality assessment)
-    - KGBuilderAgent (entity extraction)
-    """
     return LLMPool.get(ThinkingTier.MODERATE)
 
 
 def get_llm_light() -> BaseChatModel:
-    """
-    Get shared LIGHT tier LLM (1024 tokens thinking).
-
-    Use for:
-    - QueryAnalyzer (query classification)
-    - QueryRewriter (rewrite queries)
-    - SupervisorAgent (routing)
-    - GuardianAgent (safety check)
-    - MemorySummarizer (summarization)
-    - InsightExtractor (insight extraction)
-    - MemoryConsolidator (consolidation)
-    - MemoryManager (fact extraction)
-    - FactExtractor (structured extraction)
-    """
     return LLMPool.get(ThinkingTier.LIGHT)
 
 
-def get_llm_for_effort(effort: Optional[str], default_tier: ThinkingTier = ThinkingTier.MODERATE) -> BaseChatModel:
-    """
-    Get LLM instance based on per-request thinking effort.
-
-    Maps user-facing effort levels to internal ThinkingTier:
-      - "low"    → LIGHT  (1024 tokens, fast/cheap)
-      - "medium" → MODERATE (4096 tokens, balanced)
-      - "high"   → DEEP (8192 tokens, thorough)
-      - "max"    → DEEP (8192 tokens, deepest reasoning)
-      - None     → default_tier (no override)
-
-    Args:
-        effort: Per-request thinking effort from ChatRequest.
-        default_tier: Fallback tier when effort is None.
-
-    Returns:
-        BaseChatModel at the appropriate tier.
-
-    Sprint 66: Adaptive Thinking Effort
-    """
+def get_llm_for_effort(
+    effort: Optional[str],
+    default_tier=None,
+) -> BaseChatModel:
+    resolved_default = default_tier or ThinkingTier.MODERATE
     if not effort:
-        return LLMPool.get(default_tier)
-
-    tier = _EFFORT_TO_TIER.get(effort, default_tier)
-    return LLMPool.get(tier)
+        return LLMPool.get(resolved_default)
+    return LLMPool.get(_effort_to_tier(effort, resolved_default))
 
 
 def get_llm_for_provider(
     provider: Optional[str],
     effort: Optional[str] = None,
-    default_tier: ThinkingTier = ThinkingTier.MODERATE,
+    default_tier=None,
     *,
     strict_pin: bool = False,
 ) -> BaseChatModel:
-    """
-    Get LLM instance routed to a specific provider.
-
-    Used for per-request provider selection (model switcher UI).
-    Reuses existing pool/fallback instances — no new LLM creation.
-
-    Args:
-        provider: "auto" | "google" | "zhipu" | None (= auto)
-        effort: Per-request thinking effort override.
-        default_tier: Fallback tier when effort is None.
-    """
-    # Resolve tier from effort
-    if effort:
-        tier = _EFFORT_TO_TIER.get(effort, default_tier)
-    else:
-        tier = default_tier
+    resolved_default = default_tier or ThinkingTier.MODERATE
+    tier = _effort_to_tier(effort, resolved_default) if effort else resolved_default
 
     normalized_provider = LLMPool._normalize_provider(provider)
     if normalized_provider and not strict_pin:
@@ -1202,47 +739,14 @@ def get_llm_for_provider(
     return route.llm
 
 
-def get_llm_fallback(tier: Optional[str] = "moderate") -> Optional[BaseChatModel]:
-    """
-    Get pre-created fallback LLM for runtime failover.
-
-    Returns None if no fallback is configured. Use in graph nodes:
-
-        try:
-            result = await llm.ainvoke(messages)
-        except Exception as e:
-            if is_rate_limit_error(e):
-                fb = get_llm_fallback("moderate")
-                if fb:
-                    result = await fb.ainvoke(messages)
-    """
+def get_llm_fallback(
+    tier: Optional[str] = "moderate",
+) -> Optional[BaseChatModel]:
     return LLMPool.get_fallback(tier)
 
 
 def is_rate_limit_error(error: Exception) -> bool:
-    """Check if an exception is a rate-limit (429) error from any provider."""
-    err_str = str(error).lower()
-    return any(marker in err_str for marker in [
-        "429",
-        "resource_exhausted",
-        "rate_limit",
-        "rate limit",
-        "quota",
-        "too many requests",
-    ])
-
-
-_PRIMARY_TIMEOUT: float = 12.0  # legacy LIGHT-tier first-response timeout
-
-_EFFORT_TO_TIER: dict[str, "ThinkingTier"] = {
-    "low": ThinkingTier.LIGHT,
-    "medium": ThinkingTier.MODERATE,
-    "high": ThinkingTier.DEEP,
-    "max": ThinkingTier.DEEP,
-}
-
-TIMEOUT_PROFILE_STRUCTURED = "structured"
-TIMEOUT_PROFILE_BACKGROUND = "background"
+    return is_rate_limit_error_impl(error)
 
 
 def resolve_primary_timeout_seconds(
@@ -1251,39 +755,19 @@ def resolve_primary_timeout_seconds(
     timeout_profile: Optional[str] = None,
     provider: Optional[str] = None,
 ) -> float | None:
-    """Resolve the first-response timeout for one invocation.
-
-    This timeout only protects the initial LLM response path. It is not meant
-    to cap the total workflow duration for streaming/background tasks.
-    """
-    normalized_profile = str(timeout_profile or "").strip().lower()
-    if normalized_profile == TIMEOUT_PROFILE_BACKGROUND:
-        profile_key = TIMEOUT_PROFILE_BY_NAME["background"]
-    elif normalized_profile == TIMEOUT_PROFILE_STRUCTURED:
-        profile_key = TIMEOUT_PROFILE_BY_NAME["structured"]
-    else:
-        normalized_tier = LLMPool._normalize_tier_key(tier)
-        profile_key = TIMEOUT_PROFILE_BY_NAME.get(normalized_tier, "moderate_seconds")
-
-    attr_name = TIMEOUT_PROFILE_SETTINGS[profile_key]
-    normalized_provider = LLMPool._normalize_provider(provider)
-    if normalized_provider:
-        overrides = loads_timeout_provider_overrides(
-            getattr(settings, "llm_timeout_provider_overrides", "{}")
-        )
-        override_value = overrides.get(normalized_provider, {}).get(profile_key)
-        if override_value is not None:
-            return override_value if override_value > 0 else None
-
-    fallback_default = {
-        "llm_primary_timeout_light_seconds": _PRIMARY_TIMEOUT,
-        "llm_primary_timeout_moderate_seconds": 25.0,
-        "llm_primary_timeout_deep_seconds": 45.0,
-        "llm_primary_timeout_structured_seconds": 60.0,
-        "llm_primary_timeout_background_seconds": 0.0,
-    }[attr_name]
-    timeout = float(getattr(settings, attr_name, fallback_default) or 0.0)
-    return timeout if timeout > 0 else None
+    return resolve_primary_timeout_seconds_impl(
+        tier=tier,
+        timeout_profile=timeout_profile,
+        provider=provider,
+        settings_obj=settings,
+        timeout_profile_by_name=TIMEOUT_PROFILE_BY_NAME,
+        timeout_profile_settings=TIMEOUT_PROFILE_SETTINGS,
+        loads_timeout_provider_overrides_fn=loads_timeout_provider_overrides,
+        primary_timeout_default=_PRIMARY_TIMEOUT,
+        pool_cls=LLMPool,
+        timeout_profile_structured=TIMEOUT_PROFILE_STRUCTURED,
+        timeout_profile_background=TIMEOUT_PROFILE_BACKGROUND,
+    )
 
 
 async def ainvoke_with_failover(
@@ -1292,147 +776,45 @@ async def ainvoke_with_failover(
     *,
     tier: str = "moderate",
     provider: Optional[str] = None,
-    failover_mode: str = FAILOVER_MODE_AUTO,
+    failover_mode: str = "auto",
     prefer_selectable_fallback: bool = False,
-    on_primary: Optional[Callable[[BaseChatModel], BaseChatModel]] = None,
-    on_fallback: Optional[Callable[[BaseChatModel], BaseChatModel]] = None,
-    on_switch: Optional[Callable[[str, str, str], Any]] = None,
+    allowed_fallback_providers: set[str] | list[str] | tuple[str, ...] | None = None,
+    on_primary=None,
+    on_fallback=None,
+    on_switch=None,
+    on_failover=None,
     primary_timeout: Optional[float] = None,
     timeout_profile: Optional[str] = None,
 ):
-    """Invoke LLM with automatic runtime failover on rate-limit errors.
-
-    Three-layer defense (Google SRE / Netflix Hystrix pattern):
-
-    1. **Circuit breaker fast-path** — if primary is already known to be
-       down (CB open after 3 failures), skip directly to fallback (0ms).
-    2. **Primary timeout** — caps the time to first response to
-       ``primary_timeout`` seconds (resolved by tier/profile when omitted).
-       Prevents the 31s+
-       worst-case from Gemini SDK exponential backoff (1+2+4+8+16s).
-    3. **Catch-and-switch** — if primary raises 429 or times out, record
-       failure (updating CB for future requests) then retry on fallback.
-
-    Args:
-        llm: Primary LLM (may be wrapped, e.g. via with_structured_output).
-        messages: Messages to send.
-        tier: Tier key for fallback selection ("deep" | "moderate" | "light").
-        provider: Requested runtime provider for this call. ``None`` /
-                  ``"auto"`` uses the active route.
-        on_primary: Optional callback to prepare the resolved primary LLM
-                    before invocation. Needed when the resolved runtime route
-                    swaps providers under auto mode and the caller needs to
-                    re-apply wrappers such as ``with_structured_output``.
-        on_fallback: Optional callback to prepare the raw fallback LLM
-                     before retry.  Receives BaseChatModel, returns a
-                     ready-to-invoke LLM.
-                     Example: ``lambda fb: fb.with_structured_output(MySchema)``
-        on_switch: Optional callback called when failover occurs.
-                   Signature: ``(from_provider, to_provider, reason)``.
-        primary_timeout: Explicit first-response timeout override in seconds.
-                         Set 0 to disable.
-        timeout_profile: Optional timeout profile ("structured" | "background").
-                         Used only when ``primary_timeout`` is omitted.
-
-    Returns:
-        LLM response (same type as ``llm.ainvoke``).
-
-    Raises:
-        Original exception when the error is not rate-limit related
-        or no fallback provider is available.
-    """
-    import asyncio
-
-    normalized_failover_mode = LLMPool._normalize_failover_mode(failover_mode)
-    route = LLMPool.resolve_runtime_route(
-        provider,
-        tier,
-        failover_mode=normalized_failover_mode,
+    return await ainvoke_with_failover_impl(
+        llm,
+        messages,
+        tier=tier,
+        provider=provider,
+        failover_mode=failover_mode,
         prefer_selectable_fallback=prefer_selectable_fallback,
+        allowed_fallback_providers=allowed_fallback_providers,
+        on_primary=on_primary,
+        on_fallback=on_fallback,
+        on_switch=on_switch,
+        on_failover=on_failover,
+        primary_timeout=primary_timeout,
+        timeout_profile=timeout_profile,
+        pool_cls=LLMPool,
+        resolve_primary_timeout_seconds_fn=resolve_primary_timeout_seconds,
+        is_rate_limit_error_fn=is_rate_limit_error,
+        is_failover_eligible_error_fn=is_failover_eligible_error_impl,
+        logger_obj=logger,
+        failover_mode_pinned=FAILOVER_MODE_PINNED,
+        provider_unavailable_error_cls=ProviderUnavailableError,
+        resolve_same_provider_model_fallback_fn=LLMPool.resolve_same_provider_model_fallback,
+        create_llm_with_model_for_provider_fn=LLMPool.create_llm_with_model_for_provider,
+        thinking_tier_cls=ThinkingTier,
     )
-    primary_llm = route.llm
-    if on_primary is not None:
-        primary_llm = on_primary(primary_llm)
-    elif (
-        getattr(llm, "_wiii_provider_name", None) == route.provider
-        or route.provider is None
-    ):
-        primary_llm = llm
-
-    timeout = (
-        primary_timeout
-        if primary_timeout is not None
-        else resolve_primary_timeout_seconds(
-            tier=tier,
-            timeout_profile=timeout_profile,
-            provider=route.provider,
-        )
-    )
-
-    def _prepare_fallback():
-        fallback_llm = route.fallback_llm
-        if fallback_llm is None:
-            return None
-        if on_fallback is not None:
-            fallback_llm = on_fallback(fallback_llm)
-        return fallback_llm
-
-    async def _emit_switch(reason: str) -> None:
-        primary = route.provider or "unknown"
-        fallback_name = route.fallback_provider or "unknown"
-        logger.warning(
-            "[LLM_FAILOVER] %s → %s (%s, tier=%s)",
-            primary, fallback_name, reason, tier,
-        )
-        if on_switch is not None and route.fallback_provider:
-            await on_switch(primary, fallback_name, reason)
-
-    # ── Layer 1: Circuit breaker fast-path ──
-    cb = route.circuit_breaker
-    if cb is not None and not cb.is_available():
-        fb = _prepare_fallback()
-        if fb is not None:
-            await _emit_switch("circuit_breaker_open")
-            return await fb.ainvoke(messages)
-        if normalized_failover_mode == FAILOVER_MODE_PINNED:
-            raise ProviderUnavailableError(
-                provider=route.provider or (provider or "unknown"),
-                reason_code="busy",
-                message="Provider duoc chon tam thoi ban hoac da cham gioi han.",
-            )
-
-    # ── Layer 2+3: Primary with timeout → catch-and-switch ──
-    try:
-        if timeout and timeout > 0:
-            result = await asyncio.wait_for(primary_llm.ainvoke(messages), timeout=timeout)
-        else:
-            result = await primary_llm.ainvoke(messages)
-        await asyncio.shield(LLMPool.record_success_for_provider(route.provider))
-        return result
-    except (asyncio.TimeoutError, Exception) as exc:
-        is_timeout = isinstance(exc, asyncio.TimeoutError)
-        if not is_timeout and not is_rate_limit_error(exc):
-            raise
-
-        # Record failure → trips CB after threshold
-        await asyncio.shield(LLMPool.record_failure_for_provider(route.provider))
-
-        fb = _prepare_fallback()
-        if fb is None:
-            if is_timeout:
-                raise TimeoutError(
-                    f"Primary LLM timed out after {timeout}s, no fallback available"
-                )
-            raise
-
-        reason = f"timeout_{timeout}s" if is_timeout else type(exc).__name__
-        await _emit_switch(reason)
-        # Fallback also gets a timeout (2x primary) to prevent indefinite blocking
-        fallback_timeout = timeout * 2 if (timeout and timeout > 0) else None
-        if fallback_timeout:
-            return await asyncio.wait_for(fb.ainvoke(messages), timeout=fallback_timeout)
-        return await fb.ainvoke(messages)
 
 
-# Re-export get_thinking_budget from llm_factory for convenience
-# (already imported at top of file)
+register_llm_runtime_access(
+    get_stats=LLMPool.get_stats,
+    get_provider_info=LLMPool.get_provider_info,
+    get_request_selectable_providers=LLMPool.get_request_selectable_providers,
+)

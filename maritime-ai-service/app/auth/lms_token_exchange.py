@@ -15,22 +15,24 @@ import time
 from typing import Optional
 
 from app.core.config import settings
+from app.core.security import map_host_role_to_legacy_role, normalize_host_role
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Role mapping: LMS roles → Wiii roles
 # ---------------------------------------------------------------------------
-_LMS_ROLE_MAP = {
+_LMS_HOST_ROLE_MAP = {
     # Teacher variants
+    "teacher": "teacher",
     "instructor": "teacher",
     "professor": "teacher",
     "lecturer": "teacher",
     "ta": "teacher",
     "teaching_assistant": "teacher",
-    "teacher": "teacher",
     # Admin variants
     "admin": "admin",
+    "org_admin": "org_admin",
     "administrator": "admin",
     "manager": "admin",
     # Student is default
@@ -39,11 +41,17 @@ _LMS_ROLE_MAP = {
 }
 
 
-def map_lms_role(lms_role: Optional[str]) -> str:
-    """Map an LMS role string to a Wiii role. Unknown roles default to 'student'."""
+def map_lms_host_role(lms_role: Optional[str]) -> str:
+    """Map an LMS role string to a host-local role."""
     if not lms_role or not isinstance(lms_role, str):
         return "student"
-    return _LMS_ROLE_MAP.get(lms_role.lower().strip(), "student")
+    raw = lms_role.lower().strip()
+    return normalize_host_role(_LMS_HOST_ROLE_MAP.get(raw, raw))
+
+
+def map_lms_role(lms_role: Optional[str]) -> str:
+    """Map an LMS role string to the legacy compatibility role used today."""
+    return map_host_role_to_legacy_role(map_lms_host_role(lms_role))
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +205,33 @@ def _resolve_connector_org(connector_id: Optional[str]) -> Optional[str]:
     return connector_id
 
 
+def _resolve_connector_name(connector_id: Optional[str]) -> Optional[str]:
+    """Resolve a human-readable connector/workspace name when available."""
+    if not connector_id:
+        return None
+
+    try:
+        connectors = json.loads(settings.lms_connectors or "[]")
+        for c in connectors:
+            if c.get("id") == connector_id:
+                return c.get("display_name") or c.get("name") or connector_id
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    try:
+        from app.integrations.lms.registry import get_lms_connector_registry
+
+        registry = get_lms_connector_registry()
+        adapter = registry.get(connector_id)
+        if adapter:
+            config = adapter.get_config()
+            return getattr(config, "display_name", None) or getattr(config, "name", None) or connector_id
+    except Exception:
+        pass
+
+    return connector_id
+
+
 # ---------------------------------------------------------------------------
 # Token exchange
 # ---------------------------------------------------------------------------
@@ -221,6 +256,7 @@ async def exchange_lms_token(
     from app.auth.user_service import find_or_create_by_provider
     from app.auth.token_service import create_token_pair
 
+    host_role = map_lms_host_role(role)
     wiii_role = map_lms_role(role)
 
     # Find or create user
@@ -248,9 +284,48 @@ async def exchange_lms_token(
         user_id=user["id"],
         email=user.get("email"),
         name=user.get("name"),
-        role=user.get("role", wiii_role),
+        role=wiii_role,
+        platform_role="user",
+        host_role=host_role,
+        role_source="lms_host",
+        active_organization_id=resolved_org,
+        connector_id=connector_id,
+        identity_version="2",
         auth_method="lms",
     )
+
+    try:
+        from app.repositories.connector_grant_repository import upsert_connector_grant
+
+        await upsert_connector_grant(
+            user_id=user["id"],
+            connector_id=connector_id,
+            host_type="lms",
+            host_name=_resolve_connector_name(connector_id),
+            host_user_id=lms_user_id,
+            host_workspace_id=resolved_org or connector_id,
+            host_organization_id=resolved_org,
+            organization_id=resolved_org,
+            granted_capabilities={
+                "chat": True,
+                "host_context": True,
+                "host_actions": True,
+                "course_generation": True,
+            },
+            auth_metadata={
+                "role_source": "lms_host",
+                "last_host_role": host_role,
+                "email": user.get("email"),
+            },
+            status="active",
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not refresh connector grant for user %s / connector %s: %s",
+            user["id"],
+            connector_id,
+            exc,
+        )
 
     return {
         "access_token": token_pair.access_token,
@@ -261,7 +336,11 @@ async def exchange_lms_token(
             "id": user["id"],
             "email": user.get("email"),
             "name": user.get("name"),
-            "role": user.get("role", wiii_role),
+            "role": wiii_role,
+            "platform_role": "user",
+            "host_role": host_role,
+            "role_source": "lms_host",
+            "identity_version": "2",
         },
         "organization_id": resolved_org,
     }

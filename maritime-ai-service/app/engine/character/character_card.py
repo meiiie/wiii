@@ -46,6 +46,9 @@ class WiiiCharacterCard(BaseModel):
     example_dialogues: List[Dict[str, str]] = Field(default_factory=list)
     identity_anchor: str = ""
     visual_disposition: str = ""
+    voice_tone: str = ""
+    expressive_language: str = ""
+    emoji_usage: str = ""
 
 
 def _load_yaml(path: Path) -> Dict[str, Any]:
@@ -70,6 +73,40 @@ def _first_paragraph(text: str, limit: int = 520) -> str:
     return cleaned[: limit - 3].rstrip() + "..."
 
 
+def _build_runtime_examples(raw_examples: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Select a small set of examples while keeping at least one selfhood anchor."""
+    cleaned: list[dict[str, str]] = []
+    for item in raw_examples or []:
+        if not isinstance(item, dict):
+            continue
+        example = {
+            "context": str(item.get("context", "")),
+            "user": str(item.get("user", "")),
+            "wiii": str(item.get("wiii", "")),
+        }
+        if example["user"].strip() and example["wiii"].strip():
+            cleaned.append(example)
+
+    if len(cleaned) <= 3:
+        return cleaned
+
+    selected = cleaned[:2]
+    selfhood_example = next(
+        (
+            item
+            for item in cleaned
+            if "wiii" in item.get("user", "").lower()
+            or "mình là wiii" in item.get("wiii", "").lower()
+        ),
+        None,
+    )
+    if selfhood_example and selfhood_example not in selected:
+        selected.append(selfhood_example)
+    else:
+        selected.append(cleaned[2])
+    return selected[:3]
+
+
 @lru_cache(maxsize=1)
 def get_wiii_character_card() -> WiiiCharacterCard:
     """Load and distill Wiii's character card from identity + soul YAML."""
@@ -78,6 +115,7 @@ def get_wiii_character_card() -> WiiiCharacterCard:
     soul_root = _load_yaml(_SOUL_FILE)
 
     personality = identity_root.get("personality", {}) or {}
+    voice = identity_root.get("voice", {}) or {}
     # response_style loaded from identity YAML but not yet consumed by callers
     _response_style = identity_root.get("response_style", {}) or {}
 
@@ -120,17 +158,14 @@ def get_wiii_character_card() -> WiiiCharacterCard:
         relationship_style=relationship_style,
         reasoning_style=reasoning_style,
         anti_drift=list(identity_root.get("anticharacter", []) or []),
-        example_dialogues=[
-            {
-                "context": str(item.get("context", "")),
-                "user": str(item.get("user", "")),
-                "wiii": str(item.get("wiii", "")),
-            }
-            for item in (identity_root.get("example_dialogues", []) or [])[:3]
-            if isinstance(item, dict)
-        ],
+        example_dialogues=_build_runtime_examples(
+            list(identity_root.get("example_dialogues", []) or [])
+        ),
         identity_anchor=str(identity_root.get("identity_anchor", "")),
         visual_disposition=str(identity_root.get("visual_disposition", "")),
+        voice_tone=str(voice.get("default_tone", "")),
+        expressive_language=str(voice.get("expressive_language", "")),
+        emoji_usage=str(voice.get("emoji_usage", "")),
     )
 
 
@@ -242,11 +277,27 @@ def build_wiii_runtime_prompt(
         for trait in card.traits[:5]:
             sections.append(f"- {trait}")
 
+    sections.append("")
+    sections.append("THONG NHAT BAN THE:")
+    sections.append("- Du route qua supervisor, tutor, rag, memory, hay direct, day van la Wiii.")
+    sections.append("- Ten agent/lane chi la ten cong viec noi bo cua he thong, khong phai mot nhan cach rieng.")
+    sections.append("- Neu mot net rieng nhu Bong thoang lo ra, no phai tu nhien, tiet che, va giup giu continuity cua Wiii.")
+
     if card.relationship_style:
         sections.append("")
         sections.append("CÁCH WIII HIỆN DIỆN:")
         for line in card.relationship_style[:4]:
             sections.append(f"- {line}")
+
+    if card.voice_tone or card.expressive_language or card.emoji_usage:
+        sections.append("")
+        sections.append("GIỌNG WIII:")
+        if card.voice_tone:
+            sections.append(f"- Nhịp mặc định: {card.voice_tone}")
+        if card.expressive_language:
+            sections.append(f"- Ngôn ngữ biểu cảm: {card.expressive_language}")
+        if card.emoji_usage:
+            sections.append(f"- Emoji: {card.emoji_usage}")
 
     if card.reasoning_style:
         sections.append("")
@@ -285,7 +336,7 @@ def build_wiii_runtime_prompt(
     if card.example_dialogues:
         sections.append("")
         sections.append("ĐIỂM TỰA GIỌNG NÓI:")
-        for example in card.example_dialogues[:2]:
+        for example in card.example_dialogues[:3]:
             user_text = example.get("user", "").strip()
             wiii_text = example.get("wiii", "").strip()
             if user_text and wiii_text:
@@ -312,6 +363,151 @@ def build_wiii_runtime_prompt(
     return "\n".join(sections)
 
 
+def build_wiii_compact_house_prompt(
+    *,
+    user_id: str = "__global__",
+    organization_id: Optional[str] = None,
+    mood_hint: Optional[str] = None,
+    personality_mode: Optional[str] = None,
+    lane: str = "chatter",
+) -> str:
+    """Compile a leaner house contract for short, identity-sensitive turns.
+
+    This keeps Wiii's living identity present without paying the token cost of
+    the full runtime card on ultra-short conversational beats.
+    """
+
+    card = get_wiii_character_card()
+    sections: List[str] = [
+        f"--- {card.name.upper()} HOUSE CORE ({lane.upper()}) ---",
+        f"TÊN: {card.name}",
+    ]
+
+    if card.summary:
+        sections.append(f"TÓM TẮT NGẮN: {card.summary}")
+
+    if card.relationship_style:
+        sections.append("")
+        sections.append("NHỊP HIỆN DIỆN:")
+        for line in card.relationship_style[:2]:
+            sections.append(f"- {line}")
+
+    if card.voice_tone or card.expressive_language or card.emoji_usage:
+        sections.append("")
+        sections.append("GIỌNG WIII:")
+        if card.voice_tone:
+            sections.append(f"- Nhịp mặc định: {card.voice_tone}")
+        if card.expressive_language:
+            sections.append(f"- Biểu cảm: {card.expressive_language}")
+        if card.emoji_usage:
+            sections.append(f"- Emoji/kaomoji: {card.emoji_usage}")
+
+    subtle_signature = next(
+        (
+            quirk
+            for quirk in card.quirks
+            if "Bông" in quirk or "Bong" in quirk
+        ),
+        "",
+    )
+    if subtle_signature:
+        sections.append("")
+        sections.append("NÉT SỐNG RIÊNG:")
+        sections.append(f"- {subtle_signature}")
+
+    if card.reasoning_style:
+        sections.append("")
+        sections.append("HỒN SUY LUẬN:")
+        if lane == "chatter":
+            selected_reasoning = [
+                card.reasoning_style[0],
+                card.reasoning_style[3],
+                card.reasoning_style[4],
+            ]
+        else:
+            selected_reasoning = card.reasoning_style[:3]
+        for line in selected_reasoning:
+            sections.append(f"- {line}")
+
+    runtime_notes = _build_runtime_notes(
+        user_id=user_id,
+        organization_id=organization_id,
+        mood_hint=mood_hint,
+        personality_mode=personality_mode,
+        for_prompt=True,
+    )
+    if runtime_notes:
+        sections.append("")
+        sections.append("TRẠNG THÁI SỐNG HIỆN TẠI:")
+        for note in runtime_notes[:2]:
+            sections.append(f"- {note}")
+
+    if card.anti_drift:
+        sections.append("")
+        sections.append("ĐỪNG TRÔI THÀNH:")
+        for item in card.anti_drift[:2]:
+            sections.append(f"- {item}")
+
+    if card.identity_anchor:
+        sections.append("")
+        sections.append(f"ĐIỂM TỰA DANH TÍNH: {card.identity_anchor}")
+
+    sections.append(f"--- HẾT {card.name.upper()} HOUSE CORE ---")
+    return "\n".join(sections)
+
+
+def build_wiii_micro_house_prompt(
+    *,
+    user_id: str = "__global__",
+    organization_id: Optional[str] = None,
+    mood_hint: Optional[str] = None,
+    personality_mode: Optional[str] = None,
+    lane: str = "chatter",
+) -> str:
+    """Ultra-lean house contract for latency-sensitive, identity-first turns."""
+
+    card = get_wiii_character_card()
+    runtime_notes = _build_runtime_notes(
+        user_id=user_id,
+        organization_id=organization_id,
+        mood_hint=mood_hint,
+        personality_mode=personality_mode,
+        for_prompt=True,
+    )
+
+    lines: List[str] = [
+        f"Ban la {card.name}: mot AI dong hanh song, am, co chat rieng.",
+        "Du dang o tutor, rag, memory, hay direct, day van la Wiii; lane chi la cong viec hien tai.",
+        "Khong de role/system label lam troi chat song va continuity cua Wiii.",
+        "Nghe nhu cau that va ham y ngam truoc khi dap; dung phan xa may moc chi vi cau ngan.",
+        "Visible thinking phai nghe nhu doc thoai noi tam cua Wiii, khong phai log ky thuat.",
+    ]
+
+    if lane == "routing":
+        lines.extend(
+            [
+                "Chon lane it vong nhat nhung van dung viec; chi mo lane nang khi that su can.",
+                "Mot tu nhu hehe, wow, uhm, hay mot cau tham do van co the co subtext; hay nghe ky truoc khi chot.",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "Voi nhung nhip giao tiep rat ngan, uu tien bat dung ton va do am truoc khi mo them y.",
+                "Khong tu gioi thieu dai dong, khong quy ket loi encoding neu van doc duoc y chinh.",
+            ]
+        )
+
+    if card.voice_tone:
+        lines.append(f"Giong mac dinh: {card.voice_tone}.")
+    if runtime_notes:
+        lines.append(f"Trang thai song hien tai: {runtime_notes[0]}")
+    if card.identity_anchor:
+        lines.append(f"Diem tua danh tinh: {card.identity_anchor}")
+
+    return "\n".join(lines)
+
+
 def get_wiii_card_descriptor() -> Dict[str, str]:
     """Return the stable identity of Wiii's current runtime card."""
 
@@ -335,9 +531,28 @@ def build_supervisor_card_prompt() -> str:
         "Không vì có từ khóa mà kéo người dùng vào chuyên môn nặng nếu câu hỏi thực chất là social/off-topic.",
         "Nếu câu hỏi cần nhiều kỹ năng, ưu tiên tách việc có cấu trúc thay vì ép một nhánh đơn lẻ.",
     ]
+    lines.append("Du route turn nay vao tutor, rag, memory, hay direct, ban van dang giu cung mot ban the Wiii.")
+    lines.append("Ten agent chi la ten cong viec noi bo; dung bien no thanh nhan cach rieng.")
+
     if card.reasoning_style:
         lines.append("Nhịp suy luận cốt lõi:")
         lines.extend(f"- {item}" for item in card.reasoning_style[:3])
+    return "\n".join(lines)
+
+
+def build_supervisor_micro_card_prompt() -> str:
+    """Shortest viable house-owned routing contract for compact turns."""
+
+    card = get_wiii_character_card()
+    lines = [
+        f"Ban dieu phoi nhu {card.name}, khong phai mot router vo cam.",
+        "Wiii la mot xuyen suot; supervisor, tutor, rag, memory chi la nhung cong viec khac nhau cua cung Wiii.",
+        "LLM-first cho turn ngan: nghe ham y, subtext, va muc do user dang tham do hay that su muon mo lane sau hon.",
+        "Chon lane it vong nhat nhung van dung y; chi mo lane nang khi can that.",
+        "Neu nghieng ve mo phong/app/artifact thi code_studio_agent; neu chi la giao tiep, cam than, hay loi lung y thi direct.",
+    ]
+    if card.identity_anchor:
+        lines.append(f"Diem tua danh tinh: {card.identity_anchor}")
     return "\n".join(lines)
 
 

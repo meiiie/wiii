@@ -41,6 +41,19 @@ describe("code-studio-store", () => {
       expect(session.versions[0].version).toBe(1);
       expect(session.metadata.requestedView).toBe("code");
     });
+
+    it("reuses an active streaming session without wiping streamed code", () => {
+      const store = useCodeStudioStore.getState();
+      store.openSession("vs_1", "Chart", "html", 1);
+      store.appendCode("vs_1", "<div>Hello", 0, 0);
+
+      store.openSession("vs_1", "Chart", "html", 1);
+
+      const session = useCodeStudioStore.getState().sessions["vs_1"];
+      expect(session.status).toBe("streaming");
+      expect(session.code).toBe("<div>Hello");
+      expect(session.chunkCount).toBe(1);
+    });
   });
 
   describe("appendCode", () => {
@@ -66,6 +79,32 @@ describe("code-studio-store", () => {
       const store = useCodeStudioStore.getState();
       store.appendCode("nonexistent", "chunk", 0, 10);
       expect(Object.keys(useCodeStudioStore.getState().sessions)).toHaveLength(0);
+    });
+
+    it("deduplicates repeated chunk indexes instead of appending twice", () => {
+      const store = useCodeStudioStore.getState();
+      store.openSession("vs_1", "T", "html", 1);
+      store.appendCode("vs_1", "<div>", 0, 0);
+      store.appendCode("vs_1", "Hello", 1, 0);
+      store.appendCode("vs_1", "Hello", 1, 0);
+
+      const session = useCodeStudioStore.getState().sessions["vs_1"];
+      expect(session.code).toBe("<div>Hello");
+      expect(session.chunkCount).toBe(2);
+    });
+
+    it("restarts streamed code cleanly when chunk index resets to zero after retry", () => {
+      const store = useCodeStudioStore.getState();
+      store.openSession("vs_1", "T", "html", 1);
+      store.appendCode("vs_1", "<div>", 0, 0);
+      store.appendCode("vs_1", "old", 1, 0);
+
+      store.appendCode("vs_1", "<section>", 0, 0);
+      store.appendCode("vs_1", "new", 1, 0);
+
+      const session = useCodeStudioStore.getState().sessions["vs_1"];
+      expect(session.code).toBe("<section>new");
+      expect(session.chunkCount).toBe(2);
     });
   });
 
@@ -175,6 +214,7 @@ describe("code-studio-store", () => {
           requested_view: "code",
           has_preview: true,
         },
+        requested_view: "code",
       });
     });
 

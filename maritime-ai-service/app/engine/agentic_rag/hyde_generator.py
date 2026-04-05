@@ -127,6 +127,8 @@ async def _generate_hypothetical_doc(query: str) -> str:
         Hypothetical document text, or empty string on failure.
     """
     try:
+        from app.engine.agentic_rag.runtime_llm_socket import ainvoke_agentic_rag_llm
+        from app.engine.llm_factory import ThinkingTier
         from app.engine.llm_pool import get_llm_light
         from langchain_core.messages import HumanMessage
 
@@ -136,7 +138,12 @@ async def _generate_hypothetical_doc(query: str) -> str:
             return ""
 
         prompt = _HYDE_PROMPT_VI.format(query=query)
-        response = await llm.ainvoke([HumanMessage(content=prompt)])
+        response = await ainvoke_agentic_rag_llm(
+            llm=llm,
+            messages=[HumanMessage(content=prompt)],
+            tier=ThinkingTier.LIGHT,
+            component="HyDEGenerator",
+        )
 
         # Extract content, strip thinking tags if present
         content = response.content
@@ -173,15 +180,13 @@ async def _embed_hypothetical_doc(doc: str) -> List[float]:
         Embedding vector, or empty list on failure.
     """
     try:
-        from app.engine.gemini_embedding import get_embeddings
+        from app.engine.agentic_rag.corrective_rag_runtime_support import (
+            get_document_embedding_impl,
+        )
 
-        embeddings = get_embeddings()
-        # Use embed_documents (RETRIEVAL_DOCUMENT task type) not embed_query
-        result = await embeddings.aembed_documents([doc])
-        if result and len(result) > 0:
-            return result[0]
-        return []
-
+        # Use the shared embedding authority but keep document-style embedding
+        # semantics for HyDE's "document space" retrieval heuristic.
+        return await get_document_embedding_impl(doc)
     except Exception as e:
         logger.warning("[HyDE] Embedding failed: %s", e)
         return []

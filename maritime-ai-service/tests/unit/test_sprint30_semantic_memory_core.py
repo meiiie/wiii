@@ -31,7 +31,7 @@ def _make_engine(repo=None, embeddings=None, llm=None):
     mock_embeddings = embeddings or MagicMock()
     mock_repo = repo or MagicMock()
 
-    with patch("app.engine.semantic_memory.core.GeminiOptimizedEmbeddings", return_value=mock_embeddings), \
+    with patch("app.engine.semantic_memory.core.get_semantic_embedding_backend", return_value=mock_embeddings), \
          patch("app.engine.semantic_memory.core.SemanticMemoryRepository", return_value=mock_repo):
         engine = SemanticMemoryEngine(
             embeddings=mock_embeddings,
@@ -74,6 +74,14 @@ class TestIsAvailable:
         mock_repo = MagicMock()
         mock_repo.is_available.return_value = True
         engine = _make_engine(repo=mock_repo)
+        assert engine.is_available() is True
+
+    def test_available_when_repo_ok_but_embeddings_unavailable(self):
+        mock_repo = MagicMock()
+        mock_repo.is_available.return_value = True
+        mock_embeddings = MagicMock()
+        mock_embeddings.is_available.return_value = False
+        engine = _make_engine(repo=mock_repo, embeddings=mock_embeddings)
         assert engine.is_available() is True
 
     def test_not_available_when_repo_unavailable(self):
@@ -272,6 +280,25 @@ class TestStoreInteraction:
         engine = _make_engine(repo=mock_repo, embeddings=mock_embeddings)
         result = await engine.store_interaction("user-1", "Hello", "Hi")
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_embedding_failure_still_saves_null_vector_records(self):
+        mock_repo = MagicMock()
+        mock_repo.save_memory.return_value = MagicMock()
+        mock_embeddings = MagicMock()
+        mock_embeddings.aembed_documents = AsyncMock(side_effect=Exception("embedding down"))
+
+        engine = _make_engine(repo=mock_repo, embeddings=mock_embeddings)
+        engine._fact_extractor.extract_and_store_facts = AsyncMock(return_value=[])
+
+        result = await engine.store_interaction("user-1", "Hello", "Hi")
+
+        assert result is True
+        assert mock_repo.save_memory.call_count == 2
+        first_memory = mock_repo.save_memory.call_args_list[0][0][0]
+        second_memory = mock_repo.save_memory.call_args_list[1][0][0]
+        assert first_memory.embedding == []
+        assert second_memory.embedding == []
 
 
 # =============================================================================

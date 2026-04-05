@@ -68,6 +68,7 @@ class TestLivingContextBlock:
 
         assert block.reasoning_policy.task_class == "simulation_runtime"
         assert block.reasoning_policy.deliberation_level == "max"
+        assert block.current_state
         assert [item.namespace for item in block.memory_blocks] == [
             "persona",
             "human",
@@ -94,11 +95,14 @@ class TestLivingContextBlock:
             include_visual_cognition=True,
         )
 
-        assert prompt.index("### core_card") < prompt.index("### narrative_state")
+        assert prompt.index("### core_card") < prompt.index("### current_state")
+        assert prompt.index("### current_state") < prompt.index("### narrative_state")
         assert prompt.index("### narrative_state") < prompt.index("### relationship_memory")
         assert prompt.index("### relationship_memory") < prompt.index("### task_mode")
         assert prompt.index("### task_mode") < prompt.index("### reasoning_policy")
         assert prompt.index("### reasoning_policy") < prompt.index("### visual_cognition")
+        assert "## Wiii Living Core Bridge" in prompt
+        assert "khong co nhan cach rieng theo agent hay lane" in prompt
         assert "## Memory Blocks V1" in prompt
 
     def test_graph_inject_living_context_populates_reasoning_policy(self):
@@ -116,7 +120,7 @@ class TestLivingContextBlock:
             },
         }
 
-        with patch("app.engine.multi_agent.graph.settings") as mock_settings:
+        with patch("app.engine.multi_agent.context_injection.settings") as mock_settings:
             mock_settings.enable_living_core_contract = True
             mock_settings.enable_memory_blocks = True
             mock_settings.enable_deliberate_reasoning = True
@@ -124,8 +128,39 @@ class TestLivingContextBlock:
             prompt = _inject_living_context(state)
 
         assert "## Living Context Block V1" in prompt
+        assert "## Wiii Living Core Bridge" in prompt
+        assert "day van la wiii" in prompt.lower()
         assert state["reasoning_policy"]["deliberation_level"] == "high"
         assert "## Memory Blocks V1" in state["memory_block_context"]
+
+    def test_graph_inject_living_context_still_builds_core_prompt_when_flags_are_off(self):
+        from app.engine.multi_agent.graph import _inject_living_context
+
+        state = {
+            "query": "Giải thích Quy tắc 15 COLREGs",
+            "user_id": "user-123",
+            "organization_id": "org-demo",
+            "domain_id": "maritime",
+            "context": {
+                "user_name": "Hung",
+                "conversation_summary": "User đang rà lại các quy tắc tránh va.",
+            },
+        }
+
+        with patch("app.engine.multi_agent.context_injection.settings") as mock_settings:
+            mock_settings.enable_living_core_contract = False
+            mock_settings.enable_memory_blocks = False
+            mock_settings.enable_deliberate_reasoning = False
+            mock_settings.enable_living_visual_cognition = False
+            prompt = _inject_living_context(state)
+
+        assert "## Living Context Block V1" in prompt
+        assert "## Wiii Living Core Bridge" in prompt
+        assert "### core_card" in prompt
+        assert "### current_state" in prompt
+        assert "### reasoning_policy" in prompt
+        assert "## Memory Blocks V1" not in prompt
+        assert state["reasoning_policy"]["task_class"] in {"pedagogical_explanation", "general_reasoning"}
 
 
 class TestConservativeFastRouting:

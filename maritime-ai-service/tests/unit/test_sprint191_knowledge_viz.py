@@ -72,9 +72,10 @@ _ensure_sklearn_mocks()
 
 
 # =============================================================================
-# GeminiOptimizedEmbeddings stub — the service lazily imports from
-# app.engine.llm_providers.gemini_embedding which may not exist in all envs.
-# Inject a stub module so the lazy import resolves to our mock class.
+# Legacy embedder stub
+#
+# The service now resolves embeddings through get_embedding_backend(), but the
+# stub remains harmless and keeps backward compatibility with older imports.
 # =============================================================================
 
 _EMBEDDER_MODULE = "app.engine.llm_providers.gemini_embedding"
@@ -557,12 +558,9 @@ class TestKnowledgeGraph:
 
 # =============================================================================
 # 3. TestRagFlow -- embed -> retrieve -> grade pipeline
-#
-# GOTCHA: GeminiOptimizedEmbeddings is lazily imported inside simulate_rag_flow.
-# Must patch at SOURCE module: app.engine.llm_providers.gemini_embedding
 # =============================================================================
 
-_EMBEDDER_PATCH = "app.engine.llm_providers.gemini_embedding.GeminiOptimizedEmbeddings"
+_EMBEDDER_PATCH = "app.services.knowledge_visualization_service.get_embedding_backend"
 
 
 class TestRagFlow:

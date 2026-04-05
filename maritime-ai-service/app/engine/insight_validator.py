@@ -9,12 +9,10 @@ Requirements: 5.1, 5.2, 5.3, 5.4
 import logging
 import numpy as np
 from dataclasses import dataclass
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional
 
+from app.engine.embedding_runtime import EmbeddingBackendProtocol
 from app.models.semantic_memory import Insight, InsightCategory
-
-if TYPE_CHECKING:
-    from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +37,7 @@ class InsightValidator:
     
     MIN_INSIGHT_LENGTH = 20
     
-    def __init__(self, embeddings: Optional["GeminiOptimizedEmbeddings"] = None):
+    def __init__(self, embeddings: Optional[EmbeddingBackendProtocol] = None):
         """
         Initialize the validator.
         

@@ -29,6 +29,8 @@ describe('context-bridge', () => {
         page_type: 'grades',
         page_title: 'My Grades',
         course_name: 'COLREGs',
+        user_role: 'student',
+        workflow_stage: 'learning',
       },
     });
 
@@ -37,6 +39,8 @@ describe('context-bridge', () => {
     expect(ctx?.host_type).toBe('lms');
     expect(ctx?.page.type).toBe('grades');
     expect(ctx?.page.title).toBe('My Grades');
+    expect(ctx?.user_role).toBe('student');
+    expect(ctx?.workflow_stage).toBe('learning');
   });
 
   it('wiii:page-context updates page-context-store (backward compat)', () => {
@@ -107,15 +111,67 @@ describe('context-bridge', () => {
       payload: {
         host_type: 'lms',
         host_name: 'Maritime LMS',
+        connector_id: 'maritime-lms',
+        host_workspace_id: 'org-1',
+        host_organization_id: 'org-1',
+        version: '2',
         resources: ['current-page', 'grades'],
+        surfaces: ['ai_sidebar'],
         tools: [{ name: 'navigate', description: 'Navigate to page' }],
       },
     });
 
     const caps = useHostContextStore.getState().capabilities;
     expect(caps?.host_type).toBe('lms');
+    expect(caps?.version).toBe('2');
+    expect(caps?.connector_id).toBe('maritime-lms');
+    expect(caps?.host_workspace_id).toBe('org-1');
+    expect(caps?.host_organization_id).toBe('org-1');
     expect(caps?.resources).toContain('grades');
+    expect(caps?.surfaces).toContain('ai_sidebar');
     expect(caps?.tools).toHaveLength(1);
+  });
+
+  it('wiii:page-context preserves operator fields', () => {
+    dispatch({
+      type: 'wiii:page-context',
+      payload: {
+        page_type: 'course_editor',
+        page_title: 'Curriculum',
+        user_role: 'teacher',
+        workflow_stage: 'authoring',
+        selection: { type: 'lesson_block', label: 'Intro' },
+        editable_scope: { type: 'course', allowed_operations: ['quiz'] },
+        entity_refs: [{ type: 'course', id: 'c-1', title: 'COLREGs' }],
+      },
+    });
+
+    const ctx = useHostContextStore.getState().currentContext;
+    expect(ctx?.user_role).toBe('teacher');
+    expect(ctx?.workflow_stage).toBe('authoring');
+    expect(ctx?.selection).toEqual({ type: 'lesson_block', label: 'Intro' });
+    expect(ctx?.editable_scope).toEqual({ type: 'course', allowed_operations: ['quiz'] });
+    expect(ctx?.entity_refs).toEqual([{ type: 'course', id: 'c-1', title: 'COLREGs' }]);
+  });
+
+  it('wiii:page-context preserves connector overlays for host-session runtime', () => {
+    dispatch({
+      type: 'wiii:page-context',
+      payload: {
+        page_type: 'course_editor',
+        page_title: 'Curriculum',
+        connector_id: 'maritime-lms',
+        host_user_id: 'teacher-1',
+        host_workspace_id: 'org-1',
+        host_organization_id: 'org-1',
+      },
+    });
+
+    const ctx = useHostContextStore.getState().currentContext;
+    expect(ctx?.connector_id).toBe('maritime-lms');
+    expect(ctx?.host_user_id).toBe('teacher-1');
+    expect(ctx?.host_workspace_id).toBe('org-1');
+    expect(ctx?.host_organization_id).toBe('org-1');
   });
 
   // ── wiii:context ──

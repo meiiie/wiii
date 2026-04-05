@@ -12,6 +12,22 @@ const isTauri =
 /** Default request timeout in milliseconds (60 seconds) */
 const DEFAULT_TIMEOUT_MS = 60_000;
 
+export class ApiHttpError extends Error {
+  status: number;
+  body: Record<string, unknown> | null;
+
+  constructor(
+    message: string,
+    status: number,
+    body: Record<string, unknown> | null = null,
+  ) {
+    super(message);
+    this.name = "ApiHttpError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
 /**
  * Adaptive fetch — uses Tauri plugin-http in Tauri, native fetch in browser.
  * Sprint 85: Adds configurable timeout via AbortController.
@@ -87,15 +103,21 @@ export class WiiiClient {
   /** Sprint 213: Extract detailed error message from backend response body */
   private async _throwApiError(response: Response): Promise<never> {
     let detail = response.statusText;
+    let parsedBody: Record<string, unknown> | null = null;
     try {
       const body = await response.json();
-      if (body?.detail) {
-        detail = typeof body.detail === "string"
-          ? body.detail
-          : JSON.stringify(body.detail);
+      if (body && typeof body === "object" && !Array.isArray(body)) {
+        parsedBody = body as Record<string, unknown>;
+      }
+      if (typeof parsedBody?.message === "string" && parsedBody.message.trim()) {
+        detail = parsedBody.message;
+      } else if (typeof parsedBody?.detail === "string" && parsedBody.detail.trim()) {
+        detail = parsedBody.detail;
+      } else if (parsedBody?.detail) {
+        detail = JSON.stringify(parsedBody.detail);
       }
     } catch { /* Body not JSON — keep statusText */ }
-    throw new Error(detail);
+    throw new ApiHttpError(detail, response.status, parsedBody);
   }
 
   /** GET request */

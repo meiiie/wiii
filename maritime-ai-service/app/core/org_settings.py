@@ -107,7 +107,10 @@ def get_org_permissions(org_id: Optional[str], role: str, org_role: Optional[str
 
     Args:
         org_id: Organization ID (None = platform defaults).
-        role: User platform role (student, teacher, admin).
+        role: Compatibility permission tier used for org settings resolution.
+            In Identity V2, Wiii web normally uses only:
+            - "student" for regular users
+            - "admin" for platform admins
         org_role: User's role within the org (member, admin, owner). Optional.
 
     Returns:

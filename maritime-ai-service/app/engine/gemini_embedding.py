@@ -48,6 +48,7 @@ class GeminiOptimizedEmbeddings:
     TASK_TYPE_DOCUMENT = "RETRIEVAL_DOCUMENT"
     TASK_TYPE_QUERY = "RETRIEVAL_QUERY"
     TASK_TYPE_SIMILARITY = "SEMANTIC_SIMILARITY"
+    provider = "google"
     
     def __init__(
         self,
@@ -265,6 +266,15 @@ class GeminiOptimizedEmbeddings:
     def dimensions(self) -> int:
         """Get the output dimensions."""
         return self._dimensions
+
+    @property
+    def model_name(self) -> str:
+        """Get the resolved model name."""
+        return self._model_name
+
+    def is_available(self) -> bool:
+        """Return True when an API key is configured."""
+        return bool(self._api_key)
     
     def verify_dimensions(self, vector: List[float]) -> bool:
         """

@@ -18,11 +18,14 @@ async def wrap_sse_with_keepalive(
     request,
     keepalive_chunk: str = SSE_KEEPALIVE,
     keepalive_interval_sec: float = DEFAULT_KEEPALIVE_INTERVAL_SEC,
+    idle_timeout_sec: float | None = None,
     on_inner_error: Callable[[], list[str]] | None = None,
 ) -> AsyncGenerator[str, None]:
     """Wrap an SSE generator with keepalive heartbeats and disconnect checks.
     """
     queue: asyncio.Queue[str | None] = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    last_inner_chunk_at = loop.time()
 
     async def _producer() -> None:
         try:
@@ -46,14 +49,34 @@ async def wrap_sse_with_keepalive(
                 return
 
             try:
+                wait_timeout = keepalive_interval_sec
+                idle_enabled = bool(idle_timeout_sec and idle_timeout_sec > 0)
+                if idle_enabled:
+                    idle_remaining = float(idle_timeout_sec) - (loop.time() - last_inner_chunk_at)
+                    if idle_remaining <= 0:
+                        raise asyncio.TimeoutError
+                    wait_timeout = min(keepalive_interval_sec, idle_remaining)
                 item = await asyncio.wait_for(
                     queue.get(),
-                    timeout=keepalive_interval_sec,
+                    timeout=wait_timeout,
                 )
                 if item is None:
                     return
+                last_inner_chunk_at = loop.time()
                 yield item
             except asyncio.TimeoutError:
+                if idle_timeout_sec and idle_timeout_sec > 0:
+                    idle_elapsed = loop.time() - last_inner_chunk_at
+                    if idle_elapsed >= idle_timeout_sec:
+                        logger.warning(
+                            "[SSE] Inner generator idle timeout after %.2fs",
+                            idle_timeout_sec,
+                        )
+                        producer_task.cancel()
+                        if on_inner_error:
+                            for chunk in on_inner_error():
+                                yield chunk
+                        return
                 yield keepalive_chunk
     finally:
         if not producer_task.done():

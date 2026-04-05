@@ -8,6 +8,7 @@ import type {
   ThinkingBlockData,
   ThinkingLevel,
   ThinkingPhase,
+  ToolExecutionBlockData,
   VisualBlockData,
 } from "@/api/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
@@ -22,6 +23,7 @@ import { SubagentGroup } from "./SubagentGroup";
 import { PreviewGroup } from "./PreviewGroup";
 import { ArtifactCard } from "./ArtifactCard";
 import { VisualBlock } from "./VisualBlock";
+import { ToolExecutionStrip } from "./ToolExecutionStrip";
 import { useCodeStudioStore } from "@/stores/code-studio-store";
 
 function BlockErrorFallback({ blockType }: { blockType: string }) {
@@ -78,6 +80,30 @@ type RenderItem =
   | { kind: "interval"; id: string; interval: ReasoningIntervalViewModel }
   | { kind: "block"; id: string; block: ContentBlock };
 
+function roundDurationSeconds(rawSeconds: number | undefined): number | undefined {
+  if (typeof rawSeconds !== "number" || !Number.isFinite(rawSeconds) || rawSeconds <= 0) {
+    return undefined;
+  }
+  return Math.max(0.1, Math.round(rawSeconds * 10) / 10);
+}
+
+function durationSecondsFromBounds(
+  startTime?: number,
+  endTime?: number,
+): number | undefined {
+  if (typeof startTime !== "number" || typeof endTime !== "number" || endTime <= startTime) {
+    return undefined;
+  }
+  return roundDurationSeconds((endTime - startTime) / 1000);
+}
+
+function sumRoundedDurations(values: Array<number | undefined>): number | undefined {
+  const total = values.reduce<number>((sum, value) => (
+    typeof value === "number" && Number.isFinite(value) && value > 0 ? sum + value : sum
+  ), 0);
+  return roundDurationSeconds(total);
+}
+
 const EDITORIAL_BRIDGE_LABELS: Record<string, string> = {
   comparison: "Minh họa so sánh",
   process: "Minh họa theo bước",
@@ -118,6 +144,10 @@ function collectAnswerNarrative(blocks: ContentBlock[]): Array<Extract<ContentBl
   return blocks
     .filter((block): block is Extract<ContentBlock, { type: "answer" }> => block.type === "answer")
     .filter((answer) => Boolean(answer.content));
+}
+
+function isDisposedVisualBlock(block: ContentBlock): block is VisualBlockData {
+  return block.type === "visual" && block.status === "disposed";
 }
 
 function normalizeEditorialSnippet(value: string | undefined): string {
@@ -217,7 +247,9 @@ function buildSyntheticEditorialNarrative(figures: VisualBlockData[]): string[] 
 
 function buildArticleComposition(blocks: ContentBlock[]): ArticleComposition | null {
   const answers = collectAnswerNarrative(blocks);
-  const visuals = blocks.filter((block): block is VisualBlockData => block.type === "visual");
+  const visuals = blocks.filter(
+    (block): block is VisualBlockData => block.type === "visual" && block.status !== "disposed",
+  );
 
   if (visuals.length === 0) {
     return null;
@@ -437,17 +469,27 @@ function isDetailedOnlyBlock(block: ContentBlock) {
   return block.type === "preview" || block.type === "artifact" || block.type === "screenshot";
 }
 
+function isInspectorTraceBlock(block: ContentBlock) {
+  return block.type === "thinking" || block.type === "action_text" || block.type === "tool_execution";
+}
+
+function shouldHideTechnicalTraceBlock(
+  block: ContentBlock,
+  _thinkingLevel: ThinkingLevel,
+  _showReasoningRail: boolean,
+) {
+  return false;
+}
+
 function isIntervalCandidate(
   block: ContentBlock,
-  thinkingLevel: ThinkingLevel,
+  _thinkingLevel: ThinkingLevel,
 ): boolean {
-  if (block.type === "thinking" || block.type === "action_text" || block.type === "tool_execution") {
-    return true;
-  }
-  if (isDetailedOnlyBlock(block)) {
-    return thinkingLevel === "detailed";
-  }
-  return false;
+  return block.type === "thinking";
+}
+
+function isIntervalTraceCompanionBlock(block: ContentBlock): boolean {
+  return block.type === "tool_execution" || block.type === "action_text";
 }
 
 function getIntervalStepId(block: ContentBlock) {
@@ -457,6 +499,23 @@ function getIntervalStepId(block: ContentBlock) {
 function getBlockNode(block?: ContentBlock) {
   if (!block) return undefined;
   return "node" in block ? block.node : undefined;
+}
+
+function matchesIntervalTraceBlock(
+  interval: ReasoningIntervalViewModel,
+  block: ContentBlock,
+) {
+  if (interval.rawBlocks.some((candidate) => candidate.id === block.id)) {
+    return true;
+  }
+  if (interval.stepId && block.stepId === interval.stepId) {
+    return true;
+  }
+  const blockNode = getBlockNode(block);
+  if (interval.node && blockNode && interval.node === blockNode) {
+    return true;
+  }
+  return false;
 }
 
 function isCompatibleIntervalBlock(
@@ -495,36 +554,29 @@ function findMatchingPhases(
       .filter((value): value is string => Boolean(value)),
   );
 
-  return livePhases.filter((phase) => (
-    (phase.stepId && stepIds.has(phase.stepId))
-    || (phase.node && nodes.has(phase.node))
-  ));
+  if (stepIds.size > 0) {
+    return livePhases.filter((phase) => phase.stepId && stepIds.has(phase.stepId));
+  }
+
+  if (nodes.size === 1) {
+    return livePhases.filter((phase) => (
+      phase.status === "active"
+      && phase.node
+      && nodes.has(phase.node)
+    ));
+  }
+
+  return [];
 }
 
 function enrichIntervalWithPhases(
   interval: ReasoningIntervalViewModel,
   livePhases: ThinkingPhase[],
+  thinkingLevel: ThinkingLevel,
 ) {
+  if (thinkingLevel !== "detailed") return interval;
   const matchedPhases = findMatchingPhases(interval.rawBlocks, livePhases);
   if (matchedPhases.length === 0) return interval;
-
-  const nextItems = [...interval.items];
-  const statusItems: ReasoningIntervalItem[] = matchedPhases.flatMap((phase, phaseIndex) => (
-    phase.statusMessages.map((message, messageIndex) => ({
-      kind: "status" as const,
-      id: `status-${phase.id}-${phaseIndex}-${messageIndex}`,
-      content: message,
-    }))
-  ));
-
-  if (statusItems.length > 0) {
-    const firstNonThinkingIndex = nextItems.findIndex((item) => item.kind !== "thinking");
-    if (firstNonThinkingIndex === -1) {
-      nextItems.push(...statusItems);
-    } else {
-      nextItems.splice(firstNonThinkingIndex, 0, ...statusItems);
-    }
-  }
 
   const latestPhase = matchedPhases[matchedPhases.length - 1];
   const label = interval.label || latestPhase.label;
@@ -538,7 +590,7 @@ function enrichIntervalWithPhases(
     .filter((value): value is number => typeof value === "number");
   const lastEnd = completedEnds.length > 0 ? Math.max(...completedEnds) : undefined;
   const durationSeconds = interval.durationSeconds
-    || (latestPhase.startTime && lastEnd ? Math.max(1, Math.round((lastEnd - latestPhase.startTime) / 1000)) : undefined);
+    || durationSecondsFromBounds(latestPhase.startTime, lastEnd);
 
   return {
     ...interval,
@@ -549,13 +601,14 @@ function enrichIntervalWithPhases(
     stepId,
     isLive,
     durationSeconds,
-    items: nextItems,
+    items: interval.items,
   };
 }
 
 function buildReasoningInterval(
   rawBlocks: ContentBlock[],
   livePhases: ThinkingPhase[],
+  thinkingLevel: ThinkingLevel,
 ): ReasoningIntervalViewModel {
   const thinkingBlocks = rawBlocks.filter((block): block is ThinkingBlockData => block.type === "thinking");
   const firstThinking = thinkingBlocks[0];
@@ -583,7 +636,7 @@ function buildReasoningInterval(
     phase,
     isLive: rawBlocks.some((block) => block.stepState === "live")
       || thinkingBlocks.some((block) => !block.endTime),
-    durationSeconds: startTime && endTime ? Math.max(1, Math.round((endTime - startTime) / 1000)) : undefined,
+    durationSeconds: durationSecondsFromBounds(startTime, endTime),
     items: dedupeIntervalItems(
       rawBlocks
         .map((block) => mapBlockToIntervalItem(block))
@@ -592,7 +645,7 @@ function buildReasoningInterval(
     rawBlocks,
   };
 
-  return enrichIntervalWithPhases(baseInterval, livePhases);
+  return enrichIntervalWithPhases(baseInterval, livePhases, thinkingLevel);
 }
 
 function buildRenderItems(
@@ -619,12 +672,15 @@ function buildRenderItems(
       index += 1;
       while (index < blocks.length) {
         const candidate = blocks[index];
-        if (!candidate || !isIntervalCandidate(candidate, thinkingLevel)) break;
+        if (!candidate) break;
+        if (!isIntervalCandidate(candidate, thinkingLevel) && !isIntervalTraceCompanionBlock(candidate)) {
+          break;
+        }
         if (!isCompatibleIntervalBlock(intervalBlocks, candidate)) break;
         intervalBlocks.push(candidate);
         index += 1;
       }
-      const interval = buildReasoningInterval(intervalBlocks, livePhases);
+      const interval = buildReasoningInterval(intervalBlocks, livePhases, thinkingLevel);
       items.push({ kind: "interval", id: interval.id, interval });
       continue;
     }
@@ -688,7 +744,9 @@ function renderEditorialFlow(
 ) {
   const visualBlocks = new Map(
     blocks
-      .filter((candidate): candidate is VisualBlockData => candidate.type === "visual")
+      .filter(
+        (candidate): candidate is VisualBlockData => candidate.type === "visual" && candidate.status !== "disposed",
+      )
       .map((candidate) => [candidate.id, candidate]),
   );
   const lastProseIndex = composition.segments.reduce((acc, segment, index) => (
@@ -778,12 +836,14 @@ export function InterleavedBlockSequence({
 
   const visibleBlocks = useMemo(() => reorderForDisplay(
     blocks.filter((block) => {
+      if (isDisposedVisualBlock(block)) return false;
+      if (shouldHideTechnicalTraceBlock(block, thinkingLevel, showReasoningRail)) return false;
       if (!showReasoningRail) {
-        return !["thinking", "action_text", "tool_execution"].includes(block.type);
+        return !["thinking", "action_text"].includes(block.type);
       }
       return true;
     }),
-  ), [blocks, showReasoningRail]);
+  ), [blocks, showReasoningRail, thinkingLevel]);
 
   const editorialComposition = useMemo(
     () => buildArticleComposition(visibleBlocks),
@@ -802,10 +862,21 @@ export function InterleavedBlockSequence({
   const activeInspector = renderItems.find((item) => (
     item.kind === "interval" && item.interval.id === inspectorIntervalId
   ));
-  const inspectorBlocks = useMemo(
-    () => renderItems.flatMap((item) => item.kind === "interval" ? item.interval.rawBlocks : []),
-    [renderItems],
+  const traceBlocks = useMemo(
+    () => blocks.filter((block) => !isDisposedVisualBlock(block) && isInspectorTraceBlock(block)),
+    [blocks],
   );
+  const inspectorBlocks = useMemo(
+    () => traceBlocks,
+    [traceBlocks],
+  );
+  const activeInspectorBlocks = useMemo(
+    () => activeInspector?.kind === "interval"
+      ? traceBlocks.filter((block) => matchesIntervalTraceBlock(activeInspector.interval, block))
+      : inspectorBlocks,
+    [activeInspector, inspectorBlocks, traceBlocks],
+  );
+  const hasHiddenTrace = inspectorBlocks.some((block) => block.type !== "thinking");
   const inspectorTitle = activeInspector?.kind === "interval"
     ? (activeInspector.interval.summary || activeInspector.interval.label || "Trace")
     : inspectorBlocks.length > 0
@@ -851,9 +922,9 @@ export function InterleavedBlockSequence({
             isLive: mergedIntervals.some((iv) => iv.isLive),
             items: mergedIntervals.flatMap((iv) => iv.items),
             rawBlocks: mergedIntervals.flatMap((iv) => iv.rawBlocks),
-            durationSeconds: mergedIntervals.reduce(
-              (sum, iv) => sum + (iv.durationSeconds || 0), 0
-            ) || undefined,
+            durationSeconds: sumRoundedDurations(
+              mergedIntervals.map((iv) => iv.durationSeconds),
+            ),
           };
 
           // Fix: Stable key based on render position, not generated ID
@@ -898,6 +969,14 @@ export function InterleavedBlockSequence({
           // Preview/search results render at BOTTOM (after answer), not inline.
           // Answer first, sources second — user reads answer then verifies sources.
           return null;
+        }
+
+        if (block.type === "tool_execution") {
+          return (
+            <BlockErrorBoundary key={block.id} blockType="tool_execution">
+              <ToolExecutionStrip block={block as ToolExecutionBlockData} />
+            </BlockErrorBoundary>
+          );
         }
 
         if (block.type === "artifact") {
@@ -967,7 +1046,7 @@ export function InterleavedBlockSequence({
         )];
       })}
 
-      {showReasoningRail && thinkingLevel === "detailed" && inspectorBlocks.length > 0 ? (
+      {showReasoningRail && thinkingLevel === "detailed" && hasHiddenTrace ? (
         <div className="reasoning-trace-launcher">
           <button
             type="button"
@@ -983,7 +1062,7 @@ export function InterleavedBlockSequence({
       <ThinkingInspectorDrawer
         isOpen={Boolean(activeInspector) || inspectorIntervalId === "__message__"}
         title={inspectorTitle}
-        blocks={activeInspector?.kind === "interval" ? activeInspector.interval.rawBlocks : inspectorBlocks}
+        blocks={activeInspector?.kind === "interval" ? activeInspectorBlocks : inspectorBlocks}
         onClose={() => setInspectorIntervalId(null)}
       />
     </>

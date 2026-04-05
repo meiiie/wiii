@@ -25,7 +25,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from app.core.security import AuthenticatedUser, require_auth
+from app.core.security import AuthenticatedUser, is_platform_admin, require_auth
 
 router = APIRouter(prefix="/soul-bridge", tags=["soul-bridge"])
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 def _require_admin(auth: AuthenticatedUser) -> None:
     """Only admin users can manage soul bridge connections."""
-    if auth.role != "admin":
+    if not is_platform_admin(auth):
         raise HTTPException(
             status_code=403,
             detail="Admin role required to manage SoulBridge connections.",

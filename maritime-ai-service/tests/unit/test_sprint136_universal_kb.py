@@ -341,7 +341,7 @@ class TestHybridSearchServiceCrossDomain:
 
     @patch("app.repositories.sparse_search_repository.get_sparse_search_repository")
     @patch("app.services.hybrid_search_service.get_dense_search_repository")
-    @patch("app.services.hybrid_search_service.GeminiOptimizedEmbeddings")
+    @patch("app.services.hybrid_search_service.get_embedding_backend")
     def test_search_passes_active_domain_id(self, mock_emb, mock_dense, mock_sparse):
         """HybridSearchService.search should pass active_domain_id to reranker."""
         from app.services.hybrid_search_service import HybridSearchService

@@ -19,11 +19,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 def _make_service(dense_weight=0.5, sparse_weight=0.5, rrf_k=60):
     """Create HybridSearchService with mocked dependencies."""
-    with patch("app.services.hybrid_search_service.GeminiOptimizedEmbeddings") as mock_emb_cls, \
+    with patch("app.services.hybrid_search_service.get_embedding_backend") as mock_backend_fn, \
          patch("app.services.hybrid_search_service.get_dense_search_repository") as mock_dense_fn, \
          patch("app.repositories.sparse_search_repository.get_sparse_search_repository") as mock_sparse_fn:
         mock_emb = MagicMock()
-        mock_emb_cls.return_value = mock_emb
+        mock_backend_fn.return_value = mock_emb
         mock_dense = MagicMock()
         mock_dense_fn.return_value = mock_dense
         mock_sparse = MagicMock()
@@ -215,6 +215,30 @@ class TestSearchHybrid:
         results = await svc.search("Rule 15", limit=5)
         assert results == []
 
+    @pytest.mark.asyncio
+    async def test_empty_query_embedding_falls_back_to_sparse(self):
+        svc, mock_emb, mock_dense, mock_sparse = _make_service()
+        mock_emb.aembed_query = AsyncMock(return_value=[])
+
+        sparse_r = MagicMock()
+        sparse_r.node_id = "n1"
+        sparse_r.title = "Title"
+        sparse_r.content = "Content"
+        sparse_r.source = "KB"
+        sparse_r.category = "Knowledge"
+        sparse_r.score = 5.0
+        sparse_r.image_url = ""
+        sparse_r.page_number = 0
+        sparse_r.document_id = ""
+        sparse_r.bounding_boxes = None
+        mock_sparse.search = AsyncMock(return_value=[sparse_r])
+
+        results = await svc.search("Rule 15", limit=5)
+        assert len(results) == 1
+        assert results[0].search_method == "sparse_only"
+        mock_dense.search.assert_not_called()
+        mock_sparse.search.assert_called_once()
+
 
 # ============================================================================
 # search - single mode
@@ -280,6 +304,15 @@ class TestSearchSingleMode:
         assert results == []
 
     @pytest.mark.asyncio
+    async def test_dense_only_mode_empty_embedding_returns_empty(self):
+        svc, mock_emb, mock_dense, _ = _make_service(dense_weight=1.0, sparse_weight=0.0)
+        mock_emb.aembed_query = AsyncMock(return_value=[])
+
+        results = await svc.search("test", limit=5)
+        assert results == []
+        mock_dense.search.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_sparse_only_error(self):
         svc, _, _, mock_sparse = _make_service(dense_weight=0.0, sparse_weight=1.0)
         mock_sparse.search = AsyncMock(side_effect=Exception("error"))
@@ -323,6 +356,15 @@ class TestDirectSearchMethods:
         mock_emb.aembed_query = AsyncMock(side_effect=Exception("error"))
         results = await svc.search_dense_only("test")
         assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_dense_only_empty_embedding_returns_empty(self):
+        svc, mock_emb, mock_dense, _ = _make_service()
+        mock_emb.aembed_query = AsyncMock(return_value=[])
+
+        results = await svc.search_dense_only("test")
+        assert results == []
+        mock_dense.search.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_search_sparse_only(self):
@@ -449,7 +491,7 @@ class TestSingleton:
     """Test singleton pattern."""
 
     def test_get_hybrid_search_service(self):
-        with patch("app.services.hybrid_search_service.GeminiOptimizedEmbeddings"), \
+        with patch("app.services.hybrid_search_service.get_embedding_backend"), \
              patch("app.services.hybrid_search_service.get_dense_search_repository"), \
              patch("app.repositories.sparse_search_repository.get_sparse_search_repository"):
             import app.services.hybrid_search_service as mod

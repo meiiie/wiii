@@ -24,6 +24,9 @@ from google.genai import types
 from PIL import Image
 
 from app.core.config import settings
+from app.engine.vision_runtime import (
+    extract_document_markdown,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +96,7 @@ OUTPUT FORMAT:
         # SOTA Pattern: Use centralized config, no hardcoded model names
         self.model_name = model or settings.google_model
         self.api_key = api_key or settings.google_api_key
+        self._runtime_provider_override = "google" if (model is not None or api_key is not None) else None
         
         # Initialize google-genai client (new unified SDK)
         self._client = None
@@ -125,7 +129,35 @@ OUTPUT FORMAT:
             ExtractionResult with extracted text and metadata
         """
         start_time = time.time()
-        
+        if self._client is None:
+            runtime_result = await extract_document_markdown(
+                image_url=image_url,
+                media_type="image/jpeg",
+                prompt=self.MARITIME_EXTRACTION_PROMPT,
+                preferred_provider=self._runtime_provider_override,
+            )
+            if runtime_result.success:
+                result = self._analyze_extraction(runtime_result.text)
+                result.processing_time = (time.time() - start_time)
+                logger.info(
+                    "Extracted %d chars from image, tables=%s, diagrams=%s, headings=%d (provider=%s model=%s)",
+                    len(result.text),
+                    result.has_tables,
+                    result.has_diagrams,
+                    len(result.headings_found),
+                    runtime_result.provider,
+                    runtime_result.model_name,
+                )
+                return result
+            if runtime_result.error:
+                logger.error("Vision extraction failed: %s", runtime_result.error)
+                return ExtractionResult(
+                    text="",
+                    success=False,
+                    error=runtime_result.error,
+                    processing_time=time.time() - start_time,
+                )
+
         try:
             # Apply rate limiting
             await self._rate_limit()
@@ -179,7 +211,34 @@ OUTPUT FORMAT:
             ExtractionResult with extracted text and metadata
         """
         start_time = time.time()
-        
+        if self._client is None:
+            runtime_result = await extract_document_markdown(
+                image=image,
+                media_type="image/jpeg",
+                prompt=self.MARITIME_EXTRACTION_PROMPT,
+                preferred_provider=self._runtime_provider_override,
+            )
+            if runtime_result.success:
+                result = self._analyze_extraction(runtime_result.text)
+                result.processing_time = (time.time() - start_time)
+                logger.info(
+                    "Extracted %d chars from image, tables=%s, diagrams=%s (provider=%s model=%s)",
+                    len(result.text),
+                    result.has_tables,
+                    result.has_diagrams,
+                    runtime_result.provider,
+                    runtime_result.model_name,
+                )
+                return result
+            if runtime_result.error:
+                logger.error("Vision extraction failed: %s", runtime_result.error)
+                return ExtractionResult(
+                    text="",
+                    success=False,
+                    error=runtime_result.error,
+                    processing_time=time.time() - start_time,
+                )
+
         try:
             # Apply rate limiting
             await self._rate_limit()

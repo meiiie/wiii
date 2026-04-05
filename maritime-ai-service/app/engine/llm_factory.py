@@ -26,6 +26,7 @@ from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
 from app.engine.llm_provider_registry import create_provider, get_supported_provider_names
+from app.engine.model_catalog import GOOGLE_DEEP_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +170,12 @@ def create_llm(
     # Legacy direct path
     from langchain_google_genai import ChatGoogleGenerativeAI
 
-    model_name = model or settings.google_model
+    if model:
+        model_name = model
+    elif tier == ThinkingTier.DEEP:
+        model_name = getattr(settings, "google_model_advanced", GOOGLE_DEEP_MODEL)
+    else:
+        model_name = settings.google_model
 
     logger.info(
         "[LLM_FACTORY] Creating LLM: model=%s, tier=%s, budget=%d, include_thoughts=%s",

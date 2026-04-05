@@ -235,7 +235,12 @@ class GuardianAgent:
         llm = self._get_llm_for_provider(provider) if provider else self._llm
         if llm and self._config.enable_llm:
             try:
-                decision = await self._validate_with_llm(message, context, llm=llm)
+                decision = await self._validate_with_llm(
+                    message,
+                    context,
+                    llm=llm,
+                    provider=provider,
+                )
                 decision.latency_ms = int((time.time() - start_time) * 1000)
 
                 # Cache the decision
@@ -362,6 +367,7 @@ class GuardianAgent:
         context: Optional[str] = None,
         *,
         llm=None,
+        provider: Optional[str] = None,
     ) -> GuardianDecision:
         """
         Validate message using LLM.
@@ -377,7 +383,7 @@ class GuardianAgent:
             # Sprint 67: Structured Outputs — constrained decoding for Guardian
             from app.core.config import settings as _settings
             if getattr(_settings, 'enable_structured_outputs', False):
-                return await self._validate_structured(prompt, llm=llm)
+                return await self._validate_structured(prompt, llm=llm, provider=provider)
 
             return await self._validate_legacy(prompt, llm=llm)
 
@@ -386,12 +392,18 @@ class GuardianAgent:
             raise
 
     @retry_on_transient()
-    async def _validate_structured(self, prompt: str, *, llm=None) -> GuardianDecision:
+    async def _validate_structured(self, prompt: str, *, llm=None, provider: Optional[str] = None) -> GuardianDecision:
         """Validate using structured output (constrained decoding)."""
         from app.engine.structured_schemas import GuardianLLMResult
+        from app.services.structured_invoke_service import StructuredInvokeService
 
-        structured_llm = (llm or self._llm).with_structured_output(GuardianLLMResult)
-        result = await structured_llm.ainvoke(prompt)
+        result = await StructuredInvokeService.ainvoke(
+            llm=(llm or self._llm),
+            schema=GuardianLLMResult,
+            payload=prompt,
+            tier="light",
+            provider=provider,
+        )
 
         # Convert structured result to GuardianDecision
         custom_pronouns = None

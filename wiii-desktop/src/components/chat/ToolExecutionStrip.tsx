@@ -123,6 +123,14 @@ function describePythonIntent(code: string): string {
 
 function summarizeArgs(toolName: string, args?: Record<string, unknown>): string {
   if (!args) return "";
+  if (toolName === "tool_think") {
+    const thought = typeof args.thought === "string" ? sanitizeInlineText(args.thought) : "";
+    return thought ? clampNaturalText(thought, 180) : "";
+  }
+  if (toolName === "tool_report_progress") {
+    const message = typeof args.message === "string" ? sanitizeInlineText(args.message) : "";
+    return message ? clampNaturalText(message, 180) : "";
+  }
   if (toolName === "tool_generate_visual" || toolName === "tool_generate_rich_visual" || toolName === "tool_create_visual_code") {
     const title = typeof args.title === "string" ? sanitizeInlineText(args.title) : "";
     return title ? `Dang phac thao minh hoa cho: ${clampNaturalText(title, 90)}` : "Dang phac thao mot minh hoa de giai thich ro hon";
@@ -433,10 +441,11 @@ export function summarizeToolExecutionBlock(block: ToolExecutionBlockData) {
   const label = TOOL_LABELS[toolName] || toolName.replace(/^tool_/, "").replace(/_/g, " ");
   const argsLine = summarizeArgs(toolName, block.tool.args);
   const summary = summarizeResult(toolName, block.tool.result, block.tool.args);
+  const resultLine = normalizeForCompare(summary.line) === normalizeForCompare(argsLine) ? "" : summary.line;
   return {
     label,
     argsLine,
-    resultLine: summary.line,
+    resultLine,
     technicalDetail: summary.technicalDetail,
     detailLabel: summary.detailLabel,
     isPending: block.status === "pending",

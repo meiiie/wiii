@@ -6,7 +6,7 @@ template fallbacks, and state management.
 """
 
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 
 
 # ---------------------------------------------------------------------------
@@ -187,3 +187,86 @@ class TestSingleton:
             assert node is node2
         finally:
             mod._memory_node = None
+
+
+class TestMemoryPublicThinking:
+    @pytest.mark.asyncio
+    async def test_process_with_llm_does_not_propagate_private_thinking(self, mock_semantic_memory, base_state):
+        node = _make_node(mock_semantic_memory)
+        base_state["query"] = "Minh ten Nam, nho giup minh nhe"
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="Chao Nam!"))
+        mock_semantic_memory._fact_extractor.extract_and_store_facts = AsyncMock(
+            return_value=[MagicMock(to_content=MagicMock(return_value="name: Nam"))]
+        )
+
+        narrator_results = [
+            MagicMock(label="Ra lai", summary="Minh nhin lai mach cu de xem diem nao con dinh voi luot nay.", phase="retrieve"),
+            MagicMock(label="Neo lai", summary="Minh da co vai moc cu, nhung ten rieng moi nay van la diem noi bat nhat.", phase="verify"),
+            MagicMock(label="Tach y", summary="Minh dang tach phan dang nho lau khoi phan chi thuoc ve khoanh khac nay.", phase="verify"),
+            MagicMock(label="Giu lai", summary="Ten Nam du ro de giu lai nhu mot diem neo xung ho.", phase="verify"),
+            MagicMock(label="Dap lai", summary="Minh se dap gon de Nam thay minh nho ma khong bien cau tra loi thanh log he thong.", phase="synthesize"),
+        ]
+
+        with patch(
+            "app.engine.multi_agent.agents.memory_agent.get_reasoning_narrator",
+        ) as mock_narrator_fn, patch(
+            "app.services.output_processor.extract_thinking_from_response",
+            return_value=(
+                "Chao Nam!",
+                "Nam's Name: Confirmed! No \"Chao\", no thinking process, just pure cuteness.",
+            ),
+        ):
+            mock_narrator = MagicMock()
+            mock_narrator.render = AsyncMock(side_effect=narrator_results)
+            mock_narrator_fn.return_value = mock_narrator
+            result = await node.process(base_state, llm=mock_llm)
+
+        assert result["memory_output"] == "Chao Nam!"
+        assert "thinking" not in result
+        assert "thinking_content" in result
+        assert "Nam vua" not in result["thinking_content"]
+        assert "Chao Nam" not in result["thinking_content"]
+        assert "pure cuteness" not in result["thinking_content"]
+        assert "Khoan" not in result["thinking_content"]
+        assert "truong du lieu" not in result["thinking_content"].lower()
+        assert "Ten Nam du ro de giu lai nhu mot diem neo xung ho." in result["thinking_content"]
+        assert "Minh se dap gon de Nam thay minh nho ma khong bien cau tra loi thanh log he thong." in result["thinking_content"]
+
+    @pytest.mark.asyncio
+    async def test_process_builds_public_thinking_content_from_narrator_fragments(self, mock_semantic_memory, base_state):
+        node = _make_node(mock_semantic_memory)
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="Minh nho roi nhe!"))
+
+        narrator_results = [
+            MagicMock(label="Luc lai", summary="Minh luc lai chut ngu canh rieng dang dinh voi dieu ban vua noi.", phase="retrieve"),
+            MagicMock(label="Xem lai", summary="Minh nhin lai vai manh ky uc cu de xem cai nao dang lien quan den nhip nay.", phase="verify"),
+            MagicMock(label="Doi chieu", summary="Minh soi xem trong nhip nay co chi tiet nao can giu lai that khong.", phase="verify"),
+            MagicMock(label="Khoa lai", summary="Minh khoa lai manh thong tin vua lo ra de luc dap khong bi lenh.", phase="verify"),
+            MagicMock(label="Khau lai", summary="Minh khau lai dieu cu va dieu moi cho that gon.", phase="synthesize"),
+        ]
+
+        mock_semantic_memory._fact_extractor.extract_and_store_facts = AsyncMock(
+            return_value=[MagicMock(to_content=MagicMock(return_value="name: Nam"))]
+        )
+
+        with patch(
+            "app.engine.multi_agent.agents.memory_agent.get_reasoning_narrator",
+        ) as mock_narrator_fn, patch(
+            "app.services.output_processor.extract_thinking_from_response",
+            return_value=("Minh nho roi nhe!", "private hidden thought"),
+        ):
+            mock_narrator = MagicMock()
+            mock_narrator.render = AsyncMock(side_effect=narrator_results)
+            mock_narrator_fn.return_value = mock_narrator
+
+            result = await node.process(base_state, llm=mock_llm)
+
+        assert "thinking" not in result
+        assert "thinking_content" in result
+        assert "private hidden thought" not in result["thinking_content"]
+        assert "Minh luc lai chut ngu canh rieng dang dinh voi dieu ban vua noi." in result["thinking_content"]
+        assert "Minh khoa lai manh thong tin vua lo ra de luc dap khong bi lenh." in result["thinking_content"]
+        assert "tach bach giua chi tiet du ben de luu lau" not in result["thinking_content"].lower()
+        assert "doc to toan bo viec vua luu lai" not in result["thinking_content"].lower()

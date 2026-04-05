@@ -174,7 +174,7 @@ class TestNodeLabels:
 
     def test_expected_keys(self):
         expected = ["guardian", "supervisor", "rag_agent", "tutor_agent",
-                    "grader", "synthesizer", "memory_agent", "direct"]
+                    "synthesizer", "memory_agent", "direct"]
         for key in expected:
             assert key in _NODE_LABELS, f"Missing key: {key}"
 
@@ -217,7 +217,6 @@ def _make_narrator_result(node: str):
         "tutor_agent": "Soạn bài giảng",
         "memory_agent": "Truy xuất bộ nhớ",
         "direct": "Suy nghĩ câu trả lời",
-        "grader": "Kiểm tra chất lượng",
         "synthesizer": "Tổng hợp câu trả lời",
         "product_search_agent": "Tìm kiếm sản phẩm",
         "code_studio_agent": "Code Studio",
@@ -246,6 +245,7 @@ async def _collect_events(node_updates):
         return _make_narrator_result(req.node)
 
     mock_narrator.render = _mock_render
+    mock_narrator.render_fast = lambda req: _make_narrator_result(req.node)
 
     with patch("app.engine.multi_agent.graph_streaming.open_multi_agent_graph",
                new=lambda: _MockGraphCM(mock_graph)), \
@@ -271,21 +271,16 @@ class TestGraphStreamingLifecycle:
     """Test that process_with_multi_agent_streaming emits lifecycle events."""
 
     @pytest.mark.asyncio
-    async def test_supervisor_emits_start_and_end(self):
-        """Supervisor node should emit thinking_start before thinking_end."""
+    async def test_supervisor_emits_status_only(self):
+        """Supervisor no longer surfaces its own thinking lifecycle in the live stream."""
         events = await _collect_events([
             {"supervisor": {"next_agent": "rag_agent", "thinking": "Routing to RAG agent"}},
         ])
 
         event_types = [e.type for e in events]
-        assert "thinking_start" in event_types
-        assert "thinking_end" in event_types
-
-        start_idx = next(i for i, e in enumerate(events)
-                         if e.type == "thinking_start" and e.node == "supervisor")
-        end_idx = next(i for i, e in enumerate(events)
-                       if e.type == "thinking_end" and e.node == "supervisor")
-        assert start_idx < end_idx
+        assert "status" in event_types
+        assert "thinking_start" not in event_types
+        assert "thinking_end" not in event_types
 
     @pytest.mark.asyncio
     async def test_rag_emits_partial_answer(self):
@@ -349,8 +344,8 @@ class TestGraphStreamingLifecycle:
         assert len(guardian_ends) == 0
 
     @pytest.mark.asyncio
-    async def test_grader_emits_status_only(self):
-        """Sprint 145: Grader demoted to status-only (no thinking lifecycle)."""
+    async def test_legacy_grader_updates_are_ignored(self):
+        """Sprint 233: legacy grader updates are ignored by the live pipeline."""
         events = await _collect_events([
             {"supervisor": {"next_agent": "rag_agent"}},
             {"rag_agent": {"final_response": "answer"}},
@@ -358,28 +353,22 @@ class TestGraphStreamingLifecycle:
             {"synthesizer": {"final_response": "answer"}},
         ])
 
-        grader_status = [e for e in events
-                         if e.type == "status" and e.node == "grader"]
-        grader_starts = [e for e in events
-                         if e.type == "thinking_start" and e.node == "grader"]
-        grader_ends = [e for e in events
-                       if e.type == "thinking_end" and e.node == "grader"]
-
-        assert len(grader_status) >= 1  # At least the score status
-        # Sprint 145: Grader no longer emits thinking lifecycle
-        assert len(grader_starts) == 0
-        assert len(grader_ends) == 0
+        grader_events = [e for e in events if e.node == "grader"]
+        assert grader_events == []
 
     @pytest.mark.asyncio
-    async def test_thinking_start_has_label(self):
-        """thinking_start content should be the Vietnamese node label with diacritics."""
+    async def test_rag_thinking_start_has_label(self):
+        """RAG thinking_start content should be the Vietnamese node label with diacritics."""
         events = await _collect_events([
             {"supervisor": {"next_agent": "rag_agent"}},
+            {"rag_agent": {
+                "thinking_content": "Đang dò các nguồn liên quan...",
+                "final_response": "Đây là câu trả lời từ RAG.",
+            }},
         ])
 
-        supervisor_start = next(e for e in events
-                                if e.type == "thinking_start" and e.node == "supervisor")
-        assert supervisor_start.content == "Phân tích câu hỏi"
+        rag_start = next(e for e in events if e.type == "thinking_start" and e.node == "rag_agent")
+        assert rag_start.content == "Tra cứu tri thức"
 
     @pytest.mark.asyncio
     async def test_thinking_end_has_duration_ms(self):
@@ -511,8 +500,8 @@ class TestGraphStreamingLifecycle:
         assert len(mem_ends) == 1
 
     @pytest.mark.asyncio
-    async def test_tutor_recovers_answer_from_thinking_field(self):
-        """When tutor_output is empty but thinking has content, use thinking as answer."""
+    async def test_tutor_recovered_answer_can_flow_through_safety_net(self):
+        """When tutor recovers from thinking, synthesizer/safety-net should still be able to surface it."""
         # Vietnamese text to avoid translation, >50 chars to trigger recovery
         thinking_text = "Đây là giải thích chi tiết về Quy tắc 15 tình huống mạn vượt trong hàng hải quốc tế."
         events = await _collect_events([
@@ -522,11 +511,11 @@ class TestGraphStreamingLifecycle:
                 "agent_outputs": {"tutor": ""},  # Also empty
                 "thinking": thinking_text,
             }},
-            {"synthesizer": {"final_response": ""}},
+            {"synthesizer": {"final_response": "", "agent_outputs": {"tutor": thinking_text}}},
         ])
 
         answer_events = [e for e in events if e.type == "answer"]
-        assert len(answer_events) > 0, "Should recover answer from thinking field"
+        assert len(answer_events) > 0, "Should recover answer through synthesizer/safety-net"
         total_text = "".join(e.content for e in answer_events)
         assert "Quy tắc 15" in total_text
 
@@ -572,8 +561,8 @@ class TestGraphStreamingLifecycle:
         assert "khôi phục câu trả lời" in total_text
 
     @pytest.mark.asyncio
-    async def test_tutor_partial_answer_emits_before_grader(self):
-        """Tutor partial answer should appear before grader thinking events."""
+    async def test_tutor_partial_answer_survives_legacy_grader_updates(self):
+        """Tutor partial answer should still stream even if a stale grader update appears."""
         events = await _collect_events([
             {"supervisor": {"next_agent": "tutor_agent"}},
             {"tutor_agent": {
@@ -585,12 +574,23 @@ class TestGraphStreamingLifecycle:
         ])
 
         answer_indices = [i for i, e in enumerate(events) if e.type == "answer"]
-        grader_start_idx = next(
-            (i for i, e in enumerate(events)
-             if e.type == "thinking_start" and e.node == "grader"),
-            None,
-        )
         assert len(answer_indices) > 0
-        if grader_start_idx is not None:
-            assert any(idx < grader_start_idx for idx in answer_indices), \
-                "Some answer events should come before grader"
+        assert all(e.node != "grader" for e in events)
+
+    @pytest.mark.asyncio
+    async def test_tutor_stream_uses_synthesizer_authority_for_final_answer(self):
+        """Tutor stream should hold raw tutor_output and surface the synthesizer final_response instead."""
+        events = await _collect_events([
+            {"supervisor": {"next_agent": "tutor_agent"}},
+            {"tutor_agent": {
+                "tutor_output": "Bản nháp thô từ tutor.",
+                "thinking_content": "Mình đang đối chiếu Rule 15 với ngữ cảnh hiện tại...",
+            }},
+            {"synthesizer": {"final_response": "Bản chốt cuối giàu chất Wiii hơn từ synthesizer."}},
+        ])
+
+        answer_events = [e for e in events if e.type == "answer"]
+        total_text = "".join(e.content for e in answer_events)
+
+        assert "Bản chốt cuối giàu chất Wiii hơn từ synthesizer." in total_text
+        assert "Bản nháp thô từ tutor." not in total_text

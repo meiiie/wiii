@@ -20,8 +20,10 @@ from app.api.deps import RequireAuth
 from app.api.v1 import chat_stream_endpoint_support as _stream_endpoint_support
 from app.api.v1 import chat_stream_presenter as _stream_presenter
 from app.api.v1 import chat_stream_transport as _stream_transport
+from app.core.config import settings
 from app.core.rate_limit import limiter
-from app.models.schemas import ChatRequest
+from app.core.security import resolve_interaction_role
+from app.models.schemas import ChatRequest, UserRole
 from app.services.chat_stream_coordinator import generate_stream_v3_events
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,22 @@ __all__ = [
 ]
 
 
+def _canonicalize_stream_request_from_auth(
+    chat_request: ChatRequest,
+    auth: RequireAuth,
+) -> ChatRequest:
+    """Project canonical auth identity onto transport request fields."""
+    effective_role = resolve_interaction_role(auth)
+    effective_org_id = auth.organization_id or chat_request.organization_id
+    return chat_request.model_copy(
+        update={
+            "user_id": str(auth.user_id),
+            "role": UserRole(effective_role),
+            "organization_id": effective_org_id,
+        }
+    )
+
+
 async def _keepalive_generator(
     inner_gen: AsyncGenerator[str, None],
     request: Request,
@@ -58,6 +76,7 @@ async def _keepalive_generator(
     Pattern: Claude API `ping` events / SSE spec comment lines.
 
     - Sends `: keepalive\\n\\n` every 15s during idle periods
+    - Interval/idle timeout are configurable from runtime settings
     - Checks `request.is_disconnected()` to abort when client disconnects
     """
     def _inner_error_chunks() -> list[str]:
@@ -67,7 +86,8 @@ async def _keepalive_generator(
         inner_gen=inner_gen,
         request=request,
         keepalive_chunk=SSE_KEEPALIVE,
-        keepalive_interval_sec=KEEPALIVE_INTERVAL_SEC,
+        keepalive_interval_sec=settings.llm_stream_keepalive_interval_seconds,
+        idle_timeout_sec=settings.llm_stream_idle_timeout_seconds,
         on_inner_error=_inner_error_chunks,
     ):
         yield chunk
@@ -123,6 +143,7 @@ async def chat_stream_v3(
     preserve the stage ordering documented in
     app/services/REQUEST_FLOW_CONTRACT.md.
     """
+    chat_request = _canonicalize_stream_request_from_auth(chat_request, auth)
     start_time = _stream_endpoint_support.begin_chat_stream_request(
         logger=logger,
         request=request,
@@ -155,4 +176,3 @@ async def chat_stream_v3(
     return _stream_endpoint_support.build_chat_streaming_response(
         event_generator=_keepalive_generator(generate_events_v3(), request),
     )
-

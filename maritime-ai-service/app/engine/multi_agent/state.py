@@ -54,9 +54,12 @@ class AgentState(TypedDict, total=False):
     # CHỈ THỊ SỐ 28: SOTA Reasoning Trace for API transparency
     reasoning_trace: Optional[Any]  # ReasoningTrace from CorrectiveRAG
     thinking_content: Optional[str]  # Structured prose summary (fallback)
+    thinking_lifecycle: Optional[Dict[str, Any]]  # Serialized lifecycle authority for visible thinking
     
     # CHỈ THỊ SỐ 29: Native thinking from Gemini (SOTA 2025)
     thinking: Optional[str]  # Native Gemini thinking (priority)
+    _public_thinking_fragments: Optional[List[str]]  # Visible interval thinking fragments captured during the turn
+    _thinking_trajectory: Optional[Dict[str, Any]]  # Internal thought trajectory authority
     
     # CHỈ THỊ SỐ 30: Trace ID for graph-level universal tracing
     # Actual ReasoningTracer stored in module-level dict (not in state) to avoid
@@ -82,6 +85,12 @@ class AgentState(TypedDict, total=False):
 
     # Per-Request Provider Selection: user-chosen LLM provider for this turn
     provider: Optional[str]  # "auto" | "google" | "zhipu" | None (= auto)
+    model: Optional[str]  # Effective model selected for this turn when known
+
+    # Runtime execution metadata (must live in AgentState so LangGraph preserves it)
+    _execution_provider: Optional[str]  # Concrete provider that actually answered
+    _execution_model: Optional[str]  # Concrete model that actually answered
+    _llm_failover_events: Optional[List[Dict[str, Any]]]  # Structured failover trail for this turn
 
     # Sprint 69: Event bus ID for intra-node real-time streaming
     # String key into module-level _EVENT_QUEUES dict (avoids serialization issues)
@@ -113,7 +122,14 @@ class AgentState(TypedDict, total=False):
 
     # Sprint 222: Universal Host Context Engine
     host_context: Optional[Dict[str, Any]]  # Raw HostContext from request
+    host_capabilities: Optional[Dict[str, Any]]  # Raw HostCapabilities from request
+    host_action_feedback: Optional[Dict[str, Any]]  # Recent host action results from request
     host_context_prompt: Optional[str]  # Formatted prompt block (graph-level injection)
+    host_capabilities_prompt: Optional[str]  # Host capability/action block
+    host_session: Optional[Dict[str, Any]]  # HostSessionV1 runtime overlay for this turn
+    host_session_prompt: Optional[str]  # Formatted host-session block for prompts
+    operator_session: Optional[Dict[str, Any]]  # OperatorSessionV1 metadata
+    operator_context_prompt: Optional[str]  # Formatted operator block for prompts
     widget_feedback_prompt: Optional[str]  # Formatted widget/app result context
     living_context_prompt: Optional[str]  # Formatted LivingContextBlockV1 prompt
     memory_block_context: Optional[str]  # MemoryBlockV1 section extracted for prompt reuse
@@ -125,5 +141,3 @@ class AgentState(TypedDict, total=False):
     _aggregator_reasoning: Optional[str]
     _reroute_count: Optional[int]
     _parallel_targets: Optional[List[str]]  # Agent names for parallel dispatch
-
-

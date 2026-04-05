@@ -34,9 +34,12 @@ class SessionState:
     """
     session_id: UUID
     recent_phrases: List[str] = field(default_factory=list)
+    recent_messages: List[dict] = field(default_factory=list)
     name_usage_count: int = 0
     total_responses: int = 0
     is_first_message: bool = True
+    response_language: str = "vi"
+    MAX_RECENT_MESSAGES: int = 12
     pronoun_style: Optional[dict] = None  # CHỈ THỊ SỐ 20: Detected pronoun style
     
     def add_phrase(self, phrase: str) -> None:
@@ -44,6 +47,21 @@ class SessionState:
         self.recent_phrases.append(phrase)
         if len(self.recent_phrases) > 5:  # Keep last 5
             self.recent_phrases.pop(0)
+
+    def add_message(self, role: str, content: str) -> None:
+        """Track a lightweight recent-message window for continuity fallback."""
+        role_text = str(role or "").strip()
+        content_text = str(content or "").strip()
+        if not role_text or not content_text:
+            return
+        self.recent_messages.append(
+            {
+                "role": role_text,
+                "content": content_text,
+            }
+        )
+        if len(self.recent_messages) > self.MAX_RECENT_MESSAGES:
+            self.recent_messages = self.recent_messages[-self.MAX_RECENT_MESSAGES :]
     
     def increment_response(self, used_name: bool = False) -> None:
         """Increment response counter."""
@@ -69,6 +87,12 @@ class SessionState:
         if style:
             self.pronoun_style = style
             logger.debug("Updated pronoun style: %s", style)
+
+    def update_response_language(self, language: Optional[str]) -> None:
+        """Track the preferred response language for this session."""
+        if language:
+            self.response_language = language
+            logger.debug("Updated response language: %s", language)
 
 
 @dataclass
@@ -230,6 +254,23 @@ class SessionManager:
     def get_state(self, session_id: UUID) -> SessionState:
         """Get session state by session_id."""
         return self._get_or_create_state(session_id)
+
+    def append_message(self, session_id: UUID, role: str, content: str) -> None:
+        """Append a recent message to the in-memory continuity cache."""
+        state = self._get_or_create_state(session_id)
+        state.add_message(role, content)
+
+    def get_recent_messages(
+        self,
+        session_id: UUID,
+        limit: Optional[int] = None,
+    ) -> List[dict]:
+        """Return cached recent messages for follow-up continuity fallback."""
+        state = self._get_or_create_state(session_id)
+        messages = list(state.recent_messages)
+        if limit is not None and limit > 0:
+            return messages[-limit:]
+        return messages
     
     def update_state(
         self, 

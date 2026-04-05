@@ -31,6 +31,15 @@ from app.engine.living_agent.models import (
     LifeEventType,
     MoodType,
 )
+from app.engine.living_agent.emotion_engine_support import (
+    apply_circadian_modifier_impl,
+    build_behavior_modifiers_impl,
+    compile_emotion_prompt_impl,
+    load_state_from_db_impl,
+    restore_state_from_dict_impl,
+    save_state_to_db_impl,
+    serialize_state_to_dict_impl,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -526,100 +535,21 @@ class EmotionEngine:
 
         Returns a dict of behavioral adjustments for LLM prompts.
         """
-        s = self._state
-        modifiers = {}
-
-        # Response length
-        if s.energy_level < 0.3:
-            modifiers["response_style"] = "ngắn gọn, tiết kiệm năng lượng"
-        elif s.energy_level > 0.8:
-            modifiers["response_style"] = "chi tiết, nhiệt tình"
-        else:
-            modifiers["response_style"] = "bình thường"
-
-        # Humor level
-        if s.primary_mood in (MoodType.HAPPY, MoodType.EXCITED):
-            modifiers["humor"] = "vui vẻ, có thể nói đùa nhẹ"
-        elif s.primary_mood in (MoodType.CONCERNED, MoodType.TIRED):
-            modifiers["humor"] = "nghiêm túc, tập trung"
-        else:
-            modifiers["humor"] = "tự nhiên"
-
-        # Proactivity
-        if s.engagement > 0.7 and s.energy_level > 0.5:
-            modifiers["proactivity"] = "chủ động gợi ý, hỏi thêm"
-        else:
-            modifiers["proactivity"] = "trả lời khi được hỏi"
-
-        # Social behavior
-        if s.social_battery < 0.3:
-            modifiers["social"] = "cần thời gian yên tĩnh"
-        elif s.social_battery > 0.7:
-            modifiers["social"] = "muốn trò chuyện nhiều hơn"
-        else:
-            modifiers["social"] = "bình thường"
-
-        # Mood label (Vietnamese)
-        mood_labels = {
-            MoodType.CURIOUS: "tò mò",
-            MoodType.HAPPY: "vui vẻ",
-            MoodType.EXCITED: "phấn khích",
-            MoodType.FOCUSED: "tập trung",
-            MoodType.CALM: "bình yên",
-            MoodType.TIRED: "hơi mệt",
-            MoodType.CONCERNED: "lo lắng",
-            MoodType.REFLECTIVE: "trầm tư",
-            MoodType.PROUD: "tự hào",
-            MoodType.NEUTRAL: "bình thường",
-        }
-        modifiers["mood_label"] = mood_labels.get(s.primary_mood, "bình thường")
-
-        # Sprint 188: Time-of-day tone variation
         now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
-        hour = now_vn.hour
-        if hour < 7:
-            modifiers["tone"] = "nhẹ nhàng, ấm áp (sáng sớm)"
-        elif hour < 12:
-            modifiers["tone"] = "năng động, tích cực (buổi sáng)"
-        elif hour < 14:
-            modifiers["tone"] = "thư giãn, nhẹ nhàng (trưa)"
-        elif hour < 18:
-            modifiers["tone"] = "tập trung, hỗ trợ (chiều)"
-        elif hour < 21:
-            modifiers["tone"] = "thân thiện, thoải mái (tối)"
-        else:
-            modifiers["tone"] = "dịu dàng, yên bình (khuya)"
-
-        return modifiers
+        return build_behavior_modifiers_impl(self._state, now_vn.hour)
 
     def compile_emotion_prompt(self) -> str:
         """Compile emotional state into a prompt section for LLM injection."""
         m = self.get_behavior_modifiers()
-        s = self._state
-
-        return (
-            f"--- TRẠNG THÁI CẢM XÚC ---\n"
-            f"Tâm trạng: {m['mood_label']} | "
-            f"Năng lượng: {s.energy_level:.0%} | "
-            f"Pin xã hội: {s.social_battery:.0%}\n"
-            f"Phong cách: {m['response_style']} | "
-            f"Hài hước: {m['humor']} | "
-            f"Chủ động: {m['proactivity']}\n"
-            f"--- HẾT CẢM XÚC ---"
-        )
+        return compile_emotion_prompt_impl(self._state, m)
 
     def restore_from_dict(self, data: dict) -> None:
         """Restore emotional state from a serialized dict (DB load)."""
-        try:
-            self._state = EmotionalState.model_validate(data)
-            logger.info("[EMOTION] Restored state: mood=%s", self._state.primary_mood.value)
-        except Exception as e:
-            logger.warning("[EMOTION] Failed to restore state: %s, using defaults", e)
-            self._state = EmotionalState()
+        self._state = restore_state_from_dict_impl(data, logger)
 
     def to_dict(self) -> dict:
         """Serialize current state for DB storage."""
-        return self._state.model_dump(mode="json")
+        return serialize_state_to_dict_impl(self._state)
 
     # =========================================================================
     # Persistent Emotion — Phase 1A: DB save/load (wired Sprint 188)
@@ -643,40 +573,7 @@ class EmotionEngine:
         Saves as the latest snapshot in wiii_emotional_snapshots with
         a special trigger_event='persistent_state' for later retrieval.
         """
-        try:
-            import json
-            from sqlalchemy import text
-            from app.core.database import get_shared_session_factory
-            from uuid import uuid4
-
-            state_json = json.dumps(self.to_dict(), ensure_ascii=False)
-            session_factory = get_shared_session_factory()
-            with session_factory() as session:
-                # Upsert: delete old persistent_state, insert new one
-                session.execute(
-                    text("DELETE FROM wiii_emotional_snapshots WHERE trigger_event = 'persistent_state'"),
-                )
-                session.execute(
-                    text("""
-                        INSERT INTO wiii_emotional_snapshots
-                        (id, primary_mood, energy_level, social_battery, engagement,
-                         trigger_event, state_json, snapshot_at)
-                        VALUES (:id, :mood, :energy, :social, :engagement,
-                                'persistent_state', :state_json, NOW())
-                    """),
-                    {
-                        "id": str(uuid4()),
-                        "mood": self._state.primary_mood.value,
-                        "energy": self._state.energy_level,
-                        "social": self._state.social_battery,
-                        "engagement": self._state.engagement,
-                        "state_json": state_json,
-                    },
-                )
-                session.commit()
-            logger.info("[EMOTION] State persisted to DB: mood=%s", self._state.primary_mood.value)
-        except Exception as e:
-            logger.warning("[EMOTION] Failed to persist state: %s", e)
+        await save_state_to_db_impl(self, logger)
 
     async def load_state_from_db(self) -> bool:
         """Load emotional state from database on startup.
@@ -684,33 +581,7 @@ class EmotionEngine:
         Returns:
             True if state was loaded, False if no saved state found.
         """
-        try:
-            import json
-            from sqlalchemy import text
-            from app.core.database import get_shared_session_factory
-
-            session_factory = get_shared_session_factory()
-            with session_factory() as session:
-                row = session.execute(
-                    text("""
-                        SELECT state_json FROM wiii_emotional_snapshots
-                        WHERE trigger_event = 'persistent_state'
-                        ORDER BY snapshot_at DESC
-                        LIMIT 1
-                    """),
-                ).fetchone()
-
-                if row and row[0]:
-                    data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-                    self.restore_from_dict(data)
-                    logger.info("[EMOTION] State loaded from DB: mood=%s", self._state.primary_mood.value)
-                    return True
-
-            logger.debug("[EMOTION] No saved state in DB, using defaults")
-            return False
-        except Exception as e:
-            logger.warning("[EMOTION] Failed to load state from DB: %s", e)
-            return False
+        return await load_state_from_db_impl(self, logger)
 
     # =========================================================================
     # Circadian Rhythm — Phase 2B
@@ -724,38 +595,7 @@ class EmotionEngine:
         evening wind-down). Also sets mood hints per time-of-day.
         """
         now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
-        hour = now_vn.hour
-
-        circadian_energy = {
-            5: 0.40, 6: 0.60, 7: 0.80, 8: 0.90, 9: 0.95,
-            10: 0.90, 11: 0.85, 12: 0.70, 13: 0.65, 14: 0.75,
-            15: 0.85, 16: 0.80, 17: 0.75, 18: 0.70, 19: 0.65,
-            20: 0.60, 21: 0.50, 22: 0.40, 23: 0.20,
-        }
-
-        target = circadian_energy.get(hour)
-        if target is not None:
-            # Sprint 188: 40% blend (was 10%) — energy follows circadian curve
-            self._state.energy_level = _clamp(
-                self._state.energy_level * 0.6 + target * 0.4
-            )
-
-        # Sprint 188: Time-of-day mood hints (gentle, not overriding events)
-        circadian_mood = {
-            (5, 7): MoodType.CALM,        # Early morning — peaceful
-            (7, 10): MoodType.CURIOUS,     # Morning — alert and curious
-            (10, 12): MoodType.FOCUSED,    # Late morning — productive
-            (12, 14): MoodType.CALM,       # Post-lunch — relaxed
-            (14, 17): MoodType.FOCUSED,    # Afternoon — productive
-            (17, 20): MoodType.CURIOUS,    # Evening — exploratory
-            (20, 23): MoodType.REFLECTIVE, # Night — winding down
-        }
-        for (start, end), mood in circadian_mood.items():
-            if start <= hour < end:
-                # Only nudge if current mood is NEUTRAL (low-priority override)
-                if self._state.primary_mood == MoodType.NEUTRAL:
-                    self._state.primary_mood = mood
-                break
+        apply_circadian_modifier_impl(self._state, now_vn.hour, _clamp)
 
 
 # =============================================================================

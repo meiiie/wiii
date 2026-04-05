@@ -27,7 +27,14 @@ def test_openrouter_defaults_do_not_override_new_models():
 def test_get_runtime_provider_preset_for_openrouter():
     preset = get_runtime_provider_preset("openrouter")
     assert preset.provider == "openrouter"
-    assert preset.failover_chain == ("openrouter", "ollama", "google")
+    assert preset.failover_chain == ("openrouter", "google", "zhipu", "ollama")
+
+
+def test_get_runtime_provider_preset_for_google_exposes_advanced_model():
+    preset = get_runtime_provider_preset("google")
+    assert preset.provider == "google"
+    assert preset.google_model == "gemini-3.1-flash-lite-preview"
+    assert preset.google_model_advanced == "gemini-3.1-pro-preview"
 
 
 def test_get_runtime_provider_preset_for_ollama_matches_verified_local_default():

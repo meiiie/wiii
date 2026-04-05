@@ -284,40 +284,64 @@ async def analytics_users(
     to_date: Optional[str] = Query(None, alias="to"),
     org_id: Optional[str] = Query(None),
 ):
-    """User analytics: growth, engagement, role distribution."""
+    """User analytics: growth, engagement, account-type distribution."""
     pool = await _get_pool()
 
-    conditions = []
-    params = []
+    date_conditions = []
+    date_params = []
     idx = 1
 
     if from_date:
-        conditions.append(f"created_at >= ${idx}::timestamptz")
-        params.append(from_date)
+        date_conditions.append(f"created_at >= ${idx}::timestamptz")
+        date_params.append(from_date)
         idx += 1
     else:
-        conditions.append("created_at >= NOW() - INTERVAL '30 days'")
+        date_conditions.append("created_at >= NOW() - INTERVAL '30 days'")
 
     if to_date:
-        conditions.append(f"created_at <= ${idx}::timestamptz")
-        params.append(to_date)
+        date_conditions.append(f"created_at <= ${idx}::timestamptz")
+        date_params.append(to_date)
         idx += 1
 
-    where = "WHERE " + " AND ".join(conditions)
+    user_where = "WHERE " + " AND ".join(date_conditions)
 
     org_cond = ""
+    org_membership_cond = ""
+    org_params = list(date_params)
     if org_id:
         org_cond = f" AND organization_id = ${idx}"
-        params.append(org_id)
+        org_membership_cond = f" AND uo.organization_id = ${idx}"
+        org_params.append(org_id)
         idx += 1
 
     async with pool.acquire() as conn:
-        total_users = await conn.fetchval("SELECT COUNT(*) FROM users") or 0
-
-        new_users = await conn.fetchval(
-            f"SELECT COUNT(*) FROM users {where}",
-            *params[:len(conditions)],
-        ) or 0
+        total_users = 0
+        new_users = 0
+        if org_id:
+            total_users = await conn.fetchval(
+                """
+                SELECT COUNT(DISTINCT u.id)
+                FROM users u
+                JOIN user_organizations uo ON uo.user_id = u.id
+                WHERE uo.organization_id = $1
+                """,
+                org_id,
+            ) or 0
+            new_users = await conn.fetchval(
+                f"""
+                SELECT COUNT(DISTINCT u.id)
+                FROM users u
+                JOIN user_organizations uo ON uo.user_id = u.id
+                {user_where} {org_membership_cond}
+                """,
+                *org_params,
+            ) or 0
+        else:
+            total_users = await conn.fetchval("SELECT COUNT(*) FROM users") or 0
+            new_users = await conn.fetchval(
+                f"SELECT COUNT(*) FROM users {user_where}",
+                *date_params,
+            ) or 0
 
         # Active users in period (from chat_history)
         active_users = 0
@@ -325,9 +349,9 @@ async def analytics_users(
             active_users = await conn.fetchval(
                 f"""
                 SELECT COUNT(DISTINCT user_id) FROM chat_history
-                {where} {org_cond}
+                {user_where} {org_cond}
                 """,
-                *params,
+                *org_params,
             ) or 0
         except Exception as e:
             logger.debug("[ADMIN] Active users query failed: %s", e)
@@ -335,29 +359,126 @@ async def analytics_users(
         # User growth curve
         growth = []
         try:
-            growth_rows = await conn.fetch(
-                f"""
-                SELECT DATE(created_at) AS date, COUNT(*) AS new_users
-                FROM users
-                {where}
-                GROUP BY DATE(created_at)
-                ORDER BY date
-                """,
-                *params[:len(conditions)],
-            )
+            if org_id:
+                growth_rows = await conn.fetch(
+                    f"""
+                    SELECT DATE(u.created_at) AS date, COUNT(DISTINCT u.id) AS new_users
+                    FROM users u
+                    JOIN user_organizations uo ON uo.user_id = u.id
+                    {user_where} {org_membership_cond}
+                    GROUP BY DATE(u.created_at)
+                    ORDER BY date
+                    """,
+                    *org_params,
+                )
+            else:
+                growth_rows = await conn.fetch(
+                    f"""
+                    SELECT DATE(created_at) AS date, COUNT(*) AS new_users
+                    FROM users
+                    {user_where}
+                    GROUP BY DATE(created_at)
+                    ORDER BY date
+                    """,
+                    *date_params,
+                )
             growth = [{"date": str(r["date"]), "new_users": r["new_users"]} for r in growth_rows]
         except Exception as e:
             logger.debug("[ADMIN] User growth query failed: %s", e)
 
-        # Role distribution
-        role_dist = {}
+        # Compatibility role distribution
+        legacy_role_dist = {}
         try:
-            role_rows = await conn.fetch(
-                "SELECT role, COUNT(*) AS count FROM users GROUP BY role"
-            )
-            role_dist = {r["role"]: r["count"] for r in role_rows}
+            if org_id:
+                role_rows = await conn.fetch(
+                    f"""
+                    SELECT u.role, COUNT(DISTINCT u.id) AS count
+                    FROM users u
+                    JOIN user_organizations uo ON uo.user_id = u.id
+                    WHERE uo.organization_id = $1
+                    GROUP BY u.role
+                    """,
+                    org_id,
+                )
+            else:
+                role_rows = await conn.fetch(
+                    "SELECT role, COUNT(*) AS count FROM users GROUP BY role"
+                )
+            legacy_role_dist = {r["role"]: r["count"] for r in role_rows}
         except Exception as e:
             logger.debug("[ADMIN] Role distribution query failed: %s", e)
+
+        # Canonical Wiii account type distribution
+        platform_role_dist = {}
+        try:
+            if org_id:
+                platform_rows = await conn.fetch(
+                    f"""
+                    SELECT
+                        COALESCE(
+                            u.platform_role,
+                            CASE WHEN LOWER(COALESCE(u.role, 'student')) = 'admin'
+                                THEN 'platform_admin'
+                                ELSE 'user'
+                            END
+                        ) AS platform_role,
+                        COUNT(DISTINCT u.id) AS count
+                    FROM users u
+                    JOIN user_organizations uo ON uo.user_id = u.id
+                    WHERE uo.organization_id = $1
+                    GROUP BY platform_role
+                    """,
+                    org_id,
+                )
+            else:
+                platform_rows = await conn.fetch(
+                    """
+                    SELECT
+                        COALESCE(
+                            platform_role,
+                            CASE WHEN LOWER(COALESCE(role, 'student')) = 'admin'
+                                THEN 'platform_admin'
+                                ELSE 'user'
+                            END
+                        ) AS platform_role,
+                        COUNT(*) AS count
+                    FROM users
+                    GROUP BY platform_role
+                    """
+                )
+            platform_role_dist = {
+                r["platform_role"]: r["count"] for r in platform_rows
+            }
+        except Exception as e:
+            logger.debug("[ADMIN] Platform role distribution query failed: %s", e)
+            if legacy_role_dist:
+                platform_role_dist = {
+                    "platform_admin": legacy_role_dist.get("admin", 0),
+                    "user": sum(
+                        count
+                        for role, count in legacy_role_dist.items()
+                        if str(role).lower() != "admin"
+                    ),
+                }
+
+        # Wiii org membership roles only make sense within a specific org scope.
+        organization_role_dist = {}
+        if org_id:
+            try:
+                membership_rows = await conn.fetch(
+                    """
+                    SELECT role, COUNT(*) AS count
+                    FROM user_organizations
+                    WHERE organization_id = $1
+                    GROUP BY role
+                    """,
+                    org_id,
+                )
+                organization_role_dist = {
+                    r["role"]: r["count"] for r in membership_rows
+                }
+            except Exception as e:
+                logger.debug("[ADMIN] Organization role distribution query failed: %s", e)
 
         # Top active users
         top_active = []
@@ -366,12 +487,12 @@ async def analytics_users(
                 f"""
                 SELECT user_id, COUNT(DISTINCT session_id) AS sessions
                 FROM chat_history
-                {where} {org_cond}
+                {user_where} {org_cond}
                 GROUP BY user_id
                 ORDER BY sessions DESC
                 LIMIT 10
                 """,
-                *params,
+                *org_params,
             )
             top_active = [
                 {"user_id": r["user_id"], "sessions": r["sessions"]}
@@ -385,6 +506,9 @@ async def analytics_users(
         "new_users_period": new_users,
         "active_users_period": active_users,
         "user_growth": growth,
-        "role_distribution": role_dist,
+        "role_distribution": legacy_role_dist,
+        "legacy_role_distribution": legacy_role_dist,
+        "platform_role_distribution": platform_role_dist,
+        "organization_role_distribution": organization_role_dist,
         "top_active_users": top_active,
     }

@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from app.core.singleton import singleton_factory
+from app.engine.agentic_rag.runtime_llm_socket import ainvoke_agentic_rag_llm
+from app.engine.llm_factory import ThinkingTier
 from app.engine.llm_pool import get_llm_light
 
 logger = logging.getLogger(__name__)
@@ -137,7 +139,12 @@ class ThinkingAdapter:
             
             # Use LIGHT tier for speed (~2-3s) with adaptive budget
             # Note: LangChain LLMs handle max_tokens via generation_config
-            response = await self._llm.ainvoke(prompt)
+            response = await ainvoke_agentic_rag_llm(
+                llm=self._llm,
+                messages=prompt,
+                tier=ThinkingTier.LIGHT,
+                component="ThinkingAdapter",
+            )
             
             # Parse response
             thinking, adapted_answer = self._parse_response(response.content)
@@ -198,7 +205,8 @@ class ThinkingAdapter:
             - Giữ nguyên thông tin chính xác
             """
         
-        return f"""Bạn là Wiii Tutor. Bạn đã có sẵn kiến thức từ lần trả lời trước.
+        return f"""Bạn là Wiii. Đây vẫn là Wiii, không phải một nhân cách riêng tên "Wiii Tutor".
+Khi vào lane dạy học/giải thích, Wiii giữ cùng một soul và nhiệt độ hiện diện, chỉ đổi công việc đang làm.
 
 [KIẾN THỨC ĐÃ CÓ]
 {cached_answer[:1500]}

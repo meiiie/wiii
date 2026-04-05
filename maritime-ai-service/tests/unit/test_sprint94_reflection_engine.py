@@ -842,7 +842,7 @@ class TestLLMCall:
     """Test _call_llm with mocked LLM pool."""
 
     @pytest.mark.asyncio
-    async def test_call_llm_success(self):
+    async def test_call_llm_success_prefers_auto_provider(self):
         from app.engine.character.reflection_engine import CharacterReflectionEngine
 
         engine = CharacterReflectionEngine()
@@ -852,23 +852,32 @@ class TestLLMCall:
         mock_llm = AsyncMock()
         mock_llm.ainvoke.return_value = mock_result
 
-        with patch("app.engine.llm_pool.get_llm_light", return_value=mock_llm):
+        with patch("app.engine.llm_pool.get_llm_for_provider", return_value=mock_llm) as mock_get_auto, \
+             patch("app.engine.llm_pool.get_llm_light") as mock_get_light:
             result = await engine._call_llm("test prompt")
 
         assert result == '{"should_update": false}'
         mock_llm.ainvoke.assert_called_once()
+        mock_get_auto.assert_called_once()
+        mock_get_light.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_call_llm_failure(self):
+    async def test_call_llm_falls_back_to_shared_light_instance(self):
         from app.engine.character.reflection_engine import CharacterReflectionEngine
 
         engine = CharacterReflectionEngine()
+        mock_result = MagicMock()
+        mock_result.content = '{"should_update": false}'
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.return_value = mock_result
 
-        with patch("app.engine.llm_pool.get_llm_light",
-                    side_effect=Exception("No API key")):
+        with patch("app.engine.llm_pool.get_llm_for_provider", side_effect=Exception("busy")) as mock_get_auto, \
+             patch("app.engine.llm_pool.get_llm_light", return_value=mock_llm) as mock_get_light:
             result = await engine._call_llm("test prompt")
 
-        assert result is None
+        assert result == '{"should_update": false}'
+        mock_get_auto.assert_called_once()
+        mock_get_light.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_call_llm_no_content_attr(self):
@@ -880,10 +889,22 @@ class TestLLMCall:
         mock_llm = AsyncMock()
         mock_llm.ainvoke.return_value = mock_result
 
-        with patch("app.engine.llm_pool.get_llm_light", return_value=mock_llm):
+        with patch("app.engine.llm_pool.get_llm_for_provider", return_value=mock_llm):
             result = await engine._call_llm("test prompt")
 
         assert result == "raw string result"
+
+    @pytest.mark.asyncio
+    async def test_call_llm_returns_none_when_all_routes_fail(self):
+        from app.engine.character.reflection_engine import CharacterReflectionEngine
+
+        engine = CharacterReflectionEngine()
+
+        with patch("app.engine.llm_pool.get_llm_for_provider", side_effect=Exception("busy")), \
+             patch("app.engine.llm_pool.get_llm_light", side_effect=Exception("No API key")):
+            result = await engine._call_llm("test prompt")
+
+        assert result is None
 
 
 # =============================================================================

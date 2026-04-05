@@ -4,7 +4,12 @@
  */
 import { useCallback, useRef } from "react";
 import { sendMessageStream } from "@/api/chat";
-import { initClient } from "@/api/client";
+import { ApiHttpError, initClient } from "@/api/client";
+import {
+  submitHostActionAudit,
+  type HostActionAuditEventType,
+  type HostActionAuditRequest,
+} from "@/api/host-actions";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useDomainStore } from "@/stores/domain-store";
@@ -17,6 +22,7 @@ import { useCodeStudioStore } from "@/stores/code-studio-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useToastStore } from "@/stores/toast-store";
 import { useModelStore } from "@/stores/model-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { StreamBuffer } from "@/lib/stream-buffer";
 import { trackVisualTelemetry } from "@/lib/visual-telemetry";
 import type { SSEEventHandler } from "@/api/sse";
@@ -27,6 +33,7 @@ import type {
   DisplayPresentationMeta,
   ImageInput,
   MoodType,
+  PreviewItemData,
   PreviewType,
 } from "@/api/types";
 
@@ -45,8 +52,22 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function createStreamRequestId(): string {
+  const randomUuid = globalThis.crypto?.randomUUID?.();
+  if (randomUuid) {
+    return `chat-stream-${randomUuid}`;
+  }
+  return `chat-stream-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /** Sprint 165: Map error types to Wiii-character Vietnamese messages. */
 function _getVietnameseErrorMessage(err: unknown): string {
+  if (err instanceof ApiHttpError) {
+    const rawMessage = err.body?.message;
+    if (typeof rawMessage === "string" && rawMessage.trim()) {
+      return rawMessage.trim();
+    }
+  }
   if (err instanceof TypeError && err.message.includes("fetch")) {
     return "Ôi, Wiii mất kết nối với máy chủ rồi. Bạn kiểm tra mạng giúp mình nhé!";
   }
@@ -64,6 +85,13 @@ function _getVietnameseErrorMessage(err: unknown): string {
     return "Bạn ơi, hỏi nhanh quá, Wiii chưa kịp thở. Đợi mình một chút nhé!";
   }
   return "Wiii bị mất kết nối rồi. Bạn thử lại giúp mình nhé!";
+}
+
+function _extractStructuredErrorMetadata(err: unknown): Record<string, unknown> | undefined {
+  if (err instanceof ApiHttpError && err.body) {
+    return err.body;
+  }
+  return undefined;
 }
 
 /**
@@ -108,6 +136,62 @@ function _inferCodeStudioRequestedView(prompt: string): "code" | "preview" | und
   return undefined;
 }
 
+function _normalizeCompatibilityRole(
+  value: unknown,
+): "student" | "teacher" | "admin" | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "teacher") return "teacher";
+  if (normalized === "student") return "student";
+  if (normalized === "admin") return "admin";
+  if (normalized === "org_admin" || normalized === "owner") return "teacher";
+  return null;
+}
+
+export function _resolveCompatibilityRole(
+  authMode: "oauth" | "legacy",
+  settingsRole: string,
+  hostRole?: unknown,
+  pageRole?: unknown,
+): "student" | "teacher" | "admin" {
+  const hostOverlayRole =
+    _normalizeCompatibilityRole(hostRole) || _normalizeCompatibilityRole(pageRole);
+  if (hostOverlayRole) {
+    return hostOverlayRole;
+  }
+  if (authMode === "legacy") {
+    return _normalizeCompatibilityRole(settingsRole) || "student";
+  }
+  return "student";
+}
+
+export function _resolveRequestUserId(
+  authMode: "oauth" | "legacy",
+  settingsUserId: string,
+  authUserId?: string | null,
+): string {
+  if (authMode === "oauth" && authUserId && authUserId.trim()) {
+    return authUserId.trim();
+  }
+  return settingsUserId;
+}
+
+export function _resolveRequestDisplayName(
+  authMode: "oauth" | "legacy",
+  settingsDisplayName: string,
+  settingsUserId: string,
+  authName?: string | null,
+  authEmail?: string | null,
+): string {
+  if (authMode === "oauth") {
+    const authLabel = authName?.trim() || authEmail?.trim();
+    if (authLabel) {
+      return authLabel;
+    }
+  }
+  return settingsDisplayName || settingsUserId;
+}
+
 function toDisplayMeta(
   data: Partial<{
     display_role: DisplayPresentationMeta["displayRole"];
@@ -123,6 +207,187 @@ function toDisplayMeta(
     stepId: data.step_id,
     stepState: data.step_state,
     presentation: data.presentation,
+  };
+}
+
+function mapHostActionAuditEvent(action: string): HostActionAuditEventType | null {
+  switch (action) {
+    case "authoring.preview_lesson_patch":
+    case "assessment.preview_quiz_commit":
+    case "publish.preview_quiz":
+      return "preview_created";
+    case "authoring.apply_lesson_patch":
+    case "assessment.apply_quiz_commit":
+      return "apply_confirmed";
+    case "publish.apply_quiz":
+      return "publish_confirmed";
+    default:
+      return null;
+  }
+}
+
+function buildHostActionPreviewItem(
+  action: string,
+  requestId: string,
+  params: Record<string, unknown>,
+  data: Record<string, unknown>,
+  hostContext: ReturnType<typeof useHostContextStore.getState>["currentContext"],
+): PreviewItemData | null {
+  const previewToken = typeof data.preview_token === "string" ? data.preview_token.trim() : "";
+  if (!previewToken) return null;
+
+  const previewKind = typeof data.preview_kind === "string" ? data.preview_kind : "";
+  const summary = typeof data.summary === "string" ? data.summary.trim() : "Preview is ready.";
+  const changedFields = Array.isArray(data.changed_fields)
+    ? data.changed_fields.filter((field): field is string => typeof field === "string" && field.trim().length > 0)
+    : [];
+  const questionCount =
+    typeof data.question_count === "number"
+      ? data.question_count
+      : Array.isArray(params.question_ids)
+        ? params.question_ids.length
+        : Array.isArray(params.questionIds)
+          ? params.questionIds.length
+          : undefined;
+
+  const targetLabel =
+    (typeof data.lesson_title === "string" && data.lesson_title.trim())
+    || (typeof data.quiz_title === "string" && data.quiz_title.trim())
+    || (typeof params.title === "string" && params.title.trim())
+    || (typeof data.lesson_id === "string" && data.lesson_id.trim())
+    || (typeof data.quiz_id === "string" && data.quiz_id.trim())
+    || "Host preview";
+
+  const title =
+    previewKind === "lesson_patch"
+      ? `Preview cap nhat bai hoc: ${targetLabel}`
+      : previewKind === "quiz_commit"
+        ? `Preview quiz: ${targetLabel}`
+        : previewKind === "quiz_publish"
+          ? `Preview publish quiz: ${targetLabel}`
+          : `Preview host action: ${targetLabel}`;
+
+  return {
+    preview_id: `host-action-${requestId}`,
+    preview_type: "host_action",
+    title,
+    snippet: summary,
+    metadata: {
+      action,
+      request_id: requestId,
+      summary,
+      preview_kind: previewKind || undefined,
+      preview_token: previewToken,
+      apply_action: typeof data.apply_action === "string" ? data.apply_action : undefined,
+      target_label: targetLabel,
+      lesson_id: typeof data.lesson_id === "string" ? data.lesson_id : undefined,
+      lesson_title: typeof data.lesson_title === "string" ? data.lesson_title : undefined,
+      quiz_id: typeof data.quiz_id === "string" ? data.quiz_id : undefined,
+      quiz_title: typeof data.quiz_title === "string" ? data.quiz_title : undefined,
+      course_id: typeof data.course_id === "string" ? data.course_id : undefined,
+      changed_fields: changedFields.length > 0 ? changedFields : undefined,
+      changed_count: changedFields.length > 0 ? changedFields.length : undefined,
+      question_count: questionCount,
+      lesson_before:
+        data.lesson_before && typeof data.lesson_before === "object"
+          ? data.lesson_before
+          : undefined,
+      lesson_after:
+        data.lesson_after && typeof data.lesson_after === "object"
+          ? data.lesson_after
+          : undefined,
+      block_diff:
+        data.block_diff && typeof data.block_diff === "object"
+          ? data.block_diff
+          : undefined,
+      quiz_plan:
+        data.quiz_plan && typeof data.quiz_plan === "object"
+          ? data.quiz_plan
+          : undefined,
+      publish_plan:
+        data.publish_plan && typeof data.publish_plan === "object"
+          ? data.publish_plan
+          : undefined,
+      requires_confirmation: true,
+      workflow_stage: hostContext?.workflow_stage,
+      page_type: hostContext?.page?.type,
+      next_step: "Xem preview roi xac nhan ro rang neu ban muon Wiii ap dung thay doi nay vao LMS.",
+    },
+  };
+}
+
+function buildHostActionAuditRequest(
+  action: string,
+  requestId: string,
+  result: { success: boolean; data?: Record<string, unknown>; error?: string },
+  hostContext: ReturnType<typeof useHostContextStore.getState>["currentContext"],
+  hostCapabilities: ReturnType<typeof useHostContextStore.getState>["capabilities"],
+): HostActionAuditRequest | null {
+  if (!result.success) return null;
+  const eventType = mapHostActionAuditEvent(action);
+  if (!eventType) return null;
+
+  const data = result.data || {};
+  return {
+    event_type: eventType,
+    action,
+    request_id: requestId,
+    summary: typeof data.summary === "string" ? data.summary : undefined,
+    host_type: hostContext?.host_type,
+    host_name: hostCapabilities?.host_name || hostContext?.host_name,
+    page_type: hostContext?.page?.type,
+    page_title: hostContext?.page?.title,
+    user_role: hostContext?.user_role,
+    workflow_stage: hostContext?.workflow_stage,
+    preview_kind: typeof data.preview_kind === "string" ? data.preview_kind : undefined,
+    preview_token: typeof data.preview_token === "string" ? data.preview_token : undefined,
+    target_type:
+      typeof data.lesson_id === "string"
+        ? "lesson"
+        : typeof data.quiz_id === "string"
+          ? "quiz"
+          : undefined,
+    target_id:
+      typeof data.lesson_id === "string"
+        ? data.lesson_id
+        : typeof data.quiz_id === "string"
+          ? data.quiz_id
+          : undefined,
+    surface:
+      eventType === "preview_created"
+        ? "preview_panel"
+        : "editor_shell",
+    metadata: {
+      request_id: requestId,
+      course_id: typeof data.course_id === "string" ? data.course_id : undefined,
+      lesson_id: typeof data.lesson_id === "string" ? data.lesson_id : undefined,
+      lesson_title: typeof data.lesson_title === "string" ? data.lesson_title : undefined,
+      quiz_id: typeof data.quiz_id === "string" ? data.quiz_id : undefined,
+      quiz_title: typeof data.quiz_title === "string" ? data.quiz_title : undefined,
+      changed_fields: Array.isArray(data.changed_fields) ? data.changed_fields : undefined,
+      question_count:
+        typeof data.question_count === "number" ? data.question_count : undefined,
+      lesson_before:
+        data.lesson_before && typeof data.lesson_before === "object"
+          ? data.lesson_before
+          : undefined,
+      lesson_after:
+        data.lesson_after && typeof data.lesson_after === "object"
+          ? data.lesson_after
+          : undefined,
+      block_diff:
+        data.block_diff && typeof data.block_diff === "object"
+          ? data.block_diff
+          : undefined,
+      quiz_plan:
+        data.quiz_plan && typeof data.quiz_plan === "object"
+          ? data.quiz_plan
+          : undefined,
+      publish_plan:
+        data.publish_plan && typeof data.publish_plan === "object"
+          ? data.publish_plan
+          : undefined,
+    },
   };
 }
 
@@ -181,6 +446,7 @@ export function useSSEStream() {
         console.debug("[SSE] finalize", { reason, eventOrder: [...eventOrderRef.current] });
       }
       store.finalizeStream();
+      void useModelStore.getState().fetchProviders({ force: true });
       return;
     }
 
@@ -189,6 +455,7 @@ export function useSSEStream() {
         ? "Luồng phản hồi đã im lặng quá lâu trước khi chốt câu trả lời cuối."
         : "Luồng phản hồi kết thúc sớm trước khi Wiii kịp chốt câu trả lời cuối.";
     store.setStreamError(fallbackMessage);
+    void useModelStore.getState().fetchProviders({ force: true });
   }, [clearIdleGuard, hasStreamingOutput]);
 
   const scheduleIdleGuard = useCallback(() => {
@@ -350,26 +617,46 @@ export function useSSEStream() {
         // Sprint 150: Discard buffered tokens on error
         answerBufferRef.current?.discard();
         thinkingBufferRef.current?.discard();
-        useChatStore.getState().setStreamError(data.message);
+        useChatStore.getState().setStreamError(
+          data.message,
+          data as unknown as Record<string, unknown>,
+        );
+        void useModelStore.getState().fetchProviders({ force: true });
       },
       onToolCall: (data) => {
         traceEvent("tool_call", { name: data.content.name, node: data.node });
         const store = useChatStore.getState();
-        // Phase2: tool_think — extract persona_label for header, skip raw thought from UI.
-        // Raw planning ("Người dùng muốn...", "Tôi cần...") stays hidden.
-        // But persona_label ("Hmm để Wiii xem~") goes to thinking block header.
         if (data.content.name === "tool_think") {
           const personaLabel = String(data.content.args?.persona_label || "").trim();
           if (personaLabel) {
-            // Update the current thinking block's label with Wiii-voice persona label
-            useChatStore.getState().setStreamingThinkingLabel(personaLabel);
+            store.setStreamingThinkingLabel(personaLabel);
           }
+          const rawThought = String(data.content.args?.thought || "").trim();
+          const tc = {
+            id: data.content.id,
+            name: data.content.name,
+            args: data.content.args,
+            result: rawThought || undefined,
+            node: data.node,
+          };
+          flushBothBuffers();
+          store.appendToolCall(tc, toDisplayMeta(data));
+          store.appendPhaseToolCall(tc, data.step_id);
           _thinkToolIds.add(data.content.id);
           return;
         }
-        // Sprint 148: Progress tool — phase transition handled server-side
-        // via thinking_end/action_text/thinking_start. Skip tool card display.
         if (data.content.name === "tool_report_progress") {
+          const rawMessage = String(data.content.args?.message || data.content.args?.phase_label || "").trim();
+          const tc = {
+            id: data.content.id,
+            name: data.content.name,
+            args: data.content.args,
+            result: rawMessage || undefined,
+            node: data.node,
+          };
+          flushBothBuffers();
+          store.appendToolCall(tc, toDisplayMeta(data));
+          store.appendPhaseToolCall(tc, data.step_id);
           _thinkToolIds.add(data.content.id);
           return;
         }
@@ -389,7 +676,6 @@ export function useSSEStream() {
           node: data.node,
         };
         store.appendToolCall(tc, toDisplayMeta(data));
-        store.setStreamingStep(`🔧 ${data.content.name}`);
         store.appendPhaseToolCall(tc, data.step_id);
       },
       onToolResult: (data) => {
@@ -410,6 +696,7 @@ export function useSSEStream() {
 
         // Runtime failover: model_switch notification from backend
         const statusDetails = (data as unknown as Record<string, unknown>).details as Record<string, unknown> | undefined;
+        const isEphemeralHeartbeat = statusDetails?.subtype === "heartbeat" || statusDetails?.visibility === "status_only";
         if (statusDetails?.subtype === "model_switch") {
           const from = String(statusDetails.from_provider || "");
           const to = String(statusDetails.to_provider || "");
@@ -446,10 +733,14 @@ export function useSSEStream() {
           store.appendWorkerStatus(data.node, label);
         }
 
-        if (label) {
-          store.addStreamingStep(label, data.node);
+        if (label && !isEphemeralHeartbeat) {
           store.setStreamingStep(label);
-          store.appendPhaseStatus(label, data.node, data.step_id);
+        }
+        if (label) {
+          if (!isEphemeralHeartbeat) {
+            store.addStreamingStep(label, data.node);
+            store.appendPhaseStatus(label, data.node, data.step_id);
+          }
         }
       },
       onThinkingDelta: (data) => {
@@ -475,6 +766,7 @@ export function useSSEStream() {
             ...data,
             step_id: data.step_id || data.block_id,
           }),
+          data.summary_mode,
         );
         store.addOrUpdatePhase(
           data.content || data.node || "",
@@ -482,6 +774,7 @@ export function useSSEStream() {
           data.step_id || data.block_id,
           data.phase,
           data.summary,
+          data.summary_mode,
         );
       },
       onThinkingEnd: (data) => {
@@ -621,9 +914,34 @@ export function useSSEStream() {
         // Sprint 222b: AI agent requested a host action
         const { id, action, params } = data.content || {};
         if (id && action) {
-          useHostContextStore.getState().requestAction(action, params || {})
+          useHostContextStore.getState().requestAction(action, params || {}, id)
             .then((result) => {
               console.log(`[SSE] Host action ${id} resolved:`, result);
+              const hostStore = useHostContextStore.getState();
+              const previewItem = buildHostActionPreviewItem(
+                action,
+                id,
+                (params || {}) as Record<string, unknown>,
+                result.data || {},
+                hostStore.currentContext,
+              );
+              if (previewItem) {
+                flushBothBuffers();
+                useChatStore.getState().addPreviewItem(previewItem, data.node || "host_action", toDisplayMeta(data));
+                useUIStore.getState().openPreview(previewItem.preview_id);
+              }
+              const auditRequest = buildHostActionAuditRequest(
+                action,
+                id,
+                result,
+                hostStore.currentContext,
+                hostStore.capabilities,
+              );
+              if (auditRequest) {
+                void submitHostActionAudit(auditRequest).catch((err) => {
+                  console.warn(`[SSE] Host action audit ${id} failed:`, err instanceof Error ? err.message : String(err));
+                });
+              }
             })
             .catch((err) => {
               console.warn(`[SSE] Host action ${id} failed:`, err.message);
@@ -685,29 +1003,54 @@ export function useSSEStream() {
     const orgId = useOrgStore.getState().activeOrgId;
 
     // Sprint 222: Use host-context-store (generic, replaces Sprint 221 page-context-store)
-    const hostCtx = useHostContextStore.getState().getContextForRequest();
     // Sprint 221 backward compat: also read old page-context-store as fallback
     const pageData = usePageContextStore.getState().getPageContextForRequest();
 
     // Build user_context: prefer host-context-store, fallback to page-context-store
     const buildUserContext = () => {
+      const authState = useAuthStore.getState();
+      const authMode = authState.authMode;
+      const currentHostCtx = useHostContextStore.getState().getContextForRequest();
       const visualContext = useChatStore.getState().getActiveVisualContext();
       const widgetFeedback = useChatStore.getState().getActiveWidgetFeedbackContext();
       const codeStudioContext = useCodeStudioStore.getState().getActiveSessionContext();
-      if (hostCtx) {
+      const hostCapabilities = useHostContextStore.getState().capabilities;
+      const hostActionFeedback = useHostContextStore.getState().getActionFeedbackForRequest();
+      const displayName = _resolveRequestDisplayName(
+        authMode,
+        settings.display_name,
+        settings.user_id,
+        authState.user?.name,
+        authState.user?.email,
+      );
+      const compatibilityRole = _resolveCompatibilityRole(
+        authMode,
+        settings.user_role,
+        currentHostCtx?.user_role,
+        pageData?.page_context?.user_role,
+      );
+      if (currentHostCtx) {
         return {
-          display_name: settings.display_name || settings.user_id,
-          role: settings.user_role,
-          host_context: hostCtx,
+          display_name: displayName,
+          role: compatibilityRole,
+          host_context: currentHostCtx,
+          host_capabilities: hostCapabilities || undefined,
+          host_action_feedback: hostActionFeedback || undefined,
           // Sprint 221 backward compat — keep flat fields for backend
           page_context: {
-            page_type: hostCtx.page.type,
-            page_title: hostCtx.page.title,
-            ...(hostCtx.page.metadata || {}),
-            content_snippet: hostCtx.content?.snippet,
+            page_type: currentHostCtx.page.type,
+            page_title: currentHostCtx.page.title,
+            ...(currentHostCtx.page.metadata || {}),
+            content_snippet: currentHostCtx.content?.snippet,
+            action: currentHostCtx.page.metadata?.action as string | undefined,
+            user_role: currentHostCtx.user_role,
+            workflow_stage: currentHostCtx.workflow_stage,
+            selection: currentHostCtx.selection || undefined,
+            editable_scope: currentHostCtx.editable_scope || undefined,
+            entity_refs: currentHostCtx.entity_refs || undefined,
           },
-          student_state: hostCtx.user_state || undefined,
-          available_actions: hostCtx.available_actions || undefined,
+          student_state: currentHostCtx.user_state || undefined,
+          available_actions: currentHostCtx.available_actions || undefined,
           visual_context: visualContext,
           widget_feedback: widgetFeedback,
           code_studio_context: codeStudioContext,
@@ -715,8 +1058,8 @@ export function useSSEStream() {
       }
       if (pageData) {
         return {
-          display_name: settings.display_name || settings.user_id,
-          role: settings.user_role,
+          display_name: displayName,
+          role: compatibilityRole,
           ...pageData,
           visual_context: visualContext,
           widget_feedback: widgetFeedback,
@@ -725,8 +1068,8 @@ export function useSSEStream() {
       }
       if (visualContext || widgetFeedback || codeStudioContext) {
         return {
-          display_name: settings.display_name || settings.user_id,
-          role: settings.user_role,
+          display_name: displayName,
+          role: compatibilityRole,
           visual_context: visualContext,
           widget_feedback: widgetFeedback,
           code_studio_context: codeStudioContext,
@@ -743,12 +1086,25 @@ export function useSSEStream() {
     }
 
     // Per-request provider selection
-    const selectedProvider = useModelStore.getState().activeProvider;
+    const { provider: selectedProvider, model: selectedModel } =
+      useModelStore.getState().consumeSelectionForRequest();
+    const authState = useAuthStore.getState();
+    const compatibilityRole = _resolveCompatibilityRole(
+      authState.authMode,
+      settings.user_role,
+      useHostContextStore.getState().currentContext?.user_role,
+      pageData?.page_context?.user_role,
+    );
+    const effectiveUserId = _resolveRequestUserId(
+      authState.authMode,
+      settings.user_id,
+      authState.user?.id,
+    );
 
     const request = {
-      user_id: settings.user_id,
+      user_id: effectiveUserId,
       message: content,
-      role: settings.user_role,
+      role: compatibilityRole,
       domain_id: domainId,
       session_id: sessionId,
       organization_id: orgId && orgId !== "personal" ? orgId : undefined,
@@ -757,7 +1113,8 @@ export function useSSEStream() {
       // Sprint 222: Host-aware context (with Sprint 221 backward compat)
       user_context: buildUserContext(),
       // Per-request provider selection
-      provider: selectedProvider !== "auto" ? (selectedProvider as "google" | "zhipu") : undefined,
+      provider: selectedProvider !== "auto" ? selectedProvider : undefined,
+      model: selectedProvider !== "auto" ? selectedModel ?? undefined : undefined,
     };
 
     // Sprint 194b (H5): Facebook cookie now in secure storage, not settings
@@ -773,6 +1130,7 @@ export function useSSEStream() {
     }
 
     let lastEventId: string | null = null;
+    const streamRequestId = createStreamRequestId();
     let retryCount = 0;
 
     try {
@@ -783,6 +1141,7 @@ export function useSSEStream() {
             handlers,
             streamController.signal,
             lastEventId,
+            streamRequestId,
           );
           lastEventId = result.lastEventId;
           clearIdleGuardIfCurrent();
@@ -813,7 +1172,10 @@ export function useSSEStream() {
             thinkingBufferRef.current?.discard();
             // Sprint 165: Localized error messages based on error type
             const errorMsg = _getVietnameseErrorMessage(err);
-            useChatStore.getState().setStreamError(errorMsg);
+            useChatStore.getState().setStreamError(
+              errorMsg,
+              _extractStructuredErrorMetadata(err),
+            );
             break;
           }
           // Sprint 153b: Discard partially-buffered tokens before retry

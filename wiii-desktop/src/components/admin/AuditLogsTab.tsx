@@ -1,17 +1,18 @@
 /**
- * Audit Logs tab — dual subtab for admin actions + auth events.
- * Sprint 179: "Quản Trị Toàn Diện"
+ * Audit Logs tab - admin actions, auth events, and host action timeline.
  */
 import { useEffect } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { useAdminStore } from "@/stores/admin-store";
 import type { AuditSubTab } from "@/stores/admin-store";
+import type { AdminAuthEvent } from "@/api/types";
 
 const PAGE_SIZE = 20;
 
 const SUB_TABS: { id: AuditSubTab; label: string }[] = [
-  { id: "admin", label: "Hành động admin" },
-  { id: "auth", label: "Sự kiện xác thực" },
+  { id: "admin", label: "Admin actions" },
+  { id: "auth", label: "Auth events" },
+  { id: "host_actions", label: "Host actions" },
 ];
 
 export function AuditLogsTab() {
@@ -24,31 +25,34 @@ export function AuditLogsTab() {
     authEvents,
     authEventsTotal,
     authEventsPage,
+    hostActionEvents,
+    hostActionEventsTotal,
+    hostActionEventsPage,
     loading,
     fetchAuditLogs,
     fetchAuthEvents,
+    fetchHostActionEvents,
   } = useAdminStore();
 
   useEffect(() => {
     if (auditSubTab === "admin") {
-      fetchAuditLogs(0);
-    } else {
-      fetchAuthEvents(0);
+      void fetchAuditLogs(0);
+      return;
     }
-  }, [auditSubTab, fetchAuditLogs, fetchAuthEvents]);
-
-  const handleSubTabChange = (tab: AuditSubTab) => {
-    setAuditSubTab(tab);
-  };
+    if (auditSubTab === "auth") {
+      void fetchAuthEvents(0);
+      return;
+    }
+    void fetchHostActionEvents(0);
+  }, [auditSubTab, fetchAuditLogs, fetchAuthEvents, fetchHostActionEvents]);
 
   return (
     <div className="space-y-4">
-      {/* Subtabs */}
       <div className="flex gap-1.5">
         {SUB_TABS.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => handleSubTabChange(tab.id)}
+            onClick={() => setAuditSubTab(tab.id)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               auditSubTab === tab.id
                 ? "bg-[var(--accent)] text-white"
@@ -66,15 +70,23 @@ export function AuditLogsTab() {
           total={auditLogsTotal}
           page={auditLogsPage}
           loading={loading}
-          onPageChange={(p) => fetchAuditLogs(p)}
+          onPageChange={(nextPage) => void fetchAuditLogs(nextPage)}
         />
-      ) : (
+      ) : auditSubTab === "auth" ? (
         <AuthEventsTable
           entries={authEvents}
           total={authEventsTotal}
           page={authEventsPage}
           loading={loading}
-          onPageChange={(p) => fetchAuthEvents(p)}
+          onPageChange={(nextPage) => void fetchAuthEvents(nextPage)}
+        />
+      ) : (
+        <HostActionTimeline
+          entries={hostActionEvents}
+          total={hostActionEventsTotal}
+          page={hostActionEventsPage}
+          loading={loading}
+          onPageChange={(nextPage) => void fetchHostActionEvents(nextPage)}
         />
       )}
     </div>
@@ -88,7 +100,15 @@ function AdminAuditTable({
   loading,
   onPageChange,
 }: {
-  entries: { id: string; actor_name: string; action: string; target_type: string; target_id: string; ip_address: string; occurred_at: string | null }[];
+  entries: {
+    id: string;
+    actor_name: string;
+    action: string;
+    target_type: string;
+    target_id: string;
+    ip_address: string;
+    occurred_at: string | null;
+  }[];
   total: number;
   page: number;
   loading: boolean;
@@ -102,10 +122,10 @@ function AdminAuditTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-surface-secondary text-text-secondary text-left">
-              <th className="px-4 py-2.5 font-medium">Thời gian</th>
-              <th className="px-4 py-2.5 font-medium">Người thực hiện</th>
-              <th className="px-4 py-2.5 font-medium">Hành động</th>
-              <th className="px-4 py-2.5 font-medium">Đối tượng</th>
+              <th className="px-4 py-2.5 font-medium">Time</th>
+              <th className="px-4 py-2.5 font-medium">Actor</th>
+              <th className="px-4 py-2.5 font-medium">Action</th>
+              <th className="px-4 py-2.5 font-medium">Target</th>
               <th className="px-4 py-2.5 font-medium">IP</th>
             </tr>
           </thead>
@@ -113,19 +133,14 @@ function AdminAuditTable({
             {entries.length === 0 && !loading && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-text-tertiary text-xs">
-                  Không có nhật ký
+                  No audit logs
                 </td>
               </tr>
             )}
             {entries.map((entry) => (
-              <tr
-                key={entry.id}
-                className="border-t border-border hover:bg-surface-secondary transition-colors"
-              >
+              <tr key={entry.id} className="border-t border-border hover:bg-surface-secondary transition-colors">
                 <td className="px-4 py-2.5 text-xs text-text-tertiary whitespace-nowrap">
-                  {entry.occurred_at
-                    ? new Date(entry.occurred_at).toLocaleString("vi-VN")
-                    : "—"}
+                  {entry.occurred_at ? new Date(entry.occurred_at).toLocaleString("vi-VN") : "—"}
                 </td>
                 <td className="px-4 py-2.5 text-text">{entry.actor_name || "—"}</td>
                 <td className="px-4 py-2.5">
@@ -165,7 +180,7 @@ function AuthEventsTable({
   loading,
   onPageChange,
 }: {
-  entries: { id: string; event_type: string; user_id: string; provider: string; result: string; ip_address: string; created_at: string | null }[];
+  entries: AdminAuthEvent[];
   total: number;
   page: number;
   loading: boolean;
@@ -179,11 +194,11 @@ function AuthEventsTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-surface-secondary text-text-secondary text-left">
-              <th className="px-4 py-2.5 font-medium">Thời gian</th>
-              <th className="px-4 py-2.5 font-medium">Người dùng</th>
-              <th className="px-4 py-2.5 font-medium">Sự kiện</th>
+              <th className="px-4 py-2.5 font-medium">Time</th>
+              <th className="px-4 py-2.5 font-medium">User</th>
+              <th className="px-4 py-2.5 font-medium">Event</th>
               <th className="px-4 py-2.5 font-medium">Provider</th>
-              <th className="px-4 py-2.5 font-medium">Kết quả</th>
+              <th className="px-4 py-2.5 font-medium">Result</th>
               <th className="px-4 py-2.5 font-medium">IP</th>
             </tr>
           </thead>
@@ -191,19 +206,14 @@ function AuthEventsTable({
             {entries.length === 0 && !loading && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-text-tertiary text-xs">
-                  Không có sự kiện
+                  No auth events
                 </td>
               </tr>
             )}
             {entries.map((entry) => (
-              <tr
-                key={entry.id}
-                className="border-t border-border hover:bg-surface-secondary transition-colors"
-              >
+              <tr key={entry.id} className="border-t border-border hover:bg-surface-secondary transition-colors">
                 <td className="px-4 py-2.5 text-xs text-text-tertiary whitespace-nowrap">
-                  {entry.created_at
-                    ? new Date(entry.created_at).toLocaleString("vi-VN")
-                    : "—"}
+                  {entry.created_at ? new Date(entry.created_at).toLocaleString("vi-VN") : "—"}
                 </td>
                 <td className="px-4 py-2.5 text-text text-xs truncate max-w-[150px]">
                   {entry.user_id}
@@ -247,6 +257,176 @@ function AuthEventsTable({
   );
 }
 
+function HostActionTimeline({
+  entries,
+  total,
+  page,
+  loading,
+  onPageChange,
+}: {
+  entries: AdminAuthEvent[];
+  total: number;
+  page: number;
+  loading: boolean;
+  onPageChange: (page: number) => void;
+}) {
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  return (
+    <>
+      <div className="rounded-lg border border-border bg-surface-secondary/30 p-4">
+        <div className="mb-4 flex items-start gap-3">
+          <div className="rounded-lg bg-[var(--accent)]/10 p-2 text-[var(--accent)]">
+            <Sparkles size={16} />
+          </div>
+          <div>
+            <div className="text-sm font-medium text-text">Host action timeline</div>
+            <div className="text-xs text-text-secondary">
+              Preview, apply, and publish events emitted by Wiii into the host surface.
+            </div>
+          </div>
+        </div>
+
+        {entries.length === 0 && !loading ? (
+          <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-xs text-text-tertiary">
+            No host actions recorded yet.
+          </div>
+        ) : (
+          <ol className="space-y-4" aria-label="Host action timeline">
+            {entries.map((entry) => (
+              <HostActionTimelineItem key={entry.id} entry={entry} />
+            ))}
+          </ol>
+        )}
+      </div>
+
+      {total > 0 && (
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          loading={loading}
+          onPageChange={onPageChange}
+        />
+      )}
+    </>
+  );
+}
+
+function HostActionTimelineItem({ entry }: { entry: AdminAuthEvent }) {
+  const metadata = (entry.metadata ?? {}) as Record<string, unknown>;
+  const previewKind = typeof metadata.preview_kind === "string" ? metadata.preview_kind : "";
+  const summary =
+    typeof metadata.summary === "string" && metadata.summary.trim().length > 0
+      ? metadata.summary
+      : entry.reason || entry.event_type;
+  const actionLabel =
+    typeof metadata.action === "string" && metadata.action.trim().length > 0
+      ? metadata.action
+      : entry.event_type;
+  const targetId =
+    typeof metadata.target_id === "string" && metadata.target_id.trim().length > 0
+      ? metadata.target_id
+      : "—";
+  const surface =
+    typeof metadata.surface === "string" && metadata.surface.trim().length > 0
+      ? metadata.surface
+      : "—";
+  const requestId =
+    typeof metadata.request_id === "string" && metadata.request_id.trim().length > 0
+      ? metadata.request_id
+      : "—";
+  const changedFields = Array.isArray(metadata.changed_fields)
+    ? metadata.changed_fields.filter((field): field is string => typeof field === "string" && field.trim().length > 0)
+    : [];
+
+  return (
+    <li className="relative pl-6">
+      <span
+        aria-hidden="true"
+        className="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full bg-[var(--accent)] shadow-[0_0_0_4px_rgba(59,130,246,0.12)]"
+      />
+      <span aria-hidden="true" className="absolute left-[5px] top-4 bottom-[-16px] w-px bg-border" />
+      <div className="rounded-xl border border-border bg-surface px-4 py-3 shadow-sm">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-[var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--accent)]">
+            {formatHostActionEvent(entry.event_type)}
+          </span>
+          <span className="rounded-full bg-surface-secondary px-2 py-0.5 text-[10px] font-mono text-text-secondary">
+            {entry.provider}
+          </span>
+          {previewKind.length > 0 && (
+            <span className="rounded-full bg-surface-secondary px-2 py-0.5 text-[10px] font-mono text-text-secondary">
+              {previewKind}
+            </span>
+          )}
+          <span className="ml-auto text-xs text-text-tertiary">
+            {entry.created_at ? new Date(entry.created_at).toLocaleString("vi-VN") : "—"}
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          <div className="text-sm font-medium text-text">{summary}</div>
+
+          <div className="grid gap-2 text-xs text-text-secondary sm:grid-cols-2">
+            <MetaItem label="Action" value={actionLabel} />
+            <MetaItem label="User" value={entry.user_id} />
+            <MetaItem label="Target" value={targetId} mono />
+            <MetaItem label="Surface" value={surface} />
+            <MetaItem label="Request" value={requestId} mono />
+            <MetaItem label="Org" value={entry.organization_id || "—"} mono />
+          </div>
+
+          {changedFields.length > 0 && (
+            <div>
+              <div className="mb-1 text-[11px] uppercase tracking-wider text-text-tertiary">
+                Changed fields
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {changedFields.map((field) => (
+                  <span key={field} className="rounded-full bg-surface-secondary px-2 py-0.5 text-[11px] text-text">
+                    {field}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {typeof metadata.question_count === "number" && (
+            <div className="text-xs text-text-secondary">
+              Question count: <span className="font-medium text-text">{String(metadata.question_count)}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function MetaItem({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div>
+      <span className="block text-[11px] uppercase tracking-wider text-text-tertiary">{label}</span>
+      <span className={`${mono ? "font-mono" : ""} text-text`}>{value}</span>
+    </div>
+  );
+}
+
+function formatHostActionEvent(eventType: string): string {
+  if (eventType === "host_action.preview_created") return "preview";
+  if (eventType === "host_action.apply_confirmed") return "apply";
+  if (eventType === "host_action.publish_confirmed") return "publish";
+  return eventType.replace(/^host_action\./, "");
+}
+
 function PaginationBar({
   page,
   totalPages,
@@ -266,7 +446,7 @@ function PaginationBar({
   return (
     <div className="flex items-center justify-between text-xs text-text-secondary">
       <span>
-        {startIdx}–{endIdx} trên {total}
+        {startIdx}-{endIdx} of {total}
       </span>
       <div className="flex items-center gap-2">
         <button
@@ -275,17 +455,17 @@ function PaginationBar({
           className="flex items-center gap-1 px-2.5 py-1.5 rounded border border-border hover:bg-surface-tertiary disabled:opacity-30 transition-colors"
         >
           <ChevronLeft size={12} />
-          Trang trước
+          Prev
         </button>
         <span>
-          {page + 1} / {totalPages}
+          {page + 1} / {totalPages || 1}
         </span>
         <button
           onClick={() => onPageChange(page + 1)}
-          disabled={page >= totalPages - 1 || loading}
+          disabled={page >= totalPages - 1 || loading || totalPages === 0}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded border border-border hover:bg-surface-tertiary disabled:opacity-30 transition-colors"
         >
-          Trang sau
+          Next
           <ChevronRight size={12} />
         </button>
       </div>

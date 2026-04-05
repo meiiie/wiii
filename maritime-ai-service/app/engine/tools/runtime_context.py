@@ -110,7 +110,7 @@ def emit_tool_bus_event(event: Optional[dict[str, Any]]) -> bool:
         return False
 
     try:
-        from app.engine.multi_agent.graph_streaming import _get_event_queue
+        from app.engine.multi_agent.graph_event_bus import _get_event_queue
 
         queue = _get_event_queue(runtime.event_bus_id)
     except Exception:

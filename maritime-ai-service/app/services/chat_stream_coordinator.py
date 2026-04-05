@@ -8,6 +8,11 @@ from typing import AsyncGenerator, Mapping
 from app.core.config import settings
 from app.core.exceptions import ProviderUnavailableError
 from app.engine.llm_runtime_metadata import resolve_runtime_llm_metadata
+from app.services.llm_runtime_audit_service import record_llm_runtime_observation
+from app.services.model_switch_prompt_service import (
+    build_model_switch_prompt_for_failover,
+    build_model_switch_prompt_for_unavailable,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -133,6 +138,27 @@ async def generate_stream_v3_events(
             processing_time = time.time() - start_time
             fallback_meta = dict(fallback_result.metadata or {})
             runtime_llm = resolve_runtime_llm_metadata(fallback_meta)
+            fallback_thinking = (
+                fallback_meta.get("thinking")
+                or fallback_result.thinking
+            )
+            fallback_thinking_content = (
+                fallback_meta.get("thinking_content")
+                or fallback_thinking
+                or ""
+            )
+            try:
+                record_llm_runtime_observation(
+                    provider=runtime_llm["provider"],
+                    success=bool(runtime_llm["provider"]),
+                    model_name=runtime_llm["model"],
+                    note=None if runtime_llm["provider"] else "chat_stream:fallback: completed without authoritative runtime provider.",
+                    error=None if runtime_llm["provider"] else "Missing authoritative runtime provider for fallback stream response.",
+                    source="chat_stream:fallback",
+                    failover=runtime_llm["failover"],
+                )
+            except Exception as exc:
+                logger.debug("[STREAM-V3] Could not record fallback runtime observation: %s", exc)
             extra_meta = {
                 key: value for key, value in fallback_meta.items()
                 if key not in {
@@ -146,6 +172,7 @@ async def generate_stream_v3_events(
                     "streaming_version",
                     "thinking",
                     "thinking_content",
+                    "failover",
                     "routing_metadata",
                     "request_id",
                 }
@@ -174,9 +201,14 @@ async def generate_stream_v3_events(
                         agent_type=getattr(fallback_result.agent_type, "value", str(fallback_result.agent_type)),
                         model=runtime_llm["model"],
                         provider=runtime_llm["provider"],
+                        failover=runtime_llm["failover"],
+                        model_switch_prompt=build_model_switch_prompt_for_failover(
+                            failover=runtime_llm["failover"],
+                            requested_provider=getattr(chat_request, "provider", None),
+                        ),
                         session_id=effective_session_id_str,
-                        thinking=fallback_result.thinking,
-                        thinking_content=fallback_result.thinking,
+                        thinking=fallback_thinking,
+                        thinking_content=fallback_thinking_content,
                         streaming_version=f"v3-{fallback_meta.get('mode', 'fallback')}",
                         request_id=request_id,
                         routing_metadata=fallback_meta.get("routing_metadata"),
@@ -268,6 +300,7 @@ async def generate_stream_v3_events(
             domain_id=execution_input.domain_id,
             thinking_effort=execution_input.thinking_effort,
             provider=execution_input.provider,
+            model=getattr(execution_input, "model", None),
         ):
             if event.type == "answer":
                 accumulated_answer.append(event.content)
@@ -330,9 +363,28 @@ async def generate_stream_v3_events(
             exc.provider,
             exc.reason_code,
         )
+        try:
+            record_llm_runtime_observation(
+                provider=exc.provider,
+                success=False,
+                error=exc.message,
+                note=(
+                    f"chat_stream:error: requested provider {exc.provider} unavailable"
+                    f"{f' ({exc.reason_code})' if exc.reason_code else ''}."
+                ),
+                source="chat_stream:error",
+            )
+        except Exception as audit_exc:
+            logger.debug("[STREAM-V3] Could not record unavailable provider audit: %s", audit_exc)
         error_event = await create_error_event(exc.message)
         error_event.content["provider"] = exc.provider
         error_event.content["reason_code"] = exc.reason_code
+        error_event.content["model_switch_prompt"] = (
+            build_model_switch_prompt_for_unavailable(
+                provider=exc.provider,
+                reason_code=exc.reason_code,
+            )
+        )
         error_chunks, event_counter, _ = serialize_stream_event(
             event=error_event,
             event_counter=event_counter,

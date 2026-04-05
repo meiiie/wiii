@@ -6,9 +6,9 @@ from unittest.mock import MagicMock, patch
 _SP = "app.core.config.settings"
 _RP = "app.repositories.organization_repository.get_organization_repository"
 
-def _auth(uid="user-1", am="jwt", role="student"):
+def _auth(uid="user-1", am="jwt", role="student", **overrides):
     from app.core.security import AuthenticatedUser
-    return AuthenticatedUser(user_id=uid, auth_method=am, role=role)
+    return AuthenticatedUser(user_id=uid, auth_method=am, role=role, **overrides)
 
 class TestAdminContextDependency:
     def test_accepts_auth(self):
@@ -158,3 +158,29 @@ class TestAdminContextShape:
             from app.auth.user_router import get_my_admin_context
             r = await get_my_admin_context(auth=_auth(role="student"))
         assert isinstance(r["is_system_admin"], bool) and isinstance(r["is_org_admin"], bool)
+
+    @pytest.mark.asyncio
+    async def test_identity_v2_fields_are_exposed(self):
+        ms = MagicMock(); ms.enable_org_admin = False; ms.enable_multi_tenant = False
+        with patch(_SP, ms):
+            from app.auth.user_router import get_my_admin_context
+            r = await get_my_admin_context(
+                auth=_auth(
+                    role="teacher",
+                    platform_role="user",
+                    organization_role="org_admin",
+                    host_role="teacher",
+                    role_source="lms_host",
+                    organization_id="org-lms",
+                    connector_id="maritime-lms",
+                    identity_version="2",
+                )
+            )
+        assert r["platform_role"] == "user"
+        assert r["organization_role"] == "org_admin"
+        assert r["host_role"] == "teacher"
+        assert r["role_source"] == "lms_host"
+        assert r["active_organization_id"] == "org-lms"
+        assert r["connector_id"] == "maritime-lms"
+        assert r["identity_version"] == "2"
+        assert r["legacy_role"] == "teacher"

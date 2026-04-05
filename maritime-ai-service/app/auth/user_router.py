@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app.core.security import AuthenticatedUser, require_auth
+from app.core.security import AuthenticatedUser, is_platform_admin, require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,8 @@ class UserProfileUpdate(BaseModel):
 
 
 class UserRoleUpdate(BaseModel):
-    role: str = Field(..., min_length=1, max_length=50)
+    role: Optional[str] = Field(None, min_length=1, max_length=50)
+    platform_role: Optional[str] = Field(None, min_length=1, max_length=50)
 
 
 class UserProfileResponse(BaseModel):
@@ -47,9 +48,37 @@ class UserProfileResponse(BaseModel):
     name: Optional[str] = None
     avatar_url: Optional[str] = None
     role: str = "student"
+    legacy_role: Optional[str] = None
+    platform_role: Optional[str] = None
+    organization_role: Optional[str] = None
+    host_role: Optional[str] = None
+    role_source: Optional[str] = None
+    active_organization_id: Optional[str] = None
+    connector_id: Optional[str] = None
+    identity_version: Optional[str] = None
+    connected_workspaces_count: int = 0
     is_active: bool = True
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+
+class ConnectedWorkspaceResponse(BaseModel):
+    id: str
+    connector_id: str
+    grant_key: str
+    host_type: str
+    host_name: Optional[str] = None
+    host_user_id: Optional[str] = None
+    host_workspace_id: Optional[str] = None
+    host_organization_id: Optional[str] = None
+    organization_id: Optional[str] = None
+    granted_capabilities: dict = Field(default_factory=dict)
+    auth_metadata: dict = Field(default_factory=dict)
+    status: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    last_connected_at: Optional[str] = None
+    last_used_at: Optional[str] = None
 
 
 class IdentityResponse(BaseModel):
@@ -85,15 +114,52 @@ def _extract_jwt_user(request: Request) -> dict:
     try:
         from app.auth.token_service import verify_access_token
         payload = verify_access_token(token)
-        return {"sub": payload.sub, "email": payload.email, "name": payload.name, "role": payload.role}
+        return {
+            "sub": payload.sub,
+            "email": payload.email,
+            "name": payload.name,
+            "role": payload.role,
+            "platform_role": payload.platform_role,
+            "organization_role": payload.organization_role,
+            "host_role": payload.host_role,
+            "role_source": payload.role_source,
+            "active_organization_id": payload.active_organization_id,
+            "connector_id": payload.connector_id,
+            "identity_version": payload.identity_version,
+            "auth_method": payload.auth_method,
+        }
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 def _require_admin(jwt_user: dict) -> None:
     """Raise 403 if user is not admin."""
-    if jwt_user.get("role") != "admin":
+    if not is_platform_admin(jwt_user):
         raise HTTPException(status_code=403, detail="Admin access required")
+
+
+def _overlay_identity_context(user: dict, auth: AuthenticatedUser) -> dict:
+    """Project the current authenticated identity onto profile/admin responses."""
+    merged = dict(user)
+    merged["legacy_role"] = merged.get("role")
+    merged.update(
+        {
+            "platform_role": auth.platform_role,
+            "organization_role": auth.organization_role,
+            "host_role": auth.host_role,
+            "role_source": auth.role_source,
+            "active_organization_id": auth.organization_id,
+            "connector_id": auth.connector_id,
+            "identity_version": auth.identity_version,
+        }
+    )
+    return merged
+
+
+async def _count_connected_workspaces(user_id: str) -> int:
+    from app.repositories.connector_grant_repository import count_connector_grants_for_user
+
+    return await count_connector_grants_for_user(user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +167,10 @@ def _require_admin(jwt_user: dict) -> None:
 # ---------------------------------------------------------------------------
 
 @router.get("/me", response_model=UserProfileResponse)
-async def get_my_profile(request: Request):
+async def get_my_profile(
+    request: Request,
+    auth: AuthenticatedUser = Depends(require_auth),
+):
     """Get the current authenticated user's full profile."""
     jwt_user = _extract_jwt_user(request)
     from app.auth.user_service import get_user
@@ -110,11 +179,17 @@ async def get_my_profile(request: Request):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return UserProfileResponse(**user)
+    merged = _overlay_identity_context(user, auth)
+    merged["connected_workspaces_count"] = await _count_connected_workspaces(jwt_user["sub"])
+    return UserProfileResponse(**merged)
 
 
 @router.patch("/me", response_model=UserProfileResponse)
-async def update_my_profile(request: Request, body: UserProfileUpdate):
+async def update_my_profile(
+    request: Request,
+    body: UserProfileUpdate,
+    auth: AuthenticatedUser = Depends(require_auth),
+):
     """Update current user's name and/or avatar_url."""
     jwt_user = _extract_jwt_user(request)
     from app.auth.user_service import update_user
@@ -126,7 +201,20 @@ async def update_my_profile(request: Request, body: UserProfileUpdate):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return UserProfileResponse(**user)
+    merged = _overlay_identity_context(user, auth)
+    merged["connected_workspaces_count"] = await _count_connected_workspaces(jwt_user["sub"])
+    return UserProfileResponse(**merged)
+
+
+@router.get("/me/connected-workspaces", response_model=list[ConnectedWorkspaceResponse])
+async def list_my_connected_workspaces(
+    auth: AuthenticatedUser = Depends(require_auth),
+):
+    """List durable connector/workspace grants for the current user."""
+    from app.repositories.connector_grant_repository import list_connector_grants_for_user
+
+    grants = await list_connector_grants_for_user(auth.user_id)
+    return [ConnectedWorkspaceResponse(**grant) for grant in grants]
 
 
 @router.post("/me/identity-link")
@@ -211,7 +299,11 @@ async def update_user_role_admin(request: Request, user_id: str, body: UserRoleU
     from app.auth.user_service import update_user_role
 
     try:
-        user = await update_user_role(user_id, body.role)
+        user = await update_user_role(
+            user_id,
+            new_role=body.role,
+            platform_role=body.platform_role,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -276,9 +368,7 @@ async def get_my_admin_context(
     from app.core.config import settings
 
     user_id = auth.user_id
-    user_role = auth.role
-
-    is_system_admin = user_role == "admin"
+    is_system_admin = is_platform_admin(auth)
     admin_org_ids: list[str] = []
 
     if settings.enable_org_admin and settings.enable_multi_tenant:
@@ -294,6 +384,14 @@ async def get_my_admin_context(
                 "is_org_admin": is_system_admin,
                 "admin_org_ids": [],
                 "enable_org_admin": settings.enable_org_admin and settings.enable_multi_tenant,
+                "platform_role": auth.platform_role,
+                "organization_role": auth.organization_role,
+                "host_role": auth.host_role,
+                "role_source": auth.role_source,
+                "active_organization_id": auth.organization_id,
+                "connector_id": auth.connector_id,
+                "identity_version": auth.identity_version,
+                "legacy_role": auth.role,
                 "_warning": "org admin lookup failed",
             }
 
@@ -302,4 +400,12 @@ async def get_my_admin_context(
         "is_org_admin": (len(admin_org_ids) > 0 and settings.enable_multi_tenant) or is_system_admin,
         "admin_org_ids": admin_org_ids,
         "enable_org_admin": settings.enable_org_admin and settings.enable_multi_tenant,
+        "platform_role": auth.platform_role,
+        "organization_role": auth.organization_role,
+        "host_role": auth.host_role,
+        "role_source": auth.role_source,
+        "active_organization_id": auth.organization_id,
+        "connector_id": auth.connector_id,
+        "identity_version": auth.identity_version,
+        "legacy_role": auth.role,
     }

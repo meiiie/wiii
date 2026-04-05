@@ -163,6 +163,16 @@ describe("streaming blocks", () => {
     expect(thinkingAt(blocks, 0).label).toBe("retrieval");
   });
 
+  it("does not use technical streaming steps as thinking labels", () => {
+    const store = useChatStore.getState();
+    store.startStreaming();
+    store.setStreamingStep("Chuyển sang direct");
+    store.setStreamingThinking("Mình đang nghe kỹ thêm một chút.");
+
+    const blocks = getBlocks();
+    expect(thinkingAt(blocks, 0).label).toBeUndefined();
+  });
+
   it("concatenates consecutive thinking updates inside the same open block", () => {
     const store = useChatStore.getState();
     store.startStreaming();

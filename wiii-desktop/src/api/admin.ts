@@ -17,7 +17,14 @@ import type {
   AnalyticsOverview,
   LlmUsageAnalytics,
   LlmRuntimeConfig,
+  LlmRuntimeAuditRefreshBody,
   LlmRuntimeUpdateBody,
+  ModelCatalogResponse,
+  EmbeddingSpaceMigrationPlanRequest,
+  EmbeddingSpaceMigrationPlanResponse,
+  EmbeddingSpaceMigrationPromoteRequest,
+  EmbeddingSpaceMigrationRunRequest,
+  EmbeddingSpaceMigrationRunResponse,
   UserAnalytics,
   AdminAuditLogsResponse,
   AdminAuthEventsResponse,
@@ -53,6 +60,7 @@ export async function searchAdminUsers(
   if (params?.q) query.set("q", params.q);
   if (params?.email) query.set("email", params.email);
   if (params?.role) query.set("role", params.role);
+  if (params?.platform_role) query.set("platform_role", params.platform_role);
   if (params?.org_id) query.set("org_id", params.org_id);
   if (params?.status) query.set("status", params.status);
   if (params?.sort) query.set("sort", params.sort);
@@ -154,6 +162,55 @@ export async function updateLlmRuntimeConfig(
   return client.patch<LlmRuntimeConfig>(`${PREFIX}/llm-runtime`, body);
 }
 
+export async function getModelCatalog(): Promise<ModelCatalogResponse> {
+  const client = getClient();
+  return client.get<ModelCatalogResponse>(`${PREFIX}/model-catalog`);
+}
+
+export async function refreshLlmRuntimeAudit(
+  body: LlmRuntimeAuditRefreshBody = {}
+): Promise<ModelCatalogResponse> {
+  const client = getClient();
+  return client.post<ModelCatalogResponse>(`${PREFIX}/llm-runtime/audit`, body);
+}
+
+export async function refreshVisionRuntimeAudit(
+  body: LlmRuntimeAuditRefreshBody = {}
+): Promise<LlmRuntimeConfig> {
+  const client = getClient();
+  return client.post<LlmRuntimeConfig>(`${PREFIX}/llm-runtime/vision-audit`, body);
+}
+
+export async function planEmbeddingSpaceMigration(
+  body: EmbeddingSpaceMigrationPlanRequest
+): Promise<EmbeddingSpaceMigrationPlanResponse> {
+  const client = getClient();
+  return client.post<EmbeddingSpaceMigrationPlanResponse>(
+    `${PREFIX}/llm-runtime/embedding-space/plan`,
+    body,
+  );
+}
+
+export async function runEmbeddingSpaceMigration(
+  body: EmbeddingSpaceMigrationRunRequest
+): Promise<EmbeddingSpaceMigrationRunResponse> {
+  const client = getClient();
+  return client.post<EmbeddingSpaceMigrationRunResponse>(
+    `${PREFIX}/llm-runtime/embedding-space/migrate`,
+    body,
+  );
+}
+
+export async function promoteEmbeddingSpaceMigration(
+  body: EmbeddingSpaceMigrationPromoteRequest
+): Promise<EmbeddingSpaceMigrationRunResponse> {
+  const client = getClient();
+  return client.post<EmbeddingSpaceMigrationRunResponse>(
+    `${PREFIX}/llm-runtime/embedding-space/promote`,
+    body,
+  );
+}
+
 /** Get user analytics */
 export async function getUserAnalytics(params?: {
   from?: string;
@@ -204,8 +261,10 @@ export async function getAuditLogs(params?: {
 export async function getAuthEvents(params?: {
   user_id?: string;
   event_type?: string;
+  provider?: string;
   from?: string;
   to?: string;
+  org_id?: string;
   limit?: number;
   offset?: number;
 }): Promise<AdminAuthEventsResponse> {
@@ -213,8 +272,10 @@ export async function getAuthEvents(params?: {
   const query = new URLSearchParams();
   if (params?.user_id) query.set("user_id", params.user_id);
   if (params?.event_type) query.set("event_type", params.event_type);
+  if (params?.provider) query.set("provider", params.provider);
   if (params?.from) query.set("from", params.from);
   if (params?.to) query.set("to", params.to);
+  if (params?.org_id) query.set("org_id", params.org_id);
   if (params?.limit !== undefined) query.set("limit", String(params.limit));
   if (params?.offset !== undefined) query.set("offset", String(params.offset));
   const qs = query.toString();
@@ -265,6 +326,18 @@ export async function reactivateUser(userId: string): Promise<AdminUser> {
 export async function changeUserRole(userId: string, role: string): Promise<AdminUser> {
   const client = getClient();
   return client.patch<AdminUser>(`/api/v1/users/${userId}/role`, { role });
+}
+
+/** Change user platform role (admin only). */
+export async function changeUserPlatformRole(
+  userId: string,
+  platformRole: "user" | "platform_admin",
+): Promise<AdminUser> {
+  const client = getClient();
+  return client.patch<AdminUser>(`/api/v1/users/${userId}/role`, {
+    platform_role: platformRole,
+    role: platformRole === "platform_admin" ? "admin" : "student",
+  });
 }
 
 // ---------------------------------------------------------------------------

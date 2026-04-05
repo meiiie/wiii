@@ -6,7 +6,7 @@
  * Separated from admin-store (system admin) for cleaner UX.
  */
 import { create } from "zustand";
-import type { AdminOrgMember, AdminOrgDetail, OrgDocument } from "@/api/types";
+import type { AdminAuthEvent, AdminOrgMember, AdminOrgDetail, OrgDocument } from "@/api/types";
 import {
   getAdminOrgDetail,
   getAdminOrgMembers,
@@ -16,10 +16,11 @@ import {
   uploadOrgDocument as apiUploadOrgDocument,
   deleteOrgDocument as apiDeleteOrgDocument,
 } from "@/api/admin";
-import { getOrgSettings, updateOrgSettings } from "@/api/organizations";
+import { getOrgHostActionEvents, getOrgSettings, updateOrgSettings } from "@/api/organizations";
 import type { OrgSettings } from "@/api/types";
 
-export type OrgManagerTab = "dashboard" | "members" | "analytics" | "settings" | "knowledge";
+export type OrgManagerTab = "dashboard" | "members" | "analytics" | "audit" | "settings" | "knowledge";
+export type OrgHostActionView = "all" | "previews" | "applies" | "publishes";
 
 interface OrgAdminToast {
   type: "success" | "error";
@@ -42,6 +43,11 @@ interface OrgAdminState {
   documents: OrgDocument[];
   documentsTotal: number;
   documentsLoading: boolean;
+  hostActionEvents: AdminAuthEvent[];
+  hostActionEventsTotal: number;
+  hostActionEventsPage: number;
+  hostActionView: OrgHostActionView;
+  hostActionLoading: boolean;
 
   // Actions
   setActiveTab: (tab: OrgManagerTab) => void;
@@ -59,6 +65,8 @@ interface OrgAdminState {
   fetchDocuments: (orgId: string) => Promise<void>;
   uploadDocument: (orgId: string, file: File) => Promise<void>;
   deleteDocument: (orgId: string, docId: string) => Promise<void>;
+  fetchHostActionEvents: (orgId: string, page?: number) => Promise<void>;
+  setHostActionView: (view: OrgHostActionView) => void;
 }
 
 export const useOrgAdminStore = create<OrgAdminState>((set, get) => ({
@@ -77,6 +85,11 @@ export const useOrgAdminStore = create<OrgAdminState>((set, get) => ({
   documents: [],
   documentsTotal: 0,
   documentsLoading: false,
+  hostActionEvents: [],
+  hostActionEventsTotal: 0,
+  hostActionEventsPage: 0,
+  hostActionView: "all",
+  hostActionLoading: false,
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   setOrgId: (orgId) => set({ orgId }),
@@ -97,6 +110,11 @@ export const useOrgAdminStore = create<OrgAdminState>((set, get) => ({
       documents: [],
       documentsTotal: 0,
       documentsLoading: false,
+      hostActionEvents: [],
+      hostActionEventsTotal: 0,
+      hostActionEventsPage: 0,
+      hostActionView: "all",
+      hostActionLoading: false,
     });
   },
 
@@ -206,6 +224,39 @@ export const useOrgAdminStore = create<OrgAdminState>((set, get) => ({
       await get().fetchDocuments(orgId);
     }
   },
+
+  fetchHostActionEvents: async (orgId, page) => {
+    const nextPage = page ?? get().hostActionEventsPage;
+    const view = get().hostActionView;
+    const eventType =
+      view === "previews"
+        ? "host_action.preview_created"
+        : view === "applies"
+          ? "host_action.apply_confirmed"
+          : view === "publishes"
+            ? "host_action.publish_confirmed"
+            : undefined;
+
+    set({ hostActionLoading: true, hostActionEventsPage: nextPage });
+    try {
+      const response = await getOrgHostActionEvents(orgId, {
+        event_type: eventType,
+        limit: 20,
+        offset: nextPage * 20,
+      });
+      set({
+        hostActionEvents: response.entries,
+        hostActionEventsTotal: response.total,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Khong the tai host action timeline";
+      get().showToast("error", msg);
+    } finally {
+      set({ hostActionLoading: false });
+    }
+  },
+
+  setHostActionView: (view) => set({ hostActionView: view, hostActionEventsPage: 0 }),
 
   showToast: (type, message) => {
     const prev = get()._toastTimer;

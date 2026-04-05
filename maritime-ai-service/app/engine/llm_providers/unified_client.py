@@ -14,6 +14,17 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
+from app.engine.openai_compatible_credentials import (
+    resolve_openai_api_key,
+    resolve_openai_base_url,
+    resolve_openai_model,
+    resolve_openai_model_advanced,
+    resolve_openrouter_api_key,
+    resolve_openrouter_base_url,
+    resolve_openrouter_model,
+    resolve_openrouter_model_advanced,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -144,7 +155,7 @@ class UnifiedLLMClient:
                 base_url=settings.google_openai_compat_url,
                 default_model=settings.google_model,
                 models={
-                    "deep": settings.google_model,
+                    "deep": getattr(settings, "google_model_advanced", settings.google_model),
                     "moderate": settings.google_model,
                     "light": settings.google_model,
                 },
@@ -153,22 +164,42 @@ class UnifiedLLMClient:
             )
 
         elif name == "openai":
-            if not settings.openai_api_key:
+            api_key = resolve_openai_api_key(settings)
+            if not api_key:
                 logger.debug("Skipping openai unified client: no API key")
                 return None
-            base_url = settings.openai_base_url or "https://api.openai.com/v1"
+            base_url = resolve_openai_base_url(settings)
             return ProviderConfig(
                 name="openai",
-                api_key=settings.openai_api_key,
+                api_key=api_key,
                 base_url=base_url,
-                default_model=settings.openai_model,
+                default_model=resolve_openai_model(settings),
                 models={
-                    "deep": settings.openai_model_advanced,
-                    "moderate": settings.openai_model,
-                    "light": settings.openai_model,
+                    "deep": resolve_openai_model_advanced(settings),
+                    "moderate": resolve_openai_model(settings),
+                    "light": resolve_openai_model(settings),
                 },
                 supports_thinking=False,
                 thinking_param="reasoning_effort",
+            )
+
+        elif name == "openrouter":
+            api_key = resolve_openrouter_api_key(settings)
+            if not api_key:
+                logger.debug("Skipping openrouter unified client: no API key")
+                return None
+            return ProviderConfig(
+                name="openrouter",
+                api_key=api_key,
+                base_url=resolve_openrouter_base_url(settings),
+                default_model=resolve_openrouter_model(settings),
+                models={
+                    "deep": resolve_openrouter_model_advanced(settings),
+                    "moderate": resolve_openrouter_model(settings),
+                    "light": resolve_openrouter_model(settings),
+                },
+                supports_thinking=False,
+                thinking_param="",
             )
 
         elif name == "ollama":

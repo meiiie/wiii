@@ -64,7 +64,7 @@ describe("ThinkingBlock dedup", () => {
     expect(bodyText).toContain("Minh se chuyen sang buoc thuc thi de tao file PNG cho ban.");
   });
 
-  it("prefers a concise summary over a longer derived preview when collapsed", () => {
+  it("uses streamed body text for the collapsed preview instead of summary-only metadata", () => {
     const conciseSummary = "Minh dang chot huong tao file PNG cho ban.";
     const longParagraph =
       "Du lieu da duoc xu ly xong xuoi, minh dang can nhin lai cach bien nhung con so kho khan thanh mot hinh anh de mo ra la hieu ngay.";
@@ -79,7 +79,7 @@ describe("ThinkingBlock dedup", () => {
     );
 
     const bodyText = container.textContent || "";
-    expect(bodyText).toContain(conciseSummary);
-    expect(bodyText).not.toContain(longParagraph);
+    expect(bodyText).toContain(longParagraph);
+    expect(bodyText).not.toContain(conciseSummary);
   });
 });

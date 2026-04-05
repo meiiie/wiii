@@ -89,4 +89,22 @@ describe('host-context-store', () => {
     expect(ctx?.page.metadata?.course_name).toBe('Safety');
     expect(ctx?.page.metadata?.quiz_question).toBe('Which vessel gives way?');
   });
+
+  it('should preserve connector and workspace overlays from legacy page context', () => {
+    const store = useHostContextStore.getState();
+    store.setLegacyPageContext({
+      page_type: 'course_editor',
+      page_title: 'Curriculum',
+      connector_id: 'maritime-lms',
+      host_user_id: 'teacher-1',
+      host_workspace_id: 'org-1',
+      host_organization_id: 'org-1',
+    });
+
+    const ctx = useHostContextStore.getState().currentContext;
+    expect(ctx?.connector_id).toBe('maritime-lms');
+    expect(ctx?.host_user_id).toBe('teacher-1');
+    expect(ctx?.host_workspace_id).toBe('org-1');
+    expect(ctx?.host_organization_id).toBe('org-1');
+  });
 });

@@ -1,0 +1,1 @@
+"""Course generation prompt templates."""

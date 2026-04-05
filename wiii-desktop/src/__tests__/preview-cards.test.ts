@@ -89,7 +89,7 @@ describe("PreviewItemData — Type Shape", () => {
   });
 
   it("accepts all five preview types", () => {
-    const types: PreviewType[] = ["document", "product", "web", "link", "code"];
+    const types: PreviewType[] = ["document", "product", "web", "link", "code", "host_action"];
     for (const t of types) {
       const item: PreviewItemData = {
         preview_type: t,
@@ -129,6 +129,23 @@ describe("PreviewItemData — Type Shape", () => {
     expect(item.image_url).toBeUndefined();
     expect(item.citation_index).toBeUndefined();
     expect(item.metadata).toBeUndefined();
+  });
+
+  it("supports host action preview metadata for operator flows", () => {
+    const item: PreviewItemData = {
+      preview_type: "host_action",
+      preview_id: "host-action-1",
+      title: "Preview cap nhat bai hoc",
+      snippet: "Preview ready. Confirm explicitly when you want me to apply it.",
+      metadata: {
+        preview_kind: "lesson_patch",
+        preview_token: "preview-123",
+        lesson_id: "lesson-1",
+        changed_fields: ["title", "content"],
+      },
+    };
+    expect(item.preview_type).toBe("host_action");
+    expect(item.metadata?.preview_kind).toBe("lesson_patch");
   });
 });
 

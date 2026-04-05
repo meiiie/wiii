@@ -104,11 +104,16 @@ export function SettingsView() {
     setTestStatus("testing");
     setTestMessage("");
     try {
-      initClient(draft.server_url, {
-        "X-API-Key": draft.api_key,
-        "X-User-ID": settings.user_id,
-        "X-Role": settings.user_role,
-      });
+      initClient(
+        draft.server_url,
+        authMode === "oauth"
+          ? useSettingsStore.getState().getAuthHeaders()
+          : {
+              "X-API-Key": draft.api_key,
+              "X-User-ID": settings.user_id,
+              "X-Role": settings.user_role,
+            },
+      );
       await checkHealth();
       const currentStatus = useConnectionStore.getState().status;
       if (currentStatus === "connected") {
@@ -133,11 +138,16 @@ export function SettingsView() {
       server_url: draft.server_url,
       api_key: draft.api_key,
     });
-    initClient(draft.server_url, {
-      "X-API-Key": draft.api_key,
-      "X-User-ID": settings.user_id,
-      "X-Role": settings.user_role,
-    });
+    initClient(
+      draft.server_url,
+      authMode === "oauth"
+        ? useSettingsStore.getState().getAuthHeaders()
+        : {
+            "X-API-Key": draft.api_key,
+            "X-User-ID": settings.user_id,
+            "X-Role": settings.user_role,
+          },
+    );
     checkHealth();
     addToast("success", "Wiii ghi nhớ cài đặt rồi!");
   };
@@ -147,11 +157,16 @@ export function SettingsView() {
     if (key === "theme") setTheme(value as "light" | "dark" | "system");
     if (key === "user_id" || key === "user_role") {
       const updated = useSettingsStore.getState().settings;
-      initClient(updated.server_url, {
-        "X-API-Key": updated.api_key,
-        "X-User-ID": updated.user_id,
-        "X-Role": updated.user_role,
-      });
+      initClient(
+        updated.server_url,
+        authMode === "oauth"
+          ? useSettingsStore.getState().getAuthHeaders()
+          : {
+              "X-API-Key": updated.api_key,
+              "X-User-ID": updated.user_id,
+              "X-Role": updated.user_role,
+            },
+      );
     }
     addToast("success", "Wiii nhớ rồi!");
   };

@@ -13,7 +13,7 @@ import logging
 import re
 from typing import List, Optional
 
-from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
+from app.engine.embedding_runtime import EmbeddingBackendProtocol, get_embedding_backend
 from app.engine.rrf_reranker import HybridSearchResult, RRFReranker
 from app.repositories.dense_search_repository import get_dense_search_repository
 
@@ -42,7 +42,8 @@ class HybridSearchService:
         self,
         dense_weight: float = DEFAULT_DENSE_WEIGHT,
         sparse_weight: float = DEFAULT_SPARSE_WEIGHT,
-        rrf_k: int = 60
+        rrf_k: int = 60,
+        embedding_service: Optional[EmbeddingBackendProtocol] = None,
     ):
         """
         Initialize hybrid search service.
@@ -58,7 +59,7 @@ class HybridSearchService:
         self._sparse_weight = sparse_weight
         
         # Initialize components (use singleton for dense repo)
-        self._embeddings = GeminiOptimizedEmbeddings()
+        self._embeddings = embedding_service or get_embedding_backend()
         self._dense_repo = get_dense_search_repository()  # SINGLETON
         from app.repositories.sparse_search_repository import get_sparse_search_repository
         self._sparse_repo = get_sparse_search_repository()  # SINGLETON
@@ -125,6 +126,10 @@ class HybridSearchService:
         Requirements: 2.3
         """
         return await self._embeddings.aembed_query(query)
+
+    @staticmethod
+    def _has_query_embedding(embedding: Optional[List[float]]) -> bool:
+        return bool(embedding)
     
     async def search(
         self,
@@ -168,6 +173,27 @@ class HybridSearchService:
                 # Generate embedding first (needed for dense search)
                 query_embedding = await self._generate_query_embedding(query)
 
+                if not self._has_query_embedding(query_embedding):
+                    logger.warning(
+                        "Hybrid search query embedding unavailable; falling back to sparse search for query=%s",
+                        query,
+                    )
+                    sparse_results = await self._sparse_repo.search(
+                        query,
+                        limit=limit * 2,
+                        domain_id=domain_id,
+                        org_id=org_id,
+                    )
+                    search_method = "sparse_only"
+                    results = self._reranker.merge_single_source(
+                        sparse_results,
+                        "sparse",
+                        limit=limit,
+                    )
+                    for r in results:
+                        r.search_method = "sparse_only"
+                    return results
+
                 # Create tasks for parallel execution
                 dense_task = self._dense_repo.search(query_embedding, limit=limit * 2, domain_id=domain_id, org_id=org_id)
                 sparse_task = self._sparse_repo.search(query, limit=limit * 2, domain_id=domain_id, org_id=org_id)
@@ -208,6 +234,12 @@ class HybridSearchService:
         elif run_dense:
             try:
                 query_embedding = await self._generate_query_embedding(query)
+                if not self._has_query_embedding(query_embedding):
+                    logger.warning(
+                        "Dense-only hybrid search skipped because query embedding is empty for query=%s",
+                        query,
+                    )
+                    return []
                 dense_results = await self._dense_repo.search(
                     query_embedding,
                     limit=limit * 2,
@@ -295,6 +327,12 @@ class HybridSearchService:
         """
         try:
             query_embedding = await self._generate_query_embedding(query)
+            if not self._has_query_embedding(query_embedding):
+                logger.warning(
+                    "Dense-only search skipped because query embedding is empty for query=%s",
+                    query,
+                )
+                return []
             dense_results = await self._dense_repo.search(query_embedding, limit, domain_id=domain_id)
             return self._reranker.merge_single_source(dense_results, "dense", limit)
         except Exception as e:

@@ -121,6 +121,7 @@ class TestCreateLLM:
         mock_settings = MagicMock()
         mock_settings.thinking_enabled = False
         mock_settings.google_model = "gemini-3.1-flash-lite-preview"
+        mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
         mock_settings.google_api_key = "test-key"
         mock_settings.include_thought_summaries = False
         mock_settings.enable_unified_providers = False
@@ -142,6 +143,7 @@ class TestCreateLLM:
         mock_settings = MagicMock()
         mock_settings.thinking_enabled = False
         mock_settings.google_model = "default-model"
+        mock_settings.google_model_advanced = "advanced-model"
         mock_settings.google_api_key = "key"
         mock_settings.include_thought_summaries = False
         mock_settings.enable_unified_providers = False
@@ -158,6 +160,7 @@ class TestCreateLLM:
         mock_settings.thinking_enabled = True
         mock_settings.thinking_budget_deep = 8192
         mock_settings.google_model = "gemini-3.1-flash-lite-preview"
+        mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
         mock_settings.google_api_key = "key"
         mock_settings.include_thought_summaries = True
         mock_settings.enable_unified_providers = False
@@ -168,6 +171,7 @@ class TestCreateLLM:
             create_llm(tier=ThinkingTier.DEEP)
 
         call_kwargs = mock_cls.call_args[1]
+        assert call_kwargs["model"] == "gemini-3.1-pro-preview"
         assert call_kwargs["thinking_budget"] == 8192
         assert call_kwargs["include_thoughts"] is True
 
@@ -175,6 +179,7 @@ class TestCreateLLM:
         mock_settings = MagicMock()
         mock_settings.thinking_enabled = True
         mock_settings.google_model = "m"
+        mock_settings.google_model_advanced = "m-adv"
         mock_settings.google_api_key = "k"
         mock_settings.include_thought_summaries = False
         mock_settings.enable_unified_providers = False
@@ -218,6 +223,7 @@ class TestCreateLLM:
         mock_settings = MagicMock()
         mock_settings.thinking_enabled = False
         mock_settings.google_model = "gemini"
+        mock_settings.google_model_advanced = "gemini-pro"
         mock_settings.google_api_key = "key"
         mock_settings.include_thought_summaries = False
         mock_settings.enable_unified_providers = False
@@ -231,3 +237,19 @@ class TestCreateLLM:
             # but the default Gemini path always works
             result = create_llm()
             assert result == "gemini-llm"
+
+    def test_deep_tier_uses_google_advanced_model(self):
+        mock_settings = MagicMock()
+        mock_settings.thinking_enabled = False
+        mock_settings.google_model = "gemini-3.1-flash-lite-preview"
+        mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
+        mock_settings.google_api_key = "test-key"
+        mock_settings.include_thought_summaries = False
+        mock_settings.enable_unified_providers = False
+
+        with patch("app.engine.llm_factory.settings", mock_settings), \
+             patch("langchain_google_genai.ChatGoogleGenerativeAI", return_value=MagicMock()) as mock_cls:
+            from app.engine.llm_factory import create_llm
+            create_llm(tier=ThinkingTier.DEEP)
+
+        assert mock_cls.call_args[1]["model"] == "gemini-3.1-pro-preview"

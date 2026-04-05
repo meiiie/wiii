@@ -13,6 +13,7 @@ Scripts cho development, testing và data ingestion.
 | `test_streaming_v3.py` | **MAIN** - V3 streaming test (V1 vs V3 comparison) |
 | `test_production_api.py` | Full API test suite |
 | `test_chatbot_e2e.py` | End-to-end chatbot tests |
+| `test_gemini_api_key.py` | Gemini API key validation (text, stream, JSON, embeddings, multimodal, burst) |
 
 ### Quick Test Commands
 
@@ -25,6 +26,17 @@ python scripts/test_streaming_v3.py --routing
 
 # Full production API tests  
 python scripts/test_production_api.py
+
+# Gemini API key validation (balanced)
+python scripts/test_gemini_api_key.py --mode full
+
+# Minimal smoke check
+python scripts/test_gemini_api_key.py --mode smoke --skip-multimodal
+
+# Mixed workload: text + embeddings together
+python scripts/test_gemini_api_key.py --mode full ^
+  --mixed-text-models gemini-3.1-flash-lite-preview,gemini-3.1-pro-preview ^
+  --mixed-thinking-levels medium,high
 ```
 
 ### Other Test Scripts

@@ -34,6 +34,8 @@ export interface CodeStudioSession {
   language: string;
   status: "streaming" | "complete" | "error";
   code: string;
+  /** Internal chunk map so retries/replays do not duplicate streamed code. */
+  streamChunks: Record<number, string>;
   versions: CodeVersion[];
   activeVersion: number;
   chunkCount: number;
@@ -77,12 +79,33 @@ export const useCodeStudioStore = create<CodeStudioState>((set, get) => ({
               ...existing,
               status: "streaming" as const,
               code: "",
+              streamChunks: {},
               chunkCount: 0,
               totalBytes: 0,
               title,
               language,
               activeVersion: version,
               // Merge backend metadata with any local UI preference like requestedView.
+              metadata: { ...existing.metadata, ...(meta || {}) },
+            },
+          },
+        };
+      }
+      if (existing && existing.status === "streaming") {
+        const isNewVersion = version !== existing.activeVersion;
+        return {
+          activeSessionId: sessionId,
+          sessions: {
+            ...state.sessions,
+            [sessionId]: {
+              ...existing,
+              code: isNewVersion ? "" : existing.code,
+              streamChunks: isNewVersion ? {} : existing.streamChunks,
+              chunkCount: isNewVersion ? 0 : existing.chunkCount,
+              totalBytes: isNewVersion ? 0 : existing.totalBytes,
+              title,
+              language,
+              activeVersion: version,
               metadata: { ...existing.metadata, ...(meta || {}) },
             },
           },
@@ -98,6 +121,7 @@ export const useCodeStudioStore = create<CodeStudioState>((set, get) => ({
             language,
             status: "streaming" as const,
             code: "",
+            streamChunks: {},
             versions: [],
             activeVersion: version,
             chunkCount: 0,
@@ -113,14 +137,25 @@ export const useCodeStudioStore = create<CodeStudioState>((set, get) => ({
     set((state) => {
       const session = state.sessions[sessionId];
       if (!session || session.status !== "streaming") return state;
+      const hasPriorChunks = Object.keys(session.streamChunks).length > 0;
+      const nextChunks: Record<number, string> =
+        chunkIndex === 0 && hasPriorChunks
+          ? { 0: chunk }
+          : { ...session.streamChunks, [chunkIndex]: chunk };
+      const orderedCode = Object.keys(nextChunks)
+        .map((key) => Number(key))
+        .sort((left, right) => left - right)
+        .map((key) => nextChunks[key] || "")
+        .join("");
       return {
         sessions: {
           ...state.sessions,
           [sessionId]: {
             ...session,
-            code: session.code + chunk,
-            chunkCount: chunkIndex + 1,
-            totalBytes,
+            code: orderedCode,
+            streamChunks: nextChunks,
+            chunkCount: Object.keys(nextChunks).length,
+            totalBytes: totalBytes > 0 ? totalBytes : Math.max(session.totalBytes, orderedCode.length),
           },
         },
       };
@@ -146,6 +181,7 @@ export const useCodeStudioStore = create<CodeStudioState>((set, get) => ({
             status: "complete" as const,
             code: fullCode,
             language,
+            streamChunks: {},
             activeVersion: version,
             versions: [...existingVersions, newVersion],
             visualPayload,

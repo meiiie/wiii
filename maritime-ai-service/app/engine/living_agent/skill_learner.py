@@ -31,6 +31,11 @@ from app.engine.living_agent.models import (
     SkillStatus,
     WiiiSkill,
 )
+from app.engine.living_agent.skill_singleton_registry import (
+    get_or_create_registered_skill_builder,
+    get_or_create_registered_skill_learner,
+    register_skill_learner_factory,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +73,6 @@ class SkillLearner:
         Returns:
             List of skill names that received new material.
         """
-        from app.engine.living_agent.skill_builder import get_skill_builder
-
         builder = get_skill_builder()
         updated_skills: List[str] = []
 
@@ -131,8 +134,6 @@ class SkillLearner:
             True if learning occurred.
         """
         from app.engine.living_agent.local_llm import get_local_llm
-        from app.engine.living_agent.skill_builder import get_skill_builder
-
         builder = get_skill_builder()
         skill = builder._find_by_name(skill_name)
         if not skill:
@@ -209,8 +210,6 @@ class SkillLearner:
         """
         from app.core.config import settings
         from app.engine.living_agent.local_llm import get_local_llm
-        from app.engine.living_agent.skill_builder import get_skill_builder
-
         if num_questions <= 0:
             num_questions = settings.living_agent_quiz_questions_per_session
 
@@ -253,8 +252,6 @@ class SkillLearner:
             QuizResult with score and quality factor.
         """
         from app.core.config import settings
-        from app.engine.living_agent.skill_builder import get_skill_builder
-
         if not questions or not answers:
             return None
 
@@ -324,8 +321,6 @@ class SkillLearner:
         Returns:
             List of WiiiSkill objects that need review.
         """
-        from app.engine.living_agent.skill_builder import get_skill_builder
-
         builder = get_skill_builder()
         # Get all skills in learning/practicing/evaluating stages
         all_skills = builder.get_all_skills()
@@ -544,12 +539,18 @@ class SkillLearner:
 # Singleton
 # =============================================================================
 
-_learner_instance: Optional[SkillLearner] = None
-
-
 def get_skill_learner() -> SkillLearner:
     """Get the singleton SkillLearner instance."""
-    global _learner_instance
-    if _learner_instance is None:
-        _learner_instance = SkillLearner()
-    return _learner_instance
+    learner = get_or_create_registered_skill_learner()
+    if learner is None:
+        learner = SkillLearner()
+    return learner
+
+
+def get_skill_builder():
+    """Get the shared SkillBuilder singleton without a direct module edge."""
+    builder = get_or_create_registered_skill_builder()
+    return builder
+
+
+register_skill_learner_factory(SkillLearner)

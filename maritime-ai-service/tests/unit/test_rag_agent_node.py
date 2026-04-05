@@ -7,6 +7,7 @@ and thinking/reasoning_trace propagation.
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
+import asyncio
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +88,7 @@ class TestRAGAgentProcess:
 
         result = await node.process(base_state)
 
-        assert "Xin lỗi" in result["rag_output"]
+        assert "Wiii tìm kiếm bị trục trặc" in result["rag_output"]
         assert result["error"] == "rag_error"
 
 
@@ -209,3 +210,85 @@ class TestRAGSingleton:
                 assert node is node2
         finally:
             mod._rag_node = None
+
+
+class TestRAGStreamingSurfaceSanitization:
+    @pytest.mark.asyncio
+    async def test_retrieval_thinking_is_sanitized_before_surface(self, base_state):
+        async def fake_streaming(query, context):
+            yield {"type": "thinking", "content": "Tìm thấy 0 tài liệu liên quan", "step": "retrieval"}
+            yield {"type": "result", "data": _make_crag_result()}
+
+        crag = MagicMock()
+        crag.process_streaming = fake_streaming
+        crag.is_available.return_value = True
+        node = _make_node(crag)
+
+        event_queue = asyncio.Queue()
+        mock_beat = MagicMock()
+        mock_beat.label = "Mình đang rà nguồn phù hợp trước khi chốt câu trả lời."
+        mock_beat.summary = "Đang kiểm tra nguồn phù hợp."
+        mock_beat.phase = "retrieve"
+
+        with patch("app.engine.multi_agent.agents.rag_node.get_reasoning_narrator") as mock_narrator_fn:
+            mock_narrator = MagicMock()
+            mock_narrator.render = AsyncMock(return_value=mock_beat)
+            mock_narrator_fn.return_value = mock_narrator
+
+            result = await node._process_with_streaming("có thể uống rượu thưởng trăng không ?", base_state, event_queue)
+
+        assert result is not None
+
+        queue_items = []
+        while not event_queue.empty():
+            queue_items.append(event_queue.get_nowait())
+
+        thinking_deltas = [item for item in queue_items if item.get("type") == "thinking_delta"]
+        assert thinking_deltas, "Expected sanitized thinking_delta event"
+        assert "Tìm thấy 0 tài liệu liên quan" not in thinking_deltas[0]["content"]
+        assert "nguồn nào thật sự khớp" in thinking_deltas[0]["content"].lower()
+    @pytest.mark.asyncio
+    async def test_analysis_telemetry_is_demoted_to_status_only(self, base_state):
+        async def fake_streaming(query, context):
+            yield {
+                "type": "thinking",
+                "content": "Do phuc tap: simple\nChu de: dau, tai chinh\nDo tin cay phan tich: 100%",
+                "step": "analysis",
+            }
+            yield {"type": "result", "data": _make_crag_result()}
+
+        crag = MagicMock()
+        crag.process_streaming = fake_streaming
+        crag.is_available.return_value = True
+        node = _make_node(crag)
+
+        event_queue = asyncio.Queue()
+        result = await node._process_with_streaming("gia dau hom nay", base_state, event_queue)
+
+        assert result is not None
+
+        queue_items = []
+        while not event_queue.empty():
+            queue_items.append(event_queue.get_nowait())
+
+        assert not [item for item in queue_items if item.get("type") == "thinking_delta"]
+        status_events = [item for item in queue_items if item.get("type") == "status"]
+        assert status_events
+        assert status_events[0]["details"]["visibility"] == "status_only"
+        assert status_events[0]["details"]["rag_step"] == "analysis"
+
+    @pytest.mark.asyncio
+    async def test_sync_telemetry_thinking_is_not_propagated(self, base_state):
+        crag = MagicMock()
+        crag.process = AsyncMock(
+            return_value=_make_crag_result(
+                thinking_content="Do phuc tap: simple\nChu de: dau\nDo tin cay phan tich: 100%",
+                thinking="Chien luoc tim kiem: rag",
+            )
+        )
+        node = _make_node(crag)
+
+        result = await node.process(base_state)
+
+        assert "thinking_content" not in result
+        assert "thinking" not in result

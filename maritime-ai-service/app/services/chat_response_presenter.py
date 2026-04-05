@@ -14,6 +14,9 @@ from app.models.schemas import (
     SourceInfo,
     ToolUsageInfo,
 )
+from app.services.model_switch_prompt_service import (
+    build_model_switch_prompt_for_failover,
+)
 
 
 def get_tool_description(tool: dict) -> str:
@@ -109,7 +112,9 @@ def build_chat_response(
     chat_request: ChatRequest,
     internal_response: InternalChatResponse,
     processing_time: float,
-    model_name: str,
+    provider_name: str | None,
+    model_name: str | None,
+    runtime_authoritative: bool = True,
 ) -> ChatResponse:
     """Build the LMS-facing JSON response from the internal response."""
     sources = []
@@ -158,17 +163,25 @@ def build_chat_response(
         ),
         metadata=ChatResponseMetadata(
             processing_time=round(processing_time, 3),
-            model=model_name,
+            provider=provider_name,
+            model=model_name or "",
             agent_type=internal_response.agent_type,
             session_id=metadata.get("session_id"),
             tools_used=tools_used,
             reasoning_trace=metadata.get("reasoning_trace"),
             thinking_content=metadata.get("thinking_content"),
             thinking=metadata.get("thinking"),
+            thinking_lifecycle=metadata.get("thinking_lifecycle"),
+            failover=metadata.get("failover"),
+            model_switch_prompt=build_model_switch_prompt_for_failover(
+                failover=metadata.get("failover"),
+                requested_provider=getattr(chat_request, "provider", None),
+            ),
             routing_metadata=metadata.get("routing_metadata"),
             topics_accessed=topics_accessed,
             confidence_score=round(confidence_score, 2) if confidence_score else None,
             document_ids_used=document_ids_used,
             query_type=classify_query_type(chat_request.message),
+            runtime_authoritative=runtime_authoritative,
         ),
     )

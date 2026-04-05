@@ -33,6 +33,7 @@ class TestSessionState:
 
         assert state.session_id == sid
         assert state.recent_phrases == []
+        assert state.recent_messages == []
         assert state.name_usage_count == 0
         assert state.total_responses == 0
         assert state.is_first_message is True
@@ -119,6 +120,19 @@ class TestSessionState:
         state.update_pronoun_style(None)
 
         assert state.pronoun_style == {"user": "mình", "bot": "cậu"}
+
+
+    def test_add_message_tracks_recent_window(self):
+        """Recent message cache keeps only the newest continuity entries."""
+        state = SessionState(session_id=uuid4())
+
+        for idx in range(state.MAX_RECENT_MESSAGES + 2):
+            role = "user" if idx % 2 == 0 else "assistant"
+            state.add_message(role, f"msg-{idx}")
+
+        assert len(state.recent_messages) == state.MAX_RECENT_MESSAGES
+        assert state.recent_messages[0]["content"] == "msg-2"
+        assert state.recent_messages[-1]["content"] == f"msg-{state.MAX_RECENT_MESSAGES + 1}"
 
 
 # =============================================================================
@@ -368,6 +382,20 @@ class TestSessionManager:
         state = manager.get_state(sid)
         assert state.total_responses == 1
         assert len(state.recent_phrases) == 0
+
+    def test_append_message_and_get_recent_messages(self, manager):
+        """Recent cached messages can be read back for continuity fallback."""
+        sid = uuid4()
+        manager.append_message(sid, "user", "Giải thích Quy tắc 15 COLREGs")
+        manager.append_message(sid, "assistant", "Để mình giải thích rõ nhé.")
+
+        assert manager.get_recent_messages(sid) == [
+            {"role": "user", "content": "Giải thích Quy tắc 15 COLREGs"},
+            {"role": "assistant", "content": "Để mình giải thích rõ nhé."},
+        ]
+        assert manager.get_recent_messages(sid, limit=1) == [
+            {"role": "assistant", "content": "Để mình giải thích rõ nhé."},
+        ]
 
     # ---- update_user_name ----
 

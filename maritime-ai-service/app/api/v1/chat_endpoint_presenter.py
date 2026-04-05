@@ -6,7 +6,7 @@ from fastapi import status
 from fastapi.responses import JSONResponse
 
 from app.api.v1.chat_api_response_support import build_json_response
-from app.core.exceptions import WiiiException
+from app.core.exceptions import ProviderUnavailableError, WiiiException
 from app.models.schemas import (
     ChatResponse,
     DeleteHistoryResponse,
@@ -15,6 +15,13 @@ from app.models.schemas import (
     HistoryPagination,
 )
 from app.services.chat_response_presenter import build_chat_response
+from app.services.llm_runtime_audit_service import (
+    infer_runtime_completion_degraded_reason,
+    record_llm_runtime_observation,
+)
+from app.services.model_switch_prompt_service import (
+    build_model_switch_prompt_for_unavailable,
+)
 
 
 def log_chat_completion_request(
@@ -65,15 +72,32 @@ def build_chat_completion_success_response(
     chat_request,
     internal_response,
     start_time: float,
-    model_name: str,
+    provider_name: str | None,
+    model_name: str | None,
+    runtime_authoritative: bool = True,
 ) -> ChatResponse:
     """Build and log the successful /chat response."""
     processing_time = time.time() - start_time
+    metadata = internal_response.metadata or {}
+    try:
+        record_llm_runtime_observation(
+            provider=provider_name,
+            success=True,
+            model_name=model_name,
+            note=None,
+            source="chat_sync",
+            failover=metadata.get("failover"),
+            degraded_reason=infer_runtime_completion_degraded_reason(metadata),
+        )
+    except Exception as exc:
+        logger.debug("Could not record sync LLM runtime observation: %s", exc)
     response = build_chat_response(
         chat_request=chat_request,
         internal_response=internal_response,
         processing_time=processing_time,
+        provider_name=provider_name,
         model_name=model_name,
+        runtime_authoritative=runtime_authoritative,
     )
 
     log_chat_completion_response(
@@ -91,16 +115,20 @@ def build_chat_service_error_response(
     message: str,
     http_status: int,
     request_id: str | None,
+    extra: dict | None = None,
 ) -> JSONResponse:
     """Build the handled WiiiException response payload for /chat."""
+    payload = {
+        "status": "error",
+        "error_code": error_code,
+        "message": message,
+        "request_id": request_id,
+    }
+    if extra:
+        payload.update(extra)
     return build_json_response(
         status_code=http_status,
-        content={
-            "status": "error",
-            "error_code": error_code,
-            "message": message,
-            "request_id": request_id,
-        },
+        content=payload,
     )
 
 
@@ -133,11 +161,35 @@ def build_chat_completion_error_response(
             error.error_code,
             error.message,
         )
+        extra: dict | None = None
+        if isinstance(error, ProviderUnavailableError):
+            try:
+                record_llm_runtime_observation(
+                    provider=error.provider,
+                    success=False,
+                    error=error.message,
+                    note=(
+                        f"chat_sync:error: requested provider {error.provider} unavailable"
+                        f"{f' ({error.reason_code})' if error.reason_code else ''}."
+                    ),
+                    source="chat_sync:error",
+                )
+            except Exception as exc:
+                logger.debug("Could not record sync LLM runtime failure: %s", exc)
+            extra = {
+                "provider": error.provider,
+                "reason_code": error.reason_code,
+                "model_switch_prompt": build_model_switch_prompt_for_unavailable(
+                    provider=error.provider,
+                    reason_code=error.reason_code,
+                ),
+            }
         return build_chat_service_error_response(
             error_code=error.error_code,
             message=error.message,
             http_status=error.http_status,
             request_id=request_id,
+            extra=extra,
         )
 
     logger.exception("Unexpected error processing chat request: %s", error)

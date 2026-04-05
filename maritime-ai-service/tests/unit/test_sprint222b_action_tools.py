@@ -55,3 +55,135 @@ class TestGenerateHostActionTools:
             "student", event_bus_id="bus-1",
         )
         assert len(tools) == 1
+
+    def test_dotted_action_names_are_sanitized(self):
+        from app.engine.context.action_tools import generate_host_action_tools
+
+        tools = generate_host_action_tools(
+            [
+                {
+                    "name": "authoring.generate_lesson",
+                    "description": "Open lesson generation flow",
+                    "roles": ["teacher"],
+                }
+            ],
+            "teacher",
+            event_bus_id="bus-1",
+        )
+        assert len(tools) == 1
+        assert tools[0].name == "host_action__authoring__generate_lesson"
+        assert "authoring.generate_lesson" in tools[0].description
+
+    def test_mutating_action_requires_explicit_confirmation(self):
+        from app.engine.context.action_tools import generate_host_action_tools
+
+        tools = generate_host_action_tools(
+            [
+                {
+                    "name": "authoring.apply_lesson_patch",
+                    "description": "Apply lesson preview",
+                    "roles": ["teacher"],
+                    "requires_confirmation": True,
+                    "mutates_state": True,
+                }
+            ],
+            "teacher",
+            event_bus_id="bus-1",
+            approval_context={"query": "preview xong roi", "host_action_feedback": {}},
+        )
+
+        result = tools[0].invoke({})
+        assert '"status": "approval_required"' in result
+        assert "authoring.apply_lesson_patch" in result
+
+    def test_mutating_action_requires_matching_preview_before_apply(self):
+        from app.engine.context.action_tools import generate_host_action_tools
+
+        tools = generate_host_action_tools(
+            [
+                {
+                    "name": "authoring.apply_lesson_patch",
+                    "description": "Apply lesson preview",
+                    "roles": ["teacher"],
+                    "requires_confirmation": True,
+                    "mutates_state": True,
+                }
+            ],
+            "teacher",
+            event_bus_id="bus-1",
+            approval_context={"query": "dong y ap dung", "host_action_feedback": {}},
+        )
+
+        result = tools[0].invoke({})
+        assert '"status": "preview_required"' in result
+        assert '"expected_preview_kind": "lesson_patch"' in result
+
+    def test_apply_tool_reuses_latest_matching_preview_token_after_confirmation(self):
+        from app.engine.context.action_tools import generate_host_action_tools
+
+        tools = generate_host_action_tools(
+            [
+                {
+                    "name": "assessment.apply_quiz_commit",
+                    "description": "Commit quiz preview",
+                    "roles": ["teacher"],
+                    "requires_confirmation": True,
+                    "mutates_state": True,
+                }
+            ],
+            "teacher",
+            event_bus_id="bus-1",
+            approval_context={
+                "query": "dong y, cu lam di",
+                "host_action_feedback": {
+                    "last_action_result": {
+                        "action": "assessment.preview_quiz_commit",
+                        "success": True,
+                        "summary": "Quiz preview ready",
+                        "data": {
+                            "preview_token": "quiz-preview-123",
+                            "preview_kind": "quiz_commit",
+                        },
+                    }
+                },
+            },
+        )
+
+        result = tools[0].invoke({})
+        assert '"status": "action_requested"' in result
+        assert '"preview_token": "quiz-preview-123"' in result
+
+    def test_apply_tool_ignores_mismatched_preview_kind(self):
+        from app.engine.context.action_tools import generate_host_action_tools
+
+        tools = generate_host_action_tools(
+            [
+                {
+                    "name": "publish.apply_quiz",
+                    "description": "Publish quiz preview",
+                    "roles": ["teacher"],
+                    "requires_confirmation": True,
+                    "mutates_state": True,
+                }
+            ],
+            "teacher",
+            event_bus_id="bus-1",
+            approval_context={
+                "query": "confirm",
+                "host_action_feedback": {
+                    "last_action_result": {
+                        "action": "assessment.preview_quiz_commit",
+                        "success": True,
+                        "summary": "Quiz preview ready",
+                        "data": {
+                            "preview_token": "quiz-preview-123",
+                            "preview_kind": "quiz_commit",
+                        },
+                    }
+                },
+            },
+        )
+
+        result = tools[0].invoke({})
+        assert '"status": "preview_required"' in result
+        assert '"expected_preview_kind": "quiz_publish"' in result

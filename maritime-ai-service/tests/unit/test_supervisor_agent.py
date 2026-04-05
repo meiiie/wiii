@@ -11,6 +11,9 @@ import types
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
+from langchain_core.messages import AIMessage, HumanMessage
+from app.core.exceptions import ProviderUnavailableError
+
 # Break circular import: multi_agent.__init__ → graph → agents → tutor_node
 # → services.__init__ → chat_service → multi_agent.graph
 _cs_key = "app.services.chat_service"
@@ -185,6 +188,32 @@ class TestSupervisorRoute:
         mock_route.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_route_selfhood_followup_sets_house_hint_when_recent_context_is_origin(self, mock_llm):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "query": "còn Bông thì sao?",
+            "context": {
+                "conversation_summary": (
+                    "Người dùng vừa hỏi Wiii được sinh ra như thế nào, và Wiii đã kể về The Wiii Lab,"
+                    " đêm mưa tháng Giêng, cùng Bông."
+                ),
+            },
+            "domain_config": {},
+        }
+
+        mock_route = AsyncMock(return_value="direct")
+        with patch.object(sup, "_route_structured", new=mock_route):
+            result = await sup.route(state)
+
+        assert result == "direct"
+        assert state["_routing_hint"] == {
+            "kind": "selfhood_followup",
+            "intent": "selfhood",
+            "shape": "lore_followup",
+        }
+        mock_route.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_route_vague_banter_turn_sets_house_hint_and_keeps_llm_first(self, mock_llm):
         sup = _make_supervisor(mock_llm)
         state = {
@@ -236,6 +265,58 @@ class TestSupervisorRoute:
         with _mock_structured_route("DIRECT", intent="off_topic"):
             result = await sup.route(base_state)
         assert result == "direct"
+
+    @pytest.mark.asyncio
+    async def test_route_reraises_provider_unavailable_error_instead_of_rule_based_fallback(
+        self,
+        mock_llm,
+        base_state,
+    ):
+        sup = _make_supervisor(mock_llm)
+
+        with patch.object(
+            sup,
+            "_route_structured",
+            new=AsyncMock(
+                side_effect=ProviderUnavailableError(
+                    provider="google",
+                    reason_code="busy",
+                    message="Provider tam thoi ban hoac da cham gioi han.",
+                )
+            ),
+        ):
+            with pytest.raises(ProviderUnavailableError):
+                await sup.route(base_state)
+
+    @pytest.mark.asyncio
+    async def test_structured_routing_keeps_house_provider_as_primary_but_does_not_pin_failover(
+        self,
+        mock_llm,
+        base_state,
+    ):
+        from app.engine.structured_schemas import RoutingDecision
+
+        sup = _make_supervisor(mock_llm)
+        base_state["provider"] = "auto"
+        base_state["_house_routing_provider"] = "google"
+
+        invoke_mock = AsyncMock(
+            return_value=RoutingDecision(
+                agent="DIRECT",
+                intent="social",
+                confidence=0.95,
+                reasoning="structured route",
+            )
+        )
+
+        with patch(
+            "app.services.structured_invoke_service.StructuredInvokeService.ainvoke",
+            new=invoke_mock,
+        ):
+            result = await sup.route(base_state)
+
+        assert result == "direct"
+        assert invoke_mock.await_args.kwargs["provider"] is None
 
     def test_code_studio_keywords_route_to_code_studio(self):
         sup = _make_supervisor(None)
@@ -294,6 +375,132 @@ class TestSupervisorRoute:
         assert result == "direct"
         assert base_state["routing_metadata"]["method"] == "structured+visual_lane_override"
 
+    @pytest.mark.asyncio
+    async def test_domain_follow_up_visual_keeps_tutor_when_recent_context_has_domain_signal(
+        self,
+        mock_llm,
+    ):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "query": "tao visual cho minh xem duoc chu?",
+            "context": {
+                "conversation_summary": "Vua giai thich COLREGs Rule 15 va Rule 13 cho nguoi hoc.",
+            },
+            "domain_config": {
+                "routing_keywords": ["colregs, rule, quy tac"],
+            },
+        }
+
+        with _mock_structured_route("TUTOR_AGENT", intent="learning", confidence=0.95), patch(
+            "app.engine.multi_agent.supervisor.resolve_visual_intent",
+            return_value=types.SimpleNamespace(presentation_intent="", force_tool=False),
+        ):
+            result = await sup.route(state)
+
+        assert result == "tutor_agent"
+        assert state["routing_metadata"]["method"] == "structured"
+        assert state["_routing_hint"]["kind"] == "visual_followup"
+        assert state["_routing_hint"]["intent"] == "learning"
+
+    @pytest.mark.asyncio
+    async def test_domain_follow_up_visual_keeps_tutor_when_recent_messages_carry_domain_signal(
+        self,
+        mock_llm,
+    ):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "query": "tạo visual cho mình xem được chứ?",
+            "context": {
+                "langchain_messages": [
+                    HumanMessage(content="Giải thích Quy tắc 15 COLREGs"),
+                    AIMessage(
+                        content="Rule 15 trong COLREGs tập trung vào tình huống cắt hướng, tàu thấy bên mạn phải phải nhường đường."
+                    ),
+                ],
+            },
+            "domain_config": {
+                "routing_keywords": ["colregs, rule, quy tac, cắt hướng, nhường đường"],
+            },
+        }
+
+        with _mock_structured_route("TUTOR_AGENT", intent="learning", confidence=0.95), patch(
+            "app.engine.multi_agent.supervisor.resolve_visual_intent",
+            return_value=types.SimpleNamespace(presentation_intent="", force_tool=False),
+        ):
+            result = await sup.route(state)
+
+        assert result == "tutor_agent"
+        assert state["routing_metadata"]["method"] == "structured"
+        assert state["_routing_hint"]["kind"] == "visual_followup"
+        assert state["_routing_hint"]["intent"] == "learning"
+
+    @pytest.mark.asyncio
+    async def test_domain_follow_up_visual_overrides_direct_back_to_tutor(
+        self,
+        mock_llm,
+    ):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "query": "tạo visual cho mình xem được chứ?",
+            "context": {
+                "langchain_messages": [
+                    HumanMessage(content="Giải thích Quy tắc 15 COLREGs"),
+                    AIMessage(
+                        content="Rule 15 trong COLREGs tập trung vào tình huống cắt hướng, tàu thấy bên mạn phải phải nhường đường."
+                    ),
+                ],
+            },
+            "domain_config": {
+                "routing_keywords": ["colregs, rule, quy tac, cắt hướng, nhường đường"],
+            },
+        }
+
+        with _mock_structured_route("DIRECT", intent="learning", confidence=0.95), patch(
+            "app.engine.multi_agent.supervisor.resolve_visual_intent",
+            return_value=types.SimpleNamespace(presentation_intent="", force_tool=False),
+        ):
+            result = await sup.route(state)
+
+        assert result == "tutor_agent"
+        assert state["routing_metadata"]["method"] == "structured+visual_followup_override"
+        assert state["_routing_hint"]["kind"] == "visual_followup"
+
+    @pytest.mark.asyncio
+    async def test_domain_follow_up_visual_uses_history_list_when_db_history_is_unavailable(
+        self,
+        mock_llm,
+    ):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "query": "tao visual cho minh xem duoc chu?",
+            "context": {
+                "history_list": [
+                    {"role": "user", "content": "Giai thich Quy tac 15 COLREGs"},
+                    {
+                        "role": "assistant",
+                        "content": "Rule 15 noi ve tinh huong cat huong, tau thay ben man phai phai nhuong duong.",
+                    },
+                ],
+                "conversation_history": (
+                    "user: Giai thich Quy tac 15 COLREGs\n"
+                    "assistant: Rule 15 noi ve tinh huong cat huong, tau thay ben man phai phai nhuong duong."
+                ),
+            },
+            "domain_config": {
+                "routing_keywords": ["colregs, rule, quy tac, cat huong, nhuong duong"],
+            },
+        }
+
+        with _mock_structured_route("DIRECT", intent="learning", confidence=0.95), patch(
+            "app.engine.multi_agent.supervisor.resolve_visual_intent",
+            return_value=types.SimpleNamespace(presentation_intent="", force_tool=False),
+        ):
+            result = await sup.route(state)
+
+        assert result == "tutor_agent"
+        assert state["routing_metadata"]["method"] == "structured+visual_followup_override"
+        assert state["_routing_hint"]["kind"] == "visual_followup"
+
 
 class TestSupervisorCompactRoutingPrompt:
     @pytest.mark.parametrize(
@@ -322,13 +529,17 @@ class TestSupervisorCompactRoutingPrompt:
 # ---------------------------------------------------------------------------
 
 class TestRuleBasedRoute:
-    def test_no_domain_config_defaults_to_direct(self):
-        """Sprint 103: Without domain_config, non-social/personal → DIRECT."""
+    def test_no_domain_config_keeps_obvious_web_and_small_talk_on_direct(self):
+        """Without LLM, obvious chatter/web turns still stay on DIRECT."""
         sup = _make_supervisor(None)
-        assert sup._rule_based_route("giải thích COLREGs") == "direct"
         assert sup._rule_based_route("cho tôi ví dụ") == "direct"
         assert sup._rule_based_route("tìm trên mạng về tàu") == "direct"
         assert sup._rule_based_route("tin tức hàng hải mới nhất") == "direct"
+
+    def test_clear_learning_turns_route_to_tutor_when_llm_unavailable(self):
+        sup = _make_supervisor(None)
+        assert sup._rule_based_route("giải thích COLREGs") == "tutor_agent"
+        assert sup._rule_based_route("Phân tích về toán học con lắc đơn") == "tutor_agent"
 
     def test_personal_keywords_route_to_memory(self):
         sup = _make_supervisor(None)
@@ -375,6 +586,50 @@ class TestRuleBasedRoute:
         assert result == "direct"
 
 
+class TestDomainValidation:
+    def test_validate_domain_routing_keeps_tutor_for_short_visual_followup(self):
+        sup = _make_supervisor(None)
+        result = sup._validate_domain_routing(
+            "tạo visual cho mình xem được chứ?",
+            "tutor_agent",
+            {"routing_keywords": ["colregs, rule, quy tac"]},
+            context={},
+        )
+        assert result == "tutor_agent"
+
+
+class TestHouseRoutingProviderSelection:
+    def test_prefers_selectable_provider_over_merely_available_primary(self):
+        sup = _make_supervisor(None)
+        state = {"provider": "auto", "query": "ban la ai"}
+
+        with patch(
+            "app.services.llm_selectability_service.choose_best_runtime_provider",
+            return_value=types.SimpleNamespace(provider="zhipu"),
+        ):
+            assert sup._resolve_house_routing_provider(state) == "zhipu"
+
+    def test_house_routing_provider_is_preference_not_strict_pin(self):
+        sup = _make_supervisor(None)
+        runtime_llm = MagicMock()
+
+        with patch.object(
+            sup,
+            "_resolve_house_routing_provider",
+            return_value="google",
+        ), patch.object(
+            AgentConfigRegistry,
+            "get_llm",
+            return_value=runtime_llm,
+        ) as mock_get_llm:
+            result = sup._get_llm_for_state({"query": "ban la ai"})
+
+        assert result is runtime_llm
+        assert mock_get_llm.call_args.args[0] == "supervisor"
+        assert mock_get_llm.call_args.kwargs["provider_override"] == "google"
+        assert mock_get_llm.call_args.kwargs["strict_provider_pin"] is False
+
+
 # ---------------------------------------------------------------------------
 # synthesize() tests
 # ---------------------------------------------------------------------------
@@ -386,6 +641,19 @@ class TestSupervisorSynthesize:
         state = {"agent_outputs": {"rag": "Rule 13 answer"}}
         result = await sup.synthesize(state)
         assert result == "Rule 13 answer"
+
+    @pytest.mark.asyncio
+    async def test_single_text_output_ignores_metadata_passthrough(self, mock_llm):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "agent_outputs": {
+                "tutor": "Sự khác biệt cốt lõi nằm ở điều kiện áp dụng.",
+                "tutor_tools_used": [{"name": "tool_knowledge_search"}],
+            }
+        }
+        result = await sup.synthesize(state)
+        assert result == "Sự khác biệt cốt lõi nằm ở điều kiện áp dụng."
+        mock_llm.ainvoke.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_no_outputs_returns_apology(self, mock_llm):

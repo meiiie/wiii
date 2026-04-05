@@ -59,18 +59,20 @@ describe("Admin Types", () => {
       email: "test@wiii.lab",
       name: "Tester",
       role: "admin",
+      legacy_role: "admin",
+      platform_role: "platform_admin",
       is_active: true,
       created_at: "2026-01-01T00:00:00Z",
       organization_count: 2,
     };
-    expect(u.role).toBe("admin");
+    expect(u.platform_role).toBe("platform_admin");
     expect(u.organization_count).toBe(2);
   });
 
   it("creates valid AdminUserSearchParams", () => {
     const p: AdminUserSearchParams = {
       q: "test",
-      role: "student",
+      platform_role: "user",
       status: "active",
       sort: "created_at_desc",
       limit: 20,
@@ -152,9 +154,14 @@ describe("Admin Types", () => {
       active_users_period: 42,
       user_growth: [gp],
       role_distribution: { student: 100, teacher: 40, admin: 10 },
+      legacy_role_distribution: { student: 100, teacher: 40, admin: 10 },
+      platform_role_distribution: { user: 140, platform_admin: 10 },
+      organization_role_distribution: { member: 145, org_admin: 5 },
       top_active_users: [{ user_id: "u-1", sessions: 50 }],
     };
     expect(ua.role_distribution.student).toBe(100);
+    expect(ua.platform_role_distribution?.user).toBe(140);
+    expect(ua.organization_role_distribution?.org_admin).toBe(5);
     expect(ua.user_growth).toHaveLength(1);
   });
 
@@ -323,7 +330,7 @@ describe("Admin Store", () => {
     expect(state.usersSearch).toBe("");
     expect(state.usersPage).toBe(0);
     expect(state.usersSort).toBe("created_at_desc");
-    expect(state.usersRoleFilter).toBe("");
+    expect(state.usersPlatformRoleFilter).toBe("");
     expect(state.usersStatusFilter).toBe("");
     expect(state.featureFlags).toEqual([]);
     expect(state.flagSearch).toBe("");
@@ -337,6 +344,9 @@ describe("Admin Store", () => {
     expect(state.authEvents).toEqual([]);
     expect(state.authEventsTotal).toBe(0);
     expect(state.authEventsPage).toBe(0);
+    expect(state.hostActionEvents).toEqual([]);
+    expect(state.hostActionEventsTotal).toBe(0);
+    expect(state.hostActionEventsPage).toBe(0);
     expect(state.auditSubTab).toBe("admin");
     expect(state.gdprExportResult).toBeNull();
     expect(state.gdprForgetResult).toBeNull();
@@ -394,9 +404,12 @@ describe("Admin Store", () => {
     expect(useAdminStore.getState().analyticsDateRange).toBe("90d");
   });
 
-  it("setAuditSubTab switches between admin and auth", () => {
+  it("setAuditSubTab switches across all audit views", () => {
     useAdminStore.getState().setAuditSubTab("auth");
     expect(useAdminStore.getState().auditSubTab).toBe("auth");
+
+    useAdminStore.getState().setAuditSubTab("host_actions");
+    expect(useAdminStore.getState().auditSubTab).toBe("host_actions");
 
     useAdminStore.getState().setAuditSubTab("admin");
     expect(useAdminStore.getState().auditSubTab).toBe("admin");
@@ -534,6 +547,36 @@ describe("Admin Store", () => {
     expect(state.authEvents[0].event_type).toBe("login");
   });
 
+  it("host action events use the auth-event shape with metadata", () => {
+    const mockEvent: AdminAuthEvent = {
+      id: "host-1",
+      event_type: "host_action.preview_created",
+      user_id: "teacher-1",
+      provider: "host_action",
+      result: "success",
+      reason: null,
+      ip_address: "127.0.0.1",
+      organization_id: "org-1",
+      metadata: {
+        action: "authoring.preview_lesson_patch",
+        summary: "Lesson patch preview ready.",
+        preview_kind: "lesson_patch",
+      },
+      created_at: "2026-03-23T10:00:00Z",
+    };
+    useAdminStore.setState({
+      hostActionEvents: [mockEvent],
+      hostActionEventsTotal: 1,
+      hostActionEventsPage: 0,
+      loading: false,
+    });
+
+    const state = useAdminStore.getState();
+    expect(state.hostActionEvents).toHaveLength(1);
+    expect(state.hostActionEvents[0].provider).toBe("host_action");
+    expect(state.hostActionEvents[0].metadata?.preview_kind).toBe("lesson_patch");
+  });
+
   it("gdprExport sets export result", () => {
     const mockResult: GdprExportResponse = {
       user_id: "u1",
@@ -580,10 +623,10 @@ describe("Admin Store", () => {
     expect(useAdminStore.getState().usersSort).toBe("name_asc");
   });
 
-  it("usersRoleFilter and usersStatusFilter track filters", () => {
-    useAdminStore.setState({ usersRoleFilter: "admin", usersStatusFilter: "active" });
+  it("usersPlatformRoleFilter and usersStatusFilter track filters", () => {
+    useAdminStore.setState({ usersPlatformRoleFilter: "platform_admin", usersStatusFilter: "active" });
     const state = useAdminStore.getState();
-    expect(state.usersRoleFilter).toBe("admin");
+    expect(state.usersPlatformRoleFilter).toBe("platform_admin");
     expect(state.usersStatusFilter).toBe("active");
   });
 });
@@ -710,12 +753,12 @@ describe("Admin Store Integration", () => {
     };
     useAdminStore.setState({ auditLogs: [mockAudit], auditLogsTotal: 1 });
 
-    // Switch to auth subtab
-    useAdminStore.getState().setAuditSubTab("auth");
+    // Switch to host action subtab
+    useAdminStore.getState().setAuditSubTab("host_actions");
 
     // Admin data should still be there
     expect(useAdminStore.getState().auditLogs).toHaveLength(1);
-    expect(useAdminStore.getState().auditSubTab).toBe("auth");
+    expect(useAdminStore.getState().auditSubTab).toBe("host_actions");
   });
 
   it("GDPR export then forget for same user", () => {

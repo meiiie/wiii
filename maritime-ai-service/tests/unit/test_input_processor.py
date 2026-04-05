@@ -363,6 +363,33 @@ class TestBuildContext:
         assert len(context.history_list) == 2
 
     @pytest.mark.asyncio
+    async def test_build_context_uses_recent_history_fallback_when_chat_history_unavailable(
+        self,
+        sample_request,
+        session_id,
+    ):
+        """Context should preserve follow-up continuity from session cache when DB history is down."""
+        mock_chat_history = MagicMock()
+        mock_chat_history.is_available.return_value = False
+        processor = InputProcessor(chat_history=mock_chat_history)
+
+        with patch("app.services.input_processor.settings") as mock_settings:
+            mock_settings.similarity_threshold = 0.7
+            context = await processor.build_context(
+                sample_request,
+                session_id,
+                recent_history_fallback=[
+                    {"role": "user", "content": "Giải thích Quy tắc 15 COLREGs"},
+                    {"role": "assistant", "content": "Quy tắc 15 là tình huống cắt hướng."},
+                    {"role": "user", "content": "tạo visual cho mình xem được chứ?"},
+                ],
+            )
+
+        assert len(context.history_list) == 3
+        assert "Quy tắc 15" in context.conversation_history
+        assert "tạo visual" in context.conversation_history
+
+    @pytest.mark.asyncio
     async def test_build_context_learning_graph_student(
         self, mock_learning_graph, sample_request, session_id
     ):

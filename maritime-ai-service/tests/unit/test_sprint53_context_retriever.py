@@ -143,11 +143,43 @@ class TestRetrieveContext:
     async def test_error_returns_empty_context(self):
         retriever = _make_retriever()
         retriever._embeddings.aembed_query = AsyncMock(side_effect=Exception("Embedding error"))
+        retriever._repository.search_similar_text.return_value = []
+        retriever._repository.get_user_facts.return_value = []
 
         result = await retriever.retrieve_context("user1", "Query")
 
         assert isinstance(result, SemanticContext)
         assert result.relevant_memories == []
+
+    @pytest.mark.asyncio
+    async def test_embedding_failure_falls_back_to_text_recall(self):
+        retriever = _make_retriever()
+        retriever._embeddings.aembed_query = AsyncMock(side_effect=Exception("Embedding error"))
+        retriever._repository.search_similar_text.return_value = [
+            _make_search_result("Quy tắc 15 là tình huống cắt ngang")
+        ]
+        retriever._repository.get_user_facts.return_value = []
+
+        result = await retriever.retrieve_context("user1", "Quy tắc 15 là gì?")
+
+        assert len(result.relevant_memories) == 1
+        retriever._repository.search_similar.assert_not_called()
+        retriever._repository.search_similar_text.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_empty_query_embedding_falls_back_to_text_recall(self):
+        retriever = _make_retriever()
+        retriever._embeddings.aembed_query = AsyncMock(return_value=[])
+        retriever._repository.search_similar_text.return_value = [
+            _make_search_result("SOLAS chapter III")
+        ]
+        retriever._repository.get_user_facts.return_value = []
+
+        result = await retriever.retrieve_context("user1", "What is SOLAS?")
+
+        assert len(result.relevant_memories) == 1
+        retriever._repository.search_similar.assert_not_called()
+        retriever._repository.search_similar_text.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_token_estimation(self):

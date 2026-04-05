@@ -5,6 +5,7 @@ import type {
   OrganizationSummary,
   OrgSettings,
   OrgPermissionsResponse,
+  AdminAuthEventsResponse,
 } from "./types";
 import { getClient } from "./client";
 
@@ -30,4 +31,23 @@ export async function updateOrgSettings(orgId: string, patch: Record<string, unk
 export async function getOrgPermissions(orgId: string): Promise<OrgPermissionsResponse> {
   const client = getClient();
   return client.get<OrgPermissionsResponse>(`/api/v1/organizations/${encodeURIComponent(orgId)}/permissions`);
+}
+
+export async function getOrgHostActionEvents(
+  orgId: string,
+  params?: {
+    event_type?: string;
+    limit?: number;
+    offset?: number;
+  },
+): Promise<AdminAuthEventsResponse> {
+  const client = getClient();
+  const query = new URLSearchParams();
+  if (params?.event_type) query.set("event_type", params.event_type);
+  if (params?.limit !== undefined) query.set("limit", String(params.limit));
+  if (params?.offset !== undefined) query.set("offset", String(params.offset));
+  const qs = query.toString();
+  return client.get<AdminAuthEventsResponse>(
+    `/api/v1/organizations/${encodeURIComponent(orgId)}/host-action-events${qs ? `?${qs}` : ""}`,
+  );
 }

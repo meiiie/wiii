@@ -70,6 +70,12 @@ import {
   isEmbedded,
   onParentMessage,
 } from "@/lib/embed-bridge";
+import {
+  _resolveCompatibilityRole,
+  _resolveRequestDisplayName,
+  _resolveRequestUserId,
+} from "@/hooks/useSSEStream";
+import { buildAuthUserFromJwt } from "@/lib/auth-user";
 
 // =============================================================================
 // Helpers
@@ -156,30 +162,6 @@ function buildFakeJwt(payload: Record<string, unknown>): string {
   const sig = "fake-signature";
   return `${header}.${body}.${sig}`;
 }
-
-/**
- * Replicate the decodeJwtUser logic from EmbedApp.tsx for testing.
- * (The function is module-private, so we re-implement its contract here.)
- */
-function decodeJwtUser(token: string): {
-  id: string;
-  email: string;
-  name: string;
-  role: string;
-} {
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return {
-      id: payload.sub || payload.user_id || "",
-      email: payload.email || "",
-      name: payload.name || payload.display_name || "",
-      role: payload.role || "student",
-    };
-  } catch {
-    return { id: "", email: "", name: "", role: "student" };
-  }
-}
-
 
 // =============================================================================
 // C1/C5: Default user_id is UUID, not "desktop-user"
@@ -694,11 +676,12 @@ describe("H3: decodeJwtUser safety — no hardcoded fallback IDs", () => {
       role: "teacher",
     });
 
-    const user = decodeJwtUser(token);
+    const user = buildAuthUserFromJwt(token);
     expect(user.id).toBe("user-123");
     expect(user.email).toBe("test@example.com");
     expect(user.name).toBe("Test User");
     expect(user.role).toBe("teacher");
+    expect(user.legacy_role).toBe("teacher");
   });
 
   it("falls back to user_id when sub is missing", () => {
@@ -707,7 +690,7 @@ describe("H3: decodeJwtUser safety — no hardcoded fallback IDs", () => {
       email: "test@example.com",
     });
 
-    const user = decodeJwtUser(token);
+    const user = buildAuthUserFromJwt(token);
     expect(user.id).toBe("fallback-id");
   });
 
@@ -717,12 +700,12 @@ describe("H3: decodeJwtUser safety — no hardcoded fallback IDs", () => {
       display_name: "Display Name",
     });
 
-    const user = decodeJwtUser(token);
+    const user = buildAuthUserFromJwt(token);
     expect(user.name).toBe("Display Name");
   });
 
   it("returns empty strings (NOT 'embed-user') for invalid token", () => {
-    const user = decodeJwtUser("not-a-jwt");
+    const user = buildAuthUserFromJwt("not-a-jwt");
     expect(user.id).toBe("");
     expect(user.email).toBe("");
     expect(user.name).toBe("");
@@ -730,27 +713,49 @@ describe("H3: decodeJwtUser safety — no hardcoded fallback IDs", () => {
   });
 
   it("returns empty strings for completely garbled token", () => {
-    const user = decodeJwtUser("abc.!!!invalid-base64!!!.xyz");
+    const user = buildAuthUserFromJwt("abc.!!!invalid-base64!!!.xyz");
     expect(user.id).toBe("");
     expect(user.email).toBe("");
     expect(user.name).toBe("");
   });
 
   it("returns empty strings for empty string token", () => {
-    const user = decodeJwtUser("");
+    const user = buildAuthUserFromJwt("");
     expect(user.id).toBe("");
     expect(user.email).toBe("");
   });
 
   it("defaults role to 'student' when not present in token", () => {
     const token = buildFakeJwt({ sub: "user-1" });
-    const user = decodeJwtUser(token);
+    const user = buildAuthUserFromJwt(token);
     expect(user.role).toBe("student");
+    expect(user.platform_role).toBe("user");
   });
 
   it("defaults role to 'student' for invalid token", () => {
-    const user = decodeJwtUser("invalid");
+    const user = buildAuthUserFromJwt("invalid");
     expect(user.role).toBe("student");
+  });
+
+  it("preserves host role and connector context from identity v2 claims", () => {
+    const token = buildFakeJwt({
+      sub: "u-host",
+      role: "teacher",
+      legacy_role: "teacher",
+      platform_role: "user",
+      host_role: "teacher",
+      role_source: "lms_host",
+      active_organization_id: "lms-hang-hai",
+      connector_id: "maritime-lms",
+      identity_version: "2",
+    });
+
+    const user = buildAuthUserFromJwt(token);
+    expect(user.host_role).toBe("teacher");
+    expect(user.role_source).toBe("lms_host");
+    expect(user.active_organization_id).toBe("lms-hang-hai");
+    expect(user.connector_id).toBe("maritime-lms");
+    expect(user.identity_version).toBe("2");
   });
 });
 
@@ -813,5 +818,40 @@ describe("Integration: settings + auth store header coordination", () => {
 
     const headers = useSettingsStore.getState().getAuthHeaders();
     expect(headers["X-Role"]).toBe("admin");
+  });
+});
+
+describe("OAuth request identity projection", () => {
+  it("prefers canonical OAuth user id over legacy settings user_id", () => {
+    expect(
+      _resolveRequestUserId("oauth", "anon-local-user", "canonical-user-1"),
+    ).toBe("canonical-user-1");
+  });
+
+  it("falls back to settings user_id in legacy mode", () => {
+    expect(
+      _resolveRequestUserId("legacy", "legacy-user-1", "canonical-user-1"),
+    ).toBe("legacy-user-1");
+  });
+
+  it("prefers OAuth user name/email for visible request identity", () => {
+    expect(
+      _resolveRequestDisplayName(
+        "oauth",
+        "Legacy Name",
+        "anon-local-user",
+        "Wiii User",
+        "user@example.com",
+      ),
+    ).toBe("Wiii User");
+  });
+
+  it("treats host role as a local overlay in OAuth mode", () => {
+    expect(
+      _resolveCompatibilityRole("oauth", "admin", "teacher", undefined),
+    ).toBe("teacher");
+    expect(
+      _resolveCompatibilityRole("oauth", "admin", undefined, undefined),
+    ).toBe("student");
   });
 });

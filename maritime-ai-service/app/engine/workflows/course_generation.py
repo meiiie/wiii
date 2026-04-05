@@ -14,13 +14,20 @@ NO custom LlmPort — platform already handles provider failover, thinking tiers
 import asyncio
 import logging
 import re
-from typing import TypedDict, Optional
+from typing import Any, Optional, TypedDict
 from uuid import uuid4
 
 import structlog
 from langchain_core.messages import HumanMessage
 
-from app.engine.llm_pool import get_llm_deep, get_llm_light, ainvoke_with_failover
+from app.engine.llm_pool import (
+    get_llm_deep,
+    get_llm_light,
+    is_rate_limit_error,
+)
+from app.engine.workflows.course_generation_source_preparation import (
+    prepare_outline_source,
+)
 from app.models.course_generation import CourseOutlineSchema, ChapterContentSchema
 from app.ports.document_parser import DocumentParserPort
 from app.prompts.course_generation.outline import build_outline_prompt
@@ -45,6 +52,9 @@ class CourseGenState(TypedDict, total=False):
     section_map: dict
     metadata: dict
     page_count: int
+    outline_source_markdown: str
+    outline_source_mode: str
+    outline_source_metadata: dict[str, Any]
 
     # After OUTLINE
     outline: Optional[dict]
@@ -102,30 +112,50 @@ async def convert_node(
 async def outline_node(state: CourseGenState) -> CourseGenState:
     """Generate course outline — 1 LLM call, DEEP tier for structural reasoning."""
     generation_id = state.get("generation_id", "unknown")
+    from app.services.structured_invoke_service import StructuredInvokeService
+
+    prepared_markdown = state.get("outline_source_markdown") or state.get("markdown", "")
+    source_mode = state.get("outline_source_mode", "full")
+    if not prepared_markdown and state.get("markdown"):
+        prepared = prepare_outline_source(markdown=state["markdown"], tier="deep")
+        prepared_markdown = prepared.rendered_markdown
+        source_mode = prepared.mode
+        state = {
+            **state,
+            "outline_source_markdown": prepared.rendered_markdown,
+            "outline_source_mode": prepared.mode,
+            "outline_source_metadata": prepared.to_metadata(),
+        }
 
     logger.info("course_gen.outline_start",
                 generation_id=generation_id,
-                markdown_chars=len(state.get("markdown", "")))
+                markdown_chars=len(state.get("markdown", "")),
+                outline_source_chars=len(prepared_markdown),
+                outline_source_mode=source_mode)
 
     llm = get_llm_deep()
-    structured_llm = llm.with_structured_output(CourseOutlineSchema)
 
     messages = [HumanMessage(content=build_outline_prompt(
-        markdown=state["markdown"],
+        markdown=prepared_markdown,
         language=state.get("language", "vi"),
         target_chapters=state.get("target_chapters"),
         teacher_prompt=state.get("teacher_prompt", ""),
+        source_mode=source_mode,
     ))]
 
-    outline = await ainvoke_with_failover(
-        structured_llm, messages, tier="deep",
-        on_fallback=lambda fb: fb.with_structured_output(CourseOutlineSchema),
+    outline = await StructuredInvokeService.ainvoke(
+        llm=llm,
+        schema=CourseOutlineSchema,
+        payload=messages,
+        tier="deep",
+        timeout_profile="background",
     )
 
     logger.info("course_gen.outline_complete",
                 generation_id=generation_id,
                 title=outline.title,
-                chapters=len(outline.chapters))
+                chapters=len(outline.chapters),
+                outline_source_mode=source_mode)
 
     return {
         **state,
@@ -139,6 +169,7 @@ async def outline_node(state: CourseGenState) -> CourseGenState:
 async def expand_single_chapter(state: CourseGenState) -> CourseGenState:
     """Generate full content for ONE chapter — LIGHT tier, retry logic."""
     generation_id = state.get("generation_id", "unknown")
+    from app.services.structured_invoke_service import StructuredInvokeService
     chapter = state["current_chapter"]
     chapter_idx = state["current_chapter_idx"]
     course_id = state["course_id"]
@@ -156,7 +187,6 @@ async def expand_single_chapter(state: CourseGenState) -> CourseGenState:
     )
 
     llm = get_llm_light()
-    structured_llm = llm.with_structured_output(ChapterContentSchema)
 
     messages = [HumanMessage(content=build_expand_prompt(
         chapter=chapter,
@@ -171,14 +201,18 @@ async def expand_single_chapter(state: CourseGenState) -> CourseGenState:
 
     for attempt in range(max_retries + 1):
         try:
-            chapter_content = await ainvoke_with_failover(
-                structured_llm, messages, tier="light",
-                on_fallback=lambda fb: fb.with_structured_output(ChapterContentSchema),
+            chapter_content = await StructuredInvokeService.ainvoke(
+                llm=llm,
+                schema=ChapterContentSchema,
+                payload=messages,
+                tier="light",
+                timeout_profile="background",
             )
             break
         except Exception as e:
             last_error = e
-            if attempt < max_retries:
+            should_retry = isinstance(e, (TimeoutError, asyncio.TimeoutError)) or is_rate_limit_error(e)
+            if attempt < max_retries and should_retry:
                 wait = 2 ** attempt
                 logger.warning("course_gen.expand_llm_retry",
                                generation_id=generation_id,
@@ -187,6 +221,8 @@ async def expand_single_chapter(state: CourseGenState) -> CourseGenState:
                                wait_seconds=wait,
                                error=str(e))
                 await asyncio.sleep(wait)
+            else:
+                break
 
     if chapter_content is None:
         logger.error("course_gen.expand_llm_failed",

@@ -1,9 +1,5 @@
-"""LMS Host Adapter — Vietnamese prompt formatting, Socratic quiz guardrails.
+"""LMS Host Adapter - Vietnamese prompt formatting with role/stage awareness."""
 
-Sprint 222: Universal Context Engine.
-Converts HostContext from an LMS host into a Vietnamese XML block
-with page-type-aware instructions and Socratic guardrails for quizzes.
-"""
 from app.engine.context.adapters.base import HostAdapter
 from app.engine.context.host_context import HostContext
 
@@ -12,12 +8,18 @@ _PAGE_LABELS: dict[str, str] = {
     "lesson": "Bài giảng",
     "course_overview": "Tổng quan khóa học",
     "course_list": "Danh sách khóa học",
+    "course_detail": "Chi tiết khóa học",
+    "course_editor": "Trình soạn khóa học",
     "quiz": "Bài kiểm tra",
     "exam": "Bài thi",
     "assignment": "Bài tập",
+    "assignment_list": "Danh sách bài tập",
     "resource": "Tài liệu",
     "forum": "Diễn đàn",
     "grades": "Bảng điểm",
+    "analytics": "Phân tích",
+    "teacher_page": "Không gian giảng viên",
+    "admin_page": "Không gian quản trị",
     "settings": "Cài đặt",
 }
 
@@ -26,11 +28,20 @@ _PAGE_SKILL_MAP: dict[str, list[str]] = {
     "quiz": ["lms-quiz"],
     "exam": ["lms-quiz"],
     "assignment": ["lms-assignment"],
+    "course_editor": [
+        "lms-teacher-course-editor",
+        "lms-teacher-doc-to-course",
+        "lms-teacher-lesson-experience",
+        "lms-teacher-quiz-orchestrator",
+    ],
+    "analytics": ["lms-org-admin-governance", "lms-system-admin-ops"],
+    "admin_page": ["lms-org-admin-governance", "lms-system-admin-ops"],
+    "teacher_page": ["lms-teacher-course-editor"],
 }
 
 
 class LMSHostAdapter(HostAdapter):
-    """Adapter for LMS hosts — Vietnamese output with Socratic pedagogy."""
+    """Adapter for LMS hosts with Vietnamese, role-aware prompt shaping."""
 
     host_type = "lms"
 
@@ -42,21 +53,32 @@ class LMSHostAdapter(HostAdapter):
         page_label = _PAGE_LABELS.get(page_type, page_type)
 
         parts: list[str] = [f'<host_context type="lms" page_type="{page_type}">']
-        parts.append(f"  <page>{page_label} — {page_title}</page>")
+        parts.append(f"  <page>{page_label} - {page_title}</page>")
+        if ctx.connector_id:
+            parts.append(f"  <connector>{ctx.connector_id}</connector>")
+        if ctx.host_workspace_id:
+            parts.append(f"  <workspace>{ctx.host_workspace_id}</workspace>")
+        if ctx.host_organization_id:
+            parts.append(f"  <host_organization>{ctx.host_organization_id}</host_organization>")
 
-        # Course and chapter metadata
+        if ctx.user_role:
+            parts.append(f"  <user_role>{ctx.user_role}</user_role>")
+        if ctx.workflow_stage:
+            parts.append(f"  <workflow_stage>{ctx.workflow_stage}</workflow_stage>")
+
         course_name = metadata.get("course_name")
         if course_name:
             parts.append(f"  <course>{course_name}</course>")
         chapter = metadata.get("chapter_name")
         if chapter:
             parts.append(f"  <chapter>{chapter}</chapter>")
+        requested_action = metadata.get("action")
+        if requested_action:
+            parts.append(f"  <requested_action>{requested_action}</requested_action>")
 
-        # Content snippet
         if ctx.content and ctx.content.get("snippet"):
             parts.append(f'  <content>{ctx.content["snippet"]}</content>')
 
-        # Quiz question and options
         quiz_q = metadata.get("quiz_question")
         if quiz_q:
             parts.append(f"  <quiz_question>{quiz_q}</quiz_question>")
@@ -67,37 +89,86 @@ class LMSHostAdapter(HostAdapter):
                 )
                 parts.append(f"  <quiz_options>{opts_str}</quiz_options>")
 
-        # User state
         if ctx.user_state:
             state_parts = self._format_user_state(ctx.user_state)
             if state_parts:
-                parts.append(
-                    f"  <user_state>{'; '.join(state_parts)}</user_state>"
-                )
+                parts.append(f"  <user_state>{'; '.join(state_parts)}</user_state>")
 
-        # Available actions
+        if ctx.selection:
+            selected_type = str(ctx.selection.get("type", "")).strip()
+            selected_label = str(ctx.selection.get("label", "")).strip()
+            if selected_type or selected_label:
+                parts.append(f"  <selection>{selected_type} - {selected_label}</selection>")
+
+        if ctx.editable_scope:
+            scope_type = str(ctx.editable_scope.get("type", "")).strip()
+            allowed = ctx.editable_scope.get("allowed_operations", [])
+            if scope_type or allowed:
+                allowed_str = ", ".join(str(item) for item in allowed) if isinstance(allowed, list) else ""
+                parts.append(f"  <editable_scope>{scope_type}; ops={allowed_str}</editable_scope>")
+
+        if ctx.entity_refs:
+            labels = []
+            for ref in ctx.entity_refs[:6]:
+                if not isinstance(ref, dict):
+                    continue
+                ref_type = str(ref.get("type", "")).strip()
+                ref_title = str(ref.get("title", "")).strip()
+                if ref_type or ref_title:
+                    labels.append(f"{ref_type}:{ref_title}")
+            if labels:
+                parts.append(f"  <entity_refs>{' | '.join(labels)}</entity_refs>")
+
         if ctx.available_actions:
             labels = [
-                a.get("label", a.get("action", ""))
+                (
+                    f"{a.get('label', a.get('name', a.get('action', '')))}"
+                    f"{' [confirm]' if a.get('requires_confirmation') else ''}"
+                    f"{' [write]' if a.get('mutates_state') else ''}"
+                )
                 for a in ctx.available_actions
             ]
-            labels = [lb for lb in labels if lb]
+            labels = [label for label in labels if label]
             if labels:
-                parts.append(
-                    f"  <available_actions>{', '.join(labels)}</available_actions>"
-                )
+                parts.append(f"  <available_actions>{', '.join(labels)}</available_actions>")
 
-        # Page-type-specific instructions
         if page_type in ("quiz", "exam"):
             parts.append(
                 "  <instruction>"
-                "KHÔNG cho đáp án trực tiếp. Hướng dẫn Socratic."
+                "KHÔNG cho đáp án trực tiếp. Hướng dẫn Socratic. "
+                "Khong chon phuong an dung ho, khong hoan thanh bai lam ho."
+                "</instruction>"
+            )
+        elif page_type == "assignment":
+            parts.append(
+                "  <instruction>"
+                "Khong viet ho bai nop hoan chinh hoac dap an cuoi cung. "
+                "Huong dan cach tiep can, dan y, rubric, va goi y tung buoc de nguoi hoc tu hoan thanh."
                 "</instruction>"
             )
         elif page_type == "lesson":
             parts.append(
                 "  <instruction>"
-                "Hỗ trợ sinh viên hiểu bài giảng, gợi ý Socratic."
+                "Hỗ trợ người học hiểu bài giảng, gợi mở Socratic và bám sát nội dung đang xem."
+                "</instruction>"
+            )
+        elif page_type == "course_editor":
+            if requested_action == "generate_lesson":
+                parts.append(
+                    "  <instruction>"
+                    "Người dùng đang chủ động mở Wiii để tạo bài giảng hoặc cấu trúc khóa học từ ngữ cảnh Course Editor hiện tại."
+                    "</instruction>"
+                )
+            else:
+                parts.append(
+                    "  <instruction>"
+                    "Đây là bối cảnh authoring. Ưu tiên host actions, preview trước commit, và chỉnh lesson bằng cấu trúc trước khi nghĩ tới code tự do."
+                    "</instruction>"
+                )
+        elif page_type in {"analytics", "admin_page"}:
+            parts.append(
+                "  <instruction>"
+                "Giữ câu trả lời ngắn, rõ, audit-friendly, và nêu rõ phạm vi ảnh hưởng trước khi đề xuất hành động."
                 "</instruction>"
             )
         else:
@@ -107,11 +178,12 @@ class LMSHostAdapter(HostAdapter):
                 "</instruction>"
             )
 
-        # Sprint 223: Rich structured data (Path A)
         try:
             from app.core.config import get_settings
+
             if getattr(get_settings(), "enable_rich_page_context", False):
                 from app.engine.context.host_context import format_structured_data_for_prompt
+
                 structured_text = format_structured_data_for_prompt(ctx)
                 if structured_text:
                     parts.append(f"  <data>\n{structured_text}\n  </data>")
@@ -145,10 +217,8 @@ class LMSHostAdapter(HostAdapter):
             state_parts.append(f"Lần thử: {attempts}")
             last_answer = user_state.get("last_answer")
             if last_answer:
-                correct = (
-                    "Đúng" if user_state.get("is_correct") else "Sai"
-                )
-                state_parts.append(f'Đáp án trước: "{last_answer}" → {correct}')
+                correct = "Đúng" if user_state.get("is_correct") else "Sai"
+                state_parts.append(f'Đáp án trước: "{last_answer}" -> {correct}')
 
         progress = user_state.get("progress_percent")
         if progress is not None:

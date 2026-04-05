@@ -8,6 +8,7 @@ import { ProductPreviewCard } from "./ProductPreviewCard";
 import { WebPreviewCard } from "./WebPreviewCard";
 import { LinkPreviewCard } from "./LinkPreviewCard";
 import { CodePreviewCard } from "./CodePreviewCard";
+import { HostActionPreviewCard } from "./HostActionPreviewCard";
 
 type PreviewCardComponent = React.ComponentType<{
   item: PreviewItemData;
@@ -21,6 +22,7 @@ const PREVIEW_REGISTRY: Record<string, PreviewCardComponent> = {
   web: WebPreviewCard,
   link: LinkPreviewCard,
   code: CodePreviewCard,
+  host_action: HostActionPreviewCard,
 };
 
 interface PreviewCardRendererProps {
@@ -43,3 +45,4 @@ export { ProductPreviewCard } from "./ProductPreviewCard";
 export { WebPreviewCard } from "./WebPreviewCard";
 export { LinkPreviewCard } from "./LinkPreviewCard";
 export { CodePreviewCard } from "./CodePreviewCard";
+export { HostActionPreviewCard } from "./HostActionPreviewCard";

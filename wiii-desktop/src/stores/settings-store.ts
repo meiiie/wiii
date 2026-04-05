@@ -20,9 +20,14 @@ import {
 } from "@/lib/constants";
 import {
   GOOGLE_DEFAULT_MODEL,
+  OPENAI_DEFAULT_MODEL,
+  OPENAI_DEFAULT_MODEL_ADVANCED,
   OLLAMA_DEFAULT_BASE_URL,
   OLLAMA_DEFAULT_KEEP_ALIVE,
   OLLAMA_DEFAULT_MODEL,
+  ZHIPU_DEFAULT_BASE_URL,
+  ZHIPU_DEFAULT_MODEL,
+  ZHIPU_DEFAULT_MODEL_ADVANCED,
 } from "@/lib/llm-presets";
 // Sprint 218: Static import replaces require() — fixes Vite ESM browser mode
 // No circular dependency: auth-store does NOT import settings-store at module level
@@ -95,16 +100,19 @@ function normalizeLoadedSettings(saved: Partial<AppSettings> | null): AppSetting
 const DEFAULT_SETTINGS: AppSettings = {
   server_url: DEFAULT_SERVER_URL,
   api_key: "",
-  llm_provider: "ollama",
+  llm_provider: "google",
   google_model: GOOGLE_DEFAULT_MODEL,
   openai_base_url: "",
-  openai_model: "openai/gpt-oss-20b:free",
-  openai_model_advanced: "openai/gpt-oss-120b:free",
+  openai_model: OPENAI_DEFAULT_MODEL,
+  openai_model_advanced: OPENAI_DEFAULT_MODEL_ADVANCED,
+  zhipu_base_url: ZHIPU_DEFAULT_BASE_URL,
+  zhipu_model: ZHIPU_DEFAULT_MODEL,
+  zhipu_model_advanced: ZHIPU_DEFAULT_MODEL_ADVANCED,
   ollama_base_url: OLLAMA_DEFAULT_BASE_URL,
   ollama_model: OLLAMA_DEFAULT_MODEL,
   ollama_keep_alive: OLLAMA_DEFAULT_KEEP_ALIVE,
   llm_failover_enabled: true,
-  llm_failover_chain: ["ollama", "google", "openrouter"],
+  llm_failover_chain: ["google", "zhipu", "ollama", "openrouter"],
   user_id: "",  // Sprint 194b: empty — generated on first load, never hardcoded
   user_role: DEFAULT_USER_ROLE,
   display_name: DEFAULT_DISPLAY_NAME,

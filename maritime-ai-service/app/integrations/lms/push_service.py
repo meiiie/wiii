@@ -97,6 +97,47 @@ class LMSPushService:
             _circuit_breaker.record_failure(breaker_key)
             return None
 
+    async def _post_async(self, path: str, data: dict) -> Optional[dict]:
+        """Async POST variant for long-running workflows."""
+        if not self._config.base_url:
+            logger.warning("LMS push: no base_url configured")
+            return None
+
+        breaker_key = f"lms_push_{self._config.id}"
+        if _circuit_breaker.is_open(breaker_key):
+            logger.warning("LMS push circuit breaker open for '%s'", self._config.id)
+            return None
+
+        url = f"{self._config.base_url.rstrip('/')}/{path.lstrip('/')}"
+        payload_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        signature = self._sign_payload(payload_bytes)
+
+        try:
+            async with httpx.AsyncClient(timeout=self._config.api_timeout) as client:
+                resp = await client.post(
+                    url,
+                    content=payload_bytes,
+                    headers=self._headers(signature),
+                )
+            resp.raise_for_status()
+            _circuit_breaker.record_success(breaker_key)
+            return resp.json()
+        except httpx.TimeoutException:
+            logger.warning("LMS push timeout [%s]: %s", self._config.id, path)
+            _circuit_breaker.record_failure(breaker_key)
+            return None
+        except httpx.HTTPStatusError as e:
+            logger.warning(
+                "LMS push HTTP %s [%s]: %s",
+                e.response.status_code, self._config.id, path,
+            )
+            _circuit_breaker.record_failure(breaker_key)
+            return None
+        except Exception as e:
+            logger.error("LMS push error [%s]: %s", self._config.id, e)
+            _circuit_breaker.record_failure(breaker_key)
+            return None
+
     def push_student_insight(
         self,
         student_id: str,
@@ -186,6 +227,30 @@ class LMSPushService:
             return result.get("data", result)
         return None
 
+    async def push_course_shell_async(
+        self,
+        teacher_id: str,
+        category_id: str,
+        title: str,
+        description: str = "",
+        delivery_mode: str = "SELF_PACED",
+        price_type: str = "FREE",
+    ) -> Optional[dict]:
+        data = {
+            "teacherId": teacher_id,
+            "categoryId": category_id,
+            "title": title,
+            "description": description,
+            "deliveryMode": delivery_mode,
+            "priceType": price_type,
+        }
+        result = await self._post_async(f"{self._api_prefix}/courses/generate", data)
+        if result is not None:
+            course_id = result.get("data", {}).get("courseId") if isinstance(result.get("data"), dict) else None
+            logger.info("Created course shell: courseId=%s", course_id)
+            return result.get("data", result)
+        return None
+
     def push_chapter_content(
         self,
         course_id: str,
@@ -201,6 +266,24 @@ class LMSPushService:
             chapter: Full chapter content dict with nested lessons and sections.
         """
         result = self._post(
+            f"{self._api_prefix}/courses/generate/{course_id}/chapters",
+            chapter,
+        )
+        if result is not None:
+            logger.info(
+                "Pushed chapter '%s' to course %s",
+                chapter.get("title", "untitled"),
+                course_id,
+            )
+            return result.get("data", result)
+        return None
+
+    async def push_chapter_content_async(
+        self,
+        course_id: str,
+        chapter: dict,
+    ) -> Optional[dict]:
+        result = await self._post_async(
             f"{self._api_prefix}/courses/generate/{course_id}/chapters",
             chapter,
         )

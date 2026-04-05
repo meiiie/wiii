@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
 
+from app.services.living_continuity_contracts import (
+    PostResponseContinuityContext,
+)
 from app.services.lms_post_response import schedule_lms_insight_push
 from app.services.routine_post_response import schedule_routine_tracking
 from app.services.sentiment_post_response import (
@@ -37,19 +39,6 @@ __all__ = [
     "PostResponseContinuityContext",
     "schedule_post_response_continuity",
 ]
-
-
-@dataclass(frozen=True)
-class PostResponseContinuityContext:
-    """Inputs needed after a response has been produced."""
-
-    user_id: str
-    user_role: str
-    message: str
-    response_text: str
-    domain_id: str = ""
-    organization_id: str | None = None
-    channel: str = "web"
 
 
 async def _analyze_and_process_sentiment(

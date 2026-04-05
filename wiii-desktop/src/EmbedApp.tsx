@@ -32,6 +32,7 @@ import { initClient } from "@/api/client";
 import "@/lib/context-bridge";
 import { parseEmbedConfig, validateEmbedConfig, getAuthMode } from "@/lib/embed-auth";
 import { sendReadySignal, sendError, setParentOrigin } from "@/lib/embed-bridge";
+import { buildAuthUserFromJwt, toCompatibilitySettingsRole } from "@/lib/auth-user";
 import type { EmbedConfig } from "@/lib/embed-auth";
 
 export default function EmbedApp() {
@@ -117,8 +118,17 @@ export default function EmbedApp() {
 
         // 2b. Auth — JWT or legacy mode
         if (authMode === "jwt" && config.token) {
-          // Decode JWT to extract user info (basic payload extraction)
-          const user = decodeJwtUser(config.token);
+          const user = buildAuthUserFromJwt(config.token);
+          const embedRole =
+            typeof config.role === "string" && config.role.trim()
+              ? config.role.trim()
+              : user.host_role || user.legacy_role || user.role;
+          await updateSettings({
+            user_role: toCompatibilitySettingsRole({
+              role: embedRole,
+              legacy_role: embedRole,
+            }),
+          });
           // Set user_id in settings so useSSEStream sends correct user_id in chat body
           // Also update global config so storage.ts getEmbedPrefix() can namespace per-user
           if (user.id) {
@@ -299,33 +309,4 @@ export default function EmbedApp() {
       <ToastContainer />
     </ErrorBoundary>
   );
-}
-
-/**
- * Decode JWT payload to extract basic user info for UI display.
- *
- * Sprint 194b (H3): This is client-side decode ONLY for rendering the user's
- * name/email in the UI. It does NOT verify the JWT signature.
- * The backend ALWAYS verifies the signature on every API call via the
- * Authorization header — this function NEVER makes authorization decisions.
- *
- * Fallback IDs are empty strings (not "embed-user") to avoid identity collision.
- */
-function decodeJwtUser(token: string): {
-  id: string;
-  email: string;
-  name: string;
-  role: string;
-} {
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return {
-      id: payload.sub || payload.user_id || "",
-      email: payload.email || "",
-      name: payload.name || payload.display_name || "",
-      role: payload.role || "student",
-    };
-  } catch {
-    return { id: "", email: "", name: "", role: "student" };
-  }
 }

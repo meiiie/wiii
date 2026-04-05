@@ -18,8 +18,8 @@ from app.models.semantic_memory import (
     SemanticMemorySearchResult,
     Insight,
 )
+from app.engine.embedding_runtime import EmbeddingBackendProtocol
 from app.repositories.semantic_memory_repository import SemanticMemoryRepository
-from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
 
 logger = logging.getLogger(__name__)
 
@@ -46,19 +46,59 @@ class ContextRetriever:
     
     def __init__(
         self,
-        embeddings: GeminiOptimizedEmbeddings,
+        embeddings: EmbeddingBackendProtocol,
         repository: SemanticMemoryRepository
     ):
         """
         Initialize ContextRetriever.
         
         Args:
-            embeddings: GeminiOptimizedEmbeddings instance
+            embeddings: Semantic embedding backend instance
             repository: SemanticMemoryRepository instance
         """
         self._embeddings = embeddings
         self._repository = repository
         logger.debug("ContextRetriever initialized")
+
+    async def _retrieve_relevant_memories(
+        self,
+        *,
+        user_id: str,
+        query: str,
+        search_limit: int,
+        similarity_threshold: float,
+    ) -> List[SemanticMemorySearchResult]:
+        try:
+            query_embedding = await self._embeddings.aembed_query(query)
+        except Exception as exc:
+            logger.warning(
+                "Semantic query embedding failed for user %s, falling back to lexical recall: %s",
+                user_id,
+                exc,
+            )
+            query_embedding = []
+
+        if query_embedding:
+            return self._repository.search_similar(
+                user_id=user_id,
+                query_embedding=query_embedding,
+                limit=search_limit,
+                threshold=similarity_threshold,
+                memory_types=[MemoryType.MESSAGE, MemoryType.SUMMARY],
+                include_all_sessions=True,
+                use_stanford_ranking=True,
+            )
+
+        logger.info(
+            "Using fallback lexical recall for semantic context: user=%s",
+            user_id,
+        )
+        return self._repository.search_similar_text(
+            user_id=user_id,
+            query_text=query,
+            limit=search_limit,
+            memory_types=[MemoryType.MESSAGE, MemoryType.SUMMARY],
+        )
     
     async def retrieve_context(
         self,
@@ -93,49 +133,44 @@ class ContextRetriever:
         """
         search_limit = search_limit or self.DEFAULT_SEARCH_LIMIT
         similarity_threshold = similarity_threshold or self.DEFAULT_SIMILARITY_THRESHOLD
-        
+
+        relevant_memories: List[SemanticMemorySearchResult] = []
+        user_facts: List[SemanticMemorySearchResult] = []
+
         try:
-            # Generate query embedding
-            query_embedding = await self._embeddings.aembed_query(query)
-            
-            # Search for similar memories across ALL sessions (excluding user_facts)
-            # Sprint 98: Use Stanford Generative Agents hybrid re-ranking
-            relevant_memories = self._repository.search_similar(
+            relevant_memories = await self._retrieve_relevant_memories(
                 user_id=user_id,
-                query_embedding=query_embedding,
-                limit=search_limit,
-                threshold=similarity_threshold,
-                memory_types=[MemoryType.MESSAGE, MemoryType.SUMMARY],
-                include_all_sessions=True,  # Cross-session search
-                use_stanford_ranking=True,
+                query=query,
+                search_limit=search_limit,
+                similarity_threshold=similarity_threshold,
             )
-            
-            # Get user facts from ALL sessions (deduplicated)
-            user_facts = []
-            if include_user_facts:
+        except Exception as exc:
+            logger.error("Failed to retrieve relevant memories: %s", exc)
+
+        if include_user_facts:
+            try:
                 user_facts = self._repository.get_user_facts(
                     user_id=user_id,
                     limit=self.DEFAULT_USER_FACTS_LIMIT,
-                    deduplicate=deduplicate_facts  # Deduplicate by fact_type
+                    deduplicate=deduplicate_facts,
                 )
-            
-            context = SemanticContext(
-                relevant_memories=relevant_memories,
-                user_facts=user_facts,
-                recent_messages=[],  # Will be filled by ChatService if needed
-                total_tokens=self._estimate_tokens(relevant_memories, user_facts)
-            )
-            
-            logger.debug(
-                "Retrieved context for user %s: %d memories, %d facts",
-                user_id, len(relevant_memories), len(user_facts),
-            )
-            
-            return context
-            
-        except Exception as e:
-            logger.error("Failed to retrieve context: %s", e)
-            return SemanticContext()
+            except Exception as exc:
+                logger.error("Failed to get user facts: %s", exc)
+                user_facts = []
+
+        context = SemanticContext(
+            relevant_memories=relevant_memories,
+            user_facts=user_facts,
+            recent_messages=[],
+            total_tokens=self._estimate_tokens(relevant_memories, user_facts),
+        )
+
+        logger.debug(
+            "Retrieved context for user %s: %d memories, %d facts",
+            user_id, len(relevant_memories), len(user_facts),
+        )
+
+        return context
     
     async def retrieve_insights_prioritized(
         self,

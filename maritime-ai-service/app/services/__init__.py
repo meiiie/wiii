@@ -30,4 +30,11 @@ def __getattr__(name: str):
         import importlib
         module = importlib.import_module(module_path)
         return getattr(module, attr_name)
+    try:
+        import importlib
+
+        return importlib.import_module(f"{__name__}.{name}")
+    except ModuleNotFoundError as exc:
+        if exc.name != f"{__name__}.{name}":
+            raise
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

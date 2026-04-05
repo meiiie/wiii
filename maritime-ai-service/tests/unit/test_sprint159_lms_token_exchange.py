@@ -217,15 +217,19 @@ class TestRoleMapping:
         assert map_lms_role("student") == "student"
 
     def test_teacher_variants(self):
-        from app.auth.lms_token_exchange import map_lms_role
+        from app.auth.lms_token_exchange import map_lms_host_role, map_lms_role
+        assert map_lms_host_role("teacher") == "teacher"
         assert map_lms_role("instructor") == "teacher"
         assert map_lms_role("professor") == "teacher"
         assert map_lms_role("Lecturer") == "teacher"  # case-insensitive
 
     def test_admin_variants(self):
-        from app.auth.lms_token_exchange import map_lms_role
-        assert map_lms_role("admin") == "admin"
-        assert map_lms_role("Administrator") == "admin"
+        from app.auth.lms_token_exchange import map_lms_host_role, map_lms_role
+        assert map_lms_host_role("admin") == "admin"
+        assert map_lms_host_role("ORG_ADMIN") == "org_admin"
+        assert map_lms_role("admin") == "teacher"
+        assert map_lms_role("Administrator") == "teacher"
+        assert map_lms_role("ORG_ADMIN") == "teacher"
 
     def test_unknown_defaults_to_student(self):
         from app.auth.lms_token_exchange import map_lms_role
@@ -269,9 +273,12 @@ class TestTokenExchange:
             )
             assert result["access_token"] == "at"
             assert result["user"]["id"] == "u1"
+            assert result["user"]["platform_role"] == "user"
+            assert result["user"]["host_role"] == "student"
             mock_find.assert_called_once()
             assert mock_find.call_args.kwargs["provider"] == "lms"
             assert mock_find.call_args.kwargs["provider_issuer"] == "maritime-lms"
+            assert mock_find.call_args.kwargs["role"] == "student"
 
     @pytest.mark.asyncio
     async def test_existing_user_found(self):
@@ -295,6 +302,8 @@ class TestTokenExchange:
             assert result["access_token"] == "at"
             mock_create.assert_called_once()
             assert mock_create.call_args.kwargs["auth_method"] == "lms"
+            assert mock_create.call_args.kwargs["platform_role"] == "user"
+            assert mock_create.call_args.kwargs["identity_version"] == "2"
 
     @pytest.mark.asyncio
     async def test_org_membership_added(self):
@@ -318,3 +327,31 @@ class TestTokenExchange:
             )
             mock_org.assert_called_once_with("u1", "maritime-org")
             assert result["user"]["id"] == "u1"
+
+    @pytest.mark.asyncio
+    async def test_adminish_lms_role_stays_host_scoped(self):
+        """LMS admin/org-admin should not become Wiii platform admin."""
+        user = {"id": "u-admin", "email": "a@lms.edu", "name": "Admin", "role": "teacher"}
+        mock_token = MagicMock(
+            access_token="at", refresh_token="rt",
+            token_type="bearer", expires_in=1800,
+        )
+
+        with (
+            patch("app.auth.user_service.find_or_create_by_provider", new_callable=AsyncMock, return_value=user),
+            patch("app.auth.token_service.create_token_pair", new_callable=AsyncMock, return_value=mock_token) as mock_create,
+            patch("app.auth.lms_token_exchange._ensure_org_membership", new_callable=AsyncMock),
+        ):
+            from app.auth.lms_token_exchange import exchange_lms_token
+            result = await exchange_lms_token(
+                connector_id="maritime-lms",
+                lms_user_id="admin-42",
+                role="ORG_ADMIN",
+            )
+
+            assert result["user"]["role"] == "teacher"
+            assert result["user"]["platform_role"] == "user"
+            assert result["user"]["host_role"] == "org_admin"
+            assert mock_create.call_args.kwargs["role"] == "teacher"
+            assert mock_create.call_args.kwargs["platform_role"] == "user"
+            assert mock_create.call_args.kwargs["host_role"] == "org_admin"

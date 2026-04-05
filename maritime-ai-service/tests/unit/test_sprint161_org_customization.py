@@ -387,36 +387,54 @@ class TestPersonaOverlay:
         """Without org_id, no org sections appear."""
         prompt = self._build_prompt()
         assert "HƯỚNG DẪN TỔ CHỨC" not in prompt
-        assert "TÊN HIỂN THỊ" not in prompt
+        assert "NHÃN WORKSPACE" not in prompt
 
     def test_org_with_custom_chatbot_name(self):
-        """Org with custom chatbot_name gets TÊN HIỂN THỊ section."""
+        """Org with custom chatbot_name gets workspace label section."""
         from app.models.organization import OrgSettings
         settings = OrgSettings(**{
             "branding": {"chatbot_name": "Hải Bot"},
         })
         prompt = self._build_prompt(org_id="test-org", org_settings=settings)
-        assert "TÊN HIỂN THỊ" in prompt
+        assert "NHÃN WORKSPACE" in prompt
         assert "Hải Bot" in prompt
+        assert "Giữ nguyên danh tính lõi" in prompt
 
     def test_org_with_persona_overlay(self):
-        """Org with persona_prompt_overlay gets HƯỚNG DẪN TỔ CHỨC section."""
+        """Org with workflow overlay gets HƯỚNG DẪN TỔ CHỨC section."""
         from app.models.organization import OrgSettings
         settings = OrgSettings(**{
             "ai_config": {
-                "persona_prompt_overlay": "Bạn là trợ lý AI của UBND Phường Lưu Kiếm.",
+                "persona_prompt_overlay": "Ưu tiên văn phong ngắn gọn, bám đúng workflow hành chính của UBND Phường Lưu Kiếm.",
             },
         })
         prompt = self._build_prompt(org_id="phuong-luu-kiem", org_settings=settings)
         assert "HƯỚNG DẪN TỔ CHỨC" in prompt
         assert "Phường Lưu Kiếm" in prompt
+        assert "Không được đổi tên" in prompt
+
+    def test_org_identity_override_overlay_is_stripped(self):
+        """Identity-redefining overlay lines should be removed before prompt injection."""
+        from app.models.organization import OrgSettings
+        settings = OrgSettings(**{
+            "ai_config": {
+                "persona_prompt_overlay": (
+                    "Bạn là trợ lý AI của UBND Phường Lưu Kiếm.\n"
+                    "Ưu tiên compliance và diễn đạt ngắn gọn."
+                ),
+            },
+        })
+        prompt = self._build_prompt(org_id="phuong-luu-kiem", org_settings=settings)
+        assert "HƯỚNG DẪN TỔ CHỨC" in prompt
+        assert "Ưu tiên compliance" in prompt
+        assert "Bạn là trợ lý AI" not in prompt
 
     def test_default_chatbot_name_no_display_section(self):
-        """Org keeping 'Wiii' chatbot name doesn't get TÊN HIỂN THỊ section."""
+        """Org keeping 'Wiii' chatbot name doesn't get workspace label section."""
         from app.models.organization import OrgSettings
         settings = OrgSettings()  # All defaults
         prompt = self._build_prompt(org_id="test-org", org_settings=settings)
-        assert "TÊN HIỂN THỊ" not in prompt
+        assert "NHÃN WORKSPACE" not in prompt
 
 
 # ============================================================================
@@ -539,7 +557,9 @@ class TestSettingsAPI:
                 with patch("app.core.org_settings.get_org_permissions", return_value=["read:chat", "read:analytics"]):
                     request = MagicMock()
                     result = await get_org_permissions_endpoint(request, "test-org", auth)
-                    assert result["role"] == "teacher"
+                    assert result["role"] == "student"
+                    assert result["permission_role"] == "student"
+                    assert result["legacy_role"] == "teacher"
                     assert "read:analytics" in result["permissions"]
 
     @pytest.mark.asyncio

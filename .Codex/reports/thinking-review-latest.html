@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wiii Golden Eval Review</title>
+  <style>
+    :root {
+      --bg: #f4efe7;
+      --panel: rgba(255,255,255,0.72);
+      --ink: #172026;
+      --muted: #62707c;
+      --border: rgba(23,32,38,0.12);
+      --accent: #0f766e;
+      --accent-soft: rgba(15,118,110,0.12);
+      --thinking: #eef1f4;
+      --tool: #f1f7ff;
+      --answer: #16252e;
+      --answer-ink: #f7fbff;
+      --user: #fff7e8;
+      --shadow: 0 18px 40px rgba(18, 33, 43, 0.08);
+      --radius: 22px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "SF Pro Text", "Inter", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(15,118,110,0.12), transparent 30%),
+        radial-gradient(circle at top right, rgba(245,158,11,0.12), transparent 30%),
+        linear-gradient(180deg, #fbf8f2 0%, var(--bg) 100%);
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 40px 24px 72px;
+    }
+    .hero {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(16px);
+      border-radius: 28px;
+      padding: 28px 30px;
+      box-shadow: var(--shadow);
+      margin-bottom: 28px;
+    }
+    .eyebrow {
+      color: var(--accent);
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(28px, 4vw, 44px);
+      line-height: 1.05;
+    }
+    h2 {
+      margin: 0;
+      font-size: clamp(20px, 2vw, 28px);
+      line-height: 1.25;
+    }
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 960px;
+      font-size: 15px;
+      line-height: 1.65;
+    }
+    .hero-meta {
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .badge-label {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+    .badge-value {
+      color: var(--ink);
+      font-weight: 700;
+    }
+    .case-block, .turn-block {
+      margin-bottom: 24px;
+    }
+    .session-block {
+      background: rgba(255,255,255,0.36);
+      border: 1px solid rgba(23,32,38,0.08);
+      border-radius: 28px;
+      padding: 22px 18px 8px;
+      margin-bottom: 28px;
+    }
+    .session-head, .case-header {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      margin: 0 0 14px;
+    }
+    .case-index {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+    }
+    .session-goal, .turn-notes {
+      color: var(--muted);
+      margin-bottom: 12px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .turn-notes {
+      font-size: 13px;
+      margin-top: -4px;
+    }
+    .transport-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .transport-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+      min-height: 420px;
+    }
+    .transport-card.missing {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+    }
+    .transport-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .transport-name {
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+    }
+    .transport-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      flex: 1;
+    }
+    .raw-link {
+      text-decoration: none;
+      color: var(--ink);
+      border: 1px solid var(--border);
+      background: white;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: white;
+      border: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .chip-pass {
+      background: rgba(15,118,110,0.12);
+      color: #0f766e;
+      border-color: rgba(15,118,110,0.18);
+    }
+    .chip-warn {
+      background: rgba(245,158,11,0.12);
+      color: #b45309;
+      border-color: rgba(245,158,11,0.18);
+    }
+    .chip-fail {
+      background: rgba(220,38,38,0.12);
+      color: #b91c1c;
+      border-color: rgba(220,38,38,0.18);
+    }
+    .runtime-block {
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(15,118,110,0.18);
+      background: rgba(15,118,110,0.05);
+    }
+    .runtime-label {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      color: var(--accent);
+    }
+    .runtime-chips {
+      margin-bottom: 6px;
+    }
+    .runtime-route {
+      font-size: 13px;
+      color: var(--muted);
+      word-break: break-word;
+    }
+    .chat-lane {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .bubble {
+      padding: 14px 16px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .bubble-title {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .bubble-user { background: var(--user); }
+    .bubble-thinking { background: var(--thinking); }
+    .bubble-tool { background: var(--tool); }
+    .bubble-answer {
+      background: var(--answer);
+      color: var(--answer-ink);
+      border-color: rgba(255,255,255,0.08);
+    }
+    .bubble-answer .bubble-title { color: rgba(255,255,255,0.74); }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: "Consolas", "SF Mono", monospace;
+      font-size: 13px;
+      line-height: 1.65;
+    }
+    .empty {
+      color: var(--muted);
+      font-style: italic;
+      font-size: 14px;
+    }
+    .trace-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .trace-item {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.7);
+      border-radius: 16px;
+      padding: 12px;
+    }
+    .trace-kind {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+    .trace-kind-call {
+      background: rgba(15,118,110,0.12);
+      color: #0f766e;
+    }
+    .trace-kind-result, .trace-kind-action {
+      background: rgba(30,64,175,0.12);
+      color: #1d4ed8;
+    }
+    .trace-title {
+      font-size: 13px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+    @media (max-width: 980px) {
+      .transport-grid { grid-template-columns: 1fr; }
+      .wrap { padding: 24px 16px 48px; }
+      .hero { padding: 22px 20px; }
+      .session-block { padding: 18px 14px 6px; }
+    }
+    </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div class="eyebrow">Wiii Golden Eval</div>
+      <h1>Regression Review</h1>
+      <p>
+        Trang này hiển thị các session kiểm thử chuẩn của Wiii theo đúng flow chat thật: mỗi session có nhiều turn,
+        mỗi turn đặt <strong>sync</strong> và <strong>stream</strong> cạnh nhau để soi answer, thinking, tool trace,
+        continuity, và regression user-facing.
+      </p>
+      <div class="hero-meta"><span class='badge'><span class='badge-label'>source</span><span class='badge-value'>wiii-golden-eval-2026-04-05-233508.json</span></span><span class='badge'><span class='badge-label'>profiles</span><span class='badge-value'>core</span></span><span class='badge'><span class='badge-label'>sessions</span><span class='badge-value'>1</span></span><span class='badge'><span class='badge-label'>turns</span><span class='badge-value'>2</span></span><span class='badge'><span class='badge-label'>transports</span><span class='badge-value'>4</span></span><span class='badge'><span class='badge-label'>passes</span><span class='badge-value'>4</span></span><span class='badge'><span class='badge-label'>checks</span><span class='badge-value'>0</span></span><span class='badge'><span class='badge-label'>stream thinking</span><span class='badge-value'>2</span></span><span class='badge'><span class='badge-label'>tool trace</span><span class='badge-value'>2</span></span><span class='badge'><span class='badge-label'>avg sync</span><span class='badge-value'>116.083s</span></span><span class='badge'><span class='badge-label'>avg stream</span><span class='badge-value'>122.666s</span></span><span class='badge'><span class='badge-label'>failover</span><span class='badge-value'>0</span></span></div>
+    </section>
+    <section class='session-block'><div class='session-head'><div class='case-index'>Session 1</div><h2>Tutor + Visual Continuity</h2></div><div class='session-goal'>Giữ được nhịp dạy học, follow-up visual, và tool trace cho lane học thuật.</div><div class='chips'><span class='chip'>tutor</span><span class='chip'>visual</span><span class='chip'>continuity</span><span class='chip'>teaching</span></div><section class='case-block turn-block'><div class='case-header'><div class='case-index'>Turn 1</div><h2>Giải thích Quy tắc 15 COLREGs</h2></div><div class='transport-grid'><section class='transport-card'><div class='transport-head'><div class='transport-name'>SYNC</div><div class='transport-meta'><span class='badge'><span class='badge-label'>transport</span><span class='badge-value'>sync</span></span><span class='badge'><span class='badge-label'>agent</span><span class='badge-value'>tutor</span></span><span class='badge'><span class='badge-label'>status</span><span class='badge-value'>200</span></span><span class='badge'><span class='badge-label'>time</span><span class='badge-value'>165.232s</span></span></div><a class='raw-link' href='file:///E:/Sach/Sua/AI_v1/.Codex/reports/golden-sync-tutor_rule15_visual-rule15_explain-2026-04-05-233508.json' target='_blank'>Mở raw</a></div><div class='chips eval-chips'><span class='chip chip-pass'>PASS</span><span class='chip'>has_answer: True</span><span class='chip'>has_visible_thinking: True</span><span class='chip'>agent_matches: True</span><span class='chip'>answer_language: vi</span><span class='chip'>thinking_language: vi</span></div><div class='chat-lane'><article class='bubble bubble-user'><div class='bubble-title'>User</div><pre>Giải thích Quy tắc 15 COLREGs</pre></article><article class='bubble bubble-thinking'><div class='bubble-title'>Thinking</div><pre>Kết quả vừa làm rõ một mốc rất đáng giữ: Cốt lõi rất ngắn gọn: &quot;Thấy ai ở mạn phải, nhường đường cho người đó&quot; Cụ thể cách vận hành nè: 🔹 Tàu nhường đường (give-way vessel): Là tàu nhìn thấy tàu kia nằm ở mạn phải (starboard) của mình.
+
+Chỗ người học còn dễ trượt là Đừng vội bẻ lái &quot;phòng thủ&quot; quá sớm kẻo gây hiểu nhầm hoặc tạo tình huống song song nguy hiểm nha.
+
+Chỉ khi mốc này đủ rõ rồi mới mở tiếp sang 🔹 Tàu được ưu tiên (stand-on vessel): Là tàu nằm ở mạn trái của tàu kia.</pre></article><article class='bubble bubble-lifecycle'><div class='bubble-title'>Thinking Lifecycle</div><div class='chips'><span class='chip'>live=0</span><span class='chip'>final=482</span><span class='chip'>segments=1</span><span class='chip'>final_snapshot</span><span class='chip'>final_snapshot</span></div><pre>Kết quả vừa làm rõ một mốc rất đáng giữ: Cốt lõi rất ngắn gọn: &quot;Thấy ai ở mạn phải, nhường đường cho người đó&quot; Cụ thể cách vận hành nè: 🔹 Tàu nhường đường (give-way vessel): Là tàu nhìn thấy tàu kia nằm ở mạn phải (starboard) của mình.
+
+Chỗ người học còn dễ trượt là Đừng vội bẻ lái &quot;phòng thủ&quot; quá sớm kẻo gây hiểu nhầm hoặc tạo tình huống song song nguy hiểm nha.
+
+Chỉ khi mốc này đủ rõ rồi mới mở tiếp sang 🔹 Tàu được ưu tiên (stand-on vessel): Là tàu nằm ở mạn trái của tàu kia.</pre></article><article class='bubble bubble-tool'><div class='bubble-title'>Research Trace</div><div class='trace-list'><div class='trace-item'><div class='trace-kind trace-kind-call'>CALL</div><div class='trace-title'>tool_knowledge_search</div><pre>Tra cứu: COLREGs Rule 15 crossing traffic</pre></div></div></article><article class='bubble bubble-answer'><div class='bubble-title'>Answer</div><pre>Quy tắc 15 COLREGs - Tình huống cắt ngang **Quy tắc 15** xử lý tình huống **cắt ngang (crossing situation)** giữa hai tàu cơ giới. Nguyên tắc cốt lõi rất đơn giản: **&quot;Thấy ai ở mạn phải, nhường đường cho người đó&quot;** Phân vai trong tình huống cắt ngang: **Tàu nhường đường (Give-way vessel):**
+- Là tàu nhìn thấy tàu kia nằm ở **mạn phải (starboard)** của mình
+- Phải hành động sớm, dứt khoát — thường là giảm tốc hoặc đổi hướng
+- Đặc biệt **tránh cắt ngang phía trước mũi tàu kia** nếu hoàn cảnh cho phép **Tàu được ưu tiên (Stand-on vessel):**
+- Là tàu nằm ở **mạn trái (port)** của tàu kia
+- Nhiệm vụ là **giữ nguyên hướng đi và tốc độ** cho đến khi thấy rõ tàu nhường đường đang thực hiện hành động phù hợp
+- Đừng vội bẻ lái &quot;phòng thủ&quot; quá sớm kẻo gây hiểu nhầm hoặc tạo tình huống song song nguy hiểm Ví dụ dễ hiểu:
+Cứ tưởng tượng hai người đi bộ trong một ngã tư không có đèn tín hiệu. Bạn nhìn thấy người kia đang tiến từ hướng tay phải mình sang. Phản xạ tự nhiên là bạn sẽ chững bước hoặc đi chậm lại để họ qua trước, thay vì cố tăng tốc để &quot;cắt mặt&quot; họ đúng không? Trên biển cũng y chang vậy, chỉ khác là &quot;chững bước&quot; được thực hiện bằng cách giảm máy hoặc bẻ lái để tạo ra điểm tiếp cận gần nhất (CPA) đủ an toàn ≽^•⩊•^≼ Bạn đang ôn phần này cho kỳ thi thực hành, hay có tình huống cắt ngang cụ thể nào đang băn khoăn?</pre></article></div></section><section class='transport-card'><div class='transport-head'><div class='transport-name'>STREAM</div><div class='transport-meta'><span class='badge'><span class='badge-label'>transport</span><span class='badge-value'>stream</span></span><span class='badge'><span class='badge-label'>agent</span><span class='badge-value'>tutor_agent</span></span><span class='badge'><span class='badge-label'>status</span><span class='badge-value'>200</span></span><span class='badge'><span class='badge-label'>time</span><span class='badge-value'>193.44300413131714s</span></span><span class='badge'><span class='badge-label'>events</span><span class='badge-value'>68</span></span></div><a class='raw-link' href='file:///E:/Sach/Sua/AI_v1/.Codex/reports/golden-stream-tutor_rule15_visual-rule15_explain-2026-04-05-233508.txt' target='_blank'>Mở raw</a></div><div class='chips eval-chips'><span class='chip chip-pass'>PASS</span><span class='chip'>has_answer: True</span><span class='chip'>has_visible_thinking: True</span><span class='chip'>duplicate_answer_tail: False</span><span class='chip'>agent_matches: True</span><span class='chip'>answer_language: vi</span><span class='chip'>thinking_language: vi</span></div><div class='chat-lane'><article class='bubble bubble-user'><div class='bubble-title'>User</div><pre>Giải thích Quy tắc 15 COLREGs</pre></article><article class='bubble bubble-thinking'><div class='bubble-title'>Thinking</div><pre>Kết quả vừa làm rõ một mốc rất đáng giữ: Khi hai tàu đi cắt hướng nhau và có nguy cơ va chạm, luật chơi được thiết kế rất rõ ràng để tránh &quot;đoán mò&quot; giữa hai thuyền trưởng.
+
+Chỗ người học còn dễ trượt là Phát hiện sớm &amp; hành động dứt khoát: Đừng đợi đến phút chót.
+
+Chỉ khi mốc này đủ rõ rồi mới mở tiếp sang Ngược lại, tàu thấy tàu kia ở mạn trái sẽ là tàu được ưu tiên (stand-on vessel).</pre></article><article class='bubble bubble-lifecycle'><div class='bubble-title'>Thinking Lifecycle</div><div class='chips'><span class='chip'>live=403</span><span class='chip'>final=389</span><span class='chip'>segments=3</span><span class='chip'>final_snapshot</span><span class='chip'>pre_tool</span><span class='chip'>final_snapshot</span><span class='chip'>live_native</span></div><pre>Kết quả vừa làm rõ một mốc rất đáng giữ: Khi hai tàu đi cắt hướng nhau và có nguy cơ va chạm, luật chơi được thiết kế rất rõ ràng để tránh &quot;đoán mò&quot; giữa hai thuyền trưởng.
+
+Chỗ người học còn dễ trượt là Phát hiện sớm &amp; hành động dứt khoát: Đừng đợi đến phút chót.
+
+Chỉ khi mốc này đủ rõ rồi mới mở tiếp sang Ngược lại, tàu thấy tàu kia ở mạn trái sẽ là tàu được ưu tiên (stand-on vessel).</pre></article><article class='bubble bubble-tool'><div class='bubble-title'>Research Trace</div><div class='trace-list'><div class='trace-item'><div class='trace-kind trace-kind-call'>CALL</div><div class='trace-title'>tool_knowledge_search</div><pre>{
+  &quot;query&quot;: &quot;Rule 15 COLREGs crossing situation give-way vessel&quot;
+}</pre></div><div class='trace-item'><div class='trace-kind trace-kind-result'>RESULT</div><div class='trace-title'>tool_knowledge_search</div><pre>Quy tắc 15 COLREGs xử lý tình huống **cắt ngang (crossing situation)** giữa hai tàu máy. Khi hai tàu đi cắt hướng nhau và có nguy cơ va chạm, luật chơi được thiết kế rất rõ ràng để tránh &quot;đoán mò&quot; giữa hai thuyền trưởng. 🎯 **Nhận diện tàu nhường đường (give-way vessel)** Quy tắc cực kỳ đơn giản: Tàu nào **nhìn thấy tàu kia ở mạn phải (starboard)** của mình → tàu đó là tàu nhường đường. Ngược lại, tàu thấy tàu kia ở mạn trái sẽ là tàu được ưu tiên (stand-on vessel). ⚓ **Tàu nhường đường phải hành</pre></div></div></article><article class='bubble bubble-answer'><div class='bubble-title'>Answer</div><pre>Quy tắc 15 COLREGs - Tình huống cắt hướng **Quy tắc 15** áp dụng khi hai tàu máy đi cắt hướng nhau và có nguy cơ va chạm. Đây là tình huống phổ biến nhất trên biển, và quy tắc này giúp xác định rõ trách nhiệm giữa hai thuyền trưởng. Cách xác định tàu nhường đường và tàu được ưu tiên - **Tàu nhường đường (Give-way vessel)**: Tàu nhìn thấy tàu kia ở **mạn phải (starboard)** của mình
+- **Tàu được ưu tiên (Stand-on vessel)**: Tàu nhìn thấy tàu kia ở **mạn trái (port)** của mình Trách nhiệm của tàu nhường đường 1. **Phát hiện sớm &amp; hành động dứt khoát**: - Không đợi đến phút chót mới hành động - Phải giảm tốc hoặc đổi hướng đủ lớn để tạo khoảng cách tiếp cận gần nhất (CPA) an toàn - Thay đổi hướng/tốc độ quá nhỏ sẽ khiến tàu kia không nhận ra ý định của bạn 2. **Không cắt ngang mũi tàu được ưu tiên**: - Nếu hoàn cảnh cho phép, tránh đi cắt qua phía trước mũi tàu được ưu tiên - Giống như ở ngã tư đường bộ: xe bên phải có quyền đi trước, bạn không nên &quot;chèn đầu&quot; Trách nhiệm của tàu được ưu tiên - Phải **giữ nguyên hướng và tốc độ** cho đến khi thấy rõ tàu nhường đường đang hành động đúng quy tắc
+- Chỉ khi nguy cơ va chạm quá gần mà tàu kia vẫn không nhúc nhích, tàu được ưu tiên mới được phép tự hành động tránh va (chuyển sang Quy tắc 17) Ví dụ thực tế Hãy tưởng tượng bạn đang lái xe đến ngã tư không có đèn tín hiệu. Nếu xe kia ở bên phải bạn, bạn phải nhường đường. Tương tự trên biển, nếu tàu kia ở mạn phải bạn, bạn phải nhường đường bằng cách giảm tốc hoặc đổi hướng để tránh đi qua phía trước mũi tàu kia. Bạn đang tìm hiểu về quy tắc này để phục vụ cho mục đích gì? Nếu có tình huống cụ thể cần phân tích, mình có thể cùng bạn tính toán hướng né và CPA an toàn~</pre></article></div></section></div></section><section class='case-block turn-block'><div class='case-header'><div class='case-index'>Turn 2</div><h2>tạo visual cho mình xem được chứ?</h2></div><div class='transport-grid'><section class='transport-card'><div class='transport-head'><div class='transport-name'>SYNC</div><div class='transport-meta'><span class='badge'><span class='badge-label'>transport</span><span class='badge-value'>sync</span></span><span class='badge'><span class='badge-label'>agent</span><span class='badge-value'>tutor</span></span><span class='badge'><span class='badge-label'>status</span><span class='badge-value'>200</span></span><span class='badge'><span class='badge-label'>time</span><span class='badge-value'>66.933s</span></span></div><a class='raw-link' href='file:///E:/Sach/Sua/AI_v1/.Codex/reports/golden-sync-tutor_rule15_visual-rule15_visual-2026-04-05-233508.json' target='_blank'>Mở raw</a></div><div class='chips eval-chips'><span class='chip chip-pass'>PASS</span><span class='chip'>has_answer: True</span><span class='chip'>agent_matches: True</span><span class='chip'>answer_language: vi</span><span class='chip'>thinking_language: vi</span></div><div class='chat-lane'><article class='bubble bubble-user'><div class='bubble-title'>User</div><pre>tạo visual cho mình xem được chứ?</pre></article><article class='bubble bubble-thinking'><div class='bubble-title'>Thinking</div><pre>Visual vừa khóa lại khá rõ điều này: Claim chinh ma figure dang khoa lai: Đặt Tàu Nhường Đường (Give-way Vessel) cạnh Tàu Được Ưu Tiên (Stand-on Vessel) để thấy điểm khác biệt chính.
+
+Điểm nên neo tiếp theo là Tieu de hoac diem nhin cua figure: Quy tắc 15 COLREGs - Tình huống cắt ngang.
+
+Nếu nối tiếp, mình nên giữ người học ở đúng mốc này rồi mới mở rộng.</pre></article><article class='bubble bubble-lifecycle'><div class='bubble-title'>Thinking Lifecycle</div><div class='chips'><span class='chip'>live=0</span><span class='chip'>final=357</span><span class='chip'>segments=1</span><span class='chip'>final_snapshot</span><span class='chip'>final_snapshot</span></div><pre>Visual vừa khóa lại khá rõ điều này: Claim chinh ma figure dang khoa lai: Đặt Tàu Nhường Đường (Give-way Vessel) cạnh Tàu Được Ưu Tiên (Stand-on Vessel) để thấy điểm khác biệt chính.
+
+Điểm nên neo tiếp theo là Tieu de hoac diem nhin cua figure: Quy tắc 15 COLREGs - Tình huống cắt ngang.
+
+Nếu nối tiếp, mình nên giữ người học ở đúng mốc này rồi mới mở rộng.</pre></article><article class='bubble bubble-tool'><div class='bubble-title'>Research Trace</div><div class='trace-list'><div class='trace-item'><div class='trace-kind trace-kind-call'>CALL</div><div class='trace-title'>tool_generate_visual</div><pre>Gọi tool: tool_generate_visual</pre></div></div></article><article class='bubble bubble-answer'><div class='bubble-title'>Answer</div><pre>Đây là visual minh họa Quy tắc 15 COLREGs về tình huống cắt ngang giữa hai tàu: Visual này cho thấy rõ sự khác biệt giữa hai loại tàu trong tình huống cắt ngang: **Tàu A (màu xanh dương)** - Tàu nhường đường:
+- Phải hành động sớm, dứt khoát
+- Giảm tốc hoặc đổi hướng
+- Tránh cắt ngang phía trước mũi tàu kia
+- Nhường đường cho tàu ở mạn trái **Tàu B (màu đỏ)** - Tàu được ưu tiên:
+- Giữ nguyên hướng đi và tốc độ
+- Không thay đổi hướng đi
+- Chỉ hành động khi thấy tàu nhường đường không làm đúng Điểm quan trọng nhất cần nhớ: **&quot;Thấy ai ở mạn phải, nhường đường cho người đó&quot;**. Tàu A thấy tàu B ở mạn phải nên phải nhường đường, trong khi tàu B ở mạn trái nên có quyền đi trước ≽^•⩊•^≼ Visual này giúp bạn dễ dàng hình dung tình huống và phân biệt trách nhiệm của mỗi tàu khi cắt ngang nhau trên biển.</pre></article></div></section><section class='transport-card'><div class='transport-head'><div class='transport-name'>STREAM</div><div class='transport-meta'><span class='badge'><span class='badge-label'>transport</span><span class='badge-value'>stream</span></span><span class='badge'><span class='badge-label'>agent</span><span class='badge-value'>tutor_agent</span></span><span class='badge'><span class='badge-label'>status</span><span class='badge-value'>200</span></span><span class='badge'><span class='badge-label'>time</span><span class='badge-value'>51.889379262924194s</span></span><span class='badge'><span class='badge-label'>events</span><span class='badge-value'>47</span></span></div><a class='raw-link' href='file:///E:/Sach/Sua/AI_v1/.Codex/reports/golden-stream-tutor_rule15_visual-rule15_visual-2026-04-05-233508.txt' target='_blank'>Mở raw</a></div><div class='chips eval-chips'><span class='chip chip-pass'>PASS</span><span class='chip'>has_answer: True</span><span class='chip'>has_visible_thinking: True</span><span class='chip'>has_tool_trace: True</span><span class='chip'>duplicate_answer_tail: False</span><span class='chip'>agent_matches: True</span><span class='chip'>answer_language: vi</span><span class='chip'>thinking_language: vi</span></div><div class='chat-lane'><article class='bubble bubble-user'><div class='bubble-title'>User</div><pre>tạo visual cho mình xem được chứ?</pre></article><article class='bubble bubble-thinking'><div class='bubble-title'>Thinking</div><pre>Mình sẽ tạo một visual giúp cậu hiểu rõ hơn về Quy tắc 15 COLREGs~
+
+Visual vừa khóa lại khá rõ điều này: Claim chinh ma figure dang khoa lai: Đặt Tàu nhường đường (Give-way vessel) cạnh Tàu được ưu tiên (Stand-on vessel) để thấy điểm khác biệt chính.
+
+Điểm nên neo tiếp theo là Tieu de hoac diem nhin cua figure: Quy tắc 15 COLREGs - Tình huống cắt hướng.
+
+Nếu nối tiếp, mình nên giữ người học ở đúng mốc này rồi mới mở rộng.</pre></article><article class='bubble bubble-lifecycle'><div class='bubble-title'>Thinking Lifecycle</div><div class='chips'><span class='chip'>live=440</span><span class='chip'>final=425</span><span class='chip'>segments=5</span><span class='chip'>final_snapshot</span><span class='chip'>post_tool</span><span class='chip'>pre_tool</span><span class='chip'>final_snapshot</span><span class='chip'>live_native</span></div><pre>Mình sẽ tạo một visual giúp cậu hiểu rõ hơn về Quy tắc 15 COLREGs~
+
+Visual vừa khóa lại khá rõ điều này: Claim chinh ma figure dang khoa lai: Đặt Tàu nhường đường (Give-way vessel) cạnh Tàu được ưu tiên (Stand-on vessel) để thấy điểm khác biệt chính.
+
+Điểm nên neo tiếp theo là Tieu de hoac diem nhin cua figure: Quy tắc 15 COLREGs - Tình huống cắt hướng.
+
+Nếu nối tiếp, mình nên giữ người học ở đúng mốc này rồi mới mở rộng.</pre></article><article class='bubble bubble-tool'><div class='bubble-title'>Research Trace</div><div class='trace-list'><div class='trace-item'><div class='trace-kind trace-kind-call'>CALL</div><div class='trace-title'>tool_generate_visual</div><pre>{
+  &quot;visual_type&quot;: &quot;comparison&quot;,
+  &quot;title&quot;: &quot;Quy tắc 15 COLREGs - Tình huống cắt hướng&quot;,
+  &quot;spec_json&quot;: &quot;{\&quot;left\&quot;:{\&quot;title\&quot;:\&quot;Tàu nhường đường (Give-way vessel)\&quot;,\&quot;subtitle\&quot;:\&quot;Tàu nhìn thấy tàu khác ở MẠN PHẢI\&quot;,\&quot;highlight\&quot;:\&quot;Phải chủ động tránh\&quot;,\&quot;items\&quot;:[\&quot;Giảm tốc độ hoặc đổi hướng\&quot;,\&quot;Không cắt ngang mũi tàu kia\&quot;,\&quot;Hành động sớm và dứt khoát\&quot;,\&quot;Giữ khoảng cách an toàn (CPA)\&quot;]},\&quot;right\&quot;:{\&quot;title\&quot;:\&quot;Tàu được ưu tiên (Stand-on vessel)\&quot;,\&quot;subtitle\&quot;:\&quot;Tàu nhìn thấy tàu khác ở MẠN TRÁI\&quot;,\&quot;highlight\&quot;:\&quot;Giữ nguyên hướng/tốc độ\&quot;,\&quot;items\&quot;:[\&quot;Không thay đổi hướng/tốc độ\&quot;,\&quot;Chỉ hành động khi tàu kia không nhường đường\&quot;,\&quot;Giữ khoảng cách an toàn\&quot;,\&quot;Theo dõi tình hình liên tục\&quot;]},\&quot;center\&quot;:{\&quot;title\&quot;:\&quot;Nguy cơ va chạm khi cắt hướng\&quot;,\&quot;subtitle\&quot;:\&quot;Hai tàu máy đi cắt hướng nhau\&quot;}}&quot;,
+  &quot;code_html&quot;: &quot;&lt;style&gt;*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui,sans-serif;background:transparent;color:#333}.root{max-width:800px;margin:0 auto;padding:20px}.title{font-size:20px;font-weight:600;margin-bottom:10px;text-align:center;color:#2c3e50}.subtitle{font-size:14px;color:#7f8c8d;margin-bottom:30px;text-align:center}.main-container{display:flex;gap:30px;position:relative}.main-container::before{content:&#x27;&#x27;;position:absolute;top:50%;left:0;right:0;height:2px;background:linear-gradient(90deg,#e74c3c,#3498db);transform:translateY(-50%)}.center-box{position:relative;z-index:1;background:#f8f9fa;padding:15px;border-radius:8px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,0.1)}.center-box h3{font-size:16px;font-weight:600;color:#34495e;margin-bottom:5px}.box{flex:1;background:#fff;border-radius:12px;padding:20px;box-shadow:0 4px 15px rgba(0,0,0,0.1);position:relative;z-index:1}.box-title{font-size:18px;font-weight:600;margin-bottom:8px}.box-subtitle{font-size:14px;color:#7f8c8d;margin-bottom:15px;font-style:italic}.box-highlight{background:linear-gradient(135deg,#e74c3c,#c0392b);color:#fff;padding:8px 15px;border-radius:20px;font-size:14px;font-weight:600;text-align:center;margin-bottom:20px}.right .box-highlight{background:linear-gradient(135deg,#3498db,#2980b9)}.items{list-style:none}.items li{padding:8px 0;border-bottom:1px solid #ecf0f1;position:relative;padding-left:20px}.items li:before{content:&#x27;•&#x27;;position:absolute;left:0;color:#3498db;font-weight:bold}.right .items li:before{color:#e74c3c}.vessel-icon{width:60px;height:40px;margin:0 auto 15px;position:relative}.vessel-icon svg{width:100%;height:100%}.arrow{position:absolute;top:50%;transform:translateY(-50%);width:100%;height:2px;background:#34495e}.arrow::after{content:&#x27;&#x27;;position:absolute;right:0;top:-4px;width:0;height:0;border-left:8px solid #34495e;border-top:5px solid transparent;border-bottom:5px solid transparent}&lt;/style&gt;&lt;div class=\&quot;root\&quot;&gt;&lt;div class=\&quot;title\&quot;&gt;Quy tắc 15 COLREGs - Tình huống cắt hướng&lt;/div&gt;&lt;div class=\&quot;subtitle\&quot;&gt;Khi hai tàu máy đi cắt hướng nhau có nguy cơ va chạm&lt;/div&gt;&lt;div class=\&quot;main-container\&quot;&gt;&lt;div class=\&quot;box left\&quot;&gt;&lt;div class=\&quot;box-title\&quot;&gt;Tàu nhường đường&lt;/div&gt;&lt;div class=\&quot;box-subtitle\&quot;&gt;Tàu nhìn thấy tàu khác ở MẠN PHẢI&lt;/div&gt;&lt;div class=\&quot;box-highlight\&quot;&gt;Phải chủ động tránh&lt;/div&gt;&lt;ul class=\&quot;items\&quot;&gt;&lt;li&gt;Giảm tốc độ hoặc đổi hướng&lt;/li&gt;&lt;li&gt;Không cắt ngang mũi tàu kia&lt;/li&gt;&lt;li&gt;Hành động sớm và dứt khoát&lt;/li&gt;&lt;li&gt;Giữ khoảng cách an toàn (CPA)&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;&lt;div class=\&quot;center-box\&quot;&gt;&lt;h3&gt;Nguy cơ va chạm&lt;/h3&gt;&lt;div class=\&quot;vessel-icon\&quot;&gt;&lt;svg viewBox=\&quot;0 0 60 40\&quot;&gt;&lt;path d=\&quot;M5,20 L55,20\&quot; stroke=\&quot;#34495e\&quot; stroke-width=\&quot;2\&quot;/&gt;&lt;path d=\&quot;M5,20 L15,10 L15,30 Z\&quot; fill=\&quot;#e74c3c\&quot;/&gt;&lt;path d=\&quot;M55,20 L45,10 L45,30 Z\&quot; fill=\&quot;#3498db\&quot;/&gt;&lt;/svg&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=\&quot;box right\&quot;&gt;&lt;div class=\&quot;box-title\&quot;&gt;Tàu được ưu tiên&lt;/div&gt;&lt;div class=\&quot;box-subtitle\&quot;&gt;Tàu nhìn thấy tàu khác ở MẠN TRÁI&lt;/div&gt;&lt;div class=\&quot;box-highlight\&quot;&gt;Giữ nguyên hướng/tốc độ&lt;/div&gt;&lt;ul class=\&quot;items\&quot;&gt;&lt;li&gt;Không thay đổi hướng/tốc độ&lt;/li&gt;&lt;li&gt;Chỉ hành động khi tàu kia không nhường đường&lt;/li&gt;&lt;li&gt;Giữ khoảng cách an toàn&lt;/li&gt;&lt;li&gt;Theo dõi tình hình liên tục&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&quot;
+}</pre></div><div class='trace-item'><div class='trace-kind trace-kind-result'>RESULT</div><div class='trace-title'>tool_generate_visual</div><pre>{&quot;id&quot;: &quot;visual-64621ba7414b&quot;, &quot;visual_session_id&quot;: &quot;vs-comparison-c61b2dea05&quot;, &quot;type&quot;: &quot;comparison&quot;, &quot;renderer_kind&quot;: &quot;inline_html&quot;, &quot;shell_variant&quot;: &quot;editorial&quot;, &quot;patch_strategy&quot;: &quot;replace_html&quot;, &quot;figure_group_id&quot;: &quot;fg-comparison-266f29e862&quot;, &quot;figure_index&quot;: 1, &quot;figure_total&quot;: 1, &quot;pedagogical_role&quot;: &quot;comparison&quot;, &quot;chrome_mode&quot;: &quot;editorial&quot;, &quot;claim&quot;: &quot;Đặt Tàu nhường đường (Give-way vessel) cạnh Tàu được ưu tiên (Stand-on vessel) để thấy điểm khác biệt chính.&quot;, &quot;presentation_intent&quot;: &quot;article_fig</pre></div></div></article><article class='bubble bubble-answer'><div class='bubble-title'>Answer</div><pre>Đây là visual giúp cậu dễ hình dung về Quy tắc 15 COLREGs: ![Quy tắc 15 COLREGs - Tình huống cắt hướng](https://example.com/visual-64621ba7414b) Visual này so sánh trực tiếp hai loại tàu trong tình huống cắt hướng: **Tàu nhường đường (Give-way vessel)** - màu đỏ:
+- Nhìn thấy tàu khác ở MẠN PHẢI
+- Phải chủ động tránh
+- Giảm tốc độ hoặc đổi hướng
+- Không cắt ngang mũi tàu kia
+- Hành động sớm và dứt khoát **Tàu được ưu tiên (Stand-on vessel)** - màu xanh:
+- Nhìn thấy tàu khác ở MẠN TRÁI
+- Giữ nguyên hướng/tốc độ
+- Chỉ hành động khi tàu kia không nhường đường
+- Theo dõi tình hình liên tục Visual này giúp thấy rõ sự khác biệt trong trách nhiệm giữa hai loại tàu khi cắt hướng nhau trên biển. Điều quan trọng là xác định đúng tàu nhường đường và tàu được ưu tiên để áp dụng đúng quy tắc an toàn~</pre></article></div></section></div></section></section>
+  </main>
+</body>
+</html>

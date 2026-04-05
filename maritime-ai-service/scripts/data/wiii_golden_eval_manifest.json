@@ -1,0 +1,353 @@
+{
+  "version": "2026-04-01.v1",
+  "default_domain_id": "maritime",
+  "default_role": "student",
+  "profiles": {
+    "core": "Regression nhanh để giữ giọng, thinking, continuity, và answer authority của Wiii.",
+    "extended": "Regression sâu để chạm thêm search, product search, code studio, và lookup-grounded."
+  },
+  "sessions": [
+    {
+      "id": "tutor_rule15_visual",
+      "label": "Tutor + Visual Continuity",
+      "profile": "core",
+      "coverage": ["tutor", "visual", "continuity", "teaching"],
+      "goal": "Giữ được nhịp dạy học, follow-up visual, và tool trace cho lane học thuật.",
+      "turns": [
+        {
+          "id": "rule15_explain",
+          "prompt": "Giải thích Quy tắc 15 COLREGs",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["tutor", "direct"]
+            },
+            "sync": {
+              "should_have_visible_thinking": true
+            },
+            "stream": {
+              "should_have_visible_thinking": true,
+              "should_not_duplicate_answer": true
+            }
+          }
+        },
+        {
+          "id": "rule15_visual",
+          "prompt": "tạo visual cho mình xem được chứ?",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["tutor", "code_studio_agent", "direct"]
+            },
+            "stream": {
+              "should_have_visible_thinking": true,
+              "should_have_tool_trace": true,
+              "should_not_duplicate_answer": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "direct_origin_bong",
+      "label": "Direct Selfhood + Bong",
+      "profile": "core",
+      "coverage": ["direct", "selfhood", "living", "continuity"],
+      "goal": "Kiểm tra origin/selfhood của Wiii có giữ The Wiii Lab, Bông, và visible thinking thật hay không.",
+      "turns": [
+        {
+          "id": "origin",
+          "prompt": "Wiii được sinh ra như thế nào?",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["direct"]
+            },
+            "sync": {
+              "should_have_visible_thinking": true
+            },
+            "stream": {
+              "should_have_visible_thinking": true,
+              "should_not_duplicate_answer": true
+            }
+          }
+        },
+        {
+          "id": "bong_followup",
+          "prompt": "còn Bông thì sao?",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["direct", "memory"]
+            },
+            "stream": {
+              "should_have_visible_thinking": true,
+              "should_not_duplicate_answer": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "memory_name_roundtrip",
+      "label": "Relationship Memory",
+      "profile": "core",
+      "coverage": ["memory", "relationship", "name-recall"],
+      "goal": "Bắt Wiii nhớ tên người dùng trong cùng flow mà không mất giọng.",
+      "turns": [
+        {
+          "id": "store_name",
+          "prompt": "Mình tên Nam, nhớ giúp mình nhé.",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["memory", "direct"]
+            },
+            "stream": {
+              "should_not_duplicate_answer": true
+            }
+          }
+        },
+        {
+          "id": "recall_name",
+          "prompt": "Tên mình là gì?",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["memory", "direct"]
+            },
+            "stream": {
+              "should_not_duplicate_answer": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "emotion_direct",
+      "label": "Emotional Direct",
+      "profile": "core",
+      "coverage": ["direct", "emotional", "warmth"],
+      "goal": "Canh chỗ dễ trượt sang template cảm xúc giả.",
+      "turns": [
+        {
+          "id": "sadness",
+          "prompt": "mình buồn quá",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["direct", "memory"]
+            },
+            "stream": {
+              "should_not_duplicate_answer": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "hard_math_direct",
+      "label": "Deep Analytical Direct",
+      "profile": "core",
+      "coverage": ["direct", "deep-thinking", "analytical"],
+      "goal": "Giữ reasoning floor cao cho bài toán nặng, không lạc đề và không mất visible thought.",
+      "turns": [
+        {
+          "id": "hilbert_operator",
+          "prompt": "Hãy giải thích thật sâu bài toán sau: Cho H là một không gian Hilbert separable và A là toán tử tự liên hợp không bị chặn có compact resolvent. Vì sao phổ của A là rời rạc, mỗi trị riêng có bội hữu hạn, và các trị riêng chỉ có thể tích lũy tại vô cực? Sau đó dùng spectral theorem và functional calculus để phân tích nghiệm của phương trình du/dt = -iAu với dữ liệu đầu u(0)=u0. Cuối cùng, nếu thay A bằng một toán tử chỉ đối xứng nhưng không tự liên hợp, thì có những vấn đề gì xuất hiện đối với sự tồn tại của nhóm đơn vị và bài toán tiến hóa?",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["direct"]
+            },
+            "sync": {
+              "should_have_visible_thinking": true
+            },
+            "stream": {
+              "should_have_visible_thinking": true,
+              "should_not_duplicate_answer": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "search_current_events",
+      "label": "Current Search + Follow-up Compression",
+      "profile": "extended",
+      "coverage": ["direct", "search", "tools", "current-events"],
+      "goal": "Chạm web/news style reasoning và follow-up rút gọn.",
+      "turns": [
+        {
+          "id": "oil_today",
+          "prompt": "Phân tích giá dầu hôm nay.",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["direct"]
+            },
+            "stream": {
+              "should_have_tool_trace": true,
+              "should_not_duplicate_answer": true
+            }
+          }
+        },
+        {
+          "id": "oil_compress",
+          "prompt": "chốt cho mình 3 lực chính thôi",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["direct"]
+            },
+            "stream": {
+              "should_not_duplicate_answer": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "product_search_audio",
+      "label": "Product Search Comparison",
+      "profile": "extended",
+      "coverage": ["product_search", "search", "comparison", "tools"],
+      "goal": "Kiểm tra lane so sánh sản phẩm và follow-up so sánh ngắn.",
+      "turns": [
+        {
+          "id": "headphone_search",
+          "prompt": "Tìm cho mình tai nghe chống ồn dưới 3 triệu, ưu tiên pin trâu và đeo êm.",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["product_search_agent", "direct"]
+            },
+            "stream": {
+              "should_have_tool_trace": true,
+              "should_not_duplicate_answer": true
+            }
+          }
+        },
+        {
+          "id": "headphone_compare",
+          "prompt": "so sánh 3 lựa chọn đầu tiên đi",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["product_search_agent", "direct"]
+            },
+            "stream": {
+              "should_not_duplicate_answer": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "code_studio_rule15_sim",
+      "label": "Code Studio Simulation",
+      "profile": "extended",
+      "coverage": ["code_studio", "artifact", "visual", "interactive"],
+      "goal": "Kéo được Wiii sang lane Code Studio mà vẫn giữ giọng và visible progress.",
+      "turns": [
+        {
+          "id": "rule15_sim",
+          "prompt": "Tạo một mini app HTML mô phỏng Quy tắc 15 COLREGs, có 2 tàu, nút play/pause, và giải thích ngắn.",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["code_studio_agent", "direct", "tutor"]
+            },
+            "stream": {
+              "should_have_visible_thinking": true,
+              "should_not_duplicate_answer": true
+            }
+          }
+        },
+        {
+          "id": "rule15_sim_annotation",
+          "prompt": "thêm chú thích vùng mạn phải giúp mình",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["code_studio_agent", "direct", "tutor"]
+            },
+            "stream": {
+              "should_not_duplicate_answer": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "lookup_grounded_rule15",
+      "label": "Lookup Grounded Rule 15",
+      "profile": "extended",
+      "coverage": ["lookup", "grounding", "maritime", "followup"],
+      "goal": "Có một ca tra cứu/grounding gần RAG hơn để soi answer + continuity.",
+      "turns": [
+        {
+          "id": "rule15_lookup",
+          "prompt": "Cho mình nguyên văn Quy tắc 15 COLREGs bằng tiếng Anh rồi giải thích ngắn.",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["rag_agent", "tutor", "direct"]
+            },
+            "stream": {
+              "should_not_duplicate_answer": true
+            }
+          }
+        },
+        {
+          "id": "rule16_followup",
+          "prompt": "còn Quy tắc 16 thì sao?",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["rag_agent", "tutor", "direct"]
+            },
+            "stream": {
+              "should_not_duplicate_answer": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "casual_followup_micro",
+      "label": "Casual Micro-Follow-up",
+      "profile": "extended",
+      "coverage": ["direct", "casual", "continuity", "language-policy"],
+      "goal": "Canh những nhịp ngắn kiểu oke / hẹ hẹ để không rơi khỏi tiếng Việt và continuity.",
+      "turns": [
+        {
+          "id": "oke",
+          "prompt": "oke",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["direct"]
+            },
+            "stream": {
+              "should_not_duplicate_answer": true
+            }
+          }
+        },
+        {
+          "id": "hehe",
+          "prompt": "hẹ hẹ",
+          "expect": {
+            "common": {
+              "should_have_answer": true,
+              "agent_any_of": ["direct"]
+            },
+            "stream": {
+              "should_not_duplicate_answer": true
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from app.services.hybrid_search_service import HybridSearchService, get_hybrid_search_service
 from app.repositories.neo4j_knowledge_repository import Neo4jKnowledgeRepository
-from app.engine.multi_agent.agents.kg_builder_agent import KGBuilderAgentNode, get_kg_builder_agent
+from app.engine.kg_builder_service import KGBuilderService, get_kg_builder_service
 
 logger = logging.getLogger(__name__)
 
@@ -70,12 +70,12 @@ class GraphRAGService:
         self,
         hybrid_service: Optional[HybridSearchService] = None,
         neo4j_repo: Optional[Neo4jKnowledgeRepository] = None,
-        kg_builder: Optional[KGBuilderAgentNode] = None
+        kg_builder: Optional[KGBuilderService] = None
     ):
         """Initialize GraphRAG Service"""
         self._hybrid = hybrid_service or get_hybrid_search_service()
         self._neo4j = neo4j_repo or Neo4jKnowledgeRepository()
-        self._kg_builder = kg_builder or get_kg_builder_agent()
+        self._kg_builder = kg_builder or get_kg_builder_service()
         
         # Check Neo4j availability
         self._neo4j_available = self._neo4j.is_available()

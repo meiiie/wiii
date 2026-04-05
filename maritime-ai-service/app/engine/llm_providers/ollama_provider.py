@@ -12,6 +12,7 @@ uses ``ChatOpenAI`` pointed at Ollama's ``/v1`` endpoint instead of
 """
 
 import logging
+import time
 from typing import Any, List
 
 from langchain_core.language_models import BaseChatModel
@@ -31,6 +32,8 @@ except Exception:
 
 # Default models that support thinking mode via Ollama
 DEFAULT_THINKING_MODELS = ["qwen3", "deepseek-r1", "qwq"]
+_OLLAMA_AVAILABILITY_CACHE_TTL_SECONDS = 15.0
+_ollama_availability_cache: dict[str, tuple[float, bool]] = {}
 
 
 def _normalize_ollama_host(base_url: str | None) -> str | None:
@@ -77,6 +80,62 @@ def _model_supports_thinking(model_name: str) -> bool:
     return any(model_lower.startswith(prefix) for prefix in thinking_models)
 
 
+def _ollama_connectivity_headers(api_key: str | None) -> dict[str, str]:
+    if isinstance(api_key, str) and api_key.strip():
+        return {"Authorization": f"Bearer {api_key.strip()}"}
+    return {}
+
+
+def reset_ollama_availability_cache() -> None:
+    _ollama_availability_cache.clear()
+
+
+def check_ollama_host_reachable(
+    base_url: str | None = None,
+    *,
+    api_key: str | None = None,
+    force_refresh: bool = False,
+) -> bool:
+    normalized = _normalize_ollama_host(
+        base_url if base_url is not None else getattr(settings, "ollama_base_url", None)
+    )
+    if not isinstance(normalized, str) or not normalized.strip():
+        return False
+
+    cache_key = normalized
+    now = time.monotonic()
+    cached = _ollama_availability_cache.get(cache_key)
+    if (
+        not force_refresh
+        and cached is not None
+        and now - cached[0] < _OLLAMA_AVAILABILITY_CACHE_TTL_SECONDS
+    ):
+        return cached[1]
+
+    headers = _ollama_connectivity_headers(
+        api_key if api_key is not None else getattr(settings, "ollama_api_key", None)
+    )
+
+    import httpx
+
+    reachable = False
+    try:
+        with httpx.Client(timeout=2.5) as client:
+            for path in ("/api/version", "/api/tags"):
+                response = client.get(f"{normalized}{path}", headers=headers)
+                if response.status_code < 400:
+                    reachable = True
+                    break
+                if response.status_code in {401, 403}:
+                    reachable = True
+                    break
+    except Exception:
+        reachable = False
+
+    _ollama_availability_cache[cache_key] = (now, reachable)
+    return reachable
+
+
 class OllamaProvider(LLMProvider):
     """
     Ollama provider.
@@ -98,8 +157,9 @@ class OllamaProvider(LLMProvider):
         if not self.is_configured():
             return False
         if _ollama_cb is not None:
-            return _ollama_cb.is_available()
-        return True
+            if not _ollama_cb.is_available():
+                return False
+        return check_ollama_host_reachable()
 
     def create_instance(
         self,
@@ -109,15 +169,16 @@ class OllamaProvider(LLMProvider):
         temperature: float = 0.5,
         **kwargs: Any,
     ) -> BaseChatModel:
+        model_name = kwargs.get("model_name") or kwargs.get("model")
         if getattr(settings, "enable_unified_providers", False):
-            return self._create_unified(tier, thinking_budget, include_thoughts, temperature)
-        return self._create_legacy(tier, thinking_budget, include_thoughts, temperature)
+            return self._create_unified(tier, thinking_budget, include_thoughts, temperature, model_name=model_name)
+        return self._create_legacy(tier, thinking_budget, include_thoughts, temperature, model_name=model_name)
 
     # --------------------------------------------------------------------- #
     # Legacy path: ChatOllama
     # --------------------------------------------------------------------- #
     def _create_legacy(
-        self, tier: str, thinking_budget: int, include_thoughts: bool, temperature: float,
+        self, tier: str, thinking_budget: int, include_thoughts: bool, temperature: float, *, model_name: str | None = None,
     ) -> BaseChatModel:
         try:
             from langchain_ollama import ChatOllama
@@ -127,7 +188,7 @@ class OllamaProvider(LLMProvider):
                 "Install with: pip install langchain-ollama"
             )
 
-        model = getattr(settings, "ollama_model", "qwen3:4b-instruct-2507-q4_K_M")
+        model = model_name or getattr(settings, "ollama_model", "qwen3:4b-instruct-2507-q4_K_M")
         base_url = _normalize_ollama_host(
             getattr(settings, "ollama_base_url", "http://localhost:11434")
         )
@@ -179,11 +240,11 @@ class OllamaProvider(LLMProvider):
     # Unified path: ChatOpenAI → Ollama /v1 endpoint
     # --------------------------------------------------------------------- #
     def _create_unified(
-        self, tier: str, thinking_budget: int, include_thoughts: bool, temperature: float,
+        self, tier: str, thinking_budget: int, include_thoughts: bool, temperature: float, *, model_name: str | None = None,
     ) -> BaseChatModel:
         from langchain_openai import ChatOpenAI
 
-        model = getattr(settings, "ollama_model", "qwen3:4b-instruct-2507-q4_K_M")
+        model = model_name or getattr(settings, "ollama_model", "qwen3:4b-instruct-2507-q4_K_M")
         raw_base_url = getattr(settings, "ollama_base_url", "http://localhost:11434")
         api_key = getattr(settings, "ollama_api_key", None)
         if not isinstance(api_key, str) or not api_key.strip():

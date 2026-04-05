@@ -34,6 +34,7 @@ def _make_settings(**overrides):
         "enable_unified_client": True,
         "google_api_key": "test-google-key",
         "google_model": "gemini-3-flash-preview",
+        "google_model_advanced": "gemini-3.1-pro-preview",
         "google_openai_compat_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
         "openai_api_key": "test-openai-key",
         "openai_base_url": None,
@@ -372,7 +373,7 @@ class TestUnifiedClientAccess:
         """get_model returns correct model for 'deep' tier."""
         self._init_with_all_providers()
         model = UnifiedLLMClient.get_model("google", "deep")
-        assert model == "gemini-3-flash-preview"
+        assert model == "gemini-3.1-pro-preview"
 
     def test_get_model_openai_deep(self):
         """get_model('openai', 'deep') returns advanced model."""

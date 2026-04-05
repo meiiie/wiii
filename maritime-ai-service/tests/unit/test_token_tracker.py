@@ -32,9 +32,11 @@ class TestLLMCall:
         call = LLMCall(model="gemini-3-flash", tier="light")
         assert call.model == "gemini-3-flash"
         assert call.tier == "light"
+        assert call.provider == ""
         assert call.input_tokens == 0
         assert call.output_tokens == 0
         assert call.duration_ms == 0.0
+        assert call.estimated_cost_usd == 0.0
         assert call.component == ""
 
     def test_full_initialization(self):
@@ -42,14 +44,18 @@ class TestLLMCall:
         call = LLMCall(
             model="gemini-3-pro",
             tier="deep",
+            provider="openrouter",
             input_tokens=500,
             output_tokens=200,
             duration_ms=1234.5,
+            estimated_cost_usd=0.00125,
             component="tutor_node",
         )
+        assert call.provider == "openrouter"
         assert call.input_tokens == 500
         assert call.output_tokens == 200
         assert call.duration_ms == 1234.5
+        assert call.estimated_cost_usd == 0.00125
         assert call.component == "tutor_node"
 
 

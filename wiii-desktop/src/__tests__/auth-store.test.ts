@@ -27,6 +27,7 @@ const MOCK_USER: AuthUser = {
   name: "Test User",
   avatar_url: "https://example.com/avatar.jpg",
   role: "student",
+  platform_role: "user",
 };
 
 function resetStore() {
@@ -201,6 +202,22 @@ describe("AuthStore", () => {
       (c: any[]) => c[0] === "auth_state",
     );
     expect(lastCall[2]).not.toHaveProperty("tokens");
+  });
+
+  it("preserves platform_role in oauth auth state", async () => {
+    await useAuthStore.getState().loginWithTokens(
+      "access-token",
+      "refresh-token",
+      1800,
+      {
+        ...MOCK_USER,
+        role: "admin",
+        platform_role: "platform_admin",
+      },
+    );
+
+    expect(useAuthStore.getState().user?.platform_role).toBe("platform_admin");
+    expect(useAuthStore.getState().user?.role).toBe("admin");
   });
 
   it("refreshAccessToken calls server and updates tokens", async () => {

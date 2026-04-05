@@ -18,6 +18,8 @@ from typing import Any, Optional
 import numpy as np
 from pydantic import BaseModel
 
+from app.engine.embedding_runtime import get_embedding_backend
+
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -450,9 +452,10 @@ async def simulate_rag_flow(
     # Step 1: Embed query
     t0 = time.time()
     try:
-        from app.engine.llm_providers.gemini_embedding import GeminiOptimizedEmbeddings
-        embedder = GeminiOptimizedEmbeddings()
+        embedder = get_embedding_backend()
         query_embedding = await embedder.aembed_query(query)
+        if not query_embedding:
+            raise RuntimeError("No embedding backend available for RAG flow simulation")
     except Exception as e:
         logger.error("Failed to embed query: %s", e)
         return RagFlowResponse(

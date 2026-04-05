@@ -90,6 +90,19 @@ class TestGraphSingleton:
         assert result is not None
 
 
+class TestAgentStateSchema:
+    """Guard critical runtime metadata fields from being dropped by LangGraph state schema."""
+
+    def test_agent_state_declares_execution_runtime_fields(self):
+        """Execution provider/model must exist in AgentState so sync metadata survives graph hops."""
+        from app.engine.multi_agent.state import AgentState
+
+        annotations = getattr(AgentState, "__annotations__", {})
+        assert "_execution_provider" in annotations
+        assert "_execution_model" in annotations
+        assert "model" in annotations
+
+
 class TestThreadIdPassing:
     """Test that thread_id is passed correctly to graph invocations."""
 
@@ -109,6 +122,8 @@ class TestThreadIdPassing:
             "reasoning_trace": None,
             "thinking": None,
             "thinking_content": None,
+            "_execution_provider": "zhipu",
+            "_execution_model": "glm-5",
         })
 
         @asynccontextmanager
@@ -149,6 +164,10 @@ class TestThreadIdPassing:
                 # Sprint 16: composite thread_id = "user_{user_id}__session_{session_id}"
                 assert "user-1" in thread_id
                 assert "session-abc" in thread_id
+            assert result["provider"] == "zhipu"
+            assert result["model"] == "glm-5"
+            assert result["_execution_provider"] == "zhipu"
+            assert result["_execution_model"] == "glm-5"
 
     @pytest.mark.asyncio
     async def test_process_empty_session_id(self):

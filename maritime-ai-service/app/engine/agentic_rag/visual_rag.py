@@ -13,11 +13,15 @@ Feature-gated by enable_visual_rag in config.
 """
 
 import asyncio
-import base64
 import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+from app.engine.vision_runtime import (
+    analyze_image_for_query,
+    fetch_image_as_base64,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,23 +79,7 @@ async def _fetch_image_as_base64(image_url: str, timeout: float = 10.0) -> Optio
     Returns:
         Base64-encoded image data, or None on failure.
     """
-    try:
-        import httpx
-
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            response = await client.get(image_url)
-            if response.status_code == 200:
-                content_type = response.headers.get("content-type", "image/jpeg")
-                if "image" not in content_type:
-                    logger.warning("[VisualRAG] URL returned non-image content-type: %s", content_type)
-                    return None
-                return base64.b64encode(response.content).decode("utf-8")
-            else:
-                logger.warning("[VisualRAG] Image fetch failed: HTTP %d for %s", response.status_code, image_url[:80])
-                return None
-    except Exception as e:
-        logger.warning("[VisualRAG] Image fetch error: %s", e)
-        return None
+    return await fetch_image_as_base64(image_url, timeout=timeout)
 
 
 async def _analyze_image_with_vision(
@@ -109,38 +97,16 @@ async def _analyze_image_with_vision(
     Returns:
         Visual description text, or None on failure.
     """
-    try:
-        from google import genai
-        from google.genai import types as genai_types
-        from app.core.config import get_settings
-
-        settings = get_settings()
-        client = genai.Client(api_key=settings.google_api_key)
-
-        prompt = VISUAL_ANALYSIS_PROMPT.format(query=query[:500])
-
-        image_part = genai_types.Part.from_bytes(
-            data=base64.b64decode(image_base64),
-            mime_type=media_type,
-        )
-
-        response = await asyncio.to_thread(
-            client.models.generate_content,
-            model=settings.google_model,
-            contents=[prompt, image_part],
-            config=genai_types.GenerateContentConfig(
-                temperature=0.2,
-                max_output_tokens=512,
-            ),
-        )
-
-        if response and response.text:
-            return response.text.strip()
-        return None
-
-    except Exception as e:
-        logger.warning("[VisualRAG] Vision analysis error: %s", e)
-        return None
+    result = await analyze_image_for_query(
+        image_base64=image_base64,
+        query=query,
+        media_type=media_type,
+    )
+    if result.success and result.text:
+        return result.text.strip()
+    if result.error:
+        logger.warning("[VisualRAG] Vision analysis error: %s", result.error)
+    return None
 
 
 def _select_visual_documents(

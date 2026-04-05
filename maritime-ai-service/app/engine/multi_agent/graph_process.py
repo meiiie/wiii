@@ -1,0 +1,317 @@
+"""Process entrypoint helpers extracted from the multi-agent graph shell."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Optional
+
+from app.core.config import settings
+from app.engine.llm_runtime_metadata import resolve_runtime_failover_metadata
+from app.engine.multi_agent.state import AgentState
+from app.engine.reasoning import build_thinking_lifecycle_snapshot
+
+logger = logging.getLogger(__name__)
+
+
+def _serialize_langchain_messages(context: dict | None) -> list[dict]:
+    """Convert LangChain messages to serializable dict payloads."""
+    langchain_messages = (context or {}).get("langchain_messages", [])
+    serialized_messages = []
+    for message in langchain_messages:
+        if isinstance(message, dict):
+            serialized_messages.append(message)
+        else:
+            serialized_messages.append(
+                {
+                    "role": getattr(message, "type", "human"),
+                    "content": message.content,
+                }
+            )
+    return serialized_messages
+
+
+def _apply_graph_context_prompts(
+    initial_state: AgentState,
+    *,
+    inject_host_context,
+    inject_host_session,
+    inject_operator_context,
+    inject_living_context,
+    inject_visual_context,
+    inject_visual_cognition_context,
+    inject_widget_feedback_context,
+    inject_code_studio_context,
+) -> None:
+    """Populate graph-level prompt surfaces shared by all downstream nodes."""
+    host_prompt = inject_host_context(initial_state)
+    if host_prompt:
+        initial_state["host_context_prompt"] = host_prompt
+    host_capabilities_prompt = initial_state.get("host_capabilities_prompt", "")
+    if host_capabilities_prompt:
+        initial_state["host_capabilities_prompt"] = host_capabilities_prompt
+    host_session_prompt = inject_host_session(initial_state)
+    if host_session_prompt:
+        initial_state["host_session_prompt"] = host_session_prompt
+    operator_prompt = inject_operator_context(initial_state)
+    if operator_prompt:
+        initial_state["operator_context_prompt"] = operator_prompt
+    living_prompt = inject_living_context(initial_state)
+    if living_prompt:
+        initial_state["living_context_prompt"] = living_prompt
+    visual_prompt = inject_visual_context(initial_state)
+    if visual_prompt:
+        initial_state["visual_context_prompt"] = visual_prompt
+    visual_cognition_prompt = inject_visual_cognition_context(initial_state)
+    if visual_cognition_prompt:
+        initial_state["visual_cognition_prompt"] = visual_cognition_prompt
+    widget_feedback_prompt = inject_widget_feedback_context(initial_state)
+    if widget_feedback_prompt:
+        initial_state["widget_feedback_prompt"] = widget_feedback_prompt
+    code_studio_prompt = inject_code_studio_context(initial_state)
+    if code_studio_prompt:
+        initial_state["code_studio_context_prompt"] = code_studio_prompt
+
+
+def _build_invoke_config(
+    *,
+    user_id: str,
+    session_id: str,
+    domain_id: str,
+    context: dict | None,
+) -> dict:
+    """Build the per-request LangGraph invoke config."""
+    invoke_config: dict = {}
+    if session_id and user_id:
+        from app.core.thread_utils import build_thread_id
+
+        org_id = (context or {}).get("organization_id")
+        thread_id = build_thread_id(user_id, session_id, org_id=org_id)
+        invoke_config = {"configurable": {"thread_id": thread_id}}
+    elif session_id:
+        invoke_config = {"configurable": {"thread_id": session_id}}
+
+    from app.core.langsmith import get_langsmith_callback, is_langsmith_enabled
+
+    if is_langsmith_enabled():
+        callback = get_langsmith_callback(user_id, session_id, domain_id)
+        if callback:
+            invoke_config.setdefault("callbacks", []).append(callback)
+
+    return invoke_config
+
+
+async def _upsert_thread_view(
+    *,
+    query: str,
+    user_id: str,
+    session_id: str,
+    domain_id: str,
+    context: dict | None,
+    summary_milestones: set[int],
+    generate_session_summary_bg,
+) -> None:
+    """Update the thread index and trigger background summarization when needed."""
+    if not (session_id and user_id):
+        return
+    try:
+        from app.repositories.thread_repository import get_thread_repository
+        from app.core.thread_utils import build_thread_id as _build_tid
+
+        thread_id = _build_tid(user_id, session_id, org_id=(context or {}).get("organization_id"))
+        title = query[:60] + ("..." if len(query) > 60 else "")
+        thread_data = get_thread_repository().upsert_thread(
+            thread_id=thread_id,
+            user_id=user_id,
+            domain_id=domain_id,
+            title=title,
+        )
+        if thread_data:
+            count = thread_data.get("message_count", 0)
+            if count in summary_milestones:
+                asyncio.create_task(generate_session_summary_bg(thread_id, user_id))
+    except Exception as exc:  # pragma: no cover - defensive logging only
+        logger.warning("Thread upsert failed: %s", exc)
+
+
+def _build_process_result_payload(
+    *,
+    result: dict,
+    trace_id: str,
+    trace_summary: dict,
+    tracker,
+    resolve_public_thinking_content,
+) -> dict:
+    """Shape the final sync API payload from graph state."""
+    thinking_lifecycle = build_thinking_lifecycle_snapshot(
+        result,
+        fallback=result.get("thinking_content") or result.get("thinking") or "",
+    )
+    thinking_content = resolve_public_thinking_content(
+        result,
+        fallback=result.get("thinking_content") or "",
+    )
+    return {
+        "response": result.get("final_response", ""),
+        "sources": result.get("sources", []),
+        "tools_used": result.get("tools_used", []),
+        "grader_score": result.get("grader_score", 0),
+        "agent_outputs": result.get("agent_outputs", {}),
+        "current_agent": result.get("current_agent", ""),
+        "next_agent": result.get("next_agent", ""),
+        "error": result.get("error"),
+        "reasoning_trace": result.get("reasoning_trace"),
+        "thinking": result.get("thinking"),
+        "thinking_content": thinking_content,
+        "thinking_lifecycle": thinking_lifecycle,
+        "domain_notice": result.get("domain_notice"),
+        "routing_metadata": result.get("routing_metadata"),
+        "evidence_images": result.get("evidence_images", []),
+        "provider": result.get("_execution_provider") or result.get("provider"),
+        "model": result.get("_execution_model") or result.get("model"),
+        "_execution_provider": result.get("_execution_provider"),
+        "_execution_model": result.get("_execution_model"),
+        "_llm_failover_events": result.get("_llm_failover_events", []),
+        "failover": result.get("failover") or resolve_runtime_failover_metadata(result),
+        "trace_id": trace_id,
+        "trace_summary": trace_summary,
+        "token_usage": tracker.summary() if tracker else None,
+    }
+
+
+async def process_with_multi_agent_impl(
+    *,
+    query: str,
+    user_id: str,
+    session_id: str = "",
+    context: dict | None = None,
+    domain_id: Optional[str] = None,
+    thinking_effort: Optional[str] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    build_domain_config,
+    build_turn_local_state_defaults,
+    open_multi_agent_graph,
+    cleanup_tracer,
+    resolve_public_thinking_content,
+    generate_session_summary_bg,
+    inject_host_context,
+    inject_host_session,
+    inject_operator_context,
+    inject_living_context,
+    inject_visual_context,
+    inject_visual_cognition_context,
+    inject_widget_feedback_context,
+    inject_code_studio_context,
+    summary_milestones: set[int],
+):
+    """High-level sync processing entrypoint for the multi-agent system."""
+    from app.core.token_tracker import start_tracking, get_tracker
+    from app.engine.agents import get_agent_registry
+    from app.engine.multi_agent.graph_event_bus import _cleanup_stale_queues
+
+    domain_id = domain_id or settings.default_domain
+    registry = get_agent_registry()
+
+    start_tracking(request_id=session_id or "")
+    trace_id = registry.start_request_trace()
+    logger.info("[MULTI_AGENT] Started trace: %s, domain=%s", trace_id, domain_id)
+
+    initial_state: AgentState = {
+        "query": query,
+        "user_id": user_id,
+        "session_id": session_id,
+        "context": context or {},
+        "messages": _serialize_langchain_messages(context),
+        "current_agent": "",
+        "next_agent": "",
+        "agent_outputs": {},
+        "grader_score": 0.0,
+        "grader_feedback": "",
+        "final_response": "",
+        "sources": [],
+        "iteration": 0,
+        "max_iterations": 3,
+        "error": None,
+        "domain_id": domain_id,
+        "domain_config": build_domain_config(domain_id),
+        "thinking_effort": thinking_effort,
+        "provider": provider,
+        "model": model,
+        "routing_metadata": None,
+        "organization_id": (context or {}).get("organization_id"),
+        **build_turn_local_state_defaults(context),
+    }
+
+    _apply_graph_context_prompts(
+        initial_state,
+        inject_host_context=inject_host_context,
+        inject_host_session=inject_host_session,
+        inject_operator_context=inject_operator_context,
+        inject_living_context=inject_living_context,
+        inject_visual_context=inject_visual_context,
+        inject_visual_cognition_context=inject_visual_cognition_context,
+        inject_widget_feedback_context=inject_widget_feedback_context,
+        inject_code_studio_context=inject_code_studio_context,
+    )
+
+    invoke_config = _build_invoke_config(
+        user_id=user_id,
+        session_id=session_id,
+        domain_id=domain_id,
+        context=context,
+    )
+
+    _cleanup_stale_queues()
+
+    trace_id_for_cleanup = initial_state.get("_trace_id")
+    try:
+        async with open_multi_agent_graph() as graph:
+            result = await graph.ainvoke(initial_state, config=invoke_config)
+        trace_id_for_cleanup = result.get("_trace_id", trace_id_for_cleanup)
+    finally:
+        cleanup_tracer(trace_id_for_cleanup)
+
+    await _upsert_thread_view(
+        query=query,
+        user_id=user_id,
+        session_id=session_id,
+        domain_id=domain_id,
+        context=context,
+        summary_milestones=summary_milestones,
+        generate_session_summary_bg=generate_session_summary_bg,
+    )
+
+    trace_summary = registry.end_request_trace(trace_id)
+    logger.info(
+        "[MULTI_AGENT] Trace completed: %d spans, %.1fms",
+        trace_summary.get("span_count", 0),
+        trace_summary.get("total_duration_ms", 0),
+    )
+
+    tracker = get_tracker()
+    if tracker:
+        try:
+            calls = getattr(tracker, "calls", None)
+            if calls:
+                from app.services.llm_usage_logger import log_llm_usage_batch
+
+                asyncio.ensure_future(
+                    log_llm_usage_batch(
+                        request_id=session_id or "",
+                        user_id=user_id or "",
+                        session_id=session_id or "",
+                        calls=calls,
+                        organization_id=(context or {}).get("organization_id"),
+                    )
+                )
+        except Exception as exc:  # pragma: no cover - defensive logging only
+            logger.debug("[MULTI_AGENT] LLM usage batch log failed: %s", exc)
+
+    return _build_process_result_payload(
+        result=result,
+        trace_id=trace_id,
+        trace_summary=trace_summary,
+        tracker=tracker,
+        resolve_public_thinking_content=resolve_public_thinking_content,
+    )

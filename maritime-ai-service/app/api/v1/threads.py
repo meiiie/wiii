@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import RequireAuth
 from app.core.rate_limit import limiter
+from app.core.security import is_platform_admin
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +121,7 @@ async def get_thread(
 
         if not thread:
             # Admin can access any thread — re-query without user filter
-            if auth.role == "admin":
+            if is_platform_admin(auth):
                 thread = repo.get_thread(thread_id=thread_id)
             if not thread:
                 return JSONResponse(
@@ -255,7 +256,7 @@ async def get_thread_messages(
         # Ownership check: user must own the thread (admin bypasses)
         thread = repo.get_thread(thread_id=thread_id, user_id=auth.user_id)
         if not thread:
-            if auth.role == "admin":
+            if is_platform_admin(auth):
                 thread = repo.get_thread(thread_id=thread_id)
             if not thread:
                 return JSONResponse(

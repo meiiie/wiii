@@ -9,6 +9,7 @@ import { useContextStore } from "@/stores/context-store";
 import { useCharacterStore } from "@/stores/character-store";
 import { usePageContextStore } from "@/stores/page-context-store";
 import { useHostContextStore } from "@/stores/host-context-store";
+import { useModelStore } from "@/stores/model-store";
 import type { VisualPayload } from "@/api/types";
 import { sendMessageStream } from "@/api/chat";
 
@@ -18,6 +19,9 @@ vi.mock("@/api/chat", () => ({
 
 vi.mock("@/api/client", () => ({
   initClient: vi.fn(),
+  getClient: () => ({
+    get: vi.fn().mockResolvedValue({ providers: [] }),
+  }),
 }));
 
 vi.mock("@/lib/visual-telemetry", () => ({
@@ -106,6 +110,13 @@ beforeEach(() => {
   useCharacterStore.getState().reset();
   usePageContextStore.getState().clear();
   useHostContextStore.getState().clear();
+  useModelStore.setState({
+    activeProvider: "auto",
+    nextTurnProvider: null,
+    providers: [],
+    isLoading: false,
+    lastFetchedAt: null,
+  });
 
   useChatStore.setState({
     conversations: [],
@@ -199,5 +210,45 @@ describe("useSSEStream concurrency", () => {
     expect((visualBlocks[0] as { visual: VisualPayload }).visual.title).toBe("Patched process");
     expect((visualBlocks[0] as { visual: VisualPayload }).visual.type).toBe("process");
     expect(useChatStore.getState().streamError).toBe("");
+  });
+
+  it("sends the selected provider model with the stream request", async () => {
+    const sendMessageStreamMock = vi.mocked(sendMessageStream);
+    useModelStore.setState({
+      activeProvider: "openrouter",
+      nextTurnProvider: null,
+      providers: [
+        {
+          id: "openrouter",
+          displayName: "OpenRouter",
+          available: true,
+          isPrimary: false,
+          isFallback: true,
+          state: "selectable",
+          reasonCode: null,
+          reasonLabel: null,
+          selectedModel: "qwen/qwen3.6-plus:free",
+          strictPin: true,
+          verifiedAt: "2026-04-04T00:00:00Z",
+        },
+      ],
+    });
+    sendMessageStreamMock.mockResolvedValueOnce({
+      lastEventId: null,
+      sawDone: true,
+      eventOrder: ["done"],
+    });
+
+    const { result } = renderHook(() => useSSEStream());
+
+    await act(async () => {
+      await result.current.sendMessage("Thu model OpenRouter");
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
+    expect(sendMessageStreamMock.mock.calls[0]?.[0]).toMatchObject({
+      provider: "openrouter",
+      model: "qwen/qwen3.6-plus:free",
+    });
   });
 });

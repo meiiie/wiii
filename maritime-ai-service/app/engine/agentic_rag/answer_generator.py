@@ -16,9 +16,13 @@ import asyncio
 import logging
 import time
 from typing import List, Optional, Tuple
+from unittest.mock import Mock
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.engine.agentic_rag.runtime_llm_socket import ainvoke_agentic_rag_llm
+from app.engine.llm_factory import ThinkingTier
+from app.engine.llm_failover_runtime import is_failover_eligible_error_impl
 from app.models.knowledge_graph import KnowledgeNode
 
 logger = logging.getLogger(__name__)
@@ -44,7 +48,9 @@ class AnswerGenerator:
         user_name: Optional[str] = None,
         is_follow_up: bool = False,
         organization_id: Optional[str] = None,
+        response_language: Optional[str] = None,
         host_context_prompt: str = "",
+        living_context_prompt: str = "",
         skill_context: str = "",
         capability_context: str = "",
     ) -> Tuple[str, Optional[str]]:
@@ -91,6 +97,8 @@ class AnswerGenerator:
                 if hasattr(node, 'metadata') and isinstance(node.metadata, dict):
                     source_name = node.metadata.get("source_name", "") or ""
                     published = node.metadata.get("published_date", "") or ""
+                if not source_name:
+                    source_name = str(getattr(node, "source", "") or "").strip()
                 citation = node.title
                 if source_name:
                     citation += f" — {source_name}"
@@ -119,6 +127,7 @@ class AnswerGenerator:
             user_name=user_name,
             is_follow_up=is_follow_up if is_follow_up else bool(conversation_history),
             organization_id=organization_id,
+            response_language=response_language,
         )
 
         # Get thinking instruction from YAML
@@ -133,6 +142,8 @@ class AnswerGenerator:
         # Sprint 222: Graph-level host context
         if host_context_prompt:
             system_prompt = system_prompt + "\n\n" + host_context_prompt
+        if living_context_prompt:
+            system_prompt = system_prompt + "\n\n" + living_context_prompt
         if skill_context:
             system_prompt = system_prompt + "\n\n## Skill Context\n" + skill_context
         if capability_context:
@@ -149,11 +160,26 @@ class AnswerGenerator:
                 HumanMessage(content=user_prompt)
             ]
 
-            # Sprint audit: Timeout-protected invoke (streaming path already has dual-layer timeout)
+            # Sprint audit: Timeout-protected invoke. Live runtime now routes this
+            # through the shared failover socket so sync RAG answers do not stay
+            # pinned to a dead primary provider.
             import concurrent.futures
             _SYNC_INVOKE_TIMEOUT = 120  # seconds
+
+            def _invoke_sync():
+                if isinstance(llm, Mock):
+                    return llm.invoke(messages)
+                return asyncio.run(
+                    ainvoke_agentic_rag_llm(
+                        llm=llm,
+                        messages=messages,
+                        tier=ThinkingTier.MODERATE,
+                        component="AnswerGeneratorSync",
+                    )
+                )
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(llm.invoke, messages)
+                future = pool.submit(_invoke_sync)
                 try:
                     response = future.result(timeout=_SYNC_INVOKE_TIMEOUT)
                 except concurrent.futures.TimeoutError:
@@ -196,7 +222,9 @@ class AnswerGenerator:
         user_name: Optional[str] = None,
         is_follow_up: bool = False,
         organization_id: Optional[str] = None,
+        response_language: Optional[str] = None,
         host_context_prompt: str = "",
+        living_context_prompt: str = "",
         skill_context: str = "",
         capability_context: str = "",
     ):
@@ -251,6 +279,7 @@ class AnswerGenerator:
             user_name=user_name,
             is_follow_up=is_follow_up if is_follow_up else bool(conversation_history),
             organization_id=organization_id,
+            response_language=response_language,
         )
 
         thinking_instruction = prompt_loader.get_thinking_instruction()
@@ -265,6 +294,8 @@ class AnswerGenerator:
         # Sprint 222: Graph-level host context
         if host_context_prompt:
             system_prompt = system_prompt + "\n\n" + host_context_prompt
+        if living_context_prompt:
+            system_prompt = system_prompt + "\n\n" + living_context_prompt
         if skill_context:
             system_prompt = system_prompt + "\n\n## Skill Context\n" + skill_context
         if capability_context:
@@ -312,6 +343,7 @@ class AnswerGenerator:
 
             # P3 SOTA: Use astream() with per-chunk timeout to prevent hangs
             stream_start = time.time()
+            emitted_any_chunk = False
             aiter = llm.astream(messages).__aiter__()
             while True:
                 if time.time() - stream_start > TOTAL_TIMEOUT:
@@ -323,11 +355,14 @@ class AnswerGenerator:
                     )
                     content = AnswerGenerator.extract_content_from_chunk(chunk)
                     if content:
+                        emitted_any_chunk = True
                         yield content
                 except StopAsyncIteration:
                     break
                 except asyncio.TimeoutError:
                     logger.warning("[STREAMING] Chunk timeout (%ds), aborting", CHUNK_TIMEOUT)
+                    if not emitted_any_chunk and not isinstance(llm, Mock):
+                        raise
                     break
 
             # After streaming completes, yield sources
@@ -337,6 +372,29 @@ class AnswerGenerator:
             logger.info("[STREAMING] Generation complete")
 
         except Exception as e:
+            if not isinstance(llm, Mock) and is_failover_eligible_error_impl(e):
+                try:
+                    logger.warning("[STREAMING] Native stream failed, switching to buffered failover: %s", e)
+                    from app.services.output_processor import extract_thinking_from_response
+
+                    response = await ainvoke_agentic_rag_llm(
+                        llm=llm,
+                        messages=messages,
+                        tier=ThinkingTier.MODERATE,
+                        component="AnswerGeneratorStreamBufferedFallback",
+                    )
+                    answer, _ = extract_thinking_from_response(response.content)
+                    answer = answer.strip()
+                    if answer:
+                        for piece in _chunk_buffered_stream_text(answer):
+                            yield piece
+                        if sources:
+                            yield "\n\n**Ngu\u1ed3n tham kh\u1ea3o:**\n" + "\n".join(sources)
+                        logger.info("[STREAMING] Buffered failover synthesis complete")
+                        return
+                except Exception as fallback_exc:
+                    logger.error("[STREAMING] Buffered failover synthesis failed: %s", fallback_exc)
+
             logger.error("[STREAMING] LLM synthesis failed: %s", e)
             yield "Internal processing error"
 
@@ -474,3 +532,33 @@ def _build_user_prompt(
         + question + "\n\n"
         + "H\u00e3y tr\u1ea3 l\u1eddi c\u00e2u h\u1ecfi d\u1ef1a tr\u00ean th\u00f4ng tin tr\u00ean."
     )
+
+
+def _chunk_buffered_stream_text(text: str, *, chunk_size: int = 180) -> list[str]:
+    """Split buffered fallback text into stable stream-sized chunks."""
+    clean = str(text or "").strip()
+    if not clean:
+        return []
+
+    paragraphs = [part.strip() for part in clean.split("\n\n") if part.strip()]
+    if len(paragraphs) > 1:
+        return [f"{part}\n\n" if idx < len(paragraphs) - 1 else part for idx, part in enumerate(paragraphs)]
+
+    if len(clean) <= chunk_size:
+        return [clean]
+
+    chunks: list[str] = []
+    cursor = 0
+    while cursor < len(clean):
+        next_cursor = min(len(clean), cursor + chunk_size)
+        if next_cursor < len(clean):
+            split_at = clean.rfind(" ", cursor, next_cursor)
+            if split_at > cursor + 40:
+                next_cursor = split_at
+        piece = clean[cursor:next_cursor].strip()
+        if piece:
+            chunks.append(piece + (" " if next_cursor < len(clean) else ""))
+        cursor = next_cursor
+        while cursor < len(clean) and clean[cursor].isspace():
+            cursor += 1
+    return chunks

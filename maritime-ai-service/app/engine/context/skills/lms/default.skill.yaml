@@ -1,13 +1,14 @@
 name: lms-default
 host_type: lms
 page_types: ["*"]
-description: "General LMS behavior — fallback for unmatched pages"
+description: "General LMS plugin context"
 priority: 0.1
 
 prompt_addition: |
-  Hỗ trợ sinh viên trong hệ thống LMS.
-  - Liên hệ nội dung trang khi trả lời
-  - Dùng tool tìm kiếm nếu cần
+  Đây là ngữ cảnh plugin LMS cho turn hiện tại, không phải bản sắc mới của Wiii.
+  - Giữ nguyên giọng, card, và continuity của Wiii; chỉ điều chỉnh cách hỗ trợ theo trang hiện tại.
+  - Ưu tiên bám sát nội dung đang mở và các host actions có thật thay vì đoán.
+  - Nếu hành động có thể thay đổi dữ liệu hoặc ảnh hưởng rộng, luôn preview hoặc xin xác nhận rõ.
 
 tools:
   - tool_knowledge_search

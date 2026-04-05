@@ -14,7 +14,6 @@ Orchestrator module - delegates to:
 import logging
 import json
 from typing import List, Optional, TYPE_CHECKING
-from dataclasses import dataclass, field
 from pathlib import Path
 
 if TYPE_CHECKING:
@@ -23,8 +22,8 @@ if TYPE_CHECKING:
 from app.core.config import settings
 from app.services.object_storage import ObjectStorageClient, get_storage_client
 from app.services.chunking_service import SemanticChunker, get_semantic_chunker
+from app.engine.embedding_runtime import EmbeddingBackendProtocol, get_embedding_backend
 from app.engine.vision_extractor import VisionExtractor, get_vision_extractor
-from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
 from app.engine.page_analyzer import PageAnalyzer, get_page_analyzer
 from app.engine.bounding_box_extractor import BoundingBoxExtractor, get_bounding_box_extractor
 from app.engine.context_enricher import ContextEnricher, get_context_enricher
@@ -35,57 +34,9 @@ from app.repositories.neo4j_knowledge_repository import Neo4jKnowledgeRepository
 # Delegate modules
 from app.services.pdf_processor import PDFProcessor, USE_PYMUPDF
 from app.services.vision_processor import VisionProcessor
+from app.services.multimodal_ingestion_contracts import IngestionResult, PageResult
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class IngestionResult:
-    """Result of PDF ingestion"""
-    document_id: str
-    total_pages: int           # Total pages in PDF
-    successful_pages: int
-    failed_pages: int
-    pages_processed: int = 0   # Actual pages attempted (may differ from total when max_pages is set)
-    errors: List[str] = field(default_factory=list)
-
-    # Hybrid Text/Vision Detection tracking (Feature: hybrid-text-vision)
-    vision_pages: int = 0      # Pages processed via Gemini Vision
-    direct_pages: int = 0      # Pages processed via PyMuPDF direct extraction
-    fallback_pages: int = 0    # Pages that fell back from direct to vision
-
-    @property
-    def success_rate(self) -> float:
-        """Calculate success rate percentage"""
-        target = self.pages_processed if self.pages_processed > 0 else self.total_pages
-        if target == 0:
-            return 0.0
-        return (self.successful_pages / target) * 100
-
-    @property
-    def api_savings_percent(self) -> float:
-        """
-        Calculate estimated API cost savings from hybrid detection.
-
-        **Feature: hybrid-text-vision**
-        **Property 8: Savings Calculation**
-        """
-        if self.total_pages == 0:
-            return 0.0
-        return (self.direct_pages / self.total_pages) * 100
-
-
-@dataclass
-class PageResult:
-    """Result of single page processing"""
-    page_number: int
-    success: bool
-    image_url: Optional[str] = None
-    text_length: int = 0
-    total_chunks: int = 0  # Number of semantic chunks created
-    error: Optional[str] = None
-    extraction_method: str = "vision"  # "direct" or "vision" (Feature: hybrid-text-vision)
-    was_fallback: bool = False  # True if fell back from direct to vision
 
 
 class MultimodalIngestionService:
@@ -115,7 +66,7 @@ class MultimodalIngestionService:
         self,
         storage_client: Optional[ObjectStorageClient] = None,
         vision_extractor: Optional[VisionExtractor] = None,
-        embedding_service: Optional[GeminiOptimizedEmbeddings] = None,
+        embedding_service: Optional[EmbeddingBackendProtocol] = None,
         chunker: Optional[SemanticChunker] = None,
         page_analyzer: Optional[PageAnalyzer] = None,
         bbox_extractor: Optional[BoundingBoxExtractor] = None,
@@ -138,7 +89,7 @@ class MultimodalIngestionService:
         """
         self.storage = storage_client or get_storage_client()
         self.vision = vision_extractor or get_vision_extractor()
-        self.embeddings = embedding_service or GeminiOptimizedEmbeddings()
+        self.embeddings = embedding_service or get_embedding_backend()
         self.chunker = chunker or get_semantic_chunker()
         self.page_analyzer = page_analyzer or get_page_analyzer()
         self.bbox_extractor = bbox_extractor or get_bounding_box_extractor()

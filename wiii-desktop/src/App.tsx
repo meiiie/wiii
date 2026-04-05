@@ -6,6 +6,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useAuthStore } from "@/stores/auth-store";
+import type { AuthUser } from "@/stores/auth-store";
 import { useConnectionStore } from "@/stores/connection-store";
 import { useContextStore } from "@/stores/context-store";
 import { useDomainStore } from "@/stores/domain-store";
@@ -16,6 +17,7 @@ import { useToastStore } from "@/stores/toast-store";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { initClient } from "@/api/client";
+import { buildAuthUserFromPayload, toCompatibilitySettingsRole } from "@/lib/auth-user";
 
 const AppShell = lazy(async () => {
   const mod = await import("@/components/layout/AppShell");
@@ -82,23 +84,32 @@ export default function App() {
     if (!accessToken || !refreshToken) return;
 
     const expiresIn = parseInt(params.get("expires_in") || "900", 10);
-    const user = {
-      id: params.get("user_id") || "",
+    const user: AuthUser = buildAuthUserFromPayload({
+      user_id: params.get("user_id") || "",
       email: params.get("email") || "",
       name: params.get("name") || "",
       avatar_url: params.get("avatar_url") || "",
-      role: params.get("role") || "student",
-    };
+      role: params.get("role") || "",
+      legacy_role: params.get("legacy_role") || "",
+      platform_role: params.get("platform_role") || "user",
+      organization_role: params.get("organization_role") || "",
+      host_role: params.get("host_role") || "",
+      role_source: params.get("role_source") || "",
+      active_organization_id: params.get("active_organization_id") || "",
+      organization_id: params.get("organization_id") || "",
+      connector_id: params.get("connector_id") || "",
+      identity_version: params.get("identity_version") || "",
+    });
 
     // Sprint 193b: Extract organization_id from OAuth callback
-    const orgId = params.get("organization_id") || "";
+    const orgId = user.active_organization_id || params.get("organization_id") || "";
 
     // Login immediately, then persist settings + clear hash
     loginWithTokens(accessToken, refreshToken, expiresIn, user).then(async () => {
       updateSettings({
         user_id: user.id,
         display_name: user.name || user.email,
-        user_role: (user.role as "student" | "teacher" | "admin") || "student",
+        user_role: toCompatibilitySettingsRole(user),
         ...(orgId ? { organization_id: orgId } : {}),
       });
       // Sprint 218: Switch chat store to new user's conversations

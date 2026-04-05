@@ -6,6 +6,7 @@ Access tokens: short-lived (configurable, default 15 min)
 Refresh tokens: long-lived (configurable, default 30 days), stored hashed in DB
 """
 import hashlib
+import json
 import logging
 import secrets
 import threading
@@ -77,6 +78,13 @@ class AccessTokenPayload(BaseModel):
     email: Optional[str] = None
     name: Optional[str] = None
     role: str = "student"
+    platform_role: Optional[str] = None
+    organization_role: Optional[str] = None
+    host_role: Optional[str] = None
+    role_source: Optional[str] = None
+    active_organization_id: Optional[str] = None
+    connector_id: Optional[str] = None
+    identity_version: Optional[str] = None
     auth_method: str = "google"  # google, lti, api_key
     type: str = "access"
     exp: datetime
@@ -90,11 +98,57 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def _build_identity_snapshot(
+    *,
+    role: str,
+    platform_role: Optional[str] = None,
+    organization_role: Optional[str] = None,
+    host_role: Optional[str] = None,
+    role_source: Optional[str] = None,
+    active_organization_id: Optional[str] = None,
+    connector_id: Optional[str] = None,
+    identity_version: Optional[str] = None,
+) -> dict:
+    """Build a compact identity snapshot for refresh-token continuity."""
+    snapshot = {
+        "role": role,
+        "platform_role": platform_role,
+        "organization_role": organization_role,
+        "host_role": host_role,
+        "role_source": role_source,
+        "active_organization_id": active_organization_id,
+        "connector_id": connector_id,
+        "identity_version": identity_version,
+    }
+    return {key: value for key, value in snapshot.items() if value is not None}
+
+
+def _coerce_identity_snapshot(raw: object) -> dict:
+    """Normalize identity snapshots read back from refresh-token storage."""
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return {}
+    return {}
+
+
 def create_access_token(
     user_id: str,
     email: Optional[str] = None,
     name: Optional[str] = None,
     role: str = "student",
+    platform_role: Optional[str] = None,
+    organization_role: Optional[str] = None,
+    host_role: Optional[str] = None,
+    role_source: Optional[str] = None,
+    active_organization_id: Optional[str] = None,
+    connector_id: Optional[str] = None,
+    identity_version: Optional[str] = None,
     auth_method: str = "google",
     expires_delta: Optional[timedelta] = None,
 ) -> str:
@@ -110,6 +164,13 @@ def create_access_token(
         "email": email,
         "name": name,
         "role": role,
+        "platform_role": platform_role,
+        "organization_role": organization_role,
+        "host_role": host_role,
+        "role_source": role_source,
+        "active_organization_id": active_organization_id,
+        "connector_id": connector_id,
+        "identity_version": identity_version,
         "auth_method": auth_method,
         "type": "access",
         "iss": "wiii",
@@ -118,6 +179,7 @@ def create_access_token(
         "exp": expire,
         "jti": str(uuid.uuid4()),  # Sprint 176: unique token ID
     }
+    payload = {key: value for key, value in payload.items() if value is not None}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
@@ -170,6 +232,13 @@ async def create_token_pair(
     email: Optional[str] = None,
     name: Optional[str] = None,
     role: str = "student",
+    platform_role: Optional[str] = None,
+    organization_role: Optional[str] = None,
+    host_role: Optional[str] = None,
+    role_source: Optional[str] = None,
+    active_organization_id: Optional[str] = None,
+    connector_id: Optional[str] = None,
+    identity_version: Optional[str] = None,
     auth_method: str = "google",
     family_id: Optional[str] = None,
 ) -> TokenPair:
@@ -183,6 +252,13 @@ async def create_token_pair(
         email=email,
         name=name,
         role=role,
+        platform_role=platform_role,
+        organization_role=organization_role,
+        host_role=host_role,
+        role_source=role_source,
+        active_organization_id=active_organization_id,
+        connector_id=connector_id,
+        identity_version=identity_version,
         auth_method=auth_method,
     )
     refresh_token = create_refresh_token()
@@ -197,13 +273,67 @@ async def create_token_pair(
         from app.core.database import get_asyncpg_pool
         pool = await get_asyncpg_pool()
         async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO refresh_tokens (id, user_id, token_hash, auth_method, expires_at, created_at, family_id)
-                VALUES ($1, $2, $3, $4, $5, NOW(), $6)
-                """,
-                token_id, user_id, token_hash, auth_method, expires_at, effective_family_id,
+            identity_snapshot = _build_identity_snapshot(
+                role=role,
+                platform_role=platform_role,
+                organization_role=organization_role,
+                host_role=host_role,
+                role_source=role_source,
+                active_organization_id=active_organization_id,
+                connector_id=connector_id,
+                identity_version=identity_version,
             )
+            try:
+                await conn.execute(
+                    """
+                    INSERT INTO refresh_tokens (
+                        id,
+                        user_id,
+                        token_hash,
+                        auth_method,
+                        expires_at,
+                        created_at,
+                        family_id,
+                        organization_id,
+                        identity_snapshot
+                    )
+                    VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7, $8::jsonb)
+                    """,
+                    token_id,
+                    user_id,
+                    token_hash,
+                    auth_method,
+                    expires_at,
+                    effective_family_id,
+                    active_organization_id,
+                    json.dumps(identity_snapshot, ensure_ascii=False),
+                )
+            except Exception as exc:
+                if "identity_snapshot" not in str(exc) and "organization_id" not in str(exc):
+                    raise
+                logger.warning(
+                    "Refresh-token schema missing Identity V2 columns; falling back to legacy insert"
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO refresh_tokens (
+                        id,
+                        user_id,
+                        token_hash,
+                        auth_method,
+                        expires_at,
+                        created_at,
+                        family_id
+                    )
+                    VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+                    """,
+                    token_id,
+                    user_id,
+                    token_hash,
+                    auth_method,
+                    expires_at,
+                    effective_family_id,
+                )
     except Exception:
         logger.warning("Failed to store refresh token — token will be stateless only")
 
@@ -231,16 +361,34 @@ async def refresh_access_token(refresh_token: str) -> Optional[TokenPair]:
         from app.core.database import get_asyncpg_pool
         pool = await get_asyncpg_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT rt.id, rt.user_id, rt.expires_at, rt.revoked_at, rt.auth_method,
-                       rt.family_id, u.email, u.name, u.role
-                FROM refresh_tokens rt
-                JOIN users u ON u.id = rt.user_id
-                WHERE rt.token_hash = $1
-                """,
-                token_hash,
-            )
+            try:
+                row = await conn.fetchrow(
+                    """
+                    SELECT rt.id, rt.user_id, rt.expires_at, rt.revoked_at, rt.auth_method,
+                           rt.family_id, rt.organization_id, rt.identity_snapshot,
+                           u.email, u.name, u.role, u.platform_role
+                    FROM refresh_tokens rt
+                    JOIN users u ON u.id = rt.user_id
+                    WHERE rt.token_hash = $1
+                    """,
+                    token_hash,
+                )
+            except Exception as exc:
+                if "identity_snapshot" not in str(exc) and "organization_id" not in str(exc):
+                    raise
+                logger.warning(
+                    "Refresh-token schema missing Identity V2 columns; falling back to legacy lookup"
+                )
+                row = await conn.fetchrow(
+                    """
+                    SELECT rt.id, rt.user_id, rt.expires_at, rt.revoked_at, rt.auth_method,
+                           rt.family_id, u.email, u.name, u.role
+                    FROM refresh_tokens rt
+                    JOIN users u ON u.id = rt.user_id
+                    WHERE rt.token_hash = $1
+                    """,
+                    token_hash,
+                )
 
             if not row:
                 logger.warning("Refresh token not found")
@@ -290,11 +438,22 @@ async def refresh_access_token(refresh_token: str) -> Optional[TokenPair]:
             )
 
             # Issue new pair (propagate family_id)
+            identity_snapshot = _coerce_identity_snapshot(row.get("identity_snapshot"))
             new_pair = await create_token_pair(
                 user_id=row["user_id"],
                 email=row["email"],
                 name=row["name"],
-                role=row["role"],
+                role=identity_snapshot.get("role", row["role"]),
+                platform_role=identity_snapshot.get("platform_role", row.get("platform_role")),
+                organization_role=identity_snapshot.get("organization_role"),
+                host_role=identity_snapshot.get("host_role"),
+                role_source=identity_snapshot.get("role_source"),
+                active_organization_id=identity_snapshot.get(
+                    "active_organization_id",
+                    row.get("organization_id"),
+                ),
+                connector_id=identity_snapshot.get("connector_id"),
+                identity_version=identity_snapshot.get("identity_version"),
                 auth_method=row.get("auth_method") or "google",
                 family_id=row.get("family_id"),
             )

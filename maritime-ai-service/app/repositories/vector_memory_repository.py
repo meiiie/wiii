@@ -10,6 +10,7 @@ Requirements: 2.2, 2.3, 2.4, 4.2
 """
 import logging
 import math
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -19,8 +20,35 @@ from app.models.semantic_memory import (
     MemoryType,
     SemanticMemorySearchResult,
 )
+from app.services.embedding_space_registry_service import get_active_embedding_read_space
 
 logger = logging.getLogger(__name__)
+
+_TEXT_SEARCH_STOPWORDS = {
+    "la",
+    "là",
+    "va",
+    "và",
+    "cho",
+    "cua",
+    "của",
+    "the",
+    "what",
+    "is",
+    "are",
+    "and",
+    "hay",
+    "hoi",
+    "hỏi",
+    "gi",
+    "gì",
+    "minh",
+    "mình",
+    "toi",
+    "tôi",
+    "ban",
+    "bạn",
+}
 
 
 class VectorMemoryRepositoryMixin:
@@ -35,6 +63,20 @@ class VectorMemoryRepositoryMixin:
     - self.DEFAULT_SEARCH_LIMIT -> int
     - self.DEFAULT_SIMILARITY_THRESHOLD -> float
     """
+
+    def _extract_text_search_terms(self, query_text: str) -> List[str]:
+        raw_terms = re.findall(r"\w+", (query_text or "").lower(), flags=re.UNICODE)
+        terms: list[str] = []
+        seen: set[str] = set()
+        for term in raw_terms:
+            clean = term.strip()
+            if len(clean) < 2 or clean in _TEXT_SEARCH_STOPWORDS:
+                continue
+            if clean in seen:
+                continue
+            seen.add(clean)
+            terms.append(clean)
+        return terms[:8]
 
     def search_similar(
         self,
@@ -76,12 +118,17 @@ class VectorMemoryRepositoryMixin:
         """
         self._ensure_initialized()
 
+        if not query_embedding:
+            logger.warning("search_similar called with empty query embedding for user %s", user_id)
+            return []
+
         # Stanford ranking fetches more candidates for re-ranking
         fetch_limit = limit * 3 if use_stanford_ranking else limit
 
         try:
             with self._session_factory() as session:
                 embedding_str = self._format_embedding(query_embedding)
+                active_space = get_active_embedding_read_space("semantic_memories")
 
                 # Build type filter if specified
                 type_filter = ""
@@ -104,28 +151,55 @@ class VectorMemoryRepositoryMixin:
                 if eff_org_id is not None:
                     params["org_id"] = eff_org_id
 
-                # Cosine similarity = 1 - cosine distance
-                # pgvector <=> returns cosine distance
-                # Sprint 98: Also fetch last_accessed, access_count for Stanford ranking
-                query = text(f"""
-                    SELECT
-                        id,
-                        content,
-                        memory_type,
-                        importance,
-                        metadata,
-                        created_at,
-                        last_accessed,
-                        access_count,
-                        1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
-                    FROM {self.TABLE_NAME}
-                    WHERE user_id = :user_id
-                      AND 1 - (embedding <=> CAST(:embedding AS vector)) >= :threshold
-                      {type_filter}
-                      {org_filter}
-                    ORDER BY embedding <=> CAST(:embedding AS vector)
-                    LIMIT :limit
-                """)
+                if active_space is not None and active_space.storage_kind == "shadow":
+                    safe_dims = max(1, int(active_space.dimensions))
+                    query = text(f"""
+                        SELECT
+                            sm.id,
+                            sm.content,
+                            sm.memory_type,
+                            sm.importance,
+                            sm.metadata,
+                            sm.created_at,
+                            sm.last_accessed,
+                            sm.access_count,
+                            1 - ((sv.embedding::vector({safe_dims})) <=> CAST(:embedding AS vector({safe_dims}))) AS similarity
+                        FROM {self.TABLE_NAME} sm
+                        JOIN semantic_memory_vectors sv
+                          ON sv.memory_id = sm.id
+                         AND sv.space_fingerprint = :space_fingerprint
+                         AND sv.dimensions = {safe_dims}
+                        WHERE sm.user_id = :user_id
+                          AND 1 - ((sv.embedding::vector({safe_dims})) <=> CAST(:embedding AS vector({safe_dims}))) >= :threshold
+                          {type_filter.replace('memory_type', 'sm.memory_type')}
+                          {org_filter.replace('organization_id', 'sm.organization_id')}
+                        ORDER BY (sv.embedding::vector({safe_dims})) <=> CAST(:embedding AS vector({safe_dims}))
+                        LIMIT :limit
+                    """)
+                    params["space_fingerprint"] = active_space.space_fingerprint
+                else:
+                    # Cosine similarity = 1 - cosine distance
+                    # pgvector <=> returns cosine distance
+                    # Sprint 98: Also fetch last_accessed, access_count for Stanford ranking
+                    query = text(f"""
+                        SELECT
+                            id,
+                            content,
+                            memory_type,
+                            importance,
+                            metadata,
+                            created_at,
+                            last_accessed,
+                            access_count,
+                            1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
+                        FROM {self.TABLE_NAME}
+                        WHERE user_id = :user_id
+                          AND 1 - (embedding <=> CAST(:embedding AS vector)) >= :threshold
+                          {type_filter}
+                          {org_filter}
+                        ORDER BY embedding <=> CAST(:embedding AS vector)
+                        LIMIT :limit
+                    """)
 
                 result = session.execute(query, params)
                 rows = result.fetchall()
@@ -167,6 +241,102 @@ class VectorMemoryRepositoryMixin:
 
         except Exception as e:
             logger.error("Failed to search similar memories: %s", e)
+            return []
+
+    def search_similar_text(
+        self,
+        user_id: str,
+        query_text: str,
+        limit: int = 5,
+        memory_types: Optional[List[MemoryType]] = None,
+    ) -> List[SemanticMemorySearchResult]:
+        """
+        Fallback lexical recall when semantic embeddings are unavailable.
+
+        This keeps memory recall alive during embedding provider outages without
+        pretending the result is semantic-similarity quality.
+        """
+        self._ensure_initialized()
+
+        terms = self._extract_text_search_terms(query_text)
+        if not terms:
+            return []
+
+        try:
+            with self._session_factory() as session:
+                type_filter = ""
+                params: Dict[str, Any] = {
+                    "user_id": user_id,
+                    "limit": limit,
+                }
+
+                if memory_types:
+                    params["memory_types"] = [item.value for item in memory_types]
+                    type_filter = "AND memory_type = ANY(:memory_types)"
+
+                from app.core.org_filter import get_effective_org_id, org_where_clause
+
+                eff_org_id = get_effective_org_id()
+                org_filter = org_where_clause(eff_org_id)
+                if eff_org_id is not None:
+                    params["org_id"] = eff_org_id
+
+                score_clauses = []
+                match_clauses = []
+                for index, term in enumerate(terms):
+                    pattern_key = f"pattern_{index}"
+                    params[pattern_key] = f"%{term}%"
+                    score_clauses.append(
+                        f"CASE WHEN LOWER(content) LIKE :{pattern_key} THEN 1 ELSE 0 END"
+                    )
+                    match_clauses.append(f"LOWER(content) LIKE :{pattern_key}")
+
+                query = text(
+                    f"""
+                    SELECT
+                        id,
+                        content,
+                        memory_type,
+                        importance,
+                        metadata,
+                        created_at,
+                        ({' + '.join(score_clauses)}) AS lexical_hits
+                    FROM {self.TABLE_NAME}
+                    WHERE user_id = :user_id
+                      {type_filter}
+                      AND ({' OR '.join(match_clauses)})
+                      {org_filter}
+                    ORDER BY lexical_hits DESC, importance DESC, created_at DESC
+                    LIMIT :limit
+                    """
+                )
+
+                rows = session.execute(query, params).fetchall()
+                memories: List[SemanticMemorySearchResult] = []
+                normalizer = max(len(terms), 1)
+                for row in rows:
+                    hits = int(getattr(row, "lexical_hits", 0) or 0)
+                    similarity = max(0.0, min(1.0, hits / normalizer))
+                    memories.append(
+                        SemanticMemorySearchResult(
+                            id=row.id,
+                            content=row.content,
+                            memory_type=MemoryType(row.memory_type),
+                            importance=row.importance,
+                            similarity=similarity,
+                            metadata=row.metadata or {},
+                            created_at=row.created_at,
+                        )
+                    )
+
+                logger.debug(
+                    "Fallback text recall found %d memories for user %s",
+                    len(memories),
+                    user_id,
+                )
+                return memories
+        except Exception as exc:
+            logger.error("Failed fallback text recall for user %s: %s", user_id, exc)
             return []
 
     def _stanford_rerank(

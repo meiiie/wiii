@@ -146,8 +146,8 @@ class GraderAgentNode:
     async def _grade_structured(self, query: str, answer: str) -> dict:
         """Grade using structured output (constrained decoding)."""
         from app.engine.structured_schemas import QualityGradeResult
+        from app.services.structured_invoke_service import StructuredInvokeService
 
-        structured_llm = self._llm.with_structured_output(QualityGradeResult)
         messages = [
             SystemMessage(content="You are a quality grader. Grade the response quality."),
             HumanMessage(content=GRADING_PROMPT.format(
@@ -156,7 +156,12 @@ class GraderAgentNode:
             ))
         ]
 
-        result = await structured_llm.ainvoke(messages)
+        result = await StructuredInvokeService.ainvoke(
+            llm=self._llm,
+            schema=QualityGradeResult,
+            payload=messages,
+            tier="moderate",
+        )
         return result.model_dump()
 
     @retry_on_transient()

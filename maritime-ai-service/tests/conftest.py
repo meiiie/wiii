@@ -92,6 +92,8 @@ def mock_settings():
     s.enable_llm_failover = True
 
     # Embeddings
+    s.embedding_provider = "google"
+    s.embedding_failover_chain = ["google", "openai", "ollama", "openrouter"]
     s.embedding_model = "models/gemini-embedding-001"
     s.embedding_dimensions = 768
 

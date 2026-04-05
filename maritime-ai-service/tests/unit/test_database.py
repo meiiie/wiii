@@ -2,8 +2,10 @@
 
 import pytest
 from unittest.mock import patch, MagicMock
+from sqlalchemy.exc import NoSuchModuleError
 
 from app.core.database import (
+    _build_sync_postgres_url_candidates,
     get_shared_engine,
     get_shared_session_factory,
     test_connection as db_test_connection,
@@ -27,6 +29,14 @@ def reset_database_singletons():
 
 class TestGetSharedEngine:
     """Test singleton engine creation."""
+
+    def test_build_sync_postgres_url_candidates_prefers_psycopg_then_psycopg2(self):
+        candidates = _build_sync_postgres_url_candidates(
+            "postgresql://wiii:secret@localhost:5433/wiii_ai"
+        )
+
+        assert candidates[0] == "postgresql+psycopg://wiii:secret@localhost:5433/wiii_ai"
+        assert candidates[1] == "postgresql+psycopg2://wiii:secret@localhost:5433/wiii_ai"
 
     @patch("app.core.database.event")
     @patch("app.core.database.create_engine")
@@ -55,6 +65,26 @@ class TestGetSharedEngine:
         assert call_kwargs["pool_timeout"] == 30
         assert call_kwargs["pool_recycle"] == 1800
         assert call_kwargs["echo"] is False
+
+    @patch("app.core.database.event")
+    @patch("app.core.database.create_engine")
+    def test_falls_back_to_psycopg2_when_psycopg_dialect_is_unavailable(
+        self,
+        mock_create_engine,
+        mock_event,
+    ):
+        mock_engine = MagicMock()
+        mock_create_engine.side_effect = [
+            NoSuchModuleError("Can't load plugin: sqlalchemy.dialects:postgresql.psycopg"),
+            mock_engine,
+        ]
+
+        engine = get_shared_engine()
+
+        assert engine is mock_engine
+        assert mock_create_engine.call_count == 2
+        assert mock_create_engine.call_args_list[0].args[0].startswith("postgresql+psycopg://")
+        assert mock_create_engine.call_args_list[1].args[0].startswith("postgresql+psycopg2://")
 
     @patch("app.core.database.create_engine", side_effect=Exception("DB unreachable"))
     def test_raises_on_creation_failure(self, mock_create_engine):

@@ -38,13 +38,14 @@ import {
   deactivateUser as apiDeactivateUser,
   reactivateUser as apiReactivateUser,
   changeUserRole as apiChangeUserRole,
+  changeUserPlatformRole as apiChangeUserPlatformRole,
   addOrgMember as apiAddOrgMember,
   removeOrgMember as apiRemoveOrgMember,
 } from "@/api/admin";
 
-export type AdminTab = "dashboard" | "users" | "organizations" | "flags" | "analytics" | "audit" | "gdpr";
+export type AdminTab = "dashboard" | "runtime" | "users" | "organizations" | "flags" | "analytics" | "audit" | "gdpr";
 export type OrgSubView = "overview" | "members" | "flags" | "analytics" | "settings";
-export type AuditSubTab = "admin" | "auth";
+export type AuditSubTab = "admin" | "auth" | "host_actions";
 export type DateRange = "7d" | "30d" | "90d" | "all";
 
 interface AdminState {
@@ -60,7 +61,7 @@ interface AdminState {
   usersSearch: string;
   usersPage: number;
   usersSort: string;
-  usersRoleFilter: string;
+  usersPlatformRoleFilter: string;
   usersStatusFilter: string;
 
   // Organizations (Sprint 179b)
@@ -91,6 +92,9 @@ interface AdminState {
   authEvents: AdminAuthEvent[];
   authEventsTotal: number;
   authEventsPage: number;
+  hostActionEvents: AdminAuthEvent[];
+  hostActionEventsTotal: number;
+  hostActionEventsPage: number;
   auditSubTab: AuditSubTab;
 
   // GDPR
@@ -107,7 +111,7 @@ interface AdminState {
   // Actions
   setActiveTab: (tab: AdminTab) => void;
   fetchDashboard: () => Promise<void>;
-  fetchUsers: (params?: { search?: string; page?: number; sort?: string; role?: string; status?: string }) => Promise<void>;
+  fetchUsers: (params?: { search?: string; page?: number; sort?: string; role?: string; platformRole?: string; status?: string }) => Promise<void>;
   // Organizations (Sprint 179b)
   selectOrg: (orgId: string | null) => void;
   fetchOrgDetail: (orgId: string) => Promise<void>;
@@ -130,6 +134,7 @@ interface AdminState {
   setAnalyticsDateRange: (range: DateRange) => void;
   fetchAuditLogs: (page?: number) => Promise<void>;
   fetchAuthEvents: (page?: number) => Promise<void>;
+  fetchHostActionEvents: (page?: number) => Promise<void>;
   setAuditSubTab: (tab: AuditSubTab) => void;
   gdprExport: (userId: string) => Promise<void>;
   gdprForget: (userId: string) => Promise<void>;
@@ -138,6 +143,7 @@ interface AdminState {
   deactivateUser: (userId: string) => Promise<void>;
   reactivateUser: (userId: string) => Promise<void>;
   changeUserRole: (userId: string, role: string) => Promise<void>;
+  changeUserPlatformRole: (userId: string, platformRole: "user" | "platform_admin") => Promise<void>;
   addOrgMember: (orgId: string, userId: string, role?: string) => Promise<void>;
   removeOrgMember: (orgId: string, userId: string) => Promise<void>;
   reset: () => void;
@@ -162,7 +168,7 @@ const INITIAL_STATE = {
   usersSearch: "",
   usersPage: 0,
   usersSort: "created_at_desc",
-  usersRoleFilter: "",
+  usersPlatformRoleFilter: "",
   usersStatusFilter: "",
   organizations: [] as AdminOrgSummary[],
   selectedOrgId: null as string | null,
@@ -185,6 +191,9 @@ const INITIAL_STATE = {
   authEvents: [],
   authEventsTotal: 0,
   authEventsPage: 0,
+  hostActionEvents: [] as AdminAuthEvent[],
+  hostActionEventsTotal: 0,
+  hostActionEventsPage: 0,
   auditSubTab: "admin" as AuditSubTab,
   gdprExportResult: null,
   gdprForgetResult: null,
@@ -217,13 +226,23 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     const search = params?.search ?? state.usersSearch;
     const page = params?.page ?? state.usersPage;
     const sort = params?.sort ?? state.usersSort;
-    const role = params?.role ?? state.usersRoleFilter;
+    const role = params?.role;
+    const platformRole = params?.platformRole ?? state.usersPlatformRoleFilter;
     const status = params?.status ?? state.usersStatusFilter;
-    set({ loading: true, error: null, usersSearch: search, usersPage: page, usersSort: sort, usersRoleFilter: role, usersStatusFilter: status });
+    set({
+      loading: true,
+      error: null,
+      usersSearch: search,
+      usersPage: page,
+      usersSort: sort,
+      usersPlatformRoleFilter: platformRole,
+      usersStatusFilter: status,
+    });
     try {
       const resp = await searchAdminUsers({
         q: search || undefined,
         role: role || undefined,
+        platform_role: platformRole || undefined,
         status: status || undefined,
         sort,
         limit: PAGE_SIZE,
@@ -436,6 +455,25 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     }
   },
 
+  fetchHostActionEvents: async (page) => {
+    const p = page ?? get().hostActionEventsPage;
+    set({ loading: true, error: null, hostActionEventsPage: p });
+    try {
+      const resp = await getAuthEvents({
+        provider: "host_action",
+        limit: PAGE_SIZE,
+        offset: p * PAGE_SIZE,
+      });
+      set({
+        hostActionEvents: resp.entries,
+        hostActionEventsTotal: resp.total,
+        loading: false,
+      });
+    } catch (e) {
+      set({ loading: false, error: String(e) });
+    }
+  },
+
   setAuditSubTab: (tab) => set({ auditSubTab: tab }),
 
   gdprExport: async (userId) => {
@@ -497,6 +535,18 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     try {
       await apiChangeUserRole(userId, role);
       get().showToast(`Đã đổi vai trò thành ${role}`, "success");
+      await get().fetchUsers();
+    } catch (e) {
+      get().showToast(String(e), "error");
+    }
+  },
+
+  changeUserPlatformRole: async (userId, platformRole) => {
+    try {
+      await apiChangeUserPlatformRole(userId, platformRole);
+      const label =
+        platformRole === "platform_admin" ? "Platform Admin" : "Wiii User";
+      get().showToast(`Đã đổi loại tài khoản thành ${label}`, "success");
       await get().fetchUsers();
     } catch (e) {
       get().showToast(String(e), "error");

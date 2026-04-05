@@ -333,6 +333,7 @@ class TestAdminUserSearch:
             "email": "test@example.com",
             "name": "Test User",
             "role": "student",
+            "platform_role": "user",
             "is_active": True,
             "created_at": None,
             "organization_count": 1,
@@ -408,6 +409,29 @@ class TestAdminUserSearch:
 
         all_call_args = mock_conn.fetchval.call_args[0]
         assert "teacher" in all_call_args
+
+    @pytest.mark.asyncio
+    async def test_filter_by_platform_role(self):
+        """platform_role filter passes through as a separate query param."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+        mock_conn.fetchval.return_value = 1
+        mock_conn.fetch.return_value = [self._make_fake_row(platform_role="platform_admin")]
+
+        with patch("app.api.v1.admin_dashboard.settings") as mock_settings, \
+             patch(_POOL_PATCH, create=True, new=async_pool_fn):
+            mock_settings.enable_admin_module = True
+
+            from app.api.v1.admin_dashboard import admin_user_search
+            result = await admin_user_search(
+                auth=_ADMIN_USER,
+                email=None, role=None, platform_role="platform_admin", org_id=None, status=None, q=None,
+                sort="created_at_desc", limit=50, offset=0,
+            )
+
+        all_call_args = mock_conn.fetchval.call_args[0]
+        assert "platform_admin" in all_call_args
+        assert result["users"][0]["platform_role"] == "platform_admin"
+        assert result["users"][0]["legacy_role"] == result["users"][0]["role"]
 
     @pytest.mark.asyncio
     async def test_filter_by_org_id(self):

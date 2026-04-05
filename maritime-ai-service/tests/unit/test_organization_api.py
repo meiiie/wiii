@@ -25,6 +25,8 @@ from app.api.v1.organizations import (
     remove_member,
     list_members,
     my_organizations,
+    get_org_permissions_endpoint,
+    get_org_host_action_events,
     _require_multi_tenant,
     _require_admin,
 )
@@ -251,6 +253,193 @@ class TestDeleteOrganization:
         with pytest.raises(HTTPException) as exc_info:
             await delete_organization(request=mock_request, org_id="default", auth=admin_user)
         assert exc_info.value.status_code == 400
+
+
+class TestOrgHostActionEvents:
+    @pytest.mark.asyncio
+    @patch("app.api.v1.organizations.settings")
+    @patch("app.api.v1.organizations._get_pool")
+    async def test_platform_admin_can_view_org_host_actions(
+        self,
+        mock_pool_fn,
+        mock_settings,
+        admin_user,
+        mock_request,
+    ):
+        mock_settings.enable_multi_tenant = True
+        pool = MagicMock()
+        conn = AsyncMock()
+        acquire_cm = AsyncMock()
+        acquire_cm.__aenter__.return_value = conn
+        acquire_cm.__aexit__.return_value = False
+        pool.acquire.return_value = acquire_cm
+        mock_pool_fn.return_value = pool
+        conn.fetchval.return_value = 1
+        conn.fetch.return_value = [{
+            "id": "evt-1",
+            "event_type": "host_action.preview_created",
+            "user_id": "teacher-1",
+            "provider": "host_action",
+            "result": "success",
+            "reason": "Preview ready",
+            "ip_address": "127.0.0.1",
+            "organization_id": "org-x",
+            "metadata": {"preview_kind": "lesson_patch"},
+            "created_at": None,
+        }]
+
+        result = await get_org_host_action_events(
+            request=mock_request,
+            org_id="org-x",
+            auth=admin_user,
+        )
+
+        assert result["total"] == 1
+        assert result["entries"][0]["provider"] == "host_action"
+        assert "organization_id = $2" in conn.fetchval.call_args[0][0]
+
+    @pytest.mark.asyncio
+    @patch("app.api.v1.organizations.settings")
+    @patch("app.api.v1.organizations.get_organization_repository")
+    @patch("app.api.v1.organizations._get_pool")
+    async def test_org_admin_can_view_own_org_host_actions(
+        self,
+        mock_pool_fn,
+        mock_repo_fn,
+        mock_settings,
+        student_user,
+        mock_request,
+    ):
+        mock_settings.enable_multi_tenant = True
+        mock_settings.enable_org_admin = True
+        mock_repo = MagicMock()
+        mock_repo.get_user_org_role.return_value = "admin"
+        mock_repo_fn.return_value = mock_repo
+
+        pool = MagicMock()
+        conn = AsyncMock()
+        acquire_cm = AsyncMock()
+        acquire_cm.__aenter__.return_value = conn
+        acquire_cm.__aexit__.return_value = False
+        pool.acquire.return_value = acquire_cm
+        mock_pool_fn.return_value = pool
+        conn.fetchval.return_value = 0
+        conn.fetch.return_value = []
+
+        result = await get_org_host_action_events(
+            request=mock_request,
+            org_id="org-x",
+            auth=student_user,
+            event_type="host_action.publish_confirmed",
+        )
+
+        assert result["entries"] == []
+        mock_repo.get_user_org_role.assert_called_once_with("student-1", "org-x")
+        assert "event_type = $3" in conn.fetchval.call_args[0][0]
+
+    @pytest.mark.asyncio
+    @patch("app.api.v1.organizations.settings")
+    @patch("app.api.v1.organizations.get_organization_repository")
+    async def test_non_org_admin_rejected_from_host_action_events(
+        self,
+        mock_repo_fn,
+        mock_settings,
+        student_user,
+        mock_request,
+    ):
+        mock_settings.enable_multi_tenant = True
+        mock_settings.enable_org_admin = True
+        mock_repo = MagicMock()
+        mock_repo.get_user_org_role.return_value = "member"
+        mock_repo_fn.return_value = mock_repo
+
+        with pytest.raises(HTTPException) as exc_info:
+            await get_org_host_action_events(
+                request=mock_request,
+                org_id="org-x",
+                auth=student_user,
+            )
+
+        assert exc_info.value.status_code == 403
+
+
+class TestOrgPermissionsEndpoint:
+    @pytest.mark.asyncio
+    @patch("app.api.v1.organizations.settings")
+    @patch("app.api.v1.organizations.get_organization_repository")
+    @patch("app.core.org_settings.get_org_permissions")
+    async def test_regular_user_permissions_do_not_inherit_legacy_teacher_role(
+        self,
+        mock_get_org_permissions,
+        mock_repo_fn,
+        mock_settings,
+        mock_request,
+    ):
+        mock_settings.enable_multi_tenant = True
+        mock_settings.enable_org_admin = True
+        mock_repo = MagicMock()
+        mock_repo.is_user_in_org.return_value = True
+        mock_repo.get_user_org_role.return_value = "member"
+        mock_repo_fn.return_value = mock_repo
+        mock_get_org_permissions.return_value = ["read:chat"]
+
+        auth = AuthenticatedUser(
+            user_id="user-1",
+            auth_method="jwt",
+            role="teacher",
+            platform_role="user",
+            organization_role="member",
+        )
+
+        result = await get_org_permissions_endpoint(
+            request=mock_request,
+            org_id="org-1",
+            auth=auth,
+        )
+
+        mock_get_org_permissions.assert_called_once_with("org-1", "student", org_role="member")
+        assert result["role"] == "student"
+        assert result["permission_role"] == "student"
+        assert result["legacy_role"] == "teacher"
+        assert result["platform_role"] == "user"
+
+    @pytest.mark.asyncio
+    @patch("app.api.v1.organizations.settings")
+    @patch("app.api.v1.organizations.get_organization_repository")
+    @patch("app.core.org_settings.get_org_permissions")
+    async def test_platform_admin_permissions_keep_admin_tier(
+        self,
+        mock_get_org_permissions,
+        mock_repo_fn,
+        mock_settings,
+        mock_request,
+    ):
+        mock_settings.enable_multi_tenant = True
+        mock_settings.enable_org_admin = True
+        mock_repo = MagicMock()
+        mock_repo.is_user_in_org.return_value = True
+        mock_repo.get_user_org_role.return_value = "owner"
+        mock_repo_fn.return_value = mock_repo
+        mock_get_org_permissions.return_value = ["manage:org_settings"]
+
+        auth = AuthenticatedUser(
+            user_id="admin-1",
+            auth_method="jwt",
+            role="teacher",
+            platform_role="platform_admin",
+            organization_role="owner",
+        )
+
+        result = await get_org_permissions_endpoint(
+            request=mock_request,
+            org_id="org-1",
+            auth=auth,
+        )
+
+        mock_get_org_permissions.assert_called_once_with("org-1", "admin", org_role="owner")
+        assert result["role"] == "admin"
+        assert result["permission_role"] == "admin"
+        assert result["platform_role"] == "platform_admin"
 
 
 # =============================================================================

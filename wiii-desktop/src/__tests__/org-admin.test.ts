@@ -16,6 +16,7 @@ vi.mock("@/api/organizations", () => ({
   getOrgSettings: vi.fn().mockRejectedValue(new Error("Not configured")),
   getOrgPermissions: vi.fn().mockRejectedValue(new Error("Not configured")),
   updateOrgSettings: vi.fn().mockRejectedValue(new Error("Not configured")),
+  getOrgHostActionEvents: vi.fn().mockResolvedValue({ entries: [], total: 0, limit: 20, offset: 0 }),
 }));
 
 vi.mock("@/api/admin", () => ({
@@ -269,6 +270,11 @@ describe("org-admin-store", () => {
       orgSettings: null,
       loading: false,
       toast: null,
+      hostActionEvents: [],
+      hostActionEventsTotal: 0,
+      hostActionEventsPage: 0,
+      hostActionView: "all",
+      hostActionLoading: false,
     });
   });
 
@@ -298,8 +304,8 @@ describe("org-admin-store", () => {
     vi.useRealTimers();
   });
 
-  it("all 4 tab types are valid", () => {
-    const tabs = ["dashboard", "members", "analytics", "settings"] as const;
+  it("all org admin tab types are valid", () => {
+    const tabs = ["dashboard", "members", "analytics", "audit", "settings", "knowledge"] as const;
     for (const tab of tabs) {
       useOrgAdminStore.getState().setActiveTab(tab);
       expect(useOrgAdminStore.getState().activeTab).toBe(tab);
@@ -322,6 +328,11 @@ describe("org-admin-store", () => {
       members: [{ user_id: "u1", role: "member" } as any],
       orgSettings: { branding: {} } as any,
       loading: true,
+      hostActionEvents: [{ id: "evt-1" } as any],
+      hostActionEventsTotal: 1,
+      hostActionEventsPage: 2,
+      hostActionView: "publishes",
+      hostActionLoading: true,
     });
     useOrgAdminStore.getState().reset();
     const state = useOrgAdminStore.getState();
@@ -332,6 +343,11 @@ describe("org-admin-store", () => {
     expect(state.orgSettings).toBeNull();
     expect(state.loading).toBe(false);
     expect(state.toast).toBeNull();
+    expect(state.hostActionEvents).toEqual([]);
+    expect(state.hostActionEventsTotal).toBe(0);
+    expect(state.hostActionEventsPage).toBe(0);
+    expect(state.hostActionView).toBe("all");
+    expect(state.hostActionLoading).toBe(false);
   });
 });
 
@@ -423,6 +439,45 @@ describe("org-admin-store actions", () => {
     expect(useOrgAdminStore.getState().toast).toBeNull();
 
     vi.useRealTimers();
+  });
+
+  it("fetchHostActionEvents populates org-scoped audit timeline", async () => {
+    const { getOrgHostActionEvents } = await import("@/api/organizations");
+    (getOrgHostActionEvents as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      entries: [
+        {
+          id: "evt-1",
+          event_type: "host_action.preview_created",
+          user_id: "teacher-1",
+          provider: "host_action",
+          result: "success",
+          reason: "Preview ready",
+          ip_address: "127.0.0.1",
+          organization_id: "org-x",
+          metadata: { preview_kind: "lesson_patch" },
+          created_at: "2026-03-23T00:00:00Z",
+        },
+      ],
+      total: 1,
+      limit: 20,
+      offset: 0,
+    });
+
+    await useOrgAdminStore.getState().fetchHostActionEvents("org-x");
+
+    const state = useOrgAdminStore.getState();
+    expect(state.hostActionEvents).toHaveLength(1);
+    expect(state.hostActionEventsTotal).toBe(1);
+    expect(state.hostActionLoading).toBe(false);
+  });
+
+  it("setHostActionView resets paging for saved org timeline views", () => {
+    useOrgAdminStore.setState({ hostActionEventsPage: 3, hostActionView: "all" });
+    useOrgAdminStore.getState().setHostActionView("publishes");
+
+    const state = useOrgAdminStore.getState();
+    expect(state.hostActionView).toBe("publishes");
+    expect(state.hostActionEventsPage).toBe(0);
   });
 });
 

@@ -311,7 +311,7 @@ class TestStoreUserFactUpsert:
         fe = _make_extractor()
         fe._repository.find_similar_fact_by_embedding.return_value = None
         fe._repository.find_fact_by_type.return_value = None
-        fe._repository.save_memory.return_value = None
+        fe._repository.save_memory.return_value = MagicMock()
         fe._repository.count_user_memories.return_value = 5
 
         result = await fe.store_user_fact_upsert("u1", "goal: Learn COLREGs", fact_type="goal")
@@ -327,7 +327,7 @@ class TestStoreUserFactUpsert:
         fe = _make_extractor()
         fe._repository.find_similar_fact_by_embedding.return_value = None
         fe._repository.find_fact_by_type.return_value = None
-        fe._repository.save_memory.return_value = None
+        fe._repository.save_memory.return_value = MagicMock()
         fe._repository.count_user_memories.return_value = 55
 
         # Mock get_all_user_facts for importance-aware eviction
@@ -351,16 +351,48 @@ class TestStoreUserFactUpsert:
     async def test_error_returns_false(self):
         fe = _make_extractor()
         fe._embeddings.aembed_documents = AsyncMock(side_effect=Exception("Embedding error"))
+        fe._repository.find_fact_by_type.return_value = None
+        fe._repository.save_memory.return_value = None
 
         result = await fe.store_user_fact_upsert("u1", "name: Minh", fact_type="name")
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_embedding_failure_falls_back_to_insert_without_vector(self):
+        fe = _make_extractor()
+        fe._embeddings.aembed_documents = AsyncMock(side_effect=Exception("Embedding error"))
+        fe._repository.find_fact_by_type.return_value = None
+        fe._repository.save_memory.return_value = MagicMock()
+
+        result = await fe.store_user_fact_upsert("u1", "name: Minh", fact_type="name")
+
+        assert result is True
+        fe._repository.find_similar_fact_by_embedding.assert_not_called()
+        saved = fe._repository.save_memory.call_args[0][0]
+        assert saved.embedding == []
+
+    @pytest.mark.asyncio
+    async def test_embedding_failure_updates_existing_fact_preserving_embedding(self):
+        fe = _make_extractor()
+        fe._embeddings.aembed_documents = AsyncMock(side_effect=Exception("Embedding error"))
+        fe._repository.find_similar_fact_by_embedding.return_value = None
+        mock_existing = MagicMock()
+        mock_existing.id = "fact-id-3"
+        fe._repository.find_fact_by_type.return_value = mock_existing
+        fe._repository.update_fact_preserve_embedding.return_value = True
+
+        result = await fe.store_user_fact_upsert("u1", "name: Linh", fact_type="name")
+
+        assert result is True
+        fe._repository.update_fact.assert_not_called()
+        fe._repository.update_fact_preserve_embedding.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_mapped_type_used(self):
         fe = _make_extractor()
         fe._repository.find_similar_fact_by_embedding.return_value = None
         fe._repository.find_fact_by_type.return_value = None
-        fe._repository.save_memory.return_value = None
+        fe._repository.save_memory.return_value = MagicMock()
         fe._repository.count_user_memories.return_value = 1
 
         # "background" should be mapped to "role"
@@ -509,7 +541,7 @@ class TestExtractAndStoreFacts:
         fe = _make_extractor(llm=mock_llm)
         fe._repository.find_similar_fact_by_embedding.return_value = None
         fe._repository.find_fact_by_type.return_value = None
-        fe._repository.save_memory.return_value = None
+        fe._repository.save_memory.return_value = MagicMock()
         fe._repository.count_user_memories.return_value = 5
 
         with patch("app.services.output_processor.extract_thinking_from_response",

@@ -251,6 +251,12 @@ class TestFindSimilarFactByEmbedding:
         session.execute.side_effect = Exception("DB error")
         assert repo.find_similar_fact_by_embedding("user1", [0.1] * 768) is None
 
+    def test_empty_embedding_returns_none_without_query(self):
+        repo, session = _make_repo()
+        result = repo.find_similar_fact_by_embedding("user1", [])
+        assert result is None
+        session.execute.assert_not_called()
+
 
 # ============================================================================
 # update_fact
@@ -293,6 +299,24 @@ class TestUpdateFact:
         session.execute.side_effect = Exception("DB error")
         result = repo.update_fact(uuid4(), "Content", [0.1] * 768, {})
         assert result is False
+
+    def test_preserve_embedding_updates_content_without_vector(self):
+        repo, session = _make_repo()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = MagicMock()
+        session.execute.return_value = mock_result
+
+        result = repo.update_fact_preserve_embedding(
+            uuid4(),
+            "New content",
+            {"fact_type": "name", "confidence": 0.9},
+        )
+
+        assert result is True
+        query = session.execute.call_args[0][0]
+        params = session.execute.call_args[0][1]
+        assert "embedding = CAST(:embedding AS vector)" not in query.text
+        assert params["content"] == "New content"
 
 
 # ============================================================================
@@ -500,6 +524,12 @@ class TestUpsertTriple:
         existing_row = _make_fact_row("Name: Old", "name")
         mock_result_find = MagicMock()
         mock_result_find.fetchone.return_value = existing_row
+        mock_result_existing_meta = MagicMock()
+        existing_meta_row = MagicMock()
+        existing_meta_row.metadata = {
+            "embedding_space_fingerprint": "ollama:embeddinggemma:768"
+        }
+        mock_result_existing_meta.fetchone.return_value = existing_meta_row
         mock_result_update = MagicMock()
         update_row = MagicMock()
         update_row.id = existing_row.id
@@ -513,7 +543,11 @@ class TestUpsertTriple:
         update_row.updated_at = existing_row.created_at
         mock_result_update.fetchone.return_value = update_row
 
-        session.execute.side_effect = [mock_result_find, mock_result_update]
+        session.execute.side_effect = [
+            mock_result_find,
+            mock_result_existing_meta,
+            mock_result_update,
+        ]
 
         triple = SemanticTriple(
             subject="user1",
@@ -522,6 +556,52 @@ class TestUpsertTriple:
             embedding=[0.1] * 768,
         )
         # update_memory_content will be called
-        result = repo.upsert_triple(triple)
+        with patch(
+            "app.engine.semantic_memory.embeddings.get_embedding_generator",
+            side_effect=ImportError("not available"),
+        ):
+            result = repo.upsert_triple(triple)
         # Should have called find_by_predicate (which found existing), then update_memory_content
         assert result is not None
+
+
+class TestUpdateMemoryContent:
+    """Test content updates when embedding regeneration is unavailable."""
+
+    def test_preserves_existing_embedding_when_generator_unavailable(self):
+        import sys
+        import types
+
+        repo, session = _make_repo()
+        memory_id = uuid4()
+        update_row = MagicMock()
+        update_row.id = memory_id
+        update_row.user_id = "user1"
+        update_row.content = "Updated content"
+        update_row.memory_type = MemoryType.USER_FACT.value
+        update_row.importance = 0.7
+        update_row.metadata = {"fact_type": "name", "confidence": 0.7}
+        update_row.session_id = None
+        update_row.created_at = datetime.now(timezone.utc)
+        update_row.updated_at = datetime.now(timezone.utc)
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = update_row
+        session.execute.return_value = mock_result
+
+        mock_generator = MagicMock()
+        mock_generator.is_available.return_value = False
+
+        fake_embeddings = types.ModuleType("app.engine.semantic_memory.embeddings")
+        fake_embeddings.get_embedding_generator = MagicMock(return_value=mock_generator)
+
+        with patch.dict(sys.modules, {"app.engine.semantic_memory.embeddings": fake_embeddings}):
+            result = repo.update_memory_content(
+                memory_id=memory_id,
+                user_id="user1",
+                new_content="Updated content",
+                new_metadata={"fact_type": "name", "confidence": 0.7},
+            )
+
+        assert result is not None
+        query = session.execute.call_args[0][0]
+        assert "embedding = CAST(:embedding AS vector)" not in query.text

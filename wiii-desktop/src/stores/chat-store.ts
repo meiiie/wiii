@@ -23,6 +23,8 @@ import type {
   DisplayPresentationMeta,
   StreamingStep,
   ThinkingPhase,
+  ThinkingSummaryMode,
+  ThinkingBlockData,
   ScreenshotBlockData,
   SubagentGroupBlockData,
   SubagentWorker,
@@ -63,12 +65,72 @@ function normalizeNarrativeText(value: string | undefined): string {
   return (value || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+function normalizeThinkingSnapshot(value: string | undefined): string {
+  return (value || "").replace(/\s+/g, " ").trim();
+}
+
 function getLastNarrativeLine(value: string | undefined): string {
   const segments = (value || "")
     .split("\n")
     .map((segment) => segment.trim())
     .filter(Boolean);
   return segments.length > 0 ? segments[segments.length - 1] || "" : "";
+}
+
+function getNarrativeSegments(value: string | undefined): string[] {
+  return (value || "")
+    .split("\n")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function hasNarrativeSegment(value: string | undefined, candidate: string): boolean {
+  const normalizedCandidate = normalizeNarrativeText(candidate);
+  if (!normalizedCandidate) return false;
+  return getNarrativeSegments(value).some((segment) => normalizeNarrativeText(segment) === normalizedCandidate);
+}
+
+function isReplayProneNarrativeChunk(value: string | undefined): boolean {
+  const trimmed = (value || "").trim();
+  if (!trimmed) return false;
+  return trimmed.length >= 24 || /\s/u.test(trimmed) || /[.!?…]/u.test(trimmed);
+}
+
+function shouldSkipRepeatedNarrative(existingText: string | undefined, candidate: string): boolean {
+  if (!isReplayProneNarrativeChunk(candidate)) return false;
+  return hasNarrativeSegment(existingText, candidate);
+}
+
+function buildThinkingDedupContext(
+  openBlock: ThinkingBlockData | undefined,
+  previousBlock: ThinkingBlockData | undefined,
+  streamingThinking: string,
+): string {
+  return [
+    openBlock?.content,
+    openBlock?.summary,
+    previousBlock?.content,
+    previousBlock?.summary,
+    streamingThinking,
+  ]
+    .filter((value): value is string => Boolean(value && value.trim()))
+    .join("\n");
+}
+
+function fillThinkingBodyFromSummary(_block: ThinkingBlockData | undefined): void {
+  // Public-thinking authority now lives in streamed delta content.
+  // Keep thinking_start.summary as header/meta only instead of promoting it
+  // into visible body text when no delta was emitted.
+}
+
+function sanitizeThinkingLabel(label: string | undefined): string | undefined {
+  const trimmed = (label || "").trim();
+  if (!trimmed) return undefined;
+  if (/^🔧/u.test(trimmed)) return undefined;
+  if (/^chuyển sang\b/i.test(trimmed)) return undefined;
+  if (/^tìm thấy\s+\d+/i.test(trimmed)) return undefined;
+  if (/\btool_[a-z0-9_]+\b/i.test(trimmed)) return undefined;
+  return trimmed;
 }
 
 interface ChatState {
@@ -139,7 +201,14 @@ interface ChatState {
   setStreamingSources: (sources: SourceInfo[]) => void;
   addStreamingStep: (label: string, node?: string) => void;
   appendThinkingDelta: (delta: string, node?: string, meta?: DisplayPresentationMeta) => void;
-  openThinkingBlock: (label: string, summary?: string, node?: string, phase?: string, meta?: DisplayPresentationMeta) => void;
+  openThinkingBlock: (
+    label: string,
+    summary?: string,
+    node?: string,
+    phase?: string,
+    meta?: DisplayPresentationMeta,
+    summaryMode?: ThinkingSummaryMode,
+  ) => void;
   closeThinkingBlock: (durationMs?: number) => void;
   appendToolCall: (tc: ToolCallInfo, meta?: DisplayPresentationMeta) => void;
   updateToolCallResult: (id: string, result: string, meta?: DisplayPresentationMeta) => void;
@@ -179,7 +248,14 @@ interface ChatState {
   recordWidgetFeedback: (feedback: Omit<WidgetFeedbackItem, "timestamp"> & { timestamp?: string }) => void;
   getActiveWidgetFeedbackContext: () => Record<string, unknown> | undefined;
   // Sprint 141: ThinkingFlow phase actions
-  addOrUpdatePhase: (label: string, node?: string, stepId?: string, phase?: string, summary?: string) => void;
+  addOrUpdatePhase: (
+    label: string,
+    node?: string,
+    stepId?: string,
+    phase?: string,
+    summary?: string,
+    summaryMode?: ThinkingSummaryMode,
+  ) => void;
   appendPhaseThinking: (content: string, node?: string, stepId?: string) => void;
   appendPhaseThinkingDelta: (delta: string, node?: string, stepId?: string) => void;
   closeActivePhase: (durationMs?: number) => void;
@@ -188,7 +264,7 @@ interface ChatState {
   updatePhaseToolCallResult: (id: string, result: string) => void;
   setPendingStreamMetadata: (metadata: ChatResponseMetadata) => void;
   finalizeStream: (metadata?: ChatResponseMetadata) => void;
-  setStreamError: (error: string) => void;
+  setStreamError: (error: string, metadata?: Record<string, unknown>) => void;
   setMessageFeedback: (messageId: string, feedback: "up" | "down" | null) => void;
   clearStreaming: () => void;
   /** Sprint 218: Clear conversations on logout (prevent cross-user leakage) */
@@ -268,6 +344,80 @@ function mergeStreamMetadataIntoMessage(message: Message, metadata: ChatResponse
   message.reasoning_trace = metadata.reasoning_trace;
   message.metadata = metadata;
   message.suggested_questions = extractSuggestedQuestions(metadata);
+  const metadataThinking = normalizeThinkingSnapshot(
+    metadata.thinking_lifecycle?.final_text || metadata.thinking_content || metadata.thinking || "",
+  );
+  if (metadataThinking) {
+    const currentThinking = normalizeThinkingSnapshot(message.thinking);
+    if (!currentThinking || metadataThinking.length > currentThinking.length) {
+      message.thinking = metadataThinking;
+    }
+  }
+}
+
+function pickPreferredFinalThinking(
+  streamingThinking: string,
+  metadata?: ChatResponseMetadata,
+): string {
+  const liveThinking = normalizeThinkingSnapshot(streamingThinking);
+  const lifecycleThinking = normalizeThinkingSnapshot(
+    metadata?.thinking_lifecycle?.final_text || "",
+  );
+  const metadataThinking = normalizeThinkingSnapshot(
+    metadata?.thinking_content || metadata?.thinking || "",
+  );
+
+  if (lifecycleThinking) {
+    if (!liveThinking) return lifecycleThinking;
+    if (lifecycleThinking === liveThinking) return liveThinking;
+    if (lifecycleThinking.length >= liveThinking.length) return lifecycleThinking;
+  }
+  if (!metadataThinking) return liveThinking || lifecycleThinking;
+  if (!liveThinking) return metadataThinking;
+  if (metadataThinking === liveThinking) return liveThinking;
+  if (metadataThinking.length > liveThinking.length) return metadataThinking;
+  return liveThinking;
+}
+
+function reconcileFinalThinkingBlocks(
+  blocks: ContentBlock[],
+  preferredThinking: string,
+): ContentBlock[] {
+  const cleanThinking = normalizeThinkingSnapshot(preferredThinking);
+  if (!cleanThinking) return blocks;
+
+  const nextBlocks = blocks.map((block) => ({ ...block })) as ContentBlock[];
+  const lastThinking = findLastThinkingBlock(nextBlocks);
+  if (lastThinking) {
+    const currentContent = normalizeThinkingSnapshot(lastThinking.content);
+    if (!currentContent || cleanThinking.length > currentContent.length) {
+      lastThinking.content = cleanThinking;
+      if (!lastThinking.endTime) {
+        lastThinking.endTime = Date.now();
+      }
+      lastThinking.stepState = "completed";
+    }
+    return nextBlocks;
+  }
+
+  nextBlocks.unshift({
+    type: "thinking",
+    id: uuidv4(),
+    content: cleanThinking,
+    toolCalls: [],
+    startTime: Date.now(),
+    endTime: Date.now(),
+    stepState: "completed",
+    displayRole: "thinking",
+    presentation: "compact",
+  } as ThinkingBlockData);
+  return nextBlocks;
+}
+
+function getMetadataRequestId(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const requestId = (value as Record<string, unknown>).request_id;
+  return typeof requestId === "string" ? requestId.trim() : "";
 }
 
 function applyDisplayMeta<T extends DisplayPresentationMeta>(target: T, meta?: DisplayPresentationMeta): T {
@@ -833,6 +983,12 @@ export const useChatStore = create<ChatState>()(
         if (normalizedThinking === lastNarrativeLine && normalizedThinking === lastBlockLine) {
           return;
         }
+        if (hasNarrativeSegment(state.streamingThinking, thinking)) {
+          return;
+        }
+        if (lastBlock?.type === "thinking" && hasNarrativeSegment(lastBlock.content, thinking)) {
+          return;
+        }
 
         // Flat field — backward compat
         state.streamingThinking = state.streamingThinking
@@ -848,7 +1004,7 @@ export const useChatStore = create<ChatState>()(
           state.streamingBlocks.push({
             type: "thinking",
             id: uuidv4(),
-            label: state.streamingStep || undefined,
+            label: sanitizeThinkingLabel(state.streamingStep),
             content: thinking,
             toolCalls: [],
             startTime: Date.now(),
@@ -860,10 +1016,12 @@ export const useChatStore = create<ChatState>()(
     // Phase2: Update the latest thinking block's label with Wiii persona label
     setStreamingThinkingLabel: (label) => {
       set((state) => {
+        const safeLabel = sanitizeThinkingLabel(label);
+        if (!safeLabel) return;
         for (let i = state.streamingBlocks.length - 1; i >= 0; i--) {
           const block = state.streamingBlocks[i];
           if (block.type === "thinking") {
-            (block as { label?: string }).label = label;
+            (block as { label?: string }).label = safeLabel;
             break;
           }
         }
@@ -874,8 +1032,9 @@ export const useChatStore = create<ChatState>()(
       set((state) => {
         state.streamingStep = step;
         const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1];
-        if (lastBlock?.type === "thinking" && !lastBlock.label && step) {
-          lastBlock.label = step;
+        const safeLabel = sanitizeThinkingLabel(step);
+        if (lastBlock?.type === "thinking" && !lastBlock.label && safeLabel) {
+          lastBlock.label = safeLabel;
         }
       });
     },
@@ -892,11 +1051,24 @@ export const useChatStore = create<ChatState>()(
 
     appendThinkingDelta: (delta, node, meta) => {
       set((state) => {
+        if (!delta || !delta.trim()) {
+          return;
+        }
+        const openBlock = findLastOpenThinkingBlock(state.streamingBlocks, meta?.stepId, node);
+        const previousBlock = openBlock || findLastThinkingBlock(state.streamingBlocks, meta?.stepId, node);
+        const existingNarrative = buildThinkingDedupContext(
+          openBlock,
+          previousBlock,
+          state.streamingThinking,
+        );
+        if (shouldSkipRepeatedNarrative(existingNarrative, delta)) {
+          return;
+        }
+
         // Flat field - backward compat
         state.streamingThinking += delta;
 
         // Block-based: append to matching open thinking block, or create new one
-        const openBlock = findLastOpenThinkingBlock(state.streamingBlocks, meta?.stepId, node);
         if (openBlock) {
           openBlock.content += delta;
           if (node && !openBlock.node) {
@@ -904,7 +1076,6 @@ export const useChatStore = create<ChatState>()(
           }
           applyDisplayMeta(openBlock, meta);
         } else {
-          const previousBlock = findLastThinkingBlock(state.streamingBlocks, meta?.stepId, node);
           if (previousBlock && meta?.stepId && previousBlock.stepId === meta.stepId) {
             previousBlock.content += delta;
             if (node && !previousBlock.node) {
@@ -917,8 +1088,9 @@ export const useChatStore = create<ChatState>()(
           state.streamingBlocks.push(applyDisplayMeta({
             type: "thinking",
             id: uuidv4(),
-            label: previousBlock?.label || state.streamingStep || node || undefined,
+            label: sanitizeThinkingLabel(previousBlock?.label) || sanitizeThinkingLabel(state.streamingStep),
             summary: previousBlock?.summary,
+            summaryMode: previousBlock?.summaryMode,
             phase: previousBlock?.phase,
             node,
             content: delta,
@@ -932,7 +1104,7 @@ export const useChatStore = create<ChatState>()(
       });
     },
 
-    openThinkingBlock: (label, summary, node, phase, meta) => {
+    openThinkingBlock: (label, summary, node, phase, meta, summaryMode) => {
       set((state) => {
         // Close any open thinking block first
         const lastBlock = findLastOpenThinkingBlock(state.streamingBlocks);
@@ -947,6 +1119,7 @@ export const useChatStore = create<ChatState>()(
           id: uuidv4(),
           label,
           summary,
+          summaryMode,
           node,
           phase,
           content: "",
@@ -1379,7 +1552,7 @@ export const useChatStore = create<ChatState>()(
 
     // ---- Sprint 141: ThinkingFlow phase actions ----
 
-    addOrUpdatePhase: (label, node, stepId, phase, summary) => {
+    addOrUpdatePhase: (label, node, stepId, phase, summary, summaryMode) => {
       set((state) => {
         for (const p of state.streamingPhases) {
           if (p.status === "active") {
@@ -1394,6 +1567,7 @@ export const useChatStore = create<ChatState>()(
           stepId,
           phase,
           summary,
+          summaryMode,
           status: "active",
           startTime: Date.now(),
           thinkingContent: "",
@@ -1541,6 +1715,7 @@ export const useChatStore = create<ChatState>()(
     setPendingStreamMetadata: (metadata) => {
       if (!metadata) return;
       const wasStreaming = get().isStreaming;
+      const incomingRequestId = getMetadataRequestId(metadata);
 
       set((state) => {
         if (state.isStreaming) {
@@ -1555,6 +1730,13 @@ export const useChatStore = create<ChatState>()(
         const conv = state.conversations.find((c) => c.id === state.activeConversationId);
         const message = conv?.messages[conv.messages.length - 1];
         if (!conv || !message || message.role !== "assistant") return;
+
+        const messageRequestId = getMetadataRequestId(message.metadata);
+        if (incomingRequestId) {
+          if (!messageRequestId || messageRequestId !== incomingRequestId) {
+            return;
+          }
+        }
 
         mergeStreamMetadataIntoMessage(message, metadata);
 
@@ -1617,22 +1799,31 @@ export const useChatStore = create<ChatState>()(
       // Sprint 154: Keep full screenshot images (no stripping).
       // Storage cost is minimal and full images look more professional.
 
+      const preferredThinking = pickPreferredFinalThinking(
+        streamingThinking,
+        effectiveMetadata,
+      );
+      const reconciledBlocks = reconcileFinalThinkingBlocks(
+        closedBlocks,
+        preferredThinking,
+      );
+
       const message: Message = {
         id: uuidv4(),
         role: "assistant",
         content: buildDegradedAssistantContent({
           streamingContent,
-          streamingBlocks,
+          streamingBlocks: reconciledBlocks,
           streamingArtifacts,
           streamingPreviews,
         }),
         timestamp: new Date().toISOString(),
         sources: streamingSources.length > 0 ? streamingSources : undefined,
-        thinking: streamingThinking || undefined,
+        thinking: preferredThinking || undefined,
         reasoning_trace: effectiveMetadata?.reasoning_trace,
         suggested_questions: suggestedQuestions,
         tool_calls: streamingToolCalls.length > 0 ? [...streamingToolCalls] : undefined,
-        blocks: closedBlocks.length > 0 ? closedBlocks : undefined,
+        blocks: reconciledBlocks.length > 0 ? reconciledBlocks : undefined,
         domain_notice: streamingDomainNotice || undefined,
         previews: streamingPreviews.length > 0 ? [...streamingPreviews] : undefined,
         artifacts: streamingArtifacts.length > 0 ? [...streamingArtifacts] : undefined,
@@ -1668,7 +1859,7 @@ export const useChatStore = create<ChatState>()(
       persistConversationsImmediate(get().conversations);
     },
 
-    setStreamError: (error) => {
+    setStreamError: (error, metadata) => {
       const { activeConversationId } = get();
       if (!activeConversationId) return;
 
@@ -1677,6 +1868,7 @@ export const useChatStore = create<ChatState>()(
         role: "assistant",
         content: `❌ Lỗi: ${error}`,
         timestamp: new Date().toISOString(),
+        metadata,
       };
 
       set((state) => {

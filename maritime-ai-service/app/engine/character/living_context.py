@@ -129,6 +129,7 @@ class LivingExpressionPolicyV1(BaseModel):
 class LivingContextBlockV1(BaseModel):
     contract_version: Literal["living_context.v1"] = "living_context.v1"
     core_card: Dict[str, str]
+    current_state: List[str] = Field(default_factory=list)
     narrative_state: List[str] = Field(default_factory=list)
     relationship_memory: List[str] = Field(default_factory=list)
     task_mode: Dict[str, str] = Field(default_factory=dict)
@@ -348,6 +349,15 @@ def compile_living_context_block(
         personality_mode=ctx.get("personality_mode"),
     )
 
+    current_state: List[str] = []
+    for note in card.get("runtime_notes", [])[:4]:
+        cleaned_note = _clip(str(note).strip(), 220)
+        if cleaned_note and cleaned_note not in current_state:
+            current_state.append(cleaned_note)
+    mood_hint = _clip(str(ctx.get("mood_hint") or "").strip(), 220)
+    if mood_hint and mood_hint not in current_state:
+        current_state.append(mood_hint)
+
     narrative_state: List[str] = []
     living_state = _safe_character_state(user_id)
     if living_state:
@@ -400,6 +410,7 @@ def compile_living_context_block(
             "origin": _clip(str(card.get("origin") or "").strip(), 180),
             "identity_anchor": _clip(str(card.get("identity_anchor") or "").strip(), 180),
         },
+        current_state=current_state[:4],
         narrative_state=narrative_state[:4],
         relationship_memory=relationship_memory[:4],
         task_mode=task_mode,
@@ -422,6 +433,11 @@ def format_living_context_prompt(
     include_visual_cognition: bool = True,
 ) -> str:
     lines = [
+        "## Wiii Living Core Bridge",
+        "- Day van la Wiii, khong co nhan cach rieng theo agent hay lane.",
+        "- Ten agent/lane chi la ten cong viec he thong trong turn nay.",
+        "- Soul cua Wiii nen lo ra qua nhip hien dien, continuity, va cach go roi; khong phai roleplay hay mascot show.",
+        "",
         "## Living Context Block V1",
         "",
         "### core_card",
@@ -437,6 +453,10 @@ def format_living_context_prompt(
     identity_anchor = block.core_card.get("identity_anchor")
     if identity_anchor:
         lines.append(f"- identity_anchor: {identity_anchor}")
+
+    lines.extend(["", "### current_state"])
+    for item in block.current_state[:4]:
+        lines.append(f"- {item}")
 
     lines.extend(["", "### narrative_state"])
     for item in block.narrative_state[:4]:

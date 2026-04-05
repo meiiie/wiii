@@ -10,13 +10,15 @@ Delegates to specialized modules:
 
 Requirements: 2.2, 2.4, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 4.3
 """
-import json
 import logging
 from typing import List, Optional
 
 from app.core.config import settings
+from app.engine.embedding_runtime import (
+    EmbeddingBackendProtocol,
+    get_semantic_embedding_backend,
+)
 from app.services.output_processor import extract_thinking_from_response
-from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
 from app.models.semantic_memory import (
     ConversationSummary,
     Insight,
@@ -34,6 +36,17 @@ from app.repositories.semantic_memory_repository import SemanticMemoryRepository
 from .context import ContextRetriever
 from .extraction import FactExtractor
 from .insight_provider import InsightProvider
+from .session_runtime import (
+    check_and_summarize_impl,
+    count_session_tokens_impl,
+    count_tokens_impl,
+    delete_all_user_memories_impl,
+    delete_memory_by_keyword_impl,
+    generate_summary_impl,
+    get_session_messages_impl,
+    store_explicit_insight_impl,
+    summarize_session_impl,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +59,7 @@ class SemanticMemoryEngine:
     - ContextRetriever for context/insights retrieval
     - FactExtractor for fact extraction/storage
     - InsightProvider for insight extraction, validation, and lifecycle
-    - GeminiOptimizedEmbeddings for vector generation
+    - provider-agnostic embedding backend for vector generation
     - SemanticMemoryRepository for storage/retrieval
 
     Maintains backward compatibility with existing code.
@@ -70,7 +83,7 @@ class SemanticMemoryEngine:
 
     def __init__(
         self,
-        embeddings: Optional[GeminiOptimizedEmbeddings] = None,
+        embeddings: Optional[EmbeddingBackendProtocol] = None,
         repository: Optional[SemanticMemoryRepository] = None,
         llm=None  # Optional LLM for fact extraction
     ):
@@ -78,11 +91,11 @@ class SemanticMemoryEngine:
         Initialize SemanticMemoryEngine.
 
         Args:
-            embeddings: GeminiOptimizedEmbeddings instance
+            embeddings: Semantic embedding backend instance
             repository: SemanticMemoryRepository instance
             llm: Optional LLM for fact extraction (ChatGoogleGenerativeAI)
         """
-        self._embeddings = embeddings or GeminiOptimizedEmbeddings()
+        self._embeddings = embeddings or get_semantic_embedding_backend()
         self._repository = repository or SemanticMemoryRepository()
         self._llm = llm
         self._initialized = False
@@ -99,14 +112,11 @@ class SemanticMemoryEngine:
         Check if Semantic Memory Engine is available.
 
         Returns:
-            True if repository is available and embeddings are configured
+            True if repository is available. Embeddings can degrade independently
+            because read/write paths now have lexical and NULL-vector fallbacks.
         """
         try:
-            return (
-                self._repository is not None
-                and self._repository.is_available()
-                and self._embeddings is not None
-            )
+            return self._repository is not None and self._repository.is_available()
         except Exception as e:
             logger.warning("SemanticMemoryEngine availability check failed: %s", e)
             return False
@@ -334,9 +344,22 @@ class SemanticMemoryEngine:
         Requirements: 2.1
         """
         try:
+            async def _safe_embed(text: str, label: str) -> list[float]:
+                try:
+                    embeddings = await self._embeddings.aembed_documents([text])
+                    if embeddings and embeddings[0]:
+                        return embeddings[0]
+                except Exception as exc:
+                    logger.warning(
+                        "Interaction embedding unavailable for %s of user %s: %s",
+                        label,
+                        user_id,
+                        exc,
+                    )
+                return []
+
             # Store user message (Sprint 27: async embedding)
-            message_embeddings = await self._embeddings.aembed_documents([message])
-            message_embedding = message_embeddings[0]
+            message_embedding = await _safe_embed(message, "user_message")
             message_memory = SemanticMemoryCreate(
                 user_id=user_id,
                 content=f"User: {message}",
@@ -345,11 +368,10 @@ class SemanticMemoryEngine:
                 importance=0.5,
                 session_id=session_id
             )
-            self._repository.save_memory(message_memory)
+            message_saved = self._repository.save_memory(message_memory) is not None
 
             # Store AI response (Sprint 27: async embedding)
-            response_embeddings = await self._embeddings.aembed_documents([response])
-            response_embedding = response_embeddings[0]
+            response_embedding = await _safe_embed(response, "assistant_response")
             response_memory = SemanticMemoryCreate(
                 user_id=user_id,
                 content=f"AI: {response}",
@@ -358,14 +380,14 @@ class SemanticMemoryEngine:
                 importance=0.5,
                 session_id=session_id
             )
-            self._repository.save_memory(response_memory)
+            response_saved = self._repository.save_memory(response_memory) is not None
 
             # Extract and store user facts if enabled
             if extract_facts:
                 await self._extract_and_store_facts(user_id, message, session_id)
 
             logger.debug("Stored interaction for user %s", user_id)
-            return True
+            return message_saved and response_saved
 
         except Exception as e:
             logger.error("Failed to store interaction: %s", e)
@@ -385,15 +407,7 @@ class SemanticMemoryEngine:
 
         Requirements: 3.1
         """
-        try:
-            import tiktoken
-            encoding = tiktoken.get_encoding("cl100k_base")
-            return len(encoding.encode(text))
-        except ImportError:
-            return len(text) // 4
-        except Exception as e:
-            logger.warning("Token counting failed: %s", e)
-            return len(text) // 4
+        return count_tokens_impl(text, logger)
 
     def count_session_tokens(
         self,
@@ -408,22 +422,13 @@ class SemanticMemoryEngine:
 
         Requirements: 3.1
         """
-        try:
-            messages = self._repository.get_memories_by_type(
-                user_id=user_id,
-                memory_type=MemoryType.MESSAGE,
-                session_id=session_id,
-            )
-
-            total_tokens = 0
-            for msg in messages:
-                total_tokens += self.count_tokens(msg.content)
-
-            return total_tokens
-
-        except Exception as e:
-            logger.error("Failed to count session tokens: %s", e)
-            return 0
+        return count_session_tokens_impl(
+            self._repository,
+            user_id,
+            session_id,
+            self.count_tokens,
+            logger,
+        )
 
     # ==================== SUMMARIZATION ====================
 
@@ -439,33 +444,7 @@ class SemanticMemoryEngine:
         Requirements: 3.1, 3.2, 3.3, 3.4
         """
         threshold = token_threshold or settings.summarization_token_threshold
-
-        try:
-            current_tokens = self.count_session_tokens(user_id, session_id)
-
-            if current_tokens < threshold:
-                logger.debug(
-                    "Session %s has %d tokens, below threshold %d",
-                    session_id, current_tokens, threshold
-                )
-                return None
-
-            logger.info(
-                "Session %s has %d tokens, triggering summarization",
-                session_id, current_tokens
-            )
-
-            summary = await self._summarize_session(
-                user_id=user_id,
-                session_id=session_id,
-                token_count=current_tokens
-            )
-
-            return summary
-
-        except Exception as e:
-            logger.error("Summarization check failed: %s", e)
-            return None
+        return await check_and_summarize_impl(self, user_id, session_id, threshold, logger)
 
     async def _summarize_session(
         self,
@@ -474,48 +453,14 @@ class SemanticMemoryEngine:
         token_count: int
     ) -> Optional[ConversationSummary]:
         """Summarize a session's conversation."""
-        self._ensure_llm()
-
-        if not self._llm:
-            logger.warning("LLM not available for summarization")
-            return None
-
-        try:
-            messages = self._get_session_messages(user_id, session_id)
-
-            if not messages:
-                return None
-
-            conversation_text = "\n".join([m.content for m in messages])
-            summary_text, key_topics = await self._generate_summary(conversation_text)
-
-            summary = ConversationSummary(
-                user_id=user_id,
-                session_id=session_id,
-                summary_text=summary_text,
-                original_message_count=len(messages),
-                original_token_count=token_count,
-                key_topics=key_topics
-            )
-
-            # Sprint 27: async embedding to avoid blocking event loop
-            summary_embeddings = await self._embeddings.aembed_documents([summary_text])
-            summary_embedding = summary_embeddings[0]
-            summary_memory = summary.to_semantic_memory_create(summary_embedding)
-            self._repository.save_memory(summary_memory)
-
-            self._repository.delete_by_session(user_id, session_id)
-
-            logger.info(
-                "Summarized session %s: %d messages -> 1 summary",
-                session_id, len(messages)
-            )
-
-            return summary
-
-        except Exception as e:
-            logger.error("Session summarization failed: %s", e)
-            return None
+        return await summarize_session_impl(
+            self,
+            user_id,
+            session_id,
+            token_count,
+            extract_thinking_from_response,
+            logger,
+        )
 
     def _get_session_messages(
         self,
@@ -529,69 +474,19 @@ class SemanticMemoryEngine:
         instead of search_similar() with zero-vector (NaN bug in pgvector).
         Also filters directly in SQL instead of in-memory Python loop.
         """
-        try:
-            session_messages = self._repository.get_memories_by_type(
-                user_id=user_id,
-                memory_type=MemoryType.MESSAGE,
-                session_id=session_id,
-            )
-
-            # get_memories_by_type returns DESC; we need ASC for chronological
-            session_messages.sort(key=lambda x: x.created_at)
-
-            return session_messages
-
-        except Exception as e:
-            logger.error("Failed to get session messages: %s", e)
-            return []
+        return get_session_messages_impl(self._repository, user_id, session_id, logger)
 
     async def _generate_summary(
         self,
         conversation_text: str
     ) -> tuple[str, List[str]]:
         """Generate summary using LLM."""
-        prompt = f"""Summarize the following conversation between a user and an AI tutor.
-
-Conversation:
-{conversation_text}
-
-Provide:
-1. A concise summary (2-3 paragraphs) capturing the main points discussed
-2. A list of key topics covered
-
-Format your response as JSON:
-{{
-    "summary": "Your summary here...",
-    "key_topics": ["topic1", "topic2", "topic3"]
-}}
-
-Return ONLY valid JSON:"""
-
-        try:
-            response = await self._llm.ainvoke(prompt)
-
-            # SOTA FIX: Handle Gemini 2.5 Flash content block format
-            text_content, _ = extract_thinking_from_response(response.content)
-            content = text_content.strip()
-
-            if content.startswith("```json"):
-                content = content[7:]
-            if content.startswith("```"):
-                content = content[3:]
-            if content.endswith("```"):
-                content = content[:-3]
-            content = content.strip()
-
-            data = json.loads(content)
-
-            summary_text = data.get("summary", "")
-            key_topics = data.get("key_topics", [])
-
-            return summary_text, key_topics
-
-        except Exception as e:
-            logger.error("Summary generation failed: %s", e)
-            return conversation_text[:500] + "...", []
+        return await generate_summary_impl(
+            self._llm,
+            conversation_text,
+            extract_thinking_from_response,
+            logger,
+        )
 
     # ==================== MEMORY MANAGEMENT (Sprint 26) ====================
 
@@ -615,17 +510,7 @@ Return ONLY valid JSON:"""
 
         Sprint 26: Fix for CRITICAL-2 (tool_forget silent failure)
         """
-        try:
-            deleted = self._repository.delete_memories_by_keyword(
-                user_id=user_id,
-                keyword=keyword
-            )
-            if deleted > 0:
-                logger.info("Deleted %d memories matching '%s' for user %s", deleted, keyword, user_id)
-            return deleted
-        except Exception as e:
-            logger.error("Failed to delete memories by keyword: %s", e)
-            return 0
+        return await delete_memory_by_keyword_impl(self._repository, user_id, keyword, logger)
 
     async def delete_all_user_memories(self, user_id: str) -> int:
         """
@@ -642,13 +527,7 @@ Return ONLY valid JSON:"""
 
         Sprint 26: Fix for CRITICAL-1 (tool_clear_all_memories only cleared cache)
         """
-        try:
-            deleted = self._repository.delete_all_user_memories(user_id=user_id)
-            logger.info("Deleted ALL %d memories for user %s (factory reset)", deleted, user_id)
-            return deleted
-        except Exception as e:
-            logger.error("Failed to delete all memories for user %s: %s", user_id, e)
-            return 0
+        return await delete_all_user_memories_impl(self._repository, user_id, logger)
 
     async def store_explicit_insight(
         self,
@@ -673,29 +552,14 @@ Return ONLY valid JSON:"""
 
         Sprint 26: Fix for CRITICAL-3 (tool_remember called non-existent method)
         """
-        try:
-            # Validate category
-            try:
-                insight_category = InsightCategory(category)
-            except ValueError:
-                insight_category = InsightCategory.PREFERENCE
-
-            insight = Insight(
-                user_id=user_id,
-                content=insight_text,
-                category=insight_category,
-                confidence=1.0,  # Explicit memory = max confidence
-                source_messages=[insight_text],
-            )
-
-            stored = await self._insight_provider._store_insight(insight, session_id)
-            if stored:
-                logger.info("Stored explicit insight for user %s: %s...", user_id, insight_text[:50])
-            return stored
-
-        except Exception as e:
-            logger.error("Failed to store explicit insight: %s", e)
-            return False
+        return await store_explicit_insight_impl(
+            self,
+            user_id,
+            insight_text,
+            category,
+            session_id,
+            logger,
+        )
 
     # ==================== INSIGHT ENGINE v0.5 (Delegated) ====================
 

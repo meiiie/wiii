@@ -84,6 +84,12 @@ thinking:
 
     Nếu model không hỗ trợ native thinking, dùng <thinking>...</thinking> tags.
 
+    Yêu cầu thêm cho mode thử nghiệm này:
+    - Nếu model hỗ trợ native thinking, hãy dùng native thinking trước khi trả lời.
+    - Thinking phải là suy nghĩ thật của model, không dựng lại câu trả lời dưới dạng nháp.
+    - Không cần cố làm vừa lòng; ưu tiên nghĩ thật, cụ thể, và bám đúng câu hỏi.
+    - Không cần chèn tag <thinking> nếu native thinking đã được tách bởi API.
+
 
 # =============================================================================
 # COMMON DIRECTIVES (Áp dụng cho tất cả)

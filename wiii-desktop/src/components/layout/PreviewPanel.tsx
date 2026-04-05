@@ -3,11 +3,14 @@
  * Sprint 166: Follows SourcesPanel pattern.
  * Fixed right panel, Escape to close, expanded preview with full data.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { X, Eye, ExternalLink } from "lucide-react";
+import { submitHostActionAudit, type HostActionAuditEventType } from "@/api/host-actions";
 import { useUIStore } from "@/stores/ui-store";
 import { useChatStore } from "@/stores/chat-store";
+import { useHostContextStore } from "@/stores/host-context-store";
+import { useToastStore } from "@/stores/toast-store";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { LazyImage } from "@/components/chat/PreviewCard";
 import { slideInRight } from "@/lib/animations";
@@ -149,6 +152,71 @@ export function PreviewPanel({ inline }: { inline?: boolean }) {
 /** Expanded view of the selected preview */
 function ExpandedPreview({ item }: { item: PreviewItemData }) {
   const isProduct = item.preview_type === "product";
+  const isHostAction = item.preview_type === "host_action";
+  const metadataEntries = isHostAction
+    ? buildHostActionMetadataEntries(item)
+    : [];
+  const hostContext = useHostContextStore((s) => s.currentContext);
+  const hostCapabilities = useHostContextStore((s) => s.capabilities);
+  const [operatorState, setOperatorState] = useState<{
+    status: "idle" | "running" | "success" | "error";
+    message?: string;
+  }>({ status: "idle" });
+  const applyConfig = isHostAction ? resolveHostActionApplyConfig(item) : null;
+  const previewToken =
+    typeof item.metadata?.preview_token === "string"
+      ? item.metadata.preview_token
+      : "";
+  const canExecuteApply =
+    Boolean(isHostAction && applyConfig && previewToken && hostContext?.host_type);
+
+  useEffect(() => {
+    setOperatorState({ status: "idle" });
+  }, [item.preview_id]);
+
+  const handleApply = async () => {
+    if (!applyConfig || !previewToken || operatorState.status === "running") {
+      return;
+    }
+
+    const requestId = `req-preview-apply-${Math.random().toString(36).slice(2, 12)}`;
+    setOperatorState({ status: "running", message: "Wiii dang gui xac nhan sang LMS..." });
+    try {
+      const result = await useHostContextStore.getState().requestAction(
+        applyConfig.action,
+        { preview_token: previewToken },
+        requestId,
+      );
+      if (!result.success) {
+        throw new Error(result.error || "Khong the ap dung thay doi nay.");
+      }
+
+      const successMessage =
+        typeof result.data?.summary === "string" && result.data.summary.trim().length > 0
+          ? result.data.summary.trim()
+          : applyConfig.successLabel;
+      setOperatorState({ status: "success", message: successMessage });
+      useToastStore.getState().addToast("success", successMessage, 3500);
+
+      const auditRequest = buildManualHostActionAuditRequest(
+        item,
+        applyConfig.action,
+        requestId,
+        result.data || {},
+        hostContext,
+        hostCapabilities,
+      );
+      if (auditRequest) {
+        void submitHostActionAudit(auditRequest).catch((err) => {
+          console.warn("[PreviewPanel] host action audit failed:", err instanceof Error ? err.message : String(err));
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Khong the ap dung thay doi nay.";
+      setOperatorState({ status: "error", message });
+      useToastStore.getState().addToast("error", message, 4500);
+    }
+  };
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -192,6 +260,63 @@ function ExpandedPreview({ item }: { item: PreviewItemData }) {
       {item.snippet && (
         <div className="text-sm font-serif text-text-secondary leading-relaxed">
           <MarkdownRenderer content={item.snippet} />
+        </div>
+      )}
+
+      {isHostAction && (
+        <div className="space-y-3 rounded-xl border border-border bg-surface-secondary/50 p-3">
+          {metadataEntries.length > 0 && (
+            <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+              {metadataEntries.map((entry) => (
+                <div key={entry.label}>
+                  <span className="block text-xs text-text-tertiary">{entry.label}</span>
+                  <span className="font-medium text-text">{entry.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {(item.metadata?.next_step as string | undefined) && (
+            <div className="rounded-lg bg-[var(--accent)]/8 px-3 py-2 text-sm text-text">
+              <span className="block text-xs uppercase tracking-wider text-[var(--accent)]">Buoc tiep theo</span>
+              <span>{String(item.metadata?.next_step)}</span>
+            </div>
+          )}
+          {(item.metadata?.preview_token as string | undefined) && (
+            <div className="rounded-lg bg-surface px-3 py-2 text-xs text-text-secondary">
+              Preview token: <span className="font-mono text-text">{String(item.metadata?.preview_token)}</span>
+            </div>
+          )}
+          {applyConfig && (
+            <div className="rounded-lg border border-border bg-surface px-3 py-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-text">Teacher confirmation</div>
+                  <div className="text-xs text-text-secondary">
+                    Wiii da dung preview de ban xem ky truoc. Neu thay on, ban co the xac nhan ap dung ngay tai day.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleApply}
+                  disabled={!canExecuteApply || operatorState.status === "running" || operatorState.status === "success"}
+                  className={`min-h-[44px] rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 ${
+                    canExecuteApply && operatorState.status !== "success"
+                      ? "bg-[var(--accent)] text-white hover:bg-[var(--accent)]/90"
+                      : "cursor-not-allowed bg-surface-secondary text-text-tertiary"
+                  }`}
+                  aria-disabled={!canExecuteApply || operatorState.status === "running" || operatorState.status === "success"}
+                >
+                  {operatorState.status === "running" ? "Dang ap dung..." : applyConfig.label}
+                </button>
+              </div>
+              <div aria-live="polite" className="mt-2 text-xs text-text-secondary">
+                {!canExecuteApply && operatorState.status === "idle"
+                  ? "CTA nay chi hoat dong khi Wiii dang duoc nhung trong host sidebar co bridge xac nhan."
+                  : operatorState.message}
+              </div>
+            </div>
+          )}
+          {renderHostActionPreviewDetails(item)}
         </div>
       )}
 
@@ -284,6 +409,404 @@ function ExpandedPreview({ item }: { item: PreviewItemData }) {
       )}
     </div>
   );
+}
+
+function buildHostActionMetadataEntries(item: PreviewItemData): Array<{ label: string; value: string }> {
+  const entries: Array<{ label: string; value: string }> = [];
+  const push = (label: string, value: unknown) => {
+    const normalized = String(value ?? "").trim();
+    if (!normalized) return;
+    entries.push({ label, value: normalized });
+  };
+
+  push("Loai preview", item.metadata?.preview_kind);
+  push("Action", item.metadata?.action);
+  push("Target", item.metadata?.target_label);
+  push("Lesson", item.metadata?.lesson_id);
+  push("Quiz", item.metadata?.quiz_id);
+  push("Course", item.metadata?.course_id);
+  push("Workflow", item.metadata?.workflow_stage);
+
+  const changedFields = Array.isArray(item.metadata?.changed_fields)
+    ? item.metadata?.changed_fields.filter((field): field is string => typeof field === "string")
+    : [];
+  if (changedFields.length > 0) {
+    push("Truong se doi", changedFields.join(", "));
+  }
+
+  if (typeof item.metadata?.question_count === "number") {
+    push("So cau hoi", item.metadata?.question_count);
+  }
+
+  return entries;
+}
+
+function renderHostActionPreviewDetails(item: PreviewItemData) {
+  const lessonBefore = asRecord(item.metadata?.lesson_before);
+  const lessonAfter = asRecord(item.metadata?.lesson_after);
+  const blockDiff = asRecord(item.metadata?.block_diff);
+  const quizPlan = asRecord(item.metadata?.quiz_plan);
+  const publishPlan = asRecord(item.metadata?.publish_plan);
+
+  if (lessonBefore && lessonAfter) {
+    return (
+      <div className="space-y-3">
+        <div className="text-[11px] uppercase tracking-wider text-text-tertiary">
+          Before / after
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <HostActionSnapshotCard
+            title="Current"
+            snapshot={lessonBefore}
+          />
+          <HostActionSnapshotCard
+            title="Proposed"
+            snapshot={lessonAfter}
+            emphasize
+          />
+        </div>
+        {blockDiff && <HostActionBlockDiffCard blockDiff={blockDiff} />}
+      </div>
+    );
+  }
+
+  if (quizPlan) {
+    return (
+      <div className="space-y-2 rounded-lg bg-surface px-3 py-3">
+        <div className="text-[11px] uppercase tracking-wider text-text-tertiary">
+          Quiz plan
+        </div>
+        <div className="grid gap-2 text-sm sm:grid-cols-2">
+          <MetaInline label="Mode" value={String(quizPlan.mode || "draft")} />
+          <MetaInline label="Questions" value={String(quizPlan.question_count || 0)} />
+          <MetaInline label="Time limit" value={`${String(quizPlan.time_limit_minutes || 0)} min`} />
+          <MetaInline label="Attempts" value={String(quizPlan.max_attempts || 1)} />
+          <MetaInline label="Passing score" value={String(quizPlan.passing_score || 0)} />
+        </div>
+        {typeof quizPlan.title === "string" && quizPlan.title.trim().length > 0 && (
+          <div className="text-sm text-text">
+            <span className="text-text-tertiary">Title: </span>
+            <span className="font-medium">{quizPlan.title}</span>
+          </div>
+        )}
+        {typeof quizPlan.description === "string" && quizPlan.description.trim().length > 0 && (
+          <div className="text-sm text-text-secondary leading-relaxed">
+            {quizPlan.description}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (publishPlan) {
+    return (
+      <div className="space-y-2 rounded-lg bg-surface px-3 py-3">
+        <div className="text-[11px] uppercase tracking-wider text-text-tertiary">
+          Publish plan
+        </div>
+        <div className="grid gap-2 text-sm sm:grid-cols-2">
+          <MetaInline label="Quiz" value={String(publishPlan.quiz_id || "—")} />
+          <MetaInline label="Lesson" value={String(publishPlan.lesson_id || "—")} />
+          <MetaInline label="Status" value={String(publishPlan.status || "ready")} />
+        </div>
+        {typeof publishPlan.title === "string" && publishPlan.title.trim().length > 0 && (
+          <div className="text-sm text-text">
+            <span className="text-text-tertiary">Title: </span>
+            <span className="font-medium">{publishPlan.title}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function HostActionBlockDiffCard({
+  blockDiff,
+}: {
+  blockDiff: Record<string, unknown>;
+}) {
+  const items = Array.isArray(blockDiff.items)
+    ? blockDiff.items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object" && !Array.isArray(item)))
+    : [];
+
+  return (
+    <section className="rounded-lg border border-border bg-surface px-3 py-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div className="text-[11px] uppercase tracking-wider text-text-tertiary">
+          Block diff
+        </div>
+        <span className="rounded-full bg-surface-secondary px-2 py-0.5 text-[11px] text-text-secondary">
+          {String(blockDiff.changed ?? 0)} changed
+        </span>
+        <span className="rounded-full bg-surface-secondary px-2 py-0.5 text-[11px] text-text-secondary">
+          {String(blockDiff.added ?? 0)} added
+        </span>
+        <span className="rounded-full bg-surface-secondary px-2 py-0.5 text-[11px] text-text-secondary">
+          {String(blockDiff.removed ?? 0)} removed
+        </span>
+      </div>
+      {items.length > 0 ? (
+        <div className="space-y-2">
+          {items.map((item, index) => (
+            <HostActionBlockDiffRow key={`${String(item.status || "diff")}-${index}`} item={item} />
+          ))}
+        </div>
+      ) : (
+        <div className="text-sm text-text-secondary">
+          Khong co thay doi theo block de hien thi.
+        </div>
+      )}
+    </section>
+  );
+}
+
+function HostActionBlockDiffRow({
+  item,
+}: {
+  item: Record<string, unknown>;
+}) {
+  const status = String(item.status || "changed");
+  const before = asRecord(item.before);
+  const after = asRecord(item.after);
+  const toneClass =
+    status === "added"
+      ? "border-emerald-200/70 bg-emerald-50/50"
+      : status === "removed"
+        ? "border-rose-200/70 bg-rose-50/50"
+        : status === "changed"
+          ? "border-amber-200/70 bg-amber-50/50"
+          : "border-border bg-surface-secondary/60";
+
+  return (
+    <div className={`rounded-lg border px-3 py-3 ${toneClass}`}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-sm font-medium text-text">
+          {String(after?.label || before?.label || `Block ${Number(item.index || 0) + 1}`)}
+        </div>
+        <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] uppercase tracking-wider text-text-secondary">
+          {status}
+        </span>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {before && (
+          <div>
+            <div className="mb-1 text-[11px] uppercase tracking-wider text-text-tertiary">Before</div>
+            <div className="rounded-md bg-surface px-3 py-2 text-sm text-text-secondary leading-relaxed">
+              {String(before.excerpt || "—")}
+            </div>
+          </div>
+        )}
+        {after && (
+          <div>
+            <div className="mb-1 text-[11px] uppercase tracking-wider text-text-tertiary">After</div>
+            <div className="rounded-md bg-surface px-3 py-2 text-sm text-text-secondary leading-relaxed">
+              {String(after.excerpt || "—")}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HostActionSnapshotCard({
+  title,
+  snapshot,
+  emphasize,
+}: {
+  title: string;
+  snapshot: Record<string, unknown>;
+  emphasize?: boolean;
+}) {
+  return (
+    <section
+      aria-label={title}
+      className={`rounded-lg border px-3 py-3 ${
+        emphasize
+          ? "border-[var(--accent)]/30 bg-[var(--accent)]/5"
+          : "border-border bg-surface"
+      }`}
+    >
+      <div className="mb-2 text-[11px] uppercase tracking-wider text-text-tertiary">
+        {title}
+      </div>
+      <div className="space-y-2">
+        {typeof snapshot.title === "string" && snapshot.title.trim().length > 0 && (
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-text-tertiary">Title</div>
+            <div className="text-sm font-medium text-text">{snapshot.title}</div>
+          </div>
+        )}
+        {typeof snapshot.description === "string" && snapshot.description.trim().length > 0 && (
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-text-tertiary">Description</div>
+            <div className="text-sm text-text-secondary leading-relaxed">{snapshot.description}</div>
+          </div>
+        )}
+        {typeof snapshot.content_excerpt === "string" && snapshot.content_excerpt.trim().length > 0 && (
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-text-tertiary">Content</div>
+            <div className="rounded-md bg-surface-secondary px-3 py-2 text-sm text-text-secondary leading-relaxed">
+              {snapshot.content_excerpt}
+            </div>
+          </div>
+        )}
+        {Array.isArray(snapshot.blocks) && snapshot.blocks.length > 0 && (
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-text-tertiary">Blocks</div>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {snapshot.blocks
+                .filter((block): block is Record<string, unknown> => Boolean(block && typeof block === "object" && !Array.isArray(block)))
+                .slice(0, 6)
+                .map((block, index) => (
+                  <span
+                    key={`${String(block.id || index)}`}
+                    className="rounded-full bg-surface-secondary px-2 py-1 text-[11px] text-text-secondary"
+                  >
+                    {String(block.label || block.type || `Block ${index + 1}`)}
+                  </span>
+                ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function MetaInline({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span className="block text-[11px] uppercase tracking-wider text-text-tertiary">{label}</span>
+      <span className="text-text">{value}</span>
+    </div>
+  );
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function resolveHostActionApplyConfig(item: PreviewItemData): {
+  action: string;
+  label: string;
+  successLabel: string;
+} | null {
+  const explicitAction =
+    typeof item.metadata?.apply_action === "string" && item.metadata.apply_action.trim().length > 0
+      ? item.metadata.apply_action.trim()
+      : "";
+  const previewKind =
+    typeof item.metadata?.preview_kind === "string" ? item.metadata.preview_kind : "";
+
+  const action = explicitAction || (
+    previewKind === "lesson_patch"
+      ? "authoring.apply_lesson_patch"
+      : previewKind === "quiz_commit"
+        ? "assessment.apply_quiz_commit"
+        : previewKind === "quiz_publish"
+          ? "publish.apply_quiz"
+          : ""
+  );
+  if (!action) {
+    return null;
+  }
+
+  if (action === "authoring.apply_lesson_patch") {
+    return {
+      action,
+      label: "Xac nhan ap dung vao bai hoc",
+      successLabel: "Da ap dung cap nhat bai hoc vao LMS.",
+    };
+  }
+  if (action === "assessment.apply_quiz_commit") {
+    return {
+      action,
+      label: "Xac nhan commit quiz",
+      successLabel: "Da commit quiz vao LMS.",
+    };
+  }
+  if (action === "publish.apply_quiz") {
+    return {
+      action,
+      label: "Xac nhan publish quiz",
+      successLabel: "Da publish quiz tren LMS.",
+    };
+  }
+  return {
+    action,
+    label: "Xac nhan ap dung",
+    successLabel: "Da ap dung thay doi vao host.",
+  };
+}
+
+function mapManualHostActionAuditEvent(action: string): HostActionAuditEventType | null {
+  switch (action) {
+    case "authoring.apply_lesson_patch":
+    case "assessment.apply_quiz_commit":
+      return "apply_confirmed";
+    case "publish.apply_quiz":
+      return "publish_confirmed";
+    default:
+      return null;
+  }
+}
+
+function buildManualHostActionAuditRequest(
+  item: PreviewItemData,
+  action: string,
+  requestId: string,
+  data: Record<string, unknown>,
+  hostContext: ReturnType<typeof useHostContextStore.getState>["currentContext"],
+  hostCapabilities: ReturnType<typeof useHostContextStore.getState>["capabilities"],
+) {
+  const eventType = mapManualHostActionAuditEvent(action);
+  if (!eventType) {
+    return null;
+  }
+
+  return {
+    event_type: eventType,
+    action,
+    request_id: requestId,
+    summary: typeof data.summary === "string" ? data.summary : item.snippet,
+    host_type: hostContext?.host_type,
+    host_name: hostCapabilities?.host_name || hostContext?.host_name,
+    page_type: hostContext?.page?.type,
+    page_title: hostContext?.page?.title,
+    user_role: hostContext?.user_role,
+    workflow_stage: hostContext?.workflow_stage,
+    preview_kind: typeof item.metadata?.preview_kind === "string" ? item.metadata.preview_kind : undefined,
+    preview_token: typeof item.metadata?.preview_token === "string" ? item.metadata.preview_token : undefined,
+    target_type:
+      typeof item.metadata?.lesson_id === "string"
+        ? "lesson"
+        : typeof item.metadata?.quiz_id === "string"
+          ? "quiz"
+          : undefined,
+    target_id:
+      typeof item.metadata?.lesson_id === "string"
+        ? item.metadata.lesson_id
+        : typeof item.metadata?.quiz_id === "string"
+          ? item.metadata.quiz_id
+          : undefined,
+    surface: "preview_panel",
+    metadata: {
+      request_id: requestId,
+      target_label: typeof item.metadata?.target_label === "string" ? item.metadata.target_label : undefined,
+      course_id: typeof item.metadata?.course_id === "string" ? item.metadata.course_id : undefined,
+      lesson_id: typeof item.metadata?.lesson_id === "string" ? item.metadata.lesson_id : undefined,
+      quiz_id: typeof item.metadata?.quiz_id === "string" ? item.metadata.quiz_id : undefined,
+      changed_fields: Array.isArray(item.metadata?.changed_fields) ? item.metadata.changed_fields : undefined,
+      question_count:
+        typeof item.metadata?.question_count === "number" ? item.metadata.question_count : undefined,
+    },
+  };
 }
 
 /** Compact list item for the preview list at the bottom */

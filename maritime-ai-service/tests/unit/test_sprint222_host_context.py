@@ -20,6 +20,17 @@ def test_agent_state_has_host_context_field():
     )
 
 
+def test_agent_state_has_operator_contract_fields():
+    """AgentState must include host capability and operator-session prompts."""
+    from app.engine.multi_agent.state import AgentState
+
+    annotations = AgentState.__annotations__
+    assert "host_capabilities" in annotations
+    assert "host_capabilities_prompt" in annotations
+    assert "operator_session" in annotations
+    assert "operator_context_prompt" in annotations
+
+
 # ── Sprint 222 Task 4: Feature gate tests ──────────────────────────
 
 
@@ -58,6 +69,27 @@ def test_host_context_model_accepts_generic_page():
     assert ctx.page["type"] == "lesson"
 
 
+def test_host_context_model_accepts_operator_fields():
+    """HostContext accepts role, workflow, selection, editable scope, and entity refs."""
+    from app.engine.context.host_context import HostContext
+
+    ctx = HostContext(
+        host_type="lms",
+        page={"type": "course_editor", "title": "Course Editor"},
+        user_role="teacher",
+        workflow_stage="authoring",
+        selection={"type": "lesson_block", "label": "Intro block"},
+        editable_scope={"type": "course", "allowed_operations": ["lesson_content", "quiz"]},
+        entity_refs=[{"type": "course", "id": "c-1", "title": "COLREGs"}],
+    )
+
+    assert ctx.user_role == "teacher"
+    assert ctx.workflow_stage == "authoring"
+    assert ctx.selection["type"] == "lesson_block"
+    assert ctx.editable_scope["type"] == "course"
+    assert ctx.entity_refs[0]["id"] == "c-1"
+
+
 def test_host_context_model_accepts_ecommerce():
     """HostContext works for e-commerce host type too."""
     from app.engine.context.host_context import HostContext
@@ -76,6 +108,10 @@ def test_host_context_backward_compat_from_page_context():
     legacy = {
         "page_type": "quiz",
         "page_title": "Bài kiểm tra COLREGs",
+        "connector_id": "maritime-lms",
+        "host_user_id": "student-1",
+        "host_workspace_id": "org-1",
+        "host_organization_id": "org-1",
         "course_id": "colregs_2024",
         "course_name": "COLREGs",
         "quiz_question": "Tàu nào nhường?",
@@ -83,6 +119,10 @@ def test_host_context_backward_compat_from_page_context():
     }
     ctx = from_legacy_page_context(legacy)
     assert ctx.host_type == "lms"
+    assert ctx.connector_id == "maritime-lms"
+    assert ctx.host_user_id == "student-1"
+    assert ctx.host_workspace_id == "org-1"
+    assert ctx.host_organization_id == "org-1"
     assert ctx.page["type"] == "quiz"
     assert ctx.page["title"] == "Bài kiểm tra COLREGs"
     assert ctx.page["metadata"]["course_id"] == "colregs_2024"
@@ -106,13 +146,23 @@ def test_host_capabilities_model():
     caps = HostCapabilities(
         host_type="lms",
         host_name="Maritime Academy LMS",
+        connector_id="maritime-lms",
+        host_workspace_id="org-1",
+        host_organization_id="org-1",
+        version="2",
         resources=["current-page", "user-profile"],
+        surfaces=["ai_sidebar", "editor_shell"],
         tools=[
             {"name": "navigate", "description": "Navigate to a page",
              "input_schema": {"type": "object", "properties": {"url": {"type": "string"}}}},
         ],
     )
     assert caps.host_type == "lms"
+    assert caps.connector_id == "maritime-lms"
+    assert caps.host_workspace_id == "org-1"
+    assert caps.host_organization_id == "org-1"
+    assert caps.version == "2"
+    assert caps.surfaces == ["ai_sidebar", "editor_shell"]
     assert len(caps.tools) == 1
     assert caps.tools[0]["name"] == "navigate"
 
@@ -176,3 +226,89 @@ def test_chat_stream_threads_host_context():
     from app.api.v1 import chat_stream
     source = inspect.getsource(chat_stream)
     assert "host_context" in source, "chat_stream must thread host_context"
+
+
+def test_build_operator_session_includes_candidate_actions_and_confirmation():
+    """Operator session should summarize host actions and confirmation policy."""
+    from app.engine.context.host_context import (
+        build_operator_session_v1,
+        format_operator_session_for_prompt,
+    )
+
+    session = build_operator_session_v1(
+        query="Tạo quiz mới cho bài này",
+        host_context={
+            "host_type": "lms",
+            "page": {"type": "course_editor", "title": "Curriculum"},
+            "user_role": "teacher",
+            "workflow_stage": "authoring",
+            "editable_scope": {
+                "type": "course",
+                "allowed_operations": ["quiz"],
+                "requires_confirmation": True,
+            },
+        },
+        host_capabilities={
+            "host_type": "lms",
+            "resources": ["current-page"],
+            "tools": [
+                {
+                    "name": "assessment.create_quiz",
+                    "description": "Create quiz",
+                    "roles": ["teacher", "admin"],
+                    "requires_confirmation": True,
+                    "mutates_state": True,
+                }
+            ],
+        },
+    )
+
+    assert session.pending_approval is True
+    assert "assessment.create_quiz" in session.candidate_actions
+    prompt = format_operator_session_for_prompt(session)
+    assert "Operator Session V1" in prompt
+    assert "assessment.create_quiz" in prompt
+    assert "Identity boundary" in prompt
+
+
+def test_build_operator_session_prefers_confirm_apply_when_preview_exists():
+    """Preview feedback should turn operator next step into an explicit apply flow."""
+    from app.engine.context.host_context import build_operator_session_v1
+
+    session = build_operator_session_v1(
+        query="Neu preview on thi ap dung cho lesson nay",
+        host_context={
+            "host_type": "lms",
+            "page": {"type": "course_editor", "title": "Curriculum"},
+            "user_role": "teacher",
+            "workflow_stage": "authoring",
+        },
+        host_capabilities={
+            "host_type": "lms",
+            "resources": ["current-page"],
+            "tools": [
+                {
+                    "name": "authoring.apply_lesson_patch",
+                    "description": "Apply lesson patch",
+                    "roles": ["teacher"],
+                    "requires_confirmation": True,
+                    "mutates_state": True,
+                }
+            ],
+        },
+        last_host_result="Lesson patch preview ready (token=lesson-preview-123).",
+        host_action_feedback={
+            "last_action_result": {
+                "action": "authoring.preview_lesson_patch",
+                "success": True,
+                "summary": "Lesson patch preview ready.",
+                "data": {
+                    "preview_token": "lesson-preview-123",
+                    "preview_kind": "lesson_patch",
+                },
+            }
+        },
+    )
+
+    assert session.pending_approval is True
+    assert "authoring.apply_lesson_patch" in session.next_best_step

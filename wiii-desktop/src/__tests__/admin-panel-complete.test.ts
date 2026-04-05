@@ -34,6 +34,7 @@ vi.mock("@/api/admin", () => ({
   deactivateUser: vi.fn(),
   reactivateUser: vi.fn(),
   changeUserRole: vi.fn(),
+  changeUserPlatformRole: vi.fn(),
   addOrgMember: vi.fn(),
   removeOrgMember: vi.fn(),
 }));
@@ -62,6 +63,11 @@ describe("Sprint 180 API Exports", () => {
   it("exports changeUserRole as a function", async () => {
     const api = await vi.importActual<typeof import("@/api/admin")>("@/api/admin");
     expect(typeof api.changeUserRole).toBe("function");
+  });
+
+  it("exports changeUserPlatformRole as a function", async () => {
+    const api = await vi.importActual<typeof import("@/api/admin")>("@/api/admin");
+    expect(typeof api.changeUserPlatformRole).toBe("function");
   });
 
   it("exports addOrgMember as a function", async () => {
@@ -112,6 +118,7 @@ describe("Admin Store — User Actions", () => {
   let mockDeactivateUser: ReturnType<typeof vi.fn>;
   let mockReactivateUser: ReturnType<typeof vi.fn>;
   let mockChangeUserRole: ReturnType<typeof vi.fn>;
+  let mockChangeUserPlatformRole: ReturnType<typeof vi.fn>;
   let mockSearchAdminUsers: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
@@ -119,6 +126,7 @@ describe("Admin Store — User Actions", () => {
     mockDeactivateUser = adminApi.deactivateUser as unknown as ReturnType<typeof vi.fn>;
     mockReactivateUser = adminApi.reactivateUser as unknown as ReturnType<typeof vi.fn>;
     mockChangeUserRole = adminApi.changeUserRole as unknown as ReturnType<typeof vi.fn>;
+    mockChangeUserPlatformRole = adminApi.changeUserPlatformRole as unknown as ReturnType<typeof vi.fn>;
     mockSearchAdminUsers = adminApi.searchAdminUsers as unknown as ReturnType<typeof vi.fn>;
   });
 
@@ -168,23 +176,27 @@ describe("Admin Store — User Actions", () => {
     expect(toast!.type).toBe("error");
   });
 
-  it("changeUserRole success shows toast with role name", async () => {
-    mockChangeUserRole.mockResolvedValueOnce({ id: "u3", role: "teacher" });
+  it("changeUserPlatformRole success shows toast with account type label", async () => {
+    mockChangeUserPlatformRole.mockResolvedValueOnce({
+      id: "u3",
+      role: "admin",
+      platform_role: "platform_admin",
+    });
     mockSearchAdminUsers.mockResolvedValueOnce({ users: [], total: 0, limit: 20, offset: 0 });
 
-    await useAdminStore.getState().changeUserRole("u3", "teacher");
+    await useAdminStore.getState().changeUserPlatformRole("u3", "platform_admin");
 
-    expect(mockChangeUserRole).toHaveBeenCalledWith("u3", "teacher");
+    expect(mockChangeUserPlatformRole).toHaveBeenCalledWith("u3", "platform_admin");
     const toast = useAdminStore.getState().toast;
     expect(toast).not.toBeNull();
     expect(toast!.type).toBe("success");
-    expect(toast!.message).toContain("teacher");
+    expect(toast!.message).toContain("Platform Admin");
   });
 
-  it("changeUserRole error shows error toast", async () => {
-    mockChangeUserRole.mockRejectedValueOnce(new Error("Unauthorized"));
+  it("changeUserPlatformRole error shows error toast", async () => {
+    mockChangeUserPlatformRole.mockRejectedValueOnce(new Error("Unauthorized"));
 
-    await useAdminStore.getState().changeUserRole("u3", "admin");
+    await useAdminStore.getState().changeUserPlatformRole("u3", "platform_admin");
 
     const toast = useAdminStore.getState().toast;
     expect(toast).not.toBeNull();
@@ -416,15 +428,13 @@ describe("UsersTab — Overflow Menu Logic", () => {
     expect(!isSelf && user.is_active).toBe(false);
   });
 
-  it("ROLE_OPTIONS has 3 standard roles", () => {
-    // Replicate the constant from UsersTab
-    const ROLE_OPTIONS = [
-      { value: "student", label: "Sinh vi\u00ean" },
-      { value: "teacher", label: "Gi\u1ea3ng vi\u00ean" },
-      { value: "admin", label: "Qu\u1ea3n tr\u1ecb" },
+  it("PLATFORM_ROLE_OPTIONS has 2 account types", () => {
+    const PLATFORM_ROLE_OPTIONS = [
+      { value: "user", label: "Wiii User" },
+      { value: "platform_admin", label: "Platform Admin" },
     ];
-    expect(ROLE_OPTIONS).toHaveLength(3);
-    expect(ROLE_OPTIONS.map((r) => r.value)).toEqual(["student", "teacher", "admin"]);
+    expect(PLATFORM_ROLE_OPTIONS).toHaveLength(2);
+    expect(PLATFORM_ROLE_OPTIONS.map((r) => r.value)).toEqual(["user", "platform_admin"]);
   });
 
   it("inactive user only shows reactivate (logic test)", () => {
@@ -462,16 +472,20 @@ describe("UsersTab — Overflow Menu Logic", () => {
     expect(openMenuUserId).toBe("u2");
   });
 
-  it("ROLE_LABELS has all 3 roles", () => {
-    const ROLE_LABELS: Record<string, string> = {
-      student: "Sinh vi\u00ean",
-      teacher: "Gi\u1ea3ng vi\u00ean",
-      admin: "Qu\u1ea3n tr\u1ecb",
+  it("platform and legacy labels stay separate", () => {
+    const PLATFORM_ROLE_LABELS: Record<string, string> = {
+      user: "Wiii User",
+      platform_admin: "Platform Admin",
     };
-    expect(Object.keys(ROLE_LABELS)).toHaveLength(3);
-    expect(ROLE_LABELS.student).toBe("Sinh vi\u00ean");
-    expect(ROLE_LABELS.teacher).toBe("Gi\u1ea3ng vi\u00ean");
-    expect(ROLE_LABELS.admin).toBe("Qu\u1ea3n tr\u1ecb");
+    const LEGACY_ROLE_LABELS: Record<string, string> = {
+      student: "Compatibility: Student",
+      teacher: "Compatibility: Teacher",
+      admin: "Compatibility: Admin",
+    };
+    expect(Object.keys(PLATFORM_ROLE_LABELS)).toHaveLength(2);
+    expect(PLATFORM_ROLE_LABELS.user).toBe("Wiii User");
+    expect(PLATFORM_ROLE_LABELS.platform_admin).toBe("Platform Admin");
+    expect(LEGACY_ROLE_LABELS.student).toContain("Student");
   });
 });
 
@@ -630,5 +644,40 @@ describe("Admin Store — toggleFlag Toast", () => {
     const toast = useAdminStore.getState().toast;
     expect(toast).not.toBeNull();
     expect(toast!.type).toBe("error");
+  });
+});
+
+describe("Admin Store - Host Action Timeline", () => {
+  it("fetchHostActionEvents queries auth events with host_action provider", async () => {
+    const adminApi = await import("@/api/admin");
+    const mockGetAuthEvents = adminApi.getAuthEvents as unknown as ReturnType<typeof vi.fn>;
+    mockGetAuthEvents.mockResolvedValueOnce({
+      entries: [
+        {
+          id: "host-1",
+          event_type: "host_action.preview_created",
+          user_id: "teacher-1",
+          provider: "host_action",
+          result: "success",
+          reason: null,
+          ip_address: "127.0.0.1",
+          organization_id: "org-1",
+          metadata: { summary: "Lesson patch preview ready." },
+          created_at: "2026-03-23T10:00:00Z",
+        },
+      ],
+      total: 1,
+      limit: 20,
+      offset: 0,
+    });
+
+    await useAdminStore.getState().fetchHostActionEvents(0);
+
+    expect(mockGetAuthEvents).toHaveBeenCalledWith({
+      provider: "host_action",
+      limit: 20,
+      offset: 0,
+    });
+    expect(useAdminStore.getState().hostActionEvents).toHaveLength(1);
   });
 });

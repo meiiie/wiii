@@ -39,11 +39,20 @@ class HostActionBridge:
                 result.append(tool_def)
         return result
 
+    def get_action_definition(self, action: str) -> Optional[dict[str, Any]]:
+        return self._tools.get(action)
+
     def emit_action_request(self, action: str, params: dict[str, Any],
                             event_bus_id: str) -> str:
+        tool_def = self._tools.get(action) or {}
         request_id = f"req-{uuid.uuid4().hex[:12]}"
         self.pending_requests[request_id] = {
-            "action": action, "params": params, "event_bus_id": event_bus_id,
+            "action": action,
+            "params": params,
+            "event_bus_id": event_bus_id,
+            "requires_confirmation": bool(tool_def.get("requires_confirmation")),
+            "mutates_state": bool(tool_def.get("mutates_state")),
+            "surface": tool_def.get("surface"),
         }
         logger.info("[ACTION_BRIDGE] Emitted action request %s: %s", request_id, action)
         return request_id

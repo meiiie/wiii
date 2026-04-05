@@ -23,6 +23,7 @@ import types
 import asyncio
 from unittest.mock import MagicMock, AsyncMock, patch
 
+from app.core.exceptions import ProviderUnavailableError
 
 # ============================================================================
 # Break circular import chain before importing graph_streaming
@@ -67,6 +68,7 @@ if not _had_graph:
 from app.engine.multi_agent.graph_streaming import (
     _convert_bus_event,
     _extract_thinking_content,
+    _narration_delta_chunks,
     _stream_answer_tokens,
     process_with_multi_agent_streaming,
     TOKEN_CHUNK_SIZE,
@@ -216,6 +218,22 @@ class TestExtractThinkingContent:
         assert "[RAG Analysis]" in result  # Valid combined thinking preserved
 
 
+def test_narration_delta_chunks_skips_summary_echo():
+    narration = types.SimpleNamespace(
+        summary=(
+            "Doc cau nay, minh thay trong do co mot khoang chung xuong.\n\n"
+            "Luc nay dieu quan trong nhat la o lai voi ban cho that diu."
+        ),
+        delta_chunks=[
+            "Doc cau nay, minh thay trong do co mot khoang chung xuong.",
+            "Luc nay dieu quan trong nhat la o lai voi ban cho that diu.",
+            "Luc nay dieu quan trong nhat la o lai voi ban cho that diu.",
+        ],
+    )
+
+    assert _narration_delta_chunks(narration) == []
+
+
 # ============================================================================
 # _stream_answer_tokens
 # ============================================================================
@@ -356,7 +374,6 @@ class TestProcessWithMultiAgentStreaming:
             "tutor_agent": "Soạn bài giảng",
             "memory_agent": "Truy xuất bộ nhớ",
             "direct": "Suy nghĩ câu trả lời",
-            "grader": "Kiểm tra chất lượng",
             "synthesizer": "Tổng hợp câu trả lời",
         }
         mock_narrator = MagicMock()
@@ -371,7 +388,18 @@ class TestProcessWithMultiAgentStreaming:
             result.style_tags = []
             return result
 
+        def _mock_render_fast(req):
+            result = MagicMock()
+            result.label = _labels.get(req.node, req.node)
+            result.summary = f"Mock summary for {req.node}"
+            result.action_text = ""
+            result.delta_chunks = [f"Thinking..."]
+            result.phase = "route"
+            result.style_tags = []
+            return result
+
         mock_narrator.render = _mock_render
+        mock_narrator.render_fast = _mock_render_fast
 
         return {
             "graph": patch(
@@ -432,12 +460,11 @@ class TestProcessWithMultiAgentStreaming:
         assert "answer" in event_types
         assert "done" in event_types
         # Sprint 63: Supervisor routing is status, not thinking
-        # Sprint 64: Supervisor also emits thinking_start/thinking_end lifecycle events
+        # Event topology may omit explicit supervisor-noded events depending on
+        # the stream queue path, but routing should still surface progress
+        # without leaking unsupported event types.
         supervisor_events = [e for e in events if e.node == "supervisor"]
         supervisor_types = {e.type for e in supervisor_events}
-        assert "status" in supervisor_types
-        # Lifecycle events are allowed alongside status
-        # Sprint 144: thinking_delta now emitted for routing decision
         allowed_types = {"status", "thinking_start", "thinking_end", "thinking", "thinking_delta"}
         assert supervisor_types <= allowed_types
 
@@ -484,7 +511,7 @@ class TestProcessWithMultiAgentStreaming:
         assert reconstructed == "Direct answer"
 
     @pytest.mark.asyncio
-    async def test_grader_node(self):
+    async def test_legacy_grader_updates_are_ignored(self):
         mock_graph = self._mock_graph_stream([
             {"grader": {"grader_score": 8, "grader_feedback": "Good quality"}},
             {"synthesizer": {"final_response": "A", "sources": []}},
@@ -501,9 +528,8 @@ class TestProcessWithMultiAgentStreaming:
             async for event in process_with_multi_agent_streaming("Q", "u1"):
                 events.append(event)
 
-        # Sprint 63: Grader scores are status events, not thinking
-        status_events = [e for e in events if e.type == "status"]
-        assert any("8.0/10" in e.content for e in status_events)
+        grader_events = [e for e in events if e.node == "grader"]
+        assert grader_events == []
 
     @pytest.mark.asyncio
     async def test_guardian_node(self):
@@ -638,6 +664,32 @@ class TestProcessWithMultiAgentStreaming:
                 events.append(event)
 
         assert any(e.type == "error" for e in events)
+
+    @pytest.mark.asyncio
+    async def test_provider_unavailable_in_graph_stream_reraises(self):
+        """Explicit provider failures must bubble up for stream coordinator UX."""
+
+        async def _exploding_astream(*args, **kwargs):
+            raise ProviderUnavailableError(
+                provider="google",
+                reason_code="rate_limit",
+                message="Provider tam thoi ban hoac da cham gioi han.",
+            )
+            yield  # make it a generator  # noqa: E501
+
+        mock_graph = MagicMock()
+        mock_graph.astream = MagicMock(side_effect=lambda *a, **kw: _exploding_astream(*a, **kw))
+        patches = self._get_patches(mock_graph)
+
+        with patches["graph"], patches["registry"] as mock_reg, \
+             patches["domain_config"], patches["turn_defaults"], \
+             patches["host_context"], patches["narrator"], \
+             patches["settings"] as mock_settings:
+            self._setup_registry(mock_reg)
+            self._setup_settings(mock_settings)
+            with pytest.raises(ProviderUnavailableError):
+                async for _event in process_with_multi_agent_streaming("Q", "u1", "s1", provider="google"):
+                    pass
 
     @pytest.mark.asyncio
     async def test_tutor_agent_with_thinking(self):

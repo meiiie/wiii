@@ -21,6 +21,14 @@ export interface AuthUser {
   name: string;
   avatar_url?: string;
   role: string;
+  legacy_role?: string;
+  platform_role?: "user" | "platform_admin";
+  organization_role?: string;
+  host_role?: string;
+  role_source?: string;
+  active_organization_id?: string;
+  connector_id?: string;
+  identity_version?: string;
 }
 
 interface AuthTokens {

@@ -18,6 +18,11 @@ from enum import Enum
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.singleton import singleton_factory
+from app.engine.agentic_rag.runtime_llm_socket import (
+    ainvoke_agentic_rag_llm,
+    resolve_agentic_rag_llm,
+)
+from app.engine.llm_factory import ThinkingTier
 from app.engine.llm_pool import get_llm_light  # SOTA: Shared LLM Pool
 
 logger = logging.getLogger(__name__)
@@ -91,11 +96,23 @@ class QueryAnalyzer:
         """Initialize Gemini LLM for analysis with LIGHT tier thinking."""
         try:
             # SOTA: Use shared LLM from pool (memory optimized)
-            self._llm = get_llm_light()
+            self._llm = self._resolve_runtime_llm()
             logger.info("QueryAnalyzer initialized with shared LIGHT tier LLM")
         except Exception as e:
             logger.error("Failed to initialize QueryAnalyzer LLM: %s", e)
             self._llm = None
+
+    def _resolve_runtime_llm(self):
+        """Resolve the request-time LIGHT-tier analysis LLM."""
+        llm = resolve_agentic_rag_llm(
+            tier=ThinkingTier.LIGHT,
+            cached_llm=self._llm,
+            fallback_factory=get_llm_light,
+            component="QueryAnalyzer",
+        )
+        if llm is not None:
+            self._llm = llm
+        return llm
     
     async def analyze(self, query: str) -> QueryAnalysis:
         """
@@ -107,7 +124,8 @@ class QueryAnalyzer:
         Returns:
             QueryAnalysis with complexity and recommendations
         """
-        if not self._llm:
+        llm = self._resolve_runtime_llm()
+        if not llm:
             # Fallback to rule-based analysis
             return self._rule_based_analysis(query)
         
@@ -118,7 +136,12 @@ class QueryAnalyzer:
                 HumanMessage(content=ANALYSIS_PROMPT.format(query=query))
             ]
             
-            response = await self._llm.ainvoke(messages)
+            response = await ainvoke_agentic_rag_llm(
+                llm=llm,
+                messages=messages,
+                tier=ThinkingTier.LIGHT,
+                component="QueryAnalyzer",
+            )
             
             # SOTA FIX: Handle Gemini 2.5 Flash content block format
             from app.services.output_processor import extract_thinking_from_response
@@ -215,7 +238,7 @@ class QueryAnalyzer:
     
     def is_available(self) -> bool:
         """Check if LLM is available."""
-        return self._llm is not None
+        return self._resolve_runtime_llm() is not None
 
 
 get_query_analyzer = singleton_factory(QueryAnalyzer)

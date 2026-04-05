@@ -8,7 +8,9 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from dataclasses import dataclass
 
-from app.engine.agentic_rag.corrective_rag import CorrectiveRAGResult
+from app.engine.agentic_rag.corrective_rag import CorrectiveRAG, CorrectiveRAGResult
+from app.engine.agentic_rag.corrective_rag_stream_runtime import process_streaming_impl
+from app.engine.reasoning_tracer import StepNames
 
 
 class TestCorrectiveRAGResult:
@@ -132,6 +134,138 @@ class TestContentTruncation:
         short = "Hello world"
         truncated = short[:MAX_CONTENT_SNIPPET_LENGTH]
         assert truncated == short
+
+
+class TestVisibleCRAGSurface:
+    """Regression tests for user-visible CRAG no-doc surfaces."""
+
+    @pytest.mark.asyncio
+    async def test_process_streaming_no_docs_uses_generic_surface_text(self):
+        mock_settings = MagicMock()
+        mock_settings.rag_max_iterations = 1
+        mock_settings.rag_confidence_high = 0.8
+        mock_settings.enable_answer_verification = False
+        mock_settings.semantic_cache_enabled = False
+        mock_settings.enable_adaptive_rag = False
+        mock_settings.enable_visual_rag = False
+        mock_settings.enable_graph_rag = False
+        mock_settings.enable_natural_conversation = True
+        mock_settings.app_name = "Wiii"
+
+        analyzer = MagicMock()
+        analyzer.analyze = AsyncMock(
+            return_value=MagicMock(
+                complexity=MagicMock(value="simple"),
+                is_domain_related=False,
+                detected_topics=[],
+                requires_multi_step=False,
+                confidence=0.9,
+            )
+        )
+        grader = MagicMock()
+        grader.grade_documents = AsyncMock(return_value=MagicMock(avg_score=0.0, relevant_count=0))
+        rewriter = MagicMock()
+        rewriter.rewrite = AsyncMock(return_value=MagicMock(rewritten_query=""))
+        verifier = MagicMock()
+        tracer = MagicMock()
+        tracer.start_step = MagicMock()
+        tracer.end_step = MagicMock()
+        tracer.build_trace = MagicMock(return_value=MagicMock())
+        tracer.build_thinking_summary = MagicMock(return_value="")
+
+        with patch("app.engine.agentic_rag.corrective_rag.settings", mock_settings), \
+             patch("app.engine.agentic_rag.corrective_rag.get_query_analyzer", return_value=analyzer), \
+             patch("app.engine.agentic_rag.corrective_rag.get_retrieval_grader", return_value=grader), \
+             patch("app.engine.agentic_rag.corrective_rag.get_query_rewriter", return_value=rewriter), \
+             patch("app.engine.agentic_rag.corrective_rag.get_answer_verifier", return_value=verifier), \
+             patch("app.engine.agentic_rag.corrective_rag.get_reasoning_tracer", return_value=tracer):
+            crag = CorrectiveRAG(rag_agent=MagicMock())
+            crag._cache_enabled = False
+            crag._cache = None
+            crag._retrieve = AsyncMock(return_value=[])
+            crag._generate_fallback = AsyncMock(return_value="")
+
+            events = []
+            async for event in crag.process_streaming("có thể uống rượu thưởng trăng không ?", {}):
+                events.append(event)
+
+        surface_texts = [str(event.get("content", "")) for event in events if event.get("type") in {"thinking", "answer"}]
+        joined = "\n".join(surface_texts)
+        assert "Tìm thấy 0 tài liệu liên quan" not in joined
+        assert "Xin lỗi, mình chưa có thông tin" not in joined
+        assert any("chuyển sang cách đáp trực tiếp" in text.lower() for text in surface_texts)
+
+    @pytest.mark.asyncio
+    async def test_process_streaming_accepts_string_rewrite_result(self):
+        analyzer = MagicMock()
+        analyzer.analyze = AsyncMock(
+            return_value=MagicMock(
+                complexity=MagicMock(value="moderate"),
+                is_domain_related=True,
+                detected_topics=["COLREGs"],
+                requires_multi_step=False,
+                confidence=0.9,
+            )
+        )
+
+        grading_result = MagicMock(avg_score=1.0, relevant_count=0, feedback="Need better keywords")
+        grader = MagicMock()
+        grader.grade_documents = AsyncMock(return_value=grading_result)
+
+        rewriter = MagicMock()
+        rewriter.rewrite = AsyncMock(return_value="COLREGs Rule 15 crossing situation")
+
+        tracer = MagicMock()
+        tracer.start_step = MagicMock()
+        tracer.end_step = MagicMock()
+        tracer.build_trace = MagicMock(return_value=None)
+        tracer.build_thinking_summary = MagicMock(return_value="rewrite summary")
+
+        first_docs = [{"node_id": "doc-old", "title": "Old Doc", "content": "weak result", "document_id": "old"}]
+        rewritten_docs = [{"node_id": "doc-new", "title": "Rule 15", "content": "crossing rule", "document_id": "new"}]
+
+        async def _stream_answer(**kwargs):
+            assert kwargs["question"] == "COLREGs Rule 15 crossing situation"
+            yield "Câu trả lời đã sửa."
+
+        owner = MagicMock()
+        owner._analyzer = analyzer
+        owner._grader = grader
+        owner._rewriter = rewriter
+        owner._rag = MagicMock()
+        owner._rag._generate_response_streaming = _stream_answer
+        owner._retrieve = AsyncMock(side_effect=[first_docs, rewritten_docs])
+        owner._calculate_confidence = MagicMock(return_value=82.0)
+        owner._grade_threshold = 6.0
+
+        settings_obj = MagicMock()
+        settings_obj.enable_adaptive_rag = False
+        settings_obj.enable_visual_rag = False
+        settings_obj.enable_graph_rag = False
+        settings_obj.rag_model_version = "test-rag"
+
+        events = []
+        async for event in process_streaming_impl(
+            owner,
+            "crossing rule?",
+            {"user_role": "student", "conversation_history": ""},
+            result_cls=CorrectiveRAGResult,
+            get_reasoning_tracer_fn=lambda: tracer,
+            settings_obj=settings_obj,
+            step_names_cls=StepNames,
+            build_retrieval_surface_text_fn=lambda count: f"{count} docs",
+            build_house_fallback_reply_fn=lambda: "fallback",
+            is_no_doc_retrieval_text_fn=lambda text: False,
+            normalize_visible_text_fn=lambda text: str(text),
+            max_content_snippet_length=200,
+        ):
+            events.append(event)
+
+        result_event = next(event for event in events if event["type"] == "result")
+        result = result_event["data"]
+        assert result.was_rewritten is True
+        assert result.rewritten_query == "COLREGs Rule 15 crossing situation"
+        assert "Câu trả lời đã sửa." in result.answer
 
 
 class TestVerificationSkipOnEmptySources:

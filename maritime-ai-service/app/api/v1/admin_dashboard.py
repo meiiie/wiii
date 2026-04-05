@@ -117,6 +117,7 @@ async def admin_user_search(
     auth: RequireAdmin,
     email: Optional[str] = Query(None),
     role: Optional[str] = Query(None),
+    platform_role: Optional[str] = Query(None),
     org_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None, description="active or inactive"),
     q: Optional[str] = Query(None, description="Free-text search on name/email"),
@@ -132,37 +133,56 @@ async def admin_user_search(
         raise HTTPException(status_code=503, detail="Database unavailable")
 
     conditions = []
+    legacy_conditions = []
     params = []
     idx = 1
 
     if email:
         conditions.append(f"u.email ILIKE ${idx}")
+        legacy_conditions.append(f"u.email ILIKE ${idx}")
         params.append(f"%{email}%")
         idx += 1
 
     if role:
         conditions.append(f"u.role = ${idx}")
+        legacy_conditions.append(f"u.role = ${idx}")
         params.append(role)
+        idx += 1
+
+    if platform_role:
+        conditions.append(f"u.platform_role = ${idx}")
+        if platform_role == "platform_admin":
+            legacy_conditions.append("LOWER(COALESCE(u.role, 'student')) = 'admin'")
+        else:
+            legacy_conditions.append("LOWER(COALESCE(u.role, 'student')) <> 'admin'")
+        params.append(platform_role)
         idx += 1
 
     if status == "active":
         conditions.append("u.is_active = true")
+        legacy_conditions.append("u.is_active = true")
     elif status == "inactive":
         conditions.append("u.is_active = false")
+        legacy_conditions.append("u.is_active = false")
 
     if q:
         conditions.append(f"(u.name ILIKE ${idx} OR u.email ILIKE ${idx})")
+        legacy_conditions.append(f"(u.name ILIKE ${idx} OR u.email ILIKE ${idx})")
         params.append(f"%{q}%")
         idx += 1
 
     if org_id:
         conditions.append(f"EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id = u.id AND uo.organization_id = ${idx})")
+        legacy_conditions.append(f"EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id = u.id AND uo.organization_id = ${idx})")
         params.append(org_id)
         idx += 1
 
     where_clause = " AND ".join(conditions)
     if where_clause:
         where_clause = "WHERE " + where_clause
+    legacy_where_clause = " AND ".join(legacy_conditions)
+    if legacy_where_clause:
+        legacy_where_clause = "WHERE " + legacy_where_clause
 
     # Sort
     sort_map = {
@@ -175,36 +195,64 @@ async def admin_user_search(
     order = sort_map.get(sort, "u.created_at DESC")
 
     async with pool.acquire() as conn:
-        total = await conn.fetchval(
-            f"SELECT COUNT(*) FROM users u {where_clause}", *params
-        )
+        try:
+            total = await conn.fetchval(
+                f"SELECT COUNT(*) FROM users u {where_clause}", *params
+            )
+            rows = await conn.fetch(
+                f"""
+                SELECT u.id, u.email, u.name, u.role, u.platform_role, u.is_active, u.created_at,
+                       (SELECT COUNT(*) FROM user_organizations uo WHERE uo.user_id = u.id) AS organization_count
+                FROM users u
+                {where_clause}
+                ORDER BY {order}
+                LIMIT ${idx} OFFSET ${idx + 1}
+                """,
+                *params,
+                limit,
+                offset,
+            )
+        except Exception as e:
+            if "platform_role" not in str(e):
+                raise
+            total = await conn.fetchval(
+                f"SELECT COUNT(*) FROM users u {legacy_where_clause}", *params
+            )
+            rows = await conn.fetch(
+                f"""
+                SELECT u.id, u.email, u.name, u.role, u.is_active, u.created_at,
+                       (SELECT COUNT(*) FROM user_organizations uo WHERE uo.user_id = u.id) AS organization_count
+                FROM users u
+                {legacy_where_clause}
+                ORDER BY {order}
+                LIMIT ${idx} OFFSET ${idx + 1}
+                """,
+                *params,
+                limit,
+                offset,
+            )
 
-        rows = await conn.fetch(
-            f"""
-            SELECT u.id, u.email, u.name, u.role, u.is_active, u.created_at,
-                   (SELECT COUNT(*) FROM user_organizations uo WHERE uo.user_id = u.id) AS organization_count
-            FROM users u
-            {where_clause}
-            ORDER BY {order}
-            LIMIT ${idx} OFFSET ${idx + 1}
-            """,
-            *params,
-            limit,
-            offset,
+    users = []
+    for r in rows:
+        try:
+            platform_role_value = r["platform_role"]
+        except Exception:
+            platform_role_value = None
+        users.append(
+            {
+                "id": str(r["id"]),
+                "email": r["email"],
+                "name": r["name"],
+                "role": r["role"],
+                "legacy_role": r["role"],
+                "platform_role": platform_role_value or (
+                    "platform_admin" if str(r["role"]).lower() == "admin" else "user"
+                ),
+                "is_active": r["is_active"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+                "organization_count": r["organization_count"],
+            }
         )
-
-    users = [
-        {
-            "id": str(r["id"]),
-            "email": r["email"],
-            "name": r["name"],
-            "role": r["role"],
-            "is_active": r["is_active"],
-            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
-            "organization_count": r["organization_count"],
-        }
-        for r in rows
-    ]
 
     return {"users": users, "total": total or 0, "limit": limit, "offset": offset}
 

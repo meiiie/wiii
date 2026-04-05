@@ -17,9 +17,13 @@ from app.engine.llm_providers.base import LLMProvider
 logger = logging.getLogger(__name__)
 
 try:
-    from app.engine.llm_pool import get_circuit_breaker
+    from app.core.resilience import get_circuit_breaker
 
-    _vertex_cb = get_circuit_breaker("vertex", failure_threshold=3, recovery_timeout=30)
+    _vertex_cb = get_circuit_breaker(
+        "vertex",
+        failure_threshold=3,
+        recovery_timeout=30,
+    )
 except Exception:
     _vertex_cb = None
 

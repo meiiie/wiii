@@ -176,7 +176,7 @@ class TestToolKnowledgeSearch:
         import app.engine.tools.rag_tools as mod
         mod._rag_agent = None
         result = await mod.tool_knowledge_search.coroutine(query="What is SOLAS?")
-        assert "khong kha dung" in result.lower() or "Loi" in result or "L" in result
+        assert "Xin lỗi" in result
 
     @pytest.mark.asyncio
     async def test_success(self):
@@ -236,6 +236,32 @@ class TestToolKnowledgeSearch:
         assert state.confidence == 0.30
 
     @pytest.mark.asyncio
+    async def test_success_no_sources_sanitizes_domain_fallback(self):
+        import app.engine.tools.rag_tools as mod
+        mock_agent = MagicMock()
+        mod._rag_agent = mock_agent
+        mod._rag_tool_state.set(None)
+
+        mock_crag_result = MagicMock()
+        mock_crag_result.answer = "Xin lỗi, mình chưa có thông tin về chủ đề này nha~ ≽^•⩊•^≼"
+        mock_crag_result.confidence = 30
+        mock_crag_result.sources = []
+        mock_crag_result.reasoning_trace = None
+        mock_crag_result.thinking = None
+
+        with patch("app.engine.agentic_rag.corrective_rag.get_corrective_rag") as mock_get_crag, \
+             patch("app.core.config.settings") as mock_settings:
+            mock_crag = MagicMock()
+            mock_crag.process = AsyncMock(return_value=mock_crag_result)
+            mock_get_crag.return_value = mock_crag
+            mock_settings.rag_confidence_high = 0.85
+
+            result = await mod.tool_knowledge_search.coroutine(query="Random question")
+
+        assert "chưa thấy nguồn nội bộ thật sự khớp" in result.lower()
+        assert "xin lỗi" not in result.lower()
+
+    @pytest.mark.asyncio
     async def test_confidence_above_1_normalized(self):
         """CRAG confidence (0-100) is always normalized to 0-1 for config thresholds."""
         import app.engine.tools.rag_tools as mod
@@ -271,7 +297,7 @@ class TestToolKnowledgeSearch:
         with patch("app.engine.agentic_rag.corrective_rag.get_corrective_rag", side_effect=Exception("CRAG error")):
             result = await mod.tool_knowledge_search.coroutine(query="Q")
 
-        assert "Loi" in result or "L" in result
+        assert "Lỗi khi tra cứu" in result
         # State should be reset
         state = mod._get_state()
         assert state.confidence == 0.0

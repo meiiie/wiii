@@ -137,8 +137,10 @@ async def admin_auth_events(
     auth: RequireAdmin,
     user_id: Optional[str] = Query(None),
     event_type: Optional[str] = Query(None),
+    provider: Optional[str] = Query(None),
     from_date: Optional[str] = Query(None, alias="from"),
     to_date: Optional[str] = Query(None, alias="to"),
+    org_id: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -157,6 +159,10 @@ async def admin_auth_events(
         conditions.append(f"event_type = ${idx}")
         params.append(event_type)
         idx += 1
+    if provider:
+        conditions.append(f"provider = ${idx}")
+        params.append(provider)
+        idx += 1
     if from_date:
         conditions.append(f"created_at >= ${idx}::timestamptz")
         params.append(from_date)
@@ -164,6 +170,10 @@ async def admin_auth_events(
     if to_date:
         conditions.append(f"created_at <= ${idx}::timestamptz")
         params.append(to_date)
+        idx += 1
+    if org_id:
+        conditions.append(f"organization_id = ${idx}")
+        params.append(org_id)
         idx += 1
 
     where = ""

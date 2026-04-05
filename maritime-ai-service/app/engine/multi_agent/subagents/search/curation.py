@@ -14,6 +14,10 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.engine.multi_agent.lane_timeout_policy import (
+    resolve_product_curation_timeout_impl,
+)
+
 logger = logging.getLogger(__name__)
 
 # Max chars for compact product summaries sent to LLM
@@ -133,6 +137,8 @@ async def curate_with_llm(
     max_curated: int = 8,
     llm_tier: str = "light",
     timeout_seconds: float = 10.0,
+    provider_override: str | None = None,
+    requested_model: str | None = None,
 ) -> Optional[CuratedProductSelection]:
     """Call LLM to curate top products from raw results.
 
@@ -154,12 +160,24 @@ async def curate_with_llm(
         from app.engine.multi_agent.agent_config import AgentConfigRegistry
 
         # Get LLM for the specified tier
-        llm = AgentConfigRegistry.get_llm("product_search")
+        llm = AgentConfigRegistry.get_llm(
+            "product_search",
+            provider_override=provider_override,
+            requested_model=requested_model,
+        )
         if not llm:
             logger.warning("[CURATE] No LLM available for curation")
             return None
 
-        structured_llm = llm.with_structured_output(CuratedProductSelection)
+        provider_name = str(getattr(llm, "_wiii_provider_name", "") or "").strip().lower() or None
+        effective_timeout = resolve_product_curation_timeout_impl(
+            provider_name=provider_name,
+            query=query,
+            total_products=len(products),
+            requested_timeout=timeout_seconds,
+        )
+
+        from app.services.structured_invoke_service import StructuredInvokeService
 
         from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -169,8 +187,14 @@ async def curate_with_llm(
         ]
 
         result = await asyncio.wait_for(
-            structured_llm.ainvoke(messages),
-            timeout=timeout_seconds,
+            StructuredInvokeService.ainvoke(
+                llm=llm,
+                schema=CuratedProductSelection,
+                payload=messages,
+                tier="moderate",
+                timeout_profile="structured",
+            ),
+            timeout=effective_timeout,
         )
 
         if not isinstance(result, CuratedProductSelection):
@@ -194,7 +218,7 @@ async def curate_with_llm(
         return result
 
     except asyncio.TimeoutError:
-        logger.warning("[CURATE] LLM curation timed out after %.1fs", timeout_seconds)
+        logger.warning("[CURATE] LLM curation timed out after %.1fs", effective_timeout if 'effective_timeout' in locals() else timeout_seconds)
         return None
     except Exception as exc:
         logger.warning("[CURATE] LLM curation failed: %s", exc)

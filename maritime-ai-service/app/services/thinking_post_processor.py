@@ -52,6 +52,32 @@ class ThinkingPostProcessor:
         r'<thinking>(.*?)</thinking>',
         re.DOTALL | re.IGNORECASE
     )
+    VISIBLE_THINKING_BLOCK_PATTERN = re.compile(
+        r"^\s*\*{1,2}\s*visible thinking\s*:\s*(?P<thinking>.*?)\s*\*{1,2}\s*(?P<answer>.+)$",
+        re.DOTALL | re.IGNORECASE,
+    )
+    VISIBLE_THINKING_WRAPPED_LABEL_PATTERN = re.compile(
+        r"^\s*\(\s*(?:visible thinking|suy nghĩ|suy nghi|suy nghĩ của wiii|suy nghi cua wiii"
+        r"|suy nghĩ của wiii về [^:*]+|suy nghi cua wiii ve [^:*]+|nghĩ thầm|nghi tham)\s*:\s*(?P<body>.+?)\)\s*(?P<tail>.*)$",
+        re.DOTALL | re.IGNORECASE,
+    )
+    VISIBLE_THINKING_LABEL_PREFIX_PATTERN = re.compile(
+        r"^\s*\*{1,2}\s*(?:visible thinking|suy nghĩ|suy nghi|suy nghĩ của wiii|suy nghi cua wiii"
+        r"|suy nghĩ của wiii về [^:*]+|suy nghi cua wiii ve [^:*]+"
+        r"|nghĩ thầm|nghi tham)\s*:\s*\*{0,2}\s*",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _should_surface_native_thinking(thinking: str) -> bool:
+        clean = str(thinking or "").strip()
+        if len(clean) <= 10:
+            return False
+        lowered = clean.lower()
+        if any(token in lowered for token in ("mình", "người", "câu này", "bây giờ", "việt", "tiếng", "không", "để ")):
+            return True
+        vietnamese_chars = set("ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ")
+        return any(ch in vietnamese_chars for ch in lowered)
 
     def process(self, content: Any) -> Tuple[str, Optional[str]]:
         """
@@ -123,11 +149,15 @@ class ThinkingPostProcessor:
 
         combined_text = '\n'.join(text_parts)
 
-        # PRIMARY: Use Gemini native thinking blocks
+        text_result = self._extract_from_text(combined_text)
+        if text_result.thinking:
+            return text_result
+
+        # PRIMARY for Gemini native blocks only when the thought itself is already
+        # in a user-facing language we are willing to surface.
         if native_thinking_parts:
-            native_thinking = '\n'.join(native_thinking_parts)
-            if native_thinking.strip() and len(native_thinking.strip()) > 10:
-                # Clean any leftover <thinking> tags from the answer text
+            native_thinking = '\n'.join(native_thinking_parts).strip()
+            if self._should_surface_native_thinking(native_thinking):
                 clean_text = self.THINKING_PATTERN.sub('', combined_text).strip()
                 clean_text = re.sub(r'\n{3,}', '\n\n', clean_text)
                 return ThinkingResult(
@@ -135,11 +165,6 @@ class ThinkingPostProcessor:
                     thinking=native_thinking,
                     source='gemini_native'
                 )
-
-        # FALLBACK: Check for <thinking> tags in text
-        text_result = self._extract_from_text(combined_text)
-        if text_result.thinking:
-            return text_result
 
         return ThinkingResult(text=combined_text, thinking=None, source='none')
 
@@ -158,6 +183,53 @@ class ThinkingPostProcessor:
                 text=clean_text,
                 thinking=thinking,
                 source='text_tags'
+            )
+
+        visible_match = self.VISIBLE_THINKING_BLOCK_PATTERN.match(text)
+        if visible_match:
+            thinking = visible_match.group("thinking").strip()
+            clean_text = visible_match.group("answer").strip()
+            clean_text = re.sub(r'\n{3,}', '\n\n', clean_text)
+            if thinking and len(clean_text) > 20:
+                return ThinkingResult(
+                    text=clean_text,
+                    thinking=thinking,
+                    source='visible_thinking_block',
+                )
+
+        wrapped_label_match = self.VISIBLE_THINKING_WRAPPED_LABEL_PATTERN.match(text)
+        if wrapped_label_match:
+            body = wrapped_label_match.group("body").strip()
+            tail = wrapped_label_match.group("tail").strip()
+            clean_text = body if not tail else f"{body}\n\n{tail}"
+            clean_text = re.sub(r'\n{3,}', '\n\n', clean_text)
+            return ThinkingResult(
+                text=clean_text,
+                thinking=None,
+                source='visible_thinking_wrapped_label',
+            )
+
+        preserve_emphasis = bool(
+            re.match(
+                r"^\s*\*{1,2}\s*(?:nghĩ thầm|nghi tham|suy nghĩ|suy nghi)\s*:\s*",
+                text,
+                re.IGNORECASE,
+            )
+        )
+        label_removed = self.VISIBLE_THINKING_LABEL_PREFIX_PATTERN.sub("", text, count=1).strip()
+        if label_removed != text.strip():
+            if preserve_emphasis and label_removed and not label_removed.startswith("*"):
+                label_removed = f"*{label_removed}"
+            label_removed = re.sub(r"^\*+\s*", "", label_removed).strip()
+            if preserve_emphasis:
+                label_removed = "*" + label_removed.lstrip("*")
+            else:
+                label_removed = re.sub(r"\s+\*+$", "", label_removed).strip()
+            label_removed = re.sub(r'\n{3,}', '\n\n', label_removed)
+            return ThinkingResult(
+                text=label_removed,
+                thinking=None,
+                source='visible_thinking_label',
             )
 
         return ThinkingResult(text=text, thinking=None, source='none')

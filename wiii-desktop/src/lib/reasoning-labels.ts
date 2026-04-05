@@ -16,6 +16,7 @@ export const TOOL_LABELS: Record<string, string> = {
   tool_current_datetime: "Thời gian hiện tại",
   tool_calculator: "Máy tính",
   tool_think: "Suy nghĩ",
+  tool_report_progress: "Báo tiến độ",
   tool_save_user_info: "Lưu thông tin",
   tool_get_user_info: "Truy xuất thông tin",
   tool_execute_python: "Chạy mã Python",

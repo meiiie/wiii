@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from app.core.config import get_settings
 from app.core.rate_limit import limiter
-from app.core.security import AuthenticatedUser, require_auth
+from app.core.security import AuthenticatedUser, is_platform_admin, require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ async def _require_org_knowledge_admin(auth: AuthenticatedUser, org_id: str) -> 
         )
 
     # Platform admin bypass
-    if auth.role == "admin":
+    if is_platform_admin(auth):
         return auth.user_id
 
     # Check org admin/owner
@@ -112,7 +112,7 @@ async def _require_org_member(auth: AuthenticatedUser, org_id: str) -> str:
             detail="Org knowledge management is disabled",
         )
 
-    if auth.role == "admin":
+    if is_platform_admin(auth):
         return auth.user_id
 
     from app.repositories.organization_repository import get_organization_repository

@@ -142,7 +142,7 @@ class TestProgressTracking:
         """Create service with all deps mocked."""
         with patch("app.services.multimodal_ingestion_service.get_storage_client") as mock_storage, \
              patch("app.services.multimodal_ingestion_service.get_vision_extractor") as mock_vision, \
-             patch("app.services.multimodal_ingestion_service.GeminiOptimizedEmbeddings") as mock_embed, \
+             patch("app.services.multimodal_ingestion_service.get_embedding_backend") as mock_embed, \
              patch("app.services.multimodal_ingestion_service.get_semantic_chunker") as mock_chunk, \
              patch("app.services.multimodal_ingestion_service.get_page_analyzer") as mock_pa, \
              patch("app.services.multimodal_ingestion_service.get_bounding_box_extractor") as mock_bbox, \
@@ -216,7 +216,7 @@ class TestPDFDelegation:
     def _make_service(self):
         with patch("app.services.multimodal_ingestion_service.get_storage_client"), \
              patch("app.services.multimodal_ingestion_service.get_vision_extractor"), \
-             patch("app.services.multimodal_ingestion_service.GeminiOptimizedEmbeddings"), \
+             patch("app.services.multimodal_ingestion_service.get_embedding_backend"), \
              patch("app.services.multimodal_ingestion_service.get_semantic_chunker"), \
              patch("app.services.multimodal_ingestion_service.get_page_analyzer"), \
              patch("app.services.multimodal_ingestion_service.get_bounding_box_extractor"), \
@@ -267,7 +267,7 @@ class TestIngestPdf:
     def _make_service(self):
         with patch("app.services.multimodal_ingestion_service.get_storage_client"), \
              patch("app.services.multimodal_ingestion_service.get_vision_extractor"), \
-             patch("app.services.multimodal_ingestion_service.GeminiOptimizedEmbeddings"), \
+             patch("app.services.multimodal_ingestion_service.get_embedding_backend"), \
              patch("app.services.multimodal_ingestion_service.get_semantic_chunker"), \
              patch("app.services.multimodal_ingestion_service.get_page_analyzer"), \
              patch("app.services.multimodal_ingestion_service.get_bounding_box_extractor"), \
@@ -395,7 +395,7 @@ class TestSingleton:
 
         with patch("app.services.multimodal_ingestion_service.get_storage_client"), \
              patch("app.services.multimodal_ingestion_service.get_vision_extractor"), \
-             patch("app.services.multimodal_ingestion_service.GeminiOptimizedEmbeddings"), \
+             patch("app.services.multimodal_ingestion_service.get_embedding_backend"), \
              patch("app.services.multimodal_ingestion_service.get_semantic_chunker"), \
              patch("app.services.multimodal_ingestion_service.get_page_analyzer"), \
              patch("app.services.multimodal_ingestion_service.get_bounding_box_extractor"), \

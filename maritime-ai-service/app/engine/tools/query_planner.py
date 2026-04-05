@@ -186,9 +186,15 @@ async def plan_search_queries(
     )
 
     try:
-        # Use with_structured_output for reliable JSON parsing
-        structured_llm = llm.with_structured_output(QueryPlan)
-        plan = await structured_llm.ainvoke(prompt_text)
+        from app.services.structured_invoke_service import StructuredInvokeService
+
+        plan = await StructuredInvokeService.ainvoke(
+            llm=llm,
+            schema=QueryPlan,
+            payload=prompt_text,
+            tier="light",
+            provider=(context or {}).get("provider") if isinstance(context, dict) else None,
+        )
 
         if plan and isinstance(plan, QueryPlan):
             # Validate: ensure at least 1 sub-query

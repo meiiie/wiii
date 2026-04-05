@@ -183,7 +183,7 @@ class TestExtractQueryEntities:
         mock_builder.extract = AsyncMock(return_value=mock_extraction)
 
         with patch(
-            "app.engine.multi_agent.agents.kg_builder_agent.get_kg_builder_agent",
+            "app.engine.kg_builder_service.get_kg_builder_service",
             return_value=mock_builder,
         ):
             result = await _extract_query_entities("Quy tắc 15 COLREGs là gì?")
@@ -201,7 +201,7 @@ class TestExtractQueryEntities:
         mock_builder.is_available.return_value = False
 
         with patch(
-            "app.engine.multi_agent.agents.kg_builder_agent.get_kg_builder_agent",
+            "app.engine.kg_builder_service.get_kg_builder_service",
             return_value=mock_builder,
         ):
             result = await _extract_query_entities("test query")
@@ -213,7 +213,7 @@ class TestExtractQueryEntities:
         from app.engine.agentic_rag.graph_rag_retriever import _extract_query_entities
 
         with patch(
-            "app.engine.multi_agent.agents.kg_builder_agent.get_kg_builder_agent",
+            "app.engine.kg_builder_service.get_kg_builder_service",
             side_effect=ImportError("module not found"),
         ):
             result = await _extract_query_entities("test query")
@@ -242,7 +242,7 @@ class TestExtractQueryEntities:
         mock_builder.extract = AsyncMock(return_value=mock_extraction)
 
         with patch(
-            "app.engine.multi_agent.agents.kg_builder_agent.get_kg_builder_agent",
+            "app.engine.kg_builder_service.get_kg_builder_service",
             return_value=mock_builder,
         ):
             result = await _extract_query_entities("So sánh SOLAS, MARPOL và Rule 15")
@@ -261,7 +261,7 @@ class TestExtractQueryEntities:
         mock_builder.extract = AsyncMock(side_effect=RuntimeError("LLM timeout"))
 
         with patch(
-            "app.engine.multi_agent.agents.kg_builder_agent.get_kg_builder_agent",
+            "app.engine.kg_builder_service.get_kg_builder_service",
             return_value=mock_builder,
         ):
             result = await _extract_query_entities("test")

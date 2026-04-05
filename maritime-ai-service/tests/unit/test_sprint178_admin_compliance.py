@@ -437,6 +437,48 @@ class TestAuthEventsViewer:
         assert "2026-01-31T23:59:59Z" in call_args.args
 
     @pytest.mark.asyncio
+    async def test_filter_provider_forwarded_to_query(self, admin_app):
+        """provider filter is passed through to the COUNT and SELECT queries."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+        mock_conn.fetchval = AsyncMock(return_value=3)
+        mock_conn.fetch = AsyncMock(
+            return_value=[self._auth_event_row(provider="host_action")]
+        )
+
+        p1, p2, p3 = _settings_patches()
+        with p1, p2, p3, patch(_POOL_PATCH, async_pool_fn, create=True):
+            async with _make_client(admin_app) as client:
+                resp = await client.get(
+                    "/api/v1/admin/auth-events",
+                    params={"provider": "host_action"},
+                )
+
+        assert resp.status_code == 200
+        call_args = mock_conn.fetchval.call_args
+        assert "host_action" in call_args.args
+
+    @pytest.mark.asyncio
+    async def test_filter_org_id_forwarded_to_query(self, admin_app):
+        """org_id filter is passed through to the COUNT and SELECT queries."""
+        async_pool_fn, mock_conn = _mock_pool_and_conn()
+        mock_conn.fetchval = AsyncMock(return_value=1)
+        mock_conn.fetch = AsyncMock(
+            return_value=[self._auth_event_row(organization_id="org-1")]
+        )
+
+        p1, p2, p3 = _settings_patches()
+        with p1, p2, p3, patch(_POOL_PATCH, async_pool_fn, create=True):
+            async with _make_client(admin_app) as client:
+                resp = await client.get(
+                    "/api/v1/admin/auth-events",
+                    params={"org_id": "org-1"},
+                )
+
+        assert resp.status_code == 200
+        call_args = mock_conn.fetchval.call_args
+        assert "org-1" in call_args.args
+
+    @pytest.mark.asyncio
     async def test_pagination_respects_limit_and_offset(self, admin_app):
         """limit + offset appear correctly in the response body."""
         async_pool_fn, mock_conn = _mock_pool_and_conn()
@@ -481,6 +523,7 @@ class TestGDPRExport:
             email="test@example.com",
             name="Nguyen Van A",
             role="student",
+            platform_role="user",
             is_active=True,
             created_at=datetime(2025, 6, 1, 0, 0, 0, tzinfo=timezone.utc),
         )
@@ -523,7 +566,7 @@ class TestGDPRExport:
 
     @pytest.mark.asyncio
     async def test_includes_profile_fields(self, admin_app):
-        """Profile section contains id, email, name, role, is_active, created_at."""
+        """Profile section contains id, email, name, role, platform_role, is_active, created_at."""
         async_pool_fn, mock_conn = _mock_pool_and_conn()
         mock_conn.fetchrow = AsyncMock(return_value=self._profile_row("uid-99"))
         mock_conn.fetch = AsyncMock(return_value=[])
@@ -546,6 +589,7 @@ class TestGDPRExport:
         assert profile["email"] == "test@example.com"
         assert profile["name"] == "Nguyen Van A"
         assert profile["role"] == "student"
+        assert profile["platform_role"] == "user"
         assert profile["is_active"] is True
         assert "created_at" in profile
 

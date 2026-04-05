@@ -20,6 +20,7 @@ from app.api.v1 import (
 from app.api.v1 import chat_context_endpoint_support as _chat_context_support
 from app.api.v1 import chat_endpoint_presenter as _chat_endpoint_presenter
 from app.api.v1 import chat_history_endpoint_support as _chat_history_support
+from app.core.security import resolve_interaction_role
 from app.core.rate_limit import limiter
 from app.engine.llm_runtime_metadata import resolve_runtime_llm_metadata
 from app.models.schemas import (
@@ -29,6 +30,7 @@ from app.models.schemas import (
     DeleteHistoryRequest,
     DeleteHistoryResponse,
     GetHistoryResponse,
+    UserRole,
 )
 from app.services import chat_response_presenter as _chat_response_presenter
 
@@ -57,6 +59,19 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Chat"])
+
+
+def _canonicalize_chat_request_from_auth(chat_request: ChatRequest, auth: RequireAuth) -> ChatRequest:
+    """Project canonical auth identity onto transport request fields."""
+    effective_role = resolve_interaction_role(auth)
+    effective_org_id = auth.organization_id or chat_request.organization_id
+    return chat_request.model_copy(
+        update={
+            "user_id": str(auth.user_id),
+            "role": UserRole(effective_role),
+            "organization_id": effective_org_id,
+        }
+    )
 
 
 @router.post(
@@ -105,6 +120,8 @@ async def chat_completion(
         session normalization through continuity scheduling is documented in
         app/services/REQUEST_FLOW_CONTRACT.md.
     """
+    chat_request = _canonicalize_chat_request_from_auth(chat_request, auth)
+
     start_time, request_id = _chat_completion_support.begin_chat_completion_request(
         logger=logger,
         request=request,
@@ -120,14 +137,19 @@ async def chat_completion(
             )
         )
 
+        runtime_metadata = resolve_runtime_llm_metadata(
+            internal_response.metadata or {},
+            allow_fallback=False,
+        )
+
         return _chat_endpoint_presenter.build_chat_completion_success_response(
             logger=logger,
             chat_request=chat_request,
             internal_response=internal_response,
             start_time=start_time,
-            model_name=resolve_runtime_llm_metadata(
-                internal_response.metadata or {}
-            )["model"],
+            provider_name=runtime_metadata["provider"],
+            model_name=runtime_metadata["model"],
+            runtime_authoritative=bool(runtime_metadata["runtime_authoritative"]),
         )
     except Exception as error:
         return _chat_endpoint_presenter.build_chat_completion_error_response(
@@ -245,7 +267,7 @@ async def delete_chat_history(
             logger=logger,
             user_id=user_id,
             deleted_by=auth.user_id,
-            role=auth.role,
+            role=resolve_interaction_role(auth),
         )
 
     except Exception as error:
@@ -396,10 +418,10 @@ async def get_context_info(
         _system_prompt = ""
         _core_memory = ""
         try:
-            from app.prompts.prompt_loader import PromptLoader
-            loader = PromptLoader()
+            from app.prompts.prompt_loader import get_prompt_loader
+            loader = get_prompt_loader()
             _system_prompt = loader.build_system_prompt(
-                role=auth.role or "student",
+                role=resolve_interaction_role(auth),
             )
         except Exception:
             pass

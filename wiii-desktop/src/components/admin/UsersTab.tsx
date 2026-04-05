@@ -1,43 +1,66 @@
 /**
- * Users tab — search + table + pagination + action menu.
- * Sprint 179: "Quản Trị Toàn Diện"
- * Sprint 180: Overflow menu with deactivate/reactivate/role change
+ * Users tab - search + table + pagination + action menu.
+ * System admin semantics:
+ * - platform_role is the primary Wiii account type
+ * - legacy role is shown only as compatibility/debug context
  */
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Search, ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
-import { useAdminStore } from "@/stores/admin-store";
-import { useAuthStore } from "@/stores/auth-store";
+
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { useAuthStore } from "@/stores/auth-store";
+import { useAdminStore } from "@/stores/admin-store";
 
 const PAGE_SIZE = 20;
 
-const ROLE_LABELS: Record<string, string> = {
-  student: "Sinh viên",
-  teacher: "Giảng viên",
-  admin: "Quản trị",
+const PLATFORM_ROLE_LABELS: Record<string, string> = {
+  user: "Wiii User",
+  platform_admin: "Platform Admin",
 };
 
-const ROLE_OPTIONS = [
-  { value: "student", label: "Sinh viên" },
-  { value: "teacher", label: "Giảng viên" },
-  { value: "admin", label: "Quản trị" },
-];
+const LEGACY_ROLE_LABELS: Record<string, string> = {
+  student: "Compatibility: Student",
+  teacher: "Compatibility: Teacher",
+  admin: "Compatibility: Admin",
+};
+
+const PLATFORM_ROLE_OPTIONS = [
+  { value: "user", label: "Wiii User" },
+  { value: "platform_admin", label: "Platform Admin" },
+] as const;
+
+function getPlatformRoleLabel(platformRole?: string): string {
+  if (!platformRole) return PLATFORM_ROLE_LABELS.user;
+  return PLATFORM_ROLE_LABELS[platformRole] || platformRole;
+}
+
+function getLegacyRoleLabel(role?: string): string {
+  if (!role) return "Compatibility: unknown";
+  return LEGACY_ROLE_LABELS[role] || `Compatibility: ${role}`;
+}
 
 export function UsersTab() {
-  const { users, usersTotal, usersPage, usersSort, loading, fetchUsers, deactivateUser, reactivateUser, changeUserRole } = useAdminStore();
-  const currentUserId = useAuthStore((s) => s.user?.id);
+  const {
+    users,
+    usersTotal,
+    usersPage,
+    usersSort,
+    loading,
+    fetchUsers,
+    deactivateUser,
+    reactivateUser,
+    changeUserPlatformRole,
+  } = useAdminStore();
+  const currentUserId = useAuthStore((state) => state.user?.id);
   const [localSearch, setLocalSearch] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Overflow menu state
   const [openMenuUserId, setOpenMenuUserId] = useState<string | null>(null);
   const [showRoleSubmenu, setShowRoleSubmenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Confirm dialog state
   const [confirmTarget, setConfirmTarget] = useState<{ userId: string; name: string } | null>(null);
 
-  // Fetch on mount
   useEffect(() => {
     fetchUsers({ page: 0 });
   }, [fetchUsers]);
@@ -50,16 +73,15 @@ export function UsersTab() {
         fetchUsers({ search: value, page: 0 });
       }, 300);
     },
-    [fetchUsers]
+    [fetchUsers],
   );
 
   useEffect(() => () => clearTimeout(debounceRef.current), []);
 
-  // Close menu on outside click
   useEffect(() => {
     if (!openMenuUserId) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setOpenMenuUserId(null);
         setShowRoleSubmenu(false);
       }
@@ -68,14 +90,14 @@ export function UsersTab() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [openMenuUserId]);
 
-  const handleSort = (col: string) => {
+  const handleSort = (column: string) => {
     const currentBase = usersSort.replace(/_(?:asc|desc)$/, "");
-    const currentDir = usersSort.endsWith("_asc") ? "asc" : "desc";
-    const newSort =
-      currentBase === col && currentDir === "desc"
-        ? `${col}_asc`
-        : `${col}_desc`;
-    fetchUsers({ sort: newSort, page: 0 });
+    const currentDirection = usersSort.endsWith("_asc") ? "asc" : "desc";
+    const nextSort =
+      currentBase === column && currentDirection === "desc"
+        ? `${column}_asc`
+        : `${column}_desc`;
+    fetchUsers({ sort: nextSort, page: 0 });
   };
 
   const handleDeactivate = (userId: string, userName: string) => {
@@ -96,10 +118,13 @@ export function UsersTab() {
     await reactivateUser(userId);
   };
 
-  const handleRoleChange = async (userId: string, role: string) => {
+  const handlePlatformRoleChange = async (
+    userId: string,
+    platformRole: "user" | "platform_admin",
+  ) => {
     setOpenMenuUserId(null);
     setShowRoleSubmenu(false);
-    await changeUserRole(userId, role);
+    await changeUserPlatformRole(userId, platformRole);
   };
 
   const totalPages = Math.ceil(usersTotal / PAGE_SIZE);
@@ -108,40 +133,42 @@ export function UsersTab() {
 
   return (
     <div className="space-y-4">
-      {/* Search + filters */}
       <div className="flex gap-3">
         <div className="relative flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
+          <Search
+            size={14}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary"
+          />
           <input
             type="text"
             value={localSearch}
-            onChange={(e) => handleSearch(e.target.value)}
-            placeholder="Tìm theo tên, email..."
+            onChange={(event) => handleSearch(event.target.value)}
+            placeholder="Tim theo ten, email..."
             className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
           />
         </div>
         <select
-          onChange={(e) => fetchUsers({ role: e.target.value, page: 0 })}
+          onChange={(event) =>
+            fetchUsers({ platformRole: event.target.value, page: 0 })
+          }
           className="px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none"
           defaultValue=""
         >
-          <option value="">Tất cả vai trò</option>
-          <option value="student">Sinh viên</option>
-          <option value="teacher">Giảng viên</option>
-          <option value="admin">Quản trị</option>
+          <option value="">Tat ca loai tai khoan</option>
+          <option value="user">Wiii User</option>
+          <option value="platform_admin">Platform Admin</option>
         </select>
         <select
-          onChange={(e) => fetchUsers({ status: e.target.value, page: 0 })}
+          onChange={(event) => fetchUsers({ status: event.target.value, page: 0 })}
           className="px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none"
           defaultValue=""
         >
-          <option value="">Tất cả trạng thái</option>
-          <option value="active">Hoạt động</option>
-          <option value="inactive">Vô hiệu</option>
+          <option value="">Tat ca trang thai</option>
+          <option value="active">Hoat dong</option>
+          <option value="inactive">Vo hieu</option>
         </select>
       </div>
 
-      {/* Table */}
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead>
@@ -150,7 +177,7 @@ export function UsersTab() {
                 className="px-4 py-2.5 font-medium cursor-pointer hover:text-text"
                 onClick={() => handleSort("name")}
               >
-                Tên {usersSort.startsWith("name") && (usersSort.endsWith("asc") ? "\u2191" : "\u2193")}
+                Ten {usersSort.startsWith("name") && (usersSort.endsWith("asc") ? "\u2191" : "\u2193")}
               </th>
               <th
                 className="px-4 py-2.5 font-medium cursor-pointer hover:text-text"
@@ -158,29 +185,31 @@ export function UsersTab() {
               >
                 Email {usersSort.startsWith("email") && (usersSort.endsWith("asc") ? "\u2191" : "\u2193")}
               </th>
-              <th className="px-4 py-2.5 font-medium">Vai trò</th>
-              <th className="px-4 py-2.5 font-medium">Trạng thái</th>
-              <th className="px-4 py-2.5 font-medium">Tổ chức</th>
+              <th className="px-4 py-2.5 font-medium">Loai tai khoan</th>
+              <th className="px-4 py-2.5 font-medium">Trang thai</th>
+              <th className="px-4 py-2.5 font-medium">To chuc</th>
               <th
                 className="px-4 py-2.5 font-medium cursor-pointer hover:text-text"
                 onClick={() => handleSort("created_at")}
               >
-                Ngày tạo {usersSort.startsWith("created_at") && (usersSort.endsWith("asc") ? "\u2191" : "\u2193")}
+                Ngay tao {usersSort.startsWith("created_at") && (usersSort.endsWith("asc") ? "\u2191" : "\u2193")}
               </th>
-              <th className="px-4 py-2.5 font-medium w-[70px]">Hành động</th>
+              <th className="px-4 py-2.5 font-medium w-[70px]">Hanh dong</th>
             </tr>
           </thead>
           <tbody>
             {users.length === 0 && !loading && (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-text-tertiary text-xs">
-                  Không tìm thấy người dùng
+                  Khong tim thay nguoi dung
                 </td>
               </tr>
             )}
             {users.map((user) => {
               const isSelf = user.id === currentUserId;
               const isMenuOpen = openMenuUserId === user.id;
+              const platformRole = user.platform_role || "user";
+              const legacyRole = user.legacy_role || user.role;
 
               return (
                 <tr
@@ -190,9 +219,14 @@ export function UsersTab() {
                   <td className="px-4 py-2.5 text-text font-medium">{user.name || "\u2014"}</td>
                   <td className="px-4 py-2.5 text-text-secondary">{user.email || "\u2014"}</td>
                   <td className="px-4 py-2.5">
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent-light)] text-[var(--accent)]">
-                      {ROLE_LABELS[user.role] || user.role}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent-light)] text-[var(--accent)] w-fit">
+                        {getPlatformRoleLabel(platformRole)}
+                      </span>
+                      <span className="text-[10px] text-text-tertiary">
+                        {getLegacyRoleLabel(legacyRole)}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-4 py-2.5">
                     <span
@@ -202,7 +236,7 @@ export function UsersTab() {
                           : "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
                       }`}
                     >
-                      {user.is_active ? "Hoạt động" : "Vô hiệu"}
+                      {user.is_active ? "Hoat dong" : "Vo hieu"}
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-text-secondary">{user.organization_count}</td>
@@ -219,7 +253,7 @@ export function UsersTab() {
                           setShowRoleSubmenu(false);
                         }}
                         className="p-1.5 rounded-lg hover:bg-surface-tertiary transition-colors text-text-secondary"
-                        aria-label={`Hành động cho ${user.name || user.email || user.id}`}
+                        aria-label={`Hanh dong cho ${user.name || user.email || user.id}`}
                       >
                         <MoreHorizontal size={16} />
                       </button>
@@ -228,33 +262,40 @@ export function UsersTab() {
                         <div className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-border bg-surface shadow-lg z-[60] py-1">
                           {user.is_active ? (
                             <>
-                              {/* Deactivate — hidden for self */}
                               {!isSelf && (
                                 <button
-                                  onClick={() => handleDeactivate(user.id, user.name || user.email || user.id)}
+                                  onClick={() =>
+                                    handleDeactivate(user.id, user.name || user.email || user.id)
+                                  }
                                   className="w-full text-left px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-surface-secondary transition-colors"
                                 >
-                                  Vô hiệu hoá
+                                  Vo hieu hoa
                                 </button>
                               )}
-                              {/* Role change */}
                               <div className="relative">
                                 <button
                                   onClick={() => setShowRoleSubmenu(!showRoleSubmenu)}
                                   className="w-full text-left px-3 py-2 text-sm text-text hover:bg-surface-secondary transition-colors flex items-center justify-between"
                                 >
-                                  Đổi vai trò
+                                  Doi loai tai khoan
                                   <ChevronRight size={14} className="text-text-tertiary" />
                                 </button>
                                 {showRoleSubmenu && (
-                                  <div className="absolute left-full top-0 ml-1 w-36 rounded-lg border border-border bg-surface shadow-lg z-[61] py-1">
-                                    {ROLE_OPTIONS.filter((r) => r.value !== user.role).map((r) => (
+                                  <div className="absolute left-full top-0 ml-1 w-44 rounded-lg border border-border bg-surface shadow-lg z-[61] py-1">
+                                    {PLATFORM_ROLE_OPTIONS.filter(
+                                      (option) => option.value !== platformRole,
+                                    ).map((option) => (
                                       <button
-                                        key={r.value}
-                                        onClick={() => handleRoleChange(user.id, r.value)}
+                                        key={option.value}
+                                        onClick={() =>
+                                          handlePlatformRoleChange(
+                                            user.id,
+                                            option.value,
+                                          )
+                                        }
                                         className="w-full text-left px-3 py-2 text-sm text-text hover:bg-surface-secondary transition-colors"
                                       >
-                                        {r.label}
+                                        {option.label}
                                       </button>
                                     ))}
                                   </div>
@@ -266,7 +307,7 @@ export function UsersTab() {
                               onClick={() => handleReactivate(user.id)}
                               className="w-full text-left px-3 py-2 text-sm text-green-600 dark:text-green-400 hover:bg-surface-secondary transition-colors"
                             >
-                              Kích hoạt lại
+                              Kich hoat lai
                             </button>
                           )}
                         </div>
@@ -280,11 +321,10 @@ export function UsersTab() {
         </table>
       </div>
 
-      {/* Pagination */}
       {usersTotal > 0 && (
         <div className="flex items-center justify-between text-xs text-text-secondary">
           <span>
-            {startIdx}–{endIdx} trên {usersTotal}
+            {startIdx}-{endIdx} tren {usersTotal}
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -293,7 +333,7 @@ export function UsersTab() {
               className="flex items-center gap-1 px-2.5 py-1.5 rounded border border-border hover:bg-surface-tertiary disabled:opacity-30 transition-colors"
             >
               <ChevronLeft size={12} />
-              Trang trước
+              Trang truoc
             </button>
             <span>
               {usersPage + 1} / {totalPages}
@@ -310,12 +350,11 @@ export function UsersTab() {
         </div>
       )}
 
-      {/* Confirm dialog for deactivation */}
       <ConfirmDialog
         open={!!confirmTarget}
-        title="Vô hiệu hoá người dùng"
-        message={`Bạn có chắc chắn muốn vô hiệu hoá "${confirmTarget?.name}"? Người dùng sẽ không thể đăng nhập cho đến khi được kích hoạt lại.`}
-        confirmLabel="Vô hiệu hoá"
+        title="Vo hieu hoa nguoi dung"
+        message={`Ban co chac chan muon vo hieu hoa "${confirmTarget?.name}"? Nguoi dung se khong the dang nhap cho den khi duoc kich hoat lai.`}
+        confirmLabel="Vo hieu hoa"
         variant="danger"
         onConfirm={handleConfirmDeactivate}
         onCancel={() => setConfirmTarget(null)}

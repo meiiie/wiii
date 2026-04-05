@@ -16,6 +16,7 @@ from app.models.knowledge_graph import (
     Citation,
     KnowledgeNode,
 )
+from app.engine.agentic_rag.rag_agent_contracts import EvidenceImage
 from app.engine.rrf_reranker import HybridSearchResult
 
 logger = logging.getLogger(__name__)
@@ -187,9 +188,6 @@ class DocumentRetriever:
             List of EvidenceImage objects
         """
         from app.repositories.dense_search_repository import get_dense_search_repository
-        # Import EvidenceImage from rag_agent (no circular dependency since
-        # rag_agent imports DocumentRetriever, but EvidenceImage is a standalone dataclass)
-        from app.engine.agentic_rag.rag_agent import EvidenceImage
 
         evidence_images = []
         seen_urls = set()

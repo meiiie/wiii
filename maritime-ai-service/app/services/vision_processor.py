@@ -8,6 +8,8 @@ Split from multimodal_ingestion_service.py for single-responsibility.
 
 **Feature: multimodal-rag-vision, hybrid-text-vision, semantic-chunking, document-kg**
 """
+from __future__ import annotations
+
 import json
 import logging
 import uuid
@@ -16,29 +18,29 @@ from datetime import datetime, timezone
 
 if TYPE_CHECKING:
     import fitz
+    from app.engine.bounding_box_extractor import BoundingBoxExtractor
+    from app.engine.context_enricher import ContextEnricher
+    from app.engine.embedding_runtime import EmbeddingBackendProtocol
+    from app.engine.multi_agent.agents.kg_builder_agent import KGBuilderAgentNode
+    from app.engine.page_analyzer import PageAnalyzer
+    from app.engine.vision_extractor import VisionExtractor
+    from app.repositories.neo4j_knowledge_repository import Neo4jKnowledgeRepository
+    from app.services.chunking_service import SemanticChunker
+    from app.services.object_storage import ObjectStorageClient
 
 from PIL import Image
 
 from app.core.config import settings
 from app.core.database import get_shared_session_factory
-from app.services.object_storage import ObjectStorageClient
-from app.services.chunking_service import SemanticChunker, ChunkResult
-from app.engine.vision_extractor import VisionExtractor
-from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
-from app.engine.page_analyzer import PageAnalyzer
-from app.engine.bounding_box_extractor import BoundingBoxExtractor
-from app.engine.context_enricher import ContextEnricher
-from app.engine.multi_agent.agents.kg_builder_agent import KGBuilderAgentNode
-from app.repositories.neo4j_knowledge_repository import Neo4jKnowledgeRepository
+from app.services.vision_processor_runtime_bindings import (
+    ChunkResult,
+    PageResult,
+    _analyze_image_with_vision,
+    _fetch_image_as_base64,
+    get_effective_org_id,
+)
 
 logger = logging.getLogger(__name__)
-
-
-# Import PageResult here to avoid circular imports - it's defined in multimodal_ingestion_service
-# We use a lazy import pattern
-def _get_page_result_class():
-    from app.services.multimodal_ingestion_service import PageResult
-    return PageResult
 
 
 class VisionProcessor:
@@ -60,7 +62,7 @@ class VisionProcessor:
         self,
         storage: ObjectStorageClient,
         vision: VisionExtractor,
-        embeddings: GeminiOptimizedEmbeddings,
+        embeddings: EmbeddingBackendProtocol,
         chunker: SemanticChunker,
         page_analyzer: PageAnalyzer,
         bbox_extractor: BoundingBoxExtractor,
@@ -166,8 +168,6 @@ class VisionProcessor:
         **Validates: Requirements 1.1, 1.4, 7.1, 7.2**
         """
         domain_id = domain_id or settings.default_domain
-        PageResult = _get_page_result_class()
-
         extraction_method = "vision"
         was_fallback = False
 
@@ -290,8 +290,6 @@ class VisionProcessor:
             )
             if has_visual and image_url:
                 try:
-                    from app.engine.agentic_rag.visual_rag import _analyze_image_with_vision, _fetch_image_as_base64
-
                     img_b64 = await _fetch_image_as_base64(image_url)
                     if img_b64:
                         visual_desc = await _analyze_image_with_vision(
@@ -416,13 +414,17 @@ class VisionProcessor:
         """
         domain_id = domain_id or settings.default_domain
         from sqlalchemy import text as sql_text
-        from app.core.org_filter import get_effective_org_id
         organization_id = organization_id or get_effective_org_id()
 
         session_factory = get_shared_session_factory()
 
+        from app.services.embedding_space_guard import stamp_embedding_metadata
+
         # Convert metadata to JSON string
-        metadata_json = json.dumps(metadata) if metadata else '{}'
+        metadata_json = json.dumps(
+            stamp_embedding_metadata(metadata),
+            ensure_ascii=False,
+        )
 
         # Convert bounding_boxes to JSON string (Feature: source-highlight-citation)
         bounding_boxes_json = json.dumps(bounding_boxes) if bounding_boxes else None

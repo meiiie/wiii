@@ -1,0 +1,593 @@
+"""Runtime helpers for InputProcessor context assembly."""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Any, Optional
+
+from app.models.schemas import UserRole
+
+
+async def build_context_impl(
+    *,
+    request,
+    session_id,
+    user_name: Optional[str],
+    recent_history_fallback: Optional[list[dict[str, str]]],
+    chat_context_cls,
+    semantic_memory,
+    chat_history,
+    learning_graph,
+    memory_summarizer,
+    conversation_analyzer,
+    settings_obj,
+    logger_obj,
+):
+    """Build complete chat context while keeping the InputProcessor shell thin."""
+    user_id = str(request.user_id)
+    message = request.message
+    user_context = request.user_context
+
+    context = chat_context_cls(
+        user_id=user_id,
+        session_id=session_id,
+        message=message,
+        user_role=request.role,
+        user_name=user_name,
+        lms_user_name=user_context.display_name if user_context else None,
+        lms_module_id=user_context.current_module_id if user_context else None,
+        lms_course_name=user_context.current_course_name if user_context else None,
+        lms_language=user_context.language if user_context else "vi",
+        response_language=user_context.language if user_context else "vi",
+        page_context=user_context.page_context if user_context else None,
+        student_state=user_context.student_state if user_context else None,
+        available_actions=user_context.available_actions if user_context else None,
+        host_context=user_context.host_context if user_context else None,
+        host_capabilities=user_context.host_capabilities if user_context else None,
+        host_action_feedback=user_context.host_action_feedback if user_context else None,
+        visual_context=user_context.visual_context if user_context else None,
+        widget_feedback=user_context.widget_feedback if user_context else None,
+        code_studio_context=user_context.code_studio_context if user_context else None,
+    )
+
+    if context.lms_user_name and not context.user_name:
+        context.user_name = context.lms_user_name
+
+    semantic_parts: list[str] = []
+
+    if semantic_memory and semantic_memory.is_available():
+        await _populate_semantic_memory_context(
+            semantic_memory=semantic_memory,
+            context=context,
+            user_id=user_id,
+            message=message,
+            settings_obj=settings_obj,
+            logger_obj=logger_obj,
+        )
+
+    await _populate_parallel_context(
+        context=context,
+        request=request,
+        user_id=user_id,
+        message=message,
+        session_id=session_id,
+        learning_graph=learning_graph,
+        memory_summarizer=memory_summarizer,
+        semantic_parts=semantic_parts,
+        logger_obj=logger_obj,
+    )
+
+    if settings_obj.enable_cross_platform_memory:
+        try:
+            from app.engine.semantic_memory.cross_platform import (
+                _detect_channel,
+                get_cross_platform_memory,
+            )
+
+            xp_memory = get_cross_platform_memory()
+            current_channel = _detect_channel(str(session_id))
+            xp_summary = await xp_memory.get_cross_platform_summary(
+                user_id=user_id,
+                current_channel=current_channel,
+            )
+            if xp_summary:
+                semantic_parts.append(f"=== Hoạt động đa nền tảng ===\n{xp_summary}")
+        except Exception as exc:
+            logger_obj.debug("[XP_MEMORY] Cross-platform context failed: %s", exc)
+
+    if settings_obj.enable_visual_memory:
+        try:
+            from app.engine.semantic_memory.visual_memory import (
+                get_visual_memory_manager,
+            )
+
+            vm = get_visual_memory_manager()
+            visual_ctx = await vm.retrieve_visual_memories(
+                user_id=user_id,
+                query=message,
+                limit=settings_obj.visual_memory_context_max_items,
+            )
+            if visual_ctx.context_text:
+                semantic_parts.append(visual_ctx.context_text)
+        except Exception as exc:
+            logger_obj.debug("[VISUAL_MEMORY] Visual memory context failed: %s", exc)
+
+    context.semantic_context = "\n\n".join(semantic_parts)
+
+    try:
+        from app.engine.semantic_memory.core_memory_block import get_core_memory_block
+
+        core_block = get_core_memory_block()
+        context.core_memory_block = await core_block.get_block(
+            user_id=user_id,
+            semantic_memory=semantic_memory,
+        )
+        if context.core_memory_block:
+            logger_obj.info(
+                "[CORE_MEMORY] Compiled profile for %s: %d chars",
+                user_id,
+                len(context.core_memory_block),
+            )
+    except Exception as exc:
+        logger_obj.warning("[CORE_MEMORY] Failed to compile profile: %s", exc)
+
+    _populate_history_context(
+        context=context,
+        session_id=session_id,
+        chat_history=chat_history,
+        recent_history_fallback=recent_history_fallback,
+        logger_obj=logger_obj,
+    )
+
+    if conversation_analyzer and context.history_list:
+        try:
+            context.conversation_analysis = conversation_analyzer.analyze(context.history_list)
+            logger_obj.info(
+                "[CONTEXT ANALYZER] Question type: %s",
+                context.conversation_analysis.question_type.value,
+            )
+        except Exception as exc:
+            logger_obj.warning("Failed to analyze conversation: %s", exc)
+
+    await _apply_budgeted_history(
+        context=context,
+        session_id=session_id,
+        user_id=user_id,
+        logger_obj=logger_obj,
+    )
+
+    if getattr(request, "images", None) and settings_obj.enable_vision:
+        context.images = request.images
+
+        if settings_obj.enable_visual_memory:
+            try:
+                from app.engine.semantic_memory.visual_memory import (
+                    get_visual_memory_manager,
+                )
+
+                vm = get_visual_memory_manager()
+                for img in request.images:
+                    if getattr(img, "type", "base64") == "base64" and getattr(img, "data", ""):
+                        asyncio.create_task(
+                            vm.store_image_memory(
+                                user_id=user_id,
+                                image_base64=img.data,
+                                media_type=getattr(img, "media_type", "image/jpeg"),
+                                session_id=str(session_id),
+                                context_hint=message,
+                            )
+                        )
+            except Exception as exc:
+                logger_obj.debug("[VISUAL_MEMORY] Image storage scheduling failed: %s", exc)
+
+    if settings_obj.enable_emotional_state:
+        try:
+            from app.engine.emotional_state import get_emotional_state_manager
+
+            esm = get_emotional_state_manager()
+            context.mood_hint = esm.detect_and_update(
+                user_id=user_id,
+                message=message,
+                decay_rate=settings_obj.emotional_decay_rate,
+            )
+        except Exception as exc:
+            logger_obj.debug("[EMOTIONAL] State detection failed: %s", exc)
+
+    logger_obj.debug(
+        "[CONTEXT] user=%s name=%s history=%d semantic=%d",
+        user_id,
+        context.user_name or "?",
+        len(context.conversation_history),
+        len(context.semantic_context),
+    )
+
+    return context
+
+
+async def _populate_semantic_memory_context(
+    *,
+    semantic_memory,
+    context,
+    user_id: str,
+    message: str,
+    settings_obj,
+    logger_obj,
+) -> None:
+    semantic_parts: list[str] = []
+
+    try:
+        insights_task = semantic_memory.retrieve_insights_prioritized(
+            user_id=user_id,
+            query=message,
+            limit=10,
+        )
+        context_task = semantic_memory.retrieve_context(
+            user_id=user_id,
+            query=message,
+            search_limit=5,
+            similarity_threshold=settings_obj.similarity_threshold,
+            include_user_facts=False,
+        )
+        insights, mem_context = await asyncio.gather(
+            insights_task,
+            context_task,
+            return_exceptions=True,
+        )
+
+        if isinstance(insights, Exception):
+            logger_obj.warning("Insights retrieval failed: %s", insights)
+            insights = []
+        elif insights:
+            insight_lines = [f"- [{i.category.value}] {i.content}" for i in insights[:5]]
+            semantic_parts.append("=== Behavioral Insights ===\n" + "\n".join(insight_lines))
+            logger_obj.info(
+                "[INSIGHT ENGINE] Retrieved %d prioritized insights for user %s",
+                len(insights),
+                user_id,
+            )
+
+        if isinstance(mem_context, Exception):
+            logger_obj.warning("Context retrieval failed: %s", mem_context)
+            context.user_facts = []
+        else:
+            traditional_context = mem_context.to_prompt_context()
+            if traditional_context:
+                semantic_parts.append(traditional_context)
+            context.user_facts = []
+
+    except Exception as exc:
+        logger_obj.warning("Semantic memory retrieval failed: %s", exc)
+
+    try:
+        from app.models.semantic_memory import FactWithProvenance
+        from app.engine.semantic_memory.importance_decay import (
+            calculate_effective_importance_from_timestamps,
+        )
+
+        raw_facts = None
+        try:
+            if settings_obj.enable_semantic_fact_retrieval and message:
+                from app.engine.semantic_memory.embeddings import get_embedding_generator
+
+                emb = get_embedding_generator()
+                query_emb = await emb.agenerate(message)
+                if query_emb:
+                    raw_facts = semantic_memory.search_relevant_facts(
+                        user_id=user_id,
+                        query_embedding=query_emb,
+                        limit=settings_obj.max_injected_facts,
+                        min_similarity=settings_obj.fact_min_similarity,
+                    )
+                    if raw_facts:
+                        logger_obj.debug(
+                            "[SEMANTIC_FACTS] Retrieved %d query-relevant facts",
+                            len(raw_facts),
+                        )
+        except Exception as exc:
+            logger_obj.debug("Semantic fact retrieval fallback: %s", exc)
+
+        if not raw_facts and semantic_memory and hasattr(semantic_memory, "_repository"):
+            raw_facts = semantic_memory._repository.get_user_facts(
+                user_id=user_id,
+                limit=20,
+                deduplicate=True,
+            )
+
+        provenance_facts = []
+        for rf in raw_facts or []:
+            meta = rf.metadata or {}
+            fact_type = meta.get("fact_type", "unknown")
+            access_count = meta.get("access_count", 0)
+            effective = calculate_effective_importance_from_timestamps(
+                base_importance=rf.importance,
+                fact_type=fact_type,
+                last_accessed=meta.get("last_accessed"),
+                created_at=rf.created_at,
+                access_count=access_count,
+            )
+            value = rf.content.split(": ", 1)[-1] if ": " in rf.content else rf.content
+            provenance_facts.append(
+                FactWithProvenance(
+                    content=value,
+                    fact_type=fact_type,
+                    confidence=meta.get("confidence", 0.8),
+                    created_at=rf.created_at,
+                    last_accessed=meta.get("last_accessed"),
+                    access_count=access_count,
+                    source_quote=meta.get("source_quote"),
+                    effective_importance=effective,
+                    memory_id=rf.id,
+                )
+            )
+        context.user_facts = provenance_facts
+    except Exception as exc:
+        logger_obj.warning("User facts retrieval failed: %s", exc)
+        context.user_facts = []
+
+    if semantic_parts:
+        context.semantic_context = "\n\n".join(semantic_parts)
+
+
+async def _populate_parallel_context(
+    *,
+    context,
+    request,
+    user_id: str,
+    message: str,
+    session_id,
+    learning_graph,
+    memory_summarizer,
+    semantic_parts: list[str],
+    logger_obj,
+) -> None:
+    parallel_tasks: dict[str, Any] = {}
+
+    if learning_graph and learning_graph.is_available() and request.role == UserRole.STUDENT:
+        parallel_tasks["learning_graph"] = learning_graph.get_user_learning_context(user_id)
+
+    if memory_summarizer:
+        parallel_tasks["memory_summary"] = memory_summarizer.get_summary_async(str(session_id))
+
+    if len(message.strip()) >= 10:
+        try:
+            from app.services.session_summarizer import get_session_summarizer
+
+            parallel_tasks["session_summaries"] = get_session_summarizer().get_recent_summaries(user_id)
+        except Exception as exc:
+            logger_obj.debug("Session summarizer not available: %s", exc)
+    else:
+        logger_obj.debug("[SESSION_SUMMARY] Skipped for short message (%d chars)", len(message.strip()))
+
+    if not parallel_tasks:
+        if context.semantic_context:
+            semantic_parts.append(context.semantic_context)
+        return
+
+    results = await asyncio.gather(*parallel_tasks.values(), return_exceptions=True)
+    parallel_results = dict(zip(parallel_tasks.keys(), results))
+
+    if context.semantic_context:
+        semantic_parts.append(context.semantic_context)
+
+    if "learning_graph" in parallel_results:
+        graph_result = parallel_results["learning_graph"]
+        if isinstance(graph_result, Exception):
+            logger_obj.warning("Learning graph retrieval failed: %s", graph_result)
+        else:
+            if graph_result.get("learning_path"):
+                path_items = [f"- {m['title']}" for m in graph_result["learning_path"][:5]]
+                semantic_parts.append("=== Learning Path ===\n" + "\n".join(path_items))
+            if graph_result.get("knowledge_gaps"):
+                gap_items = [f"- {g['topic_name']}" for g in graph_result["knowledge_gaps"][:5]]
+                semantic_parts.append("=== Knowledge Gaps ===\n" + "\n".join(gap_items))
+            logger_obj.info("[LEARNING GRAPH] Added graph context for %s", user_id)
+
+    if "memory_summary" in parallel_results:
+        summary_result = parallel_results["memory_summary"]
+        if isinstance(summary_result, Exception):
+            logger_obj.warning("Failed to get conversation summary: %s", summary_result)
+        else:
+            context.conversation_summary = summary_result
+
+    if "session_summaries" in parallel_results:
+        ss_result = parallel_results["session_summaries"]
+        if isinstance(ss_result, Exception):
+            logger_obj.warning("Session summaries retrieval failed: %s", ss_result)
+        elif ss_result:
+            semantic_parts.append(ss_result)
+            logger_obj.info("[SESSION_SUMMARY] Layer 3 context added for %s", user_id)
+
+
+def _populate_history_context(
+    *,
+    context,
+    session_id,
+    chat_history,
+    recent_history_fallback,
+    logger_obj,
+) -> None:
+    persisted_history: list[dict[str, str]] = []
+    fallback_history = _normalize_history_list(recent_history_fallback)
+    persisted_prompt = ""
+
+    if chat_history and chat_history.is_available():
+        recent_messages = chat_history.get_recent_messages(session_id)
+        logger_obj.info(
+            "[HISTORY] Loaded %d messages for session %s",
+            len(recent_messages),
+            session_id,
+        )
+        persisted_history = [
+            {
+                "role": str(msg.role),
+                "content": str(msg.content),
+            }
+            for msg in recent_messages
+            if getattr(msg, "content", None)
+        ]
+        persisted_prompt = chat_history.format_history_for_prompt(recent_messages)
+
+        if not context.user_name:
+            context.user_name = chat_history.get_user_name(session_id)
+    else:
+        logger_obj.warning(
+            "[HISTORY] Chat history unavailable — using session continuity fallback."
+        )
+
+    chosen_history = _choose_history_source(
+        persisted_history=persisted_history,
+        fallback_history=fallback_history,
+    )
+    if chosen_history is fallback_history and fallback_history:
+        logger_obj.info(
+            "[HISTORY] Using session continuity fallback with %d messages for session %s",
+            len(fallback_history),
+            session_id,
+        )
+
+    context.history_list.extend(chosen_history)
+    if chosen_history is persisted_history and persisted_prompt:
+        context.conversation_history = persisted_prompt
+    else:
+        context.conversation_history = _format_history_for_prompt(chosen_history)
+    return
+
+    if chat_history and chat_history.is_available():
+        recent_messages = chat_history.get_recent_messages(session_id)
+        logger_obj.info("[HISTORY] Loaded %d messages for session %s", len(recent_messages), session_id)
+        context.conversation_history = chat_history.format_history_for_prompt(recent_messages)
+
+        for msg in recent_messages:
+            context.history_list.append(
+                {
+                    "role": msg.role,
+                    "content": msg.content,
+                }
+            )
+
+        if not context.user_name:
+            context.user_name = chat_history.get_user_name(session_id)
+        return
+
+    logger_obj.warning(
+        "[HISTORY] ⚠️ Chat history UNAVAILABLE — conversation recall will not work. "
+        "Ensure PostgreSQL is running (docker compose up -d wiii-postgres)."
+    )
+
+
+def _normalize_history_list(history_items) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    for item in history_items or []:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip()
+        content = str(item.get("content") or "").strip()
+        if not role or not content:
+            continue
+        normalized.append({"role": role, "content": content})
+    return normalized
+
+
+def _history_quality_score(history_items: list[dict[str, str]]) -> tuple[int, int, int]:
+    roles = {str(item.get("role") or "").strip().lower() for item in history_items}
+    assistant_count = sum(
+        1
+        for item in history_items
+        if str(item.get("role") or "").strip().lower() == "assistant"
+    )
+    return (
+        len(history_items),
+        assistant_count,
+        len(roles),
+    )
+
+
+def _choose_history_source(
+    *,
+    persisted_history: list[dict[str, str]],
+    fallback_history: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    if not persisted_history:
+        return fallback_history
+    if not fallback_history:
+        return persisted_history
+
+    persisted_last = persisted_history[-1]
+    fallback_last = fallback_history[-1]
+    if (
+        persisted_last.get("role") == fallback_last.get("role")
+        and persisted_last.get("content") == fallback_last.get("content")
+    ):
+        return (
+            fallback_history
+            if _history_quality_score(fallback_history)
+            > _history_quality_score(persisted_history)
+            else persisted_history
+        )
+
+    return (
+        fallback_history
+        if _history_quality_score(fallback_history)
+        > _history_quality_score(persisted_history)
+        else persisted_history
+    )
+
+
+def _format_history_for_prompt(history_items: list[dict[str, str]]) -> str:
+    if not history_items:
+        return ""
+    lines: list[str] = []
+    for item in history_items:
+        role = str(item.get("role") or "").strip().lower()
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        role_label = "User" if role == "user" else "AI"
+        if len(content) > 300:
+            content = content[:300] + "..."
+        lines.append(f"{role_label}: {content}")
+    return "\n".join(lines)
+
+
+async def _apply_budgeted_history(
+    *,
+    context,
+    session_id,
+    user_id: str,
+    logger_obj,
+) -> None:
+    from app.engine.conversation_window import ConversationWindowManager
+
+    window_mgr = ConversationWindowManager()
+
+    try:
+        from app.engine.context_manager import get_compactor
+
+        compactor = get_compactor()
+        running_summary, lc_messages, budget = await compactor.maybe_compact(
+            session_id=str(session_id),
+            history_list=context.history_list or [],
+            system_prompt="",
+            core_memory=context.core_memory_block or "",
+            user_id=user_id,
+        )
+
+        context.langchain_messages = lc_messages
+        if running_summary:
+            context.conversation_summary = running_summary
+
+        if budget:
+            logger_obj.info(
+                "[CONTEXT_MGR] Budget: %d/%d tokens (%.0f%%), %d msgs included, %d dropped%s",
+                budget.total_used,
+                budget.total_budget,
+                budget.utilization * 100,
+                budget.messages_included,
+                budget.messages_dropped,
+                ", COMPACTED" if budget.has_summary else "",
+            )
+    except Exception as exc:
+        logger_obj.warning("[CONTEXT_MGR] Budget manager unavailable, using fixed window: %s", exc)
+        context.langchain_messages = window_mgr.build_messages(context.history_list or [])
+
+    context.conversation_history = window_mgr.format_for_prompt(context.history_list or [])

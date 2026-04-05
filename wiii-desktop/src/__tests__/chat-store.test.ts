@@ -248,6 +248,83 @@ describe("Chat Store — Streaming", () => {
     expect(conv.messages[1].thinking).toBe("I analyzed the question...");
   });
 
+  it("prefers richer metadata thinking when stream rail is thinner", () => {
+    const store = useChatStore.getState();
+    store.createConversation("maritime");
+    store.addUserMessage("Test question");
+    store.startStreaming();
+    store.appendStreamingContent("This is the answer.");
+    store.setStreamingThinking("Mình đang chốt ý chính.");
+
+    useChatStore.getState().finalizeStream({
+      processing_time: 1.5,
+      model: "gemini-pro",
+      agent_type: "direct",
+      thinking_content:
+        "Mình đang chốt ý chính.\n\nSau đó mình nối lại The Wiii Lab và Bông để câu trả lời vẫn giữ đúng lõi sống của Wiii.",
+    } as any);
+
+    const conv = useChatStore.getState().conversations[0];
+    expect(conv.messages[1].thinking).toContain("The Wiii Lab");
+    const thinkingBlock = conv.messages[1].blocks?.find((block) => block.type === "thinking");
+    expect(thinkingBlock?.type).toBe("thinking");
+    if (thinkingBlock?.type === "thinking") {
+      expect(thinkingBlock.content).toContain("The Wiii Lab");
+    }
+  });
+
+  it("ignores late metadata that belongs to a different request", () => {
+    const store = useChatStore.getState();
+    store.createConversation("maritime");
+    store.addUserMessage("Test question");
+    store.startStreaming();
+    store.appendStreamingContent("Fast answer.");
+
+    useChatStore.getState().finalizeStream({
+      processing_time: 1.2,
+      model: "glm-5",
+      agent_type: "rag",
+      request_id: "req-fast",
+    } as any);
+
+    useChatStore.getState().setPendingStreamMetadata({
+      processing_time: 112.1,
+      model: "glm-5",
+      agent_type: "rag",
+      request_id: "req-stale",
+    } as any);
+
+    const conv = useChatStore.getState().conversations[0];
+    expect(conv.messages[1].metadata?.processing_time).toBe(1.2);
+    expect(conv.messages[1].metadata?.request_id).toBe("req-fast");
+  });
+
+  it("allows a late metadata patch when the request id matches the current assistant turn", () => {
+    const store = useChatStore.getState();
+    store.createConversation("maritime");
+    store.addUserMessage("Test question");
+    store.startStreaming();
+    store.appendStreamingContent("Fast answer.");
+
+    useChatStore.getState().finalizeStream({
+      processing_time: 1.2,
+      model: "glm-5",
+      agent_type: "rag",
+      request_id: "req-fast",
+    } as any);
+
+    useChatStore.getState().setPendingStreamMetadata({
+      processing_time: 1.6,
+      model: "glm-5",
+      agent_type: "rag",
+      request_id: "req-fast",
+    } as any);
+
+    const conv = useChatStore.getState().conversations[0];
+    expect(conv.messages[1].metadata?.processing_time).toBe(1.6);
+    expect(conv.messages[1].metadata?.request_id).toBe("req-fast");
+  });
+
   it("should handle stream error", () => {
     const store = useChatStore.getState();
     store.createConversation("maritime");
@@ -263,6 +340,32 @@ describe("Chat Store — Streaming", () => {
     expect(conv.messages).toHaveLength(2);
     expect(conv.messages[1].role).toBe("assistant");
     expect(conv.messages[1].content).toContain("Connection timeout");
+  });
+
+  it("attaches structured metadata to stream error messages", () => {
+    const store = useChatStore.getState();
+    store.createConversation("maritime");
+    store.addUserMessage("Test");
+    store.startStreaming();
+
+    useChatStore.getState().setStreamError("Provider unavailable", {
+      provider: "google",
+      reason_code: "rate_limit",
+      model_switch_prompt: {
+        title: "Doi model de tiep tuc?",
+        message: "Gemini dang cham gioi han.",
+        trigger: "provider_unavailable",
+        options: [{ provider: "zhipu", label: "Zhipu GLM" }],
+        allow_retry_once: true,
+        allow_session_switch: true,
+      },
+    });
+
+    const conv = useChatStore.getState().conversations[0];
+    expect(conv.messages[1].metadata?.provider).toBe("google");
+    expect(
+      (conv.messages[1].metadata?.model_switch_prompt as { title?: string } | undefined)?.title,
+    ).toBe("Doi model de tiep tuc?");
   });
 
   it("should clear streaming state", () => {

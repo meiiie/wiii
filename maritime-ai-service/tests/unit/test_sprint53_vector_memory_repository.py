@@ -7,6 +7,7 @@ Tests vector similarity search:
 
 import pytest
 import math
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -183,6 +184,31 @@ class TestSearchSimilar:
         results = repo.search_similar("user1", [0.1] * 768)
         assert results == []
 
+    def test_empty_query_embedding_short_circuits(self):
+        repo = _make_repo()
+        results = repo.search_similar("user1", [])
+        assert results == []
+
+    def test_search_similar_text_fallback(self):
+        repo = _make_repo()
+        mock_session = MagicMock()
+        repo._session_factory.return_value.__enter__ = MagicMock(return_value=mock_session)
+        repo._session_factory.return_value.__exit__ = MagicMock(return_value=False)
+
+        row = _make_row("Quy tắc 15 là tình huống cắt ngang", "message", 0.0)
+        row.lexical_hits = 2
+        mock_session.execute.return_value.fetchall.return_value = [row]
+
+        results = repo.search_similar_text(
+            "user1",
+            "Quy tắc 15 là gì",
+            memory_types=[MemoryType.MESSAGE],
+        )
+
+        assert len(results) == 1
+        assert results[0].content == "Quy tắc 15 là tình huống cắt ngang"
+        assert results[0].similarity > 0
+
     def test_multiple_results(self):
         repo = _make_repo()
         mock_session = MagicMock()
@@ -214,3 +240,27 @@ class TestSearchSimilar:
 
         results = repo.search_similar("user1", [0.1] * 768)
         assert results[0].metadata == {}
+
+    def test_shadow_space_query_uses_side_table(self, monkeypatch):
+        repo = _make_repo()
+        mock_session = MagicMock()
+        repo._session_factory.return_value.__enter__ = MagicMock(return_value=mock_session)
+        repo._session_factory.return_value.__exit__ = MagicMock(return_value=False)
+        mock_session.execute.return_value.fetchall.return_value = []
+
+        shadow_space = SimpleNamespace(
+            storage_kind="shadow",
+            space_fingerprint="openai:text-embedding-3-small:1536",
+            dimensions=1536,
+        )
+        monkeypatch.setattr(
+            "app.repositories.vector_memory_repository.get_active_embedding_read_space",
+            lambda *_args, **_kwargs: shadow_space,
+        )
+
+        repo.search_similar("user1", [0.1] * 1536)
+
+        query = mock_session.execute.call_args[0][0].text
+        params = mock_session.execute.call_args[0][1]
+        assert "semantic_memory_vectors" in query
+        assert params["space_fingerprint"] == "openai:text-embedding-3-small:1536"

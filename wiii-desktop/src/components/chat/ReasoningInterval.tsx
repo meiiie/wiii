@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { createPortal } from "react-dom";
@@ -57,6 +57,15 @@ export interface ReasoningIntervalViewModel {
   durationSeconds?: number;
   items: ReasoningIntervalItem[];
   rawBlocks: ContentBlock[];
+}
+
+function formatIntervalDuration(seconds?: number): string {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) {
+    return "";
+  }
+  const rounded = Math.round(seconds * 10) / 10;
+  const display = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  return `Nhịp ${display}s`;
 }
 
 function normalizeNode(node?: string) {
@@ -153,10 +162,11 @@ function renderThinkingMarkdown(
   block: ThinkingBlockData,
   withCursor = false,
 ) {
-  if (!block.content?.trim()) return null;
+  const content = block.content?.trim() || "";
+  if (!content) return null;
   return (
     <div className="reasoning-interval__thinking">
-      <MarkdownRenderer content={block.content} />
+      <MarkdownRenderer content={content} />
       {withCursor && (
         <span
           className="reasoning-interval__cursor"
@@ -165,6 +175,19 @@ function renderThinkingMarkdown(
       )}
     </div>
   );
+}
+
+function buildCollapsedPreviewText(items: ReasoningIntervalItem[]) {
+  for (const item of items) {
+    if (item.kind !== "thinking") continue;
+    const raw = item.block.content?.trim() || "";
+    if (!raw) continue;
+    const normalized = raw.replace(/\s+/g, " ").trim();
+    if (!normalized) continue;
+    if (normalized.length <= 180) return normalized;
+    return `${normalized.slice(0, 179).trimEnd()}…`;
+  }
+  return "";
 }
 
 function OperationRow({
@@ -280,11 +303,18 @@ function renderOperationItem(
 function ToolIntervalSection({
   children,
   thinkingAfter,
+  defaultExpanded = false,
 }: {
   children: ReactNode;
   thinkingAfter?: ReactNode;
+  defaultExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  useEffect(() => {
+    if (defaultExpanded) {
+      setExpanded(true);
+    }
+  }, [defaultExpanded]);
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // Don't trigger parent thinking block toggle
     setExpanded(!expanded);
@@ -319,15 +349,58 @@ function ToolIntervalSection({
 function selectVisibleItems(
   items: ReasoningIntervalItem[],
   thinkingLevel: ThinkingLevel,
-  _isLive: boolean,
+  isLive: boolean,
+  keepExpandedTail = false,
 ) {
-  // Phase2: Keep ALL items in merged timeline — don't drop middle thinking blocks.
-  // compactBalancedItems was causing Bug #3: text appears then disappears when
-  // isLive flips from true to false (balanced mode drops middle items).
-  // The collapse/expand mechanism already handles information density.
+  const thinkingItems = items.filter(
+    (item): item is Extract<ReasoningIntervalItem, { kind: "thinking" }> => item.kind === "thinking",
+  );
+
   if (thinkingLevel === "minimal") {
-    return items.filter((item) => item.kind !== "thinking");
+    return [];
   }
+
+  if (thinkingLevel === "detailed") {
+    return items;
+  }
+
+  if (thinkingLevel === "balanced") {
+    if (thinkingItems.length <= 2) {
+      return items;
+    }
+
+    const firstThinking = thinkingItems[0];
+    const lastThinking = thinkingItems[thinkingItems.length - 1];
+    if (!firstThinking || !lastThinking) {
+      return items;
+    }
+
+    let visibleThinkingIds = new Set<string>();
+    if (isLive) {
+      const latestWindow = thinkingItems.slice(-2);
+      visibleThinkingIds = new Set(
+        [firstThinking, ...latestWindow.filter((item) => item.id != firstThinking.id)].map((item) => item.id),
+      );
+      return items.filter((item) => item.kind !== "thinking" || visibleThinkingIds.has(item.id));
+    }
+
+    if (keepExpandedTail) {
+      const latestWindow = thinkingItems.slice(-2);
+      visibleThinkingIds = new Set(
+        [firstThinking, ...latestWindow.filter((item) => item.id !== firstThinking.id)].map((item) => item.id),
+      );
+      return items.filter((item) => item.kind !== "thinking" || visibleThinkingIds.has(item.id));
+    }
+
+    if (lastThinking.id === firstThinking.id) {
+      visibleThinkingIds = new Set([firstThinking.id]);
+      return items.filter((item) => item.kind !== "thinking" || visibleThinkingIds.has(item.id));
+    }
+
+    visibleThinkingIds = new Set([firstThinking.id, lastThinking.id]);
+    return items.filter((item) => item.kind !== "thinking" || visibleThinkingIds.has(item.id));
+  }
+
   return items;
 }
 
@@ -348,21 +421,32 @@ export function ReasoningInterval({
   const effectiveInterval = { ...interval, isLive: !isDone };
   const headerLabel = getIntervalHeaderLabel(effectiveInterval);
   void getIntervalSummary;
-  const durationText = interval.durationSeconds ? `${interval.durationSeconds}s` : "";
+  const durationText = formatIntervalDuration(interval.durationSeconds);
+  const keepLongTurnExpanded =
+    thinkingLevel === "balanced"
+    && isDone
+    && typeof interval.durationSeconds === "number"
+    && interval.durationSeconds >= 12;
 
   // Phase2: Auto-expand while streaming, auto-collapse when done (Claude pattern)
   const [userToggled, setUserToggled] = useState(false);
   const [userExpanded, setUserExpanded] = useState(false);
   const allItems = interval.items;
   const visibleItems = useMemo(
-    () => selectVisibleItems(allItems, thinkingLevel, interval.isLive),
-    [allItems, thinkingLevel, interval.isLive],
+    () => selectVisibleItems(allItems, thinkingLevel, !isDone, keepLongTurnExpanded),
+    [allItems, isDone, keepLongTurnExpanded, thinkingLevel],
+  );
+  const collapsedPreview = useMemo(
+    () =>
+      buildCollapsedPreviewText(visibleItems.length > 0 ? visibleItems : allItems)
+      || "",
+    [allItems, visibleItems],
   );
 
   // Streaming → auto expanded. Done → auto collapsed. User click → manual override.
   const showBody = userToggled
     ? userExpanded
-    : (!isDone || thinkingLevel === "detailed");
+    : (!isDone || thinkingLevel === "detailed" || keepLongTurnExpanded);
 
   const handleToggle = () => {
     setUserToggled(true);
@@ -405,6 +489,12 @@ export function ReasoningInterval({
         </button>
         <span className="sr-only" role="status" aria-live="polite">{headerLabel}</span>
 
+        {!showBody && collapsedPreview ? (
+          <div className="reasoning-interval__collapsed-preview">
+            <MarkdownRenderer content={collapsedPreview} />
+          </div>
+        ) : null}
+
         {/* Thinking body: timeline line via ::before, contained here */}
         <div
           className={`reasoning-interval__thinking-body ${showBody ? "reasoning-interval__thinking-body--expanded" : "reasoning-interval__thinking-body--collapsed"}`}
@@ -440,7 +530,14 @@ export function ReasoningInterval({
               }
 
               elements.push(
-                <ToolIntervalSection key={item.id} thinkingAfter={thinkingAfterNode}>
+                <ToolIntervalSection
+                  key={item.id}
+                  thinkingAfter={thinkingAfterNode}
+                  defaultExpanded={
+                    Boolean(thinkingAfterNode)
+                    && (thinkingLevel === "detailed" || (thinkingLevel === "balanced" && showBody))
+                  }
+                >
                   {operation}
                 </ToolIntervalSection>
               );
@@ -477,7 +574,8 @@ function renderInspectorBlock(block: ContentBlock) {
             : undefined
         }
         label={block.label}
-        summary={block.summary || block.label}
+        summary={block.summary}
+        summaryMode={block.summaryMode}
         phase={block.phase}
         thinkingLevel="detailed"
         autoExpand

@@ -1,20 +1,13 @@
 """
-Memory Agent Node — Sprint 73: Retrieve-Extract-Decide-Respond
+Memory Agent Node - Sprint 73: Retrieve-Extract-Decide-Respond
 
 4-phase pipeline for personal memory management:
-  Phase 1: RETRIEVE — Load existing user facts from semantic memory
-  Phase 2: EXTRACT — Use FactExtractor with existing facts context (enhanced)
-  Phase 3: DECIDE — MemoryUpdater classifies ADD/UPDATE/DELETE/NOOP (NEW)
-  Phase 4: RESPOND — LLM generates natural response referencing changes (enhanced)
+  Phase 1: RETRIEVE - Load existing user facts from semantic memory
+  Phase 2: EXTRACT - Use FactExtractor with existing facts context
+  Phase 3: DECIDE - MemoryUpdater classifies ADD/UPDATE/DELETE/NOOP
+  Phase 4: RESPOND - LLM generates natural response referencing changes
 
-SOTA Reference (Feb 2026):
-  OpenAI ChatGPT: background extraction + explicit acknowledgment
-  Letta/MemGPT: core memory (in-context) + archival (DB) + agent self-editing
-  Mem0: Two-phase extract→evaluate with ADD/UPDATE/DELETE/NOOP
-  LangMem: background thread extraction with semantic dedup
-  Our approach: Hybrid — inline extraction + Mem0 classify + LLM response
-
-**Integrated with agents/ framework for config and tracing.**
+Integrated with the agents/ framework for config and tracing.
 """
 
 import logging
@@ -22,34 +15,38 @@ from typing import Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.engine.multi_agent.state import AgentState
 from app.engine.agents import MEMORY_AGENT_CONFIG
-from app.engine.reasoning import ReasoningRenderRequest, get_reasoning_narrator
-from app.engine.semantic_memory.memory_updater import MemoryUpdater, MemoryAction
+from app.engine.multi_agent.public_thinking import (
+    _append_public_thinking_fragment,
+    _resolve_public_thinking_content,
+)
+from app.engine.multi_agent.state import AgentState
+from app.engine.reasoning import (
+    ReasoningRenderRequest,
+    build_living_thinking_context,
+    capture_thinking_lifecycle_event,
+    get_reasoning_narrator,
+)
+from app.engine.semantic_memory.memory_updater import MemoryAction, MemoryUpdater
 
 logger = logging.getLogger(__name__)
 
-# Sprint 90: Build memory response prompt from wiii_identity.yaml (single source of truth)
-# Removes hardcoded personality — loads via PromptLoader for consistency with all agents
 _MEMORY_BEHAVIOR_RULES = (
-    "- Dùng thông tin đã biết về user để trả lời tự nhiên\n"
-    "- Nếu user chia sẻ thông tin mới, xác nhận đã ghi nhớ CỤ THỂ\n"
-    "- Nếu thông tin được CẬP NHẬT, đề cập thay đổi\n"
-    "- Nếu user hỏi về thông tin đã lưu, trả lời chính xác và đầy đủ\n"
-    "- KHÔNG bắt đầu bằng 'Chào' hay lời chào — đi thẳng vào nội dung\n"
-    "- KHÔNG bao gồm quá trình suy nghĩ\n"
-    "- Trả lời bằng tiếng Việt"
+    "- Dung thong tin da biet ve user de tra loi tu nhien\n"
+    "- Neu user chia se thong tin moi, xac nhan da ghi nho cu the\n"
+    "- Neu thong tin duoc cap nhat, de cap thay doi\n"
+    "- Neu user hoi ve thong tin da luu, tra loi chinh xac va day du\n"
+    "- KHONG bat dau bang loi chao - di thang vao noi dung\n"
+    "- KHONG bao gom qua trinh suy nghi"
 )
 
 
-def _build_memory_response_prompt() -> str:
-    """Build memory agent prompt from wiii_identity.yaml + behavior rules.
-
-    Sprint 90: Single source of truth for personality/voice.
-    Falls back to inline defaults if YAML unavailable.
-    """
+def _build_memory_response_prompt(response_language: str = "vi") -> str:
+    """Build memory agent prompt from wiii_identity.yaml + behavior rules."""
     try:
         from app.prompts.prompt_loader import get_prompt_loader
+        from app.prompts.prompt_context_utils import build_response_language_instruction
+
         loader = get_prompt_loader()
         identity = loader.get_identity().get("identity", {})
         personality = identity.get("personality", {}).get("summary", "")
@@ -58,101 +55,143 @@ def _build_memory_response_prompt() -> str:
 
         if personality:
             return (
-                f"Bạn là {name} — {personality}\n"
+                f"Ban la {name} - {personality}\n"
                 f"- {emoji_usage}\n"
-                f"{_MEMORY_BEHAVIOR_RULES}"
+                f"{_MEMORY_BEHAVIOR_RULES}\n"
+                f"{build_response_language_instruction(response_language)}"
             )
-    except Exception as e:
-        logger.warning("[MEMORY_AGENT] Failed to load identity YAML: %s", e)
+    except Exception as exc:
+        logger.warning("[MEMORY_AGENT] Failed to load identity YAML: %s", exc)
 
-    # Fallback if YAML unavailable
     return (
-        "Bạn là Wiii — đáng yêu, thích trò chuyện, giải thích rõ ràng.\n"
-        "- Dùng emoji tự nhiên như nhắn tin với bạn thân (⚓🌊📚✨💡🎯😄)\n"
+        "Ban la Wiii - dang yeu, thich tro chuyen, giai thich ro rang.\n"
+        "- Dung emoji tu nhien nhu nhan tin voi ban than (⚓🌊📚✨💡🎯😄)\n"
         f"{_MEMORY_BEHAVIOR_RULES}"
     )
 
 
 class MemoryAgentNode:
     """
-    Memory Agent — Retrieve-Extract-Decide-Respond pipeline.
+    Memory Agent - Retrieve-Extract-Decide-Respond pipeline.
 
     Phase 1: Retrieve existing user facts from semantic memory
     Phase 2: Extract new facts with existing facts context
-    Phase 3: Classify via MemoryUpdater → ADD/UPDATE/DELETE/NOOP
+    Phase 3: Classify via MemoryUpdater -> ADD/UPDATE/DELETE/NOOP
     Phase 4: Generate natural LLM response referencing specific changes
-
-    Implements agents/ framework integration.
     """
 
     def __init__(self, semantic_memory=None):
-        """
-        Initialize Memory Agent.
-
-        Args:
-            semantic_memory: SemanticMemoryEngine instance (or None for graceful degradation)
-        """
         self._semantic_memory = semantic_memory
         self._config = MEMORY_AGENT_CONFIG
         self._updater = MemoryUpdater()
         logger.info("MemoryAgentNode initialized (Sprint 73: Retrieve-Extract-Decide-Respond)")
 
     async def process(self, state: AgentState, llm=None) -> AgentState:
-        """
-        Execute 4-phase memory pipeline.
-
-        Args:
-            state: Current agent state
-            llm: Optional LangChain LLM for response generation
-
-        Returns:
-            Updated state with memory_output and agent_outputs
-        """
+        """Execute the 4-phase memory pipeline."""
         user_id = state.get("user_id", "")
         query = state.get("query", "")
+        context = state.get("context") or {}
+        living_thinking_context = build_living_thinking_context(
+            user_id=user_id or "__global__",
+            organization_id=state.get("organization_id") or context.get("organization_id"),
+            mood_hint=context.get("mood_hint"),
+            personality_mode=context.get("personality_mode"),
+            lane="memory",
+            intent="personal",
+        )
 
-        # Sprint 140: Event bus for real-time phase progress
-        _event_queue = None
-        _bus_id = state.get("_event_bus_id")
-        if _bus_id:
-            from app.engine.multi_agent.graph_streaming import _get_event_queue
-            _event_queue = _get_event_queue(_bus_id)
+        event_queue = None
+        bus_id = state.get("_event_bus_id")
+        if bus_id:
+            from app.engine.multi_agent.graph_event_bus import _get_event_queue
+
+            event_queue = _get_event_queue(bus_id)
 
         async def _push(event: dict):
-            if _event_queue:
+            capture_thinking_lifecycle_event(state, event)
+            if event_queue:
                 try:
-                    _event_queue.put_nowait(event)
+                    event_queue.put_nowait(event)
                 except Exception:
                     pass
 
+        narrator_state = {
+            "current_state": list(living_thinking_context.runtime_notes),
+            "narrative_state": [
+                item
+                for item in (
+                    living_thinking_context.identity_anchor,
+                    *living_thinking_context.reasoning_style,
+                )
+                if item
+            ],
+            "relationship_memory": list(living_thinking_context.relationship_style),
+        }
+
+        async def _emit_narration(narration, *, include_header: bool = False):
+            if include_header and (narration.label or narration.summary):
+                await _push(
+                    {
+                        "type": "thinking_start",
+                        "content": narration.label,
+                        "node": "memory_agent",
+                        "summary": narration.summary,
+                        "details": {
+                            "phase": getattr(narration, "phase", ""),
+                            "style_tags": list(getattr(narration, "style_tags", []) or []),
+                        },
+                    }
+                )
+
+            fragments = [str(chunk).strip() for chunk in (getattr(narration, "delta_chunks", []) or []) if str(chunk).strip()]
+            if not fragments and str(getattr(narration, "summary", "") or "").strip():
+                fragments = [str(narration.summary).strip()]
+
+            for fragment in fragments:
+                await _push(
+                    {
+                        "type": "thinking_delta",
+                        "content": fragment,
+                        "node": "memory_agent",
+                    }
+                )
+                _append_public_thinking_fragment(
+                    state,
+                    fragment,
+                    node="memory_agent",
+                    capture=False,
+                )
+
         try:
-            # Phase 1: RETRIEVE existing facts
-            _retrieve_narration = await get_reasoning_narrator().render(
+            retrieve_narration = await get_reasoning_narrator().render(
                 ReasoningRenderRequest(
                     node="memory_agent",
                     phase="retrieve",
                     user_goal=query,
                     conversation_context=str((state.get("context") or {}).get("conversation_summary", "")),
-                    next_action="Lục lại những mảnh ngữ cảnh riêng có thể đỡ câu trả lời này.",
+                    next_action="Luc lai nhung manh ngu canh rieng co the do cau tra loi nay.",
                     user_id=user_id or "__global__",
                     organization_id=state.get("organization_id"),
                     personality_mode=(state.get("context") or {}).get("personality_mode"),
                     mood_hint=(state.get("context") or {}).get("mood_hint"),
                     visibility_mode="rich",
                     style_tags=["memory", "retrieve"],
+                    **narrator_state,
                 )
             )
-            await _push({"type": "thinking_start", "content": _retrieve_narration.label, "node": "memory_agent", "summary": _retrieve_narration.summary, "details": {"phase": _retrieve_narration.phase}})
+            await _emit_narration(retrieve_narration, include_header=True)
+
             existing_facts_list = await self._retrieve_facts(user_id)
-            existing_facts_dict = {f["type"]: f["content"] for f in existing_facts_list}
+            existing_facts_dict = {fact["type"]: fact["content"] for fact in existing_facts_list}
+
             if existing_facts_list:
-                _existing_narration = await get_reasoning_narrator().render(
+                existing_narration = await get_reasoning_narrator().render(
                     ReasoningRenderRequest(
                         node="memory_agent",
                         phase="verify",
                         user_goal=query,
-                        memory_context="\n".join(f"{f['type']}: {f['content']}" for f in existing_facts_list[:6]),
-                        next_action="Xem mảnh nào còn đáng giữ và mảnh nào cần nối vào câu hỏi lúc này.",
+                        memory_context=f"{len(existing_facts_list)} manh ky uc dang con lien quan.",
+                        next_action="Xem manh nao con dang giu va manh nao can noi vao cau hoi luc nay.",
                         observations=[f"existing_facts={len(existing_facts_list)}"],
                         user_id=user_id or "__global__",
                         organization_id=state.get("organization_id"),
@@ -160,46 +199,38 @@ class MemoryAgentNode:
                         mood_hint=(state.get("context") or {}).get("mood_hint"),
                         visibility_mode="rich",
                         style_tags=["memory", "verify"],
+                        **narrator_state,
                     )
                 )
-                await _push({
-                    "type": "thinking_delta",
-                    "content": _existing_narration.summary,
-                    "node": "memory_agent",
-                })
+                await _emit_narration(existing_narration)
 
-            # Phase 2: EXTRACT new facts (with existing facts context)
-            _extract_narration = await get_reasoning_narrator().render(
+            extract_narration = await get_reasoning_narrator().render(
                 ReasoningRenderRequest(
                     node="memory_agent",
                     phase="verify",
                     user_goal=query,
-                    memory_context="\n".join(f"{f['type']}: {f['content']}" for f in existing_facts_list[:6]),
-                    next_action="Soi xem trong tin nhắn này có điều gì mới thật sự đáng giữ lại.",
+                    memory_context=f"{len(existing_facts_list)} manh ky uc dang duoc doi chieu voi tin nhan moi.",
+                    next_action="Soi xem trong tin nhan nay co dieu gi moi that su dang giu lai.",
                     user_id=user_id or "__global__",
                     organization_id=state.get("organization_id"),
                     personality_mode=(state.get("context") or {}).get("personality_mode"),
                     mood_hint=(state.get("context") or {}).get("mood_hint"),
                     visibility_mode="rich",
                     style_tags=["memory", "extract"],
+                    **narrator_state,
                 )
             )
-            await _push({
-                "type": "thinking_delta",
-                "content": _extract_narration.summary,
-                "node": "memory_agent",
-            })
-            new_facts = await self._extract_and_store_facts(
-                user_id, query, existing_facts_dict,
-            )
+            await _emit_narration(extract_narration)
+
+            new_facts = await self._extract_and_store_facts(user_id, query, existing_facts_dict)
             if new_facts:
-                _new_fact_narration = await get_reasoning_narrator().render(
+                new_fact_narration = await get_reasoning_narrator().render(
                     ReasoningRenderRequest(
                         node="memory_agent",
                         phase="verify",
                         user_goal=query,
-                        memory_context="\n".join(new_facts[:6]),
-                        next_action="Gạn lại xem chi tiết mới nào nên được giữ thật lâu hơn.",
+                        memory_context=f"{len(new_facts)} chi tiet moi vua noi len.",
+                        next_action="Gan lai xem chi tiet moi nao nen duoc giu that lau hon.",
                         observations=[f"new_facts={len(new_facts)}"],
                         user_id=user_id or "__global__",
                         organization_id=state.get("organization_id"),
@@ -207,82 +238,102 @@ class MemoryAgentNode:
                         mood_hint=(state.get("context") or {}).get("mood_hint"),
                         visibility_mode="rich",
                         style_tags=["memory", "new_facts"],
+                        **narrator_state,
                     )
                 )
-                await _push({
-                    "type": "thinking_delta",
-                    "content": _new_fact_narration.summary,
-                    "node": "memory_agent",
-                })
+                await _emit_narration(new_fact_narration)
 
-            # Phase 3: DECIDE — classify changes via MemoryUpdater
             parsed_facts = []
-            for f in new_facts:
-                if ": " in f:
-                    parts = f.split(": ", 1)
-                    parsed_facts.append({"fact_type": parts[0], "value": parts[1]})
-                elif f.strip():
-                    parsed_facts.append({"fact_type": "unknown", "value": f.strip()})
+            for fact in new_facts:
+                if ": " in fact:
+                    fact_type, value = fact.split(": ", 1)
+                    parsed_facts.append({"fact_type": fact_type, "value": value})
+                elif fact.strip():
+                    parsed_facts.append({"fact_type": "unknown", "value": fact.strip()})
+
             decisions = self._updater.classify_batch(
                 extracted_facts=parsed_facts,
                 existing_facts=existing_facts_dict,
             )
 
-            # Execute DELETE actions against DB
-            for d in decisions:
-                if d.action == MemoryAction.DELETE and self._semantic_memory:
+            for decision in decisions:
+                if decision.action == MemoryAction.DELETE and self._semantic_memory:
                     try:
                         await self._semantic_memory.delete_memory_by_keyword(
                             user_id=user_id,
-                            keyword=d.old_value or d.new_value,
+                            keyword=decision.old_value or decision.new_value,
                         )
-                        logger.info("[MEMORY_AGENT] Executed DELETE for %s: %s", d.fact_type, d.old_value)
-                    except Exception as e:
-                        logger.warning("[MEMORY_AGENT] DELETE failed for %s: %s", d.fact_type, e)
+                        logger.info(
+                            "[MEMORY_AGENT] Executed DELETE for %s: %s",
+                            decision.fact_type,
+                            decision.old_value,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "[MEMORY_AGENT] DELETE failed for %s: %s",
+                            decision.fact_type,
+                            exc,
+                        )
+
+            action_counts = {}
+            for decision in decisions:
+                action_counts[decision.action.value] = action_counts.get(decision.action.value, 0) + 1
 
             changes_summary = self._updater.summarize_changes(decisions)
             await _push({"type": "thinking_end", "content": "", "node": "memory_agent"})
 
-            # Phase 4: RESPOND with LLM using all context + changes
-            _synthesis_narration = await get_reasoning_narrator().render(
+            synthesis_narration = await get_reasoning_narrator().render(
                 ReasoningRenderRequest(
                     node="memory_agent",
                     phase="synthesize",
                     user_goal=query,
-                    memory_context=changes_summary,
-                    next_action="Khâu điều cũ và điều mới thành một câu trả lời gần người dùng.",
+                    memory_context=(
+                        f"{sum(action_counts.values())} thay doi can khau lai."
+                        if action_counts
+                        else "Khong co thay doi lon, chi can tra loi that tu nhien."
+                    ),
+                    next_action="Khau dieu cu va dieu moi thanh mot cau tra loi gan nguoi dung.",
                     user_id=user_id or "__global__",
                     organization_id=state.get("organization_id"),
                     personality_mode=(state.get("context") or {}).get("personality_mode"),
                     mood_hint=(state.get("context") or {}).get("mood_hint"),
                     visibility_mode="rich",
                     style_tags=["memory", "synthesis"],
+                    **narrator_state,
                 )
             )
-            await _push({"type": "thinking_start", "content": _synthesis_narration.label, "node": "memory_agent", "summary": _synthesis_narration.summary, "details": {"phase": _synthesis_narration.phase}})
+            await _emit_narration(synthesis_narration, include_header=True)
+
             response = await self._generate_response(
-                llm, query, existing_facts_list, new_facts, changes_summary, state,
+                llm,
+                query,
+                existing_facts_list,
+                new_facts,
+                changes_summary,
+                state,
             )
             await _push({"type": "thinking_end", "content": "", "node": "memory_agent"})
 
-            # Update state
             state["memory_output"] = response
             state["agent_outputs"] = state.get("agent_outputs", {})
             state["agent_outputs"]["memory"] = response
             state["current_agent"] = "memory_agent"
+            state.pop("thinking", None)
 
-            action_counts = {}
-            for d in decisions:
-                action_counts[d.action.value] = action_counts.get(d.action.value, 0) + 1
+            public_memory_thinking = _resolve_public_thinking_content(state)
+            if public_memory_thinking:
+                state["thinking_content"] = public_memory_thinking
 
             logger.info(
                 "[MEMORY_AGENT] Processed for user %s: %d existing, %d extracted, actions=%s",
-                user_id, len(existing_facts_list), len(new_facts), action_counts,
+                user_id,
+                len(existing_facts_list),
+                len(new_facts),
+                action_counts,
             )
 
-        except Exception as e:
-            logger.error("[MEMORY_AGENT] Error: %s", e)
-            # Graceful fallback — never return an error to the user
+        except Exception as exc:
+            logger.error("[MEMORY_AGENT] Error: %s", exc)
             fallback = self._template_response(query, [], [], "")
             state["memory_output"] = fallback
             state["agent_outputs"] = state.get("agent_outputs", {})
@@ -291,23 +342,13 @@ class MemoryAgentNode:
 
         return state
 
-    # =========================================================================
-    # Phase 1: RETRIEVE
-    # =========================================================================
-
     async def _retrieve_facts(self, user_id: str) -> list:
-        """
-        Retrieve existing user facts from semantic memory.
-
-        Returns:
-            List of fact dicts: [{"type": "name", "content": "Minh"}, ...]
-        """
+        """Retrieve existing user facts from semantic memory."""
         if not self._semantic_memory or not user_id:
             return []
 
         try:
             facts_dict = await self._semantic_memory.get_user_facts(user_id)
-            # Convert dict → list of {type, content} for uniform handling
             result = []
             for fact_type, value in facts_dict.items():
                 if value:
@@ -317,26 +358,17 @@ class MemoryAgentNode:
                     else:
                         result.append({"type": fact_type, "content": str(value)})
             return result
-        except Exception as e:
-            logger.warning("[MEMORY_AGENT] Failed to retrieve facts: %s", e)
+        except Exception as exc:
+            logger.warning("[MEMORY_AGENT] Failed to retrieve facts: %s", exc)
             return []
 
-    # =========================================================================
-    # Phase 2: EXTRACT + STORE
-    # =========================================================================
-
     async def _extract_and_store_facts(
-        self, user_id: str, message: str, existing_facts: dict,
+        self,
+        user_id: str,
+        message: str,
+        existing_facts: dict,
     ) -> list:
-        """
-        Extract facts from current message and store via upsert.
-
-        Sprint 73: Passes existing_facts to FactExtractor for
-        context-aware extraction (avoids re-extracting known info).
-
-        Returns:
-            List of new fact content strings that were stored.
-        """
+        """Extract facts from the current message and store them via upsert."""
         if not self._semantic_memory or not user_id or not message:
             return []
 
@@ -345,20 +377,16 @@ class MemoryAgentNode:
             if fact_extractor is None:
                 logger.warning("[MEMORY_AGENT] No fact extractor available on semantic memory")
                 return []
+
             stored_facts = await fact_extractor.extract_and_store_facts(
                 user_id=user_id,
                 message=message,
                 existing_facts=existing_facts,
             )
-            # Return content strings for response generation
-            return [f.to_content() for f in stored_facts]
-        except Exception as e:
-            logger.warning("[MEMORY_AGENT] Failed to extract facts: %s", e)
+            return [fact.to_content() for fact in stored_facts]
+        except Exception as exc:
+            logger.warning("[MEMORY_AGENT] Failed to extract facts: %s", exc)
             return []
-
-    # =========================================================================
-    # Phase 4: RESPOND
-    # =========================================================================
 
     async def _generate_response(
         self,
@@ -369,94 +397,85 @@ class MemoryAgentNode:
         changes_summary: str,
         state: AgentState,
     ) -> str:
-        """
-        Generate natural Vietnamese response using LLM with memory context.
-
-        Sprint 73: Includes changes_summary so LLM can reference specific
-        ADD/UPDATE/DELETE changes in its response.
-
-        Falls back to template response if LLM is unavailable.
-        """
+        """Generate a natural Vietnamese response using LLM memory context."""
         if not llm:
             return self._template_response(query, existing_facts, new_facts, changes_summary)
 
         try:
-            # Build context block for LLM
             context_parts = []
             if existing_facts:
-                facts_str = "\n".join(
-                    f"- {f['type']}: {f['content']}" for f in existing_facts
-                )
-                context_parts.append(f"Thông tin đã biết về user:\n{facts_str}")
+                facts_str = "\n".join(f"- {fact['type']}: {fact['content']}" for fact in existing_facts)
+                context_parts.append(f"Thong tin da biet ve user:\n{facts_str}")
             if new_facts:
-                new_str = "\n".join(f"- {f}" for f in new_facts)
-                context_parts.append(f"Thông tin mới vừa ghi nhớ:\n{new_str}")
+                new_str = "\n".join(f"- {fact}" for fact in new_facts)
+                context_parts.append(f"Thong tin moi vua ghi nho:\n{new_str}")
             if changes_summary:
-                context_parts.append(f"Thay đổi: {changes_summary}")
+                context_parts.append(f"Thay doi: {changes_summary}")
 
-            # Sprint 220c: Inject LMS context if available (from resolve_lms_identity)
             ctx = state.get("context", {})
-            _lms_ext_id = ctx.get("lms_external_id")
-            _lms_conn_id = ctx.get("lms_connector_id")
-            if _lms_ext_id and _lms_conn_id:
+            lms_external_id = ctx.get("lms_external_id")
+            lms_connector_id = ctx.get("lms_connector_id")
+            if lms_external_id and lms_connector_id:
                 try:
-                    from app.core.config import settings as _cfg
-                    if getattr(_cfg, "enable_lms_integration", False):
+                    from app.core.config import settings as cfg
+
+                    if getattr(cfg, "enable_lms_integration", False):
                         from app.integrations.lms.context_loader import get_lms_context_loader
-                        _loader = get_lms_context_loader()
-                        _lms_ctx = _loader.load_student_context(_lms_ext_id, connector_id=_lms_conn_id)
-                        if _lms_ctx:
-                            context_parts.append(_loader.format_for_prompt(_lms_ctx))
+
+                        loader = get_lms_context_loader()
+                        lms_ctx = loader.load_student_context(
+                            lms_external_id,
+                            connector_id=lms_connector_id,
+                        )
+                        if lms_ctx:
+                            context_parts.append(loader.format_for_prompt(lms_ctx))
                 except Exception:
-                    pass  # Non-critical: LMS data is supplementary
+                    pass
 
-            # Sprint 222: Graph-level host context (replaces per-agent injection)
-            _host_prompt = state.get("host_context_prompt", "")
-            if _host_prompt:
-                context_parts.append(_host_prompt)
-            _host_capabilities_prompt = state.get("host_capabilities_prompt", "")
-            if _host_capabilities_prompt:
-                context_parts.append(_host_capabilities_prompt)
-            _operator_prompt = state.get("operator_context_prompt", "")
-            if _operator_prompt:
-                context_parts.append(_operator_prompt)
-            _living_prompt = state.get("living_context_prompt", "")
-            if _living_prompt:
-                context_parts.append(_living_prompt)
-            _widget_feedback_prompt = state.get("widget_feedback_prompt", "")
-            if _widget_feedback_prompt:
-                context_parts.append(_widget_feedback_prompt)
+            for key in (
+                "host_context_prompt",
+                "host_capabilities_prompt",
+                "operator_context_prompt",
+                "living_context_prompt",
+                "widget_feedback_prompt",
+            ):
+                prompt = state.get(key, "")
+                if prompt:
+                    context_parts.append(prompt)
 
-            context_block = "\n\n".join(context_parts) if context_parts else "Chưa có thông tin nào về user."
+            context_block = (
+                "\n\n".join(context_parts)
+                if context_parts
+                else "Chua co thong tin nao ve user."
+            )
 
-            messages = [SystemMessage(content=_build_memory_response_prompt())]
-            # Sprint 77: Inject last 5 turns for conversational continuity
-            lc_messages = state.get("context", {}).get("langchain_messages", [])
-            if lc_messages:
-                messages.extend(lc_messages[-5:])
-            messages.append(HumanMessage(content=(
-                f"Ngữ cảnh bộ nhớ:\n{context_block}\n\n"
-                f"Tin nhắn của user: {query}"
-            )))
+            messages = [SystemMessage(content=_build_memory_response_prompt(ctx.get("response_language", "vi")))]
+            langchain_messages = state.get("context", {}).get("langchain_messages", [])
+            if langchain_messages:
+                messages.extend(langchain_messages[-5:])
+            messages.append(
+                HumanMessage(
+                    content=(
+                        f"Ngu canh bo nho:\n{context_block}\n\n"
+                        f"Tin nhan cua user: {query}"
+                    )
+                )
+            )
 
             response = await llm.ainvoke(messages)
 
-            # Handle Gemini content block format
             from app.services.output_processor import extract_thinking_from_response
-            text_content, thinking = extract_thinking_from_response(response.content)
-            result = text_content.strip()
 
-            if thinking:
-                state["thinking"] = thinking
+            text_content, _thinking = extract_thinking_from_response(response.content)
+            result = text_content.strip()
 
             if result:
                 return result
 
-            # LLM returned empty — fall back to template
             return self._template_response(query, existing_facts, new_facts, changes_summary)
 
-        except Exception as e:
-            logger.warning("[MEMORY_AGENT] LLM response generation failed: %s", e)
+        except Exception as exc:
+            logger.warning("[MEMORY_AGENT] LLM response generation failed: %s", exc)
             return self._template_response(query, existing_facts, new_facts, changes_summary)
 
     def _template_response(
@@ -466,29 +485,20 @@ class MemoryAgentNode:
         new_facts: list,
         changes_summary: str,
     ) -> str:
-        """
-        Template-based fallback response when LLM is unavailable.
-
-        Never returns a hardcoded error — always a natural acknowledgment.
-        Sprint 73: Includes changes_summary in response.
-        """
-        # Case 1: Changes were made — use summary
+        """Template fallback response when LLM is unavailable."""
         if changes_summary:
             return f"{changes_summary}. Bạn cứ hỏi lại bất cứ lúc nào nhé!"
 
-        # Case 2: New facts were stored — acknowledge
         if new_facts:
             items = ", ".join(new_facts[:3])
             return f"Mình đã ghi nhớ: {items}. Bạn cứ hỏi lại bất cứ lúc nào nhé!"
 
-        # Case 3: User is asking about stored facts
         if existing_facts:
             facts_str = ", ".join(
-                f"{f['type']}: {f['content']}" for f in existing_facts[:5]
+                f"{fact['type']}: {fact['content']}" for fact in existing_facts[:5]
             )
             return f"Đây là thông tin mình biết về bạn: {facts_str}"
 
-        # Case 4: No facts at all — friendly response
         return "Mình chưa có thông tin gì về bạn. Bạn có thể chia sẻ để mình ghi nhớ nhé!"
 
     def is_available(self) -> bool:
@@ -496,7 +506,6 @@ class MemoryAgentNode:
         return self._semantic_memory is not None
 
 
-# Singleton
 _memory_node: Optional[MemoryAgentNode] = None
 
 

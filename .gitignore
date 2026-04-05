@@ -108,3 +108,7 @@ pytest-cache-files-*
 .agents/
 AGENTS.md
 .Codex/external/OpenGenerativeUI/
+.Codex/tmp/
+.Codex/reports/*.json
+.Codex/reports/*.txt
+.Codex/reports/*.png

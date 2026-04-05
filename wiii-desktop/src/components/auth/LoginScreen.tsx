@@ -12,6 +12,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import type { AuthUser } from "@/stores/auth-store";
 import type { AppSettings } from "@/api/types";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
+import { buildAuthUserFromPayload, toCompatibilitySettingsRole } from "@/lib/auth-user";
 import { DEFAULT_SERVER_URL } from "@/lib/constants";
 
 // Dynamic import that bypasses Vite static analysis (plugin may not be installed)
@@ -137,15 +138,29 @@ export function LoginScreen() {
           throw new Error("Không nhận được thông tin đăng nhập từ Google. Vui lòng thử lại.");
         }
 
-        // Sprint 192: Parse role from backend instead of hardcoding
-        const role = params.get("role") || "student";
-        const user: AuthUser = { id: userId, email, name, avatar_url: avatarUrl, role };
+        const user: AuthUser = buildAuthUserFromPayload({
+          user_id: userId,
+          email,
+          name,
+          avatar_url: avatarUrl,
+          role: params.get("role") || "",
+          legacy_role: params.get("legacy_role") || "",
+          platform_role: params.get("platform_role") || "user",
+          organization_role: params.get("organization_role") || "",
+          host_role: params.get("host_role") || "",
+          role_source: params.get("role_source") || "",
+          active_organization_id: params.get("active_organization_id") || "",
+          organization_id: params.get("organization_id") || "",
+          connector_id: params.get("connector_id") || "",
+          identity_version: params.get("identity_version") || "",
+        });
         await loginWithTokens(accessToken, refreshToken, expiresIn, user);
 
         // Sync user info to settings
         await updateSettings({
           user_id: userId,
           display_name: name || email,
+          user_role: toCompatibilitySettingsRole(user),
         });
 
         await oauth.cancel(port);
@@ -217,13 +232,10 @@ export function LoginScreen() {
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === "auth_success") {
-            const user: AuthUser = {
-              id: msg.user.id,
-              email: msg.user.email,
-              name: msg.user.name || "",
-              avatar_url: "",
-              role: msg.user.role || "student",
-            };
+            const user: AuthUser = buildAuthUserFromPayload({
+              ...msg.user,
+              avatar_url: msg.user?.avatar_url || "",
+            });
             await loginWithTokens(
               msg.access_token,
               msg.refresh_token,
@@ -233,6 +245,7 @@ export function LoginScreen() {
             await updateSettings({
               user_id: msg.user.id,
               display_name: msg.user.name || msg.user.email,
+              user_role: toCompatibilitySettingsRole(user),
             });
           } else if (msg.type === "timeout") {
             setError("Phiên đăng nhập đã hết hạn. Vui lòng thử lại.");

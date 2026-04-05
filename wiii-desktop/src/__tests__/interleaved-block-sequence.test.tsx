@@ -174,6 +174,7 @@ describe("InterleavedBlockSequence", () => {
       <InterleavedBlockSequence
         blocks={blocks}
         showThinking
+        thinkingLevel="detailed"
       />,
     );
 
@@ -211,7 +212,7 @@ describe("InterleavedBlockSequence", () => {
     expect(bodyText.indexOf(answer.textContent || "")).toBeLessThan(bodyText.indexOf(artifact.textContent || ""));
   });
 
-  it("renders tool execution as an inline operation inside the reasoning interval", () => {
+  it("renders tool execution directly inside the detailed reasoning rail", () => {
     const blocks: ContentBlock[] = [
       createThinking("Can goi cong cu de doi chieu."),
       createTool("tool_web_search"),
@@ -222,17 +223,17 @@ describe("InterleavedBlockSequence", () => {
       <InterleavedBlockSequence
         blocks={blocks}
         showThinking
+        thinkingLevel="detailed"
       />,
     );
 
     expect(screen.getAllByTestId("reasoning-interval")).toHaveLength(1);
-    expect(container.querySelectorAll(".reasoning-op-row")).toHaveLength(1);
+    expect(container.querySelectorAll(".reasoning-op-row").length).toBeGreaterThan(0);
     expect(screen.getByText("tool_web_search")).toBeTruthy();
-    expect(screen.queryByTestId("tool-strip")).toBeNull();
     expect(screen.getByTestId("answer-block").textContent || "").toContain("Minh da doi chieu xong va day la ket qua.");
   });
 
-  it("keeps reasoning visible while a visual is still pending", () => {
+  it("keeps reasoning and visual tool execution visible while a visual is still pending", () => {
     const blocks: ContentBlock[] = [
       createThinking("Dang sap xep lai y de chuyen sang visual."),
       createTool("tool_generate_visual", "pending", { stepId: "step-visual" }),
@@ -248,9 +249,8 @@ describe("InterleavedBlockSequence", () => {
     );
 
     expect(screen.getAllByTestId("reasoning-interval")).toHaveLength(1);
-    expect(container.querySelectorAll(".reasoning-op-row")).toHaveLength(1);
+    expect(container.querySelectorAll(".reasoning-op-row").length).toBeGreaterThan(0);
     expect(screen.getByText("tool_generate_visual")).toBeTruthy();
-    expect(screen.queryByTestId("visual-pending-strip")).toBeNull();
     expect(screen.getByTestId("answer-block").textContent || "").toContain("Minh dang dung visual cho doan nay.");
   });
 
@@ -276,7 +276,7 @@ describe("InterleavedBlockSequence", () => {
     expect(screen.getByTestId("answer-block")).toBeTruthy();
   });
 
-  it("keeps balanced mode free of the trace launcher in the main flow", () => {
+  it("keeps balanced mode free of the trace launcher while still surfacing tool execution", () => {
     const blocks: ContentBlock[] = [
       createThinking("Dang nghien cuu co che va chuan bi minh hoa.", {
         summary: "Dang nghien cuu co che",
@@ -295,9 +295,10 @@ describe("InterleavedBlockSequence", () => {
 
     expect(screen.getAllByTestId("reasoning-interval")).toHaveLength(1);
     expect(screen.queryByTestId("reasoning-inspector-toggle")).toBeNull();
+    expect(screen.getByText("tool_web_search")).toBeTruthy();
   });
 
-  it("keeps tool history visible when an inline visual is present", () => {
+  it("keeps inline visual visible while tool history also appears in the main flow", () => {
     const blocks: ContentBlock[] = [
       createTool("tool_generate_visual", "completed", { stepId: "step-visual" }),
       createVisual({ stepId: "step-visual" }),
@@ -308,16 +309,16 @@ describe("InterleavedBlockSequence", () => {
       <InterleavedBlockSequence
         blocks={blocks}
         showThinking
+        thinkingLevel="detailed"
       />,
     );
 
-    expect(screen.getAllByTestId("reasoning-interval")).toHaveLength(1);
-    expect(container.querySelectorAll(".reasoning-op-row")).toHaveLength(1);
-    expect(screen.getByText("tool_generate_visual")).toBeTruthy();
+    expect(screen.queryByTestId("reasoning-interval")).toBeNull();
+    expect(screen.getByTestId("tool-strip").textContent || "").toContain("tool_generate_visual");
     expect(screen.getByTestId("visual-block")).toBeTruthy();
   });
 
-  it("renders detailed trace in the inspector drawer instead of the main flow", () => {
+  it("renders detailed trace in the main flow and still keeps the inspector available", () => {
     const blocks: ContentBlock[] = [
       createThinking("Can goi cong cu de doi chieu.", { summary: "Dang doi chieu" }),
       createTool("tool_web_search"),
@@ -334,6 +335,7 @@ describe("InterleavedBlockSequence", () => {
 
     expect(screen.getAllByTestId("reasoning-interval")).toHaveLength(1);
     expect(screen.queryByTestId("thinking-block")).toBeNull();
+    expect(screen.getByText("tool_web_search")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("reasoning-inspector-toggle"));
 
@@ -630,6 +632,7 @@ describe("InterleavedBlockSequence", () => {
       <InterleavedBlockSequence
         blocks={blocks}
         showThinking
+        thinkingLevel="detailed"
       />,
     );
 
@@ -865,7 +868,46 @@ describe("InterleavedBlockSequence", () => {
     expect(flow.textContent || "").toContain("Figure C tong hop ket qua.");
   });
 
-  it("groups post-tool thinking with the same step into a single interval", () => {
+  it("hides superseded visual sessions that were already disposed", () => {
+    const blocks: ContentBlock[] = [
+      createVisual({
+        id: "visual-old",
+        sessionId: "vs-old",
+        status: "disposed",
+        visual: {
+          ...createVisual().visual,
+          id: "visual-old",
+          visual_session_id: "vs-old",
+          title: "Old visual",
+        },
+      }),
+      createVisual({
+        id: "visual-current",
+        sessionId: "vs-current",
+        status: "committed",
+        visual: {
+          ...createVisual().visual,
+          id: "visual-current",
+          visual_session_id: "vs-current",
+          title: "Current visual",
+        },
+      }),
+    ];
+
+    render(
+      <InterleavedBlockSequence
+        blocks={blocks}
+        showThinking
+        thinkingLevel="detailed"
+      />,
+    );
+
+    expect(screen.getAllByTestId("visual-block")).toHaveLength(1);
+    expect(screen.queryByText("Old visual")).toBeNull();
+    expect(screen.getByText("Current visual")).toBeTruthy();
+  });
+
+  it("groups post-tool thinking with the same step into a single interval while keeping tool trace visible", () => {
     const blocks: ContentBlock[] = [
       createThinking("Can chuan bi du lieu.", {
         id: "t1",
@@ -887,6 +929,7 @@ describe("InterleavedBlockSequence", () => {
       <InterleavedBlockSequence
         blocks={blocks}
         showThinking
+        thinkingLevel="detailed"
       />,
     );
 
@@ -895,11 +938,14 @@ describe("InterleavedBlockSequence", () => {
     const interval = intervals[0];
     expect(interval.textContent || "").toContain("Can chuan bi du lieu.");
     expect(interval.textContent || "").toContain("Minh vua nhin lai ket qua chay code.");
-    expect(within(interval).getByText("tool_execute_python")).toBeTruthy();
-    expect(container.querySelectorAll(".reasoning-op-row")).toHaveLength(1);
+    expect(interval.textContent || "").toContain("tool_execute_python");
+    expect(container.querySelectorAll(".reasoning-op-row").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByTestId("reasoning-inspector-toggle"));
+    expect(screen.getByTestId("tool-strip").textContent || "").toContain("tool_execute_python");
   });
 
-  it("compacts balanced reasoning to the opening beat and the latest beat", () => {
+  it("compacts balanced reasoning to the opening beat and the latest beat while keeping tool trace visible", () => {
     const blocks: ContentBlock[] = [
       createThinking("Can chuan bi du lieu dau vao.", {
         id: "t1",
@@ -930,9 +976,10 @@ describe("InterleavedBlockSequence", () => {
 
     const interval = screen.getAllByTestId("reasoning-interval")[0];
     expect(interval.textContent || "").toContain("Can chuan bi du lieu dau vao.");
-    expect(interval.textContent || "").toContain("Minh vua doi chieu xong va chot duoc diem lech lon nhat.");
     expect(interval.textContent || "").not.toContain("Da tach nhom du lieu de so sanh tung lop.");
-    expect(within(interval).getByText("tool_execute_python")).toBeTruthy();
-    expect(container.querySelectorAll(".reasoning-op-row")).toHaveLength(1);
+    expect(interval.textContent || "").toContain("tool_execute_python");
+    expect(container.querySelectorAll(".reasoning-op-row").length).toBeGreaterThan(0);
+    fireEvent.click(interval.querySelector(".reasoning-interval__header-btn") as HTMLButtonElement);
+    expect(interval.textContent || "").toContain("Minh vua doi chieu xong va chot duoc diem lech lon nhat.");
   });
 });

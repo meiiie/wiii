@@ -5,15 +5,12 @@ import pytest
 
 from app.engine.model_catalog import (
     ChatModelMetadata,
-    GOOGLE_CHAT_MODELS,
     GOOGLE_DEFAULT_MODEL,
-    OPENROUTER_CHAT_MODELS,
-    OLLAMA_KNOWN_MODELS,
-    EMBEDDING_MODELS,
     DEFAULT_EMBEDDING_MODEL,
     get_all_static_chat_models,
     is_known_model,
     ModelCatalogService,
+    resolve_openai_catalog_provider,
 )
 
 
@@ -27,6 +24,11 @@ class TestStaticCatalogs:
         cats = get_all_static_chat_models()
         assert "openrouter" in cats
         assert "openai/gpt-oss-20b:free" in cats["openrouter"]
+
+    def test_openai_models_present(self):
+        cats = get_all_static_chat_models()
+        assert "openai" in cats
+        assert "gpt-5.4" in cats["openai"]
 
     def test_ollama_models_present(self):
         cats = get_all_static_chat_models()
@@ -52,6 +54,9 @@ class TestIsKnownModel:
 
     def test_known_openrouter(self):
         assert is_known_model("openrouter", "openai/gpt-oss-20b:free") is True
+
+    def test_known_openai(self):
+        assert is_known_model("openai", "gpt-5.4-mini") is True
 
     def test_unknown_provider(self):
         assert is_known_model("azure", "gpt-4") is False
@@ -162,6 +167,89 @@ class TestOllamaDiscovery:
         assert called_url == "http://localhost:11434/api/tags"
 
 
+class TestProviderCatalogResolution:
+    def test_resolve_openai_catalog_provider_to_openrouter_from_base_url(self):
+        assert resolve_openai_catalog_provider(
+            active_provider="google",
+            openai_base_url="https://openrouter.ai/api/v1",
+        ) == "openrouter"
+
+    def test_resolve_openai_catalog_provider_to_openrouter_from_active_provider(self):
+        assert resolve_openai_catalog_provider(
+            active_provider="openrouter",
+            openai_base_url="",
+        ) == "openrouter"
+
+    def test_resolve_openai_catalog_provider_to_openai(self):
+        assert resolve_openai_catalog_provider(
+            active_provider="openai",
+            openai_base_url=None,
+        ) == "openai"
+
+
+class TestRuntimeDiscovery:
+    @pytest.fixture(autouse=True)
+    def reset_cache(self):
+        ModelCatalogService.reset_cache()
+        yield
+        ModelCatalogService.reset_cache()
+
+    @pytest.mark.asyncio
+    async def test_discover_google_models_filters_to_gemini_generation_models(self):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "models": [
+                {
+                    "name": "models/gemini-3.1-flash-lite-preview",
+                    "displayName": "Gemini 3.1 Flash-Lite Preview",
+                    "supportedGenerationMethods": ["generateContent"],
+                },
+                {
+                    "name": "models/text-embedding-004",
+                    "displayName": "Text Embedding 004",
+                    "supportedGenerationMethods": ["embedContent"],
+                },
+            ]
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            models = await ModelCatalogService.discover_google_models("google-key")
+
+        assert [model.model_name for model in models] == [GOOGLE_DEFAULT_MODEL]
+
+    @pytest.mark.asyncio
+    async def test_discover_openai_compatible_models_filters_non_chat_models(self):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "data": [
+                {"id": "gpt-5.4-mini"},
+                {"id": "text-embedding-3-large"},
+                {"id": "gpt-5.4"},
+            ]
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            models = await ModelCatalogService.discover_openai_compatible_models(
+                provider="openai",
+                base_url="https://api.openai.com/v1",
+                api_key="openai-key",
+            )
+
+        assert [model.model_name for model in models] == ["gpt-5.4-mini", "gpt-5.4"]
+
+
 class TestGetFullCatalog:
     @pytest.fixture(autouse=True)
     def reset_cache(self):
@@ -174,8 +262,10 @@ class TestGetFullCatalog:
         catalog = await ModelCatalogService.get_full_catalog(ollama_base_url=None)
         assert "providers" in catalog
         assert "google" in catalog["providers"]
+        assert "openai" in catalog["providers"]
         assert "openrouter" in catalog["providers"]
         assert catalog["ollama_discovered"] is False
+        assert "provider_metadata" in catalog
         assert "timestamp" in catalog
 
     @pytest.mark.asyncio
@@ -196,6 +286,34 @@ class TestGetFullCatalog:
 
         assert catalog["ollama_discovered"] is True
         assert "phi3:latest" in catalog["providers"]["ollama"]
+
+    @pytest.mark.asyncio
+    async def test_openrouter_runtime_discovery_metadata_is_exposed(self):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "data": [
+                {"id": "openai/gpt-oss-20b:free"},
+                {"id": "anthropic/claude-sonnet-4"},
+            ]
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            catalog = await ModelCatalogService.get_full_catalog(
+                openai_api_key="openrouter-key",
+                openai_base_url="https://openrouter.ai/api/v1",
+                active_provider="openrouter",
+            )
+
+        assert "anthropic/claude-sonnet-4" in catalog["providers"]["openrouter"]
+        assert catalog["provider_metadata"]["openrouter"]["runtime_discovery_enabled"] is True
+        assert catalog["provider_metadata"]["openrouter"]["runtime_discovery_succeeded"] is True
+        assert catalog["provider_metadata"]["openrouter"]["catalog_source"] == "mixed"
 
     @pytest.mark.asyncio
     async def test_embedding_models_included(self):

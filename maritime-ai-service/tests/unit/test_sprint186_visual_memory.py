@@ -439,7 +439,7 @@ class TestStoreImageMemory:
 
         with patch("app.core.config.get_settings", return_value=mock_settings), \
              patch("google.genai.Client", return_value=mock_client), \
-             patch("app.engine.gemini_embedding.get_embeddings", return_value=mock_embeddings), \
+             patch("app.engine.semantic_memory.visual_memory.get_embedding_backend", return_value=mock_embeddings), \
              patch("app.repositories.semantic_memory_repository.SemanticMemoryRepository", return_value=mock_repo):
             entry = await mgr.store_image_memory(
                 user_id="user-1",
@@ -551,7 +551,7 @@ class TestRetrieveVisualMemories:
         mock_repo = MagicMock()
         mock_repo.search_similar.return_value = [mock_result]
 
-        with patch("app.engine.gemini_embedding.get_embeddings", return_value=mock_embeddings), \
+        with patch("app.engine.semantic_memory.visual_memory.get_embedding_backend", return_value=mock_embeddings), \
              patch("app.repositories.semantic_memory_repository.SemanticMemoryRepository", return_value=mock_repo):
             ctx = await mgr.retrieve_visual_memories(
                 user_id="u1", query="radar tàu biển",
@@ -575,7 +575,7 @@ class TestRetrieveVisualMemories:
         mock_repo = MagicMock()
         mock_repo.search_similar.return_value = []
 
-        with patch("app.engine.gemini_embedding.get_embeddings", return_value=mock_embeddings), \
+        with patch("app.engine.semantic_memory.visual_memory.get_embedding_backend", return_value=mock_embeddings), \
              patch("app.repositories.semantic_memory_repository.SemanticMemoryRepository", return_value=mock_repo):
             ctx = await mgr.retrieve_visual_memories(user_id="u1", query="test")
 
@@ -602,7 +602,7 @@ class TestRetrieveVisualMemories:
         mock_repo = MagicMock()
         mock_repo.search_similar.return_value = [mock_result]
 
-        with patch("app.engine.gemini_embedding.get_embeddings", return_value=mock_embeddings), \
+        with patch("app.engine.semantic_memory.visual_memory.get_embedding_backend", return_value=mock_embeddings), \
              patch("app.repositories.semantic_memory_repository.SemanticMemoryRepository", return_value=mock_repo):
             ctx = await mgr.retrieve_visual_memories(user_id="u1", query="test")
 
@@ -614,7 +614,7 @@ class TestRetrieveVisualMemories:
 
         mgr = VisualMemoryManager()
 
-        with patch("app.engine.gemini_embedding.get_embeddings", side_effect=Exception("embed error")):
+        with patch("app.engine.semantic_memory.visual_memory.get_embedding_backend", side_effect=Exception("embed error")):
             ctx = await mgr.retrieve_visual_memories(user_id="u1", query="test")
 
         assert len(ctx.entries) == 0

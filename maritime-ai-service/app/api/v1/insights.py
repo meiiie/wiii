@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from app.api.deps import RequireAuth
 from app.core.rate_limit import limiter
+from app.core.security import is_platform_admin
 from app.repositories.semantic_memory_repository import SemanticMemoryRepository
 
 logger = logging.getLogger(__name__)
@@ -78,7 +79,7 @@ async def get_user_insights(
     # but guard defensively in case it's somehow None
     if not auth:
         raise HTTPException(status_code=401, detail="Authentication required")
-    if auth.user_id != user_id and auth.role != "admin":
+    if auth.user_id != user_id and not is_platform_admin(auth):
         raise HTTPException(
             status_code=403,
             detail="You can only access your own insights"

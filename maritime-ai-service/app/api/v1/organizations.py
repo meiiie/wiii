@@ -9,11 +9,11 @@ Sprint 161: Added settings GET/PATCH + permissions endpoint.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.core.config import settings
 from app.core.rate_limit import limiter
-from app.core.security import AuthenticatedUser, require_auth
+from app.core.security import AuthenticatedUser, is_platform_admin, require_auth
 from app.models.organization import (
     AddMemberRequest,
     OrganizationCreate,
@@ -40,7 +40,7 @@ def _require_multi_tenant() -> None:
 
 def _require_admin(auth: AuthenticatedUser) -> None:
     """Raise 403 if the user is not admin."""
-    if auth.role != "admin":
+    if not is_platform_admin(auth):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin role required",
@@ -56,7 +56,7 @@ def _require_org_admin_or_platform_admin(auth: AuthenticatedUser, org_id: str) -
 
     Returns the org-level role ('admin'/'owner') or 'platform_admin' for downstream checks.
     """
-    if auth.role == "admin":
+    if is_platform_admin(auth):
         return "platform_admin"
 
     if not settings.enable_org_admin:
@@ -75,6 +75,21 @@ def _require_org_admin_or_platform_admin(auth: AuthenticatedUser, org_id: str) -
     return org_role
 
 
+def _resolve_org_permission_role(auth: AuthenticatedUser) -> str:
+    """Resolve the Wiii-native permission tier for org settings.
+
+    Platform-wide identity stays binary: user vs platform admin. Org elevation
+    is handled separately through `org_role`, so host-local overlays such as
+    teacher/student should not shape global org permissions on Wiii web.
+    """
+    return "admin" if is_platform_admin(auth) else "student"
+
+
+async def _get_pool():
+    from app.core.database import get_asyncpg_pool
+    return await get_asyncpg_pool()
+
+
 # =============================================================================
 # Organization CRUD
 # =============================================================================
@@ -90,7 +105,7 @@ async def list_organizations(
     _require_multi_tenant()
     repo = get_organization_repository()
 
-    if auth.role == "admin":
+    if is_platform_admin(auth):
         return repo.list_organizations(active_only=False)
     else:
         user_orgs = repo.get_user_organizations(auth.user_id)
@@ -116,7 +131,7 @@ async def get_organization(
 
     # Sprint 194b (M4): Non-admin users can only view their own organizations.
     # Platform admins always pass; org members can view their org.
-    if auth.role != "admin" and not repo.is_user_in_org(auth.user_id, org_id):
+    if not is_platform_admin(auth) and not repo.is_user_in_org(auth.user_id, org_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not a member of this organization",
@@ -350,7 +365,7 @@ async def get_org_settings(
     # Members can read settings (needed for branding); only admin/org admin can modify
     # Sprint 194b (M4): Consistent with two-tier admin model — platform admin
     # always passes, org members can read their org settings
-    if auth.role != "admin" and not repo.is_user_in_org(auth.user_id, org_id):
+    if not is_platform_admin(auth) and not repo.is_user_in_org(auth.user_id, org_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not a member of this organization",
@@ -452,5 +467,82 @@ async def get_org_permissions_endpoint(
     if settings.enable_org_admin:
         org_role = repo.get_user_org_role(auth.user_id, org_id)
 
-    perms = get_org_permissions(org_id, auth.role, org_role=org_role)
-    return {"permissions": perms, "role": auth.role, "organization_id": org_id, "org_role": org_role}
+    permission_role = _resolve_org_permission_role(auth)
+    perms = get_org_permissions(org_id, permission_role, org_role=org_role)
+    return {
+        "permissions": perms,
+        "role": permission_role,
+        "permission_role": permission_role,
+        "legacy_role": auth.role,
+        "platform_role": auth.platform_role,
+        "organization_id": org_id,
+        "org_role": org_role,
+    }
+
+
+@router.get("/{org_id}/host-action-events")
+@limiter.limit("30/minute")
+async def get_org_host_action_events(
+    request: Request,
+    org_id: str,
+    auth: AuthenticatedUser = Depends(require_auth),
+    event_type: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """List host action events for a specific organization.
+
+    Platform admins may inspect any org. Org admins/owners may inspect only
+    their own org when org-admin mode is enabled.
+    """
+    _require_multi_tenant()
+    _require_org_admin_or_platform_admin(auth, org_id)
+    pool = await _get_pool()
+
+    conditions = ["provider = $1", "organization_id = $2"]
+    params: list[object] = ["host_action", org_id]
+    idx = 3
+
+    if event_type:
+        conditions.append(f"event_type = ${idx}")
+        params.append(event_type)
+        idx += 1
+
+    where = "WHERE " + " AND ".join(conditions)
+
+    async with pool.acquire() as conn:
+        total = await conn.fetchval(
+            f"SELECT COUNT(*) FROM auth_events {where}",
+            *params,
+        ) or 0
+
+        rows = await conn.fetch(
+            f"""
+            SELECT id, event_type, user_id, provider, result, reason,
+                   ip_address, user_agent, organization_id, metadata, created_at
+            FROM auth_events {where}
+            ORDER BY created_at DESC
+            LIMIT ${idx} OFFSET ${idx + 1}
+            """,
+            *params,
+            limit,
+            offset,
+        )
+
+    entries = [
+        {
+            "id": r["id"],
+            "event_type": r["event_type"],
+            "user_id": r["user_id"],
+            "provider": r["provider"],
+            "result": r["result"],
+            "reason": r["reason"],
+            "ip_address": r["ip_address"],
+            "organization_id": r["organization_id"],
+            "metadata": r["metadata"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        }
+        for r in rows
+    ]
+
+    return {"entries": entries, "total": total, "limit": limit, "offset": offset}

@@ -76,7 +76,10 @@ class ZhipuProvider(LLMProvider):
         from langchain_openai import ChatOpenAI
 
         # Select model based on tier
-        if tier == "deep":
+        model_name = kwargs.get("model_name") or kwargs.get("model")
+        if model_name:
+            model = model_name
+        elif tier == "deep":
             model = getattr(settings, "zhipu_model_advanced", "glm-5")
         else:
             model = getattr(settings, "zhipu_model", "glm-5")

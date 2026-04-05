@@ -9,9 +9,18 @@ import logging
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+KNOWN_TRACKING_PROVIDER_PREFIXES = (
+    "google",
+    "openai",
+    "openrouter",
+    "ollama",
+    "zhipu",
+    "vertex",
+)
 
 _current_tracker: ContextVar[Optional["TokenTracker"]] = ContextVar(
     "token_tracker", default=None
@@ -24,10 +33,30 @@ class LLMCall:
 
     model: str
     tier: str  # deep / moderate / light
+    provider: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
     duration_ms: float = 0.0
+    estimated_cost_usd: float = 0.0
     component: str = ""  # e.g. "supervisor", "rag_agent"
+
+
+def split_tracking_tier(raw_tier: str) -> Tuple[str, str]:
+    """Infer provider and normalized tier from callback tier labels."""
+    tier_text = (raw_tier or "").strip()
+    if not tier_text:
+        return "", ""
+
+    if tier_text.startswith("fallback_"):
+        return "", tier_text.removeprefix("fallback_")
+
+    if "_" not in tier_text:
+        return "", tier_text
+
+    provider, normalized_tier = tier_text.split("_", 1)
+    if provider in KNOWN_TRACKING_PROVIDER_PREFIXES:
+        return provider, normalized_tier
+    return "", tier_text
 
 
 @dataclass
@@ -95,7 +124,9 @@ def record_llm_call(
     tier: str,
     input_tokens: int,
     output_tokens: int,
+    provider: str = "",
     duration_ms: float = 0.0,
+    estimated_cost_usd: float = 0.0,
     component: str = "",
 ) -> None:
     """Record an LLM call on the current request tracker."""
@@ -105,9 +136,11 @@ def record_llm_call(
             LLMCall(
                 model=model,
                 tier=tier,
+                provider=provider,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 duration_ms=duration_ms,
+                estimated_cost_usd=estimated_cost_usd,
                 component=component,
             )
         )
@@ -168,6 +201,8 @@ class TokenTrackingCallback:
             input_tokens = 0
             output_tokens = 0
             model_name = ""
+            provider_name, normalized_tier = split_tracking_tier(self.tier)
+            estimated_cost_usd = 0.0
 
             # LLMResult has generations list; each generation has message
             if hasattr(response, "generations") and response.generations:
@@ -186,6 +221,13 @@ class TokenTrackingCallback:
                             rm = msg.response_metadata
                             if isinstance(rm, dict):
                                 model_name = rm.get("model_name", "")
+                                provider_name = (
+                                    provider_name
+                                    or rm.get("provider")
+                                    or rm.get("provider_name")
+                                    or rm.get("provider_alias")
+                                    or ""
+                                )
 
             # Fallback: check llm_output dict
             if input_tokens == 0 and hasattr(response, "llm_output") and response.llm_output:
@@ -194,13 +236,23 @@ class TokenTrackingCallback:
                     input_tokens = usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0)
                     output_tokens = usage.get("completion_tokens", 0) or usage.get("output_tokens", 0)
                 model_name = model_name or response.llm_output.get("model_name", "")
+                provider_name = (
+                    provider_name
+                    or response.llm_output.get("provider")
+                    or response.llm_output.get("provider_name")
+                    or response.llm_output.get("provider_alias")
+                    or ""
+                )
+                estimated_cost_usd = float(response.llm_output.get("estimated_cost_usd", 0) or 0)
 
             if input_tokens > 0 or output_tokens > 0:
                 record_llm_call(
                     model=model_name or "unknown",
-                    tier=self.tier,
+                    tier=normalized_tier or self.tier,
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
+                    provider=provider_name,
+                    estimated_cost_usd=estimated_cost_usd,
                     component=kwargs.get("tags", [""])[0] if kwargs.get("tags") else "",
                 )
         except Exception as e:

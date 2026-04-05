@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Optional
 
+from app.engine.openai_compatible_credentials import (
+    is_openrouter_legacy_slot_configured,
+    openrouter_credentials_available,
+)
 
 _OPENROUTER_HOST_MARKER = "openrouter.ai"
 
@@ -41,7 +45,11 @@ def build_openrouter_extra_body(settings: Any, *, primary_model: Optional[str] =
     - ``models`` for model fallback order
     - ``provider`` for provider selection and routing preferences
     """
-    if not is_openrouter_base_url(getattr(settings, "openai_base_url", None)):
+    if not (
+        openrouter_credentials_available(settings)
+        or is_openrouter_legacy_slot_configured(settings)
+        or str(getattr(settings, "llm_provider", "") or "").strip().lower() == "openrouter"
+    ):
         return {}
 
     extra_body: dict[str, Any] = {}

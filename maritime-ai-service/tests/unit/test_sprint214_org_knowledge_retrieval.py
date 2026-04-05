@@ -98,19 +98,30 @@ class TestToolKnowledgeSearchOrgId:
 # ============================================================================
 
 class TestDirectToolsIncludeKnowledgeSearch:
-    """Verify _collect_direct_tools returns tool_knowledge_search."""
+    """Verify direct lane only exposes KB retrieval on explicit internal-doc intent."""
 
-    def test_direct_tools_include_knowledge_search(self):
-        """tool_knowledge_search should be in Direct Agent's tool list."""
+    def test_direct_tools_include_knowledge_search_for_explicit_internal_doc_lookup(self):
+        """tool_knowledge_search should be in Direct Agent's tool list for explicit KB lookup."""
         mock_settings = _make_settings()
 
         with patch("app.engine.multi_agent.graph.settings", mock_settings):
             from app.engine.multi_agent.graph import _collect_direct_tools
-            tools, force = _collect_direct_tools("test query")
+            tools, force = _collect_direct_tools("Tra cứu tài liệu nội bộ về quy định an toàn hàng hải")
 
         tool_names = [getattr(t, "name", str(t)) for t in tools]
         assert "tool_knowledge_search" in tool_names, \
             f"tool_knowledge_search not found in direct tools: {tool_names}"
+
+    def test_direct_tools_skip_knowledge_search_for_plain_off_topic_turn(self):
+        """Plain off-topic/direct turns should not bind KB retrieval by default."""
+        mock_settings = _make_settings()
+
+        with patch("app.engine.multi_agent.graph.settings", mock_settings):
+            from app.engine.multi_agent.graph import _collect_direct_tools
+            tools, force = _collect_direct_tools("có thể uống rượu thưởng trăng không ?")
+
+        tool_names = [getattr(t, "name", str(t)) for t in tools]
+        assert "tool_knowledge_search" not in tool_names
 
 
 # ============================================================================

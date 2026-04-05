@@ -53,6 +53,30 @@ class TestHostActionBridge:
         req_id = bridge.emit_action_request("create_course", {}, "bus-1")
         assert req_id in bridge.pending_requests
 
+    def test_emit_action_carries_contract_metadata(self):
+        from app.engine.context.action_bridge import HostActionBridge
+
+        bridge = HostActionBridge(
+            capabilities_tools=[
+                {
+                    "name": "authoring.generate_lesson",
+                    "description": "Generate lesson",
+                    "requires_confirmation": True,
+                    "mutates_state": True,
+                    "surface": "ai_sidebar",
+                }
+            ]
+        )
+        req_id = bridge.emit_action_request(
+            "authoring.generate_lesson",
+            {"course_id": "course-1"},
+            "bus-1",
+        )
+        pending = bridge.pending_requests[req_id]
+        assert pending["requires_confirmation"] is True
+        assert pending["mutates_state"] is True
+        assert pending["surface"] == "ai_sidebar"
+
     def test_get_available_actions_for_role(self):
         from app.engine.context.action_bridge import HostActionBridge
         caps = [

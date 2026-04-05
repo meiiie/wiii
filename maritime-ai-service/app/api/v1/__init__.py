@@ -1,123 +1,144 @@
 """
-API Version 1 Router
-Aggregates all v1 endpoints (REST, WebSocket, Webhook)
+API Version 1 package.
+
+The public `router` is now built lazily so importing a single submodule such as
+`app.api.v1.living_agent` no longer eagerly imports every other router in the
+package. This reduces coupling and keeps package import side-effects smaller.
 """
+
+from __future__ import annotations
+
+import importlib
 import logging
+from typing import Optional
 
 from fastapi import APIRouter
 
-from app.api.v1.chat import router as chat_router
-from app.api.v1.chat_stream import router as chat_stream_router  # Streaming API
-from app.api.v1.health import router as health_router
-from app.api.v1.insights import router as insights_router  # Insights API
-from app.api.v1.knowledge import router as knowledge_router
-from app.api.v1.memories import router as memories_router
-from app.api.v1.sources import router as sources_router
-from app.api.v1.admin import router as admin_router  # Admin Document API
-from app.api.v1.webhook import router as webhook_router  # Sprint 12: Webhook
-from app.api.v1.threads import router as threads_router  # Sprint 16: Thread Management
-from app.api.v1.organizations import router as org_router  # Sprint 24: Multi-Tenant
-from app.api.v1.feedback import router as feedback_router  # Sprint 107: Feedback
-from app.api.v1.character import router as character_router  # Sprint 120: Character State
-from app.api.v1.mood import router as mood_router  # Sprint 120: Mood/Emotional State
-from app.api.v1.generated_files import router as generated_files_router  # Generated artifacts
-from app.api.v1.llm_status import router as llm_status_router  # LLM Provider Status
-
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["v1"])
-
-# Include sub-routers
-router.include_router(chat_router)
-router.include_router(chat_stream_router)  # POST /chat/stream
-router.include_router(health_router)
-router.include_router(insights_router)  # GET /insights/{user_id}
-router.include_router(knowledge_router)
-router.include_router(memories_router)
-router.include_router(sources_router)
-router.include_router(admin_router)  # POST/GET/DELETE /admin/documents
-router.include_router(webhook_router)  # POST /webhook/{channel_id}
-router.include_router(threads_router)  # GET/DELETE/PATCH /threads
-router.include_router(org_router)  # Sprint 24: Organizations
-router.include_router(feedback_router)  # Sprint 107: Feedback
-router.include_router(character_router)  # Sprint 120: Character State
-router.include_router(mood_router)  # Sprint 120: Mood/Emotional State
-router.include_router(generated_files_router)
-router.include_router(llm_status_router)  # GET /llm/status
-
-# Sprint 158: User profile + admin endpoints (always included, JWT-enforced)
-from app.auth.user_router import router as user_router
-router.include_router(user_router)
+_router: Optional[APIRouter] = None
 
 
-# ---------------------------------------------------------------------------
-# Config-gated routers — log success/failure for debuggability
-# ---------------------------------------------------------------------------
+def _register_router(router: APIRouter, import_path: str, label: str) -> None:
+    parts = import_path.rsplit(".", 1)
+    module = importlib.import_module(parts[0])
+    sub_router = getattr(module, parts[1])
+    router.include_router(sub_router)
+    logger.debug("[OK] %s router registered", label)
+
 
 def _register_optional_router(
-    flag_name: str, import_path: str, label: str,
+    router: APIRouter,
+    flag_name: str,
+    import_path: str,
+    label: str,
 ) -> None:
-    """Register an optional router, logging success or failure."""
     from app.core.config import settings
+
     if not getattr(settings, flag_name, False):
         return
     try:
-        import importlib
-        parts = import_path.rsplit(".", 1)
-        mod = importlib.import_module(parts[0])
-        sub_router = getattr(mod, parts[1])
-        router.include_router(sub_router)
+        _register_router(router, import_path, label)
         logger.info("[OK] %s router registered", label)
-    except Exception as e:
-        logger.error("[FAIL] %s router registration failed: %s", label, e)
+    except Exception as exc:
+        logger.error("[FAIL] %s router registration failed: %s", label, exc)
 
 
-_register_optional_router("enable_websocket", "app.api.v1.websocket.router", "WebSocket")
-_register_optional_router("enable_google_oauth", "app.auth.google_oauth.router", "Google OAuth")
-_register_optional_router("enable_lms_token_exchange", "app.auth.lms_auth_router.router", "LMS Token Exchange")
-_register_optional_router("enable_living_agent", "app.api.v1.living_agent.router", "Living Agent")
-_register_optional_router("enable_messenger_webhook", "app.api.v1.messenger_webhook.router", "Messenger Webhook")
-_register_optional_router("enable_zalo_webhook", "app.api.v1.zalo_webhook.router", "Zalo Webhook")
-_register_optional_router("enable_org_knowledge", "app.api.v1.org_knowledge.router", "Org Knowledge")
-_register_optional_router("enable_soul_bridge", "app.api.v1.soul_bridge.router", "Soul Bridge")
-_register_optional_router("enable_knowledge_visualization", "app.api.v1.knowledge_visualization.router", "Knowledge Visualization")
-_register_optional_router("enable_magic_link_auth", "app.auth.magic_link_router.router", "Magic Link Auth")
+def _build_router() -> APIRouter:
+    router = APIRouter(tags=["v1"])
 
-# Sprint 155: LMS Integration (multiple routers)
-try:
-    from app.core.config import settings as _settings
-    if getattr(_settings, "enable_lms_integration", False):
-        from app.api.v1.lms_webhook import router as lms_router
-        router.include_router(lms_router)
-        from app.api.v1.lms_data import router as lms_data_router
-        router.include_router(lms_data_router)
-        from app.api.v1.lms_dashboard import router as lms_dashboard_router
-        router.include_router(lms_dashboard_router)
-        from app.api.v1.course_generation import router as course_gen_router
-        router.include_router(course_gen_router)
-        logger.info("[OK] LMS Integration routers registered (4 routers, incl. course generation)")
-except Exception as e:
-    logger.error("[FAIL] LMS Integration router registration failed: %s", e)
+    core_router_specs = [
+        ("app.api.v1.chat.router", "Chat"),
+        ("app.api.v1.chat_stream.router", "Chat Stream"),
+        ("app.api.v1.health.router", "Health"),
+        ("app.api.v1.insights.router", "Insights"),
+        ("app.api.v1.knowledge.router", "Knowledge"),
+        ("app.api.v1.memories.router", "Memories"),
+        ("app.api.v1.sources.router", "Sources"),
+        ("app.api.v1.admin.router", "Admin"),
+        ("app.api.v1.webhook.router", "Webhook"),
+        ("app.api.v1.threads.router", "Threads"),
+        ("app.api.v1.organizations.router", "Organizations"),
+        ("app.api.v1.feedback.router", "Feedback"),
+        ("app.api.v1.character.router", "Character"),
+        ("app.api.v1.mood.router", "Mood"),
+        ("app.api.v1.generated_files.router", "Generated Files"),
+        ("app.api.v1.llm_status.router", "LLM Status"),
+        ("app.auth.user_router.router", "User"),
+    ]
+    for import_path, label in core_router_specs:
+        _register_router(router, import_path, label)
 
-# Sprint 178: Admin Module (multiple routers)
-try:
-    if getattr(_settings, "enable_admin_module", False):
-        from app.api.v1.admin_dashboard import router as admin_dashboard_router
-        router.include_router(admin_dashboard_router)
-        from app.api.v1.admin_feature_flags import router as admin_ff_router
-        router.include_router(admin_ff_router)
-        from app.api.v1.admin_analytics import router as admin_analytics_router
-        router.include_router(admin_analytics_router)
-        from app.api.v1.admin_audit import router as admin_audit_router
-        router.include_router(admin_audit_router)
-        from app.api.v1.admin_gdpr import router as admin_gdpr_router
-        router.include_router(admin_gdpr_router)
-        logger.info("[OK] Admin Module routers registered (5 routers)")
-except Exception as e:
-    logger.error("[FAIL] Admin Module router registration failed: %s", e)
+    optional_router_specs = [
+        ("enable_websocket", "app.api.v1.websocket.router", "WebSocket"),
+        ("enable_google_oauth", "app.auth.google_oauth.router", "Google OAuth"),
+        ("enable_lms_token_exchange", "app.auth.lms_auth_router.router", "LMS Token Exchange"),
+        ("enable_living_agent", "app.api.v1.living_agent.router", "Living Agent"),
+        ("enable_messenger_webhook", "app.api.v1.messenger_webhook.router", "Messenger Webhook"),
+        ("enable_zalo_webhook", "app.api.v1.zalo_webhook.router", "Zalo Webhook"),
+        ("enable_org_knowledge", "app.api.v1.org_knowledge.router", "Org Knowledge"),
+        ("enable_soul_bridge", "app.api.v1.soul_bridge.router", "Soul Bridge"),
+        (
+            "enable_knowledge_visualization",
+            "app.api.v1.knowledge_visualization.router",
+            "Knowledge Visualization",
+        ),
+        ("enable_magic_link_auth", "app.auth.magic_link_router.router", "Magic Link Auth"),
+        ("enable_host_actions", "app.api.v1.host_actions.router", "Host Actions"),
+    ]
+    for flag_name, import_path, label in optional_router_specs:
+        _register_optional_router(router, flag_name, import_path, label)
+
+    try:
+        from app.core.config import settings
+
+        if getattr(settings, "enable_lms_integration", False):
+            for import_path, label in [
+                ("app.api.v1.lms_webhook.router", "LMS Webhook"),
+                ("app.api.v1.lms_data.router", "LMS Data"),
+                ("app.api.v1.lms_dashboard.router", "LMS Dashboard"),
+                ("app.api.v1.course_generation.router", "Course Generation"),
+            ]:
+                _register_router(router, import_path, label)
+            logger.info("[OK] LMS Integration routers registered")
+    except Exception as exc:
+        logger.error("[FAIL] LMS Integration router registration failed: %s", exc)
+
+    try:
+        from app.core.config import settings
+
+        if getattr(settings, "enable_admin_module", False):
+            for import_path, label in [
+                ("app.api.v1.admin_dashboard.router", "Admin Dashboard"),
+                ("app.api.v1.admin_feature_flags.router", "Admin Feature Flags"),
+                ("app.api.v1.admin_analytics.router", "Admin Analytics"),
+                ("app.api.v1.admin_audit.router", "Admin Audit"),
+                ("app.api.v1.admin_gdpr.router", "Admin GDPR"),
+            ]:
+                _register_router(router, import_path, label)
+            logger.info("[OK] Admin Module routers registered")
+    except Exception as exc:
+        logger.error("[FAIL] Admin Module router registration failed: %s", exc)
+
+    @router.get("/")
+    async def api_v1_root():
+        return {"api": "v1", "status": "active"}
+
+    return router
 
 
-@router.get("/")
-async def api_v1_root():
-    """API v1 root endpoint"""
-    return {"api": "v1", "status": "active"}
+def __getattr__(name: str):
+    if name == "router":
+        global _router
+        if _router is None:
+            _router = _build_router()
+        return _router
+    try:
+        return importlib.import_module(f"{__name__}.{name}")
+    except ModuleNotFoundError as exc:
+        if exc.name != f"{__name__}.{name}":
+            raise
+    raise AttributeError(name)
+
+
+__all__ = ["router"]

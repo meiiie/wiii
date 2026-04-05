@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from app.api.deps import RequireAuth
 from app.core.rate_limit import limiter
+from app.core.security import is_platform_admin
 from app.repositories.semantic_memory_repository import SemanticMemoryRepository
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,7 @@ async def get_user_memories(
     **Validates: Requirements 3.1, 3.2, 3.3**
     """
     # Ownership check: users can only access their own data
-    if auth.user_id != user_id and auth.role != "admin":
+    if auth.user_id != user_id and not is_platform_admin(auth):
         raise HTTPException(
             status_code=403,
             detail="You can only access your own memories"
@@ -141,7 +142,7 @@ async def delete_user_memory(
     """
     try:
         # Ownership check: users can delete own data, admins can delete any
-        if auth.user_id != user_id and auth.role != "admin":
+        if auth.user_id != user_id and not is_platform_admin(auth):
             raise HTTPException(
                 status_code=403,
                 detail="You can only delete your own memories"
@@ -199,7 +200,7 @@ async def clear_user_memories(
     """
     try:
         # Ownership check: users can clear own data, admins can clear any
-        if auth.user_id != user_id and auth.role != "admin":
+        if auth.user_id != user_id and not is_platform_admin(auth):
             raise HTTPException(
                 status_code=403,
                 detail="You can only clear your own memories"

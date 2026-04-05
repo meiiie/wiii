@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import Awaitable, Callable
 
 from app.core.config import settings
-
-if TYPE_CHECKING:
-    from app.services.living_continuity import PostResponseContinuityContext
+from app.services.living_continuity_contracts import (
+    PostResponseContinuityContext,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ __all__ = ["schedule_living_sentiment_continuity"]
 
 
 def schedule_living_sentiment_continuity(
-    context: "PostResponseContinuityContext",
+    context: PostResponseContinuityContext,
     *,
     analyze_and_process_sentiment: Callable[..., Awaitable[None]],
 ) -> bool:

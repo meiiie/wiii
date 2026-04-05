@@ -60,3 +60,22 @@ class ValidationError(WiiiException):
 
     http_status = 400
     error_code = "VALIDATION_ERROR"
+
+
+class ProviderUnavailableError(WiiiException):
+    """Requested runtime provider is not currently selectable (503)."""
+
+    http_status = 503
+    error_code = "PROVIDER_UNAVAILABLE"
+
+    def __init__(
+        self,
+        *,
+        provider: str,
+        reason_code: str,
+        message: str = "Provider currently unavailable.",
+        details: Optional[str] = None,
+    ):
+        super().__init__(message=message, details=details)
+        self.provider = provider
+        self.reason_code = reason_code

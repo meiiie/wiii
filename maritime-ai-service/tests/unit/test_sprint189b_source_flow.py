@@ -329,18 +329,16 @@ class TestEvidenceImagesCollection:
             return_value=fake_images,
         ) as mock_collect, \
              patch(
-            "app.engine.gemini_embedding.get_embeddings"
-        ) as mock_get_embeddings:
+            "app.engine.agentic_rag.corrective_rag_process_runtime.get_query_embedding_impl",
+            new_callable=AsyncMock,
+            return_value=[0.1, 0.2, 0.3],
+        ):
             mock_tracer = MagicMock()
             mock_tracer.start_step = MagicMock()
             mock_tracer.end_step = MagicMock()
             mock_tracer.record_correction = MagicMock()
             mock_tracer.build_trace = MagicMock(return_value=None)
             mock_tracer_fn.return_value = mock_tracer
-
-            mock_embeddings = MagicMock()
-            mock_embeddings.aembed_query = AsyncMock(return_value=[0.1, 0.2, 0.3])
-            mock_get_embeddings.return_value = mock_embeddings
 
             mock_settings.rag_enable_reflection = False
             mock_settings.enable_visual_rag = False

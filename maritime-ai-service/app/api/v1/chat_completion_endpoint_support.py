@@ -24,6 +24,12 @@ def begin_chat_completion_request(*, logger, request, chat_request, auth_method)
 
 async def process_chat_completion_request(*, chat_request, background_save):
     """Run the authoritative sync chat service for the /chat endpoint."""
+    requested_provider = getattr(chat_request, "provider", None)
+    if requested_provider and requested_provider != "auto":
+        from app.services.llm_selectability_service import ensure_provider_is_selectable
+
+        ensure_provider_is_selectable(requested_provider)
+
     from app.services.chat_service import get_chat_service
 
     chat_service = get_chat_service()

@@ -21,12 +21,18 @@ Reference: Zep/Graphiti (2025), Microsoft GraphRAG, Mem0
 """
 
 import logging
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set
 from uuid import uuid4
+
+from app.engine.semantic_memory.temporal_graph_runtime import (
+    build_context_text_impl,
+    extract_graph_from_facts_impl,
+    from_dict_impl,
+    to_dict_impl,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -470,76 +476,36 @@ class TemporalGraphManager:
 
         Formats entities and their relations into a natural paragraph.
         """
-        parts = []
-        entities = self._entities.get(user_id, {})
-        relations = self._relations.get(user_id, {})
-
-        # Filter to relevant entities if specified
-        if relevant_entity_ids:
-            entity_list = [
-                entities[eid]
-                for eid in relevant_entity_ids
-                if eid in entities and entities[eid].is_current
-            ]
-        else:
-            entity_list = [e for e in entities.values() if e.is_current]
-
-        entity_list = entity_list[:max_entities]
-
-        if entity_list:
-            entity_strs = []
-            for e in entity_list:
-                desc = f"{e.name}"
-                if e.description:
-                    desc += f" ({e.description})"
-                entity_strs.append(desc)
-            parts.append(f"Thông tin liên quan: {', '.join(entity_strs)}")
-
-        # Add key relations
-        rel_strs = []
-        for rel in list(relations.values())[:max_relations]:
-            source = entities.get(rel.source_id)
-            target = entities.get(rel.target_id)
-            if source and target:
-                rel_strs.append(
-                    f"{source.name} → {rel.relation_type.value} → {target.name}"
-                )
-        if rel_strs:
-            parts.append(f"Quan hệ: {'; '.join(rel_strs)}")
-
-        return ". ".join(parts)
+        return build_context_text_impl(
+            user_id=user_id,
+            entities_by_user=self._entities,
+            relations_by_user=self._relations,
+            relevant_entity_ids=relevant_entity_ids,
+            max_entities=max_entities,
+            max_relations=max_relations,
+        )
 
     def to_dict(self, user_id: str) -> Dict[str, Any]:
         """Serialize user's graph to dict for JSON storage."""
-        return {
-            "entities": {
-                eid: e.to_dict()
-                for eid, e in self._entities.get(user_id, {}).items()
-            },
-            "relations": {
-                rid: r.to_dict()
-                for rid, r in self._relations.get(user_id, {}).items()
-            },
-            "episodes": {
-                epid: ep.to_dict()
-                for epid, ep in self._episodes.get(user_id, {}).items()
-            },
-        }
+        return to_dict_impl(
+            user_id=user_id,
+            entities_by_user=self._entities,
+            relations_by_user=self._relations,
+            episodes_by_user=self._episodes,
+        )
 
     def from_dict(self, user_id: str, data: Dict[str, Any]) -> None:
         """Load user's graph from serialized dict."""
-        self._entities[user_id] = {
-            eid: GraphEntity.from_dict(e_data)
-            for eid, e_data in data.get("entities", {}).items()
-        }
-        self._relations[user_id] = {
-            rid: GraphRelation.from_dict(r_data)
-            for rid, r_data in data.get("relations", {}).items()
-        }
-        self._episodes[user_id] = {
-            epid: Episode.from_dict(ep_data)
-            for epid, ep_data in data.get("episodes", {}).items()
-        }
+        entities, relations, episodes = from_dict_impl(
+            user_id=user_id,
+            data=data,
+            entity_from_dict=GraphEntity.from_dict,
+            relation_from_dict=GraphRelation.from_dict,
+            episode_from_dict=Episode.from_dict,
+        )
+        self._entities[user_id] = entities
+        self._relations[user_id] = relations
+        self._episodes[user_id] = episodes
 
     def clear_user(self, user_id: str) -> None:
         """Clear all graph data for a user."""
@@ -585,110 +551,13 @@ async def extract_graph_from_facts(
     Returns:
         TemporalGraphContext with created entities, relations, and episode.
     """
-    start = time.time()
-    manager = get_temporal_graph_manager()
-
-    entities = []
-    relations = []
-
-    # Map fact types to entity types
-    _fact_to_entity_type = {
-        "name": EntityType.PERSON,
-        "age": EntityType.FACT,
-        "hometown": EntityType.LOCATION,
-        "role": EntityType.FACT,
-        "level": EntityType.FACT,
-        "location": EntityType.LOCATION,
-        "organization": EntityType.FACT,
-        "goal": EntityType.PREFERENCE,
-        "preference": EntityType.PREFERENCE,
-        "weakness": EntityType.SKILL,
-        "strength": EntityType.SKILL,
-        "learning_style": EntityType.PREFERENCE,
-        "hobby": EntityType.PREFERENCE,
-        "interest": EntityType.CONCEPT,
-        "emotion": EntityType.FACT,
-        "recent_topic": EntityType.CONCEPT,
-    }
-
-    _fact_to_relation_type = {
-        "name": RelationType.HAS_FACT,
-        "goal": RelationType.PREFERS,
-        "preference": RelationType.PREFERS,
-        "weakness": RelationType.WEAK_AT,
-        "strength": RelationType.STRONG_AT,
-        "interest": RelationType.STUDIES,
-        "hometown": RelationType.LOCATED_AT,
-        "location": RelationType.LOCATED_AT,
-    }
-
-    # Ensure user entity exists
-    user_entity = manager.add_entity(
+    return await extract_graph_from_facts_impl(
         user_id=user_id,
-        name=user_id,
-        entity_type=EntityType.PERSON,
-        description="User",
-    )
-
-    entity_ids = [user_entity.entity_id]
-    relation_ids = []
-
-    for fact in facts:
-        fact_type = fact.get("fact_type", "")
-        value = fact.get("value", "")
-        confidence = fact.get("confidence", 0.8)
-
-        if not value:
-            continue
-
-        entity_type = _fact_to_entity_type.get(fact_type, EntityType.FACT)
-        relation_type = _fact_to_relation_type.get(fact_type, RelationType.HAS_FACT)
-
-        # Create entity for the fact
-        entity = manager.add_entity(
-            user_id=user_id,
-            name=value,
-            entity_type=entity_type,
-            description=f"{fact_type}: {value}",
-        )
-        entities.append(entity)
-        entity_ids.append(entity.entity_id)
-
-        # Create relation: user → relation_type → fact_entity
-        relation = manager.add_relation(
-            user_id=user_id,
-            source_id=user_entity.entity_id,
-            target_id=entity.entity_id,
-            relation_type=relation_type,
-            confidence=confidence,
-        )
-        relations.append(relation)
-        relation_ids.append(relation.relation_id)
-
-    # Create episode for this interaction
-    episode = manager.add_episode(
-        user_id=user_id,
+        facts=facts,
         session_id=session_id,
-        summary=f"Extracted {len(facts)} facts from conversation",
-        entity_ids=entity_ids,
-        relation_ids=relation_ids,
-    )
-
-    total_time = (time.time() - start) * 1000
-    context_text = manager.build_context_text(user_id, entity_ids)
-
-    logger.info(
-        "[TGraph] Extracted %d entities, %d relations, 1 episode for user %s (%.0fms)",
-        len(entities),
-        len(relations),
-        user_id,
-        total_time,
-    )
-
-    return TemporalGraphContext(
-        entities=entities,
-        relations=relations,
-        episodes=[episode],
-        context_text=context_text,
-        total_time_ms=total_time,
+        get_temporal_graph_manager_fn=get_temporal_graph_manager,
+        temporal_graph_context_cls=TemporalGraphContext,
+        entity_type_cls=EntityType,
+        relation_type_cls=RelationType,
+        logger_obj=logger,
     )

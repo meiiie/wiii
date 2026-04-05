@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from app.services.living_continuity import PostResponseContinuityContext
+from app.services.living_continuity_contracts import (
+    PostResponseContinuityContext,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,7 @@ __all__ = ["schedule_routine_tracking"]
 
 
 def schedule_routine_tracking(
-    context: "PostResponseContinuityContext",
+    context: PostResponseContinuityContext,
 ) -> bool:
     """Schedule routine tracking when the runtime flag enables it."""
     try:

@@ -2,7 +2,7 @@
 Embedding Generator for Semantic Memory.
 
 Provides a centralized way to generate embeddings for fact storage
-and retrieval. Uses GeminiOptimizedEmbeddings as the backend.
+and retrieval. Uses the provider-agnostic semantic embedding backend.
 
 Sprint 137: Created to enable semantic fact retrieval.
 """
@@ -15,7 +15,7 @@ _generator_instance = None
 
 
 class EmbeddingGenerator:
-    """Wrapper around GeminiOptimizedEmbeddings for semantic memory use."""
+    """Wrapper around the semantic embedding backend for backward compatibility."""
 
     def __init__(self):
         self._embeddings = None
@@ -24,10 +24,19 @@ class EmbeddingGenerator:
 
     def _init(self):
         try:
-            from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
-            self._embeddings = GeminiOptimizedEmbeddings()
-            self._available = True
-            logger.info("EmbeddingGenerator initialized with GeminiOptimizedEmbeddings")
+            from app.engine.embedding_runtime import get_semantic_embedding_backend
+
+            self._embeddings = get_semantic_embedding_backend()
+            self._available = bool(self._embeddings and self._embeddings.is_available())
+            if self._available:
+                logger.info(
+                    "EmbeddingGenerator initialized with provider=%s model=%s dims=%s",
+                    self._embeddings.provider,
+                    self._embeddings.model_name,
+                    self._embeddings.dimensions,
+                )
+            else:
+                logger.warning("EmbeddingGenerator unavailable: no embedding backend resolved")
         except Exception as e:
             logger.warning("EmbeddingGenerator unavailable: %s", e)
             self._available = False
@@ -72,3 +81,9 @@ def get_embedding_generator() -> EmbeddingGenerator:
     if _generator_instance is None:
         _generator_instance = EmbeddingGenerator()
     return _generator_instance
+
+
+def reset_embedding_generator() -> None:
+    """Reset singleton generator for tests and runtime reconfiguration."""
+    global _generator_instance
+    _generator_instance = None

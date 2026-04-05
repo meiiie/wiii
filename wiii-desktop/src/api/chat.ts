@@ -19,11 +19,15 @@ export async function sendMessageStream(
   handlers: SSEEventHandler,
   abortSignal?: AbortSignal,
   lastEventId?: string | null,
+  requestId?: string | null,
 ): Promise<SSEStreamResult> {
   const client = getClient();
   const extraHeaders: Record<string, string> = {};
   if (lastEventId) {
     extraHeaders["Last-Event-ID"] = lastEventId;
+  }
+  if (requestId) {
+    extraHeaders["X-Request-ID"] = requestId;
   }
   // Sprint 153b: Pass abort signal to postStream so initial HTTP request is also cancellable
   const stream = await client.postStream("/api/v1/chat/stream/v3", request, extraHeaders, abortSignal);

@@ -77,6 +77,15 @@ def test_resolves_accented_vietnamese_chart_request():
     assert decision.preferred_tool == "tool_generate_visual"
 
 
+def test_resolves_visual_statistics_request_with_unicode_vietnamese_as_chart_runtime():
+    decision = resolve_visual_intent("Visual cho mình xem thống kê dữ liệu hiện tại giá dầu mấy ngày gần đây")
+    assert decision.mode == "inline_html"
+    assert decision.force_tool is True
+    assert decision.visual_type == "chart"
+    assert decision.presentation_intent == "chart_runtime"
+    assert decision.preferred_tool == "tool_generate_visual"
+
+
 def test_resolves_mermaid_request():
     decision = resolve_visual_intent("Ve flowchart quy trinh onboarding")
     assert decision.mode == "mermaid"
@@ -124,6 +133,16 @@ def test_resolves_english_pendulum_simulation_request_as_app():
     assert decision.presentation_intent == "code_studio_app"
     assert decision.preferred_tool == "tool_create_visual_code"
     assert decision.quality_profile == "premium"
+
+
+def test_resolves_literary_scene_simulation_request_as_code_studio_app():
+    decision = resolve_visual_intent("Mô phỏng cảnh Thúy Kiều ở lầu Ngưng Bích cho mình được chứ ?")
+    assert decision.mode == "app"
+    assert decision.force_tool is True
+    assert decision.visual_type == "simulation"
+    assert decision.presentation_intent == "code_studio_app"
+    assert decision.preferred_tool == "tool_create_visual_code"
+    assert decision.preferred_render_surface == "canvas"
 
 
 def test_resolves_vietnamese_app_followup_patch_as_app():

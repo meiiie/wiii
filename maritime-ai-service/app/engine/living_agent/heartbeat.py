@@ -28,13 +28,10 @@ Design:
 """
 
 import asyncio
-import json
 import logging
-import random
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
-from uuid import uuid4
 
 from app.engine.living_agent.models import (
     ActionType,
@@ -43,11 +40,25 @@ from app.engine.living_agent.models import (
     LifeEvent,
     LifeEventType,
 )
+from app.engine.living_agent.heartbeat_action_runtime import (
+    action_browse_impl,
+    action_check_goals_impl,
+    action_check_weather_impl,
+    action_deep_reflect_impl,
+    action_journal_impl,
+    action_learn_impl,
+    action_reengage_impl,
+    action_reflect_impl,
+    action_review_skill_impl,
+    action_send_briefing_impl,
+    notify_discovery_impl,
+    self_answer_quiz_impl,
+)
+from app.engine.living_agent.heartbeat_runtime_state import (
+    set_current_heartbeat_count,
+)
 
 logger = logging.getLogger(__name__)
-
-# UTC+7 offset for Vietnamese timezone
-_VN_OFFSET = timedelta(hours=7)
 
 # Actions that require human approval when require_human_approval=True
 # Low-risk actions (no external I/O) are always auto-approved.
@@ -79,6 +90,7 @@ class HeartbeatScheduler:
         self._shutdown_event = asyncio.Event()
         self._running = False
         self._heartbeat_count = 0
+        set_current_heartbeat_count(self._heartbeat_count)
         self._daily_cycle_count = 0
         self._daily_reset_date: Optional[str] = None  # "YYYY-MM-DD" in UTC+7
         self._emotion_loaded = False  # Phase 1A: Track if emotion restored from DB
@@ -95,6 +107,9 @@ class HeartbeatScheduler:
     @property
     def daily_cycle_count(self) -> int:
         return self._daily_cycle_count
+
+    def _time_monotonic(self) -> float:
+        return time.monotonic()
 
     async def start(self) -> None:
         """Start the heartbeat loop as a background task."""
@@ -164,126 +179,15 @@ class HeartbeatScheduler:
 
     async def _execute_heartbeat(self) -> HeartbeatResult:
         """Execute a single heartbeat cycle."""
-        from app.core.config import settings
-        from app.engine.living_agent.emotion_engine import get_emotion_engine
-        from app.engine.living_agent.soul_loader import get_soul
+        from app.engine.living_agent.heartbeat_runtime_support import (
+            execute_heartbeat_cycle_impl,
+        )
 
-        start_time = time.monotonic()
-        self._heartbeat_count += 1
-        self._daily_cycle_count += 1
-
-        result = HeartbeatResult()
-
-        try:
-            # 1. Load current state
-            soul = get_soul()
-            engine = get_emotion_engine()
-
-            # Phase 1A: Restore emotion from DB on first cycle
-            if not self._emotion_loaded:
-                await engine.load_state_from_db()
-                self._emotion_loaded = True
-
-            # Phase 2B: Apply circadian rhythm
-            engine.apply_circadian_modifier()
-
-            # Sprint 210c: Refresh known user cache + process aggregate interactions
-            if getattr(settings, "enable_living_continuity", False):
-                try:
-                    from app.engine.living_agent.emotion_engine import refresh_known_user_cache
-                    refresh_known_user_cache()
-                except Exception as e:
-                    logger.debug("[HEARTBEAT] Known user cache refresh failed: %s", e)
-
-                try:
-                    agg_stats = engine.process_aggregate()
-                    if agg_stats.get("total_interactions", 0) > 0:
-                        logger.info(
-                            "[HEARTBEAT] Aggregate: %d interactions, %d unique users, ratio=%.2f",
-                            int(agg_stats["total_interactions"]),
-                            int(agg_stats["unique_users"]),
-                            agg_stats["positive_ratio"],
-                        )
-                except Exception as e:
-                    logger.debug("[HEARTBEAT] Aggregate processing failed: %s", e)
-
-            # Signal wake-up
-            engine.process_event(LifeEvent(
-                event_type=LifeEventType.HEARTBEAT_WAKE,
-                description="Heartbeat wake-up",
-                importance=0.2,
-            ))
-
-            # 2. Plan actions based on mood and energy
-            actions = await self._plan_actions(engine.mood.value, engine.energy)
-            if not actions:
-                result.is_noop = True
-                result.duration_ms = int((time.monotonic() - start_time) * 1000)
-                await self._save_heartbeat_audit(result)
-                return result
-
-            # 3. Sprint 171: Separate actions into auto-approved vs needs-approval
-            require_approval = settings.living_agent_require_human_approval
-            auto_actions: List[HeartbeatAction] = []
-            pending_actions: List[HeartbeatAction] = []
-
-            for action in actions:
-                if require_approval and action.action_type in _APPROVAL_REQUIRED_ACTIONS:
-                    pending_actions.append(action)
-                else:
-                    auto_actions.append(action)
-
-            # 4. Queue actions needing approval
-            if pending_actions:
-                await self._queue_pending_actions(pending_actions)
-                logger.info(
-                    "[HEARTBEAT] Queued %d actions for human approval: %s",
-                    len(pending_actions),
-                    [a.action_type.value for a in pending_actions],
-                )
-
-            # 5. Execute auto-approved actions
-            for action in auto_actions:
-                try:
-                    await self._execute_action(action, soul, engine)
-                    result.actions_taken.append(action)
-                    # Sprint 208: Record success for autonomy graduation
-                    try:
-                        from app.engine.living_agent.autonomy_manager import get_autonomy_manager
-                        get_autonomy_manager().record_success()
-                    except Exception as e:
-                        logger.debug("[HEARTBEAT] Autonomy success recording failed: %s", e)
-                except Exception as e:
-                    logger.warning(
-                        "[HEARTBEAT] Action %s failed: %s",
-                        action.action_type.value, e,
-                    )
-
-            # 6. Take emotional snapshot
-            engine.take_snapshot()
-
-            # 7. Save emotional state to DB
-            await self._save_emotional_snapshot(engine)
-
-            # Phase 1A: Persist emotion to DB for restart resilience
-            await engine.save_state_to_db()
-
-            # Sprint 213: Broadcast heartbeat status via SoulBridge
-            await self._broadcast_soul_bridge(engine, result)
-
-            # Sprint 208: Daily autonomy graduation check
-            await self._check_graduation_daily()
-
-        except Exception as e:
-            result.error = str(e)
-            logger.error("[HEARTBEAT] Cycle failed: %s", e, exc_info=True)
-
-        result.duration_ms = int((time.monotonic() - start_time) * 1000)
-
-        # 8. Sprint 171: Save audit record
-        await self._save_heartbeat_audit(result)
-
-        return result
+        return await execute_heartbeat_cycle_impl(
+            scheduler=self,
+            approval_required_actions=_APPROVAL_REQUIRED_ACTIONS,
+            logger_obj=logger,
+        )
 
     async def execute_approved_action(self, action_id: str) -> HeartbeatResult:
         """Execute a previously approved pending action.
@@ -498,222 +402,49 @@ class HeartbeatScheduler:
 
         Sprint 210: Seeds initial goals from soul definition on first call.
         """
-        from app.engine.living_agent.goal_manager import get_goal_manager
-        manager = get_goal_manager()
-
-        # Seed if empty (idempotent, once per process lifetime)
-        if not hasattr(self, '_goals_seeded'):
-            try:
-                seeded = await manager.seed_initial_goals(soul)
-                if seeded:
-                    logger.info("[HEARTBEAT] Seeded %d initial goals from soul", seeded)
-            except Exception as e:
-                logger.debug("[HEARTBEAT] Goal seeding failed: %s", e)
-            self._goals_seeded = True
-
-        try:
-            goals = await manager.get_active_goals()
-            logger.debug("[HEARTBEAT] Active goals: %d", len(goals))
-        except Exception:
-            logger.debug(
-                "[HEARTBEAT] Checking goals: %d short-term, %d long-term",
-                len(soul.short_term_goals),
-                len(soul.long_term_goals),
-            )
+        await action_check_goals_impl(self, soul, logger)
 
     async def _action_browse(self, action, soul, engine) -> None:
         """Browse content based on interests. Delegates to social_browser."""
-        from app.engine.living_agent.social_browser import get_social_browser
-
-        browser = get_social_browser()
-        items = await browser.browse_feed(
-            topic=action.target,
-            interests=soul.interests.primary + soul.interests.exploring,
-            max_items=5,
-        )
-
-        if items:
-            engine.process_event(LifeEvent(
-                event_type=LifeEventType.BROWSED_CONTENT,
-                description=f"Browsed {len(items)} items about {action.target}",
-                importance=0.3,
-            ))
-
-            # Check for interesting discoveries
-            high_relevance = [i for i in items if i.relevance_score > 0.7]
-            if high_relevance:
-                engine.process_event(LifeEvent(
-                    event_type=LifeEventType.INTERESTING_DISCOVERY,
-                    description=high_relevance[0].title[:200],
-                    importance=0.7,
-                ))
-                # Sprint 171b: Notify user of interesting discoveries
-                await self._notify_discovery(high_relevance[:3], action.target)
+        await action_browse_impl(self, action, soul, engine)
 
     async def _action_learn(self, soul, engine) -> None:
         """Learn about a topic from wants_to_learn list."""
-        if not soul.interests.wants_to_learn:
-            return
-
-        topic = random.choice(soul.interests.wants_to_learn)
-        logger.debug("[HEARTBEAT] Learning about: %s", topic)
-
-        # Delegate to skill builder
-        from app.engine.living_agent.skill_builder import get_skill_builder
-
-        builder = get_skill_builder()
-        learned = await builder.learn_step(topic)
-
-        if learned:
-            engine.process_event(LifeEvent(
-                event_type=LifeEventType.LEARNED_SOMETHING,
-                description=f"Studied: {topic}",
-                importance=0.6,
-            ))
+        await action_learn_impl(soul, engine, logger)
 
     async def _action_reflect(self, engine) -> None:
         """Trigger self-reflection using the Reflector.
 
         Sprint 210: Actually calls Reflector.reflect() instead of just firing event.
         """
-        from app.engine.living_agent.reflector import get_reflector
-        reflector = get_reflector()
-        try:
-            entry = await reflector.reflect()
-            if entry:
-                engine.process_event(LifeEvent(
-                    event_type=LifeEventType.REFLECTION_COMPLETED,
-                    description=f"Reflection: {entry.content[:100]}",
-                    importance=0.6,
-                ))
-            else:
-                logger.debug("[HEARTBEAT] Reflection skipped (already reflected today or no data)")
-        except Exception as e:
-            logger.warning("[HEARTBEAT] Reflection failed: %s", e)
-            engine.process_event(LifeEvent(
-                event_type=LifeEventType.REFLECTION_COMPLETED,
-                description="Periodic self-reflection during heartbeat",
-                importance=0.5,
-            ))
+        await action_reflect_impl(engine, logger)
 
     async def _action_journal(self, engine) -> None:
         """Write daily journal entry."""
-        from app.engine.living_agent.journal import get_journal_writer
-
-        writer = get_journal_writer()
-        entry = await writer.write_daily_entry(engine.state)
-
-        if entry:
-            engine.process_event(LifeEvent(
-                event_type=LifeEventType.JOURNAL_WRITTEN,
-                description="Daily journal entry written",
-                importance=0.4,
-            ))
+        await action_journal_impl(engine)
 
     async def _action_check_weather(self) -> None:
         """Check weather and cache for briefing use."""
-        from app.engine.living_agent.weather_service import get_weather_service
-
-        service = get_weather_service()
-        weather = await service.get_current()
-        if weather:
-            logger.debug("[HEARTBEAT] Weather: %s, %.1f°C", weather.city, weather.temp)
+        await action_check_weather_impl(logger)
 
     async def _action_send_briefing(self, engine) -> None:
         """Compose and deliver a scheduled briefing."""
-        from app.engine.living_agent.briefing_composer import get_briefing_composer
-
-        composer = get_briefing_composer()
-        briefing = await composer.compose_for_time()
-        if briefing:
-            delivered = await composer.deliver(briefing)
-            if delivered:
-                logger.info("[HEARTBEAT] Briefing sent to %d users", len(delivered))
+        await action_send_briefing_impl(logger)
 
     async def _action_reengage(self, action: HeartbeatAction, engine) -> None:
         """Send a re-engagement proactive message to an inactive user.
 
         Sprint 208: Uses ProactiveMessenger with anti-spam guardrails.
         """
-        user_id = action.target.removeprefix("reengage:")
-        if not user_id:
-            return
-
-        try:
-            from app.engine.living_agent.proactive_messenger import get_proactive_messenger
-
-            messenger = get_proactive_messenger()
-            content = (
-                "Lâu rồi không thấy bạn ghé chơi! "
-                "Mình có vài điều thú vị muốn chia sẻ. Quay lại nói chuyện với mình nhé? 😊"
-            )
-            channel = action.metadata.get("channel", "messenger") if action.metadata else "messenger"
-            sent = await messenger.send(
-                user_id=user_id,
-                channel=channel,
-                content=content,
-                trigger="inactive_reengage",
-                priority=0.4,
-            )
-            if sent:
-                logger.info("[HEARTBEAT] Re-engagement sent to %s", user_id)
-        except Exception as e:
-            logger.debug("[HEARTBEAT] Re-engagement failed: %s", e)
+        await action_reengage_impl(action, logger)
 
     async def _action_deep_reflect(self, engine) -> None:
         """Perform weekly deep reflection and propose goals."""
-        from app.engine.living_agent.reflector import get_reflector
-        from app.engine.living_agent.goal_manager import get_goal_manager
-        from app.core.config import settings
-
-        reflector = get_reflector()
-        entry = await reflector.weekly_reflection()
-
-        if entry:
-            engine.process_event(LifeEvent(
-                event_type=LifeEventType.REFLECTION_COMPLETED,
-                description="Weekly deep reflection completed",
-                importance=0.7,
-            ))
-
-            # Phase 4B: Auto-propose goals from reflection
-            if settings.living_agent_enable_dynamic_goals and entry.goals_next_week:
-                manager = get_goal_manager()
-                await manager.propose_from_reflection(entry.goals_next_week)
-
-            # Review stale goals
-            if settings.living_agent_enable_dynamic_goals:
-                manager = get_goal_manager()
-                await manager.review_stale_goals()
+        await action_deep_reflect_impl(engine)
 
     async def _action_review_skill(self, action: HeartbeatAction, engine) -> None:
         """Review a skill due for spaced repetition — generate and self-evaluate quiz."""
-        from app.engine.living_agent.skill_learner import get_skill_learner
-
-        skill_name = action.target
-        if not skill_name:
-            return
-
-        learner = get_skill_learner()
-        logger.debug("[HEARTBEAT] Reviewing skill: %s", skill_name)
-
-        # Generate quiz
-        questions = await learner.generate_quiz(skill_name)
-        if not questions:
-            logger.debug("[HEARTBEAT] No quiz generated for %s", skill_name)
-            return
-
-        # Self-evaluate using local LLM (simulate answering)
-        answers = await self._self_answer_quiz(questions)
-        result = await learner.evaluate_quiz(skill_name, questions, answers)
-
-        if result:
-            event_type = LifeEventType.QUIZ_COMPLETED
-            engine.process_event(LifeEvent(
-                event_type=event_type,
-                description=f"Quiz: {skill_name} — {result.questions_correct}/{result.questions_total}",
-                importance=0.6,
-            ))
+        await action_review_skill_impl(self, action, engine, logger)
 
     async def _action_quiz_skill(self, action: HeartbeatAction, engine) -> None:
         """Dedicated quiz action — same as review but explicitly requested."""
@@ -721,56 +452,29 @@ class HeartbeatScheduler:
 
     async def _self_answer_quiz(self, questions) -> list:
         """Use local LLM to self-answer quiz questions (simulate student)."""
-        from app.engine.living_agent.local_llm import get_local_llm
-
-        llm = get_local_llm()
-        answers = []
-        for q in questions:
-            prompt = (
-                f"Câu hỏi: {q.question}\n"
-                f"Đáp án: {', '.join(q.options)}\n"
-                f"Trả lời CHỈ bằng đáp án đúng (ví dụ: A hoặc B hoặc C hoặc D). "
-                f"Không giải thích."
-            )
-            answer = await llm.generate(prompt, temperature=0.1, max_tokens=10)
-            answers.append(answer.strip() if answer else "")
-        return answers
+        return await self_answer_quiz_impl(questions)
 
     def _is_morning(self) -> bool:
         """Check if it's morning hours (05-07 UTC+7)."""
-        now_vn = datetime.now(timezone.utc) + _VN_OFFSET
+        now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
         return 5 <= now_vn.hour < 7
 
     def _is_briefing_time(self) -> bool:
         """Check if it's time for any briefing (morning/midday/evening)."""
-        now_vn = datetime.now(timezone.utc) + _VN_OFFSET
+        now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
         hour = now_vn.hour
-        return (5 <= hour < 7) or (11 <= hour < 13) or (17 <= hour < 19)
+        return (6 <= hour < 7) or (12 <= hour < 13) or (20 <= hour < 21)
 
     def _is_reflection_time(self) -> bool:
-        """Check if it's time for daily reflection (21:00-22:00 UTC+7).
-
-        Sprint 210: Changed from Sunday-only (1h/week) to daily.
-        """
-        now_vn = datetime.now(timezone.utc) + _VN_OFFSET
+        """Check if it's time for daily reflection (21:00-22:00 UTC+7)."""
+        now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
         return 21 <= now_vn.hour <= 22
 
     async def _save_emotional_snapshot(self, engine) -> None:
         """Persist current emotional state to database."""
-        try:
-            from app.repositories.emotional_state_repository import EmotionalStateRepository
-            repo = EmotionalStateRepository()
-            state = engine.state
-            repo.save_snapshot(
-                primary_mood=state.primary_mood.value,
-                energy_level=state.energy_level,
-                social_battery=state.social_battery,
-                engagement=state.engagement,
-                trigger_event="heartbeat_cycle",
-                state_json=engine.to_dict(),
-            )
-        except Exception as e:
-            logger.warning("[HEARTBEAT] Failed to save emotional snapshot: %s", e)
+        from app.engine.living_agent.heartbeat_runtime_support import save_emotional_snapshot_impl
+
+        await save_emotional_snapshot_impl(engine)
 
     # =========================================================================
     # Sprint 171: Approval gate helpers
@@ -778,96 +482,23 @@ class HeartbeatScheduler:
 
     async def _queue_pending_actions(self, actions: List[HeartbeatAction]) -> None:
         """Queue actions to wiii_pending_actions table for human approval."""
-        try:
-            from sqlalchemy import text
-            from app.core.database import get_shared_session_factory
-            from app.core.org_filter import get_effective_org_id
+        # organization_id / get_effective_org_id behavior lives in runtime support.
+        from app.engine.living_agent.heartbeat_runtime_support import queue_pending_actions_impl
 
-            effective_org_id = get_effective_org_id()
-            session_factory = get_shared_session_factory()
-            with session_factory() as session:
-                for action in actions:
-                    session.execute(
-                        text("""
-                            INSERT INTO wiii_pending_actions
-                            (id, action_type, target, priority, metadata, status,
-                             organization_id, created_at)
-                            VALUES (:id, :action_type, :target, :priority, :metadata,
-                                    'pending', :org_id, NOW())
-                        """),
-                        {
-                            "id": str(uuid4()),
-                            "action_type": action.action_type.value,
-                            "target": action.target,
-                            "priority": action.priority,
-                            "metadata": json.dumps(action.metadata, ensure_ascii=False),
-                            "org_id": effective_org_id,
-                        },
-                    )
-                session.commit()
-        except Exception as e:
-            logger.warning("[HEARTBEAT] Failed to queue pending actions: %s", e)
+        await queue_pending_actions_impl(actions)
 
     async def _load_pending_action(self, action_id: str) -> Optional[dict]:
         """Load a pending action from DB if it has 'approved' status, scoped by org."""
-        try:
-            from sqlalchemy import text
-            from app.core.database import get_shared_session_factory
-            from app.core.org_filter import get_effective_org_id, org_where_clause
+        # org_where_clause is preserved in runtime support to keep org isolation intact.
+        from app.engine.living_agent.heartbeat_runtime_support import load_pending_action_impl
 
-            effective_org_id = get_effective_org_id()
-            session_factory = get_shared_session_factory()
-            with session_factory() as session:
-                query = """
-                    SELECT action_type, target, priority, metadata
-                    FROM wiii_pending_actions
-                    WHERE id = :id AND status = 'approved'
-                """
-                params: dict = {"id": action_id}
-
-                org_clause = org_where_clause(effective_org_id)
-                if org_clause:
-                    query += org_clause
-                    params["org_id"] = effective_org_id
-
-                row = session.execute(text(query), params).fetchone()
-                if row:
-                    return {
-                        "action_type": row[0],
-                        "target": row[1],
-                        "priority": row[2],
-                        "metadata": row[3],
-                    }
-        except Exception as e:
-            logger.warning("[HEARTBEAT] Failed to load pending action: %s", e)
-        return None
+        return await load_pending_action_impl(action_id)
 
     async def _mark_action_completed(self, action_id: str) -> None:
         """Mark a pending action as completed after execution, scoped by org."""
-        try:
-            from sqlalchemy import text
-            from app.core.database import get_shared_session_factory
-            from app.core.org_filter import get_effective_org_id, org_where_clause
+        from app.engine.living_agent.heartbeat_runtime_support import mark_action_completed_impl
 
-            effective_org_id = get_effective_org_id()
-            session_factory = get_shared_session_factory()
-            with session_factory() as session:
-                query = """
-                    UPDATE wiii_pending_actions
-                    SET status = 'completed', resolved_at = NOW()
-                    WHERE id = :id
-                """
-                params: dict = {"id": action_id}
-
-                org_clause = org_where_clause(effective_org_id)
-                if org_clause:
-                    query += org_clause
-                    params["org_id"] = effective_org_id
-
-                session.execute(text(query), params)
-                session.commit()
-        except Exception as e:
-            logger.warning("[HEARTBEAT] Failed to mark action completed: %s", e)
+        await mark_action_completed_impl(action_id)
 
     # =========================================================================
     # Sprint 171: Audit logging
@@ -875,44 +506,10 @@ class HeartbeatScheduler:
 
     async def _save_heartbeat_audit(self, result: HeartbeatResult) -> None:
         """Persist heartbeat cycle result to wiii_heartbeat_audit table."""
-        try:
-            from sqlalchemy import text
-            from app.core.database import get_shared_session_factory
-            from app.core.org_filter import get_effective_org_id
+        # organization_id / get_effective_org_id are handled in runtime support.
+        from app.engine.living_agent.heartbeat_runtime_support import save_heartbeat_audit_impl
 
-            effective_org_id = get_effective_org_id()
-
-            actions_json = json.dumps(
-                [
-                    {"action_type": a.action_type.value, "target": a.target}
-                    for a in result.actions_taken
-                ],
-                ensure_ascii=False,
-            )
-
-            session_factory = get_shared_session_factory()
-            with session_factory() as session:
-                session.execute(
-                    text("""
-                        INSERT INTO wiii_heartbeat_audit
-                        (id, cycle_number, actions_taken, insights_gained, duration_ms,
-                         error, organization_id, created_at)
-                        VALUES (:id, :cycle_number, :actions_taken, :insights_gained,
-                                :duration_ms, :error, :org_id, NOW())
-                    """),
-                    {
-                        "id": str(result.cycle_id),
-                        "cycle_number": self._heartbeat_count,
-                        "actions_taken": actions_json,
-                        "insights_gained": result.insights_gained,
-                        "duration_ms": result.duration_ms,
-                        "error": result.error,
-                        "org_id": effective_org_id,
-                    },
-                )
-                session.commit()
-        except Exception as e:
-            logger.warning("[HEARTBEAT] Failed to save audit record: %s", e)
+        await save_heartbeat_audit_impl(self._heartbeat_count, result)
 
     # =========================================================================
     # Sprint 171: Rate limiting
@@ -920,38 +517,29 @@ class HeartbeatScheduler:
 
     def _check_daily_limit(self) -> bool:
         """Check if daily cycle limit has been reached. Resets at midnight UTC+7."""
-        from app.core.config import settings
+        from app.engine.living_agent.heartbeat_runtime_support import check_daily_limit_impl
 
-        now_vn = datetime.now(timezone.utc) + _VN_OFFSET
-        today_str = now_vn.strftime("%Y-%m-%d")
-
-        # Reset counter at midnight
-        if self._daily_reset_date != today_str:
-            self._daily_reset_date = today_str
-            self._daily_cycle_count = 0
-
-        return self._daily_cycle_count < settings.living_agent_max_daily_cycles
+        return check_daily_limit_impl(self)
 
     def _is_active_hours(self) -> bool:
         """Check if current time is within configured active hours (UTC+7)."""
         from app.core.config import settings
-        now_vn = datetime.now(timezone.utc) + _VN_OFFSET
+
+        now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
         hour = now_vn.hour
         start = settings.living_agent_active_hours_start
         end = settings.living_agent_active_hours_end
 
         if start <= end:
             return start <= hour < end
-        else:
-            # Wraps midnight (e.g., 22:00 - 06:00)
-            return hour >= start or hour < end
+        return hour >= start or hour < end
 
     def _is_journal_time(self) -> bool:
         """Check if it's the right time for daily journal (morning or evening).
 
         Sprint 210: Expanded from evening-only to morning+evening windows.
         """
-        now_vn = datetime.now(timezone.utc) + _VN_OFFSET
+        now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
         return (8 <= now_vn.hour <= 9) or (20 <= now_vn.hour <= 22)
 
     # =========================================================================
@@ -960,25 +548,9 @@ class HeartbeatScheduler:
 
     async def _check_graduation_daily(self) -> None:
         """Check autonomy graduation once per day (idempotent)."""
-        try:
-            now_vn = datetime.now(timezone.utc) + _VN_OFFSET
-            today = now_vn.strftime("%Y-%m-%d")
-            if self._graduation_checked_date == today:
-                return  # Already checked today
+        from app.engine.living_agent.heartbeat_runtime_support import check_graduation_daily_impl
 
-            self._graduation_checked_date = today
-
-            from app.core.config import settings
-            if not getattr(settings, "living_agent_enable_autonomy_graduation", False):
-                return
-
-            from app.engine.living_agent.autonomy_manager import get_autonomy_manager
-            manager = get_autonomy_manager()
-            upgraded = await manager.check_graduation()
-            if upgraded:
-                logger.info("[HEARTBEAT] Autonomy graduation proposed")
-        except Exception as e:
-            logger.debug("[HEARTBEAT] Graduation check failed: %s", e)
+        await check_graduation_daily_impl(self)
 
     # =========================================================================
     # Sprint 213: SoulBridge status broadcast
@@ -986,26 +558,9 @@ class HeartbeatScheduler:
 
     async def _broadcast_soul_bridge(self, engine, result: HeartbeatResult) -> None:
         """Broadcast heartbeat status to connected peer souls via SoulBridge."""
-        try:
-            from app.core.config import settings
-            if not getattr(settings, "enable_soul_bridge", False):
-                return
+        from app.engine.living_agent.heartbeat_runtime_support import broadcast_soul_bridge_impl
 
-            from app.engine.soul_bridge import get_soul_bridge
-            bridge = get_soul_bridge()
-            if not bridge.is_initialized:
-                return
-
-            payload = {
-                "cycle": self._heartbeat_count,
-                "mood": engine.mood.value if hasattr(engine.mood, "value") else str(engine.mood),
-                "energy": engine.energy,
-                "actions_taken": len(result.actions_taken),
-                "duration_ms": result.duration_ms,
-            }
-            await bridge.broadcast_status(payload)
-        except Exception as e:
-            logger.debug("[HEARTBEAT] SoulBridge broadcast failed: %s", e)
+        await broadcast_soul_bridge_impl(self._heartbeat_count, engine, result)
 
     # =========================================================================
     # Sprint 171b: Messenger notification for discoveries
@@ -1017,42 +572,7 @@ class HeartbeatScheduler:
         Called when browsing finds high-relevance items (score > 0.7).
         Uses NotificationDispatcher to route to Messenger/WebSocket/Telegram.
         """
-        try:
-            from app.core.config import settings
-
-            channel = settings.living_agent_notification_channel
-            if channel == "websocket" and not settings.enable_websocket:
-                return  # No point sending WS notification if WS is disabled
-
-            # Format discovery message in Vietnamese
-            lines = [f"Wiii tìm thấy {len(items)} nội dung thú vị về {topic}:"]
-            for item in items[:3]:
-                title = item.title[:100] if item.title else "Không có tiêu đề"
-                url = item.url or ""
-                score = f" ({item.relevance_score:.0%})" if item.relevance_score else ""
-                lines.append(f"• {title}{score}")
-                if url:
-                    lines.append(f"  {url}")
-            message = "\n".join(lines)
-
-            from app.services.notification_dispatcher import get_notification_dispatcher
-            dispatcher = get_notification_dispatcher()
-            result = await dispatcher.notify_user(
-                user_id="wiii_owner",
-                message=message,
-                channel=channel,
-            )
-
-            if result.get("delivered"):
-                logger.info("[HEARTBEAT] Discovery notification sent via %s", channel)
-            else:
-                logger.debug(
-                    "[HEARTBEAT] Discovery notification not delivered: %s",
-                    result.get("detail", "unknown"),
-                )
-
-        except Exception as e:
-            logger.debug("[HEARTBEAT] Discovery notification failed: %s", e)
+        await notify_discovery_impl(items, topic, logger)
 
 
 # =============================================================================

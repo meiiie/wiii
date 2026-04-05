@@ -12,6 +12,7 @@ This module provides a SINGLE shared database engine for all repositories.
 import logging
 
 from sqlalchemy import create_engine, event, text
+from sqlalchemy.exc import NoSuchModuleError
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
@@ -25,6 +26,31 @@ logger = logging.getLogger(__name__)
 _shared_engine = None
 _shared_session_factory = None
 _engine_initialized = False
+
+
+def _build_sync_postgres_url_candidates(raw_url: str) -> list[str]:
+    """Return dialect candidates for sync PostgreSQL engines."""
+    candidates: list[str] = []
+
+    def _add(candidate: str) -> None:
+        if candidate not in candidates:
+            candidates.append(candidate)
+
+    normalized = raw_url
+    if raw_url.startswith("postgresql://"):
+        normalized = raw_url.replace("postgresql://", "postgresql+psycopg://", 1)
+
+    _add(normalized)
+
+    if normalized.startswith("postgresql+psycopg://"):
+        _add(normalized.replace("postgresql+psycopg://", "postgresql+psycopg2://", 1))
+    elif normalized.startswith("postgresql+psycopg2://"):
+        _add(normalized.replace("postgresql+psycopg2://", "postgresql+psycopg://", 1))
+
+    if raw_url.startswith("postgresql://"):
+        _add(raw_url)
+
+    return candidates
 
 
 def get_shared_engine():
@@ -48,23 +74,38 @@ def get_shared_engine():
     
     if _shared_engine is None:
         try:
-            # Sprint 165: Use postgresql+psycopg:// dialect for psycopg3 sync driver
-            # (psycopg2-binary was removed in Sprint 154, replaced by psycopg[binary]>=3.1)
-            sync_url = settings.postgres_url_sync
-            if sync_url.startswith("postgresql://") and "+psycopg" not in sync_url:
-                sync_url = sync_url.replace("postgresql://", "postgresql+psycopg://", 1)
-
             pool_size = settings.async_pool_min_size
             max_overflow = settings.async_pool_max_size - settings.async_pool_min_size
-            _shared_engine = create_engine(
-                sync_url,
-                echo=False,
-                pool_pre_ping=True,
-                pool_size=pool_size,
-                max_overflow=max_overflow,
-                pool_timeout=30,
-                pool_recycle=1800
-            )
+            last_error = None
+            sync_candidates = _build_sync_postgres_url_candidates(settings.postgres_url_sync)
+            for sync_url in sync_candidates:
+                try:
+                    _shared_engine = create_engine(
+                        sync_url,
+                        echo=False,
+                        pool_pre_ping=True,
+                        pool_size=pool_size,
+                        max_overflow=max_overflow,
+                        pool_timeout=30,
+                        pool_recycle=1800
+                    )
+                    if sync_url != sync_candidates[0]:
+                        logger.warning(
+                            "Shared database engine falling back to sync dialect URL: %s",
+                            sync_url,
+                        )
+                    break
+                except NoSuchModuleError as exc:
+                    last_error = exc
+                    logger.warning(
+                        "Sync database dialect unavailable for URL '%s': %s",
+                        sync_url,
+                        exc,
+                    )
+            if _shared_engine is None:
+                if last_error is not None:
+                    raise last_error
+                raise RuntimeError("No usable sync PostgreSQL SQLAlchemy dialect candidate found")
             # Sprint 171: Set statement_timeout + idle_in_transaction on checkout
             # CIS PostgreSQL Benchmark 5.4 — prevent runaway queries
             stmt_timeout = getattr(settings, "postgres_statement_timeout_ms", 30000)

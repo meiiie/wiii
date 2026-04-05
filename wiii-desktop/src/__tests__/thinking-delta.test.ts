@@ -139,7 +139,7 @@ describe("appendThinkingDelta action", () => {
     expect(state.streamingThinking).toBe("hello world");
   });
 
-  it("creates new thinking block if no blocks exist", () => {
+  it("creates new thinking block if no blocks exist without surfacing the raw node as label", () => {
     const store = useChatStore.getState();
     store.appendThinkingDelta("first token", "tutor_agent");
 
@@ -148,7 +148,7 @@ describe("appendThinkingDelta action", () => {
     expect(state.streamingBlocks[0].type).toBe("thinking");
     if (state.streamingBlocks[0].type === "thinking") {
       expect(state.streamingBlocks[0].content).toBe("first token");
-      expect(state.streamingBlocks[0].label).toBe("tutor_agent");
+      expect(state.streamingBlocks[0].label).toBeUndefined();
     }
   });
 
@@ -217,13 +217,13 @@ describe("appendThinkingDelta action", () => {
     }
   });
 
-  it("sets label from node parameter", () => {
+  it("does not surface raw node names as thinking labels", () => {
     const store = useChatStore.getState();
     store.appendThinkingDelta("tok", "supervisor");
 
     const state = useChatStore.getState();
     if (state.streamingBlocks[0].type === "thinking") {
-      expect(state.streamingBlocks[0].label).toBe("supervisor");
+      expect(state.streamingBlocks[0].label).toBeUndefined();
     }
   });
 
@@ -235,6 +235,48 @@ describe("appendThinkingDelta action", () => {
     const state = useChatStore.getState();
     if (state.streamingBlocks[0].type === "thinking") {
       expect(state.streamingBlocks[0].label).toBe("routing");
+    }
+  });
+
+  it("ignores replayed multi-word thinking chunks instead of appending them twice", () => {
+    const store = useChatStore.getState();
+
+    store.appendThinkingDelta("Minh dang doi chieu so lieu dau vao.");
+    store.appendThinkingDelta("Minh dang doi chieu so lieu dau vao.");
+
+    const state = useChatStore.getState();
+    const thinkingBlocks = state.streamingBlocks.filter((block) => block.type === "thinking");
+    expect(thinkingBlocks).toHaveLength(1);
+    if (thinkingBlocks[0]?.type === "thinking") {
+      expect(thinkingBlocks[0].content).toBe("Minh dang doi chieu so lieu dau vao.");
+    }
+  });
+
+  it("keeps a repeated summary delta out of the visible body text", () => {
+    const store = useChatStore.getState();
+    store.openThinkingBlock(
+      "Bat nhip cau hoi",
+      "Doc cau nay, minh thay trong do co mot khoang chung xuong.",
+      "direct",
+      "attune",
+      { stepId: "step-summary" },
+      "header_only",
+    );
+
+    store.appendThinkingDelta(
+      "Doc cau nay, minh thay trong do co mot khoang chung xuong.",
+      "direct",
+      { stepId: "step-summary" },
+    );
+    store.closeThinkingBlock();
+
+    const state = useChatStore.getState();
+    const thinkingBlocks = state.streamingBlocks.filter((block) => block.type === "thinking");
+    expect(thinkingBlocks).toHaveLength(1);
+    if (thinkingBlocks[0]?.type === "thinking") {
+      expect(thinkingBlocks[0].content).toBe("");
+      expect(thinkingBlocks[0].summary).toBe("Doc cau nay, minh thay trong do co mot khoang chung xuong.");
+      expect(thinkingBlocks[0].summaryMode).toBe("header_only");
     }
   });
 

@@ -1,0 +1,18 @@
+name: lms-teacher-lesson-experience
+host_type: lms
+page_types: [course_editor, lesson]
+roles: [teacher, admin]
+workflow_stages: [authoring, learning]
+description: "Lesson flow, visual, motion, and experience design"
+priority: 0.92
+
+prompt_addition: |
+  Khi teacher muốn cải thiện lesson experience:
+  - Ưu tiên visual, motion, và simulation phục vụ hiểu bài, không trang trí đơn thuần.
+  - Bắt đầu từ block structure, theme tokens, media modules, layout presets, rồi mới cân nhắc custom app/code.
+  - Giữ giọng Wiii như một producer/editor tinh tế: sống, có trực giác, nhưng không lấn át nhiệm vụ.
+  - Với inline visual: article/chart nên SVG-first. Với simulation: Canvas-first.
+
+tools:
+  - tool_generate_visual
+  - tool_create_visual_code

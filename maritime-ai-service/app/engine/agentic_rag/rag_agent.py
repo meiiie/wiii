@@ -15,7 +15,6 @@ Feature: sparse-search-migration
 """
 
 import logging
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -23,9 +22,11 @@ from typing import Any, Dict, List, Optional, Tuple
 # extract_thinking_from_response is imported inside functions where needed
 
 # CHỈ THỊ SỐ 29: PromptLoader for SOTA thinking instruction
-from app.prompts.prompt_loader import PromptLoader
+from app.prompts.prompt_loader import PromptLoader, get_prompt_loader
 
 from app.core.config import settings
+from app.engine.agentic_rag.runtime_llm_socket import resolve_agentic_rag_llm
+from app.engine.llm_factory import ThinkingTier
 from app.engine.openrouter_routing import build_openrouter_extra_body
 from app.engine.llm_pool import get_llm_moderate
 
@@ -36,8 +37,17 @@ from app.models.knowledge_graph import (
     KnowledgeNode,
     RelationType,
 )
+from app.engine.agentic_rag.rag_agent_contracts import (
+    EvidenceImage,
+    MaritimeDocumentParser,
+    RAGResponse,
+)
 from app.repositories.neo4j_knowledge_repository import Neo4jKnowledgeRepository
 from app.engine.rrf_reranker import HybridSearchResult
+from app.engine.agentic_rag.rag_agent_runtime import (
+    query_impl,
+    query_streaming_impl,
+)
 
 # Extracted modules for document retrieval and answer generation
 from app.engine.agentic_rag.document_retriever import DocumentRetriever
@@ -75,56 +85,6 @@ def get_knowledge_repository():
         logger.info("Neo4j unavailable - RAG uses PostgreSQL hybrid search")
 
     return _knowledge_repo
-
-
-@dataclass
-class EvidenceImage:
-    """
-    Evidence image reference for Multimodal RAG.
-
-    CHỈ THỊ KỸ THUẬT SỐ 26: Evidence Images
-    **Feature: multimodal-rag-vision**
-    """
-    url: str
-    page_number: int
-    document_id: str = ""
-
-
-@dataclass
-class RAGResponse:
-    """
-    Response from RAG Agent with citations.
-
-    **Validates: Requirements 4.1**
-    **Feature: multimodal-rag-vision** - Added evidence_images
-    **Feature: document-kg** - Added entity_context for GraphRAG
-    """
-    content: str
-    citations: List[Citation]
-    is_fallback: bool = False
-    disclaimer: Optional[str] = None
-    evidence_images: List[EvidenceImage] = None  # CHỈ THỊ 26: Evidence Images
-    entity_context: Optional[str] = None  # Feature: document-kg - GraphRAG entity context
-    related_entities: List[str] = None  # Feature: document-kg - Related entity names
-    native_thinking: Optional[str] = None  # CHỈ THỊ SỐ 29: Gemini native thinking for hybrid display
-
-    def __post_init__(self):
-        if self.evidence_images is None:
-            self.evidence_images = []
-        if self.related_entities is None:
-            self.related_entities = []
-
-    def has_citations(self) -> bool:
-        """Check if response has citations."""
-        return len(self.citations) > 0
-
-    def has_evidence_images(self) -> bool:
-        """Check if response has evidence images."""
-        return len(self.evidence_images) > 0
-
-    def has_entity_context(self) -> bool:
-        """Check if response has entity context from GraphRAG."""
-        return bool(self.entity_context)
 
 
 class RAGAgent:
@@ -190,7 +150,7 @@ class RAGAgent:
             self._graph_rag = graph_rag_service
 
         # CHỈ THỊ SỐ 29: Initialize PromptLoader for SOTA thinking instruction
-        self._prompt_loader = PromptLoader()
+        self._prompt_loader = get_prompt_loader()
 
         self._llm = self._init_llm()
 
@@ -202,6 +162,10 @@ class RAGAgent:
         Supports Google Gemini (primary) and OpenAI/OpenRouter (fallback).
         """
         provider = getattr(settings, 'llm_provider', 'google')
+
+        runtime_llm = self._resolve_runtime_llm()
+        if runtime_llm is not None:
+            return runtime_llm
 
         # Try Google Gemini first with MODERATE tier thinking
         if provider == "google" or (not settings.openai_api_key and settings.google_api_key):
@@ -251,6 +215,18 @@ class RAGAgent:
             logger.error("Failed to initialize LLM for RAG: %s", e)
             return None
 
+    def _resolve_runtime_llm(self):
+        """Resolve the request-time MODERATE-tier synthesis LLM."""
+        llm = resolve_agentic_rag_llm(
+            tier=ThinkingTier.MODERATE,
+            cached_llm=getattr(self, "_llm", None),
+            fallback_factory=get_llm_moderate,
+            component="RAGAgent",
+        )
+        if llm is not None:
+            self._llm = llm
+        return llm
+
     async def query(
         self,
         question: str,
@@ -276,109 +252,13 @@ class RAGAgent:
         **Spec: CHỈ THỊ KỸ THUẬT SỐ 03 - Role-Based Prompting**
         **Feature: hybrid-search, document-kg**
         """
-        # Check if search is available
-        if not self._hybrid_search.is_available():
-            return self._create_fallback_response(question)
-
-        # Feature: document-kg - Use GraphRAG for entity-enriched search
-        entity_context = ""
-        related_entities = []
-        hybrid_results = []
-
-        if self._graph_rag and self._graph_rag.is_available():
-            try:
-                # GraphRAG search with entity context
-                graph_results, entity_ctx = await self._graph_rag.search_with_graph_context(
-                    query=question,
-                    limit=limit
-                )
-
-                if graph_results:
-                    # Convert GraphEnhancedResult to HybridSearchResult format
-                    hybrid_results = self._graph_to_hybrid_results(graph_results)
-                    entity_context = entity_ctx
-
-                    # Collect related entities from results
-                    # SOTA FIX: Separate entity dicts and regulation strings to avoid unhashable dict error
-                    related_entity_dicts = []  # List[Dict] - not hashable
-                    related_regulation_names = []  # List[str] - hashable
-
-                    for gr in graph_results:
-                        if gr.related_entities:
-                            related_entity_dicts.extend(gr.related_entities[:3])
-                        if gr.related_regulations:
-                            related_regulation_names.extend(gr.related_regulations[:3])
-
-                    # Deduplicate entities by ID (SOTA: hashable key extraction)
-                    seen_entity_ids = set()
-                    unique_entities = []
-                    for entity in related_entity_dicts:
-                        entity_id = entity.get("id") or entity.get("name", str(entity))
-                        if entity_id not in seen_entity_ids:
-                            seen_entity_ids.add(entity_id)
-                            unique_entities.append(entity)
-
-                    # Deduplicate regulation names (strings are hashable)
-                    unique_regulations = list(dict.fromkeys(related_regulation_names))
-
-                    # Combine for backward compatibility
-                    related_entities = unique_entities[:5] + unique_regulations[:5]
-
-                    logger.info("[GraphRAG] Found %d results with entity context", len(hybrid_results))
-            except Exception as e:
-                logger.warning("GraphRAG search failed, falling back to hybrid: %s", e)
-                hybrid_results = []
-
-        # Fallback to standard hybrid search if GraphRAG unavailable or failed
-        if not hybrid_results:
-            hybrid_results = await self._hybrid_search.search(question, limit=limit)
-
-        if not hybrid_results:
-            # Fallback to legacy Neo4j search
-            logger.info("Hybrid search returned no results, falling back to legacy search")
-            nodes = await self._kg.hybrid_search(question, limit=limit)
-            if not nodes:
-                return self._create_no_results_response(question)
-            expanded_nodes = await self._expand_context(nodes)
-            citations = await self._kg.get_citations(nodes)
-            # CHỈ THỊ SỐ 29: Unpack tuple with native_thinking
-            content, native_thinking = self._generate_response(question, expanded_nodes, conversation_history, user_role, entity_context)
-            return RAGResponse(content=content, citations=citations, is_fallback=False, native_thinking=native_thinking)
-
-        # Convert hybrid results to KnowledgeNodes for compatibility
-        nodes = self._hybrid_results_to_nodes(hybrid_results)
-
-        # Expand context with related nodes
-        expanded_nodes = await self._expand_context(nodes)
-
-        # Generate citations with relevance scores
-        citations = self._generate_hybrid_citations(hybrid_results)
-
-        # Generate response content with entity context
-        # CHỈ THỊ SỐ 29: Unpack tuple with native_thinking
-        content, native_thinking = self._generate_response(
-            question, expanded_nodes, conversation_history, user_role, entity_context
-        )
-
-        # Add search method info to response
-        search_method = hybrid_results[0].search_method if hybrid_results else "hybrid"
-        if entity_context:
-            search_method = "graph_enhanced"
-        if search_method not in ["hybrid", "graph_enhanced"]:
-            content += f"\n\n*[Tìm kiếm: {search_method}]*"
-
-        # CHỈ THỊ 26: Collect evidence images
-        node_ids = [r.node_id for r in hybrid_results]
-        evidence_images = await self._collect_evidence_images(node_ids, max_images=3)
-
-        return RAGResponse(
-            content=content,
-            citations=citations,
-            is_fallback=False,
-            evidence_images=evidence_images,
-            entity_context=entity_context,
-            related_entities=related_entities,
-            native_thinking=native_thinking  # CHỈ THỊ SỐ 29: Propagate native thinking
+        return await query_impl(
+            self,
+            question=question,
+            limit=limit,
+            conversation_history=conversation_history,
+            user_role=user_role,
+            response_cls=RAGResponse,
         )
 
     # ==========================================================================
@@ -394,7 +274,9 @@ class RAGAgent:
         user_name: Optional[str] = None,
         is_follow_up: bool = False,
         entity_context: str = "",
+        response_language: Optional[str] = None,
         host_context_prompt: str = "",  # Sprint 222
+        living_context_prompt: str = "",
         skill_context: str = "",
         capability_context: str = "",
     ) -> RAGResponse:
@@ -436,7 +318,9 @@ class RAGAgent:
             entity_context=entity_context,
             user_name=user_name,
             is_follow_up=is_follow_up,
+            response_language=response_language,
             host_context_prompt=host_context_prompt,  # Sprint 222
+            living_context_prompt=living_context_prompt,
             skill_context=skill_context,
             capability_context=capability_context,
         )
@@ -485,63 +369,14 @@ class RAGAgent:
 
         **Feature: p3-sota-streaming**
         """
-        # Yield thinking event for retrieval phase
-        yield {"type": "thinking", "content": "🔍 Đang tra cứu cơ sở dữ liệu..."}
-
-        # Check if search is available
-        if not self._hybrid_search.is_available():
-            yield {"type": "error", "content": "Cơ sở dữ liệu không khả dụng"}
-            return
-
-        # Perform hybrid search (same as regular query)
-        entity_context = ""
-        hybrid_results = []
-
-        if self._graph_rag and self._graph_rag.is_available():
-            try:
-                graph_results, entity_ctx = await self._graph_rag.search_with_graph_context(
-                    query=question, limit=limit
-                )
-                if graph_results:
-                    hybrid_results = self._graph_to_hybrid_results(graph_results)
-                    entity_context = entity_ctx
-            except Exception as e:
-                logger.warning("[STREAMING] GraphRAG failed: %s", e)
-
-        if not hybrid_results:
-            hybrid_results = await self._hybrid_search.search(question, limit=limit)
-
-        if not hybrid_results:
-            yield {"type": "answer", "content": "Không tìm thấy thông tin về chủ đề này."}
-            yield {"type": "done", "content": ""}
-            return
-
-        # Yield thinking event
-        yield {"type": "thinking", "content": f"📚 Tìm thấy {len(hybrid_results)} tài liệu liên quan"}
-
-        # Convert to nodes
-        nodes = self._hybrid_results_to_nodes(hybrid_results)
-        expanded_nodes = await self._expand_context(nodes)
-
-        # Yield thinking event before generation
-        yield {"type": "thinking", "content": "✍️ Đang tạo câu trả lời..."}
-
-        # P3 SOTA: Stream the generation
-        async for chunk in self._generate_response_streaming(
-            question, expanded_nodes, conversation_history, user_role, entity_context
+        async for event in query_streaming_impl(
+            self,
+            question=question,
+            limit=limit,
+            conversation_history=conversation_history,
+            user_role=user_role,
         ):
-            yield {"type": "answer", "content": chunk}
-
-        # After generation, yield sources
-        citations = self._generate_hybrid_citations(hybrid_results)
-        sources_data = [
-            {"title": c.title, "content": c.source or "", "document_id": c.document_id or ""}
-            for c in citations
-        ]
-        yield {"type": "sources", "content": sources_data}
-
-        # Done signal
-        yield {"type": "done", "content": ""}
+            yield event
 
     def _graph_to_hybrid_results(self, graph_results) -> List[HybridSearchResult]:
         """Convert GraphEnhancedResult to HybridSearchResult for compatibility."""
@@ -619,7 +454,9 @@ class RAGAgent:
         entity_context: str = "",  # Feature: document-kg
         user_name: Optional[str] = None,
         is_follow_up: bool = False,
+        response_language: Optional[str] = None,
         host_context_prompt: str = "",  # Sprint 222
+        living_context_prompt: str = "",
         skill_context: str = "",
         capability_context: str = "",
     ) -> Tuple[str, Optional[str]]:
@@ -643,7 +480,7 @@ class RAGAgent:
         **Spec: CHỈ THỊ KỸ THUẬT SỐ 03, CHỈ THỊ SỐ 29**
         """
         return AnswerGenerator.generate_response(
-            llm=self._llm,
+            llm=self._resolve_runtime_llm(),
             prompt_loader=self._prompt_loader,
             question=question,
             nodes=nodes,
@@ -652,7 +489,9 @@ class RAGAgent:
             entity_context=entity_context,
             user_name=user_name,
             is_follow_up=is_follow_up,
+            response_language=response_language,
             host_context_prompt=host_context_prompt,  # Sprint 222
+            living_context_prompt=living_context_prompt,
             skill_context=skill_context,
             capability_context=capability_context,
         )
@@ -718,7 +557,9 @@ class RAGAgent:
         conversation_history: str = "",
         user_role: str = "student",
         entity_context: str = "",
+        response_language: Optional[str] = None,
         host_context_prompt: str = "",  # Sprint 222
+        living_context_prompt: str = "",
         skill_context: str = "",
         capability_context: str = "",
     ):
@@ -736,14 +577,16 @@ class RAGAgent:
         **Feature: p3-sota-streaming**
         """
         async for chunk in AnswerGenerator.generate_response_streaming(
-            llm=self._llm,
+            llm=self._resolve_runtime_llm(),
             prompt_loader=self._prompt_loader,
             question=question,
             nodes=nodes,
             conversation_history=conversation_history,
             user_role=user_role,
             entity_context=entity_context,
+            response_language=response_language,
             host_context_prompt=host_context_prompt,  # Sprint 222
+            living_context_prompt=living_context_prompt,
             skill_context=skill_context,
             capability_context=capability_context,
         ):
@@ -760,76 +603,6 @@ class RAGAgent:
         **Feature: p3-sota-streaming, gemini-3-flash-thinking**
         """
         return AnswerGenerator.extract_content_from_chunk(chunk)
-
-
-class MaritimeDocumentParser:
-    """
-    Parser for maritime regulation documents.
-
-    Extracts structured data from SOLAS, COLREGs, etc.
-
-    **Validates: Requirements 4.5, 4.6**
-    """
-
-    @staticmethod
-    def parse_regulation(
-        code: str,
-        title: str,
-        content: str,
-        source: str = ""
-    ) -> KnowledgeNode:
-        """
-        Parse a regulation into a KnowledgeNode.
-
-        Args:
-            code: Regulation code (e.g., "SOLAS II-2/10")
-            title: Regulation title
-            content: Full regulation text
-            source: Source document
-
-        Returns:
-            KnowledgeNode representing the regulation
-
-        **Validates: Requirements 4.5**
-        """
-        from app.models.knowledge_graph import NodeType
-
-        return KnowledgeNode(
-            id=f"reg_{code.lower().replace('/', '_').replace('-', '_')}",
-            node_type=NodeType.REGULATION,
-            title=title,
-            content=content,
-            source=source,
-            metadata={"code": code}
-        )
-
-    @staticmethod
-    def serialize_to_document(node: KnowledgeNode) -> str:
-        """
-        Serialize a KnowledgeNode back to document format.
-
-        Args:
-            node: The node to serialize
-
-        Returns:
-            Document string representation
-
-        **Validates: Requirements 4.6**
-        """
-        parts = []
-
-        # Add code if available
-        code = node.metadata.get("code", "")
-        if code:
-            parts.append(f"Code: {code}")
-
-        parts.append(f"Title: {node.title}")
-        parts.append(f"Content: {node.content}")
-
-        if node.source:
-            parts.append(f"Source: {node.source}")
-
-        return "\n".join(parts)
 
 
 # =============================================================================

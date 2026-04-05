@@ -159,6 +159,112 @@ describe("PreviewPanel — Selected Preview", () => {
     expect(state.selectedPreviewId).toBeNull();
     // The component would show "Chon mot the xem truoc de xem chi tiet" empty state
   });
+
+  it("supports host action previews with preview token metadata", () => {
+    const previews = [
+      makePreviewItem({
+        preview_id: "host-preview-1",
+        preview_type: "host_action",
+        title: "Preview quiz publish",
+        snippet: "Quiz publish preview ready.",
+        metadata: {
+          preview_kind: "quiz_publish",
+          preview_token: "preview-quiz-1",
+          quiz_id: "quiz-1",
+        },
+      }),
+    ];
+    setupConversationWithPreviews(previews);
+
+    useUIStore.getState().openPreview("host-preview-1");
+
+    const selectedId = useUIStore.getState().selectedPreviewId;
+    const conv = useChatStore.getState().conversations[0];
+    const lastAssistant = conv.messages.find((m) => m.role === "assistant");
+    const found = lastAssistant?.previews?.find((p) => p.preview_id === selectedId);
+    expect(found?.preview_type).toBe("host_action");
+    expect(found?.metadata?.preview_token).toBe("preview-quiz-1");
+  });
+
+  it("stores lesson before/after snapshots for host action previews", () => {
+    const previews = [
+      makePreviewItem({
+        preview_id: "host-preview-diff-1",
+        preview_type: "host_action",
+        title: "Preview cap nhat bai hoc",
+        snippet: "Lesson patch preview ready.",
+        metadata: {
+          preview_kind: "lesson_patch",
+          preview_token: "lesson-preview-1",
+          apply_action: "authoring.apply_lesson_patch",
+          lesson_before: {
+            title: "Bai hoc cu",
+            description: "Mo ta cu",
+            content_excerpt: "Noi dung cu",
+            blocks: [
+              { id: "b1", label: "Doan 1", excerpt: "Noi dung cu" },
+            ],
+          },
+          lesson_after: {
+            title: "Bai hoc moi",
+            description: "Mo ta moi",
+            content_excerpt: "Noi dung moi",
+            blocks: [
+              { id: "b1", label: "Doan 1", excerpt: "Noi dung moi" },
+            ],
+          },
+          block_diff: {
+            changed: 1,
+            added: 0,
+            removed: 0,
+            unchanged: 0,
+            items: [
+              {
+                index: 0,
+                status: "changed",
+              },
+            ],
+          },
+        },
+      }),
+    ];
+    setupConversationWithPreviews(previews);
+
+    useUIStore.getState().openPreview("host-preview-diff-1");
+
+    const conv = useChatStore.getState().conversations[0];
+    const lastAssistant = conv.messages.find((m) => m.role === "assistant");
+    const found = lastAssistant?.previews?.find((p) => p.preview_id === "host-preview-diff-1");
+    expect(found?.metadata?.lesson_before).toEqual({
+      title: "Bai hoc cu",
+      description: "Mo ta cu",
+      content_excerpt: "Noi dung cu",
+      blocks: [
+        { id: "b1", label: "Doan 1", excerpt: "Noi dung cu" },
+      ],
+    });
+    expect(found?.metadata?.lesson_after).toEqual({
+      title: "Bai hoc moi",
+      description: "Mo ta moi",
+      content_excerpt: "Noi dung moi",
+      blocks: [
+        { id: "b1", label: "Doan 1", excerpt: "Noi dung moi" },
+      ],
+    });
+    expect(found?.metadata?.apply_action).toBe("authoring.apply_lesson_patch");
+    expect(found?.metadata?.block_diff).toEqual({
+      changed: 1,
+      added: 0,
+      removed: 0,
+      unchanged: 0,
+      items: [
+        {
+          index: 0,
+          status: "changed",
+        },
+      ],
+    });
+  });
 });
 
 // =============================================================================

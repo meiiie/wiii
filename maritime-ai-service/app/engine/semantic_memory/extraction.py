@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from app.core.config import settings
+from app.engine.embedding_runtime import EmbeddingBackendProtocol
 from app.engine.llm_pool import get_llm_light
 from app.services.output_processor import extract_thinking_from_response
 from app.models.semantic_memory import (
@@ -27,7 +28,6 @@ from app.models.semantic_memory import (
     UserFactExtraction,
 )
 from app.repositories.semantic_memory_repository import SemanticMemoryRepository
-from app.engine.gemini_embedding import GeminiOptimizedEmbeddings
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ class FactExtractor:
     
     def __init__(
         self,
-        embeddings: GeminiOptimizedEmbeddings,
+        embeddings: EmbeddingBackendProtocol,
         repository: SemanticMemoryRepository,
         llm=None
     ):
@@ -104,7 +104,7 @@ class FactExtractor:
         Initialize FactExtractor.
         
         Args:
-            embeddings: GeminiOptimizedEmbeddings instance
+            embeddings: Semantic embedding backend instance
             repository: SemanticMemoryRepository instance
             llm: Optional LLM for fact extraction
         """
@@ -295,17 +295,29 @@ class FactExtractor:
                 logger.debug("Fact type '%s' is invalid/ignored, skipping storage", fact_type)
                 return False
 
-            # Step 2: Generate embedding for the fact
-            fact_embedding = (await self._embeddings.aembed_documents([fact_content]))[0]
+            # Step 2: Generate embedding for the fact when available.
+            fact_embedding = []
+            try:
+                fact_embeddings = await self._embeddings.aembed_documents([fact_content])
+                if fact_embeddings and fact_embeddings[0]:
+                    fact_embedding = fact_embeddings[0]
+            except Exception as exc:
+                logger.warning(
+                    "Fact embedding unavailable for user %s; continuing without vector: %s",
+                    user_id,
+                    exc,
+                )
 
             # Step 3: SOTA - Check for semantic duplicate first
             # Find existing fact with high embedding similarity
-            semantic_duplicate = self._repository.find_similar_fact_by_embedding(
-                user_id=user_id,
-                embedding=fact_embedding,
-                similarity_threshold=settings.fact_similarity_threshold,  # Configurable
-                memory_type=MemoryType.USER_FACT
-            )
+            semantic_duplicate = None
+            if fact_embedding:
+                semantic_duplicate = self._repository.find_similar_fact_by_embedding(
+                    user_id=user_id,
+                    embedding=fact_embedding,
+                    similarity_threshold=settings.fact_similarity_threshold,  # Configurable
+                    memory_type=MemoryType.USER_FACT
+                )
 
             metadata = {
                 "fact_type": validated_type,
@@ -320,13 +332,21 @@ class FactExtractor:
             if semantic_duplicate:
                 # SOTA: Update semantically similar fact
                 logger.info("Found semantic duplicate for %s, updating...", validated_type)
-                success = self._repository.update_fact(
-                    fact_id=semantic_duplicate.id,
-                    content=fact_content,
-                    embedding=fact_embedding,
-                    metadata=metadata,
-                    user_id=user_id,  # Sprint 121 RC-7: defense-in-depth
-                )
+                if fact_embedding:
+                    success = self._repository.update_fact(
+                        fact_id=semantic_duplicate.id,
+                        content=fact_content,
+                        embedding=fact_embedding,
+                        metadata=metadata,
+                        user_id=user_id,  # Sprint 121 RC-7: defense-in-depth
+                    )
+                else:
+                    success = self._repository.update_fact_preserve_embedding(
+                        fact_id=semantic_duplicate.id,
+                        content=fact_content,
+                        metadata=metadata,
+                        user_id=user_id,
+                    )
                 if success:
                     logger.info("Updated similar fact for %s: %s=%s...", user_id, validated_type, fact_content[:50])
                 return success
@@ -336,13 +356,21 @@ class FactExtractor:
             
             if existing_fact:
                 # Step 4a: Update existing fact (UPSERT - Update)
-                success = self._repository.update_fact(
-                    fact_id=existing_fact.id,
-                    content=fact_content,
-                    embedding=fact_embedding,
-                    metadata=metadata,
-                    user_id=user_id,  # Sprint 121 RC-7: defense-in-depth
-                )
+                if fact_embedding:
+                    success = self._repository.update_fact(
+                        fact_id=existing_fact.id,
+                        content=fact_content,
+                        embedding=fact_embedding,
+                        metadata=metadata,
+                        user_id=user_id,  # Sprint 121 RC-7: defense-in-depth
+                    )
+                else:
+                    success = self._repository.update_fact_preserve_embedding(
+                        fact_id=existing_fact.id,
+                        content=fact_content,
+                        metadata=metadata,
+                        user_id=user_id,
+                    )
                 if success:
                     logger.info("Updated user fact for %s: %s=%s...", user_id, validated_type, fact_content[:50])
                 return success
@@ -357,8 +385,11 @@ class FactExtractor:
                     metadata=metadata,
                     session_id=session_id
                 )
-                
-                self._repository.save_memory(fact_memory)
+
+                saved_memory = self._repository.save_memory(fact_memory)
+                if saved_memory is None:
+                    logger.warning("Failed to persist new fact for %s (%s)", user_id, validated_type)
+                    return False
                 logger.info("Stored new user fact for %s: %s=%s...", user_id, validated_type, fact_content[:50])
                 
                 # Step 5: Enforce memory cap after insert

@@ -1,0 +1,1181 @@
+"""Direct response execution — LLM invocation, streaming, tool rounds.
+
+Extracted from graph.py — handles the core execution loop for the direct
+response lane including answer streaming, heartbeats, and multi-round
+tool calling.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from difflib import SequenceMatcher
+import json
+import logging
+import re
+import unicodedata
+import uuid
+import time
+from typing import Any, Optional
+
+from app.core.config import settings
+from app.engine.multi_agent.direct_reasoning import (
+    _DIRECT_ANALYSIS_PREFIXES,
+    _DIRECT_BROWSER_TOOLS,
+    _DIRECT_HOST_ACTION_PREFIX,
+    _DIRECT_LEGAL_TOOLS,
+    _DIRECT_LMS_PREFIX,
+    _DIRECT_MEMORY_TOOLS,
+    _DIRECT_NEWS_TOOLS,
+    _DIRECT_TIME_TOOLS,
+    _DIRECT_WEB_TOOLS,
+    _build_direct_tool_reflection,
+    _has_prefixed_tool,
+    _infer_direct_reasoning_cue,
+    _uses_host_action_tool,
+    _uses_lms_tool,
+)
+from app.engine.multi_agent.direct_intent import (
+    _looks_emotional_support_turn,
+    _looks_identity_selfhood_turn,
+    _looks_selfhood_followup_turn,
+)
+from app.engine.multi_agent.direct_wait_surface import (
+    _build_code_studio_wait_heartbeat_text,
+    _build_direct_wait_heartbeat_text,
+    _compact_visible_query,
+    _contains_wait_marker,
+    _thinking_start_label,
+)
+from app.engine.multi_agent.direct_opening_runtime import (
+    finalize_direct_opening_phase_impl,
+    start_direct_opening_phase_impl,
+)
+from app.engine.multi_agent.direct_visible_thinking_cleanup import (
+    looks_like_direct_selfhood_answer_draft_paragraph,
+    looks_like_direct_selfhood_english_meta_paragraph,
+    looks_like_direct_selfhood_meta_heading,
+    looks_like_direct_selfhood_meta_intro,
+    strip_direct_selfhood_filler_prefix,
+)
+from app.engine.multi_agent.direct_tool_rounds_runtime import (
+    execute_direct_tool_rounds_impl,
+)
+from app.engine.multi_agent.direct_response_runtime import (
+    extract_direct_response_impl,
+    resolve_direct_answer_primary_timeout_impl,
+    resolve_direct_answer_timeout_profile_impl,
+)
+from app.engine.multi_agent.state import AgentState
+
+from app.engine.multi_agent.direct_prompts import _resolve_tool_choice, _tool_name
+from app.engine.multi_agent.public_thinking import _public_reasoning_delta_chunks
+from app.engine.multi_agent.visual_intent_resolver import required_visual_tool_names, resolve_visual_intent
+from app.engine.multi_agent.visual_events import (
+    _collect_active_visual_session_ids, _emit_visual_commit_events,
+    _maybe_emit_host_action_event, _maybe_emit_visual_event,
+    _summarize_tool_result_for_stream,
+)
+from app.engine.multi_agent.code_studio_patterns import (
+    _CODE_STUDIO_ACTION_JSON_RE,
+    _CODE_STUDIO_SANDBOX_IMAGE_RE,
+    _CODE_STUDIO_SANDBOX_LINK_RE,
+    _CODE_STUDIO_SANDBOX_PATH_RE,
+)
+from app.engine.multi_agent.direct_runtime_bindings import (
+    _extract_runtime_target,
+    _remember_runtime_target,
+    _stream_openai_compatible_answer_with_route,
+    _truncate_before_code_dump,
+)
+from app.engine.reasoning import (
+    align_visible_thinking_language,
+    sanitize_visible_reasoning_text,
+    should_align_visible_thinking_language,
+)
+from app.engine.llm_runtime_metadata import record_runtime_failover_event
+
+logger = logging.getLogger(__name__)
+
+_DIRECT_VISIBLE_THINKING_PLANNER_MARKERS = (
+    "my response to this inquiry",
+    "reflecting on the response",
+    "reflecting on this response",
+    "reflecting on the inquiry",
+    "my response to this question",
+    "my approach to this question",
+    "my approach to answering",
+    "here's my take on those thoughts",
+    "tailored for an expert audience",
+    "for an expert audience",
+    "i will attempt a few kaomoji",
+    "dash of personality and charm",
+    "let's begin",
+    "lets begin",
+    "day la cach minh thu tom tat lai nhung suy nghi do",
+    "nham den doi tuong chuyen gia",
+    "xung o ngoi thu nhat, nhu ban yeu cau",
+    "to make it easier for them",
+    "i will break this down",
+    "i can't resist",
+    "i cant resist",
+    "signature wiii style",
+    "final polished version",
+    "i will greet",
+)
+
+# Functions still in graph.py — imported lazily inside functions to avoid circular deps.
+# These should be extracted to shared modules in future refactoring phases.
+
+
+def _strip_incomplete_thinking_blocks(text: str) -> str:
+    """Remove complete or partial <thinking> blocks from cumulative streamed text."""
+    clean = str(text or "")
+    lowered = clean.lower()
+    start = lowered.find("<thinking>")
+    while start >= 0:
+        end = lowered.find("</thinking>", start + len("<thinking>"))
+        if end < 0:
+            clean = clean[:start]
+            break
+        clean = clean[:start] + clean[end + len("</thinking>"):]
+        lowered = clean.lower()
+        start = lowered.find("<thinking>")
+    clean = re.sub(r"</thinking\s*>?", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"</thinking$", "", clean, flags=re.IGNORECASE)
+    return clean
+
+
+def _extract_stream_chunk_parts(content: Any) -> tuple[str, str]:
+    """Extract per-chunk native reasoning and visible answer text."""
+    if isinstance(content, list):
+        reasoning_parts: list[str] = []
+        answer_parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                if item:
+                    answer_parts.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            block_type = str(item.get("type") or "").strip().lower()
+            if block_type == "thinking":
+                thinking_text = str(item.get("thinking") or "").strip()
+                if thinking_text:
+                    reasoning_parts.append(thinking_text)
+                continue
+            if block_type == "text":
+                text_value = str(item.get("text") or "").strip()
+                if text_value:
+                    answer_parts.append(text_value)
+                continue
+            text_value = str(item.get("text") or item.get("content") or "").strip()
+            if text_value:
+                answer_parts.append(text_value)
+        return "".join(reasoning_parts), "".join(answer_parts)
+    if isinstance(content, str):
+        return "", content
+    return "", str(content or "")
+
+
+def _extract_message_text(content: Any) -> str:
+    """Flatten a message payload into plain text for intent/alignment checks."""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                if item.strip():
+                    parts.append(item.strip())
+                continue
+            if not isinstance(item, dict):
+                continue
+            text_value = str(
+                item.get("text")
+                or item.get("content")
+                or item.get("thinking")
+                or ""
+            ).strip()
+            if text_value:
+                parts.append(text_value)
+        return "\n".join(parts).strip()
+    return str(content or "").strip()
+
+
+def _normalize_stream_compare_text(value: str) -> str:
+    """Normalize answer text for duplicate/replay comparison."""
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _compute_visible_answer_delta(*, emitted_text: str, visible_text: str) -> str:
+    """Return only the genuinely new visible answer text for SSE streaming.
+
+    Some providers emit incremental text chunks and then replay a near-identical
+    full answer near the end of the stream. We want to keep real incremental
+    growth while skipping those replays.
+    """
+    candidate = str(visible_text or "")
+    emitted = str(emitted_text or "")
+    if not candidate:
+        return ""
+    if not emitted:
+        return candidate
+    if candidate == emitted:
+        return ""
+    if candidate.startswith(emitted):
+        return candidate[len(emitted):]
+    if emitted.startswith(candidate):
+        return ""
+
+    normalized_candidate = _normalize_stream_compare_text(candidate)
+    normalized_emitted = _normalize_stream_compare_text(emitted)
+    if normalized_candidate and normalized_candidate == normalized_emitted:
+        return ""
+
+    max_overlap = min(len(candidate), len(emitted))
+    for overlap in range(max_overlap, 0, -1):
+        if emitted.endswith(candidate[:overlap]):
+            return candidate[overlap:]
+
+    if len(normalized_candidate) >= 80 and len(normalized_emitted) >= 80:
+        similarity = SequenceMatcher(None, normalized_candidate, normalized_emitted).ratio()
+        if similarity >= 0.985:
+            return ""
+
+    return candidate
+
+
+def _split_visible_thinking_chunks(text: str) -> list[str]:
+    """Break a thinking block into stable SSE-sized paragraphs without rewriting it."""
+    clean = sanitize_visible_reasoning_text(str(text or "")).strip()
+    if not clean:
+        return []
+
+    paragraphs = [part.strip() for part in re.split(r"\n{2,}", clean) if part.strip()]
+    if paragraphs:
+        return paragraphs
+
+    return [clean]
+
+
+def _looks_primary_timeout_failure(exc: Exception) -> bool:
+    text = " ".join(str(exc or "").split()).strip().lower()
+    if not text:
+        return False
+    return "timed out" in text or "timeout" in text
+
+
+def _fold_direct_marker_text(text: str) -> str:
+    lowered = str(text or "").strip().lower()
+    lowered = lowered.replace("đ", "d").replace("Đ", "d")
+    return "".join(
+        ch for ch in unicodedata.normalize("NFKD", lowered)
+        if not unicodedata.combining(ch)
+    )
+
+
+def _looks_like_direct_selfhood_meta_heading(paragraph: str) -> bool:
+    clean = sanitize_visible_reasoning_text(str(paragraph or "")).strip()
+    if not clean:
+        return False
+    lowered = clean.lower()
+    if len(clean) > 120:
+        return False
+    if not (clean.startswith("**") and clean.endswith("**")):
+        return False
+    return any(marker in lowered for marker in _DIRECT_SELFHOOD_META_HEADING_MARKERS)
+
+
+def _strip_direct_selfhood_filler_prefix(paragraph: str) -> str:
+    clean = str(paragraph or "").strip()
+    if not clean:
+        return ""
+    lowered = clean.lower()
+    for prefix in _DIRECT_SELFHOOD_ENGLISH_FILLER_PREFIXES:
+        if lowered.startswith(prefix):
+            stripped = clean[len(prefix):].lstrip(" ,.-:;…")
+            if stripped and stripped[0].islower():
+                stripped = stripped[0].upper() + stripped[1:]
+            return stripped
+    return clean
+
+
+def _looks_like_direct_selfhood_english_paragraph(paragraph: str) -> bool:
+    clean = str(paragraph or "").strip()
+    if len(clean) < 40:
+        return False
+    lowered = clean.lower()
+    if not any(marker in lowered for marker in _DIRECT_SELFHOOD_ENGLISH_PARAGRAPH_MARKERS):
+        return False
+    return all((ord(ch) < 128) or ch in "\n\r\t" for ch in clean)
+
+
+async def _normalize_direct_visible_thinking(
+    text: str,
+    *,
+    response_language: str,
+    alignment_mode: str | None,
+    llm: Any,
+) -> str:
+    clean = sanitize_visible_reasoning_text(str(text or "")).strip()
+    if not clean:
+        return ""
+
+    paragraphs = [part.strip() for part in re.split(r"\n{2,}", clean) if part.strip()]
+    if not paragraphs:
+        paragraphs = [clean]
+
+    kept: list[str] = []
+    for paragraph in paragraphs:
+        lowered = paragraph.lower().strip()
+        folded = _fold_direct_marker_text(paragraph)
+        if alignment_mode == "direct_selfhood":
+            if (
+                looks_like_direct_selfhood_meta_heading(paragraph)
+                or looks_like_direct_selfhood_meta_intro(paragraph)
+                or looks_like_direct_selfhood_answer_draft_paragraph(paragraph)
+            ):
+                continue
+        if any(
+            marker in lowered or marker in folded
+            for marker in _DIRECT_VISIBLE_THINKING_PLANNER_MARKERS
+        ):
+            continue
+
+        normalized = paragraph
+        if alignment_mode == "direct_selfhood":
+            if looks_like_direct_selfhood_english_meta_paragraph(normalized):
+                continue
+            normalized = strip_direct_selfhood_filler_prefix(normalized)
+        if should_align_visible_thinking_language(
+            normalized,
+            target_language=response_language,
+        ):
+            try:
+                aligned = await align_visible_thinking_language(
+                    normalized,
+                    target_language=response_language,
+                    alignment_mode=alignment_mode,
+                    llm=llm,
+                )
+            except Exception:
+                aligned = None
+            if aligned and not should_align_visible_thinking_language(
+                aligned,
+                target_language=response_language,
+            ):
+                normalized = aligned.strip()
+
+        if should_align_visible_thinking_language(
+            normalized,
+            target_language=response_language,
+        ):
+            continue
+
+        normalized = sanitize_visible_reasoning_text(normalized).strip()
+        if alignment_mode == "direct_selfhood":
+            if (
+                looks_like_direct_selfhood_meta_heading(normalized)
+                or looks_like_direct_selfhood_meta_intro(normalized)
+                or looks_like_direct_selfhood_english_meta_paragraph(normalized)
+                or looks_like_direct_selfhood_answer_draft_paragraph(normalized)
+            ):
+                continue
+            normalized = strip_direct_selfhood_filler_prefix(normalized)
+            if should_align_visible_thinking_language(
+                normalized,
+                target_language=response_language,
+            ):
+                continue
+        if normalized:
+            kept.append(normalized)
+
+    return "\n\n".join(kept).strip()
+
+
+def _split_visible_answer_chunks(text: str, *, target_size: int = 160) -> list[str]:
+    """Chunk a completed answer for pseudo-stream playback without changing content."""
+    clean = str(text or "").strip()
+    if not clean:
+        return []
+    if len(clean) <= target_size:
+        return [clean]
+
+    sentence_like = [
+        part.strip()
+        for part in re.split(r"(?<=[\.\!\?…])\s+", clean)
+        if part and part.strip()
+    ]
+    if not sentence_like:
+        sentence_like = [clean]
+
+    chunks: list[str] = []
+    current = ""
+    for piece in sentence_like:
+        candidate = piece if not current else f"{current} {piece}"
+        if current and len(candidate) > target_size:
+            chunks.append(current)
+            current = piece
+            continue
+        current = candidate
+    if current:
+        chunks.append(current)
+    return chunks or [clean]
+
+
+def _should_prefer_native_langchain_stream(
+    *,
+    provider_name: str,
+    node: str,
+) -> bool:
+    """Prefer provider-native LangChain streaming when compat streaming loses thought quality.
+
+    On March 31, 2026, Google direct no-tool turns were returning good answers via the
+    OpenAI-compatible stream path but silently dropping visible native thought in live SSE.
+    The native LangChain ``astream`` path, however, surfaced Gemini thinking blocks correctly.
+    Keep this override intentionally narrow until we validate other lanes/providers.
+    """
+    normalized_provider = str(provider_name or "").strip().lower()
+    normalized_node = str(node or "").strip().lower()
+    return normalized_provider == "google" and normalized_node == "direct"
+
+
+def _should_prefer_invoke_backfilled_stream(
+    *,
+    node: str,
+    query: str,
+    state: AgentState | None = None,
+) -> bool:
+    """Use final-result playback on turns where live thought is less trustworthy."""
+    normalized_node = str(node or "").strip().lower()
+    if normalized_node != "direct":
+        return False
+    return (
+        _looks_identity_selfhood_turn(query)
+        or _looks_selfhood_followup_turn(query, state)
+        or _looks_emotional_support_turn(query)
+    )
+
+
+async def _preserve_ai_message_metadata(
+    merged_chunk: Any,
+    *,
+    visible_text: str,
+    response_language: str | None,
+    alignment_mode: str | None = None,
+    llm: Any = None,
+):
+    """Keep native message metadata when stream rendering trims visible content.
+
+    Some providers stream plain answer deltas but only attach thought metadata on the
+    final merged AIMessage. If we replace that object with a bare AIMessage(content=...),
+    sync/stream parity breaks and visible-thought review loses the model-authored
+    reasoning that is still present in the final object.
+    """
+    from langchain_core.messages import AIMessage
+
+    preserved: dict[str, Any] = {}
+    additional_kwargs = dict(getattr(merged_chunk, "additional_kwargs", None) or {})
+    response_metadata = dict(getattr(merged_chunk, "response_metadata", None) or {})
+
+    raw_thinking = str(
+        response_metadata.get("thinking_content")
+        or response_metadata.get("thinking")
+        or additional_kwargs.get("thinking")
+        or ""
+    ).strip()
+    if raw_thinking:
+        sanitized_thinking = sanitize_visible_reasoning_text(raw_thinking).strip() or raw_thinking
+        if should_align_visible_thinking_language(
+            sanitized_thinking,
+            target_language=response_language,
+        ):
+            try:
+                aligned_thinking = await align_visible_thinking_language(
+                    sanitized_thinking,
+                    target_language=response_language,
+                    alignment_mode=alignment_mode,
+                    llm=llm,
+                )
+                if aligned_thinking and not should_align_visible_thinking_language(
+                    aligned_thinking,
+                    target_language=response_language,
+                ):
+                    sanitized_thinking = aligned_thinking.strip()
+            except Exception:
+                pass
+        response_metadata["thinking_content"] = sanitized_thinking
+        if "thinking" in response_metadata:
+            response_metadata["thinking"] = sanitized_thinking
+        if additional_kwargs.get("thinking") is not None:
+            additional_kwargs["thinking"] = sanitized_thinking
+
+    if additional_kwargs:
+        preserved["additional_kwargs"] = additional_kwargs
+    if response_metadata:
+        preserved["response_metadata"] = response_metadata
+
+    for field_name in (
+        "tool_calls",
+        "invalid_tool_calls",
+        "usage_metadata",
+        "id",
+        "name",
+    ):
+        value = getattr(merged_chunk, field_name, None)
+        if value in (None, "", [], {}):
+            continue
+        preserved[field_name] = value
+    return AIMessage(content=visible_text, **preserved)
+
+async def _ainvoke_with_fallback(
+    llm, messages, tools=None, tool_choice=None, tier="moderate",
+    provider: str | None = None,
+    resolved_provider: str | None = None,
+    failover_mode: str | None = None,
+    allowed_fallback_providers: set[str] | list[str] | tuple[str, ...] | None = None,
+    push_event=None,
+    primary_timeout: float | None = None,
+    timeout_profile: str | None = None,
+    state: Optional[AgentState] = None,
+):
+    """Invoke LLM with request-scoped runtime failover.
+
+    Delegates timeout / circuit-breaker / catch-and-switch logic to
+    ``ainvoke_with_failover`` in ``llm_pool``. Graph-specific extras stay
+    here: SSE ``model_switch`` emission and fallback tool re-binding with
+    provider-aware ``tool_choice`` translation.
+    """
+    from app.engine.llm_pool import (
+        FAILOVER_MODE_AUTO,
+        FAILOVER_MODE_PINNED,
+        ainvoke_with_failover,
+    )
+
+    normalized_provider = str(provider or "").strip().lower()
+    concrete_provider = (
+        str(resolved_provider or "").strip().lower()
+        or _extract_runtime_target(llm)[0]
+        or normalized_provider
+        or None
+    )
+    effective_failover_mode = failover_mode or (
+        FAILOVER_MODE_PINNED if normalized_provider and normalized_provider != "auto" else FAILOVER_MODE_AUTO
+    )
+    prefer_selectable_fallback = (
+        effective_failover_mode == FAILOVER_MODE_AUTO
+        and normalized_provider in {"", "auto"}
+        and bool(concrete_provider)
+    )
+
+    def _prepare_fallback(fallback_llm, fallback_provider):
+        """Re-bind tools on fallback LLM with provider-aware tool_choice."""
+        prepared_llm = fallback_llm
+        if tools:
+            if tool_choice:
+                translated = _resolve_tool_choice(True, tools, provider=fallback_provider)
+                prepared_llm = fallback_llm.bind_tools(tools, tool_choice=translated or tool_choice)
+            else:
+                prepared_llm = fallback_llm.bind_tools(tools)
+        _remember_runtime_target(state, prepared_llm or fallback_llm)
+        return prepared_llm
+
+    async def _notify_switch(from_provider: str, to_provider: str, reason: str) -> None:
+        if isinstance(state, dict) and to_provider:
+            state["_execution_provider"] = str(to_provider).strip().lower()
+        if push_event:
+            await push_event({
+                "type": "model_switch",
+                "from_provider": from_provider,
+                "to_provider": to_provider,
+                "reason": reason,
+            })
+
+    async def _record_failover(event: dict[str, Any]) -> None:
+        if isinstance(state, dict):
+            record_runtime_failover_event(state, event)
+
+    return await ainvoke_with_failover(
+        llm,
+        messages,
+        tier=tier,
+        provider=concrete_provider,
+        failover_mode=effective_failover_mode,
+        prefer_selectable_fallback=prefer_selectable_fallback,
+        allowed_fallback_providers=allowed_fallback_providers,
+        on_fallback=lambda fb: _prepare_fallback(
+            fb,
+            getattr(fb, "_wiii_provider_name", None) or "google",
+        ),
+        on_switch=_notify_switch,
+        on_failover=_record_failover,
+        primary_timeout=primary_timeout,
+        timeout_profile=timeout_profile,
+    )
+
+
+async def _push_status_only_progress(
+    push_event,
+    *,
+    node: str,
+    content: str,
+    step: str | None = None,
+    subtype: str = "progress",
+) -> None:
+    """Emit non-primary progress copy that should stay out of the main thinking rail."""
+    text = " ".join((content or "").split()).strip()
+    if not text:
+        return
+
+    event: dict[str, Any] = {
+        "type": "status",
+        "content": text,
+        "node": node,
+        "details": {
+            "subtype": subtype,
+            "visibility": "status_only",
+        },
+    }
+    if step:
+        event["step"] = step
+    await push_event(event)
+
+
+async def _stream_direct_wait_heartbeats(
+    push_event,
+    *,
+    query: str,
+    phase: str,
+    cue: str,
+    tool_names: Optional[list[str]] = None,
+    interval_sec: float = 6.0,
+    stop_signal: Optional[asyncio.Event] = None,
+) -> None:
+    """Emit hidden wait heartbeats so direct turns keep progress without public duplicate thinking."""
+    beat_index = 0
+    while True:
+        if stop_signal is not None:
+            try:
+                await asyncio.wait_for(stop_signal.wait(), timeout=interval_sec)
+                return
+            except asyncio.TimeoutError:
+                pass
+            if stop_signal.is_set():
+                return
+        else:
+            await asyncio.sleep(interval_sec)
+        beat_index += 1
+        if beat_index > 2:
+            return
+        _hb_event: dict = {
+            "type": "status",
+            "content": "Đang giữ nhịp xử lý...",
+            "node": "direct",
+            "details": {"visibility": "status_only"},
+        }
+        await push_event(_hb_event)
+
+
+async def _stream_code_studio_wait_heartbeats(
+    push_event,
+    *,
+    query: str,
+    state: Optional[dict] = None,
+    interval_sec: float = 8.0,
+    stop_signal: Optional[asyncio.Event] = None,
+) -> None:
+    """Emit hidden wait heartbeats so code studio progress stays separate from public thinking."""
+    beat_index = 0
+    while True:
+        if stop_signal is not None:
+            try:
+                await asyncio.wait_for(stop_signal.wait(), timeout=interval_sec)
+                return
+            except asyncio.TimeoutError:
+                pass
+            if stop_signal.is_set():
+                return
+        else:
+            await asyncio.sleep(interval_sec)
+        beat_index += 1
+        if beat_index > 2:
+            return
+        _hb_event: dict = {
+            "type": "status",
+            "content": "Đang dựng tiếp...",
+            "node": "code_studio_agent",
+            "details": {"visibility": "status_only"},
+        }
+        await push_event(_hb_event)
+
+
+
+
+async def _stream_answer_with_fallback(
+    llm,
+    messages: list,
+    push_event,
+    *,
+    provider: str | None = None,
+    resolved_provider: str | None = None,
+    failover_mode: str | None = None,
+    allowed_fallback_providers: set[str] | list[str] | tuple[str, ...] | None = None,
+    node: str = "direct",
+    thinking_stop_signal: Optional[asyncio.Event] = None,
+    thinking_block_opened: bool = True,
+    state: Optional[AgentState] = None,
+    primary_timeout: float | None = None,
+    timeout_profile: str | None = None,
+) -> tuple[object, bool]:
+    """Stream answer text deltas for provider-backed lanes when no tools are needed."""
+    from app.engine.llm_pool import FAILOVER_MODE_AUTO, FAILOVER_MODE_PINNED, LLMPool
+    from langchain_core.messages import AIMessage
+    from app.services.output_processor import extract_thinking_from_response
+    tier_key = str(getattr(llm, "_wiii_tier_key", "") or "moderate").strip().lower()
+    normalized_provider = str(provider or "").strip().lower()
+    effective_failover_mode = failover_mode or (
+        FAILOVER_MODE_PINNED if normalized_provider and normalized_provider != "auto" else FAILOVER_MODE_AUTO
+    )
+    prefer_selectable_fallback = (
+        effective_failover_mode == FAILOVER_MODE_AUTO
+        and normalized_provider in {"", "auto"}
+        and bool(str(resolved_provider or "").strip())
+    )
+    if not str(resolved_provider or provider or "").strip():
+        fallback_response = await llm.ainvoke(messages)
+        _remember_runtime_target(state, llm)
+        return fallback_response, False
+    route = LLMPool.resolve_runtime_route(
+        resolved_provider or provider,
+        tier_key,
+        failover_mode=effective_failover_mode,
+        prefer_selectable_fallback=prefer_selectable_fallback,
+    )
+    _remember_runtime_target(state, route.llm)
+    route_provider = str(getattr(route, "provider", "") or resolved_provider or provider or "").strip().lower()
+    response_language = (
+        str(((state or {}).get("context") or {}).get("response_language") or "vi").strip()
+        or "vi"
+    )
+    query = str((state or {}).get("query") or "").strip()
+    if not query and messages:
+        try:
+            query = _extract_message_text(getattr(messages[-1], "content", ""))
+        except Exception:
+            query = ""
+    is_selfhood_stream_turn = _looks_identity_selfhood_turn(query) or _looks_selfhood_followup_turn(query, state)
+    alignment_mode = "direct_selfhood" if is_selfhood_stream_turn else None
+    if _should_prefer_invoke_backfilled_stream(node=node, query=query, state=state):
+        try:
+            fallback_response = await _ainvoke_with_fallback(
+                route.llm,
+                messages,
+                tools=[],
+                tier=tier_key,
+                provider=provider,
+                resolved_provider=resolved_provider,
+                failover_mode=failover_mode,
+                push_event=push_event,
+                primary_timeout=primary_timeout,
+                timeout_profile=timeout_profile,
+                state=state,
+            )
+        except Exception as exc:
+            if (
+                _looks_emotional_support_turn(query)
+                and primary_timeout is not None
+                and _looks_primary_timeout_failure(exc)
+            ):
+                logger.warning(
+                    "[%s] Emotional invoke-backfill timed out under primary SLA; retrying without primary timeout",
+                    node.upper(),
+                )
+                fallback_response = await _ainvoke_with_fallback(
+                    route.llm,
+                    messages,
+                    tools=[],
+                    tier=tier_key,
+                    provider=provider,
+                    resolved_provider=resolved_provider,
+                    failover_mode=failover_mode,
+                    push_event=push_event,
+                    primary_timeout=None,
+                    timeout_profile=timeout_profile,
+                    state=state,
+                )
+            else:
+                raise
+        response_text, thinking_text, _tools_used = extract_direct_response_impl(
+            fallback_response,
+            messages,
+        )
+        preserved_response = await _preserve_ai_message_metadata(
+            fallback_response,
+            visible_text=response_text,
+            response_language=response_language,
+            alignment_mode=alignment_mode,
+            llm=route.llm,
+        )
+        preserved_metadata = dict(getattr(preserved_response, "response_metadata", None) or {})
+        preserved_kwargs = dict(getattr(preserved_response, "additional_kwargs", None) or {})
+        visible_thinking = str(
+            preserved_metadata.get("thinking_content")
+            or preserved_metadata.get("thinking")
+            or preserved_kwargs.get("thinking")
+            or thinking_text
+            or ""
+        ).strip()
+        if visible_thinking:
+            visible_thinking = await _normalize_direct_visible_thinking(
+                visible_thinking,
+                response_language=response_language,
+                alignment_mode=alignment_mode,
+                llm=route.llm,
+            )
+            response_metadata_obj = getattr(preserved_response, "response_metadata", None)
+            if isinstance(response_metadata_obj, dict):
+                response_metadata_obj["thinking_content"] = visible_thinking
+                if "thinking" in response_metadata_obj:
+                    response_metadata_obj["thinking"] = visible_thinking
+            additional_kwargs_obj = getattr(preserved_response, "additional_kwargs", None)
+            if isinstance(additional_kwargs_obj, dict) and additional_kwargs_obj.get("thinking") is not None:
+                additional_kwargs_obj["thinking"] = visible_thinking
+        if visible_thinking:
+            await push_event({
+                "type": "thinking_start",
+                "content": "Suy nghĩ câu trả lời",
+                "node": node,
+            })
+            for chunk in _split_visible_thinking_chunks(visible_thinking):
+                await push_event({
+                    "type": "thinking_delta",
+                    "content": chunk,
+                    "node": node,
+                })
+            await push_event({
+                "type": "thinking_end",
+                "content": "",
+                "node": node,
+            })
+        answer_text = str(getattr(preserved_response, "content", "") or "").strip()
+        if answer_text:
+            for chunk in _split_visible_answer_chunks(answer_text):
+                await push_event({
+                    "type": "answer_delta",
+                    "content": chunk,
+                    "node": node,
+                })
+            return preserved_response, True
+        return preserved_response, False
+    if not _should_prefer_native_langchain_stream(
+        provider_name=route_provider,
+        node=node,
+    ):
+        native_response, native_streamed = await _stream_openai_compatible_answer_with_route(
+            route,
+            messages,
+            push_event,
+            node=node,
+            thinking_stop_signal=thinking_stop_signal,
+        )
+        if native_response is not None:
+            return native_response, native_streamed
+
+    llm = route.llm
+    merged_chunk = None
+    emitted_text = ""
+    # Even when the opening phase did not emit a visible thinking block, a later
+    # native reasoning chunk from the model should still be allowed to open one.
+    thinking_closed = False
+    reasoning_started = False
+
+    stream_iter = llm.astream(messages)
+    first_stream_chunk: Any | None = None
+    try:
+        if primary_timeout is not None:
+            first_stream_chunk = await asyncio.wait_for(anext(stream_iter), timeout=primary_timeout)
+        else:
+            first_stream_chunk = await anext(stream_iter)
+    except StopAsyncIteration:
+        first_stream_chunk = None
+    except Exception as exc:
+        logger.warning(
+            "[%s] astream first-chunk wait failed, falling back to ainvoke: %s",
+            node.upper(),
+            exc,
+        )
+        fallback_response = await _ainvoke_with_fallback(
+            llm,
+            messages,
+            tools=[],
+            tier=tier_key,
+            provider=provider,
+            resolved_provider=resolved_provider,
+            failover_mode=failover_mode,
+            allowed_fallback_providers=allowed_fallback_providers,
+            push_event=push_event,
+            primary_timeout=primary_timeout,
+            timeout_profile=timeout_profile,
+            state=state,
+        )
+        return fallback_response, False
+
+    async def _iter_stream_chunks():
+        if first_stream_chunk is not None:
+            yield first_stream_chunk
+        async for chunk in stream_iter:
+            yield chunk
+
+    try:
+        async for chunk in _iter_stream_chunks():
+            if merged_chunk is None:
+                merged_chunk = chunk
+            else:
+                try:
+                    merged_chunk = merged_chunk + chunk
+                except Exception:
+                    merged_chunk = chunk
+
+            chunk_content = getattr(chunk, "content", "")
+            reasoning_piece, answer_piece = _extract_stream_chunk_parts(chunk_content)
+            if reasoning_piece and not thinking_closed:
+                clean_reasoning = await _normalize_direct_visible_thinking(
+                    reasoning_piece,
+                    response_language=response_language,
+                    alignment_mode=alignment_mode,
+                    llm=llm,
+                )
+                if clean_reasoning:
+                    if not reasoning_started:
+                        await push_event({
+                            "type": "thinking_start",
+                            "content": "Suy nghĩ câu trả lời",
+                            "node": node,
+                        })
+                        reasoning_started = True
+                    await push_event({
+                        "type": "thinking_delta",
+                        "content": clean_reasoning,
+                        "node": node,
+                    })
+
+            if answer_piece:
+                clean_text = answer_piece
+            else:
+                content = getattr(merged_chunk, "content", getattr(chunk, "content", ""))
+                text_content, _ = extract_thinking_from_response(content)
+                if isinstance(content, str) and "<thinking>" in content.lower():
+                    text_content = _strip_incomplete_thinking_blocks(content)
+                clean_text = text_content or ""
+            if "<thinking>" in clean_text.lower():
+                clean_text = _strip_incomplete_thinking_blocks(clean_text)
+            if not clean_text:
+                continue
+            visible_text = clean_text
+            if node == "code_studio_agent":
+                visible_text = _truncate_before_code_dump(clean_text)
+            if not visible_text:
+                continue
+            delta = _compute_visible_answer_delta(
+                emitted_text=emitted_text,
+                visible_text=visible_text,
+            )
+            if not delta:
+                continue
+            if not thinking_closed:
+                if thinking_stop_signal is not None:
+                    thinking_stop_signal.set()
+                if reasoning_started or thinking_block_opened:
+                    await push_event({
+                        "type": "thinking_end",
+                        "content": "",
+                        "node": node,
+                    })
+                thinking_closed = True
+            await push_event({
+                "type": "answer_delta",
+                "content": delta,
+                "node": node,
+            })
+            emitted_text += delta
+
+        if merged_chunk is not None:
+            if not thinking_closed:
+                if thinking_stop_signal is not None:
+                    thinking_stop_signal.set()
+                if reasoning_started or thinking_block_opened:
+                    await push_event({
+                        "type": "thinking_end",
+                        "content": "",
+                        "node": node,
+                    })
+            if (
+                node == "direct"
+                and emitted_text
+                and isinstance(getattr(merged_chunk, "content", None), str)
+                and str(getattr(merged_chunk, "content", "") or "") != emitted_text
+            ):
+                return await _preserve_ai_message_metadata(
+                    merged_chunk,
+                    visible_text=emitted_text,
+                    response_language=response_language,
+                    alignment_mode=alignment_mode,
+                    llm=llm,
+                ), True
+            return merged_chunk, bool(emitted_text)
+    except Exception as exc:
+        logger.warning("[%s] astream failed, falling back to ainvoke: %s", node.upper(), exc)
+
+    fallback_response = await _ainvoke_with_fallback(
+        llm,
+        messages,
+        tools=[],
+        tier=tier_key,
+        provider=provider,
+        resolved_provider=resolved_provider,
+        failover_mode=failover_mode,
+        allowed_fallback_providers=allowed_fallback_providers,
+        push_event=push_event,
+        primary_timeout=primary_timeout,
+        timeout_profile=timeout_profile,
+        state=state,
+    )
+    return fallback_response, False
+
+
+async def _stream_direct_answer_with_fallback(
+    llm,
+    messages: list,
+    push_event,
+    *,
+    provider: str | None = None,
+    resolved_provider: str | None = None,
+    failover_mode: str | None = None,
+    allowed_fallback_providers: set[str] | list[str] | tuple[str, ...] | None = None,
+    thinking_stop_signal: Optional[asyncio.Event] = None,
+    thinking_block_opened: bool = True,
+    state: Optional[AgentState] = None,
+    primary_timeout: float | None = None,
+    timeout_profile: str | None = None,
+) -> tuple[object, bool]:
+    return await _stream_answer_with_fallback(
+        llm,
+        messages,
+        push_event,
+        provider=provider,
+        resolved_provider=resolved_provider,
+        failover_mode=failover_mode,
+        allowed_fallback_providers=allowed_fallback_providers,
+        node="direct",
+        thinking_stop_signal=thinking_stop_signal,
+        thinking_block_opened=thinking_block_opened,
+        state=state,
+        primary_timeout=primary_timeout,
+        timeout_profile=timeout_profile,
+    )
+
+
+def _resolve_direct_answer_timeout_profile(
+    *,
+    provider_name: str | None,
+    query: str = "",
+    state: object | None = None,
+    is_identity_turn: bool,
+    is_short_house_chatter: bool,
+    use_house_voice_direct: bool,
+    tools_bound: bool,
+) -> str | None:
+    """Give short/direct Wiii turns more room on slow-but-healthy providers."""
+    return resolve_direct_answer_timeout_profile_impl(
+        provider_name=provider_name,
+        query=query,
+        state=state,
+        is_identity_turn=is_identity_turn,
+        is_short_house_chatter=is_short_house_chatter,
+        use_house_voice_direct=use_house_voice_direct,
+        tools_bound=tools_bound,
+    )
+
+
+def _resolve_direct_answer_primary_timeout(
+    *,
+    provider_name: str | None,
+    query: str = "",
+    state: object | None = None,
+    is_identity_turn: bool,
+    is_short_house_chatter: bool,
+    use_house_voice_direct: bool,
+    tools_bound: bool,
+) -> float | None:
+    """Give direct no-tool turns a lane-specific first-token SLA."""
+    return resolve_direct_answer_primary_timeout_impl(
+        provider_name=provider_name,
+        query=query,
+        state=state,
+        is_identity_turn=is_identity_turn,
+        is_short_house_chatter=is_short_house_chatter,
+        use_house_voice_direct=use_house_voice_direct,
+        tools_bound=tools_bound,
+    )
+
+
+async def _execute_direct_tool_rounds(
+    llm_with_tools, llm_auto, messages: list, tools: list, push_event,
+    runtime_context_base=None,
+    max_rounds: int = 3,
+    query: str = "",
+    state: Optional[AgentState] = None,
+    provider: str | None = None,
+    forced_tool_choice: str | None = None,
+    llm_base=None,
+    direct_answer_timeout_profile: str | None = None,
+    direct_answer_primary_timeout: float | None = None,
+    allowed_fallback_providers: tuple[str, ...] | list[str] | set[str] | None = None,
+):
+    """Execute multi-round tool calling loop for direct response.
+
+    Sprint 154: Extracted from direct_response_node.
+    Gemini often calls tools sequentially (datetime → web_search → answer).
+
+    Returns:
+        tuple: (AIMessage, messages, tool_call_events) — final response, messages, and
+               structured tool events for downstream preview emission (Sprint 166).
+    """
+    return await execute_direct_tool_rounds_impl(
+        llm_with_tools,
+        llm_auto,
+        messages,
+        tools,
+        push_event,
+        runtime_context_base=runtime_context_base,
+        max_rounds=max_rounds,
+        query=query,
+        state=state,
+        provider=provider,
+        forced_tool_choice=forced_tool_choice,
+        llm_base=llm_base,
+        direct_answer_timeout_profile=direct_answer_timeout_profile,
+        direct_answer_primary_timeout=direct_answer_primary_timeout,
+        allowed_fallback_providers=allowed_fallback_providers,
+        ainvoke_with_fallback=_ainvoke_with_fallback,
+        stream_direct_answer_with_fallback=_stream_direct_answer_with_fallback,
+        stream_direct_wait_heartbeats=_stream_direct_wait_heartbeats,
+        push_status_only_progress=_push_status_only_progress,
+    )
+
+
+def _extract_direct_response(llm_response, messages: list):
+    """Extract response text, thinking content, and tools used from LLM result."""
+    return extract_direct_response_impl(llm_response, messages)
+
+_STRUCTURED_VISUAL_MARKER_RE = re.compile(
+    r"\{visual-[a-f0-9]+\}|<!--\s*WiiiVisualBridge:[^>]+-->|"
+    r"\[Biểu đồ[^\]]*\]|\[Bieu do[^\]]*\]|\[Chart[^\]]*\]|\[Visual[^\]]*\]",
+    re.IGNORECASE,
+)
+_STRUCTURED_VISUAL_PLACEHOLDER_MD_RE = re.compile(
+    r"!\[[^\]]*\]\((?:https?://example\.com/[^)\s]+|https?://[^)\s]*chart-placeholder[^)\s]*|sandbox:[^)]+)\)",
+    re.IGNORECASE,
+)
+
+

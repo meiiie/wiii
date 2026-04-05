@@ -122,10 +122,10 @@ class TestEmbedHypotheticalDoc:
     async def test_successful_embedding(self):
         from app.engine.agentic_rag.hyde_generator import _embed_hypothetical_doc
 
-        mock_embeddings = MagicMock()
-        mock_embeddings.aembed_documents = AsyncMock(return_value=[[0.1, 0.2, 0.3]])
-
-        with patch("app.engine.gemini_embedding.get_embeddings", return_value=mock_embeddings):
+        with patch(
+            "app.engine.agentic_rag.corrective_rag_runtime_support.get_document_embedding_impl",
+            AsyncMock(return_value=[0.1, 0.2, 0.3]),
+        ):
             result = await _embed_hypothetical_doc("Some hypothetical document text")
 
         assert result == [0.1, 0.2, 0.3]
@@ -134,10 +134,10 @@ class TestEmbedHypotheticalDoc:
     async def test_empty_result(self):
         from app.engine.agentic_rag.hyde_generator import _embed_hypothetical_doc
 
-        mock_embeddings = MagicMock()
-        mock_embeddings.aembed_documents = AsyncMock(return_value=[])
-
-        with patch("app.engine.gemini_embedding.get_embeddings", return_value=mock_embeddings):
+        with patch(
+            "app.engine.agentic_rag.corrective_rag_runtime_support.get_document_embedding_impl",
+            AsyncMock(return_value=[]),
+        ):
             result = await _embed_hypothetical_doc("test")
 
         assert result == []
@@ -146,7 +146,10 @@ class TestEmbedHypotheticalDoc:
     async def test_exception_returns_empty(self):
         from app.engine.agentic_rag.hyde_generator import _embed_hypothetical_doc
 
-        with patch("app.engine.gemini_embedding.get_embeddings", side_effect=ImportError("no module")):
+        with patch(
+            "app.engine.agentic_rag.corrective_rag_runtime_support.get_document_embedding_impl",
+            AsyncMock(side_effect=ImportError("no module")),
+        ):
             result = await _embed_hypothetical_doc("test")
 
         assert result == []

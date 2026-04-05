@@ -58,6 +58,28 @@ async def test_wrap_sse_with_keepalive_sends_heartbeat_on_idle():
 
 
 @pytest.mark.asyncio
+async def test_wrap_sse_with_keepalive_allows_long_streams_when_idle_timeout_disabled():
+    async def slow_inner():
+        await asyncio.sleep(0.03)
+        yield "late-data"
+
+    mock_request = MagicMock()
+    mock_request.is_disconnected = AsyncMock(return_value=False)
+
+    chunks = []
+    async for chunk in wrap_sse_with_keepalive(
+        inner_gen=slow_inner(),
+        request=mock_request,
+        keepalive_interval_sec=0.01,
+        idle_timeout_sec=0,
+    ):
+        chunks.append(chunk)
+
+    assert SSE_KEEPALIVE in chunks
+    assert "late-data" in chunks
+
+
+@pytest.mark.asyncio
 async def test_wrap_sse_with_keepalive_uses_error_callback():
     async def failing_inner():
         yield "first"
@@ -75,3 +97,27 @@ async def test_wrap_sse_with_keepalive_uses_error_callback():
         chunks.append(chunk)
 
     assert chunks == ["first", "error-chunk"]
+
+
+@pytest.mark.asyncio
+async def test_wrap_sse_with_keepalive_aborts_after_idle_timeout():
+    async def never_yields():
+        await asyncio.sleep(1)
+        yield "unreachable"
+
+    mock_request = MagicMock()
+    mock_request.is_disconnected = AsyncMock(return_value=False)
+
+    chunks = []
+    async for chunk in wrap_sse_with_keepalive(
+        inner_gen=never_yields(),
+        request=mock_request,
+        keepalive_interval_sec=0.01,
+        idle_timeout_sec=0.03,
+        on_inner_error=lambda: ["idle-timeout-error"],
+    ):
+        chunks.append(chunk)
+
+    assert SSE_KEEPALIVE in chunks
+    assert "idle-timeout-error" in chunks
+    assert "unreachable" not in chunks

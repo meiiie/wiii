@@ -20,6 +20,11 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from app.engine.living_agent.models import SkillStatus, WiiiSkill
+from app.engine.living_agent.skill_singleton_registry import (
+    get_or_create_registered_skill_builder,
+    get_or_create_registered_skill_learner,
+    register_skill_builder_factory,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +194,6 @@ class SkillBuilder:
         Returns:
             True if learning occurred.
         """
-        from app.engine.living_agent.skill_learner import get_skill_learner
         learner = get_skill_learner()
         return await learner.learn_from_content(topic, material)
 
@@ -199,7 +203,6 @@ class SkillBuilder:
         Returns:
             Skills whose review_schedule.next_review_at has passed.
         """
-        from app.engine.living_agent.skill_learner import get_skill_learner
         learner = get_skill_learner()
         return learner.get_skills_due_for_review()
 
@@ -412,12 +415,18 @@ class SkillBuilder:
 # Singleton
 # =============================================================================
 
-_builder_instance: Optional[SkillBuilder] = None
-
-
 def get_skill_builder() -> SkillBuilder:
     """Get the singleton SkillBuilder instance."""
-    global _builder_instance
-    if _builder_instance is None:
-        _builder_instance = SkillBuilder()
-    return _builder_instance
+    builder = get_or_create_registered_skill_builder()
+    if builder is None:
+        builder = SkillBuilder()
+    return builder
+
+
+def get_skill_learner():
+    """Get the shared SkillLearner singleton without a direct module edge."""
+    learner = get_or_create_registered_skill_learner()
+    return learner
+
+
+register_skill_builder_factory(SkillBuilder)

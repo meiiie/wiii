@@ -38,10 +38,18 @@ async def gdpr_export(user_id: str, request: Request, auth: RequireAdmin):
 
     async with pool.acquire() as conn:
         # Profile
-        profile = await conn.fetchrow(
-            "SELECT id, email, name, role, is_active, created_at FROM users WHERE id = $1",
-            user_id,
-        )
+        try:
+            profile = await conn.fetchrow(
+                "SELECT id, email, name, role, platform_role, is_active, created_at FROM users WHERE id = $1",
+                user_id,
+            )
+        except Exception as exc:
+            if "platform_role" not in str(exc):
+                raise
+            profile = await conn.fetchrow(
+                "SELECT id, email, name, role, is_active, created_at FROM users WHERE id = $1",
+                user_id,
+            )
         if not profile:
             raise HTTPException(status_code=404, detail=f"User {user_id} not found")
 
@@ -50,6 +58,10 @@ async def gdpr_export(user_id: str, request: Request, auth: RequireAdmin):
             "email": profile["email"],
             "name": profile["name"],
             "role": profile["role"],
+            "platform_role": profile.get(
+                "platform_role",
+                "platform_admin" if str(profile["role"]).lower() == "admin" else "user",
+            ),
             "is_active": profile["is_active"],
             "created_at": profile["created_at"].isoformat() if profile["created_at"] else None,
         }

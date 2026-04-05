@@ -1,13 +1,35 @@
-"""Resolve visual delivery lanes for article figures, chart runtime, apps, and artifacts."""
+﻿"""Resolve visual delivery lanes for article figures, chart runtime, apps, and artifacts."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
-import unicodedata
 from typing import Any, Literal
 
-
+from app.engine.multi_agent.visual_intent_presets import (
+    build_app_decision_impl,
+    build_article_figure_decision_impl,
+    build_artifact_decision_impl,
+    build_chart_runtime_decision_impl,
+    build_diagram_decision_impl,
+)
+from app.engine.multi_agent.visual_intent_support import (
+    LEGACY_VISUAL_TOOL_NAMES as _LEGACY_VISUAL_TOOL_NAMES,
+    QUIZ_WIDGET_CUES as _QUIZ_WIDGET_CUES,
+    SCENE_SIMULATION_CUES as _SCENE_SIMULATION_CUES,
+    SIMULATION_APP_CUES as _SIMULATION_APP_CUES,
+    SIMULATION_PATCH_CUES as _SIMULATION_PATCH_CUES,
+    contains_any_impl,
+    detect_visual_patch_request_impl,
+    infer_figure_budget_impl,
+    infer_followup_simulation_type_impl,
+    looks_like_app_followup_patch_impl,
+    looks_like_quiz_app_request_impl,
+    looks_like_recipe_backed_simulation_impl,
+    merge_quality_profile_impl,
+    merge_thinking_effort_impl,
+    metadata_value_impl,
+    normalize_impl,
+)
 VisualMode = Literal["text", "mermaid", "template", "inline_html", "app"]
 PresentationIntent = Literal["text", "article_figure", "chart_runtime", "code_studio_app", "artifact"]
 StudioLane = Literal["app", "artifact", "widget"]
@@ -20,192 +42,6 @@ PlanningProfile = Literal["article_svg", "chart_svg", "simulation_canvas", "arti
 CriticPolicy = Literal["none", "standard", "premium"]
 LivingExpressionMode = Literal["subtle", "expressive"]
 
-_QUALITY_PROFILE_ORDER: dict[str, int] = {
-    "draft": 0,
-    "standard": 1,
-    "premium": 2,
-}
-
-_THINKING_EFFORT_ORDER: dict[str, int] = {
-    "low": 0,
-    "medium": 1,
-    "high": 2,
-    "max": 3,
-}
-
-_LEGACY_VISUAL_TOOL_NAMES = frozenset({
-    "tool_generate_interactive_chart",
-    "tool_generate_chart",
-    "tool_generate_mermaid",
-})
-
-_VISUAL_PATCH_KEYWORDS = (
-    "highlight",
-    "focus on",
-    "focus only",
-    "bottleneck",
-    "giu cung visual",
-    "giu nguyen visual",
-    "same visual",
-    "same visual session",
-    "keep the same visual",
-    "reuse visual",
-    "update visual",
-    "patch visual",
-    "modify visual",
-    "change this visual",
-    "annotate",
-    "them annotation",
-    "lam ro",
-    "nhan manh",
-    "chi show",
-    "chi hien thi",
-    "doi thanh 3 buoc",
-    "doi thanh",
-    "bien thanh",
-    "thanh 3 buoc",
-    "so do nay",
-    "turn this into",
-    "convert this visual",
-    "filter",
-    "loc theo",
-    "zoom in",
-    "giu app hien tai",
-    "giu mini app hien tai",
-    "giu widget hien tai",
-    "keep the current app",
-    "keep the same app",
-    "keep the current widget",
-    "keep the same widget",
-    "update the app",
-    "modify the app",
-    "change the app",
-    "change background",
-    "change the background",
-    "doi mau nen",
-    "doi background",
-    "them slider",
-    "bo sung slider",
-    "them dieu khien",
-    "cap nhat app",
-)
-
-_VISUAL_PATCH_PREFIXES = (
-    "giu ",
-    "them ",
-    "doi ",
-    "sua ",
-    "chinh sua ",
-    "cap nhat ",
-    "bo sung ",
-    "nang cap ",
-    "lam ro ",
-    "highlight ",
-    "annotate ",
-    "make ",
-    "change ",
-    "update ",
-    "modify ",
-    "add ",
-    "turn ",
-)
-
-_SIMULATION_PATCH_CUES = (
-    "con lac",
-    "pendulum",
-    "vat ly",
-    "physics",
-    "trong luc",
-    "ma sat",
-    "keo tha",
-    "drag",
-    "goc lech",
-    "van toc",
-    "do thi thoi gian",
-    "rule 15",
-    "colregs",
-    "tau",
-    "ship",
-)
-
-_SIMULATION_APP_CUES = (
-    "pendulum",
-    "physics app",
-    "physics simulation",
-    "drag interaction",
-    "drag physics",
-    "gravity slider",
-    "damping slider",
-    "con lac",
-    "vat ly",
-    "keo tha",
-)
-
-
-_QUIZ_WIDGET_CUES = (
-    "quiz widget",
-    "quiz app",
-    "interactive quiz",
-    "quiz interactive",
-    "trac nghiem tuong tac",
-    "bai quiz tuong tac",
-    "widget quiz",
-    "html quiz",
-    "mini quiz app",
-)
-
-_QUIZ_CREATION_CUES = (
-    "tao",
-    "lam",
-    "dung",
-    "xay",
-    "soan",
-    "thiet ke",
-    "build",
-    "create",
-    "generate",
-)
-
-_QUIZ_REQUEST_CUES = (
-    "quiz",
-    "quizz",
-    "trac nghiem",
-    "bai quiz",
-    "bo quiz",
-)
-
-_QUIZ_CREATION_RAW_CUES = (
-    "tạo",
-    "làm",
-    "dựng",
-    "xây",
-    "soạn",
-    "thiết kế",
-    "build",
-    "create",
-    "generate",
-)
-
-_QUIZ_REQUEST_RAW_CUES = (
-    "quiz",
-    "quizz",
-    "trắc nghiệm",
-    "bài quiz",
-    "bộ quiz",
-)
-
-
-def _looks_like_quiz_app_request(query: str, normalized: str) -> bool:
-    if not query and not normalized:
-        return False
-    raw_lower = query.lower().strip()
-    has_quiz_request = _contains_any(normalized, _QUIZ_REQUEST_CUES) or _contains_any(raw_lower, _QUIZ_REQUEST_RAW_CUES)
-    has_creation_intent = _contains_any(normalized, _QUIZ_CREATION_CUES) or _contains_any(raw_lower, _QUIZ_CREATION_RAW_CUES)
-    return has_quiz_request and has_creation_intent
-
-
-def _looks_like_recipe_backed_simulation(normalized: str) -> bool:
-    return _contains_any(normalized, _SIMULATION_APP_CUES + _SIMULATION_PATCH_CUES)
 
 
 @dataclass(frozen=True)
@@ -229,100 +65,56 @@ class VisualIntentDecision:
     renderer_kind_hint: str = ""
 
 
-def _normalize(text: str) -> str:
-    normalized = unicodedata.normalize("NFKD", text.lower()).replace("đ", "d")
-    normalized = normalized.encode("ascii", "ignore").decode("ascii")
-    normalized = re.sub(r"[^a-z0-9\s/+.-]", " ", normalized)
-    return re.sub(r"\s+", " ", normalized).strip()
-
-
-def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
-    return any(needle in text for needle in needles)
-
-
-def _metadata_value(source: dict[str, Any] | None, *keys: str) -> str:
-    if not isinstance(source, dict):
-        return ""
-    for key in keys:
-        value = source.get(key)
-        if value is None:
-            continue
-        text = str(value).strip()
-        if text:
-            return text
-    return ""
-
-
-def merge_quality_profile(*values: Any) -> QualityProfile:
-    best = ""
-    best_rank = -1
-    for value in values:
-        candidate = str(value or "").strip().lower()
-        rank = _QUALITY_PROFILE_ORDER.get(candidate)
-        if rank is None:
-            continue
-        if rank > best_rank:
-            best = candidate
-            best_rank = rank
-    return (best or "standard")  # type: ignore[return-value]
-
-
-def merge_thinking_effort(base: str | None, recommended: str | None) -> str | None:
-    base_value = str(base or "").strip().lower()
-    recommended_value = str(recommended or "").strip().lower()
-
-    if base_value not in _THINKING_EFFORT_ORDER:
-        return recommended_value or None
-    if recommended_value not in _THINKING_EFFORT_ORDER:
-        return base_value
-    if _THINKING_EFFORT_ORDER[recommended_value] > _THINKING_EFFORT_ORDER[base_value]:
-        return recommended_value
-    return base_value
-
-
-def _looks_like_app_followup_patch(normalized: str) -> bool:
-    if not normalized:
-        return False
-    if not detect_visual_patch_request(normalized):
-        return False
-    return _contains_any(
+def _looks_like_quiz_app_request(query: str, normalized: str) -> bool:
+    return looks_like_quiz_app_request_impl(
+        query,
         normalized,
-        (
-            " app ",
-            "app hien tai",
-            "same app",
-            "current app",
-            "widget",
-            "slider",
-            "trong luc",
-            "ma sat",
-            "drag",
-            "keo tha",
-            "preview",
-            "background",
-            "mau nen",
-            "code studio",
-            "goc lech",
-            "van toc",
-            "pendulum",
-            "con lac",
-        ),
+        contains_any=_contains_any,
     )
 
 
-def _infer_followup_simulation_type(normalized: str) -> str | None:
-    return "simulation" if _contains_any(normalized, _SIMULATION_PATCH_CUES) else None
+def _looks_like_recipe_backed_simulation(normalized: str) -> bool:
+    return looks_like_recipe_backed_simulation_impl(
+        normalized,
+        contains_any=_contains_any,
+    )
 
+
+def _normalize(text: str) -> str:
+    return normalize_impl(text)
+
+def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
+    return contains_any_impl(text, needles)
+
+def _metadata_value(source: dict[str, Any] | None, *keys: str) -> str:
+    return metadata_value_impl(source, *keys)
+
+def merge_quality_profile(*values: Any) -> QualityProfile:
+    return merge_quality_profile_impl(*values)  # type: ignore[return-value]
+
+def merge_thinking_effort(base: str | None, recommended: str | None) -> str | None:
+    return merge_thinking_effort_impl(base, recommended)
+
+def _looks_like_app_followup_patch(normalized: str) -> bool:
+    return looks_like_app_followup_patch_impl(
+        normalized,
+        contains_any=_contains_any,
+        detect_visual_patch_request=detect_visual_patch_request,
+    )
+
+def _infer_followup_simulation_type(normalized: str) -> str | None:
+    return infer_followup_simulation_type_impl(
+        normalized,
+        contains_any=_contains_any,
+    )
 
 def detect_visual_patch_request(query: str) -> bool:
     """Return True when the query looks like a follow-up edit to an existing visual."""
-    normalized = _normalize(query)
-    if not normalized:
-        return False
-    if _contains_any(normalized, _VISUAL_PATCH_KEYWORDS):
-        return True
-    return normalized.startswith(_VISUAL_PATCH_PREFIXES)
-
+    return detect_visual_patch_request_impl(
+        query,
+        normalize=_normalize,
+        contains_any=_contains_any,
+    )
 
 def preferred_visual_tool_name() -> str:
     """Return the preferred rich visual tool for the current runtime mode."""
@@ -456,39 +248,12 @@ def _infer_figure_budget(
     visual_type: str | None,
     presentation_intent: PresentationIntent,
 ) -> int:
-    if presentation_intent == "text":
-        return 1
-
-    if presentation_intent == "code_studio_app":
-        return 1
-
-    if presentation_intent == "artifact":
-        return 1
-
-    if presentation_intent == "chart_runtime":
-        if _contains_any(normalized, ("explain in charts", "explain with charts", "giai thich", "step by step")):
-            return 2
-        return 1
-
-    if presentation_intent == "article_figure":
-        if _contains_any(
-            normalized,
-            (
-                "explain in charts",
-                "explain with charts",
-                "step by step",
-                "giai thich",
-                "co che",
-                "trade off",
-                "benchmark",
-                "kien truc",
-            ),
-        ):
-            return 3 if visual_type in {"chart", "comparison", "architecture"} else 2
-        if visual_type in {"comparison", "process", "architecture", "concept", "chart"}:
-            return 2
-    return 1
-
+    return infer_figure_budget_impl(
+        normalized,
+        visual_type=visual_type,
+        presentation_intent=presentation_intent,
+        contains_any=_contains_any,
+    )
 
 def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
     """Core classification logic (before code-gen upgrade)."""
@@ -528,23 +293,7 @@ def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
             "react app",
         ),
     ):
-        return VisualIntentDecision(
-            mode="app",
-            force_tool=True,
-            reason="artifact-request",
-            presentation_intent="artifact",
-            preferred_tool="tool_create_visual_code",
-            figure_budget=1,
-            studio_lane="artifact",
-            artifact_kind="html_app",
-            quality_profile="premium",
-            renderer_contract="host_shell",
-            preferred_render_surface="html",
-            planning_profile="artifact_html",
-            thinking_floor="high",
-            critic_policy="standard",
-            living_expression_mode="subtle",
-        )
+        return build_artifact_decision_impl(decision_cls=VisualIntentDecision)
 
     if _contains_any(
         normalized,
@@ -559,6 +308,10 @@ def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
             "simulator",
             "mo phong",
             "mo phong vat ly",
+            "mo phong canh",
+            "tai hien canh",
+            "dung canh",
+            "khung canh",
             "keo tha",
             "drag and drop",
             "interactive table",
@@ -575,52 +328,32 @@ def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
                 "simulator",
                 "mo phong",
                 "mo phong vat ly",
+                "mo phong canh",
+                "tai hien canh",
+                "dung canh",
+                "khung canh",
                 "keo tha",
                 "drag and drop",
                 "drag interaction",
                 "pendulum",
                 "physics",
                 "con lac",
+                "van hoc",
+                "nhan vat",
             ),
         ) else None
-        return VisualIntentDecision(
-            mode="app",
-            force_tool=True,
+        return build_app_decision_impl(
+            decision_cls=VisualIntentDecision,
             visual_type=visual_type,
             reason="app-request",
-            presentation_intent="code_studio_app",
-            preferred_tool="tool_create_visual_code",
-            figure_budget=1,
-            studio_lane="app",
-            artifact_kind="html_app",
-            quality_profile="premium" if visual_type == "simulation" else "standard",
-            renderer_contract="host_shell",
-            preferred_render_surface="canvas" if visual_type == "simulation" else "html",
-            planning_profile="simulation_canvas" if visual_type == "simulation" else "artifact_html",
-            thinking_floor="max" if visual_type == "simulation" else "high",
-            critic_policy="premium" if visual_type == "simulation" else "standard",
-            living_expression_mode="expressive" if visual_type == "simulation" else "subtle",
         )
 
     if _looks_like_app_followup_patch(normalized):
         visual_type = _infer_followup_simulation_type(normalized)
-        return VisualIntentDecision(
-            mode="app",
-            force_tool=True,
+        return build_app_decision_impl(
+            decision_cls=VisualIntentDecision,
             visual_type=visual_type,
             reason="app-followup-patch",
-            presentation_intent="code_studio_app",
-            preferred_tool="tool_create_visual_code",
-            figure_budget=1,
-            studio_lane="app",
-            artifact_kind="html_app",
-            quality_profile="premium" if visual_type == "simulation" else "standard",
-            renderer_contract="host_shell",
-            preferred_render_surface="canvas" if visual_type == "simulation" else "html",
-            planning_profile="simulation_canvas" if visual_type == "simulation" else "artifact_html",
-            thinking_floor="max" if visual_type == "simulation" else "high",
-            critic_policy="premium" if visual_type == "simulation" else "standard",
-            living_expression_mode="expressive" if visual_type == "simulation" else "subtle",
         )
 
     if _contains_any(
@@ -636,20 +369,7 @@ def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
             "so do",
         ),
     ):
-        return VisualIntentDecision(
-            mode="mermaid",
-            force_tool=True,
-            reason="diagram-request",
-            presentation_intent="article_figure",
-            preferred_tool="tool_generate_mermaid",
-            figure_budget=1,
-            renderer_contract="article_figure",
-            preferred_render_surface="svg",
-            planning_profile="article_svg",
-            thinking_floor="high",
-            critic_policy="standard",
-            living_expression_mode="expressive",
-        )
+        return build_diagram_decision_impl(decision_cls=VisualIntentDecision)
 
     if _contains_any(
         normalized,
@@ -666,21 +386,14 @@ def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
             "trinh bay hien dai",
         ),
     ):
-        return VisualIntentDecision(
-            mode="inline_html",
-            force_tool=True,
+        return build_article_figure_decision_impl(
+            decision_cls=VisualIntentDecision,
             visual_type="concept",
             reason="bespoke-inline-html",
-            presentation_intent="article_figure",
-            preferred_tool="tool_generate_visual",
             figure_budget=2,
             quality_profile="premium",
-            renderer_contract="article_figure",
             preferred_render_surface="html",
-            planning_profile="article_svg",
-            thinking_floor="high",
             critic_policy="premium",
-            living_expression_mode="expressive",
         )
 
     if _contains_any(
@@ -710,124 +423,68 @@ def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
             "ranking",
         ),
     ):
-        return VisualIntentDecision(
-            mode="inline_html",
-            force_tool=True,
+        return build_chart_runtime_decision_impl(
+            decision_cls=VisualIntentDecision,
             visual_type="chart",
             reason="chart-runtime",
-            presentation_intent="chart_runtime",
-            preferred_tool="tool_generate_visual",
             figure_budget=_infer_figure_budget(
                 normalized,
                 visual_type="chart",
                 presentation_intent="chart_runtime",
             ),
             quality_profile="premium" if _contains_any(normalized, ("benchmark", "kpi", "perplexity")) else "standard",
-            renderer_contract="chart_runtime",
-            preferred_render_surface="svg",
-            planning_profile="chart_svg",
-            thinking_floor="high",
-            critic_policy="standard",
             living_expression_mode="subtle",
-            # Default: inline SVG/HTML. Recharts only for "interactive"/"dashboard" keywords.
         )
 
     if _contains_any(normalized, ("so sanh", "compare", "vs ", "khac nhau", "uu nhuoc diem")):
-        return VisualIntentDecision(
-            mode="inline_html",
-            force_tool=True,
-            visual_type="chart",
+        return build_article_figure_decision_impl(
+            decision_cls=VisualIntentDecision,
+            visual_type="comparison",
             reason="comparison_as_inline_chart",
-            presentation_intent="chart_runtime",
-            preferred_tool="tool_generate_visual",
-            figure_budget=_infer_figure_budget(
-                normalized,
-                visual_type="chart",
-                presentation_intent="chart_runtime",
-            ),
-            renderer_contract="chart_runtime",
-            preferred_render_surface="svg",
-            planning_profile="chart_svg",
-            thinking_floor="high",
-            critic_policy="standard",
+            figure_budget=2,
             living_expression_mode="expressive",
         )
 
     if _contains_any(normalized, ("quy trinh", "cac buoc", "step by step", "how it works", "process")):
-        return VisualIntentDecision(
-            mode="inline_html",
-            force_tool=True,
+        return build_article_figure_decision_impl(
+            decision_cls=VisualIntentDecision,
             visual_type="process",
             reason="process",
-            presentation_intent="article_figure",
-            preferred_tool="tool_generate_visual",
             figure_budget=_infer_figure_budget(
                 normalized,
                 visual_type="process",
                 presentation_intent="article_figure",
             ),
-            renderer_contract="article_figure",
-            preferred_render_surface="svg",
-            planning_profile="article_svg",
-            thinking_floor="high",
-            critic_policy="standard",
-            living_expression_mode="expressive",
         )
 
     if _contains_any(normalized, ("kien truc", "architecture", "he thong", "layer", "stack")):
-        return VisualIntentDecision(
-            mode="inline_html",
-            force_tool=True,
+        return build_article_figure_decision_impl(
+            decision_cls=VisualIntentDecision,
             visual_type="architecture",
             reason="architecture",
-            presentation_intent="article_figure",
-            preferred_tool="tool_generate_visual",
             figure_budget=_infer_figure_budget(
                 normalized,
                 visual_type="architecture",
                 presentation_intent="article_figure",
             ),
             quality_profile="premium",
-            renderer_contract="article_figure",
-            preferred_render_surface="svg",
-            planning_profile="article_svg",
-            thinking_floor="high",
             critic_policy="premium",
-            living_expression_mode="expressive",
         )
 
     if _contains_any(normalized, ("ma tran", "matrix", "heatmap", "quadrant", "2x2")):
-        return VisualIntentDecision(
-            mode="inline_html",
-            force_tool=True,
+        return build_article_figure_decision_impl(
+            decision_cls=VisualIntentDecision,
             visual_type="matrix",
             reason="matrix",
-            presentation_intent="article_figure",
-            preferred_tool="tool_generate_visual",
             figure_budget=2,
-            renderer_contract="article_figure",
-            preferred_render_surface="svg",
-            planning_profile="article_svg",
-            thinking_floor="high",
-            critic_policy="standard",
-            living_expression_mode="expressive",
         )
 
     if _contains_any(normalized, ("infographic", "tong quan nhanh", "facts at a glance", "highlights")):
-        return VisualIntentDecision(
-            mode="inline_html",
-            force_tool=True,
+        return build_article_figure_decision_impl(
+            decision_cls=VisualIntentDecision,
             visual_type="infographic",
             reason="infographic",
-            presentation_intent="article_figure",
-            preferred_tool="tool_generate_visual",
             figure_budget=2,
-            renderer_contract="article_figure",
-            preferred_render_surface="svg",
-            planning_profile="article_svg",
-            thinking_floor="high",
-            critic_policy="standard",
-            living_expression_mode="expressive",
         )
 
     if _contains_any(
@@ -841,20 +498,12 @@ def _resolve_visual_intent_core(query: str) -> VisualIntentDecision:
             "truc quan hoa",
         ),
     ):
-        return VisualIntentDecision(
-            mode="inline_html",
-            force_tool=True,
+        return build_article_figure_decision_impl(
+            decision_cls=VisualIntentDecision,
             visual_type="concept",
             reason="concept",
-            presentation_intent="article_figure",
-            preferred_tool="tool_generate_visual",
             figure_budget=2,
-            renderer_contract="article_figure",
-            preferred_render_surface="svg",
-            planning_profile="article_svg",
-            thinking_floor="high",
-            critic_policy="standard",
-            living_expression_mode="expressive",
         )
 
     return VisualIntentDecision(mode="text", reason="plain-text")
+

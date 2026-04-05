@@ -483,11 +483,14 @@ def serialize_stream_event(
         ], event_counter, False
 
     if event_type == "error":
+        if isinstance(event.content, dict):
+            payload = dict(event.content)
+        else:
+            payload = {"message": str(event.content)}
+        payload.setdefault("message", str(event.content))
+        payload.setdefault("type", "stream_error")
         data = _apply_presentation_metadata(
-            payload={
-                "message": event.content.get("message", str(event.content)),
-                "type": "stream_error",
-            },
+            payload=payload,
             event_type=event_type,
             event_counter=event_counter,
             event=event,

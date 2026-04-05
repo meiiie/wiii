@@ -21,6 +21,9 @@ import logging
 from datetime import datetime, date, timezone
 from typing import Optional
 
+from app.engine.living_agent.heartbeat_runtime_state import (
+    get_current_heartbeat_count,
+)
 from app.engine.living_agent.models import EmotionalState, JournalEntry
 
 logger = logging.getLogger(__name__)
@@ -84,17 +87,15 @@ class JournalWriter:
 
         # Generate journal content via local LLM
         from app.engine.living_agent.local_llm import get_local_llm
-        from app.engine.living_agent.heartbeat import get_heartbeat_scheduler
 
         llm = get_local_llm()
-        scheduler = get_heartbeat_scheduler()
 
         prompt = _JOURNAL_PROMPT.format(
             mood=emotional_state.primary_mood.value,
             energy=emotional_state.energy_level,
             social=emotional_state.social_battery,
             date=today.strftime("%d/%m/%Y"),
-            heartbeat_count=scheduler.heartbeat_count,
+            heartbeat_count=get_current_heartbeat_count(),
         )
 
         content = await llm.generate(prompt, temperature=0.7, max_tokens=1024)

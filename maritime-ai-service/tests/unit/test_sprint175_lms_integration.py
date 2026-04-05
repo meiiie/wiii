@@ -202,26 +202,79 @@ class TestLMSDataEndpoints:
         from app.api.v1.lms_data import router
         assert router.prefix == "/lms"
 
-    def test_check_student_access_allows_own_data(self):
+    @pytest.mark.asyncio
+    async def test_check_student_access_allows_own_data(self):
         from app.api.v1.lms_data import _check_student_access
-        # Should not raise
-        _check_student_access("student-1", "student", "student-1")
+        from app.core.security import AuthenticatedUser
 
-    def test_check_student_access_blocks_other_student(self):
+        auth = AuthenticatedUser(
+            user_id="wiii-user-1",
+            auth_method="jwt",
+            role="student",
+            organization_id="lms-hang-hai",
+        )
+        with patch("app.api.v1.lms_data.resolve_lms_identity", new=AsyncMock(return_value=("student-1", "maritime-lms"))):
+            await _check_student_access(auth, "student-1", connector_id="maritime-lms")
+
+    @pytest.mark.asyncio
+    async def test_check_student_access_blocks_other_student(self):
         from app.api.v1.lms_data import _check_student_access
         from fastapi import HTTPException
-        with pytest.raises(HTTPException) as exc_info:
-            _check_student_access("student-1", "student", "student-2")
+        from app.core.security import AuthenticatedUser
+
+        auth = AuthenticatedUser(
+            user_id="wiii-user-1",
+            auth_method="jwt",
+            role="student",
+            organization_id="lms-hang-hai",
+        )
+        with patch("app.api.v1.lms_data.resolve_lms_identity", new=AsyncMock(return_value=("student-1", "maritime-lms"))):
+            with pytest.raises(HTTPException) as exc_info:
+                await _check_student_access(auth, "student-2", connector_id="maritime-lms")
         assert exc_info.value.status_code == 403
 
-    def test_check_student_access_allows_teacher(self):
+    @pytest.mark.asyncio
+    async def test_check_student_access_allows_teacher(self):
         from app.api.v1.lms_data import _check_student_access
-        # Teachers can access any student data
-        _check_student_access("teacher-1", "teacher", "student-2")
+        from app.core.security import AuthenticatedUser
 
-    def test_check_student_access_allows_admin(self):
+        auth = AuthenticatedUser(
+            user_id="wiii-user-1",
+            auth_method="jwt",
+            role="student",
+            host_role="teacher",
+        )
+        await _check_student_access(auth, "student-2", connector_id="maritime-lms")
+
+    @pytest.mark.asyncio
+    async def test_check_student_access_allows_admin(self):
         from app.api.v1.lms_data import _check_student_access
-        _check_student_access("admin-1", "admin", "student-2")
+        from app.core.security import AuthenticatedUser
+
+        auth = AuthenticatedUser(
+            user_id="wiii-user-1",
+            auth_method="jwt",
+            role="admin",
+            platform_role="platform_admin",
+        )
+        await _check_student_access(auth, "student-2", connector_id="maritime-lms")
+
+    @pytest.mark.asyncio
+    async def test_check_student_access_blocks_connector_mismatch(self):
+        from app.api.v1.lms_data import _check_student_access
+        from app.core.security import AuthenticatedUser
+        from fastapi import HTTPException
+
+        auth = AuthenticatedUser(
+            user_id="wiii-user-1",
+            auth_method="jwt",
+            role="student",
+            organization_id="lms-hang-hai",
+        )
+        with patch("app.api.v1.lms_data.resolve_lms_identity", new=AsyncMock(return_value=("student-1", "other-lms"))):
+            with pytest.raises(HTTPException) as exc_info:
+                await _check_student_access(auth, "student-1", connector_id="maritime-lms")
+        assert exc_info.value.status_code == 403
 
 
 # =============================================================================
@@ -637,6 +690,30 @@ class TestDashboardEndpoints:
         with pytest.raises(HTTPException) as exc_info:
             _require_teacher_or_admin("student")
         assert exc_info.value.status_code == 403
+
+    def test_require_teacher_allows_host_org_admin(self):
+        from app.api.v1.lms_dashboard import _require_teacher_or_admin
+        from app.core.security import AuthenticatedUser
+
+        auth = AuthenticatedUser(
+            user_id="wiii-user-1",
+            auth_method="jwt",
+            role="student",
+            host_role="org_admin",
+        )
+        _require_teacher_or_admin(auth)
+
+    def test_require_org_overview_allows_wiii_org_admin(self):
+        from app.api.v1.lms_dashboard import _require_org_overview_access
+        from app.core.security import AuthenticatedUser
+
+        auth = AuthenticatedUser(
+            user_id="wiii-user-1",
+            auth_method="jwt",
+            role="student",
+            organization_role="admin",
+        )
+        _require_org_overview_access(auth)
 
 
 # =============================================================================

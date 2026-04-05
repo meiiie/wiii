@@ -18,6 +18,19 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.constants import DEFAULT_RELEVANCE_THRESHOLD, MAX_CONTENT_SNIPPET_LENGTH, MAX_DOCUMENT_PREVIEW_LENGTH
 from app.core.resilience import retry_on_transient
+from app.engine.agentic_rag.runtime_llm_socket import (
+    ainvoke_agentic_rag_llm,
+    resolve_agentic_rag_llm,
+)
+from app.engine.llm_factory import ThinkingTier
+from app.engine.agentic_rag.retrieval_grader_support import (
+    batch_grade_legacy_impl,
+    batch_grade_structured_impl,
+    build_feedback_direct_impl,
+    generate_feedback_impl,
+    parse_batch_response_impl,
+    sequential_grade_documents_impl,
+)
 from app.engine.llm_pool import get_llm_moderate  # SOTA: Shared LLM Pool
 
 logger = logging.getLogger(__name__)
@@ -169,11 +182,23 @@ class RetrievalGrader:
         """Initialize Gemini LLM from shared pool for grading."""
         try:
             # SOTA: Use shared LLM from pool (memory optimized)
-            self._llm = get_llm_moderate()
+            self._llm = self._resolve_runtime_llm()
             logger.info("RetrievalGrader initialized with shared MODERATE tier LLM")
         except Exception as e:
             logger.error("Failed to initialize RetrievalGrader LLM: %s", e)
             self._llm = None
+
+    def _resolve_runtime_llm(self):
+        """Resolve the request-time MODERATE-tier grading LLM."""
+        llm = resolve_agentic_rag_llm(
+            tier=ThinkingTier.MODERATE,
+            cached_llm=self._llm,
+            fallback_factory=get_llm_moderate,
+            component="RetrievalGrader",
+        )
+        if llm is not None:
+            self._llm = llm
+        return llm
     
     async def grade_document(
         self,
@@ -193,7 +218,8 @@ class RetrievalGrader:
         doc_id = document.get("id", document.get("node_id", "unknown"))
         content = document.get("content", document.get("text", ""))[:MAX_DOCUMENT_PREVIEW_LENGTH]
 
-        if not self._llm:
+        llm = self._resolve_runtime_llm()
+        if not llm:
             # Fallback: keyword matching
             return self._rule_based_grade(query, doc_id, content)
 
@@ -214,13 +240,19 @@ class RetrievalGrader:
         """Grade single document using structured output."""
         from app.engine.structured_schemas import SingleDocGrade
 
-        structured_llm = self._llm.with_structured_output(SingleDocGrade)
         messages = [
             SystemMessage(content="You are a document relevance grader."),
             HumanMessage(content=GRADING_PROMPT.format(query=query, document=content))
         ]
 
-        result = await structured_llm.ainvoke(messages)
+        from app.services.structured_invoke_service import StructuredInvokeService
+
+        result = await StructuredInvokeService.ainvoke(
+            llm=self._llm,
+            schema=SingleDocGrade,
+            payload=messages,
+            tier="moderate",
+        )
         return DocumentGrade(
             document_id=doc_id,
             content_preview=content[:MAX_CONTENT_SNIPPET_LENGTH],
@@ -237,7 +269,12 @@ class RetrievalGrader:
             HumanMessage(content=GRADING_PROMPT.format(query=query, document=content))
         ]
 
-        response = await self._llm.ainvoke(messages)
+        response = await ainvoke_agentic_rag_llm(
+            llm=self._llm,
+            messages=messages,
+            tier=ThinkingTier.MODERATE,
+            component="RetrievalGraderLegacy",
+        )
 
         # SOTA FIX: Handle Gemini 2.5 Flash content block format
         from app.services.output_processor import extract_thinking_from_response
@@ -285,6 +322,8 @@ class RetrievalGrader:
         Returns:
             GradingResult with all grades and summary
         """
+        self._resolve_runtime_llm()
+
         if not documents:
             return GradingResult(
                 query=query,
@@ -444,8 +483,10 @@ class RetrievalGrader:
         if not documents:
             return []
 
+        llm = self._resolve_runtime_llm()
+
         # Fallback to rule-based if no LLM
-        if not self._llm:
+        if not llm:
             return [
                 self._rule_based_grade(
                     query,
@@ -477,46 +518,28 @@ class RetrievalGrader:
     async def _batch_grade_structured(self, query: str, documents: List[Dict[str, Any]],
                                        docs_text: str) -> List[DocumentGrade]:
         """Batch grade using structured output."""
-        from app.engine.structured_schemas import BatchDocGrades
-
-        structured_llm = self._llm.with_structured_output(BatchDocGrades)
-        messages = [
-            SystemMessage(content="Grade document relevance for each document."),
-            HumanMessage(content=BATCH_GRADING_PROMPT.format(query=query, documents=docs_text))
-        ]
-
-        result = await structured_llm.ainvoke(messages)
-        grades = []
-        for item in result.grades:
-            if item.doc_index < len(documents):
-                doc = documents[item.doc_index]
-                doc_id = doc.get("id", doc.get("node_id", f"doc_{item.doc_index}"))
-                content = doc.get("content", doc.get("text", ""))[:MAX_CONTENT_SNIPPET_LENGTH]
-                grades.append(DocumentGrade(
-                    document_id=doc_id,
-                    content_preview=content,
-                    score=item.score,
-                    is_relevant=item.score >= self._threshold,
-                    reason=item.reason,
-                ))
-
-        logger.info("[GRADER] Batch graded %d docs via structured output", len(grades))
-        return grades
+        return await batch_grade_structured_impl(
+            llm=self._llm,
+            threshold=self._threshold,
+            query=query,
+            documents=documents,
+            docs_text=docs_text,
+            prompt=BATCH_GRADING_PROMPT,
+            document_grade_cls=DocumentGrade,
+        )
 
     @retry_on_transient()
     async def _batch_grade_legacy(self, query: str, documents: List[Dict[str, Any]],
                                    docs_text: str) -> List[DocumentGrade]:
         """Batch grade using legacy JSON parsing."""
-        messages = [
-            SystemMessage(content="Grade document relevance. Return only valid JSON array."),
-            HumanMessage(content=BATCH_GRADING_PROMPT.format(query=query, documents=docs_text))
-        ]
-
-        response = await self._llm.ainvoke(messages)
-        grades = self._parse_batch_response(response.content, documents)
-
-        logger.info("[GRADER] Batch graded %d docs in 1 LLM call (SOTA)", len(grades))
-        return grades
+        return await batch_grade_legacy_impl(
+            llm=self._llm,
+            query=query,
+            documents=documents,
+            docs_text=docs_text,
+            prompt=BATCH_GRADING_PROMPT,
+            parse_batch_response=self._parse_batch_response,
+        )
     
     async def _sequential_grade_documents(
         self,
@@ -524,11 +547,11 @@ class RetrievalGrader:
         documents: List[Dict[str, Any]]
     ) -> List[DocumentGrade]:
         """Fallback: Sequential grading when batch fails."""
-        grades = []
-        for doc in documents:
-            grade = await self.grade_document(query, doc)
-            grades.append(grade)
-        return grades
+        return await sequential_grade_documents_impl(
+            query=query,
+            documents=documents,
+            grade_document=self.grade_document,
+        )
     
     def _parse_batch_response(
         self,
@@ -536,53 +559,13 @@ class RetrievalGrader:
         documents: List[Dict[str, Any]]
     ) -> List[DocumentGrade]:
         """Parse batch grading JSON response."""
-        # SOTA FIX: Handle Gemini 2.5 Flash content block format
-        # When thinking_enabled=True, response may be list, not string
-        from app.services.output_processor import extract_thinking_from_response
-        text_content, _ = extract_thinking_from_response(response)
-        result = text_content.strip()
-        
-        # Clean markdown code blocks if present
-        if result.startswith("```"):
-            result = result.split("```")[1]
-            if result.startswith("json"):
-                result = result[4:]
-        result = result.strip()
-        
-        try:
-            data = json.loads(result)
-            
-            grades = []
-            for item in data:
-                doc_idx = item.get("doc_index", 0)
-                if doc_idx < len(documents):
-                    doc = documents[doc_idx]
-                    doc_id = doc.get("id", doc.get("node_id", f"doc_{doc_idx}"))
-                    content = doc.get("content", doc.get("text", ""))[:MAX_CONTENT_SNIPPET_LENGTH]
-                    
-                    score = float(item.get("score", 5.0))
-                    
-                    grades.append(DocumentGrade(
-                        document_id=doc_id,
-                        content_preview=content,
-                        score=score,
-                        is_relevant=score >= self._threshold,
-                        reason=item.get("reason", "Batch graded")
-                    ))
-            
-            return grades
-            
-        except json.JSONDecodeError as e:
-            logger.warning("Failed to parse batch response: %s", e)
-            # Fallback to rule-based
-            return [
-                self._rule_based_grade(
-                    "", 
-                    doc.get("id", doc.get("node_id", "unknown")), 
-                    doc.get("content", doc.get("text", ""))[:MAX_DOCUMENT_PREVIEW_LENGTH]
-                ) 
-                for doc in documents
-            ]
+        return parse_batch_response_impl(
+            response=response,
+            documents=documents,
+            threshold=self._threshold,
+            document_grade_cls=DocumentGrade,
+            rule_based_grade=self._rule_based_grade,
+        )
     
     def _build_feedback_direct(
         self,
@@ -606,25 +589,11 @@ class RetrievalGrader:
         Returns:
             Formatted feedback string for QueryRewriter
         """
-        # Format issues - take top 3 unique issues
-        unique_issues = list(dict.fromkeys(issues))[:3]
-        issues_text = "; ".join(unique_issues) if unique_issues else "Documents không trực tiếp trả lời query"
-        
-        # Rule-based feedback based on score severity
-        if avg_score < 3.0:
-            severity = "Rất thấp"
-            suggestion = "Thử sử dụng thuật ngữ hàng hải chuẩn (SOLAS, COLREGs, MARPOL)"
-        elif avg_score < 5.0:
-            severity = "Thấp"
-            suggestion = "Thêm từ khóa cụ thể hoặc diễn đạt lại câu hỏi"
-        else:
-            severity = "Trung bình"
-            suggestion = "Cân nhắc thêm context hoặc phạm vi cụ thể hơn"
-        
-        return (
-            f"Độ liên quan {severity} ({avg_score:.1f}/10, {relevant_count}/{total} docs). "
-            f"Vấn đề: {issues_text[:200]}. "
-            f"Gợi ý: {suggestion}"
+        return build_feedback_direct_impl(
+            avg_score=avg_score,
+            relevant_count=relevant_count,
+            total=total,
+            issues=issues,
         )
     
     async def _generate_feedback(
@@ -636,30 +605,16 @@ class RetrievalGrader:
         issues: List[str]
     ) -> str:
         """Generate feedback for query rewriting."""
-        if not self._llm:
-            return f"Low relevance ({avg_score:.1f}/10). Try more specific keywords."
-        
-        try:
-            messages = [
-                HumanMessage(content=FEEDBACK_PROMPT.format(
-                    query=query,
-                    avg_score=f"{avg_score:.1f}",
-                    relevant_count=relevant_count,
-                    total=total,
-                    issues="; ".join(issues[:3]) if issues else "Documents không trực tiếp trả lời query"
-                ))
-            ]
-            
-            response = await self._llm.ainvoke(messages)
-            
-            # SOTA FIX: Handle Gemini 2.5 Flash content block format
-            from app.services.output_processor import extract_thinking_from_response
-            text_content, _ = extract_thinking_from_response(response.content)
-            return text_content.strip()
-            
-        except Exception as e:
-            logger.warning("Feedback generation failed: %s", e)
-            return f"Low relevance ({avg_score:.1f}/10). Try more specific keywords."
+        self._resolve_runtime_llm()
+        return await generate_feedback_impl(
+            llm=self._llm,
+            query=query,
+            avg_score=avg_score,
+            relevant_count=relevant_count,
+            total=total,
+            issues=issues,
+            prompt=FEEDBACK_PROMPT,
+        )
     
     def _rule_based_grade(
         self, 
@@ -687,7 +642,7 @@ class RetrievalGrader:
     
     def is_available(self) -> bool:
         """Check if LLM is available."""
-        return self._llm is not None
+        return self._resolve_runtime_llm() is not None
 
 
 # Singleton

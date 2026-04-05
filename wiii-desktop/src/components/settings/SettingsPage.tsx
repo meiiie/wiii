@@ -39,34 +39,29 @@ import { useDomainStore } from "@/stores/domain-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { getOrgDisplayName } from "@/lib/org-config";
 import { PERSONAL_ORG_ID } from "@/lib/constants";
-import { getLlmRuntimeConfig, updateLlmRuntimeConfig } from "@/api/admin";
-import { fetchIdentities, unlinkIdentity } from "@/api/users";
-import type { AppSettings, LlmRuntimeConfig, UserIdentity } from "@/api/types";
 import {
-  applyLlmProviderPreset,
-  GOOGLE_DEFAULT_MODEL,
-  OLLAMA_DEFAULT_BASE_URL,
-  OLLAMA_DEFAULT_KEEP_ALIVE,
-  OLLAMA_DEFAULT_MODEL,
-  OPENROUTER_BASE_URL,
-  OPENROUTER_DEFAULT_MODEL,
-  OPENROUTER_DEFAULT_MODEL_ADVANCED,
-} from "@/lib/llm-presets";
+  fetchConnectedWorkspaces,
+  fetchIdentities,
+  fetchProfile,
+  unlinkIdentity,
+} from "@/api/users";
+import type {
+  AppSettings,
+  ConnectedWorkspace,
+  UserIdentity,
+  UserProfile,
+} from "@/api/types";
 import { OrgSettingsTab } from "./OrgSettingsTab";
 import { LivingAgentPanel } from "@/components/living-agent/LivingAgentPanel";
+import { LlmRuntimePolicyEditor } from "@/components/runtime/LlmRuntimePolicyEditor";
 import { Building2, Heart } from "lucide-react";
 import {
   clearGeminiApiKey,
   clearOllamaApiKey,
   clearOpenRouterApiKey,
-  loadGeminiApiKey,
-  loadOpenRouterApiKey,
-  loadOllamaApiKey,
+  clearZhipuApiKey,
   storeFacebookCookie,
   loadFacebookCookie,
-  storeGeminiApiKey,
-  storeOllamaApiKey,
-  storeOpenRouterApiKey,
 } from "@/lib/secure-token-storage";
 
 type Tab = "connection" | "profile" | "preferences" | "memory" | "context" | "organization" | "living-agent";
@@ -143,12 +138,15 @@ export function SettingsPage() {
     setTestMessage("");
 
     try {
+      const authHeaders = authMode === "oauth"
+        ? useSettingsStore.getState().getAuthHeaders()
+        : {
+            "X-API-Key": draft.api_key,
+            "X-User-ID": settings.user_id,
+            "X-Role": settings.user_role,
+          };
       // Temporarily init client with draft values to test
-      initClient(draft.server_url, {
-        "X-API-Key": draft.api_key,
-        "X-User-ID": settings.user_id,
-        "X-Role": settings.user_role,
-      });
+      initClient(draft.server_url, authHeaders);
 
       await checkHealth();
 
@@ -179,11 +177,16 @@ export function SettingsPage() {
     });
 
     // Re-init client with new settings
-    initClient(draft.server_url, {
-      "X-API-Key": draft.api_key,
-      "X-User-ID": settings.user_id,
-      "X-Role": settings.user_role,
-    });
+    initClient(
+      draft.server_url,
+      authMode === "oauth"
+        ? useSettingsStore.getState().getAuthHeaders()
+        : {
+            "X-API-Key": draft.api_key,
+            "X-User-ID": settings.user_id,
+            "X-Role": settings.user_role,
+          },
+    );
 
     checkHealth();
     addToast("success", "Wiii ghi nhớ cài đặt rồi!");
@@ -203,11 +206,16 @@ export function SettingsPage() {
     // Re-init client if auth headers changed
     if (key === "user_id" || key === "user_role") {
       const updated = useSettingsStore.getState().settings;
-      initClient(updated.server_url, {
-        "X-API-Key": updated.api_key,
-        "X-User-ID": updated.user_id,
-        "X-Role": updated.user_role,
-      });
+      initClient(
+        updated.server_url,
+        authMode === "oauth"
+          ? useSettingsStore.getState().getAuthHeaders()
+          : {
+              "X-API-Key": updated.api_key,
+              "X-User-ID": updated.user_id,
+              "X-Role": updated.user_role,
+            },
+      );
     }
 
     addToast("success", "Wiii nhớ rồi!");
@@ -342,6 +350,7 @@ export function SettingsPage() {
               await clearFacebookCookie();
               await clearGeminiApiKey();
               await clearOpenRouterApiKey();
+              await clearZhipuApiKey();
               await clearOllamaApiKey();
             } catch { /* ignore */ }
             setDraft({
@@ -374,85 +383,6 @@ export interface ConnectionTabProps {
   onUpdate?: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
 }
 
-type GatewayDraft = {
-  provider: "google" | "openai" | "openrouter" | "ollama";
-  use_multi_agent: boolean;
-  google_api_key: string;
-  google_model: string;
-  openai_api_key: string;
-  ollama_api_key: string;
-  openai_base_url: string;
-  openai_model: string;
-  openai_model_advanced: string;
-  ollama_base_url: string;
-  ollama_model: string;
-  ollama_keep_alive: string;
-  enable_llm_failover: boolean;
-  llm_failover_chain: string;
-};
-const LEGACY_PAID_OPENAI_MODELS = new Set([
-  "gpt-4o-mini",
-  "gpt-4o",
-  "openai/gpt-4o-mini",
-  "openai/gpt-4o",
-]);
-
-function applyGatewayProviderDefaults(
-  current: GatewayDraft,
-  provider: GatewayDraft["provider"]
-): GatewayDraft {
-  const currentChain = current.llm_failover_chain
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  const preset = applyLlmProviderPreset(
-    {
-      llm_provider: current.provider,
-      google_model: current.google_model,
-      openai_base_url: current.openai_base_url,
-      openai_model: current.openai_model,
-      openai_model_advanced: current.openai_model_advanced,
-      ollama_base_url: current.ollama_base_url,
-      ollama_model: current.ollama_model,
-      ollama_keep_alive: current.ollama_keep_alive,
-      llm_failover_chain: currentChain,
-    },
-    provider
-  );
-  const next: GatewayDraft = {
-    ...current,
-    provider,
-    google_model: preset.google_model ?? current.google_model,
-    openai_base_url: preset.openai_base_url ?? current.openai_base_url,
-    openai_model: preset.openai_model ?? current.openai_model,
-    openai_model_advanced:
-      preset.openai_model_advanced ?? current.openai_model_advanced,
-    ollama_base_url: preset.ollama_base_url ?? current.ollama_base_url,
-    ollama_model: preset.ollama_model ?? current.ollama_model,
-    ollama_keep_alive:
-      preset.ollama_keep_alive ?? current.ollama_keep_alive,
-    llm_failover_chain: (
-      Array.isArray(preset.llm_failover_chain)
-        ? preset.llm_failover_chain
-        : currentChain
-    ).join(", "),
-  };
-
-  if (provider === "openrouter") {
-    if (!next.openai_model || LEGACY_PAID_OPENAI_MODELS.has(next.openai_model)) {
-      next.openai_model = OPENROUTER_DEFAULT_MODEL;
-    }
-    if (
-      !next.openai_model_advanced
-      || LEGACY_PAID_OPENAI_MODELS.has(next.openai_model_advanced)
-    ) {
-      next.openai_model_advanced = OPENROUTER_DEFAULT_MODEL_ADVANCED;
-    }
-  }
-
-  return next;
-}
-
 export function ConnectionTab({
   draft,
   setDraft,
@@ -463,226 +393,7 @@ export function ConnectionTab({
   settings,
   onUpdate,
 }: ConnectionTabProps) {
-  const { updateSettings } = useSettingsStore();
   const { addToast } = useToastStore();
-  const [gatewayDraft, setGatewayDraft] = useState<GatewayDraft>({
-    provider: settings?.llm_provider ?? "ollama",
-    use_multi_agent: true,
-    google_api_key: "",
-    google_model: settings?.google_model ?? GOOGLE_DEFAULT_MODEL,
-    openai_api_key: "",
-    ollama_api_key: "",
-    openai_base_url: settings?.openai_base_url ?? "",
-    openai_model: settings?.openai_model ?? OPENROUTER_DEFAULT_MODEL,
-    openai_model_advanced:
-      settings?.openai_model_advanced ?? OPENROUTER_DEFAULT_MODEL_ADVANCED,
-    ollama_base_url: settings?.ollama_base_url ?? OLLAMA_DEFAULT_BASE_URL,
-    ollama_model: settings?.ollama_model ?? OLLAMA_DEFAULT_MODEL,
-    ollama_keep_alive: settings?.ollama_keep_alive ?? OLLAMA_DEFAULT_KEEP_ALIVE,
-    enable_llm_failover: settings?.llm_failover_enabled ?? true,
-    llm_failover_chain: (
-      settings?.llm_failover_chain ?? ["ollama", "google", "openrouter"]
-    ).join(", "),
-  });
-  const [gatewayInfo, setGatewayInfo] = useState<LlmRuntimeConfig | null>(null);
-  const [gatewayState, setGatewayState] = useState<"idle" | "loading" | "saving" | "error">("idle");
-  const [gatewayMessage, setGatewayMessage] = useState("");
-
-  useEffect(() => {
-    setGatewayDraft((current) => ({
-      ...current,
-      provider: settings?.llm_provider ?? current.provider,
-      use_multi_agent: gatewayInfo?.use_multi_agent ?? current.use_multi_agent,
-      google_model: settings?.google_model ?? current.google_model,
-      openai_base_url: settings?.openai_base_url ?? current.openai_base_url,
-      openai_model: settings?.openai_model ?? current.openai_model,
-      openai_model_advanced: settings?.openai_model_advanced ?? current.openai_model_advanced,
-      ollama_base_url: settings?.ollama_base_url ?? current.ollama_base_url,
-      ollama_model: settings?.ollama_model ?? current.ollama_model,
-      ollama_keep_alive: settings?.ollama_keep_alive ?? current.ollama_keep_alive,
-      enable_llm_failover: settings?.llm_failover_enabled ?? current.enable_llm_failover,
-      llm_failover_chain: (settings?.llm_failover_chain ?? current.llm_failover_chain.split(",").map((item) => item.trim()).filter(Boolean)).join(", "),
-    }));
-  }, [
-    settings?.llm_provider,
-    settings?.google_model,
-    settings?.openai_base_url,
-    settings?.openai_model,
-    settings?.openai_model_advanced,
-    settings?.ollama_base_url,
-    settings?.ollama_model,
-    settings?.ollama_keep_alive,
-    settings?.llm_failover_enabled,
-    settings?.llm_failover_chain,
-    gatewayInfo?.use_multi_agent,
-  ]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    Promise.all([loadGeminiApiKey(), loadOpenRouterApiKey(), loadOllamaApiKey()])
-      .then(([geminiApiKey, openRouterApiKey, ollamaApiKey]) => {
-        if (cancelled) return;
-        setGatewayDraft((current) => ({
-          ...current,
-          google_api_key: geminiApiKey ?? current.google_api_key,
-          openai_api_key: openRouterApiKey ?? current.openai_api_key,
-          ollama_api_key: ollamaApiKey ?? current.ollama_api_key,
-        }));
-      })
-      .catch(() => undefined);
-
-    if (!settings) {
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setGatewayState("loading");
-    getLlmRuntimeConfig()
-      .then((config) => {
-        if (cancelled) return;
-        setGatewayInfo(config);
-        setGatewayDraft((current) => ({
-          ...current,
-          provider: config.provider,
-          use_multi_agent: config.use_multi_agent,
-          google_model: config.google_model,
-          openai_base_url: config.openai_base_url ?? current.openai_base_url,
-          openai_model: config.openai_model,
-          openai_model_advanced: config.openai_model_advanced,
-          ollama_base_url: config.ollama_base_url ?? current.ollama_base_url,
-          ollama_model: config.ollama_model,
-          ollama_keep_alive: config.ollama_keep_alive ?? current.ollama_keep_alive,
-          enable_llm_failover: config.enable_llm_failover,
-          llm_failover_chain: config.llm_failover_chain.join(", "),
-        }));
-        setGatewayState("idle");
-        setGatewayMessage("");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setGatewayState("error");
-        setGatewayMessage("Không đọc được cấu hình LLM runtime từ backend.");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [settings]);
-
-  const refreshGateway = async () => {
-    setGatewayState("loading");
-    setGatewayMessage("");
-    try {
-      const config = await getLlmRuntimeConfig();
-      setGatewayInfo(config);
-      setGatewayDraft((current) => ({
-        ...current,
-        provider: config.provider,
-        use_multi_agent: config.use_multi_agent,
-        google_model: config.google_model,
-        openai_base_url: config.openai_base_url ?? "",
-        openai_model: config.openai_model,
-        openai_model_advanced: config.openai_model_advanced,
-        ollama_base_url: config.ollama_base_url ?? OLLAMA_DEFAULT_BASE_URL,
-        ollama_model: config.ollama_model,
-        ollama_keep_alive: config.ollama_keep_alive ?? OLLAMA_DEFAULT_KEEP_ALIVE,
-        enable_llm_failover: config.enable_llm_failover,
-        llm_failover_chain: config.llm_failover_chain.join(", "),
-      }));
-      setGatewayState("idle");
-    } catch {
-      setGatewayState("error");
-      setGatewayMessage("Không đọc được cấu hình runtime mới nhất.");
-    }
-  };
-
-  const handleSaveGateway = async () => {
-    const chain = gatewayDraft.llm_failover_chain
-      .split(",")
-      .map((item) => item.trim().toLowerCase())
-      .filter(Boolean);
-
-    setGatewayState("saving");
-    setGatewayMessage("");
-
-    try {
-      const runtime = await updateLlmRuntimeConfig({
-        provider: gatewayDraft.provider,
-        use_multi_agent: gatewayDraft.use_multi_agent,
-        google_api_key: gatewayDraft.google_api_key || undefined,
-        clear_google_api_key: !gatewayDraft.google_api_key,
-        google_model: gatewayDraft.google_model,
-        openai_api_key: gatewayDraft.openai_api_key || undefined,
-        clear_openai_api_key: !gatewayDraft.openai_api_key,
-        ollama_api_key: gatewayDraft.ollama_api_key || undefined,
-        clear_ollama_api_key: !gatewayDraft.ollama_api_key,
-        openai_base_url: gatewayDraft.openai_base_url,
-        openai_model: gatewayDraft.openai_model,
-        openai_model_advanced: gatewayDraft.openai_model_advanced,
-        ollama_base_url: gatewayDraft.ollama_base_url,
-        ollama_model: gatewayDraft.ollama_model,
-        ollama_keep_alive: gatewayDraft.ollama_keep_alive,
-        enable_llm_failover: gatewayDraft.enable_llm_failover,
-        llm_failover_chain: chain,
-      });
-
-      if (gatewayDraft.google_api_key) {
-        await storeGeminiApiKey(gatewayDraft.google_api_key);
-      } else {
-        await clearGeminiApiKey();
-      }
-
-      if (gatewayDraft.openai_api_key) {
-        await storeOpenRouterApiKey(gatewayDraft.openai_api_key);
-      } else {
-        await clearOpenRouterApiKey();
-      }
-
-      if (gatewayDraft.ollama_api_key) {
-        await storeOllamaApiKey(gatewayDraft.ollama_api_key);
-      } else {
-        await clearOllamaApiKey();
-      }
-
-      await updateSettings({
-        llm_provider: runtime.provider,
-        google_model: runtime.google_model,
-        openai_base_url: runtime.openai_base_url ?? "",
-        openai_model: runtime.openai_model,
-        openai_model_advanced: runtime.openai_model_advanced,
-        ollama_base_url: runtime.ollama_base_url ?? OLLAMA_DEFAULT_BASE_URL,
-        ollama_model: runtime.ollama_model,
-        ollama_keep_alive: runtime.ollama_keep_alive ?? OLLAMA_DEFAULT_KEEP_ALIVE,
-        llm_failover_enabled: runtime.enable_llm_failover,
-        llm_failover_chain: runtime.llm_failover_chain,
-      });
-
-      setGatewayInfo(runtime);
-      setGatewayDraft((current) => ({
-        ...current,
-        provider: runtime.provider,
-        use_multi_agent: runtime.use_multi_agent,
-        google_model: runtime.google_model,
-        openai_base_url: runtime.openai_base_url ?? current.openai_base_url,
-        openai_model: runtime.openai_model,
-        openai_model_advanced: runtime.openai_model_advanced,
-        ollama_base_url: runtime.ollama_base_url ?? current.ollama_base_url,
-        ollama_model: runtime.ollama_model,
-        ollama_keep_alive: runtime.ollama_keep_alive ?? current.ollama_keep_alive,
-        enable_llm_failover: runtime.enable_llm_failover,
-        llm_failover_chain: runtime.llm_failover_chain.join(", "),
-      }));
-      setGatewayState("idle");
-      setGatewayMessage("Đã áp dụng LLM gateway cho backend hiện tại.");
-      addToast("success", "Đã cập nhật cổng model.");
-    } catch {
-      setGatewayState("error");
-      setGatewayMessage("Không thể cập nhật LLM gateway.");
-      addToast("error", "Không thể cập nhật cổng model.");
-    }
-  };
 
   return (
     <div className="space-y-4">
@@ -706,8 +417,7 @@ export function ConnectionTab({
         />
       </FieldGroup>
 
-      {/* Sprint 154: Facebook cookie for logged-in search */}
-      <FieldGroup label="Facebook Cookie" hint="Cho phép tìm kiếm trong hội nhóm Facebook. Lấy từ DevTools > Application > Cookies.">
+      <FieldGroup label="Facebook Cookie" hint="Cho phep tim kiem trong hoi nhom Facebook. Lay tu DevTools > Application > Cookies.">
         <input
           type="password"
           value={draft.facebook_cookie}
@@ -717,7 +427,6 @@ export function ConnectionTab({
         />
       </FieldGroup>
 
-      {/* Test + Save row */}
       <div className="flex gap-3">
         <button
           onClick={onTest}
@@ -733,17 +442,16 @@ export function ConnectionTab({
           ) : (
             <Server size={14} />
           )}
-          Kiểm tra kết nối
+          Kiem tra ket noi
         </button>
         <button
           onClick={onSave}
           className="px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors"
         >
-          Lưu
+          Luu
         </button>
       </div>
 
-      {/* Test result */}
       {testMessage && (
         <div
           className={`flex items-center gap-2 p-3 rounded-lg text-sm ${
@@ -762,213 +470,18 @@ export function ConnectionTab({
       )}
 
       {settings && (
-        <div className="mt-6 pt-4 border-t border-border space-y-4">
-          <div>
-            <div className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">
-              LLM Gateway
-            </div>
-            <p className="text-xs text-text-tertiary">
-              Cấu hình provider runtime cho backend đang chạy. API key được giữ trong secure store của desktop. Local preset mặc định dùng Ollama + Qwen để giảm phụ thuộc cloud.
-            </p>
-          </div>
-
-          <p className="text-xs text-text-tertiary">
-            Current verified local path: backend Docker to native host Ollama
-            via host.docker.internal. If you switch to the Docker Ollama
-            profile, update the base URL to http://ollama:11434.
-          </p>
-
-          <FieldGroup label="Provider">
-            <select
-              value={gatewayDraft.provider}
-              onChange={(e) =>
-                setGatewayDraft(
-                  applyGatewayProviderDefaults(
-                    gatewayDraft,
-                    e.target.value as GatewayDraft["provider"]
-                  )
-                )
-              }
-              className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-            >
-              <option value="google">Google Gemini</option>
-              <option value="openrouter">OpenRouter</option>
-              <option value="openai">OpenAI Compatible</option>
-              <option value="ollama">Ollama</option>
-            </select>
-          </FieldGroup>
-
-          <FieldGroup label="Gemini API Key">
-            <input
-              type="password"
-              value={gatewayDraft.google_api_key}
-              onChange={(e) => setGatewayDraft({ ...gatewayDraft, google_api_key: e.target.value })}
-              placeholder="AIza..."
-              className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-            />
-          </FieldGroup>
-
-          <FieldGroup label="Gemini Model" hint="Gemini la provider native ho tro thinking budget trong runtime hien tai.">
-            <input
-              type="text"
-              value={gatewayDraft.google_model}
-              onChange={(e) => setGatewayDraft({ ...gatewayDraft, google_model: e.target.value })}
-              placeholder={GOOGLE_DEFAULT_MODEL}
-              className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-            />
-          </FieldGroup>
-
-          <FieldGroup label="OpenRouter / OpenAI API Key">
-            <input
-              type="password"
-              value={gatewayDraft.openai_api_key}
-              onChange={(e) => setGatewayDraft({ ...gatewayDraft, openai_api_key: e.target.value })}
-              placeholder="sk-or-v1-..."
-              className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-            />
-          </FieldGroup>
-
-          <FieldGroup label="Ollama API Key" hint="Chỉ cần khi gọi trực tiếp Ollama Cloud. Với Wiii + ChatOllama, dùng host https://ollama.com; client sẽ tự gọi các API path bên dưới. Local Ollama không cần key này.">
-            <input
-              type="password"
-              value={gatewayDraft.ollama_api_key}
-              onChange={(e) => setGatewayDraft({ ...gatewayDraft, ollama_api_key: e.target.value })}
-              placeholder="ollama_api_key"
-              className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-            />
-          </FieldGroup>
-
-          <FieldGroup label="OpenAI-Compatible Base URL" hint="Để trống khi dùng OpenAI mặc định. OpenRouter dùng https://openrouter.ai/api/v1.">
-            <input
-              type="url"
-              value={gatewayDraft.openai_base_url}
-              onChange={(e) => setGatewayDraft({ ...gatewayDraft, openai_base_url: e.target.value })}
-              placeholder={OPENROUTER_BASE_URL}
-              className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-            />
-          </FieldGroup>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <FieldGroup label="Model">
-              <input
-                type="text"
-                value={gatewayDraft.openai_model}
-                onChange={(e) => setGatewayDraft({ ...gatewayDraft, openai_model: e.target.value })}
-                placeholder={OPENROUTER_DEFAULT_MODEL}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-              />
-            </FieldGroup>
-            <FieldGroup label="Advanced Model">
-              <input
-                type="text"
-                value={gatewayDraft.openai_model_advanced}
-                onChange={(e) => setGatewayDraft({ ...gatewayDraft, openai_model_advanced: e.target.value })}
-                placeholder={OPENROUTER_DEFAULT_MODEL_ADVANCED}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-              />
-            </FieldGroup>
-          </div>
-
-          <div className="text-xs text-text-tertiary">
-            Current verified local path: backend Docker to
-            http://host.docker.internal:11434. Use http://localhost:11434 only
-            when backend runs outside Docker.
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <FieldGroup label="Ollama Base URL" hint="Backend trong Docker dùng http://ollama:11434. Chạy web cục bộ ngoài Docker có thể dùng http://localhost:11434. Với Ollama Cloud trên Wiii, dùng https://ollama.com thay vì thêm /api ở cuối.">
-              <input
-                type="url"
-                value={gatewayDraft.ollama_base_url}
-                onChange={(e) => setGatewayDraft({ ...gatewayDraft, ollama_base_url: e.target.value })}
-                placeholder={OLLAMA_DEFAULT_BASE_URL}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-              />
-            </FieldGroup>
-            <FieldGroup label="Ollama Model" hint="Khuyen dung qwen3:4b-instruct-2507-q4_K_M cho local-first de giam do tre. Co the thay model khac ma khong can sua code backend.">
-              <input
-                type="text"
-                value={gatewayDraft.ollama_model}
-                onChange={(e) => setGatewayDraft({ ...gatewayDraft, ollama_model: e.target.value })}
-                placeholder={OLLAMA_DEFAULT_MODEL}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-              />
-            </FieldGroup>
-            <FieldGroup label="Ollama Keep Alive" hint="Khuyen dung 30m de giam cold-start. Dat 0 de unload ngay, -1 de giu model vo thoi han.">
-              <input
-                type="text"
-                value={gatewayDraft.ollama_keep_alive}
-                onChange={(e) => setGatewayDraft({ ...gatewayDraft, ollama_keep_alive: e.target.value })}
-                placeholder={OLLAMA_DEFAULT_KEEP_ALIVE}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-              />
-            </FieldGroup>
-          </div>
-
-          <FieldGroup label="Failover Chain" hint="Nhập danh sách provider, cách nhau bởi dấu phẩy. Ví dụ: google, openrouter, ollama">
-            <input
-              type="text"
-              value={gatewayDraft.llm_failover_chain}
-              onChange={(e) => setGatewayDraft({ ...gatewayDraft, llm_failover_chain: e.target.value })}
-              placeholder="google, openrouter, ollama"
-              className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
-            />
-          </FieldGroup>
-
-          <ToggleField
-            label="Bật failover"
-            description="Khi provider chính lỗi, backend sẽ thử provider kế tiếp trong chain"
-            checked={gatewayDraft.enable_llm_failover}
-            onChange={(value) => setGatewayDraft({ ...gatewayDraft, enable_llm_failover: value })}
+        <div className="mt-6 pt-4 border-t border-border">
+          <LlmRuntimePolicyEditor
+            variant="settings"
+            onToast={(message, tone) => addToast(tone, message)}
           />
-
-          <ToggleField
-            label="Bat Multi-Agent Graph"
-            description="Tat de dung local direct fallback da verify. Bat de quay lai graph/orchestrator path day du."
-            checked={gatewayDraft.use_multi_agent}
-            onChange={(value) => setGatewayDraft({ ...gatewayDraft, use_multi_agent: value })}
-          />
-
-          <div className="flex gap-3">
-            <button
-              onClick={handleSaveGateway}
-              disabled={gatewayState === "saving"}
-              className="px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50"
-            >
-              {gatewayState === "saving" ? "Đang áp dụng..." : "Áp dụng gateway"}
-            </button>
-            <button
-              onClick={refreshGateway}
-              disabled={gatewayState === "loading"}
-              className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-surface-tertiary transition-colors disabled:opacity-50"
-            >
-              Làm mới
-            </button>
-          </div>
-
-          {(gatewayMessage || gatewayInfo) && (
-            <div className="rounded-lg border border-border bg-surface-secondary p-3 text-sm text-text-secondary space-y-1">
-              {gatewayMessage && <div>{gatewayMessage}</div>}
-              {gatewayInfo && (
-                <>
-                  <div>Che do runtime: <span className="font-medium text-text">{gatewayInfo.use_multi_agent ? "multi-agent graph" : "local direct fallback"}</span></div>
-                  <div>Provider hiện tại: <span className="font-medium text-text">{gatewayInfo.provider}</span></div>
-                  <div>Active provider: <span className="font-medium text-text">{gatewayInfo.active_provider || "chưa khởi tạo"}</span></div>
-                  <div>Providers đăng ký: <span className="font-medium text-text">{gatewayInfo.providers_registered.join(", ") || "không có"}</span></div>
-                  <div>OpenAI/OpenRouter key runtime: <span className="font-medium text-text">{gatewayInfo.openai_api_key_configured ? "đã cấu hình" : "chưa cấu hình"}</span></div>
-                  <div>Ollama key runtime: <span className="font-medium text-text">{gatewayInfo.ollama_api_key_configured ? "đã cấu hình" : "chưa cấu hình"}</span></div>
-                </>
-              )}
-            </div>
-          )}
         </div>
       )}
 
-      {/* Sprint 216: Developer tools moved from Preferences tab */}
       {settings && onUpdate && (
         <div className="mt-6 pt-4 border-t border-border">
           <div className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-3">
-            Công cụ nhà phát triển
+            Cong cu nha phat trien
           </div>
 
           <FieldGroup label="Streaming version">
@@ -995,8 +508,8 @@ export function ConnectionTab({
 
           <div className="mt-3">
             <ToggleField
-              label="Hiển thị reasoning trace"
-              description="Xem chi tiết các bước xử lý"
+              label="Hien thi reasoning trace"
+              description="Xem chi tiet cac buoc xu ly"
               checked={settings.show_reasoning_trace}
               onChange={(v) => onUpdate("show_reasoning_trace", v)}
             />
@@ -1027,18 +540,50 @@ export function UserTab({ settings, onUpdate }: UserTabProps) {
   const isOAuth = authMode === "oauth" && isAuthenticated && user;
 
   // Linked accounts state (OAuth mode only)
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [connectedWorkspaces, setConnectedWorkspaces] = useState<ConnectedWorkspace[]>([]);
   const [identities, setIdentities] = useState<UserIdentity[]>([]);
   const [identitiesLoading, setIdentitiesLoading] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isOAuth) return;
+    if (!isOAuth) {
+      setProfile(null);
+      setConnectedWorkspaces([]);
+      setIdentities([]);
+      setProfileLoading(false);
+      setIdentitiesLoading(false);
+      return;
+    }
     let cancelled = false;
+    setProfileLoading(true);
     setIdentitiesLoading(true);
-    fetchIdentities()
-      .then((data) => { if (!cancelled) setIdentities(data); })
+    Promise.allSettled([
+      fetchProfile(),
+      fetchConnectedWorkspaces(),
+      fetchIdentities(),
+    ])
+      .then((results) => {
+        if (cancelled) return;
+        const [profileResult, workspaceResult, identitiesResult] = results;
+        if (profileResult.status === "fulfilled") {
+          setProfile(profileResult.value);
+        }
+        if (workspaceResult.status === "fulfilled") {
+          setConnectedWorkspaces(workspaceResult.value);
+        }
+        if (identitiesResult.status === "fulfilled") {
+          setIdentities(identitiesResult.value);
+        }
+      })
       .catch(() => { /* silent — non-critical */ })
-      .finally(() => { if (!cancelled) setIdentitiesLoading(false); });
+      .finally(() => {
+        if (!cancelled) {
+          setProfileLoading(false);
+          setIdentitiesLoading(false);
+        }
+      });
     return () => { cancelled = true; };
   }, [isOAuth]);
 
@@ -1060,17 +605,41 @@ export function UserTab({ settings, onUpdate }: UserTabProps) {
     addToast("success", "Đã đăng xuất");
   };
 
-  // Sprint 215: Compute contextual role label
-  const displayRole = (() => {
-    if (activeOrgId && orgRole) {
-      // In org context → show org membership role
-      const orgRoleLabels: Record<string, string> = { owner: "Chủ sở hữu", admin: "Quản trị viên", member: "Thành viên" };
-      return orgRoleLabels[orgRole] || "Thành viên";
+  const effectiveProfile = isOAuth ? profile : null;
+  const identityBadge = (() => {
+    if (!isOAuth) {
+      const legacyRoleLabels: Record<string, string> = {
+        admin: "Quản trị viên",
+        teacher: "Giảng viên",
+        student: "Người dùng",
+      };
+      return legacyRoleLabels[settings.user_role] || "Người dùng";
     }
-    // No org → show global role
-    const globalRole = isOAuth && user ? user.role : settings.user_role;
-    const globalRoleLabels: Record<string, string> = { admin: "Quản trị viên", teacher: "Giảng viên", student: "Người dùng" };
-    return globalRoleLabels[globalRole] || "Người dùng";
+    return effectiveProfile?.platform_role === "platform_admin"
+      ? "Platform Admin"
+      : "Wiii User";
+  })();
+  const orgMembershipLabel = (() => {
+    const role = effectiveProfile?.organization_role || orgRole;
+    if (!role) return null;
+    const orgRoleLabels: Record<string, string> = {
+      owner: "Chủ sở hữu tổ chức",
+      org_admin: "Quản trị tổ chức",
+      admin: "Quản trị tổ chức",
+      member: "Thành viên tổ chức",
+    };
+    return orgRoleLabels[role] || "Thành viên tổ chức";
+  })();
+  const hostOverlayLabel = (() => {
+    if (!isOAuth) return null;
+    if (!effectiveProfile?.host_role) return null;
+    const hostRoleLabels: Record<string, string> = {
+      teacher: "Vai trò host: Giảng viên",
+      student: "Vai trò host: Học viên",
+      admin: "Vai trò host: Quản trị host",
+      org_admin: "Vai trò host: Quản trị tổ chức host",
+    };
+    return hostRoleLabels[effectiveProfile.host_role] || `Vai trò host: ${effectiveProfile.host_role}`;
   })();
 
   const handleOrgChange = (orgId: string) => {
@@ -1102,6 +671,20 @@ export function UserTab({ settings, onUpdate }: UserTabProps) {
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-text truncate">{user.name || "Chưa đặt tên"}</div>
             <div className="text-xs text-text-tertiary truncate">{user.email}</div>
+            {orgMembershipLabel && (
+              <div className="text-[11px] text-text-tertiary truncate">
+                {orgMembershipLabel}
+                {activeOrgId ? ` • ${activeOrgId}` : ""}
+              </div>
+            )}
+            {hostOverlayLabel && (
+              <div className="text-[11px] text-text-tertiary truncate">{hostOverlayLabel}</div>
+            )}
+            {(effectiveProfile?.connected_workspaces_count || connectedWorkspaces.length) > 0 && (
+              <div className="text-[11px] text-text-tertiary truncate">
+                {effectiveProfile?.connected_workspaces_count || connectedWorkspaces.length} không gian đã kết nối
+              </div>
+            )}
             <button
               onClick={() => { navigator.clipboard.writeText(user.id); addToast("success", "Đã sao chép mã hỗ trợ"); }}
               className="text-[10px] text-text-tertiary hover:text-text-secondary transition-colors"
@@ -1111,7 +694,7 @@ export function UserTab({ settings, onUpdate }: UserTabProps) {
             </button>
           </div>
           <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[var(--accent-light)] text-[var(--accent)]">
-            {displayRole}
+            {identityBadge}
           </span>
         </div>
       )}
@@ -1135,7 +718,7 @@ export function UserTab({ settings, onUpdate }: UserTabProps) {
             </button>
           </div>
           <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[var(--accent-light)] text-[var(--accent)]">
-            {displayRole}
+            {identityBadge}
           </span>
         </div>
       )}
@@ -1154,6 +737,42 @@ export function UserTab({ settings, onUpdate }: UserTabProps) {
       {/* OAuth mode: Linked accounts section */}
       {isOAuth && (
         <div>
+          <div className="text-sm font-medium text-text-secondary mb-1.5">Không gian đã kết nối</div>
+          {profileLoading ? (
+            <div className="flex items-center gap-2 text-xs text-text-tertiary py-2">
+              <Loader2 size={12} className="animate-spin" />
+              Đang tải hồ sơ Wiii...
+            </div>
+          ) : connectedWorkspaces.length === 0 ? (
+            <div className="text-xs text-text-tertiary py-2">
+              Chưa có workspace/plugin nào được kết nối bền vững.
+            </div>
+          ) : (
+            <div className="space-y-1.5 mb-4">
+              {connectedWorkspaces.map((workspace) => (
+                <div key={workspace.id} className="p-2 rounded-lg border border-border bg-surface-secondary">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent-light)] text-[var(--accent)]">
+                      {(workspace.host_name || workspace.connector_id || workspace.host_type).trim()}
+                    </span>
+                    <span className="text-[10px] text-text-tertiary uppercase tracking-wide">
+                      {workspace.status}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs text-text-secondary">
+                    {workspace.host_type}
+                    {workspace.host_workspace_id ? ` • ${workspace.host_workspace_id}` : ""}
+                  </div>
+                  {workspace.last_used_at && (
+                    <div className="text-[11px] text-text-tertiary">
+                      Dùng gần nhất: {new Date(workspace.last_used_at).toLocaleString("vi-VN")}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="text-sm font-medium text-text-secondary mb-1.5">Tài khoản liên kết</div>
           {identitiesLoading ? (
             <div className="flex items-center gap-2 text-xs text-text-tertiary py-2">

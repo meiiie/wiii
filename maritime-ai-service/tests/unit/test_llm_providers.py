@@ -13,7 +13,11 @@ from langchain_core.language_models import BaseChatModel
 from app.engine.llm_providers.base import LLMProvider
 from app.engine.llm_providers.gemini_provider import GeminiProvider
 from app.engine.llm_providers.openai_provider import OpenAIProvider
-from app.engine.llm_providers.ollama_provider import OllamaProvider
+from app.engine.llm_providers.ollama_provider import (
+    OllamaProvider,
+    check_ollama_host_reachable,
+    reset_ollama_availability_cache,
+)
 
 
 # ============================================================================
@@ -168,6 +172,7 @@ class TestGeminiProvider:
         mock_settings.enable_unified_providers = False
         mock_settings.google_api_key = "key"
         mock_settings.google_model = "gemini-3-flash-preview"
+        mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
         mock_settings.thinking_enabled = True
         mock_instance = MagicMock(spec=BaseChatModel)
         mock_chat.return_value = mock_instance
@@ -176,6 +181,7 @@ class TestGeminiProvider:
         llm = p.create_instance(tier="deep", thinking_budget=8192, include_thoughts=True)
         assert llm == mock_instance
         mock_chat.assert_called_once()
+        assert mock_chat.call_args[1]["model"] == "gemini-3.1-pro-preview"
 
     @patch("langchain_google_genai.ChatGoogleGenerativeAI")
     @patch("app.engine.llm_providers.gemini_provider.settings")
@@ -183,6 +189,7 @@ class TestGeminiProvider:
         mock_settings.enable_unified_providers = False
         mock_settings.google_api_key = "key"
         mock_settings.google_model = "gemini-3-flash-preview"
+        mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
         mock_settings.thinking_enabled = False
         mock_instance = MagicMock(spec=BaseChatModel)
         mock_chat.return_value = mock_instance
@@ -200,12 +207,14 @@ class TestGeminiProvider:
         mock_settings.enable_unified_providers = False
         mock_settings.google_api_key = "key"
         mock_settings.google_model = "gemini-3-flash-preview"
+        mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
         mock_settings.thinking_enabled = True
         mock_chat.return_value = MagicMock(spec=BaseChatModel)
 
         p = GeminiProvider()
         p.create_instance(tier="deep", thinking_budget=8192, include_thoughts=True)
         call_kwargs = mock_chat.call_args[1]
+        assert call_kwargs["model"] == "gemini-3.1-pro-preview"
         assert call_kwargs["thinking_budget"] == 8192
         assert call_kwargs["include_thoughts"] is True
 
@@ -359,6 +368,9 @@ class TestOpenAIProvider:
 class TestOllamaProvider:
     """Test the Ollama (local) provider."""
 
+    def setup_method(self):
+        reset_ollama_availability_cache()
+
     def test_name_is_ollama(self):
         p = OllamaProvider()
         assert p.name == "ollama"
@@ -382,11 +394,37 @@ class TestOllamaProvider:
         assert p.is_configured() is False
 
     @patch("app.engine.llm_providers.ollama_provider._ollama_cb", None)
+    @patch("app.engine.llm_providers.ollama_provider.check_ollama_host_reachable", return_value=True)
     @patch("app.engine.llm_providers.ollama_provider.settings")
-    def test_is_available_no_circuit_breaker(self, mock_settings):
+    def test_is_available_no_circuit_breaker(self, mock_settings, _mock_reachable):
         mock_settings.ollama_base_url = "http://localhost:11434"
         p = OllamaProvider()
         assert p.is_available() is True
+
+    @patch("app.engine.llm_providers.ollama_provider._ollama_cb", None)
+    @patch("app.engine.llm_providers.ollama_provider.check_ollama_host_reachable", return_value=False)
+    @patch("app.engine.llm_providers.ollama_provider.settings")
+    def test_not_available_when_ollama_host_unreachable(self, mock_settings, _mock_reachable):
+        mock_settings.ollama_base_url = "http://localhost:11434"
+        p = OllamaProvider()
+        assert p.is_available() is False
+
+    @patch("app.engine.llm_providers.ollama_provider.settings")
+    def test_check_ollama_host_reachable_via_version_endpoint(self, mock_settings):
+        mock_settings.ollama_base_url = "http://localhost:11434"
+        mock_settings.ollama_api_key = None
+
+        mock_response = MagicMock(status_code=200)
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value = mock_client
+        mock_client.__exit__.return_value = False
+        mock_client.get.return_value = mock_response
+
+        with patch("httpx.Client", return_value=mock_client):
+            assert check_ollama_host_reachable(force_refresh=True) is True
+
+        called_url = mock_client.get.call_args[0][0]
+        assert called_url == "http://localhost:11434/api/version"
 
     @patch("app.engine.llm_providers.ollama_provider.settings")
     def test_create_instance_uses_config(self, mock_settings):
