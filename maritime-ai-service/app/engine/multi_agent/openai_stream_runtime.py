@@ -20,13 +20,6 @@ from app.engine.reasoning import sanitize_visible_reasoning_text
 
 logger = logging.getLogger(__name__)
 
-# Zombie Tier-2 phrases that should be stripped from thinking content
-_ZOMBIE_PHRASES = (
-    "Chỗ khó của câu này không nằm ở",
-    "Mình sẽ đi thẳng vào phần lõi",
-    "Điều dễ sai nhất là nhầm giữa",
-)
-
 
 def _derive_code_stream_session_id_impl(
     *,
@@ -313,6 +306,17 @@ async def _stream_openai_compatible_answer_with_route_impl(
         langchain_message_to_openai_payload(message)
         for message in messages
     ]
+
+    # P3: Assistant pre-fill to force System 2 activation for Z.ai/GLM.
+    # The incomplete <thinking> tag compels the model to continue the thought.
+    if provider_name and ("zhipu" in provider_name.lower() or "glm" in provider_name.lower()):
+        try:
+            from app.engine.reasoning.thinking_enforcement import should_prefill_thinking
+            if should_prefill_thinking(request_messages, provider=provider_name):
+                from app.engine.reasoning.thinking_enforcement import get_thinking_prefill_message
+                request_messages.append(get_thinking_prefill_message())
+        except Exception:
+            pass
     request_kwargs: dict[str, Any] = {
         "model": model_name,
         "messages": request_messages,
@@ -353,10 +357,8 @@ async def _stream_openai_compatible_answer_with_route_impl(
                     answer_delta = cleaned_answer
                 if reasoning_delta and emit_provider_reasoning and not thinking_closed:
                     reasoning_delta = sanitize_visible_reasoning_text(reasoning_delta)
-                    # Strip zombie boilerplate phrases
-                    for zp in _ZOMBIE_PHRASES:
-                        if zp in reasoning_delta:
-                            reasoning_delta = reasoning_delta.replace(zp, "").strip()
+                    # NOTE: Zombie phrase filtering now handled at SSE presentation layer
+                    # (chat_stream_presenter.py::_filter_thinking_content) — single choke point
                 if reasoning_delta and emit_provider_reasoning and not thinking_closed and not reasoning_started:
                     await push_event({
                         "type": "thinking_start",

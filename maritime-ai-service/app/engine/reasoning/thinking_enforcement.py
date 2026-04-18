@@ -34,6 +34,49 @@ User: "tim day dien 2.5mm tren Shopee"
 IMPORTANT: Start EVERY response with <thinking>...</thinking>. No exceptions."""
 
 
+# P3: Assistant pre-fill to force System 2 activation.
+# When appended as the last message with role="assistant", it creates an
+# incomplete thinking block that the model is compelled to complete.
+# This leverages the "incomplete sentence completion" bias in LLMs.
+_THINKING_PREFILL = "<thinking>\nPhan tich: "
+
+
 def get_thinking_enforcement() -> str:
     """Return the unified enforcement string. Single accessor for all agents."""
     return UNIFIED_THINKING_ENFORCEMENT
+
+
+def get_thinking_prefill_message() -> dict:
+    """Return an assistant pre-fill message to prime thinking.
+
+    Usage: append this as the last message before LLM invocation.
+    The incomplete <thinking> tag forces the model to continue the thought.
+
+    Returns:
+        dict with role="assistant" and content starting with <thinking> tag.
+    """
+    return {"role": "assistant", "content": _THINKING_PREFILL}
+
+
+def should_prefill_thinking(messages: list, *, provider: str = "") -> bool:
+    """Decide whether to add assistant pre-fill.
+
+    Pre-fill is useful when:
+    - Provider is Z.ai/GLM (tends to skip thinking for simple queries)
+    - Messages don't already contain thinking pre-fill
+    - NOT already using tool calls (tool paths already produce thinking)
+
+    Args:
+        messages: Current message list.
+        provider: Provider identifier (e.g. "zhipu", "google").
+
+    Returns:
+        True if pre-fill should be added.
+    """
+    # Don't add if already present
+    for msg in messages:
+        content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+        if content and "<thinking>" in str(content):
+            return False
+    # Only for Z.ai/GLM provider
+    return "zhipu" in provider.lower() or "glm" in provider.lower()

@@ -4,6 +4,34 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+# ── Unified Zombie Phrase Filter (Expert Review P1) ──────────────────────
+# Single source of truth for zombie phrase filtering at SSE presentation
+# layer. ALL thinking_delta events pass through this filter regardless of
+# which agent path generated them (Direct, RAG, Product Search, etc.).
+# Thà không có thinking còn hơn có suy nghĩ giả.
+_ZOMBIE_PHRASES = (
+    "Chỗ khó của câu này không nằm ở",
+    "Mình sẽ đi thẳng vào phần lõi",
+    "Điều dễ sai nhất là nhầm giữa",
+    "Câu này nhẹ hơn một lượt đào sâu",
+    "giữ phản hồi ngắn và tự nhiên",
+    "giữ đúng cảnh này trước đã",
+    "Đang chuẩn bị lượt trả lời",
+)
+
+
+def _filter_thinking_content(content: str) -> str:
+    """Strip zombie boilerplate from thinking content.
+
+    Returns empty string if content is all zombie filler (should be skipped).
+    """
+    if not content:
+        return content
+    cleaned = content
+    for phrase in _ZOMBIE_PHRASES:
+        cleaned = cleaned.replace(phrase, "")
+    return cleaned.strip()
+
 
 DISPLAY_ROLE_BY_EVENT: dict[str, str] = {
     "thinking": "thinking",
@@ -12,6 +40,8 @@ DISPLAY_ROLE_BY_EVENT: dict[str, str] = {
     "thinking_delta": "thinking",
     "tool_call": "tool",
     "tool_result": "tool",
+    "host_action": "tool",
+    "guided_tutor_proposal": "action",
     "browser_screenshot": "tool",
     "preview": "tool",
     "action_text": "action",
@@ -34,6 +64,8 @@ PRESENTATION_BY_EVENT: dict[str, str] = {
     "thinking_delta": "expanded",
     "tool_call": "technical",
     "tool_result": "technical",
+    "host_action": "technical",
+    "guided_tutor_proposal": "compact",
     "browser_screenshot": "technical",
     "preview": "compact",
     "action_text": "compact",
@@ -119,6 +151,8 @@ def _step_state_for_event(event_type: str) -> str | None:
         "thinking_delta",
         "tool_call",
         "tool_result",
+        "host_action",
+        "guided_tutor_proposal",
         "action_text",
         "browser_screenshot",
         "preview",
@@ -325,12 +359,12 @@ def serialize_stream_event(
         )
         return [format_sse("answer", data, event_id=event_counter)], event_counter, False
 
-    if event_type in {"tool_call", "tool_result"}:
+    if event_type in {"tool_call", "tool_result", "host_action", "guided_tutor_proposal"}:
         data = _apply_presentation_metadata(
             payload={
                 "content": event.content,
-                "node": event.node,
-                "step": event.step,
+                "node": getattr(event, "node", None),
+                "step": getattr(event, "step", None),
             },
             event_type=event_type,
             event_counter=event_counter,
@@ -415,8 +449,12 @@ def serialize_stream_event(
         ], event_counter, False
 
     if event_type == "thinking_delta":
+        # P1: Unified zombie filter at SSE presentation layer
+        filtered_content = _filter_thinking_content(event.content or "")
+        if not filtered_content:
+            return [], event_counter, False  # Skip empty zombie filler
         data = _apply_presentation_metadata(
-            payload={"content": event.content, "node": event.node},
+            payload={"content": filtered_content, "node": event.node},
             event_type=event_type,
             event_counter=event_counter,
             event=event,

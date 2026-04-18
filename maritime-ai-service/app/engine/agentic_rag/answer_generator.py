@@ -360,6 +360,20 @@ class AnswerGenerator:
                 HumanMessage(content=user_prompt)
             ]
 
+            # P3: Assistant pre-fill to force System 2 activation for Z.ai/GLM
+            try:
+                _llm_provider = str(getattr(llm, "_wiii_provider", "") or "").lower()
+                if "zhipu" in _llm_provider or "glm" in _llm_provider:
+                    from app.engine.reasoning.thinking_enforcement import (
+                        should_prefill_thinking,
+                        get_thinking_prefill_message,
+                    )
+                    _msg_dicts = [{"role": getattr(m, "type", "system"), "content": getattr(m, "content", "")} for m in messages]
+                    if should_prefill_thinking(_msg_dicts, provider=_llm_provider):
+                        messages.append(AIMessage(content="<thinking>\nPhan tich: "))
+            except Exception:
+                pass
+
             logger.info("[STREAMING] Starting token-by-token generation...")
 
             # P3 SOTA: Use astream() with per-chunk timeout to prevent hangs
