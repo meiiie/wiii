@@ -3,22 +3,27 @@ Answer Generator for RAG Agent.
 
 Handles LLM-based answer generation including:
 - Synchronous response synthesis with RAG context
-- Streaming token-by-token generation
+- Streaming token-by-token generation (Native SDK + LangChain fallback)
 - Role-based prompt building
 - Native thinking extraction
 
 Extracted from rag_agent.py as part of modular refactoring.
 
 **Feature: wiii, p3-sota-streaming, document-kg**
+
+De-LangChaining Phase 1: Streaming path now uses Native AsyncOpenAI SDK
+directly, with LangChain as automatic fallback. This eliminates the
+`LLM.astream()` blackbox and enables reuse of thinking extraction logic
+from the Direct path.
 """
 
 import asyncio
 import logging
 import time
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 from unittest.mock import Mock
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.engine.agentic_rag.runtime_llm_socket import ainvoke_agentic_rag_llm
 from app.engine.llm_factory import ThinkingTier
@@ -26,6 +31,143 @@ from app.engine.llm_failover_runtime import is_failover_eligible_error_impl
 from app.models.knowledge_graph import KnowledgeNode
 
 logger = logging.getLogger(__name__)
+
+# ── De-LangChaining Phase 1: Native SDK helpers ────────────────────────
+# These functions mirror openai_stream_runtime.py patterns so the RAG path
+# can use AsyncOpenAI directly instead of LangChain's LLM.astream().
+
+
+def _resolve_rag_provider(llm) -> str:
+    """Extract provider name from LLM instance."""
+    return str(
+        getattr(llm, "_wiii_provider_name", "")
+        or getattr(llm, "_wiii_provider", "")
+        or ""
+    ).strip().lower()
+
+
+def _resolve_rag_model(llm, provider: str) -> str | None:
+    """Resolve model name from LLM instance or settings."""
+    tagged = (
+        getattr(llm, "_wiii_model_name", None)
+        or getattr(llm, "model_name", None)
+        or getattr(llm, "model", None)
+    )
+    if tagged:
+        return str(tagged)
+    return None
+
+
+def _create_native_client(provider: str):
+    """Create AsyncOpenAI client for the given provider."""
+    from openai import AsyncOpenAI
+    from app.core.config import settings
+
+    if provider == "google":
+        if not settings.google_api_key:
+            return None
+        return AsyncOpenAI(
+            api_key=settings.google_api_key,
+            base_url=settings.google_openai_compat_url,
+        )
+    if provider == "zhipu":
+        if not settings.zhipu_api_key:
+            return None
+        return AsyncOpenAI(
+            api_key=settings.zhipu_api_key,
+            base_url=settings.zhipu_base_url,
+        )
+    if provider == "openai":
+        if not settings.openai_api_key:
+            return None
+        return AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=getattr(settings, "openai_base_url", "https://api.openai.com/v1"),
+        )
+    return None
+
+
+def _langchain_to_openai_messages(messages: list) -> list[dict]:
+    """Convert LangChain messages to OpenAI API format."""
+    result = []
+    for msg in messages:
+        role = getattr(msg, "type", "system")
+        content = getattr(msg, "content", "")
+        if role == "system":
+            result.append({"role": "system", "content": content})
+        elif role == "human":
+            result.append({"role": "user", "content": content})
+        elif role == "ai":
+            result.append({"role": "assistant", "content": content})
+        else:
+            result.append({"role": role, "content": content})
+    return result
+
+
+def _extract_native_delta(delta: Any) -> tuple[str, str]:
+    """Extract reasoning + answer from OpenAI SDK delta chunk."""
+    reasoning_parts: list[str] = []
+    answer_parts: list[str] = []
+
+    reasoning = getattr(delta, "reasoning_content", None)
+    if isinstance(reasoning, str) and reasoning:
+        reasoning_parts.append(reasoning)
+
+    content = getattr(delta, "content", None)
+    if isinstance(content, str) and content:
+        answer_parts.append(content)
+
+    return "".join(reasoning_parts), "".join(answer_parts)
+
+
+# Tag parser state for streaming <thinking> tag extraction
+_THINKING_TAG_STATE = {"inside_thinking": False, "pending": ""}
+
+
+def _extract_tagged_thinking_streaming(text: str) -> tuple[str, str]:
+    """Stateful <thinking> tag parser for streaming text."""
+    state = _THINKING_TAG_STATE
+    incoming = f"{state.get('pending', '')}{text or ''}"
+    state["pending"] = ""
+    if not incoming:
+        return "", ""
+
+    reasoning_parts: list[str] = []
+    visible_parts: list[str] = []
+    inside = bool(state.get("inside_thinking"))
+    idx = 0
+
+    while idx < len(incoming):
+        if incoming[idx] == "<":
+            close_idx = incoming.find(">", idx + 1)
+            if close_idx < 0:
+                state["pending"] = incoming[idx:]
+                break
+            tag = incoming[idx: close_idx + 1].strip().lower()
+            if tag == "<thinking>":
+                inside = True
+            elif tag == "</thinking>":
+                inside = False
+            else:
+                target = reasoning_parts if inside else visible_parts
+                target.append(incoming[idx: close_idx + 1])
+            idx = close_idx + 1
+            continue
+
+        next_tag = incoming.find("<", idx)
+        if next_tag < 0:
+            segment = incoming[idx:]
+            idx = len(incoming)
+        else:
+            segment = incoming[idx:next_tag]
+            idx = next_tag
+        if not segment:
+            continue
+        target = reasoning_parts if inside else visible_parts
+        target.append(segment)
+
+    state["inside_thinking"] = inside
+    return "".join(reasoning_parts), "".join(visible_parts)
 
 
 class AnswerGenerator:
@@ -376,33 +518,99 @@ class AnswerGenerator:
 
             logger.info("[STREAMING] Starting token-by-token generation...")
 
-            # P3 SOTA: Use astream() with per-chunk timeout to prevent hangs
             stream_start = time.time()
             emitted_any_chunk = False
-            aiter = llm.astream(messages).__aiter__()
-            while True:
-                if time.time() - stream_start > TOTAL_TIMEOUT:
-                    logger.warning("[STREAMING] Total timeout exceeded (%ds)", TOTAL_TIMEOUT)
-                    break
+
+            # ── De-LangChaining Phase 1: Try Native SDK first ──────────
+            _native_ok = False
+            _provider = _resolve_rag_provider(llm)
+            _model = _resolve_rag_model(llm, _provider)
+
+            if _provider and _model:
                 try:
-                    chunk = await asyncio.wait_for(
-                        aiter.__anext__(), timeout=CHUNK_TIMEOUT
+                    _client = _create_native_client(_provider)
+                    if _client:
+                        # Convert LangChain messages to OpenAI format
+                        _oai_msgs = _langchain_to_openai_messages(messages)
+
+                        # P3: Assistant pre-fill for Z.ai/GLM
+                        if "zhipu" in _provider or "glm" in _provider:
+                            try:
+                                from app.engine.reasoning.thinking_enforcement import (
+                                    should_prefill_thinking,
+                                    get_thinking_prefill_message,
+                                )
+                                if should_prefill_thinking(_oai_msgs, provider=_provider):
+                                    _oai_msgs.append(get_thinking_prefill_message())
+                            except Exception:
+                                pass
+
+                        # Reset tag parser state for this stream
+                        _THINKING_TAG_STATE["inside_thinking"] = False
+                        _THINKING_TAG_STATE["pending"] = ""
+
+                        _stream_kwargs = {
+                            "model": _model,
+                            "messages": _oai_msgs,
+                            "stream": True,
+                        }
+                        temperature = getattr(llm, "temperature", None)
+                        if temperature is not None:
+                            _stream_kwargs["temperature"] = temperature
+
+                        _stream = await _client.chat.completions.create(**_stream_kwargs)
+                        async for _chunk in _stream:
+                            if time.time() - stream_start > TOTAL_TIMEOUT:
+                                logger.warning("[STREAMING] Native SDK total timeout")
+                                break
+                            for _choice in getattr(_chunk, "choices", []) or []:
+                                _delta = getattr(_choice, "delta", None)
+                                if _delta is None:
+                                    continue
+                                _reasoning, _content = _extract_native_delta(_delta)
+                                # Also parse <thinking> tags from content
+                                if _content:
+                                    _tagged_reasoning, _cleaned = _extract_tagged_thinking_streaming(_content)
+                                    if _tagged_reasoning:
+                                        _reasoning = f"{_reasoning}{_tagged_reasoning}"
+                                    _content = _cleaned
+                                if _reasoning:
+                                    yield f"__THINKING__{_reasoning}"
+                                if _content:
+                                    emitted_any_chunk = True
+                                    yield _content
+                        _native_ok = True
+                        logger.info("[STREAMING] Native SDK stream complete (provider=%s)", _provider)
+                except Exception as _native_exc:
+                    logger.warning(
+                        "[STREAMING] Native SDK failed, falling back to LangChain: %s",
+                        _native_exc,
                     )
-                    # Extract both thinking and text from chunk
-                    thinking, content = AnswerGenerator.extract_thinking_and_text(chunk)
-                    if thinking:
-                        # Yield thinking as tagged chunk for caller to detect
-                        yield f"__THINKING__{thinking}"
-                    if content:
-                        emitted_any_chunk = True
-                        yield content
-                except StopAsyncIteration:
-                    break
-                except asyncio.TimeoutError:
-                    logger.warning("[STREAMING] Chunk timeout (%ds), aborting", CHUNK_TIMEOUT)
-                    if not emitted_any_chunk and not isinstance(llm, Mock):
-                        raise
-                    break
+
+            # ── LangChain fallback ─────────────────────────────────────
+            if not _native_ok:
+                aiter = llm.astream(messages).__aiter__()
+                while True:
+                    if time.time() - stream_start > TOTAL_TIMEOUT:
+                        logger.warning("[STREAMING] Total timeout exceeded (%ds)", TOTAL_TIMEOUT)
+                        break
+                    try:
+                        chunk = await asyncio.wait_for(
+                            aiter.__anext__(), timeout=CHUNK_TIMEOUT
+                        )
+                        thinking, content = AnswerGenerator.extract_thinking_and_text(chunk)
+                        if thinking:
+                            yield f"__THINKING__{thinking}"
+                        if content:
+                            emitted_any_chunk = True
+                            yield content
+                    except StopAsyncIteration:
+                        break
+                    except asyncio.TimeoutError:
+                        logger.warning("[STREAMING] Chunk timeout (%ds), aborting", CHUNK_TIMEOUT)
+                        if not emitted_any_chunk and not isinstance(llm, Mock):
+                            raise
+                        break
 
             # After streaming completes, yield sources
             if sources:
