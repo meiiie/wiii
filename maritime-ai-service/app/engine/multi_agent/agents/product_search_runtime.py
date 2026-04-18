@@ -31,6 +31,7 @@ from app.engine.multi_agent.agents.product_search_runtime_bindings import (
     plan_search_queries,
     select_runtime_tools,
 )
+from app.engine.multi_agent.graph_runtime_helpers import _get_requested_model, _remember_runtime_target
 
 
 logger = logging.getLogger(__name__)
@@ -76,14 +77,16 @@ async def react_loop_impl(
     """Run the product-search ReAct loop."""
 
     if not node._llm:
-        return "Xin lỗi, mình chưa sẵn sàng tìm kiếm sản phẩm lúc này nha~", [], None, False
+        return "Hmm, mình chưa sẵn sàng tìm kiếm sản phẩm lúc này nè~ Bạn thử lại sau nhé? (˶˃ ᵕ ˂˶)", [], None, False
+
+    state = state or {}
+    allow_authored_fallback = bool(state.get("allow_authored_thinking_fallback", True))
 
     active_tools = filter_tools_for_role(
         node._tools,
         (context or {}).get("user_role", "student"),
     )
     llm_to_use = node._llm_with_tools
-    state = state or {}
 
     async def _push(event):
         if event_queue is None:
@@ -108,7 +111,7 @@ async def react_loop_impl(
                 await asyncio.sleep(chunk_delay)
 
     async def _emit_narration(narration, *, include_start: bool = True):
-        if event_queue is None or narration is None:
+        if event_queue is None or narration is None or not allow_authored_fallback:
             return
         if include_start:
             await _push(
@@ -150,6 +153,13 @@ async def react_loop_impl(
             system_sections.append(f"{heading}{value}")
 
     system_prompt = "\n\n".join(section for section in system_sections if section)
+
+    # Unified thinking enforcement at TOP for maximum model attention
+    try:
+        from app.engine.reasoning.thinking_enforcement import get_thinking_enforcement
+        system_prompt = get_thinking_enforcement() + "\n\n" + system_prompt
+    except Exception:
+        pass
     narrated_thinking: List[str] = []
     query_plan = None
 
@@ -165,7 +175,8 @@ async def react_loop_impl(
                     next_action="Bẻ yêu cầu thành vài lối dò gọn trước khi bung tìm kiếm thật.",
                     observations=[query],
                 )
-                narrated_thinking.append(plan_narration.summary)
+                if allow_authored_fallback:
+                    narrated_thinking.append(plan_narration.summary)
                 await _emit_narration(plan_narration)
             if query_plan:
                 system_prompt += "\n\n" + format_plan_for_prompt(query_plan)
@@ -181,7 +192,8 @@ async def react_loop_impl(
                             f"sub_queries={len(query_plan.sub_queries)}",
                         ],
                     )
-                    narrated_thinking.append(plan_detail.summary)
+                    if allow_authored_fallback:
+                        narrated_thinking.append(plan_detail.summary)
                     await _emit_narration(plan_detail, include_start=False)
                 logger.info(
                     "[PRODUCT_SEARCH] Query plan: intent=%s, strategy=%s, %d sub_queries",
@@ -212,6 +224,7 @@ async def react_loop_impl(
     except Exception as selection_err:
         logger.debug("[PRODUCT_SEARCH] Runtime tool selection skipped: %s", selection_err)
 
+    runtime_llm_source = node._llm
     llm_to_use = node._llm.bind_tools(active_tools) if node._llm and active_tools else node._llm_with_tools
 
     provider_override = get_effective_provider_impl(state)
@@ -221,12 +234,15 @@ async def react_loop_impl(
                 "product_search",
                 effort_override=thinking_effort,
                 provider_override=provider_override,
-                requested_model=state.get("model"),
+                requested_model=_get_requested_model(state),
             )
             if llm_override and active_tools:
+                runtime_llm_source = llm_override
                 llm_to_use = llm_override.bind_tools(active_tools)
         except Exception:
             pass
+
+    _remember_runtime_target(state, runtime_llm_source or llm_to_use)
 
     if images and len(images) > 0:
         try:
@@ -343,7 +359,7 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
                 await _push_answer_deltas(final_response)
             break
 
-        if event_queue is not None and pre_tool_stream_text.strip():
+        if event_queue is not None and pre_tool_stream_text.strip() and allow_authored_fallback:
             await _push_thinking_deltas(pre_tool_stream_text)
 
         for tool_call in tool_calls:
@@ -416,7 +432,8 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
                 next_action="Lồng kết quả vừa có vào mặt bằng giá chung rồi quyết định có dò tiếp hay không.",
                 observations=[f"iteration={iteration}", f"tool={tool_name}"],
             )
-            narrated_thinking.append(ack_narration.summary)
+            if allow_authored_fallback:
+                narrated_thinking.append(ack_narration.summary)
             await _emit_narration(ack_narration, include_start=False)
             messages.append(AIMessage(content="", tool_calls=[tool_call]))
             messages.append(ToolMessage(content=result_str, tool_call_id=tool_id))
@@ -463,7 +480,8 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
                     f"accumulated_products={len(accumulated_products)}",
                 ],
             )
-            narrated_thinking.append(final_narration.summary)
+            if allow_authored_fallback:
+                narrated_thinking.append(final_narration.summary)
             await _emit_narration(final_narration)
 
         if event_queue is not None:
@@ -510,7 +528,7 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
                 max_curated=max_curated,
                 llm_tier=llm_tier,
                 provider_override=provider_override,
-                requested_model=state.get("model"),
+                requested_model=_get_requested_model(state),
             )
             curated_list = []
             if selection and selection.selected:
@@ -564,6 +582,10 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
         except Exception as cur_exc:
             logger.warning("[PRODUCT_SEARCH] Post-loop curation failed: %s", cur_exc)
 
-    combined_parts = [part for part in narrated_thinking + all_thinking if part]
+    combined_parts = [
+        part
+        for part in ((narrated_thinking if allow_authored_fallback else []) + all_thinking)
+        if part
+    ]
     combined_thinking = "\n\n".join(combined_parts) if combined_parts else None
     return final_response, tools_used, combined_thinking, answer_streamed

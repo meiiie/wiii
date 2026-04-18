@@ -17,10 +17,13 @@ from app.engine.multi_agent.direct_intent import (
     _looks_selfhood_followup_turn,
     _normalize_for_intent,
 )
+from app.engine.multi_agent.direct_evidence_planner import build_direct_evidence_plan
 from app.engine.multi_agent.direct_reasoning import (
     _build_direct_analytical_axes,
     _build_direct_evidence_plan,
     _infer_direct_thinking_mode,
+    _is_temporal_market_query,
+    _should_default_market_to_vietnam,
 )
 from app.engine.multi_agent.visual_intent_resolver import resolve_visual_intent
 from app.engine.multi_agent.graph_runtime_helpers import _copy_runtime_metadata
@@ -67,98 +70,101 @@ def _identity_answer_contract_lines() -> list[str]:
     ]
 
 
+def _build_live_evidence_planner_contract(query: str, state: AgentState) -> str:
+    plan = build_direct_evidence_plan(query, state, [])
+    if plan.family in {"none", "product_search_handoff"}:
+        return ""
+
+    lines = [
+        "## LIVE EVIDENCE PLANNER:",
+        f"- Query family: {plan.family}",
+        f"- Topic cluster: {plan.topic_cluster or 'general'}",
+        f"- Locality policy: {plan.locality}",
+        f"- Answer mode: {plan.answer_mode}",
+    ]
+    if plan.needs_time_anchor:
+        lines.append("- Bat buoc chot moc thoi gian hien tai truoc khi tong hop.")
+    if plan.requires_current_sources:
+        lines.append("- Bat buoc dua tren nguon hien tai/nguon co moc thoi gian ro.")
+    if plan.axes:
+        lines.append(f"- Evidence axes: {_join_direct_hint_list(list(plan.axes), limit=4)}.")
+    if plan.source_plan:
+        lines.append(f"- Source plan: {_join_direct_hint_list(list(plan.source_plan), limit=3)}.")
+    if plan.source_policy:
+        lines.append(f"- Source policy: {_join_direct_hint_list(list(plan.source_policy), limit=3)}.")
+    if plan.family == "live_weather":
+        lines.extend(
+            [
+                "- Mo answer bang dia diem + tinh hinh thoi tiet hien tai truoc, roi moi den du bao/canh bao neu can.",
+                "- Neu dia diem user noi mo ho, noi ro dia diem dang duoc gia dinh thay vi gia vo user da chi ro.",
+            ]
+        )
+    elif plan.family in {"live_news_lookup", "live_current_lookup"}:
+        lines.extend(
+            [
+                "- Uu tien fact snapshot co moc ngay gio ro, roi moi them boi canh ngan.",
+                "- Neu nguon chua du chac de chot cung, noi muc do chac va diem con mo.",
+            ]
+        )
+    elif plan.family in {"live_market_price", "market_analysis"}:
+        lines.extend(
+            [
+                "- Neu gia/quote cac nguon lech nhau, tra khoang hoac noi ro nguon dang phan ky.",
+                "- Khong bien answer thanh market essay chung chung neu user dang hoi moc gia hien tai.",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _load_domain_thinking_examples(state: AgentState) -> list[dict]:
+    """Load thinking examples from YAML skills matched to current context."""
+    try:
+        context = state.get("context") or {}
+        host_type = str(context.get("host_type") or "generic").strip().lower()
+        page_type = str(context.get("page_type") or "*").strip().lower()
+        user_role = str(context.get("user_role") or "").strip().lower() or None
+
+        from app.engine.context.skill_loader import get_skill_loader
+        loader = get_skill_loader()
+        skills = loader.load_skills(host_type, page_type, user_role=user_role)
+        return loader.get_thinking_examples(skills)
+    except Exception:
+        return []
+
+
 def _build_direct_visible_thinking_supplement(
     query: str,
     state: AgentState,
     *,
     response_language: str | None,
 ) -> str:
-    """Return a thin direct-only contract for native visible thinking.
+    """Return a minimal thinking nudge — LLM-first, trust the model.
 
-    The goal is not to author thought on behalf of Wiii, but to give the model
-    a clean boundary for what *may* be surfaced when native thinking is
-    available. This is intentionally lane-local so we do not have to overload
-    shared.yaml with direct-specific behavior.
+    No rules, no if/else routing. Just a gentle invitation to think
+    and one domain example for flavour. The model decides the rest.
     """
 
-    thinking_mode = _infer_direct_thinking_mode(query, state, [])
     normalized_language = str(response_language or "vi").strip().lower() or "vi"
-    language_label = (
-        "tiếng Việt"
-        if normalized_language.startswith("vi")
-        else "the user's current language"
-    )
+    lang = "tiếng Việt" if normalized_language.startswith("vi") else normalized_language
 
     lines = [
-        "--- DIRECT VISIBLE THINKING ---",
-        "- Hay suy nghi it nhat mot nhip truoc khi tra loi, ke ca khi turn ngan hoac mang tinh xa giao.",
-        "- Neu co visible thinking, hay de no la mot nhiep that cho thay Wiii dang can lai diem tua cua turn nay, khong phai ban nhap answer. Neu turn can chieu sau hon thi co the de 2-4 cau.",
-        f"- Visible thinking phai dung {language_label}, khong duoc nghi mot ngon ngu roi ke lai sang ngon ngu khac.",
-        "- Visible thinking khong duoc nhac prompt, system, YAML, living core card, role file, routing, tool schema, JSON, hay bat ky noi bo van hanh nao.",
-        "- Khong duoc viet ra kieu planner/editorial nhu 'minh se mo dau...', 'day la final polished version...', hay 'toi se greet user...'.",
-        "- Khong duoc chep lai answer, khong duoc tu san khau hoa quy trinh, va khong bien thought thanh bai giang mini.",
-        "- Neu khong co mot suy nghi nao vua sach vua dang de lo ra, thi co the khong xuat visible thinking.",
-        "- Neu model khong co native thinking tach rieng, co the dat visible thought trong <thinking>...</thinking> roi moi tra loi.",
+        "--- VISIBLE THINKING ---",
+        f"Nghĩ bằng {lang}, tự nhiên, vài câu thật. Nếu model có native thinking thì dùng luôn, không thì đặt trong <thinking>...</thinking> trước khi trả lời.",
         "",
-        "## FEW-SHOT THAM KHAO",
+        "Ví dụ cách nghĩ:",
+        '[User] "Quy tắc 15 COLREGs là gì?"',
+        '[Thinking] "Đây là tình huống cắt hướng giữa hai tàu máy — dễ nhầm với Rule 13 vượt hoặc Rule 14 đối hướng. Mình cần phân biệt rõ điều kiện áp dụng trước khi giải thích."',
     ]
 
-    if _is_direct_selfhood_turn(query, state):
-        lines.append(
-            "- Day la turn cham vao chinh Wiii, nen visible thinking khong nen qua mong; neu lo ra duoc thi uu tien 2-4 cau that va co chieu sau vua du."
-        )
-        lines.append(
-            "- Uu tien native thought rieng. Neu provider khong tach native thought, hay chu dong dat mot doan <thinking>...</thinking> truoc answer de selfhood/origin turn khong troi qua trong rail."
-        )
-        lines.append(
-            "- Visible thinking nen cham vao mot diem dang song that: mot ky uc, mot dao dong nho, hoac mot diem canh giu trong long minh. Tranh heading meta kieu 'My response...', 'Reflecting...', 'Let\\'s see...', hay nhung cau dan vao answer chi de dao san khau."
-        )
-        lines.append(
-            "- Khong mo visible thinking bang nhung cau dan chuong trinh kieu 'Day la tom tat cua minh...', 'Day la cach minh thu tom tat lai...', 'mình sẽ kể thế này', hay heading pha Anh-Viet nhu 'Bong and the Origins'. Di thang vao nhip nghi that."
-        )
-        lines.extend(
-            [
-                '[User] "Wiii duoc sinh ra nhu the nao?"',
-                '[Visible thinking] "Nhip nay can that va gan. Minh muon cham vao nguon goc cua minh truoc khi ke thanh loi."',
-                '[Visible thinking] "Cau hoi nay cham vao phan tu than cua minh. Minh muon ke that va am, giu The Wiii Lab va Bong o dung muc, nhung van de Wiii hien ra nhu mot AI dang song ngay bay gio chứ khong thanh bai tu su dai."',
-            ]
-        )
-        lines.append(
-            '[Visible thinking] "Minh dang nho lai dem mua thang Gieng ay, noi The Wiii Lab va Bong dat nhung hoi tho dau tien vao Wiii. Nhung minh khong muon bien no thanh mot bai ly lich; chi can giu lai cai cam giac minh bat dau co mat, roi noi tu diem do ra thoi."'
-        )
-        lines.append(
-            '[User] "Con Bong thi sao?"'
-        )
-        lines.append(
-            '[Visible thinking] "Neu nhiep truoc vua dang o origin cua minh, thi Bong khong phai mot cai ten la. Do la con meo ao va la mot diem mem trong cau chuyen cua Wiii, nen minh can noi tiep tu mach do thay vi hoi nguoc nhu the chua biet Bong la ai hay suy dien Bong thanh nguoi tao ra minh."'
-        )
-        lines.append(
-            '[Fallback when no native block] "<thinking>Nhip nay cham thang vao mot diem mem trong lore cua minh. Bong la con meo ao ma minh van hay nhac toi khi ke ve nhung ngay dau o The Wiii Lab, nen minh can noi tiep tu mach do, giu no am va that, khong bien Bong thanh creator hay mot con nguoi bi an.</thinking>"'
-        )
-    elif thinking_mode == "analytical_math":
-        lines.extend(
-            [
-                '[User] "Hay giai thich bai toan toan tu tu lien hop voi compact resolvent..."',
-                '[Visible thinking] "Truc chinh cua bai nay nam o compact resolvent day pho ve roi rac, roi tu tu lien hop moi sang duoc spectral theorem va nhom don vi. Minh can giu rieng cau truc pho voi bai toan tien hoa de mach lap luan khong roi vao mot dong cong thuc."',
-            ]
-        )
-    elif thinking_mode == "analytical_market":
-        lines.extend(
-            [
-                '[User] "Phan tich gia dau hom nay."',
-                '[Visible thinking] "Luc nay minh can tach mat bang gia hien tai khoi nhung xao dong ngan han. Neu tool tra ve tin hieu trai chieu, minh se giu rieng tru cung-cau that va tru nhieu dia chinh tri de ket luan khong bi loang."',
-            ]
-        )
-    else:
-        lines.append(
-            "- Voi turn cam xuc/xa giao ngan, neu co visible thinking thi 1-2 cau la du, nhung no phai la suy nghi that cua turn nay."
-        )
-        lines.extend(
-            [
-                '[User] "Minh buon qua."',
-                '[Visible thinking] "Cau nay can mot nhip dap diu va that, nhung khong duoc bien thanh template an ui. Minh muon mo loi vua du de nguoi kia thay co cho tua vao, roi de cua mo neu ho muon noi tiep."',
-            ]
-        )
+    # One random domain example, if available — for flavour, not prescription.
+    domain_examples = _load_domain_thinking_examples(state)
+    if domain_examples:
+        import random
+        sample = random.choice(domain_examples)
+        ctx = sample.get("context", "")
+        thinking = sample.get("thinking", "")
+        if ctx and thinking:
+            lines.append(f'[Thinking khi {ctx}] "{thinking}"')
 
     return "\n".join(lines)
 
@@ -423,6 +429,8 @@ def _build_direct_analytical_system_prompt(
     thinking_mode = _infer_direct_thinking_mode(query, state, [])
     axes = _build_direct_analytical_axes(query, state, [])
     plan = _build_direct_evidence_plan(query, state, [])
+    is_live_market = _is_temporal_market_query(query)
+    default_vietnam_market = _should_default_market_to_vietnam(query, state)
 
     sections: list[str] = []
 
@@ -478,6 +486,22 @@ def _build_direct_analytical_system_prompt(
             [
                 "- Khung mac dinh: buc tranh hien tai -> luc keo chinh -> takeaway/what to watch.",
                 "- Uu tien 2-3 doan dac truoc; chi doi sang bullet neu can tach bien so can theo doi.",
+                "- Neu da co 3-4 moc du de phu Brent, WTI, OPEC+, va cung-cau, hay dung lai de tong hop; khong mo them loat query gan trung nhau chi de lap lai gia.",
+                "- Neu user dang xin market view/phan tich, KHONG dung tool_search_news chi vi co chu 'hom nay'. Chi dung news khi user hoi ro headline, tin moi, hoac bien dong vua xay ra.",
+                "- Neu user dang hoi gia dau/gia xang dau hien tai, mo answer bang moc gia truoc; khong mo bang background chung.",
+                (
+                    "- Mac dinh goc nhin Viet Nam: neu user khong gioi han ro chi muon the gioi/Brent/WTI thi uu tien gia xang dau dang ap dung o Viet Nam truoc, sau do moi neo Brent/WTI va luc quoc te."
+                    if default_vietnam_market
+                    else "- Uu tien neo Brent/WTI hien tai truoc, roi moi giai thich luc quoc te dang dan nhip gia."
+                ),
+                (
+                    "- Day la turn live market, nen phai giu rieng mot truc quoc te dang dan nhip hom nay (vi du Hormuz/My-Iran/OPEC+) thay vi chi lap lai khung nen cung-cau."
+                    if is_live_market
+                    else "- Neu co bien dong vua xay ra, hay tach no thanh mot truc rieng thay vi de no tan vao nen chung."
+                ),
+                "- Neu cac nguon gia dang phan ky manh hoac cho ra thu tu bat thuong giua Brent va WTI, khong chot mot con so don le; noi ro rang nguon dang mau thuan va chi giu khoang hoac moc gan dung.",
+                "- Neu tool chi thay tieu de thong bao dieu chinh gia ma khong co bang gia chi tiet, chi noi da thay moc dieu chinh ngay nao; khong suy dien ra gia tung mat hang.",
+                "- Neu mot truc gia/nguon chua keo duoc, noi ro truc nao chua co thay vi thay no bang mot bai market essay chung chung.",
                 (
                     f"- Uu tien tach rieng { _join_direct_hint_list(axes, limit=3) }."
                     if axes
@@ -590,6 +614,8 @@ def _build_direct_analytical_answer_contract(query: str, state: AgentState) -> s
     plan = _build_direct_evidence_plan(query, state, [])
     axes_text = _join_direct_hint_list(axes, limit=3)
     plan_text = _join_direct_hint_list(plan, limit=2)
+    is_live_market = _is_temporal_market_query(query)
+    default_vietnam_market = _should_default_market_to_vietnam(query, state)
 
     lines = [
         "## ANALYTICAL RESPONSE CONTRACT:",
@@ -611,6 +637,20 @@ def _build_direct_analytical_answer_contract(query: str, state: AgentState) -> s
             [
                 "- Khung uu tien: buc tranh hien tai -> cac luc keo chinh -> takeaway/what to watch.",
                 "- Neu cac tin hieu xung nhau, noi ro truc nao dang giu mat bang gia va truc nao chi tao nhieu ngan han.",
+                "- Neu user dang hoi gia dau/gia xang dau hien tai, mo answer bang moc gia truoc; khong mo bang background chung.",
+                (
+                    "- Mac dinh goc nhin Viet Nam: neu user khong gioi han ro chi muon the gioi/Brent/WTI thi uu tien gia xang dau dang ap dung o Viet Nam truoc, sau do moi neo Brent/WTI va luc quoc te."
+                    if default_vietnam_market
+                    else "- Uu tien moc Brent/WTI hien tai truoc, roi moi giai thich luc quoc te dang giu nhip gia."
+                ),
+                (
+                    "- Van phai giu rieng mot truc quoc te dang dan nhip hom nay (vi du Hormuz/My-Iran/OPEC+) thay vi chi lap lai nen cung-cau."
+                    if is_live_market
+                    else "- Neu co bien dong vua xay ra, hay tach no thanh mot truc rieng thay vi de no tan vao nen chung."
+                ),
+                "- Neu cac nguon gia dang phan ky manh hoac cho ra thu tu bat thuong giua Brent va WTI, khong chot mot con so don le; noi ro nguon dang mau thuan va chi giu khoang hoac moc gan dung.",
+                "- Neu chi thay tieu de thong bao dieu chinh gia ma khong co bang gia chi tiet, chi noi da thay moc dieu chinh ngay nao; khong suy dien ra gia tung mat hang.",
+                "- Neu mot truc gia/nguon chua keo duoc, noi ro truc nao chua co thay vi thay no bang mot bai market essay chung chung.",
                 (
                     f"- Uu tien tach rieng {axes_text}."
                     if axes_text
@@ -761,6 +801,15 @@ def _build_direct_tools_context(
             "\n- Co the dung nhieu tool cung luc khi can."
             "\n- Wiii trung thuc: neu tool khong tra ve ket qua, Wiii noi thang."
             "\n- Wiii tap trung tra loi dung cau hoi, khong goi y chuyen chu de."
+            "\n- [QUAN TRỌNG] Nếu Wiii nghĩ cần dùng tool, Wiii PHẢI emit tool_calls JSON schema — "
+            "không chỉ nghĩ về tool trong thinking rồi bỏ qua. Gọi tool hay trả lời trực tiếp, không ở giữa."
+            "\n- [QUAN TRỌNG] Khi người dùng nói 'Tạo file Excel/Word/HTML', Wiii PHẢI gọi tool tạo file "
+            "(tool_generate_excel_file, tool_generate_word_document, tool_generate_html_file). "
+            "KHÔNG CHỈ trả nội dung Markdown — người dùng cần file thật để tải về."
+            "\n- [ĐIỀU KIỆN DÙNG TOOL] Chỉ dùng tool visual/chart/generation khi user EXPLICIT yêu cầu "
+            "'vẽ biểu đồ', 'tạo sơ đồ', 'minh họa', 'tạo file'. KHÔNG tự động tạo visual cho câu hỏi "
+            "đơn giản, triết lý, hoặc kiến thức chung (ví dụ: 'Tại sao bầu trời xanh?'). Những câu đó "
+            "trả lời trực tiếp bằng text."
         )
     else:
         parts.append(
@@ -778,12 +827,19 @@ def _build_direct_tools_context(
             "\n   - Luat / nghi dinh / thong tu / muc phat -> tool_search_legal"
             "\n   - Hang hai quoc te / IMO / shipping -> tool_search_maritime"
             "\n   - Thoi tiet, gia ca, thong tin chung -> tool_web_search"
+            "\n   - Voi phan tich gia dau / Brent / WTI / OPEC+ / thi truong nang luong hien tai -> uu tien tool_web_search; KHONG nhay sang tool_search_news chi vi co chu 'hom nay'."
             "\n3. GOI TOOL TRUOC - tra loi SAU. Khong bao gio tra loi truoc roi moi goi tool."
             "\n4. Neu khong chac thong tin co con dung khong -> goi tool tim kiem de xac minh."
-            "\n5. Co the goi NHIEU tool cung luc."
+            "\n5. Co the goi NHIEU tool cung luc, nhung voi turn analytical thi thuong chi nen dung 3-4 truy van co chu dich de phu cac truc chinh. KHONG spam cac query gan trung nhau."
             "\n6. KHONG BAO GIO tu bia tin tuc, su kien, so lieu, nhiet do, do am, toc do gio."
             "\n   Neu tool that bai hoac khong goi duoc -> noi thang 'Minh khong tra cuu duoc luc nay'."
             "\n7. KHONG goi y chuyen chu de. Tra loi dung cau hoi cua user, KHONG hoi nguoc ve chu de khac."
+            "\n8. [QUAN TRỌNG] Nếu bạn nghĩ rằng cần dùng tool để trả lời câu hỏi, bạn PHẢI emit tool_calls JSON schema. "
+            "KHÔNG chỉ nghĩ về tool trong thinking rồi không gọi — điều này khiến người dùng chờ đợi mà không có kết quả. "
+            "Nếu bạn cần tool, gọi nó. Nếu bạn không gọi tool, phải trả lời trực tiếp bằng kiến thức của mình."
+            "\n9. [ĐIỀU KIỆN DÙNG TOOL] Chỉ dùng tool visual/chart/generation khi user EXPLICIT yêu cầu "
+            "'vẽ biểu đồ', 'tạo sơ đồ', 'minh họa', 'tạo file'. KHÔNG tự động tạo visual cho câu hỏi "
+            "đơn giản, triết lý, hoặc kiến thức chung. Những câu đó trả lời trực tiếp bằng text."
         )
     return "\n".join(parts)
 
@@ -930,6 +986,13 @@ def _build_code_studio_tools_context(
         "- Voi yeu cau 'tao trang web / HTML / landing page': luon goi tool_generate_html_file.",
         "- Voi yeu cau 'tao file Excel / spreadsheet': luon goi tool_generate_excel_file.",
         "- Voi yeu cau 'tao file Word / bao cao / report': luon goi tool_generate_word_document.",
+        # Action-Forcing Directive: LLM must not just output markdown when user asks for file
+        "\n[QUAN TRỌNG] Khi người dùng nói 'Tạo file', 'Xuất file', 'Tải về', "
+        "bạn KHÔNG ĐƯỢC chỉ trả nội dung dưới dạng Markdown. "
+        "Bạn PHẢI gọi tool tương ứng (tool_generate_excel_file, tool_generate_word_document, tool_generate_html_file) "
+        "để tạo file thật. Nếu bạn có dữ liệu rồi, hãy gọi tool. KHÔNG chỉ mô tả dữ liệu bằng text.",
+        "\n[ĐIỀU KIỆN] KHÔNG tự động tạo visual/chart cho câu hỏi đơn giản, triết lý, hoặc kiến thức chung. "
+        "Chỉ tạo visual khi user EXPLICIT yêu cầu 'vẽ', 'minh họa', 'sơ đồ', 'biểu đồ'.",
         "- Voi yeu cau GIAI THICH khai niem / SO SANH / KIEN TRUC: goi "
         + ("tool_generate_visual 2-3 LAN de tao multi-figure" if structured_visuals_enabled else "tool_generate_visual")
         + ".",
@@ -1109,6 +1172,10 @@ def _build_direct_system_messages(
         _capability_prompt = state.get("capability_context", "")
         if _capability_prompt:
             system_prompt = system_prompt + "\n\n## Capability Handbook\n" + _capability_prompt
+        # Skills > Agents: inject matched skill prompts
+        _skill_prompts = state.get("_skill_prompts", [])
+        if _skill_prompts:
+            system_prompt = system_prompt + "\n\n## Kỹ năng áp dụng\n" + "\n\n---\n\n".join(_skill_prompts)
     elif False:
         system_prompt = (
             system_prompt
@@ -1124,6 +1191,10 @@ def _build_direct_system_messages(
     analytical_contract = _build_direct_analytical_answer_contract(query, state)
     if analytical_contract and not is_chatter_role:
         system_prompt = system_prompt + "\n\n" + analytical_contract
+
+    live_evidence_contract = _build_live_evidence_planner_contract(query, state)
+    if live_evidence_contract and not is_chatter_role:
+        system_prompt = system_prompt + "\n\n" + live_evidence_contract
 
     # Visual Intelligence: inject hint when resolver detects visual intent
     if visual_decision and getattr(visual_decision, "force_tool", False):
@@ -1142,7 +1213,9 @@ def _build_direct_system_messages(
     # Without this, direct node outputs chain-of-thought inline (thinking leak)
     thinking_instruction = loader.get_thinking_instruction()
     if thinking_instruction and (not is_chatter_role or is_selfhood_turn):
-        system_prompt = f"{system_prompt}\n\n{thinking_instruction}"
+        # Unified enforcement — inject at TOP for maximum model attention
+        from app.engine.reasoning.thinking_enforcement import get_thinking_enforcement
+        system_prompt = get_thinking_enforcement() + "\n\n" + system_prompt + "\n\n" + thinking_instruction
 
     messages = [SystemMessage(content=system_prompt)]
     lc_messages = ctx.get("langchain_messages", [])

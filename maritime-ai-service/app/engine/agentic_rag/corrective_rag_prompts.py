@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.engine.reasoning.thinking_enforcement import get_thinking_enforcement
+
 
 def resolve_fallback_domain_name(context: dict, settings_obj) -> str:
     """Resolve Vietnamese-facing domain display name for fallback answers."""
@@ -28,9 +30,12 @@ def build_fallback_system_prompt(
     natural_enabled: bool,
 ) -> str:
     """Build the fallback CRAG system prompt for 0-doc turns."""
+    enforcement = get_thinking_enforcement() + "\n\n"
+
     if natural_enabled:
         return (
-            f"Bạn là {settings_obj.app_name}. {personality} "
+            enforcement
+            + f"Bạn là {settings_obj.app_name}. {personality} "
             f"{name_hint}"
             f"{avoid_text} "
             f"Chuyên ngành: {domain_name}. "
@@ -46,7 +51,8 @@ def build_fallback_system_prompt(
         )
 
     return (
-        f"Bạn là {settings_obj.app_name}. {personality} "
+        enforcement
+        + f"Bạn là {settings_obj.app_name}. {personality} "
         f"{name_hint}"
         f"{avoid_text} "
         f"Chuyên ngành: {domain_name}. "
@@ -61,7 +67,5 @@ def build_fallback_system_prompt(
         "kiến thức chung của bạn. Cuối câu trả lời, có thể thêm một ghi chú ngắn nếu thực sự hữu ích cho người dùng. "
         f"{emoji_usage} "
         "BẮT BUỘC: Trả lời hoàn toàn bằng TIẾNG VIỆT. "
-        "TUYỆT ĐỐI KHÔNG trả lời bằng tiếng Anh. "
-        "QUAN TRỌNG: CHỈ trả lời nội dung, KHÔNG bao gồm quá trình suy nghĩ, "
-        "phân tích hay reasoning. Đi thẳng vào câu trả lời."
+        "TUYỆT ĐỐI KHÔNG trả lời bằng tiếng Anh."
     )

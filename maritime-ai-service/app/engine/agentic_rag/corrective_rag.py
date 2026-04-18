@@ -156,18 +156,20 @@ class CorrectiveRAG:
     async def process(
         self,
         query: str,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        _prefetch_docs: Optional[List[Dict[str, Any]]] = None,
     ) -> CorrectiveRAGResult:
         """
         Process query through Corrective RAG pipeline.
-        
+
         Args:
             query: User query
             context: Additional context (user_id, session_id, etc.)
-            
+            _prefetch_docs: Sprint 234 — pre-fetched documents from speculative prefetch
+
         Returns:
             CorrectiveRAGResult with answer and metadata
-        
+
         **Feature: reasoning-trace**
         """
         # Source-inspection anchor preserved for isolation hardening tests:
@@ -180,6 +182,7 @@ class CorrectiveRAG:
             result_cls=CorrectiveRAGResult,
             get_reasoning_tracer_fn=get_reasoning_tracer,
             step_names_cls=StepNames,
+            _prefetch_docs=_prefetch_docs,
         )
     
     async def _retrieve(
@@ -187,6 +190,7 @@ class CorrectiveRAG:
         query: str,
         context: Dict[str, Any],
         query_embedding_override: Optional[List[float]] = None,
+        _prefetch_docs: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Dict[str, Any]]:
         """Retrieve documents for grading while preserving full chunk content."""
         return await retrieve_impl(
@@ -195,6 +199,7 @@ class CorrectiveRAG:
             context=context,
             query_embedding_override=query_embedding_override,
             logger=logger,
+            _prefetch_docs=_prefetch_docs,
         )
 
     
@@ -202,8 +207,12 @@ class CorrectiveRAG:
         self,
         query: str,
         context: Dict[str, Any],
-    ) -> str:
-        """Generate a response using model general knowledge when RAG has 0 docs."""
+    ) -> tuple[str, Optional[str]]:
+        """Generate a response using model general knowledge when RAG has 0 docs.
+
+        Returns:
+            Tuple of (answer_text, native_thinking_or_None)
+        """
         return await generate_fallback_impl(
             query=query,
             context=context,
@@ -241,7 +250,8 @@ class CorrectiveRAG:
     async def process_streaming(
         self,
         query: str,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        _prefetch_docs: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         SOTA 2025: Full CRAG pipeline with progressive SSE events.
@@ -262,6 +272,7 @@ class CorrectiveRAG:
             is_no_doc_retrieval_text_fn=is_no_doc_retrieval_text,
             normalize_visible_text_fn=normalize_visible_text,
             max_content_snippet_length=MAX_CONTENT_SNIPPET_LENGTH,
+            _prefetch_docs=_prefetch_docs,
         ):
             yield event
     

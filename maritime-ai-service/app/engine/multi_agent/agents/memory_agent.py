@@ -17,17 +17,15 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.engine.agents import MEMORY_AGENT_CONFIG
 from app.engine.multi_agent.public_thinking import (
-    _append_public_thinking_fragment,
     _resolve_public_thinking_content,
 )
 from app.engine.multi_agent.state import AgentState
 from app.engine.reasoning import (
-    ReasoningRenderRequest,
-    build_living_thinking_context,
     capture_thinking_lifecycle_event,
-    get_reasoning_narrator,
+    record_thinking_snapshot,
 )
 from app.engine.semantic_memory.memory_updater import MemoryAction, MemoryUpdater
+from app.prompts.prompt_runtime_tail import get_thinking_instruction_from_shared_config
 
 logger = logging.getLogger(__name__)
 
@@ -43,31 +41,60 @@ _MEMORY_BEHAVIOR_RULES = (
 
 def _build_memory_response_prompt(response_language: str = "vi") -> str:
     """Build memory agent prompt from wiii_identity.yaml + behavior rules."""
+    thinking_instruction = get_thinking_instruction_from_shared_config({})
     try:
         from app.prompts.prompt_loader import get_prompt_loader
         from app.prompts.prompt_context_utils import build_response_language_instruction
+        from app.engine.reasoning.thinking_enforcement import get_thinking_enforcement
 
         loader = get_prompt_loader()
         identity = loader.get_identity().get("identity", {})
         personality = identity.get("personality", {}).get("summary", "")
         emoji_usage = identity.get("voice", {}).get("emoji_usage", "")
         name = identity.get("name", "Wiii")
+        thinking_instruction = str(loader.get_thinking_instruction() or "").strip() or thinking_instruction
+        enforcement = get_thinking_enforcement()
 
         if personality:
-            return (
-                f"Ban la {name} - {personality}\n"
-                f"- {emoji_usage}\n"
-                f"{_MEMORY_BEHAVIOR_RULES}\n"
-                f"{build_response_language_instruction(response_language)}"
+            return "\n".join(
+                part
+                for part in (
+                    enforcement,
+                    f"Ban la {name} - {personality}\n- {emoji_usage}\n{_MEMORY_BEHAVIOR_RULES}",
+                    build_response_language_instruction(response_language),
+                    thinking_instruction,
+                )
+                if part
             )
     except Exception as exc:
         logger.warning("[MEMORY_AGENT] Failed to load identity YAML: %s", exc)
 
-    return (
-        "Ban la Wiii - dang yeu, thich tro chuyen, giai thich ro rang.\n"
-        "- Dung emoji tu nhien nhu nhan tin voi ban than (⚓🌊📚✨💡🎯😄)\n"
-        f"{_MEMORY_BEHAVIOR_RULES}"
+    try:
+        from app.engine.reasoning.thinking_enforcement import get_thinking_enforcement
+        enforcement = get_thinking_enforcement()
+    except Exception:
+        enforcement = ""
+
+    return "\n".join(
+        part
+        for part in (
+            enforcement,
+            "Ban la Wiii - dang yeu, thich tro chuyen, giai thich ro rang.\n"
+            "- Dung emoji tu nhien nhu nhan tin voi ban than (⚓🌊📚✨💡🎯😄)\n"
+            f"{_MEMORY_BEHAVIOR_RULES}",
+            thinking_instruction,
+        )
+        if part
     )
+
+
+def _thinking_provenance_from_source(source: str | None) -> str:
+    normalized = str(source or "").strip().lower()
+    if normalized == "gemini_native":
+        return "provider_native"
+    if normalized in {"text_tags", "visible_thinking_block"}:
+        return "provider_summary"
+    return "provider_native"
 
 
 class MemoryAgentNode:
@@ -90,15 +117,7 @@ class MemoryAgentNode:
         """Execute the 4-phase memory pipeline."""
         user_id = state.get("user_id", "")
         query = state.get("query", "")
-        context = state.get("context") or {}
-        living_thinking_context = build_living_thinking_context(
-            user_id=user_id or "__global__",
-            organization_id=state.get("organization_id") or context.get("organization_id"),
-            mood_hint=context.get("mood_hint"),
-            personality_mode=context.get("personality_mode"),
-            lane="memory",
-            intent="personal",
-        )
+        state["allow_authored_thinking_fallback"] = False
 
         event_queue = None
         bus_id = state.get("_event_bus_id")
@@ -115,194 +134,22 @@ class MemoryAgentNode:
                 except Exception:
                     pass
 
-        narrator_state = {
-            "current_state": list(living_thinking_context.runtime_notes),
-            "narrative_state": [
-                item
-                for item in (
-                    living_thinking_context.identity_anchor,
-                    *living_thinking_context.reasoning_style,
-                )
-                if item
-            ],
-            "relationship_memory": list(living_thinking_context.relationship_style),
-        }
-
-        async def _emit_narration(narration, *, include_header: bool = False):
-            if include_header and (narration.label or narration.summary):
-                await _push(
-                    {
-                        "type": "thinking_start",
-                        "content": narration.label,
-                        "node": "memory_agent",
-                        "summary": narration.summary,
-                        "details": {
-                            "phase": getattr(narration, "phase", ""),
-                            "style_tags": list(getattr(narration, "style_tags", []) or []),
-                        },
-                    }
-                )
-
-            fragments = [str(chunk).strip() for chunk in (getattr(narration, "delta_chunks", []) or []) if str(chunk).strip()]
-            if not fragments and str(getattr(narration, "summary", "") or "").strip():
-                fragments = [str(narration.summary).strip()]
-
-            for fragment in fragments:
-                await _push(
-                    {
-                        "type": "thinking_delta",
-                        "content": fragment,
-                        "node": "memory_agent",
-                    }
-                )
-                _append_public_thinking_fragment(
-                    state,
-                    fragment,
-                    node="memory_agent",
-                    capture=False,
-                )
-
         try:
-            retrieve_narration = await get_reasoning_narrator().render(
-                ReasoningRenderRequest(
-                    node="memory_agent",
-                    phase="retrieve",
-                    user_goal=query,
-                    conversation_context=str((state.get("context") or {}).get("conversation_summary", "")),
-                    next_action="Luc lai nhung manh ngu canh rieng co the do cau tra loi nay.",
-                    user_id=user_id or "__global__",
-                    organization_id=state.get("organization_id"),
-                    personality_mode=(state.get("context") or {}).get("personality_mode"),
-                    mood_hint=(state.get("context") or {}).get("mood_hint"),
-                    visibility_mode="rich",
-                    style_tags=["memory", "retrieve"],
-                    **narrator_state,
-                )
-            )
-            await _emit_narration(retrieve_narration, include_header=True)
-
             existing_facts_list = await self._retrieve_facts(user_id)
             existing_facts_dict = {fact["type"]: fact["content"] for fact in existing_facts_list}
 
-            if existing_facts_list:
-                existing_narration = await get_reasoning_narrator().render(
-                    ReasoningRenderRequest(
-                        node="memory_agent",
-                        phase="verify",
-                        user_goal=query,
-                        memory_context=f"{len(existing_facts_list)} manh ky uc dang con lien quan.",
-                        next_action="Xem manh nao con dang giu va manh nao can noi vao cau hoi luc nay.",
-                        observations=[f"existing_facts={len(existing_facts_list)}"],
-                        user_id=user_id or "__global__",
-                        organization_id=state.get("organization_id"),
-                        personality_mode=(state.get("context") or {}).get("personality_mode"),
-                        mood_hint=(state.get("context") or {}).get("mood_hint"),
-                        visibility_mode="rich",
-                        style_tags=["memory", "verify"],
-                        **narrator_state,
-                    )
-                )
-                await _emit_narration(existing_narration)
-
-            extract_narration = await get_reasoning_narrator().render(
-                ReasoningRenderRequest(
-                    node="memory_agent",
-                    phase="verify",
-                    user_goal=query,
-                    memory_context=f"{len(existing_facts_list)} manh ky uc dang duoc doi chieu voi tin nhan moi.",
-                    next_action="Soi xem trong tin nhan nay co dieu gi moi that su dang giu lai.",
-                    user_id=user_id or "__global__",
-                    organization_id=state.get("organization_id"),
-                    personality_mode=(state.get("context") or {}).get("personality_mode"),
-                    mood_hint=(state.get("context") or {}).get("mood_hint"),
-                    visibility_mode="rich",
-                    style_tags=["memory", "extract"],
-                    **narrator_state,
-                )
+            new_facts, decisions = await self._extract_and_store_facts(
+                user_id,
+                query,
+                existing_facts_dict,
             )
-            await _emit_narration(extract_narration)
-
-            new_facts = await self._extract_and_store_facts(user_id, query, existing_facts_dict)
-            if new_facts:
-                new_fact_narration = await get_reasoning_narrator().render(
-                    ReasoningRenderRequest(
-                        node="memory_agent",
-                        phase="verify",
-                        user_goal=query,
-                        memory_context=f"{len(new_facts)} chi tiet moi vua noi len.",
-                        next_action="Gan lai xem chi tiet moi nao nen duoc giu that lau hon.",
-                        observations=[f"new_facts={len(new_facts)}"],
-                        user_id=user_id or "__global__",
-                        organization_id=state.get("organization_id"),
-                        personality_mode=(state.get("context") or {}).get("personality_mode"),
-                        mood_hint=(state.get("context") or {}).get("mood_hint"),
-                        visibility_mode="rich",
-                        style_tags=["memory", "new_facts"],
-                        **narrator_state,
-                    )
-                )
-                await _emit_narration(new_fact_narration)
-
-            parsed_facts = []
-            for fact in new_facts:
-                if ": " in fact:
-                    fact_type, value = fact.split(": ", 1)
-                    parsed_facts.append({"fact_type": fact_type, "value": value})
-                elif fact.strip():
-                    parsed_facts.append({"fact_type": "unknown", "value": fact.strip()})
-
-            decisions = self._updater.classify_batch(
-                extracted_facts=parsed_facts,
-                existing_facts=existing_facts_dict,
-            )
-
-            for decision in decisions:
-                if decision.action == MemoryAction.DELETE and self._semantic_memory:
-                    try:
-                        await self._semantic_memory.delete_memory_by_keyword(
-                            user_id=user_id,
-                            keyword=decision.old_value or decision.new_value,
-                        )
-                        logger.info(
-                            "[MEMORY_AGENT] Executed DELETE for %s: %s",
-                            decision.fact_type,
-                            decision.old_value,
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "[MEMORY_AGENT] DELETE failed for %s: %s",
-                            decision.fact_type,
-                            exc,
-                        )
-
+            actionable_decisions = [
+                decision for decision in decisions if decision.action != MemoryAction.NOOP
+            ]
             action_counts = {}
-            for decision in decisions:
+            for decision in actionable_decisions:
                 action_counts[decision.action.value] = action_counts.get(decision.action.value, 0) + 1
-
-            changes_summary = self._updater.summarize_changes(decisions)
-            await _push({"type": "thinking_end", "content": "", "node": "memory_agent"})
-
-            synthesis_narration = await get_reasoning_narrator().render(
-                ReasoningRenderRequest(
-                    node="memory_agent",
-                    phase="synthesize",
-                    user_goal=query,
-                    memory_context=(
-                        f"{sum(action_counts.values())} thay doi can khau lai."
-                        if action_counts
-                        else "Khong co thay doi lon, chi can tra loi that tu nhien."
-                    ),
-                    next_action="Khau dieu cu va dieu moi thanh mot cau tra loi gan nguoi dung.",
-                    user_id=user_id or "__global__",
-                    organization_id=state.get("organization_id"),
-                    personality_mode=(state.get("context") or {}).get("personality_mode"),
-                    mood_hint=(state.get("context") or {}).get("mood_hint"),
-                    visibility_mode="rich",
-                    style_tags=["memory", "synthesis"],
-                    **narrator_state,
-                )
-            )
-            await _emit_narration(synthesis_narration, include_header=True)
+            changes_summary = self._updater.summarize_changes(actionable_decisions)
 
             response = await self._generate_response(
                 llm,
@@ -312,17 +159,60 @@ class MemoryAgentNode:
                 changes_summary,
                 state,
             )
-            await _push({"type": "thinking_end", "content": "", "node": "memory_agent"})
+            native_thinking = str(state.pop("_memory_native_thinking", "") or "").strip()
+            thinking_source = str(state.pop("_memory_thinking_source", "") or "").strip()
+            if native_thinking:
+                provenance = _thinking_provenance_from_source(thinking_source)
+                details = {"phase": "post_tool", "provenance": provenance}
+                state["thinking_provenance"] = provenance
+                await _push(
+                    {
+                        "type": "thinking_start",
+                        "content": "",
+                        "node": "memory_agent",
+                        "details": details,
+                        "provenance": provenance,
+                    }
+                )
+                await _push(
+                    {
+                        "type": "thinking_delta",
+                        "content": native_thinking,
+                        "node": "memory_agent",
+                        "details": details,
+                        "provenance": provenance,
+                    }
+                )
+                await _push(
+                    {
+                        "type": "thinking_end",
+                        "content": "",
+                        "node": "memory_agent",
+                        "details": details,
+                        "provenance": provenance,
+                    }
+                )
+                state["thinking"] = native_thinking
+                record_thinking_snapshot(
+                    state,
+                    native_thinking,
+                    node="memory_agent",
+                    provenance=provenance,
+                )
+            else:
+                state.pop("thinking", None)
+                state.pop("thinking_provenance", None)
 
             state["memory_output"] = response
             state["agent_outputs"] = state.get("agent_outputs", {})
             state["agent_outputs"]["memory"] = response
             state["current_agent"] = "memory_agent"
-            state.pop("thinking", None)
 
             public_memory_thinking = _resolve_public_thinking_content(state)
             if public_memory_thinking:
                 state["thinking_content"] = public_memory_thinking
+            else:
+                state["thinking_content"] = ""
 
             logger.info(
                 "[MEMORY_AGENT] Processed for user %s: %d existing, %d extracted, actions=%s",
@@ -339,6 +229,9 @@ class MemoryAgentNode:
             state["agent_outputs"] = state.get("agent_outputs", {})
             state["agent_outputs"]["memory"] = fallback
             state["current_agent"] = "memory_agent"
+            state["thinking_content"] = ""
+            state.pop("thinking", None)
+            state.pop("thinking_provenance", None)
 
         return state
 
@@ -367,10 +260,10 @@ class MemoryAgentNode:
         user_id: str,
         message: str,
         existing_facts: dict,
-    ) -> list:
+    ) -> tuple[list, list]:
         """Extract facts from the current message and store them via upsert."""
         if not self._semantic_memory or not user_id or not message:
-            return []
+            return [], []
 
         try:
             fact_extractor = getattr(self._semantic_memory, "_fact_extractor", None)
@@ -382,11 +275,19 @@ class MemoryAgentNode:
                 user_id=user_id,
                 message=message,
                 existing_facts=existing_facts,
+                return_decisions=True,
             )
-            return [fact.to_content() for fact in stored_facts]
+            if (
+                isinstance(stored_facts, tuple)
+                and len(stored_facts) == 2
+            ):
+                facts, decisions = stored_facts
+            else:
+                facts, decisions = stored_facts or [], []
+            return [fact.to_content() for fact in facts], list(decisions or [])
         except Exception as exc:
             logger.warning("[MEMORY_AGENT] Failed to extract facts: %s", exc)
-            return []
+            return [], []
 
     async def _generate_response(
         self,
@@ -398,6 +299,8 @@ class MemoryAgentNode:
         state: AgentState,
     ) -> str:
         """Generate a natural Vietnamese response using LLM memory context."""
+        state.pop("_memory_native_thinking", None)
+        state.pop("_memory_thinking_source", None)
         if not llm:
             return self._template_response(query, existing_facts, new_facts, changes_summary)
 
@@ -464,10 +367,15 @@ class MemoryAgentNode:
 
             response = await llm.ainvoke(messages)
 
-            from app.services.output_processor import extract_thinking_from_response
+            from app.services.thinking_post_processor import get_thinking_processor
 
-            text_content, _thinking = extract_thinking_from_response(response.content)
-            result = text_content.strip()
+            extraction = get_thinking_processor().process_result(response.content)
+            result = extraction.text.strip()
+            thinking = str(extraction.thinking or "").strip()
+            if thinking:
+                state["_memory_native_thinking"] = thinking
+                state["_memory_thinking_source"] = extraction.source
+                state["thinking"] = thinking
 
             if result:
                 return result

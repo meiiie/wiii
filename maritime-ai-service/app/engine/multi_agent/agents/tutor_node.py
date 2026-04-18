@@ -19,6 +19,7 @@ from app.engine.tools.rag_tools import (
     get_last_native_thinking,  # CH? TH? S? 29 v9: Option B+ thinking propagation
     get_last_reasoning_trace,  # CH? TH? S? 31 v3: CRAG trace propagation
     get_last_confidence,  # SOTA 2025: Confidence-based early termination
+    is_no_internal_match_observation,
     clear_retrieved_sources,
 )
 from app.engine.tools.utility_tools import tool_calculator, tool_current_datetime
@@ -33,8 +34,11 @@ from app.engine.multi_agent.visual_intent_resolver import (
 )
 from app.prompts.prompt_loader import get_prompt_loader
 from app.engine.multi_agent.agents.tutor_response import (
+    apply_quiz_socratic_guardrail,
     build_tutor_fallback_response,
+    build_tutor_rescue_response,
     collect_tutor_model_message,
+    collect_tutor_model_message_with_failover,
     extract_tutor_content_with_thinking,
     looks_like_tutor_placeholder_answer,
     normalize_tutor_answer_shape,
@@ -231,6 +235,8 @@ def distill_post_tool_context(tool_result_text: str | None) -> str:
     cleaned = _strip_post_tool_markup(str(tool_result_text or ""))
     if not cleaned:
         return ""
+    if is_no_internal_match_observation(cleaned):
+        return ""
 
     units = _split_post_tool_units(cleaned)
     if not units:
@@ -377,33 +383,71 @@ def distill_visual_tool_context(
         for marker in ("benchmark", "chart_runtime", "chart", "thời gian thực thi", "thoi gian thuc thi")
     )
 
-    if html_cues and (metadata_looks_generic or not any((claim, title, pedagogical_role, visual_type, renderer_kind, presentation_intent))):
+    def _append_unique(lines: list[str], value: str) -> None:
+        cleaned = " ".join(str(value or "").split()).strip()
+        if not cleaned:
+            return
+        lowered = cleaned.lower()
+        if lowered in {line.lower() for line in lines}:
+            return
+        lines.append(cleaned)
+
+    def _build_visual_signal_lines(
+        *,
+        primary_signal: str,
+        anchor_signal: str = "",
+        tension_signal: str = "",
+    ) -> list[str]:
         lines: list[str] = ["Tin hieu vua lo ra tu visual:"]
-        lines.extend(f"- {cue}" for cue in html_cues[:3])
-        if title_hint and title_hint.lower() not in {cue.lower() for cue in html_cues}:
-            lines.append(f"- Moc neo de tiep tuc giai thich: {title_hint}")
+        if primary_signal:
+            _append_unique(lines, f"- Dieu nguoi hoc vua co the chot duoc: {primary_signal}")
+        if anchor_signal:
+            _append_unique(lines, f"- Moc nen giu de noi tiep: {anchor_signal}")
+        if tension_signal:
+            lines.append("Cho de nham:")
+            _append_unique(lines, f"- {tension_signal}")
         lines.append(
-            "- Sau khi co visual, visible thinking chi nen bam vao dieu nguoi hoc vua nhin ra duoc va cho de nham con lai."
+            "- Sau khi co visual, visible thinking chi nen bam vao dieu nguoi hoc vua nhin ra duoc, cho de sot, va moc can giu de noi tiep."
+        )
+        return lines
+
+    if html_cues and (metadata_looks_generic or not any((claim, title, pedagogical_role, visual_type, renderer_kind, presentation_intent))):
+        primary_signal = html_cues[0] if html_cues else ""
+        anchor_signal = title_hint if title_hint and title_hint.lower() not in {cue.lower() for cue in html_cues} else ""
+        if not anchor_signal and len(html_cues) > 1:
+            anchor_signal = html_cues[1]
+        tension_index = 1 if anchor_signal == title_hint and len(html_cues) > 1 else 2
+        tension_signal = html_cues[tension_index] if len(html_cues) > tension_index else ""
+        lines = _build_visual_signal_lines(
+            primary_signal=primary_signal,
+            anchor_signal=anchor_signal,
+            tension_signal=tension_signal,
         )
         return "\n".join(lines).strip()
 
     if not any((claim, title, pedagogical_role, visual_type, renderer_kind, presentation_intent)):
         return ""
 
-    lines: list[str] = ["Tin hieu vua lo ra tu visual:"]
-    if claim:
-        lines.append(f"- Claim chinh ma figure dang khoa lai: {claim}")
-    if title:
-        lines.append(f"- Tieu de hoac diem nhin cua figure: {title}")
-    visual_descriptor = ", ".join(
+    descriptor_parts = [
         part
-        for part in (pedagogical_role, visual_type, presentation_intent, renderer_kind)
+        for part in (title_hint, title, pedagogical_role, visual_type, presentation_intent, renderer_kind)
         if part
-    )
-    if visual_descriptor:
-        lines.append(f"- Dang visual hien tai: {visual_descriptor}")
-    lines.append(
-        "- Sau khi co visual, phan giai thich tiep theo chi nen bam vao diem de nham nhat va dieu ma nguoi hoc se nhin ra ngay."
+    ]
+    primary_signal = claim or (html_cues[0] if html_cues else "") or title or title_hint
+    anchor_signal = ""
+    for candidate in descriptor_parts:
+        if candidate and str(candidate).strip().lower() != str(primary_signal or "").strip().lower():
+            anchor_signal = str(candidate).strip()
+            break
+    tension_signal = ""
+    if len(html_cues) > 1:
+        tension_signal = html_cues[1]
+    elif len(descriptor_parts) > 1:
+        tension_signal = str(descriptor_parts[-1]).strip()
+    lines = _build_visual_signal_lines(
+        primary_signal=primary_signal,
+        anchor_signal=anchor_signal,
+        tension_signal=tension_signal,
     )
     return "\n".join(lines).strip()
 
@@ -453,7 +497,7 @@ def _build_post_tool_fallback_continuation(
         if factual:
             lines.append(
                 _ensure_sentence(
-                    f"Visual vừa khóa lại khá rõ điều này: {factual[0]}"
+                    f"Visual này khóa được một mốc khá sáng: {factual[0]}"
                 )
             )
         if tensions:
@@ -465,37 +509,40 @@ def _build_post_tool_fallback_continuation(
         elif len(factual) > 1:
             lines.append(
                 _ensure_sentence(
-                    f"Điểm nên neo tiếp theo là {factual[1]}"
+                    f"Điểm mình nên giữ tiếp theo là {factual[1]}"
                 )
             )
         lines.append(
-            "Nếu nối tiếp, mình nên giữ người học ở đúng mốc này rồi mới mở rộng."
+            "Mình nên giữ người học ở đúng cảnh này thêm một nhịp rồi mới mở tiếp."
         )
     else:
         if factual:
             lines.append(
                 _ensure_sentence(
-                    f"Kết quả vừa làm rõ một mốc rất đáng giữ: {factual[0]}"
+                    f"Mốc vừa lộ ra rõ nhất là {factual[0]}"
                 )
             )
         if tensions:
             lines.append(
                 _ensure_sentence(
-                    f"Chỗ người học còn dễ trượt là {tensions[0]}"
+                    f"Chỗ vẫn dễ lẫn là {tensions[0]}"
                 )
             )
         elif len(factual) > 1:
             lines.append(
                 _ensure_sentence(
-                    f"Nếu giải thích tiếp, mình nên khóa thêm {factual[1]}"
+                    f"Điều mình nên giữ câu trả lời bám vào tiếp theo là {factual[1]}"
                 )
             )
         if len(factual) > 2:
             lines.append(
                 _ensure_sentence(
-                    f"Chỉ khi mốc này đủ rõ rồi mới mở tiếp sang {factual[2]}"
+                    f"Mình chỉ nên mở tiếp sang {factual[2]} khi mốc này đã đứng yên"
                 )
             )
+        lines.append(
+            "Mình nên đặt câu đầu quanh mốc đó, rồi mới mở ra phần hành động hay ví dụ."
+        )
 
     candidate = "\n\n".join(line for line in lines if line).strip()
     candidate = sanitize_public_tutor_thinking(candidate) or ""
@@ -566,6 +613,10 @@ class TutorAgentNode:
         """
         query = state.get("query", "")
         context = state.get("context", {})
+        state["allow_authored_thinking_fallback"] = False
+        state["allow_secondary_model_thinking"] = bool(
+            state.get("allow_secondary_model_thinking", True)
+        )
         learning_context = state.get("learning_context", {})
 
         try:
@@ -622,7 +673,7 @@ class TutorAgentNode:
                     state,
                     thinking,
                     node="tutor_agent",
-                    provenance="final_snapshot",
+                    provenance=str(state.get("thinking_provenance") or "").strip() or "final_snapshot",
                 )
                 logger.info("[TUTOR_AGENT] Thinking propagated to state: %d chars", len(thinking))
             else:
@@ -633,6 +684,10 @@ class TutorAgentNode:
                 )
                 if resolved_tutor_thinking:
                     state["thinking_content"] = resolved_tutor_thinking
+                else:
+                    state.pop("thinking", None)
+                    state["thinking_content"] = ""
+                    state.pop("thinking_provenance", None)
             
             # CHá»ˆ THá»Š Sá» 31 v3 SOTA: Propagate CRAG trace for synthesizer merge
             # This follows LangGraph shared state pattern
@@ -687,6 +742,10 @@ class TutorAgentNode:
         if not llm_with_tools:
             return self._fallback_response(query), [], [], None, False
 
+        allow_secondary_model_thinking = (
+            True if state is None else bool(state.get("allow_secondary_model_thinking", False))
+        )
+
         tools = tools or self._tools
         
         # Clear previous sources (also clears thinking)
@@ -695,6 +754,13 @@ class TutorAgentNode:
         
         # SOTA 2025: Build dynamic prompt from YAML
         system_prompt = self._build_system_prompt(context, query)
+
+        # Unified thinking enforcement at TOP
+        try:
+            from app.engine.reasoning.thinking_enforcement import get_thinking_enforcement
+            system_prompt = get_thinking_enforcement() + "\n\n" + system_prompt
+        except Exception:
+            pass
 
         # Initialize messages â€” Sprint 77: inject conversation history
         messages = [SystemMessage(content=system_prompt)]
@@ -734,9 +800,12 @@ class TutorAgentNode:
         _answer_streamed_via_bus = False  # Legacy compatibility only; tutor no longer streams final answer
         public_tutor_fragments: list[str] = []
         native_tutor_thoughts: list[str] = []
+        streamed_native_tutor_public_text = ""
+        streamed_native_tutor_reasoning_buffer = ""
         last_tool_result_text: str | None = None
         last_tool_args: dict[str, Any] | None = None
         last_tool_name_seen: str = ""
+        used_secondary_public_reflection = False
         # Sprint 70: Sub-chunk size for smooth streaming (matches graph_streaming.py)
         _CHUNK_SIZE = 40  # ~8-10 words per sub-chunk (Sprint 103b: was 12)
         _CHUNK_DELAY = 0.008  # 8ms between sub-chunks (Sprint 103b: was 18ms)
@@ -888,6 +957,33 @@ class TutorAgentNode:
                 if fragment and str(fragment).strip():
                     await _push_public_tutor_thinking(f"{str(fragment).strip()}\n\n")
 
+        async def _push_live_native_tutor_reasoning(reasoning_delta: str) -> None:
+            nonlocal streamed_native_tutor_public_text, streamed_native_tutor_reasoning_buffer
+            if event_queue is None:
+                return
+
+            delta_text = str(reasoning_delta or "")
+            if not delta_text.strip():
+                return
+
+            streamed_native_tutor_reasoning_buffer += delta_text
+            public_text = await _align_public_tutor_thinking(streamed_native_tutor_reasoning_buffer)
+            if not public_text:
+                return
+            if not _should_surface_native_tutor_thought(
+                public_text,
+                stage="pre_tool_native_stream",
+            ):
+                return
+
+            emitted_delta = public_text
+            if streamed_native_tutor_public_text and public_text.startswith(streamed_native_tutor_public_text):
+                emitted_delta = public_text[len(streamed_native_tutor_public_text):]
+
+            if emitted_delta.strip():
+                await _push_thinking_deltas_raw(emitted_delta)
+            streamed_native_tutor_public_text = public_text
+
         async def _capture_native_tutor_thinking(
             thinking_text: str | None,
             *,
@@ -895,6 +991,7 @@ class TutorAgentNode:
             phase_label: str = "",
             stage: str = "captured_native",
         ) -> bool:
+            nonlocal streamed_native_tutor_public_text, streamed_native_tutor_reasoning_buffer
             if not thinking_text:
                 return False
             if not _should_surface_native_tutor_thought(
@@ -932,7 +1029,13 @@ class TutorAgentNode:
                     }
                 )
             public_tutor_fragments.append(public_text)
-            await _push_thinking_deltas_raw(public_text)
+            emitted_public_text = public_text
+            if streamed_native_tutor_public_text and public_text.startswith(streamed_native_tutor_public_text):
+                emitted_public_text = public_text[len(streamed_native_tutor_public_text):]
+            streamed_native_tutor_public_text = public_text
+            streamed_native_tutor_reasoning_buffer = str(thinking_text)
+            if emitted_public_text.strip():
+                await _push_thinking_deltas_raw(emitted_public_text)
             return True
 
         async def _generate_post_tool_native_continuation(
@@ -1013,8 +1116,19 @@ class TutorAgentNode:
                 "- Nhip cua Wiii o day nam o cach go roi va chot moc nhan thuc, khong nam o man san khau hoa hay tu bieu dien su de thuong.\n"
                 "- Neu dang co xu huong noi voi user bang 'ban', lui lai mot nhip va chuyen thanh doc thoai noi tam ve nguoi hoc, cho de nham, va diem neo can giu.\n"
                 "- Neu ban khong the giu dung dang inner monologue, dung tra ve gi khac ngoai mot <thinking> block that su inward.\n"
+                "- VOI BAI TOAN TINH TOAN: hay nghi buoc buoc, so lieu cu the, goi an ro rang, tinh toan ngay trong thinking. Dung chi nghi ve pedagogy — hay thuc su GIAI bai toan trong thinking.\n"
                 "\n## VI DU NHANH\n"
-                "Tot:\n"
+                "Tot (bai toan):\n"
+                "<thinking>\n"
+                "Goi v = toc do ban dau (dam/gio). Quang duong AB = 240 dam.\n"
+                "Phan 1/3 dau: 80 dam voi toc do v, mat t1 = 80/v gio.\n"
+                "Phan 2/3 sau: 160 dam voi toc do (2/3)v, mat t2 = 160/(2v/3) = 240/v gio.\n"
+                "Tong thoi gian thuc te: t1 + t2 = 80/v + 240/v = 320/v.\n"
+                "Thoi gian du kien neu khong hong: t0 = 240/v.\n"
+                "Tre 4 gio: 320/v - 240/v = 4 => 80/v = 4 => v = 20 dam/gio.\n"
+                "Kiem tra: du kien 240/20=12h, thuc te 80/20+160/(40/3)=4+12=16h, tre 4h. Dung.\n"
+                "</thinking>\n\n"
+                "Tot (giai thich kien thuc):\n"
                 "<thinking>\n"
                 "Nguoi hoc de truot o cho nham giua vi tri tiep can va quyen uu tien. Minh nen khoa lai moc 'man phai' truoc, roi moi noi toi hanh dong tranh va. Chat Wiii o day nam o nhip go roi nhe nha, khong nam o man vo ve.\n"
                 "</thinking>\n\n"
@@ -1088,6 +1202,73 @@ class TutorAgentNode:
                 recent_fragments=list(public_tutor_fragments),
             )
 
+        async def _finalize_tutor_message_payload(message_obj: Any) -> tuple[str, Optional[str]]:
+            _raw_final_text, raw_final_thinking = extract_thinking_from_response(
+                getattr(message_obj, "content", ""),
+            )
+            if raw_final_thinking and _should_surface_native_tutor_thought(
+                raw_final_thinking,
+                stage="final_native",
+            ):
+                await _capture_native_tutor_thinking(
+                    raw_final_thinking,
+                    stage="final_native",
+                )
+            resolved_response, resolved_thinking = self._extract_content_with_thinking(
+                getattr(message_obj, "content", ""),
+                query=query,
+            )
+            if not resolved_thinking:
+                resolved_thinking = raw_final_thinking
+            return resolved_response, resolved_thinking
+
+        async def _recover_final_tutor_response(
+            *,
+            note_internal_gap: bool,
+            primary_error: Exception | None = None,
+        ) -> tuple[str, Optional[str]]:
+            failover_provider = str(getattr(self._llm, "_wiii_provider_name", "") or "").strip().lower() or None
+            if primary_error is not None:
+                logger.warning(
+                    "[TUTOR_AGENT] Attempting final synthesis failover rescue after primary error: %s",
+                    primary_error,
+                )
+
+            try:
+                rescue_msg, _ignored_text, _used_streaming = await collect_tutor_model_message_with_failover(
+                    self._llm,
+                    messages,
+                    logger=logger,
+                    tier="moderate",
+                    provider=failover_provider,
+                )
+                if rescue_msg is not None:
+                    rescue_response, rescue_thinking = await _finalize_tutor_message_payload(
+                        rescue_msg,
+                    )
+                    if rescue_response and not looks_like_tutor_placeholder_answer(rescue_response):
+                        return rescue_response, rescue_thinking
+            except Exception as rescue_exc:
+                logger.warning(
+                    "[TUTOR_AGENT] Final synthesis failover rescue failed: %s",
+                    rescue_exc,
+                )
+
+            recovered_response = recover_tutor_answer_from_messages(
+                messages,
+                query=query,
+            )
+            if recovered_response:
+                logger.warning(
+                    "[TUTOR_AGENT] Recovered tutor answer from tool observation during final rescue"
+                )
+                return recovered_response, None
+
+            return build_tutor_rescue_response(
+                query,
+                note_internal_gap=note_internal_gap,
+            ), None
+
         # Sprint 148: Track phase transitions for rate limiting and double-close prevention
         _phase_transition_count = 0
         _last_tool_was_progress = False
@@ -1096,6 +1277,7 @@ class TutorAgentNode:
         for iteration in range(max_iterations):
             logger.info("[TUTOR_AGENT] ReAct iteration %d/%d", iteration + 1, max_iterations)
             _last_tool_was_progress = False  # Reset at start of each iteration
+            break_outer_loop = False
 
             # THINK: use one model-collection path for both sync and stream so
             # transport does not change the answer semantics.
@@ -1118,10 +1300,17 @@ class TutorAgentNode:
                         "tone_mode": getattr(_beat, "tone_mode", ""),
                     },
                 })
+                beat_fragments = list(getattr(_beat, "fragments", []) or [])
+                if allow_secondary_model_thinking and beat_fragments:
+                    used_secondary_public_reflection = True
+                    await _push_public_tutor_fragments(beat_fragments)
             response, pre_tool_stream_text, _used_streaming = await collect_tutor_model_message(
                 llm_with_tools,
                 messages,
                 logger=logger,
+                on_stream_reasoning_delta=(
+                    _push_live_native_tutor_reasoning if event_queue is not None else None
+                ),
             )
             if response is None:
                 from langchain_core.messages import AIMessage as _AIMsg
@@ -1160,6 +1349,11 @@ class TutorAgentNode:
                         "[TUTOR_AGENT] Keeping native tutor thought as authority over pre-tool text (%d chars suppressed)",
                         len(pre_tool_stream_text),
                     )
+                elif not allow_secondary_model_thinking:
+                    logger.debug(
+                        "[TUTOR_AGENT] Suppressing pre-tool stream text because secondary model thinking is disabled (%d chars)",
+                        len(pre_tool_stream_text),
+                    )
                 else:
                     if _should_surface_native_tutor_thought(
                         pre_tool_stream_text,
@@ -1191,6 +1385,9 @@ class TutorAgentNode:
 
                 logger.info("[TUTOR_AGENT] Calling tool: %s with args: %s", tool_name, tool_args)
                 
+                async def _push_secondary_tutor_thinking(_text: str) -> None:
+                    return None
+
                 dispatch_result = await dispatch_tutor_tool_call(
                     tool_call=tool_call,
                     query=query,
@@ -1201,7 +1398,11 @@ class TutorAgentNode:
                     messages=messages,
                     runtime_context_base=runtime_context_base,
                     push=_push,
-                    push_thinking_deltas=_push_public_tutor_thinking,
+                    push_thinking_deltas=(
+                        _push_public_tutor_thinking
+                        if allow_secondary_model_thinking
+                        else _push_secondary_tutor_thinking
+                    ),
                     iteration_beat_fn=_iteration_beat_runtime,
                     tool_acknowledgment_fn=_tool_acknowledgment_runtime,
                     get_tool_by_name_fn=get_tool_by_name,
@@ -1230,13 +1431,14 @@ class TutorAgentNode:
                             phase_label="Đối chiếu kết quả",
                             stage="rag_tool_native",
                         )
-                        if not post_tool_emitted:
+                        if allow_secondary_model_thinking and not post_tool_emitted:
                             continuation_thought = await _generate_post_tool_native_continuation(
                                 tool_name=tool_name,
                                 tool_result_text=getattr(dispatch_result, "tool_result_text", None),
                                 tool_call_args=getattr(dispatch_result, "tool_args", None),
                             )
                             if continuation_thought:
+                                used_secondary_public_reflection = True
                                 await _capture_native_tutor_thinking(
                                     continuation_thought,
                                     reopen_after_tool=True,
@@ -1248,13 +1450,18 @@ class TutorAgentNode:
                             rag_tool_thought,
                             stage="rag_tool_native",
                         )
-                elif tool_name == "tool_generate_visual" and event_queue is not None:
+                elif (
+                    allow_secondary_model_thinking
+                    and tool_name == "tool_generate_visual"
+                    and event_queue is not None
+                ):
                     continuation_thought = await _generate_post_tool_native_continuation(
                         tool_name=tool_name,
                         tool_result_text=getattr(dispatch_result, "tool_result_text", None),
                         tool_call_args=getattr(dispatch_result, "tool_args", None),
                     )
                     if continuation_thought:
+                        used_secondary_public_reflection = True
                         await _capture_native_tutor_thinking(
                             continuation_thought,
                             reopen_after_tool=True,
@@ -1262,11 +1469,16 @@ class TutorAgentNode:
                             stage="post_visual_continuation",
                         )
                 if dispatch_result.should_break_loop:
+                    break_outer_loop = True
                     break
             # Sprint 146b: Close thinking block after all tool executions
             # Sprint 148: Don't double-close if tool_report_progress already closed the block
             if event_queue is not None and not _last_tool_was_progress:
                 await _push({"type": "thinking_end", "content": "", "node": "tutor_agent"})
+
+            if break_outer_loop:
+                logger.info("[TUTOR_AGENT] Breaking outer loop after tool-directed final synthesis handoff")
+                break
 
             # SOTA 2025 Phase 2: Check if we should break outer loop
             confidence, is_complete = get_last_confidence()
@@ -1279,35 +1491,38 @@ class TutorAgentNode:
             # Sprint 148: Close any open thinking block from tool_report_progress
             if event_queue is not None and _last_tool_was_progress:
                 await _push({"type": "thinking_end", "content": "", "node": "tutor_agent"})
+            note_internal_gap = bool(last_tool_result_text) and is_no_internal_match_observation(
+                str(last_tool_result_text or "")
+            )
             try:
                 final_msg, _ignored_text, _used_streaming = await collect_tutor_model_message(
                     self._llm,
                     messages,
                     logger=logger,
+                    on_stream_reasoning_delta=(
+                        _push_live_native_tutor_reasoning if event_queue is not None else None
+                    ),
                 )
                 if final_msg is not None:
-                    _raw_final_text, raw_final_thinking = extract_thinking_from_response(
-                        getattr(final_msg, "content", ""),
+                    final_response, llm_thinking = await _finalize_tutor_message_payload(
+                        final_msg,
                     )
-                    if raw_final_thinking and _should_surface_native_tutor_thought(
-                        raw_final_thinking,
-                        stage="final_native",
-                    ):
-                        await _capture_native_tutor_thinking(
-                            raw_final_thinking,
-                            stage="final_native",
+                    if looks_like_tutor_placeholder_answer(final_response):
+                        final_response, recovered_thinking = await _recover_final_tutor_response(
+                            note_internal_gap=note_internal_gap,
                         )
-                    final_response, llm_thinking = self._extract_content_with_thinking(
-                        final_msg.content,
-                        query=query,
-                    )
-                    if not llm_thinking:
-                        llm_thinking = raw_final_thinking
+                        if recovered_thinking and not llm_thinking:
+                            llm_thinking = recovered_thinking
                 else:
-                    final_response = "Hmm, cÃ³ gÃ¬ Ä‘Ã³ trá»¥c tráº·c rá»“i. Báº¡n thá»­ há»i láº¡i mÃ¬nh nhÃ©!"
+                    final_response, llm_thinking = await _recover_final_tutor_response(
+                        note_internal_gap=note_internal_gap,
+                    )
             except Exception as e:
                 logger.error("[TUTOR_AGENT] Final generation error: %s", e)
-                final_response = "Hmm, cÃ³ gÃ¬ Ä‘Ã³ trá»¥c tráº·c rá»“i. Báº¡n thá»­ há»i láº¡i mÃ¬nh nhÃ©!"
+                final_response, llm_thinking = await _recover_final_tutor_response(
+                    note_internal_gap=note_internal_gap,
+                    primary_error=e,
+                )
 
         if tools_used and looks_like_tutor_placeholder_answer(final_response):
             recovered_response = recover_tutor_answer_from_messages(
@@ -1319,6 +1534,17 @@ class TutorAgentNode:
                     "[TUTOR_AGENT] Recovered tutor answer from tool observation after placeholder final generation"
                 )
                 final_response = recovered_response
+            else:
+                final_response = build_tutor_rescue_response(
+                    query,
+                    note_internal_gap=bool(last_tool_result_text)
+                    and is_no_internal_match_observation(str(last_tool_result_text or "")),
+                )
+
+        final_response = apply_quiz_socratic_guardrail(
+            final_response,
+            context=context,
+        )
 
         # Get sources from tool calls
         sources = get_last_retrieved_sources()
@@ -1367,6 +1593,8 @@ class TutorAgentNode:
             combined_thinking = await _align_public_tutor_thinking(combined_thinking) or combined_thinking
 
         if (
+            allow_secondary_model_thinking
+            and
             not combined_thinking
             and last_tool_name_seen in ("tool_knowledge_search", "tool_maritime_search", "tool_generate_visual")
             and last_tool_result_text
@@ -1377,6 +1605,7 @@ class TutorAgentNode:
                 tool_call_args=last_tool_args,
             )
             if fallback_continuation:
+                used_secondary_public_reflection = True
                 combined_thinking = await _align_public_tutor_thinking(fallback_continuation)
 
         if combined_thinking:
@@ -1386,6 +1615,13 @@ class TutorAgentNode:
                 bool(rag_thinking),
                 bool(llm_thinking),
             )
+        if state is not None:
+            if used_secondary_public_reflection:
+                state["thinking_provenance"] = "public_reflection"
+            elif combined_thinking and (public_tutor_thinking or public_rag_thinking or public_llm_thinking):
+                state["thinking_provenance"] = "provider_native"
+            else:
+                state.pop("thinking_provenance", None)
 
         return final_response, sources, tools_used, combined_thinking, _answer_streamed_via_bus
 

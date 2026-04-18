@@ -53,6 +53,7 @@ class AnswerGenerator:
         living_context_prompt: str = "",
         skill_context: str = "",
         capability_context: str = "",
+        _skill_prompts: list | None = None,
     ) -> Tuple[str, Optional[str]]:
         """
         Generate response using LLM to synthesize retrieved knowledge.
@@ -133,11 +134,15 @@ class AnswerGenerator:
         # Get thinking instruction from YAML
         thinking_instruction = prompt_loader.get_thinking_instruction()
 
+        # Unified enforcement at TOP for maximum model attention
+        from app.engine.reasoning.thinking_enforcement import get_thinking_enforcement
+        enforcement = get_thinking_enforcement()
+
         # Role-specific additional rules
         role_rules = _get_role_rules(user_role)
 
-        # Combine: base (from YAML) + thinking + role rules
-        system_prompt = f"{base_prompt}\n\n{thinking_instruction}\n{role_rules}"
+        # Combine: enforcement (TOP) + base + thinking + role rules
+        system_prompt = f"{enforcement}\n\n{base_prompt}\n\n{thinking_instruction}\n{role_rules}"
 
         # Sprint 222: Graph-level host context
         if host_context_prompt:
@@ -148,6 +153,10 @@ class AnswerGenerator:
             system_prompt = system_prompt + "\n\n## Skill Context\n" + skill_context
         if capability_context:
             system_prompt = system_prompt + "\n\n## Capability Handbook\n" + capability_context
+        if _skill_prompts:
+            system_prompt = system_prompt + "\n\n## Kỹ năng áp dụng\n" + "\n\n---\n\n".join(
+                str(p) for p in _skill_prompts if p
+            )
 
         # Build user prompt with history and entity context
         user_prompt = _build_user_prompt(
@@ -227,6 +236,7 @@ class AnswerGenerator:
         living_context_prompt: str = "",
         skill_context: str = "",
         capability_context: str = "",
+        _skill_prompts: list | None = None,
     ):
         """
         SOTA Streaming Generation - yields tokens as they arrive from LLM.
@@ -289,7 +299,14 @@ class AnswerGenerator:
         else:
             role_rules = _get_streaming_other_rules()
 
-        system_prompt = f"{base_prompt}\n\n{thinking_instruction}\n{role_rules}"
+        # Unified thinking enforcement at TOP for maximum model attention
+        try:
+            from app.engine.reasoning.thinking_enforcement import get_thinking_enforcement
+            _enforcement = get_thinking_enforcement()
+        except Exception:
+            _enforcement = ""
+
+        system_prompt = f"{_enforcement}\n\n{base_prompt}\n\n{thinking_instruction}\n{role_rules}" if _enforcement else f"{base_prompt}\n\n{thinking_instruction}\n{role_rules}"
 
         # Sprint 222: Graph-level host context
         if host_context_prompt:
@@ -300,6 +317,10 @@ class AnswerGenerator:
             system_prompt = system_prompt + "\n\n## Skill Context\n" + skill_context
         if capability_context:
             system_prompt = system_prompt + "\n\n## Capability Handbook\n" + capability_context
+        if _skill_prompts:
+            system_prompt = system_prompt + "\n\n## Kỹ năng áp dụng\n" + "\n\n---\n\n".join(
+                str(p) for p in _skill_prompts if p
+            )
 
         history_section = ""
         if conversation_history:
@@ -353,7 +374,11 @@ class AnswerGenerator:
                     chunk = await asyncio.wait_for(
                         aiter.__anext__(), timeout=CHUNK_TIMEOUT
                     )
-                    content = AnswerGenerator.extract_content_from_chunk(chunk)
+                    # Extract both thinking and text from chunk
+                    thinking, content = AnswerGenerator.extract_thinking_and_text(chunk)
+                    if thinking:
+                        # Yield thinking as tagged chunk for caller to detect
+                        yield f"__THINKING__{thinking}"
                     if content:
                         emitted_any_chunk = True
                         yield content
@@ -383,7 +408,9 @@ class AnswerGenerator:
                         tier=ThinkingTier.MODERATE,
                         component="AnswerGeneratorStreamBufferedFallback",
                     )
-                    answer, _ = extract_thinking_from_response(response.content)
+                    answer, native_thinking = extract_thinking_from_response(response.content)
+                    if native_thinking:
+                        yield f"__THINKING__{native_thinking}"
                     answer = answer.strip()
                     if answer:
                         for piece in _chunk_buffered_stream_text(answer):
@@ -435,6 +462,65 @@ class AnswerGenerator:
             return "".join(text_parts)
 
         return ""
+
+    @staticmethod
+    def extract_thinking_and_text(chunk) -> tuple[str, str]:
+        """Extract thinking and text from LLM streaming chunk.
+
+        Returns:
+            (thinking_text, answer_text) — either may be empty.
+        """
+        if isinstance(chunk, str):
+            return AnswerGenerator._split_thinking_tags(chunk)
+
+        if not hasattr(chunk, 'content'):
+            return "", ""
+
+        content = chunk.content
+
+        # Simple string case — parse <thinking> tags
+        if isinstance(content, str):
+            return AnswerGenerator._split_thinking_tags(content)
+
+        # List of content blocks (Gemini thinking mode)
+        if isinstance(content, list):
+            thinking_parts = []
+            text_parts = []
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "thinking":
+                        thinking_parts.append(block.get("thinking", ""))
+                    elif block.get("type") == "text":
+                        text_parts.append(block.get("text", ""))
+                elif isinstance(block, str):
+                    t, a = AnswerGenerator._split_thinking_tags(block)
+                    if t:
+                        thinking_parts.append(t)
+                    text_parts.append(a)
+            return "".join(thinking_parts), "".join(text_parts)
+
+        return "", ""
+
+    @staticmethod
+    def _split_thinking_tags(text: str) -> tuple[str, str]:
+        """Split <thinking>...</thinking> tags from text.
+
+        Returns (thinking_content, remaining_text).
+        Handles streaming chunks where tags may span multiple chunks.
+        """
+        if "<thinking>" not in text and "</thinking>" not in text:
+            return "", text
+
+        import re
+        # Extract content between <thinking> and </thinking>
+        thinking_parts = []
+        remaining = text
+        for m in re.finditer(r"<thinking>(.*?)(?:</thinking>|$)", remaining, re.DOTALL):
+            thinking_parts.append(m.group(1))
+
+        # Remove thinking tags and their content from remaining text
+        cleaned = re.sub(r"<thinking>.*?(?:</thinking>|$)", "", text, flags=re.DOTALL).strip()
+        return "".join(thinking_parts).strip(), cleaned
 
 
 # ==========================================================================

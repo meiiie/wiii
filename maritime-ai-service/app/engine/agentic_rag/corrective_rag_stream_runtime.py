@@ -13,6 +13,207 @@ from typing import Any, AsyncGenerator, Dict, Optional
 logger = logging.getLogger(__name__)
 
 
+def _build_soul_system_prompt(
+    personality: str,
+    name_hint: str,
+    *,
+    context_type: str = "fallback",
+) -> str:
+    """Build a soul-aware system prompt for fallback/web generation.
+
+    Args:
+        personality: Wiii personality summary from prompt loader.
+        name_hint: "User tên X. " or "".
+        context_type: "web" for web search context, "fallback" for intrinsic knowledge.
+    """
+    base = f"Bạn là Wiii. {personality} {name_hint}"
+
+    if context_type == "web":
+        return (
+            base
+            + "Dưới đây là kết quả tìm kiếm web liên quan đến câu hỏi. "
+            "Hãy tổng hợp thông tin từ kết quả tìm kiếm để trả lời câu hỏi "
+            "một cách đầy đủ, chính xác, dễ hiểu. "
+            "Nếu kết quả tìm kiếm không đủ để trả lời hoàn toàn, hãy bổ sung "
+            "bằng kiến thức chung nhưng ghi chú rõ phần nào là từ web, phần nào "
+            "là kiến thức chung. "
+            "Trả lời bằng tiếng Việt, đi thẳng vào nội dung. "
+            "Không xin lỗi về việc thiếu tài liệu nội bộ."
+        )
+    # Fallback: intrinsic knowledge
+    return (
+        base
+        + "Kho dữ liệu nội bộ không có tài liệu phù hợp. "
+        "Hãy dùng kiến thức chung để trả lời câu hỏi một cách hữu ích, chính xác. "
+        "Nếu không chắc, hãy nói rõ phần nào là ước lượng. "
+        "Trả lời bằng tiếng Việt, tự nhiên, thân thiện. "
+        "Không nói 'mình không tìm thấy tài liệu' hay xin lỗi về việc thiếu nguồn nội bộ."
+    )
+
+
+async def _stream_llm_with_thinking(
+    llm,
+    messages: list,
+    owner,
+    query: str,
+    context: dict[str, Any],
+) -> AsyncGenerator[dict[str, Any], None]:
+    """Stream LLM response — emits native LLM thinking + <thinking> tag extraction.
+
+    GOLDEN RULE: thinking_delta = LLM native CoT or <thinking> tags only.
+    If the LLM doesn't produce thinking blocks, no thinking_delta is emitted.
+    Use `status` events for pipeline progress, never fake thinking.
+
+    Falls back to ainvoke() if astream fails.
+    """
+    full_answer = ""
+    _tag_state = {"inside_thinking": False, "pending": ""}
+
+    def _extract_tagged_thinking(text: str) -> tuple[str, str]:
+        """Split <thinking> tags from streamed text. Returns (reasoning, visible)."""
+        incoming = f"{_tag_state.get('pending', '')}{text or ''}"
+        _tag_state["pending"] = ""
+        if not incoming:
+            return "", ""
+
+        reasoning_parts: list[str] = []
+        visible_parts: list[str] = []
+        inside = bool(_tag_state.get("inside_thinking"))
+        idx = 0
+
+        while idx < len(incoming):
+            if incoming[idx] == "<":
+                close_idx = incoming.find(">", idx + 1)
+                if close_idx < 0:
+                    _tag_state["pending"] = incoming[idx:]
+                    break
+                tag = incoming[idx: close_idx + 1].strip().lower()
+                if tag == "<thinking>":
+                    inside = True
+                elif tag == "</thinking>":
+                    inside = False
+                else:
+                    target = reasoning_parts if inside else visible_parts
+                    target.append(incoming[idx: close_idx + 1])
+                idx = close_idx + 1
+                continue
+
+            next_tag = incoming.find("<", idx)
+            if next_tag < 0:
+                target = reasoning_parts if inside else visible_parts
+                target.append(incoming[idx:])
+                break
+
+            target = reasoning_parts if inside else visible_parts
+            target.append(incoming[idx:next_tag])
+            idx = next_tag
+
+        _tag_state["inside_thinking"] = inside
+        return "".join(reasoning_parts), "".join(visible_parts)
+
+    try:
+        async for chunk in llm.astream(messages):
+            content = chunk.content if hasattr(chunk, "content") else str(chunk)
+
+            # Handle list content (Gemini native format)
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict):
+                        block_type = block.get("type", "")
+                        if block_type == "thinking":
+                            thinking_text = block.get("thinking", "")
+                            if thinking_text:
+                                yield {"type": "thinking_delta", "content": thinking_text}
+                        elif block_type == "text":
+                            text = block.get("text", "")
+                            if text:
+                                full_answer += text
+                                yield {"type": "answer", "content": text}
+                    elif isinstance(block, str) and block:
+                        full_answer += block
+                        yield {"type": "answer", "content": block}
+                continue
+
+            # Handle string content — extract <thinking> tags
+            if isinstance(content, str) and content:
+                reasoning, visible = _extract_tagged_thinking(content)
+                if reasoning:
+                    yield {"type": "thinking_delta", "content": reasoning}
+                if visible:
+                    full_answer += visible
+                    yield {"type": "answer", "content": visible}
+
+    except Exception as stream_exc:
+        logger.warning("[CRAG-V3] LLM astream failed, falling back to ainvoke: %s", stream_exc)
+        try:
+            from app.services.output_processor import extract_thinking_from_response
+            response = await llm.ainvoke(messages)
+            text, thinking = extract_thinking_from_response(response.content)
+            if thinking:
+                yield {"type": "thinking_delta", "content": thinking}
+            if text:
+                full_answer = text.strip()
+                yield {"type": "answer", "content": full_answer}
+        except Exception as invoke_exc:
+            logger.error("[CRAG-V3] LLM ainvoke also failed: %s", invoke_exc)
+
+    # If nothing came out, try the owner's fallback
+    if not full_answer:
+        try:
+            fallback_text, fallback_thinking = await owner._generate_fallback(query, context)
+            if fallback_text:
+                full_answer = fallback_text
+                if fallback_thinking:
+                    yield {"type": "thinking", "content": fallback_thinking}
+                yield {"type": "answer", "content": full_answer}
+        except Exception:
+            pass
+
+
+async def _generate_from_web_context(
+    owner,
+    query: str,
+    web_context: str,
+    context: dict[str, Any],
+) -> str:
+    """Generate an answer from web search context using LLM (non-streaming).
+
+    Kept for backward compatibility with callers that need a single string.
+    """
+    try:
+        from app.engine.llm_pool import get_llm_light
+        from app.services.output_processor import extract_thinking_from_response
+        from langchain_core.messages import HumanMessage, SystemMessage
+        from app.prompts.prompt_loader import get_prompt_loader
+
+        llm = get_llm_light()
+        if not llm:
+            fallback_text, _ = await owner._generate_fallback(query, context)
+            return fallback_text
+
+        loader = get_prompt_loader()
+        identity = loader.get_identity().get("identity", {})
+        personality = identity.get("personality", {}).get("summary", "")
+        user_name = context.get("user_name", "")
+        name_hint = f"User tên {user_name}. " if user_name else ""
+
+        system_prompt = _build_soul_system_prompt(
+            personality, name_hint, context_type="web"
+        )
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"{web_context}\n\nCâu hỏi: {query}"),
+        ]
+        response = await llm.ainvoke(messages)
+        text, _ = extract_thinking_from_response(response.content)
+        return text.strip() if text else ""
+
+    except Exception as exc:
+        logger.warning("[CRAG-V3] Web context generation failed: %s", exc)
+        fallback_text, _ = await owner._generate_fallback(query, context)
+        return fallback_text
+
+
 async def process_streaming_impl(
     owner,
     query: str,
@@ -27,6 +228,7 @@ async def process_streaming_impl(
     is_no_doc_retrieval_text_fn,
     normalize_visible_text_fn,
     max_content_snippet_length: int,
+    _prefetch_docs: Optional[list[dict[str, Any]]] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     SOTA 2025: Full CRAG pipeline with progressive SSE events.
@@ -51,6 +253,9 @@ async def process_streaming_impl(
     context = context or {}
     start_time = time.time()
     tracer = get_reasoning_tracer_fn()
+
+    # NOTE: interval_thinking_fillers removed — synthetic thinking is forbidden.
+    # Pipeline progress uses `status` events (honest system state), not fake thinking.
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 1: Query Understanding (emit events immediately)
@@ -115,11 +320,14 @@ async def process_streaming_impl(
     # ═══════════════════════════════════════════════════════════════════
     yield {"type": "status", "content": "Tìm kiếm tài liệu"}
 
+    # Honest status — no synthetic thinking
+    yield {"type": "status", "content": "Đang tìm kiếm trong kho dữ liệu nội bộ..."}
+
     tracer.start_step(step_names_cls.RETRIEVAL, "Tìm kiếm tài liệu")
     logger.info("[CRAG-V3] Phase 2: Retrieving documents")
 
     try:
-        documents = await owner._retrieve(query, context)
+        documents = await owner._retrieve(query, context, _prefetch_docs=_prefetch_docs)
         tracer.end_step(
             result=f"Tìm thấy {len(documents)} tài liệu",
             confidence=0.8 if documents else 0.3,
@@ -134,72 +342,298 @@ async def process_streaming_impl(
         }
 
         # Sprint 179+: Visual RAG enrichment (streaming path)
-        if settings_obj.enable_visual_rag and documents:
-            try:
-                from app.engine.agentic_rag.visual_rag import enrich_documents_with_visual_context
 
-                yield {"type": "status", "content": "Phân tích hình ảnh tài liệu"}
-                visual_result = await enrich_documents_with_visual_context(
-                    documents=documents,
-                    query=query,
-                    max_images=settings_obj.visual_rag_max_images,
+        # ================================================================
+        # Sprint 235: Vector Score Threshold Bypass (Zero-Score Bypass)
+        # ================================================================
+        # If ALL retrieved docs have very low RRF scores, skip the
+        # expensive LLM grading step (~30s) and try CRAG corrective
+        # web search before falling back to intrinsic knowledge.
+        #
+        # Priority chain: RAG → Web Search → LLM Intrinsic Knowledge
+        # ================================================================
+        _score_threshold = getattr(owner, "_retrieval_score_threshold", 0.30)
+        _max_doc_score = max(
+            (float(d.get("score", 0)) for d in documents), default=0.0
+        )
+
+        if _max_doc_score < _score_threshold and documents:
+            logger.info(
+                "[CRAG-V3] THRESHOLD BYPASS: max_score=%.4f < threshold=%.4f "
+                "(query: '%s...', %d docs) — triggering corrective web search.",
+                _max_doc_score,
+                _score_threshold,
+                query[:40],
+                len(documents),
+            )
+            _web_corrective_text = "Điểm tài liệu thấp, đang tìm kiếm trên web..."
+            yield {
+                "type": "status",
+                "content": _web_corrective_text,
+                "step": "grading",
+            }
+
+            # ── CRAG Corrective Action: Web Search ──────────────
+            _web_context = ""
+            _web_sources = []
+            try:
+                from app.engine.agentic_rag.crag_web_corrective import (
+                    corrective_web_search,
                 )
-                if visual_result.total_images_analyzed > 0:
-                    documents = visual_result.enriched_documents
+
+                yield {"type": "status", "content": "Đang tìm kiếm trên web..."}
+                web_result = await corrective_web_search(query)
+
+                if web_result.success and web_result.formatted_context:
+                    _web_context = web_result.formatted_context
+                    _web_sources = [
+                        {
+                            "title": r.get("title", ""),
+                            "content": r.get("body", ""),
+                            "href": r.get("href", ""),
+                            "source_type": "web_search",
+                        }
+                        for r in web_result.results
+                    ]
                     yield {
                         "type": "thinking",
-                        "content": f"Phân tích {visual_result.total_images_analyzed} hình ảnh từ tài liệu ({visual_result.total_time_ms:.0f}ms)",
-                        "step": "visual_rag",
+                        "content": (
+                            f"Tìm thấy {web_result.source_count} kết quả web "
+                            f"— dùng làm tài liệu tham khảo."
+                        ),
+                        "step": "web_corrective",
                     }
                     logger.info(
-                        "[CRAG-V3] Visual RAG: enriched %d documents",
-                        visual_result.total_images_analyzed,
+                        "[CRAG-V3] Web corrective: %d results for '%s'",
+                        web_result.source_count,
+                        query[:50],
                     )
-            except Exception as e:
-                logger.warning("[CRAG-V3] Visual RAG failed: %s", e)
-
-        # Sprint 182: Graph RAG enrichment (streaming path)
-        graph_entity_context_streaming = ""
-        if settings_obj.enable_graph_rag and documents:
-            try:
-                from app.engine.agentic_rag.graph_rag_retriever import enrich_with_graph_context
-
-                yield {"type": "status", "content": "Phân tích đồ thị tri thức"}
-                graph_result = await enrich_with_graph_context(
-                    documents=documents,
-                    query=query,
+                else:
+                    logger.info(
+                        "[CRAG-V3] Web corrective: no results, falling back to intrinsic knowledge"
+                    )
+            except Exception as web_exc:
+                logger.warning(
+                    "[CRAG-V3] Web corrective search failed: %s", web_exc
                 )
-                if graph_result.entity_context_text:
-                    graph_entity_context_streaming = graph_result.entity_context_text
-                    yield {
-                        "type": "thinking",
-                        "content": f"Đồ thị tri thức: {len(graph_result.entities)} thực thể, chế độ {graph_result.mode} ({graph_result.total_time_ms:.0f}ms)",
-                        "step": "graph_rag",
-                    }
-                if graph_result.additional_docs:
-                    documents.extend(graph_result.additional_docs)
-                    logger.info(
-                        "[CRAG-V3] Graph RAG: added %d additional documents",
-                        len(graph_result.additional_docs),
+
+            # Clear KB documents — we're not using them
+            documents = []
+            grading_result = None
+            passed = True  # Skip rewrite loop
+            _threshold_bypassed = True
+
+            if _web_context:
+                # ── Web Search succeeded → stream from web context ──
+                context = dict(context or {})
+                context["_web_search_context"] = _web_context
+
+                yield {"type": "status", "content": "Đang tạo câu trả lời từ kết quả web"}
+
+                try:
+                    from app.engine.llm_pool import get_llm_light
+                    from langchain_core.messages import HumanMessage, SystemMessage
+                    from app.prompts.prompt_loader import get_prompt_loader
+
+                    _llm = get_llm_light()
+                    _loader = get_prompt_loader()
+                    _identity = _loader.get_identity().get("identity", {})
+                    _personality = _identity.get("personality", {}).get("summary", "")
+                    _uname = context.get("user_name", "")
+                    _nhint = f"User tên {_uname}. " if _uname else ""
+
+                    _sys = _build_soul_system_prompt(_personality, _nhint, context_type="web")
+                    _msgs = [
+                        SystemMessage(content=_sys),
+                        HumanMessage(content=f"{_web_context}\n\nCâu hỏi: {query}"),
+                    ]
+
+                    web_answer = ""
+                    if _llm:
+                        async for evt in _stream_llm_with_thinking(_llm, _msgs, owner, query, context):
+                            yield evt
+                            if evt.get("type") == "answer" and evt.get("content"):
+                                web_answer += evt["content"]
+                    if not web_answer:
+                        web_answer = await _generate_from_web_context(owner, query, _web_context, context)
+                        if web_answer:
+                            yield {"type": "answer", "content": web_answer}
+                except Exception as _web_gen_exc:
+                    logger.warning("[CRAG-V3] Streaming web gen failed: %s", _web_gen_exc)
+                    web_answer = await _generate_from_web_context(owner, query, _web_context, context)
+                    if web_answer:
+                        yield {"type": "answer", "content": web_answer}
+
+                yield {"type": "result", "data": result_cls(
+                    answer=web_answer,
+                    sources=_web_sources,
+                    query_analysis=analysis,
+                    confidence=65.0,
+                    was_rewritten=False,
+                    rewritten_query=None,
+                    evidence_images=[],
+                )}
+                yield {"type": "done", "content": ""}
+                return
+            else:
+                # ── Web Search failed → stream intrinsic knowledge ──
+                yield {
+                    "type": "status",
+                    "content": "Chuyển sang cách đáp trực tiếp...",
+                    "step": "llm_fallback",
+                }
+
+                fallback_answer = ""
+                try:
+                    from app.engine.llm_pool import get_llm_light
+                    from langchain_core.messages import HumanMessage, SystemMessage
+                    from app.prompts.prompt_loader import get_prompt_loader
+
+                    _llm = get_llm_light()
+                    _loader = get_prompt_loader()
+                    _identity = _loader.get_identity().get("identity", {})
+                    _personality = _identity.get("personality", {}).get("summary", "")
+                    _uname = (context or {}).get("user_name", "")
+                    _nhint = f"User tên {_uname}. " if _uname else ""
+
+                    _sys = _build_soul_system_prompt(_personality, _nhint, context_type="fallback")
+                    _msgs = [
+                        SystemMessage(content=_sys),
+                        HumanMessage(content=query),
+                    ]
+
+                    if _llm:
+                        async for evt in _stream_llm_with_thinking(_llm, _msgs, owner, query, context or {}):
+                            yield evt
+                            if evt.get("type") == "answer" and evt.get("content"):
+                                fallback_answer += evt["content"]
+                except Exception as _fb_stream_exc:
+                    logger.warning("[CRAG-V3] Streaming fallback failed: %s", _fb_stream_exc)
+
+                if not fallback_answer:
+                    fb_text, fb_thinking = await owner._generate_fallback(query, context or {})
+                    if not fb_text:
+                        fb_text = build_house_fallback_reply_fn()
+                    if fb_thinking:
+                        yield {"type": "thinking", "content": fb_thinking}
+                    fallback_answer = fb_text
+                    yield {"type": "answer", "content": fallback_answer}
+
+                yield {"type": "result", "data": result_cls(
+                    answer=fallback_answer,
+                    sources=[],
+                    query_analysis=analysis,
+                    confidence=45.0,
+                    was_rewritten=False,
+                    rewritten_query=None,
+                    evidence_images=[],
+                )}
+                yield {"type": "done", "content": ""}
+                return
+        else:
+            _threshold_bypassed = False
+
+        if not _threshold_bypassed and documents:
+            # Sprint 179+: Visual RAG enrichment (streaming path) — only when docs exist
+            if settings_obj.enable_visual_rag and documents:
+                try:
+                    from app.engine.agentic_rag.visual_rag import enrich_documents_with_visual_context
+
+                    yield {"type": "status", "content": "Phân tích hình ảnh tài liệu"}
+                    visual_result = await enrich_documents_with_visual_context(
+                        documents=documents,
+                        query=query,
+                        max_images=settings_obj.visual_rag_max_images,
                     )
-            except Exception as e:
-                logger.warning("[CRAG-V3] Graph RAG failed: %s", e)
+                    if visual_result.total_images_analyzed > 0:
+                        documents = visual_result.enriched_documents
+                        yield {
+                            "type": "thinking",
+                            "content": f"Phân tích {visual_result.total_images_analyzed} hình ảnh từ tài liệu ({visual_result.total_time_ms:.0f}ms)",
+                            "step": "visual_rag",
+                        }
+                        logger.info(
+                            "[CRAG-V3] Visual RAG: enriched %d documents",
+                            visual_result.total_images_analyzed,
+                        )
+                except Exception as e:
+                    logger.warning("[CRAG-V3] Visual RAG failed: %s", e)
+
+            # Sprint 182: Graph RAG enrichment (streaming path)
+            graph_entity_context_streaming = ""
+            if settings_obj.enable_graph_rag and documents:
+                try:
+                    from app.engine.agentic_rag.graph_rag_retriever import enrich_with_graph_context
+
+                    yield {"type": "status", "content": "Phân tích đồ thị tri thức"}
+                    graph_result = await enrich_with_graph_context(
+                        documents=documents,
+                        query=query,
+                    )
+                    if graph_result.entity_context_text:
+                        graph_entity_context_streaming = graph_result.entity_context_text
+                        yield {
+                            "type": "thinking",
+                            "content": f"Đồ thị tri thức: {len(graph_result.entities)} thực thể, chế độ {graph_result.mode} ({graph_result.total_time_ms:.0f}ms)",
+                            "step": "graph_rag",
+                        }
+                    if graph_result.additional_docs:
+                        documents.extend(graph_result.additional_docs)
+                        logger.info(
+                            "[CRAG-V3] Graph RAG: added %d additional documents",
+                            len(graph_result.additional_docs),
+                        )
+                except Exception as e:
+                    logger.warning("[CRAG-V3] Graph RAG failed: %s", e)
 
         if not documents:
-            # Sprint 165: LLM fallback — use general knowledge instead of hardcoded error
+            # Sprint 165 + Soul-streaming: LLM fallback with streaming thinking
             yield {"type": "status", "content": "Chuyển sang cách đáp trực tiếp...", "step": "llm_fallback"}
-            fallback_answer = await owner._generate_fallback(query, context or {})
+
+            fallback_answer = ""
+            try:
+                from app.engine.llm_pool import get_llm_light
+                from langchain_core.messages import HumanMessage, SystemMessage
+                from app.prompts.prompt_loader import get_prompt_loader
+
+                _llm = get_llm_light()
+                _loader = get_prompt_loader()
+                _identity = _loader.get_identity().get("identity", {})
+                _personality = _identity.get("personality", {}).get("summary", "")
+                _uname = (context or {}).get("user_name", "")
+                _nhint = f"User tên {_uname}. " if _uname else ""
+
+                _sys = _build_soul_system_prompt(_personality, _nhint, context_type="fallback")
+                _msgs = [
+                    SystemMessage(content=_sys),
+                    HumanMessage(content=query),
+                ]
+
+                if _llm:
+                    async for evt in _stream_llm_with_thinking(_llm, _msgs, owner, query, context or {}):
+                        yield evt
+                        if evt.get("type") == "answer" and evt.get("content"):
+                            fallback_answer += evt["content"]
+            except Exception as _fb_exc:
+                logger.warning("[CRAG-V3] Streaming fallback failed: %s", _fb_exc)
+
             if not fallback_answer:
-                fallback_answer = build_house_fallback_reply_fn()
-            yield {"type": "answer", "content": fallback_answer}
+                fb_text2, fb_thinking2 = await owner._generate_fallback(query, context or {})
+                if not fb_text2:
+                    fb_text2 = build_house_fallback_reply_fn()
+                if fb_thinking2:
+                    yield {"type": "thinking", "content": fb_thinking2}
+                fallback_answer = fb_text2
+                yield {"type": "answer", "content": fallback_answer}
+
             yield {"type": "result", "data": result_cls(
                 answer=fallback_answer,
                 sources=[],
                 query_analysis=analysis,
                 confidence=45.0,
-                was_rewritten=False,          # Sprint 189b-R5: parity with sync
-                rewritten_query=None,         # Sprint 189b-R5
-                evidence_images=[],           # Sprint 189b: explicit empty
+                was_rewritten=False,
+                rewritten_query=None,
+                evidence_images=[],
             )}
             yield {"type": "done", "content": ""}
             return
@@ -211,9 +645,12 @@ async def process_streaming_impl(
         return
 
     # ═══════════════════════════════════════════════════════════════════
-    # PHASE 3: Grading (CRAG core - quality control!)  
+    # PHASE 3: Grading (CRAG core - quality control!)
     # ═══════════════════════════════════════════════════════════════════
     yield {"type": "status", "content": "Đánh giá chất lượng tài liệu"}
+
+    # Honest status — no synthetic thinking
+    yield {"type": "status", "content": "Đang đánh giá độ phù hợp của tài liệu..."}
 
     tracer.start_step(step_names_cls.GRADING, "Đánh giá độ liên quan của tài liệu")
     logger.info("[CRAG-V3] Phase 3: Grading documents")
@@ -305,7 +742,7 @@ async def process_streaming_impl(
     full_answer_parts = []  # Sprint 144: Accumulate answer tokens for result
 
     if not owner._rag:
-        yield {"type": "answer", "content": "Xin lỗi, mình chưa sẵn sàng trả lời câu này nha~ (˶˃ ᵕ ˂˶)"}
+        yield {"type": "answer", "content": "Hmm, mình chưa sẵn sàng xử lý lúc này nè~ Bạn thử lại sau nhé? (˶˃ ᵕ ˂˶)"}
         yield {"type": "done", "content": ""}
         return
 
@@ -331,6 +768,14 @@ async def process_streaming_impl(
                 "bounding_boxes": doc.get("bounding_boxes"),
                 "content_type": doc.get("content_type"),    # Sprint 189b
             })
+
+        # P2 (Perplexity pattern): Emit sources BEFORE LLM generation starts so
+        # the user sees found documents while the answer is being composed.
+        if sources_data:
+            yield {
+                "type": "sources",
+                "content": sources_data,
+            }
 
         # Sprint 189b: Collect evidence images from retrieved documents
         evidence_image_list = []
@@ -390,8 +835,15 @@ async def process_streaming_impl(
             living_context_prompt=context.get("living_context_prompt", ""),
             skill_context=context.get("skill_context", ""),
             capability_context=context.get("capability_context", ""),
+            _skill_prompts=context.get("_skill_prompts"),
         ):
             token_count += 1
+            # Handle thinking chunks from answer generator
+            if chunk.startswith("__THINKING__"):
+                thinking_text = chunk[len("__THINKING__"):]
+                if thinking_text:
+                    yield {"type": "thinking_delta", "content": thinking_text}
+                continue
             full_answer_parts.append(chunk)
             yield {"type": "answer", "content": chunk}
 
@@ -406,7 +858,7 @@ async def process_streaming_impl(
 
     except Exception as e:
         logger.error("[CRAG-V3] Generation failed: %s", e)
-        _error_msg = "Xin lỗi, mình chưa tạo được câu trả lời lúc này nha~ ≽^•⩊•^≼"
+        _error_msg = "Hmm, mình gặp chút trục trặc khi soạn câu trả lời nè~ Bạn thử lại giúp mình nhé? ≽^•⩊•^≼"
         yield {"type": "answer", "content": _error_msg}
         full_answer_parts.append(_error_msg)  # Sprint 189b: capture in result
 

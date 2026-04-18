@@ -10,10 +10,6 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from app.engine.agentic_rag.runtime_llm_socket import (
-    ainvoke_agentic_rag_llm,
-    resolve_agentic_rag_llm,
-)
 from app.engine.agentic_rag.corrective_rag_prompts import (
     build_fallback_system_prompt,
     resolve_fallback_domain_name,
@@ -35,17 +31,13 @@ async def generate_fallback_impl(
 ) -> str:
     """Generate an answer from model general knowledge when RAG has no docs."""
     try:
-        from app.engine.llm_factory import ThinkingTier
         from app.engine.llm_pool import get_llm_light
         from app.prompts.prompt_loader import get_prompt_loader
         from app.services.output_processor import extract_thinking_from_response
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        llm = resolve_agentic_rag_llm(
-            tier=ThinkingTier.LIGHT,
-            fallback_factory=get_llm_light,
-            component="CorrectiveRAGFallback",
-        )
+        # Prefer pool directly — the runtime socket may have stale failover chains
+        llm = get_llm_light()
         if not llm:
             return ""
 
@@ -75,20 +67,18 @@ async def generate_fallback_impl(
             SystemMessage(content=sys_content),
             HumanMessage(content=query),
         ]
-        response = await ainvoke_agentic_rag_llm(
-            llm=llm,
-            messages=messages,
-            tier=ThinkingTier.LIGHT,
-            component="CorrectiveRAGFallback",
-        )
-        text, _ = extract_thinking_from_response(response.content)
+        response = await llm.ainvoke(messages)
+        text, native_thinking = extract_thinking_from_response(response.content)
         text = text.strip()
+
+        if native_thinking:
+            logger.info("[CRAG] Fallback native thinking: %d chars", len(native_thinking))
 
         if text and is_likely_english(text):
             logger.info("[CRAG] Fallback response is English, translating to Vietnamese...")
             text = await translate_to_vietnamese(text)
 
-        return text or build_house_fallback_reply()
+        return (text or build_house_fallback_reply(), native_thinking)
     except Exception as exc:
         logger.warning("[CRAG] Fallback generation failed: %s", exc)
         return build_house_fallback_reply()
@@ -104,10 +94,11 @@ async def generate_answer_impl(
 ) -> tuple[str, list[dict[str, Any]], Optional[str]]:
     """Generate an answer from already-retrieved documents."""
     if not rag_agent:
-        return "Xin lỗi, mình chưa sẵn sàng trả lời câu này nha~ (˶˃ ᵕ ˂˶)", documents, None
+        return "Hmm, mình chưa sẵn sàng xử lý lúc này nè~ Bạn thử lại sau nhé? (˶˃ ᵕ ˂˶)", documents, None
 
     if not documents:
-        return await generate_fallback(query, context), [], None
+        fallback_text, fallback_thinking = await generate_fallback(query, context)
+        return fallback_text, [], fallback_thinking
 
     try:
         history = context.get("conversation_history", "")
@@ -124,6 +115,7 @@ async def generate_answer_impl(
             living_context_prompt=context.get("living_context_prompt", ""),
             skill_context=context.get("skill_context", ""),
             capability_context=context.get("capability_context", ""),
+            _skill_prompts=context.get("_skill_prompts"),
         )
         native_thinking = response.native_thinking
         if native_thinking:
@@ -131,4 +123,4 @@ async def generate_answer_impl(
         return response.content, documents, native_thinking
     except Exception as exc:
         logger.error("[CRAG] Generation failed: %s", exc)
-        return "Xin lỗi, mình chưa tạo được câu trả lời lúc này nha~ ≽^•⩊•^≼", documents, None
+        return "Hmm, mình gặp chút trục trặc khi soạn câu trả lời nè~ Bạn thử lại giúp mình nhé? ≽^•⩊•^≼", documents, None

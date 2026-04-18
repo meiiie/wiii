@@ -20,6 +20,13 @@ from app.engine.reasoning import sanitize_visible_reasoning_text
 
 logger = logging.getLogger(__name__)
 
+# Zombie Tier-2 phrases that should be stripped from thinking content
+_ZOMBIE_PHRASES = (
+    "Chỗ khó của câu này không nằm ở",
+    "Mình sẽ đi thẳng vào phần lõi",
+    "Điều dễ sai nhất là nhầm giữa",
+)
+
 
 def _derive_code_stream_session_id_impl(
     *,
@@ -51,16 +58,8 @@ def _should_enable_real_code_streaming_impl(
     normalized = str(provider or "").strip().lower()
     model_name = str(getattr(llm, "_wiii_model_name", "") or "").strip().lower()
 
-    if normalized in {"openai", "openrouter"}:
+    if normalized in {"openai", "openrouter", "zhipu"}:
         return True
-
-    if normalized == "zhipu":
-        logger.info(
-            "[CODE_STUDIO] Real code streaming disabled for zhipu model=%s; "
-            "using buffered planning + heartbeat path instead",
-            model_name or "(unknown)",
-        )
-        return False
 
     return False
 
@@ -182,7 +181,11 @@ def _resolve_openai_stream_model_name_impl(
     tier_key: str,
 ) -> str | None:
     tagged_provider = str(getattr(llm, "_wiii_provider_name", "") or "").strip().lower()
-    tagged_model = getattr(llm, "model_name", None) or getattr(llm, "model", None)
+    tagged_model = (
+        getattr(llm, "_wiii_model_name", None)
+        or getattr(llm, "model_name", None)
+        or getattr(llm, "model", None)
+    )
     if tagged_provider == provider_name and tagged_model:
         return str(tagged_model)
 
@@ -340,7 +343,7 @@ async def _stream_openai_compatible_answer_with_route_impl(
                 if delta is None:
                     continue
                 reasoning_delta, answer_delta = extract_openai_delta_text(delta)
-                if provider_name == "google" and answer_delta:
+                if answer_delta and str(node or "").strip().lower() != "code_studio_agent":
                     tagged_reasoning, cleaned_answer = _extract_google_tagged_thinking_impl(
                         answer_delta,
                         state=google_tag_state,
@@ -350,6 +353,10 @@ async def _stream_openai_compatible_answer_with_route_impl(
                     answer_delta = cleaned_answer
                 if reasoning_delta and emit_provider_reasoning and not thinking_closed:
                     reasoning_delta = sanitize_visible_reasoning_text(reasoning_delta)
+                    # Strip zombie boilerplate phrases
+                    for zp in _ZOMBIE_PHRASES:
+                        if zp in reasoning_delta:
+                            reasoning_delta = reasoning_delta.replace(zp, "").strip()
                 if reasoning_delta and emit_provider_reasoning and not thinking_closed and not reasoning_started:
                     await push_event({
                         "type": "thinking_start",
@@ -399,7 +406,15 @@ async def _stream_openai_compatible_answer_with_route_impl(
             provider_name,
             model_name,
             exc,
+            exc_info=True,
         )
         if emitted_answer:
             return AIMessage(content=emitted_answer), True
+    logger.info(
+        "[%s] Native stream result: provider=%s model=%s answer=%d chars",
+        node.upper(),
+        provider_name,
+        model_name,
+        len(emitted_answer),
+    )
     return None, False
