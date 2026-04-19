@@ -198,6 +198,7 @@ class WiiiRunner:
                 state = await self._run_step(step.agent_name, state)
 
             state["_orchestrator_turn"] = turn + 1
+            self._preserve_thinking(state)
 
         # Synthesize + output guardrails
         state = await self._run_step(_NODE_SYNTHESIZER, state)
@@ -273,6 +274,7 @@ class WiiiRunner:
                 self._push_queue(merged_queue, step.agent_name, state)
 
             state["_orchestrator_turn"] = turn + 1
+            self._preserve_thinking(state)
 
         # Synthesize
         state = await self._run_step(_NODE_SYNTHESIZER, state)
@@ -326,6 +328,15 @@ class WiiiRunner:
                 return NextStepRunAgain(agent_name=current, reason="tool_calls_pending")
             state["_agentic_continue"] = None
 
+        # Self-correction: check if response quality is too low for a retry
+        if self._should_retry_response(state, turn):
+            state["_self_correction_retry"] = (state.get("_self_correction_retry") or 0) + 1
+            logger.info(
+                "[RUNNER] Self-correction: re-routing to supervisor (retry %d)",
+                state["_self_correction_retry"],
+            )
+            return NextStepHandoff(target_agent=_NODE_SUPERVISOR, reason="self_correction_retry")
+
         # Default: finalize
         return NextStepFinalOutput(reason="agent_complete")
 
@@ -338,6 +349,64 @@ class WiiiRunner:
             return getattr(config, "enable_agentic_loop", False)
         except Exception:
             return False
+
+    @staticmethod
+    def _should_retry_response(state: AgentState, turn: int) -> bool:
+        """Check if the agent response is low-quality and worth a retry.
+
+        Conditions for retry (max 1 retry to prevent loops):
+        - Runner error occurred during agent execution
+        - Grader score is critically low (< 3/10) when available
+        - Response is empty or very short (< 20 chars) when no grader score
+        - Haven't already retried
+        """
+        if turn < 1:
+            return False  # Don't retry before agent has executed
+
+        retry_count = state.get("_self_correction_retry") or 0
+        if retry_count >= 1:
+            return False  # Max 1 retry
+
+        # Check for error state
+        if state.get("_runner_error"):
+            return True
+
+        # Check grader score first (most reliable signal)
+        grader_score = state.get("grader_score", 0)
+        if isinstance(grader_score, (int, float)) and grader_score > 0:
+            return grader_score < 3
+
+        # No grader score — check response quality
+        response = (state.get("final_response") or "").strip()
+        if not response or len(response) < 20:
+            return True
+
+        return False
+
+    @staticmethod
+    def _preserve_thinking(state: AgentState) -> None:
+        """Save thinking fragments from current turn into _thinking_history.
+
+        Subsequent agents can build on previous reasoning rather than
+        starting from scratch on each NextStep turn.
+        """
+        thinking_content = state.get("thinking_content")
+        fragments = state.get("_public_thinking_fragments")
+        thinking = state.get("thinking")  # Native Gemini thinking
+
+        # Only preserve if there's something meaningful
+        if not thinking_content and not fragments and not thinking:
+            return
+
+        history = state.get("_thinking_history") or []
+        history.append({
+            "turn": state.get("_orchestrator_turn", 0),
+            "agent": state.get("current_agent", ""),
+            "thinking_content": thinking_content,
+            "fragments": fragments,
+            "thinking": thinking,
+        })
+        state["_thinking_history"] = history
 
     @staticmethod
     def _push_queue(

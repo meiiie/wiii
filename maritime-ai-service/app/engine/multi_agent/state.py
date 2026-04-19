@@ -112,6 +112,7 @@ class RuntimeMeta(TypedDict, total=False):
     _agentic_continue: Optional[bool]     # Agent signals more turns needed
     _orchestrator_turn: Optional[int]     # Current orchestrator loop turn
     _handoff_count: Optional[int]         # Handoff counter (bounded by agent_handoff_max_count)
+    _self_correction_retry: Optional[int] # Self-correction retry counter (max 1)
 
 
 # =========================================================================
@@ -133,6 +134,7 @@ class ThinkingState(TypedDict, total=False):
     _public_thinking_fragments: List[str]
     _thinking_trajectory: Optional[Dict[str, Any]]
     thinking_effort: Optional[str]  # "low" | "medium" | "high" | "max"
+    _thinking_history: List[Dict[str, Any]]  # Preserved thinking across NextStep turns
 
 
 # =========================================================================

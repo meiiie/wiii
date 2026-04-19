@@ -82,6 +82,8 @@ class TestRunnerAgenticLoopSignal:
             "current_agent": "supervisor",
             "_agentic_continue": True,
             "_orchestrator_turn": 1,
+            "final_response": "Response is long enough to avoid self-correction",
+            "_self_correction_retry": 0,
         }
         step = await runner._resolve_next_step(state, turn=1)
         assert isinstance(step, NextStepFinalOutput)
@@ -93,6 +95,7 @@ class TestRunnerAgenticLoopSignal:
             "current_agent": "rag_agent",
             "_agentic_continue": True,
             "_orchestrator_turn": 1,
+            "final_response": "Response is long enough to avoid self-correction",
         }
         await runner._resolve_next_step(state, turn=1)
         assert state.get("_agentic_continue") is None
