@@ -31,6 +31,7 @@ def _build_turn_local_state_defaults(context: Optional[dict] = None) -> dict:
         "_answer_streamed_via_bus": False,
         "_execution_provider": None,
         "_execution_model": None,
+        "_execution_tier": None,
         "_llm_failover_events": [],
         "domain_notice": None,
         "evidence_images": [],
@@ -98,6 +99,7 @@ def _build_domain_config(domain_id: str) -> dict:
                 "routing_keywords": config.routing_keywords,
                 "rag_description": routing.get("rag_description", ""),
                 "tutor_description": routing.get("tutor_description", ""),
+                "scope_description": routing.get("scope_description", ""),
             }
     except Exception as exc:  # pragma: no cover - defensive logging only
         logger.debug("Domain config fallback: %s", exc)
@@ -108,6 +110,7 @@ def _build_domain_config(domain_id: str) -> dict:
         "routing_keywords": [],
         "rag_description": "Tra cứu kiến thức, quy định, luật, thủ tục trong cơ sở dữ liệu",
         "tutor_description": "Giải thích, dạy học, quiz về kiến thức chuyên ngành",
+        "scope_description": "",
     }
 
 

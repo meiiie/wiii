@@ -13,7 +13,7 @@ from typing import Optional
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.resilience import retry_on_transient
-from app.engine.llm_pool import get_llm_moderate
+from app.engine.multi_agent.agent_config import AgentConfigRegistry
 from app.engine.multi_agent.state import AgentState
 from app.engine.agents import GRADER_AGENT_CONFIG
 
@@ -71,10 +71,9 @@ class GraderAgentNode:
         logger.info("GraderAgentNode initialized with config: %s", self._config.id)
     
     def _init_llm(self):
-        """Initialize grading LLM with MODERATE tier thinking."""
+        """Initialize grading LLM via AgentConfigRegistry."""
         try:
-            # CHỈ THỊ SỐ 28: Use MODERATE tier (4096 tokens) for grading
-            self._llm = get_llm_moderate()  # Shared pool instance
+            self._llm = AgentConfigRegistry.get_llm("grader")
         except Exception as e:
             logger.error("Failed to initialize Grader LLM: %s", e)
             self._llm = None

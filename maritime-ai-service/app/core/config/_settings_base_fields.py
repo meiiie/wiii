@@ -231,7 +231,7 @@ class BaseSettingsFieldsMixin:
         default=GOOGLE_DEEP_MODEL,
         description="Google Gemini model for complex/deep tasks (default: gemini-3.1-pro-preview)",
     )
-    llm_provider: str = Field(default="google", description="LLM provider: google, zhipu, openai, openrouter, ollama")
+    llm_provider: str = Field(default="zhipu", description="LLM provider: google, zhipu, openai, openrouter, ollama")
 
     # LLM Settings - Ollama (local/self-hosted)
     ollama_api_key: Optional[str] = Field(
@@ -631,6 +631,10 @@ class BaseSettingsFieldsMixin:
     enable_subagent_architecture: bool = Field(default=False, description="Enable subagent/subgraph architecture")
     subagent_default_timeout: int = Field(default=60, ge=10, le=300, description="Default subagent timeout (seconds)")
     subagent_max_parallel: int = Field(default=5, ge=1, le=10, description="Max parallel subagent executions")
+
+    # WiiiRunner (De-LangGraphing Phase 3: custom Runner replacing LangGraph)
+    enable_wiii_runner: bool = Field(default=True, description="Use WiiiRunner instead of LangGraph for orchestration")
+    enable_runner_hooks: bool = Field(default=True, description="Enable lifecycle hooks (logging + metrics) in WiiiRunner")
 
     # MCP Support
     enable_mcp_server: bool = Field(default=False, description="Enable MCP Server")
