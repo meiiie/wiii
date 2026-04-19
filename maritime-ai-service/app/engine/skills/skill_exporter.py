@@ -140,23 +140,23 @@ Extract a reusable YAML skill. Respond with ONLY the YAML block:
 
 ```yaml
 name: auto-<descriptive-kebab-case>
-description: "<one-line Vietnamese description>"
+description: "<mô tả một dòng bằng tiếng Việt có dấu>"
 priority: 0.6
 prompt_addition: |
-  <Vietnamese instructions for the AI to follow this workflow pattern>
-  <Include specific tool recommendations and strategy>
-  <Keep under 300 characters>
+  <Hướng dẫn bằng tiếng Việt có dấu cho AI cách xử lý loại yêu cầu này>
+  <Bao gồm khuyến nghị công cụ cụ thể và chiến lược>
+  <Giữ dưới 300 ký tự>
 tools:
   - <tool_name_1>
   - <tool_name_2>
 triggers:
-  - "<intent keyword 1>"
-  - "<intent keyword 2>"
+  - "<từ khóa ý định 1>"
+  - "<từ khóa ý định 2>"
 ```
 
 Rules:
 - name must be kebab-case, prefixed with "auto-"
-- prompt_addition must be in Vietnamese
+- prompt_addition must be in Vietnamese WITH proper diacritics (tiếng Việt có dấu)
 - tools must only include tools actually used
 - triggers capture INTENT not exact query
 - Only export if this is a REUSABLE pattern"""

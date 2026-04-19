@@ -91,7 +91,8 @@ class TestCompletenessEvaluation:
         guard = CompletenessGuard()
         report = guard.evaluate([{"platform": "Shopee", "title": "A"}])
         assert len(report.suggestion) > 0
-        assert "Shopee" in report.suggestion or "ket qua" in report.suggestion.lower() or "nền tảng" in report.suggestion or "nen tang" in report.suggestion
+        # Vietnamese with diacritics
+        assert "kết quả" in report.suggestion or "nền tảng" in report.suggestion
 
     def test_suggestion_when_sufficient(self):
         guard = CompletenessGuard()
@@ -101,7 +102,7 @@ class TestCompletenessEvaluation:
             {"platform": "C", "title": "Z", "price": "300k", "extracted_price": 300},
         ]
         report = guard.evaluate(results)
-        assert report.suggestion == "Ket qua da du."
+        assert report.suggestion == "Kết quả đã đủ."
 
     def test_missing_fields_detection(self):
         guard = CompletenessGuard()

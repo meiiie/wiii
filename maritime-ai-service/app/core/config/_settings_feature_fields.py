@@ -154,17 +154,17 @@ class FeatureSettingsMixin:
     apify_api_token: Optional[str] = Field(default=None, description="Apify API token")
 
     # Site Playbooks (Firecrawl pattern)
-    enable_site_playbooks: bool = Field(default=False, description="Enable YAML-driven site playbooks for scraping config")
+    enable_site_playbooks: bool = Field(default=True, description="Enable YAML-driven site playbooks for scraping config")
     playbooks_hot_reload: bool = Field(default=False, description="Reload playbooks on every request (dev only)")
 
     # Data Completeness Guard (Firecrawl pattern)
-    enable_completeness_guard: bool = Field(default=False, description="Check result completeness before product search synthesis")
+    enable_completeness_guard: bool = Field(default=True, description="Check result completeness before product search synthesis")
     completeness_min_results: int = Field(default=3, ge=1, le=20, description="Minimum results for completeness pass")
     completeness_min_platforms: int = Field(default=2, ge=1, le=10, description="Minimum distinct platforms for completeness")
     completeness_max_extra_rounds: int = Field(default=2, ge=0, le=5, description="Max extra search rounds from guard")
 
     # Skill Export (Firecrawl pattern)
-    enable_skill_export: bool = Field(default=False, description="Auto-generate YAML skills from successful conversations")
+    enable_skill_export: bool = Field(default=True, description="Auto-generate YAML skills from successful conversations")
     skill_export_min_tool_calls: int = Field(default=2, ge=1, le=10, description="Min tool calls to trigger skill export")
     skill_export_max_per_day: int = Field(default=5, ge=0, le=50, description="Max auto-generated skills per day")
     product_search_max_results: int = Field(default=30, ge=1, le=100, description="Max results per platform search")

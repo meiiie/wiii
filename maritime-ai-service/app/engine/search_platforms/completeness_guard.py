@@ -136,27 +136,27 @@ class CompletenessGuard:
 
         if result_count < self._config.min_results:
             parts.append(
-                f"Chi co {result_count}/{self._config.min_results} ket qua. "
-                f"Thu tim them tren cac san khac."
+                f"Chỉ có {result_count}/{self._config.min_results} kết quả. "
+                f"Thử tìm thêm trên các sàn khác."
             )
 
         if platform_count < self._config.min_platforms:
             parts.append(
-                f"Ket qua chi tu {platform_count} nen tang. "
-                f"Thu Shopee, Lazada, hoac WebSosanh de so sanh gia."
+                f"Kết quả chỉ từ {platform_count} nền tảng. "
+                f"Thử Shopee, Lazada, hoặc WebSosanh để so sánh giá."
             )
 
         if price_coverage < self._config.price_coverage_min:
             parts.append(
-                f"Chi {price_coverage:.0%} co gia. "
-                f"Thu tim chi tiet hon de lay thong tin gia."
+                f"Chỉ {price_coverage:.0%} có giá. "
+                f"Thử tìm chi tiết hơn để lấy thông tin giá."
             )
 
         if missing_fields:
             field_names = ", ".join(missing_fields)
-            parts.append(f"Thieu truong: {field_names}.")
+            parts.append(f"Thiếu trường: {field_names}.")
 
         if not parts:
-            return "Ket qua da du."
+            return "Kết quả đã đủ."
 
         return " ".join(parts)
