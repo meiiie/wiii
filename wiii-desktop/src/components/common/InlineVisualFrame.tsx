@@ -98,6 +98,69 @@ function mergeBodyClassAttribute(attrs: string, extraClass: string) {
   ));
 }
 
+/**
+ * Tweaks protocol — PostMessage-based live editing (Claude Design pattern).
+ * Injected into every visual iframe so the host can toggle a floating Tweaks panel.
+ */
+const TWEAKS_INJECT = `
+<style>
+  #wiii-tweaks-panel{display:none;position:fixed;bottom:12px;right:12px;z-index:9999;
+    width:260px;max-height:70vh;overflow-y:auto;background:rgba(255,255,255,0.95);
+    border:1px solid rgba(0,0,0,0.08);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,0.12);
+    padding:12px;font:12px/1.5 system-ui,sans-serif;color:#1c1917;backdrop-filter:blur(8px)}
+  #wiii-tweaks-panel.visible{display:block}
+  .tw-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;
+    font-weight:600;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:#78716c}
+  .tw-close{cursor:pointer;background:none;border:none;font-size:16px;color:#a8a29e;padding:0 2px}
+  .tw-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+  .tw-row label{flex:0 0 90px;font-size:11px;color:#78716c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tw-row input[type=color]{width:28px;height:22px;border:1px solid #d6d3d1;border-radius:4px;cursor:pointer;padding:0}
+  .tw-row input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;background:#e7e5e4;border-radius:2px}
+  .tw-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#fff;border:1px solid #a8a29e;cursor:pointer}
+</style>
+<script id="wiii-tweak-state">/*EDITMODE-BEGIN*/{}/*EDITMODE-END*/</script>
+<script>
+(function(){
+  var _p=document.getElementById('wiii-tweaks-panel');
+  var _ts=document.getElementById('wiii-tweak-state');
+  if(!_ts)return;
+  var _rm=/\\/\\*EDITMODE-BEGIN\\*\\/([\\s\\S]*?)\\/\\*EDITMODE-END\\*\\//;
+  function _gj(){var m=_ts.textContent.match(_rm);try{return m?JSON.parse(m[1]):{}}catch(e){return{}}}
+  function _sj(j){_ts.textContent='/*EDITMODE-BEGIN*/'+JSON.stringify(j)+'/*EDITMODE-END*/';}
+  function _ctrl(k,v){
+    var r=document.createElement('div');r.className='tw-row';
+    var lb=document.createElement('label');lb.textContent=k;lb.title=k;
+    var inp=document.createElement('input');
+    if(/#[0-9a-f]{3,8}/i.test(v)){inp.type='color';inp.value=v;inp.addEventListener('input',function(e){_apply(k,e.target.value);});}
+    else{var n=parseFloat(v);if(!isNaN(n)){inp.type='range';inp.min='0';inp.max=String(Math.max(n*3,1));inp.step='any';inp.value=v;
+      inp.addEventListener('input',function(e){_apply(k,e.target.value);});}
+    else{inp.type='text';inp.value=v;inp.addEventListener('input',function(e){_apply(k,e.target.value);});}}
+    r.appendChild(lb);r.appendChild(inp);return r;
+  }
+  function _apply(k,v){document.documentElement.style.setProperty(k,v);
+    var j=_gj();j[k]=v;_sj(j);parent.postMessage({type:'__edit_mode_set_keys',edits:j},'*');}
+  function _render(){
+    if(!_p){_p=document.createElement('div');_p.id='wiii-tweaks-panel';document.body.appendChild(_p);}
+    _p.innerHTML='';
+    var h=document.createElement('div');h.className='tw-hdr';
+    h.textContent='Tweaks';
+    var cb=document.createElement('button');cb.className='tw-close';cb.innerHTML='\\u2715';
+    cb.onclick=function(){_p.classList.remove('visible');parent.postMessage({type:'__deactivate_edit_mode'},'*');};
+    h.appendChild(cb);_p.appendChild(h);
+    var j=_gj();var ks=Object.keys(j);
+    if(!ks.length){var em=document.createElement('div');em.style.cssText='font-size:11px;color:#a8a29e';
+      em.textContent='No tweakable properties';_p.appendChild(em);return;}
+    ks.forEach(function(k){_p.appendChild(_ctrl(k,j[k]));});
+  }
+  window.addEventListener('message',function(e){
+    var d=e.data;if(!d||typeof d!=='object')return;
+    if(d.type==='__activate_edit_mode'){_render();if(_p)_p.classList.add('visible');}
+    if(d.type==='__deactivate_edit_mode'){if(_p)_p.classList.remove('visible');}
+  });
+  parent.postMessage({type:'__edit_mode_available'},'*');
+})();
+</script>`;
+
 function injectIntoHead(content: string, payload: string) {
   if (/<head[^>]*>/i.test(content)) {
     return content.replace(/<head[^>]*>/i, (match) => `${match}\n${payload}`);
@@ -379,18 +442,19 @@ export function buildVisualFrameDocument(
     <div class="wiii-frame-content">${bodyContent}</div>
   </div>
   ${bridgeScript}
+  ${TWEAKS_INJECT}
 </body>`;
       });
     }
 
-    const bodyDecorated = headInjected.replace(/<body([^>]*)>/i, (_match, attrs: string) => {
+    const bodyDecorated = headInjected.replace(/<body([^>]*>)/i, (_match, attrs: string) => {
       const mergedAttrs = mergeBodyClassAttribute(attrs, hostShellMode === "force" ? "wiii-host-shell-active" : "");
       return `<body${mergedAttrs}${hostShellMode === "force" ? ` data-wiii-host-shell="true" data-wiii-has-intro="${hasIntro ? "true" : "false"}"` : ""}>`;
     });
 
     return /<\/body>/i.test(bodyDecorated)
-      ? bodyDecorated.replace(/<\/body>/i, `${bridgeScript}\n</body>`)
-      : `${bodyDecorated}\n${bridgeScript}`;
+      ? bodyDecorated.replace(/<\/body>/i, `${bridgeScript}\n${TWEAKS_INJECT}\n</body>`)
+      : `${bodyDecorated}\n${bridgeScript}\n${TWEAKS_INJECT}`;
   }
 
   return `<!DOCTYPE html>
@@ -407,6 +471,7 @@ export function buildVisualFrameDocument(
     <div class="wiii-frame-content">${content}</div>
   </div>
   ${bridgeScript}
+  ${TWEAKS_INJECT}
 </body>
 </html>`;
 }

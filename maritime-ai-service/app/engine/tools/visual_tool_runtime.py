@@ -311,7 +311,16 @@ def tool_create_visual_code_impl(
             )
 
     if raw.lstrip().lower().startswith("<!doctype") or raw.lstrip().lower().startswith("<html"):
-        final_html = raw
+        # Even for full documents, inject tweaks protocol if not already present
+        if "EDITMODE-BEGIN" not in raw:
+            from app.engine.tools.visual_html_core import _tweaks_inject
+            tweaks_block = _tweaks_inject()
+            if "</body>" in raw:
+                final_html = raw.replace("</body>", f"{tweaks_block}</body>", 1)
+            else:
+                final_html = raw + tweaks_block
+        else:
+            final_html = raw
     else:
         css_parts = []
         body_content = raw
