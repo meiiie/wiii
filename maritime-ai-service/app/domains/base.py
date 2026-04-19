@@ -35,6 +35,7 @@ class DomainConfig:
     mandatory_search_triggers: List[str] = field(default_factory=list)
     rag_agent_description: str = ""
     tutor_agent_description: str = ""
+    scope_description: str = ""
 
 
 @dataclass
@@ -108,6 +109,7 @@ class DomainPlugin(ABC):
             "routing_keywords": config.routing_keywords,
             "rag_description": config.rag_agent_description,
             "tutor_description": config.tutor_agent_description,
+            "scope_description": config.scope_description,
         }
 
     def get_greetings(self) -> Dict[str, str]:
@@ -223,6 +225,7 @@ class YamlDomainPlugin(DomainPlugin):
                 mandatory_search_triggers=m.get("mandatory_search_triggers", []),
                 rag_agent_description=m.get("rag_agent_description", ""),
                 tutor_agent_description=m.get("tutor_agent_description", ""),
+                scope_description=m.get("scope_description", ""),
             )
         return self._config
 

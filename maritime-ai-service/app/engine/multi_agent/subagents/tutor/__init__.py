@@ -1,6 +1,6 @@
 """Tutor subgraph — analysis → generation → refinement pipeline."""
 
 from app.engine.multi_agent.subagents.tutor.state import TutorSubgraphState
-from app.engine.multi_agent.subagents.tutor.graph import build_tutor_subgraph
+# build_tutor_subgraph removed (De-LangGraphing Phase 3) — pipeline runs via WiiiRunner
 
-__all__ = ["TutorSubgraphState", "build_tutor_subgraph"]
+__all__ = ["TutorSubgraphState"]

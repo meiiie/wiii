@@ -369,3 +369,35 @@ async def _build_direct_tool_reflection(
     if normalized_tool.startswith("tool_chart_") or normalized_tool.startswith("tool_plot_"):
         return "Phần trực quan đã có khung chính; giờ mình gạn lại để bạn nhìn là hiểu ngay."
     return "Mình đang lồng kết quả vừa có vào câu trả lời để nó vừa chắc vừa tự nhiên hơn."
+
+
+# ── Market temporal + locality helpers (shared with direct_evidence_planner) ──
+
+_TEMPORAL_MARKERS = (
+    "hom nay", "hien tai", "bay gio", "moi nhat", "gan day",
+    "latest", "today", "current", "now",
+)
+
+_VIETNAM_LOCALITY_MARKERS = (
+    "viet nam", "vietnam", "trong nuoc", "xang ron", "petrolimex", "pvoil",
+    "gia xang", "gia dau",
+)
+
+
+def _is_temporal_market_query(query: str) -> bool:
+    """Check if the query asks about current/live market data."""
+    normalized = _normalize_reasoning_text(query)
+    is_market = any(kw in normalized for kw in _MARKET_ANALYSIS_KEYWORDS)
+    is_temporal = any(kw in normalized for kw in _TEMPORAL_MARKERS)
+    return is_market and is_temporal
+
+
+def _should_default_market_to_vietnam(query: str, state: AgentState) -> bool:
+    """Check if the market query should default to a Vietnam-first perspective."""
+    del state
+    normalized = _normalize_reasoning_text(query)
+    global_markers = ("the gioi", "quoc te", "global", "brent", "wti", "usd", "index")
+    has_global = any(kw in normalized for kw in global_markers)
+    if has_global:
+        return False
+    return any(kw in normalized for kw in _VIETNAM_LOCALITY_MARKERS)

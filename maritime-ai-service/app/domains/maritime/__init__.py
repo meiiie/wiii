@@ -84,6 +84,7 @@ Paragraph:""",
             "rag_description": config.rag_agent_description or "Tra cứu quy định hàng hải (COLREGs, SOLAS, MARPOL), luật, thủ tục",
             "tutor_description": config.tutor_agent_description or "Giải thích, dạy học, quiz về kiến thức hàng hải",
             "mandatory_search_triggers": config.mandatory_search_triggers,
+            "scope_description": config.scope_description or "",
         }
 
     def get_greetings(self) -> Dict[str, str]:

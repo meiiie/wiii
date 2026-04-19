@@ -1,0 +1,17 @@
+id: rag-delegation
+name: "RAG Knowledge Delegation"
+version: "1.0.0"
+type: prompt
+triggers:
+  - "tra cứu chuyên sâu, phân tích quy định, đối chiếu luật"
+  - "kiến thức chuyên ngành, tài liệu nội bộ, quy định"
+  - "COLREGs, SOLAS, MARPOL, luật giao thông, biển báo"
+roles: [student, teacher, admin]
+domain: null
+description: "Hướng dẫn dùng tool_rag_knowledge để delegate tra cứu chuyên sâu cho RAG agent"
+disclosure:
+  l1: "RAG knowledge delegation"
+  l2: "Dùng tool_rag_knowledge khi cần tra cứu chuyên sâu từ cơ sở dữ liệu kiến thức nội bộ."
+  l3:
+    prompt_file: prompt.md
+    tools: [tool_rag_knowledge]

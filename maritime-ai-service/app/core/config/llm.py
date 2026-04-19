@@ -18,8 +18,8 @@ from app.engine.model_catalog import (
 
 class LLMConfig(BaseModel):
     """LLM provider settings — Gemini, OpenAI, Ollama."""
-    provider: str = "google"
-    failover_chain: list[str] = ["google", "zhipu", "ollama", "openrouter"]
+    provider: str = "zhipu"
+    failover_chain: list[str] = ["zhipu", "google", "ollama", "openrouter"]
     enable_failover: bool = True
     primary_timeout_light_seconds: float = 12.0
     primary_timeout_moderate_seconds: float = 25.0

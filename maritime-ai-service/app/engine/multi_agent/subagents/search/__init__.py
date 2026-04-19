@@ -4,10 +4,9 @@ from app.engine.multi_agent.subagents.search.state import (
     PlatformWorkerState,
     SearchSubgraphState,
 )
-from app.engine.multi_agent.subagents.search.graph import build_search_subgraph
+# build_search_subgraph removed (De-LangGraphing Phase 3) — pipeline runs via WiiiRunner
 
 __all__ = [
     "PlatformWorkerState",
     "SearchSubgraphState",
-    "build_search_subgraph",
 ]

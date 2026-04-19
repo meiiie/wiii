@@ -291,6 +291,7 @@ async def collect_tutor_model_message(
     messages: list[Any],
     *,
     logger: logging.Logger,
+    on_stream_reasoning_delta: Any = None,
 ) -> tuple[Any, str, bool]:
     """Collect a tutor model response with stream-first parity, fallback to ainvoke."""
 
@@ -309,6 +310,16 @@ async def collect_tutor_model_message(
                     text = _extract_tutor_chunk_text(getattr(chunk, "content", ""))
                     if text:
                         streamed_text_parts.append(text)
+                    # Propagate reasoning deltas if callback provided
+                    if on_stream_reasoning_delta is not None:
+                        reasoning = getattr(chunk, "reasoning_content", None) or getattr(
+                            getattr(chunk, "additional_kwargs", {}), "reasoning_content", None
+                        )
+                        if reasoning:
+                            try:
+                                await on_stream_reasoning_delta(reasoning)
+                            except Exception:
+                                pass
                 if final_msg is not None:
                     _copy_runtime_metadata(llm, final_msg)
                     return final_msg, "".join(streamed_text_parts), True
@@ -318,6 +329,42 @@ async def collect_tutor_model_message(
     response = await llm.ainvoke(messages)
     _copy_runtime_metadata(llm, response)
     return response, "", False
+
+
+async def collect_tutor_model_message_with_failover(
+    llm: Any,
+    messages: list[Any],
+    *,
+    logger: logging.Logger,
+    tier: str = "moderate",
+    provider: str | None = None,
+) -> tuple[Any, str, bool]:
+    """Collect tutor model response with failover to alternate provider.
+
+    Tries the primary LLM first. On failure, attempts to construct a
+    rescue LLM from the configured failover chain and retry.
+    """
+    # Try primary
+    try:
+        result, text, streamed = await collect_tutor_model_message(llm, messages, logger=logger)
+        if result is not None:
+            return result, text, streamed
+    except Exception as exc:
+        logger.warning("[TUTOR] Primary LLM failed in failover path: %s", exc)
+
+    # Failover: try to get a rescue LLM
+    try:
+        from app.engine.llm_pool import get_llm_moderate, get_llm_light
+        rescue_llm = get_llm_moderate() if tier == "moderate" else get_llm_light()
+        if rescue_llm is not None:
+            logger.info("[TUTOR] Attempting failover with tier=%s", tier)
+            result, text, streamed = await collect_tutor_model_message(rescue_llm, messages, logger=logger)
+            if result is not None:
+                return result, text, streamed
+    except Exception as exc:
+        logger.warning("[TUTOR] Failover LLM also failed: %s", exc)
+
+    return None, "", False
 
 
 def extract_tutor_content_with_thinking(
@@ -348,3 +395,83 @@ def extract_tutor_content_with_thinking(
         return thinking.strip(), None
 
     return clean_text, thinking
+
+
+def build_tutor_rescue_response(
+    query: str,
+    *,
+    note_internal_gap: bool = False,
+) -> str:
+    """Build a rescue response when the tutor LLM fails or returns empty.
+
+    Provides a structured fallback that acknowledges the gap and offers
+    to help the user explore further.
+    """
+    gap_note = ""
+    if note_internal_gap:
+        gap_note = (
+            "\n\nMình đã kiểm tra kho nội bộ nhưng chưa tìm thấy tài liệu khớp "
+            "với câu hỏi này, nên phần trả lời dưới đây dựa trên kiến thức chung."
+        )
+    return (
+        f"Mình sẽ giúp bạn hiểu về: **{query}**\n"
+        f"{gap_note}\n\n"
+        "Để mình giải thích theo cách dễ hiểu nhất nhé. "
+        "Nếu bạn cần đi sâu hơn hay có câu hỏi phụ, cứ hỏi nhé!"
+    )
+
+
+def apply_quiz_socratic_guardrail(
+    response: str,
+    *,
+    context: Any = None,
+) -> str:
+    """Socratic guardrail for quiz/test pages — avoid revealing answers directly.
+
+    When LMS page context indicates the user is on a quiz page, this function
+    redacts direct answers and replaces them with Socratic hints.
+    """
+    if not response or not context:
+        return response
+
+    # Check if we're on a quiz/test page via LMS page context
+    page_context = None
+    if isinstance(context, dict):
+        page_context = context.get("page_context") or context.get("host_context")
+    if not page_context:
+        return response
+
+    page_type = ""
+    if isinstance(page_context, dict):
+        page_type = str(page_context.get("page_type", "")).lower()
+
+    # Only apply on quiz/test pages
+    if page_type not in ("quiz", "test", "exam", "assessment"):
+        return response
+
+    # Socratic transformation markers — simple heuristic
+    direct_answer_patterns = [
+        (r"Đáp án (đúng|chính xác)\s*(?:là|:)\s*(.+?)\."),
+        r"đáp án đúng là",
+        r"đáp án chính xác là",
+    ]
+    import re as _re
+    for pattern in direct_answer_patterns:
+        if isinstance(pattern, tuple):
+            if _re.search(pattern[0], response, _re.IGNORECASE):
+                response = _re.sub(
+                    pattern[0],
+                    r"Mình thấy bạn đang làm bài kiểm tra — mình sẽ gợi ý thay vì đưa đáp án trực tiếp. Hãy suy nghĩ về: \2.",
+                    response,
+                    flags=_re.IGNORECASE,
+                )
+        elif _re.search(pattern, response, _re.IGNORECASE):
+            response = _re.sub(
+                pattern,
+                "Mình thấy bạn đang làm bài kiểm tra — mình sẽ gợi ý thay vì đưa đáp án trực tiếp. "
+                "Hãy xem lại tài liệu và thử xác định đáp án nhé!",
+                response,
+                flags=_re.IGNORECASE,
+            )
+
+    return response

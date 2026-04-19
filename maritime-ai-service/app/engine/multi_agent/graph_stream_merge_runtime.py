@@ -36,12 +36,20 @@ async def forward_graph_events_impl(
     invoke_config,
     merged_queue: asyncio.Queue,
 ) -> None:
-    """Forward graph node completions into the merged streaming queue."""
+    """Forward graph node completions into the merged streaming queue.
+
+    Uses WiiiRunner.run_streaming() for execution (De-LangGraphing).
+    The graph parameter is kept for API compatibility but is not used.
+    """
     try:
-        async for update in graph.astream(
-            initial_state, config=invoke_config, stream_mode="updates"
-        ):
-            await merged_queue.put(("graph", update))
+        from app.engine.multi_agent.runner import get_wiii_runner
+
+        runner = get_wiii_runner()
+        await runner.run_streaming(
+            initial_state,
+            merged_queue=merged_queue,
+        )
+        logger.info("[STREAM] Executed via WiiiRunner streaming")
     except asyncio.TimeoutError:
         await merged_queue.put(("error", "Processing timeout exceeded"))
     except ProviderUnavailableError as exc:

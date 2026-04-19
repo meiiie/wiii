@@ -471,10 +471,13 @@ def guardian_route(state: AgentState) -> Literal["supervisor", "synthesizer"]:
 
 
 # =============================================================================
-# Graph Builder
+# Graph Builder (DEPRECATED — LangGraph removed, De-LangGraphing Phase 3)
+# These functions remain for API compatibility but raise RuntimeError if called.
+# Use WiiiRunner (app/engine/multi_agent/runner.py) for orchestration.
 # =============================================================================
 
 def build_multi_agent_graph(checkpointer=None):
+    """DEPRECATED — use WiiiRunner instead. Raises RuntimeError."""
     return build_multi_agent_graph_entry_impl(
         checkpointer=checkpointer,
         settings_obj=settings,

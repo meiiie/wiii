@@ -1,4 +1,9 @@
-"""Graph singleton and request-scoped lifecycle helpers."""
+"""Graph singleton and request-scoped lifecycle helpers.
+
+NOTE: LangGraph graph lifecycle is deprecated (De-LangGraphing Phase 3).
+These functions remain for backward compatibility but are no longer used
+by the main execution paths which now use WiiiRunner.
+"""
 
 from __future__ import annotations
 
@@ -15,11 +20,8 @@ def get_multi_agent_graph_impl(*, cached_graph, build_graph, set_cached_graph):
 
 @asynccontextmanager
 async def open_multi_agent_graph_impl(*, build_graph):
-    """Build a request-scoped graph with its own checkpointer connection."""
-    from app.engine.multi_agent.checkpointer import open_checkpointer
-
-    async with open_checkpointer() as checkpointer:
-        yield build_graph(checkpointer=checkpointer)
+    """Build a request-scoped graph (no checkpointer — LangGraph removed)."""
+    yield build_graph(checkpointer=None)
 
 
 async def get_multi_agent_graph_async_impl(*, build_graph):

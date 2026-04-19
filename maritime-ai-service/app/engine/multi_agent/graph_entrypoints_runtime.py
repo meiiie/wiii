@@ -1,10 +1,14 @@
-"""Entry-point and singleton helpers for the graph shell."""
+"""Entry-point and singleton helpers for the graph shell.
+
+NOTE: LangGraph graph entrypoints are deprecated (De-LangGraphing Phase 3).
+These functions remain for backward compatibility but are no longer used
+by the main execution paths which now use WiiiRunner.
+"""
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from app.engine.multi_agent.graph_builder_runtime import build_multi_agent_graph_impl
 from app.engine.multi_agent.graph_lifecycle import (
     get_multi_agent_graph_async_impl,
     get_multi_agent_graph_impl,
@@ -32,23 +36,13 @@ def build_multi_agent_graph_entry_impl(
     route_decision,
     guardian_route,
 ):
-    """Build the compiled multi-agent graph from shell callbacks."""
-    return build_multi_agent_graph_impl(
-        checkpointer=checkpointer,
-        settings_obj=settings_obj,
-        guardian_node=guardian_node,
-        supervisor_node=supervisor_node,
-        rag_node=rag_node,
-        tutor_node=tutor_node,
-        memory_node=memory_node,
-        direct_response_node=direct_response_node,
-        code_studio_node=code_studio_node,
-        synthesizer_node=synthesizer_node,
-        colleague_agent_node=colleague_agent_node,
-        product_search_node=product_search_node,
-        parallel_dispatch_node=parallel_dispatch_node,
-        route_decision=route_decision,
-        guardian_route=guardian_route,
+    """DEPRECATED — Build the compiled multi-agent graph from shell callbacks.
+
+    Now raises RuntimeError (langgraph removed). Use WiiiRunner instead.
+    """
+    raise RuntimeError(
+        "build_multi_agent_graph_entry_impl is deprecated (De-LangGraphing Phase 3). "
+        "Use WiiiRunner from app.engine.multi_agent.runner instead."
     )
 
 

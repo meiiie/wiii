@@ -378,21 +378,13 @@ class TestRAGNodes:
 
 
 class TestRAGSubgraphBuild:
-    """RAG subgraph compilation."""
+    """RAG subgraph build is deprecated (De-LangGraphing Phase 3)."""
 
-    def test_compiles(self):
+    def test_raises_runtime_error(self):
         from app.engine.multi_agent.subagents.rag.graph import build_rag_subgraph
 
-        graph = build_rag_subgraph()
-        assert graph is not None
-
-    def test_has_nodes(self):
-        from app.engine.multi_agent.subagents.rag.graph import build_rag_subgraph
-
-        graph = build_rag_subgraph()
-        nodes = set(graph.nodes.keys()) if hasattr(graph, "nodes") else set()
-        for expected in ["retrieve", "grade", "correct", "generate"]:
-            assert expected in nodes
+        with pytest.raises(RuntimeError, match="deprecated"):
+            build_rag_subgraph()
 
 
 # =========================================================================
@@ -489,21 +481,13 @@ class TestTutorNodes:
 
 
 class TestTutorSubgraphBuild:
-    """Tutor subgraph compilation."""
+    """Tutor subgraph build is deprecated (De-LangGraphing Phase 3)."""
 
-    def test_compiles(self):
+    def test_raises_runtime_error(self):
         from app.engine.multi_agent.subagents.tutor.graph import build_tutor_subgraph
 
-        graph = build_tutor_subgraph()
-        assert graph is not None
-
-    def test_has_nodes(self):
-        from app.engine.multi_agent.subagents.tutor.graph import build_tutor_subgraph
-
-        graph = build_tutor_subgraph()
-        nodes = set(graph.nodes.keys()) if hasattr(graph, "nodes") else set()
-        for expected in ["analyze", "generate", "refine", "output"]:
-            assert expected in nodes
+        with pytest.raises(RuntimeError, match="deprecated"):
+            build_tutor_subgraph()
 
 
 # =========================================================================
@@ -527,12 +511,14 @@ class TestPackageExports:
         m = SubagentMetrics.get_instance()
         assert m.count == 0
 
-    def test_rag_subgraph_importable(self):
-        from app.engine.multi_agent.subagents.rag import build_rag_subgraph
+    def test_rag_subgraph_not_in_exports(self):
+        """build_rag_subgraph removed from __init__.py (De-LangGraphing Phase 3)."""
+        import app.engine.multi_agent.subagents.rag as rag_pkg
 
-        assert callable(build_rag_subgraph)
+        assert not hasattr(rag_pkg, "build_rag_subgraph")
 
-    def test_tutor_subgraph_importable(self):
-        from app.engine.multi_agent.subagents.tutor import build_tutor_subgraph
+    def test_tutor_subgraph_not_in_exports(self):
+        """build_tutor_subgraph removed from __init__.py (De-LangGraphing Phase 3)."""
+        import app.engine.multi_agent.subagents.tutor as tutor_pkg
 
-        assert callable(build_tutor_subgraph)
+        assert not hasattr(tutor_pkg, "build_tutor_subgraph")

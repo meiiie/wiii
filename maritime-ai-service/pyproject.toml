@@ -30,7 +30,7 @@ dependencies = [
     "alembic>=1.13.0",
     "langchain>=1.2.11",
     "langchain-core>=1.2.18",
-    "langgraph>=1.1.0",
+    # langgraph REMOVED (De-LangGraphing Phase 3) — replaced by WiiiRunner
     "langchain-openai>=0.0.5",
     "langchain-google-genai>=4.2.1",
     "langchain-ollama>=0.3.0,<1.0.0",

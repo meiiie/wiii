@@ -243,8 +243,10 @@ async def process_with_multi_agent_streaming(
     final_state = None
 
     try:
-        graph_cm = open_multi_agent_graph()
-        graph = await graph_cm.__aenter__()
+        # Only open LangGraph context manager when NOT using WiiiRunner
+        if not settings.enable_wiii_runner:
+            graph_cm = open_multi_agent_graph()
+            graph = await graph_cm.__aenter__()
         # Yield initial status (pipeline — hidden from thinking rail)
         yield await create_status_event("Đang bắt đầu lượt xử lý...", None, details=_PIPELINE_STATUS_DETAILS)
 

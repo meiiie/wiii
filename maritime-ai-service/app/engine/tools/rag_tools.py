@@ -93,6 +93,38 @@ def clear_retrieved_sources():
     _rag_tool_state.set(RAGToolState())
 
 
+def is_no_internal_match_observation(text: str) -> bool:
+    """Check if a tool result is a 'no internal match' / no-result observation.
+
+    Returns True when the text indicates that RAG retrieval found nothing
+    useful, meaning the answer should fall back to direct knowledge.
+    """
+    if not text or not str(text).strip():
+        return True
+    lowered = str(text).lower().strip()
+    no_match_markers = (
+        "không tìm thấy",
+        "khong tim thay",
+        "không có kết quả",
+        "khong co ket qua",
+        "no relevant",
+        "no documents",
+        "no results",
+        "0 document",
+        "no matching",
+        "không có nguồn",
+        "khong co nguon",
+        "không tìm được",
+        "khong tim duoc",
+        "xin lỗi, mình không",
+        "xin lỗi, không",
+        "không thể tìm",
+        "khong the tim",
+        "no internal match",
+    )
+    return any(marker in lowered for marker in no_match_markers)
+
+
 def _sanitize_direct_rag_answer(text: str) -> str:
     normalized = " ".join(str(text or "").split()).strip()
     if not normalized:

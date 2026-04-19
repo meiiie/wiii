@@ -1,10 +1,18 @@
-"""Graph builder extracted from the multi-agent shell."""
+"""DEPRECATED: Graph builder for LangGraph StateGraph.
+
+This file is preserved as architectural documentation showing the original
+LangGraph graph structure. Replaced by WiiiRunner (De-LangGraphing Phase 3).
+
+The graph topology is now encoded in WiiiRunner.run() / run_streaming():
+    guardian → supervisor → {agent} → synthesizer
+"""
 
 from __future__ import annotations
 
 import logging
 
-from langgraph.graph import END, StateGraph
+# LangGraph imports removed — this module is no longer importable without langgraph.
+# from langgraph.graph import END, StateGraph
 
 from app.engine.multi_agent.state import AgentState
 
@@ -12,6 +20,35 @@ logger = logging.getLogger(__name__)
 
 
 def build_multi_agent_graph_impl(
+    *,
+    checkpointer=None,
+    settings_obj,
+    guardian_node,
+    supervisor_node,
+    rag_node,
+    tutor_node,
+    memory_node,
+    direct_response_node,
+    code_studio_node,
+    synthesizer_node,
+    colleague_agent_node,
+    product_search_node,
+    parallel_dispatch_node,
+    route_decision,
+    guardian_route,
+) -> object:
+    """DEPRECATED — use WiiiRunner instead.
+
+    Original: Build and compile the LangGraph workflow.
+    Now: Raises RuntimeError if called (langgraph dependency removed).
+    """
+    raise RuntimeError(
+        "build_multi_agent_graph_impl is deprecated (De-LangGraphing Phase 3). "
+        "Use WiiiRunner from app.engine.multi_agent.runner instead."
+    )
+
+
+def _build_multi_agent_graph_impl_original(
     *,
     checkpointer=None,
     settings_obj,

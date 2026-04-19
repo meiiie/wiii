@@ -241,7 +241,8 @@ async def execute_direct_tool_rounds_impl(
     )
     streamed_direct_answer = False
     try:
-        if tools:
+        if tools and forced_tool_choice:
+            # Forced tool choice — use ainvoke to ensure tool calls happen
             candidate_provider, _candidate_model = remember_execution_target(
                 llm_with_tools,
                 fallback_source=llm_base,

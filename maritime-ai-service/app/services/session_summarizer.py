@@ -62,7 +62,7 @@ class SessionSummarizer:
         """
         Generate a 2-3 sentence summary of a conversation thread.
 
-        If messages are not provided, attempts to load from checkpointer.
+        If messages are not provided, returns None (checkpointer removed).
         Saves the summary to thread_views.extra_data['summary'].
 
         Args:
@@ -162,37 +162,12 @@ class SessionSummarizer:
 
     async def _load_thread_messages(self, thread_id: str) -> list[dict]:
         """
-        Load messages from a thread via the checkpointer.
+        Load messages from a thread.
 
-        Falls back to empty list if checkpointer is not available.
+        Note: LangGraph checkpointer removed (De-LangGraphing Phase 3).
+        Returns empty list — callers should pass messages explicitly.
         """
-        try:
-            from app.engine.multi_agent.checkpointer import open_checkpointer
-
-            async with open_checkpointer() as checkpointer:
-                if not checkpointer:
-                    return []
-
-                config = {"configurable": {"thread_id": thread_id}}
-                checkpoint = await checkpointer.aget(config)
-                if not checkpoint:
-                    return []
-
-                # Extract messages from checkpoint state
-                state = checkpoint.get("channel_values", {})
-                messages = state.get("messages", [])
-
-                return [
-                    {
-                        "role": getattr(msg, "type", "unknown"),
-                        "content": getattr(msg, "content", str(msg)),
-                    }
-                    for msg in messages[-20:]  # Last 20 messages max
-                ]
-
-        except Exception as e:
-            logger.debug("Failed to load thread messages: %s", e)
-            return []
+        return []
 
     @staticmethod
     def _format_messages(messages: list[dict]) -> str:

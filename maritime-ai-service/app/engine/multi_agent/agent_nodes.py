@@ -332,7 +332,7 @@ async def synthesizer_node(state: AgentState) -> AgentState:
     
     logger.info("[SYNTHESIZER] Final response generated, length=%d", len(final_response))
 
-    # Tracer cleanup happens in process_with_multi_agent() after graph.ainvoke()
+    # Tracer cleanup happens in process_with_multi_agent() after runner.run()
     # _trace_id in state is just a string key — safe for msgpack serialization
 
     return state

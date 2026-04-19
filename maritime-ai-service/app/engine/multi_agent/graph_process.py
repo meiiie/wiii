@@ -266,8 +266,11 @@ async def process_with_multi_agent_impl(
 
     trace_id_for_cleanup = initial_state.get("_trace_id")
     try:
-        async with open_multi_agent_graph() as graph:
-            result = await graph.ainvoke(initial_state, config=invoke_config)
+        from app.engine.multi_agent.runner import get_wiii_runner
+
+        runner = get_wiii_runner()
+        result = await runner.run(initial_state)
+        logger.info("[MULTI_AGENT] Executed via WiiiRunner")
         trace_id_for_cleanup = result.get("_trace_id", trace_id_for_cleanup)
     finally:
         cleanup_tracer(trace_id_for_cleanup)

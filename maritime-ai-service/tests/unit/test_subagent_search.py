@@ -650,102 +650,89 @@ class TestSynthesizeResponse:
 
 
 class TestRouteToPlatforms:
-    """route_to_platforms Send() creation tests."""
+    """route_to_platforms dict creation tests (updated for De-LangGraphing Phase 3)."""
 
-    def test_creates_send_per_platform(self):
+    def test_creates_task_per_platform(self):
         from app.engine.multi_agent.subagents.search.graph import route_to_platforms
-        from langgraph.types import Send
 
-        sends = route_to_platforms({
+        tasks = route_to_platforms({
             "platforms_to_search": ["shopee", "lazada", "google_shopping"],
             "query": "laptop",
         })
 
-        assert len(sends) == 3
-        assert all(isinstance(s, Send) for s in sends)
+        assert len(tasks) == 3
+        assert all(isinstance(t, dict) for t in tasks)
 
-    def test_sends_contain_correct_platform_ids(self):
+    def test_tasks_contain_correct_platform_ids(self):
         from app.engine.multi_agent.subagents.search.graph import route_to_platforms
 
-        sends = route_to_platforms({
+        tasks = route_to_platforms({
             "platforms_to_search": ["shopee", "lazada"],
             "query": "test",
         })
 
-        platform_ids = [s.arg["platform_id"] for s in sends]
+        platform_ids = [t["platform_id"] for t in tasks]
         assert "shopee" in platform_ids
         assert "lazada" in platform_ids
 
     def test_empty_platforms_fallback(self):
         from app.engine.multi_agent.subagents.search.graph import route_to_platforms
 
-        sends = route_to_platforms({
+        tasks = route_to_platforms({
             "platforms_to_search": [],
             "query": "test",
         })
 
-        assert len(sends) == 1
-        assert sends[0].arg["platform_id"] == "google_shopping"
+        assert len(tasks) == 1
+        assert tasks[0]["platform_id"] == "google_shopping"
 
     def test_org_id_propagated(self):
         from app.engine.multi_agent.subagents.search.graph import route_to_platforms
 
-        sends = route_to_platforms({
+        tasks = route_to_platforms({
             "platforms_to_search": ["shopee"],
             "query": "test",
             "organization_id": "org_abc",
         })
 
-        assert sends[0].arg["organization_id"] == "org_abc"
+        assert tasks[0]["organization_id"] == "org_abc"
 
     def test_bus_id_propagated(self):
         from app.engine.multi_agent.subagents.search.graph import route_to_platforms
 
-        sends = route_to_platforms({
+        tasks = route_to_platforms({
             "platforms_to_search": ["shopee"],
             "query": "test",
             "_event_bus_id": "bus_xyz",
         })
 
-        assert sends[0].arg["_event_bus_id"] == "bus_xyz"
+        assert tasks[0]["_event_bus_id"] == "bus_xyz"
 
     def test_default_max_results_and_page(self):
         from app.engine.multi_agent.subagents.search.graph import route_to_platforms
 
-        sends = route_to_platforms({
+        tasks = route_to_platforms({
             "platforms_to_search": ["shopee"],
             "query": "test",
         })
 
-        assert sends[0].arg["max_results"] == 20
-        assert sends[0].arg["page"] == 1
+        assert tasks[0]["max_results"] == 20
+        assert tasks[0]["page"] == 1
 
 
 # =========================================================================
-# build_search_subgraph
+# build_search_subgraph (DEPRECATED — LangGraph removed)
 # =========================================================================
 
 
 class TestBuildSearchSubgraph:
-    """build_search_subgraph compilation tests."""
+    """build_search_subgraph is deprecated (De-LangGraphing Phase 3)."""
 
-    def test_compiles_successfully(self):
+    def test_raises_runtime_error(self):
         from app.engine.multi_agent.subagents.search.graph import build_search_subgraph
 
-        graph = build_search_subgraph()
-        assert graph is not None
-
-    def test_has_expected_nodes(self):
-        from app.engine.multi_agent.subagents.search.graph import build_search_subgraph
-
-        graph = build_search_subgraph()
-        # LangGraph compiled graph has nodes attribute
-        node_names = set()
-        if hasattr(graph, "nodes"):
-            node_names = set(graph.nodes.keys())
-        # At minimum these nodes should exist
-        for expected in ["plan_search", "platform_worker", "aggregate_results", "synthesize_response"]:
-            assert expected in node_names, f"Missing node: {expected}"
+        with pytest.raises(RuntimeError, match="deprecated"):
+            build_search_subgraph()
 
 
 # =========================================================================
@@ -754,54 +741,75 @@ class TestBuildSearchSubgraph:
 
 
 class TestGraphIntegration:
-    """Integration with main multi-agent graph."""
+    """Integration with main multi-agent graph — deprecated (De-LangGraphing Phase 3)."""
 
     def test_subgraph_used_when_both_flags_enabled(self):
-        """When enable_subagent_architecture=True AND enable_product_search=True,
-        the search subgraph should be used instead of the original node."""
-        from app.engine.multi_agent.graph import build_multi_agent_graph
-
+        """De-LangGraphing: WiiiRunner registers product_search_node when both flags on."""
         with patch("app.engine.multi_agent.graph.settings") as mock_settings:
             mock_settings.enable_product_search = True
             mock_settings.enable_subagent_architecture = True
-            mock_settings.quality_skip_threshold = 0.85
-            mock_settings.default_domain = "maritime"
-            mock_settings.app_name = "Wiii"
+            mock_settings.enable_cross_soul_query = False
+            mock_settings.enable_soul_bridge = False
 
-            graph = build_multi_agent_graph()
+            from app.engine.multi_agent.runner import WiiiRunner
 
-        # Graph should have product_search_agent node
-        assert "product_search_agent" in graph.nodes
+            runner = WiiiRunner()
+            from app.engine.multi_agent.graph import product_search_node, parallel_dispatch_node
+            runner.register_feature_node(
+                "product_search_agent",
+                product_search_node,
+                lambda: bool(mock_settings.enable_product_search),
+            )
+            runner.register_feature_node(
+                "parallel_dispatch",
+                parallel_dispatch_node,
+                lambda: bool(mock_settings.enable_subagent_architecture),
+            )
+
+        assert runner._get_node("product_search_agent") is not None
+        assert runner._get_node("parallel_dispatch") is not None
 
     def test_original_node_when_subagent_disabled(self):
-        """When enable_subagent_architecture=False, use original node."""
-        from app.engine.multi_agent.graph import build_multi_agent_graph
-
+        """De-LangGraphing: WiiiRunner has product_search but not parallel_dispatch when subagent off."""
         with patch("app.engine.multi_agent.graph.settings") as mock_settings:
             mock_settings.enable_product_search = True
             mock_settings.enable_subagent_architecture = False
-            mock_settings.quality_skip_threshold = 0.85
-            mock_settings.default_domain = "maritime"
-            mock_settings.app_name = "Wiii"
+            mock_settings.enable_cross_soul_query = False
+            mock_settings.enable_soul_bridge = False
 
-            graph = build_multi_agent_graph()
+            from app.engine.multi_agent.runner import WiiiRunner
 
-        assert "product_search_agent" in graph.nodes
+            runner = WiiiRunner()
+            from app.engine.multi_agent.graph import product_search_node
+            runner.register_feature_node(
+                "product_search_agent",
+                product_search_node,
+                lambda: bool(mock_settings.enable_product_search),
+            )
+            runner.register_feature_node(
+                "parallel_dispatch",
+                lambda s: s,
+                lambda: bool(mock_settings.enable_subagent_architecture),
+            )
+
+        assert runner._get_node("product_search_agent") is not None
+        assert runner._get_node("parallel_dispatch") is None
 
     def test_no_product_search_when_disabled(self):
-        """When enable_product_search=False, no product search node."""
-        from app.engine.multi_agent.graph import build_multi_agent_graph
-
+        """De-LangGraphing: WiiiRunner skips product_search when flag off."""
         with patch("app.engine.multi_agent.graph.settings") as mock_settings:
             mock_settings.enable_product_search = False
-            mock_settings.enable_subagent_architecture = False
-            mock_settings.quality_skip_threshold = 0.85
-            mock_settings.default_domain = "maritime"
-            mock_settings.app_name = "Wiii"
 
-            graph = build_multi_agent_graph()
+            from app.engine.multi_agent.runner import WiiiRunner
 
-        assert "product_search_agent" not in graph.nodes
+            runner = WiiiRunner()
+            runner.register_feature_node(
+                "product_search_agent",
+                lambda s: s,
+                lambda: bool(mock_settings.enable_product_search),
+            )
+
+        assert runner._get_node("product_search_agent") is None
 
 
 # =========================================================================
@@ -934,25 +942,25 @@ class TestOrganizationPropagation:
     def test_send_carries_org_id(self):
         from app.engine.multi_agent.subagents.search.graph import route_to_platforms
 
-        sends = route_to_platforms({
+        tasks = route_to_platforms({
             "platforms_to_search": ["shopee", "lazada"],
             "query": "test",
             "organization_id": "org_maritime_uni",
         })
 
-        for send in sends:
-            assert send.arg["organization_id"] == "org_maritime_uni"
+        for task in tasks:
+            assert task["organization_id"] == "org_maritime_uni"
 
     def test_send_carries_none_org_id(self):
         from app.engine.multi_agent.subagents.search.graph import route_to_platforms
 
-        sends = route_to_platforms({
+        tasks = route_to_platforms({
             "platforms_to_search": ["shopee"],
             "query": "test",
             "organization_id": None,
         })
 
-        assert sends[0].arg["organization_id"] is None
+        assert tasks[0]["organization_id"] is None
 
 
 # =========================================================================

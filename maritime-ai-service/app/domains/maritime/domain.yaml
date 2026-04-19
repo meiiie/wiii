@@ -70,3 +70,4 @@ mandatory_search_triggers:
 
 rag_agent_description: "Tra cứu quy định hàng hải (COLREGs, SOLAS, MARPOL), luật, thủ tục"
 tutor_agent_description: "Giải thích, dạy học, quiz về kiến thức hàng hải"
+scope_description: "RAG chỉ chứa tài liệu về hàng hải chuyên ngành: COLREGs, SOLAS, MARPOL, STCW, ISM, an toàn tàu, cứu sinh, hàng nguy hiểm, ổn định tàu, hoa tiêu, PSC, GMDSS. KHÔNG chứa: địa lý chung, lịch sử, văn hóa, nấu ăn, sức khỏe cá nhân, lập trình, toán học chung, tiếng Anh chung, thủ đô, thành phố."

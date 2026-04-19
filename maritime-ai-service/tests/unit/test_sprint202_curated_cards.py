@@ -468,21 +468,19 @@ class TestCurateProductsNode:
 
 
 class TestGraphWiring:
-    """Test that curate_products is wired correctly in the search subgraph."""
+    """Test that curate_products is available (De-LangGraphing Phase 3: graph wiring removed)."""
 
-    def test_curate_products_node_exists(self):
-        """build_search_subgraph includes curate_products node."""
+    def test_curate_products_importable(self):
+        """curate_products function is importable from workers."""
+        from app.engine.multi_agent.subagents.search.workers import curate_products
+        assert curate_products is not None
+
+    def test_build_search_subgraph_deprecated(self):
+        """build_search_subgraph raises RuntimeError (LangGraph removed)."""
         from app.engine.multi_agent.subagents.search.graph import build_search_subgraph
 
-        graph = build_search_subgraph()
-        # LangGraph compiled graph exposes nodes
-        node_names = set()
-        if hasattr(graph, "nodes"):
-            node_names = set(graph.nodes.keys()) if isinstance(graph.nodes, dict) else set()
-        # The graph builder adds curate_products
-        # Even if we can't inspect the compiled graph directly, importing succeeds
-        from app.engine.multi_agent.subagents.search.graph import curate_products
-        assert curate_products is not None
+        with pytest.raises(RuntimeError, match="deprecated"):
+            build_search_subgraph()
 
     def test_graph_imports_curate_products(self):
         """graph.py imports curate_products from workers."""

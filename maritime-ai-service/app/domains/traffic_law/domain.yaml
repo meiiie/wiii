@@ -21,3 +21,4 @@ mandatory_search_triggers:
 
 rag_agent_description: "Tra cứu luật giao thông đường bộ, nghị định, mức phạt, biển báo"
 tutor_agent_description: "Giải thích, ôn thi bằng lái xe, quiz về luật giao thông"
+scope_description: "RAG chỉ chứa tài liệu về luật giao thông đường bộ Việt Nam: nghị định, biển báo, mức phạt, bằng lái, an toàn giao thông. KHÔNG chứa: luật hình sự, luật dân sự, luật đất đai, luật doanh nghiệp, thuế, hôn nhân gia đình."

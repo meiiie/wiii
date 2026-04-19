@@ -160,6 +160,7 @@ async def route_structured_impl(
                     domain_name=domain_name,
                     rag_description=rag_desc,
                     tutor_description=tutor_desc,
+                    scope_hint=domain_config.get("scope_description", ""),
                     query=query,
                     context=context_str,
                     user_role=user_role,

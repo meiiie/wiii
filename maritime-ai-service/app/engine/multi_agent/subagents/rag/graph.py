@@ -1,13 +1,13 @@
-"""RAG subgraph builder — Corrective RAG pipeline as subgraph.
+"""DEPRECATED: RAG subgraph builder — Corrective RAG pipeline as subgraph.
 
-Flow::
+LangGraph removed (De-LangGraphing Phase 3).
+The node functions (retrieve_node, grade_node, correct_node, generate_node)
+are preserved as they may be reused by a future pipeline implementation.
 
+Original flow:
     START → retrieve → grade → should_correct?
                                   ├─ yes → correct → retrieve (loop)
                                   └─ no  → generate → END
-
-Feature-gated: ``enable_subagent_architecture=True`` to activate.
-Falls back to existing ``rag_node`` when disabled.
 """
 
 from __future__ import annotations
@@ -15,7 +15,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Literal
 
-from langgraph.graph import END, START, StateGraph
+# LangGraph imports removed
+# from langgraph.graph import END, START, StateGraph
 
 from app.engine.multi_agent.subagents.rag.state import RAGSubgraphState
 
@@ -162,23 +163,13 @@ async def _generate_fallback_response(query: str, state: Dict[str, Any]) -> str:
     return "Xin lỗi, mình chưa tìm thấy tài liệu liên quan nha~ (˶˃ ᵕ ˂˶)"
 
 
-def build_rag_subgraph() -> StateGraph:
-    """Build the Corrective RAG subgraph."""
-    builder = StateGraph(RAGSubgraphState)
+def build_rag_subgraph():
+    """DEPRECATED — LangGraph removed (De-LangGraphing Phase 3).
 
-    builder.add_node("retrieve", retrieve_node)
-    builder.add_node("grade", grade_node)
-    builder.add_node("correct", correct_node)
-    builder.add_node("generate", generate_node)
-
-    builder.add_edge(START, "retrieve")
-    builder.add_edge("retrieve", "grade")
-    builder.add_conditional_edges(
-        "grade",
-        should_correct,
-        {"generate": "generate", "correct": "correct"},
+    Node functions (retrieve_node, grade_node, etc.) are still available
+    for direct async calls. Use WiiiRunner for orchestration.
+    """
+    raise RuntimeError(
+        "build_rag_subgraph() is deprecated (De-LangGraphing Phase 3). "
+        "Use node functions directly or via WiiiRunner."
     )
-    builder.add_edge("correct", "retrieve")
-    builder.add_edge("generate", END)
-
-    return builder.compile()

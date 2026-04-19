@@ -195,6 +195,23 @@ def _collect_direct_tools(query: str, user_role: str = "student", state: Optiona
         except Exception as _e:
             logger.debug("[DIRECT] Knowledge search tool unavailable: %s", _e)
 
+    # P3 Agent-as-Tool: RAG knowledge delegation.
+    # When tool_knowledge_search is NOT already bound, provide the agent-level
+    # delegation tool so the LLM can still query domain knowledge when needed.
+    _bound_tool_names = {
+        str(getattr(t, "name", "") or getattr(t, "__name__", ""))
+        for t in _direct_tools
+    }
+    if "tool_knowledge_search" not in _bound_tool_names:
+        try:
+            tool_rag_knowledge = _load_attr(
+                "app.engine.tools.agent_tools",
+                "RAG_KNOWLEDGE_TOOL",
+            )
+            _direct_tools.append(tool_rag_knowledge)
+        except Exception as _e:
+            logger.debug("[DIRECT] RAG agent tool unavailable: %s", _e)
+
     # Sprint 175: LMS tools (role-aware)
     try:
         if settings.enable_lms_integration:

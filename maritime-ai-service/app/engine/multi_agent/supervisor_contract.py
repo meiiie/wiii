@@ -9,11 +9,12 @@ ROUTING_PROMPT_TEMPLATE = """Bạn là Supervisor Agent cho hệ thống {domain
 ## Phân tích theo bước:
 1. Xác định intent: lookup (tra cứu) | learning (dạy/giải thích/quiz) | personal (cá nhân) | social (chào hỏi) | off_topic (không liên quan) | web_search (tìm kiếm web/tin tức/pháp luật) | product_search (tìm/so sánh sản phẩm/giá cả trên sàn TMĐT) | colleague_consult (hỏi Bro/đồng nghiệp về trading/crypto/rủi ro — CHỈ khi user_role=admin)
 2. Xác định domain: có THỰC SỰ liên quan {domain_name} hay không? (Lưu ý: "tàu" có thể là tàu hỏa, không phải tàu thủy)
-3. Chọn agent dựa trên intent + domain + user_role
+3. Kiểm tra phạm vi kiến thức: câu hỏi có NẰM TRONG phạm vi RAG không? {scope_hint}
+4. Chọn agent dựa trên intent + domain + user_role
 
 ## Agent Mapping:
-- RAG_AGENT: intent=lookup VÀ CÓ domain keyword RÕ RÀNG → tra cứu quy định, luật, mức phạt. {rag_description}
-- TUTOR_AGENT: intent=learning VÀ CÓ domain keyword → giải thích, quiz, ôn bài, dạy kiến thức. {tutor_description}
+- RAG_AGENT: intent=lookup VÀ CÓ domain keyword RÕ RÀNG VÀ nằm trong phạm vi kiến thức RAG. {rag_description}
+- TUTOR_AGENT: intent=learning VÀ CÓ domain keyword VÀ nằm trong phạm vi kiến thức. {tutor_description}
 - MEMORY_AGENT: intent=personal → lịch sử học, preferences, nhớ thông tin
 - CODE_STUDIO_AGENT: intent=code_execution → viết/chạy code, tạo app/widget/mô phỏng, tạo file (HTML/Excel/Word/PDF), chụp trang web, xử lý artifact kỹ thuật
 - PRODUCT_SEARCH_AGENT: intent=product_search → tìm kiếm sản phẩm, so sánh giá, mua hàng trên sàn TMĐT (Shopee, Lazada, TikTok Shop, Google Shopping, Facebook Marketplace)
@@ -31,6 +32,7 @@ ROUTING_PROMPT_TEMPLATE = """Bạn là Supervisor Agent cho hệ thống {domain
 - "tin tức hàng hải", "maritime news", "shipping news" → DIRECT (intent=web_search, DIRECT có tool_search_maritime)
 - Câu hỏi KHÔNG liên quan {domain_name} → DIRECT (kể cả khi dài, kể cả khi có từ "tàu" nhưng ngữ cảnh không phải hàng hải)
 - Từ "tàu" một mình CHƯA ĐỦ để xác định domain — cần thêm ngữ cảnh hàng hải (COLREGs, hải đồ, thuyền trưởng, v.v.)
+- Câu hỏi có domain keyword nhưng RẮNG RỜI nằm NGOÀI phạm vi RAG → DIRECT (ví dụ: "Thủ đô Việt Nam ở đâu?" → geography, not maritime)
 
 ## Ví dụ:
 - "Điều 15 COLREGs nói gì?" → intent=lookup, agent=RAG_AGENT, confidence=0.95
@@ -52,6 +54,9 @@ ROUTING_PROMPT_TEMPLATE = """Bạn là Supervisor Agent cho hệ thống {domain
 - "Quy tắc nhường đường trên biển" → intent=lookup, agent=RAG_AGENT, confidence=0.95
 - "Thời sự hôm nay" → intent=web_search, agent=DIRECT, confidence=0.95
 - "Giá vàng hôm nay" → intent=web_search, agent=DIRECT, confidence=0.95
+- "Thủ đô Việt Nam ở đâu?" → intent=off_topic, agent=DIRECT, confidence=0.95 (địa lý chung, không phải hàng hải chuyên ngành)
+- "Tàu hỏa đi Huế mất mấy tiếng?" → intent=off_topic, agent=DIRECT, confidence=0.95 (tàu hỏa, không phải hàng hải)
+- "Cách nấu phở bò ngon" → intent=off_topic, agent=DIRECT, confidence=0.95 (ẩm thực, ngoài chuyên môn)
 - "Tìm cuộn dây điện 3 ruột 2.5mm²" → intent=product_search, agent=PRODUCT_SEARCH_AGENT, confidence=0.95
 - "So sánh giá máy khoan Bosch trên Shopee và Lazada" → intent=product_search, agent=PRODUCT_SEARCH_AGENT, confidence=0.95
 - "Mua ốp lưng iPhone 16 ở đâu rẻ nhất?" → intent=product_search, agent=PRODUCT_SEARCH_AGENT, confidence=0.90

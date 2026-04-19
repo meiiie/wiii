@@ -1,6 +1,7 @@
 """
-Test LangGraph/LangChain API availability.
-Kiểm tra xem API nào thực sự hoạt động với phiên bản hiện tại.
+DEPRECATED: Test LangGraph/LangChain API availability.
+LangGraph has been removed (De-LangGraphing Phase 3).
+This test is kept for historical reference only — it will FAIL if run.
 """
 
 import sys

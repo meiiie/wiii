@@ -433,11 +433,18 @@ def _should_prefer_native_langchain_stream(
     On March 31, 2026, Google direct no-tool turns were returning good answers via the
     OpenAI-compatible stream path but silently dropping visible native thought in live SSE.
     The native LangChain ``astream`` path, however, surfaced Gemini thinking blocks correctly.
-    Keep this override intentionally narrow until we validate other lanes/providers.
+
+    UPDATE (2026-04-19, De-LangChaining Phase 2): Disabled for direct node so that the
+    Native AsyncOpenAI SDK path handles streaming instead. The Native SDK path provides
+    real-time reasoning_content extraction + <thinking> tag parsing + thinking event
+    emission, giving 95-100% thinking coverage instead of LangChain's string-only content.
     """
     normalized_provider = str(provider_name or "").strip().lower()
     normalized_node = str(node or "").strip().lower()
-    return normalized_provider == "google" and normalized_node == "direct"
+    # Phase 2: route direct node through Native SDK for thinking event coverage
+    if normalized_node == "direct":
+        return False
+    return normalized_provider == "google"
 
 
 def _should_prefer_invoke_backfilled_stream(
@@ -766,6 +773,7 @@ async def _stream_answer_with_fallback(
     is_selfhood_stream_turn = _looks_identity_selfhood_turn(query) or _looks_selfhood_followup_turn(query, state)
     alignment_mode = "direct_selfhood" if is_selfhood_stream_turn else None
     if _should_prefer_invoke_backfilled_stream(node=node, query=query, state=state):
+        logger.info("[%s] Path: invoke-backfilled (identity/emotional)", node.upper())
         try:
             fallback_response = await _ainvoke_with_fallback(
                 route.llm,
@@ -871,6 +879,7 @@ async def _stream_answer_with_fallback(
         provider_name=route_provider,
         node=node,
     ):
+        logger.info("[%s] Path: Native SDK (provider=%s)", node.upper(), route_provider)
         native_response, native_streamed = await _stream_openai_compatible_answer_with_route(
             route,
             messages,
@@ -882,6 +891,7 @@ async def _stream_answer_with_fallback(
             return native_response, native_streamed
 
     llm = route.llm
+    logger.info("[%s] Path: LangChain astream (provider=%s)", node.upper(), route_provider)
     merged_chunk = None
     emitted_text = ""
     # Even when the opening phase did not emit a visible thinking block, a later

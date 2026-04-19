@@ -1,11 +1,11 @@
-"""Tutor subgraph builder — three-phase teaching pipeline.
+"""DEPRECATED: Tutor subgraph builder — three-phase teaching pipeline.
 
-Flow::
+LangGraph removed (De-LangGraphing Phase 3).
+The node functions (analyze_node, generate_node, refine_node, output_node)
+are preserved as they may be reused by a future pipeline implementation.
 
+Original flow:
     START → analyze → generate → refine → END
-
-Simple queries may skip the refine phase (conditional).
-Feature-gated: ``enable_subagent_architecture=True`` to activate.
 """
 
 from __future__ import annotations
@@ -13,7 +13,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Literal
 
-from langgraph.graph import END, START, StateGraph
+# LangGraph imports removed
+# from langgraph.graph import END, START, StateGraph
 
 from app.engine.multi_agent.subagents.tutor.state import TutorSubgraphState
 
@@ -94,23 +95,13 @@ async def output_node(state: Dict[str, Any]) -> dict:
     }
 
 
-def build_tutor_subgraph() -> StateGraph:
-    """Build the Tutor subgraph with conditional refinement."""
-    builder = StateGraph(TutorSubgraphState)
+def build_tutor_subgraph():
+    """DEPRECATED — LangGraph removed (De-LangGraphing Phase 3).
 
-    builder.add_node("analyze", analyze_node)
-    builder.add_node("generate", generate_node)
-    builder.add_node("refine", refine_node)
-    builder.add_node("output", output_node)
-
-    builder.add_edge(START, "analyze")
-    builder.add_edge("analyze", "generate")
-    builder.add_conditional_edges(
-        "generate",
-        should_refine,
-        {"refine": "refine", "output": "output"},
+    Node functions (analyze_node, generate_node, etc.) are still available
+    for direct async calls. Use WiiiRunner for orchestration.
+    """
+    raise RuntimeError(
+        "build_tutor_subgraph() is deprecated (De-LangGraphing Phase 3). "
+        "Use node functions directly or via WiiiRunner."
     )
-    builder.add_edge("refine", END)
-    builder.add_edge("output", END)
-
-    return builder.compile()
