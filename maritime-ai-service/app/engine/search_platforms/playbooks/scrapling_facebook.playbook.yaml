@@ -1,0 +1,36 @@
+platform_id: scrapling_facebook
+display_name: "Facebook (Scrapling Stealth)"
+backend: scrapling
+enabled: true
+priority: 3
+
+site:
+  base_url: "https://www.facebook.com"
+  url_template: "https://www.facebook.com/marketplace/search?query={query_encoded}"
+  query_encoding: "percent"
+  pagination: "scroll"
+
+request:
+  method: GET
+  headers:
+    User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    Accept-Language: "vi-VN,vi;q=0.9"
+  timeout_seconds: 60
+  follow_redirects: true
+
+extraction:
+  type: llm
+  selectors:
+    container: "div[class*='x9f619']"
+    title: "span[class*='x1lliihq']"
+    price: "span[class*='x193iq5w']"
+    image: "img"
+  fallback_selectors: {}
+  field_mapping:
+    use_stealth: true
+    price_parser: "vnd_text"
+
+strategy:
+  preferred_backend: scrapling
+  reason: "Facebook anti-bot — Scrapling with TLS fingerprint bypass"
+  fallback_chain: [browser, serper_site]

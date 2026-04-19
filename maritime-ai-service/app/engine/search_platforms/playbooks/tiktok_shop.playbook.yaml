@@ -1,0 +1,36 @@
+platform_id: tiktok_shop
+display_name: "TikTok Shop"
+backend: serper_site
+enabled: true
+priority: 8
+
+site:
+  base_url: "https://www.tiktok.com/shop"
+  url_template: "https://www.tiktok.com/shop/search?keyword={query_encoded}"
+  query_encoding: "percent"
+  pagination: "scroll"
+
+request:
+  method: GET
+  headers:
+    User-Agent: "WiiiBot/1.0 (+https://wiii.ai; product-search)"
+  timeout_seconds: 30
+  follow_redirects: true
+
+extraction:
+  type: api_json
+  selectors:
+    container: "products"
+    title: "title"
+    price: "price.min_price"
+    image: "images.0"
+    link: "product_link"
+    seller: "seller.name"
+  fallback_selectors: {}
+  field_mapping:
+    price_parser: "vnd_text"
+
+strategy:
+  preferred_backend: native_api
+  reason: "TikTok has Research API — use when available, fallback to Serper"
+  fallback_chain: [serper_site, crawl4ai]

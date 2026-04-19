@@ -30,6 +30,7 @@ class SkillType(str, Enum):
     DOMAIN_KNOWLEDGE = "domain_knowledge"  # DomainPlugin SKILL.md
     LIVING_AGENT = "living_agent"          # SkillBuilder wiii_skills table
     MCP_EXTERNAL = "mcp_external"          # MCP client external tools
+    AUTO_GENERATED = "auto_generated"      # LLM-extracted from conversations
 
 
 @dataclass

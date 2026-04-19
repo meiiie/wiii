@@ -1,0 +1,45 @@
+platform_id: websosanh
+display_name: "WebSosanh.vn"
+backend: custom
+enabled: true
+priority: 0
+
+site:
+  base_url: "https://websosanh.vn/s/"
+  url_template: "{base_url}{query_encoded}.htm?page={page}"
+  query_encoding: "plus"
+  pagination: "query_param"
+
+request:
+  method: GET
+  headers:
+    User-Agent: "WiiiBot/1.0 (+https://wiii.ai; product-search)"
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    Accept-Language: "vi-VN,vi;q=0.9,en;q=0.8"
+  timeout_seconds: 30
+  follow_redirects: true
+
+extraction:
+  type: html_css
+  selectors:
+    container: ".product-single-info"
+    title: ".product-single-name a"
+    price: ".product-single-price"
+    seller: ".merchant-name"
+    link: ".product-single-name a[href]"
+    image: ".product-image img"
+  fallback_selectors:
+    container: [".product-short-info", ".product-item"]
+    title: [".product-info-name a", ".product-name a", "a.product-name"]
+    price: [".product-info-price", ".product-price"]
+    seller: [".product-single-merchant", ".product-info-merchant", ".product-shop"]
+    image: [".product-single-image img", "img"]
+  field_mapping:
+    link_base: "https://websosanh.vn"
+    image_protocol: "https:"
+    price_parser: "vnd_text"
+
+strategy:
+  preferred_backend: custom
+  reason: "WebSosanh: custom HTML scraper, Vietnam's largest price comparison site"
+  fallback_chain: [serper_site, crawl4ai]

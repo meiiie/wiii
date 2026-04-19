@@ -1,0 +1,38 @@
+platform_id: shopee
+display_name: "Shopee Vietnam"
+backend: serper_site
+enabled: true
+priority: 5
+
+site:
+  base_url: "https://shopee.vn"
+  url_template: "https://shopee.vn/search?keyword={query_encoded}"
+  query_encoding: "percent"
+  pagination: "scroll"
+
+request:
+  method: GET
+  headers:
+    User-Agent: "WiiiBot/1.0 (+https://wiii.ai; product-search)"
+  timeout_seconds: 30
+  follow_redirects: true
+
+extraction:
+  type: api_json
+  selectors:
+    container: "items"
+    title: "item_basic.name"
+    price: "item_basic.price"
+    image: "item_basic.image"
+    link: "item_basic.itemid"
+    seller: "item_basic.shop_location"
+  fallback_selectors: {}
+  field_mapping:
+    price_divisor: 100000
+    link_template: "https://shopee.vn/item-i.{shopid}.{itemid}"
+    price_parser: "vnd_divided"
+
+strategy:
+  preferred_backend: serper_site
+  reason: "Shopee blocks direct scraping — Serper site: filter most reliable"
+  fallback_chain: [crawl4ai, scrapling]

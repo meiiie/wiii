@@ -1,0 +1,38 @@
+platform_id: lazada
+display_name: "Lazada Vietnam"
+backend: serper_site
+enabled: true
+priority: 6
+
+site:
+  base_url: "https://www.lazada.vn"
+  url_template: "https://www.lazada.vn/catalog/?q={query_encoded}"
+  query_encoding: "percent"
+  pagination: "query_param"
+
+request:
+  method: GET
+  headers:
+    User-Agent: "WiiiBot/1.0 (+https://wiii.ai; product-search)"
+  timeout_seconds: 30
+  follow_redirects: true
+
+extraction:
+  type: html_css
+  selectors:
+    container: "[data-tracking='product-card']"
+    title: "[data-tracking='product-card'] a[title]"
+    price: ".pzOU8M"
+    image: "[data-tracking='product-card'] img"
+    link: "[data-tracking='product-card'] a[href]"
+  fallback_selectors:
+    container: [".JMUkfg", ".product-card"]
+    price: [".OO5mK7", ".product-price"]
+  field_mapping:
+    link_base: "https://www.lazada.vn"
+    price_parser: "vnd_text"
+
+strategy:
+  preferred_backend: serper_site
+  reason: "Lazada uses Serper site: filter — most reliable approach"
+  fallback_chain: [crawl4ai]

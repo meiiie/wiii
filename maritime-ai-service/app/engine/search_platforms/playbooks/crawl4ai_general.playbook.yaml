@@ -1,0 +1,31 @@
+platform_id: crawl4ai_general
+display_name: "Web Crawler (AI)"
+backend: crawl4ai
+enabled: true
+priority: 90
+
+site:
+  base_url: "https://www.google.com"
+  url_template: "https://www.google.com/search?q={query_encoded}+site:vn"
+  query_encoding: "percent"
+  pagination: "none"
+
+request:
+  method: GET
+  headers:
+    User-Agent: "WiiiBot/1.0 (+https://wiii.ai; product-search)"
+  timeout_seconds: 45
+  follow_redirects: true
+
+extraction:
+  type: llm
+  selectors: {}
+  fallback_selectors: {}
+  field_mapping:
+    use_llm_extraction: true
+    price_parser: "vnd_text"
+
+strategy:
+  preferred_backend: crawl4ai
+  reason: "General web crawl with LLM extraction — fallback for all platforms"
+  fallback_chain: []

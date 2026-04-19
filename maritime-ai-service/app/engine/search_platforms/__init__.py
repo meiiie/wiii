@@ -248,6 +248,26 @@ def init_search_platforms():
         len(registry),
         ", ".join(registry.list_ids()),
     )
+
+    # --- Site Playbooks (Firecrawl pattern) ---
+    if getattr(settings, "enable_site_playbooks", False) is True:
+        try:
+            from app.engine.search_platforms.playbook_loader import get_playbook_loader
+            from app.engine.search_platforms.playbook_adapter import PlaybookDrivenAdapter
+
+            loader = get_playbook_loader()
+            existing_ids = set(registry.list_ids())
+            playbook_count = 0
+            for playbook in loader.get_all():
+                if playbook.enabled and playbook.platform_id not in existing_ids:
+                    adapter = PlaybookDrivenAdapter(playbook)
+                    registry.register(adapter)
+                    playbook_count += 1
+            if playbook_count:
+                logger.info("[PLAYBOOK] Registered %d playbook-driven adapters", playbook_count)
+        except Exception as exc:
+            logger.warning("[PLAYBOOK] Playbook registration failed: %s", exc)
+
     return registry
 
 

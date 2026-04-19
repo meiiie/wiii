@@ -1,0 +1,36 @@
+platform_id: facebook_marketplace
+display_name: "Facebook Marketplace"
+backend: serper_site
+enabled: true
+priority: 10
+
+site:
+  base_url: "https://www.facebook.com/marketplace/"
+  url_template: "https://www.facebook.com/marketplace/search?query={query_encoded}"
+  query_encoding: "percent"
+  pagination: "scroll"
+
+request:
+  method: GET
+  headers:
+    User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    Accept-Language: "vi-VN,vi;q=0.9"
+  timeout_seconds: 60
+  follow_redirects: true
+
+extraction:
+  type: graphql_intercept
+  selectors:
+    container: "[data-testid='marketplace_feed_item']"
+    title: "[data-testid='marketplace_feed_item'] span"
+    price: "[data-testid='marketplace_feed_item'] span"
+    image: "img"
+  fallback_selectors: {}
+  field_mapping:
+    graphql_path: "data.marketplace_search.feed_units"
+    price_parser: "vnd_text"
+
+strategy:
+  preferred_backend: scrapling
+  reason: "Facebook requires anti-bot bypass — Scrapling stealth mode primary"
+  fallback_chain: [browser, serper_site]
