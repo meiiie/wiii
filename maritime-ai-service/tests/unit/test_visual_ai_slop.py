@@ -133,3 +133,38 @@ class TestCheckAiSlopSummary:
         summary = check_ai_slop_summary(html)
         total = sum(len(v) for v in summary.values())
         assert total == 0
+
+
+class TestEmojiInCodeElements:
+    """Tests for emoji detection in structural UI elements."""
+
+    def test_emoji_in_button_detected(self):
+        html = "<button>" + "\U0001F680" + " Launch</button>"
+        violations = check_ai_slop_patterns(html)
+        rules = [v.rule for v in violations]
+        assert "emoji_in_code_elements" in rules
+
+    def test_emoji_in_heading_detected(self):
+        html = "<h2>" + "\U0001F525" + " Features</h2>"
+        violations = check_ai_slop_patterns(html)
+        rules = [v.rule for v in violations]
+        assert "emoji_in_code_elements" in rules
+
+    def test_emoji_in_paragraph_not_flagged(self):
+        # Emoji in user-content tags (p, td, li) should NOT trigger this rule
+        html = "<p>Great work " + "\U0001F680" + "</p>"
+        violations = check_ai_slop_patterns(html)
+        rules = [v.rule for v in violations]
+        assert "emoji_in_code_elements" not in rules
+
+    def test_clean_buttons_no_violation(self):
+        html = "<button>Play</button><button>Reset</button>"
+        violations = check_ai_slop_patterns(html)
+        rules = [v.rule for v in violations]
+        assert "emoji_in_code_elements" not in rules
+
+    def test_emoji_in_label_detected(self):
+        html = "<label>" + "\U0001F4DD" + " Notes</label>"
+        violations = check_ai_slop_patterns(html)
+        rules = [v.rule for v in violations]
+        assert "emoji_in_code_elements" in rules

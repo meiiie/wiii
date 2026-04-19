@@ -23,7 +23,13 @@ from __future__ import annotations
 import html as html_mod
 from typing import Optional
 
-from app.engine.tools.visual_html_core import _DESIGN_CSS, _wrap_html, _wrap_html_react
+from app.engine.tools.visual_html_core import (
+    _DESIGN_CSS,
+    _svg_icon,
+    _tweaks_inject,
+    _wrap_html,
+    _wrap_html_react,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +145,10 @@ def _build_simulation_scaffold(title: str, subtitle: str = "", query: str = "") 
     safe_title = html_mod.escape(title.strip() or "Simulation")
     safe_subtitle = html_mod.escape(
         subtitle.strip() or "Interactive simulation — adjust parameters and observe."
+    )
+    sim_tweaks = _tweaks_inject(
+        '{"--sim-speed":"1","--sim-intensity":"0.7",'
+        '"--sim-bg":"#f8fafc","--sim-accent":"#2563eb"}'
     )
 
     return f"""<!DOCTYPE html>
@@ -263,8 +273,8 @@ def _build_simulation_scaffold(title: str, subtitle: str = "", query: str = "") 
     </section>
     <section class="sim-card">
       <div class="sim-actions">
-        <button type="button" id="play-toggle">Pause</button>
-        <button type="button" id="reset-btn">Reset</button>
+        <button type="button" id="play-toggle">{_svg_icon("pause", 14)} Pause</button>
+        <button type="button" id="reset-btn">{_svg_icon("reset", 14)} Reset</button>
       </div>
     </section>
   </aside>
@@ -283,6 +293,9 @@ def _build_simulation_scaffold(title: str, subtitle: str = "", query: str = "") 
   const fpsReadout = document.getElementById('fps-readout');
   const elapsedReadout = document.getElementById('elapsed-readout');
   const statusReadout = document.getElementById('status-readout');
+
+  const pauseSvg = '{_svg_icon("pause", 14)}';
+  const playSvg = '{_svg_icon("play", 14)}';
 
   const state = {{
     speed: 1.0, intensity: 0.7, running: true,
@@ -342,13 +355,13 @@ def _build_simulation_scaffold(title: str, subtitle: str = "", query: str = "") 
   intensitySlider.addEventListener('input', () => {{ state.intensity = Number(intensitySlider.value); }});
   playToggle.addEventListener('click', () => {{
     state.running = !state.running;
-    playToggle.textContent = state.running ? 'Pause' : 'Resume';
+    playToggle.innerHTML = state.running ? pauseSvg + ' Pause' : playSvg + ' Resume';
     report('simulation_result', {{action: state.running?'resume':'pause'}},
       state.running ? 'Resumed simulation.' : 'Paused simulation.', state.running?'running':'paused');
   }});
   resetBtn.addEventListener('click', () => {{
     state.frame = 0; state.elapsed = 0; state.running = true;
-    playToggle.textContent = 'Pause';
+    playToggle.innerHTML = pauseSvg + ' Pause';
     report('simulation_result', {{action:'reset'}}, 'Simulation reset.', 'reset');
   }});
 
@@ -357,6 +370,7 @@ def _build_simulation_scaffold(title: str, subtitle: str = "", query: str = "") 
   requestAnimationFrame(loop);
 }})();
 </script>
+{sim_tweaks}
 </body></html>"""
 
 
@@ -635,6 +649,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(<Quiz />);"""
     # Inject title/subtitle into JSX
     jsx = jsx.replace("__TITLE__", safe_title).replace("__SUBTITLE__", safe_subtitle)
 
+    quiz_tweaks = _tweaks_inject('{"--quiz-accent":"#D97757","--quiz-radius":"10"}')
+
     return (
         "<!DOCTYPE html>\n"
         '<html lang="vi"><head><meta charset="UTF-8">'
@@ -644,6 +660,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<Quiz />);"""
         f"</head>\n<body>"
         f'<div id="root"></div>\n'
         f'<script type="text/babel">\n{jsx}\n</script>'
+        f"{quiz_tweaks}"
         f"</body></html>"
     )
 
@@ -662,6 +679,7 @@ def _build_dashboard_scaffold(title: str, subtitle: str = "", query: str = "") -
     safe_subtitle = html_mod.escape(
         subtitle.strip() or "Key metrics and data at a glance."
     )
+    dash_tweaks = _tweaks_inject('{"--dash-accent":"#2563eb","--dash-gap":"12"}')
 
     return f"""<!DOCTYPE html>
 <html lang="vi"><head><meta charset="UTF-8">
@@ -782,4 +800,5 @@ def _build_dashboard_scaffold(title: str, subtitle: str = "", query: str = "") -
   }};
 }})();
 </script>
+{dash_tweaks}
 </body></html>"""

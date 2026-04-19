@@ -219,7 +219,7 @@ These patterns make output look "obviously AI-generated". Detect and avoid them.
 
 ### DO NOT:
 - **Gradient overuse**: Do not put `linear-gradient` on every background. Use solid colors or at most 1-2 subtle gradients.
-- **Emoji spam**: No emoji unless the brand explicitly uses them. They are a dead giveaway of AI output.
+- **Emoji in UI elements**: NEVER use emoji in buttons, headings, labels, or any structural UI element. Use inline SVG icons (`<svg>`) for play, pause, reset, check, cross, arrow indicators. The `visual_html_core` module provides `_svg_icon()` for standard icons. Emoji in user-content text (paragraphs, data cells) is acceptable when contextually appropriate, but the UI chrome itself must be emoji-free.
 - **"AI card" trope**: The combination of `border-radius` + `border-left: 4px solid <accent>` + gradient background is the most recognizable AI-generated pattern. Vary card styles.
 - **SVG drawings as imagery**: Do not attempt to draw complex imagery (people, objects, scenes) with SVG. Use simple placeholders instead — a colored box with a label is better than a bad attempt at the real thing.
 - **Overused fonts**: Avoid Inter, Roboto, Arial, Fraunces, system-ui as primary font. Use distinctive fonts like DM Sans, Outfit, Sora, or Wiii's system font stack.
@@ -234,6 +234,7 @@ These patterns make output look "obviously AI-generated". Detect and avoid them.
 - Use CSS Grid, `container queries`, `subgrid` — advanced CSS is your friend
 - Prefer fewer, higher-quality elements over many filler elements
 - Use simple colored placeholders for missing images — do not draw with SVG
+- Use inline SVG icons from the `_SVG_ICONS` library for common UI actions (play, pause, reset, check, close). Never substitute emoji for icon elements.
 - Add intentional visual variety and rhythm (different background colors, varied layouts)
 - Use typography hierarchy (size + weight + color) instead of decorative elements
 - Every element must justify its existence — if a section feels empty, solve with layout not content

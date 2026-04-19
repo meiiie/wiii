@@ -156,6 +156,24 @@ def check_ai_slop_patterns(html: str) -> list[SlopViolation]:
                     "Vary layout, density, and visual treatment.",
         ))
 
+    # 8. Emoji in structural UI elements (buttons, headings, labels)
+    # Emoji in user content (p, td, li) is acceptable — but UI chrome must be emoji-free.
+    structural_emoji_pattern = re.compile(
+        r'<(?:button|h[1-6]|label|legend|caption|summary)[^>]*>'
+        r'[^<]*'
+        r'[\U0001F300-\U0001F9FF\U00002600-\U000027BF\U0001FA00-\U0001FAFF]',
+        re.UNICODE,
+    )
+    structural_emoji_matches = structural_emoji_pattern.findall(html)
+    if structural_emoji_matches:
+        violations.append(SlopViolation(
+            rule="emoji_in_code_elements",
+            severity="high",
+            message=f"Found {len(structural_emoji_matches)} emoji in structural UI elements "
+                    "(buttons, headings, labels). Use inline SVG icons instead of emoji — "
+                    "they are more professional and theme-adaptive.",
+        ))
+
     return violations
 
 

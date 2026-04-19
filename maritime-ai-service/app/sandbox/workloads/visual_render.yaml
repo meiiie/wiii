@@ -1,0 +1,18 @@
+id: visual_render
+display_name: Visual HTML Rendering
+description: Render visual HTML in a sandboxed browser and capture a screenshot for verification.
+workload_kind: browser
+runtime_template: opensandbox/playwright:latest
+network_mode: disabled
+timeout_seconds: 60
+working_directory: /opt/wiii-visual
+approval_scope: visual_rendering
+execution_backend: opensandbox
+tool_names:
+  - tool_validate_visual_render
+capabilities:
+  - browser
+  - screenshots
+  - visual_verification
+metadata:
+  risk_level: medium

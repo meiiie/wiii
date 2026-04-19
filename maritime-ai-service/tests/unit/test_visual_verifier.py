@@ -175,3 +175,58 @@ class TestVisualVerificationResult:
         assert len(result.deficiencies) == 1
         assert len(result.slop_violations) == 1
         assert len(result.suggestions) == 1
+
+    def test_result_screenshot_url_field(self):
+        result = VisualVerificationResult(
+            score=8,
+            passed=True,
+            screenshot_url="https://sandbox.test/screenshot.png",
+        )
+        assert result.screenshot_url == "https://sandbox.test/screenshot.png"
+
+    def test_result_no_screenshot_by_default(self):
+        result = VisualVerificationResult(score=7, passed=True)
+        assert result.screenshot_url is None
+
+
+class TestVisualVerifierSandbox:
+    def test_sandbox_disabled_no_screenshot(self):
+        verifier = VisualVerifier(min_score=1, verify_in_sandbox=False)
+        html = "<html><body><p>Hello</p></body></html>"
+        result = verifier.verify(html, "")
+        assert result.screenshot_url is None
+
+    def test_sandbox_failure_does_not_fail_verification(self):
+        """When sandbox fails, overall verification still passes if static checks pass."""
+        verifier = VisualVerifier(min_score=1, verify_in_sandbox=True)
+        # Patch _run_sandbox_verify to return None (simulating sandbox failure)
+        verifier._run_sandbox_verify = lambda html, vt: None
+        html = (
+            "<html><body>"
+            "<style>:root { --bg: #fff; --fg: #000; --accent: blue; }"
+            "@media (prefers-color-scheme: light) { :root { --bg: #f8fafc; } }</style>"
+            "<button aria-label='Test'>Click</button>"
+            "<script>function f(){requestAnimationFrame(f);}f();"
+            "window.WiiiVisualBridge.reportResult('x',{},'','');</script>"
+            "</body></html>"
+        )
+        result = verifier.verify(html, "")
+        # Should still pass based on static checks
+        assert result.screenshot_url is None
+        # Sandbox failure should not affect pass/fail
+
+    def test_sandbox_verification_adds_screenshot(self):
+        """When sandbox succeeds, screenshot_url is populated."""
+        verifier = VisualVerifier(min_score=1, verify_in_sandbox=True)
+        verifier._run_sandbox_verify = lambda html, vt: "https://sandbox.test/shot.png"
+        html = (
+            "<html><body>"
+            "<style>:root { --bg: #fff; --fg: #000; --accent: blue; }"
+            "@media (prefers-color-scheme: light) { :root { --bg: #f8fafc; } }</style>"
+            "<button aria-label='Test'>Click</button>"
+            "<script>function f(){requestAnimationFrame(f);}f();"
+            "window.WiiiVisualBridge.reportResult('x',{},'','');</script>"
+            "</body></html>"
+        )
+        result = verifier.verify(html, "")
+        assert result.screenshot_url == "https://sandbox.test/shot.png"

@@ -37,6 +37,7 @@ class VisualVerificationResult:
     deficiencies: list[str] = field(default_factory=list)
     slop_violations: list[str] = field(default_factory=list)
     suggestions: list[str] = field(default_factory=list)
+    screenshot_url: str | None = None
 
 
 class VisualVerifier:
@@ -57,10 +58,12 @@ class VisualVerifier:
         min_score: int = 6,
         check_slop: bool = True,
         check_accessibility: bool = True,
+        verify_in_sandbox: bool = False,
     ):
         self._min_score = min_score
         self._check_slop = check_slop
         self._run_accessibility = check_accessibility
+        self._verify_in_sandbox = verify_in_sandbox
 
     def verify(self, html: str, visual_type: str = "") -> VisualVerificationResult:
         """Run all verification checks on HTML output.
@@ -113,12 +116,18 @@ class VisualVerifier:
         final_score = max(0, quality_score - len(high_severity))
         passed = final_score >= self._min_score
 
+        # 6. Sandbox rendering verification (optional — advisory only)
+        screenshot_url = None
+        if self._verify_in_sandbox:
+            screenshot_url = self._run_sandbox_verify(html, visual_type)
+
         return VisualVerificationResult(
             score=final_score,
             passed=passed,
             deficiencies=all_deficiencies,
             slop_violations=slop_violations,
             suggestions=suggestions,
+            screenshot_url=screenshot_url,
         )
 
     def _check_render_surface(self, html: str, visual_type: str) -> list[str]:
@@ -223,3 +232,27 @@ class VisualVerifier:
             suggestions.append("Use CSS Grid with @media (max-width: 720px) for responsive layout.")
 
         return suggestions
+
+    def _run_sandbox_verify(self, html: str, visual_type: str) -> str | None:
+        """Run sandbox-based rendering verification (advisory — never fails pipeline).
+
+        Uses run_awaitable_sync to call the async sandbox from sync context.
+        Returns screenshot URL on success, None on failure.
+        """
+        try:
+            from app.engine.tools.visual_sandbox_verify import (
+                VisualSandboxVerifyRequest,
+                VisualSandboxVerifier,
+            )
+            from app.sandbox.service import run_awaitable_sync
+
+            verifier = VisualSandboxVerifier()
+            request = VisualSandboxVerifyRequest(html=html, visual_type=visual_type)
+            result = run_awaitable_sync(verifier.verify(request))
+            if result.success and result.screenshot_url:
+                return result.screenshot_url
+            if result.error:
+                logger.debug("[VISUAL-VERIFY] Sandbox verification skipped: %s", result.error)
+        except Exception as exc:
+            logger.debug("[VISUAL-VERIFY] Sandbox verification failed: %s", exc)
+        return None
