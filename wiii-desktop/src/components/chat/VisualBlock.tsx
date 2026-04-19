@@ -1198,6 +1198,7 @@ export function VisualBlock({
           frameKind="inline_html"
           showFrameIntro={false}
           hostShellMode="force"
+          showTweaksToggle
         />
       );
     } else if (isRechartsVisual) {
@@ -1246,6 +1247,7 @@ export function VisualBlock({
           frameKind="inline_html"
           showFrameIntro={false}
           hostShellMode="force"
+          showTweaksToggle
         />
       );
     } else {

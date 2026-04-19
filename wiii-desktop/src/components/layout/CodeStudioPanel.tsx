@@ -337,6 +337,7 @@ function PreviewTab({ session }: { session: CodeStudioSession }) {
         title={session.title}
         sessionId={session.sessionId}
         className="w-full h-full"
+        showTweaksToggle
       />
     </div>
   );

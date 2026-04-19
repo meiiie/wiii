@@ -71,6 +71,8 @@ interface InlineVisualFrameProps {
   showFrameIntro?: boolean;
   hostShellMode?: "auto" | "force";
   onBridgeEvent?: (detail: Record<string, unknown>) => void;
+  /** Whether to show the Tweaks toggle button. Default false. */
+  showTweaksToggle?: boolean;
 }
 
 function escapeHtml(value: string): string {
@@ -421,12 +423,15 @@ export const InlineVisualFrame = memo(function InlineVisualFrame({
   showFrameIntro = false,
   hostShellMode = frameKind === "legacy" ? "auto" : "force",
   onBridgeEvent,
+  showTweaksToggle = false,
 }: InlineVisualFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const blobUrlRef = useRef<string | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [height, setHeight] = useState(frameKind === "app" ? 420 : 320);
   const [error, setError] = useState<string | null>(null);
+  const [tweaksAvailable, setTweaksAvailable] = useState(false);
+  const [tweaksActive, setTweaksActive] = useState(false);
 
   const wrappedHtml = useMemo(
     () => buildVisualFrameDocument(html, {
@@ -465,6 +470,23 @@ export const InlineVisualFrame = memo(function InlineVisualFrame({
       if (iframeRef.current && event.source !== iframeRef.current.contentWindow) return;
       const data = event.data;
       if (!data || typeof data !== "object") return;
+
+      // Tweaks protocol: iframe announces edit mode availability
+      if (data.type === "__edit_mode_available") {
+        setTweaksAvailable(true);
+        return;
+      }
+
+      // Tweaks protocol: collect persisted edits
+      if (data.type === "__edit_mode_set_keys" && data.edits) {
+        // Fire a bridge event so the host can persist tweaks if desired
+        onBridgeEvent?.({ bridgeType: "tweaks_persist", edits: data.edits });
+        window.dispatchEvent(new CustomEvent("wiii:visual-frame", {
+          detail: { bridgeType: "tweaks_persist", edits: data.edits },
+        }));
+        return;
+      }
+
       if (data.type === "wiii-frame-resize") {
         const nextHeight = (data.payload as { height?: number } | undefined)?.height;
         if (typeof nextHeight === "number" && nextHeight > 0) {
@@ -506,6 +528,24 @@ export const InlineVisualFrame = memo(function InlineVisualFrame({
     return () => window.removeEventListener("message", handler);
   }, [frameKind, onBridgeEvent, runtimeManifest, sessionId, shellVariant]);
 
+  // Tweaks toggle: send activate/deactivate to iframe
+  const handleTweaksToggle = useCallback(() => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    const nextActive = !tweaksActive;
+    setTweaksActive(nextActive);
+    win.postMessage(
+      { type: nextActive ? "__activate_edit_mode" : "__deactivate_edit_mode" },
+      "*",
+    );
+  }, [tweaksActive]);
+
+  // Reset tweaks state when HTML changes
+  useEffect(() => {
+    setTweaksAvailable(false);
+    setTweaksActive(false);
+  }, [html]);
+
   if (error) {
     return (
       <div className={`rounded-[20px] border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 ${className}`}>
@@ -533,6 +573,7 @@ export const InlineVisualFrame = memo(function InlineVisualFrame({
       className={`${wrapperClassName} ${className}`.trim()}
       data-inline-visual-frame={frameKind}
       data-inline-visual-shell={shellVariant}
+      style={{ position: "relative" }}
     >
       {/* eslint-disable-next-line react/iframe-missing-sandbox */}
       <iframe
@@ -552,6 +593,34 @@ export const InlineVisualFrame = memo(function InlineVisualFrame({
         }}
         title={title || frameLabel(frameKind)}
       />
+      {/* Tweaks toggle button — only shown when iframe announces edit mode availability */}
+      {showTweaksToggle && tweaksAvailable && (
+        <button
+          onClick={handleTweaksToggle}
+          className={`absolute bottom-2 right-2 z-50 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+            tweaksActive
+              ? "bg-[var(--accent)] text-white shadow-md"
+              : "bg-white/90 text-text-secondary border border-border shadow-sm hover:bg-white hover:border-[var(--accent)]/40"
+          }`}
+          title={tweaksActive ? "Tat Tweaks" : "Tuy chinh Tweaks"}
+          aria-label={tweaksActive ? "Deactivate Tweaks" : "Activate Tweaks"}
+          aria-pressed={tweaksActive}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          >
+            <circle cx="8" cy="8" r="2.5" />
+            <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4M3.1 12.9l1.4-1.4M11.5 4.5l1.4-1.4" />
+          </svg>
+          {tweaksActive ? "Tweaks" : "Tweaks"}
+        </button>
+      )}
     </div>
   );
 });
