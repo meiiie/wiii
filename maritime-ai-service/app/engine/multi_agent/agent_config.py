@@ -41,12 +41,12 @@ class AgentNodeConfig:
 
 _DEFAULT_CONFIGS: Dict[str, AgentNodeConfig] = {
     "tutor_agent": AgentNodeConfig("tutor_agent", tier="moderate", enable_agentic_loop=True),
-    "rag_agent": AgentNodeConfig("rag_agent", tier="moderate"),
+    "rag_agent": AgentNodeConfig("rag_agent", tier="moderate", enable_agentic_loop=True),
     "supervisor": AgentNodeConfig("supervisor", tier="light", temperature=0.3),
     "guardian": AgentNodeConfig("guardian", tier="light", temperature=0.0),
     "grader": AgentNodeConfig("grader", tier="moderate"),
     "memory": AgentNodeConfig("memory", tier="light", temperature=0.5),
-    "direct": AgentNodeConfig("direct", tier="light"),
+    "direct": AgentNodeConfig("direct", tier="light", enable_agentic_loop=True),
     "direct_identity": AgentNodeConfig("direct_identity", tier="deep"),
     "code_studio_agent": AgentNodeConfig(
         "code_studio_agent",

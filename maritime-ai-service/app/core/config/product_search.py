@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 class ProductSearchConfig(BaseModel):
     """Product search — platforms, scraping, browser."""
-    enable_product_search: bool = False
+    enable_product_search: bool = True
     serper_api_key: Optional[str] = None
     apify_api_token: Optional[str] = None
     max_results: int = 30

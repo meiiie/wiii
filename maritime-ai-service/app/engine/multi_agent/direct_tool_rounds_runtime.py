@@ -401,6 +401,17 @@ async def execute_direct_tool_rounds_impl(
                 }
             )
             messages.append(_TM(content=str(result), tool_call_id=tc_id))
+
+            # Phase 3: Detect handoff tool call and set state signal
+            if state is not None and tc_name == "handoff_to_agent" and settings.enable_agent_handoffs:
+                try:
+                    from app.engine.multi_agent.handoff_tools import extract_handoff_target
+                    target = extract_handoff_target(tc.get("args", {}))
+                    if target:
+                        state["_handoff_target"] = target
+                        logger.info("[DIRECT] Agent handoff requested → %s", target)
+                except Exception:
+                    pass
         await graph_emit_visual_commit_events(
             push_event=push_event,
             node="direct",

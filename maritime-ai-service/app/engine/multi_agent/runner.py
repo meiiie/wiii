@@ -1,11 +1,14 @@
 """WiiiRunner — Custom orchestrator replacing LangGraph StateGraph.
 
 Inspired by OpenAI Agents SDK Runner pattern:
+- NextStep loop: RunAgain, Handoff, FinalOutput (typed next-step variants)
 - Simple async execution loop (no framework dependency)
 - Guardian → Supervisor → {Agent} → Synthesize
 - Streaming via event bus (already custom, not LangGraph streaming)
 - Agent-as-Tool support built-in
 - Lifecycle hooks (P1): RunHooks + AgentHooks for observability
+- Agent handoffs (Phase 3): agents can transfer to other agents
+- Orchestrator-level agentic loop (Phase 4): agents can request re-invocation
 
 Design principles:
 - All node functions are UNCHANGED (they take AgentState, return AgentState)
@@ -24,6 +27,12 @@ from app.core.config import settings
 from app.engine.multi_agent.stream_events import make_graph_event, make_graph_done
 from app.engine.multi_agent.state import AgentState
 from app.engine.multi_agent.guardrails import run_input_guardrails, run_output_guardrails
+from app.engine.multi_agent.next_step import (
+    NextStep,
+    NextStepFinalOutput,
+    NextStepHandoff,
+    NextStepRunAgain,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +47,7 @@ _NODE_PARALLEL_DISPATCH = "parallel_dispatch"
 _NODE_AGGREGATOR = "aggregator"
 
 _MAX_DISPATCH_ITERATIONS = 2  # Safety limit for aggregator→supervisor loop
+_MAX_HANDOFF_COUNT = 2  # Max agent-to-agent handoffs per request
 
 
 class WiiiRunner:
@@ -127,7 +137,11 @@ class WiiiRunner:
     async def run(self, state: AgentState) -> AgentState:
         """Execute: Guardian → Supervisor → Agent → Synthesize.
 
-        This replaces ``graph.ainvoke(initial_state, config=invoke_config)``.
+        Uses a NextStep loop (inspired by OpenAI Agents SDK Runner):
+        - Turn 0: supervisor routes to an agent
+        - Subsequent turns: agent can request continuation (_agentic_continue),
+          handoff to another agent (_handoff_target), or finalize.
+        - Max turns protected by ``agentic_loop_max_steps``.
         """
         t_start = time.perf_counter()
         await self._emit_run_start(state)
@@ -135,8 +149,7 @@ class WiiiRunner:
         # 1. Guardian
         state = await self._run_step(_NODE_GUARDIAN, state)
 
-        # 1b. Extended input guardrails (P5)
-
+        # 1b. Extended input guardrails
         guardian_passed = state.get("guardian_passed", True)
         passed, reason = await run_input_guardrails(state, guardian_passed=guardian_passed)
         if not passed:
@@ -152,38 +165,42 @@ class WiiiRunner:
         if route == _NODE_SYNTHESIZER:
             state["current_agent"] = _NODE_SYNTHESIZER
             state = await self._run_step(_NODE_SYNTHESIZER, state)
-            # Output guardrails (P5)
             await run_output_guardrails(state)
             elapsed = (time.perf_counter() - t_start) * 1000
             await self._emit_run_end(state, elapsed)
             return state
 
-        # 3. Supervisor
-        state = await self._run_step(_NODE_SUPERVISOR, state)
+        # === NextStep Loop ===
+        max_turns = getattr(settings, "agentic_loop_max_steps", 8)
+        state["_orchestrator_turn"] = 0
+        state["_handoff_count"] = 0
 
-        # 4. Supervisor routing decision
-        from app.engine.multi_agent.graph_support import route_decision
+        for turn in range(max_turns):
+            step = await self._resolve_next_step(state, turn)
 
-        agent_name = route_decision(state)
-        state["current_agent"] = agent_name
-        await self._emit_route(_NODE_SUPERVISOR, agent_name, state)
+            if isinstance(step, NextStepFinalOutput):
+                break
 
-        # Handle parallel dispatch → aggregator → (synthesizer | supervisor loop)
-        if agent_name == _NODE_PARALLEL_DISPATCH:
-            state = await self._run_parallel_dispatch(state)
-            elapsed = (time.perf_counter() - t_start) * 1000
-            await self._emit_run_end(state, elapsed)
-            return state
+            elif isinstance(step, NextStepHandoff):
+                await self._emit_route(state.get("current_agent", ""), step.target_agent, state)
+                state["current_agent"] = step.target_agent
+                state["next_agent"] = step.target_agent
 
-        # 5. Execute chosen agent
-        node_fn = self._get_node(agent_name)
-        if node_fn:
-            state = await self._run_step(agent_name, state)
+                if step.target_agent == _NODE_PARALLEL_DISPATCH:
+                    state = await self._run_parallel_dispatch(state)
+                    elapsed = (time.perf_counter() - t_start) * 1000
+                    await self._emit_run_end(state, elapsed)
+                    return state
 
-        # 6. Synthesize
+                state = await self._run_step(step.target_agent, state)
+
+            elif isinstance(step, NextStepRunAgain):
+                state = await self._run_step(step.agent_name, state)
+
+            state["_orchestrator_turn"] = turn + 1
+
+        # Synthesize + output guardrails
         state = await self._run_step(_NODE_SYNTHESIZER, state)
-
-        # 7. Output guardrails (P5)
         await run_output_guardrails(state)
 
         elapsed = (time.perf_counter() - t_start) * 1000
@@ -202,18 +219,15 @@ class WiiiRunner:
     ) -> AgentState:
         """Execute with streaming — push node updates to merged_queue.
 
-        This replaces ``graph.astream(initial_state, config, stream_mode="updates")``.
-        Each completed node produces an update ``{node_name: state_snapshot}``
-        pushed to the merged_queue, matching LangGraph's "updates" format that
-        ``graph_stream_merge_runtime.py`` expects.
+        Same NextStep loop as run(), but pushes state snapshots to merged_queue
+        after each node completion for real-time UI updates.
         """
         t_start = time.perf_counter()
         await self._emit_run_start(state)
 
         # 1. Guardian
         state = await self._run_step(_NODE_GUARDIAN, state)
-        if merged_queue:
-            await merged_queue.put(make_graph_event(_NODE_GUARDIAN, dict(state)))
+        self._push_queue(merged_queue, _NODE_GUARDIAN, state)
 
         # 2. Guardian route
         from app.engine.multi_agent.graph import guardian_route
@@ -224,46 +238,116 @@ class WiiiRunner:
         if route == _NODE_SYNTHESIZER:
             state["current_agent"] = _NODE_SYNTHESIZER
             state = await self._run_step(_NODE_SYNTHESIZER, state)
-            if merged_queue:
-                await merged_queue.put(make_graph_event(_NODE_SYNTHESIZER, dict(state)))
+            self._push_queue(merged_queue, _NODE_SYNTHESIZER, state)
             elapsed = (time.perf_counter() - t_start) * 1000
             await self._emit_run_end(state, elapsed)
             return state
 
-        # 3. Supervisor
-        state = await self._run_step(_NODE_SUPERVISOR, state)
-        if merged_queue:
-            await merged_queue.put(make_graph_event(_NODE_SUPERVISOR, dict(state)))
+        # === NextStep Loop ===
+        max_turns = getattr(settings, "agentic_loop_max_steps", 8)
+        state["_orchestrator_turn"] = 0
+        state["_handoff_count"] = 0
 
-        # 4. Supervisor routing
-        from app.engine.multi_agent.graph_support import route_decision
+        for turn in range(max_turns):
+            step = await self._resolve_next_step(state, turn)
 
-        agent_name = route_decision(state)
-        state["current_agent"] = agent_name
-        await self._emit_route(_NODE_SUPERVISOR, agent_name, state)
+            if isinstance(step, NextStepFinalOutput):
+                break
 
-        # Handle parallel dispatch
-        if agent_name == _NODE_PARALLEL_DISPATCH:
-            state = await self._run_parallel_dispatch(state, merged_queue=merged_queue)
-            elapsed = (time.perf_counter() - t_start) * 1000
-            await self._emit_run_end(state, elapsed)
-            return state
+            elif isinstance(step, NextStepHandoff):
+                await self._emit_route(state.get("current_agent", ""), step.target_agent, state)
+                state["current_agent"] = step.target_agent
+                state["next_agent"] = step.target_agent
 
-        # 5. Execute chosen agent
-        node_fn = self._get_node(agent_name)
-        if node_fn:
-            state = await self._run_step(agent_name, state)
-            if merged_queue:
-                await merged_queue.put(make_graph_event(agent_name, dict(state)))
+                if step.target_agent == _NODE_PARALLEL_DISPATCH:
+                    state = await self._run_parallel_dispatch(state, merged_queue=merged_queue)
+                    elapsed = (time.perf_counter() - t_start) * 1000
+                    await self._emit_run_end(state, elapsed)
+                    return state
 
-        # 6. Synthesize
+                state = await self._run_step(step.target_agent, state)
+                self._push_queue(merged_queue, step.target_agent, state)
+
+            elif isinstance(step, NextStepRunAgain):
+                state = await self._run_step(step.agent_name, state)
+                self._push_queue(merged_queue, step.agent_name, state)
+
+            state["_orchestrator_turn"] = turn + 1
+
+        # Synthesize
         state = await self._run_step(_NODE_SYNTHESIZER, state)
-        if merged_queue:
-            await merged_queue.put(make_graph_event(_NODE_SYNTHESIZER, dict(state)))
+        self._push_queue(merged_queue, _NODE_SYNTHESIZER, state)
 
         elapsed = (time.perf_counter() - t_start) * 1000
         await self._emit_run_end(state, elapsed)
         return state
+
+    # ------------------------------------------------------------------
+    # NextStep resolution
+    # ------------------------------------------------------------------
+
+    async def _resolve_next_step(self, state: AgentState, turn: int) -> NextStep:
+        """Determine the next step in the orchestrator loop.
+
+        - Turn 0: run supervisor, route to agent
+        - Turn > 0: check for handoff, agentic continuation, or finalize
+        """
+        if turn == 0:
+            # First turn: run supervisor routing
+            state = await self._run_step(_NODE_SUPERVISOR, state)
+            from app.engine.multi_agent.graph_support import route_decision
+
+            agent_name = route_decision(state)
+            state["current_agent"] = agent_name
+            state["next_agent"] = agent_name
+            await self._emit_route(_NODE_SUPERVISOR, agent_name, state)
+            return NextStepHandoff(target_agent=agent_name, reason="supervisor_route")
+
+        # Subsequent turns: check for agent-initiated handoff
+        handoff_target = state.get("_handoff_target")
+        if handoff_target and settings.enable_agent_handoffs:
+            handoff_count = state.get("_handoff_count", 0) or 0
+            max_handoffs = getattr(settings, "agent_handoff_max_count", _MAX_HANDOFF_COUNT)
+            if handoff_count < max_handoffs:
+                state["_handoff_target"] = None
+                state["_handoff_count"] = handoff_count + 1
+                return NextStepHandoff(target_agent=handoff_target, reason="agent_handoff")
+            else:
+                logger.warning("[RUNNER] Handoff limit (%d) reached, finalizing", max_handoffs)
+                state["_handoff_target"] = None
+                return NextStepFinalOutput(reason="handoff_limit_reached")
+
+        # Check if agent wants to continue (orchestrator-level agentic loop)
+        if state.get("_agentic_continue"):
+            current = state.get("current_agent", "")
+            # Only allow continuation if agent config enables agentic loop
+            if self._agent_has_agentic_loop(current):
+                state["_agentic_continue"] = None
+                return NextStepRunAgain(agent_name=current, reason="tool_calls_pending")
+            state["_agentic_continue"] = None
+
+        # Default: finalize
+        return NextStepFinalOutput(reason="agent_complete")
+
+    @staticmethod
+    def _agent_has_agentic_loop(agent_name: str) -> bool:
+        """Check if agent config has agentic loop enabled."""
+        try:
+            from app.engine.multi_agent.agent_config import AgentConfigRegistry
+            config = AgentConfigRegistry.get_config(agent_name)
+            return getattr(config, "enable_agentic_loop", False)
+        except Exception:
+            return False
+
+    @staticmethod
+    def _push_queue(
+        queue: Optional[asyncio.Queue],
+        node_name: str,
+        state: AgentState,
+    ) -> None:
+        """Push a graph event to the merged queue if available."""
+        if queue is not None:
+            queue.put_nowait(make_graph_event(node_name, dict(state)))
 
     # ------------------------------------------------------------------
     # Parallel dispatch (replaces LangGraph conditional edges + aggregator)
@@ -282,13 +366,11 @@ class WiiiRunner:
         """
         # Run parallel_dispatch
         state = await self._run_step(_NODE_PARALLEL_DISPATCH, state)
-        if merged_queue:
-            await merged_queue.put(make_graph_event(_NODE_PARALLEL_DISPATCH, dict(state)))
+        self._push_queue(merged_queue, _NODE_PARALLEL_DISPATCH, state)
 
         # Run aggregator
         state = await self._run_step(_NODE_AGGREGATOR, state)
-        if merged_queue:
-            await merged_queue.put(make_graph_event(_NODE_AGGREGATOR, dict(state)))
+        self._push_queue(merged_queue, _NODE_AGGREGATOR, state)
 
         # Aggregator route: synthesizer or back to supervisor (with loop limit)
         for _iteration in range(_MAX_DISPATCH_ITERATIONS):
@@ -300,8 +382,7 @@ class WiiiRunner:
 
             # Loop back: supervisor → agent → (continue or break)
             state = await self._run_step(_NODE_SUPERVISOR, state)
-            if merged_queue:
-                await merged_queue.put(make_graph_event(_NODE_SUPERVISOR, dict(state)))
+            self._push_queue(merged_queue, _NODE_SUPERVISOR, state)
 
             from app.engine.multi_agent.graph_support import route_decision
 
@@ -312,13 +393,11 @@ class WiiiRunner:
             node_fn = self._get_node(agent_name)
             if node_fn:
                 state = await self._run_step(agent_name, state)
-                if merged_queue:
-                    await merged_queue.put(make_graph_event(agent_name, dict(state)))
+                self._push_queue(merged_queue, agent_name, state)
 
             # After agent execution, run aggregator again to decide next step
             state = await self._run_step(_NODE_AGGREGATOR, state)
-            if merged_queue:
-                await merged_queue.put(make_graph_event(_NODE_AGGREGATOR, dict(state)))
+            self._push_queue(merged_queue, _NODE_AGGREGATOR, state)
 
         return await self._run_step(_NODE_SYNTHESIZER, state)
 

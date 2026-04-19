@@ -628,13 +628,21 @@ class BaseSettingsFieldsMixin:
     enable_neo4j: bool = Field(default=False, description="Enable Neo4j graph database (legacy, reserved for Learning Graph)")
 
     # Subagent Architecture (Sprint 163)
-    enable_subagent_architecture: bool = Field(default=False, description="Enable subagent/subgraph architecture")
+    enable_subagent_architecture: bool = Field(default=True, description="Enable subagent/subgraph architecture")
     subagent_default_timeout: int = Field(default=60, ge=10, le=300, description="Default subagent timeout (seconds)")
     subagent_max_parallel: int = Field(default=5, ge=1, le=10, description="Max parallel subagent executions")
 
     # WiiiRunner (De-LangGraphing Phase 3: custom Runner replacing LangGraph)
     enable_wiii_runner: bool = Field(default=True, description="Use WiiiRunner instead of LangGraph for orchestration")
     enable_runner_hooks: bool = Field(default=True, description="Enable lifecycle hooks (logging + metrics) in WiiiRunner")
+
+    # Agent Handoffs (inspired by OpenAI Agents SDK)
+    enable_agent_handoffs: bool = Field(default=True, description="Enable agent-to-agent handoffs via tool calls")
+    agent_handoff_max_count: int = Field(default=2, ge=1, le=5, description="Max handoffs per request to prevent ping-pong")
+
+    # Concurrent Tool Execution (inspired by Claude Code)
+    enable_concurrent_tool_execution: bool = Field(default=False, description="Execute read-only tool calls concurrently within a single LLM turn")
+    concurrent_tool_max_workers: int = Field(default=10, ge=1, le=20, description="Max concurrent read-only tool executions")
 
     # MCP Support
     enable_mcp_server: bool = Field(default=False, description="Enable MCP Server")

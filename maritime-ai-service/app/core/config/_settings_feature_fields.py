@@ -149,7 +149,7 @@ class FeatureSettingsMixin:
     enable_artifacts: bool = Field(default=True, description="Interactive artifacts (code execution, file preview)")
 
     # Product Search Agent
-    enable_product_search: bool = Field(default=False, description="Enable product search agent")
+    enable_product_search: bool = Field(default=True, description="Enable product search agent")
     serper_api_key: Optional[str] = Field(default=None, description="Serper.dev API key")
     apify_api_token: Optional[str] = Field(default=None, description="Apify API token")
     product_search_max_results: int = Field(default=30, ge=1, le=100, description="Max results per platform search")

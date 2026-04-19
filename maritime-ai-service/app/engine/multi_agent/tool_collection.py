@@ -371,6 +371,15 @@ def _collect_direct_tools(query: str, user_role: str = "student", state: Optiona
         or _needs_news_search(query) or _needs_legal_search(query)
         or _needs_lms_query(query) or _needs_visual_tool
     )
+
+    # Agent handoff tool (Phase 3)
+    if settings.enable_agent_handoffs:
+        try:
+            from app.engine.multi_agent.handoff_tools import handoff_to_agent
+            _direct_tools.append(handoff_to_agent)
+        except Exception:
+            pass
+
     return _direct_tools, force_tools
 
 

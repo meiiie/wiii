@@ -108,6 +108,10 @@ class RuntimeMeta(TypedDict, total=False):
     _aggregator_action: Optional[str]
     _aggregator_reasoning: Optional[str]
     _parallel_targets: List[str]
+    _handoff_target: Optional[str]       # Agent-initiated handoff target
+    _agentic_continue: Optional[bool]     # Agent signals more turns needed
+    _orchestrator_turn: Optional[int]     # Current orchestrator loop turn
+    _handoff_count: Optional[int]         # Handoff counter (bounded by agent_handoff_max_count)
 
 
 # =========================================================================
