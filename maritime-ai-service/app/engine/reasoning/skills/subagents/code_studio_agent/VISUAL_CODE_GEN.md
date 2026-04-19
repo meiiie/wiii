@@ -4,7 +4,7 @@ name: visual-code-gen
 skill_type: subagent
 node: code_studio_agent
 description: Lane policy, quality rubric, and runtime contract for Code Studio outputs.
-version: "5.0.0"
+version: "6.0.0"
 ---
 
 # Visual Code Generation - Wiii V5
@@ -212,3 +212,62 @@ When you see a `## REFERENCE EXAMPLE` section, study its structure and quality l
 - **Interactive dashboard** (`dashboard_metrics.html`): KPI cards + SVG line chart + SVG donut chart + data table + mini bars + tooltips. ~480 lines.
 
 Learn from the design system, code structure, and depth of interactivity — do NOT copy verbatim.
+
+## 12. AI Slop Anti-Patterns (from Claude Design analysis)
+
+These patterns make output look "obviously AI-generated". Detect and avoid them.
+
+### DO NOT:
+- **Gradient overuse**: Do not put `linear-gradient` on every background. Use solid colors or at most 1-2 subtle gradients.
+- **Emoji spam**: No emoji unless the brand explicitly uses them. They are a dead giveaway of AI output.
+- **"AI card" trope**: The combination of `border-radius` + `border-left: 4px solid <accent>` + gradient background is the most recognizable AI-generated pattern. Vary card styles.
+- **SVG drawings as imagery**: Do not attempt to draw complex imagery (people, objects, scenes) with SVG. Use simple placeholders instead — a colored box with a label is better than a bad attempt at the real thing.
+- **Overused fonts**: Avoid Inter, Roboto, Arial, Fraunces, system-ui as primary font. Use distinctive fonts like DM Sans, Outfit, Sora, or Wiii's system font stack.
+- **"Data slop"**: Do not pad designs with unnecessary stats, numbers, icons, or metrics. Every element must earn its place. One thousand no's for every yes.
+- **Cookie-cutter sections**: Do not repeat the same heading + icon + description pattern for every section. Vary layout density, visual treatment, and composition.
+- **Purple-blue gradient hero**: The most recognizable AI slop pattern. Never use purple-blue gradients for hero/banner sections.
+- **Symmetric everything**: Intentional asymmetry feels more human. Not every section needs equal width columns.
+
+### DO:
+- Use `oklch()` for harmonious colors that match Wiii palette (#D97757, #85CDCA, #FFD166)
+- Use `text-wrap: pretty` for better text rendering
+- Use CSS Grid, `container queries`, `subgrid` — advanced CSS is your friend
+- Prefer fewer, higher-quality elements over many filler elements
+- Use simple colored placeholders for missing images — do not draw with SVG
+- Add intentional visual variety and rhythm (different background colors, varied layouts)
+- Use typography hierarchy (size + weight + color) instead of decorative elements
+- Every element must justify its existence — if a section feels empty, solve with layout not content
+- "Less is more" — a clean, focused output beats a busy, comprehensive one
+
+## 13. React + Babel Guidelines (for interactive components)
+
+When building interactive prototypes or widgets that benefit from React state management:
+
+### CDN Scripts (pinned versions with integrity hashes)
+Use these exact script tags — do NOT use unpinned versions:
+```html
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"
+        integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
+        crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
+        integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
+        crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+        integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+        crossorigin="anonymous"></script>
+```
+
+### Rules
+1. Use `<script type="text/babel">` for JSX code
+2. Mount to `<div id="root"></div>`
+3. **CRITICAL**: Give global-scoped style objects SPECIFIC names. NEVER write `const styles = {}`.
+   Use `const quizStyles = {}`, `const dashboardStyles = {}`, etc.
+4. Share components between script blocks via `Object.assign(window, { Component1, Component2 })`
+5. Keep files under 1000 lines — split into multiple JSX files if needed
+6. Do not use `type="module"` on script imports — it may break things with Babel
+7. For simulations, Canvas is still preferred — React adds unnecessary overhead for physics engines
+
+### When to use React vs vanilla
+- **React**: Quiz widgets, dashboards, multi-state UIs, forms, tab interfaces
+- **Vanilla + Canvas**: Physics simulations, particle systems, real-time rendering
+- **Vanilla + SVG**: Static diagrams, flowcharts, architectural figures

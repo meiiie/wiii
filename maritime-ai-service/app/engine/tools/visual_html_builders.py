@@ -9,7 +9,13 @@ from app.engine.tools.visual_chart_builders import (
     _build_chart_html_impl,
     _normalize_chart_spec,
 )
-from app.engine.tools.visual_html_core import _DESIGN_CSS, _esc, _wrap_html
+from app.engine.tools.visual_html_core import (
+    _DESIGN_CSS,
+    _REACT_CDN_SCRIPTS,
+    _esc,
+    _wrap_html,
+    _wrap_html_react,
+)
 from app.engine.tools.visual_html_layout_builders import (
     _build_architecture_html,
     _build_comparison_html_impl,

@@ -86,3 +86,62 @@ def _wrap_html(
         f"<style>{_DESIGN_CSS}\n{body_css}</style></head>\n"
         f"<body>{title_html}{subtitle_html}{body_html}</body></html>"
     )
+
+
+# ---------------------------------------------------------------------------
+# React + Babel CDN (pinned versions with integrity hashes)
+# Source: Claude Design system prompt (April 2026)
+# ---------------------------------------------------------------------------
+
+_REACT_CDN_SCRIPTS = (
+    '<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"'
+    ' integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"'
+    ' crossorigin="anonymous"></script>\n'
+    '<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"'
+    ' integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"'
+    ' crossorigin="anonymous"></script>\n'
+    '<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"'
+    ' integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"'
+    ' crossorigin="anonymous"></script>'
+)
+
+
+def _wrap_html_react(
+    body_css: str,
+    body_jsx: str,
+    title: str = "",
+    subtitle: str = "",
+) -> str:
+    """Wrap React JSX content in full HTML with Babel transpilation.
+
+    Use for interactive widgets (quiz, dashboard) that benefit from React
+    state management. For simulations, prefer Canvas + vanilla JS.
+
+    Rules (from Claude Design):
+    - Give global-scoped style objects SPECIFIC names (never ``const styles = {}``)
+    - Share components via ``Object.assign(window, { Component })``
+    - Keep files under 1000 lines
+    """
+    title_html = (
+        f'<div class="wiii-frame-title widget-title">{_esc(title)}</div>'
+        if title
+        else ""
+    )
+    subtitle_html = (
+        f'<div class="wiii-frame-subtitle widget-subtitle">{_esc(subtitle)}</div>'
+        if subtitle
+        else ""
+    )
+    return (
+        "<!DOCTYPE html>\n"
+        '<html lang="vi"><head><meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
+        '<meta name="color-scheme" content="light">\n'
+        f"<style>{_DESIGN_CSS}\n{body_css}</style>\n"
+        f"{_REACT_CDN_SCRIPTS}\n"
+        f"</head>\n<body>"
+        f"{title_html}{subtitle_html}"
+        f'<div id="root"></div>\n'
+        f'<script type="text/babel">\n{body_jsx}\n</script>'
+        f"</body></html>"
+    )

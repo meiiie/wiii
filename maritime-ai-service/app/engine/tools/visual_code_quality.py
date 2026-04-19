@@ -6,6 +6,13 @@ from app.engine.tools.visual_pendulum_scaffold import (
     _build_pendulum_simulation_scaffold,
     _looks_like_pendulum_simulation,
 )
+from app.engine.tools.visual_scaffolds import (
+    _looks_like_dashboard,
+    _looks_like_quiz,
+    _looks_like_simulation,
+    build_scaffold,
+    detect_scaffold,
+)
 from app.engine.tools.runtime_context import get_current_tool_runtime_context
 from app.engine.tools.visual_runtime_metadata import (
     _runtime_metadata_text_impl,
@@ -262,16 +269,27 @@ def maybe_upgrade_code_studio_output_impl(
     if not quality_error:
         return raw_html
     runtime_visual_user_query = _runtime_visual_user_query_impl(_runtime_metadata_text)
-    if requested_visual_type == "simulation" and quality_profile == "premium" and _looks_like_pendulum_simulation(raw_html, title, runtime_visual_user_query):
-        upgraded = _build_pendulum_simulation_scaffold(title, subtitle, runtime_visual_user_query)
-        if not validate_code_studio_output_impl(
-            upgraded,
-            requested_visual_type=requested_visual_type,
-            studio_lane=studio_lane,
-            artifact_kind=artifact_kind,
-            quality_profile=quality_profile,
-        ):
-            return upgraded
+
+    # Try scaffold detection — supports pendulum, simulation, quiz, dashboard
+    scaffold_kind = detect_scaffold(
+        query=runtime_visual_user_query,
+        visual_type=requested_visual_type,
+        raw_html=raw_html,
+    )
+    if scaffold_kind:
+        try:
+            upgraded = build_scaffold(scaffold_kind, title, subtitle, runtime_visual_user_query)
+            if not validate_code_studio_output_impl(
+                upgraded,
+                requested_visual_type=requested_visual_type,
+                studio_lane=studio_lane,
+                artifact_kind=artifact_kind,
+                quality_profile=quality_profile,
+            ):
+                return upgraded
+        except Exception as exc:
+            logger.debug("[SCAFFOLD] Failed to build %s scaffold: %s", scaffold_kind, exc)
+
     return raw_html
 
 
