@@ -261,7 +261,8 @@ class _ViSpaceInjector:
             return token
 
         first_is_alpha = token[0].isalpha()
-        inject = first_is_alpha and (self._has_vowel or self._after_punct)
+        token_has_vowel = any(ch in _VI_VOWELS for ch in token)
+        inject = first_is_alpha and token_has_vowel and (self._has_vowel or self._after_punct)
 
         if inject:
             self._has_vowel = False

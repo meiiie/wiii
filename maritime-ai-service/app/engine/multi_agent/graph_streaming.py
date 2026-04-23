@@ -278,7 +278,7 @@ async def process_with_multi_agent_streaming(
                 # Agent lanes own visible thinking; a public supervisor prelude
                 # creates a second narrator voice before the real turn begins.
                 yield await create_status_event(
-                    NODE_DESCRIPTIONS.get("supervisor", "Dang canh lai huong xu ly..."),
+                    NODE_DESCRIPTIONS.get("supervisor", "Đang canh lại hướng xử lý..."),
                     "supervisor",
                     details=_PIPELINE_STATUS_DETAILS,
                 )

@@ -33,9 +33,9 @@ def _summarize_tool_result_for_stream(tool_name: str, result: object) -> str:
         payloads = parse_visual_payloads(result)
         if payloads:
             if len(payloads) == 1:
-                return f"Minh hoa da san sang: {payloads[0].title}"
+                return f"Minh họa đã sẵn sàng: {payloads[0].title}"
             group_title = payloads[0].title
-            return f"Nhom minh hoa da san sang: {group_title} va {len(payloads) - 1} figure lien ket"
+            return f"Nhóm minh họa đã sẵn sàng: {group_title} và {len(payloads) - 1} figure liên kết"
     except Exception:
         pass
     try:
@@ -45,16 +45,16 @@ def _summarize_tool_result_for_stream(tool_name: str, result: object) -> str:
                 action_name = str(parsed.get("action") or "").strip()
                 request_id = str(parsed.get("request_id") or "").strip()
                 if action_name and request_id:
-                    return f"Da gui host action `{action_name}` ({request_id})"
+                    return f"Đã gửi host action `{action_name}` ({request_id})"
     except Exception:
         pass
     lowered_tool = str(tool_name or "").strip().lower()
     if any(token in lowered_tool for token in ("web_search", "search_news", "search_legal", "search_maritime")):
-        return "Da keo them vai nguon de kiem cheo."
+        return "Đã kéo thêm vài nguồn để kiểm chéo."
     if "knowledge_search" in lowered_tool:
-        return "Da ra lai phan tri thuc lien quan."
+        return "Đã rà lại phần tri thức liên quan."
     if any(token in lowered_tool for token in ("chart", "visual")):
-        return "Phan nhin dang san sang."
+        return "Phần nhìn đang sẵn sàng."
     compact = " ".join(str(result or "").split())
     lowered_result = compact.lower()
     if (
@@ -63,7 +63,7 @@ def _summarize_tool_result_for_stream(tool_name: str, result: object) -> str:
         or len(compact) > 180
         or "http" in lowered_result
     ):
-        return "Da co them ket qua de chat loc."
+        return "Đã có thêm kết quả để chắt lọc."
     return compact
 
 

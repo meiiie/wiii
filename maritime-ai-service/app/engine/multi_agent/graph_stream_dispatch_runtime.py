@@ -372,7 +372,7 @@ async def emit_state_update_events_impl(
         if node_name == "code_studio_agent":
             events.append(
                 await create_status_event(
-                    node_descriptions.get("code_studio_agent", "Dang che tac dau ra ky thuat..."),
+                    node_descriptions.get("code_studio_agent", "Đang chế tác đầu ra kỹ thuật..."),
                     "code_studio_agent",
                     details=pipeline_status_details,
                 )

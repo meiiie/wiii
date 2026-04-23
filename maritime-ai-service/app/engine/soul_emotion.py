@@ -54,7 +54,7 @@ _MAX_SCAN_LENGTH = 2048
 
 # Regex: tag at start of text (with optional leading whitespace).
 # Non-greedy (.*?) stops at first "-->". re.DOTALL allows JSON with newlines.
-_SOUL_TAG_RE = re.compile(r"^\s*<!--WIII_SOUL:(.*?)-->", re.DOTALL)
+_SOUL_TAG_RE = re.compile(r"^\s*<!--\s*WIII_SOUL:(.*?)-->", re.DOTALL)
 
 
 @dataclass

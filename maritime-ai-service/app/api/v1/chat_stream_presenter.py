@@ -1,10 +1,23 @@
 """Presentation helpers for streaming SSE responses."""
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.engine.llm_providers.wiii_chat_model import _ViSpaceInjector
+
+# ── Soul Emotion Tag Stripper ──────────────────────────────────────────────
+# LLM sometimes emits <!--WIII_SOUL:...--> or <!-- WIII_SOUL:...--> tags
+# that must NEVER reach the frontend as visible text. Strip at SSE layer
+# as a safety net regardless of upstream extraction.
+_SOUL_TAG_RE = re.compile(r"<!--\s*WIII_SOUL:.*?-->", re.DOTALL)
+
+
+def _strip_soul_tags(text: str) -> str:
+    if not text or "WIII_SOUL" not in text:
+        return text
+    return _SOUL_TAG_RE.sub("", text).lstrip()
 
 # ── Unified Zombie Phrase Filter (Expert Review P1) ──────────────────────
 # Single source of truth for zombie phrase filtering at SSE presentation
@@ -354,7 +367,7 @@ def serialize_stream_event(
         return [format_sse("thinking", data, event_id=event_counter)], event_counter, False
 
     if event_type == "answer":
-        answer_content = event.content
+        answer_content = _strip_soul_tags(event.content or "")
         if presentation_state and answer_content:
             answer_content = presentation_state._vi_answer.process(answer_content)
         data = _apply_presentation_metadata(

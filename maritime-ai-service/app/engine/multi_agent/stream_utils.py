@@ -65,7 +65,7 @@ NODE_DESCRIPTIONS = {
     "grader": "Đang rà soát độ chắc chắn...",
     "synthesizer": "Đang khâu lại phản hồi...",
     "product_search_agent": "Đang tiếp tục đối chiếu...",
-    "code_studio_agent": "Dang che tac dau ra ky thuat...",
+    "code_studio_agent": "Đang chế tác đầu ra kỹ thuật...",
 }
 
 NODE_STEPS = {
