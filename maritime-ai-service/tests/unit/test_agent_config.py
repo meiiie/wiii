@@ -53,7 +53,7 @@ class TestAgentNodeConfig:
     def test_defaults(self):
         config = AgentNodeConfig("test_node")
         assert config.node_id == "test_node"
-        assert config.provider == "google"
+        assert config.provider == ""
         assert config.model is None
         assert config.tier == "moderate"
         assert config.temperature == 0.5
@@ -292,22 +292,28 @@ class TestAgentConfigRegistry:
         assert mock_custom.call_args[0][:2] == ("openrouter", "qwen/qwen3.6-plus:free")
 
     def test_auto_provider_prefers_selectable_provider_when_default_is_disabled(self):
-        AgentConfigRegistry.initialize()
-        mock_llm = MagicMock()
-        with patch(
-            "app.services.llm_selectability_service.get_llm_selectability_snapshot",
-            return_value=[
-                SimpleNamespace(provider="google", state="disabled", configured=True, request_selectable=True, reason_code="busy"),
-                SimpleNamespace(provider="zhipu", state="selectable", configured=True, request_selectable=True, reason_code=None),
-            ],
-        ), patch(
-            "app.engine.llm_pool.get_llm_for_provider",
-            return_value=mock_llm,
-        ) as mock_get_provider:
-            result = AgentConfigRegistry.get_llm("direct")
+        from app.core.config import settings
+        orig_provider = settings.llm_provider
+        settings.llm_provider = "google"
+        try:
+            AgentConfigRegistry.initialize()
+            mock_llm = MagicMock()
+            with patch(
+                "app.services.llm_selectability_service.get_llm_selectability_snapshot",
+                return_value=[
+                    SimpleNamespace(provider="google", state="disabled", configured=True, request_selectable=True, reason_code="busy"),
+                    SimpleNamespace(provider="zhipu", state="selectable", configured=True, request_selectable=True, reason_code=None),
+                ],
+            ), patch(
+                "app.engine.llm_pool.get_llm_for_provider",
+                return_value=mock_llm,
+            ) as mock_get_provider:
+                result = AgentConfigRegistry.get_llm("direct")
 
-        assert result == mock_llm
-        assert mock_get_provider.call_args.args[0] == "zhipu"
+            assert result == mock_llm
+            assert mock_get_provider.call_args.args[0] == "zhipu"
+        finally:
+            settings.llm_provider = orig_provider
 
     def test_code_studio_auto_switches_to_zhipu_advanced_profile_when_google_is_disabled(self):
         AgentConfigRegistry.initialize()
@@ -394,106 +400,130 @@ class TestAgentConfigRegistry:
         mock_get_model.assert_not_called()
 
     def test_group_profile_changes_default_provider_for_node(self):
-        mock_provider_llm = MagicMock()
-        AgentConfigRegistry.initialize(
-            "{}",
-            {
-                "knowledge": {
-                    "default_provider": "zhipu",
-                    "tier": "moderate",
-                    "provider_models": {},
-                }
-            },
-        )
-
-        with patch(
-            "app.services.llm_selectability_service.choose_best_runtime_provider",
-            return_value=SimpleNamespace(provider="zhipu"),
-        ), patch(
-            "app.engine.llm_pool.get_llm_for_provider",
-            return_value=mock_provider_llm,
-        ) as mock_get_provider:
-            result = AgentConfigRegistry.get_llm("tutor_agent")
-
-        assert result is mock_provider_llm
-        mock_get_provider.assert_called_once()
-        assert mock_get_provider.call_args[0][0] == "zhipu"
-
-    def test_auto_provider_prefers_selectable_provider_before_degraded_fallback(self):
-        mock_provider_llm = MagicMock()
-        AgentConfigRegistry.initialize(
-            "{}",
-            {
-                "knowledge": {
-                    "default_provider": "google",
-                    "tier": "moderate",
-                    "provider_models": {},
-                }
-            },
-        )
-
-        with patch(
-            "app.services.llm_selectability_service.choose_best_runtime_provider",
-            side_effect=[SimpleNamespace(provider="zhipu")],
-        ) as mock_choose, patch(
-            "app.engine.llm_pool.get_llm_for_provider",
-            return_value=mock_provider_llm,
-        ):
-            result = AgentConfigRegistry.get_llm("tutor_agent")
-
-        assert result is mock_provider_llm
-        assert mock_choose.call_count == 1
-        assert mock_choose.call_args.kwargs["allow_degraded_fallback"] is False
-
-    def test_auto_provider_only_uses_degraded_fallback_when_no_selectable_provider_exists(self):
-        mock_provider_llm = MagicMock()
-        AgentConfigRegistry.initialize(
-            "{}",
-            {
-                "knowledge": {
-                    "default_provider": "google",
-                    "tier": "moderate",
-                    "provider_models": {},
-                }
-            },
-        )
-
-        with patch(
-            "app.services.llm_selectability_service.choose_best_runtime_provider",
-            side_effect=[None, SimpleNamespace(provider="zhipu")],
-        ) as mock_choose, patch(
-            "app.engine.llm_pool.get_llm_for_provider",
-            return_value=mock_provider_llm,
-        ):
-            result = AgentConfigRegistry.get_llm("tutor_agent")
-
-        assert result is mock_provider_llm
-        assert mock_choose.call_count == 2
-        assert mock_choose.call_args_list[0].kwargs["allow_degraded_fallback"] is False
-        assert mock_choose.call_args_list[1].kwargs["allow_degraded_fallback"] is True
-
-    def test_non_strict_provider_override_keeps_provider_as_preference_not_pin(self):
-        mock_provider_llm = MagicMock()
-        AgentConfigRegistry.initialize()
-
-        with patch.object(
-            AgentConfigRegistry,
-            "_resolve_auto_provider",
-            return_value="zhipu",
-        ) as mock_resolve, patch(
-            "app.engine.llm_pool.get_llm_for_provider",
-            return_value=mock_provider_llm,
-        ) as mock_get_provider:
-            result = AgentConfigRegistry.get_llm(
-                "supervisor",
-                provider_override="zhipu",
-                strict_provider_pin=False,
+        from app.core.config import settings
+        orig_provider = settings.llm_provider
+        settings.llm_provider = "google"
+        try:
+            mock_provider_llm = MagicMock()
+            AgentConfigRegistry.initialize(
+                "{}",
+                {
+                    "knowledge": {
+                        "default_provider": "zhipu",
+                        "tier": "moderate",
+                        "provider_models": {},
+                    }
+                },
             )
 
-        assert result is mock_provider_llm
-        mock_resolve.assert_called_once_with("zhipu")
-        assert mock_get_provider.call_args.args[0] == "zhipu"
-        assert mock_get_provider.call_args.kwargs.get("strict_pin", False) is False
+            with patch(
+                "app.services.llm_selectability_service.choose_best_runtime_provider",
+                return_value=SimpleNamespace(provider="zhipu"),
+            ), patch(
+                "app.engine.llm_pool.get_llm_for_provider",
+                return_value=mock_provider_llm,
+            ) as mock_get_provider:
+                result = AgentConfigRegistry.get_llm("tutor_agent")
+
+            assert result is mock_provider_llm
+            mock_get_provider.assert_called_once()
+            assert mock_get_provider.call_args[0][0] == "zhipu"
+        finally:
+            settings.llm_provider = orig_provider
+
+    def test_auto_provider_prefers_selectable_provider_before_degraded_fallback(self):
+        from app.core.config import settings
+        orig_provider = settings.llm_provider
+        settings.llm_provider = "google"
+        try:
+            mock_provider_llm = MagicMock()
+            AgentConfigRegistry.initialize(
+                "{}",
+                {
+                    "knowledge": {
+                        "default_provider": "google",
+                        "tier": "moderate",
+                        "provider_models": {},
+                    }
+                },
+            )
+
+            with patch(
+                "app.services.llm_selectability_service.choose_best_runtime_provider",
+                side_effect=[SimpleNamespace(provider="zhipu")],
+            ) as mock_choose, patch(
+                "app.engine.llm_pool.get_llm_for_provider",
+                return_value=mock_provider_llm,
+            ):
+                result = AgentConfigRegistry.get_llm("tutor_agent")
+
+            assert result is mock_provider_llm
+            assert mock_choose.call_count == 1
+            assert mock_choose.call_args.kwargs["allow_degraded_fallback"] is False
+        finally:
+            settings.llm_provider = orig_provider
+
+    def test_auto_provider_only_uses_degraded_fallback_when_no_selectable_provider_exists(self):
+        from app.core.config import settings
+        orig_provider = settings.llm_provider
+        settings.llm_provider = "google"
+        try:
+            mock_provider_llm = MagicMock()
+            AgentConfigRegistry.initialize(
+                "{}",
+                {
+                    "knowledge": {
+                        "default_provider": "google",
+                        "tier": "moderate",
+                        "provider_models": {},
+                    }
+                },
+            )
+
+            with patch(
+                "app.services.llm_selectability_service.choose_best_runtime_provider",
+                side_effect=[None, SimpleNamespace(provider="zhipu")],
+            ) as mock_choose, patch(
+                "app.engine.llm_pool.get_llm_for_provider",
+                return_value=mock_provider_llm,
+            ):
+                result = AgentConfigRegistry.get_llm("tutor_agent")
+
+            assert result is mock_provider_llm
+            assert mock_choose.call_count == 2
+            assert mock_choose.call_args_list[0].kwargs["allow_degraded_fallback"] is False
+            assert mock_choose.call_args_list[1].kwargs["allow_degraded_fallback"] is True
+        finally:
+            settings.llm_provider = orig_provider
+
+    def test_non_strict_provider_override_keeps_provider_as_preference_not_pin(self):
+        from app.core.config import settings
+        orig_provider = settings.llm_provider
+        settings.llm_provider = "google"
+        try:
+            mock_provider_llm = MagicMock()
+            AgentConfigRegistry.initialize()
+
+            with patch.object(
+                AgentConfigRegistry,
+                "_resolve_auto_provider",
+                return_value="zhipu",
+            ) as mock_resolve, patch(
+                "app.engine.llm_pool.get_llm_for_provider",
+                return_value=mock_provider_llm,
+            ) as mock_get_provider:
+                result = AgentConfigRegistry.get_llm(
+                    "supervisor",
+                    provider_override="zhipu",
+                    strict_provider_pin=False,
+                )
+
+            assert result is mock_provider_llm
+            mock_resolve.assert_called_once_with("zhipu")
+            assert mock_get_provider.call_args.args[0] == "zhipu"
+            assert mock_get_provider.call_args.kwargs.get("strict_pin", False) is False
+        finally:
+            settings.llm_provider = orig_provider
 
     def test_explicit_provider_pin_uses_group_specific_model_when_present(self):
         mock_llm = MagicMock()

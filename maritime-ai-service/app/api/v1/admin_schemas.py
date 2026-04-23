@@ -301,7 +301,7 @@ class ModelCatalogResponse(BaseModel):
 
 
 class AgentRuntimeProfileConfig(BaseModel):
-    default_provider: str
+    default_provider: str = ""
     tier: str
     provider_models: dict[str, str] = Field(default_factory=dict)
 

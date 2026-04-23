@@ -46,32 +46,26 @@ AGENT_NODE_TO_GROUP = {
 
 DEFAULT_AGENT_RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
     "routing": {
-        "default_provider": "google",
         "tier": "light",
         "provider_models": {},
     },
     "safety": {
-        "default_provider": "google",
         "tier": "light",
         "provider_models": {},
     },
     "knowledge": {
-        "default_provider": "google",
         "tier": "moderate",
         "provider_models": {},
     },
     "utility": {
-        "default_provider": "google",
         "tier": "light",
         "provider_models": {},
     },
     "evaluation": {
-        "default_provider": "google",
         "tier": "moderate",
         "provider_models": {},
     },
     "creative": {
-        "default_provider": "google",
         "tier": "deep",
         "provider_models": {
             "google": "gemini-3.1-pro-preview",

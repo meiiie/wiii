@@ -30,7 +30,7 @@ class AgentNodeConfig:
     """Configuration for a single LangGraph node."""
 
     node_id: str
-    provider: str = "google"
+    provider: str = ""
     model: Optional[str] = None
     tier: str = "moderate"
     temperature: float = 0.5
@@ -51,8 +51,6 @@ _DEFAULT_CONFIGS: Dict[str, AgentNodeConfig] = {
     "code_studio_agent": AgentNodeConfig(
         "code_studio_agent",
         tier="deep",
-        provider="google",
-        model="gemini-3.1-pro-preview",
         enable_agentic_loop=True,
     ),
     "synthesizer": AgentNodeConfig("synthesizer", tier="moderate"),
