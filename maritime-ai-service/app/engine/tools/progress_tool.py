@@ -28,12 +28,12 @@ def tool_report_progress(message: str, phase_label: str = "") -> str:
     communicate your progress before starting the next phase.
 
     Examples:
-    - After searching documents: message="Da tim duoc 3 tai lieu lien quan", phase_label="Phan tich chi tiet"
-    - After initial analysis: message="Phan tich xong cau hoi", phase_label="Tim kiem tai lieu"
+    - After searching documents: message="Đã tìm được 3 tài liệu liên quan", phase_label="Phân tích chi tiết"
+    - After initial analysis: message="Phân tích xong câu hỏi", phase_label="Tìm kiếm tài liệu"
 
     Args:
         message: Progress message shown to the user (Vietnamese, 1-2 sentences)
-        phase_label: Label for the next thinking phase (e.g., "Tim kiem tai lieu")
+        phase_label: Label for the next thinking phase (e.g., "Tìm kiếm tài liệu")
 
     Returns:
         Acknowledgment string.

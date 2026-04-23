@@ -332,121 +332,118 @@ class RetrievalGrader:
             )
         
         # ====================================================================
-        # PHASE 2: HYBRID CONFIDENCE PRE-FILTER (SOTA 2025 - Self-RAG)
-        # ====================================================================
-        # Fast non-LLM evaluation: BM25 + embedding + maritime boosting
-        # Reference: Anthropic Contextual Retrieval, Self-RAG
-        # Latency: ~0.1s vs 14s for LLM-only grading
+        # Hybrid Confidence Pre-Filter (BM25 + embedding + domain boost)
+        # Latency: ~0.1s for 10 docs — no LLM calls
         # ====================================================================
         from app.engine.agentic_rag.confidence_evaluator import get_hybrid_confidence_evaluator
-        
+        from app.core.config import settings as _cfg
+
         hybrid_evaluator = get_hybrid_confidence_evaluator()
         hybrid_results = hybrid_evaluator.evaluate_batch(query, documents, query_embedding)
-        
-        # Calculate aggregate confidence
         aggregate_confidence = hybrid_evaluator.aggregate_confidence(hybrid_results)
-        
+
+        high_count = sum(1 for r in hybrid_results if r.is_high_confidence)
+        med_count = sum(1 for r in hybrid_results if r.is_medium_confidence and not r.is_high_confidence)
         logger.info(
             "[GRADER] Hybrid pre-filter: aggregate=%.2f, HIGH=%d, MEDIUM=%d",
-            aggregate_confidence,
-            sum(1 for r in hybrid_results if r.is_high_confidence),
-            sum(1 for r in hybrid_results if r.is_medium_confidence and not r.is_high_confidence),
+            aggregate_confidence, high_count, med_count,
         )
-        
-        # Separate by hybrid confidence level
-        high_conf_docs = []
-        high_conf_results = []
-        needs_mini_judge_docs = []
-        
-        for doc, result in zip(documents, hybrid_results):
-            if result.is_high_confidence:
-                # HIGH confidence from hybrid → skip Mini-Judge
-                high_conf_docs.append(doc)
-                high_conf_results.append(result)
-            else:
-                # MEDIUM or LOW → needs Mini-Judge verification
-                needs_mini_judge_docs.append(doc)
-        
-        # ====================================================================
-        # PHASE 3.5: LLM MINI-JUDGE PRE-GRADING (SOTA 2025)
-        # ====================================================================
-        # Only called for documents not already HIGH confidence from hybrid
-        # Root Cause Fix: Bi-encoder similarity ≠ Relevance (65-80% accuracy)
-        # Solution: LLM Mini-Judge for binary relevance (85-95% accuracy)
-        # ====================================================================
-        from app.engine.agentic_rag.mini_judge_grader import get_mini_judge_grader
-        
-        mini_judge = get_mini_judge_grader()
-        
-        # Build grades list
-        grades = []
-        
-        # Add HIGH confidence docs from hybrid (no LLM needed)
-        for doc, result in zip(high_conf_docs, high_conf_results):
-            doc_id = doc.get("id", doc.get("node_id", "unknown"))
-            content_preview = doc.get("content", doc.get("text", ""))[:100]
-            
-            grades.append(DocumentGrade(
-                document_id=doc_id,
-                content_preview=content_preview,
-                score=result.score * 10,  # Convert 0-1 to 0-10
-                is_relevant=True,
-                reason=f"[Hybrid HIGH] BM25={result.bm25_score:.2f}, Domain={result.domain_boost:.2f}"
-            ))
-        
-        # Mini-Judge only for non-HIGH confidence docs
-        relevant_docs = []
-        relevant_results = []
-        uncertain_docs = []
-        
-        if needs_mini_judge_docs:
-            judge_results = await mini_judge.pre_grade_batch(query, needs_mini_judge_docs)
-            
-            for doc, result in zip(needs_mini_judge_docs, judge_results):
-                if result.is_relevant and result.confidence in ("high", "medium"):
-                    relevant_docs.append(doc)
-                    relevant_results.append(result)
-                else:
-                    uncertain_docs.append(doc)
-            
-            # Add Mini-Judge approved docs
-            for doc, result in zip(relevant_docs, relevant_results):
+
+        grades: list[DocumentGrade] = []
+
+        if getattr(_cfg, "enable_reranker_grading", True):
+            # ==============================================================
+            # Reranker mode: score ALL docs via Hybrid Confidence only.
+            # No MiniJudge, no LLM batch — saves 20-40s per grading phase.
+            # SOTA 2026: Anthropic / OpenAI / Cohere all use reranker, not
+            # LLM grading.  Hybrid = BM25 + embedding + domain boost.
+            # ==============================================================
+            for doc, result in zip(documents, hybrid_results):
+                doc_id = doc.get("id", doc.get("node_id", "unknown"))
+                preview = doc.get("content", doc.get("text", ""))[:100]
+                score_10 = round(result.score * 10, 2)
                 grades.append(DocumentGrade(
-                    document_id=result.document_id,
-                    content_preview=result.content_preview,
-                    score=8.5,  # High score for Mini-Judge approved
-                    is_relevant=True,
-                    reason=f"[Mini-Judge] {result.reason}"
+                    document_id=doc_id,
+                    content_preview=preview,
+                    score=score_10,
+                    is_relevant=result.is_high_confidence or result.is_medium_confidence,
+                    reason=(
+                        f"[Reranker] score={result.score:.2f} "
+                        f"BM25={result.bm25_score:.2f} emb={result.embedding_score:.2f} "
+                        f"domain={result.domain_boost:.2f}"
+                    ),
                 ))
-        
-        # ====================================================================
-        # SOTA 2025 Phase 2.4a: Early Exit on Sufficient Relevant Docs
-        # ====================================================================
-        # Pattern: Self-RAG (Asai et al. 2023) - Skip grading when confident
-        # Reference: Anthropic Contextual Retrieval, Cohere Re-ranking
-        # Key insight: Major labs use re-ranking (~200ms), not LLM grading (19s)
-        # This early exit saves 19s when fast evaluators find 2+ relevant docs
-        # ====================================================================
-        fast_path_relevant_count = len(high_conf_docs) + len(relevant_docs)
-        
-        if fast_path_relevant_count >= 2:
-            # SOTA: Sufficient relevant docs from fast-path - skip LLM batch
             logger.info(
-                "[GRADER] SOTA Early Exit: %d relevant docs "
-                "from Hybrid+MiniJudge - skipping LLM batch grading (save ~19s)",
-                fast_path_relevant_count,
+                "[GRADER] Reranker mode: %d docs scored in <0.2s (no LLM calls)",
+                len(documents),
             )
-        elif uncertain_docs:
-            # Only grade when truly uncertain (0-1 relevant from fast-path)
-            llm_grades = await self.batch_grade_documents(query, uncertain_docs[:5])
-            grades.extend(llm_grades)
-        
-        logger.info(
-            "[GRADER] Summary: %d docs → Hybrid HIGH=%d, Mini-Judge=%d, LLM Full=%d (saved %d LLM calls)",
-            len(documents), len(high_conf_docs), len(relevant_docs),
-            0 if fast_path_relevant_count >= 2 else min(len(uncertain_docs), 5),
-            len(high_conf_docs) + len(relevant_docs),
-        )
+        else:
+            # ==============================================================
+            # Legacy 3-tier mode: Hybrid → MiniJudge → LLM Batch
+            # ==============================================================
+            high_conf_docs = []
+            high_conf_results = []
+            needs_mini_judge_docs = []
+
+            for doc, result in zip(documents, hybrid_results):
+                if result.is_high_confidence:
+                    high_conf_docs.append(doc)
+                    high_conf_results.append(result)
+                else:
+                    needs_mini_judge_docs.append(doc)
+
+            for doc, result in zip(high_conf_docs, high_conf_results):
+                doc_id = doc.get("id", doc.get("node_id", "unknown"))
+                content_preview = doc.get("content", doc.get("text", ""))[:100]
+                grades.append(DocumentGrade(
+                    document_id=doc_id,
+                    content_preview=content_preview,
+                    score=result.score * 10,
+                    is_relevant=True,
+                    reason=f"[Hybrid HIGH] BM25={result.bm25_score:.2f}, Domain={result.domain_boost:.2f}"
+                ))
+
+            relevant_docs = []
+            relevant_results = []
+            uncertain_docs = []
+
+            if needs_mini_judge_docs:
+                from app.engine.agentic_rag.mini_judge_grader import get_mini_judge_grader
+                mini_judge = get_mini_judge_grader()
+                judge_results = await mini_judge.pre_grade_batch(query, needs_mini_judge_docs)
+
+                for doc, jr in zip(needs_mini_judge_docs, judge_results):
+                    if jr.is_relevant and jr.confidence in ("high", "medium"):
+                        relevant_docs.append(doc)
+                        relevant_results.append(jr)
+                    else:
+                        uncertain_docs.append(doc)
+
+                for doc, jr in zip(relevant_docs, relevant_results):
+                    grades.append(DocumentGrade(
+                        document_id=jr.document_id,
+                        content_preview=jr.content_preview,
+                        score=8.5,
+                        is_relevant=True,
+                        reason=f"[Mini-Judge] {jr.reason}"
+                    ))
+
+            fast_path_relevant_count = len(high_conf_docs) + len(relevant_docs)
+
+            if fast_path_relevant_count >= 2:
+                logger.info(
+                    "[GRADER] Early exit: %d relevant from Hybrid+MiniJudge — skipping LLM batch",
+                    fast_path_relevant_count,
+                )
+            elif uncertain_docs:
+                llm_grades = await self.batch_grade_documents(query, uncertain_docs[:5])
+                grades.extend(llm_grades)
+
+            logger.info(
+                "[GRADER] Legacy mode: %d docs → HIGH=%d, MiniJudge=%d, LLM=%d",
+                len(documents), len(high_conf_docs), len(relevant_docs),
+                0 if fast_path_relevant_count >= 2 else min(len(uncertain_docs), 5),
+            )
         
         result = GradingResult(query=query, grades=grades)
         

@@ -406,6 +406,7 @@ class BaseSettingsFieldsMixin:
     rag_max_iterations: int = Field(default=2, description="Soft limit on CRAG iterations")
     rag_enable_reflection: bool = Field(default=True, description="Enable Self-RAG reflection tokens")
     rag_early_exit_on_high_confidence: bool = Field(default=True, description="Exit iteration loop early if HIGH confidence")
+    enable_reranker_grading: bool = Field(default=True, description="Use lightweight reranker instead of LLM grading (skip MiniJudge + LLM batch)")
 
     # Gemini Thinking Level
     gemini_thinking_level: str = Field(default="medium", description="Gemini 3.0 thinking level")

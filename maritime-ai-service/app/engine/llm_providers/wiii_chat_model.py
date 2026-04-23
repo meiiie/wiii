@@ -26,6 +26,7 @@ from langchain_core.callbacks import (
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
+    AIMessageChunk,
     BaseMessage,
     ChatMessage,
     FunctionMessage,
@@ -180,10 +181,10 @@ def _openai_chunk_to_generation_chunk(chunk: Any) -> Optional[ChatGenerationChun
     delta = choice.delta
 
     content = delta.content or ""
-    tool_calls = []
+    tool_call_chunks = []
     if delta.tool_calls:
         for tc in delta.tool_calls:
-            tool_calls.append(
+            tool_call_chunks.append(
                 {
                     "name": tc.function.name if tc.function else "",
                     "args": tc.function.arguments if tc.function else "",
@@ -193,10 +194,9 @@ def _openai_chunk_to_generation_chunk(chunk: Any) -> Optional[ChatGenerationChun
                 }
             )
 
-    ai_chunk = AIMessage(
+    ai_chunk = AIMessageChunk(
         content=content,
-        tool_calls=tool_calls,
-        additional_kwargs={},
+        tool_call_chunks=tool_call_chunks,
     )
 
     return ChatGenerationChunk(

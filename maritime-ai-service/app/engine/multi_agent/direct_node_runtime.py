@@ -959,7 +959,7 @@ async def direct_response_node_impl(
                     raise ProviderUnavailableError(
                         provider=str(explicit_user_provider).strip().lower(),
                         reason_code="busy",
-                        message="Provider duoc chon hien khong san sang de xu ly yeu cau nay.",
+                        message="Provider được chọn hiện không sẵn sàng để xử lý yêu cầu này.",
                     )
                 response = (
                     get_phase_fallback(state)
@@ -1019,7 +1019,7 @@ async def direct_response_node_impl(
                 raise ProviderUnavailableError(
                     provider=str(explicit_user_provider).strip().lower(),
                     reason_code=str(classified.get("reason_code") or "provider_unavailable"),
-                    message="Provider duoc chon hien khong san sang de xu ly yeu cau nay.",
+                    message="Provider được chọn hiện không sẵn sàng để xử lý yêu cầu này.",
                     details=classified.get("detail"),
                 ) from exc
             else:

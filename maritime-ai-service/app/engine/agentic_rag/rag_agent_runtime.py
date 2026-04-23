@@ -110,7 +110,7 @@ async def query_impl(
     if entity_context:
         search_method = "graph_enhanced"
     if search_method not in ["hybrid", "graph_enhanced"]:
-        content += f"\n\n*[Tim kiem: {search_method}]*"
+        content += f"\n\n*[Tìm kiếm: {search_method}]*"
 
     node_ids = [result.node_id for result in hybrid_results]
     evidence_images = await rag_agent._collect_evidence_images(

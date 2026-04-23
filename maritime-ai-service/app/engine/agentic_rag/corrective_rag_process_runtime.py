@@ -95,7 +95,7 @@ async def process_impl(
 
     tracer.start_step(
         step_names_cls.QUERY_ANALYSIS,
-        "Phan tich do phuc tap cau hoi",
+        "Phân tích độ phức tạp câu hỏi",
     )
     _emit_crag_progress("Đang phân tích câu hỏi...", "query_analysis")
     logger.info("[CRAG] Step 1: Analyzing query: '%s...'", query[:50])
@@ -103,7 +103,7 @@ async def process_impl(
     logger.info("[CRAG] Analysis: %s", analysis)
     tracer.end_step(
         result=(
-            f"Do phuc tap: {analysis.complexity.value}, "
+            f"Độ phức tạp: {analysis.complexity.value}, "
             f"Domain: {analysis.is_domain_related}"
         ),
         confidence=analysis.confidence,
@@ -175,7 +175,7 @@ async def process_impl(
 
         tracer.start_step(
             step_names_cls.RETRIEVAL,
-            f"Tim kiem tai lieu (lan {iterations})",
+            f"Tìm kiếm tài liệu (lần {iterations})",
         )
         _emit_crag_progress(
             f"Tìm kiếm tài liệu liên quan (lần {iterations})...",
@@ -201,12 +201,12 @@ async def process_impl(
 
         if not documents:
             logger.warning("[CRAG] No documents retrieved")
-            tracer.end_step(result="Khong tim thay tai lieu", confidence=0.0)
+            tracer.end_step(result="Không tìm thấy tài liệu", confidence=0.0)
 
             if iteration < rag._max_iterations - 1:
                 tracer.start_step(
                     step_names_cls.QUERY_REWRITE,
-                    "Viet lai query do khong co ket qua",
+                    "Viết lại query do không có kết quả",
                 )
                 current_query = await rag._rewriter.rewrite(
                     current_query,
@@ -215,22 +215,22 @@ async def process_impl(
                 rewritten_query = current_query
                 was_rewritten = True
                 tracer.end_step(
-                    result=f"Query moi: {current_query[:50]}...",
+                    result=f"Query mới: {current_query[:50]}...",
                     confidence=0.7,
                 )
-                tracer.record_correction("Khong tim thay tai lieu")
+                tracer.record_correction("Không tìm thấy tài liệu")
                 continue
             break
 
         tracer.end_step(
-            result=f"Tim thay {len(documents)} tai lieu",
+            result=f"Tìm thấy {len(documents)} tài liệu",
             confidence=0.8,
             details={"doc_count": len(documents)},
         )
 
         tracer.start_step(
             step_names_cls.GRADING,
-            "Danh gia do lien quan cua tai lieu",
+            "Đánh giá độ liên quan của tài liệu",
         )
         _emit_crag_progress(
             f"Đánh giá {len(documents)} tài liệu...",
@@ -261,7 +261,7 @@ async def process_impl(
                 settings_obj.rag_confidence_high,
             )
             tracer.end_step(
-                result=f"Diem: {grading_result.avg_score:.1f}/10 - DAT",
+                result=f"Điểm: {grading_result.avg_score:.1f}/10 - ĐẠT",
                 confidence=normalized_confidence,
                 details={
                     "score": grading_result.avg_score,
@@ -281,7 +281,7 @@ async def process_impl(
             )
             tracer.end_step(
                 result=(
-                    f"Diem: {grading_result.avg_score:.1f}/10 - MEDIUM "
+                    f"Điểm: {grading_result.avg_score:.1f}/10 - MEDIUM "
                     "(early exit)"
                 ),
                 confidence=normalized_confidence,
@@ -294,7 +294,7 @@ async def process_impl(
             break
 
         tracer.end_step(
-            result=f"Diem: {grading_result.avg_score:.1f}/10 - Can cai thien",
+            result=f"Điểm: {grading_result.avg_score:.1f}/10 - Cần cải thiện",
             confidence=normalized_confidence,
             details={"score": grading_result.avg_score, "passed": False},
         )
@@ -309,7 +309,7 @@ async def process_impl(
         if iteration < rag._max_iterations - 1:
             tracer.start_step(
                 step_names_cls.QUERY_REWRITE,
-                "Viet lai query de cai thien ket qua",
+                "Viết lại query để cải thiện kết quả",
             )
             _emit_crag_progress("Viết lại câu hỏi để tìm chính xác hơn...", "rewrite")
             logger.info(
@@ -331,11 +331,11 @@ async def process_impl(
             rewritten_query = current_query
             was_rewritten = True
             tracer.end_step(
-                result=f"Query moi: {current_query[:50]}...",
+                result=f"Query mới: {current_query[:50]}...",
                 confidence=0.8,
             )
             tracer.record_correction(
-                "Khong tim thay doc lien quan "
+                "Không tìm thấy doc liên quan "
                 f"(score={grading_result.avg_score:.1f}/10)"
             )
 
@@ -397,7 +397,7 @@ async def process_impl(
         context["entity_context"] = graph_entity_context
 
     _emit_crag_progress("Tạo câu trả lời từ nguồn tài liệu...", "generation")
-    tracer.start_step(step_names_cls.GENERATION, "Tao cau tra loi tu context")
+    tracer.start_step(step_names_cls.GENERATION, "Tạo câu trả lời từ context")
     logger.info("[CRAG] Step 5: Generating answer")
     answer, sources, native_thinking = await rag._generate(
         query,
@@ -410,7 +410,7 @@ async def process_impl(
         answer = await translate_to_vietnamese(answer)
 
     tracer.end_step(
-        result=f"Tao cau tra loi dua tren {len(sources)} nguon",
+        result=f"Tạo câu trả lời dựa trên {len(sources)} nguồn",
         confidence=0.85,
         details={"source_count": len(sources)},
     )
@@ -468,7 +468,7 @@ async def process_impl(
         _emit_crag_progress("Kiểm tra độ chính xác câu trả lời...", "verification")
         tracer.start_step(
             step_names_cls.VERIFICATION,
-            "Kiem tra do chinh xac va hallucination",
+            "Kiểm tra độ chính xác và hallucination",
         )
         logger.info(
             "[CRAG] Step 6: Verifying answer (low confidence=%.2f)",
@@ -479,7 +479,7 @@ async def process_impl(
         if verification_result.warning:
             answer = f"\u26a0\ufe0f {verification_result.warning}\n\n{answer}"
             tracer.end_step(
-                result=f"Canh bao: {verification_result.warning}",
+                result=f"Cảnh báo: {verification_result.warning}",
                 confidence=(
                     verification_result.confidence / 100
                     if verification_result.confidence
@@ -488,7 +488,7 @@ async def process_impl(
             )
         else:
             tracer.end_step(
-                result="Da xac minh - Khong phat hien van de",
+                result="Đã xác minh - Không phát hiện vấn đề",
                 confidence=(
                     verification_result.confidence / 100
                     if verification_result.confidence
