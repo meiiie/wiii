@@ -368,8 +368,6 @@ def serialize_stream_event(
 
     if event_type == "answer":
         answer_content = _strip_soul_tags(event.content or "")
-        if presentation_state and answer_content:
-            answer_content = presentation_state._vi_answer.process(answer_content)
         data = _apply_presentation_metadata(
             payload={"content": answer_content},
             event_type=event_type,

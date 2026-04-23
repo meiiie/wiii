@@ -794,7 +794,7 @@ class TutorAgentNode:
             messages.append(HumanMessage(content=query))
         
         tools_used = []
-        max_iterations = 4  # Sprint 103b→fix: 2 → 4 (need room for think + search + generate)
+        max_iterations = 2
         final_response = ""
         llm_thinking = None  # Thinking from final LLM response
         _answer_streamed_via_bus = False  # Legacy compatibility only; tutor no longer streams final answer

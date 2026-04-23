@@ -51,6 +51,7 @@ _DEFAULT_CONFIGS: Dict[str, AgentNodeConfig] = {
     "code_studio_agent": AgentNodeConfig(
         "code_studio_agent",
         tier="deep",
+        provider="google",
         model="gemini-3.1-pro-preview",
         enable_agentic_loop=True,
     ),

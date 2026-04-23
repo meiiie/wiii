@@ -327,7 +327,7 @@ async def process_streaming_impl(
     logger.info("[CRAG-V3] Phase 2: Retrieving documents")
 
     try:
-        documents = await owner._retrieve(query, context, _prefetch_docs=_prefetch_docs)
+        documents = await owner._retrieve(query, context, query_embedding_override=None, _prefetch_docs=_prefetch_docs)
         tracer.end_step(
             result=f"Tìm thấy {len(documents)} tài liệu",
             confidence=0.8 if documents else 0.3,
@@ -757,16 +757,16 @@ async def process_streaming_impl(
             if content:
                 context_parts.append(f"[{title}]: {content}")
 
-            # Prepare source data for later
             sources_data.append({
                 "title": title,
                 "content": content[:max_content_snippet_length] if content else "",
+                "source": doc.get("source", ""),
                 "page_number": doc.get("page_number"),
                 "image_url": doc.get("image_url"),
                 "document_id": doc.get("document_id"),
-                "node_id": doc.get("node_id"),              # Sprint 189b-R5: parity with sync
+                "node_id": doc.get("node_id"),
                 "bounding_boxes": doc.get("bounding_boxes"),
-                "content_type": doc.get("content_type"),    # Sprint 189b
+                "content_type": doc.get("content_type"),
             })
 
         # P2 (Perplexity pattern): Emit sources BEFORE LLM generation starts so

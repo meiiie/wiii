@@ -323,12 +323,12 @@ async def code_studio_node_impl(
                 details={"response_type": "fallback"},
             )
     except Exception as e:
-        logger.warning("[CODE_STUDIO] Generation failed: %s", e)
+        logger.error("[CODE_STUDIO] Generation failed: %s", e, exc_info=True)
         response = "Mình gặp trục trặc khi mở Code Studio. Bạn thử lại giúp mình nhé."
         tracer.end_step(
-            result="Fallback (code studio error)",
+            result=f"Fallback (code studio error: {type(e).__name__})",
             confidence=0.5,
-            details={"response_type": "fallback"},
+            details={"response_type": "fallback", "error": str(e)[:200]},
         )
 
     if not state.get("thinking_content"):

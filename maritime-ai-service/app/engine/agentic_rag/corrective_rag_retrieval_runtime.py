@@ -89,6 +89,7 @@ async def retrieve_impl(
                         "node_id": result.node_id,
                         "content": result.content,
                         "title": result.title,
+                        "source": getattr(result, "source", ""),
                         "score": result.rrf_score,
                         "image_url": result.image_url,
                         "page_number": result.page_number if hasattr(result, "page_number") else None,
