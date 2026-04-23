@@ -25,18 +25,14 @@ pgvector==0.2.5
 
 # --- AI CORE STACK (PINNED to tested minor versions) ---
 # Phase 0: langchain + langchain-community removed (0 imports in app/)
+# Phase 1-2: langchain-openai, langchain-google-genai, langchain-ollama, langchain-text-splitters removed
+# All providers now use WiiiChatModel (AsyncOpenAI SDK wrapper)
 langchain-core~=1.2.18
-langchain-openai~=1.1.0
-langchain-text-splitters~=1.1.0
 
 # LangGraph REMOVED (De-LangGraphing Phase 3) — replaced by WiiiRunner (app/engine/multi_agent/runner.py)
 # langgraph, langgraph-checkpoint, langgraph-checkpoint-postgres, langgraph-prebuilt — all removed
 # psycopg3 async driver (kept for asyncpg compat)
 psycopg[binary]>=3.1.0,<4.0.0
-
-# LLM Providers
-langchain-google-genai~=4.2.1
-langchain-ollama>=0.3.0,<1.0.0
 
 # Unified LLM Client (Sprint 55: AsyncOpenAI SDK for OpenAI-compatible endpoints)
 openai~=2.9.0

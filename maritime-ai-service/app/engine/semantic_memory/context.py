@@ -158,6 +158,12 @@ class ContextRetriever:
                 logger.error("Failed to get user facts: %s", exc)
                 user_facts = []
 
+            if user_facts:
+                user_facts.sort(
+                    key=lambda f: f.metadata.get("confidence", 0.0) if hasattr(f, "metadata") and isinstance(f.metadata, dict) else 0.0,
+                    reverse=True,
+                )
+
         context = SemanticContext(
             relevant_memories=relevant_memories,
             user_facts=user_facts,

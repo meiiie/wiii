@@ -1,14 +1,8 @@
 """
 Ollama Provider — Local, self-hosted, or Ollama Cloud backend for Wiii.
 
-Supports both unauthenticated local hosts and direct authenticated access to
-Ollama Cloud via https://ollama.com/api.
-
-Sprint 59: Enhanced with thinking mode support for Qwen3/DeepSeek-R1.
-
-Phase 1 (unified providers): Behind ``enable_unified_providers`` gate,
-uses ``ChatOpenAI`` pointed at Ollama's ``/v1`` endpoint instead of
-``ChatOllama``.
+Uses WiiiChatModel (AsyncOpenAI SDK) via Ollama's /v1 endpoint.
+De-LangChaining Phase 1: Removed ChatOllama dependency.
 """
 
 import logging
@@ -19,6 +13,7 @@ from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
 from app.engine.llm_providers.base import LLMProvider
+from app.engine.llm_providers.wiii_chat_model import WiiiChatModel
 
 logger = logging.getLogger(__name__)
 
@@ -37,46 +32,23 @@ _ollama_availability_cache: dict[str, tuple[float, bool]] = {}
 
 
 def _normalize_ollama_host(base_url: str | None) -> str | None:
-    """Normalize Ollama host URLs for client libraries.
-
-    The official HTTP examples use `https://ollama.com/api`, but the Python
-    client used by langchain-ollama expects the host root and appends `/api`
-    internally. Accept both forms here to keep runtime config forgiving.
-    """
     if not isinstance(base_url, str):
         return base_url
-
     normalized = base_url.strip()
     if not normalized:
         return normalized
-
     if normalized.endswith("/api"):
         return normalized[:-4]
     return normalized
 
 
 def _model_supports_thinking(model_name: str) -> bool:
-    """Check if an Ollama model supports thinking mode (think=True).
-
-    Models like Qwen3, DeepSeek-R1, and QwQ support structured
-    thinking via the `think` parameter in Ollama's OpenAI-compat API.
-    Qwen's newer instruct-specific tags should not be treated as
-    thinking-capable by default.
-
-    Args:
-        model_name: Full model name (e.g., "qwen3:8b", "deepseek-r1:14b")
-
-    Returns:
-        True if the model supports thinking mode.
-    """
     thinking_models: List[str] = getattr(
         settings, "ollama_thinking_models", DEFAULT_THINKING_MODELS
     )
     model_lower = model_name.lower()
     if model_lower.startswith("qwen3") and "-instruct" in model_lower:
         return False
-
-    # Check if model_name starts with any thinking model prefix
     return any(model_lower.startswith(prefix) for prefix in thinking_models)
 
 
@@ -137,14 +109,7 @@ def check_ollama_host_reachable(
 
 
 class OllamaProvider(LLMProvider):
-    """
-    Ollama provider.
-
-    Two paths:
-    - Legacy (default): ``ChatOllama`` from langchain-ollama
-    - Unified (``enable_unified_providers=True``): ``ChatOpenAI`` via
-      Ollama's ``/v1`` OpenAI-compatible endpoint
-    """
+    """Ollama provider via WiiiChatModel at /v1 endpoint."""
 
     @property
     def name(self) -> str:
@@ -170,81 +135,8 @@ class OllamaProvider(LLMProvider):
         **kwargs: Any,
     ) -> BaseChatModel:
         model_name = kwargs.get("model_name") or kwargs.get("model")
-        if getattr(settings, "enable_unified_providers", False):
-            return self._create_unified(tier, thinking_budget, include_thoughts, temperature, model_name=model_name)
-        return self._create_legacy(tier, thinking_budget, include_thoughts, temperature, model_name=model_name)
-
-    # --------------------------------------------------------------------- #
-    # Legacy path: ChatOllama
-    # --------------------------------------------------------------------- #
-    def _create_legacy(
-        self, tier: str, thinking_budget: int, include_thoughts: bool, temperature: float, *, model_name: str | None = None,
-    ) -> BaseChatModel:
-        try:
-            from langchain_ollama import ChatOllama
-        except ImportError:
-            raise ImportError(
-                "langchain-ollama is required for Ollama provider. "
-                "Install with: pip install langchain-ollama"
-            )
-
         model = model_name or getattr(settings, "ollama_model", "qwen3:4b-instruct-2507-q4_K_M")
-        base_url = _normalize_ollama_host(
-            getattr(settings, "ollama_base_url", "http://localhost:11434")
-        )
-        api_key = getattr(settings, "ollama_api_key", None)
-        keep_alive = getattr(settings, "ollama_keep_alive", None)
-        if not isinstance(api_key, str):
-            api_key = None
-        else:
-            api_key = api_key.strip() or None
-        if not isinstance(keep_alive, str):
-            keep_alive = None
-        elif not keep_alive.strip():
-            keep_alive = None
-        else:
-            keep_alive = keep_alive.strip()
 
-        # Build extra kwargs for thinking-capable models
-        ollama_kwargs = {}
-        if keep_alive:
-            ollama_kwargs["keep_alive"] = keep_alive
-        if api_key:
-            ollama_kwargs["client_kwargs"] = {
-                "headers": {"Authorization": f"Bearer {api_key}"}
-            }
-        thinks = thinking_budget > 0 or include_thoughts
-        if _model_supports_thinking(model) and thinks:
-            # Pass think=True via extra_body for Qwen3/DeepSeek-R1
-            ollama_kwargs["extra_body"] = {"think": True}
-            logger.info("[OLLAMA] Thinking mode enabled for %s", model)
-
-        llm = ChatOllama(
-            model=model,
-            base_url=base_url,
-            temperature=temperature,
-            **ollama_kwargs,
-        )
-        logger.info(
-            "[OLLAMA] Created %s instance [legacy] (model=%s, base_url=%s, thinking=%s, keep_alive=%s, auth=%s)",
-            tier.upper(),
-            model,
-            base_url,
-            bool("extra_body" in ollama_kwargs),
-            keep_alive,
-            bool(api_key),
-        )
-        return llm
-
-    # --------------------------------------------------------------------- #
-    # Unified path: ChatOpenAI → Ollama /v1 endpoint
-    # --------------------------------------------------------------------- #
-    def _create_unified(
-        self, tier: str, thinking_budget: int, include_thoughts: bool, temperature: float, *, model_name: str | None = None,
-    ) -> BaseChatModel:
-        from langchain_openai import ChatOpenAI
-
-        model = model_name or getattr(settings, "ollama_model", "qwen3:4b-instruct-2507-q4_K_M")
         raw_base_url = getattr(settings, "ollama_base_url", "http://localhost:11434")
         api_key = getattr(settings, "ollama_api_key", None)
         if not isinstance(api_key, str) or not api_key.strip():
@@ -257,24 +149,24 @@ class OllamaProvider(LLMProvider):
         if not base_url_v1.endswith("/v1"):
             base_url_v1 = base_url_v1 + "/v1"
 
-        llm_kwargs: dict[str, Any] = {
-            "model": model,
-            "api_key": api_key,
-            "base_url": base_url_v1,
-            "temperature": temperature,
-            "streaming": True,
-        }
+        model_kwargs: dict[str, Any] = {}
 
         # Ollama thinking for Qwen3/DeepSeek-R1
         thinks = thinking_budget > 0 or include_thoughts
         if _model_supports_thinking(model) and thinks:
-            llm_kwargs["model_kwargs"] = {"extra_body": {"think": True}}
-            logger.info("[OLLAMA] Thinking mode enabled for %s [unified]", model)
+            model_kwargs["extra_body"] = {"think": True}
+            logger.info("[OLLAMA] Thinking mode enabled for %s", model)
 
-        llm = ChatOpenAI(**llm_kwargs)
+        llm = WiiiChatModel(
+            model=model,
+            api_key=api_key,
+            base_url=base_url_v1,
+            temperature=temperature,
+            model_kwargs=model_kwargs,
+        )
         logger.info(
-            "[OLLAMA] Created %s instance [unified/ChatOpenAI] (model=%s, base_url=%s)",
-            tier.upper(), model, base_url_v1,
+            "[OLLAMA] Created %s instance (model=%s, base_url=%s, thinking=%s)",
+            tier.upper(), model, base_url_v1, bool(model_kwargs.get("extra_body")),
         )
         return llm
 

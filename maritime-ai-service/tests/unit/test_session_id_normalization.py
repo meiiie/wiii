@@ -167,6 +167,17 @@ class TestSaveMessageNormalization:
         params = mock_db.execute.call_args[0][1]
         assert params["org_id"] == "org-1"
 
+    def test_save_message_includes_created_at_in_insert(self):
+        repo = _make_repo()
+        mock_db = _mock_session_context(repo)
+
+        repo.save_message(uuid4(), "user", "hello", user_id="u1")
+
+        sql = str(mock_db.execute.call_args[0][0])
+        params = mock_db.execute.call_args[0][1]
+        assert "created_at" in sql
+        assert isinstance(params["created_at"], datetime)
+
     def test_save_message_returns_none_when_unavailable(self):
         repo = _make_repo(available=False)
 

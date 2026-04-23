@@ -599,12 +599,7 @@ class BaseSettingsFieldsMixin:
     # Unified LLM Client
     enable_unified_client: bool = Field(default=True, description="Enable UnifiedLLMClient (AsyncOpenAI SDK)")
 
-    # Unified Providers (Phase 1: use ChatOpenAI for all providers via OpenAI-compatible endpoints)
-    enable_unified_providers: bool = Field(
-        default=False,
-        description="Use ChatOpenAI for all LLM providers via OpenAI-compatible endpoints. "
-                    "Eliminates langchain-google-genai and langchain-ollama dependencies.",
-    )
+    # Google Gemini OpenAI-compatible endpoint URL
     google_openai_compat_url: str = Field(
         default="https://generativelanguage.googleapis.com/v1beta/openai/",
         description="Google Gemini OpenAI-compatible endpoint URL"

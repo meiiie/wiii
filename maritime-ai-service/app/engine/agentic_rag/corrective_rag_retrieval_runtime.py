@@ -13,8 +13,13 @@ async def retrieve_impl(
     context: dict[str, Any],
     query_embedding_override: Optional[list[float]],
     logger: Any,
+    _prefetch_docs: Optional[list[dict[str, Any]]] = None,
 ) -> list[dict[str, Any]]:
     """Retrieve grading-ready documents with full content preserved."""
+    if _prefetch_docs:
+        logger.info("[CRAG] Using %d pre-fetched documents, skipping retrieval", len(_prefetch_docs))
+        return _prefetch_docs
+
     if not crag._rag:
         logger.warning("[CRAG] No RAG agent available")
         return []

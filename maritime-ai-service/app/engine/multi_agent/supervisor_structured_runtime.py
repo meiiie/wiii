@@ -273,6 +273,7 @@ async def route_structured_impl(
             or looks_like_visual_data_request_fn(query)
         )
         and chosen_agent != agent_type_enum.DIRECT.value
+        and result.intent not in ("learning", "lookup")
     ):
         logger_obj.info(
             "[SUPERVISOR] Visual lane override: %s -> direct (%s)",
@@ -282,8 +283,10 @@ async def route_structured_impl(
         chosen_agent = agent_type_enum.DIRECT.value
         method = "structured+visual_lane_override"
 
-    if chosen_agent == agent_type_enum.TUTOR.value and (
-        visual_decision.presentation_intent == "chart_runtime" or visual_decision.force_tool
+    if (
+        chosen_agent == agent_type_enum.TUTOR.value
+        and (visual_decision.presentation_intent == "chart_runtime" or visual_decision.force_tool)
+        and result.intent not in ("learning", "lookup")
     ):
         logger_obj.info(
             "[SUPERVISOR] Visual override: tutor -> direct (force_tool=%s, intent=%s)",

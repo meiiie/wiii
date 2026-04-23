@@ -772,7 +772,7 @@ async def direct_response_node_impl(
                     query[:60],
                 )
 
-                if visual_decision.force_tool and not force_tools:
+                if visual_decision.force_tool and not force_tools and routing_intent not in ("learning", "lookup"):
                     has_visual_tool = any(getattr(tool, "name", getattr(tool, "__name__", "")) == "tool_generate_visual" for tool in tools)
                     if has_visual_tool:
                         force_tools = True

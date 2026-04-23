@@ -12,11 +12,112 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Inline RecursiveCharacterTextSplitter (De-LangChaining Phase 2)
+# Replaces langchain-text-splitters package
+# =============================================================================
+
+class RecursiveCharacterTextSplitter:
+    """
+    Simple text splitter that recursively splits text on separator characters.
+
+    De-LangChaining Phase 2: Inline implementation replacing
+    langchain_text_splitters.RecursiveCharacterTextSplitter.
+    """
+
+    def __init__(
+        self,
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200,
+        separators: Optional[List[str]] = None,
+        length_function: callable = len,
+        is_separator_regex: bool = False,
+    ):
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.separators = separators or ["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " ", ""]
+        self.length_function = length_function
+        self.is_separator_regex = is_separator_regex
+
+    def split_text(self, text: str) -> List[str]:
+        """Split text into chunks."""
+        if not text:
+            return []
+
+        # Find the best separator
+        best_separator = self.separators[-1]
+        best_separator_index = len(self.separators) - 1
+
+        # Iterate through separators in order
+        for i, sep in enumerate(self.separators):
+            if sep == "":
+                separator_index = len(text)
+            else:
+                if self.is_separator_regex:
+                    import re
+                    separator_index = re.search(sep, text)
+                    separator_index = separator_index.start() if separator_index else -1
+                else:
+                    separator_index = text.find(sep)
+
+            if separator_index != -1:
+                best_separator = sep
+                best_separator_index = i
+                break
+
+        # Now split on the best separator
+        if best_separator == "":
+            separator_splits = [text]
+        else:
+            if self.is_separator_regex:
+                import re
+                separator_splits = re.split(best_separator, text)
+            else:
+                separator_splits = text.split(best_separator)
+
+        # Merge splits into chunks
+        good_splits = []
+        for split in separator_splits:
+            if self.length_function(split) < self.chunk_size:
+                good_splits.append(split)
+            else:
+                if best_separator_index < len(self.separators) - 1:
+                    new_separators = self.separators[best_separator_index + 1:]
+                    new_splitter = RecursiveCharacterTextSplitter(
+                        chunk_size=self.chunk_size,
+                        chunk_overlap=self.chunk_overlap,
+                        separators=new_separators,
+                        length_function=self.length_function,
+                        is_separator_regex=self.is_separator_regex,
+                    )
+                    good_splits.extend(new_splitter.split_text(split))
+                else:
+                    # No more separators, force split
+                    good_splits.append(split[:self.chunk_size])
+                    good_splits.append(split[self.chunk_size:])
+
+        # Merge small chunks with overlap
+        final_chunks = []
+        current_chunk = ""
+        for split in good_splits:
+            if self.length_function(current_chunk) + self.length_function(split) <= self.chunk_size:
+                if current_chunk:
+                    current_chunk += best_separator
+                current_chunk += split
+            else:
+                if current_chunk:
+                    final_chunks.append(current_chunk)
+                current_chunk = split
+
+        if current_chunk:
+            final_chunks.append(current_chunk)
+
+        return final_chunks
 
 
 @dataclass
@@ -64,8 +165,8 @@ class SemanticChunker:
         self.chunk_size = chunk_size or settings.chunk_size
         self.chunk_overlap = chunk_overlap or settings.chunk_overlap
         self.min_chunk_size = min_chunk_size or settings.min_chunk_size
-        
-        # Initialize LangChain text splitter
+
+        # Initialize text splitter (inline implementation)
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap,

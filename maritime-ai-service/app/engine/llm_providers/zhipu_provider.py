@@ -1,11 +1,8 @@
 """
 Zhipu AI (GLM-5) Provider — Fallback LLM backend for Wiii.
 
-GLM-5 is OpenAI-compatible, so we use ChatOpenAI with base_url override.
-API docs: https://docs.z.ai/guides/llm/glm-5
-
-Sprint V5-Visual: Added as fallback for Gemini 429 rate limiting.
-$400 credit available for this provider.
+Uses WiiiChatModel (AsyncOpenAI SDK).
+De-LangChaining Phase 1: Removed ChatOpenAI dependency.
 """
 
 import logging
@@ -15,6 +12,7 @@ from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
 from app.engine.llm_providers.base import LLMProvider
+from app.engine.llm_providers.wiii_chat_model import WiiiChatModel
 
 logger = logging.getLogger(__name__)
 
@@ -29,27 +27,9 @@ except Exception:
 # Default base URL (international endpoint)
 ZHIPU_DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
 
-# Map tiers to GLM models
-_TIER_MODEL_MAP = {
-    "deep": None,      # Use zhipu_model_advanced from config (glm-5)
-    "moderate": None,   # Use zhipu_model from config (glm-5)
-    "light": None,      # Use zhipu_model from config (glm-5)
-}
-
 
 class ZhipuProvider(LLMProvider):
-    """
-    Zhipu AI provider (GLM-5) via langchain-openai ChatOpenAI.
-
-    GLM-5 exposes a fully OpenAI-compatible API, so we reuse
-    ChatOpenAI with base_url pointed to Zhipu's endpoint.
-
-    Features:
-    - Tool calling / function calling (up to 128 functions)
-    - Streaming support
-    - 200K context window, 128K max output
-    - MoE architecture (745B total, 44B active)
-    """
+    """Zhipu AI provider (GLM-5) via WiiiChatModel."""
 
     @property
     def name(self) -> str:
@@ -73,9 +53,6 @@ class ZhipuProvider(LLMProvider):
         temperature: float = 0.5,
         **kwargs: Any,
     ) -> BaseChatModel:
-        from langchain_openai import ChatOpenAI
-
-        # Select model based on tier
         model_name = kwargs.get("model_name") or kwargs.get("model")
         if model_name:
             model = model_name
@@ -84,22 +61,17 @@ class ZhipuProvider(LLMProvider):
         else:
             model = getattr(settings, "zhipu_model", "glm-5")
 
-        base_url = getattr(
-            settings, "zhipu_base_url", ZHIPU_DEFAULT_BASE_URL
+        base_url = getattr(settings, "zhipu_base_url", ZHIPU_DEFAULT_BASE_URL)
+
+        llm = WiiiChatModel(
+            model=model,
+            api_key=settings.zhipu_api_key,
+            base_url=base_url,
+            temperature=temperature,
         )
-
-        llm_kwargs = {
-            "model": model,
-            "api_key": settings.zhipu_api_key,
-            "base_url": base_url,
-            "temperature": temperature,
-            "streaming": True,
-        }
-
-        llm = ChatOpenAI(**llm_kwargs)
         logger.info(
-            f"[ZHIPU] Created {tier.upper()} instance "
-            f"(model={model}, base_url={base_url})"
+            "[ZHIPU] Created %s instance (model=%s, base_url=%s)",
+            tier.upper(), model, base_url,
         )
         return llm
 

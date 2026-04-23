@@ -35,55 +35,15 @@ def create_instance_legacy_impl(
     logger_obj: Any,
     attach_tracking_callback_fn,
 ):
-    """Legacy single-provider creation path for Google."""
-    if getattr(settings_obj, "enable_unified_providers", False):
-        provider = create_provider_fn("google")
-        try:
-            llm = provider.create_instance(
-                tier=tier_key,
-                thinking_budget=thinking_budget,
-                include_thoughts=include_thoughts,
-                temperature=0.5,
-            )
-            attach_tracking_callback_fn(llm, tier_key)
-            llm = cls_ref._tag_runtime_metadata(
-                llm,
-                provider_name="google",
-                tier_key=tier_key,
-            )
-            cls_ref._pool[tier_key] = llm
-            cls_ref._provider_pools.setdefault("google", {})[tier_key] = llm
-            cls_ref._active_provider = "google"
-            logger_obj.info(
-                "[LLM_POOL] Created %s instance [unified] (budget=%d, thoughts=%s)",
-                tier_key.upper(),
-                thinking_budget,
-                include_thoughts,
-            )
-            return llm
-        except Exception as exc:
-            logger_obj.error(
-                "[LLM_POOL] Failed to create %s instance [unified]: %s",
-                tier_key,
-                exc,
-            )
-            raise
-
-    from langchain_google_genai import ChatGoogleGenerativeAI
-
-    llm_kwargs = {
-        "model": settings_obj.google_model,
-        "google_api_key": settings_obj.google_api_key,
-        "temperature": 0.5,
-    }
-
-    if settings_obj.thinking_enabled and thinking_budget > 0:
-        llm_kwargs["thinking_budget"] = thinking_budget
-        if include_thoughts:
-            llm_kwargs["include_thoughts"] = True
-
+    """Single-provider creation path for Google via GeminiProvider (WiiiChatModel)."""
+    provider = create_provider_fn("google")
     try:
-        llm = ChatGoogleGenerativeAI(**llm_kwargs)
+        llm = provider.create_instance(
+            tier=tier_key,
+            thinking_budget=thinking_budget,
+            include_thoughts=include_thoughts,
+            temperature=0.5,
+        )
         attach_tracking_callback_fn(llm, tier_key)
         llm = cls_ref._tag_runtime_metadata(
             llm,
@@ -94,7 +54,7 @@ def create_instance_legacy_impl(
         cls_ref._provider_pools.setdefault("google", {})[tier_key] = llm
         cls_ref._active_provider = "google"
         logger_obj.info(
-            "[LLM_POOL] Created %s instance [legacy] (budget=%d, thoughts=%s)",
+            "[LLM_POOL] Created %s instance (budget=%d, thoughts=%s)",
             tier_key.upper(),
             thinking_budget,
             include_thoughts,

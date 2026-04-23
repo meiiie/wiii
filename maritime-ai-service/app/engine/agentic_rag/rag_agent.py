@@ -27,11 +27,7 @@ from app.prompts.prompt_loader import PromptLoader, get_prompt_loader
 from app.core.config import settings
 from app.engine.agentic_rag.runtime_llm_socket import resolve_agentic_rag_llm
 from app.engine.llm_factory import ThinkingTier
-from app.engine.openrouter_routing import build_openrouter_extra_body
 from app.engine.llm_pool import get_llm_moderate
-
-# Lazy import for optional LLM providers
-ChatOpenAI = None  # Will be imported if needed
 from app.models.knowledge_graph import (
     Citation,
     KnowledgeNode,
@@ -158,59 +154,21 @@ class RAGAgent:
         """
         Initialize LLM for response synthesis.
 
-        CHỈ THỊ SỐ 28: Uses MODERATE tier thinking (4096 tokens) for RAG synthesis.
-        Supports Google Gemini (primary) and OpenAI/OpenRouter (fallback).
+        Provider-agnostic: delegates to LLMPool (respects settings.llm_provider).
+        Falls back to direct WiiiChatModel only if LLMPool unavailable.
         """
-        provider = getattr(settings, 'llm_provider', 'google')
-
         runtime_llm = self._resolve_runtime_llm()
         if runtime_llm is not None:
             return runtime_llm
 
-        # Try Google Gemini first with MODERATE tier thinking
-        if provider == "google" or (not settings.openai_api_key and settings.google_api_key):
-            if settings.google_api_key:
-                try:
-                    logger.info("RAG using Gemini with MODERATE thinking: %s", settings.google_model)
-                    return get_llm_moderate()  # Shared pool instance
-                except Exception as e:
-                    logger.error("Failed to initialize Gemini for RAG: %s", e)
-
-        # Fallback to OpenAI/OpenRouter (optional)
-        if not settings.openai_api_key:
-            logger.warning("No LLM API key, RAG will return raw content")
-            return None
+        try:
+            return get_llm_moderate()
+        except Exception as e:
+            logger.warning("LLMPool unavailable for RAG: %s", e)
 
         try:
-            # Lazy import ChatOpenAI only when needed
-            global ChatOpenAI
-            if ChatOpenAI is None:
-                try:
-                    from langchain_openai import ChatOpenAI as _ChatOpenAI
-                    ChatOpenAI = _ChatOpenAI
-                except ImportError:
-                    logger.warning("langchain-openai not installed, skipping OpenAI fallback")
-                    return None
-
-            llm_kwargs = {
-                "api_key": settings.openai_api_key,
-                "model": settings.openai_model,
-                "temperature": 0.3,  # Lower for factual responses
-            }
-            if settings.openai_base_url:
-                llm_kwargs["base_url"] = settings.openai_base_url
-                logger.info("RAG using OpenRouter: %s", settings.openai_model)
-            else:
-                logger.info("RAG using OpenAI: %s", settings.openai_model)
-
-            openrouter_extra_body = build_openrouter_extra_body(
-                settings,
-                primary_model=settings.openai_model,
-            )
-            if openrouter_extra_body:
-                llm_kwargs["extra_body"] = openrouter_extra_body
-
-            return ChatOpenAI(**llm_kwargs)
+            from app.engine.llm_factory import create_llm
+            return create_llm(tier="moderate")
         except Exception as e:
             logger.error("Failed to initialize LLM for RAG: %s", e)
             return None
@@ -279,6 +237,7 @@ class RAGAgent:
         living_context_prompt: str = "",
         skill_context: str = "",
         capability_context: str = "",
+        _skill_prompts: list | None = None,
     ) -> RAGResponse:
         """
         Generate response from pre-retrieved documents (no re-retrieval).
@@ -323,6 +282,7 @@ class RAGAgent:
             living_context_prompt=living_context_prompt,
             skill_context=skill_context,
             capability_context=capability_context,
+            _skill_prompts=_skill_prompts,
         )
 
         # Convert documents to citations
@@ -459,6 +419,7 @@ class RAGAgent:
         living_context_prompt: str = "",
         skill_context: str = "",
         capability_context: str = "",
+        _skill_prompts: list | None = None,
     ) -> Tuple[str, Optional[str]]:
         """
         Generate response using LLM to synthesize retrieved knowledge.
@@ -494,6 +455,7 @@ class RAGAgent:
             living_context_prompt=living_context_prompt,
             skill_context=skill_context,
             capability_context=capability_context,
+            _skill_prompts=_skill_prompts,
         )
 
     def _create_fallback_response(self, question: str) -> RAGResponse:
@@ -562,6 +524,7 @@ class RAGAgent:
         living_context_prompt: str = "",
         skill_context: str = "",
         capability_context: str = "",
+        _skill_prompts: list | None = None,
     ):
         """
         SOTA Streaming Generation - yields tokens as they arrive from LLM.
@@ -589,6 +552,7 @@ class RAGAgent:
             living_context_prompt=living_context_prompt,
             skill_context=skill_context,
             capability_context=capability_context,
+            _skill_prompts=_skill_prompts,
         ):
             yield chunk
 

@@ -101,7 +101,7 @@ export async function parseSSEStream(
   abortSignal?: AbortSignal
 ): Promise<SSEStreamResult> {
   const reader = stream.getReader();
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder('utf-8');
   let buffer = "";
   let lastEventId: string | null = null;
   let sawDone = false;

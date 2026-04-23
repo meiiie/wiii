@@ -151,48 +151,16 @@ def create_llm(
                 effective_provider,
             )
 
-    # --- Default: Google Gemini ---
-    # Behind unified providers gate, delegate to GeminiProvider (which
-    # internally picks ChatOpenAI or ChatGoogleGenerativeAI).
-    if getattr(settings, "enable_unified_providers", False):
-        p = create_provider("google")
-        logger.info(
-            "[LLM_FACTORY] Creating LLM via GeminiProvider [unified]: tier=%s, budget=%d",
-            tier.value, thinking_budget,
-        )
-        return p.create_instance(
-            tier=tier.value,
-            thinking_budget=thinking_budget,
-            include_thoughts=include_thoughts,
-            temperature=temperature,
-        )
-
-    # Legacy direct path
-    from langchain_google_genai import ChatGoogleGenerativeAI
-
-    if model:
-        model_name = model
-    elif tier == ThinkingTier.DEEP:
-        model_name = getattr(settings, "google_model_advanced", GOOGLE_DEEP_MODEL)
-    else:
-        model_name = settings.google_model
-
+    # --- Default: Google Gemini via GeminiProvider (WiiiChatModel) ---
+    p = create_provider("google")
     logger.info(
-        "[LLM_FACTORY] Creating LLM: model=%s, tier=%s, budget=%d, include_thoughts=%s",
-        model_name, tier.value, thinking_budget, include_thoughts
+        "[LLM_FACTORY] Creating LLM via GeminiProvider: tier=%s, budget=%d",
+        tier.value, thinking_budget,
     )
-
-    # LangChain ChatGoogleGenerativeAI supports direct params (langchain-google-genai >= 3.1.0)
-    llm_kwargs = {
-        "model": model_name,
-        "temperature": temperature,
-        "google_api_key": settings.google_api_key,
-    }
-
-    # Add thinking config if enabled (requires langchain-google-genai >= 3.0.0)
-    if settings.thinking_enabled and thinking_budget != 0:
-        llm_kwargs["thinking_budget"] = thinking_budget
-        if include_thoughts:
-            llm_kwargs["include_thoughts"] = True
-
-    return ChatGoogleGenerativeAI(**llm_kwargs)
+    return p.create_instance(
+        tier=tier.value,
+        thinking_budget=thinking_budget,
+        include_thoughts=include_thoughts,
+        temperature=temperature,
+        model=model,
+    )

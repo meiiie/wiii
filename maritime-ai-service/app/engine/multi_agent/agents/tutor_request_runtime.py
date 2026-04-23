@@ -201,8 +201,9 @@ def prepare_tutor_request(
         logger_obj.debug("[TUTOR_AGENT] Runtime tool selection skipped: %s", exc)
 
     llm_with_tools_for_request = None
+    routing_intent = str((state.get("routing_metadata") or {}).get("intent", "")).strip().lower()
     if llm_for_request:
-        if visual_decision.force_tool:
+        if visual_decision.force_tool and routing_intent not in ("learning", "lookup"):
             visual_tools_only = [
                 tool for tool in active_tools if getattr(tool, "name", "") == "tool_generate_visual"
             ]

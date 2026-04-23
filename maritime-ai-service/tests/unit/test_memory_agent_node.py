@@ -100,8 +100,8 @@ class TestMemoryAgentProcess:
         ))
 
         from unittest.mock import patch
-        with patch("app.services.output_processor.extract_thinking_from_response",
-                    return_value=("Chào Minh!", "")):
+        with patch("app.services.thinking_post_processor.ThinkingPostProcessor.process",
+                    return_value=("Chào Minh!", None)):
             result = await node.process(base_state, llm=mock_llm)
 
         assert result["memory_output"] == "Chào Minh!"
@@ -126,6 +126,74 @@ class TestRetrieveFacts:
         node = _make_node()
         facts = await node._retrieve_facts("user-1")
         assert facts == []
+
+
+class TestExtractAndStoreFacts:
+    @pytest.mark.asyncio
+    async def test_classifies_changes_when_extractor_returns_facts_only(self):
+        from app.engine.semantic_memory.memory_updater import MemoryAction
+        from app.models.semantic_memory import FactType, UserFact
+
+        semantic_memory = MagicMock()
+        semantic_memory._fact_extractor = MagicMock()
+        semantic_memory._fact_extractor.extract_and_store_facts = AsyncMock(
+            return_value=[
+                UserFact(
+                    fact_type=FactType.ROLE,
+                    value="captain",
+                    confidence=0.95,
+                )
+            ]
+        )
+        node = _make_node(semantic_memory)
+
+        facts, decisions = await node._extract_and_store_facts(
+            "user-123",
+            "Mình là thuyền trưởng",
+            {"role": "student"},
+        )
+
+        assert facts == ["role: captain"]
+        assert len(decisions) == 1
+        assert decisions[0].action == MemoryAction.UPDATE
+        assert decisions[0].old_value == "student"
+
+
+class TestGenerateResponseContext:
+    @pytest.mark.asyncio
+    async def test_generate_response_includes_recent_conversation_context(self):
+        node = _make_node()
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="Nho chu."))
+        state = {
+            "context": {
+                "history_list": [
+                    {"role": "user", "content": "doi qua huhu"},
+                    {
+                        "role": "assistant",
+                        "content": "Trong nha con gi an duoc khong?",
+                    },
+                ]
+            }
+        }
+
+        with patch(
+            "app.services.thinking_post_processor.ThinkingPostProcessor.process",
+            return_value=("Nho chu.", None),
+        ):
+            text = await node._generate_response(
+                mock_llm,
+                "Wii khong nho minh ha?",
+                [],
+                [],
+                "",
+                state,
+            )
+
+        assert text == "Nho chu."
+        prompt = mock_llm.ainvoke.await_args.args[0][-1].content
+        assert "Doan hoi thoai gan day" in prompt
+        assert "doi qua huhu" in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +259,7 @@ class TestSingleton:
 
 class TestMemoryPublicThinking:
     @pytest.mark.asyncio
-    async def test_process_with_llm_does_not_propagate_private_thinking(self, mock_semantic_memory, base_state):
+    async def test_process_with_llm_stores_thinking_in_state(self, mock_semantic_memory, base_state):
         node = _make_node(mock_semantic_memory)
         base_state["query"] = "Minh ten Nam, nho giup minh nhe"
         mock_llm = AsyncMock()
@@ -200,73 +268,30 @@ class TestMemoryPublicThinking:
             return_value=[MagicMock(to_content=MagicMock(return_value="name: Nam"))]
         )
 
-        narrator_results = [
-            MagicMock(label="Ra lai", summary="Minh nhin lai mach cu de xem diem nao con dinh voi luot nay.", phase="retrieve"),
-            MagicMock(label="Neo lai", summary="Minh da co vai moc cu, nhung ten rieng moi nay van la diem noi bat nhat.", phase="verify"),
-            MagicMock(label="Tach y", summary="Minh dang tach phan dang nho lau khoi phan chi thuoc ve khoanh khac nay.", phase="verify"),
-            MagicMock(label="Giu lai", summary="Ten Nam du ro de giu lai nhu mot diem neo xung ho.", phase="verify"),
-            MagicMock(label="Dap lai", summary="Minh se dap gon de Nam thay minh nho ma khong bien cau tra loi thanh log he thong.", phase="synthesize"),
-        ]
-
         with patch(
-            "app.engine.multi_agent.agents.memory_agent.get_reasoning_narrator",
-        ) as mock_narrator_fn, patch(
-            "app.services.output_processor.extract_thinking_from_response",
-            return_value=(
-                "Chao Nam!",
-                "Nam's Name: Confirmed! No \"Chao\", no thinking process, just pure cuteness.",
-            ),
+            "app.services.thinking_post_processor.ThinkingPostProcessor.process",
+            return_value=("Chao Nam!", "Minh nhan ra ten Nam tu ngu canh."),
         ):
-            mock_narrator = MagicMock()
-            mock_narrator.render = AsyncMock(side_effect=narrator_results)
-            mock_narrator_fn.return_value = mock_narrator
             result = await node.process(base_state, llm=mock_llm)
 
         assert result["memory_output"] == "Chao Nam!"
-        assert "thinking" not in result
-        assert "thinking_content" in result
-        assert "Nam vua" not in result["thinking_content"]
-        assert "Chao Nam" not in result["thinking_content"]
-        assert "pure cuteness" not in result["thinking_content"]
-        assert "Khoan" not in result["thinking_content"]
-        assert "truong du lieu" not in result["thinking_content"].lower()
-        assert "Ten Nam du ro de giu lai nhu mot diem neo xung ho." in result["thinking_content"]
-        assert "Minh se dap gon de Nam thay minh nho ma khong bien cau tra loi thanh log he thong." in result["thinking_content"]
+        assert result.get("thinking") == "Minh nhan ra ten Nam tu ngu canh."
 
     @pytest.mark.asyncio
-    async def test_process_builds_public_thinking_content_from_narrator_fragments(self, mock_semantic_memory, base_state):
+    async def test_process_with_llm_no_thinking_when_none(self, mock_semantic_memory, base_state):
         node = _make_node(mock_semantic_memory)
         mock_llm = AsyncMock()
         mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="Minh nho roi nhe!"))
-
-        narrator_results = [
-            MagicMock(label="Luc lai", summary="Minh luc lai chut ngu canh rieng dang dinh voi dieu ban vua noi.", phase="retrieve"),
-            MagicMock(label="Xem lai", summary="Minh nhin lai vai manh ky uc cu de xem cai nao dang lien quan den nhip nay.", phase="verify"),
-            MagicMock(label="Doi chieu", summary="Minh soi xem trong nhip nay co chi tiet nao can giu lai that khong.", phase="verify"),
-            MagicMock(label="Khoa lai", summary="Minh khoa lai manh thong tin vua lo ra de luc dap khong bi lenh.", phase="verify"),
-            MagicMock(label="Khau lai", summary="Minh khau lai dieu cu va dieu moi cho that gon.", phase="synthesize"),
-        ]
 
         mock_semantic_memory._fact_extractor.extract_and_store_facts = AsyncMock(
             return_value=[MagicMock(to_content=MagicMock(return_value="name: Nam"))]
         )
 
         with patch(
-            "app.engine.multi_agent.agents.memory_agent.get_reasoning_narrator",
-        ) as mock_narrator_fn, patch(
-            "app.services.output_processor.extract_thinking_from_response",
-            return_value=("Minh nho roi nhe!", "private hidden thought"),
+            "app.services.thinking_post_processor.ThinkingPostProcessor.process",
+            return_value=("Minh nho roi nhe!", None),
         ):
-            mock_narrator = MagicMock()
-            mock_narrator.render = AsyncMock(side_effect=narrator_results)
-            mock_narrator_fn.return_value = mock_narrator
-
             result = await node.process(base_state, llm=mock_llm)
 
+        assert result["memory_output"] == "Minh nho roi nhe!"
         assert "thinking" not in result
-        assert "thinking_content" in result
-        assert "private hidden thought" not in result["thinking_content"]
-        assert "Minh luc lai chut ngu canh rieng dang dinh voi dieu ban vua noi." in result["thinking_content"]
-        assert "Minh khoa lai manh thong tin vua lo ra de luc dap khong bi lenh." in result["thinking_content"]
-        assert "tach bach giua chi tiet du ben de luu lau" not in result["thinking_content"].lower()
-        assert "doc to toan bo viec vua luu lai" not in result["thinking_content"].lower()

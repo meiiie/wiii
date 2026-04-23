@@ -260,6 +260,7 @@ class ChatHistoryRepository:
         try:
             _, _, org_params = self._org_scope()
             msg_id = uuid4()
+            created_at = datetime.now(timezone.utc)
             with self._session_factory() as session:
                 session.execute(
                     text(
@@ -270,6 +271,7 @@ class ChatHistoryRepository:
                             session_id,
                             role,
                             content,
+                            created_at,
                             is_blocked,
                             block_reason,
                             organization_id
@@ -280,6 +282,7 @@ class ChatHistoryRepository:
                             :session_id,
                             :role,
                             :content,
+                            :created_at,
                             :is_blocked,
                             :block_reason,
                             :org_id
@@ -292,6 +295,7 @@ class ChatHistoryRepository:
                         "session_id": str(norm_session_id),
                         "role": role,
                         "content": content,
+                        "created_at": created_at,
                         "is_blocked": is_blocked,
                         "block_reason": block_reason,
                         "org_id": org_params.get("org_id"),
@@ -304,7 +308,7 @@ class ChatHistoryRepository:
                 session_id=norm_session_id,
                 role=role,
                 content=content,
-                created_at=datetime.now(timezone.utc),
+                created_at=created_at,
                 is_blocked=is_blocked,
                 block_reason=block_reason,
             )

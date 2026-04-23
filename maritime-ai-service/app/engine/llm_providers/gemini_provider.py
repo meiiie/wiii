@@ -1,12 +1,8 @@
 """
 Google Gemini Provider — Primary LLM backend for Wiii.
 
-Extracted from llm_pool.py._create_instance() to support
-multi-provider failover architecture.
-
-Phase 1 (unified providers): Behind ``enable_unified_providers`` gate,
-uses ``ChatOpenAI`` pointed at Gemini's OpenAI-compatible endpoint
-instead of ``ChatGoogleGenerativeAI``.
+Uses WiiiChatModel (AsyncOpenAI SDK) via Gemini's OpenAI-compatible endpoint.
+De-LangChaining Phase 1: Removed ChatGoogleGenerativeAI dependency.
 """
 
 import logging
@@ -16,6 +12,7 @@ from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
 from app.engine.llm_providers.base import LLMProvider
+from app.engine.llm_providers.wiii_chat_model import WiiiChatModel
 from app.engine.model_catalog import GOOGLE_DEEP_MODEL
 
 logger = logging.getLogger(__name__)
@@ -38,14 +35,7 @@ def _resolve_gemini_model_for_tier(tier: str, explicit_model: str | None = None)
 
 
 class GeminiProvider(LLMProvider):
-    """
-    Google Gemini provider.
-
-    Two paths:
-    - Legacy (default): ``ChatGoogleGenerativeAI`` from langchain-google-genai
-    - Unified (``enable_unified_providers=True``): ``ChatOpenAI`` via
-      Gemini's OpenAI-compatible endpoint
-    """
+    """Google Gemini provider via OpenAI-compatible endpoint."""
 
     @property
     def name(self) -> str:
@@ -70,75 +60,34 @@ class GeminiProvider(LLMProvider):
         **kwargs: Any,
     ) -> BaseChatModel:
         model_name = kwargs.get("model_name") or kwargs.get("model")
-        if getattr(settings, "enable_unified_providers", False):
-            return self._create_unified(tier, thinking_budget, include_thoughts, temperature, model_name=model_name)
-        return self._create_legacy(tier, thinking_budget, include_thoughts, temperature, model_name=model_name)
+        model = _resolve_gemini_model_for_tier(tier, model_name)
 
-    # --------------------------------------------------------------------- #
-    # Legacy path: ChatGoogleGenerativeAI
-    # --------------------------------------------------------------------- #
-    def _create_legacy(
-        self, tier: str, thinking_budget: int, include_thoughts: bool, temperature: float, *, model_name: str | None = None,
-    ) -> BaseChatModel:
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
-        llm_kwargs: dict[str, Any] = {
-            "model": _resolve_gemini_model_for_tier(tier, model_name),
-            "google_api_key": settings.google_api_key,
-            "temperature": temperature,
-        }
-
+        model_kwargs: dict[str, Any] = {}
         if settings.thinking_enabled and thinking_budget > 0:
-            llm_kwargs["thinking_budget"] = thinking_budget
-            if include_thoughts:
-                llm_kwargs["include_thoughts"] = True
-
-        llm = ChatGoogleGenerativeAI(**llm_kwargs)
-        logger.info(
-            "[GEMINI] Created %s instance [legacy] (budget=%d, thoughts=%s)",
-            tier.upper(), thinking_budget, include_thoughts,
-        )
-        return llm
-
-    # --------------------------------------------------------------------- #
-    # Unified path: ChatOpenAI → Gemini OpenAI-compat endpoint
-    # --------------------------------------------------------------------- #
-    def _create_unified(
-        self, tier: str, thinking_budget: int, include_thoughts: bool, temperature: float, *, model_name: str | None = None,
-    ) -> BaseChatModel:
-        from langchain_openai import ChatOpenAI
-
-        llm_kwargs: dict[str, Any] = {
-            "model": _resolve_gemini_model_for_tier(tier, model_name),
-            "api_key": settings.google_api_key,
-            "base_url": settings.google_openai_compat_url,
-            "temperature": temperature,
-            "streaming": True,
-        }
-
-        # Gemini thinking via model_kwargs passthrough
-        if settings.thinking_enabled and thinking_budget > 0:
-            llm_kwargs["model_kwargs"] = {
-                "extra_body": {
-                    "google": {
-                        "thinking_config": {
-                            "thinking_budget": thinking_budget,
-                            "include_thoughts": include_thoughts,
-                        }
+            model_kwargs["extra_body"] = {
+                "google": {
+                    "thinking_config": {
+                        "thinking_budget": thinking_budget,
+                        "include_thoughts": include_thoughts,
                     }
                 }
             }
 
-        llm = ChatOpenAI(**llm_kwargs)
+        llm = WiiiChatModel(
+            model=model,
+            api_key=settings.google_api_key,
+            base_url=settings.google_openai_compat_url,
+            temperature=temperature,
+            model_kwargs=model_kwargs,
+        )
         logger.info(
-            "[GEMINI] Created %s instance [unified/ChatOpenAI] (budget=%d, thoughts=%s)",
-            tier.upper(), thinking_budget, include_thoughts,
+            "[GEMINI] Created %s instance (model=%s, budget=%d, thoughts=%s)",
+            tier.upper(), model, thinking_budget, include_thoughts,
         )
         return llm
 
     @staticmethod
     def get_circuit_breaker():
-        """Access the underlying Gemini circuit breaker."""
         return _gemini_cb
 
     @staticmethod

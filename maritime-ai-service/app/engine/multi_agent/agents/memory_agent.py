@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 
 _MEMORY_BEHAVIOR_RULES = (
     "- Dung thong tin da biet ve user de tra loi tu nhien\n"
+    "- Neu chua co fact lau dai nhung van co hoi thoai gan day, hay dua vao ngu canh do de dap tu nhien\n"
+    "- Khong noi la 'khong biet gi' neu van dang nho doan hoi thoai vua trao doi\n"
     "- Neu user chia se thong tin moi, xac nhan da ghi nho cu the\n"
     "- Neu thong tin duoc cap nhat, de cap thay doi\n"
     "- Neu user hoi ve thong tin da luu, tra loi chinh xac va day du\n"
@@ -269,25 +271,138 @@ class MemoryAgentNode:
             fact_extractor = getattr(self._semantic_memory, "_fact_extractor", None)
             if fact_extractor is None:
                 logger.warning("[MEMORY_AGENT] No fact extractor available on semantic memory")
-                return []
+                return [], []
 
             stored_facts = await fact_extractor.extract_and_store_facts(
                 user_id=user_id,
                 message=message,
                 existing_facts=existing_facts,
-                return_decisions=True,
             )
-            if (
-                isinstance(stored_facts, tuple)
-                and len(stored_facts) == 2
-            ):
-                facts, decisions = stored_facts
-            else:
-                facts, decisions = stored_facts or [], []
+            facts = list(stored_facts or [])
+            decisions = self._classify_fact_changes(facts, existing_facts)
             return [fact.to_content() for fact in facts], list(decisions or [])
         except Exception as exc:
             logger.warning("[MEMORY_AGENT] Failed to extract facts: %s", exc)
             return [], []
+
+    def _classify_fact_changes(
+        self,
+        facts: list,
+        existing_facts: dict,
+    ) -> list:
+        extracted_facts = []
+        for fact in facts or []:
+            payload = self._fact_to_payload(fact)
+            if payload:
+                extracted_facts.append(payload)
+        if not extracted_facts:
+            return []
+        return self._updater.classify_batch(extracted_facts, existing_facts or {})
+
+    @staticmethod
+    def _fact_to_payload(fact) -> dict | None:
+        if fact is None:
+            return None
+
+        fact_type = ""
+        value = ""
+        confidence = 0.9
+
+        if isinstance(fact, dict):
+            fact_type = str(fact.get("fact_type") or fact.get("type") or "").strip()
+            value = str(fact.get("value") or fact.get("content") or "").strip()
+            confidence = float(fact.get("confidence") or confidence)
+        else:
+            if hasattr(fact, "to_content"):
+                try:
+                    content = str(fact.to_content() or "").strip()
+                except Exception:
+                    content = ""
+                if ": " in content:
+                    fact_type, value = content.split(": ", 1)
+                    fact_type = fact_type.strip()
+                    value = value.strip()
+
+            if not fact_type:
+                raw_fact_type = getattr(fact, "fact_type", None)
+                fact_type = str(getattr(raw_fact_type, "value", raw_fact_type) or "").strip()
+
+            if not value:
+                raw_value = getattr(fact, "value", "")
+                value = str(raw_value or "").strip()
+
+            raw_confidence = getattr(fact, "confidence", confidence)
+            try:
+                confidence = float(raw_confidence or confidence)
+            except (TypeError, ValueError):
+                confidence = 0.9
+
+        if not fact_type or not value:
+            return None
+
+        return {
+            "fact_type": fact_type,
+            "value": value,
+            "confidence": confidence,
+        }
+
+    @staticmethod
+    def _serialize_content(content) -> str:
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    text = str(item.get("text") or item.get("content") or "").strip()
+                    if text:
+                        parts.append(text)
+                else:
+                    text = str(item or "").strip()
+                    if text:
+                        parts.append(text)
+            return "\n".join(part for part in parts if part).strip()
+        return str(content or "").strip()
+
+    def _recent_conversation_excerpt(self, state: AgentState) -> str:
+        context = state.get("context", {}) or {}
+        history_list = context.get("history_list") or []
+        lines = []
+        for item in history_list[-6:]:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role") or "").strip().lower()
+            content = str(item.get("content") or "").strip()
+            if not content:
+                continue
+            label = "User" if role == "user" else "AI"
+            lines.append(f"{label}: {content}")
+        if lines:
+            return "\n".join(lines)
+
+        langchain_messages = context.get("langchain_messages") or []
+        for msg in langchain_messages[-6:]:
+            role = str(
+                getattr(msg, "type", None)
+                or getattr(msg, "role", None)
+                or msg.__class__.__name__
+            ).strip().lower()
+            if "system" in role:
+                continue
+            content = self._serialize_content(getattr(msg, "content", ""))
+            if not content:
+                continue
+            label = "User" if ("human" in role or role == "user") else "AI"
+            lines.append(f"{label}: {content}")
+        if lines:
+            return "\n".join(lines)
+
+        conversation_history = str(context.get("conversation_history") or "").strip()
+        if conversation_history:
+            return conversation_history[-1200:]
+        return ""
 
     async def _generate_response(
         self,
@@ -306,6 +421,9 @@ class MemoryAgentNode:
 
         try:
             context_parts = []
+            recent_conversation = self._recent_conversation_excerpt(state)
+            if recent_conversation:
+                context_parts.append(f"Doan hoi thoai gan day:\n{recent_conversation}")
             if existing_facts:
                 facts_str = "\n".join(f"- {fact['type']}: {fact['content']}" for fact in existing_facts)
                 context_parts.append(f"Thong tin da biet ve user:\n{facts_str}")
@@ -349,7 +467,7 @@ class MemoryAgentNode:
             context_block = (
                 "\n\n".join(context_parts)
                 if context_parts
-                else "Chua co thong tin nao ve user."
+                else "Chua co fact lau dai nao ve user. Neu van co ngu canh hoi thoai gan day, hay dua vao do de tra loi tu nhien."
             )
 
             messages = [SystemMessage(content=_build_memory_response_prompt(ctx.get("response_language", "vi")))]
@@ -369,12 +487,11 @@ class MemoryAgentNode:
 
             from app.services.thinking_post_processor import get_thinking_processor
 
-            extraction = get_thinking_processor().process_result(response.content)
-            result = extraction.text.strip()
-            thinking = str(extraction.thinking or "").strip()
+            text, thinking_raw = get_thinking_processor().process(response.content)
+            result = text.strip()
+            thinking = (thinking_raw or "").strip()
             if thinking:
                 state["_memory_native_thinking"] = thinking
-                state["_memory_thinking_source"] = extraction.source
                 state["thinking"] = thinking
 
             if result:

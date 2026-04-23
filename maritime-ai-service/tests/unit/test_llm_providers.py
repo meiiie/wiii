@@ -166,13 +166,13 @@ class TestGeminiProvider:
         p = GeminiProvider()
         assert p.is_available() is False
 
-    @patch("langchain_google_genai.ChatGoogleGenerativeAI")
+    @patch("app.engine.llm_providers.gemini_provider.WiiiChatModel")
     @patch("app.engine.llm_providers.gemini_provider.settings")
     def test_create_instance_returns_base_chat_model(self, mock_settings, mock_chat):
-        mock_settings.enable_unified_providers = False
         mock_settings.google_api_key = "key"
         mock_settings.google_model = "gemini-3-flash-preview"
         mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
+        mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_settings.thinking_enabled = True
         mock_instance = MagicMock(spec=BaseChatModel)
         mock_chat.return_value = mock_instance
@@ -183,13 +183,13 @@ class TestGeminiProvider:
         mock_chat.assert_called_once()
         assert mock_chat.call_args[1]["model"] == "gemini-3.1-pro-preview"
 
-    @patch("langchain_google_genai.ChatGoogleGenerativeAI")
+    @patch("app.engine.llm_providers.gemini_provider.WiiiChatModel")
     @patch("app.engine.llm_providers.gemini_provider.settings")
     def test_create_instance_without_thinking(self, mock_settings, mock_chat):
-        mock_settings.enable_unified_providers = False
         mock_settings.google_api_key = "key"
         mock_settings.google_model = "gemini-3-flash-preview"
         mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
+        mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_settings.thinking_enabled = False
         mock_instance = MagicMock(spec=BaseChatModel)
         mock_chat.return_value = mock_instance
@@ -197,17 +197,17 @@ class TestGeminiProvider:
         p = GeminiProvider()
         llm = p.create_instance(tier="light", thinking_budget=0)
         assert llm == mock_instance
-        # Should NOT have thinking_budget kwarg
+        # When thinking disabled, model_kwargs should be empty (no extra_body)
         call_kwargs = mock_chat.call_args[1]
-        assert "thinking_budget" not in call_kwargs
+        assert call_kwargs.get("model_kwargs", {}) == {}
 
-    @patch("langchain_google_genai.ChatGoogleGenerativeAI")
+    @patch("app.engine.llm_providers.gemini_provider.WiiiChatModel")
     @patch("app.engine.llm_providers.gemini_provider.settings")
     def test_create_instance_with_thinking_budget(self, mock_settings, mock_chat):
-        mock_settings.enable_unified_providers = False
         mock_settings.google_api_key = "key"
         mock_settings.google_model = "gemini-3-flash-preview"
         mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
+        mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_settings.thinking_enabled = True
         mock_chat.return_value = MagicMock(spec=BaseChatModel)
 
@@ -215,8 +215,9 @@ class TestGeminiProvider:
         p.create_instance(tier="deep", thinking_budget=8192, include_thoughts=True)
         call_kwargs = mock_chat.call_args[1]
         assert call_kwargs["model"] == "gemini-3.1-pro-preview"
-        assert call_kwargs["thinking_budget"] == 8192
-        assert call_kwargs["include_thoughts"] is True
+        thinking_config = call_kwargs["model_kwargs"]["extra_body"]["google"]["thinking_config"]
+        assert thinking_config["thinking_budget"] == 8192
+        assert thinking_config["include_thoughts"] is True
 
 
 # ============================================================================
@@ -250,7 +251,7 @@ class TestOpenAIProvider:
         p = OpenAIProvider()
         assert p.is_available() is True
 
-    @patch("langchain_openai.ChatOpenAI")
+    @patch("app.engine.llm_providers.openai_provider.WiiiChatModel")
     @patch("app.engine.llm_providers.openai_provider.settings")
     def test_create_instance_deep_uses_advanced_model(self, mock_settings, mock_chat):
         mock_settings.openai_api_key = "sk-test"
@@ -264,7 +265,7 @@ class TestOpenAIProvider:
         call_kwargs = mock_chat.call_args[1]
         assert call_kwargs["model"] == "gpt-4o"
 
-    @patch("langchain_openai.ChatOpenAI")
+    @patch("app.engine.llm_providers.openai_provider.WiiiChatModel")
     @patch("app.engine.llm_providers.openai_provider.settings")
     def test_create_instance_light_uses_standard_model(self, mock_settings, mock_chat):
         mock_settings.openai_api_key = "sk-test"
@@ -278,7 +279,7 @@ class TestOpenAIProvider:
         call_kwargs = mock_chat.call_args[1]
         assert call_kwargs["model"] == "gpt-4o-mini"
 
-    @patch("langchain_openai.ChatOpenAI")
+    @patch("app.engine.llm_providers.openai_provider.WiiiChatModel")
     @patch("app.engine.llm_providers.openai_provider.settings")
     def test_create_instance_with_custom_base_url(self, mock_settings, mock_chat):
         """Support OpenRouter via custom base_url."""
@@ -302,7 +303,7 @@ class TestOpenAIProvider:
         call_kwargs = mock_chat.call_args[1]
         assert call_kwargs["base_url"] == "https://openrouter.ai/api/v1"
 
-    @patch("langchain_openai.ChatOpenAI")
+    @patch("app.engine.llm_providers.openai_provider.WiiiChatModel")
     @patch("app.engine.llm_providers.openai_provider.settings")
     def test_create_instance_adds_openrouter_extra_body(self, mock_settings, mock_chat):
         mock_settings.openai_api_key = "sk-test"
@@ -323,7 +324,8 @@ class TestOpenAIProvider:
         p = OpenAIProvider()
         p.create_instance(tier="moderate")
         call_kwargs = mock_chat.call_args[1]
-        assert call_kwargs["extra_body"] == {
+        # extra_body is now inside model_kwargs
+        assert call_kwargs["model_kwargs"]["extra_body"] == {
             "models": ["anthropic/claude-sonnet-4"],
             "provider": {
                 "order": ["anthropic", "openai"],
@@ -335,7 +337,7 @@ class TestOpenAIProvider:
             },
         }
 
-    @patch("langchain_openai.ChatOpenAI")
+    @patch("app.engine.llm_providers.openai_provider.WiiiChatModel")
     @patch("app.engine.llm_providers.openai_provider.settings")
     def test_create_instance_no_base_url(self, mock_settings, mock_chat):
         mock_settings.openai_api_key = "sk-test"
@@ -356,8 +358,10 @@ class TestOpenAIProvider:
         p = OpenAIProvider()
         p.create_instance(tier="moderate")
         call_kwargs = mock_chat.call_args[1]
-        assert "base_url" not in call_kwargs
-        assert "extra_body" not in call_kwargs
+        # When no base_url, it's passed as empty string
+        assert call_kwargs["base_url"] == ""
+        # No OpenRouter extra_body when base_url is not an OpenRouter URL
+        assert "extra_body" not in call_kwargs.get("model_kwargs", {})
 
 
 # ============================================================================
@@ -426,69 +430,48 @@ class TestOllamaProvider:
         called_url = mock_client.get.call_args[0][0]
         assert called_url == "http://localhost:11434/api/version"
 
+    @patch("app.engine.llm_providers.ollama_provider.WiiiChatModel")
     @patch("app.engine.llm_providers.ollama_provider.settings")
-    def test_create_instance_uses_config(self, mock_settings):
-        mock_settings.enable_unified_providers = False
+    def test_create_instance_uses_config(self, mock_settings, mock_chat):
         mock_settings.ollama_base_url = "http://localhost:11434"
         mock_settings.ollama_model = "llama3.2"
         mock_settings.ollama_api_key = None
-        mock_settings.ollama_keep_alive = None
+        mock_chat.return_value = MagicMock(spec=BaseChatModel)
 
-        # Mock the langchain_ollama module since it may not be installed
-        mock_chat_ollama = MagicMock(return_value=MagicMock(spec=BaseChatModel))
-        mock_module = MagicMock()
-        mock_module.ChatOllama = mock_chat_ollama
+        p = OllamaProvider()
+        llm = p.create_instance(tier="moderate", temperature=0.5)
+        call_kwargs = mock_chat.call_args[1]
+        assert call_kwargs["model"] == "llama3.2"
+        # OllamaProvider appends /v1 for OpenAI-compat endpoint
+        assert call_kwargs["base_url"] == "http://localhost:11434/v1"
+        assert call_kwargs["temperature"] == 0.5
+        assert call_kwargs["api_key"] == "ollama"  # default placeholder
 
-        import sys
-        with patch.dict(sys.modules, {"langchain_ollama": mock_module}):
-            p = OllamaProvider()
-            llm = p.create_instance(tier="moderate", temperature=0.5)
-            call_kwargs = mock_chat_ollama.call_args[1]
-            assert call_kwargs["model"] == "llama3.2"
-            assert call_kwargs["base_url"] == "http://localhost:11434"
-            assert call_kwargs["temperature"] == 0.5
-
+    @patch("app.engine.llm_providers.ollama_provider.WiiiChatModel")
     @patch("app.engine.llm_providers.ollama_provider.settings")
-    def test_create_instance_with_cloud_api_key_sets_auth_header(self, mock_settings):
-        mock_settings.enable_unified_providers = False
+    def test_create_instance_with_cloud_api_key_sets_auth_header(self, mock_settings, mock_chat):
         mock_settings.ollama_base_url = "https://ollama.com/api"
         mock_settings.ollama_model = "gpt-oss:20b"
         mock_settings.ollama_api_key = "ollama-cloud-key"
-        mock_settings.ollama_keep_alive = None
+        mock_chat.return_value = MagicMock(spec=BaseChatModel)
 
-        mock_chat_ollama = MagicMock(return_value=MagicMock(spec=BaseChatModel))
-        mock_module = MagicMock()
-        mock_module.ChatOllama = mock_chat_ollama
-
-        import sys
-        with patch.dict(sys.modules, {"langchain_ollama": mock_module}):
-            p = OllamaProvider()
-            p.create_instance(tier="moderate", temperature=0.1)
-            call_kwargs = mock_chat_ollama.call_args[1]
-            assert call_kwargs["base_url"] == "https://ollama.com"
-            assert call_kwargs["client_kwargs"]["headers"]["Authorization"] == (
-                "Bearer ollama-cloud-key"
-            )
-
-    def test_create_instance_missing_dependency(self):
-        """Should raise ImportError with helpful message when langchain-ollama missing."""
         p = OllamaProvider()
-        with patch.dict("sys.modules", {"langchain_ollama": None}):
-            # The lazy import inside create_instance will fail
-            # We need to actually trigger the ImportError
-            with patch(
-                "app.engine.llm_providers.ollama_provider.settings"
-            ) as mock_settings:
-                mock_settings.ollama_base_url = "http://localhost:11434"
-                mock_settings.ollama_model = "llama3.2"
-                # Simulate ImportError from the lazy import
-                with patch.object(
-                    OllamaProvider,
-                    "create_instance",
-                    side_effect=ImportError("langchain-ollama is required"),
-                ):
-                    with pytest.raises(ImportError, match="langchain-ollama"):
-                        p.create_instance(tier="light")
+        p.create_instance(tier="moderate", temperature=0.1)
+        call_kwargs = mock_chat.call_args[1]
+        # Cloud key is passed directly as api_key (OpenAI SDK uses Bearer auth)
+        assert call_kwargs["api_key"] == "ollama-cloud-key"
+        assert call_kwargs["base_url"] == "https://ollama.com/api/v1"
+
+    def test_create_instance_propagates_errors(self):
+        """Errors from WiiiChatModel creation propagate correctly."""
+        p = OllamaProvider()
+        with patch.object(
+            OllamaProvider,
+            "create_instance",
+            side_effect=RuntimeError("connection refused"),
+        ):
+            with pytest.raises(RuntimeError, match="connection refused"):
+                p.create_instance(tier="light")
 
 
 # ============================================================================

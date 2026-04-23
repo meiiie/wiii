@@ -25,6 +25,21 @@ from app.engine.agentic_rag.query_analyzer import QueryComplexity
 logger = logging.getLogger(__name__)
 
 
+def _emit_crag_progress(content: str, step: str = "crag") -> None:
+    """Best-effort status event so the user sees pipeline progress."""
+    try:
+        from app.engine.tools.runtime_context import emit_tool_bus_event
+
+        emit_tool_bus_event({
+            "type": "status",
+            "content": content,
+            "step": step,
+            "details": {"subtype": "progress", "visibility": "status_only"},
+        })
+    except Exception:
+        pass
+
+
 async def process_impl(
     rag,
     query: str,
@@ -34,6 +49,7 @@ async def process_impl(
     result_cls,
     get_reasoning_tracer_fn,
     step_names_cls,
+    _prefetch_docs: Optional[list] = None,
 ):
     """Run the synchronous Corrective RAG pipeline for ``CorrectiveRAG.process``."""
     context = context or {}
@@ -81,6 +97,7 @@ async def process_impl(
         step_names_cls.QUERY_ANALYSIS,
         "Phan tich do phuc tap cau hoi",
     )
+    _emit_crag_progress("Đang phân tích câu hỏi...", "query_analysis")
     logger.info("[CRAG] Step 1: Analyzing query: '%s...'", query[:50])
     analysis = await rag._analyzer.analyze(query)
     logger.info("[CRAG] Analysis: %s", analysis)
@@ -160,6 +177,10 @@ async def process_impl(
             step_names_cls.RETRIEVAL,
             f"Tim kiem tai lieu (lan {iterations})",
         )
+        _emit_crag_progress(
+            f"Tìm kiếm tài liệu liên quan (lần {iterations})...",
+            "retrieval",
+        )
         logger.info(
             "[CRAG] Step 2.%d: Retrieving for '%s...'",
             iterations,
@@ -175,6 +196,7 @@ async def process_impl(
             current_query,
             context,
             query_embedding_override=embedding_override,
+            _prefetch_docs=_prefetch_docs if iteration == 0 else None,
         )
 
         if not documents:
@@ -209,6 +231,10 @@ async def process_impl(
         tracer.start_step(
             step_names_cls.GRADING,
             "Danh gia do lien quan cua tai lieu",
+        )
+        _emit_crag_progress(
+            f"Đánh giá {len(documents)} tài liệu...",
+            "grading",
         )
         logger.info(
             "[CRAG] Step 3.%d: Grading %d documents",
@@ -285,6 +311,7 @@ async def process_impl(
                 step_names_cls.QUERY_REWRITE,
                 "Viet lai query de cai thien ket qua",
             )
+            _emit_crag_progress("Viết lại câu hỏi để tìm chính xác hơn...", "rewrite")
             logger.info(
                 "[CRAG] Step 4.%d: Rewriting query (score=%.1f, 0 relevant docs)",
                 iterations,
@@ -369,6 +396,7 @@ async def process_impl(
     if graph_entity_context:
         context["entity_context"] = graph_entity_context
 
+    _emit_crag_progress("Tạo câu trả lời từ nguồn tài liệu...", "generation")
     tracer.start_step(step_names_cls.GENERATION, "Tao cau tra loi tu context")
     logger.info("[CRAG] Step 5: Generating answer")
     answer, sources, native_thinking = await rag._generate(
@@ -437,6 +465,7 @@ async def process_impl(
     )
 
     if should_verify:
+        _emit_crag_progress("Kiểm tra độ chính xác câu trả lời...", "verification")
         tracer.start_step(
             step_names_cls.VERIFICATION,
             "Kiem tra do chinh xac va hallucination",
