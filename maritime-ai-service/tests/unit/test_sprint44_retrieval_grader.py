@@ -399,9 +399,10 @@ class TestFeedbackGeneration:
 
     @pytest.fixture
     def grader(self):
-        with patch("app.engine.agentic_rag.retrieval_grader.get_llm_moderate", side_effect=Exception("No LLM")):
+        with patch("app.engine.agentic_rag.retrieval_grader.get_llm_moderate", side_effect=Exception("No LLM")), \
+             patch("app.engine.agentic_rag.runtime_llm_socket.get_llm_for_provider", return_value=None):
             from app.engine.agentic_rag.retrieval_grader import RetrievalGrader
-            return RetrievalGrader()
+            yield RetrievalGrader()
 
     def test_very_low_score_feedback(self, grader):
         """Very low score gets appropriate severity."""

@@ -369,7 +369,7 @@ class RetrievalGrader:
                     is_relevant=result.is_high_confidence or result.is_medium_confidence,
                     reason=(
                         f"[Reranker] score={result.score:.2f} "
-                        f"BM25={result.bm25_score:.2f} emb={result.embedding_score:.2f} "
+                        f"BM25={result.bm25_score:.2f} "
                         f"domain={result.domain_boost:.2f}"
                     ),
                 ))

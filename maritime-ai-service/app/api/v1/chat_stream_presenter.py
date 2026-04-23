@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.engine.llm_providers.wiii_chat_model import _ViSpaceInjector
+
 # ── Unified Zombie Phrase Filter (Expert Review P1) ──────────────────────
 # Single source of truth for zombie phrase filtering at SSE presentation
 # layer. ALL thinking_delta events pass through this filter regardless of
@@ -93,6 +95,8 @@ class StreamPresentationState:
 
     active_step_by_node: dict[str, str] = field(default_factory=dict)
     last_step_id: str | None = None
+    _vi_thinking: _ViSpaceInjector = field(default_factory=_ViSpaceInjector)
+    _vi_answer: _ViSpaceInjector = field(default_factory=_ViSpaceInjector)
 
     @staticmethod
     def _node_key(node: str | None) -> str:
@@ -350,8 +354,11 @@ def serialize_stream_event(
         return [format_sse("thinking", data, event_id=event_counter)], event_counter, False
 
     if event_type == "answer":
+        answer_content = event.content
+        if presentation_state and answer_content:
+            answer_content = presentation_state._vi_answer.process(answer_content)
         data = _apply_presentation_metadata(
-            payload={"content": event.content},
+            payload={"content": answer_content},
             event_type=event_type,
             event_counter=event_counter,
             event=event,
@@ -449,10 +456,11 @@ def serialize_stream_event(
         ], event_counter, False
 
     if event_type == "thinking_delta":
-        # P1: Unified zombie filter at SSE presentation layer
         filtered_content = _filter_thinking_content(event.content or "")
         if not filtered_content:
-            return [], event_counter, False  # Skip empty zombie filler
+            return [], event_counter, False
+        if presentation_state:
+            filtered_content = presentation_state._vi_thinking.process(filtered_content)
         data = _apply_presentation_metadata(
             payload={"content": filtered_content, "node": event.node},
             event_type=event_type,

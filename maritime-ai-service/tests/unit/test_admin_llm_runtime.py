@@ -20,8 +20,10 @@ def test_serialize_llm_runtime_includes_use_multi_agent():
     original_vision_timeout = getattr(settings, "vision_timeout_seconds", 30.0)
     original_embedding_model = getattr(settings, "embedding_model", None)
     original_embedding_dimensions = getattr(settings, "embedding_dimensions", None)
+    original_llm_provider = getattr(settings, "llm_provider", "zhipu")
     try:
         settings.use_multi_agent = False
+        settings.llm_provider = "google"
         settings.google_api_key = "gemini-test-key"
         settings.google_model = "gemini-3.1-flash-lite-preview"
         settings.zhipu_api_key = "zhipu-test-key"
@@ -219,6 +221,7 @@ def test_serialize_llm_runtime_includes_use_multi_agent():
         assert result.embedding_migration_previews[0].same_space is True
     finally:
         settings.use_multi_agent = original
+        settings.llm_provider = original_llm_provider
         settings.google_api_key = original_google_api_key
         settings.google_model = original_google_model
         settings.zhipu_api_key = original_zhipu_api_key

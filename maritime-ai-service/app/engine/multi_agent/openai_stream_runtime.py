@@ -357,8 +357,6 @@ async def _stream_openai_compatible_answer_with_route_impl(
                     answer_delta = cleaned_answer
                 if reasoning_delta and emit_provider_reasoning and not thinking_closed:
                     reasoning_delta = sanitize_visible_reasoning_text(reasoning_delta)
-                    # NOTE: Zombie phrase filtering now handled at SSE presentation layer
-                    # (chat_stream_presenter.py::_filter_thinking_content) — single choke point
                 if reasoning_delta and emit_provider_reasoning and not thinking_closed and not reasoning_started:
                     await push_event({
                         "type": "thinking_start",

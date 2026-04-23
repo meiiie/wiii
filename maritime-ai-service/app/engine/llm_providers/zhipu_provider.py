@@ -36,7 +36,8 @@ class ZhipuProvider(LLMProvider):
         return "zhipu"
 
     def is_configured(self) -> bool:
-        return bool(getattr(settings, "zhipu_api_key", None))
+        api_key = getattr(settings, "zhipu_api_key", None)
+        return bool(api_key) and isinstance(api_key, str)
 
     def is_available(self) -> bool:
         if not self.is_configured():

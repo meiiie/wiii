@@ -223,6 +223,66 @@ def _strip_unsupported_params(api_kwargs: dict[str, Any], base_url: str) -> dict
 
 
 # ---------------------------------------------------------------------------
+# Vietnamese space injection for Chinese-optimized tokenizers (Zhipu GLM)
+# ---------------------------------------------------------------------------
+
+_VI_VOWELS = frozenset(
+    "aăâeêioôơuưy"
+    "AĂÂEÊIOÔƠUƯY"
+    "áàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệ"
+    "íìỉĩịóòỏõọốồổỗộớờởỡợ"
+    "úùủũụứừửữựýỳỷỹỵ"
+    "ÁÀẢÃẠẮẰẲẴẶẤẦẨẪẬÉÈẺẼẸẾỀỂỄỆ"
+    "ÍÌỈĨỊÓÒỎÕỌỐỒỔỖỘỚỜỞỠỢ"
+    "ÚÙỦŨỤỨỪỬỮỰÝỲỶỸỴ"
+)
+
+
+_SPACE_AFTER_PUNCT = frozenset(".,!?;:")
+
+
+class _ViSpaceInjector:
+    """Inject missing spaces between Vietnamese syllables in streaming tokens.
+
+    Chinese-optimized BPE tokenizers (Zhipu GLM) don't emit inter-syllable
+    spaces for Vietnamese. Tracks whether the accumulated buffer forms a
+    complete syllable (contains ≥1 vowel) and injects a space when a new
+    syllable-initial token arrives. Also injects after sentence punctuation.
+    """
+
+    __slots__ = ("_has_vowel", "_after_punct")
+
+    def __init__(self) -> None:
+        self._has_vowel = False
+        self._after_punct = False
+
+    def process(self, token: str) -> str:
+        if not token:
+            return token
+
+        first_is_alpha = token[0].isalpha()
+        inject = first_is_alpha and (self._has_vowel or self._after_punct)
+
+        if inject:
+            self._has_vowel = False
+        self._after_punct = False
+
+        for ch in token:
+            if ch in _VI_VOWELS:
+                self._has_vowel = True
+            elif ch.isalpha():
+                pass
+            elif ch in _SPACE_AFTER_PUNCT:
+                self._has_vowel = False
+                self._after_punct = True
+            else:
+                self._has_vowel = False
+                self._after_punct = False
+
+        return (" " + token) if inject else token
+
+
+# ---------------------------------------------------------------------------
 # WiiiChatModel
 # ---------------------------------------------------------------------------
 
@@ -373,10 +433,21 @@ class WiiiChatModel(BaseChatModel):
             api_kwargs["stop"] = stop
 
         api_kwargs = _strip_unsupported_params(api_kwargs, self.base_url)
+
+        _injector = (
+            _ViSpaceInjector()
+            if any(h in self.base_url for h in _ZHIPU_HOSTS)
+            else None
+        )
+
         stream = await client.chat.completions.create(**api_kwargs)
         async for chunk in stream:
             gen_chunk = _openai_chunk_to_generation_chunk(chunk)
             if gen_chunk is not None:
+                if _injector and gen_chunk.message.content:
+                    gen_chunk.message.content = _injector.process(
+                        gen_chunk.message.content
+                    )
                 yield gen_chunk
 
     # ------------------------------------------------------------------ #

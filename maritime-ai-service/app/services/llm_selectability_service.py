@@ -153,12 +153,12 @@ def _friendly_reason_label(reason_code: ProviderDisabledReasonCode) -> str:
     if reason_code == "busy":
         return "Provider tam thoi ban hoac da cham gioi han."
     if reason_code == "host_down":
-        return "May chu local hien chua san sang."
+        return "Máy chủ local hiện chưa sẵn sàng."
     if reason_code == "model_missing":
-        return "Model hien tai chua kha dung tren provider nay."
+        return "Model hiện tại chưa khả dụng trên provider này."
     if reason_code == "capability_missing":
-        return "Provider nay chua du kha nang cho che do chat hien tai."
-    return "He thong dang xac minh trang thai runtime."
+        return "Provider này chưa đủ khả năng cho chế độ chat hiện tại."
+    return "Hệ thống đang xác minh trạng thái runtime."
 
 
 def _parse_iso_datetime(value: Any) -> datetime | None:

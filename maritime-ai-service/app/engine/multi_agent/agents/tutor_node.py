@@ -598,9 +598,9 @@ class TutorAgentNode:
         """
         Process educational request with ReAct pattern.
         
-        SOTA Pattern: Think â†’ Act â†’ Observe â†’ Repeat
+        SOTA Pattern: Think → Act → Observe → Repeat
         
-        CHá»ˆ THá»Š Sá» 29 v9: Option B+ - Propagates thinking to state for API transparency.
+        CHỈ THỊ SỐ 29 v9: Option B+ - Propagates thinking to state for API transparency.
         Combines thinking from:
         1. RAG tool (via get_last_native_thinking)
         2. Tutor LLM response (extracted in _react_loop)
@@ -664,7 +664,7 @@ class TutorAgentNode:
             state["agent_outputs"]["tutor_tools_used"] = tools_used  # SOTA: Track tool usage
             state["current_agent"] = "tutor_agent"
             
-            # CHá»ˆ THá»Š Sá» 29 v9: Set thinking in state for SOTA reasoning transparency
+            # CHỈ THỊ SỐ 29 v9: Set thinking in state for SOTA reasoning transparency
             # This follows the same pattern as rag_node.py
             if thinking:
                 state["thinking"] = thinking
@@ -689,7 +689,7 @@ class TutorAgentNode:
                     state["thinking_content"] = ""
                     state.pop("thinking_provenance", None)
             
-            # CHá»ˆ THá»Š Sá» 31 v3 SOTA: Propagate CRAG trace for synthesizer merge
+            # CHỈ THỊ SỐ 31 v3 SOTA: Propagate CRAG trace for synthesizer merge
             # This follows LangGraph shared state pattern
             crag_trace = get_last_reasoning_trace()
             if crag_trace:
@@ -700,7 +700,7 @@ class TutorAgentNode:
             
         except Exception as e:
             logger.error("[TUTOR_AGENT] Error: %s", e)
-            state["tutor_output"] = "Ã”i, Wiii váº¥p rá»“i! MÃ¬nh Ä‘ang cá»‘ láº¡i nhÃ©... Báº¡n thá»­ há»i láº¡i mÃ¬nh Ä‘Æ°á»£c khÃ´ng?"
+            state["tutor_output"] = "Ôi, Wiii vấp rồi! Mình đang cố lại nhé... Bạn thử hỏi lại mình được không?"
             state["error"] = "tutor_error"
             state["sources"] = []
             state["tools_used"] = []
@@ -718,11 +718,11 @@ class TutorAgentNode:
         state: AgentState | None = None,
     ) -> tuple[str, List[Dict[str, Any]], List[Dict[str, Any]], Optional[str], bool]:
         """
-        Execute ReAct loop: Think â†’ Act â†’ Observe.
+        Execute ReAct loop: Think → Act → Observe.
 
         SOTA Pattern from OpenAI Agents SDK / Anthropic Claude.
 
-        CHá»‰ THá»Š Sá» 29 v9: Now returns thinking for SOTA reasoning transparency.
+        CHỉ THỊ SỐ 29 v9: Now returns thinking for SOTA reasoning transparency.
         Combines thinking from:
         1. RAG tool (get_last_native_thinking)
         2. Tutor LLM final response (extract_thinking_from_response)
@@ -762,7 +762,7 @@ class TutorAgentNode:
         except Exception:
             pass
 
-        # Initialize messages â€” Sprint 77: inject conversation history
+        # Initialize messages — Sprint 77: inject conversation history
         messages = [SystemMessage(content=system_prompt)]
         lc_messages = context.get("langchain_messages", [])
         if lc_messages:
@@ -794,7 +794,7 @@ class TutorAgentNode:
             messages.append(HumanMessage(content=query))
         
         tools_used = []
-        max_iterations = 4  # Sprint 103bâ†’fix: 2 â†’ 4 (need room for think + search + generate)
+        max_iterations = 4  # Sprint 103b→fix: 2 → 4 (need room for think + search + generate)
         final_response = ""
         llm_thinking = None  # Thinking from final LLM response
         _answer_streamed_via_bus = False  # Legacy compatibility only; tutor no longer streams final answer
@@ -1146,11 +1146,11 @@ class TutorAgentNode:
                 SystemMessage(content=continuation_prompt),
                 HumanMessage(
                     content=(
-                        f"Cau hoi cua nguoi dung:\n{query}\n\n"
-                        f"Tom tat hoi thoai hien tai:\n{conversation_summary or '(khong co)'}\n\n"
-                        f"Mood hint hien tai:\n{mood_hint or '(khong co)'}\n\n"
-                        f"Cac tin hieu vua lo ra tu {tool_turn_label}:\n{distilled_context}\n\n"
-                        "Hay tiep tuc suy nghi noi tam cua Wiii ngay sau khi vua chot duoc cac tin hieu tren."
+                        f"Câu hỏi của người dùng:\n{query}\n\n"
+                        f"Tóm tắt hội thoại hiện tại:\n{conversation_summary or '(không có)'}\n\n"
+                        f"Mood hint hiện tại:\n{mood_hint or '(không có)'}\n\n"
+                        f"Các tín hiệu vừa lộ ra từ {tool_turn_label}:\n{distilled_context}\n\n"
+                        "Hãy tiếp tục suy nghĩ nội tâm của Wiii ngay sau khi vừa chốt được các tín hiệu trên."
                     )
                 ),
             ]
@@ -1549,7 +1549,7 @@ class TutorAgentNode:
         # Get sources from tool calls
         sources = get_last_retrieved_sources()
 
-        # CHá»ˆ THá»Š Sá» 29 v9: Get RAG thinking from tool (Option B+)
+        # CHỈ THỊ SỐ 29 v9: Get RAG thinking from tool (Option B+)
         rag_thinking = get_last_native_thinking()
         if not _should_surface_native_tutor_thought(
             rag_thinking,

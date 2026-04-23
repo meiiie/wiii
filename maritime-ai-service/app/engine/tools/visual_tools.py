@@ -1,5 +1,5 @@
 ﻿"""
-Rich Visual Widget Generator â€” Claude-level educational diagrams.
+Rich Visual Widget Generator — Claude-level educational diagrams.
 Sprint 229: Custom SVG/HTML visuals rendered inline in chat via ```widget blocks.
 
 Generates self-contained HTML+CSS+SVG for:
@@ -282,7 +282,7 @@ def _infer_renderer_kind(visual_type: str, spec: dict[str, Any], requested: str 
     if _runtime_presentation_intent() in {"article_figure", "chart_runtime"}:
         return "inline_html" if _llm_first_visual_codegen_enabled() else "template"
 
-    # Code-gen route: explanatory types with HTML builders â†’ inline_html iframe
+    # Code-gen route: explanatory types with HTML builders → inline_html iframe
     from app.core.config import get_settings
     if getattr(get_settings(), "enable_code_gen_visuals", False):
         if visual_type in _BUILDERS:
@@ -338,44 +338,44 @@ def tool_generate_visual(
     runtime_manifest_json: str = "",
     code_html: str = "",
 ) -> str:
-    """Táº¡o biá»ƒu Ä‘á»“ hoáº·c minh há»a inline trong chat.
+    """Tạo biểu đồ hoặc minh họa inline trong chat.
 
-    Wiii dÃ¹ng tool nÃ y Ä‘á»ƒ táº¡o visual giÃºp ngÆ°á»i Ä‘á»c hiá»ƒu nhanh hÆ¡n.
-    Visual hiá»‡n trá»±c tiáº¿p trong chat â€” khÃ´ng cáº§n má»Ÿ app khÃ¡c.
+    Wiii dùng tool này để tạo visual giúp người đọc hiểu nhanh hơn.
+    Visual hiện trực tiếp trong chat — không cần mở app khác.
 
-    CÃCH DÃ™NG ÄÆ N GIáº¢N NHáº¤T:
-    - Chá»‰ cáº§n gá»­i code_html (HTML fragment) â€” Ä‘Ã¢y lÃ  param duy nháº¥t cáº§n thiáº¿t
-    - visual_type vÃ  spec_json tá»± Ä‘á»™ng cÃ³ default, khÃ´ng báº¯t buá»™c
-    - VÃ­ dá»¥: tool_generate_visual(code_html="<style>...</style><div>...</div>")
+    CÁCH DÙNG ĐƠN GIẢN NHẤT:
+    - Chỉ cần gửi code_html (HTML fragment) — đây là param duy nhất cần thiết
+    - visual_type và spec_json tự động có default, không bắt buộc
+    - Ví dụ: tool_generate_visual(code_html="<style>...</style><div>...</div>")
 
     Example specs for rich output:
 
     architecture:
       {"layers": [
-        {"name": "API Gateway", "description": "Nháº­n request tá»« client, xÃ¡c thá»±c, rate limiting", "components": ["Auth", "Rate Limiter", "Router"]},
-        {"name": "Service Layer", "description": "Xá»­ lÃ½ business logic, orchestrate giá»¯a cÃ¡c service", "components": ["UserService", "OrderService", "PaymentService"]},
-        {"name": "Data Layer", "description": "LÆ°u trá»¯ vÃ  truy váº¥n dá»¯ liá»‡u", "components": ["PostgreSQL", "Redis Cache", "S3"]}
+        {"name": "API Gateway", "description": "Nhận request từ client, xác thực, rate limiting", "components": ["Auth", "Rate Limiter", "Router"]},
+        {"name": "Service Layer", "description": "Xử lý business logic, orchestrate giữa các service", "components": ["UserService", "OrderService", "PaymentService"]},
+        {"name": "Data Layer", "description": "Lưu trữ và truy vấn dữ liệu", "components": ["PostgreSQL", "Redis Cache", "S3"]}
       ]}
 
     comparison:
-      {"left": {"title": "Monolith", "subtitle": "Kiáº¿n trÃºc truyá»n thá»‘ng", "highlight": "ÄÆ¡n giáº£n triá»ƒn khai, khÃ³ scale", "items": ["Single codebase", "Shared database", "Tight coupling"]},
-       "right": {"title": "Microservices", "subtitle": "Kiáº¿n trÃºc phÃ¢n tÃ¡n", "highlight": "Scale linh hoáº¡t, phá»©c táº¡p váº­n hÃ nh", "items": ["Independent services", "Own database", "Loose coupling"]}}
+      {"left": {"title": "Monolith", "subtitle": "Kiến trúc truyền thống", "highlight": "Đơn giản triển khai, khó scale", "items": ["Single codebase", "Shared database", "Tight coupling"]},
+       "right": {"title": "Microservices", "subtitle": "Kiến trúc phân tán", "highlight": "Scale linh hoạt, phức tạp vận hành", "items": ["Independent services", "Own database", "Loose coupling"]}}
 
     process:
       {"steps": [
-        {"title": "Request Ä‘áº¿n", "description": "Client gá»­i HTTP request tá»›i API Gateway", "icon": "1", "signals": ["HTTP/HTTPS", "REST/GraphQL"]},
-        {"title": "XÃ¡c thá»±c", "description": "Gateway kiá»ƒm tra JWT token vÃ  quyá»n truy cáº­p", "icon": "2", "signals": ["JWT", "RBAC"]},
-        {"title": "Xá»­ lÃ½", "description": "Service xá»­ lÃ½ business logic vÃ  tráº£ káº¿t quáº£", "icon": "3", "signals": ["Business Logic", "Response"]}
+        {"title": "Request đến", "description": "Client gửi HTTP request tới API Gateway", "icon": "1", "signals": ["HTTP/HTTPS", "REST/GraphQL"]},
+        {"title": "Xác thực", "description": "Gateway kiểm tra JWT token và quyền truy cập", "icon": "2", "signals": ["JWT", "RBAC"]},
+        {"title": "Xử lý", "description": "Service xử lý business logic và trả kết quả", "icon": "3", "signals": ["Business Logic", "Response"]}
       ]}
 
     code_html:
-      HTML/CSS trá»±c tiáº¿p cho visual. Font: system-ui. Background: transparent.
-      Xen káº½ 5 mÃ u gradient: #D97757 (cam), #85CDCA (mint), #FFD166 (vÃ ng), #C9B1FF (tÃ­m), #E8A87C (cam nháº¡t).
-      Title nhá» (15px font-weight:600). Label rá»™ng (min-width:160px, word-wrap).
-      Má»—i bar cÃ³ giÃ¡ trá»‹ sá»‘ bÃªn pháº£i.
+      HTML/CSS trực tiếp cho visual. Font: system-ui. Background: transparent.
+      Xen kẽ 5 màu gradient: #D97757 (cam), #85CDCA (mint), #FFD166 (vàng), #C9B1FF (tím), #E8A87C (cam nhạt).
+      Title nhỏ (15px font-weight:600). Label rộng (min-width:160px, word-wrap).
+      Mỗi bar có giá trị số bên phải.
 
-      VÃ­ dá»¥ horizontal bar chart (labels rá»™ng, cÃ³ value, xen káº½ mÃ u):
-        code_html='<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui,sans-serif;background:transparent;color:#333}.root{max-width:640px;padding:16px 0}.title{font-size:15px;font-weight:600;margin-bottom:4px}.sub{font-size:13px;color:#999;margin-bottom:20px}.rows{display:flex;flex-direction:column;gap:12px}.row{display:flex;align-items:center;gap:12px}.lbl{min-width:160px;max-width:200px;font-size:13px;color:#555;text-align:right;font-weight:500;word-wrap:break-word}.track{flex:1;height:28px;background:#f5f2ef;border-radius:6px;overflow:hidden}.fill{height:100%;border-radius:6px}.val{font-size:12px;font-weight:600;color:#555;min-width:52px}</style><div class="root"><div class="title">Yáº¿u tá»‘ áº£nh hÆ°á»Ÿng giÃ¡ dáº§u 2024</div><div class="sub">Má»©c Ä‘á»™ tÃ¡c Ä‘á»™ng (%), nguá»“n: IEA World Energy Outlook</div><div class="rows"><div class="row"><div class="lbl">CÄƒng tháº³ng Ä‘á»‹a chÃ­nh trá»‹</div><div class="track"><div class="fill" style="width:95%;background:linear-gradient(90deg,#D97757,#e89a7c)"></div></div><div class="val">95%</div></div><div class="row"><div class="lbl">ChÃ­nh sÃ¡ch cáº¯t giáº£m OPEC+</div><div class="track"><div class="fill" style="width:82%;background:linear-gradient(90deg,#85CDCA,#a8ddd8)"></div></div><div class="val">82%</div></div><div class="row"><div class="lbl">Nhu cáº§u tiÃªu thá»¥ toÃ n cáº§u</div><div class="track"><div class="fill" style="width:78%;background:linear-gradient(90deg,#FFD166,#ffe09a)"></div></div><div class="val">78%</div></div><div class="row"><div class="lbl">Rá»§i ro giÃ¡n Ä‘oáº¡n chuá»—i cung á»©ng</div><div class="track"><div class="fill" style="width:65%;background:linear-gradient(90deg,#C9B1FF,#ddd0ff)"></div></div><div class="val">65%</div></div><div class="row"><div class="lbl">TÄƒng trÆ°á»Ÿng nÄƒng lÆ°á»£ng tÃ¡i táº¡o</div><div class="track"><div class="fill" style="width:45%;background:linear-gradient(90deg,#E8A87C,#f0c4a8)"></div></div><div class="val">45%</div></div></div></div>'
+      Ví dụ horizontal bar chart (labels rộng, có value, xen kẽ màu):
+        code_html='<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui,sans-serif;background:transparent;color:#333}.root{max-width:640px;padding:16px 0}.title{font-size:15px;font-weight:600;margin-bottom:4px}.sub{font-size:13px;color:#999;margin-bottom:20px}.rows{display:flex;flex-direction:column;gap:12px}.row{display:flex;align-items:center;gap:12px}.lbl{min-width:160px;max-width:200px;font-size:13px;color:#555;text-align:right;font-weight:500;word-wrap:break-word}.track{flex:1;height:28px;background:#f5f2ef;border-radius:6px;overflow:hidden}.fill{height:100%;border-radius:6px}.val{font-size:12px;font-weight:600;color:#555;min-width:52px}</style><div class="root"><div class="title">Yếu tố ảnh hưởng giá dầu 2024</div><div class="sub">Mức độ tác động (%), nguồn: IEA World Energy Outlook</div><div class="rows"><div class="row"><div class="lbl">Căng thẳng địa chính trị</div><div class="track"><div class="fill" style="width:95%;background:linear-gradient(90deg,#D97757,#e89a7c)"></div></div><div class="val">95%</div></div><div class="row"><div class="lbl">Chính sách cắt giảm OPEC+</div><div class="track"><div class="fill" style="width:82%;background:linear-gradient(90deg,#85CDCA,#a8ddd8)"></div></div><div class="val">82%</div></div><div class="row"><div class="lbl">Nhu cầu tiêu thụ toàn cầu</div><div class="track"><div class="fill" style="width:78%;background:linear-gradient(90deg,#FFD166,#ffe09a)"></div></div><div class="val">78%</div></div><div class="row"><div class="lbl">Rủi ro gián đoạn chuỗi cung ứng</div><div class="track"><div class="fill" style="width:65%;background:linear-gradient(90deg,#C9B1FF,#ddd0ff)"></div></div><div class="val">65%</div></div><div class="row"><div class="lbl">Tăng trưởng năng lượng tái tạo</div><div class="track"><div class="fill" style="width:45%;background:linear-gradient(90deg,#E8A87C,#f0c4a8)"></div></div><div class="val">45%</div></div></div></div>'
     """
     return tool_generate_visual_impl(
         visual_type=visual_type,
@@ -462,7 +462,7 @@ def get_visual_tools() -> list:
     tools = []
     if getattr(settings, "enable_structured_visuals", False):
         tools.append(tool_generate_visual)
-    # tool_create_visual_code: tool riÃªng cho LLM code-gen visuals
+    # tool_create_visual_code: tool riêng cho LLM code-gen visuals
     if getattr(settings, "enable_llm_code_gen_visuals", False):
         tools.append(tool_create_visual_code)
     return tools

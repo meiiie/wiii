@@ -77,9 +77,9 @@ def generate_suggested_questions(user_message: str, ai_response: str) -> list[st
         "excel", "word", "docx", "xlsx", "javascript", "react",
     ]):
         return [
-            "Báº¡n muá»‘n mÃ¬nh dÃ¹ng dá»¯ liá»‡u cá»¥ thá»ƒ nÃ o Ä‘á»ƒ lÃ m láº¡i phiÃªn báº£n chuáº©n hÆ¡n?",
-            "Báº¡n cÃ³ muá»‘n Ä‘á»•i kiá»ƒu hiá»ƒn thá»‹ hoáº·c mÃ u sáº¯c cá»§a artifact khÃ´ng?",
-            "Báº¡n muá»‘n mÃ¬nh xuáº¥t thÃªm má»™t file khÃ¡c nhÆ° HTML, Excel, hoáº·c Word khÃ´ng?",
+            "Bạn muốn mình dùng dữ liệu cụ thể nào để làm lại phiên bản chuẩn hơn?",
+            "Bạn có muốn đổi kiểu hiển thị hoặc màu sắc của artifact không?",
+            "Bạn muốn mình xuất thêm một file khác như HTML, Excel, hoặc Word không?",
         ]
 
     if any(keyword in response_lower for keyword in ["quy tắc", "rule", "điều", "quy định"]):

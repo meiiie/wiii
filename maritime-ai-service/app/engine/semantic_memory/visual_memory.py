@@ -267,13 +267,13 @@ class VisualMemoryManager:
             client = genai.Client()
 
             prompt = (
-                "MÃ´ táº£ chi tiáº¿t hÃ¬nh áº£nh nÃ y báº±ng tiáº¿ng Viá»‡t. "
-                "NÃªu rÃµ: loáº¡i hÃ¬nh áº£nh (biá»ƒu Ä‘á»“/báº£ng/áº£nh/sÆ¡ Ä‘á»“/tÃ i liá»‡u), "
-                "ná»™i dung chÃ­nh, cÃ¡c chi tiáº¿t quan trá»ng. "
-                "Viáº¿t ngáº¯n gá»n (50-150 tá»«)."
+                "Mô tả chi tiết hình ảnh này bằng tiếng Việt. "
+                "Nêu rõ: loại hình ảnh (biểu đồ/bảng/ảnh/sơ đồ/tài liệu), "
+                "nội dung chính, các chi tiết quan trọng. "
+                "Viết ngắn gọn (50-150 từ)."
             )
             if context_hint:
-                prompt += f"\nNgá»¯ cáº£nh: {context_hint}"
+                prompt += f"\nNgữ cảnh: {context_hint}"
 
             from app.core.config import get_settings
 
@@ -297,12 +297,12 @@ class VisualMemoryManager:
 
             description = response.text.strip() if response.text else ""
             if len(description) < 10:
-                description = "HÃ¬nh áº£nh khÃ´ng rÃµ ná»™i dung."
+                description = "Hình ảnh không rõ nội dung."
             return description
 
         except Exception as e:
             logger.warning("[VisualMemory] Image description failed: %s", e)
-            return "HÃ¬nh áº£nh do ngÆ°á»i dÃ¹ng gá»­i (khÃ´ng thá»ƒ phÃ¢n tÃ­ch chi tiáº¿t)."
+            return "Hình ảnh do người dùng gửi (không thể phân tích chi tiết)."
 
     def detect_concept_type(self, description: str) -> VisualConceptType:
         """Detect visual concept type from description text."""

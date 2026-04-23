@@ -43,6 +43,7 @@ elif _orig_cs is not None:
 # ============================================================================
 
 
+@pytest.mark.skip(reason="De-LangGraphing Phase 3: _guardian_instance removed from graph module")
 class TestGuardianSingleton:
     """Sprint 75: Guardian agent reused across invocations via module singleton."""
 
@@ -144,6 +145,7 @@ class TestGuardianSingleton:
 # ============================================================================
 
 
+@pytest.mark.skip(reason="De-LangGraphing Phase 3: build_multi_agent_graph deprecated, use WiiiRunner")
 class TestGraderRemovedFromPipeline:
     """Sprint 233: Grader removed from pipeline. All agents route to synthesizer."""
 
@@ -287,6 +289,7 @@ class TestBulkAnswerPush:
         assert elapsed < 0.01, f"Bulk push took {elapsed:.3f}s, expected < 10ms"
         assert len(chunks) == 5  # 1000 / 200
 
+    @pytest.mark.skip(reason="De-LangGraphing: _push_answer_bulk removed from refactored _react_loop")
     @pytest.mark.asyncio
     async def test_tutor_react_loop_uses_bulk_for_reemit(self):
         """When ReAct loop emits answer after thinking, should use bulk push."""
@@ -300,6 +303,7 @@ class TestBulkAnswerPush:
             "_push_answer_bulk should be used in _react_loop for answer re-emission"
         )
 
+    @pytest.mark.skip(reason="De-LangGraphing: _push_answer_deltas removed from refactored _react_loop")
     @pytest.mark.asyncio
     async def test_tutor_final_generation_still_uses_deltas(self):
         """Final generation block (line ~560) should still use _push_answer_deltas.
@@ -325,6 +329,7 @@ class TestBulkAnswerPush:
 class TestLatencyConstants:
     """Verify Sprint 75 constants are correctly set."""
 
+    @pytest.mark.skip(reason="De-LangGraphing: _BULK_SIZE removed from refactored _react_loop")
     def test_bulk_size_is_200(self):
         """_BULK_SIZE should be 200 (not 12 like _CHUNK_SIZE)."""
         from app.engine.multi_agent.agents import tutor_node as tn_mod
@@ -346,6 +351,7 @@ class TestLatencyConstants:
         source = inspect.getsource(tn_mod.TutorAgentNode._react_loop)
         assert "_CHUNK_DELAY = 0.008" in source
 
+    @pytest.mark.skip(reason="De-LangGraphing Phase 3: _guardian_instance removed")
     def test_guardian_singleton_exists(self):
         """Module-level _guardian_instance variable should exist."""
         import app.engine.multi_agent.graph as graph_mod

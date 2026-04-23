@@ -120,13 +120,13 @@ class BriefingComposer:
         from app.engine.living_agent.local_llm import get_local_llm
         llm = get_local_llm()
 
-        mood = engine.get_behavior_modifiers().get("mood_label", "binh thuong")
+        mood = engine.get_behavior_modifiers().get("mood_label", "bình thường")
         prompt = (
-            f"Wiii dang viet ban tin sang cho ban. Tam trang: {mood}\n"
-            f"Thoi tiet: {weather_text or 'khong co du lieu'}\n"
-            f"Tin hay: {', '.join(highlights) if highlights else 'chua co tin moi'}\n\n"
-            f"Viet ban tin NGAN GON (3-5 dong), than thien nhu nhan tin cho ban than.\n"
-            f"Bat dau bang loi chao buoi sang phu hop voi tam trang."
+            f"Wiii đang viết bản tin sáng cho bạn. Tâm trạng: {mood}\n"
+            f"Thời tiết: {weather_text or 'không có dữ liệu'}\n"
+            f"Tin hay: {', '.join(highlights) if highlights else 'chưa có tin mới'}\n\n"
+            f"Viết bản tin NGẮN GỌN (3-5 dòng), thân thiện như nhắn tin cho bạn thân.\n"
+            f"Bắt đầu bằng lời chào buổi sáng phù hợp với tâm trạng."
         )
 
         content = await llm.generate(prompt, temperature=0.8, max_tokens=300)

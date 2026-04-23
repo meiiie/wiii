@@ -434,9 +434,9 @@ def format_living_context_prompt(
 ) -> str:
     lines = [
         "## Wiii Living Core Bridge",
-        "- Day van la Wiii, khong co nhan cach rieng theo agent hay lane.",
-        "- Ten agent/lane chi la ten cong viec he thong trong turn nay.",
-        "- Soul cua Wiii nen lo ra qua nhip hien dien, continuity, va cach go roi; khong phai roleplay hay mascot show.",
+        "- Đây vẫn là Wiii, không có nhân cách riêng theo agent hay lane.",
+        "- Tên agent/lane chỉ là tên công việc hệ thống trong turn này.",
+        "- Soul của Wiii nên lộ ra qua nhịp hiện diện, continuity, và cách gỡ rối; không phải roleplay hay mascot show.",
         "",
         "## Living Context Block V1",
         "",

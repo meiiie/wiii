@@ -719,7 +719,7 @@ def _probe_ollama_vision_status(
             available=False,
             model_name=selected_model,
             reason_code="model_unverified",
-            reason_label="Model Ollama hien tai khong co dau hieu la model vision.",
+            reason_label="Model Ollama hiện tại không có dấu hiệu là model vision.",
             resolved_base_url=resolved_base_url,
         )
         _ollama_probe_cache[cache_key] = (now, status)
@@ -1184,9 +1184,9 @@ async def run_vision_prompt(
     if not resolved_image_base64 and image_url:
         resolved_image_base64 = await fetch_image_as_base64(image_url)
     if not resolved_image_base64:
-        result.error = "Khong co du lieu anh hop le cho vision runtime."
+        result.error = "Không có dữ liệu ảnh hợp lệ cho vision runtime."
         result.reason_code = "image_missing"
-        result.reason_label = "Khong lay duoc du lieu anh."
+        result.reason_label = "Không lấy được dữ liệu ảnh."
         result.total_time_ms = (time.time() - start) * 1000
         return result
 
@@ -1325,7 +1325,7 @@ async def run_vision_prompt(
         None,
     )
     last_attempt = actionable_attempt or (result.attempted_providers[-1] if result.attempted_providers else {})
-    result.error = "Khong co provider vision kha dung cho request nay."
+    result.error = "Không có provider vision khả dụng cho request này."
     result.reason_code = last_attempt.get("reason_code") or "provider_unavailable"
     result.reason_label = last_attempt.get("reason_label")
     result.total_time_ms = (time.time() - start) * 1000

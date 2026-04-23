@@ -5,7 +5,7 @@ Extracted from chat_service.py as part of Clean Architecture refactoring.
 Orchestrates the complete chat processing pipeline.
 
 **Pattern:** Orchestrator / Pipeline
-**Spec:** CHá»ˆ THá»Š Ká»¸ THUáº¬T Sá» 25 - Project Restructure
+**Spec:** CHỈ THỊ KỸ THUẬT SỐ 25 - Project Restructure
 
 Authoritative request flow:
 see app/services/REQUEST_FLOW_CONTRACT.md
@@ -85,7 +85,7 @@ class AgentType(str, Enum):
     CODE_STUDIO = "code_studio"
 
 
-# Map supervisor next_agent values â†’ AgentType
+# Map supervisor next_agent values → AgentType
 _AGENT_TYPE_MAP = {
     "rag_agent": AgentType.RAG,
     "tutor_agent": AgentType.TUTOR,

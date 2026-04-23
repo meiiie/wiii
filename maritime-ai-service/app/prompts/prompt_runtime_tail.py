@@ -109,9 +109,9 @@ def get_thinking_instruction_from_shared_config(shared_config: dict[str, Any]) -
         if instruction:
             return instruction.strip()
 
-    return """## NGUYEN TAC SUY LUAN:
-1. Neu model co native thinking, hay de native thinking dan duong cho cau tra loi. Chi dung <thinking>...</thinking> khi model khong co native thinking.
-2. Trong <thinking>, tap trung vao dieu de nham, dieu kien ap dung, diem neo lap luan, muc can doi, hoac dieu gi con chua chac.
-3. KHONG lap dan y cau tra loi. KHONG ban ve loi chao, emoji, formatting, schema, hay "gio den phan cau tra loi".
-4. KHONG viet nhap cau tra loi cho user trong <thinking>. Thinking chi duoc la dong suy tu noi tam, khong phai mini-answer.
-5. Sau <thinking>, moi dua ra cau tra loi chinh thuc."""
+    return """## NGUYÊN TẮC SUY LUẬN:
+1. Nếu model có native thinking, hãy để native thinking dẫn đường cho câu trả lời. Chỉ dùng <thinking>...</thinking> khi model không có native thinking.
+2. Trong <thinking>, tập trung vào điều dễ nhầm, điều kiện áp dụng, điểm neo lập luận, mức cân đối, hoặc điều gì còn chưa chắc.
+3. KHÔNG lập dàn ý câu trả lời. KHÔNG bàn về lời chào, emoji, formatting, schema, hay "giờ đến phần câu trả lời".
+4. KHÔNG viết nháp câu trả lời cho user trong <thinking>. Thinking chỉ được là dòng suy tư nội tâm, không phải mini-answer.
+5. Sau <thinking>, mới đưa ra câu trả lời chính thức."""

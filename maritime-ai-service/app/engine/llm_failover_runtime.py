@@ -134,12 +134,12 @@ def is_failover_eligible_error_impl(error: Exception) -> bool:
 
 
 _FAILOVER_REASON_LABELS: dict[str, str] = {
-    "rate_limit": "Provider vuot gioi han hoac dang bi quota/rate limit.",
-    "auth_error": "Xac thuc provider that bai.",
-    "provider_unavailable": "Provider tam thoi khong kha dung.",
-    "host_down": "Host dich vu hoac local runtime hien khong san sang.",
-    "server_error": "Provider tra ve loi may chu.",
-    "timeout": "Provider phan hoi qua lau va da bi timeout.",
+    "rate_limit": "Provider vượt giới hạn hoặc đang bị quota/rate limit.",
+    "auth_error": "Xác thực provider thất bại.",
+    "provider_unavailable": "Provider tạm thời không khả dụng.",
+    "host_down": "Host dịch vụ hoặc local runtime hiện không sẵn sàng.",
+    "server_error": "Provider trả về lỗi máy chủ.",
+    "timeout": "Provider phản hồi quá lâu và đã bị timeout.",
 }
 
 

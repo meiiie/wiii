@@ -96,9 +96,9 @@ def _format_execution_result(result: SandboxExecutionResult) -> str:
         )
 
     if result.success and not output_parts:
-        return "Code chay thanh cong (khong co output)"
+        return "Code chạy thành công (không có output)"
 
-    return "\n\n".join(output_parts) if output_parts else "Code chay that bai."
+    return "\n\n".join(output_parts) if output_parts else "Code chạy thất bại."
 
 
 def _summarize_artifact(artifact: SandboxArtifact) -> str:

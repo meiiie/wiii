@@ -112,7 +112,7 @@ def resolve_runtime_route_impl(
                 raise provider_unavailable_error_cls(
                     provider=primary,
                     reason_code="busy",
-                    message="Provider duoc chon hien khong san sang de xu ly yeu cau nay.",
+                    message="Provider được chọn hiện không sẵn sàng để xử lý yêu cầu này.",
                 )
             logger_ref.warning(
                 "[LLM_POOL] Requested provider %s unavailable, falling back to auto route",
@@ -182,7 +182,7 @@ def resolve_runtime_route_impl(
         raise provider_unavailable_error_cls(
             provider="auto",
             reason_code="busy",
-            message="Hien khong co provider nao dang san sang cho che do Tu dong.",
+            message="Hiện không có provider nào đang sẵn sàng cho chế độ Tự động.",
         )
 
     llm = get_default_llm(tier_key)

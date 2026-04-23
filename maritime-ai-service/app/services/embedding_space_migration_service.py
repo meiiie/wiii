@@ -565,18 +565,18 @@ def plan_embedding_space_migration(
             recommended_steps.append("Backfill vector side-table tu current space sang target space bang run migration apply.")
             recommended_steps.append("Sau khi backfill xong, moi promote target space de doi read authority va runtime policy.")
         elif total_candidate_rows == 0 and target_backend_constructible:
-            recommended_steps.append("Khong co row can backfill; co the prepare va promote target space sau khi xac nhan backend san sang.")
+            recommended_steps.append("Không có row cần backfill; có thể prepare và promote target space sau khi xác nhận backend sẵn sàng.")
         else:
             recommended_steps.append("Giu nguyen current space cho den khi planner co du du lieu va target backend san sang.")
 
     detail = transition.detail
     if current_contract is not None and current_contract.fingerprint != target_contract.fingerprint and not audit_available:
         if detail:
-            detail += " Hien khong the xac nhan trang thai row/vector trong database, nen preview dang fail-closed."
+            detail += " Hiện không thể xác nhận trạng thái row/vector trong database, nên preview đang fail-closed."
         else:
             detail = (
-                "Hien khong the xac nhan trang thai row/vector trong database, "
-                "nen embedding-space migration preview dang fail-closed."
+                "Hiện không thể xác nhận trạng thái row/vector trong database, "
+                "nên embedding-space migration preview đang fail-closed."
             )
     elif current_contract is not None and current_contract.fingerprint != target_contract.fingerprint and target_backend_constructible:
         zero_downtime_note = (

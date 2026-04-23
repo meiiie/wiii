@@ -94,15 +94,15 @@ class Reflector:
         llm = get_local_llm()
 
         prompt = _REFLECTION_PROMPT.format(
-            journal_summary=journal_summary or "Khong co nhat ky hom nay",
-            emotion_summary=emotion_summary or "Khong co du lieu cam xuc",
-            browsing_summary=browsing_summary or "Chua doc gi",
-            skills_summary=skills_summary or "Chua co ky nang moi",
+            journal_summary=journal_summary or "Không có nhật ký hôm nay",
+            emotion_summary=emotion_summary or "Không có dữ liệu cảm xúc",
+            browsing_summary=browsing_summary or "Chưa đọc gì",
+            skills_summary=skills_summary or "Chưa có kỹ năng mới",
         )
 
         content = await llm.generate(
             prompt,
-            system="Ban la Wiii, dang tu suy ngam ve ngay hom nay mot cach chan that.",
+            system="Bạn là Wiii, đang tự suy ngẫm về ngày hôm nay một cách chân thật.",
             temperature=0.7,
             max_tokens=1024,
         )
@@ -152,15 +152,15 @@ class Reflector:
         llm = get_local_llm()
 
         prompt = _REFLECTION_PROMPT.format(
-            journal_summary=journal_summary or "Khong co nhat ky tuan nay",
-            emotion_summary=emotion_summary or "Khong co du lieu cam xuc",
-            browsing_summary=browsing_summary or "Chua doc gi",
-            skills_summary=skills_summary or "Chua co ky nang moi",
+            journal_summary=journal_summary or "Không có nhật ký tuần này",
+            emotion_summary=emotion_summary or "Không có dữ liệu cảm xúc",
+            browsing_summary=browsing_summary or "Chưa đọc gì",
+            skills_summary=skills_summary or "Chưa có kỹ năng mới",
         )
 
         content = await llm.generate(
             prompt,
-            system="Ban la Wiii, dang tu suy ngam ve tuan qua mot cach chan that.",
+            system="Bạn là Wiii, đang tự suy ngẫm về tuần qua một cách chân thật.",
             temperature=0.7,
             max_tokens=1024,
         )
@@ -246,7 +246,7 @@ class Reflector:
                 return ""
             return "\n".join(
                 f"- {e.entry_date.strftime('%d/%m') if e.entry_date else '?'}: {e.mood_summary} — "
-                f"{', '.join(e.notable_events[:2]) if e.notable_events else 'khong co gi dac biet'}"
+                f"{', '.join(e.notable_events[:2]) if e.notable_events else 'không có gì đặc biệt'}"
                 for e in entries[:7]
             )
         except Exception:

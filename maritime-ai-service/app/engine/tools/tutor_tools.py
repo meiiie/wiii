@@ -181,7 +181,7 @@ async def tool_lesson_status() -> str:
     tool_state = _get_state()
 
     if not tool_state.session_id:
-        return "Khong co buoi hoc nao dang hoat dong. Hay noi 'Day toi ve [chu de]' de bat dau."
+        return "Không có buổi học nào đang hoạt động. Hãy nói 'Dạy tôi về [chủ đề]' để bắt đầu."
 
     try:
         state = _tutor_agent.get_session(tool_state.session_id)
@@ -221,7 +221,7 @@ async def tool_end_lesson() -> str:
     tool_state = _get_state()
 
     if not tool_state.session_id:
-        return "Khong co buoi hoc nao dang hoat dong."
+        return "Không có buổi học nào đang hoạt động."
 
     try:
         state = _tutor_agent.get_session(tool_state.session_id)
