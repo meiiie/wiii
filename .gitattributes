@@ -1,0 +1,76 @@
+# Normalize line endings on check-in; checkout is platform-native.
+# Prevents CRLF / LF mismatch warnings that show up on Windows machines.
+* text=auto eol=lf
+
+# Explicitly treat shell and CI scripts as LF-only (Bash is picky).
+*.sh        text eol=lf
+*.bash      text eol=lf
+Makefile    text eol=lf
+Dockerfile  text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+
+# Windows batch / PowerShell must keep CRLF so cmd.exe doesn't choke.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# Source — enforce LF so diffs stay clean across platforms.
+*.py        text eol=lf diff=python
+*.pyi       text eol=lf diff=python
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.js        text eol=lf
+*.jsx       text eol=lf
+*.json      text eol=lf
+*.toml      text eol=lf
+*.md        text eol=lf diff=markdown
+*.rs        text eol=lf diff=rust
+*.html      text eol=lf diff=html
+*.css       text eol=lf
+*.sql       text eol=lf
+
+# Binary — never EOL-normalize, never diff as text.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
+*.tar.gz    binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.otf       binary
+*.eot       binary
+*.mp3       binary
+*.mp4       binary
+*.wav       binary
+*.sqlite    binary
+*.db        binary
+*.pkl       binary
+*.onnx      binary
+*.safetensors binary
+
+# Generated / lock files — keep diffs but don't count as review surface.
+package-lock.json   linguist-generated=true
+yarn.lock           linguist-generated=true
+pnpm-lock.yaml      linguist-generated=true
+Cargo.lock          linguist-generated=true
+poetry.lock         linguist-generated=true
+requirements*.txt   linguist-generated=false
+
+# Jupyter notebooks — diff via nbdiff when available, otherwise avoid noise.
+*.ipynb             linguist-language=Python
+
+# Large vendored content — exclude from language stats so GitHub reports the
+# real tech mix.
+Documents/*         linguist-documentation
+docs/**             linguist-documentation
+**/*.min.js         linguist-generated=true
+**/*.min.css        linguist-generated=true
+
+# Windows text files with a BOM we want to keep intact (ignore normalization).
+*.csv               text eol=lf
