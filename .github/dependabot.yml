@@ -126,6 +126,9 @@ updates:
       # dedicated window (was recurring PR #57, #61).
       - dependency-name: "uuid"
         update-types: ["version-update:semver-major"]
+      # react-markdown 9 → 10 is a plugin-API rewrite (was PR #62).
+      - dependency-name: "react-markdown"
+        update-types: ["version-update:semver-major"]
     groups:
       tauri:
         patterns:
