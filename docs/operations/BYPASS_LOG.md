@@ -42,8 +42,30 @@ Every bypass event is appended here within 24 hours. Format:
 - **Merged PR / commit produced**: PR #26 merged as squash commit `a14757d`. Contains: `.github/CODEOWNERS` (adds @wiiiii123), `docs/operations/WIII_BRANCH_PROTECTION.md` (adds "Second code owner" section), `docs/operations/BYPASS_LOG.md` (initial file with the first event recorded).
 - **Re-enable confirmation**: Protection restored from the pre-bypass snapshot. All fields verbatim: `enforce_admins: true`, `require_code_owner_reviews: true`, `required_approving_review_count: 1`, `require_last_push_approval: true`, `required_status_checks.contexts: ["CodeRabbit"]`, `required_conversation_resolution: true`.
 - **Follow-up**:
-  - Every subsequent PR (including the still-open PR #25 for CI stabilization and the Dependabot queue) can now merge via the normal workflow: @wiiiii123 approves PRs authored by @meiiie, and vice versa. No more bypass required for the self-approval reason.
-  - A third bypass this quarter triggers a protection-policy review per `WIII_BRANCH_PROTECTION.md`. Two out of three used today — any subsequent bypass in Q2 2026 must be for a genuinely different reason (production incident, security patch window, etc.).
+  - Every subsequent PR (including the still-open PR #25 for CI stabilization and the Dependabot queue) can now merge via the normal workflow: @wiiiii123 approves PRs authored by @meiiie, and vice versa.
+  - PR #25 and PR #27 were subsequently merged on 2026-04-25 after the admin-override policy change (see below).
+
+---
+
+## 2026-04-25 — Policy change, not a bypass event
+
+Not strictly a bypass event, but recorded here so the audit trail is complete.
+
+Rationale: on review, the maintainer decided that routing every @meiiie-authored PR through @wiiiii123 added more friction than review-value, given there is only one architectural owner. See `WIII_BRANCH_PROTECTION.md` → "Admin override policy" for the full rationale.
+
+Change applied:
+
+- `enforce_admins` flipped from `true` to `false` on `main`.
+- Admins (@meiiie) can now `gh pr merge --admin --squash` without a second approval.
+- Non-admins (@wiiiii123, Dependabot, future collaborators) remain bound by review, status checks, signed commits, and conversation resolution.
+- CodeRabbit continues to run on every PR; its commit status is the primary pre-merge signal when @meiiie self-reviews.
+
+Immediate merges enabled by this change:
+
+- PR #25 (CI stabilization, 55 files) — merged as squash commit `61d6e3a`.
+- PR #27 (bypass-log entry for 2026-04-24 event #2) — merged as squash commit `e5accaf`.
+
+This is reversible. If the admin-override policy is rescinded (see "When to reconsider" in the policy doc), flip `enforce_admins` back to `true` via `gh api -X PUT` on the protection endpoint.
 
 ---
 
