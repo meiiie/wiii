@@ -1,0 +1,55 @@
+name: Operations / Maintenance Task
+description: Track cleanup, governance, documentation, release, CI, or infrastructure work.
+title: "[Ops]: "
+labels: ["maintenance", "needs-triage"]
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: What operational outcome should be true when this is complete?
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Repository hygiene
+        - Documentation governance
+        - CI/build
+        - Release readiness
+        - Runtime configuration
+        - Database/migration
+        - Security/auth hardening
+        - Observability
+        - Dependency/tooling
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      placeholder: |
+        In scope:
+        Out of scope:
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification Plan
+      description: Exact commands, checks, review evidence, or manual validation.
+    validations:
+      required: true
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback / Recovery
+      description: How do we undo or recover if this goes wrong?

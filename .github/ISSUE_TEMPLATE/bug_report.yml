@@ -1,0 +1,88 @@
+name: Bug Report
+description: Report a reproducible defect in Wiii.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for defects, regressions, broken runtime behavior, and incorrect user-visible output.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken and why does it matter?
+      placeholder: Wiii does X when it should do Y...
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - P0 - release blocker or data/security risk
+        - P1 - major feature path broken
+        - P2 - degraded behavior with workaround
+        - P3 - minor issue or polish
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Backend API
+        - Chat pipeline
+        - Memory/identity
+        - RAG/retrieval
+        - LLM/provider runtime
+        - Tools/MCP
+        - LMS/embed/host context
+        - Desktop frontend
+        - Database/migrations
+        - Documentation/governance
+        - CI/build/deployment
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction Steps
+      description: Provide exact steps, request payloads, prompts, or commands.
+      placeholder: |
+        1. Start ...
+        2. Send ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: Include logs, screenshots, response snippets, or error messages when possible.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Windows 11, Docker prod compose, localhost:1420, backend 8080...
+    validations:
+      required: true
+  - type: textarea
+    id: checks
+    attributes:
+      label: Verification Already Tried
+      placeholder: Commands run, tests run, logs inspected, provider status...
+  - type: textarea
+    id: risk
+    attributes:
+      label: Risk Notes
+      description: Mention security, tenant isolation, memory, auth, migration, or data risks if relevant.

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Wiii operations documentation
+    url: https://github.com/meiiie/LMS_AI/tree/main/docs/operations
+    about: Read governance, cleanup, and repository hygiene standards before opening maintenance work.

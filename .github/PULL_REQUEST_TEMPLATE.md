@@ -1,32 +1,61 @@
 ## Summary
 
-Brief description of changes.
+Describe the change in 2-5 sentences. State the user/system outcome, not only the files changed.
 
-## Type of Change
+## Linked Work
 
-- [ ] Bug fix (non-breaking change that fixes an issue)
-- [ ] New feature (non-breaking change that adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to change)
-- [ ] Documentation update
-- [ ] Refactoring (no functional changes)
-- [ ] Tests (adding or updating tests)
+Refs #
 
-## Changes Made
+## Scope
 
-- Change 1
-- Change 2
+- In scope:
+- Out of scope:
 
-## Testing
+## Change Type
 
-- [ ] Backend tests pass (`pytest tests/unit/ -p no:capture --tb=short`)
-- [ ] Desktop tests pass (`npx vitest run`) — if desktop changes
-- [ ] New tests added for new functionality
-- [ ] Lint passes (`ruff check app/`)
+- [ ] Bug fix
+- [ ] Feature
+- [ ] Refactor
+- [ ] Documentation/governance
+- [ ] Test-only
+- [ ] Build/CI/dependency
+- [ ] Security/auth/privacy
+- [ ] Database/migration
+- [ ] Breaking change
 
-## Screenshots
+## Risk Checklist
 
-If UI changes, add before/after screenshots.
+- [ ] No unrelated dirty worktree changes were staged.
+- [ ] No secrets, tokens, private data, or local-only files are committed.
+- [ ] Auth, tenant isolation, memory, and user identity behavior were considered.
+- [ ] Feature flags and default behavior were considered.
+- [ ] Database migrations are included or explicitly not required.
+- [ ] Rollback path is clear.
 
-## Notes
+## Verification
 
-Any additional context for reviewers.
+List exact commands and results. If a check was not run, state why.
+
+```text
+Command:
+Result:
+```
+
+## UI Evidence
+
+Required for frontend-visible changes. Attach screenshots or recordings, or write `N/A`.
+
+## Deployment Notes
+
+- Environment/config changes:
+- Migration/backfill steps:
+- Monitoring/logs to watch:
+- Rollback:
+
+## Reviewer Focus
+
+Tell reviewers where to spend attention first.
+
+- Critical paths:
+- Edge cases:
+- Known limitations:

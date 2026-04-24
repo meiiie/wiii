@@ -1,0 +1,14 @@
+# Default ownership for repository review routing.
+#
+# Keep this file conservative. Specialized team ownership can be added later
+# when GitHub teams exist.
+
+* @meiiie
+
+/.github/ @meiiie
+/docs/ @meiiie
+/docs/operations/ @meiiie
+/maritime-ai-service/app/core/ @meiiie
+/maritime-ai-service/app/auth/ @meiiie
+/maritime-ai-service/alembic/ @meiiie
+/wiii-desktop/src/ @meiiie

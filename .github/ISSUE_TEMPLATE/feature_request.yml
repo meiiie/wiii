@@ -1,0 +1,62 @@
+name: Feature Request
+description: Propose a product or platform capability.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user, operator, or developer problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: Describe the intended behavior and primary user flow.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Backend API
+        - Chat pipeline
+        - Memory/identity
+        - RAG/retrieval
+        - LLM/provider runtime
+        - Tools/MCP
+        - LMS/embed/host context
+        - Desktop frontend
+        - Database/migrations
+        - Documentation/governance
+        - CI/build/deployment
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      placeholder: |
+        - Given ...
+        - When ...
+        - Then ...
+    validations:
+      required: true
+  - type: textarea
+    id: non_scope
+    attributes:
+      label: Non-Scope
+      description: What should this issue explicitly not change?
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and Constraints
+      description: Include auth, memory, tenant isolation, provider cost, migration, or UX risks.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
