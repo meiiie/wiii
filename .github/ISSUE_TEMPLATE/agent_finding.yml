@@ -1,0 +1,136 @@
+name: Agent Finding
+description: An AI agent (Codex, Claude, or other) surfaced a signal worth tracking. Includes provenance fields so maintainers can triage agent output.
+title: "[Agent]: "
+labels: ["agent-finding", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when an AI agent produced the report. The provenance fields let maintainers understand who / what / when / confidence and decide whether to convert this into a Bug, Feature, or Operations issue.
+
+        **Do not file the same finding under multiple templates.** If you are unsure of severity or type, leave it as an Agent Finding and a human maintainer will reclassify.
+
+  - type: textarea
+    id: finding
+    attributes:
+      label: Finding
+      description: One or two sentences summarizing what was observed. Do not paste raw chat logs here — extract the signal.
+      placeholder: The CRAG fallback path returns a static message for queries that hit the 0-document branch, instead of attempting a web search.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agent_name
+    attributes:
+      label: Agent
+      options:
+        - Claude Code (Anthropic)
+        - Codex (OpenAI)
+        - CodeRabbit
+        - Cursor
+        - GitHub Copilot
+        - Other (describe in details)
+    validations:
+      required: true
+
+  - type: input
+    id: agent_model
+    attributes:
+      label: Model version
+      description: Exact model ID so maintainers can reproduce. Example — claude-opus-4-7, gpt-5-mini, codex-2026-04, coderabbit-pro.
+      placeholder: claude-opus-4-7
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Source of signal
+      description: How was this finding produced?
+      options:
+        - Code audit / read-only review
+        - Failing test discovered while implementing
+        - Running the product and observing behavior
+        - CodeRabbit review comment
+        - Static analysis / lint
+        - Type check / compile error
+        - CI failure
+        - Documentation cross-check
+        - User-reported and reproduced by agent
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: confidence
+    attributes:
+      label: Agent confidence
+      description: How confident is the agent that this is real and actionable?
+      options:
+        - High — agent verified the behavior with code and tests
+        - Medium — agent read code, did not run it
+        - Low — pattern match only, maintainer should confirm
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Suggested classification
+      description: If a maintainer takes this on, what should it become?
+      options:
+        - Likely Bug
+        - Likely Feature
+        - Likely Operations / hygiene
+        - Likely Security (will re-route privately)
+        - Unclear — maintainer please decide
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: File paths, line numbers, log snippets, reproduction commands, or diff hunks. Prefer `file:line` references.
+      placeholder: |
+        maritime-ai-service/app/engine/agentic_rag/corrective_rag_generation.py:274
+        Log:
+        ```
+        KB returned 0 documents for query "giá dầu hôm nay"
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested_owner
+    attributes:
+      label: Suggested owner path
+      description: Which subsystem or path should triage this? Use glob-style paths so CODEOWNERS routing works.
+      placeholder: maritime-ai-service/app/engine/agentic_rag/**
+    validations:
+      required: false
+
+  - type: textarea
+    id: proposed_fix
+    attributes:
+      label: Proposed fix (optional)
+      description: If the agent has a concrete suggestion, describe it. Maintainers are not bound to the agent's proposal.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Related context
+      description: Linked issues, linked PRs, prior agent sessions, or relevant docs. Use `#123` for issue numbers.
+
+  - type: checkboxes
+    id: compliance
+    attributes:
+      label: Agent compliance
+      description: Confirm the agent followed filing rules.
+      options:
+        - label: No user PII, tokens, or private data were pasted into this report.
+          required: true
+        - label: The finding is one coherent signal, not a combined list of unrelated issues.
+          required: true
+        - label: If CodeRabbit or another reviewer already commented on this, that thread is linked above.
+          required: true
