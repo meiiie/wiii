@@ -46,7 +46,7 @@ Configure under **Settings → Branches → Branch protection rules → `main`**
 - **Require linear history**: ✅ (squash or rebase — no merge commits)
 - **Require deployments to succeed before merging**: ❌ (deployments are manual for now)
 - **Lock branch**: ❌
-- **Do not allow bypassing the above settings**: ✅ (applies to admins too — bypass becomes an explicit policy change via PR to this file)
+- **Do not allow bypassing the above settings**: ⚠️ **Admins may bypass** (`enforce_admins: false`). See "Admin override policy" below for rationale. Non-admin collaborators remain bound.
 
 ### Push rules
 
@@ -89,6 +89,33 @@ Automated agents that push commits or open PRs must:
 4. Open PRs as the bot account. A human PR owner declares themselves in the PR template's `PR owner` field and is accountable for the final diff.
 
 Why: agent-produced commits under a human's account distort attribution and make post-incident review harder. A bot account with a verified key is explicit and revocable.
+
+## Admin override policy (`enforce_admins: false`)
+
+Adopted: 2026-04-25.
+
+The main branch keeps every review and status-check rule active, but **admins are exempt from them** (`enforce_admins: false` in the GitHub UI). Practical effect:
+
+- `@meiiie` (admin) can merge own PRs with `gh pr merge --admin --squash`. No secondary approval required.
+- `@wiiiii123` (write) is still bound: needs an approving review from a code owner who is not the PR author.
+- CodeRabbit, status checks, conversation resolution, and signed-commit requirements continue to apply to non-admins.
+
+Why this is a considered policy, not a bypass:
+
+- The alternative — routing every @meiiie-authored PR through @wiiiii123 — adds a manual account-switch step per PR. Over the multi-agent workflow (Dependabot queue, Codex / Claude PRs, governance fixes), that friction produces more risk-of-error from fatigue than it removes from missed review.
+- `@meiiie` is the sole architectural owner of the repo. A one-person review lane is honest about the situation rather than theatrical.
+- CodeRabbit's automated review still runs on every PR, producing a diff analysis that @meiiie reads before merging. That is the actual safety net, not the GitHub approve button.
+
+When to reconsider:
+
+- If a third maintainer joins who can routinely review @meiiie's PRs, re-enable `enforce_admins: true` and remove admin override.
+- If a production incident is traced to an unreviewed @meiiie merge, re-enable `enforce_admins: true` and accept the friction.
+- If the Dependabot queue causes noise but no real review, tighten auto-merge instead of lowering review bars further.
+
+Accountability:
+
+- Every admin merge is still recorded in `git log` with the PR link and the merger's identity. `git log --grep "(#[0-9]*)"` on main yields the audit trail.
+- CodeRabbit's commit status on the PR is the best available pre-merge signal when @meiiie self-reviews.
 
 ## Second code owner — avoiding the self-approval deadlock
 
@@ -142,13 +169,13 @@ These paths are also flagged in `.coderabbit.yaml` `path_instructions` for deepe
 
 Maintainer re-walks this list each quarter and opens an `Operations` issue for any drift:
 
-1. GitHub UI `main` rule matches the _Required Settings_ section above.
-2. `CODEOWNERS` file is current (no orphaned teams, all paths have at least one owner).
+1. GitHub UI `main` rule matches the _Required Settings_ section above (including `enforce_admins: false` — see "Admin override policy").
+2. `CODEOWNERS` file is current (both @meiiie and @wiiiii123 on every path).
 3. `.github/workflows/*.yml` job names still match the _Required status checks_ list.
 4. `.coderabbit.yaml` is present and has not been disabled.
 5. Dependabot auto-merge allowlist has not silently expanded.
 6. No bypass events were unlogged.
-7. Bot accounts still have their signing keys valid.
+7. Admin-override policy is still appropriate — see the "When to reconsider" list in "Admin override policy".
 
 ## Related Documents
 
