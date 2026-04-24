@@ -50,7 +50,7 @@ opensandbox-code-interpreter>=0.1.1,<0.2.0
 google-genai>=1.66.0,<2.0.0
 
 # Semantic Memory
-numpy>=1.24.0
+numpy>=1.26.4
 scikit-learn>=1.8.0
 
 # Graph DB
