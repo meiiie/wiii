@@ -67,6 +67,87 @@ _NEWS_RSS_FEEDS = {
 
 
 # =============================================================================
+# SOTA relevance filter — align with Perplexity / Gemini Deep Research
+# =============================================================================
+
+# Vietnamese + English function words that should not count as content matches.
+# Without this filter, queries like "giá dầu hôm nay" match every trending
+# article that contains "hôm nay" — producing noise instead of relevance.
+_VI_EN_STOPWORDS = frozenset({
+    # Vietnamese common fillers
+    "là", "của", "và", "cho", "với", "các", "những", "một", "tôi", "bạn", "mình",
+    "hôm", "nay", "qua", "mai", "đang", "sẽ", "có", "không", "được", "rồi",
+    "thì", "mà", "như", "để", "từ", "trong", "ngoài", "ở", "đến", "theo",
+    "hay", "hoặc", "nhưng", "này", "kia", "đó", "ai", "gì", "sao", "nào",
+    "mới", "cũ", "lại", "đã", "chỉ", "cũng", "thêm", "nữa", "ra", "vào",
+    "về", "trên", "dưới", "trước", "sau", "giữa", "bên", "lúc", "khi",
+    "tại", "bởi", "do", "nên", "vì", "nếu", "thì",
+    # English
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+    "what", "when", "where", "who", "how", "why", "i", "you", "we", "they",
+    "today", "now", "current", "latest", "today's",
+})
+
+
+def _content_words(query: str) -> list[str]:
+    """Tokenize a query into content-carrying lowercase words (≥2 chars, non-stopword)."""
+    raw = [w.strip(".,!?;:\"'()[]{}").lower() for w in (query or "").split()]
+    return [w for w in raw if len(w) >= 2 and w not in _VI_EN_STOPWORDS]
+
+
+def _relevance_score(query: str, result: dict) -> float:
+    """Fraction of query content words found in result title+body. 0.0 to 1.0."""
+    words = _content_words(query)
+    if not words:
+        return 1.0
+    title = str(result.get("title", ""))
+    body = str(result.get("body") or result.get("snippet") or result.get("summary") or "")
+    text = f"{title} {body}".lower()
+    matches = sum(1 for w in words if w in text)
+    return matches / len(words)
+
+
+def _filter_by_relevance(query: str, results: list, *, threshold: float = 0.5) -> list:
+    """Keep results whose content-word overlap with query is ≥ threshold.
+
+    SOTA research agents (Perplexity, Gemini Deep Research) always post-filter
+    retrieval — blindly forwarding search output to the LLM pollutes grounding.
+    We require ≥50% of content words to appear in title+body by default.
+    """
+    if not results:
+        return results
+    scored = [(r, _relevance_score(query, r)) for r in results]
+    kept = [r for (r, s) in scored if s >= threshold]
+    if not kept:
+        # Fallback: keep top-N by score even if all below threshold, so the
+        # agent still has something to work from rather than an empty set.
+        scored.sort(key=lambda pair: pair[1], reverse=True)
+        kept = [r for (r, s) in scored[: min(3, len(scored))] if s > 0]
+    return kept
+
+
+# Finance-specific site list for price/market queries.
+_FINANCE_SITES = [
+    "tradingview.com", "investing.com", "bloomberg.com",
+    "reuters.com", "cnbc.com", "ft.com",
+    "vietstock.vn", "cafef.vn", "vneconomy.vn", "ndh.vn",
+]
+
+_FINANCE_KEYWORDS = (
+    "giá dầu", "giá vàng", "giá xăng", "chứng khoán", "cổ phiếu", "tỷ giá",
+    "lãi suất", "trái phiếu", "chỉ số", "vn-index", "vnindex",
+    "bitcoin", "ethereum", "crypto", "tiền ảo",
+    "brent", "wti", "gold", "oil price", "stock", "forex",
+    "usd/vnd", "eur/vnd", "jpy/vnd",
+)
+
+
+def _is_finance_query(query: str) -> bool:
+    q = (query or "").lower()
+    return any(kw in q for kw in _FINANCE_KEYWORDS)
+
+
+# =============================================================================
 # Circuit breaker helpers
 # =============================================================================
 
@@ -180,28 +261,31 @@ def _rss_fetch_sync(query: str, max_results: int = 5) -> list:
     """Fetch Vietnamese news from RSS feeds, filtered by query keywords.
 
     Sprint 102: Uses feedparser for RSS aggregation. Graceful on ImportError.
+    SOTA filter: require ≥60% of content words to match; reject stopword-only
+    matches (e.g. "hôm nay" matching every trending article).
     """
     try:
         import feedparser
     except ImportError:
         return []
 
-    query_words = [w.lower() for w in query.split() if len(w) >= 2]
-    if not query_words:
+    content_query_words = _content_words(query)
+    if not content_query_words:
         return []
 
     results = []
     for source, url in _NEWS_RSS_FEEDS.items():
         try:
             feed = feedparser.parse(url)
-            for entry in feed.entries[:10]:
-                title = (entry.get("title") or "").lower()
-                summary = (entry.get("summary") or "").lower()
-                text = f"{title} {summary}"
-                if any(w in text for w in query_words):
+            for entry in feed.entries[:15]:
+                title = (entry.get("title") or "")
+                summary = (entry.get("summary") or "")
+                text = f"{title} {summary}".lower()
+                matches = sum(1 for w in content_query_words if w in text)
+                if matches / max(len(content_query_words), 1) >= 0.6:
                     results.append({
-                        "title": entry.get("title", ""),
-                        "body": entry.get("summary", "")[:300],
+                        "title": title,
+                        "body": summary[:300],
                         "href": entry.get("link", ""),
                         "source": source,
                         "date": entry.get("published", ""),
@@ -264,10 +348,24 @@ def tool_web_search(query: str) -> str:
         from app.engine.tools.serper_web_search import is_serper_available, _serper_search
 
         if is_serper_available():
-            results = _serper_search(query, max_results=5)
+            # SOTA finance routing: for price/market queries, restrict to
+            # dedicated financial sites first (TradingView, Bloomberg, Reuters,
+            # VietStock, CafeF) — generic Google returns noise for real-time prices.
+            if _is_finance_query(query):
+                site_filter = " OR ".join(f"site:{s}" for s in _FINANCE_SITES)
+                finance_q = f"({site_filter}) {query}"
+                finance_results = _serper_search(finance_q, max_results=5)
+                finance_results = _filter_by_relevance(query, finance_results, threshold=0.4)
+                if finance_results:
+                    _cb_record_success(_CB_NAME)
+                    logger.info("[WEB_SEARCH] Finance-site branch returned %d results", len(finance_results))
+                    return _format_results(finance_results, "WEB_SEARCH")
+
+            results = _serper_search(query, max_results=8)
+            results = _filter_by_relevance(query, results, threshold=0.5)
             if results:
                 _cb_record_success(_CB_NAME)
-                return _format_results(results, "WEB_SEARCH")
+                return _format_results(results[:5], "WEB_SEARCH")
             # Serper returned empty — fall through to DuckDuckGo
 
         # DuckDuckGo fallback
@@ -275,12 +373,13 @@ def tool_web_search(query: str) -> str:
 
         future = _executor.submit(_search_sync, query)
         results = future.result(timeout=WEB_SEARCH_TIMEOUT)
+        results = _filter_by_relevance(query, results or [], threshold=0.5)
 
         if not results:
             return "Không tìm thấy kết quả trên web."
 
         _cb_record_success(_CB_NAME)
-        return _format_results(results, "WEB_SEARCH")
+        return _format_results(results[:5], "WEB_SEARCH")
 
     except concurrent.futures.TimeoutError:
         _cb_record_failure(_CB_NAME)
@@ -346,6 +445,11 @@ def tool_search_news(query: str) -> str:
             if url and url not in seen_urls:
                 seen_urls.add(url)
                 all_results.append(r)
+
+        # SOTA relevance gate: reject articles whose title+body doesn't
+        # actually cover the query content words. Without this, RSS and Serper
+        # feed trending noise (e.g. vnexpress trending articles for "giá dầu").
+        all_results = _filter_by_relevance(query, all_results, threshold=0.5)
 
         if not all_results:
             return "Không tìm thấy tin tức liên quan."

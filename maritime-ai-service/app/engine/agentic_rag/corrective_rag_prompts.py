@@ -28,9 +28,26 @@ def build_fallback_system_prompt(
     avoid_text: str,
     domain_name: str,
     natural_enabled: bool,
+    web_context: str = "",
 ) -> str:
-    """Build the fallback CRAG system prompt for 0-doc turns."""
+    """Build the fallback CRAG system prompt for 0-doc turns.
+
+    When `web_context` is non-empty, the prompt instructs the model to treat the
+    provided web results as additional grounding, cite domain sources, and flag
+    uncertainty — still refusing canned refusals.
+    """
     enforcement = get_thinking_enforcement() + "\n\n"
+
+    web_block = ""
+    if web_context:
+        web_block = (
+            "\n\nKết quả tìm kiếm web (dùng làm thông tin tham khảo bổ sung):\n"
+            f"{web_context}\n\n"
+            "Hướng dẫn dùng kết quả web: nếu thông tin thực sự khớp câu hỏi, "
+            "hãy tổng hợp rõ ràng và ghi chú nguồn (ví dụ: 'theo imo.org', 'theo wikipedia'). "
+            "Nếu không khớp hoặc chất lượng thấp, hãy bỏ qua và trả lời từ kiến thức chung, "
+            "có gợi ý người dùng đối chiếu tài liệu chính thức khi áp dụng thực tế.\n"
+        )
 
     if natural_enabled:
         return (
@@ -48,6 +65,7 @@ def build_fallback_system_prompt(
             "không nhắc các câu xin lỗi hay từ chối cứng. "
             f"{emoji_usage} "
             "Wiii trả lời bằng tiếng Việt, đi thẳng vào nội dung."
+            + web_block
         )
 
     return (
@@ -68,4 +86,5 @@ def build_fallback_system_prompt(
         f"{emoji_usage} "
         "BẮT BUỘC: Trả lời hoàn toàn bằng TIẾNG VIỆT. "
         "TUYỆT ĐỐI KHÔNG trả lời bằng tiếng Anh."
+        + web_block
     )
