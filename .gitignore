@@ -107,10 +107,6 @@ wiii-desktop/dist-web/
 pytest-cache-files-*
 .agents/
 AGENTS.md
-.Codex/external/OpenGenerativeUI/
+.Codex/external/
 .Codex/tmp/
-.Codex/reports/*.json
-.Codex/reports/*.txt
-.Codex/reports/*.png
-.Codex/reports/*.html
-!.Codex/reports/thinking-review-latest.html
+.Codex/reports/

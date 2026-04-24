@@ -29,4 +29,4 @@ Use this folder for repository-level documentation that explains the product, th
 - Put stable planning and design documents under `docs/plans/`.
 - Put reviewed cleanup, release, and governance documents under `docs/operations/`.
 - Keep desktop-only docs under `wiii-desktop/docs/`.
-- Agent-generated working reports stay under `.Codex/reports/` or `.claude/reports/` and are intentionally non-canonical until promoted.
+- Do not commit agent-generated working reports. Keep temporary reports in ignored local scratch paths and promote durable findings into canonical docs.

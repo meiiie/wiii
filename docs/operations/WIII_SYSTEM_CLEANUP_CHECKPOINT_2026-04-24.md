@@ -102,8 +102,6 @@ Reproducible but costly dependency candidates:
 
 High-risk cleanup targets requiring a separate retention decision:
 
-- `.Codex/reports`, because it contains many tracked historical artifacts.
-- `.claude/reports`, because it may contain active legacy operational history.
 - `docs/assets/screenshots`, because assets may be referenced by docs.
 - `maritime-ai-service/data`, because it contains domain data.
 - Untracked source-like files such as ingestion scripts, local analyses, and new Playwright configs.
@@ -113,9 +111,23 @@ High-risk cleanup targets requiring a separate retention decision:
 This checkpoint establishes:
 
 - `docs/operations/` as the canonical location for operational governance and cleanup checkpoints.
-- `.Codex/reports/` and `.claude/reports/` as working-report locations, not canonical source-of-truth locations.
-- Untracked scratch reports from the current research should be deleted after their findings are consolidated into this checkpoint.
-- Broad tracked-report cleanup is intentionally deferred until a separate retention issue and PR.
+- `.Codex/reports/` and `.claude/reports/` as retired local scratch paths, not canonical source-of-truth locations.
+- Untracked scratch reports from the current research were deleted after their findings were consolidated into this checkpoint.
+- Legacy tracked report trees were removed from source control after the canonical operations docs were established.
+- Future report output should stay ignored unless promoted into `docs/operations/`, `docs/plans/`, or the relevant product documentation area.
+
+## Cleanup Execution Update
+
+Executed on 2026-04-24:
+
+- Removed tracked non-canonical report trees: `.Codex/reports/`, `.claude/reports/`, and `maritime-ai-service/.claude/reports/`.
+- Removed local generated/dependency artifacts: `wiii-desktop/node_modules`, `maritime-ai-service/.venv`, `.Codex/external`, `.Codex/tmp`, Tauri target, Vite dist outputs, test results, screenshots, logs, caches, and Python `__pycache__` directories.
+- Updated `.gitignore` so `.Codex/reports/`, `.Codex/external/`, `.Codex/tmp/`, and `.claude/reports/` stay out of source control.
+- Left source-like untracked files for explicit triage instead of deleting them as generic junk.
+
+Known residue:
+
+- Several root `pytest-cache-files-*` directories remain at `0 KB` because Windows denied deletion. They are ignored and should be retried after reboot or with corrected ACLs if necessary.
 
 ## Follow-Up Backlog
 
@@ -127,8 +139,8 @@ Recommended issue sequence:
 4. Fix `ToolCategory.LMS` registration drift.
 5. Generate a runtime feature and tool capability matrix.
 6. Remove duplicate production env keys.
-7. Decide retention policy for `.Codex/reports` and `.claude/reports`.
-8. Delete safe generated artifacts only when local rebuild cost is acceptable.
+7. Triage source-like untracked files and decide whether they belong in source, docs, or deletion.
+8. Reinstall local dependencies only when development resumes: `npm install` in `wiii-desktop` and virtualenv setup in `maritime-ai-service`.
 
 ## Verification Notes
 
