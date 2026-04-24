@@ -38,7 +38,7 @@ psycopg[binary]>=3.1.0,<4.0.0
 openai~=2.32.0
 
 # MCP Support (Sprint 56: Model Context Protocol)
-mcp~=1.26.0
+mcp~=1.27.0
 fastapi-mcp~=0.4.0
 langchain-mcp-adapters>=0.2.2,<1.0.0
 opensandbox>=0.1.5,<0.2.0
