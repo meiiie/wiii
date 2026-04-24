@@ -54,7 +54,7 @@ numpy>=1.26.4
 scikit-learn>=1.8.0
 
 # Graph DB
-neo4j~=5.28.0
+neo4j>=5.28,<6.2
 
 # PDF Processing
 pypdf>=4.0.0
