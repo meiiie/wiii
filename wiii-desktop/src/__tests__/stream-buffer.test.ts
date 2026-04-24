@@ -179,10 +179,12 @@ describe("StreamBuffer", () => {
       onFlush: (c) => chunks.push(c),
       minCharsPerFrame: 1,
       maxCharsPerFrame: 12,
-      targetFrames: 8,
       minFlushInterval: 0, initialHoldMs: 0,
     });
-    buf.push("ab"); // 2 chars, ceil(2/8)=1, clamped to min=1
+    // Small buffer with a word boundary at position 1 — adaptive pacing lands
+    // at minCharsPerFrame (1), and the segmenter finds that boundary within
+    // SNAP_RANGE so it returns 1 unchanged (no snap past minimum).
+    buf.push("a b");
     tickFrame();
     expect(chunks[0].length).toBe(1); // minCharsPerFrame
   });

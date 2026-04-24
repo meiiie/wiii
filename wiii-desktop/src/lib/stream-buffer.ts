@@ -220,29 +220,40 @@ export class StreamBuffer {
    * Snap flush count to nearest word boundary.
    * SOTA 2026: Uses Intl.Segmenter("vi") for Vietnamese/CJK-aware word breaks.
    * Falls back to ASCII punctuation scan when Segmenter unavailable.
+   *
+   * Both branches cap overshoot at SNAP_RANGE chars past count. A "word"
+   * whose end sits beyond that range (e.g. a long URL or repeated-char
+   * buffer) is NOT allowed to override adaptive pacing — otherwise
+   * pathological streams would burst-flush the entire buffer in one frame.
    */
   private _snapToWordBoundary(count: number): number {
     if (count >= this._buffer.length) return count;
 
+    const SNAP_RANGE = 6;
+
     // Try Intl.Segmenter first — handles Vietnamese diacritics correctly
     if (this._segmenter) {
-      const slice = this._buffer.slice(0, Math.min(this._buffer.length, count + 8));
+      const searchLimit = Math.min(this._buffer.length, count + SNAP_RANGE);
+      const slice = this._buffer.slice(0, searchLimit);
       const segments = this._segmenter.segment(slice);
-      let bestPos = count;
       let pos = 0;
       for (const seg of segments) {
         pos += seg.segment.length;
-        // Find the segment boundary closest to (and preferably >= ) count
         if (pos >= count) {
-          bestPos = pos;
+          // Only snap if within SNAP_RANGE. A segment that ends exactly
+          // at slice-edge likely reflects the slice truncation, not a
+          // real word boundary, so require strict less-than.
+          if (pos - count < SNAP_RANGE) {
+            return Math.min(pos, this._buffer.length);
+          }
           break;
         }
       }
-      return Math.max(1, Math.min(bestPos, this._buffer.length));
+      return count;
     }
 
-    // Fallback: ASCII punctuation scan ±6 chars
-    const SEARCH_RANGE = 6;
+    // Fallback: ASCII punctuation scan ±SNAP_RANGE chars
+    const SEARCH_RANGE = SNAP_RANGE;
     const searchStart = Math.max(1, count - SEARCH_RANGE);
     const searchEnd = Math.min(this._buffer.length, count + SEARCH_RANGE);
 
