@@ -90,6 +90,25 @@ Automated agents that push commits or open PRs must:
 
 Why: agent-produced commits under a human's account distort attribution and make post-incident review harder. A bot account with a verified key is explicit and revocable.
 
+## Second code owner — avoiding the self-approval deadlock
+
+GitHub forbids self-approval of a PR. If `CODEOWNERS` has only one owner and that owner authors a PR, branch protection cannot be satisfied without a bypass (see `BYPASS_LOG.md`).
+
+Wiii's current second-owner setup:
+
+- **@meiiie** — primary maintainer, repository admin.
+- **@wiiiii123** — secondary code owner, added 2026-04-24 as `write` collaborator.
+
+Both appear on every `CODEOWNERS` line joined with a space, which GitHub treats as an OR — any one of the listed owners can satisfy the required-review gate. This means:
+
+- PRs authored by @meiiie can be approved by @wiiiii123.
+- PRs authored by @wiiiii123 can be approved by @meiiie.
+- Neither can approve their own PRs, which is the correct safety boundary.
+
+If a third owner is added later (e.g., a dedicated maintainer bot), append `@<login>` to the same lines; do **not** duplicate path entries with different owners on separate lines, because GitHub then requires approval from each of the duplicate lines.
+
+Reconciliation: if either code owner becomes inactive for >30 days, open an Ops issue to add a replacement. Do not leave the project with only one effective reviewer — that is how bypass events happen.
+
 ## Bypass and emergency repair
 
 - Bypassing branch protection requires a human maintainer to temporarily disable the rule, perform the change, then re-enable.
