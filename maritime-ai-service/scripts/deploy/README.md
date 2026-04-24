@@ -179,9 +179,11 @@ Operational consequence:
 Set image tags in `.env.production`:
 
 ```bash
-WIII_APP_IMAGE=ghcr.io/meiiie/lms-ai-app:main
-WIII_NGINX_IMAGE=ghcr.io/meiiie/lms-ai-nginx:main
+WIII_APP_IMAGE=ghcr.io/meiiie/wiii-app:main
+WIII_NGINX_IMAGE=ghcr.io/meiiie/wiii-nginx:main
 ```
+
+The legacy `ghcr.io/meiiie/lms-ai-app` and `ghcr.io/meiiie/lms-ai-nginx` tags are still being published for one release cycle so existing deployments keep pulling while they migrate. New deploys should pin the `wiii-*` names.
 
 To deploy a pinned revision, use matching `sha-...` tags for both images.
 

@@ -98,8 +98,8 @@ Current deployment flow:
 1. Push to `main` triggers `.github/workflows/build-production-images.yml`.
 2. CI builds `wiii-desktop/dist-embed/` as a build artifact.
 3. CI builds and publishes:
-   - `ghcr.io/meiiie/lms-ai-app:*`
-   - `ghcr.io/meiiie/lms-ai-nginx:*`
+   - `ghcr.io/meiiie/wiii-app:*` (legacy `ghcr.io/meiiie/lms-ai-app:*` is still pushed for one release window)
+   - `ghcr.io/meiiie/wiii-nginx:*` (legacy `ghcr.io/meiiie/lms-ai-nginx:*` is still pushed for one release window)
 4. The app image serves embed assets from `/app-embed`.
 5. The nginx image serves embed assets from `/usr/share/nginx/embed`.
 6. Production deploy pulls tagged images instead of rebuilding frontend assets on the host.

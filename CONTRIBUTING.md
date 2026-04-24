@@ -128,6 +128,6 @@ test(rag): add corrective RAG edge cases
 
 ## Getting Help
 
-- Open an [issue](https://github.com/meiiie/LMS_AI/issues) for bugs or feature requests
+- Open an [issue](https://github.com/meiiie/wiii/issues) for bugs or feature requests
 - Check existing issues before creating new ones
 - Use issue templates for consistent reporting
