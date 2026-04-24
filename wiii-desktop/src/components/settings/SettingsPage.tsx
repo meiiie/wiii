@@ -305,7 +305,14 @@ export function SettingsPage() {
           )}
 
           {activeTab === "memory" && (
-            <MemoryTab userId={authMode === "oauth" && authUser?.id ? authUser.id : settings.user_id} />
+            <MemoryTab userId={
+              authMode === "oauth" && authUser?.id
+                ? authUser.id
+                // Legacy/dev mode: backend under ENVIRONMENT=production forces
+                // auth.user_id="api-client" for API-key auth, so match that on
+                // the client side to avoid a 403 ownership mismatch.
+                : (authMode === "legacy" ? "api-client" : settings.user_id)
+            } />
           )}
 
           {activeTab === "context" && (

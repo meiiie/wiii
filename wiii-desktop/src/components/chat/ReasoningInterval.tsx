@@ -76,7 +76,9 @@ function getNodeLabel(node?: string) {
   return NODE_LABELS[normalizeNode(node)] || node || "Đang suy luận";
 }
 
-// Wiii-voice fallback labels (Tier 2) — used when no persona_label received
+// Wiii-voice fallback labels (Tier 2) — used when no persona_label received.
+// Wiii is a Living Agent (Soul AGI, Sprints 170-210) — her cute personality is
+// core identity, not cosmetic. Keep the aliveness.
 const WIII_FALLBACK_LABELS_LIVE = "Wiii đang suy nghĩ~ (˶˃ ᵕ ˂˶)";
 const WIII_FALLBACK_LABELS_DONE = [
   "Wiii đã nghĩ xong~ (˶˃ ᵕ ˂˶)",

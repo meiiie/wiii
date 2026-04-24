@@ -191,9 +191,12 @@ export function LoginScreen() {
       settings,
       typeof window !== "undefined" ? window.location.hostname : "",
     );
-    if (Object.keys(localDevPatch).length > 0) {
-      await updateSettings(localDevPatch);
-    }
+    // Sprint 226 local fix: backend under ENVIRONMENT=production forces
+    // auth.user_id="api-client" for API-key auth regardless of X-User-ID.
+    // Align local settings.user_id so ownership-checked endpoints
+    // (/memories/{user_id}, /insights/{user_id}, ...) match and don't 403.
+    localDevPatch.user_id = "api-client";
+    await updateSettings(localDevPatch);
     await setLegacyMode();
   };
 
@@ -227,6 +230,15 @@ export function LoginScreen() {
         `/api/v1/auth/magic-link/ws/${data.session_id}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
+
+      // Dev convenience: when backend indicates Resend is a placeholder, it
+      // returns the verify URL directly. Auto-open it after the WS is ready so
+      // the magic link flow completes without waiting for an email.
+      if (data.dev_verify_url) {
+        ws.addEventListener("open", () => {
+          window.open(data.dev_verify_url, "_blank", "noopener,noreferrer");
+        }, { once: true });
+      }
 
       ws.onmessage = async (event) => {
         try {
