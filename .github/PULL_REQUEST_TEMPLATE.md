@@ -11,6 +11,15 @@ Refs #
 - In scope:
 - Out of scope:
 
+## Ownership and Coordination
+
+- PR owner:
+- Agents involved:
+- Owned paths:
+- Out-of-scope paths:
+- Conflict risk:
+- Merge decision owner:
+
 ## Change Type
 
 - [ ] Bug fix
@@ -27,6 +36,8 @@ Refs #
 
 - [ ] No unrelated dirty worktree changes were staged.
 - [ ] No secrets, tokens, private data, or local-only files are committed.
+- [ ] Multi-agent file ownership was declared when more than one agent contributed.
+- [ ] CodeRabbit findings are resolved, deferred with rationale, or explicitly not applicable.
 - [ ] Auth, tenant isolation, memory, and user identity behavior were considered.
 - [ ] Feature flags and default behavior were considered.
 - [ ] Database migrations are included or explicitly not required.

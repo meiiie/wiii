@@ -6,13 +6,15 @@ Owner: Project leadership
 
 Last updated: 2026-04-24
 
-Applies to: issues, pull requests, branch protection, reviews, labels, merge readiness, release hygiene
+Applies to: issues, pull requests, branch protection, reviews, CodeRabbit, labels, merge readiness, release hygiene
 
 ## Executive Policy
 
 GitHub is the operational control plane for Wiii engineering work.
 
 Every non-trivial change must be traceable from issue to branch to pull request to verification evidence. The default standard is not "code exists"; the standard is "reviewers can understand scope, risk, validation, and rollback without reconstructing the investigation from chat history."
+
+For multi-agent work, also follow `WIII_MULTI_AGENT_MAINTAINER_PROTOCOL.md`.
 
 ## Required Flow
 
@@ -60,6 +62,7 @@ Every PR must include:
 - Summary of user/system outcome.
 - Linked issue or explicit reason no issue exists.
 - In-scope and out-of-scope boundaries.
+- PR owner, agents involved, owned paths, and conflict risk when multiple agents contribute.
 - Exact verification commands and results.
 - Rollback or recovery notes.
 - Reviewer focus areas.
@@ -78,6 +81,7 @@ Minimum review expectations:
 
 - One approving review for normal changes.
 - Owner review for auth, identity, memory, migration, tenant isolation, provider runtime, deployment, or GitHub governance changes.
+- CodeRabbit review/check resolved or explicitly documented as not applicable.
 - Screenshot or recording evidence for frontend-visible changes.
 - Explicit test evidence or explicit explanation when tests are not run.
 
@@ -99,8 +103,11 @@ Configure `main` with:
 - Require pull request before merge.
 - Require at least one approval.
 - Dismiss stale approvals when new commits are pushed.
+- Require CODEOWNERS review.
+- Require last push approval when available.
 - Require conversation resolution before merge.
-- Require status checks to pass before merge.
+- Require the `CodeRabbit` status check.
+- Require CI checks after backend/desktop/image workflows are stable on `main`.
 - Require branches to be up to date before merge when practical.
 - Block force pushes.
 - Block branch deletion.
@@ -108,10 +115,28 @@ Configure `main` with:
 
 Recommended required checks:
 
+- CodeRabbit.
 - Backend unit tests.
 - Desktop unit tests.
 - Production image build when deployment files change.
 - Lint/type checks when available.
+
+Do not require currently failing CI checks until they are made consistently green on `main`; otherwise branch protection becomes noise instead of a control.
+
+## CodeRabbit Policy
+
+CodeRabbit is configured through `.coderabbit.yaml`.
+
+Repository policy:
+
+- Review draft PRs and incremental pushes.
+- Use assertive review profile for security, correctness, and maintainability.
+- Keep generated/dependency/local artifacts out of review scope.
+- Apply path-specific instructions for auth, core config, multi-agent graph, RAG, living agent, MCP, migrations, frontend, GitHub automation, and operational docs.
+- Suggest labels and reviewers, but do not auto-apply or auto-assign.
+- Keep `request_changes_workflow` disabled until the team confirms CodeRabbit false-positive rate on real PRs.
+
+Maintainers must resolve, defer, or explicitly reject CodeRabbit findings before merge. CodeRabbit does not replace human ownership.
 
 ## CODEOWNERS Policy
 
