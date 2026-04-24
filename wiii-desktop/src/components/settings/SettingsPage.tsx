@@ -361,7 +361,7 @@ export function SettingsPage() {
               await clearOllamaApiKey();
             } catch { /* ignore */ }
             setDraft({
-              server_url: "http://localhost:8000",
+              server_url: "http://localhost:8080",
               api_key: "local-dev-key",
               facebook_cookie: "",
             });
@@ -409,7 +409,7 @@ export function ConnectionTab({
           type="url"
           value={draft.server_url}
           onChange={(e) => setDraft({ ...draft, server_url: e.target.value })}
-          placeholder="http://localhost:8000"
+          placeholder="http://localhost:8080"
           className="w-full px-3 py-2 rounded-lg border border-border bg-surface-secondary text-text text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
         />
       </FieldGroup>

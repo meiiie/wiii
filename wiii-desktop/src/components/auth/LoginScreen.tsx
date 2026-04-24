@@ -29,7 +29,7 @@ export function resolveDevModeSettingsPatch(
   const patch: Partial<AppSettings> = {};
 
   if (!settings.server_url && isLocalBrowser) {
-    patch.server_url = DEFAULT_SERVER_URL || "http://localhost:8000";
+    patch.server_url = DEFAULT_SERVER_URL || "http://localhost:8080";
   }
 
   if (
