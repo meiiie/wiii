@@ -26,9 +26,10 @@ Every bypass event is appended here within 24 hours. Format:
   - PR #6 — `docs + chore: governance gap close + naming migration (CoC, Dependabot, agent template, branch protection)` — merged as squash commit `4c29c4e`.
   - PR #7 — `fix + feat: demo stabilization bundle (Gemini 2.5 compat, magic-link dev, admin embed, SOTA search)` — merged as squash commit `db0efe2`.
 - **Re-enable confirmation**: `PUT /repos/meiiie/wiii/branches/main/protection` succeeded with the exact pre-bypass payload. `gh api repos/meiiie/wiii/branches/main/protection` post-restore shows `required_status_checks.contexts: ["CodeRabbit"]`, `enforce_admins.enabled: true`, `required_pull_request_reviews.required_approving_review_count: 1`, `require_last_push_approval: true`, `require_code_owner_reviews: true`, `required_conversation_resolution.enabled: true`. Configuration matches pre-bypass verbatim.
-- **Follow-up**:
-  - Add a second code-owner account (human or dedicated maintainer bot) so future PRs from @meiiie can satisfy review requirements without bypass. Tracked in `docs/operations/WIII_BRANCH_PROTECTION.md` "Agent identity and attribution" section — suggested accounts: `wiii-codex[bot]`, `wiii-claude[bot]`.
-  - Until a second owner exists, future self-authored PRs will need the same documented bypass. Three bypasses per quarter triggers a protection-policy review per `WIII_BRANCH_PROTECTION.md`.
-  - Open an Ops issue for "provision secondary code owner for main".
+- **Follow-up** (resolved same day):
+  - Added **@wiiiii123** as `write` collaborator (invitation ID 316160239, sent 2026-04-24 15:49 UTC). @wiiiii123 is an existing second GitHub account belonging to the same maintainer; using it as a second code owner avoided the overhead of provisioning a new bot identity.
+  - Updated `.github/CODEOWNERS` to list `@meiiie @wiiiii123` on every path — OR semantics means either can approve any PR they are not the author of.
+  - Updated `docs/operations/WIII_BRANCH_PROTECTION.md` with a dedicated "Second code owner — avoiding the self-approval deadlock" section describing the pattern.
+  - Pending: @wiiiii123 must **accept** the invitation at https://github.com/meiiie/wiii/invitations and then configure GPG/SSH signing so future commits from that account are verified. Until accepted, the CODEOWNERS entry for that login is inert and the next @meiiie-authored PR would still need a bypass.
 
 ---

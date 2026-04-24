@@ -1,14 +1,19 @@
 # Default ownership for repository review routing.
 #
+# Multiple owners on a line are OR'd for approval: any one of them can
+# approve. This is intentional — it lets @meiiie and @wiiiii123 cross-review
+# each other's PRs without requiring a third party and without triggering
+# the self-approval deadlock documented in docs/operations/BYPASS_LOG.md.
+#
 # Keep this file conservative. Specialized team ownership can be added later
 # when GitHub teams exist.
 
-* @meiiie
+* @meiiie @wiiiii123
 
-/.github/ @meiiie
-/docs/ @meiiie
-/docs/operations/ @meiiie
-/maritime-ai-service/app/core/ @meiiie
-/maritime-ai-service/app/auth/ @meiiie
-/maritime-ai-service/alembic/ @meiiie
-/wiii-desktop/src/ @meiiie
+/.github/                           @meiiie @wiiiii123
+/docs/                              @meiiie @wiiiii123
+/docs/operations/                   @meiiie @wiiiii123
+/maritime-ai-service/app/core/      @meiiie @wiiiii123
+/maritime-ai-service/app/auth/      @meiiie @wiiiii123
+/maritime-ai-service/alembic/       @meiiie @wiiiii123
+/wiii-desktop/src/                  @meiiie @wiiiii123
