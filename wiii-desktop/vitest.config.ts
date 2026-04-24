@@ -13,6 +13,18 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["src/__tests__/setup.ts"],
+    // Keep vitest's default excludes and add the Playwright spec folder —
+    // playwright/*.spec.ts uses @playwright/test's test.describe(), which
+    // throws when collected by vitest. Those files run via the Playwright
+    // runner in a separate job.
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/cypress/**",
+      "**/.{idea,git,cache,output,temp}/**",
+      "**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*",
+      "**/playwright/**",
+    ],
     // Single worker prevents Zustand store leakage between concurrent test files
     // and eliminates 15s dynamic-import timeouts under jsdom load.
     pool: "forks",
