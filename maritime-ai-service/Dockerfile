@@ -2,7 +2,7 @@
 # by The Wiii Lab
 # Multimodal RAG with Vision support (PyMuPDF)
 
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # Install system dependencies
 # - libpq-dev/gcc: PostgreSQL driver
