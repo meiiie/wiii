@@ -23,6 +23,43 @@ from app.engine.agentic_rag.corrective_rag_surface import (
 logger = logging.getLogger(__name__)
 
 
+async def _try_web_search_fallback_context(query: str, settings_obj: Any) -> str:
+    """Fetch web search context as belt-and-suspenders when KB returns 0 docs.
+
+    Returns the formatted web search results on success, empty string otherwise.
+    Never raises — all failures become empty context so LLM falls back to general knowledge.
+    """
+    if not getattr(settings_obj, "enable_serper_web_search", False):
+        return ""
+    try:
+        import asyncio
+
+        from app.engine.tools.web_search_tools import tool_web_search
+
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, lambda: tool_web_search.invoke({"query": query}))
+
+        if not isinstance(result, str):
+            return ""
+        stripped = result.strip()
+        rejected_markers = (
+            "Không tìm thấy",
+            "tạm thời không khả dụng",
+            "quá thời gian chờ",
+            "Lỗi tìm kiếm",
+            "Chưa cài đặt",
+        )
+        if any(marker in stripped for marker in rejected_markers):
+            return ""
+        if len(stripped) < 80:
+            return ""
+        logger.info("[CRAG] Web search fallback fetched %d chars of context", len(stripped))
+        return stripped
+    except Exception as exc:
+        logger.info("[CRAG] Web search fallback unavailable: %s", exc)
+        return ""
+
+
 async def generate_fallback_impl(
     *,
     query: str,
@@ -53,6 +90,12 @@ async def generate_fallback_impl(
         avoid_text = " ".join(f"Tránh: {rule}." for rule in avoid_rules) if avoid_rules else ""
 
         natural_enabled = getattr(settings_obj, "enable_natural_conversation", False) is True
+
+        # Sprint 205 polish: Try web search first — wire results into fallback prompt as
+        # additional grounding. Empty string when disabled/failed, in which case the prompt
+        # still instructs the model to answer from general knowledge.
+        web_context = await _try_web_search_fallback_context(query, settings_obj)
+
         sys_content = build_fallback_system_prompt(
             settings_obj=settings_obj,
             personality=personality,
@@ -61,6 +104,7 @@ async def generate_fallback_impl(
             avoid_text=avoid_text,
             domain_name=domain_name,
             natural_enabled=natural_enabled,
+            web_context=web_context,
         )
 
         messages = [

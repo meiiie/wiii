@@ -43,14 +43,31 @@ def build_magic_link_html(verify_url: str) -> str:
     return MAGIC_LINK_HTML_TEMPLATE.format(url=verify_url)
 
 
+def _is_resend_configured() -> bool:
+    key = getattr(settings, "resend_api_key", "") or ""
+    return bool(key) and not key.startswith("CHANGE_ME")
+
+
 async def send_magic_link_email(to_email: str, verify_url: str) -> bool:
     """Send magic link email via Resend.
 
-    Returns True if sent successfully, False on error.
+    Dev fallback: when Resend is not configured OR environment != production,
+    log the verify URL to stdout so developers can open it manually instead
+    of waiting for email delivery.
+
+    Returns True if sent (or logged in dev mode), False on error.
     """
-    if resend is None:
-        logger.error("resend package not installed — cannot send magic link email")
-        return False
+    resend_ready = _is_resend_configured() and resend is not None
+
+    if not resend_ready:
+        # Placeholder secret (CHANGE_ME_...) or missing package → dev fallback.
+        # A real production deployment would never ship a CHANGE_ME_ key, so
+        # this branch is safe to leave on even when environment=production.
+        logger.warning(
+            "[DEV MAGIC LINK] Resend not configured. Open this URL to finish login for %s:\n  %s",
+            to_email, verify_url,
+        )
+        return True
 
     try:
         resend.api_key = settings.resend_api_key

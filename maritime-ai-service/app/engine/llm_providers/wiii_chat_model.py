@@ -214,12 +214,61 @@ _ZHIPU_ALLOWED_PARAMS = frozenset({
     "stream", "stop", "tools", "tool_choice",
 })
 
+# LangChain/LangSmith internals that leak through call-level kwargs and break
+# AsyncOpenAI (`unexpected keyword argument`). Filter before forwarding.
+_LC_INTERNAL_KWARGS = frozenset({
+    "ls_structured_output_format",
+    "ls_provider",
+    "ls_model_name",
+    "ls_model_type",
+    "ls_temperature",
+    "ls_max_tokens",
+    "ls_stop",
+    "run_manager",
+    "callbacks",
+    "run_name",
+    "run_id",
+    "metadata",
+    "tags",
+    "configurable",
+})
+
 
 def _strip_unsupported_params(api_kwargs: dict[str, Any], base_url: str) -> dict[str, Any]:
     """Remove parameters not supported by the target provider."""
+    # Always drop LangChain-internal kwargs that AsyncOpenAI rejects
+    api_kwargs = {k: v for k, v in api_kwargs.items() if k not in _LC_INTERNAL_KWARGS}
     if any(host in base_url for host in _ZHIPU_HOSTS):
         return {k: v for k, v in api_kwargs.items() if k in _ZHIPU_ALLOWED_PARAMS}
     return api_kwargs
+
+
+_VALID_TOOL_CHOICE_STRINGS = frozenset({"auto", "none", "required", "validated"})
+
+# LangChain/OpenAI aliases → Gemini-compat equivalents. `any` means "must use
+# some tool" which maps to `required`. `tool` is sometimes used similarly.
+_TOOL_CHOICE_ALIASES: dict[str, str] = {
+    "any": "required",
+    "tool": "required",
+}
+
+
+def _normalize_tool_choice(value: Any) -> Any:
+    """Translate plain tool-name strings into the OpenAI/Gemini descriptor object.
+
+    Gemini's OpenAI-compat endpoint rejects `tool_choice="<name>"` (returns
+    `Invalid tool_choice ... but found "<name>"`). It only accepts one of
+    {auto,none,required,validated} as strings or `{type: function, function: {name}}`.
+    Plain name strings from callers (bind_tools(tool_choice="tool_foo")) are
+    translated here to the descriptor form. Common aliases like `any`/`tool`
+    are rewritten to `required`.
+    """
+    if isinstance(value, str):
+        aliased = _TOOL_CHOICE_ALIASES.get(value, value)
+        if aliased in _VALID_TOOL_CHOICE_STRINGS:
+            return aliased
+        return {"type": "function", "function": {"name": value}}
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +448,12 @@ class WiiiChatModel(BaseChatModel):
         if stop:
             api_kwargs["stop"] = stop
 
+        # Normalize tool_choice regardless of whether it came from kwargs or
+        # bind_tools() (which stores it in self.model_kwargs). Gemini rejects
+        # plain tool-name strings; we rewrite to the descriptor object.
+        if "tool_choice" in api_kwargs:
+            api_kwargs["tool_choice"] = _normalize_tool_choice(api_kwargs["tool_choice"])
+
         api_kwargs = _strip_unsupported_params(api_kwargs, self.base_url)
         response = await client.chat.completions.create(**api_kwargs)
         return _openai_response_to_chat_result(response)
@@ -432,6 +487,12 @@ class WiiiChatModel(BaseChatModel):
 
         if stop:
             api_kwargs["stop"] = stop
+
+        # Normalize tool_choice regardless of whether it came from kwargs or
+        # bind_tools() (which stores it in self.model_kwargs). Gemini rejects
+        # plain tool-name strings; we rewrite to the descriptor object.
+        if "tool_choice" in api_kwargs:
+            api_kwargs["tool_choice"] = _normalize_tool_choice(api_kwargs["tool_choice"])
 
         api_kwargs = _strip_unsupported_params(api_kwargs, self.base_url)
 

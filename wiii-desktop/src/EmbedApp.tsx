@@ -45,7 +45,7 @@ export default function EmbedApp() {
   const { startPolling, stopPolling } = useConnectionStore();
   const { startPolling: startContextPolling, stopPolling: stopContextPolling } = useContextStore();
   const { fetchDomains, setActiveDomain, setOrgFilter } = useDomainStore();
-  const { fetchOrganizations, setActiveOrg } = useOrgStore();
+  const { fetchOrganizations, setActiveOrg, fetchAdminContext } = useOrgStore();
   const { loadConversations } = useChatStore();
 
   // Step 1: Parse config on mount
@@ -202,6 +202,13 @@ export default function EmbedApp() {
               setOrgFilter(org.allowed_domains);
             }
           });
+        }
+
+        // Sprint 226 local: fetch admin context so the Sidebar's
+        // "Hệ Quản Trị" / "Quản Lý Tổ Chức" buttons appear for admin JWTs
+        // inside the iframe embed too.
+        if (authMode === "jwt") {
+          fetchAdminContext();
         }
 
         // 2f. Start health polling

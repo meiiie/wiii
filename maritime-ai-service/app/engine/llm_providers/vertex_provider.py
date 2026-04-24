@@ -60,14 +60,15 @@ class VertexAIProvider(LLMProvider):
 
         model_kwargs: dict[str, Any] = {}
         if settings.thinking_enabled and thinking_budget > 0:
-            model_kwargs["extra_body"] = {
-                "google": {
-                    "thinking_config": {
-                        "thinking_budget": thinking_budget,
-                        "include_thoughts": include_thoughts,
-                    }
-                }
-            }
+            # Gemini 2.5+ OpenAI-compat accepts `reasoning_effort`; legacy
+            # `extra_body={"google": {"thinking_config": ...}}` is rejected.
+            if thinking_budget <= 1024:
+                effort = "low"
+            elif thinking_budget <= 4096:
+                effort = "medium"
+            else:
+                effort = "high"
+            model_kwargs["reasoning_effort"] = effort
 
         llm = WiiiChatModel(
             model=model_name,

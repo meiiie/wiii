@@ -195,6 +195,11 @@ class TestIntentAwareRuleRouting:
         result = supervisor._rule_based_route("tên tôi là Nam", {})
         assert result == AgentType.MEMORY.value
 
+    def test_wiii_does_not_remember_me_routes_to_memory(self, supervisor):
+        """A recall complaint like 'Wii không nhớ mình?' routes to MEMORY."""
+        result = supervisor._rule_based_route("Wii không nhớ mình hả ?", {})
+        assert result == AgentType.MEMORY.value
+
     def test_teach_about_solas_routes_to_rag(self, supervisor):
         """Sprint 103: 'dạy tôi về SOLAS' → RAG (domain match)."""
         config = _make_domain_config(["colregs", "solas"])
