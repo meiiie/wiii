@@ -62,7 +62,7 @@ jobs:
       # working. After the first production deploy on wiii-app / wiii-nginx, the
       # legacy tag block can be removed.
       - name: Build and push app image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: maritime-ai-service/Dockerfile.prod
@@ -76,7 +76,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push nginx image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: maritime-ai-service/nginx/Dockerfile.prod
