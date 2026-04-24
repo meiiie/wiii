@@ -33,7 +33,7 @@ vi.mock("@/lib/constants", async (importOriginal) => {
 beforeEach(() => {
   useSettingsStore.setState({
     settings: {
-      server_url: "http://localhost:8000",
+      server_url: "http://localhost:8080",
       api_key: "local-dev-key",
       user_id: "test-user-fixed",
       user_role: "student",
@@ -60,7 +60,7 @@ beforeEach(() => {
 describe("Settings Store", () => {
   it("should start with default settings", () => {
     const { settings } = useSettingsStore.getState();
-    expect(settings.server_url).toBe("http://localhost:8000");
+    expect(settings.server_url).toBe("http://localhost:8080");
     expect(settings.api_key).toBe("local-dev-key");
     expect(settings.user_id).toBe("test-user-fixed");
     expect(settings.user_role).toBe("student");
@@ -110,7 +110,7 @@ describe("Settings Store", () => {
     await useSettingsStore.getState().resetSettings();
 
     const { settings } = useSettingsStore.getState();
-    expect(settings.server_url).toBe("http://localhost:8000");
+    expect(settings.server_url).toBe("http://localhost:8080");
     expect(settings.theme).toBe("system");
     expect(settings.user_role).toBe("student");
   });

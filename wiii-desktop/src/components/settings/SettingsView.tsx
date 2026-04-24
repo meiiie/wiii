@@ -232,7 +232,7 @@ export function SettingsView() {
             await clearOllamaApiKey();
           } catch { /* ignore */ }
           setDraft({
-            server_url: "http://localhost:8000",
+            server_url: "http://localhost:8080",
             api_key: "local-dev-key",
             facebook_cookie: "",
           });

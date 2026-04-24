@@ -18,7 +18,7 @@ describe("local preview bootstrap", () => {
       "127.0.0.1",
     );
 
-    expect(normalized.server_url).toBe("http://localhost:8000");
+    expect(normalized.server_url).toBe("http://localhost:8080");
   });
 
   it("promotes local-dev-key developer mode to admin on localhost", () => {
@@ -31,11 +31,11 @@ describe("local preview bootstrap", () => {
       "127.0.0.1",
     );
 
-    expect(patch.server_url).toBe("http://localhost:8000");
+    expect(patch.server_url).toBe("http://localhost:8080");
     expect(patch.user_role).toBe("admin");
   });
 
-  it("migrates stale localhost:8001 settings back to localhost:8000 on local preview", () => {
+  it("migrates stale localhost:8001 settings back to localhost:8080 on local preview", () => {
     const normalized = normalizeLoadedSettingsForHost(
       {
         server_url: "http://localhost:8001",
@@ -46,10 +46,10 @@ describe("local preview bootstrap", () => {
       "localhost",
     );
 
-    expect(normalized.server_url).toBe("http://localhost:8000");
+    expect(normalized.server_url).toBe("http://localhost:8080");
   });
 
-  it("migrates stale 127.0.0.1:8001 settings back to localhost:8000 on local preview", () => {
+  it("migrates stale 127.0.0.1:8001 settings back to localhost:8080 on local preview", () => {
     const normalized = normalizeLoadedSettingsForHost(
       {
         server_url: "http://127.0.0.1:8001",
@@ -60,7 +60,7 @@ describe("local preview bootstrap", () => {
       "127.0.0.1",
     );
 
-    expect(normalized.server_url).toBe("http://localhost:8000");
+    expect(normalized.server_url).toBe("http://localhost:8080");
   });
 
   it("does not override explicit non-local settings", () => {
