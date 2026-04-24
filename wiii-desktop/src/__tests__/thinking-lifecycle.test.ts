@@ -95,20 +95,11 @@ describe("closeThinkingBlock", () => {
     expect(tb.stepState).toBe("completed");
   });
 
-  it("should fall back to summary when closing an empty thinking block", () => {
-    useChatStore.getState().startStreaming();
-    useChatStore.getState().openThinkingBlock(
-      "Đang suy luận",
-      "Mình đang gom lại các điểm chính trước khi đáp.",
-    );
-
-    useChatStore.getState().closeThinkingBlock();
-
-    const blocks = getBlocks();
-    const tb = thinkingAt(blocks, 0);
-    expect(tb.content).toBe("Mình đang gom lại các điểm chính trước khi đáp.");
-    expect(tb.endTime).toBeDefined();
-  });
+  // Summary-fallback test removed: the "empty thinking block → show summary"
+  // fallback moved from the chat-store to render-time in ThinkingBlock.tsx
+  // (search for `summaryMode === "body_fallback"`). The store now only
+  // tracks lifecycle state; the view layer is responsible for deciding what
+  // to display when content is empty. User-visible behavior unchanged.
 
   it("should compute endTime from startTime + durationMs when provided", () => {
     useChatStore.getState().startStreaming();
