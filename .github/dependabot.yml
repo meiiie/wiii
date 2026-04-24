@@ -46,6 +46,10 @@ updates:
       # Stay on 4.x until we rerun the ingestion regression suite.
       - dependency-name: "pypdf"
         update-types: ["version-update:semver-major"]
+      # duckduckgo-search 7 → 8 has API rename of search_news etc.; pin
+      # until we update the wrapper (was PR #56).
+      - dependency-name: "duckduckgo-search"
+        update-types: ["version-update:semver-major"]
     groups:
       langchain-stack:
         patterns:
@@ -117,6 +121,10 @@ updates:
       - dependency-name: "zustand"
         update-types: ["version-update:semver-major"]
       - dependency-name: "lucide-react"
+        update-types: ["version-update:semver-major"]
+      # uuid 9 → 14 is a five-major jump with ESM migration; pin until a
+      # dedicated window (was recurring PR #57, #61).
+      - dependency-name: "uuid"
         update-types: ["version-update:semver-major"]
     groups:
       tauri:
