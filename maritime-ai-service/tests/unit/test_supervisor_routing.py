@@ -26,6 +26,7 @@ if not _had_cs:
     _mock_cs.get_chat_service = lambda: None
     sys.modules[_cs_key] = _mock_cs
 
+from app.core.exceptions import ProviderUnavailableError
 from app.engine.multi_agent.agent_config import AgentConfigRegistry
 from app.engine.multi_agent.supervisor import SupervisorAgent, AgentType
 
@@ -132,6 +133,28 @@ class TestMemoryRouting:
     def test_routes_vietnamese_remember_to_memory(self, supervisor):
         result = supervisor._rule_based_route("bạn có nhớ câu hỏi lần trước không?", {})
         assert result == AgentType.MEMORY.value
+
+    def test_routes_wiii_recall_complaint_to_memory(self, supervisor):
+        result = supervisor._rule_based_route("Wii không nhớ mình hả ?", {})
+        assert result == AgentType.MEMORY.value
+
+    @pytest.mark.asyncio
+    async def test_provider_unavailable_routing_falls_back_to_memory(self):
+        with patch.object(AgentConfigRegistry, "get_llm", return_value=MagicMock()):
+            agent = SupervisorAgent()
+
+        state = {
+            "query": "Wii không nhớ mình hả ?",
+            "context": {},
+            "domain_config": {},
+        }
+        error = ProviderUnavailableError(provider="google", reason_code="busy")
+        with patch.object(agent, "_route_structured", side_effect=error):
+            result = await agent.route(state)
+
+        assert result == AgentType.MEMORY.value
+        assert state["routing_metadata"]["method"] == "rule_based"
+        assert state["routing_metadata"]["final_agent"] == AgentType.MEMORY.value
 
 
 # =============================================================================

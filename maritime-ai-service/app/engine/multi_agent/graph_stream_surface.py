@@ -229,6 +229,7 @@ def _normalize_narration_text_impl(value: str) -> str:
 def _narration_delta_chunks_impl(narration) -> list[str]:
     summary_norm = _normalize_narration_text_impl(getattr(narration, "summary", ""))
     filtered: list[str] = []
+    filtered_norms: list[str] = []
     for chunk in getattr(narration, "delta_chunks", []) or []:
         if not chunk or not chunk.strip():
             continue
@@ -239,9 +240,32 @@ def _narration_delta_chunks_impl(narration) -> list[str]:
             or summary_norm in chunk_norm
         ):
             continue
-        if filtered and _normalize_narration_text_impl(filtered[-1]) == chunk_norm:
+        # Skip exact-match duplicates (consecutive or non-consecutive).
+        if chunk_norm in filtered_norms:
+            continue
+        # Skip substantial prefix/suffix overlap with ANY previous chunk —
+        # prevents "A B", "A C" pairs that share a repeated opening from
+        # stacking into display. Threshold: shorter chunk is >=80% inside longer.
+        duplicate = False
+        for prev_norm in filtered_norms:
+            if not prev_norm or not chunk_norm:
+                continue
+            shorter, longer = (chunk_norm, prev_norm) if len(chunk_norm) <= len(prev_norm) else (prev_norm, chunk_norm)
+            if len(shorter) >= 40 and shorter in longer:
+                duplicate = True
+                break
+            # Detect heavy prefix overlap (new chunk repeats start of a past chunk)
+            overlap = 0
+            max_overlap = min(len(shorter), len(longer))
+            while overlap < max_overlap and shorter[overlap] == longer[overlap]:
+                overlap += 1
+            if overlap >= 50 and overlap / max(len(shorter), 1) >= 0.8:
+                duplicate = True
+                break
+        if duplicate:
             continue
         filtered.append(chunk.strip())
+        filtered_norms.append(chunk_norm)
     return filtered
 
 

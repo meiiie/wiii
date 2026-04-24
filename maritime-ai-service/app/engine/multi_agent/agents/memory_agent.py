@@ -29,6 +29,8 @@ from app.prompts.prompt_runtime_tail import get_thinking_instruction_from_shared
 
 logger = logging.getLogger(__name__)
 
+_SERVICE_IDENTITY_USER_IDS = {"api-client", "anonymous"}
+
 _MEMORY_BEHAVIOR_RULES = (
     "- Dung thong tin da biet ve user de tra loi tu nhien\n"
     "- Neu chua co fact lau dai nhung van co hoi thoai gan day, hay dua vao ngu canh do de dap tu nhien\n"
@@ -115,6 +117,10 @@ class MemoryAgentNode:
         self._updater = MemoryUpdater()
         logger.info("MemoryAgentNode initialized (Sprint 73: Retrieve-Extract-Decide-Respond)")
 
+    @staticmethod
+    def _is_service_identity(user_id: str) -> bool:
+        return str(user_id or "").strip().lower() in _SERVICE_IDENTITY_USER_IDS
+
     async def process(self, state: AgentState, llm=None) -> AgentState:
         """Execute the 4-phase memory pipeline."""
         user_id = state.get("user_id", "")
@@ -137,14 +143,23 @@ class MemoryAgentNode:
                     pass
 
         try:
-            existing_facts_list = await self._retrieve_facts(user_id)
-            existing_facts_dict = {fact["type"]: fact["content"] for fact in existing_facts_list}
+            if self._is_service_identity(user_id):
+                logger.info(
+                    "[MEMORY_AGENT] Skipping long-term facts for service identity %s",
+                    user_id,
+                )
+                existing_facts_list = []
+                existing_facts_dict = {}
+                new_facts, decisions = [], []
+            else:
+                existing_facts_list = await self._retrieve_facts(user_id)
+                existing_facts_dict = {fact["type"]: fact["content"] for fact in existing_facts_list}
 
-            new_facts, decisions = await self._extract_and_store_facts(
-                user_id,
-                query,
-                existing_facts_dict,
-            )
+                new_facts, decisions = await self._extract_and_store_facts(
+                    user_id,
+                    query,
+                    existing_facts_dict,
+                )
             actionable_decisions = [
                 decision for decision in decisions if decision.action != MemoryAction.NOOP
             ]
@@ -226,7 +241,13 @@ class MemoryAgentNode:
 
         except Exception as exc:
             logger.error("[MEMORY_AGENT] Error: %s", exc)
-            fallback = self._template_response(query, [], [], "")
+            fallback = self._template_response(
+                query,
+                [],
+                [],
+                "",
+                recent_conversation=self._recent_conversation_excerpt(state),
+            )
             state["memory_output"] = fallback
             state["agent_outputs"] = state.get("agent_outputs", {})
             state["agent_outputs"]["memory"] = fallback
@@ -416,12 +437,18 @@ class MemoryAgentNode:
         """Generate a natural Vietnamese response using LLM memory context."""
         state.pop("_memory_native_thinking", None)
         state.pop("_memory_thinking_source", None)
+        recent_conversation = self._recent_conversation_excerpt(state)
         if not llm:
-            return self._template_response(query, existing_facts, new_facts, changes_summary)
+            return self._template_response(
+                query,
+                existing_facts,
+                new_facts,
+                changes_summary,
+                recent_conversation=recent_conversation,
+            )
 
         try:
             context_parts = []
-            recent_conversation = self._recent_conversation_excerpt(state)
             if recent_conversation:
                 context_parts.append(f"Doan hoi thoai gan day:\n{recent_conversation}")
             if existing_facts:
@@ -497,11 +524,37 @@ class MemoryAgentNode:
             if result:
                 return result
 
-            return self._template_response(query, existing_facts, new_facts, changes_summary)
+            return self._template_response(
+                query,
+                existing_facts,
+                new_facts,
+                changes_summary,
+                recent_conversation=recent_conversation,
+            )
 
         except Exception as exc:
             logger.warning("[MEMORY_AGENT] LLM response generation failed: %s", exc)
-            return self._template_response(query, existing_facts, new_facts, changes_summary)
+            return self._template_response(
+                query,
+                existing_facts,
+                new_facts,
+                changes_summary,
+                recent_conversation=recent_conversation,
+            )
+
+    @staticmethod
+    def _compact_recent_user_context(recent_conversation: str) -> str:
+        user_lines = []
+        for line in str(recent_conversation or "").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("User:"):
+                text = stripped.removeprefix("User:").strip()
+                if text:
+                    user_lines.append(text)
+        compact = "; ".join(user_lines[-3:]).strip()
+        if len(compact) > 260:
+            compact = compact[:257].rstrip() + "..."
+        return compact
 
     def _template_response(
         self,
@@ -509,6 +562,7 @@ class MemoryAgentNode:
         existing_facts: list,
         new_facts: list,
         changes_summary: str,
+        recent_conversation: str = "",
     ) -> str:
         """Template fallback response when LLM is unavailable."""
         if changes_summary:
@@ -523,6 +577,13 @@ class MemoryAgentNode:
                 f"{fact['type']}: {fact['content']}" for fact in existing_facts[:5]
             )
             return f"Đây là thông tin mình biết về bạn: {facts_str}"
+
+        recent_user_context = self._compact_recent_user_context(recent_conversation)
+        if recent_user_context:
+            return (
+                f"Mình vẫn theo được đoạn vừa rồi: bạn nói \"{recent_user_context}\". "
+                "Mình chưa thấy fact dài hạn nào đủ rõ để lưu, nhưng ngữ cảnh gần thì vẫn còn đây."
+            )
 
         return "Mình chưa có thông tin gì về bạn. Bạn có thể chia sẻ để mình ghi nhớ nhé!"
 

@@ -263,9 +263,23 @@ class SupervisorAgent:
             # Sprint 103: Always use structured routing (no feature flag check)
             return await self._route_structured(query, context, domain_name, rag_desc, tutor_desc, domain_config, state, llm=llm)
 
+        except ProviderUnavailableError as e:
+            logger.warning(
+                "LLM routing provider unavailable; falling back to rules: %s",
+                e,
+            )
+            result = self._rule_based_route(query, domain_config)
+            state["routing_metadata"] = {
+                "intent": "unknown",
+                "confidence": 1.0,
+                "reasoning": "rule-based fallback (routing provider unavailable)",
+                "method": "rule_based",
+                "provider": getattr(e, "provider", ""),
+                "reason_code": getattr(e, "reason_code", ""),
+                "final_agent": result,
+            }
+            return result
         except Exception as e:
-            if isinstance(e, ProviderUnavailableError):
-                raise
             logger.warning("LLM routing failed: %s", e)
             result = self._rule_based_route(query, domain_config)
             state["routing_metadata"] = {
@@ -273,6 +287,7 @@ class SupervisorAgent:
                 "confidence": 1.0,
                 "reasoning": "rule-based fallback (LLM routing unavailable)",
                 "method": "rule_based",
+                "final_agent": result,
             }
             return result
 

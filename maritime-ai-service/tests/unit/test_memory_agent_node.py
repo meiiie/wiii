@@ -107,6 +107,30 @@ class TestMemoryAgentProcess:
         assert result["memory_output"] == "Chào Minh!"
 
 
+    @pytest.mark.asyncio
+    async def test_process_skips_long_term_facts_for_service_identity(self, mock_semantic_memory):
+        node = _make_node(mock_semantic_memory)
+        state = {
+            "user_id": "api-client",
+            "query": "Wii không nhớ mình hả?",
+            "agent_outputs": {},
+            "context": {
+                "history_list": [
+                    {"role": "user", "content": "chào"},
+                    {"role": "user", "content": "đói quá huhu"},
+                    {"role": "user", "content": "nằm im á"},
+                ]
+            },
+        }
+
+        result = await node.process(state)
+
+        assert "đói quá huhu" in result["memory_output"]
+        assert "COLREGs" not in result["memory_output"]
+        mock_semantic_memory.get_user_facts.assert_not_awaited()
+        mock_semantic_memory._fact_extractor.extract_and_store_facts.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # _retrieve_facts() tests
 # ---------------------------------------------------------------------------
@@ -223,6 +247,25 @@ class TestTemplateResponse:
         assert "chưa có thông tin" in text.lower() or "chia sẻ" in text.lower()
         # Never returns old hardcoded error
         assert text != "Không có thông tin về user"
+
+    def test_empty_with_recent_context_does_not_claim_no_memory(self):
+        node = _make_node()
+        text = node._template_response(
+            "Wii không nhớ mình hả?",
+            [],
+            [],
+            "",
+            recent_conversation=(
+                "User: chào\n"
+                "AI: Chào bạn\n"
+                "User: đói quá huhu\n"
+                "User: nằm im á"
+            ),
+        )
+
+        assert "đoạn vừa rồi" in text
+        assert "đói quá huhu" in text
+        assert "chưa có thông tin gì" not in text.lower()
 
 
 # ---------------------------------------------------------------------------

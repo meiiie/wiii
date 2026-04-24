@@ -238,6 +238,51 @@ def conservative_fast_route_impl(
     return None
 
 
+def _looks_personal_memory_recall_turn(normalized_query: str) -> bool:
+    """Detect user asking whether Wiii remembers the current person/context."""
+    query = f" {normalized_query or ''} "
+    if not query.strip():
+        return False
+
+    directed_subject = any(
+        token in query
+        for token in (
+            " ban ",
+            " wii ",
+            " wiii ",
+            " wiiii ",
+        )
+    )
+    personal_object = any(
+        token in query
+        for token in (
+            " minh",
+            " toi",
+            " tui",
+            " em",
+            " anh",
+            " chi",
+        )
+    )
+
+    if directed_subject and personal_object and " nho " in query:
+        return True
+
+    recall_markers = (
+        "co nho minh",
+        "co nho toi",
+        "con nho minh",
+        "con nho toi",
+        "nho minh khong",
+        "nho toi khong",
+        "nho minh ha",
+        "nho toi ha",
+        "remember me",
+        "remember who i am",
+    )
+    return any(marker in query for marker in recall_markers)
+
+
 def rule_based_route_impl(
     *,
     query: str,
@@ -261,7 +306,16 @@ def rule_based_route_impl(
     if is_obvious_social_turn_fn(query):
         return direct_agent_name
 
-    if any(kw in query_lower for kw in personal_keywords):
+    normalized_personal_keywords = [
+        normalize_router_text_fn(str(kw or ""))
+        for kw in personal_keywords
+        if str(kw or "").strip()
+    ]
+    if (
+        any(kw in query_lower for kw in personal_keywords)
+        or any(kw and kw in normalized_query for kw in normalized_personal_keywords)
+        or _looks_personal_memory_recall_turn(normalized_query)
+    ):
         return memory_agent_name
 
     if needs_code_studio_fn(query):
