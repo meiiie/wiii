@@ -1,0 +1,159 @@
+# Dependabot configuration for Wiii.
+# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Strategy:
+#   - Security updates are handled separately via Dependabot Security alerts
+#     (auto-PR for high/critical CVEs).
+#   - Version updates run weekly, grouped per ecosystem to keep PR volume
+#     predictable while multiple agents are active in the repo.
+#   - Patch bumps are grouped; major bumps land as separate PRs so that
+#     human maintainers can review breaking-change risk explicitly.
+#   - All PRs land Monday morning Asia/Ho_Chi_Minh to batch into the work
+#     week, not over the weekend.
+
+version: 2
+
+updates:
+  # ─── Backend (FastAPI + LangChain + Gemini SDK) ─────────────────────
+  - package-ecosystem: "pip"
+    directory: "/maritime-ai-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Asia/Ho_Chi_Minh"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: "scope"
+    labels:
+      - "area:backend"
+      - "dependencies"
+    groups:
+      langchain-stack:
+        patterns:
+          - "langchain*"
+          - "langgraph*"
+      google-ai-stack:
+        patterns:
+          - "google-*"
+          - "vertexai"
+      observability:
+        patterns:
+          - "opentelemetry-*"
+          - "sentry-sdk"
+          - "structlog"
+      fastapi-stack:
+        patterns:
+          - "fastapi"
+          - "uvicorn"
+          - "gunicorn"
+          - "slowapi"
+          - "starlette"
+      dev-tools:
+        dependency-type: "development"
+
+  # ─── Desktop / Embed (React + Tauri + Vite) ─────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/wiii-desktop"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Asia/Ho_Chi_Minh"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: "scope"
+    labels:
+      - "area:frontend"
+      - "dependencies"
+    ignore:
+      # React major bumps need coordinated migration
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+    groups:
+      tauri:
+        patterns:
+          - "@tauri-apps/*"
+      visualization:
+        patterns:
+          - "plotly.js*"
+          - "react-plotly.js"
+          - "mermaid*"
+          - "@mermaid-js/*"
+          - "cytoscape*"
+      code-rendering:
+        patterns:
+          - "shiki*"
+          - "@shikijs/*"
+          - "refractor"
+          - "react-shiki"
+          - "monaco-editor*"
+          - "@codesandbox/*"
+      build-tools:
+        patterns:
+          - "vite*"
+          - "@vitejs/*"
+          - "vitest*"
+          - "typescript"
+      dev-tools:
+        dependency-type: "development"
+
+  # ─── Tauri Rust side ────────────────────────────────────────────────
+  - package-ecosystem: "cargo"
+    directory: "/wiii-desktop/src-tauri"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Asia/Ho_Chi_Minh"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    labels:
+      - "area:frontend"
+      - "dependencies"
+      - "rust"
+    groups:
+      tauri-core:
+        patterns:
+          - "tauri*"
+
+  # ─── GitHub Actions workflows ───────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Asia/Ho_Chi_Minh"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"
+    labels:
+      - "area:ci"
+      - "dependencies"
+
+  # ─── Dockerfile base images ─────────────────────────────────────────
+  - package-ecosystem: "docker"
+    directory: "/maritime-ai-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Asia/Ho_Chi_Minh"
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    labels:
+      - "area:backend"
+      - "dependencies"
+      - "docker"

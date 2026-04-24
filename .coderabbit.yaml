@@ -1,0 +1,138 @@
+language: en-US
+early_access: false
+tone_instructions: "Be direct, technical, and risk-focused. Prioritize correctness, security, maintainability, and actionable findings."
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  review_status: true
+  review_details: true
+  commit_status: true
+  fail_commit_status: true
+  collapse_walkthrough: false
+  changed_files_summary: true
+  sequence_diagrams: true
+  estimate_code_review_effort: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  suggested_labels: true
+  auto_apply_labels: false
+  suggested_reviewers: true
+  auto_assign_reviewers: false
+  poem: false
+  enable_prompt_for_ai_agents: true
+  abort_on_close: true
+  disable_cache: false
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: true
+    base_branches:
+      - "main"
+      - "develop"
+      - "release/.*"
+      - "hotfix/.*"
+    ignore_title_keywords:
+      - "DO NOT MERGE"
+      - "[skip review]"
+    ignore_usernames:
+      - "dependabot[bot]"
+      - "renovate[bot]"
+      - "github-actions[bot]"
+
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/.venv/**"
+    - "!**/venv/**"
+    - "!**/__pycache__/**"
+    - "!**/.pytest_cache/**"
+    - "!**/.mypy_cache/**"
+    - "!**/.ruff_cache/**"
+    - "!**/dist/**"
+    - "!**/build/**"
+    - "!**/target/**"
+    - "!**/coverage/**"
+    - "!**/htmlcov/**"
+    - "!**/*.log"
+    - "!**/*.tmp"
+    - "!**/*.sqlite"
+    - "!**/*.db"
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.jpeg"
+    - "!**/*.gif"
+    - "!**/*.webp"
+    - "!**/*.pdf"
+    - "!tools/bin/**"
+    - "!Documents/**"
+
+  labeling_instructions:
+    - label: "area:backend"
+      instructions: "Suggest when changes touch maritime-ai-service backend API, services, repositories, engine, auth, or migrations."
+    - label: "area:frontend"
+      instructions: "Suggest when changes touch wiii-desktop React, Tauri, Zustand stores, frontend APIs, or UI behavior."
+    - label: "area:auth"
+      instructions: "Suggest when changes affect OAuth, JWT, identity federation, LMS token exchange, sessions, or permissions."
+    - label: "area:memory"
+      instructions: "Suggest when changes affect semantic memory, long-term memory, relationship continuity, or thread persistence."
+    - label: "area:rag"
+      instructions: "Suggest when changes affect retrieval, ingestion, citations, embeddings, GraphRAG, HyDE, or adaptive RAG."
+    - label: "area:mcp-tools"
+      instructions: "Suggest when changes affect MCP servers, external tools, tool registry, or tool execution."
+    - label: "area:docs"
+      instructions: "Suggest when changes are documentation, governance, operational runbooks, or cleanup policy."
+    - label: "risk:security"
+      instructions: "Suggest when the PR may affect secrets, authentication, authorization, tenant isolation, SSRF, tool exposure, or private data."
+    - label: "risk:migration"
+      instructions: "Suggest when database schema, Alembic migrations, backfills, or persistent data contracts change."
+
+  path_instructions:
+    - path: "maritime-ai-service/app/auth/**"
+      instructions: |
+        Review auth changes as security-sensitive. Check token lifetime, refresh replay handling, provider identity linking, verified-email gates, audit logging, and backwards compatibility for desktop/LMS flows.
+    - path: "maritime-ai-service/app/core/**"
+      instructions: |
+        Check feature flags, configuration defaults, tenant isolation middleware, rate limiting, and fail-closed behavior. Flag changes that silently alter production defaults.
+    - path: "maritime-ai-service/app/engine/multi_agent/**"
+      instructions: |
+        Focus on routing correctness, streaming parity, memory/tool boundaries, structured output robustness, and fallback behavior. Flag hidden prompt or state-contract changes.
+    - path: "maritime-ai-service/app/engine/agentic_rag/**"
+      instructions: |
+        Validate retrieval quality, source propagation, citation integrity, confidence thresholds, fallback behavior, and tenant/org filtering.
+    - path: "maritime-ai-service/app/engine/living_agent/**"
+      instructions: |
+        Treat Wiii identity, continuity, relationship, and memory behavior as product-critical. Check that persona changes preserve coherent Wiii behavior and do not leak private state across users.
+    - path: "maritime-ai-service/app/mcp/**"
+      instructions: |
+        Review MCP/tool exposure for input validation, permission boundaries, SSRF/local-file risk, schema conversion correctness, and safe failure modes.
+    - path: "maritime-ai-service/alembic/**"
+      instructions: |
+        Require migration safety: reversible or documented rollback path, data backfill plan when needed, no destructive operations without explicit justification, and compatibility with running services.
+    - path: "wiii-desktop/src/**"
+      instructions: |
+        Review React/Tauri changes for SSE correctness, persisted Zustand state, auth refresh behavior, accessibility, responsive UI, and CORS/Tauri HTTP fallback compatibility.
+    - path: ".github/**"
+      instructions: |
+        Review GitHub automation as governance-critical. Check permissions, required checks, trigger paths, token exposure, concurrency, and whether rules can block emergency recovery.
+    - path: "docs/operations/**"
+      instructions: |
+        Check operational docs for current truth, concrete ownership, verifiable procedures, and absence of stale sprint-report noise.
+
+chat:
+  art: false
+  auto_reply: true
+
+knowledge_base:
+  web_search:
+    enabled: true
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
+      - "docs/operations/*.md"
+      - "maritime-ai-service/docs/architecture/*.md"

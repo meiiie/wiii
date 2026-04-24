@@ -25,7 +25,7 @@ services:
   # NGINX — Reverse Proxy + SPA Serving + Subdomain Routing (Sprint 175)
   # =============================================================================
   nginx:
-    image: ${WIII_NGINX_IMAGE:-ghcr.io/meiiie/lms-ai-nginx:main}
+    image: ${WIII_NGINX_IMAGE:-ghcr.io/meiiie/wiii-nginx:main}
     container_name: wiii-nginx
     ports:
       - "${NGINX_HTTP_PORT:-8080}:80"
@@ -64,7 +64,7 @@ services:
   # FASTAPI APP — Production (no hot-reload, Gunicorn workers)
   # =============================================================================
   app:
-    image: ${WIII_APP_IMAGE:-ghcr.io/meiiie/lms-ai-app:main}
+    image: ${WIII_APP_IMAGE:-ghcr.io/meiiie/wiii-app:main}
     # Sprint 232: Removed container_name to allow docker compose scale
     # container_name: wiii-app
     # Sprint 232: Removed host port mapping (Nginx connects via internal network)
