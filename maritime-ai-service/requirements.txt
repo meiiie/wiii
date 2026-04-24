@@ -69,7 +69,7 @@ Pillow>=10.0.0  # CHỈ THỊ 26: Image processing
 # docling>=2.30.0  # Uncomment when ready to deploy Docling
 
 # Object Storage (MinIO SDK)
-minio>=7.2.0
+minio>=7.2.20
 
 # Web Search
 # ddgs removed Sprint 154 — duckduckgo-search>=7.0.0 is the active package (import: duckduckgo_search)
