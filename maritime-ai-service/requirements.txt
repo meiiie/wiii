@@ -35,7 +35,7 @@ langchain-core>=1.2.18,<1.4.0
 psycopg[binary]>=3.1.0,<4.0.0
 
 # Unified LLM Client (Sprint 55: AsyncOpenAI SDK for OpenAI-compatible endpoints)
-openai~=2.9.0
+openai~=2.32.0
 
 # MCP Support (Sprint 56: Model Context Protocol)
 mcp~=1.26.0
