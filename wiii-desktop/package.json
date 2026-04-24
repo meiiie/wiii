@@ -43,7 +43,7 @@
     "react-markdown": "^9.0.0",
     "react-plotly.js": "^2.6.0",
     "react-resizable-panels": "^4.7.4",
-    "react-shiki": "^0.9.1",
+    "react-shiki": "^0.9.3",
     "recharts": "^3.7.0",
     "rehype-katex": "^7.0.1",
     "rehype-raw": "^7.0.0",
