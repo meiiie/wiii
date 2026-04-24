@@ -30,6 +30,21 @@ Every bypass event is appended here within 24 hours. Format:
   - Added **@wiiiii123** as `write` collaborator (invitation ID 316160239, sent 2026-04-24 15:49 UTC). @wiiiii123 is an existing second GitHub account belonging to the same maintainer; using it as a second code owner avoided the overhead of provisioning a new bot identity.
   - Updated `.github/CODEOWNERS` to list `@meiiie @wiiiii123` on every path — OR semantics means either can approve any PR they are not the author of.
   - Updated `docs/operations/WIII_BRANCH_PROTECTION.md` with a dedicated "Second code owner — avoiding the self-approval deadlock" section describing the pattern.
-  - Pending: @wiiiii123 must **accept** the invitation at https://github.com/meiiie/wiii/invitations and then configure GPG/SSH signing so future commits from that account are verified. Until accepted, the CODEOWNERS entry for that login is inert and the next @meiiie-authored PR would still need a bypass.
+  - @wiiiii123 accepted the collaborator invitation later the same day and is now listed with `write` role.
+
+---
+
+## 2026-04-24 (second event) — @meiiie — main
+
+- **Reason**: Even after @wiiiii123 accepted the collaborator invitation, GitHub's "require review from Code Owners" gate reads `CODEOWNERS` from the **base branch** (main). Until the updated CODEOWNERS (listing @wiiiii123) was actually present on main, an approval from @wiiiii123 on PR #25 would not satisfy the gate — only @meiiie's would, and @meiiie cannot self-approve. A second bypass was needed to land the CODEOWNERS update itself.
+- **Linked incident / ticket**: PR #26 (`docs(governance): bring @wiiiii123 code-owner + bypass log onto main`).
+- **Protection change applied**: same procedure as the first event — `GET` current protection, `DELETE`, merge, `PUT` original config back.
+- **Merged PR / commit produced**: PR #26 merged as squash commit `a14757d`. Contains: `.github/CODEOWNERS` (adds @wiiiii123), `docs/operations/WIII_BRANCH_PROTECTION.md` (adds "Second code owner" section), `docs/operations/BYPASS_LOG.md` (initial file with the first event recorded).
+- **Re-enable confirmation**: Protection restored from the pre-bypass snapshot. All fields verbatim: `enforce_admins: true`, `require_code_owner_reviews: true`, `required_approving_review_count: 1`, `require_last_push_approval: true`, `required_status_checks.contexts: ["CodeRabbit"]`, `required_conversation_resolution: true`.
+- **Follow-up**:
+  - Every subsequent PR (including the still-open PR #25 for CI stabilization and the Dependabot queue) can now merge via the normal workflow: @wiiiii123 approves PRs authored by @meiiie, and vice versa. No more bypass required for the self-approval reason.
+  - A third bypass this quarter triggers a protection-policy review per `WIII_BRANCH_PROTECTION.md`. Two out of three used today — any subsequent bypass in Q2 2026 must be for a genuinely different reason (production incident, security patch window, etc.).
+
+---
 
 ---
