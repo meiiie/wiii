@@ -120,9 +120,10 @@ This checkpoint establishes:
 
 Executed on 2026-04-24:
 
-- Removed tracked non-canonical report trees: `.Codex/reports/`, `.claude/reports/`, and `maritime-ai-service/.claude/reports/`.
+- Removed tracked non-canonical report trees: `.Codex/reports/`, `.claude/reports/`, `maritime-ai-service/.claude/reports/`, and nested `maritime-ai-service/.Codex/reports/`.
 - Removed local generated/dependency artifacts: `wiii-desktop/node_modules`, `maritime-ai-service/.venv`, `.Codex/external`, `.Codex/tmp`, Tauri target, Vite dist outputs, test results, screenshots, logs, caches, and Python `__pycache__` directories.
-- Updated `.gitignore` so `.Codex/reports/`, `.Codex/external/`, `.Codex/tmp/`, and `.claude/reports/` stay out of source control.
+- Removed ignored old planning/checkpoint notes and unrelated sample PDFs that were outside canonical documentation/data paths.
+- Updated `.gitignore` so `.Codex/reports/`, `.Codex/external/`, `.Codex/tmp/`, and `.claude/reports/` stay out of source control, including nested `.Codex` locations.
 - Left source-like untracked files for explicit triage instead of deleting them as generic junk.
 
 Known residue:

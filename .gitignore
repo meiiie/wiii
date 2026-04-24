@@ -92,7 +92,7 @@ wiii-desktop/scripts/screenshots/
 .claude/plans/
 .claude/reports/
 .claude/tasks/
-plans/
+/plans/
 
 # === Large data files ===
 maritime-ai-service/data/*.pdf
@@ -110,3 +110,6 @@ AGENTS.md
 .Codex/external/
 .Codex/tmp/
 .Codex/reports/
+**/.Codex/external/
+**/.Codex/tmp/
+**/.Codex/reports/
