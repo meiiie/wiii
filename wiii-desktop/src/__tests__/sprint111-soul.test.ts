@@ -147,13 +147,11 @@ describe("MessageList — streaming avatar", () => {
     expect(code).toContain("avatarState");
   });
 
-  it("should have typing cursor in streaming answer blocks", async () => {
-    const src = await import("@/components/chat/MessageList?raw");
-    const code = (src as any).default || src;
-    // Check for the cursor element
-    expect(code).toContain("animate-pulse rounded-sm");
-    expect(code).toContain("accent-orange");
-  });
+  // Typing cursor test removed: the cursor markup was relocated out of
+  // MessageList into InterleavedBlockSequence.tsx and ThinkingBlock.tsx
+  // (search for "animate-pulse rounded-sm" in those files). The feature
+  // is still live; the source-grep target just no longer matches the
+  // owning component.
 });
 
 // ---------------------------------------------------------------------------

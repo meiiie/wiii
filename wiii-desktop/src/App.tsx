@@ -54,7 +54,7 @@ export default function App() {
   // Dev tool: ?preview=avatar shows avatar preview page
   if (window.location.search.includes("preview=avatar")) {
     return (
-      <Suspense fallback={<BootSplash label="Wiii dang mo ban xem truoc..." />}>
+      <Suspense fallback={<BootSplash label="Wiii đang mở bản xem trước..." />}>
         <AvatarPreview />
       </Suspense>
     );
@@ -226,14 +226,14 @@ export default function App() {
 
   // Loading screen while stores initialize
   if (!settingsLoaded || !authLoaded || !chatsLoaded) {
-    return <BootSplash label="Wiii dang thuc day..." />;
+    return <BootSplash label="Wiii đang thức dậy..." />;
   }
 
   // Sprint 157: Show login screen when not authenticated
   if (!isAuthenticated) {
     return (
       <ErrorBoundary>
-        <Suspense fallback={<BootSplash label="Wiii dang mo cong dang nhap..." />}>
+        <Suspense fallback={<BootSplash label="Wiii đang mở cổng đăng nhập..." />}>
           <LoginScreen />
         </Suspense>
       </ErrorBoundary>
@@ -242,7 +242,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <Suspense fallback={<BootSplash label="Wiii dang mo khong gian tro chuyen..." />}>
+      <Suspense fallback={<BootSplash label="Wiii đang mở không gian trò chuyện..." />}>
         <AppShell />
       </Suspense>
       <Suspense fallback={null}>

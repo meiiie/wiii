@@ -118,16 +118,8 @@ describe("chat-store — finalizeStream type safety", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// 6) MessageList — proper Unicode in stop button
-// ---------------------------------------------------------------------------
-describe("MessageList — stop button text", () => {
-  it("should use real Unicode not HTML entities", async () => {
-    const src = await import("@/components/chat/MessageList?raw");
-    const code = (src as any).default || src;
-    expect(code).toContain("■ Dừng Wiii");
-    // Should NOT have HTML entities
-    expect(code).not.toContain("&#9632;");
-    expect(code).not.toContain("&#7915;");
-  });
-});
+// Stop button test removed: the Stop control was moved from MessageList to
+// ChatInput and switched to an SVG icon with aria-label="Dừng tạo phản hồi"
+// (see ChatInput.tsx). The original substring assertion no longer maps onto
+// the component that owns the button; accessible-label coverage belongs in
+// an integration/RTL test against ChatInput, not a source-grep here.
