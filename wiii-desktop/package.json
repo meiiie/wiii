@@ -34,7 +34,7 @@
     "@tauri-apps/plugin-store": "^2.0.0",
     "immer": "^11.1.4",
     "katex": "^0.16.28",
-    "lucide-react": "^0.400.0",
+    "lucide-react": "^0.577.0",
     "mermaid": "^11.14.0",
     "motion": "^12.38.0",
     "plotly.js-gl3d-dist-min": "^3.5.0",
