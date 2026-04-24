@@ -20,7 +20,7 @@ sentry-sdk[fastapi]>=2.58.0,<3.0.0
 sqlalchemy>=2.0.27,<3.0.0
 asyncpg>=0.30.0,<1.0.0
 # psycopg2-binary removed Sprint 154 — psycopg[binary]>=3.1.0 (line 29) is the modern async replacement
-alembic~=1.15.0
+alembic>=1.15,<1.19
 pgvector==0.2.5
 
 # --- AI CORE STACK (PINNED to tested minor versions) ---
