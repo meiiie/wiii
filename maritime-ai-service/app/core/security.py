@@ -238,8 +238,16 @@ async def require_auth(
     x_org_id = _normalize_optional_header(x_org_id)
     x_host_role = _normalize_optional_header(x_host_role)
 
+    # Track whether an API key was supplied but failed verification, so we can
+    # still attempt a Bearer fallback before returning 401. This follows the
+    # "try all provided credentials before failing" pattern used by AWS SDK,
+    # GitHub, and Cloudflare Access. A stale API key in a browser that also
+    # holds a valid JWT must not silently break every request.
+    api_key_attempted = False
+
     # Try API Key or LMS service token first
     if api_key:
+        api_key_attempted = True
         if verify_api_key(api_key):
             effective_host_role = normalize_host_role(x_host_role or x_role)
             effective_role = (
@@ -405,23 +413,10 @@ async def require_auth(
                     )
 
             return user
-        else:
-            logger.warning("Invalid API key provided")
-            # Sprint 176: Audit event (fire-and-forget, non-blocking)
-            if settings.enable_auth_audit:
-                try:
-                    import asyncio
-                    from app.auth.auth_audit import log_auth_event
-                    asyncio.get_running_loop().create_task(log_auth_event(
-                        "auth_failed", provider="api_key", result="failed",
-                        reason="Invalid API key",
-                    ))
-                except Exception as _audit_err:
-                    logger.debug("Auth audit log failed (auth_failed): %s", _audit_err)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid API key",
-            )
+        # API key was present but neither path verified. Fall through to the
+        # Bearer/JWT check — if the caller also supplied a valid JWT we honour
+        # it. The final 401 at the bottom of the function still raises
+        # "Invalid API key" if no alternative credential succeeds.
 
     # Try JWT Token
     if credentials:
@@ -474,7 +469,27 @@ async def require_auth(
 
         return user
 
-    # No authentication provided
+    # All provided credentials failed (or none were provided).
+    if api_key_attempted:
+        logger.warning("Invalid API key provided")
+        # Sprint 176: Audit event (fire-and-forget, non-blocking). Logged at
+        # final-failure time so legitimate callers whose stale API key was
+        # superseded by a valid JWT do not spam the audit log.
+        if settings.enable_auth_audit:
+            try:
+                import asyncio
+                from app.auth.auth_audit import log_auth_event
+                asyncio.get_running_loop().create_task(log_auth_event(
+                    "auth_failed", provider="api_key", result="failed",
+                    reason="Invalid API key",
+                ))
+            except Exception as _audit_err:
+                logger.debug("Auth audit log failed (auth_failed): %s", _audit_err)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+        )
+
     logger.warning("No authentication credentials provided")
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
