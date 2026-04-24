@@ -373,7 +373,7 @@ def _collect_direct_tools(query: str, user_role: str = "student", state: Optiona
     )
 
     # Agent handoff tool (Phase 3)
-    if settings.enable_agent_handoffs:
+    if settings.enable_agent_handoffs and not force_tools:
         try:
             from app.engine.multi_agent.handoff_tools import handoff_to_agent
             _direct_tools.append(handoff_to_agent)
@@ -726,5 +726,4 @@ def _build_visual_tool_runtime_metadata(state: dict, query: str) -> dict[str, An
         metadata["last_visual_html"] = last_visual_html[:50000]  # cap at 50k chars
 
     return metadata or None
-
 

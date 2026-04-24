@@ -312,6 +312,29 @@ def _clear_stale_provider_state_for_model_change(
     state["max_output_source"] = None
 
 
+def _provider_flag(provider_obj: Any, *, method_name: str, key: str) -> bool:
+    """Read provider booleans from live provider objects or serialized snapshots."""
+    if not provider_obj:
+        return False
+
+    method = getattr(provider_obj, method_name, None)
+    if callable(method):
+        try:
+            return bool(method())
+        except Exception as exc:
+            logger.debug(
+                "[LLM_SELECTABILITY] provider.%s() failed: %s",
+                method_name,
+                exc,
+            )
+            return False
+
+    if isinstance(provider_obj, Mapping):
+        return bool(provider_obj.get(key))
+
+    return bool(getattr(provider_obj, key, False))
+
+
 def _resolve_required_capability_reason(state: dict[str, Any]) -> ProviderDisabledReasonCode | None:
     capability_checks: list[tuple[str, str]] = [
         ("streaming_supported", "streaming_source"),
@@ -444,8 +467,16 @@ def get_llm_selectability_snapshot(
     snapshot: list[ProviderSelectability] = []
     for provider_name in get_supported_provider_names():
         provider_obj = LLMPool.get_provider_info(provider_name)
-        configured = bool(provider_obj.is_configured()) if provider_obj else False
-        runtime_available = bool(provider_obj.is_available()) if provider_obj else False
+        configured = _provider_flag(
+            provider_obj,
+            method_name="is_configured",
+            key="configured",
+        )
+        runtime_available = _provider_flag(
+            provider_obj,
+            method_name="is_available",
+            key="available",
+        )
         is_request_selectable = provider_name in request_selectable
         selected_model = _selected_model_for_provider(provider_name)
         provider_state = (

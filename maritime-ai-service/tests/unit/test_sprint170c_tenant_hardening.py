@@ -216,7 +216,8 @@ class TestFactRepositoryOrgFiltering:
         repo._format_embedding = MagicMock(return_value="[0.1]")
 
         with _patch_settings(enable_multi_tenant=True, default_org="org-F"), \
-             _patch_org_context("org-F"):
+             _patch_org_context("org-F"), \
+             patch("app.services.embedding_space_guard.stamp_embedding_metadata", side_effect=lambda metadata, **_: metadata):
             result = repo.update_fact(
                 uuid4(), "new content", [0.1] * 768, {"fact_type": "name"}, user_id="user1"
             )

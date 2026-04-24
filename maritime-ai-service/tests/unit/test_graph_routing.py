@@ -507,7 +507,7 @@ class TestDirectAnswerTimeoutProfile:
 
         assert result["final_response"] == "Mình là Wiii."
         assert mock_get_llm.call_args.kwargs["provider_override"] == "google"
-        assert execute_direct_tool_rounds.await_args.kwargs["provider"] == "auto"
+        assert execute_direct_tool_rounds.await_args.kwargs["provider"] is None
         mock_collect_tools.assert_not_called()
         fake_tracer.end_step.assert_called_once()
 
@@ -621,7 +621,7 @@ class TestDirectAnswerTimeoutProfile:
         fake_tracer.end_step.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_direct_response_node_does_not_invent_template_thinking_without_native_or_fragments(self):
+    async def test_direct_response_node_backfills_emotional_thinking_without_native_or_fragments(self):
         fake_tracer = MagicMock()
         fake_llm = MagicMock()
         state = {
@@ -661,7 +661,7 @@ class TestDirectAnswerTimeoutProfile:
         ):
             result = await direct_response_node(state)
 
-        assert result.get("thinking_content", "") == ""
+        assert result.get("thinking_content", "") == "Câu này cần một nhịp đáp chậm và thật hơn là một lời giải thích vội."
         assert "khoảng chùng xuống" not in result.get("thinking_content", "").lower()
 
     @pytest.mark.asyncio
@@ -1250,19 +1250,19 @@ class TestCodeStudioProgressHeartbeat:
         assert session_a == session_b
         assert session_a.startswith("vs-stream-")
 
-    def test_real_code_streaming_is_disabled_for_zhipu_until_tool_streaming_is_proven(self):
+    def test_real_code_streaming_is_allowed_for_zhipu_glm5(self):
         with patch("app.core.config.get_settings", return_value=SimpleNamespace(enable_real_code_streaming=True)):
             assert _should_enable_real_code_streaming(
                 "zhipu",
                 llm=SimpleNamespace(_wiii_model_name="glm-5"),
-            ) is False
+            ) is True
 
     def test_real_code_streaming_is_allowed_for_openai_compatible_gate(self):
         with patch("app.core.config.get_settings", return_value=SimpleNamespace(enable_real_code_streaming=True)):
             assert _should_enable_real_code_streaming("openai") is True
 
     @pytest.mark.asyncio
-    async def test_native_answer_streaming_keeps_provider_reasoning_private_for_direct_lane(self):
+    async def test_native_answer_streaming_surfaces_provider_reasoning_for_direct_lane(self):
         class _FakeDelta:
             def __init__(self, *, reasoning=None, content=None):
                 self.reasoning_content = reasoning
@@ -1337,11 +1337,13 @@ class TestCodeStudioProgressHeartbeat:
         assert thinking_stop.is_set() is True
         assert response.content == "Xin chao"
         assert [event["type"] for event in events] == [
+            "thinking_start",
+            "thinking_delta",
             "thinking_end",
             "answer_delta",
             "answer_delta",
         ]
-        assert all(event.get("content") != "raw hidden scratchpad" for event in events)
+        assert any(event.get("content") == "raw hidden scratchpad" for event in events)
 
     @pytest.mark.asyncio
     async def test_stream_answer_with_fallback_strips_google_thinking_tags_from_direct_answer(self):
@@ -1690,7 +1692,7 @@ class TestVisibleProgressCopy:
             "giá dầu hôm nay https://example.com Brent 98.74 WTI 95.92",
         )
 
-        assert result == "Da keo them vai nguon de kiem cheo."
+        assert result == "Đã kéo thêm vài nguồn để kiểm chéo."
 
 
 class TestProviderFlowIntegrity:
@@ -1741,7 +1743,7 @@ class TestProviderFlowIntegrity:
 
         assert result["final_response"] == "Đã dựng chart"
         assert mock_get_llm.call_args.kwargs["effort_override"] == "high"
-        assert mock_execute.call_args.kwargs["provider"] == "auto"
+        assert mock_execute.call_args.kwargs["provider"] is None
         assert result["provider"] == "auto"
         assert result["model"] == "glm-4.5-air"
 

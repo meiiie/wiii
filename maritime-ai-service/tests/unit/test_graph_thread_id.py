@@ -1,100 +1,110 @@
 """
-Tests for LangGraph thread_id passing and graph compilation (Sprint 8).
+Tests for thread identity handling and the retired LangGraph shell.
 
 Verifies:
-- Graph builds with and without checkpointer
-- thread_id is passed to ainvoke/astream via config
-- Async singleton initializes checkpointer
-- Empty session_id produces empty config
+- Deprecated LangGraph entrypoints fail closed after De-LangGraphing
+- WiiiRunner is registered with the core orchestration nodes
+- process_with_multi_agent preserves user/session identity and thread views
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
 
 
-class TestBuildMultiAgentGraph:
-    """Test graph compilation with checkpointer support."""
+class TestDeprecatedGraphEntrypoints:
+    """Test the retired LangGraph build helpers fail explicitly."""
+
+    def _assert_deprecated(self, func, *args, **kwargs):
+        with pytest.raises(RuntimeError, match="build_multi_agent_graph.*deprecated"):
+            func(*args, **kwargs)
 
     def test_build_without_checkpointer(self):
-        """Graph compiles successfully without checkpointer."""
+        """Graph builder is no longer available without checkpointer."""
         from app.engine.multi_agent.graph import build_multi_agent_graph
 
-        graph = build_multi_agent_graph(checkpointer=None)
-        assert graph is not None
+        self._assert_deprecated(build_multi_agent_graph, checkpointer=None)
 
     def test_build_with_checkpointer_true(self):
-        """Graph compiles successfully with checkpointer=True (MemorySaver)."""
+        """Graph builder is no longer available with checkpointer=True."""
         from app.engine.multi_agent.graph import build_multi_agent_graph
 
-        # LangGraph accepts True to auto-create MemorySaver
-        graph = build_multi_agent_graph(checkpointer=True)
-        assert graph is not None
+        self._assert_deprecated(build_multi_agent_graph, checkpointer=True)
 
-    def test_graph_has_expected_nodes(self):
-        """Graph contains all expected agent nodes."""
+    def test_build_default_raises(self):
+        """Default build fails with a migration hint."""
         from app.engine.multi_agent.graph import build_multi_agent_graph
 
-        graph = build_multi_agent_graph()
-        # LangGraph compiled graph has nodes attribute
-        node_names = set(graph.nodes.keys()) if hasattr(graph, 'nodes') else set()
-        expected = {"supervisor", "rag_agent", "tutor_agent", "memory_agent", "direct", "grader", "synthesizer"}
-        # At minimum, these should exist (graph may add __start__, __end__)
-        assert expected.issubset(node_names) or len(node_names) > 0
-
-    def test_build_default_no_checkpointer(self):
-        """Default build (no args) should compile without error."""
-        from app.engine.multi_agent.graph import build_multi_agent_graph
-
-        graph = build_multi_agent_graph()
-        assert graph is not None
+        self._assert_deprecated(build_multi_agent_graph)
 
 
-class TestGraphSingleton:
-    """Test sync and async graph singletons."""
+class TestRunnerRegistration:
+    """Test WiiiRunner replaces the previous graph node registry."""
 
     @pytest.fixture(autouse=True)
-    def reset_singleton(self):
-        """Reset sync graph singleton between tests."""
-        import app.engine.multi_agent.graph as mod
-        mod._sync_graph = None
-        yield
-        mod._sync_graph = None
+    def reset_runner(self):
+        """Reset runner singleton between tests."""
+        import app.engine.multi_agent.runner as runner_mod
 
-    def test_sync_singleton(self):
-        """Sync singleton creates graph without checkpointer."""
+        runner_mod._RUNNER = None
+        yield
+        runner_mod._RUNNER = None
+
+    def test_runner_has_expected_core_nodes(self):
+        """Runner contains the core agent nodes used by the main path."""
+        from app.engine.multi_agent.runner import get_wiii_runner
+
+        runner = get_wiii_runner()
+
+        node_names = set(runner._nodes.keys())
+        expected = {
+            "guardian",
+            "supervisor",
+            "rag_agent",
+            "tutor_agent",
+            "memory_agent",
+            "direct",
+            "code_studio_agent",
+            "synthesizer",
+        }
+        assert expected.issubset(node_names)
+
+    def test_runner_registers_feature_nodes(self):
+        """Feature-gated nodes remain registered on the runner shell."""
+        from app.engine.multi_agent.runner import get_wiii_runner
+
+        runner = get_wiii_runner()
+
+        feature_node_names = set(runner._feature_nodes.keys())
+        assert "colleague_agent" in feature_node_names
+        assert "product_search_agent" in feature_node_names
+        assert "parallel_dispatch" in feature_node_names
+
+
+class TestGraphSingletonCompatibility:
+    """Test old graph singleton accessors keep failing closed."""
+
+    def test_sync_singleton_is_deprecated(self):
+        """Sync singleton still routes to the retired builder."""
         from app.engine.multi_agent.graph import get_multi_agent_graph
 
-        graph = get_multi_agent_graph()
-        assert graph is not None
-
-        # Second call returns same instance
-        graph2 = get_multi_agent_graph()
-        assert graph is graph2
+        with pytest.raises(RuntimeError, match="deprecated"):
+            get_multi_agent_graph()
 
     @pytest.mark.asyncio
-    async def test_async_singleton_with_none_checkpointer(self):
-        """Async singleton works when checkpointer returns None (no DB)."""
-        import app.engine.multi_agent.graph as mod
+    async def test_async_singleton_is_deprecated(self):
+        """Async singleton still routes to the retired builder."""
+        from app.engine.multi_agent.graph import get_multi_agent_graph_async
 
-        # get_multi_agent_graph_async() always builds a fresh graph (request-scoped)
-        graph = await mod.get_multi_agent_graph_async()
-        assert graph is not None
-
-    @pytest.mark.asyncio
-    async def test_async_singleton_returns_same_instance(self):
-        """get_multi_agent_graph_async() returns a compiled graph each call."""
-        import app.engine.multi_agent.graph as mod
-
-        # The async accessor always builds a fresh no-checkpointer graph
-        result = await mod.get_multi_agent_graph_async()
-        assert result is not None
+        with pytest.raises(RuntimeError, match="deprecated"):
+            await get_multi_agent_graph_async()
 
 
 class TestAgentStateSchema:
-    """Guard critical runtime metadata fields from being dropped by LangGraph state schema."""
+    """Guard critical runtime metadata fields from being dropped by state schema."""
 
     def test_agent_state_declares_execution_runtime_fields(self):
-        """Execution provider/model must exist in AgentState so sync metadata survives graph hops."""
+        """Execution provider/model must exist in AgentState so sync metadata survives hops."""
         from app.engine.multi_agent.state import AgentState
 
         annotations = getattr(AgentState, "__annotations__", {})
@@ -104,42 +114,43 @@ class TestAgentStateSchema:
 
 
 class TestThreadIdPassing:
-    """Test that thread_id is passed correctly to graph invocations."""
+    """Test thread identity is preserved through the WiiiRunner path."""
 
-    @pytest.mark.asyncio
-    async def test_process_passes_thread_id(self):
-        """process_with_multi_agent passes composite thread_id in config (Sprint 16)."""
-        from contextlib import asynccontextmanager
-
-        mock_graph = MagicMock()
-        mock_graph.ainvoke = AsyncMock(return_value={
-            "final_response": "test",
-            "sources": [],
-            "tools_used": [],
-            "grader_score": 8,
-            "agent_outputs": {},
-            "error": None,
-            "reasoning_trace": None,
-            "thinking": None,
-            "thinking_content": None,
-            "_execution_provider": "zhipu",
-            "_execution_model": "glm-5",
-        })
-
-        @asynccontextmanager
-        async def mock_open_graph():
-            yield mock_graph
-
+    def _mock_registry(self):
         mock_registry = MagicMock()
         mock_registry.start_request_trace.return_value = "trace-123"
-        mock_registry.end_request_trace.return_value = {"span_count": 0, "total_duration_ms": 0}
+        mock_registry.end_request_trace.return_value = {
+            "span_count": 0,
+            "total_duration_ms": 0,
+        }
+        return mock_registry
 
+    @pytest.mark.asyncio
+    async def test_process_preserves_thread_identity(self):
+        """process_with_multi_agent passes identity through runner state."""
+        mock_runner = MagicMock()
+        mock_runner.run = AsyncMock(
+            return_value={
+                "final_response": "test",
+                "sources": [],
+                "tools_used": [],
+                "grader_score": 8,
+                "agent_outputs": {},
+                "error": None,
+                "reasoning_trace": None,
+                "thinking": None,
+                "thinking_content": None,
+                "_execution_provider": "zhipu",
+                "_execution_model": "glm-5",
+            }
+        )
+        mock_registry = self._mock_registry()
         mock_thread_repo = MagicMock()
-        mock_thread_repo.upsert_thread.return_value = None
+        mock_thread_repo.upsert_thread.return_value = {"message_count": 1}
 
         with patch(
-            "app.engine.multi_agent.graph.open_multi_agent_graph",
-            side_effect=mock_open_graph,
+            "app.engine.multi_agent.runner.get_wiii_runner",
+            return_value=mock_runner,
         ), patch(
             "app.engine.multi_agent.graph.get_agent_registry",
             return_value=mock_registry,
@@ -155,15 +166,12 @@ class TestThreadIdPassing:
                 session_id="session-abc",
             )
 
-            # Verify ainvoke was called with config containing composite thread_id
-            call_args = mock_graph.ainvoke.call_args
-            assert call_args is not None
-            config = call_args.kwargs.get("config") or (call_args[1] if len(call_args) > 1 else {})
-            if isinstance(config, dict) and "configurable" in config:
-                thread_id = config["configurable"]["thread_id"]
-                # Sprint 16: composite thread_id = "user_{user_id}__session_{session_id}"
-                assert "user-1" in thread_id
-                assert "session-abc" in thread_id
+            run_state = mock_runner.run.call_args.args[0]
+            assert run_state["user_id"] == "user-1"
+            assert run_state["session_id"] == "session-abc"
+            upsert_kwargs = mock_thread_repo.upsert_thread.call_args.kwargs
+            assert "user-1" in upsert_kwargs["thread_id"]
+            assert "session-abc" in upsert_kwargs["thread_id"]
             assert result["provider"] == "zhipu"
             assert result["model"] == "glm-5"
             assert result["_execution_provider"] == "zhipu"
@@ -171,36 +179,33 @@ class TestThreadIdPassing:
 
     @pytest.mark.asyncio
     async def test_process_empty_session_id(self):
-        """Empty session_id produces empty config (no thread_id)."""
-        from contextlib import asynccontextmanager
-
-        mock_graph = MagicMock()
-        mock_graph.ainvoke = AsyncMock(return_value={
-            "final_response": "test",
-            "sources": [],
-            "tools_used": [],
-            "grader_score": 8,
-            "agent_outputs": {},
-            "error": None,
-            "reasoning_trace": None,
-            "thinking": None,
-            "thinking_content": None,
-        })
-
-        @asynccontextmanager
-        async def mock_open_graph():
-            yield mock_graph
-
-        mock_registry = MagicMock()
-        mock_registry.start_request_trace.return_value = "trace-123"
-        mock_registry.end_request_trace.return_value = {"span_count": 0, "total_duration_ms": 0}
+        """Empty session_id skips thread view persistence."""
+        mock_runner = MagicMock()
+        mock_runner.run = AsyncMock(
+            return_value={
+                "final_response": "test",
+                "sources": [],
+                "tools_used": [],
+                "grader_score": 8,
+                "agent_outputs": {},
+                "error": None,
+                "reasoning_trace": None,
+                "thinking": None,
+                "thinking_content": None,
+            }
+        )
+        mock_registry = self._mock_registry()
+        mock_thread_repo = MagicMock()
 
         with patch(
-            "app.engine.multi_agent.graph.open_multi_agent_graph",
-            side_effect=mock_open_graph,
+            "app.engine.multi_agent.runner.get_wiii_runner",
+            return_value=mock_runner,
         ), patch(
             "app.engine.multi_agent.graph.get_agent_registry",
             return_value=mock_registry,
+        ), patch(
+            "app.repositories.thread_repository.get_thread_repository",
+            return_value=mock_thread_repo,
         ):
             from app.engine.multi_agent.graph import process_with_multi_agent
 
@@ -210,7 +215,8 @@ class TestThreadIdPassing:
                 session_id="",
             )
 
-            call_args = mock_graph.ainvoke.call_args
-            config = call_args.kwargs.get("config", {})
-            # Empty session_id should produce empty config
-            assert config == {} or "configurable" not in config
+            run_state = mock_runner.run.call_args.args[0]
+            assert run_state["user_id"] == "user-1"
+            assert run_state["session_id"] == ""
+            mock_thread_repo.upsert_thread.assert_not_called()
+            assert result["response"] == "test"

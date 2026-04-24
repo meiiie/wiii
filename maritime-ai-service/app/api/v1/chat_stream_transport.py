@@ -26,6 +26,7 @@ async def wrap_sse_with_keepalive(
     queue: asyncio.Queue[str | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
     last_inner_chunk_at = loop.time()
+    sent_keepalive_since_inner = False
 
     async def _producer() -> None:
         try:
@@ -63,11 +64,19 @@ async def wrap_sse_with_keepalive(
                 if item is None:
                     return
                 last_inner_chunk_at = loop.time()
+                sent_keepalive_since_inner = False
                 yield item
             except asyncio.TimeoutError:
                 if idle_timeout_sec and idle_timeout_sec > 0:
                     idle_elapsed = loop.time() - last_inner_chunk_at
                     if idle_elapsed >= idle_timeout_sec:
+                        if (
+                            not sent_keepalive_since_inner
+                            and keepalive_interval_sec < idle_timeout_sec
+                        ):
+                            sent_keepalive_since_inner = True
+                            yield keepalive_chunk
+                            continue
                         logger.warning(
                             "[SSE] Inner generator idle timeout after %.2fs",
                             idle_timeout_sec,
@@ -77,6 +86,7 @@ async def wrap_sse_with_keepalive(
                             for chunk in on_inner_error():
                                 yield chunk
                         return
+                sent_keepalive_since_inner = True
                 yield keepalive_chunk
     finally:
         if not producer_task.done():

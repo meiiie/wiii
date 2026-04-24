@@ -44,9 +44,9 @@ def test_direct_system_messages_adds_market_analytical_contract():
     assert "mo answer bang mot thesis co the kiem cheo duoc" in lowered
     assert "khong dung danh sach dam/net bold nhu mot ban tom tat tin tuc" in lowered
     assert "base system prompt" not in lowered
-    assert "--- direct visible thinking ---" in lowered
-    assert "khong duoc viet ra kieu planner/editorial" in lowered
-    assert "luc nay minh can tach mat bang gia hien tai" in lowered
+    assert "--- visible thinking ---" in lowered
+    assert "visible thinking phai nghe nhu wiii dang can lai tin hieu" in lowered
+    assert "neu mot truc gia/nguon chua keo duoc" in lowered
 
 
 def test_direct_system_messages_adds_math_analytical_contract():
@@ -62,6 +62,6 @@ def test_direct_system_messages_adds_math_analytical_contract():
     assert "pham vi ma gan dung do con hop le" in lowered
     assert "phuong trinh" in lowered
     assert "base system prompt" not in lowered
-    assert "--- direct visible thinking ---" in lowered
-    assert "compact resolvent day pho ve roi rac" in lowered
-    assert "giu rieng cau truc pho voi bai toan tien hoa" in lowered
+    assert "--- visible thinking ---" in lowered
+    assert "khung uu tien: mo hinh va gia dinh -> phuong trinh/derivation -> y nghia vat ly" in lowered
+    assert "neu cong thuc phu thuoc gia dinh" in lowered

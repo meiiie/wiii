@@ -396,8 +396,10 @@ class TestLLMDecision:
             SubagentReport(agent_name="tutor", verdict=ReportVerdict.CONFIDENT, relevance_score=0.8, summary="Tutor output"),
         ]
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg:
-            mock_reg.get_llm = MagicMock(return_value=mock_llm)
+        with (
+            patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm),
+            patch("app.services.structured_invoke_service.StructuredInvokeService.ainvoke", new=AsyncMock(return_value=mock_schema_result)),
+        ):
             decision = await _llm_decision(reports, "test query", {})
 
         assert decision.action == "synthesize"
@@ -428,8 +430,10 @@ class TestLLMDecision:
             SubagentReport(agent_name="rag", verdict=ReportVerdict.CONFIDENT, relevance_score=0.8, summary="RAG out"),
         ]
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg:
-            mock_reg.get_llm = MagicMock(return_value=mock_llm)
+        with (
+            patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm),
+            patch("app.services.structured_invoke_service.StructuredInvokeService.ainvoke", new=AsyncMock(return_value=mock_schema_result)),
+        ):
             decision = await _llm_decision(reports, "query", {})
 
         assert decision.action == "use_best"
@@ -459,8 +463,10 @@ class TestLLMDecision:
             SubagentReport(agent_name="rag", verdict=ReportVerdict.PARTIAL, relevance_score=0.3, summary="Low"),
         ]
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg:
-            mock_reg.get_llm = MagicMock(return_value=mock_llm)
+        with (
+            patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm),
+            patch("app.services.structured_invoke_service.StructuredInvokeService.ainvoke", new=AsyncMock(return_value=mock_schema_result)),
+        ):
             decision = await _llm_decision(reports, "query", {})
 
         assert decision.action == "re_route"
@@ -479,8 +485,10 @@ class TestLLMDecision:
             SubagentReport(agent_name="tutor", verdict=ReportVerdict.PARTIAL, relevance_score=0.4, summary="Low"),
         ]
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg:
-            mock_reg.get_llm = MagicMock(side_effect=Exception("LLM unavailable"))
+        with patch(
+            "app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm",
+            side_effect=Exception("LLM unavailable"),
+        ):
             decision = await _llm_decision(reports, "query", {})
 
         assert decision.action == "use_best"
@@ -499,8 +507,7 @@ class TestLLMDecision:
             SubagentReport(agent_name="tutor", verdict=ReportVerdict.CONFIDENT, relevance_score=0.7, summary="T"),
         ]
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg:
-            mock_reg.get_llm = MagicMock(return_value=None)
+        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=None):
             decision = await _llm_decision(reports, "query", {})
 
         assert decision.action == "use_best"
@@ -578,8 +585,10 @@ class TestAggregatorNode:
             ],
         }
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg:
-            mock_reg.get_llm = MagicMock(return_value=mock_llm)
+        with (
+            patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm),
+            patch("app.services.structured_invoke_service.StructuredInvokeService.ainvoke", new=AsyncMock(return_value=mock_schema_result)),
+        ):
             result = await aggregator_node(state)
 
         assert result["_aggregator_action"] == "synthesize"
@@ -613,8 +622,10 @@ class TestAggregatorNode:
             ],
         }
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg:
-            mock_reg.get_llm = MagicMock(return_value=mock_llm)
+        with (
+            patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm),
+            patch("app.services.structured_invoke_service.StructuredInvokeService.ainvoke", new=AsyncMock(return_value=mock_schema_result)),
+        ):
             result = await aggregator_node(state)
 
         assert result["_aggregator_action"] == "re_route"
@@ -646,8 +657,10 @@ class TestAggregatorNode:
             ],
         }
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_reg:
-            mock_reg.get_llm = MagicMock(return_value=mock_llm)
+        with (
+            patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm),
+            patch("app.services.structured_invoke_service.StructuredInvokeService.ainvoke", new=AsyncMock(return_value=mock_schema_result)),
+        ):
             result = await aggregator_node(state)
 
         # Should NOT re-route — fallback to use_best instead

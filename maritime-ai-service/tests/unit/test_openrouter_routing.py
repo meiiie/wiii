@@ -41,6 +41,7 @@ class TestBuildOpenRouterExtraBody:
 
     def test_includes_models_and_provider_preferences(self):
         settings = _make_settings(
+            openrouter_api_key="sk-or-test",
             openrouter_model_fallbacks=[
                 "openai/gpt-oss-120b:free",
                 "openai/gpt-oss-20b:free",

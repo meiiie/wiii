@@ -53,8 +53,8 @@ def test_default_thinking_instruction_fallback_stays_native_first():
     instruction = get_thinking_instruction_from_shared_config({})
 
     assert "native thinking" in instruction.lower()
-    assert "KHONG lap dan y cau tra loi" in instruction
-    assert "KHONG viet nhap cau tra loi cho user" in instruction
+    assert "KHÔNG lập dàn ý câu trả lời" in instruction
+    assert "KHÔNG viết nháp câu trả lời cho user" in instruction
 
 
 def test_shared_yaml_thinking_instruction_restores_old_shared_prompt_language():

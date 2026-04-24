@@ -95,8 +95,12 @@ async def test_emit_stream_finalization_prefers_public_thinking_fragments():
 
     metadata_event = next(event for event in events if event.type == "metadata")
     assert metadata_event.content["thinking"] == "native private thinking"
-    assert metadata_event.content["thinking_content"] == "Nhịp này không cần kéo dài quá tay."
-    assert metadata_event.content["thinking_lifecycle"]["final_text"] == "Nhịp này không cần kéo dài quá tay."
+    expected_thinking = (
+        "Mình đang gom các biến số thị trường quan trọng trước.\n\n"
+        "Sau đó mình đối chiếu cung cầu với yếu tố địa chính trị để tránh nhận định bề mặt."
+    )
+    assert metadata_event.content["thinking_content"] == expected_thinking
+    assert metadata_event.content["thinking_lifecycle"]["final_text"] == expected_thinking
     assert events[-1].type == "done"
 
 

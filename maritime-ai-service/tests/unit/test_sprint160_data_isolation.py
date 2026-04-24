@@ -208,7 +208,9 @@ class TestSemanticMemoryRepoOrgIsolation:
             memory_type=MemoryType.USER_FACT, importance=0.8
         )
 
-        with patch("app.core.org_filter.get_effective_org_id", return_value="org-test"):
+        with patch("app.core.org_filter.get_effective_org_id", return_value="org-test"), \
+             patch.object(repo, "_resolve_inline_embedding", return_value=(memory.embedding, json.dumps({}, ensure_ascii=False), tuple())), \
+             patch.object(repo, "_store_shadow_vectors", return_value=None):
             repo.save_memory(memory)
 
         # Verify the execute was called with org_id in params
@@ -238,7 +240,9 @@ class TestSemanticMemoryRepoOrgIsolation:
             memory_type=MemoryType.USER_FACT, importance=0.8
         )
 
-        with patch("app.core.org_filter.get_effective_org_id", return_value=None):
+        with patch("app.core.org_filter.get_effective_org_id", return_value=None), \
+             patch.object(repo, "_resolve_inline_embedding", return_value=(memory.embedding, json.dumps({}, ensure_ascii=False), tuple())), \
+             patch.object(repo, "_store_shadow_vectors", return_value=None):
             repo.save_memory(memory)
 
         call_args = mock_session.execute.call_args

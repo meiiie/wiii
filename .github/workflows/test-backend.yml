@@ -35,7 +35,7 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://wiii:wiii_secret@localhost:5433/wiii_ai
       API_KEY: test-key
       GOOGLE_API_KEY: fake-key-for-unit-tests
-      ENVIRONMENT: test
+      ENVIRONMENT: development
       PYTHONIOENCODING: utf-8
 
     steps:

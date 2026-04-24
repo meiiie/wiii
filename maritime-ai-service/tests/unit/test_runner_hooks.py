@@ -325,6 +325,7 @@ class TestWiiiRunnerHooks:
             return state
         async def mock_rag(state):
             state["rag_output"] = "answer"
+            state["final_response"] = "answer long enough to pass retry guard"
             return state
         async def mock_synthesizer(state):
             state["final_response"] = state.get("rag_output", "")

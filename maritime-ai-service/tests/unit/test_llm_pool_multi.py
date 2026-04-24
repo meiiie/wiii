@@ -402,38 +402,42 @@ class TestInitProviders:
 class TestLLMFactoryProvider:
     """Test create_llm() with explicit provider parameter."""
 
+    @patch("app.engine.llm_factory.create_provider")
     @patch("app.engine.llm_factory.settings")
-    def test_create_llm_default_is_gemini(self, mock_settings):
-        """create_llm() without provider creates Gemini by default."""
+    def test_create_llm_default_is_gemini(self, mock_settings, mock_create_provider):
+        """create_llm() without provider creates the Google provider by default."""
         mock_settings.llm_provider = "google"
         mock_settings.thinking_enabled = False
         mock_settings.include_thought_summaries = False
         mock_settings.google_model = "gemini-3-flash-preview"
         mock_settings.google_api_key = "test-key"
         mock_settings.enable_unified_providers = False
+        google = _make_provider("google")
+        mock_create_provider.return_value = google
 
-        with patch("langchain_google_genai.ChatGoogleGenerativeAI") as mock_chat:
-            mock_chat.return_value = MagicMock(spec=BaseChatModel)
-            from app.engine.llm_factory import create_llm
-            llm = create_llm(tier=ThinkingTier.LIGHT)
-            mock_chat.assert_called_once()
+        from app.engine.llm_factory import create_llm
 
-    @patch("app.engine.llm_providers.openai_provider.settings")
+        llm = create_llm(tier=ThinkingTier.LIGHT)
+
+        assert llm is google.create_instance.return_value
+        mock_create_provider.assert_called_once_with("google")
+        google.create_instance.assert_called_once()
+
+    @patch("app.engine.llm_factory.create_provider")
     @patch("app.engine.llm_factory.settings")
-    def test_create_llm_with_openai_provider(self, mock_factory_settings, mock_provider_settings):
+    def test_create_llm_with_openai_provider(self, mock_factory_settings, mock_create_provider):
         """create_llm(provider='openai') uses OpenAIProvider."""
         mock_factory_settings.thinking_enabled = False
         mock_factory_settings.include_thought_summaries = False
-        mock_provider_settings.openai_api_key = "sk-test"
-        mock_provider_settings.openai_model = "gpt-4o-mini"
-        mock_provider_settings.openai_model_advanced = "gpt-4o"
-        mock_provider_settings.openai_base_url = None
+        openai = _make_provider("openai")
+        mock_create_provider.return_value = openai
 
-        with patch("langchain_openai.ChatOpenAI") as mock_chat:
-            mock_chat.return_value = MagicMock(spec=BaseChatModel)
-            from app.engine.llm_factory import create_llm
-            llm = create_llm(tier=ThinkingTier.MODERATE, provider="openai")
-            assert llm is not None
+        from app.engine.llm_factory import create_llm
+
+        llm = create_llm(tier=ThinkingTier.MODERATE, provider="openai")
+
+        assert llm is openai.create_instance.return_value
+        mock_create_provider.assert_called_once_with("openai")
 
     @patch("app.engine.llm_factory.settings")
     def test_create_llm_unknown_provider_raises(self, mock_settings):

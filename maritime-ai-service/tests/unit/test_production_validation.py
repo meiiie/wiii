@@ -108,7 +108,7 @@ class TestCORSProduction:
     def test_cors_origins_env_template_has_production_domains(self):
         """Production env template should include holilihu.online."""
         import pathlib
-        template = pathlib.Path("scripts/deploy/.env.production.template").read_text()
+        template = pathlib.Path("scripts/deploy/.env.production.template").read_text(encoding="utf-8")
         assert "holilihu.online" in template
         assert "wiii.holilihu.online" in template
 
@@ -140,7 +140,7 @@ class TestProductionSmokeTestDocs:
         """Production API-key smoke test should not rely on X-User-ID."""
         import pathlib
 
-        script = pathlib.Path("scripts/deploy/smoke-test.sh").read_text()
+        script = pathlib.Path("scripts/deploy/smoke-test.sh").read_text(encoding="utf-8")
         assert '"user_id": "api-client"' in script
         assert '-H "X-User-ID:' not in script
 
@@ -148,7 +148,7 @@ class TestProductionSmokeTestDocs:
         """Launch checklist should document service-client auth for API key examples."""
         import pathlib
 
-        checklist = pathlib.Path("scripts/deploy/LAUNCH_CHECKLIST.md").read_text()
+        checklist = pathlib.Path("scripts/deploy/LAUNCH_CHECKLIST.md").read_text(encoding="utf-8")
         assert '"user_id": "api-client"' in checklist
         assert "JWT or LMS service token" in checklist
 
@@ -160,7 +160,7 @@ class TestProductionBackupScheduling:
         """Containerized pg-backup should wait for the daily 20:00 UTC window."""
         import pathlib
 
-        compose = pathlib.Path("docker-compose.prod.yml").read_text()
+        compose = pathlib.Path("docker-compose.prod.yml").read_text(encoding="utf-8")
         assert "pg-backup:" in compose
         assert "TARGET_TOTAL=$$((20 * 3600))" in compose
         assert "sleep $$SLEEP_FOR" in compose

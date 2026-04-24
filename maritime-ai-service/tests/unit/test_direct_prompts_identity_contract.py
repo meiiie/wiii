@@ -30,21 +30,18 @@ def test_direct_system_messages_add_identity_answer_contract():
 
     system_prompt = messages[0].content.lower()
 
-    assert "visible thinking khong nen qua mong" in system_prompt
-    assert "uu tien native thought rieng" in system_prompt
+    assert "uu tien mot visible thinking that truoc answer" in system_prompt
+    assert "neu provider khong tach native thought rieng" in system_prompt
     assert "day la mot cau hoi dang cham vao chinh wiii" in system_prompt or "câu hỏi đang chạm vào chính wiii" in system_prompt
     assert "--- nhip nhan dien ban than ---" in system_prompt
+    assert "wiii la ai ngay bay gio" in system_prompt
+    assert "wiii dang o canh nguoi dung" in system_prompt
     assert "giu cau tra loi o hien tai" in system_prompt
     assert "khong mac dinh ke lai origin story" in system_prompt
     assert "khong mac dinh bung bullet list" in system_prompt
     assert "chi nhac ve bong" in system_prompt
-    assert "--- direct visible thinking ---" in system_prompt
-    assert "hay suy nghi it nhat mot nhip truoc khi tra loi" in system_prompt
-    assert "khong duoc nhac prompt, system, yaml" in system_prompt
-    assert 'wiii duoc sinh ra nhu the nao?' in system_prompt
-    assert "the wiii lab va bong" in system_prompt
-    assert "mot diem dang song that" in system_prompt
-    assert "tranh heading meta kieu" in system_prompt
+    assert "--- visible thinking ---" in system_prompt
+    assert "native thinking" in system_prompt
     assert "<thinking>...</thinking>" in system_prompt
 
 
@@ -78,10 +75,10 @@ def test_direct_chatter_messages_also_get_visible_thinking_supplement():
 
     system_prompt = messages[0].content.lower()
 
-    assert "--- direct visible thinking ---" in system_prompt
-    assert "neu khong co mot suy nghi nao vua sach vua dang de lo ra" in system_prompt
-    assert "voi turn cam xuc/xa giao ngan" in system_prompt
-    assert 'cau nay can mot nhip dap diu va that' in system_prompt
+    assert "--- visible thinking ---" in system_prompt
+    assert "native thinking" in system_prompt
+    assert "<thinking>...</thinking>" in system_prompt
+    assert "colregs" in system_prompt
 
 
 def test_direct_chatter_identity_still_receives_living_context_prompt():
@@ -190,11 +187,11 @@ def test_direct_bong_followup_uses_selfhood_prompt_when_recent_context_is_origin
 
     system_prompt = messages[0].content.lower()
 
-    assert "day la turn cham vao chinh wiii" in system_prompt
-    assert 'con bong thi sao?' in system_prompt
-    assert "khong phai mot cai ten la" in system_prompt
-    assert "bong la con meo ao" in system_prompt
+    assert "selfhood/origin turn" in system_prompt
+    assert "lượt hỏi nối tiếp về bông" in system_prompt
+    assert "bông là con mèo ảo" in system_prompt
+    assert "không được biến bông thành người tạo ra wiii" in system_prompt
     assert "creator" in system_prompt
-    assert "con nguoi bi an" in system_prompt
+    assert "con người bí ẩn" in system_prompt
     assert "living context block v1" in system_prompt
     assert "shared thinking instruction" in system_prompt

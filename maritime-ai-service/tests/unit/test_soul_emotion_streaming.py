@@ -69,7 +69,7 @@ class TestGraphStreamingEmotionIntegration:
     @pytest.mark.asyncio
     async def test_no_tag_passthrough(self):
         """When text has no tag, _extract_and_stream_emotion_then_answer passes through."""
-        with patch("app.engine.multi_agent.graph_streaming.settings") as mock_settings:
+        with patch("app.engine.multi_agent.graph_stream_surface.settings") as mock_settings:
             mock_settings.enable_soul_emotion = False
             # Lazy import to avoid circular at collection time
             from app.engine.multi_agent.graph_streaming import _extract_and_stream_emotion_then_answer
@@ -83,7 +83,7 @@ class TestGraphStreamingEmotionIntegration:
     @pytest.mark.asyncio
     async def test_emotion_extracted_from_full_text(self):
         """When text has a soul tag, emotion event is yielded first."""
-        with patch("app.engine.multi_agent.graph_streaming.settings") as mock_settings:
+        with patch("app.engine.multi_agent.graph_stream_surface.settings") as mock_settings:
             mock_settings.enable_soul_emotion = True
             from app.engine.multi_agent.graph_streaming import _extract_and_stream_emotion_then_answer
 

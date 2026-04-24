@@ -45,7 +45,9 @@ def _make_supervisor(llm=None):
     with patch.object(AgentConfigRegistry, "get_llm", return_value=llm):
         from app.engine.multi_agent.supervisor import SupervisorAgent
 
-        return SupervisorAgent()
+        supervisor = SupervisorAgent()
+        supervisor._get_llm_for_state = MagicMock(return_value=llm)
+        return supervisor
 
 
 class TestLivingContextBlock:
@@ -102,7 +104,7 @@ class TestLivingContextBlock:
         assert prompt.index("### task_mode") < prompt.index("### reasoning_policy")
         assert prompt.index("### reasoning_policy") < prompt.index("### visual_cognition")
         assert "## Wiii Living Core Bridge" in prompt
-        assert "khong co nhan cach rieng theo agent hay lane" in prompt
+        assert "không có nhân cách riêng theo agent hay lane" in prompt
         assert "## Memory Blocks V1" in prompt
 
     def test_graph_inject_living_context_populates_reasoning_policy(self):
@@ -165,14 +167,14 @@ class TestLivingContextBlock:
 
 class TestConservativeFastRouting:
     @pytest.mark.asyncio
-    async def test_web_query_skips_llm_when_fast_routing_enabled(self):
+    async def test_social_query_skips_llm_when_fast_routing_enabled(self):
         from app.engine.multi_agent import supervisor as supervisor_module
 
         mock_llm = MagicMock()
         mock_llm.with_structured_output = MagicMock()
         supervisor = _make_supervisor(mock_llm)
         state = {
-            "query": "Tin tuc hang hai hom nay",
+            "query": "chao",
             "context": {},
             "domain_config": {},
         }
@@ -185,32 +187,55 @@ class TestConservativeFastRouting:
         mock_llm.with_structured_output.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_inline_visual_query_skips_llm_when_fast_routing_enabled(self):
+    async def test_web_query_falls_through_to_supervisor_llm(self):
         from app.engine.multi_agent import supervisor as supervisor_module
+        from app.engine.structured_schemas import RoutingDecision
 
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(
+            return_value=RoutingDecision(
+                agent="DIRECT",
+                intent="web_search",
+                confidence=0.95,
+                reasoning="Fresh news requires direct web-search capable lane.",
+            )
+        )
         mock_llm = MagicMock()
-        mock_llm.with_structured_output = MagicMock()
+        mock_llm.with_structured_output.return_value = mock_structured
         supervisor = _make_supervisor(mock_llm)
         state = {
-            "query": "Explain Kimi linear attention in charts with 2 to 3 inline figures.",
+            "query": "Tin tuc hang hai hom nay",
             "context": {},
-            "domain_config": {"routing_keywords": ["colregs", "solas"]},
+            "domain_config": {},
         }
 
-        with patch.object(supervisor_module.settings, "enable_conservative_fast_routing", True):
+        with (
+            patch.object(supervisor_module.settings, "enable_conservative_fast_routing", True),
+            patch.object(supervisor_module.StructuredInvokeService, "ainvoke", AsyncMock(return_value=mock_structured.ainvoke.return_value)),
+        ):
             result = await supervisor.route(state)
 
         assert result == "direct"
-        assert state["routing_metadata"]["method"] == "conservative_fast_path"
-        assert state["routing_metadata"]["intent"] == "learning"
+        assert state["routing_metadata"]["method"] != "conservative_fast_path"
+        assert state["routing_metadata"]["intent"] == "web_search"
         mock_llm.with_structured_output.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_quiz_creation_request_routes_code_studio(self):
         from app.engine.multi_agent import supervisor as supervisor_module
+        from app.engine.structured_schemas import RoutingDecision
 
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(
+            return_value=RoutingDecision(
+                agent="CODE_STUDIO_AGENT",
+                intent="code_execution",
+                confidence=0.95,
+                reasoning="Quiz creation is an artifact generation task.",
+            )
+        )
         mock_llm = MagicMock()
-        mock_llm.with_structured_output = MagicMock()
+        mock_llm.with_structured_output.return_value = mock_structured
         supervisor = _make_supervisor(mock_llm)
         state = {
             "query": "Tao cho minh quizz gom 30 cau hoi ve tieng Trung de luyen tap duoc khong?",
@@ -218,11 +243,14 @@ class TestConservativeFastRouting:
             "domain_config": {"routing_keywords": ["colregs", "solas"]},
         }
 
-        with patch.object(supervisor_module.settings, "enable_conservative_fast_routing", True):
+        with (
+            patch.object(supervisor_module.settings, "enable_conservative_fast_routing", True),
+            patch.object(supervisor_module.StructuredInvokeService, "ainvoke", AsyncMock(return_value=mock_structured.ainvoke.return_value)),
+        ):
             result = await supervisor.route(state)
 
         assert result == "code_studio_agent"
-        assert state["routing_metadata"]["method"] == "conservative_fast_path"
+        assert state["routing_metadata"]["method"] != "conservative_fast_path"
         assert state["routing_metadata"]["intent"] == "code_execution"
         mock_llm.with_structured_output.assert_not_called()
 
@@ -249,9 +277,12 @@ class TestConservativeFastRouting:
             "domain_config": {"routing_keywords": ["colregs"]},
         }
 
-        with patch.object(supervisor_module.settings, "enable_conservative_fast_routing", True):
+        with (
+            patch.object(supervisor_module.settings, "enable_conservative_fast_routing", True),
+            patch.object(supervisor_module.StructuredInvokeService, "ainvoke", AsyncMock(return_value=mock_structured.ainvoke.return_value)),
+        ):
             result = await supervisor.route(state)
 
         assert result == "tutor_agent"
-        mock_llm.with_structured_output.assert_called_once()
+        mock_llm.with_structured_output.assert_not_called()
         assert state["routing_metadata"]["method"] != "conservative_fast_path"

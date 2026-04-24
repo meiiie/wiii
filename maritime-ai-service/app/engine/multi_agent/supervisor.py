@@ -220,7 +220,11 @@ class SupervisorAgent:
 
         _apply_routing_hint(state, query)
 
-        if settings.enable_conservative_fast_routing and not state.get("_routing_hint"):
+        routing_hint = state.get("_routing_hint") or {}
+        if (
+            settings.enable_conservative_fast_routing
+            and (not routing_hint or routing_hint.get("kind") == "fast_chatter")
+        ):
             fast_result = self._conservative_fast_route(query, context, domain_config)
             if fast_result is not None:
                 agent, intent, confidence, reasoning = fast_result

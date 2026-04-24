@@ -575,6 +575,13 @@ def build_knowledge_summary_impl(request: Any) -> str:
 
 def build_relational_summary_impl(request: Any) -> str:
     continuity = build_living_continuity_line_impl(request, "relational")
+    folded_goal = fold_text_impl(getattr(request, "user_goal", "") or "")
+    if folded_goal in {"hehe", "haha", "hihi"}:
+        return join_reasoning_lines_impl(
+            continuity,
+            "Đây chỉ là một cú chạm nhịp nhỏ, nên mình muốn đáp lại bằng một câu thật nhẹ.",
+            "Mình sẽ để dành chỗ cho câu đùa tiếp theo, hoặc rủ mình cười cùng nếu bạn muốn kéo nhịp này tiếp.",
+        )
     if request.phase == "act":
         return join_reasoning_lines_impl(
             continuity,

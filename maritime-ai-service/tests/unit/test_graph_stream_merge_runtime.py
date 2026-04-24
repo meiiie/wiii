@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import patch
 
 import pytest
 
@@ -17,6 +18,14 @@ class _ExplodingGraph:
         yield  # pragma: no cover
 
 
+class _ExplodingRunner:
+    def __init__(self, exc):
+        self._exc = exc
+
+    async def run_streaming(self, *_args, **_kwargs):
+        raise self._exc
+
+
 @pytest.mark.asyncio
 async def test_forward_graph_events_preserves_provider_unavailable():
     merged_queue: asyncio.Queue = asyncio.Queue()
@@ -26,12 +35,16 @@ async def test_forward_graph_events_preserves_provider_unavailable():
         message="Provider tam thoi bi gioi han.",
     )
 
-    await forward_graph_events_impl(
-        graph=_ExplodingGraph(exc),
-        initial_state={},
-        invoke_config={},
-        merged_queue=merged_queue,
-    )
+    with patch(
+        "app.engine.multi_agent.runner.get_wiii_runner",
+        return_value=_ExplodingRunner(exc),
+    ):
+        await forward_graph_events_impl(
+            graph=_ExplodingGraph(exc),
+            initial_state={},
+            invoke_config={},
+            merged_queue=merged_queue,
+        )
 
     msg_type, payload = await merged_queue.get()
     assert msg_type == "provider_unavailable"
