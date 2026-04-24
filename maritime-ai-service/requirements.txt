@@ -59,7 +59,7 @@ neo4j~=5.28.0
 # PDF Processing
 pypdf>=4.0.0
 pymupdf>=1.26.0  # CHỈ THỊ 26: PDF to image (no external deps, replaces pdf2image+Poppler)
-pdf2image>=1.16.3  # Fallback for Poppler-based PDF rendering (pymupdf is primary)
+pdf2image>=1.17.0  # Fallback for Poppler-based PDF rendering (pymupdf is primary)
 Pillow>=10.0.0  # CHỈ THỊ 26: Image processing
 
 # Document Conversion (Course Generation — design spec v2.0, optional)
