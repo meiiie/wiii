@@ -27,6 +27,7 @@ import type {
 } from "@/api/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { NODE_LABELS } from "@/lib/reasoning-labels";
+import { useCodeStudioStore } from "@/stores/code-studio-store";
 import {
   ToolExecutionStrip,
   summarizeToolExecutionBlock,
@@ -430,6 +431,13 @@ export function ReasoningInterval({
     && typeof interval.durationSeconds === "number"
     && interval.durationSeconds >= 12;
 
+  // Code Studio delegation: when a tool_create_visual_code call targets a
+  // session that Code Studio already owns, skip the inline tool render — the
+  // Code Studio panel is responsible for showing that content. Mirrors
+  // VisualBlock's delegation check so the tool trace and the visual don't
+  // both duplicate into the reasoning timeline.
+  const codeStudioSessions = useCodeStudioStore((s) => s.sessions);
+
   // Phase2: Auto-expand while streaming, auto-collapse when done (Claude pattern)
   const [userToggled, setUserToggled] = useState(false);
   const [userExpanded, setUserExpanded] = useState(false);
@@ -516,6 +524,17 @@ export function ReasoningInterval({
                   </div>
                 );
                 continue;
+              }
+
+              // Delegate to Code Studio panel when it owns the target session.
+              if (
+                item.kind === "tool"
+                && item.block.tool.name === "tool_create_visual_code"
+              ) {
+                const vsid = (item.block.tool.args as Record<string, unknown> | undefined)?.visual_session_id;
+                if (typeof vsid === "string" && codeStudioSessions[vsid]) {
+                  continue;
+                }
               }
 
               // Operation: collect the NEXT thinking item as its expandable body
