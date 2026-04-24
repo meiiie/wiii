@@ -32,6 +32,16 @@ updates:
     labels:
       - "area:backend"
       - "dependencies"
+    ignore:
+      # Backend runtime majors — each needs a manual migration window.
+      # - numpy 2.x: many downstream wheels (scipy, scikit-learn, torch)
+      #   still catching up; stay on 1.x until we validate the tree.
+      # - pgvector: follows PostgreSQL extension schema; requires coordinated
+      #   pg extension upgrade.
+      - dependency-name: "numpy"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "pgvector"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
       langchain-stack:
         patterns:
@@ -97,6 +107,12 @@ updates:
       - dependency-name: "cross-env"
         update-types: ["version-update:semver-major"]
       - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # Frontend runtime majors — each is a breaking-API bump. Revisit
+      # individually; Dependabot was closing PRs #40, #43 to these.
+      - dependency-name: "zustand"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "lucide-react"
         update-types: ["version-update:semver-major"]
     groups:
       tauri:
