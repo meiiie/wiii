@@ -95,18 +95,25 @@ async def test_stream_answer_with_fallback_surfaces_list_chunk_thinking(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_stream_answer_with_fallback_prefers_native_langchain_stream_for_google_direct(monkeypatch):
+async def test_stream_answer_with_fallback_prefers_openai_compat_stream_for_google_direct(monkeypatch):
     events = []
+    compat_calls = []
 
     async def _push_event(event):
         events.append(event)
 
-    async def _compat_stream_should_not_run(*_args, **_kwargs):
-        raise AssertionError("google direct should bypass compat stream here")
+    async def _compat_stream(route, _messages, push_event, *, node, **_kwargs):
+        compat_calls.append(route.provider)
+        await push_event({
+            "type": "answer_delta",
+            "content": "Native SDK answer.",
+            "node": node,
+        })
+        return _FakeStringChunk("Native SDK answer."), True
 
     monkeypatch.setattr(
         "app.engine.multi_agent.direct_execution._stream_openai_compatible_answer_with_route",
-        _compat_stream_should_not_run,
+        _compat_stream,
     )
 
     class _FakePool:
@@ -128,13 +135,9 @@ async def test_stream_answer_with_fallback_prefers_native_langchain_stream_for_g
     )
 
     assert streamed is True
-    assert isinstance(response.content, list)
-    assert [event["type"] for event in events] == [
-        "thinking_start",
-        "thinking_delta",
-        "thinking_end",
-        "answer_delta",
-    ]
+    assert response.content == "Native SDK answer."
+    assert compat_calls == ["google"]
+    assert [event["type"] for event in events] == ["answer_delta"]
 
 
 @pytest.mark.asyncio
@@ -150,6 +153,10 @@ async def test_stream_answer_with_fallback_preserves_final_message_metadata_when
     monkeypatch.setattr(
         "app.engine.multi_agent.direct_execution._stream_openai_compatible_answer_with_route",
         _compat_stream_should_not_run,
+    )
+    monkeypatch.setattr(
+        "app.engine.multi_agent.direct_execution._should_prefer_native_langchain_stream",
+        lambda **_kwargs: True,
     )
 
     class _StringLLM:
@@ -210,6 +217,10 @@ async def test_stream_answer_with_fallback_aligns_preserved_metadata_thinking_to
         _compat_stream_should_not_run,
     )
     monkeypatch.setattr(
+        "app.engine.multi_agent.direct_execution._should_prefer_native_langchain_stream",
+        lambda **_kwargs: True,
+    )
+    monkeypatch.setattr(
         "app.engine.multi_agent.direct_execution.align_visible_thinking_language",
         _fake_align,
     )
@@ -264,6 +275,10 @@ async def test_stream_answer_with_fallback_aligns_live_thinking_delta_to_respons
     monkeypatch.setattr(
         "app.engine.multi_agent.direct_execution._stream_openai_compatible_answer_with_route",
         _compat_stream_should_not_run,
+    )
+    monkeypatch.setattr(
+        "app.engine.multi_agent.direct_execution._should_prefer_native_langchain_stream",
+        lambda **_kwargs: True,
     )
     monkeypatch.setattr(
         "app.engine.multi_agent.direct_execution.align_visible_thinking_language",

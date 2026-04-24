@@ -262,8 +262,8 @@ class TestF4SingleFactInjectionPath:
         """input_processor should call retrieve_context with include_user_facts=False."""
         # This is a structural test — verify the code was changed
         import inspect
-        from app.services.input_processor import InputProcessor
-        source = inspect.getsource(InputProcessor.build_context)
+        from app.services.input_processor_context_runtime import _populate_semantic_memory_context
+        source = inspect.getsource(_populate_semantic_memory_context)
         assert "include_user_facts=False" in source
 
     def test_core_memory_block_not_injected_in_direct_node(self):
@@ -278,8 +278,8 @@ class TestF4SingleFactInjectionPath:
     def test_core_memory_section_empty_in_tutor_node(self):
         """tutor_node should set core_memory_section = '' (no injection)."""
         import inspect
-        from app.engine.multi_agent.agents import tutor_node
-        source = inspect.getsource(tutor_node)
+        from app.engine.multi_agent.agents import tutor_surface
+        source = inspect.getsource(tutor_surface)
         assert 'core_memory_section = ""' in source
 
 

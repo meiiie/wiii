@@ -150,21 +150,19 @@ class TestGuardianRoute:
 
 
 class TestGuardianGraphIntegration:
-    """Test Guardian is properly wired into the graph."""
+    """Test Guardian is properly wired into the runner."""
 
-    def test_graph_has_guardian_node(self):
-        """Graph should contain the guardian node."""
-        from app.engine.multi_agent.graph import build_multi_agent_graph
+    def test_runner_has_guardian_node(self):
+        """Runner should contain the guardian node."""
+        import app.engine.multi_agent.runner as runner_mod
 
-        graph = build_multi_agent_graph()
-        node_names = set(graph.nodes.keys()) if hasattr(graph, "nodes") else set()
-        assert "guardian" in node_names or "__start__" in node_names
+        runner_mod._RUNNER = None
+        runner = runner_mod.get_wiii_runner()
+        assert "guardian" in runner._nodes
 
-    def test_graph_entry_point_is_guardian(self):
-        """Graph entry point should be guardian (not supervisor)."""
-        from app.engine.multi_agent.graph import build_multi_agent_graph
+    def test_guardian_route_stays_before_supervisor(self):
+        """Guardian route remains the gate before supervisor execution."""
+        from app.engine.multi_agent.graph import guardian_route
 
-        graph = build_multi_agent_graph()
-        # In LangGraph, __start__ connects to the entry point
-        if hasattr(graph, "nodes"):
-            assert "guardian" in graph.nodes
+        assert guardian_route({"guardian_passed": True}) == "supervisor"
+        assert guardian_route({"guardian_passed": False}) == "synthesizer"

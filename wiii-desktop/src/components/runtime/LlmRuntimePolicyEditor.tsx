@@ -995,7 +995,7 @@ export function LlmRuntimePolicyEditor({ variant, onToast }: Props) {
       });
       setEmbeddingMigrationRun(result);
       notify("Da prepare/backfill shadow migration cho embedding model dang chon.", "success");
-      await loadConfig();
+      await loadRuntime();
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       setMessage("Khong apply duoc shadow migration cho embedding model dang chon.");
@@ -1017,7 +1017,7 @@ export function LlmRuntimePolicyEditor({ variant, onToast }: Props) {
       });
       setEmbeddingMigrationRun(result);
       notify("Da promote target embedding space thanh active.", "success");
-      await loadConfig();
+      await loadRuntime();
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       setMessage("Khong promote duoc target embedding space.");
@@ -1880,7 +1880,7 @@ export function LlmRuntimePolicyEditor({ variant, onToast }: Props) {
                           <div>runtime recovered on: {provider.recovered_reasons?.join(", ")}</div>
                         ) : null}
                         {(provider.degraded_reasons?.length ?? 0) > 0 ? (
-                          <div>{provider.degraded_reasons.join(" ")}</div>
+                          <div>{provider.degraded_reasons?.join(" ")}</div>
                         ) : null}
                       </div>
                       {(provider.capabilities?.length ?? 0) > 0 ? (

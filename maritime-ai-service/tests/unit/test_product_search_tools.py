@@ -70,9 +70,9 @@ class TestConfig:
         assert "product_search_timeout" in fields
 
     def test_product_search_defaults(self):
-        """Product search disabled by default."""
+        """Product search is enabled by default."""
         from app.core.config import Settings
-        assert Settings.model_fields["enable_product_search"].default is False
+        assert Settings.model_fields["enable_product_search"].default is True
         assert Settings.model_fields["product_search_max_results"].default == 30
         assert Settings.model_fields["product_search_timeout"].default == 30
 
@@ -430,34 +430,25 @@ class TestGraphWiring:
         state = {"next_agent": "unknown_agent"}
         assert route_decision(state) == "direct"
 
-    @patch("app.engine.multi_agent.graph.settings")
-    def test_graph_builds_with_product_search(self, mock_s):
-        """Graph includes product_search_agent node when enabled."""
-        mock_s.enable_product_search = True
-        mock_s.quality_skip_threshold = 0.85
-        mock_s.default_domain = "maritime"
-        mock_s.app_name = "Wiii"
+    def test_runner_enables_product_search_feature_node(self):
+        """Runner exposes product_search_agent when enabled."""
+        import app.engine.multi_agent.runner as runner_mod
 
-        from app.engine.multi_agent.graph import build_multi_agent_graph
-        graph = build_multi_agent_graph()
+        runner_mod._RUNNER = None
+        with patch.object(runner_mod.settings, "enable_product_search", True):
+            runner = runner_mod.get_wiii_runner()
+            assert "product_search_agent" in runner._feature_nodes
+            assert runner._get_node("product_search_agent") is not None
 
-        # Check that the node exists in the compiled graph
-        node_names = list(graph.nodes.keys())
-        assert "product_search_agent" in node_names
+    def test_runner_disables_product_search_feature_node(self):
+        """Runner keeps product_search_agent registered but gated when disabled."""
+        import app.engine.multi_agent.runner as runner_mod
 
-    @patch("app.engine.multi_agent.graph.settings")
-    def test_graph_builds_without_product_search(self, mock_s):
-        """Graph excludes product_search_agent when disabled."""
-        mock_s.enable_product_search = False
-        mock_s.quality_skip_threshold = 0.85
-        mock_s.default_domain = "maritime"
-        mock_s.app_name = "Wiii"
-
-        from app.engine.multi_agent.graph import build_multi_agent_graph
-        graph = build_multi_agent_graph()
-
-        node_names = list(graph.nodes.keys())
-        assert "product_search_agent" not in node_names
+        runner_mod._RUNNER = None
+        with patch.object(runner_mod.settings, "enable_product_search", False):
+            runner = runner_mod.get_wiii_runner()
+            assert "product_search_agent" in runner._feature_nodes
+            assert runner._get_node("product_search_agent") is None
 
 
 # =============================================================================

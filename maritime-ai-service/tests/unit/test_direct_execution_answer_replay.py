@@ -38,6 +38,10 @@ async def test_stream_answer_with_fallback_does_not_replay_full_answer_after_del
         "app.engine.multi_agent.direct_execution._stream_openai_compatible_answer_with_route",
         _compat_stream_should_not_run,
     )
+    monkeypatch.setattr(
+        "app.engine.multi_agent.direct_execution._should_prefer_native_langchain_stream",
+        lambda **_kwargs: True,
+    )
 
     class _ReplayChunkLLM:
         _wiii_tier_key = "deep"
@@ -60,11 +64,19 @@ async def test_stream_answer_with_fallback_does_not_replay_full_answer_after_del
         def resolve_runtime_route(*_args, **_kwargs):
             return SimpleNamespace(provider="google", llm=_ReplayChunkLLM())
 
+        @staticmethod
+        def resolve_same_provider_model_fallback(*_args, **_kwargs):
+            return None
+
+        @staticmethod
+        def create_llm_with_model_for_provider(*_args, **_kwargs):
+            raise AssertionError("same-provider model fallback should not run")
+
     monkeypatch.setattr("app.engine.llm_pool.LLMPool", _FakePool)
 
     response, streamed = await _stream_answer_with_fallback(
         _ReplayChunkLLM(),
-        messages=[SimpleNamespace(content="Wiii duoc sinh ra nhu the nao?")],
+        messages=[SimpleNamespace(content="Ke mot cau chuyen ngan.")],
         push_event=_push_event,
         provider="google",
         resolved_provider="google",

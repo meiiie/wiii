@@ -253,7 +253,7 @@ class TestExtractAndStoreFactsCacheInvalidation:
         fe = _make_extractor(llm=mock_llm)
         fe._repository.find_similar_fact_by_embedding.return_value = None
         fe._repository.find_fact_by_type.return_value = None
-        fe._repository.save_memory.return_value = None
+        fe._repository.save_memory.return_value = MagicMock(id="memory-1")
         fe._repository.count_user_memories.return_value = 5
 
         mock_cmb = MagicMock()

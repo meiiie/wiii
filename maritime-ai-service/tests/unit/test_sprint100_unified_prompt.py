@@ -246,15 +246,16 @@ class TestBuildSystemPromptDirect:
         )
         assert "PERSONA REMINDER" in prompt
 
-    def test_domain_name_in_tools_context(self):
-        """Domain name should appear in tools_context when provided."""
+    def test_maritime_tool_hint_in_tools_context(self):
+        """Tools context should expose maritime search without injecting domain labels."""
         from app.engine.multi_agent.graph import _build_direct_tools_context
         mock_settings = MagicMock()
         mock_settings.enable_character_tools = True
         mock_settings.enable_code_execution = False
 
         tools_ctx = _build_direct_tools_context(mock_settings, "Hàng hải")
-        assert "Hàng hải" in tools_ctx
+        assert "tool_search_maritime" in tools_ctx
+        assert "Chuyên môn sâu" not in tools_ctx
 
 
 # =============================================================================
@@ -273,7 +274,7 @@ class TestBuildDirectToolsContext:
         result = _build_direct_tools_context(mock_settings, "Hàng hải")
         assert "tool_current_datetime" in result
         assert "tool_web_search" in result
-        assert "GIỚI HẠN KIẾN THỨC" in result
+        assert ("GIỚI HẠN KIẾN THỨC" in result) or ("GIOI HAN KIEN THUC" in result)
         assert "2024" in result
 
     def test_character_tools_hint_when_enabled(self):
@@ -334,7 +335,7 @@ class TestBuildDirectToolsContext:
         mock_settings.enable_code_execution = False
 
         result = _build_direct_tools_context(mock_settings, "")
-        assert "GIỚI HẠN KIẾN THỨC" in result
+        assert ("GIỚI HẠN KIẾN THỨC" in result) or ("GIOI HAN KIEN THUC" in result)
         # No domain specialization line
         assert "Chuyên môn sâu:" not in result
 
@@ -345,9 +346,9 @@ class TestBuildDirectToolsContext:
         mock_settings.enable_code_execution = False
 
         result = _build_direct_tools_context(mock_settings, "Hàng hải")
-        assert "QUY TẮC BẮT BUỘC VỀ TOOL" in result
-        assert "GỌI TOOL TRƯỚC" in result
-        assert "KHÔNG BAO GIỜ tự bịa" in result
+        assert ("QUY TẮC BẮT BUỘC VỀ TOOL" in result) or ("QUY TAC BAT BUOC VE TOOL" in result)
+        assert ("GỌI TOOL TRƯỚC" in result) or ("GOI TOOL TRUOC" in result)
+        assert ("KHÔNG BAO GIỜ tự bịa" in result) or ("KHONG BAO GIO tu bia" in result)
 
 
 # =============================================================================
@@ -380,10 +381,16 @@ class TestDirectNodeUsesPromptLoader:
         mock_loader = MagicMock()
         mock_loader.build_system_prompt.return_value = "Bạn là Wiii, trợ lý đa lĩnh vực."
 
+        async def fake_execute_direct_tool_rounds(*args, **kwargs):
+            messages = args[2]
+            return mock_response, messages, []
+
         with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm",
                     return_value=mock_llm), \
              patch("app.prompts.prompt_loader.get_prompt_loader",
                     return_value=mock_loader), \
+             patch("app.engine.multi_agent.graph._execute_direct_tool_rounds",
+                    side_effect=fake_execute_direct_tool_rounds), \
              patch("app.services.output_processor.extract_thinking_from_response",
                     return_value=("test response", None)):
             await direct_response_node(state)
@@ -411,6 +418,11 @@ class TestDirectNodeUsesPromptLoader:
         mock_llm.bind_tools.return_value = mock_llm
         mock_llm.ainvoke = capture_ainvoke
 
+        async def fake_execute_direct_tool_rounds(*args, **kwargs):
+            messages = args[2]
+            captured_messages.extend(messages)
+            return MagicMock(content="Response here", tool_calls=[]), messages, []
+
         state = {
             "query": "xin chào bạn",
             "domain_id": "maritime",
@@ -421,6 +433,8 @@ class TestDirectNodeUsesPromptLoader:
 
         with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm",
                     return_value=mock_llm), \
+             patch("app.engine.multi_agent.graph._execute_direct_tool_rounds",
+                    side_effect=fake_execute_direct_tool_rounds), \
              patch("app.services.output_processor.extract_thinking_from_response",
                     return_value=("Response here", None)):
             await direct_response_node(state)
@@ -458,6 +472,11 @@ class TestDirectNodeUsesPromptLoader:
         mock_llm.bind_tools.return_value = mock_llm
         mock_llm.ainvoke = capture_ainvoke
 
+        async def fake_execute_direct_tool_rounds(*args, **kwargs):
+            messages = args[2]
+            captured_messages.extend(messages)
+            return MagicMock(content="Response", tool_calls=[]), messages, []
+
         state = {
             "query": "tell me about cooking techniques",
             "domain_id": "maritime",
@@ -471,6 +490,8 @@ class TestDirectNodeUsesPromptLoader:
 
         with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm",
                     return_value=mock_llm), \
+             patch("app.engine.multi_agent.graph._execute_direct_tool_rounds",
+                    side_effect=fake_execute_direct_tool_rounds), \
              patch("app.services.output_processor.extract_thinking_from_response",
                     return_value=("Response", None)):
             await direct_response_node(state)

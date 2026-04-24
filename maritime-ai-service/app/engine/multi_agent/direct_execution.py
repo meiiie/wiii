@@ -977,7 +977,7 @@ async def _stream_answer_with_fallback(
                 if isinstance(content, str) and "<thinking>" in content.lower():
                     text_content = _strip_incomplete_thinking_blocks(content)
                 clean_text = text_content or ""
-            if "<thinking>" in clean_text.lower():
+            if re.search(r"</?\s*thinking", clean_text, flags=re.IGNORECASE):
                 clean_text = _strip_incomplete_thinking_blocks(clean_text)
             if not clean_text:
                 continue
@@ -1187,5 +1187,4 @@ _STRUCTURED_VISUAL_PLACEHOLDER_MD_RE = re.compile(
     r"!\[[^\]]*\]\((?:https?://example\.com/[^)\s]+|https?://[^)\s]*chart-placeholder[^)\s]*|sandbox:[^)]+)\)",
     re.IGNORECASE,
 )
-
 

@@ -1013,6 +1013,17 @@ class TestExecuteDirectToolRounds:
                 return first_response
             return final_response
 
+        async def fake_stream_direct_answer(llm, messages, push_event, **kwargs):
+            calls.append(
+                {
+                    "llm": llm,
+                    "timeout_profile": kwargs.get("timeout_profile"),
+                    "provider": kwargs.get("provider"),
+                    "resolved_provider": kwargs.get("resolved_provider"),
+                }
+            )
+            return first_response, False
+
         async def noop_push(_event):
             return None
 
@@ -1025,6 +1036,7 @@ class TestExecuteDirectToolRounds:
              patch("app.engine.multi_agent.graph._maybe_emit_visual_event", new=AsyncMock(return_value=([], []))), \
              patch("app.engine.multi_agent.graph._maybe_emit_host_action_event", new=AsyncMock()), \
              patch("app.engine.multi_agent.graph._build_direct_tool_reflection", new=AsyncMock(return_value="")), \
+             patch("app.engine.multi_agent.graph._stream_direct_answer_with_fallback", new=fake_stream_direct_answer), \
              patch("app.engine.multi_agent.graph._stream_direct_wait_heartbeats", new=AsyncMock()), \
              patch("app.engine.multi_agent.graph._render_reasoning_fast", return_value=SimpleNamespace(label="Dang can", summary="Dang can", action_text="", phase="act")):
             result, _msgs, tool_events = await _execute_direct_tool_rounds(
@@ -1099,6 +1111,17 @@ class TestExecuteDirectToolRounds:
             )
             return responses[len(calls) - 1]
 
+        async def fake_stream_direct_answer(llm, messages, push_event, **kwargs):
+            calls.append(
+                {
+                    "llm": llm,
+                    "messages": list(messages),
+                    "tools": kwargs.get("tools"),
+                    "timeout_profile": kwargs.get("timeout_profile"),
+                }
+            )
+            return responses[0], False
+
         async def noop_push(_event):
             return None
 
@@ -1111,6 +1134,7 @@ class TestExecuteDirectToolRounds:
              patch("app.engine.multi_agent.graph._maybe_emit_visual_event", new=AsyncMock(return_value=([], []))), \
              patch("app.engine.multi_agent.graph._maybe_emit_host_action_event", new=AsyncMock()), \
              patch("app.engine.multi_agent.graph._build_direct_tool_reflection", new=AsyncMock(return_value="")), \
+             patch("app.engine.multi_agent.graph._stream_direct_answer_with_fallback", new=fake_stream_direct_answer), \
              patch("app.engine.multi_agent.graph._stream_direct_wait_heartbeats", new=AsyncMock()), \
              patch("app.engine.multi_agent.graph._render_reasoning_fast", return_value=SimpleNamespace(label="Dang can", summary="Dang can", action_text="", phase="synthesize")):
             result, msgs, tool_events = await _execute_direct_tool_rounds(
@@ -1192,9 +1216,9 @@ class TestNestedConfigModels:
     def test_llm_config_defaults(self):
         from app.core.config import LLMConfig
         llm = LLMConfig()
-        assert llm.provider == "google"
+        assert llm.provider == "zhipu"
         assert llm.ollama_model == "qwen3:4b-instruct-2507-q4_K_M"
-        assert llm.failover_chain == ["google", "zhipu", "ollama", "openrouter"]
+        assert llm.failover_chain == ["zhipu", "google", "ollama", "openrouter"]
 
     def test_rag_config_defaults(self):
         from app.core.config import RAGConfig
@@ -1212,7 +1236,7 @@ class TestNestedConfigModels:
     def test_product_search_config_defaults(self):
         from app.core.config import ProductSearchConfig
         ps = ProductSearchConfig()
-        assert ps.enable_product_search is False
+        assert ps.enable_product_search is True
         assert len(ps.platforms) == 8
 
     def test_thinking_config_defaults(self):

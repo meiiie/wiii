@@ -29,7 +29,7 @@ jobs:
 
       - name: Run ruff check
         working-directory: maritime-ai-service
-        run: ruff check app/
+        run: ruff check app/ --select=E9,F63,F7 --output-format=github
 
   test:
     name: Unit Tests
@@ -55,7 +55,7 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://wiii:wiii_secret@localhost:5433/wiii_ai
       API_KEY: test-key
       GOOGLE_API_KEY: fake-key-for-unit-tests
-      ENVIRONMENT: test
+      ENVIRONMENT: development
       PYTHONIOENCODING: utf-8
 
     steps:

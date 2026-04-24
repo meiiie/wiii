@@ -474,7 +474,7 @@ function isInspectorTraceBlock(block: ContentBlock) {
 }
 
 function shouldHideTechnicalTraceBlock(
-  block: ContentBlock,
+  _block: ContentBlock,
   _thinkingLevel: ThinkingLevel,
   _showReasoningRail: boolean,
 ) {

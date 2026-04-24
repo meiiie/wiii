@@ -295,14 +295,18 @@ async def emit_stream_finalization_impl(
                 )
             except Exception as exc:
                 logger.debug("[STREAM] Could not record LLM runtime observation: %s", exc)
-        thinking_lifecycle = build_thinking_lifecycle_snapshot(
-            effective_state,
-            fallback=effective_state.get("thinking_content") or effective_state.get("thinking") or "",
-            default_node=agent_type,
-        )
         public_thinking_content = _resolve_public_thinking_content(
             effective_state,
             fallback=effective_state.get("thinking_content") or "",
+        )
+        lifecycle_state = effective_state
+        if public_thinking_content:
+            lifecycle_state = dict(effective_state)
+            lifecycle_state["thinking_content"] = public_thinking_content
+        thinking_lifecycle = build_thinking_lifecycle_snapshot(
+            lifecycle_state,
+            fallback=public_thinking_content or effective_state.get("thinking") or "",
+            default_node=agent_type,
         )
 
         yield await create_metadata_event(

@@ -137,9 +137,10 @@ class TestConfig:
         cfg = ProductSearchConfig()
         assert cfg.auto_group_max_groups == 3
 
-    def test_cross_field_warning_no_browser(self):
+    def test_cross_field_warning_no_browser(self, caplog):
         """Warning when auto_group enabled but browser scraping disabled."""
         import logging
+        caplog.set_level(logging.WARNING)
         with patch("app.core.config.get_settings") as gs:
             # Use the real Settings class for cross-field validation
             from app.core.config import Settings
@@ -150,18 +151,18 @@ class TestConfig:
                 "PRODUCT_SEARCH_PLATFORMS": '["facebook_group"]',
                 "GOOGLE_API_KEY": "fake",
             }, clear=False):
-                with patch("app.core.config._settings._config_logger") as mock_logger:
-                    try:
-                        s = Settings()
-                    except Exception:
-                        pass  # Other validation may fail
-                    # Check that warning was emitted
-                    warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
-                    found = any("enable_auto_group_discovery" in c and "enable_browser_scraping" in c for c in warning_calls)
-                    assert found, f"Expected warning about browser scraping, got: {warning_calls}"
+                try:
+                    s = Settings()
+                except Exception:
+                    pass  # Other validation may fail
+                warning_messages = [record.getMessage() for record in caplog.records]
+                found = any("enable_auto_group_discovery" in c and "enable_browser_scraping" in c for c in warning_messages)
+                assert found, f"Expected warning about browser scraping, got: {warning_messages}"
 
-    def test_cross_field_warning_no_cookie(self):
+    def test_cross_field_warning_no_cookie(self, caplog):
         """Warning when auto_group enabled but facebook cookie disabled."""
+        import logging
+        caplog.set_level(logging.WARNING)
         with patch.dict("os.environ", {
             "ENABLE_AUTO_GROUP_DISCOVERY": "true",
             "ENABLE_BROWSER_SCRAPING": "true",
@@ -169,18 +170,19 @@ class TestConfig:
             "PRODUCT_SEARCH_PLATFORMS": '["facebook_group"]',
             "GOOGLE_API_KEY": "fake",
         }, clear=False):
-            with patch("app.core.config._settings._config_logger") as mock_logger:
-                try:
-                    from app.core.config import Settings
-                    s = Settings()
-                except Exception:
-                    pass
-                warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
-                found = any("enable_auto_group_discovery" in c and "enable_facebook_cookie" in c for c in warning_calls)
-                assert found, f"Expected warning about facebook cookie, got: {warning_calls}"
+            try:
+                from app.core.config import Settings
+                s = Settings()
+            except Exception:
+                pass
+            warning_messages = [record.getMessage() for record in caplog.records]
+            found = any("enable_auto_group_discovery" in c and "enable_facebook_cookie" in c for c in warning_messages)
+            assert found, f"Expected warning about facebook cookie, got: {warning_messages}"
 
-    def test_cross_field_warning_no_facebook_group(self):
+    def test_cross_field_warning_no_facebook_group(self, caplog):
         """Warning when auto_group enabled but facebook_group not in platforms."""
+        import logging
+        caplog.set_level(logging.WARNING)
         with patch.dict("os.environ", {
             "ENABLE_AUTO_GROUP_DISCOVERY": "true",
             "ENABLE_BROWSER_SCRAPING": "true",
@@ -188,15 +190,14 @@ class TestConfig:
             "PRODUCT_SEARCH_PLATFORMS": '["google_shopping"]',
             "GOOGLE_API_KEY": "fake",
         }, clear=False):
-            with patch("app.core.config._settings._config_logger") as mock_logger:
-                try:
-                    from app.core.config import Settings
-                    s = Settings()
-                except Exception:
-                    pass
-                warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
-                found = any("enable_auto_group_discovery" in c and "product_search_platforms" in c for c in warning_calls)
-                assert found, f"Expected warning about platforms, got: {warning_calls}"
+            try:
+                from app.core.config import Settings
+                s = Settings()
+            except Exception:
+                pass
+            warning_messages = [record.getMessage() for record in caplog.records]
+            found = any("enable_auto_group_discovery" in c and "product_search_platforms" in c for c in warning_messages)
+            assert found, f"Expected warning about platforms, got: {warning_messages}"
 
 
 # =============================================================================

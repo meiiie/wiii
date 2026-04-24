@@ -186,50 +186,59 @@ class TestFailoverChain:
 class TestLegacyPath:
     """Test behavior when failover is disabled."""
 
-    @patch("langchain_google_genai.ChatGoogleGenerativeAI")
+    @patch("app.engine.llm_pool.create_provider")
     @patch("app.engine.llm_pool.settings")
-    def test_legacy_creates_gemini_directly(self, mock_settings, mock_chat):
-        """With failover disabled, create Gemini instance directly."""
+    def test_legacy_creates_google_provider_instance(self, mock_settings, mock_create_provider):
+        """With failover disabled, create the Google provider instance."""
         mock_settings.enable_llm_failover = False
+        mock_settings.llm_provider = "google"
         mock_settings.google_api_key = "test-key"
         mock_settings.google_model = "gemini-3-flash-preview"
         mock_settings.thinking_enabled = True
         mock_settings.llm_failover_chain = ["google"]
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        google = _make_mock_provider("google")
+        mock_create_provider.return_value = google
 
         LLMPool._providers = {}  # Empty providers
         llm = LLMPool._create_instance("moderate")
 
         assert llm is not None
-        mock_chat.assert_called_once()
+        mock_create_provider.assert_called_once_with("google")
+        google.create_instance.assert_called_once()
         assert LLMPool._active_provider == "google"
 
-    @patch("langchain_google_genai.ChatGoogleGenerativeAI")
+    @patch("app.engine.llm_pool.create_provider")
     @patch("app.engine.llm_pool.settings")
-    def test_legacy_thinking_disabled(self, mock_settings, mock_chat):
+    def test_legacy_uses_provider_thinking_contract(self, mock_settings, mock_create_provider):
         mock_settings.enable_llm_failover = False
-        mock_settings.enable_unified_providers = False
+        mock_settings.llm_provider = "google"
         mock_settings.google_api_key = "test-key"
         mock_settings.google_model = "gemini-3-flash-preview"
         mock_settings.thinking_enabled = False
         mock_settings.llm_failover_chain = ["google"]
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        google = _make_mock_provider("google")
+        mock_create_provider.return_value = google
 
         LLMPool._providers = {}
         LLMPool._create_instance("light")
 
-        call_kwargs = mock_chat.call_args[1]
-        assert "thinking_budget" not in call_kwargs
+        call_kwargs = google.create_instance.call_args.kwargs
+        assert call_kwargs["tier"] == "light"
+        assert call_kwargs["thinking_budget"] == 1024
+        assert call_kwargs["include_thoughts"] is True
 
-    @patch("langchain_google_genai.ChatGoogleGenerativeAI")
+    @patch("app.engine.llm_pool.create_provider")
     @patch("app.engine.llm_pool.settings")
-    def test_legacy_failure_raises(self, mock_settings, mock_chat):
+    def test_legacy_failure_raises(self, mock_settings, mock_create_provider):
         mock_settings.enable_llm_failover = False
+        mock_settings.llm_provider = "google"
         mock_settings.google_api_key = "test-key"
         mock_settings.google_model = "gemini-3-flash-preview"
         mock_settings.thinking_enabled = True
         mock_settings.llm_failover_chain = ["google"]
-        mock_chat.side_effect = Exception("API key invalid")
+        google = _make_mock_provider("google")
+        google.create_instance.side_effect = Exception("API key invalid")
+        mock_create_provider.return_value = google
 
         LLMPool._providers = {}
 
@@ -516,6 +525,7 @@ class TestRequestScopedRouting:
         mock_settings.enable_llm_failover = True
         mock_settings.llm_failover_chain = ["google", "openai", "openrouter"]
         mock_settings.llm_provider = "google"
+        mock_settings.openai_api_key = "legacy-openrouter-key"
         mock_settings.openai_base_url = "https://openrouter.ai/api/v1"
 
         google = _make_mock_provider("google")
@@ -871,7 +881,7 @@ class TestRequestScopedRouting:
         assert failover_events[0]["to_provider"] == "zhipu"
         assert failover_events[0]["reason_code"] == "auth_error"
         assert failover_events[0]["reason_category"] == "auth_error"
-        assert failover_events[0]["reason_label"] == "Xac thuc provider that bai."
+        assert failover_events[0]["reason_label"] == "Xác thực provider thất bại."
 
     @pytest.mark.asyncio
     async def test_ainvoke_with_failover_reports_timeout_failover_event(self):

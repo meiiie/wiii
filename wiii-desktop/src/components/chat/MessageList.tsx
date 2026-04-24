@@ -18,7 +18,7 @@ import { SourceCitation } from "./SourceCitation";
 const VIRTUALIZATION_THRESHOLD = 50;
 const MESSAGE_GAP = 20;
 
-function isHiddenTechnicalStreamingBlock(block: ContentBlock) {
+function isHiddenTechnicalStreamingBlock(_block: ContentBlock) {
   return false;
 }
 

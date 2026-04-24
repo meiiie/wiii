@@ -221,8 +221,8 @@ class TestVisibleCRAGSurface:
         tracer.build_trace = MagicMock(return_value=None)
         tracer.build_thinking_summary = MagicMock(return_value="rewrite summary")
 
-        first_docs = [{"node_id": "doc-old", "title": "Old Doc", "content": "weak result", "document_id": "old"}]
-        rewritten_docs = [{"node_id": "doc-new", "title": "Rule 15", "content": "crossing rule", "document_id": "new"}]
+        first_docs = [{"node_id": "doc-old", "title": "Old Doc", "content": "weak result", "document_id": "old", "score": 0.9}]
+        rewritten_docs = [{"node_id": "doc-new", "title": "Rule 15", "content": "crossing rule", "document_id": "new", "score": 0.9}]
 
         async def _stream_answer(**kwargs):
             assert kwargs["question"] == "COLREGs Rule 15 crossing situation"
@@ -237,6 +237,7 @@ class TestVisibleCRAGSurface:
         owner._retrieve = AsyncMock(side_effect=[first_docs, rewritten_docs])
         owner._calculate_confidence = MagicMock(return_value=82.0)
         owner._grade_threshold = 6.0
+        owner._retrieval_score_threshold = 0.3
 
         settings_obj = MagicMock()
         settings_obj.enable_adaptive_rag = False

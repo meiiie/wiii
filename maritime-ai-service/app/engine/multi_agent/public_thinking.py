@@ -108,13 +108,6 @@ def _resolve_public_thinking_content(
     *,
     fallback: str = "",
 ) -> str:
-    lifecycle_text = resolve_visible_thinking_from_lifecycle(
-        state,
-        fallback=fallback,
-    )
-    if lifecycle_text:
-        return lifecycle_text
-
     fragments = [
         sanitize_visible_reasoning_text(str(fragment)).strip()
         for fragment in (state.get("_public_thinking_fragments") or [])
@@ -123,6 +116,13 @@ def _resolve_public_thinking_content(
     fragments = [fragment for fragment in fragments if fragment]
     if fragments:
         return "\n\n".join(fragments)
+
+    lifecycle_text = resolve_visible_thinking_from_lifecycle(
+        state,
+        fallback=fallback,
+    )
+    if lifecycle_text:
+        return lifecycle_text
 
     current = sanitize_visible_reasoning_text(str(state.get("thinking_content") or "")).strip()
     if current:

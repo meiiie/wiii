@@ -6,16 +6,24 @@ Sprint 56: MCP Support.
 
 import pytest
 from unittest.mock import patch, MagicMock
+from types import SimpleNamespace
 
 
 class TestSetupMcpServer:
     """Test setup_mcp_server()."""
 
+    def _mock_app_with_mcp_route(self):
+        mock_app = MagicMock()
+        mock_app.routes = [
+            SimpleNamespace(path="/api/v1/chat", methods={"POST"}),
+        ]
+        return mock_app
+
     def test_disabled_when_config_false(self):
         """MCP server not mounted when enable_mcp_server=False."""
         mock_settings = MagicMock()
         mock_settings.enable_mcp_server = False
-        mock_app = MagicMock()
+        mock_app = self._mock_app_with_mcp_route()
 
         with patch("app.mcp.server.settings", mock_settings, create=True):
             with patch("app.core.config.settings", mock_settings):
@@ -32,7 +40,7 @@ class TestSetupMcpServer:
         with patch("app.core.config.settings", mock_settings):
             with patch.dict("sys.modules", {"fastapi_mcp": None}):
                 from app.mcp.server import setup_mcp_server
-                result = setup_mcp_server(MagicMock())
+                result = setup_mcp_server(self._mock_app_with_mcp_route())
 
         assert result is None
 
@@ -48,7 +56,7 @@ class TestSetupMcpServer:
         mock_module = types.ModuleType("fastapi_mcp")
         mock_module.FastApiMCP = mock_fastapi_mcp_cls
 
-        mock_app = MagicMock()
+        mock_app = self._mock_app_with_mcp_route()
 
         with patch("app.core.config.settings", mock_settings):
             with patch.dict("sys.modules", {"fastapi_mcp": mock_module}):
@@ -74,6 +82,6 @@ class TestSetupMcpServer:
         with patch("app.core.config.settings", mock_settings):
             with patch.dict("sys.modules", {"fastapi_mcp": mock_module}):
                 from app.mcp.server import setup_mcp_server
-                result = setup_mcp_server(MagicMock())
+                result = setup_mcp_server(self._mock_app_with_mcp_route())
 
         assert result is None

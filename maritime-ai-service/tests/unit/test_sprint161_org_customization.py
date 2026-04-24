@@ -386,8 +386,8 @@ class TestPersonaOverlay:
     def test_no_org_id_no_overlay(self):
         """Without org_id, no org sections appear."""
         prompt = self._build_prompt()
-        assert "HƯỚNG DẪN TỔ CHỨC" not in prompt
-        assert "NHÃN WORKSPACE" not in prompt
+        assert "HUONG DAN TO CHUC" not in prompt
+        assert "NHAN WORKSPACE" not in prompt
 
     def test_org_with_custom_chatbot_name(self):
         """Org with custom chatbot_name gets workspace label section."""
@@ -396,12 +396,12 @@ class TestPersonaOverlay:
             "branding": {"chatbot_name": "Hải Bot"},
         })
         prompt = self._build_prompt(org_id="test-org", org_settings=settings)
-        assert "NHÃN WORKSPACE" in prompt
+        assert "NHAN WORKSPACE" in prompt
         assert "Hải Bot" in prompt
-        assert "Giữ nguyên danh tính lõi" in prompt
+        assert "Giu nguyen danh tinh loi" in prompt
 
     def test_org_with_persona_overlay(self):
-        """Org with workflow overlay gets HƯỚNG DẪN TỔ CHỨC section."""
+        """Org with workflow overlay gets HUONG DAN TO CHUC section."""
         from app.models.organization import OrgSettings
         settings = OrgSettings(**{
             "ai_config": {
@@ -409,9 +409,9 @@ class TestPersonaOverlay:
             },
         })
         prompt = self._build_prompt(org_id="phuong-luu-kiem", org_settings=settings)
-        assert "HƯỚNG DẪN TỔ CHỨC" in prompt
+        assert "HUONG DAN TO CHUC" in prompt
         assert "Phường Lưu Kiếm" in prompt
-        assert "Không được đổi tên" in prompt
+        assert "Khong duoc doi ten" in prompt
 
     def test_org_identity_override_overlay_is_stripped(self):
         """Identity-redefining overlay lines should be removed before prompt injection."""
@@ -425,7 +425,7 @@ class TestPersonaOverlay:
             },
         })
         prompt = self._build_prompt(org_id="phuong-luu-kiem", org_settings=settings)
-        assert "HƯỚNG DẪN TỔ CHỨC" in prompt
+        assert "HUONG DAN TO CHUC" in prompt
         assert "Ưu tiên compliance" in prompt
         assert "Bạn là trợ lý AI" not in prompt
 
@@ -434,7 +434,7 @@ class TestPersonaOverlay:
         from app.models.organization import OrgSettings
         settings = OrgSettings()  # All defaults
         prompt = self._build_prompt(org_id="test-org", org_settings=settings)
-        assert "NHÃN WORKSPACE" not in prompt
+        assert "NHAN WORKSPACE" not in prompt
 
 
 # ============================================================================

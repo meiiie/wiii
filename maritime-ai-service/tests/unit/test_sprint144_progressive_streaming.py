@@ -123,7 +123,7 @@ class TestProcessStreamingResultEvent:
 
         # Mock _retrieve to return fake documents
         crag._retrieve = AsyncMock(return_value=[
-            {"content": "Rule 15 content", "title": "Rule 15", "node_id": "r15"},
+            {"content": "Rule 15 content", "title": "Rule 15", "node_id": "r15", "score": 0.9},
         ])
 
         # Mock _generate_response_streaming to yield tokens
@@ -153,8 +153,10 @@ class TestProcessStreamingResultEvent:
         crag._analyzer = MagicMock()
         crag._analyzer.analyze = AsyncMock(return_value=FakeAnalysis())
         crag._retrieve = AsyncMock(return_value=[])
+        crag._generate_fallback = AsyncMock(return_value=("Fallback answer", None))
 
-        events = await _collect_events(crag.process_streaming("test query", {}))
+        with patch("app.engine.llm_pool.get_llm_light", return_value=None):
+            events = await _collect_events(crag.process_streaming("test query", {}))
 
         result_events = [e for e in events if e.get("type") == "result"]
         assert len(result_events) == 1
@@ -184,7 +186,7 @@ class TestCleanVietnameseLabels:
         crag._grade_threshold = 6.0
         crag._rag = MagicMock()
         crag._retrieve = AsyncMock(return_value=[
-            {"content": "content", "title": "Title", "node_id": "n1"},
+            {"content": "content", "title": "Title", "node_id": "n1", "score": 0.9},
         ])
 
         async def fake_stream(**kwargs):
@@ -223,8 +225,8 @@ class TestIntermediateResponse:
         crag._grade_threshold = 6.0
         crag._rag = MagicMock()
         crag._retrieve = AsyncMock(return_value=[
-            {"content": "c1", "title": "T1", "node_id": "n1"},
-            {"content": "c2", "title": "T2", "node_id": "n2"},
+            {"content": "c1", "title": "T1", "node_id": "n1", "score": 0.9},
+            {"content": "c2", "title": "T2", "node_id": "n2", "score": 0.8},
         ])
 
         async def fake_stream(**kwargs):
@@ -267,7 +269,7 @@ class TestRAGAgentNodeStreaming:
 
         async def fake_process_streaming(query, context):
             yield {"type": "status", "content": "Analyzing"}
-            yield {"type": "thinking", "content": "Details", "step": "analysis"}
+            yield {"type": "thinking", "content": "Details", "step": "retrieval"}
             yield {"type": "answer", "content": "Test answer"}
             yield {"type": "result", "data": fake_result}
             yield {"type": "done", "content": ""}
@@ -286,9 +288,20 @@ class TestRAGAgentNodeStreaming:
         # Patch at graph_streaming module level (lazy import inside process())
         mock_gs = MagicMock()
         mock_gs._get_event_queue = MagicMock(return_value=event_queue)
+        fake_narrator = MagicMock()
+        fake_narrator.render = AsyncMock(
+            return_value=types.SimpleNamespace(
+                label="Tra cứu nguồn",
+                summary="Đang rà nguồn phù hợp.",
+                phase="retrieve",
+            )
+        )
         with patch.dict(sys.modules, {
             "app.engine.multi_agent.graph_streaming": mock_gs,
-        }):
+        }), patch(
+            "app.engine.multi_agent.agents.rag_node.get_reasoning_narrator",
+            return_value=fake_narrator,
+        ):
             result_state = await node.process(state)
 
         assert result_state["rag_output"] == "Test answer"
@@ -380,13 +393,25 @@ class TestProcessWithStreaming:
         fake_result = CorrectiveRAGResult(answer="x", sources=[], confidence=80.0)
 
         async def fake_streaming(query, context):
-            yield {"type": "thinking", "content": "Analysis details", "step": "analysis"}
+            yield {"type": "thinking", "content": "Analysis details", "step": "retrieval"}
             yield {"type": "result", "data": fake_result}
 
         node._corrective_rag.process_streaming = fake_streaming
 
         queue = asyncio.Queue()
-        await node._process_with_streaming("q", {}, queue)
+        fake_narrator = MagicMock()
+        fake_narrator.render = AsyncMock(
+            return_value=types.SimpleNamespace(
+                label="Tra cứu nguồn",
+                summary="Đang rà nguồn phù hợp.",
+                phase="retrieve",
+            )
+        )
+        with patch(
+            "app.engine.multi_agent.agents.rag_node.get_reasoning_narrator",
+            return_value=fake_narrator,
+        ):
+            await node._process_with_streaming("q", {}, queue)
 
         events = []
         while not queue.empty():
@@ -398,7 +423,7 @@ class TestProcessWithStreaming:
         assert isinstance(events[0]["content"], str)
         assert len(events[0]["content"]) > 0
         assert events[1]["type"] == "thinking_delta"
-        assert events[1]["content"] == "Analysis details"
+        assert events[1]["content"] == "Mình đang rà nguồn phù hợp trước khi chốt câu trả lời."
         assert events[2]["type"] == "thinking_end"
 
     @pytest.mark.asyncio

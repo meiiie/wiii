@@ -1035,16 +1035,10 @@ async def direct_response_node_impl(
                     details={"response_type": "fallback"},
                 )
 
-    resolved_direct_thinking = resolve_visible_thinking_from_lifecycle(
+    resolved_direct_thinking = resolve_public_thinking_content(
         state,
         fallback="",
-        default_node="direct",
     )
-    if not resolved_direct_thinking:
-        resolved_direct_thinking = resolve_public_thinking_content(
-            state,
-            fallback="",
-        )
     if resolved_direct_thinking:
         state["thinking_content"] = resolved_direct_thinking
         record_thinking_snapshot(

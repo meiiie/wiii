@@ -104,7 +104,7 @@ class TestCodeExecution:
     def test_no_output(self, mock_settings):
         mock_settings.code_execution_timeout = 10
         result = tool_execute_python.invoke({"code": "x = 42"})
-        assert "Code chay thanh cong" in result
+        assert "Code chạy thành công" in result
 
     def test_forbidden_import_rejected(self):
         result = tool_execute_python.invoke({"code": "import os\nos.system('ls')"})

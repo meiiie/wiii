@@ -117,12 +117,6 @@ function buildThinkingDedupContext(
     .join("\n");
 }
 
-function fillThinkingBodyFromSummary(_block: ThinkingBlockData | undefined): void {
-  // Public-thinking authority now lives in streamed delta content.
-  // Keep thinking_start.summary as header/meta only instead of promoting it
-  // into visible body text when no delta was emitted.
-}
-
 function sanitizeThinkingLabel(label: string | undefined): string | undefined {
   const trimmed = (label || "").trim();
   if (!trimmed) return undefined;

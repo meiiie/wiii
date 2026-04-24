@@ -107,120 +107,95 @@ class TestModelSupportsThinking:
 class TestOllamaProviderThinking:
     """Test OllamaProvider thinking mode integration."""
 
-    def test_thinking_enabled_for_qwen3(self):
-        """Qwen3 model with thinking_budget > 0 passes extra_body."""
-        import sys
-        import types
-
+    def _settings_for_model(self, model: str):
         mock_settings = MagicMock()
-        mock_settings.enable_unified_providers = False
-        mock_settings.ollama_model = "qwen3:8b"
+        mock_settings.ollama_model = model
         mock_settings.ollama_base_url = "http://localhost:11434"
-        mock_settings.ollama_keep_alive = "30m"
+        mock_settings.ollama_api_key = None
         mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
+        return mock_settings
 
-        mock_ollama_module = types.ModuleType("langchain_ollama")
-        mock_chat_ollama = MagicMock()
-        mock_ollama_module.ChatOllama = mock_chat_ollama
+    def test_thinking_enabled_for_qwen3(self):
+        """Qwen3 model with thinking_budget > 0 passes OpenAI-compatible extra_body."""
+        mock_settings = self._settings_for_model("qwen3:8b")
 
-        with patch("app.engine.llm_providers.ollama_provider.settings", mock_settings):
-            with patch.dict(sys.modules, {"langchain_ollama": mock_ollama_module}):
-                from app.engine.llm_providers.ollama_provider import OllamaProvider
-                provider = OllamaProvider()
-                provider.create_instance(
-                    tier="moderate",
-                    thinking_budget=1024,
-                    include_thoughts=True,
-                )
+        with (
+            patch("app.engine.llm_providers.ollama_provider.settings", mock_settings),
+            patch("app.engine.llm_providers.ollama_provider.WiiiChatModel") as mock_chat,
+        ):
+            from app.engine.llm_providers.ollama_provider import OllamaProvider
 
-        mock_chat_ollama.assert_called_once()
-        call_kwargs = mock_chat_ollama.call_args
-        assert call_kwargs.kwargs.get("extra_body") == {"think": True}
-        assert call_kwargs.kwargs.get("keep_alive") == "30m"
+            provider = OllamaProvider()
+            provider.create_instance(
+                tier="moderate",
+                thinking_budget=1024,
+                include_thoughts=True,
+            )
+
+        mock_chat.assert_called_once()
+        call_kwargs = mock_chat.call_args.kwargs
+        assert call_kwargs["base_url"] == "http://localhost:11434/v1"
+        assert call_kwargs["model_kwargs"]["extra_body"] == {"think": True}
 
     def test_thinking_not_enabled_for_llama(self):
         """Non-thinking model does NOT pass extra_body."""
-        import sys
-        import types
+        mock_settings = self._settings_for_model("llama3.2")
 
-        mock_settings = MagicMock()
-        mock_settings.enable_unified_providers = False
-        mock_settings.ollama_model = "llama3.2"
-        mock_settings.ollama_base_url = "http://localhost:11434"
-        mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
+        with (
+            patch("app.engine.llm_providers.ollama_provider.settings", mock_settings),
+            patch("app.engine.llm_providers.ollama_provider.WiiiChatModel") as mock_chat,
+        ):
+            from app.engine.llm_providers.ollama_provider import OllamaProvider
 
-        mock_ollama_module = types.ModuleType("langchain_ollama")
-        mock_chat_ollama = MagicMock()
-        mock_ollama_module.ChatOllama = mock_chat_ollama
+            provider = OllamaProvider()
+            provider.create_instance(
+                tier="moderate",
+                thinking_budget=1024,
+                include_thoughts=True,
+            )
 
-        with patch("app.engine.llm_providers.ollama_provider.settings", mock_settings):
-            with patch.dict(sys.modules, {"langchain_ollama": mock_ollama_module}):
-                from app.engine.llm_providers.ollama_provider import OllamaProvider
-                provider = OllamaProvider()
-                provider.create_instance(
-                    tier="moderate",
-                    thinking_budget=1024,
-                    include_thoughts=True,
-                )
-
-        call_kwargs = mock_chat_ollama.call_args
-        assert "extra_body" not in call_kwargs.kwargs
+        call_kwargs = mock_chat.call_args.kwargs
+        assert "extra_body" not in call_kwargs["model_kwargs"]
 
     def test_thinking_not_enabled_without_budget(self):
         """Qwen3 without thinking_budget does NOT enable thinking."""
-        import sys
-        import types
+        mock_settings = self._settings_for_model("qwen3:8b")
 
-        mock_settings = MagicMock()
-        mock_settings.enable_unified_providers = False
-        mock_settings.ollama_model = "qwen3:8b"
-        mock_settings.ollama_base_url = "http://localhost:11434"
-        mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
+        with (
+            patch("app.engine.llm_providers.ollama_provider.settings", mock_settings),
+            patch("app.engine.llm_providers.ollama_provider.WiiiChatModel") as mock_chat,
+        ):
+            from app.engine.llm_providers.ollama_provider import OllamaProvider
 
-        mock_ollama_module = types.ModuleType("langchain_ollama")
-        mock_chat_ollama = MagicMock()
-        mock_ollama_module.ChatOllama = mock_chat_ollama
+            provider = OllamaProvider()
+            provider.create_instance(
+                tier="moderate",
+                thinking_budget=0,
+                include_thoughts=False,
+            )
 
-        with patch("app.engine.llm_providers.ollama_provider.settings", mock_settings):
-            with patch.dict(sys.modules, {"langchain_ollama": mock_ollama_module}):
-                from app.engine.llm_providers.ollama_provider import OllamaProvider
-                provider = OllamaProvider()
-                provider.create_instance(
-                    tier="moderate",
-                    thinking_budget=0,
-                    include_thoughts=False,
-                )
-
-        call_kwargs = mock_chat_ollama.call_args
-        assert "extra_body" not in call_kwargs.kwargs
+        call_kwargs = mock_chat.call_args.kwargs
+        assert "extra_body" not in call_kwargs["model_kwargs"]
 
     def test_thinking_not_enabled_for_qwen3_instruct_tag(self):
         """Explicit Qwen3 instruct tags should not receive think=True."""
-        import sys
-        import types
+        mock_settings = self._settings_for_model("qwen3:4b-instruct-2507-q4_K_M")
 
-        mock_settings = MagicMock()
-        mock_settings.enable_unified_providers = False
-        mock_settings.ollama_model = "qwen3:4b-instruct-2507-q4_K_M"
-        mock_settings.ollama_base_url = "http://localhost:11434"
-        mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
+        with (
+            patch("app.engine.llm_providers.ollama_provider.settings", mock_settings),
+            patch("app.engine.llm_providers.ollama_provider.WiiiChatModel") as mock_chat,
+        ):
+            from app.engine.llm_providers.ollama_provider import OllamaProvider
 
-        mock_ollama_module = types.ModuleType("langchain_ollama")
-        mock_chat_ollama = MagicMock()
-        mock_ollama_module.ChatOllama = mock_chat_ollama
+            provider = OllamaProvider()
+            provider.create_instance(
+                tier="moderate",
+                thinking_budget=1024,
+                include_thoughts=True,
+            )
 
-        with patch("app.engine.llm_providers.ollama_provider.settings", mock_settings):
-            with patch.dict(sys.modules, {"langchain_ollama": mock_ollama_module}):
-                from app.engine.llm_providers.ollama_provider import OllamaProvider
-                provider = OllamaProvider()
-                provider.create_instance(
-                    tier="moderate",
-                    thinking_budget=1024,
-                    include_thoughts=True,
-                )
-
-        call_kwargs = mock_chat_ollama.call_args
-        assert "extra_body" not in call_kwargs.kwargs
+        call_kwargs = mock_chat.call_args.kwargs
+        assert "extra_body" not in call_kwargs["model_kwargs"]
 
 
 # ============================================================================

@@ -54,6 +54,19 @@ def _remember_runtime_target(
     return provider_name, model_name
 
 
+def _get_requested_model(state: Optional[AgentState]) -> str | None:
+    """Return a clean requested model override from graph state."""
+    if not isinstance(state, dict):
+        return None
+    value = state.get("model")
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized or normalized.lower() == "auto":
+        return None
+    return normalized
+
+
 def _copy_runtime_metadata(source_obj: Any | None, target_obj: Any | None):
     """Carry Wiii runtime metadata across LangChain wrapper/bind layers."""
     if source_obj is None or target_obj is None:
