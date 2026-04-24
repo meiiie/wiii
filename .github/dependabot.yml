@@ -1,13 +1,15 @@
 # Dependabot configuration for Wiii.
 # Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 #
-# Strategy:
+# Strategy (updated 2026-04-25 for single-maintainer noise control):
 #   - Security updates are handled separately via Dependabot Security alerts
-#     (auto-PR for high/critical CVEs).
-#   - Version updates run weekly, grouped per ecosystem to keep PR volume
-#     predictable while multiple agents are active in the repo.
+#     (auto-PR for high/critical CVEs regardless of schedule).
+#   - Version updates run **monthly**, grouped per ecosystem, to keep email
+#     and review volume manageable for a solo maintainer.
 #   - Patch bumps are grouped; major bumps land as separate PRs so that
-#     human maintainers can review breaking-change risk explicitly.
+#     breaking-change risk is reviewed explicitly.
+#   - Each ecosystem caps at 2 open PRs — Dependabot will queue the rest
+#     until older ones merge.
 #   - All PRs land Monday morning Asia/Ho_Chi_Minh to batch into the work
 #     week, not over the weekend.
 
@@ -18,11 +20,11 @@ updates:
   - package-ecosystem: "pip"
     directory: "/maritime-ai-service"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
       day: "monday"
       time: "08:00"
       timezone: "Asia/Ho_Chi_Minh"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
@@ -58,11 +60,11 @@ updates:
   - package-ecosystem: "npm"
     directory: "/wiii-desktop"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
       day: "monday"
       time: "08:00"
       timezone: "Asia/Ho_Chi_Minh"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
@@ -128,11 +130,11 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/wiii-desktop/src-tauri"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
       day: "monday"
       time: "08:00"
       timezone: "Asia/Ho_Chi_Minh"
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
@@ -149,11 +151,11 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
       day: "monday"
       time: "08:00"
       timezone: "Asia/Ho_Chi_Minh"
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore(ci)"
       include: "scope"
@@ -165,7 +167,7 @@ updates:
   - package-ecosystem: "docker"
     directory: "/maritime-ai-service"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
       day: "monday"
       time: "08:00"
       timezone: "Asia/Ho_Chi_Minh"

@@ -3,24 +3,29 @@ early_access: false
 tone_instructions: "Be direct, technical, and risk-focused. Prioritize correctness, security, maintainability, and actionable findings."
 
 reviews:
-  profile: assertive
+  # Tuned 2026-04-25 for single-maintainer noise control. Core review still
+  # runs on every PR, but chatty extras (sequence diagrams, effort estimate,
+  # walkthrough duplication, draft-PR reviews) are disabled. Revert to the
+  # original `assertive` + full verbosity profile if multiple reviewers
+  # rejoin the project.
+  profile: chill
   request_changes_workflow: false
   high_level_summary: true
-  high_level_summary_in_walkthrough: true
+  high_level_summary_in_walkthrough: false
   review_status: true
   review_details: true
   commit_status: true
-  fail_commit_status: true
-  collapse_walkthrough: false
+  fail_commit_status: false
+  collapse_walkthrough: true
   changed_files_summary: true
-  sequence_diagrams: true
-  estimate_code_review_effort: true
+  sequence_diagrams: false
+  estimate_code_review_effort: false
   assess_linked_issues: true
   related_issues: true
   related_prs: true
   suggested_labels: true
   auto_apply_labels: false
-  suggested_reviewers: true
+  suggested_reviewers: false
   auto_assign_reviewers: false
   poem: false
   enable_prompt_for_ai_agents: true
@@ -29,8 +34,8 @@ reviews:
 
   auto_review:
     enabled: true
-    auto_incremental_review: true
-    drafts: true
+    auto_incremental_review: false
+    drafts: false
     base_branches:
       - "main"
       - "develop"
@@ -39,6 +44,9 @@ reviews:
     ignore_title_keywords:
       - "DO NOT MERGE"
       - "[skip review]"
+      - "chore(deps)"
+      - "chore(deps-dev)"
+      - "chore(ci)"
     ignore_usernames:
       - "dependabot[bot]"
       - "renovate[bot]"
@@ -124,7 +132,7 @@ reviews:
 
 chat:
   art: false
-  auto_reply: true
+  auto_reply: false
 
 knowledge_base:
   web_search:
