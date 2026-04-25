@@ -78,6 +78,12 @@ OPENROUTER_DEFAULT_MODEL = "openai/gpt-oss-20b:free"
 OPENROUTER_DEFAULT_MODEL_ADVANCED = "openai/gpt-oss-120b:free"
 ZHIPU_DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
 
+# NVIDIA NIM — OpenAI-compatible endpoint (Issue #110)
+# Free tier available with NGC API key from build.nvidia.com.
+NVIDIA_DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
+NVIDIA_DEFAULT_MODEL = "meta/llama-3.1-70b-instruct"
+NVIDIA_DEFAULT_MODEL_ADVANCED = "meta/llama-3.1-405b-instruct"
+
 GOOGLE_CHAT_MODELS: dict[str, ChatModelMetadata] = {
     GOOGLE_DEFAULT_MODEL: ChatModelMetadata(
         provider="google",

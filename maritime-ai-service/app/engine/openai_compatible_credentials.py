@@ -10,6 +10,9 @@ from __future__ import annotations
 from typing import Any
 
 from app.engine.model_catalog import (
+    NVIDIA_DEFAULT_BASE_URL,
+    NVIDIA_DEFAULT_MODEL,
+    NVIDIA_DEFAULT_MODEL_ADVANCED,
     OPENAI_DEFAULT_BASE_URL,
     OPENAI_DEFAULT_MODEL,
     OPENAI_DEFAULT_MODEL_ADVANCED,
@@ -93,6 +96,30 @@ def resolve_openrouter_model_advanced(settings_obj: Any) -> str:
 
 def openrouter_credentials_available(settings_obj: Any) -> bool:
     return bool(resolve_openrouter_api_key(settings_obj))
+
+
+# NVIDIA NIM resolvers (Issue #110) — OpenAI-compatible endpoint at
+# integrate.api.nvidia.com. Each resolver mirrors the OpenAI/OpenRouter
+# pattern: explicit setting first, fall back to the catalogued default.
+
+def resolve_nvidia_api_key(settings_obj: Any) -> str | None:
+    return _normalize_text(getattr(settings_obj, "nvidia_api_key", None))
+
+
+def resolve_nvidia_base_url(settings_obj: Any) -> str:
+    return _normalize_text(getattr(settings_obj, "nvidia_base_url", None)) or NVIDIA_DEFAULT_BASE_URL
+
+
+def resolve_nvidia_model(settings_obj: Any) -> str:
+    return _normalize_text(getattr(settings_obj, "nvidia_model", None)) or NVIDIA_DEFAULT_MODEL
+
+
+def resolve_nvidia_model_advanced(settings_obj: Any) -> str:
+    return _normalize_text(getattr(settings_obj, "nvidia_model_advanced", None)) or NVIDIA_DEFAULT_MODEL_ADVANCED
+
+
+def nvidia_credentials_available(settings_obj: Any) -> bool:
+    return bool(resolve_nvidia_api_key(settings_obj))
 
 
 def is_openrouter_legacy_slot_configured(settings_obj: Any) -> bool:

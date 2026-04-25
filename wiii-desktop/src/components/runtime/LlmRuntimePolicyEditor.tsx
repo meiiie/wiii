@@ -198,6 +198,7 @@ function defaultTimeoutProviderOverrides(): Record<RuntimeProvider, TimeoutProvi
     zhipu: {},
     openai: {},
     openrouter: {},
+    nvidia: {},
     ollama: {},
   };
 }

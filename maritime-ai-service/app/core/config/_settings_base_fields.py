@@ -21,6 +21,9 @@ from app.engine.model_catalog import (
     OPENROUTER_DEFAULT_BASE_URL,
     OPENROUTER_DEFAULT_MODEL,
     OPENROUTER_DEFAULT_MODEL_ADVANCED,
+    NVIDIA_DEFAULT_BASE_URL,
+    NVIDIA_DEFAULT_MODEL,
+    NVIDIA_DEFAULT_MODEL_ADVANCED,
     ZHIPU_DEFAULT_MODEL,
     ZHIPU_DEFAULT_MODEL_ADVANCED,
     get_embedding_dimensions,
@@ -204,6 +207,13 @@ class BaseSettingsFieldsMixin:
     openai_model_advanced: str = Field(default=OPENAI_DEFAULT_MODEL_ADVANCED, description="OpenAI model for complex tasks")
     openrouter_model: str = Field(default=OPENROUTER_DEFAULT_MODEL, description="OpenRouter model for general tasks")
     openrouter_model_advanced: str = Field(default=OPENROUTER_DEFAULT_MODEL_ADVANCED, description="OpenRouter model for complex tasks")
+
+    # NVIDIA NIM (Issue #110) — OpenAI-compatible endpoint at integrate.api.nvidia.com.
+    # NGC API key from build.nvidia.com unlocks Llama 3.1 405B, Nemotron 70B, etc.
+    nvidia_api_key: Optional[str] = Field(default=None, description="NVIDIA NIM (NGC) API key")
+    nvidia_base_url: Optional[str] = Field(default=NVIDIA_DEFAULT_BASE_URL, description="NVIDIA NIM API base URL")
+    nvidia_model: str = Field(default=NVIDIA_DEFAULT_MODEL, description="NVIDIA model for general tasks")
+    nvidia_model_advanced: str = Field(default=NVIDIA_DEFAULT_MODEL_ADVANCED, description="NVIDIA model for complex tasks")
     openrouter_model_fallbacks: list[str] = Field(
         default_factory=list,
         description="Ordered fallback models for OpenRouter requests",
