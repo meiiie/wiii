@@ -183,18 +183,30 @@ def _latest_runtime_observation_succeeded(state: dict[str, Any]) -> bool:
     return success_at >= observed_at
 
 
+def _probe_success_supersedes_observation(state: Mapping[str, Any]) -> bool:
+    """A successful live probe at-or-after the failed observation supersedes it.
+
+    The provider has been verifiably reached since the recorded failure, so
+    stale chat_stream:error records (often from pre-flight selectability
+    rejections) shouldn't keep it disabled. Mirrors the ``>=`` semantics of
+    ``_latest_runtime_observation_succeeded`` for consistency: when the two
+    timestamps are equal the probe wins, since a probe is the more reliable
+    signal of reachability.
+    """
+    probe_success_at = _parse_iso_datetime(state.get("last_live_probe_success_at"))
+    observed_at = _parse_iso_datetime(state.get("last_runtime_observation_at"))
+    if probe_success_at is None or observed_at is None:
+        return False
+    return probe_success_at >= observed_at
+
+
 def _latest_runtime_observation_failed(state: Mapping[str, Any]) -> bool:
     observed_at = _parse_iso_datetime(state.get("last_runtime_observation_at"))
     if observed_at is None:
         return False
-    success_at = _parse_iso_datetime(state.get("last_runtime_success_at"))
-    # A successful live probe AFTER the failed observation supersedes it: the
-    # provider really is reachable now, and stale chat_stream:error records
-    # (often from pre-flight selectability rejections) shouldn't keep it
-    # disabled forever.
-    probe_success_at = _parse_iso_datetime(state.get("last_live_probe_success_at"))
-    if probe_success_at is not None and probe_success_at > observed_at:
+    if _probe_success_supersedes_observation(state):
         return False
+    success_at = _parse_iso_datetime(state.get("last_runtime_success_at"))
     if success_at is None:
         return True
     return success_at < observed_at
@@ -217,12 +229,13 @@ def _is_stale_busy_signal(state: Mapping[str, Any]) -> bool:
     if any(marker in runtime_note for marker in _BUSY_MARKERS):
         if _is_stale_runtime_failure(state):
             return True
-        # A successful live probe that's newer than the observation overrides
-        # the busy runtime signal — the provider is verifiably reachable.
-        probe_success_at = _parse_iso_datetime(state.get("last_live_probe_success_at"))
-        observed_at = _parse_iso_datetime(state.get("last_runtime_observation_at"))
-        if probe_success_at is not None and observed_at is not None and probe_success_at > observed_at:
+        if _probe_success_supersedes_observation(state):
             return True
+        # When an explicit busy marker is present we ONLY trust a fresh probe
+        # success (above) or age-based staleness. The probe-attempt-age
+        # heuristic in the lower branch intentionally does NOT apply here —
+        # otherwise an old probe attempt would silently mask a fresh 429
+        # signal. Future readers: don't unify the two branches.
         return False
 
     probe_dt = _parse_iso_datetime(
@@ -666,6 +679,12 @@ def ensure_provider_is_selectable(provider: str | None) -> ProviderSelectability
         and item.state == "disabled"
         and item.reason_code in _DEGRADED_BUT_ROUTABLE_REASON_CODES
     ):
+        logger.info(
+            "[LLM_SELECTABILITY] Allowing pinned degraded provider=%s reason=%s "
+            "(explicit user pin overrides degraded-but-routable state)",
+            normalized,
+            item.reason_code,
+        )
         return item
 
     reason_code = item.reason_code if item and item.reason_code else "verifying"
