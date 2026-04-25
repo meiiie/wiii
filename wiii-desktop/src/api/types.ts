@@ -114,7 +114,7 @@ export interface ChatRequest {
   organization_id?: string;
   images?: ImageInput[];
   user_context?: ChatUserContext;
-  provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
   model?: string;
 }
 
@@ -213,7 +213,7 @@ export interface FailoverMetadata {
 }
 
 export interface ModelSwitchPromptOption {
-  provider: "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  provider: "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
   label: string;
   selected_model?: string | null;
 }
@@ -1267,7 +1267,7 @@ export type ThinkingLevel = "minimal" | "balanced" | "detailed";
 export interface AppSettings {
   server_url: string;
   api_key: string;
-  llm_provider?: "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  llm_provider?: "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
   google_model?: string;
   openai_base_url?: string;
   openai_model?: string;
@@ -1313,11 +1313,11 @@ export interface AppSettings {
   /** Sprint 167: Show interactive artifacts */
   show_artifacts?: boolean;
   /** Per-request model provider selection (persisted across reloads) */
-  model_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  model_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
 }
 
 export interface LlmRuntimeConfig {
-  provider: "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  provider: "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
   use_multi_agent: boolean;
   google_model: string;
   openai_base_url?: string | null;
@@ -1355,12 +1355,12 @@ export interface LlmRuntimeConfig {
   agent_profiles: Record<string, AgentRuntimeProfileConfig>;
   timeout_profiles: LlmTimeoutProfilesConfig;
   timeout_provider_overrides: Record<string, LlmTimeoutProviderOverride>;
-  vision_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
-  vision_describe_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  vision_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
+  vision_describe_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
   vision_describe_model?: string | null;
-  vision_ocr_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  vision_ocr_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
   vision_ocr_model?: string | null;
-  vision_grounded_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  vision_grounded_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
   vision_grounded_model?: string | null;
   vision_failover_chain?: string[];
   vision_timeout_seconds: number;
@@ -1369,7 +1369,7 @@ export interface LlmRuntimeConfig {
   vision_last_live_probe_at?: string | null;
   vision_audit_persisted?: boolean;
   vision_audit_warnings?: string[];
-  embedding_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  embedding_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
   embedding_failover_chain?: string[];
   embedding_model: string;
   embedding_dimensions: number;
@@ -1578,7 +1578,7 @@ export interface EmbeddingSpaceMigrationPromoteRequest {
 }
 
 export interface AgentRuntimeProfileConfig {
-  default_provider: "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  default_provider: "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
   tier: "deep" | "moderate" | "light";
   provider_models: Record<string, string>;
 }
@@ -1668,7 +1668,7 @@ export interface ModelCatalogResponse {
 }
 
 export interface LlmRuntimeUpdateBody {
-  provider?: "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  provider?: "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
   use_multi_agent?: boolean;
   google_api_key?: string;
   clear_google_api_key?: boolean;
@@ -1707,16 +1707,16 @@ export interface LlmRuntimeUpdateBody {
   agent_profiles?: Record<string, AgentRuntimeProfileConfig>;
   timeout_profiles?: LlmTimeoutProfilesConfig;
   timeout_provider_overrides?: Record<string, LlmTimeoutProviderOverride>;
-  vision_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
-  vision_describe_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  vision_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
+  vision_describe_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
   vision_describe_model?: string;
-  vision_ocr_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  vision_ocr_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
   vision_ocr_model?: string;
-  vision_grounded_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  vision_grounded_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
   vision_grounded_model?: string;
   vision_failover_chain?: string[];
   vision_timeout_seconds?: number;
-  embedding_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "ollama";
+  embedding_provider?: "auto" | "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
   embedding_failover_chain?: string[];
   embedding_model?: string;
 }
@@ -1753,7 +1753,7 @@ export interface LlmStatusResponse {
 }
 
 export interface LlmRuntimeAuditRefreshBody {
-  providers?: Array<"google" | "zhipu" | "openai" | "openrouter" | "ollama">;
+  providers?: Array<"google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama">;
 }
 
 // ===== Sprint 170: Living Agent Types =====

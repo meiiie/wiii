@@ -1,8 +1,9 @@
 """
-OpenAI / OpenRouter Provider — Secondary LLM backend for Wiii.
+OpenAI / OpenRouter / NVIDIA NIM Provider — Secondary LLM backend for Wiii.
 
 Uses WiiiChatModel (AsyncOpenAI SDK).
 De-LangChaining Phase 1: Removed ChatOpenAI dependency.
+Issue #110: NVIDIA NIM added as alias-based OpenAI-compatible target.
 """
 
 import logging
@@ -14,6 +15,10 @@ from app.core.config import settings
 from app.engine.llm_providers.base import LLMProvider
 from app.engine.llm_providers.wiii_chat_model import WiiiChatModel
 from app.engine.openai_compatible_credentials import (
+    resolve_nvidia_api_key,
+    resolve_nvidia_base_url,
+    resolve_nvidia_model,
+    resolve_nvidia_model_advanced,
     resolve_openai_api_key,
     resolve_openai_base_url,
     resolve_openai_model,
@@ -62,6 +67,8 @@ class OpenAIProvider(LLMProvider):
     def is_configured(self) -> bool:
         if self._provider_alias == "openrouter":
             return bool(resolve_openrouter_api_key(settings))
+        if self._provider_alias == "nvidia":
+            return bool(resolve_nvidia_api_key(settings))
         return bool(resolve_openai_api_key(settings))
 
     def is_available(self) -> bool:
@@ -87,6 +94,10 @@ class OpenAIProvider(LLMProvider):
             model = resolve_openrouter_model_advanced(settings)
         elif self._provider_alias == "openrouter":
             model = resolve_openrouter_model(settings)
+        elif self._provider_alias == "nvidia" and tier == "deep":
+            model = resolve_nvidia_model_advanced(settings)
+        elif self._provider_alias == "nvidia":
+            model = resolve_nvidia_model(settings)
         elif tier == "deep":
             model = resolve_openai_model_advanced(settings)
         else:
@@ -95,11 +106,12 @@ class OpenAIProvider(LLMProvider):
         # Detect o-series reasoning models
         is_o_series = any(model.startswith(prefix) for prefix in _O_SERIES_PREFIXES)
 
-        api_key = (
-            resolve_openrouter_api_key(settings)
-            if self._provider_alias == "openrouter"
-            else resolve_openai_api_key(settings)
-        )
+        if self._provider_alias == "openrouter":
+            api_key = resolve_openrouter_api_key(settings)
+        elif self._provider_alias == "nvidia":
+            api_key = resolve_nvidia_api_key(settings)
+        else:
+            api_key = resolve_openai_api_key(settings)
 
         model_kwargs: dict[str, Any] = {}
 
@@ -112,12 +124,14 @@ class OpenAIProvider(LLMProvider):
         else:
             model_kwargs["temperature"] = temperature
 
-        # Support OpenRouter or custom base URL
+        # Support OpenRouter / NVIDIA NIM / custom base URL
         base_url = ""
         use_openrouter_request = False
         if self._provider_alias == "openrouter":
             base_url = resolve_openrouter_base_url(settings)
             use_openrouter_request = True
+        elif self._provider_alias == "nvidia":
+            base_url = resolve_nvidia_base_url(settings)
         else:
             explicit_openai_base = getattr(settings, "openai_base_url", None)
             if isinstance(explicit_openai_base, str) and explicit_openai_base.strip():
