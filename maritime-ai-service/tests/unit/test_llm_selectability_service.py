@@ -775,3 +775,190 @@ def test_runtime_success_newer_than_probe_busy_signal_recovers_provider(
     google = next(item for item in snapshot if item.provider == "google")
     assert google.state == "selectable"
     assert google.reason_code is None
+
+
+# ---------------------------------------------------------------------------
+# PR #114: probe success supersedes failed runtime observation
+# ---------------------------------------------------------------------------
+
+
+def test_probe_success_supersedes_observation_helper():
+    """Probe success at-or-after observation overrides the failure."""
+    from app.services.llm_selectability_service import _probe_success_supersedes_observation
+
+    state_recovered = {
+        "last_runtime_observation_at": "2026-04-25T15:21:00+00:00",
+        "last_live_probe_success_at": "2026-04-25T15:29:00+00:00",
+    }
+    assert _probe_success_supersedes_observation(state_recovered) is True
+
+    state_equal = {
+        "last_runtime_observation_at": "2026-04-25T15:21:00+00:00",
+        "last_live_probe_success_at": "2026-04-25T15:21:00+00:00",
+    }
+    assert _probe_success_supersedes_observation(state_equal) is True
+
+    state_stale_probe = {
+        "last_runtime_observation_at": "2026-04-25T15:29:00+00:00",
+        "last_live_probe_success_at": "2026-04-25T15:21:00+00:00",
+    }
+    assert _probe_success_supersedes_observation(state_stale_probe) is False
+
+    assert _probe_success_supersedes_observation(
+        {"last_runtime_observation_at": "2026-04-25T15:21:00+00:00"}
+    ) is False
+    assert _probe_success_supersedes_observation(
+        {"last_live_probe_success_at": "2026-04-25T15:21:00+00:00"}
+    ) is False
+
+
+def test_runtime_observation_failure_overridden_by_fresh_probe():
+    """Stale chat_stream:error observation is masked by a newer probe success.
+
+    Loop-break behavior introduced in PR #114: NVIDIA was getting rejected by
+    ensure_provider_is_selectable, the rejection was recorded as a runtime
+    observation failure, and the next request saw the same audit state and
+    rejected again — forever. A successful live probe between rejections
+    must clear the failure.
+    """
+    from app.services.llm_selectability_service import _latest_runtime_observation_failed
+
+    state_loop = {
+        "last_runtime_observation_at": "2026-04-25T15:21:00+00:00",
+        "last_runtime_error": "Provider tam thoi ban hoac da cham gioi han.",
+        "last_runtime_success_at": None,
+        "last_live_probe_success_at": "2026-04-25T15:29:00+00:00",
+    }
+    assert _latest_runtime_observation_failed(state_loop) is False
+
+    state_no_probe = {
+        "last_runtime_observation_at": "2026-04-25T15:21:00+00:00",
+        "last_runtime_error": "Provider tam thoi ban hoac da cham gioi han.",
+        "last_runtime_success_at": None,
+    }
+    assert _latest_runtime_observation_failed(state_no_probe) is True
+
+
+def test_busy_signal_overridden_by_fresh_probe_success():
+    """A 429 marker in last_runtime_note is masked by a newer probe success."""
+    from app.services.llm_selectability_service import _is_stale_busy_signal
+
+    state_busy_marker_with_fresh_probe = {
+        "last_runtime_observation_at": "2026-04-25T15:21:00+00:00",
+        "last_runtime_success_at": "2026-04-25T15:21:00+00:00",
+        "last_runtime_note": "chat_stream: completed after 429 quota recovery.",
+        "last_live_probe_success_at": "2026-04-25T15:29:00+00:00",
+    }
+    assert _is_stale_busy_signal(state_busy_marker_with_fresh_probe) is True
+
+
+def test_ensure_provider_is_selectable_allows_capability_missing_for_explicit_pin():
+    """Explicit user pin bypasses capability_missing.
+
+    DeepSeek V4 on NVIDIA NIM lacks structured_output but is otherwise usable;
+    user explicitly chose this provider so the strict gate would prevent
+    legitimate use.
+    """
+    from app.services.llm_selectability_service import (
+        ensure_provider_is_selectable,
+        ProviderSelectability,
+    )
+
+    pinned_capable = ProviderSelectability(
+        provider="nvidia",
+        display_name="Nvidia",
+        state="disabled",
+        reason_code="capability_missing",
+        reason_label="Provider thieu mot so kha nang.",
+        selected_model="deepseek-ai/deepseek-v4-flash",
+        strict_pin=True,
+        verified_at="2026-04-25T15:29:41+00:00",
+        available=False,
+        configured=True,
+        request_selectable=True,
+        is_primary=False,
+        is_fallback=False,
+    )
+
+    with patch(
+        "app.services.llm_selectability_service.get_provider_selectability",
+        return_value=pinned_capable,
+    ):
+        result = ensure_provider_is_selectable("nvidia")
+    assert result is pinned_capable
+
+
+def test_ensure_provider_is_selectable_still_rejects_hidden_provider():
+    """Regression guard: capability_missing bypass must NOT extend to hidden state."""
+    from app.services.llm_selectability_service import (
+        ensure_provider_is_selectable,
+        ProviderSelectability,
+    )
+    from app.core.exceptions import ProviderUnavailableError
+
+    hidden_item = ProviderSelectability(
+        provider="ollama",
+        display_name="Ollama",
+        state="hidden",
+        reason_code=None,
+        reason_label=None,
+        selected_model=None,
+        strict_pin=True,
+        verified_at=None,
+        available=False,
+        configured=False,
+        request_selectable=False,
+        is_primary=False,
+        is_fallback=False,
+    )
+
+    with patch(
+        "app.services.llm_selectability_service.get_provider_selectability",
+        return_value=hidden_item,
+    ):
+        try:
+            ensure_provider_is_selectable("ollama")
+            assert False, "Expected ProviderUnavailableError"
+        except ProviderUnavailableError as exc:
+            assert exc.provider == "ollama"
+
+
+def test_ensure_provider_is_selectable_still_rejects_busy_provider():
+    """Regression guard: capability_missing bypass must NOT extend to busy state.
+
+    A busy provider hasn't passed a recent probe; we still want to reject it
+    even on explicit pin so the user gets a clear error rather than a real
+    failure mid-stream.
+    """
+    from app.services.llm_selectability_service import (
+        ensure_provider_is_selectable,
+        ProviderSelectability,
+    )
+    from app.core.exceptions import ProviderUnavailableError
+
+    busy_item = ProviderSelectability(
+        provider="nvidia",
+        display_name="Nvidia",
+        state="disabled",
+        reason_code="busy",
+        reason_label="Provider tam thoi ban.",
+        selected_model="deepseek-ai/deepseek-v4-flash",
+        strict_pin=True,
+        verified_at="2026-04-25T15:29:41+00:00",
+        available=False,
+        configured=True,
+        request_selectable=True,
+        is_primary=False,
+        is_fallback=False,
+    )
+
+    with patch(
+        "app.services.llm_selectability_service.get_provider_selectability",
+        return_value=busy_item,
+    ):
+        try:
+            ensure_provider_is_selectable("nvidia")
+            assert False, "Expected ProviderUnavailableError"
+        except ProviderUnavailableError as exc:
+            assert exc.provider == "nvidia"
+            assert exc.reason_code == "busy"
