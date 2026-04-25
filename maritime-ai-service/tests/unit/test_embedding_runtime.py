@@ -62,6 +62,24 @@ class TestOpenAICompatibleEmbeddings:
 
 
 class TestSemanticEmbeddingBackend:
+    @pytest.fixture(autouse=True)
+    def _reset_ollama_probe_cache(self):
+        """Clear the module-level probe cache before each test.
+
+        The cache is keyed by ``(base_url, model_name)``. When CI runs other
+        tests that exercise ``probe_ollama_embedding_model`` against a real
+        unreachable Ollama, the cache stores ``available=False`` for the
+        common ``localhost:11434 / embeddinggemma`` key. Subsequent tests in
+        this class then short-circuit to the cached miss BEFORE reaching the
+        ``urlopen`` mock, producing the long-running flake on CI Unit Tests.
+        Resetting the cache per test makes the mock authoritative.
+        """
+        from app.engine import embedding_runtime as mod
+
+        mod._ollama_embedding_probe_cache.clear()
+        yield
+        mod._ollama_embedding_probe_cache.clear()
+
     def test_build_embedding_backend_for_provider_model_refuses_cross_space_pair(self):
         from app.engine import embedding_runtime as mod
 
@@ -298,12 +316,15 @@ class TestSemanticEmbeddingBackend:
 
                 return _json.dumps(self._payload).encode("utf-8")
 
-        with patch.object(mod, "urlopen", return_value=_Response(payload)):
+        with patch.object(mod, "urlopen", return_value=_Response(payload)) as mock_urlopen:
             result = mod.probe_ollama_embedding_model(
                 "http://localhost:11434",
                 "embeddinggemma",
             )
 
+        # If the cache short-circuited the call, urlopen would never run —
+        # asserting ``called`` is the canary for cache pollution regressions.
+        assert mock_urlopen.called, "urlopen was bypassed by the probe cache — fixture must clear it before each test"
         assert result.available is True
 
     def test_probe_ollama_embedding_model_uses_short_cache(self):
