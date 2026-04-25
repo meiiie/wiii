@@ -286,9 +286,19 @@ class TestToolSearchNews:
     """Test tool_search_news function."""
 
     def test_successful_news_search(self, mock_ddgs):
-        """News search should merge DuckDuckGo news + RSS results."""
+        """News search should merge DuckDuckGo news + RSS results.
+
+        Mock title/body must contain query content words so the relevance
+        filter (added in a later sprint, requires >=50% query-word overlap)
+        keeps the result. Without this, mocks with content like "DDG News"
+        get dropped before reaching the assertion.
+        """
         mock_ddgs.DDGS.return_value.news.return_value = [
-            {"title": "DDG News", "body": "From DuckDuckGo", "href": "https://news.com/1"},
+            {
+                "title": "DDG News: tin tức Việt Nam hôm nay",
+                "body": "Bản tin từ DuckDuckGo về tin tức Việt Nam mới nhất",
+                "href": "https://news.com/1",
+            },
         ]
 
         from app.engine.tools.web_search_tools import tool_search_news
@@ -300,14 +310,18 @@ class TestToolSearchNews:
         assert "DuckDuckGo" in result
 
     def test_dedup_between_ddg_and_rss(self, mock_ddgs):
-        """Same URL from DDG and RSS should be deduplicated."""
+        """Same URL from DDG and RSS should be deduplicated.
+
+        Mock content must contain the query content word ("test") for the
+        relevance filter to keep them.
+        """
         mock_ddgs.DDGS.return_value.news.return_value = [
-            {"title": "DDG", "body": "Body", "href": "https://shared.com/1"},
+            {"title": "DDG test article", "body": "test body", "href": "https://shared.com/1"},
         ]
 
         rss_results = [
-            {"title": "RSS", "body": "Body", "href": "https://shared.com/1"},
-            {"title": "RSS Only", "body": "Unique", "href": "https://rss.com/2"},
+            {"title": "RSS test", "body": "test body", "href": "https://shared.com/1"},
+            {"title": "RSS Only test", "body": "Unique test content", "href": "https://rss.com/2"},
         ]
 
         from app.engine.tools.web_search_tools import tool_search_news
@@ -448,7 +462,11 @@ class TestCircuitBreakerPerTool:
     """Per-tool circuit breaker isolation (Sprint audit fix)."""
 
     def test_failure_in_one_tool_does_not_affect_another(self, mock_ddgs):
-        """Failure in legal search should NOT affect news search (per-tool isolation)."""
+        """Failure in legal search should NOT affect news search (per-tool isolation).
+
+        Mock content must contain the query content word ("test") for the
+        relevance filter to keep it.
+        """
         import app.engine.tools.web_search_tools as mod
 
         # Record failures only for legal tool
@@ -456,7 +474,7 @@ class TestCircuitBreakerPerTool:
 
         # News tool should NOT be blocked
         mock_ddgs.DDGS.return_value.news.return_value = [
-            {"title": "News OK", "body": "Working", "href": "https://news.com/1"}
+            {"title": "News OK test", "body": "Working test article", "href": "https://news.com/1"}
         ]
         from app.engine.tools.web_search_tools import tool_search_news
         with patch("app.engine.tools.web_search_tools._rss_fetch_sync", return_value=[]):
