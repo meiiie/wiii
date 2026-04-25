@@ -188,6 +188,12 @@ async def shutdown_application(resources: AppRuntimeResources, logger_: logging.
     await _cancel_background_task(
         "runtime audit loop", resources.runtime_audit_loop_task, logger_
     )
+    await _cancel_background_task(
+        "magic link cleanup", resources.magic_link_cleanup_task, logger_
+    )
+    await _cancel_background_task(
+        "magic link session reaper", resources.magic_link_reaper_task, logger_
+    )
     await _stop_heartbeat(resources, logger_)
     await _persist_emotion_state(logger_)
     await _stop_soul_bridge(resources, logger_)

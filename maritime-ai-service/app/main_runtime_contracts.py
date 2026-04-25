@@ -17,3 +17,5 @@ class AppRuntimeResources:
     scheduled_executor: Any = None
     heartbeat: Any = None
     soul_bridge: Any = None
+    magic_link_cleanup_task: asyncio.Task | None = None
+    magic_link_reaper_task: asyncio.Task | None = None
