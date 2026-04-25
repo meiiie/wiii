@@ -1,4 +1,4 @@
-"""Process entrypoint helpers extracted from the multi-agent graph shell."""
+"""Process entrypoint helpers extracted from the multi-agent runtime shell."""
 
 from __future__ import annotations
 
@@ -71,34 +71,6 @@ def _apply_graph_context_prompts(
     code_studio_prompt = inject_code_studio_context(initial_state)
     if code_studio_prompt:
         initial_state["code_studio_context_prompt"] = code_studio_prompt
-
-
-def _build_invoke_config(
-    *,
-    user_id: str,
-    session_id: str,
-    domain_id: str,
-    context: dict | None,
-) -> dict:
-    """Build the per-request LangGraph invoke config."""
-    invoke_config: dict = {}
-    if session_id and user_id:
-        from app.core.thread_utils import build_thread_id
-
-        org_id = (context or {}).get("organization_id")
-        thread_id = build_thread_id(user_id, session_id, org_id=org_id)
-        invoke_config = {"configurable": {"thread_id": thread_id}}
-    elif session_id:
-        invoke_config = {"configurable": {"thread_id": session_id}}
-
-    from app.core.langsmith import get_langsmith_callback, is_langsmith_enabled
-
-    if is_langsmith_enabled():
-        callback = get_langsmith_callback(user_id, session_id, domain_id)
-        if callback:
-            invoke_config.setdefault("callbacks", []).append(callback)
-
-    return invoke_config
 
 
 async def _upsert_thread_view(
@@ -191,7 +163,6 @@ async def process_with_multi_agent_impl(
     model: Optional[str] = None,
     build_domain_config,
     build_turn_local_state_defaults,
-    open_multi_agent_graph,
     cleanup_tracer,
     resolve_public_thinking_content,
     generate_session_summary_bg,
@@ -253,13 +224,6 @@ async def process_with_multi_agent_impl(
         inject_visual_cognition_context=inject_visual_cognition_context,
         inject_widget_feedback_context=inject_widget_feedback_context,
         inject_code_studio_context=inject_code_studio_context,
-    )
-
-    invoke_config = _build_invoke_config(
-        user_id=user_id,
-        session_id=session_id,
-        domain_id=domain_id,
-        context=context,
     )
 
     _cleanup_stale_queues()

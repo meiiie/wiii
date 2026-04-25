@@ -330,17 +330,16 @@ def _prewarm_corrective_rag(logger_: logging.Logger) -> None:
         logger_.warning("[WARN] CorrectiveRAG pre-warm failed: %s", exc)
 
 
-async def _prewarm_multi_agent_graph(logger_: logging.Logger) -> None:
+def _prewarm_multi_agent_runner(logger_: logging.Logger) -> None:
     try:
-        get_multi_agent_graph_async = _load_attr(
-            "app.engine.multi_agent.graph",
-            "get_multi_agent_graph_async",
+        get_wiii_runner = _load_attr(
+            "app.engine.multi_agent.runner",
+            "get_wiii_runner",
         )
-
-        await get_multi_agent_graph_async()
-        logger_.info("Multi-Agent Graph pre-warmed (with checkpointer)")
+        get_wiii_runner()
+        logger_.info("Multi-Agent runner pre-warmed")
     except Exception as exc:  # pragma: no cover - logging path
-        logger_.warning("Multi-Agent Graph pre-warm failed: %s", exc)
+        logger_.warning("Multi-Agent runner pre-warm failed: %s", exc)
 
 
 async def _run_startup_health_check(logger_: logging.Logger) -> None:
@@ -537,7 +536,7 @@ async def startup_application(logger_: logging.Logger) -> AppRuntimeResources:
     _validate_embedding_dimensions(logger_)
     _prewarm_rag_agent(logger_)
     _prewarm_corrective_rag(logger_)
-    await _prewarm_multi_agent_graph(logger_)
+    _prewarm_multi_agent_runner(logger_)
     logger_.info("ChatService will initialize on first request (memory optimized)")
     await _run_startup_health_check(logger_)
     await _recover_course_generation_jobs(logger_)

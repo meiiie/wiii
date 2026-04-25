@@ -52,7 +52,7 @@ settings.entity_extraction_enabled
 
 ```python
 # Agent Selection
-use_multi_agent: bool = True      # LangGraph multi-agent system
+use_multi_agent: bool = True      # WiiiRunner multi-agent runtime
 
 # RAG Features
 contextual_rag_enabled: bool = True   # Anthropic-style enrichment

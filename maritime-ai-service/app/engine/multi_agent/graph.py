@@ -1,9 +1,9 @@
 """
-Multi-Agent Graph - Phase 8.4
+Multi-Agent Runtime Compatibility Module - Phase 8.4
 
-LangGraph workflow for multi-agent orchestration.
-
-Pattern: Supervisor with specialized worker agents
+The active orchestration path runs through WiiiRunner. This module now hosts
+shared node wiring plus deprecated graph compatibility entrypoints that remain
+temporarily available for legacy callers.
 
 **Integrated with agents/ framework for registry and tracing.**
 
@@ -499,7 +499,7 @@ def build_multi_agent_graph(checkpointer=None):
 
 # =============================================================================
 def get_multi_agent_graph():
-    """Get or create Multi-Agent Graph singleton (sync, no checkpointer)."""
+    """Get the deprecated graph singleton shim for legacy callers."""
     return get_multi_agent_graph_entry_impl(
         build_graph=build_multi_agent_graph,
     )
@@ -507,17 +507,14 @@ def get_multi_agent_graph():
 
 @asynccontextmanager
 async def open_multi_agent_graph():
-    """Build a request-scoped graph with its own checkpointer connection."""
+    """Open the deprecated request-scoped graph shim for legacy callers."""
     async with open_multi_agent_graph_entry_impl(build_graph=build_multi_agent_graph) as graph:
         yield graph
 
 
 async def get_multi_agent_graph_async():
     """
-    Backward-compatible async accessor.
-
-    Prefer ``open_multi_agent_graph()`` for request handling so each request
-    gets an isolated checkpointer connection.
+    Backward-compatible async accessor for the deprecated graph shim.
     """
     return await get_multi_agent_graph_async_entry_impl(build_graph=build_multi_agent_graph)
 
@@ -546,7 +543,6 @@ async def process_with_multi_agent(
         model=model,
         build_domain_config=_build_domain_config,
         build_turn_local_state_defaults=_build_turn_local_state_defaults,
-        open_multi_agent_graph=open_multi_agent_graph,
         cleanup_tracer=_cleanup_tracer,
         resolve_public_thinking_content=_resolve_public_thinking_content,
         generate_session_summary_bg=_generate_session_summary_bg,

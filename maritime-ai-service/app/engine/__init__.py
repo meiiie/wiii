@@ -1,1 +1,1 @@
-"""AI Engine - LangGraph Orchestrator, Memory, and Tools"""
+"""AI Engine - WiiiRunner orchestration, memory, and tools."""

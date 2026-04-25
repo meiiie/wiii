@@ -157,7 +157,7 @@ class ChatOrchestrator:
         input_processor: Optional[InputProcessor] = None,
         output_processor: Optional[OutputProcessor] = None,
         background_runner: Optional[BackgroundTaskRunner] = None,
-        multi_agent_graph=None,
+        multi_agent_runner=None,
         rag_agent=None,
         semantic_memory=None,
         chat_history=None,
@@ -176,7 +176,7 @@ class ChatOrchestrator:
         self._background_runner = background_runner or get_background_runner()
         
         # Agents
-        self._multi_agent_graph = multi_agent_graph
+        self._multi_agent_runner = multi_agent_runner
         self._rag_agent = rag_agent
         
         # Dependencies for context building
@@ -639,7 +639,7 @@ def init_chat_orchestrator(
     input_processor=None,
     output_processor=None,
     background_runner=None,
-    multi_agent_graph=None,
+    multi_agent_runner=None,
     rag_agent=None,
     semantic_memory=None,
     chat_history=None,
@@ -653,7 +653,7 @@ def init_chat_orchestrator(
         input_processor=input_processor,
         output_processor=output_processor,
         background_runner=background_runner,
-        multi_agent_graph=multi_agent_graph,
+        multi_agent_runner=multi_agent_runner,
         rag_agent=rag_agent,
         semantic_memory=semantic_memory,
         chat_history=chat_history,

@@ -274,8 +274,8 @@ async def check_async_pool_health() -> ComponentHealth:
     """
     Check async PostgreSQL connection pool health.
 
-    SOTA 2026: Verifies the async engine (used by LangGraph checkpointer
-    and async repositories) can execute queries.
+    SOTA 2026: Verifies the shared async engine used by repositories and
+    runner-backed runtime services can execute queries.
 
     Sprint 171: Uses singleton engine — no longer creates/disposes per call.
     """

@@ -40,9 +40,7 @@ async def test_forward_graph_events_preserves_provider_unavailable():
         return_value=_ExplodingRunner(exc),
     ):
         await forward_graph_events_impl(
-            graph=_ExplodingGraph(exc),
             initial_state={},
-            invoke_config={},
             merged_queue=merged_queue,
         )
 
