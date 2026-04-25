@@ -78,7 +78,7 @@ Authoritative request contract:
 │   └────────┬────────┘                                            │
 │            ▼                                                      │
 │   ┌─────────────────┐                                            │
-│   │ STAGE 4: AGENT  │  MultiAgentGraph.process() (LangGraph)      │
+│   │ STAGE 4: AGENT  │  WiiiRunner.run()                           │
 │   │   Processing    │  → Supervisor routes to specialized agents  │
 │   └────────┬────────┘                                            │
 │            ▼                                                      │

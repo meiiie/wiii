@@ -1,17 +1,10 @@
 """
 Multi-Agent System Module - Phase 8
 
-Supervisor Pattern with Specialized Agents.
+Supervisor pattern with specialized agents, routed through WiiiRunner.
 
-Components:
-- SupervisorAgent: Coordinator and router
-- RAGAgentNode: Knowledge retrieval specialist
-- TutorAgentNode: Teaching specialist
-- MemoryAgentNode: Context specialist
-- GraderAgentNode: Quality control
-
-V3 Streaming (2025-12-21):
-- process_with_multi_agent_streaming: Full graph with interleaved streaming
+Compatibility exports remain available for deprecated graph entrypoints while
+the active runtime uses the custom runner and streaming shell.
 
 Sprint 140: Lazy imports via __getattr__ to break circular dependency
 (state ↔ graph via __init__.py eager imports).

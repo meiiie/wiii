@@ -31,15 +31,13 @@ def _should_suppress_bus_event(event: dict | None) -> bool:
 
 async def forward_graph_events_impl(
     *,
-    graph,
     initial_state,
-    invoke_config,
     merged_queue: asyncio.Queue,
 ) -> None:
-    """Forward graph node completions into the merged streaming queue.
+    """Forward runner state updates into the merged streaming queue.
 
-    Uses WiiiRunner.run_streaming() for execution (De-LangGraphing).
-    The graph parameter is kept for API compatibility but is not used.
+    This runtime is WiiiRunner-only. Historical LangGraph parameters were
+    removed so the streaming shell matches the real execution path.
     """
     try:
         from app.engine.multi_agent.runner import get_wiii_runner

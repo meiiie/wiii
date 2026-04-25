@@ -17,9 +17,9 @@ app/engine/                     # ~44 Python files
 │   ├── answer_verifier.py     # Hallucination check
 │   ├── query_analyzer.py      # Query classification
 │   └── query_rewriter.py      # Query expansion
-├── multi_agent/               # LangGraph Multi-Agent
+├── multi_agent/               # WiiiRunner runtime
 │   ├── supervisor.py          # Query routing
-│   ├── graph.py               # LangGraph workflow
+│   ├── graph.py               # Compatibility shell + runtime entrypoints
 │   ├── state.py               # Shared state
 │   └── agents/                # Specialized agents
 │       ├── rag_node.py
@@ -58,7 +58,7 @@ app/engine/                     # ~44 Python files
 
 ```mermaid
 graph TD
-    Request[Chat Request] --> Multi[Multi-Agent Graph]
+    Request[Chat Request] --> Multi[WiiiRunner Runtime]
 
     Multi --> Supervisor[SupervisorAgent]
     Supervisor --> Route{Route Decision}
@@ -149,13 +149,13 @@ response = await rag.query(
 
 ### 3. Multi-Agent System (`multi_agent/`)
 
-**Pattern:** LangGraph Supervisor
+**Pattern:** Runner-backed Supervisor orchestration
 
 ```python
-from app.engine.multi_agent import build_multi_agent_graph
+from app.engine.multi_agent.runner import get_wiii_runner
 
-graph = build_multi_agent_graph()
-result = await graph.ainvoke({
+runner = get_wiii_runner()
+result = await runner.run({
     "query": "Question here",
     "user_id": "student-123"
 })
@@ -269,7 +269,7 @@ llm_with_tools = llm.bind_tools(tools)
 
 ```python
 # app/core/config.py
-use_multi_agent: bool = True        # LangGraph multi-agent system
+use_multi_agent: bool = True        # WiiiRunner multi-agent runtime
 enable_corrective_rag: bool = True  # CRAG loop
 deep_reasoning_enabled: bool = True # <thinking> tags
 entity_extraction_enabled: bool = True  # GraphRAG entities
