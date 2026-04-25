@@ -58,6 +58,22 @@ class BaseSettingsFieldsMixin:
     enable_lms_token_exchange: bool = Field(default=False, description="Enable LMS backend → Wiii JWT token exchange")
     lms_token_exchange_max_age: int = Field(default=300, ge=30, le=600, description="Max request age for replay protection (seconds)")
 
+    # Local Dev Login (Issue #88): frictionless one-click JWT for localhost
+    # development. Hard-refused in production by build_validate_production_security.
+    enable_dev_login: bool = Field(
+        default=False,
+        description="Enable POST /auth/dev-login endpoint for local development. "
+        "Forbidden in production (validator hard-fails).",
+    )
+    dev_login_default_email: str = Field(
+        default="dev@localhost",
+        description="Email used when /auth/dev-login is called without a body",
+    )
+    dev_login_default_role: str = Field(
+        default="admin",
+        description="Default role granted by /auth/dev-login (typically 'admin' for local convenience)",
+    )
+
     # Magic Link Email Auth (Sprint 224)
     enable_magic_link_auth: bool = Field(default=False, description="Enable Magic Link email authentication")
     resend_api_key: str = Field(default="", description="Resend API key for sending magic link emails")
