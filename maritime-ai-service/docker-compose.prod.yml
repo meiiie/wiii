@@ -73,10 +73,14 @@ services:
     env_file:
       - .env.production
     environment:
-      - ENVIRONMENT=production
-      - DEBUG=false
-      - LOG_LEVEL=INFO
-      - LOG_FORMAT=json
+      # Default to production but let env_file override (Issue #88: allows
+      # local prod-stack-with-dev-shortcuts when ENVIRONMENT=development is
+      # set in .env.production). Real prod deployments always have
+      # ENVIRONMENT=production in their .env file, so this stays safe.
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
       # Sprint 232: Connect via PgBouncer for connection pooling at scale
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-wiii}:${POSTGRES_PASSWORD}@${DB_HOST:-postgres}:5432/${POSTGRES_DB:-wiii_ai}
       - MINIO_ENDPOINT=minio:9000

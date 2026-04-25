@@ -167,6 +167,13 @@ def build_validate_production_security(config_logger):
                     "SECURITY: enable_magic_link_auth=True but RESEND_API_KEY is empty — "
                     "magic link emails will fail silently"
                 )
+            if getattr(self, "enable_dev_login", False):
+                raise ValueError(
+                    "SECURITY: enable_dev_login=True is forbidden in production. "
+                    "The dev-login endpoint mints JWTs without verifying any credential "
+                    "and must never be reachable in a production environment. "
+                    "Unset ENABLE_DEV_LOGIN or set ENVIRONMENT=development."
+                )
         return self
 
     return _validate

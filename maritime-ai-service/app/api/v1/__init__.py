@@ -84,6 +84,7 @@ def _build_router() -> APIRouter:
             "Knowledge Visualization",
         ),
         ("enable_magic_link_auth", "app.auth.magic_link_router.router", "Magic Link Auth"),
+        ("enable_dev_login", "app.auth.dev_login_router.router", "Dev Login"),
         ("enable_host_actions", "app.api.v1.host_actions.router", "Host Actions"),
     ]
     for flag_name, import_path, label in optional_router_specs:
