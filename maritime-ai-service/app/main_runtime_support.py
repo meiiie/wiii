@@ -5,7 +5,6 @@ from __future__ import annotations
 from app.main_runtime_contracts import AppRuntimeResources
 from app.main_shutdown_runtime import (
     _cancel_background_task,
-    _close_checkpointer,
     _close_course_generation_pool,
     _close_neo4j,
     _close_playwright_browser,
@@ -85,7 +84,6 @@ __all__ = [
     "_persist_emotion_state",
     "_stop_soul_bridge",
     "_shutdown_mcp_client",
-    "_close_checkpointer",
     "_close_sources_pool",
     "_close_course_generation_pool",
     "_close_search_pools",

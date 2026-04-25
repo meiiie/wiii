@@ -77,7 +77,6 @@ FEATURE_TIER_GROUPS: Final[dict[FeatureTier, frozenset[str]]] = {
             "enable_structured_outputs",
             "enable_text_ingestion",
             "enable_websocket",
-            "enable_wiii_runner",
         }
     ),
     FeatureTier.PRODUCTION_SUPPORTED: frozenset(

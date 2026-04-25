@@ -1,41 +1,47 @@
 """
-Tests for thread identity handling and the retired LangGraph shell.
+Tests for thread identity handling and the runner-backed multi-agent runtime.
 
 Verifies:
-- Deprecated LangGraph entrypoints fail closed after De-LangGraphing
+- retired graph/checkpointer entrypoints are no longer public APIs
 - WiiiRunner is registered with the core orchestration nodes
 - process_with_multi_agent preserves user/session identity and thread views
 """
 
+import importlib.util
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 
-class TestDeprecatedGraphEntrypoints:
-    """Test the retired LangGraph build helpers fail explicitly."""
+class TestRemovedGraphEntrypoints:
+    """Test the retired graph/checkpointer APIs are gone from public surface."""
 
-    def _assert_deprecated(self, func, *args, **kwargs):
-        with pytest.raises(RuntimeError, match="build_multi_agent_graph.*deprecated"):
-            func(*args, **kwargs)
+    def test_graph_builder_symbols_are_removed(self):
+        import app.engine.multi_agent.graph as graph_mod
 
-    def test_build_without_checkpointer(self):
-        """Graph builder is no longer available without checkpointer."""
-        from app.engine.multi_agent.graph import build_multi_agent_graph
+        removed = {
+            "build_multi_agent_graph",
+            "get_multi_agent_graph",
+            "get_multi_agent_graph_async",
+            "open_multi_agent_graph",
+        }
+        for name in removed:
+            assert not hasattr(graph_mod, name)
 
-        self._assert_deprecated(build_multi_agent_graph, checkpointer=None)
+    def test_package_no_longer_exports_graph_builder_symbols(self):
+        import app.engine.multi_agent as multi_agent
 
-    def test_build_with_checkpointer_true(self):
-        """Graph builder is no longer available with checkpointer=True."""
-        from app.engine.multi_agent.graph import build_multi_agent_graph
+        removed = {
+            "build_multi_agent_graph",
+            "get_multi_agent_graph",
+        }
+        for name in removed:
+            assert name not in multi_agent.__all__
+            with pytest.raises(AttributeError):
+                getattr(multi_agent, name)
 
-        self._assert_deprecated(build_multi_agent_graph, checkpointer=True)
-
-    def test_build_default_raises(self):
-        """Default build fails with a migration hint."""
-        from app.engine.multi_agent.graph import build_multi_agent_graph
-
-        self._assert_deprecated(build_multi_agent_graph)
+    def test_checkpointer_module_is_removed(self):
+        assert importlib.util.find_spec("app.engine.multi_agent.checkpointer") is None
 
 
 class TestRunnerRegistration:
@@ -79,25 +85,6 @@ class TestRunnerRegistration:
         assert "colleague_agent" in feature_node_names
         assert "product_search_agent" in feature_node_names
         assert "parallel_dispatch" in feature_node_names
-
-
-class TestGraphSingletonCompatibility:
-    """Test old graph singleton accessors keep failing closed."""
-
-    def test_sync_singleton_is_deprecated(self):
-        """Sync singleton still routes to the retired builder."""
-        from app.engine.multi_agent.graph import get_multi_agent_graph
-
-        with pytest.raises(RuntimeError, match="deprecated"):
-            get_multi_agent_graph()
-
-    @pytest.mark.asyncio
-    async def test_async_singleton_is_deprecated(self):
-        """Async singleton still routes to the retired builder."""
-        from app.engine.multi_agent.graph import get_multi_agent_graph_async
-
-        with pytest.raises(RuntimeError, match="deprecated"):
-            await get_multi_agent_graph_async()
 
 
 class TestAgentStateSchema:
