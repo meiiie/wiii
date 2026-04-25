@@ -95,19 +95,6 @@ async def _shutdown_mcp_client(logger_: logging.Logger) -> None:
         logger_.warning("MCP Client shutdown failed: %s", exc)
 
 
-async def _close_checkpointer(logger_: logging.Logger) -> None:
-    try:
-        close_checkpointer = _load_attr(
-            "app.engine.multi_agent.checkpointer",
-            "close_checkpointer",
-        )
-
-        await close_checkpointer()
-        logger_.info("Checkpointer connection closed")
-    except Exception as exc:  # pragma: no cover - logging path
-        logger_.warning("Checkpointer close failed: %s", exc)
-
-
 async def _close_sources_pool(logger_: logging.Logger) -> None:
     try:
         close_pool = _load_attr("app.api.v1.sources", "close_pool")
@@ -198,7 +185,6 @@ async def shutdown_application(resources: AppRuntimeResources, logger_: logging.
     await _persist_emotion_state(logger_)
     await _stop_soul_bridge(resources, logger_)
     await _shutdown_mcp_client(logger_)
-    await _close_checkpointer(logger_)
     await _close_sources_pool(logger_)
     await _close_course_generation_pool(logger_)
     await _close_search_pools(logger_)

@@ -1,9 +1,8 @@
 """
-Multi-Agent Runtime Compatibility Module - Phase 8.4
+Multi-Agent Runtime Node Module - Phase 8.4
 
-The active orchestration path runs through WiiiRunner. This module now hosts
-shared node wiring plus deprecated graph compatibility entrypoints that remain
-temporarily available for legacy callers.
+The active orchestration path runs through WiiiRunner. This module hosts shared
+node wiring and the runner-backed process entrypoint.
 
 **Integrated with agents/ framework for registry and tracing.**
 
@@ -11,7 +10,6 @@ temporarily available for legacy callers.
 """
 
 import asyncio
-from contextlib import asynccontextmanager
 import importlib
 import logging
 import time
@@ -36,12 +34,6 @@ from app.engine.multi_agent.guardian_runtime import (
     get_guardian_impl,
     guardian_node_impl,
     guardian_route_impl,
-)
-from app.engine.multi_agent.graph_entrypoints_runtime import (
-    build_multi_agent_graph_entry_impl,
-    get_multi_agent_graph_async_entry_impl,
-    get_multi_agent_graph_entry_impl,
-    open_multi_agent_graph_entry_impl,
 )
 from app.engine.multi_agent.direct_node_runtime import direct_response_node_impl
 from app.engine.multi_agent.code_studio_tool_rounds import (
@@ -468,57 +460,6 @@ async def guardian_node(state: AgentState) -> AgentState:
 def guardian_route(state: AgentState) -> Literal["supervisor", "synthesizer"]:
     """Route based on Guardian decision."""
     return guardian_route_impl(state)
-
-
-# =============================================================================
-# Graph Builder (DEPRECATED — LangGraph removed, De-LangGraphing Phase 3)
-# These functions remain for API compatibility but raise RuntimeError if called.
-# Use WiiiRunner (app/engine/multi_agent/runner.py) for orchestration.
-# =============================================================================
-
-def build_multi_agent_graph(checkpointer=None):
-    """DEPRECATED — use WiiiRunner instead. Raises RuntimeError."""
-    return build_multi_agent_graph_entry_impl(
-        checkpointer=checkpointer,
-        settings_obj=settings,
-        guardian_node=guardian_node,
-        supervisor_node=supervisor_node,
-        rag_node=rag_node,
-        tutor_node=tutor_node,
-        memory_node=memory_node,
-        direct_response_node=direct_response_node,
-        code_studio_node=code_studio_node,
-        synthesizer_node=synthesizer_node,
-        colleague_agent_node=colleague_agent_node,
-        product_search_node=product_search_node,
-        parallel_dispatch_node=parallel_dispatch_node,
-        route_decision=route_decision,
-        guardian_route=guardian_route,
-    )
-
-
-# =============================================================================
-def get_multi_agent_graph():
-    """Get the deprecated graph singleton shim for legacy callers."""
-    return get_multi_agent_graph_entry_impl(
-        build_graph=build_multi_agent_graph,
-    )
-
-
-@asynccontextmanager
-async def open_multi_agent_graph():
-    """Open the deprecated request-scoped graph shim for legacy callers."""
-    async with open_multi_agent_graph_entry_impl(build_graph=build_multi_agent_graph) as graph:
-        yield graph
-
-
-async def get_multi_agent_graph_async():
-    """
-    Backward-compatible async accessor for the deprecated graph shim.
-    """
-    return await get_multi_agent_graph_async_entry_impl(build_graph=build_multi_agent_graph)
-
-
 
 
 async def process_with_multi_agent(

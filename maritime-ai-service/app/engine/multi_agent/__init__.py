@@ -3,8 +3,8 @@ Multi-Agent System Module - Phase 8
 
 Supervisor pattern with specialized agents, routed through WiiiRunner.
 
-Compatibility exports remain available for deprecated graph entrypoints while
-the active runtime uses the custom runner and streaming shell.
+The public package surface now exposes runner-backed processing only; retired
+graph builder/checkpointer APIs were removed with the LangGraph purge.
 
 Sprint 140: Lazy imports via __getattr__ to break circular dependency
 (state ↔ graph via __init__.py eager imports).
@@ -14,8 +14,6 @@ __all__ = [
     "AgentState",
     "SupervisorAgent",
     "get_supervisor_agent",
-    "build_multi_agent_graph",
-    "get_multi_agent_graph",
     "process_with_multi_agent",
     "process_with_multi_agent_streaming",
 ]
@@ -28,7 +26,7 @@ def __getattr__(name: str):
     if name in ("SupervisorAgent", "get_supervisor_agent"):
         from app.engine.multi_agent import supervisor
         return getattr(supervisor, name)
-    if name in ("build_multi_agent_graph", "get_multi_agent_graph", "process_with_multi_agent"):
+    if name == "process_with_multi_agent":
         from app.engine.multi_agent import graph
         return getattr(graph, name)
     if name == "process_with_multi_agent_streaming":

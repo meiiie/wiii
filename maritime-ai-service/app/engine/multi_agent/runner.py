@@ -545,9 +545,8 @@ _RUNNER: Optional[WiiiRunner] = None
 def get_wiii_runner() -> WiiiRunner:
     """Get or create the WiiiRunner singleton.
 
-    The runner is configured with all the same node functions that
-    the LangGraph graph uses. Node functions are imported lazily
-    to avoid circular imports.
+    The runner is configured with the core orchestration node functions.
+    Node functions are imported lazily to avoid circular imports.
     """
     global _RUNNER
     if _RUNNER is not None:

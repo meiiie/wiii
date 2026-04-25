@@ -648,8 +648,7 @@ class BaseSettingsFieldsMixin:
     subagent_default_timeout: int = Field(default=60, ge=10, le=300, description="Default subagent timeout (seconds)")
     subagent_max_parallel: int = Field(default=5, ge=1, le=10, description="Max parallel subagent executions")
 
-    # WiiiRunner (De-LangGraphing Phase 3: custom Runner replacing LangGraph)
-    enable_wiii_runner: bool = Field(default=True, description="Use WiiiRunner instead of LangGraph for orchestration")
+    # WiiiRunner (custom orchestration runtime)
     enable_runner_hooks: bool = Field(default=True, description="Enable lifecycle hooks (logging + metrics) in WiiiRunner")
 
     # Agent Handoffs (inspired by OpenAI Agents SDK)
@@ -676,6 +675,5 @@ class BaseSettingsFieldsMixin:
     enable_multi_tenant: bool = Field(default=False, description="Enable multi-organization support")
     default_organization_id: str = Field(default="default", description="Default org for unauthenticated users")
     enable_rls: bool = Field(default=False, description="Enable PostgreSQL Row-Level Security (requires enable_multi_tenant)")
-
 
 
