@@ -170,12 +170,23 @@ export default function App() {
       detectSubdomainOrg();
 
       // Sprint 156: Fetch organizations + restore saved org
-      fetchOrganizations().then(() => {
-        // Sprint 181: Fetch admin context after auth/org init
-        fetchAdminContext();
+      fetchOrganizations().then(async () => {
+        // Sprint 181: Fetch admin context after auth/org init.
+        // Issue #112: await it so the auto-pick branch below can rely on
+        // isSystemAdmin() being populated.
+        await fetchAdminContext();
         // Sprint 175: If subdomain detected, use it (skip saved org)
         const subdomainOrg = useOrgStore.getState().subdomainOrgId;
-        const orgToActivate = subdomainOrg || settings.organization_id;
+        let orgToActivate = subdomainOrg || settings.organization_id;
+        // Issue #112: System admin without an active org cannot reach the
+        // "Quản lý tổ chức" sidebar button (gated on activeOrgId !== "personal"),
+        // so the Knowledge upload + visual knowledge graph/scatter UI is
+        // unreachable. Auto-pick the first non-personal org as a starting point.
+        if (!orgToActivate && useOrgStore.getState().isSystemAdmin()) {
+          const orgs = useOrgStore.getState().organizations;
+          const firstRealOrg = orgs.find((o) => o.id && o.id !== "personal");
+          if (firstRealOrg) orgToActivate = firstRealOrg.id;
+        }
         if (orgToActivate) {
           setActiveOrg(orgToActivate);
           const org = useOrgStore.getState().organizations.find((o) => o.id === orgToActivate);
