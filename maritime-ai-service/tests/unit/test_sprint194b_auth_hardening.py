@@ -731,6 +731,106 @@ class TestCombinedScenarios:
             assert exc_info.value.status_code == 401
             assert "Authentication required" in exc_info.value.detail
 
+    @pytest.mark.asyncio
+    async def test_invalid_api_key_with_valid_jwt_falls_back_to_jwt(self):
+        """Issue #86: stale API key must not override a valid Bearer JWT.
+
+        A common browser-side regression: user switches from OAuth to legacy
+        (or vice versa) and one credential goes stale while the other is
+        fresh. Prior behavior rejected the whole request at the API-key step;
+        correct behavior is to try every provided credential before failing.
+        """
+        import jwt as _jwt
+        from datetime import datetime, timedelta, timezone
+        from fastapi.security import HTTPAuthorizationCredentials
+
+        s = MagicMock()
+        s.api_key = "the-only-valid-api-key"
+        s.jwt_secret_key = "test-secret-key"
+        s.jwt_algorithm = "HS256"
+        s.jwt_expire_minutes = 15
+        s.jwt_audience = "wiii"
+        s.environment = "production"
+        s.lms_service_token = None
+        s.enforce_api_key_role_restriction = True
+        s.enable_org_membership_check = False
+        s.enable_jti_denylist = False
+        s.enable_auth_audit = False
+
+        payload = {
+            "sub": "jwt-user-1",
+            "role": "teacher",
+            "auth_method": "oauth",
+            "type": "access",
+            "aud": "wiii",
+            "iat": datetime.now(timezone.utc),
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
+        }
+        token = _jwt.encode(payload, "test-secret-key", algorithm="HS256")
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+
+        with (
+            patch("app.core.security.settings", s),
+            patch("app.auth.token_service.settings", s),
+        ):
+            from app.core.security import require_auth
+
+            result = await require_auth(
+                api_key="stale-wrong-key",  # would 401 under old behavior
+                credentials=creds,
+                x_user_id=None,
+                x_role=None,
+                x_session_id=None,
+                x_org_id=None,
+            )
+
+        # JWT identity wins; request authenticated as the JWT subject.
+        assert result.user_id == "jwt-user-1"
+        assert result.role == "teacher"
+        assert result.auth_method == "oauth"
+
+    @pytest.mark.asyncio
+    async def test_invalid_api_key_with_invalid_jwt_still_401(self):
+        """Issue #86 security check: both creds invalid still raises 401."""
+        from fastapi.security import HTTPAuthorizationCredentials
+
+        s = MagicMock()
+        s.api_key = "the-only-valid-api-key"
+        s.jwt_secret_key = "test-secret-key"
+        s.jwt_algorithm = "HS256"
+        s.jwt_expire_minutes = 15
+        s.jwt_audience = "wiii"
+        s.environment = "production"
+        s.lms_service_token = None
+        s.enforce_api_key_role_restriction = True
+        s.enable_org_membership_check = False
+        s.enable_jti_denylist = False
+        s.enable_auth_audit = False
+
+        creds = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials="not-a-valid-jwt"
+        )
+
+        with (
+            patch("app.core.security.settings", s),
+            patch("app.auth.token_service.settings", s),
+        ):
+            from app.core.security import require_auth
+
+            with pytest.raises(HTTPException) as exc_info:
+                await require_auth(
+                    api_key="stale-wrong-key",
+                    credentials=creds,
+                    x_user_id=None,
+                    x_role=None,
+                    x_session_id=None,
+                    x_org_id=None,
+                )
+            # JWT verify raises its own 401 before we reach the final
+            # "Invalid API key" branch — either message is acceptable, but
+            # status must be 401.
+            assert exc_info.value.status_code == 401
+
     def test_sanitize_then_truncate_order(self):
         """Sanitization happens before truncation — injected chars don't count toward length."""
         from app.repositories.thread_repository import _sanitize_thread_segment
