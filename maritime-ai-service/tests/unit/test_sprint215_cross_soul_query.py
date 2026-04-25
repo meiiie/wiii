@@ -630,8 +630,8 @@ class TestSupervisorRouting:
 # =====================================================================
 
 
-class TestGraphWiring:
-    """Test that colleague_agent is wired into the LangGraph."""
+class TestRunnerWiring:
+    """Test that colleague_agent is wired into WiiiRunner."""
 
     def _mock_settings(self, **overrides):
         """Create mock settings for graph building."""
@@ -658,29 +658,31 @@ class TestGraphWiring:
         assert route_decision(state) == "direct"
 
     def test_node_exists_when_enabled(self):
-        """Colleague agent node is added when both flags enabled."""
-        from app.engine.multi_agent.graph import build_multi_agent_graph
+        """Colleague agent node is registered when both flags are enabled."""
+        import app.engine.multi_agent.runner as runner_mod
+        from app.engine.multi_agent.runner import get_wiii_runner
 
-        with patch("app.engine.multi_agent.graph.settings", self._mock_settings()):
-            graph = build_multi_agent_graph()
-
-        # Check the graph has the colleague_agent node
-        node_names = set(graph.nodes.keys()) if hasattr(graph, "nodes") else set()
-        # LangGraph compiled graph may use different attribute
-        if not node_names:
-            node_names = set(getattr(graph, "_nodes", {}).keys())
-        # If we can't inspect nodes, just verify graph compiled without error
-        assert graph is not None
+        runner_mod._RUNNER = None
+        with patch("app.engine.multi_agent.runner.settings", self._mock_settings()):
+            runner = get_wiii_runner()
+            assert "colleague_agent" in runner._feature_nodes
+            assert runner._get_node("colleague_agent") is not None
+        runner_mod._RUNNER = None
 
     def test_node_absent_when_disabled(self):
-        """Colleague agent node is NOT added when flag disabled."""
-        from app.engine.multi_agent.graph import build_multi_agent_graph
+        """Colleague agent node is gated off when cross-soul is disabled."""
+        import app.engine.multi_agent.runner as runner_mod
+        from app.engine.multi_agent.runner import get_wiii_runner
 
-        s = self._mock_settings(enable_cross_soul_query=False)
-        with patch("app.engine.multi_agent.graph.settings", s):
-            graph = build_multi_agent_graph()
-
-        assert graph is not None
+        runner_mod._RUNNER = None
+        with patch(
+            "app.engine.multi_agent.runner.settings",
+            self._mock_settings(enable_cross_soul_query=False),
+        ):
+            runner = get_wiii_runner()
+            assert "colleague_agent" in runner._feature_nodes
+            assert runner._get_node("colleague_agent") is None
+        runner_mod._RUNNER = None
 
 
 # =====================================================================
