@@ -100,11 +100,11 @@ class ChatRequest(BaseModel):
     )
 
     # v9.0: Per-Request Provider Selection
-    provider: Optional[Literal["auto", "google", "zhipu", "openai", "openrouter", "ollama"]] = Field(
+    provider: Optional[Literal["auto", "google", "zhipu", "openai", "openrouter", "nvidia", "ollama"]] = Field(
         default=None,
         description="Provider for this request. 'auto'=system failover (default), "
                     "'google'=Gemini, 'zhipu'=GLM-5, 'openai'=OpenAI-compatible, "
-                    "'openrouter'=OpenRouter, 'ollama'=local."
+                    "'openrouter'=OpenRouter, 'nvidia'=NVIDIA NIM, 'ollama'=local."
     )
     model: Optional[str] = Field(
         default=None,
