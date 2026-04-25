@@ -167,6 +167,15 @@ def build_validate_production_security(config_logger):
                     "SECURITY: enable_magic_link_auth=True but RESEND_API_KEY is empty — "
                     "magic link emails will fail silently"
                 )
+            if (
+                getattr(self, "enable_distributed_magic_link_sessions", False)
+                and not getattr(self, "valkey_url", "")
+            ):
+                config_logger.warning(
+                    "CONFIG: enable_distributed_magic_link_sessions=True but valkey_url is empty — "
+                    "store will silently fall back to in-memory (single-process only). "
+                    "Set VALKEY_URL to enable cross-worker handoff."
+                )
             if getattr(self, "enable_dev_login", False):
                 raise ValueError(
                     "SECURITY: enable_dev_login=True is forbidden in production. "

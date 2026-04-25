@@ -86,6 +86,7 @@ class BaseSettingsFieldsMixin:
     magic_link_cleanup_interval_seconds: int = Field(default=3600, ge=60, le=86400, description="Periodic cleanup of expired magic_link_tokens rows (default 1h)")
     magic_link_cleanup_grace_hours: int = Field(default=24, ge=0, le=168, description="Grace period before deleting expired magic-link rows (hours)")
     magic_link_session_reaper_interval_seconds: int = Field(default=60, ge=15, le=3600, description="Interval for reaping stale in-memory WS sessions")
+    enable_distributed_magic_link_sessions: bool = Field(default=False, description="Use Valkey-backed magic link session store for restart safety + multi-worker support")
 
     # Sentry — Error Tracking (Production Hardening)
     sentry_dsn: str = Field(default="", description="Sentry DSN — empty disables Sentry")

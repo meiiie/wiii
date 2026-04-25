@@ -448,10 +448,21 @@ async def _start_magic_link_maintenance(
     """Start the magic-link cleanup + WS-session reaper background tasks.
 
     Both run only when ``enable_magic_link_auth`` is on. They are gated together
-    since they are two halves of the same feature's hygiene loop.
+    since they are two halves of the same feature's hygiene loop. Also picks
+    the session store (in-memory vs Valkey) for cross-worker handoff support.
     """
     if not settings.enable_magic_link_auth:
         return None, None
+
+    # Pick the session store (in-memory by default; Valkey if flag+reachable)
+    try:
+        initialize_session_store = _load_attr(
+            "app.auth.magic_link_session_store", "initialize_session_store"
+        )
+        await initialize_session_store(settings)
+    except Exception as exc:  # pragma: no cover - logging path
+        logger_.warning("[WARN] Magic link session store initialization failed: %s", exc)
+
     cleanup_task: asyncio.Task | None = None
     reaper_task: asyncio.Task | None = None
     try:
