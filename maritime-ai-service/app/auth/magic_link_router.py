@@ -10,6 +10,7 @@ import asyncio
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -197,9 +198,36 @@ async def request_magic_link(body: MagicLinkRequest, request: Request):
 # GET /auth/magic-link/verify/{token} -- verify token, issue JWT
 # ---------------------------------------------------------------------------
 
+async def _audit_verify_failure(reason: str, request: Optional[Request], email: Optional[str] = None) -> None:
+    """Fire-and-forget auth audit log for a failed verify attempt.
+
+    Defense-in-depth: only successes were audited before. Failures are now
+    captured so abuse patterns (brute-force, replay) are detectable.
+    """
+    try:
+        from app.auth.auth_audit import log_auth_event
+        ip = request.client.host if (request and request.client) else None
+        await log_auth_event(
+            "login_failed",
+            provider="magic_link",
+            result="failed",
+            reason=reason,
+            ip_address=ip,
+            metadata={"email": email} if email else None,
+        )
+    except Exception:
+        pass
+
+
 @router.get("/verify/{token}")
-async def verify_magic_link(token: str):
-    """Verify a magic link token, create user/JWT, and push via WebSocket."""
+@limiter.limit("30/hour")
+async def verify_magic_link(token: str, request: Request):
+    """Verify a magic link token, create user/JWT, and push via WebSocket.
+
+    Per-IP rate-limited to ``30/hour`` (defense-in-depth — the 288-bit token
+    space already makes brute force infeasible, but no auth endpoint should be
+    unlimited).
+    """
     from app.auth.token_service import create_token_pair
     from app.auth.user_service import find_or_create_by_provider
     from app.core.database import get_asyncpg_pool
@@ -219,12 +247,15 @@ async def verify_magic_link(token: str):
         )
 
         if not row:
+            await _audit_verify_failure("invalid_token", request)
             return _error_page("Link không hợp lệ hoặc đã hết hạn.")
 
         if is_token_used(row["used_at"]):
+            await _audit_verify_failure("token_already_used", request, row["email"])
             return _error_page("Link này đã được sử dụng.")
 
         if is_token_expired(row["expires_at"]):
+            await _audit_verify_failure("token_expired", request, row["email"])
             return _error_page("Link đã hết hạn. Vui lòng yêu cầu link mới.")
 
         # ---- Mark as used ----

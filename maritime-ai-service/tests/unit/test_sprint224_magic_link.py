@@ -1,4 +1,5 @@
 """Sprint 224: Magic Link Email Auth — Unit Tests."""
+import asyncio
 import hashlib
 import secrets
 import time
@@ -371,3 +372,231 @@ class TestMagicLinkRouter:
         from app.auth.magic_link_router import router
         paths = [r.path for r in router.routes]
         assert any("/ws/" in p for p in paths)
+
+
+# ===================================================================
+# TASK-2026-04-25-001: Production hardening
+# Cleanup task, per-IP rate limit on /verify, WS session reaper
+# ===================================================================
+
+
+class TestExpiredTokenCleanup:
+    """Periodic DELETE of expired magic_link_tokens rows."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_returns_deleted_count(self):
+        """Parses asyncpg's `DELETE <n>` status string into an int count."""
+        from app.auth import magic_link_service
+
+        mock_conn = AsyncMock()
+        mock_conn.execute = AsyncMock(return_value="DELETE 7")
+
+        class _PoolCtx:
+            async def __aenter__(self_inner): return mock_conn
+            async def __aexit__(self_inner, *_): return None
+
+        mock_pool = MagicMock()
+        mock_pool.acquire = MagicMock(return_value=_PoolCtx())
+
+        with patch("app.core.database.get_asyncpg_pool", new=AsyncMock(return_value=mock_pool)):
+            deleted = await magic_link_service.cleanup_expired_tokens(grace_period_hours=24)
+
+        assert deleted == 7
+        # Verify the DELETE query targets magic_link_tokens with grace period
+        sql = mock_conn.execute.call_args[0][0]
+        assert "DELETE FROM magic_link_tokens" in sql
+        assert "expires_at" in sql
+
+    @pytest.mark.asyncio
+    async def test_cleanup_swallows_db_errors(self):
+        """DB failure must NOT raise — cleanup is best-effort hygiene."""
+        from app.auth import magic_link_service
+
+        with patch(
+            "app.core.database.get_asyncpg_pool",
+            new=AsyncMock(side_effect=Exception("connection refused")),
+        ):
+            deleted = await magic_link_service.cleanup_expired_tokens()
+        assert deleted == 0
+
+    @pytest.mark.asyncio
+    async def test_cleanup_handles_unparseable_status(self):
+        """Defensive: if execute() returns something unexpected, return 0 gracefully."""
+        from app.auth import magic_link_service
+
+        mock_conn = AsyncMock()
+        mock_conn.execute = AsyncMock(return_value="WEIRD")
+
+        class _PoolCtx:
+            async def __aenter__(self_inner): return mock_conn
+            async def __aexit__(self_inner, *_): return None
+
+        mock_pool = MagicMock()
+        mock_pool.acquire = MagicMock(return_value=_PoolCtx())
+
+        with patch("app.core.database.get_asyncpg_pool", new=AsyncMock(return_value=mock_pool)):
+            deleted = await magic_link_service.cleanup_expired_tokens()
+        assert deleted == 0
+
+    @pytest.mark.asyncio
+    async def test_cleanup_loop_cancellable(self):
+        """Loop must propagate CancelledError so shutdown can stop it cleanly."""
+        from app.auth import magic_link_service
+
+        # interval is clamped to >= 60s; we cancel before the first sleep ends
+        task = asyncio.create_task(
+            magic_link_service.magic_link_cleanup_loop(interval_seconds=60.0)
+        )
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+class TestMagicLinkConfigDefaults:
+    """New config flags introduced by the hardening pass."""
+
+    def test_cleanup_interval_default(self):
+        from app.core.config import Settings
+        assert Settings.model_fields["magic_link_cleanup_interval_seconds"].default == 3600
+
+    def test_cleanup_grace_default(self):
+        from app.core.config import Settings
+        assert Settings.model_fields["magic_link_cleanup_grace_hours"].default == 24
+
+    def test_session_reaper_interval_default(self):
+        from app.core.config import Settings
+        assert Settings.model_fields["magic_link_session_reaper_interval_seconds"].default == 60
+
+
+class TestSessionReaper:
+    """In-memory WS session reaper drops stale entries."""
+
+    def test_reap_drops_stale_sessions(self):
+        """Sessions older than max_age are removed; fresh ones kept."""
+        from app.auth.magic_link_service import MagicLinkSessionManager, _SessionEntry
+
+        mgr = MagicLinkSessionManager()
+        now = time.monotonic()
+        mgr._sessions["old"] = _SessionEntry(websocket=MagicMock(), created_at=now - 1000)
+        mgr._sessions["fresh"] = _SessionEntry(websocket=MagicMock(), created_at=now - 10)
+
+        reaped = mgr.reap_stale(max_age_seconds=300)
+
+        assert reaped == 1
+        assert "old" not in mgr._sessions
+        assert "fresh" in mgr._sessions
+        assert mgr.active_count == 1
+
+    def test_reap_no_op_when_all_fresh(self):
+        from app.auth.magic_link_service import MagicLinkSessionManager, _SessionEntry
+
+        mgr = MagicLinkSessionManager()
+        mgr._sessions["a"] = _SessionEntry(websocket=MagicMock(), created_at=time.monotonic())
+        mgr._sessions["b"] = _SessionEntry(websocket=MagicMock(), created_at=time.monotonic())
+
+        assert mgr.reap_stale(max_age_seconds=300) == 0
+        assert mgr.active_count == 2
+
+    def test_reap_zero_max_age_is_safe(self):
+        """Defensive: max_age_seconds=0 short-circuits without touching state."""
+        from app.auth.magic_link_service import MagicLinkSessionManager, _SessionEntry
+
+        mgr = MagicLinkSessionManager()
+        mgr._sessions["a"] = _SessionEntry(websocket=MagicMock(), created_at=time.monotonic() - 99999)
+
+        assert mgr.reap_stale(max_age_seconds=0) == 0
+        assert "a" in mgr._sessions
+
+    @pytest.mark.asyncio
+    async def test_register_records_created_at(self):
+        """register() must stamp created_at so the reaper can age sessions."""
+        from app.auth.magic_link_service import MagicLinkSessionManager
+
+        mgr = MagicLinkSessionManager()
+        mock_ws = MagicMock()
+        mock_ws.accept = AsyncMock()
+
+        before = time.monotonic()
+        await mgr.register("sid-1", mock_ws)
+        after = time.monotonic()
+
+        entry = mgr._sessions["sid-1"]
+        assert entry.websocket is mock_ws
+        assert before <= entry.created_at <= after
+
+    @pytest.mark.asyncio
+    async def test_reaper_loop_cancellable(self):
+        from app.auth import magic_link_service
+
+        task = asyncio.create_task(
+            magic_link_service.magic_link_session_reaper_loop(
+                interval_seconds=15.0, max_age_seconds=60.0
+            )
+        )
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+class TestVerifyEndpointHardening:
+    """Per-IP rate limit + audit log on failures."""
+
+    def test_verify_endpoint_takes_request_param(self):
+        """slowapi's per-IP limit needs a Request param to extract the client IP."""
+        import inspect
+        from app.auth.magic_link_router import verify_magic_link
+
+        sig = inspect.signature(verify_magic_link)
+        assert "request" in sig.parameters
+
+    def test_verify_endpoint_has_rate_limit_metadata(self):
+        """Confirm @limiter.limit(...) decorated the verify endpoint.
+
+        slowapi attaches the limit string to the wrapped function via _rate_limit;
+        we check for either that attribute or the wrapped marker so the test
+        survives minor slowapi version bumps.
+        """
+        from app.auth.magic_link_router import verify_magic_link
+
+        # slowapi stores limits in either __wrapped__ or via _rate_limit on the func
+        has_limit = (
+            hasattr(verify_magic_link, "__wrapped__")
+            or hasattr(verify_magic_link, "_rate_limit")
+            or any("rate" in attr.lower() for attr in dir(verify_magic_link))
+        )
+        assert has_limit
+
+    @pytest.mark.asyncio
+    async def test_audit_helper_no_op_on_audit_disabled(self):
+        """_audit_verify_failure must never raise even if downstream fails."""
+        from app.auth.magic_link_router import _audit_verify_failure
+
+        mock_request = MagicMock()
+        mock_request.client = MagicMock(host="1.2.3.4")
+
+        with patch(
+            "app.auth.auth_audit.log_auth_event",
+            new=AsyncMock(side_effect=Exception("DB down")),
+        ):
+            await _audit_verify_failure("invalid_token", mock_request, "x@y.z")
+
+    @pytest.mark.asyncio
+    async def test_audit_helper_extracts_ip(self):
+        from app.auth.magic_link_router import _audit_verify_failure
+
+        mock_request = MagicMock()
+        mock_request.client = MagicMock(host="9.8.7.6")
+
+        captured = {}
+
+        async def _capture(*args, **kwargs):
+            captured.update(kwargs)
+
+        with patch("app.auth.auth_audit.log_auth_event", new=_capture):
+            await _audit_verify_failure("token_expired", mock_request, "abc@example.com")
+
+        assert captured.get("ip_address") == "9.8.7.6"
+        assert captured.get("provider") == "magic_link"
+        assert captured.get("reason") == "token_expired"

@@ -442,6 +442,56 @@ async def _start_living_agent(logger_: logging.Logger) -> Any:
         return None
 
 
+async def _start_magic_link_maintenance(
+    logger_: logging.Logger,
+) -> tuple[asyncio.Task | None, asyncio.Task | None]:
+    """Start the magic-link cleanup + WS-session reaper background tasks.
+
+    Both run only when ``enable_magic_link_auth`` is on. They are gated together
+    since they are two halves of the same feature's hygiene loop.
+    """
+    if not settings.enable_magic_link_auth:
+        return None, None
+    cleanup_task: asyncio.Task | None = None
+    reaper_task: asyncio.Task | None = None
+    try:
+        magic_link_cleanup_loop = _load_attr(
+            "app.auth.magic_link_service", "magic_link_cleanup_loop"
+        )
+        magic_link_session_reaper_loop = _load_attr(
+            "app.auth.magic_link_service", "magic_link_session_reaper_loop"
+        )
+
+        cleanup_task = asyncio.create_task(
+            magic_link_cleanup_loop(
+                interval_seconds=settings.magic_link_cleanup_interval_seconds,
+                grace_period_hours=settings.magic_link_cleanup_grace_hours,
+            )
+        )
+        logger_.info(
+            "[OK] Magic link cleanup loop started (every %ds, grace %dh)",
+            settings.magic_link_cleanup_interval_seconds,
+            settings.magic_link_cleanup_grace_hours,
+        )
+
+        # Reaper drops stale sessions older than 2x the WS timeout
+        reaper_max_age = float(settings.magic_link_ws_timeout_seconds) * 2.0
+        reaper_task = asyncio.create_task(
+            magic_link_session_reaper_loop(
+                interval_seconds=settings.magic_link_session_reaper_interval_seconds,
+                max_age_seconds=reaper_max_age,
+            )
+        )
+        logger_.info(
+            "[OK] Magic link WS session reaper started (every %ds, max age %.0fs)",
+            settings.magic_link_session_reaper_interval_seconds,
+            reaper_max_age,
+        )
+    except Exception as exc:  # pragma: no cover - logging path
+        logger_.warning("[WARN] Magic link maintenance startup failed: %s", exc)
+    return cleanup_task, reaper_task
+
+
 async def _start_soul_bridge(logger_: logging.Logger) -> Any:
     if not settings.enable_soul_bridge:
         return None
@@ -495,4 +545,8 @@ async def startup_application(logger_: logging.Logger) -> AppRuntimeResources:
     resources.scheduled_executor = await _start_scheduled_executor(logger_)
     resources.heartbeat = await _start_living_agent(logger_)
     resources.soul_bridge = await _start_soul_bridge(logger_)
+    (
+        resources.magic_link_cleanup_task,
+        resources.magic_link_reaper_task,
+    ) = await _start_magic_link_maintenance(logger_)
     return resources
