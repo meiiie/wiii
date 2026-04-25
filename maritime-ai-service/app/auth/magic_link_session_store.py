@@ -55,6 +55,7 @@ class MagicLinkSessionStore(Protocol):
     async def push_tokens(self, session_id: str, payload: dict) -> bool: ...
     def remove(self, session_id: str) -> None: ...
     def reap_stale(self, max_age_seconds: float) -> int: ...
+    async def aclose(self) -> None: ...
     @property
     def active_count(self) -> int: ...
 
@@ -111,6 +112,10 @@ class InMemorySessionStore:
     @property
     def active_count(self) -> int:
         return len(self._sessions)
+
+    async def aclose(self) -> None:
+        """Drop all session entries. In-memory store has no other resources."""
+        self._sessions.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +199,34 @@ class ValkeySessionStore:
     @property
     def active_count(self) -> int:
         return len(self._sessions)
+
+    async def aclose(self) -> None:
+        """Cancel every in-flight subscriber task and close the Valkey client.
+
+        Called from the FastAPI lifespan shutdown so the asyncio event loop
+        does not leave dangling pubsub subscriptions when the worker exits.
+        Idempotent — safe to call twice.
+        """
+        # Snapshot tasks before mutating maps, then cancel them all
+        pending = [task for task in self._tasks.values() if not task.done()]
+        for task in pending:
+            task.cancel()
+        if pending:
+            # Await cancellation cleanup; never raise from shutdown
+            await asyncio.gather(*pending, return_exceptions=True)
+        self._tasks.clear()
+        self._sessions.clear()
+
+        close = getattr(self._redis, "aclose", None) or getattr(
+            self._redis, "close", None
+        )
+        if close is not None:
+            try:
+                result = close()
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception as exc:
+                logger.warning("Valkey client close failed during aclose: %s", exc)
 
     # -- internals ---------------------------------------------------------
 

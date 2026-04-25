@@ -95,6 +95,26 @@ async def _shutdown_mcp_client(logger_: logging.Logger) -> None:
         logger_.warning("MCP Client shutdown failed: %s", exc)
 
 
+async def _close_magic_link_session_store(logger_: logging.Logger) -> None:
+    """Cancel any in-flight Valkey subscriber tasks and close the Valkey client.
+
+    Issue #106 — without this, ValkeySessionStore relies on event-loop close
+    to terminate per-session subscriber tasks, which can leak pubsub
+    subscriptions and Valkey connections. Idempotent and never raises.
+    """
+    try:
+        get_session_store = _load_attr(
+            "app.auth.magic_link_session_store", "get_session_store"
+        )
+        store = get_session_store()
+        if store is None:
+            return
+        await store.aclose()
+        logger_.info("Magic link session store closed cleanly")
+    except Exception as exc:  # pragma: no cover - logging path
+        logger_.warning("Magic link session store close failed: %s", exc)
+
+
 async def _close_sources_pool(logger_: logging.Logger) -> None:
     try:
         close_pool = _load_attr("app.api.v1.sources", "close_pool")
@@ -181,6 +201,7 @@ async def shutdown_application(resources: AppRuntimeResources, logger_: logging.
     await _cancel_background_task(
         "magic link session reaper", resources.magic_link_reaper_task, logger_
     )
+    await _close_magic_link_session_store(logger_)
     await _stop_heartbeat(resources, logger_)
     await _persist_emotion_state(logger_)
     await _stop_soul_bridge(resources, logger_)
