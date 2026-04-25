@@ -203,7 +203,15 @@ class TestGeminiProvider:
 
     @patch("app.engine.llm_providers.gemini_provider.WiiiChatModel")
     @patch("app.engine.llm_providers.gemini_provider.settings")
-    def test_create_instance_with_thinking_budget(self, mock_settings, mock_chat):
+    def test_create_instance_with_thinking_budget_high(self, mock_settings, mock_chat):
+        """High budget (>4096) maps to reasoning_effort=high.
+
+        The legacy ``extra_body={"google": {"thinking_config": ...}}`` shape
+        was rejected by Gemini's OpenAI-compatible endpoint with
+        ``Unknown name "google": Cannot find field``. The provider now maps
+        ``thinking_budget`` to OpenAI-style ``reasoning_effort`` (low/medium/
+        high) so the same call works against the v1beta/openai/ endpoint.
+        """
         mock_settings.google_api_key = "key"
         mock_settings.google_model = "gemini-3-flash-preview"
         mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
@@ -215,9 +223,58 @@ class TestGeminiProvider:
         p.create_instance(tier="deep", thinking_budget=8192, include_thoughts=True)
         call_kwargs = mock_chat.call_args[1]
         assert call_kwargs["model"] == "gemini-3.1-pro-preview"
-        thinking_config = call_kwargs["model_kwargs"]["extra_body"]["google"]["thinking_config"]
-        assert thinking_config["thinking_budget"] == 8192
-        assert thinking_config["include_thoughts"] is True
+        model_kwargs = call_kwargs["model_kwargs"]
+        assert model_kwargs == {"reasoning_effort": "high"}
+        # Legacy shape must NOT be present — Gemini rejects it
+        assert "extra_body" not in model_kwargs
+
+    @patch("app.engine.llm_providers.gemini_provider.WiiiChatModel")
+    @patch("app.engine.llm_providers.gemini_provider.settings")
+    def test_create_instance_with_thinking_budget_medium(self, mock_settings, mock_chat):
+        """Budget in (1024, 4096] maps to reasoning_effort=medium."""
+        mock_settings.google_api_key = "key"
+        mock_settings.google_model = "gemini-3-flash-preview"
+        mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
+        mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+        mock_settings.thinking_enabled = True
+        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+
+        p = GeminiProvider()
+        p.create_instance(tier="moderate", thinking_budget=2048)
+        model_kwargs = mock_chat.call_args[1]["model_kwargs"]
+        assert model_kwargs == {"reasoning_effort": "medium"}
+
+    @patch("app.engine.llm_providers.gemini_provider.WiiiChatModel")
+    @patch("app.engine.llm_providers.gemini_provider.settings")
+    def test_create_instance_with_thinking_budget_low(self, mock_settings, mock_chat):
+        """Budget <=1024 maps to reasoning_effort=low."""
+        mock_settings.google_api_key = "key"
+        mock_settings.google_model = "gemini-3-flash-preview"
+        mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
+        mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+        mock_settings.thinking_enabled = True
+        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+
+        p = GeminiProvider()
+        p.create_instance(tier="light", thinking_budget=512)
+        model_kwargs = mock_chat.call_args[1]["model_kwargs"]
+        assert model_kwargs == {"reasoning_effort": "low"}
+
+    @patch("app.engine.llm_providers.gemini_provider.WiiiChatModel")
+    @patch("app.engine.llm_providers.gemini_provider.settings")
+    def test_create_instance_thinking_disabled_in_settings_skips_effort(self, mock_settings, mock_chat):
+        """thinking_enabled=False suppresses reasoning_effort even with positive budget."""
+        mock_settings.google_api_key = "key"
+        mock_settings.google_model = "gemini-3-flash-preview"
+        mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
+        mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+        mock_settings.thinking_enabled = False
+        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+
+        p = GeminiProvider()
+        p.create_instance(tier="deep", thinking_budget=8192)
+        model_kwargs = mock_chat.call_args[1]["model_kwargs"]
+        assert model_kwargs == {}
 
 
 # ============================================================================
