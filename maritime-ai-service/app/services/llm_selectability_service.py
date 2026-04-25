@@ -188,6 +188,13 @@ def _latest_runtime_observation_failed(state: Mapping[str, Any]) -> bool:
     if observed_at is None:
         return False
     success_at = _parse_iso_datetime(state.get("last_runtime_success_at"))
+    # A successful live probe AFTER the failed observation supersedes it: the
+    # provider really is reachable now, and stale chat_stream:error records
+    # (often from pre-flight selectability rejections) shouldn't keep it
+    # disabled forever.
+    probe_success_at = _parse_iso_datetime(state.get("last_live_probe_success_at"))
+    if probe_success_at is not None and probe_success_at > observed_at:
+        return False
     if success_at is None:
         return True
     return success_at < observed_at
@@ -208,7 +215,15 @@ def _is_stale_busy_signal(state: Mapping[str, Any]) -> bool:
         if str(state.get(key) or "").strip()
     ).lower()
     if any(marker in runtime_note for marker in _BUSY_MARKERS):
-        return _is_stale_runtime_failure(state)
+        if _is_stale_runtime_failure(state):
+            return True
+        # A successful live probe that's newer than the observation overrides
+        # the busy runtime signal — the provider is verifiably reachable.
+        probe_success_at = _parse_iso_datetime(state.get("last_live_probe_success_at"))
+        observed_at = _parse_iso_datetime(state.get("last_runtime_observation_at"))
+        if probe_success_at is not None and observed_at is not None and probe_success_at > observed_at:
+            return True
+        return False
 
     probe_dt = _parse_iso_datetime(
         state.get("last_live_probe_attempt_at")
@@ -638,15 +653,28 @@ def ensure_provider_is_selectable(provider: str | None) -> ProviderSelectability
         return None
 
     item = get_provider_selectability(normalized)
-    if item is None or item.state != "selectable":
-        reason_code = item.reason_code if item and item.reason_code else "verifying"
-        if item and item.state == "hidden":
-            reason_label = "Provider nay hien khong duoc bat cho request-level selection."
-        else:
-            reason_label = item.reason_label if item and item.reason_label else _friendly_reason_label("verifying")
-        raise ProviderUnavailableError(
-            provider=normalized,
-            reason_code=reason_code or "verifying",
-            message=reason_label,
-        )
-    return item
+    if item is not None and item.state == "selectable":
+        return item
+    # Explicit user pin: allow degraded-but-routable states (e.g.
+    # capability_missing, verifying) — the user accepted the trade-off when
+    # they chose this provider. Selectable fallback ranking still treats
+    # these as second-tier candidates.
+    if (
+        item is not None
+        and item.configured
+        and item.request_selectable
+        and item.state == "disabled"
+        and item.reason_code in _DEGRADED_BUT_ROUTABLE_REASON_CODES
+    ):
+        return item
+
+    reason_code = item.reason_code if item and item.reason_code else "verifying"
+    if item and item.state == "hidden":
+        reason_label = "Provider nay hien khong duoc bat cho request-level selection."
+    else:
+        reason_label = item.reason_label if item and item.reason_label else _friendly_reason_label("verifying")
+    raise ProviderUnavailableError(
+        provider=normalized,
+        reason_code=reason_code or "verifying",
+        message=reason_label,
+    )
