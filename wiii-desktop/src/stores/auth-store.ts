@@ -108,7 +108,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
       }
 
-      if (tokens && saved?.user) {
+      // Issue #108: Treat OAuth state as stale and self-heal when:
+      //   1. Tokens are missing (logout / partial state / secure-store wiped), OR
+      //   2. Tokens have expired by more than 30s (clock-skew tolerance) and no
+      //      refresh has run.
+      // Stale OAuth gets demoted to "legacy" so getAuthHeaders() takes the
+      // X-API-Key path instead of sending a dead Bearer token.
+      const STALE_TOKEN_GRACE_MS = 30_000;
+      const isTokenExpired =
+        !!tokens &&
+        typeof tokens.expires_at === "number" &&
+        tokens.expires_at + STALE_TOKEN_GRACE_MS < Date.now();
+      const hasUsableOAuthTokens = !!tokens && !isTokenExpired;
+
+      if (hasUsableOAuthTokens && saved?.user) {
         set({
           isAuthenticated: true,
           isLoaded: true,
@@ -118,6 +131,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
       } else if (saved?.authMode === "legacy") {
         set({ authMode: "legacy", isAuthenticated: true, isLoaded: true });
+      } else if (saved?.authMode === "oauth") {
+        // Saved oauth mode but tokens are missing/stale — demote to legacy
+        // and persist the corrected mode so subsequent loads don't loop.
+        set({
+          isAuthenticated: false,
+          isLoaded: true,
+          user: null,
+          tokens: null,
+          authMode: "legacy",
+        });
+        try {
+          await saveStore(AUTH_STORE_KEY, "data", {
+            user: null,
+            authMode: "legacy",
+          });
+        } catch {
+          // Persistence failure is non-fatal; in-memory state is still corrected.
+        }
       } else {
         // Sprint 218: Mark as loaded even if no saved auth found
         set({ isLoaded: true });

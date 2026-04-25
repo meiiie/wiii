@@ -249,11 +249,22 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     // Sprint 157: Try OAuth JWT first, fallback to API key
     // Sprint 218: Uses static import (require() fails in Vite ESM browser mode)
+    // Issue #108: Defensive runtime check — if oauth mode but the token has
+    // already expired, fall through to the legacy api_key path for THIS
+    // request (don't mutate the store; that's loadAuth's job at startup).
+    // Without this, every request between token expiry and the next loadAuth
+    // would silently send a dead Bearer.
+    const STALE_TOKEN_GRACE_MS = 30_000;
     const authState = useAuthStore.getState();
-    if (authState.authMode === "oauth" && authState.tokens?.access_token) {
+    const hasFreshOAuthToken =
+      authState.authMode === "oauth" &&
+      !!authState.tokens?.access_token &&
+      typeof authState.tokens?.expires_at === "number" &&
+      authState.tokens.expires_at + STALE_TOKEN_GRACE_MS >= Date.now();
+    if (hasFreshOAuthToken) {
       // Sprint 194b (H1): OAuth mode — identity from JWT only
       // DO NOT send X-User-ID or X-Role — backend extracts from token
-      headers["Authorization"] = `Bearer ${authState.tokens.access_token}`;
+      headers["Authorization"] = `Bearer ${authState.tokens!.access_token}`;
       // Sprint 156: Include org ID when not personal workspace
       if (settings.organization_id && settings.organization_id !== "personal") {
         headers["X-Organization-ID"] = settings.organization_id;
