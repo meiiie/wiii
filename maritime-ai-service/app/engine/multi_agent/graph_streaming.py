@@ -1,8 +1,8 @@
 """
-Multi-Agent Graph Streaming - Extracted from graph.py
+Multi-Agent Runtime Streaming - Extracted from graph.py
 
-Handles streaming execution of the multi-agent graph, yielding
-progressive SSE events for real-time UI updates.
+Handles streaming execution for the runner-backed multi-agent runtime,
+yielding progressive SSE events for real-time UI updates.
 
 **Feature: v3-full-graph-streaming**
 
@@ -45,7 +45,6 @@ from app.engine.multi_agent.state import AgentState
 from app.engine.multi_agent.graph import (
     _build_domain_config,
     _build_turn_local_state_defaults,
-    open_multi_agent_graph,
 )
 from app.engine.reasoning import ReasoningRenderRequest, get_reasoning_narrator
 from app.engine.reasoning.reasoning_narrator import build_tool_context_summary
@@ -213,14 +212,14 @@ async def process_with_multi_agent_streaming(
     model: Optional[str] = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     """
-    Process with Multi-Agent graph with token-level streaming.
+    Process with the runner-backed multi-agent runtime with token-level streaming.
 
     v3 REFACTORED (2026-02-09):
     - Token-level answer streaming (12-char chunks with 18ms delays)
     - Real AI thinking content from nodes
     - Proper status → thinking → answer → sources → metadata flow
 
-    Yields StreamEvents at each graph node:
+    Yields StreamEvents at each runtime node:
     - Supervisor: routing decision (thinking event)
     - RAG/TutorAgent: tool calls + actual reasoning (thinking events)
     - GraderAgent: quality score (thinking event)
@@ -236,17 +235,10 @@ async def process_with_multi_agent_streaming(
     trace_id = registry.start_request_trace()
     logger.info("[MULTI_AGENT_STREAM] Started streaming trace: %s", trace_id)
 
-    # Sprint 153: Initialize before outer try to prevent NameError in finally
     bus_id = None
-    graph_cm = None
-    graph = None
     final_state = None
 
     try:
-        # Only open LangGraph context manager when NOT using WiiiRunner
-        if not settings.enable_wiii_runner:
-            graph_cm = open_multi_agent_graph()
-            graph = await graph_cm.__aenter__()
         # Yield initial status (pipeline — hidden from thinking rail)
         yield await create_status_event("Đang bắt đầu lượt xử lý...", None, details=_PIPELINE_STATUS_DETAILS)
 
@@ -306,8 +298,6 @@ async def process_with_multi_agent_streaming(
         _soul_emotion_emitted = bootstrap["soul_emotion_emitted"]
 
         # Build config for thread persistence with per-user isolation (Sprint 16)
-        invoke_config = bootstrap["invoke_config"]
-
         # Timeout: max 10 min per graph node, 20 min total
         # Code Studio + Gemini Pro deep thinking can take 3-5 min per generation
         GRAPH_NODE_TIMEOUT = 600
@@ -324,9 +314,7 @@ async def process_with_multi_agent_streaming(
 
         graph_task = asyncio.create_task(
             forward_graph_events_impl(
-                graph=graph,
                 initial_state=initial_state,
-                invoke_config=invoke_config,
                 merged_queue=merged_queue,
             )
         )
@@ -500,11 +488,6 @@ async def process_with_multi_agent_streaming(
         yield await create_done_event(time.time() - start_time)
         registry.end_request_trace(trace_id)
     finally:
-        if graph_cm is not None:
-            try:
-                await graph_cm.__aexit__(None, None, None)
-            except Exception as exc:
-                logger.debug("[MULTI_AGENT_STREAM] Graph context close failed: %s", exc)
         # Sprint 139: Clean up tracer from module-level storage
         if final_state:
             from app.engine.multi_agent.graph import _cleanup_tracer

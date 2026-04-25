@@ -1,9 +1,9 @@
-# Multi-Agent System - LangGraph Orchestration
+# Multi-Agent System - WiiiRunner Orchestration
 
-> LangGraph-based multi-agent workflow with specialized worker agents.
+> Runner-backed multi-agent workflow with specialized worker agents.
 
-**Location:** `app/engine/multi_agent/`  
-**Pattern:** Supervisor + Worker Agents (LangGraph)  
+**Location:** `app/engine/multi_agent/`
+**Pattern:** Supervisor + Worker Agents (Runner-backed)
 **Status:** ✅ Fully integrated with `agents/` framework
 
 ---
@@ -31,7 +31,7 @@ multi_agent/
 ├── __init__.py         # Exports
 ├── state.py            # AgentState TypedDict (58 lines)
 ├── supervisor.py       # SupervisorAgent (250 lines) ✅ SUPERVISOR_AGENT_CONFIG
-├── graph.py            # LangGraph workflow (275 lines) ✅ AgentTracer
+├── graph.py            # Compatibility shell + runtime entrypoints (275 lines) ✅ AgentTracer
 └── agents/             # Worker agents
     ├── rag_node.py         # ✅ RAG_AGENT_CONFIG
     ├── tutor_node.py       # ✅ TUTOR_AGENT_CONFIG
@@ -97,7 +97,7 @@ Response includes `trace_id` and `trace_summary`.
 
 ## 🎬 V3 Streaming (2025-12-21)
 
-V3 endpoint uses full Multi-Agent Graph with progressive streaming:
+V3 endpoint uses the WiiiRunner runtime with progressive streaming:
 
 ```
 POST /api/v1/chat/stream/v3
@@ -115,10 +115,9 @@ POST /api/v1/chat/stream/v3
 ### Architecture
 
 ```python
-# graph.py - process_with_multi_agent_streaming()
-async for event in graph.astream(inputs, config, stream_mode="updates"):
-    for node, output in event.items():
-        yield StreamEvent(type=event_type, content=output)
+# graph_streaming.py
+runner = get_wiii_runner()
+await runner.run_streaming(inputs, merged_queue=merged_queue)
 ```
 
 ### Test
@@ -140,7 +139,7 @@ python scripts/test_streaming_v3.py
 ## 📝 Changelog
 
 ### 2025-12-19: SOTA Trace Architecture (CHỈ THỊ SỐ 31 v3)
-- **Research:** OpenAI o3, Anthropic Claude 3.7, DeepSeek R1, Google Gemini 3, LangGraph
+- **Research:** OpenAI o3, Anthropic Claude 3.7, DeepSeek R1, Google Gemini 3
 - **Pattern:** Single Build Point + Shared State + Unified CRAG Trace
 - **Changes:**
   - `graph.py`: Removed build_trace from direct_response_node (Single Build Point)
@@ -155,7 +154,7 @@ python scripts/test_streaming_v3.py
 - **Pattern:** TOP injection for maximum Gemini thinking compliance
 
 ### 2025-12-16: Native Thinking Propagation Fix (CHỈ THỊ SỐ 29 v2)
-- **Bug:** `thinking` field missing in `AgentState` TypedDict → native thinking lost in LangGraph
+- **Bug:** `thinking` field missing in `AgentState` TypedDict → native thinking lost in the legacy orchestration shell
 - **Fix:** Added `thinking: Optional[str]` to `state.py`
 - **Result:** Native Gemini thinking now properly propagates through Multi-Agent pipeline
 

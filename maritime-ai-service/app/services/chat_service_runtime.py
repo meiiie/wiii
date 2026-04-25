@@ -16,7 +16,7 @@ from app.services.chat_service_runtime_bindings import (
     get_learning_graph_service,
     get_learning_profile_repository,
     get_memory_summarizer,
-    get_multi_agent_graph,
+    get_multi_agent_runner,
     get_prompt_loader,
     get_semantic_memory_engine,
     get_user_graph_repository,
@@ -80,10 +80,10 @@ def initialize_chat_service_runtime_impl(
         get_semantic_memory_engine,
         check_available=True,
     )
-    service._multi_agent_graph = service._init_optional(
-        "Multi-Agent System",
+    service._multi_agent_runner = service._init_optional(
+        "Multi-Agent Runner",
         getattr(settings_obj, "use_multi_agent", True),
-        get_multi_agent_graph,
+        get_multi_agent_runner,
     )
     service._guardian_agent = service._init_optional(
         "Guardian Agent",
@@ -134,7 +134,7 @@ def initialize_chat_service_runtime_impl(
     )
 
     init_chat_orchestrator(
-        multi_agent_graph=service._multi_agent_graph,
+        multi_agent_runner=service._multi_agent_runner,
         rag_agent=service._rag_agent,
         semantic_memory=service._semantic_memory,
         chat_history=service._chat_history,
@@ -153,5 +153,5 @@ def initialize_chat_service_runtime_impl(
     logger.info("Knowledge graph available: %s", service._knowledge_graph.is_available())
     logger.info("Chat history available: %s", service._chat_history.is_available())
     logger.info("Semantic memory available: %s", service._semantic_memory is not None)
-    logger.info("Multi-Agent available: %s", service._multi_agent_graph is not None)
+    logger.info("Multi-Agent runner available: %s", service._multi_agent_runner is not None)
     logger.info("ChatService initialized (Facade Pattern) [OK]")

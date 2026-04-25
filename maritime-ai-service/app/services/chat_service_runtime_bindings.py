@@ -28,8 +28,8 @@ def create_guardrails() -> Any:
     return guardrails_cls()
 
 
-def get_multi_agent_graph() -> Any:
-    return _load_attr("app.engine.multi_agent.graph", "get_multi_agent_graph")()
+def get_multi_agent_runner() -> Any:
+    return _load_attr("app.engine.multi_agent.runner", "get_wiii_runner")()
 
 
 def get_chat_history_repository() -> Any:
@@ -138,7 +138,7 @@ __all__ = [
     "get_learning_graph_service",
     "get_learning_profile_repository",
     "get_memory_summarizer",
-    "get_multi_agent_graph",
+    "get_multi_agent_runner",
     "get_prompt_loader",
     "get_semantic_memory_engine",
     "get_user_graph_repository",
