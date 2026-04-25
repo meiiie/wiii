@@ -59,6 +59,35 @@ export function LoginScreen() {
   // Sprint 193: Detect Tauri vs browser environment
   const isTauri = !!(window as any).__TAURI_INTERNALS__;
 
+  // Issue #88: One-click dev login on localhost. Probe the backend's
+  // /auth/dev-login/status (public, unauthenticated) on mount and only show
+  // the button when both the host is localhost AND the backend opts in.
+  // The probe runs once per mount, so a misconfigured remote backend cannot
+  // surprise-render the button.
+  const [devLoginEnabled, setDevLoginEnabled] = useState(false);
+  useEffect(() => {
+    const isLocalHost =
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1");
+    if (!isLocalHost || !settings.server_url) {
+      setDevLoginEnabled(false);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${settings.server_url}/api/v1/auth/dev-login/status`)
+      .then((res) => (res.ok ? res.json() : { enabled: false }))
+      .then((data) => {
+        if (!cancelled) setDevLoginEnabled(Boolean(data?.enabled));
+      })
+      .catch(() => {
+        if (!cancelled) setDevLoginEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [settings.server_url]);
+
   const handleGoogleLogin = async () => {
     setError(null);
     setIsLoading(true);
@@ -172,6 +201,58 @@ export function LoginScreen() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Đăng nhập thất bại");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Issue #88: One-click local dev login. Calls /auth/dev-login, pipes
+  // the response straight into the existing OAuth-style storage flow.
+  const handleDevLogin = async () => {
+    setError(null);
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${settings.server_url}/api/v1/auth/dev-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(
+          detail?.detail || `Dev login thất bại (${res.status})`,
+        );
+      }
+      const data = await res.json();
+      const user: AuthUser = buildAuthUserFromPayload({
+        user_id: data.user.id,
+        email: data.user.email || "",
+        name: data.user.name || "",
+        avatar_url: data.user.avatar_url || "",
+        role: data.user.role || "admin",
+        legacy_role: data.user.legacy_role || "admin",
+        platform_role: data.user.platform_role || "platform_admin",
+        organization_role: data.user.organization_role || "",
+        host_role: data.user.host_role || "",
+        role_source: data.user.role_source || "platform",
+        active_organization_id: data.user.active_organization_id || "",
+        organization_id: data.organization_id || "",
+        connector_id: "",
+        identity_version: "2",
+      });
+      await loginWithTokens(
+        data.access_token,
+        data.refresh_token,
+        data.expires_in,
+        user,
+      );
+      await updateSettings({
+        user_id: data.user.id,
+        display_name: data.user.name || data.user.email || "Dev User",
+        user_role: toCompatibilitySettingsRole(user),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Dev login thất bại");
     } finally {
       setIsLoading(false);
     }
@@ -332,6 +413,24 @@ export function LoginScreen() {
         <p className="mt-2 mb-7 text-[15px] text-text-tertiary text-center">
           Trợ lý AI thông minh cho học tập và nghiên cứu
         </p>
+
+        {/* Issue #88: One-click local dev login. Visible only when running
+            on localhost AND the backend has enable_dev_login=true. Styled
+            distinctively (dashed accent border + "DEV" badge) so it is
+            unmistakably a development shortcut, not a production path. */}
+        {devLoginEnabled && (
+          <button
+            data-testid="dev-login-button"
+            onClick={handleDevLogin}
+            disabled={isLoading}
+            className="w-full mb-3 flex items-center justify-center gap-2 h-[44px] px-5 rounded-2xl border-2 border-dashed border-[var(--accent)] bg-[var(--accent)]/5 text-[14px] font-semibold text-[var(--accent)] hover:bg-[var(--accent)]/10 active:scale-[0.97] transition-all disabled:opacity-50"
+          >
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[var(--accent)] text-white tracking-wider">
+              DEV
+            </span>
+            <span>Đăng nhập nhanh — Local Dev</span>
+          </button>
+        )}
 
         {/* Google login button — primary CTA */}
         <button
