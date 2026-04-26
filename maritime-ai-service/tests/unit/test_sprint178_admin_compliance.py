@@ -101,6 +101,26 @@ def _make_client(app) -> httpx.AsyncClient:
     )
 
 
+def _keep_root_mount_last(app) -> None:
+    """Keep SPA catch-all mounts after dynamically attached API routes."""
+    root_mount_ids = {
+        id(route)
+        for route in app.router.routes
+        if (
+            route.__class__.__name__ == "Mount"
+            and getattr(route, "path", None) in {"", "/"}
+        )
+    }
+    if not root_mount_ids:
+        return
+
+    app.router.routes[:] = [
+        route for route in app.router.routes if id(route) not in root_mount_ids
+    ] + [
+        route for route in app.router.routes if id(route) in root_mount_ids
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -119,6 +139,7 @@ def base_app():
         _app.include_router(audit_router, prefix="/api/v1")
     if "/api/v1/admin/users/{user_id}/export" not in existing_paths:
         _app.include_router(gdpr_router, prefix="/api/v1")
+    _keep_root_mount_last(_app)
 
     return _app
 
@@ -129,7 +150,12 @@ def admin_app(base_app):
 
     Cleans up the override after each test.
     """
+    from app.api.v1.admin_audit import _check_admin_module as audit_admin_gate
+    from app.api.v1.admin_gdpr import _check_admin_module as gdpr_admin_gate
+
     base_app.dependency_overrides[require_auth] = lambda: _ADMIN_USER
+    base_app.dependency_overrides[audit_admin_gate] = lambda: None
+    base_app.dependency_overrides[gdpr_admin_gate] = lambda: None
     yield base_app
     base_app.dependency_overrides.clear()
 
@@ -137,7 +163,12 @@ def admin_app(base_app):
 @pytest.fixture()
 def student_app(base_app):
     """App with require_auth overridden to return a student (non-admin) user."""
+    from app.api.v1.admin_audit import _check_admin_module as audit_admin_gate
+    from app.api.v1.admin_gdpr import _check_admin_module as gdpr_admin_gate
+
     base_app.dependency_overrides[require_auth] = lambda: _STUDENT_USER
+    base_app.dependency_overrides[audit_admin_gate] = lambda: None
+    base_app.dependency_overrides[gdpr_admin_gate] = lambda: None
     yield base_app
     base_app.dependency_overrides.clear()
 
@@ -149,9 +180,9 @@ def student_app(base_app):
 def _settings_patches():
     """Return a tuple of patch context managers for admin module gate.
 
-    After DRY refactor (ADMIN-4), all admin routers use check_admin_module
-    from admin_security.py. Patching that single function skips both the
-    enable_admin_module check and IP allowlist in one shot.
+    Captured FastAPI dependencies are overridden in the app fixtures above.
+    These patches are retained for direct helper imports and to keep the
+    existing test context structure stable.
     Tuple size stays at 3 so all ``p1, p2, p3 = _settings_patches()`` unpack.
     """
     return (
