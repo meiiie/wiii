@@ -104,6 +104,8 @@ def _merge_tutor_context(
         ("skill_context", "skill_context"),
         ("capability_context", "capability_context"),
         ("host_context_prompt", "host_context_prompt"),
+        ("host_capabilities_prompt", "host_capabilities_prompt"),
+        ("operator_context_prompt", "operator_context_prompt"),
         ("living_context_prompt", "living_context_prompt"),
         ("widget_feedback_prompt", "widget_feedback_prompt"),
     ):
