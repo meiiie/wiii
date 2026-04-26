@@ -68,6 +68,10 @@ _needs_lms_query = _load_attr(
     "app.engine.multi_agent.direct_intent",
     "_needs_lms_query",
 )
+_LMS_INTENT_KEYWORDS = _load_attr(
+    "app.engine.multi_agent.direct_intent",
+    "_LMS_INTENT_KEYWORDS",
+)
 _needs_direct_knowledge_search = _load_attr(
     "app.engine.multi_agent.direct_intent",
     "_needs_direct_knowledge_search",
