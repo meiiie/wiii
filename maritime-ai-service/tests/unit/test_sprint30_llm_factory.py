@@ -247,24 +247,27 @@ class TestCreateLLM:
         mock_factory_settings.include_thought_summaries = False
         mock_factory_settings.llm_provider = "openai"
 
-        mock_gemini_settings = MagicMock()
-        mock_gemini_settings.google_model = "gemini"
-        mock_gemini_settings.google_model_advanced = "gemini-pro"
-        mock_gemini_settings.google_api_key = "key"
-        mock_gemini_settings.google_openai_compat_url = "https://test.example.com/"
-        mock_gemini_settings.thinking_enabled = False
-
         mock_openai_provider = MagicMock()
         mock_openai_provider.create_instance.side_effect = ImportError("no openai")
+        mock_gemini_result = MagicMock()
+        mock_gemini_provider = MagicMock()
+        mock_gemini_provider.create_instance.return_value = mock_gemini_result
+
+        def provider_factory(name):
+            if name == "openai":
+                return mock_openai_provider
+            if name == "google":
+                return mock_gemini_provider
+            raise AssertionError(f"Unexpected provider: {name}")
 
         with patch("app.engine.llm_factory.settings", mock_factory_settings), \
-             patch("app.engine.llm_providers.gemini_provider.settings", mock_gemini_settings), \
-             patch("app.engine.llm_providers.gemini_provider.WiiiChatModel", return_value=MagicMock()) as mock_wiii, \
-             patch("app.engine.llm_provider_registry.create_provider", return_value=mock_openai_provider):
+             patch("app.engine.llm_factory.create_provider", side_effect=provider_factory):
             from app.engine.llm_factory import create_llm
             result = create_llm()
-            # Falls back to Gemini after OpenAI ImportError
-            assert result is not None
+
+        assert result == mock_gemini_result
+        mock_openai_provider.create_instance.assert_called_once()
+        mock_gemini_provider.create_instance.assert_called_once()
 
     def test_deep_tier_uses_google_advanced_model(self):
         mock_factory_settings = MagicMock()
