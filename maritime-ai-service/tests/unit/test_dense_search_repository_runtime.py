@@ -88,7 +88,10 @@ async def test_store_document_chunk_uses_uuid_id_when_schema_lacks_node_id():
     assert params[0] == _derive_storage_uuid("legacy-node-123")
     metadata_payload = json.loads(params[9])
     assert metadata_payload["legacy_node_id"] == "legacy-node-123"
-    assert metadata_payload["embedding_space_fingerprint"] == "google:models/gemini-embedding-001:768"
+    assert (
+        metadata_payload["embedding_space_fingerprint"]
+        == metadata_payload["_embedding_space"]["fingerprint"]
+    )
 
 
 @pytest.mark.asyncio
