@@ -300,9 +300,9 @@ class TestProcessBrowsingResults:
             BrowsingItem(platform="web", title="Low relevance", relevance_score=0.3),
         ]
 
-        # get_skill_builder is imported inside process_browsing_results, patch at source
+        # Patch the seam used by SkillLearner after the singleton registry split.
         mock_builder = MagicMock()
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder):
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder):
             result = learner.process_browsing_results(items, ["AI"])
             assert result == []
 
@@ -326,7 +326,7 @@ class TestProcessBrowsingResults:
         mock_builder._find_by_name.return_value = mock_skill
         mock_builder._update_skill.return_value = None
 
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder):
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder):
             result = learner.process_browsing_results(items, ["maritime"])
             assert len(result) == 1
             assert "COLREGs Rule 14 Explained" in result[0]
@@ -352,7 +352,7 @@ class TestProcessBrowsingResults:
         mock_builder.discover.return_value = new_skill
         mock_builder._update_skill.return_value = None
 
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder):
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder):
             result = learner.process_browsing_results(items, ["maritime"])
             assert len(result) == 1
             mock_builder.discover.assert_called_once()
