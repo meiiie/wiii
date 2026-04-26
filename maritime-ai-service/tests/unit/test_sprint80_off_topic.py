@@ -14,6 +14,7 @@ sets domain_notice for UI indicator when content is off-domain.
 import sys
 import types
 import pytest
+from contextlib import contextmanager
 from unittest.mock import patch, MagicMock, AsyncMock
 
 # Break circular import
@@ -67,6 +68,37 @@ MARITIME_KEYWORDS = [
 
 def _maritime_config():
     return {"routing_keywords": MARITIME_KEYWORDS}
+
+
+@contextmanager
+def _patched_direct_node_runtime(response_text: str, captured_messages: list | None = None):
+    """Keep DirectNode behavior under test while removing provider/network dependency."""
+    mock_llm = MagicMock()
+    mock_llm.bind_tools.return_value = mock_llm
+
+    async def fake_execute_direct_tool_rounds(
+        _llm_with_tools,
+        _llm_auto,
+        messages,
+        _tools,
+        _push_event,
+        **_kwargs,
+    ):
+        if captured_messages is not None:
+            captured_messages.extend(messages)
+        return MagicMock(content=response_text, tool_calls=[]), messages, []
+
+    with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm), \
+         patch("app.engine.multi_agent.graph._get_effective_provider", return_value=None), \
+         patch("app.engine.multi_agent.graph._get_explicit_user_provider", return_value=None), \
+         patch("app.engine.multi_agent.graph._collect_direct_tools", return_value=([], False)), \
+         patch("app.engine.multi_agent.graph._direct_required_tool_names", return_value=set()), \
+         patch("app.engine.multi_agent.graph._bind_direct_tools", return_value=(mock_llm, mock_llm, None)), \
+         patch("app.engine.multi_agent.graph._execute_direct_tool_rounds",
+               side_effect=fake_execute_direct_tool_rounds), \
+         patch("app.services.output_processor.extract_thinking_from_response",
+               return_value=(response_text, None)):
+        yield mock_llm
 
 
 # =============================================================================
@@ -582,17 +614,10 @@ class TestDirectNodeHelpfulBehavior:
 
         captured_messages = []
 
-        async def capture_ainvoke(messages):
-            captured_messages.extend(messages)
-            return MagicMock(content="Khi đói trên tàu, bạn có thể...", tool_calls=[])
-
-        mock_llm = MagicMock()
-        mock_llm.bind_tools.return_value = mock_llm
-        mock_llm.ainvoke = capture_ainvoke
-
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm), \
-             patch("app.services.output_processor.extract_thinking_from_response",
-                   return_value=("Khi đói trên tàu, bạn có thể...", None)):
+        with _patched_direct_node_runtime(
+            "Khi đói trên tàu, bạn có thể...",
+            captured_messages,
+        ):
             result = await direct_response_node(state)
 
         # System prompt should be helpful, not refusing
@@ -614,13 +639,7 @@ class TestDirectNodeHelpfulBehavior:
             "routing_metadata": {"intent": "general", "confidence": 0.9},
         }
 
-        mock_llm = MagicMock()
-        mock_llm.bind_tools.return_value = mock_llm
-        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="Để nấu cơm ngon...", tool_calls=[]))
-
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm), \
-             patch("app.services.output_processor.extract_thinking_from_response",
-                   return_value=("Để nấu cơm ngon...", None)):
+        with _patched_direct_node_runtime("Để nấu cơm ngon..."):
             result = await direct_response_node(state)
 
         assert result.get("domain_notice") is not None
@@ -639,13 +658,7 @@ class TestDirectNodeHelpfulBehavior:
             "routing_metadata": {"intent": "general", "confidence": 0.8},
         }
 
-        mock_llm = MagicMock()
-        mock_llm.bind_tools.return_value = mock_llm
-        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="Hôm nay thời tiết đẹp...", tool_calls=[]))
-
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm), \
-             patch("app.services.output_processor.extract_thinking_from_response",
-                   return_value=("Hôm nay thời tiết đẹp...", None)):
+        with _patched_direct_node_runtime("Hôm nay thời tiết đẹp..."):
             result = await direct_response_node(state)
 
         assert result.get("domain_notice") is not None
@@ -664,13 +677,7 @@ class TestDirectNodeHelpfulBehavior:
             "routing_metadata": {"intent": "greeting", "confidence": 1.0},
         }
 
-        mock_llm = MagicMock()
-        mock_llm.bind_tools.return_value = mock_llm
-        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="Xin chào! Tôi có thể giúp gì?", tool_calls=[]))
-
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm), \
-             patch("app.services.output_processor.extract_thinking_from_response",
-                   return_value=("Xin chào! Tôi có thể giúp gì?", None)):
+        with _patched_direct_node_runtime("Xin chào! Tôi có thể giúp gì?"):
             result = await direct_response_node(state)
 
         # Sprint 203: "greeting" removed from domain notice triggers — UX bugfix
@@ -688,13 +695,7 @@ class TestDirectNodeHelpfulBehavior:
             "context": {},
         }
 
-        mock_llm = MagicMock()
-        mock_llm.bind_tools.return_value = mock_llm
-        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="Chào bạn!", tool_calls=[]))
-
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm), \
-             patch("app.services.output_processor.extract_thinking_from_response",
-                   return_value=("Chào bạn!", None)):
+        with _patched_direct_node_runtime("Chào bạn!"):
             result = await direct_response_node(state)
 
         assert result.get("domain_notice") is None
@@ -712,13 +713,7 @@ class TestDirectNodeHelpfulBehavior:
             "routing_metadata": {"intent": "lookup", "confidence": 0.9},
         }
 
-        mock_llm = MagicMock()
-        mock_llm.bind_tools.return_value = mock_llm
-        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="Answer...", tool_calls=[]))
-
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm), \
-             patch("app.services.output_processor.extract_thinking_from_response",
-                   return_value=("Answer...", None)):
+        with _patched_direct_node_runtime("Answer..."):
             result = await direct_response_node(state)
 
         assert result.get("domain_notice") is None
@@ -736,16 +731,9 @@ class TestDirectNodeHelpfulBehavior:
             "routing_metadata": {"intent": "off_topic", "confidence": 0.9},
         }
 
-        mock_llm = MagicMock()
-        mock_llm.bind_tools.return_value = mock_llm
-        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(
-            content="Khi đói trên tàu, bạn có thể tìm nhà bếp...",
-            tool_calls=[],
-        ))
-
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm), \
-             patch("app.services.output_processor.extract_thinking_from_response",
-                   return_value=("Khi đói trên tàu, bạn có thể tìm nhà bếp...", None)):
+        with _patched_direct_node_runtime(
+            "Khi đói trên tàu, bạn có thể tìm nhà bếp..."
+        ):
             result = await direct_response_node(state)
 
         response = result.get("final_response", "")
