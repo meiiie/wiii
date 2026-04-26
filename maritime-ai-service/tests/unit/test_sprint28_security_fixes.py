@@ -126,10 +126,12 @@ class TestJWTRoleOverrideFix:
     async def test_jwt_auth_ignores_x_role_header(self):
         """JWT authentication should NOT use X-Role header."""
         from app.core.security import require_auth, TokenPayload
-        from unittest.mock import MagicMock
+        from fastapi.security import HTTPAuthorizationCredentials
 
-        mock_credentials = MagicMock()
-        mock_credentials.credentials = "fake-token"
+        mock_credentials = HTTPAuthorizationCredentials(
+            scheme="Bearer",
+            credentials="fake-token",
+        )
 
         token_payload = TokenPayload(
             sub="user-1",
