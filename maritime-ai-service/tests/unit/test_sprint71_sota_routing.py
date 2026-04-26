@@ -583,16 +583,19 @@ class TestRoutingMetadata:
     @pytest.mark.asyncio
     async def test_process_sets_routing_metadata(self):
         """process() populates routing_metadata in returned state."""
-        with patch.object(AgentConfigRegistry, "get_llm", return_value=None):
+        with (
+            patch.object(supervisor_module.settings, "enable_conservative_fast_routing", True),
+            patch.object(AgentConfigRegistry, "get_llm", return_value=None),
+        ):
             agent = SupervisorAgent()
             agent._llm = None
 
-        state = _make_state("xin chào")
-        result_state = await agent.process(state)
+            state = _make_state("xin chào")
+            result_state = await agent.process(state)
 
-        assert "routing_metadata" in result_state
-        assert result_state["next_agent"] == AgentType.DIRECT.value
-        assert result_state["routing_metadata"]["method"] == "conservative_fast_path"
+            assert "routing_metadata" in result_state
+            assert result_state["next_agent"] == AgentType.DIRECT.value
+            assert result_state["routing_metadata"]["method"] == "conservative_fast_path"
 
 
 # =============================================================================
