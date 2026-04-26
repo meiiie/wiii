@@ -4,7 +4,7 @@ Status: Active
 
 Owner: Project leadership
 
-Last updated: 2026-04-24
+Last updated: 2026-04-26
 
 Applies to: issues, pull requests, branch protection, reviews, CodeRabbit, labels, merge readiness, release hygiene
 

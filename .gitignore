@@ -107,8 +107,8 @@ wiii-desktop/dist-web/
 pytest-cache-files-*
 # Keep local nested agent configs ignored, but track root Codex review guidance.
 .agents/
-AGENTS.md
-!AGENTS.md
+**/AGENTS.md
+!/AGENTS.md
 .Codex/external/
 .Codex/tmp/
 .Codex/reports/
