@@ -22,7 +22,7 @@ def _make_settings(**overrides):
 
 # Lazy imports → patch at SOURCE module
 _SETTINGS_PATCH = "app.core.config.settings"
-_DB_PATCH = "app.core.database.get_shared_session_factory"
+_DB_PATCH = "app.api.v1.living_agent_support.get_shared_session_factory"
 _SCHED_PATCH = "app.engine.living_agent.heartbeat.get_heartbeat_scheduler"
 
 
