@@ -37,27 +37,27 @@ class TestCrossPlatformConfig:
 
     def test_default_cross_platform_identity_disabled(self):
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.enable_cross_platform_identity is False
 
     def test_default_zalo_webhook_disabled(self):
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.enable_zalo_webhook is False
 
     def test_default_zalo_webhook_token_none(self):
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.zalo_webhook_token is None
 
     def test_default_personality_mode_professional(self):
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.default_personality_mode == "professional"
 
     def test_default_channel_personality_map(self):
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         mapping = json.loads(s.channel_personality_map)
         assert mapping["web"] == "professional"
         assert mapping["desktop"] == "professional"
