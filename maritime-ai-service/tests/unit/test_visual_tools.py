@@ -225,10 +225,10 @@ class TestToolGenerateVisual:
 
         assert payload is not None
         assert payload.type == "comparison"
-        assert payload.renderer_kind == "template"
+        assert payload.renderer_kind == "inline_html"
         assert payload.shell_variant == "editorial"
-        assert payload.patch_strategy == "spec_merge"
-        assert payload.runtime == "svg"
+        assert payload.patch_strategy == "replace_html"
+        assert payload.runtime == "sandbox_html"
         assert payload.title == "Softmax vs Linear"
         assert payload.summary == "Quick comparison"
         assert payload.visual_session_id.startswith("vs-comparison-")
@@ -239,7 +239,7 @@ class TestToolGenerateVisual:
         assert payload.chrome_mode == "editorial"
         assert payload.claim == "Quick comparison"
         assert payload.scene["kind"] == "comparison"
-        assert payload.scene["render_surface"] == "svg"
+        assert payload.scene["render_surface"] == "html"
         assert payload.scene["state_model"]["kind"] == "semantic_svg_scene"
         assert payload.controls[0]["id"] == "focus_side"
         assert payload.annotations
@@ -312,7 +312,7 @@ class TestToolGenerateVisual:
         assert payload is not None
         assert payload.visual_session_id == "vs-process-123"
         assert payload.lifecycle_event == "visual_patch"
-        assert payload.patch_strategy == "spec_merge"
+        assert payload.patch_strategy == "replace_html"
         assert payload.scene["kind"] == "process"
 
     def test_runtime_context_can_promote_followup_to_patch(self):
@@ -1258,7 +1258,7 @@ class TestCodeHtmlToolIntegration:
         payload = parse_visual_payload(result)
 
         assert payload is not None
-        assert payload.renderer_kind == "template"
+        assert payload.renderer_kind == "inline_html"
         # fallback_html should be builder output, not code_html
         if payload.fallback_html:
             assert "Should be ignored" not in payload.fallback_html
@@ -1296,9 +1296,11 @@ class TestCodeHtmlToolIntegration:
             })
 
         payloads = parse_visual_payloads(result)
-        assert len(payloads) == 2
-        assert payloads[0].renderer_kind == "template"
-        assert payloads[1].renderer_kind == "template"
+        assert len(payloads) == 1
+        assert payloads[0].renderer_kind == "inline_html"
+        assert payloads[0].patch_strategy == "replace_html"
+        assert payloads[0].fallback_html is not None
+        assert "<rect" in payloads[0].fallback_html
 
 
 # =============================================================================

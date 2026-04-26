@@ -17,10 +17,38 @@ Tests cover:
 import asyncio
 import json
 import operator
+from types import SimpleNamespace
 from typing import Annotated, Dict, List
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _fast_search_worker_runtime(monkeypatch):
+    """Keep search-subagent unit tests off optional LLM/runtime services."""
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "enable_query_planner", False, raising=False)
+    monkeypatch.setattr(settings, "enable_product_image_enrichment", False, raising=False)
+    monkeypatch.setattr(settings, "enable_curated_product_cards", False, raising=False)
+
+    class _FastNarrator:
+        async def render(self, req):
+            return SimpleNamespace(
+                label="Product search",
+                summary=f"{req.phase}: {req.cue}",
+                action_text="",
+                delta_chunks=[f"{req.phase}: {req.cue}"],
+                phase=req.phase,
+                style_tags=[],
+            )
+
+    monkeypatch.setattr(
+        "app.engine.multi_agent.subagents.search.workers.get_reasoning_narrator",
+        lambda: _FastNarrator(),
+    )
 
 
 # =========================================================================
@@ -971,12 +999,12 @@ class TestOrganizationPropagation:
 class TestFeatureFlag:
     """Feature flag controls subgraph activation."""
 
-    def test_default_disabled(self, monkeypatch):
+    def test_default_enabled(self, monkeypatch):
         monkeypatch.delenv("ENABLE_SUBAGENT_ARCHITECTURE", raising=False)
         from app.core.config import Settings
 
         s = Settings(_env_file=None, google_api_key="test", api_key="test")
-        assert s.enable_subagent_architecture is False
+        assert s.enable_subagent_architecture is True
 
     def test_enabled_explicitly(self):
         from app.core.config import Settings

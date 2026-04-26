@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 TOOL_INSTRUCTION_DEFAULT = """
 ## GOI Y DUNG TOOL:
 
+- RAG-First: Khi can kien thuc chuyen nganh, tra cuu truoc roi moi giai thich de tranh suy doan.
 - Khi can kien thuc chuyen nganh, uu tien `tool_knowledge_search` de lay moc dang tin.
 - Chi goi tool khi no giup xac minh, lay du lieu, tinh toan, hoac tao visual that su can.
 - Sau khi co ket qua, uu tien rut ra mau chot, dieu kien ap dung, diem de nham, va moc co the kiem chung.

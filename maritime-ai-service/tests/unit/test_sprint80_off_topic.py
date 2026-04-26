@@ -14,8 +14,9 @@ sets domain_notice for UI indicator when content is off-domain.
 import sys
 import types
 import pytest
-from contextlib import contextmanager
 from unittest.mock import patch, MagicMock, AsyncMock
+
+from tests.unit._direct_node_test_utils import patched_direct_node_runtime
 
 # Break circular import
 _cs_key = "app.services.chat_service"
@@ -68,37 +69,6 @@ MARITIME_KEYWORDS = [
 
 def _maritime_config():
     return {"routing_keywords": MARITIME_KEYWORDS}
-
-
-@contextmanager
-def _patched_direct_node_runtime(response_text: str, captured_messages: list | None = None):
-    """Keep DirectNode behavior under test while removing provider/network dependency."""
-    mock_llm = MagicMock()
-    mock_llm.bind_tools.return_value = mock_llm
-
-    async def fake_execute_direct_tool_rounds(
-        _llm_with_tools,
-        _llm_auto,
-        messages,
-        _tools,
-        _push_event,
-        **_kwargs,
-    ):
-        if captured_messages is not None:
-            captured_messages.extend(messages)
-        return MagicMock(content=response_text, tool_calls=[]), messages, []
-
-    with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm", return_value=mock_llm), \
-         patch("app.engine.multi_agent.graph._get_effective_provider", return_value=None), \
-         patch("app.engine.multi_agent.graph._get_explicit_user_provider", return_value=None), \
-         patch("app.engine.multi_agent.graph._collect_direct_tools", return_value=([], False)), \
-         patch("app.engine.multi_agent.graph._direct_required_tool_names", return_value=set()), \
-         patch("app.engine.multi_agent.graph._bind_direct_tools", return_value=(mock_llm, mock_llm, None)), \
-         patch("app.engine.multi_agent.graph._execute_direct_tool_rounds",
-               side_effect=fake_execute_direct_tool_rounds), \
-         patch("app.services.output_processor.extract_thinking_from_response",
-               return_value=(response_text, None)):
-        yield mock_llm
 
 
 # =============================================================================
@@ -614,9 +584,9 @@ class TestDirectNodeHelpfulBehavior:
 
         captured_messages = []
 
-        with _patched_direct_node_runtime(
+        with patched_direct_node_runtime(
             "Khi đói trên tàu, bạn có thể...",
-            captured_messages,
+            captured_messages=captured_messages,
         ):
             result = await direct_response_node(state)
 
@@ -639,7 +609,7 @@ class TestDirectNodeHelpfulBehavior:
             "routing_metadata": {"intent": "general", "confidence": 0.9},
         }
 
-        with _patched_direct_node_runtime("Để nấu cơm ngon..."):
+        with patched_direct_node_runtime("Để nấu cơm ngon..."):
             result = await direct_response_node(state)
 
         assert result.get("domain_notice") is not None
@@ -658,7 +628,7 @@ class TestDirectNodeHelpfulBehavior:
             "routing_metadata": {"intent": "general", "confidence": 0.8},
         }
 
-        with _patched_direct_node_runtime("Hôm nay thời tiết đẹp..."):
+        with patched_direct_node_runtime("Hôm nay thời tiết đẹp..."):
             result = await direct_response_node(state)
 
         assert result.get("domain_notice") is not None
@@ -677,7 +647,7 @@ class TestDirectNodeHelpfulBehavior:
             "routing_metadata": {"intent": "greeting", "confidence": 1.0},
         }
 
-        with _patched_direct_node_runtime("Xin chào! Tôi có thể giúp gì?"):
+        with patched_direct_node_runtime("Xin chào! Tôi có thể giúp gì?"):
             result = await direct_response_node(state)
 
         # Sprint 203: "greeting" removed from domain notice triggers — UX bugfix
@@ -695,7 +665,7 @@ class TestDirectNodeHelpfulBehavior:
             "context": {},
         }
 
-        with _patched_direct_node_runtime("Chào bạn!"):
+        with patched_direct_node_runtime("Chào bạn!"):
             result = await direct_response_node(state)
 
         assert result.get("domain_notice") is None
@@ -713,7 +683,7 @@ class TestDirectNodeHelpfulBehavior:
             "routing_metadata": {"intent": "lookup", "confidence": 0.9},
         }
 
-        with _patched_direct_node_runtime("Answer..."):
+        with patched_direct_node_runtime("Answer..."):
             result = await direct_response_node(state)
 
         assert result.get("domain_notice") is None
@@ -731,7 +701,7 @@ class TestDirectNodeHelpfulBehavior:
             "routing_metadata": {"intent": "off_topic", "confidence": 0.9},
         }
 
-        with _patched_direct_node_runtime(
+        with patched_direct_node_runtime(
             "Khi đói trên tàu, bạn có thể tìm nhà bếp..."
         ):
             result = await direct_response_node(state)

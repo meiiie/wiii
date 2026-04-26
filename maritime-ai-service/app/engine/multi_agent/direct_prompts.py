@@ -784,7 +784,7 @@ def _build_direct_tools_context(
 
     if _natural_guidance:
         parts.append(
-            "\n## VE KIEN THUC CUA WIII:"
+            "\n## GIỚI HẠN KIẾN THỨC CỦA WIII:"
             "\n- Wiii co kien thuc huan luyen den dau 2024."
             "\n- Khi can thong tin moi (tin tuc, thoi tiet, gia ca, su kien sau 2024), "
             "Wiii dung tool tim kiem de dam bao chinh xac."
@@ -813,7 +813,7 @@ def _build_direct_tools_context(
         )
     else:
         parts.append(
-            "\n## GIOI HAN KIEN THUC (QUAN TRONG):"
+            "\n## GIỚI HẠN KIẾN THỨC (QUAN TRỌNG):"
             "\n- Kien thuc huan luyen cua ban CU - ngat vao dau nam 2024."
             "\n- Ban KHONG CO Internet truc tiep - chi co the truy cap web QUA tool_web_search."
             "\n- Ban KHONG BIET ngay gio hien tai - chi biet qua tool_current_datetime."
@@ -1251,4 +1251,3 @@ def _build_direct_system_messages(
     else:
         messages.append(HumanMessage(content=query))
     return messages
-

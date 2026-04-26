@@ -247,8 +247,13 @@ async def _collect_events(node_updates):
     mock_narrator.render = _mock_render
     mock_narrator.render_fast = lambda req: _make_narrator_result(req.node)
 
-    with patch("app.engine.multi_agent.graph_streaming.open_multi_agent_graph",
-               new=lambda: _MockGraphCM(mock_graph)), \
+    async def _mock_forward_graph_events(*, initial_state, merged_queue):
+        for update in node_updates:
+            await merged_queue.put(("graph", update))
+        await merged_queue.put(("graph_done", None))
+
+    with patch("app.engine.multi_agent.graph_streaming.forward_graph_events_impl",
+               new=_mock_forward_graph_events), \
          patch("app.engine.multi_agent.graph_streaming.get_agent_registry",
                return_value=mock_registry), \
          patch("app.engine.multi_agent.graph_streaming._build_domain_config",
@@ -374,8 +379,11 @@ class TestGraphStreamingLifecycle:
     async def test_thinking_end_has_duration_ms(self):
         """thinking_end should include duration_ms in details."""
         events = await _collect_events([
-            {"supervisor": {"next_agent": "direct"}},
-            {"direct": {"final_response": "Hi"}},
+            {"supervisor": {"next_agent": "rag_agent"}},
+            {"rag_agent": {
+                "thinking_content": "Dang kiem tra nguon lien quan...",
+                "final_response": "Answer",
+            }},
         ])
 
         end_events = [e for e in events if e.type == "thinking_end"]
