@@ -174,7 +174,7 @@ class TestConfigurableAnchor:
     def test_config_default_is_6(self):
         """Default should be 6 (was 10)."""
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.identity_anchor_interval == 6
 
     def test_config_min_3(self):
