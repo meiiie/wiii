@@ -65,7 +65,7 @@ class TestKeepaliveGenerator:
         assert chunks == ["chunk1", "chunk2"]
 
     @pytest.mark.asyncio
-    async def test_sends_keepalive_on_timeout(self):
+    async def test_sends_keepalive_on_timeout(self, monkeypatch):
         """Should send keepalive when inner generator is idle."""
         async def slow_inner():
             await asyncio.sleep(0.5)  # Simulate delay
@@ -74,19 +74,18 @@ class TestKeepaliveGenerator:
         mock_request = MagicMock()
         mock_request.is_disconnected = AsyncMock(return_value=False)
 
-        # Use a very short keepalive interval for testing
         import app.api.v1.chat_stream as module
-        original = module.KEEPALIVE_INTERVAL_SEC
-        module.KEEPALIVE_INTERVAL_SEC = 0.1  # 100ms for fast test
+        monkeypatch.setattr(
+            module.settings,
+            "llm_stream_keepalive_interval_seconds",
+            0.1,
+        )
 
-        try:
-            chunks = []
-            async for chunk in _keepalive_generator(slow_inner(), mock_request):
-                chunks.append(chunk)
-                if len(chunks) > 10:
-                    break  # Safety limit
-        finally:
-            module.KEEPALIVE_INTERVAL_SEC = original
+        chunks = []
+        async for chunk in _keepalive_generator(slow_inner(), mock_request):
+            chunks.append(chunk)
+            if len(chunks) > 10:
+                break  # Safety limit
 
         # Should have at least one keepalive before the data
         assert SSE_KEEPALIVE in chunks
