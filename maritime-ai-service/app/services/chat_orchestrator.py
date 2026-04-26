@@ -501,6 +501,8 @@ class ChatOrchestrator:
         # save_message, schedule_all, routine_tracker.record_interaction,
         # and _analyze_and_process_sentiment via finalize_response_turn()
         # and living_continuity.schedule_post_response_continuity().
+        # Tenant-isolation marker: finalize_response_turn_impl forwards
+        # org_id=organization_id to BackgroundTaskRunner.schedule_all().
         
         self.finalize_response_turn(
             session_id=session_id,
