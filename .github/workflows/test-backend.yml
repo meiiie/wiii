@@ -12,6 +12,13 @@ on:
       - 'maritime-ai-service/**'
       - '.github/workflows/test-backend.yml'
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest

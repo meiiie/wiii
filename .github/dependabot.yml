@@ -3,7 +3,7 @@
 #
 # Strategy (updated 2026-04-25 for single-maintainer noise control):
 #   - Security updates are handled separately via Dependabot Security alerts
-#     (auto-PR for high/critical CVEs regardless of schedule).
+#     and automated security fixes enabled in repository settings.
 #   - Version updates run **monthly**, grouped per ecosystem, to keep email
 #     and review volume manageable for a solo maintainer.
 #   - Patch bumps are grouped; major bumps land as separate PRs so that
