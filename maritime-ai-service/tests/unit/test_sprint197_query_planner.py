@@ -21,6 +21,20 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 
 
+@pytest.fixture(autouse=True)
+def _structured_invoke_uses_test_llm_mock(monkeypatch):
+    """Keep planner tests on the mocked LLM seam, not the real failover pool."""
+
+    async def _ainvoke(*, llm, schema, payload, **kwargs):
+        structured_llm = llm.with_structured_output(schema)
+        return await structured_llm.ainvoke(payload)
+
+    monkeypatch.setattr(
+        "app.services.structured_invoke_service.StructuredInvokeService.ainvoke",
+        _ainvoke,
+    )
+
+
 # =============================================================================
 # 1. Pydantic Model Tests (12 tests)
 # =============================================================================
