@@ -163,6 +163,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: detect-changes
     if: needs.detect-changes.outputs.backend == 'true'
+    # Keep the branch-protection gate self-contained so `Gate Summary` remains
+    # a stable required context even while advisory CI workflows evolve.
     services:
       postgres:
         image: pgvector/pgvector:pg15
