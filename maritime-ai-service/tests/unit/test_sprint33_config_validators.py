@@ -2,7 +2,7 @@
 Tests for Sprint 33: Enum and numeric config validators.
 
 Covers:
-- llm_provider: google|openai|ollama|openrouter
+- llm_provider: google|vertex|openai|openrouter|nvidia|ollama|zhipu
 - rag_quality_mode: speed|balanced|quality
 - gemini_thinking_level: minimal|low|medium|high
 - log_format: json|text
@@ -40,9 +40,12 @@ def _make_settings(**overrides):
 class TestLLMProvider:
     def test_default_valid(self):
         s = _make_settings()
-        assert s.llm_provider == "google"
+        assert s.llm_provider == "zhipu"
 
-    @pytest.mark.parametrize("val", ["google", "openai", "ollama", "openrouter"])
+    @pytest.mark.parametrize(
+        "val",
+        ["google", "vertex", "openai", "openrouter", "nvidia", "ollama", "zhipu"],
+    )
     def test_valid_providers(self, val):
         s = _make_settings(llm_provider=val)
         assert s.llm_provider == val
