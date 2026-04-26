@@ -82,6 +82,8 @@ def build_embedding_space_contract(
     model_name: str | None,
     dimensions: int | None = None,
 ) -> EmbeddingSpaceContract | None:
+    if not isinstance(model_name, str):
+        return None
     normalized_model = (model_name or "").strip()
     if not normalized_model:
         return None
