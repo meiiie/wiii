@@ -12,6 +12,7 @@ Tests tutor tools including ContextVar state management:
 
 import pytest
 from unittest.mock import MagicMock, patch
+import unicodedata
 
 
 # ============================================================================
@@ -24,6 +25,15 @@ def _reset_module_state():
     import app.engine.tools.tutor_tools as mod
     mod._tutor_agent = None
     mod._tutor_tool_state.set(None)
+
+
+def _plain(text: str) -> str:
+    """Return lowercase text without Vietnamese accents for stable assertions."""
+    return "".join(
+        char
+        for char in unicodedata.normalize("NFD", text)
+        if unicodedata.category(char) != "Mn"
+    ).lower()
 
 
 # ============================================================================
@@ -128,7 +138,7 @@ class TestToolStartLesson:
         mod._tutor_agent = None
         with patch("app.engine.tutor.tutor_agent.TutorAgent", side_effect=ImportError):
             result = await mod.tool_start_lesson.coroutine(topic="solas")
-        assert "khong kha dung" in result.lower()
+        assert "khong kha dung" in _plain(result)
 
     @pytest.mark.asyncio
     async def test_success(self):
@@ -156,7 +166,7 @@ class TestToolStartLesson:
         mod._tutor_tool_state.set(None)
 
         result = await mod.tool_start_lesson.coroutine(topic="solas")
-        assert "Loi" in result
+        assert "loi" in _plain(result)
 
 
 # ============================================================================
@@ -175,7 +185,7 @@ class TestToolContinueLesson:
         import app.engine.tools.tutor_tools as mod
         mod._tutor_agent = None
         result = await mod.tool_continue_lesson.coroutine(user_input="ready")
-        assert "Chua co buoi hoc" in result
+        assert "chua co buoi hoc" in _plain(result)
 
     @pytest.mark.asyncio
     async def test_no_session(self):
@@ -183,7 +193,7 @@ class TestToolContinueLesson:
         mod._tutor_agent = MagicMock()
         mod._tutor_tool_state.set(None)
         result = await mod.tool_continue_lesson.coroutine(user_input="ready")
-        assert "Khong co buoi hoc" in result
+        assert "khong co buoi hoc" in _plain(result)
 
     @pytest.mark.asyncio
     async def test_success(self):
@@ -249,7 +259,7 @@ class TestToolContinueLesson:
         mod._get_state().session_id = "session-123"
 
         result = await mod.tool_continue_lesson.coroutine(user_input="answer")
-        assert "Loi" in result
+        assert "loi" in _plain(result)
 
 
 # ============================================================================
@@ -268,7 +278,7 @@ class TestToolLessonStatus:
         import app.engine.tools.tutor_tools as mod
         mod._tutor_tool_state.set(None)
         result = await mod.tool_lesson_status.coroutine()
-        assert "Khong co buoi hoc" in result
+        assert "khong co buoi hoc" in _plain(result)
 
     @pytest.mark.asyncio
     async def test_success(self):
@@ -302,7 +312,7 @@ class TestToolLessonStatus:
         mod._get_state().session_id = "session-123"
 
         result = await mod.tool_lesson_status.coroutine()
-        assert "tim thay" in result.lower() or "Kh" in result
+        assert "tim thay" in _plain(result) or "kh" in _plain(result)
 
     @pytest.mark.asyncio
     async def test_error(self):
@@ -314,7 +324,7 @@ class TestToolLessonStatus:
         mod._get_state().session_id = "session-123"
 
         result = await mod.tool_lesson_status.coroutine()
-        assert "L" in result  # "Lỗi" or error message
+        assert "l" in _plain(result)  # "loi" or error message
 
 
 # ============================================================================
@@ -333,7 +343,7 @@ class TestToolEndLesson:
         import app.engine.tools.tutor_tools as mod
         mod._tutor_tool_state.set(None)
         result = await mod.tool_end_lesson.coroutine()
-        assert "Khong co buoi hoc" in result
+        assert "khong co buoi hoc" in _plain(result)
 
     @pytest.mark.asyncio
     async def test_session_not_found(self):
@@ -345,7 +355,7 @@ class TestToolEndLesson:
         mod._get_state().session_id = "session-123"
 
         result = await mod.tool_end_lesson.coroutine()
-        assert "ket thuc" in result.lower()
+        assert "ket thuc" in _plain(result)
         assert mod._get_state().session_id is None
 
     @pytest.mark.asyncio
@@ -397,4 +407,4 @@ class TestToolEndLesson:
         mod._get_state().session_id = "session-123"
 
         result = await mod.tool_end_lesson.coroutine()
-        assert "L" in result
+        assert "l" in _plain(result)
