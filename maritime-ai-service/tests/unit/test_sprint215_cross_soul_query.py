@@ -511,7 +511,11 @@ class TestSupervisorRouting:
             "routing_metadata": None,
         }
 
-        with patch("app.core.config.settings", self._mock_settings()):
+        with patch("app.engine.multi_agent.supervisor.settings", self._mock_settings()), \
+             patch(
+                 "app.engine.multi_agent.supervisor.StructuredInvokeService.ainvoke",
+                 new=AsyncMock(return_value=mock_result),
+             ):
             result = await supervisor._route_structured(
                 "Hỏi Bro về BTC", {"user_role": "admin"}, "AI", "", "", {}, state,
             )
@@ -540,7 +544,11 @@ class TestSupervisorRouting:
 
         state = {"routing_metadata": None}
 
-        with patch("app.core.config.settings", self._mock_settings()):
+        with patch("app.engine.multi_agent.supervisor.settings", self._mock_settings()), \
+             patch(
+                 "app.engine.multi_agent.supervisor.StructuredInvokeService.ainvoke",
+                 new=AsyncMock(return_value=mock_result),
+             ):
             result = await supervisor._route_structured(
                 "Hỏi Bro về BTC", {"user_role": "student"}, "AI", "", "", {}, state,
             )
@@ -569,8 +577,12 @@ class TestSupervisorRouting:
 
         state = {"routing_metadata": None}
 
-        with patch("app.core.config.settings",
-                    self._mock_settings(enable_cross_soul_query=False)):
+        with patch("app.engine.multi_agent.supervisor.settings",
+                    self._mock_settings(enable_cross_soul_query=False)), \
+             patch(
+                 "app.engine.multi_agent.supervisor.StructuredInvokeService.ainvoke",
+                 new=AsyncMock(return_value=mock_result),
+             ):
             result = await supervisor._route_structured(
                 "Hỏi Bro về BTC", {"user_role": "admin"}, "AI", "", "", {}, state,
             )
@@ -599,8 +611,12 @@ class TestSupervisorRouting:
 
         state = {"routing_metadata": None}
 
-        with patch("app.core.config.settings",
-                    self._mock_settings(enable_soul_bridge=False)):
+        with patch("app.engine.multi_agent.supervisor.settings",
+                    self._mock_settings(enable_soul_bridge=False)), \
+             patch(
+                 "app.engine.multi_agent.supervisor.StructuredInvokeService.ainvoke",
+                 new=AsyncMock(return_value=mock_result),
+             ):
             result = await supervisor._route_structured(
                 "Hỏi Bro", {"user_role": "admin"}, "AI", "", "", {}, state,
             )
