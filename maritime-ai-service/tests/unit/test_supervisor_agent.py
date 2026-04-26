@@ -80,6 +80,14 @@ def mock_llm():
     return llm
 
 
+@pytest.fixture(autouse=True)
+def reset_supervisor_feature_flags(monkeypatch):
+    """Keep supervisor tests isolated from global Settings mutations in full suite runs."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "enable_conservative_fast_routing", True, raising=False)
+
+
 @pytest.fixture
 def base_state():
     return {
