@@ -256,6 +256,7 @@ class TestSupervisorStructuredRoute:
         from app.engine.multi_agent.supervisor import SupervisorAgent
         sup = SupervisorAgent.__new__(SupervisorAgent)
         sup._llm = mock_llm
+        sup._get_llm_for_state = MagicMock(return_value=mock_llm)
         return sup
 
     @pytest.mark.asyncio
