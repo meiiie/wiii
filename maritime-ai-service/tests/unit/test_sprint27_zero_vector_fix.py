@@ -303,19 +303,31 @@ class TestCoreSessionMethodsFixed:
 class TestCorrectedCacheConfidenceThreshold:
     """Sprint 27: Cache threshold uses >= 70 (0-100 scale), not >= 0.7."""
 
-    def test_threshold_is_70_not_0_7(self):
-        """The cache confidence check should use 70, not 0.7."""
-        import ast
-        from pathlib import Path
+    @pytest.mark.asyncio
+    async def test_threshold_is_70_not_0_7(self):
+        """Cache storage should use the 0-100 confidence scale."""
+        from app.engine.agentic_rag.corrective_rag_runtime_support import (
+            store_cache_response_impl,
+        )
 
-        source_path = Path(__file__).parent.parent.parent / "app" / "engine" / "agentic_rag" / "corrective_rag.py"
-        source = source_path.read_text(encoding="utf-8")
+        cache_manager = MagicMock()
+        cache_manager.set = AsyncMock()
 
-        # Should contain >= 70 (the fix)
-        assert "confidence >= 70" in source
-        # Should NOT contain the old buggy >= 0.7 for cache comparison
-        # (Note: 0.7 may still appear in other contexts like rag_confidence_high)
-        lines = source.split("\n")
-        for line in lines:
-            if "cache" in line.lower() and "confidence >= 0.7" in line:
-                pytest.fail(f"Found old bug: cache comparison using 0.7 instead of 70: {line.strip()}")
+        common_kwargs = {
+            "cache_enabled": True,
+            "cache_manager": cache_manager,
+            "query_embedding": [0.1, 0.2],
+            "query": "test",
+            "answer": "answer",
+            "sources": [{"document_id": "doc-1"}],
+            "thinking": None,
+            "iterations": 1,
+            "was_rewritten": False,
+            "context": {"user_id": "user-1", "organization_id": "org-1"},
+        }
+
+        await store_cache_response_impl(confidence=0.7, **common_kwargs)
+        cache_manager.set.assert_not_called()
+
+        await store_cache_response_impl(confidence=70, **common_kwargs)
+        cache_manager.set.assert_awaited_once()
