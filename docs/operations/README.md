@@ -12,6 +12,7 @@ Operational docs are different from exploratory reports:
 
 - `WIII_DOCUMENTATION_GOVERNANCE.md`: documentation lifecycle, retention, issue/PR standards, and cleanup controls.
 - `WIII_GITHUB_GOVERNANCE.md`: GitHub issue, PR, branch, review, label, and merge standards.
+- `WIII_CODEX_REVIEW_SETUP.md`: Codex GitHub Review setup, rollout, operating policy, and rollback controls.
 - `WIII_MULTI_AGENT_MAINTAINER_PROTOCOL.md`: multi-agent ownership, maintainer review, CodeRabbit, conflict, and merge protocol.
 - `WIII_SYSTEM_CLEANUP_CHECKPOINT_2026-04-24.md`: current cleanup checkpoint consolidated from runtime and pipeline research.
 - `WIII_REPOSITORY_HYGIENE_AUDIT_2026-04-24.md`: final cleanup verification, retained local artifacts, and rebuild instructions.

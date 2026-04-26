@@ -38,6 +38,7 @@ Refs #
 - [ ] No secrets, tokens, private data, or local-only files are committed.
 - [ ] Multi-agent file ownership was declared when more than one agent contributed.
 - [ ] CodeRabbit findings are resolved, deferred with rationale, or explicitly not applicable.
+- [ ] Codex Review was requested for high-risk changes, or explicitly marked not required.
 - [ ] Auth, tenant isolation, memory, and user identity behavior were considered.
 - [ ] Feature flags and default behavior were considered.
 - [ ] Database migrations are included or explicitly not required.
@@ -70,3 +71,4 @@ Tell reviewers where to spend attention first.
 - Critical paths:
 - Edge cases:
 - Known limitations:
+- Codex Review focus:
