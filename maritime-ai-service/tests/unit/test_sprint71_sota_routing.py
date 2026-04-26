@@ -525,14 +525,14 @@ class TestRoutingMetadata:
             agent = SupervisorAgent()
             agent._llm = None
 
-        state = _make_state("xin chào")
-        await agent.route(state)
+            state = _make_state("xin chào")
+            await agent.route(state)
 
-        assert "routing_metadata" in state
-        meta = state["routing_metadata"]
-        assert meta["method"] == "conservative_fast_path"
-        assert meta["confidence"] == 1.0
-        assert meta["final_agent"] == AgentType.DIRECT.value
+            assert "routing_metadata" in state
+            meta = state["routing_metadata"]
+            assert meta["method"] == "conservative_fast_path"
+            assert meta["confidence"] == 1.0
+            assert meta["final_agent"] == AgentType.DIRECT.value
 
     @pytest.mark.asyncio
     async def test_structured_route_sets_metadata(self):
