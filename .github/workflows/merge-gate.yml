@@ -41,7 +41,8 @@ jobs:
             if git merge-base "$base" HEAD >/dev/null 2>&1; then
               range="$base...HEAD"
             else
-              range="$base..HEAD"
+              echo "No merge-base found for $base; falling back to the latest commit range." >&2
+              range="HEAD~1..HEAD"
             fi
           elif [[ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
             range="${{ github.event.before }}..${{ github.sha }}"
@@ -88,7 +89,8 @@ jobs:
             if git merge-base "$base" HEAD >/dev/null 2>&1; then
               range="$base...HEAD"
             else
-              range="$base..HEAD"
+              echo "No merge-base found for $base; falling back to the latest commit range." >&2
+              range="HEAD~1..HEAD"
             fi
           elif [[ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
             range="${{ github.event.before }}..${{ github.sha }}"
