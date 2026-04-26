@@ -785,6 +785,7 @@ def _build_direct_tools_context(
     if _natural_guidance:
         parts.append(
             "\n## GIỚI HẠN KIẾN THỨC CỦA WIII:"
+            "\n- Ve kien thuc cua Wiii: day la phan noi ro cach Wiii dung tri thuc san co va khi nao can tra cuu."
             "\n- Wiii co kien thuc huan luyen den dau 2024."
             "\n- Khi can thong tin moi (tin tuc, thoi tiet, gia ca, su kien sau 2024), "
             "Wiii dung tool tim kiem de dam bao chinh xac."
