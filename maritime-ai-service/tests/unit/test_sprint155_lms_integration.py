@@ -28,6 +28,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Stub heavy dependencies before import
 # ---------------------------------------------------------------------------
+_STUBBED_MODULES = {}
 for mod in [
     "app.engine.llm_pool",
     "app.engine.gemini_embedding",
@@ -35,7 +36,9 @@ for mod in [
     "app.services.output_processor",
 ]:
     if mod not in sys.modules:
-        sys.modules[mod] = MagicMock()
+        stub = MagicMock()
+        sys.modules[mod] = stub
+        _STUBBED_MODULES[mod] = stub
 
 from app.integrations.lms.models import (
     AssignmentSubmittedPayload,
@@ -61,6 +64,10 @@ from app.integrations.lms.base import (
 )
 from app.integrations.lms.registry import LMSConnectorRegistry, get_lms_connector_registry
 from app.integrations.lms.connectors.spring_boot import SpringBootLMSAdapter
+
+for mod, stub in _STUBBED_MODULES.items():
+    if sys.modules.get(mod) is stub:
+        del sys.modules[mod]
 
 
 # =============================================================================
