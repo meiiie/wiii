@@ -269,9 +269,8 @@ class TestToolFunctionDispatch:
         mock_legacy.assert_called_once()
 
     @patch("app.engine.tools.excel_report_tool._generate_advanced_report")
-    @patch("app.core.config.get_settings")
-    def test_flag_on_uses_advanced(self, mock_settings, mock_advanced):
-        mock_settings.return_value = MagicMock(enable_advanced_excel_report=True)
+    @patch("app.engine.tools.excel_report_tool._advanced_excel_report_enabled", return_value=True)
+    def test_flag_on_uses_advanced(self, mock_flag, mock_advanced):
         mock_advanced.return_value = json.dumps({"file_path": "/tmp/test.xlsx", "sheets": []})
 
         from app.engine.tools.excel_report_tool import tool_generate_product_report
