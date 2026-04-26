@@ -435,7 +435,7 @@ class TestLearnFromContent:
         mock_builder._update_skill.return_value = None
 
         with patch("app.engine.living_agent.local_llm.get_local_llm", return_value=mock_llm), \
-             patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder), \
+             patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder), \
              patch.object(SkillLearner, "_update_skill_metadata"):
             result = await learner.learn_from_content("Deep Learning Basics", material)
 
@@ -459,7 +459,7 @@ class TestLearnFromContent:
         mock_builder = MagicMock()
         mock_builder._find_by_name.return_value = mock_skill
 
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder):
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder):
             result = await learner.learn_from_content("Test", material)
 
         assert result is False
@@ -485,7 +485,7 @@ class TestLearnFromContent:
         mock_builder._update_skill.return_value = None
 
         with patch("app.engine.living_agent.local_llm.get_local_llm", return_value=mock_llm), \
-             patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder), \
+             patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder), \
              patch.object(SkillLearner, "_update_skill_metadata"):
             await learner.learn_from_content("New Topic", material)
 
@@ -513,7 +513,7 @@ class TestLearnFromContent:
         mock_builder._update_skill.return_value = None
 
         with patch("app.engine.living_agent.local_llm.get_local_llm", return_value=mock_llm), \
-             patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder), \
+             patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder), \
              patch.object(SkillLearner, "_update_skill_metadata"):
             await learner.learn_from_content("Test", material)
 
@@ -546,7 +546,7 @@ class TestQuizGeneration:
         mock_builder._find_by_name.return_value = mock_skill
 
         with patch("app.engine.living_agent.local_llm.get_local_llm", return_value=mock_llm), \
-             patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder), \
+             patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder), \
              patch("app.core.config.settings") as mock_settings:
             mock_settings.living_agent_quiz_questions_per_session = 3
             questions = await learner.generate_quiz("Test", num_questions=2)
@@ -566,7 +566,7 @@ class TestQuizGeneration:
         mock_builder = MagicMock()
         mock_builder._find_by_name.return_value = mock_skill
 
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder):
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder):
             questions = await learner.generate_quiz("Test")
 
         assert questions == []
@@ -579,7 +579,7 @@ class TestQuizGeneration:
         mock_builder = MagicMock()
         mock_builder._find_by_name.return_value = None
 
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder):
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder):
             questions = await learner.generate_quiz("Nonexistent")
 
         assert questions == []
@@ -643,7 +643,7 @@ class TestQuizEvaluation:
         mock_builder._find_by_name.return_value = mock_skill
         mock_builder._update_skill.return_value = None
 
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder), \
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder), \
              patch("app.core.config.settings") as mock_settings, \
              patch.object(SkillLearner, "_update_skill_metadata"):
             mock_settings.living_agent_review_confidence_weight = 0.3
@@ -675,7 +675,7 @@ class TestQuizEvaluation:
         mock_builder._find_by_name.return_value = mock_skill
         mock_builder._update_skill.return_value = None
 
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder), \
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder), \
              patch("app.core.config.settings") as mock_settings, \
              patch.object(SkillLearner, "_update_skill_metadata"):
             mock_settings.living_agent_review_confidence_weight = 0.3
@@ -706,7 +706,7 @@ class TestQuizEvaluation:
         mock_builder._update_skill.return_value = None
 
         alpha = 0.3
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder), \
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder), \
              patch("app.core.config.settings") as mock_settings, \
              patch.object(SkillLearner, "_update_skill_metadata"):
             mock_settings.living_agent_review_confidence_weight = alpha
@@ -737,7 +737,7 @@ class TestQuizEvaluation:
         mock_builder._find_by_name.return_value = mock_skill
         mock_builder._update_skill.return_value = None
 
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder), \
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder), \
              patch("app.core.config.settings") as mock_settings, \
              patch.object(SkillLearner, "_update_skill_metadata"):
             mock_settings.living_agent_review_confidence_weight = 0.3
@@ -765,7 +765,7 @@ class TestQuizEvaluation:
         mock_builder = MagicMock()
         mock_builder._find_by_name.return_value = None
 
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder):
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder):
             result = await learner.evaluate_quiz("Missing", questions, ["A"])
 
         assert result is None
@@ -793,7 +793,7 @@ class TestSkillsDueForReview:
         mock_builder = MagicMock()
         mock_builder.get_all_skills.return_value = [skill]
 
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder):
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder):
             due = learner.get_skills_due_for_review()
 
         assert len(due) == 1
@@ -814,7 +814,7 @@ class TestSkillsDueForReview:
         mock_builder = MagicMock()
         mock_builder.get_all_skills.return_value = [skill]
 
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder):
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder):
             due = learner.get_skills_due_for_review()
 
         assert len(due) == 1
@@ -835,7 +835,7 @@ class TestSkillsDueForReview:
         mock_builder = MagicMock()
         mock_builder.get_all_skills.return_value = [skill]
 
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder):
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder):
             due = learner.get_skills_due_for_review()
 
         assert len(due) == 0
@@ -855,7 +855,7 @@ class TestSkillsDueForReview:
         mock_builder = MagicMock()
         mock_builder.get_all_skills.return_value = [skill]
 
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder):
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder):
             due = learner.get_skills_due_for_review()
 
         assert len(due) == 0
@@ -875,7 +875,7 @@ class TestSkillsDueForReview:
         mock_builder = MagicMock()
         mock_builder.get_all_skills.return_value = [skill]
 
-        with patch("app.engine.living_agent.skill_builder.get_skill_builder", return_value=mock_builder):
+        with patch("app.engine.living_agent.skill_learner.get_skill_builder", return_value=mock_builder):
             due = learner.get_skills_due_for_review()
 
         assert len(due) == 0
@@ -899,7 +899,7 @@ class TestSkillBuilderNewMethods:
         mock_learner = MagicMock()
         mock_learner.learn_from_content = AsyncMock(return_value=True)
 
-        with patch("app.engine.living_agent.skill_learner.get_skill_learner", return_value=mock_learner):
+        with patch("app.engine.living_agent.skill_builder.get_skill_learner", return_value=mock_learner):
             result = await builder.learn_from_material("Test Topic", material)
 
         assert result is True
@@ -915,7 +915,7 @@ class TestSkillBuilderNewMethods:
         mock_learner = MagicMock()
         mock_learner.get_skills_due_for_review.return_value = mock_skills
 
-        with patch("app.engine.living_agent.skill_learner.get_skill_learner", return_value=mock_learner):
+        with patch("app.engine.living_agent.skill_builder.get_skill_learner", return_value=mock_learner):
             result = builder.get_skills_for_review()
 
         assert len(result) == 1
