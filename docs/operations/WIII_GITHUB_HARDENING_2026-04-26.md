@@ -89,7 +89,7 @@ For multi-agent PRs:
 - Require CodeRabbit and Codex Review for security-sensitive changes.
 - Resolve or explicitly defer all P0/P1 automated findings.
 - Prefer squash merge so agent-authored intermediate commits do not become long-lived history.
-- Use `Gate Summary` as the stable branch protection CI context after this workflow lands on `main`.
+- Use `Gate Summary` as the stable branch protection CI context after `.github/workflows/merge-gate.yml` lands on `main`.
 
 ## Follow-Up
 

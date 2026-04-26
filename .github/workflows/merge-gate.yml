@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   detect-changes:
@@ -36,8 +36,13 @@ jobs:
           set -euo pipefail
 
           if [[ -n "${{ github.base_ref }}" ]]; then
-            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-            range="FETCH_HEAD...HEAD"
+            git fetch --no-tags origin "${{ github.base_ref }}"
+            base="FETCH_HEAD"
+            if git merge-base "$base" HEAD >/dev/null 2>&1; then
+              range="$base...HEAD"
+            else
+              range="$base..HEAD"
+            fi
           elif [[ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
             range="${{ github.event.before }}..${{ github.sha }}"
           else
@@ -58,9 +63,9 @@ jobs:
           {
             echo "backend=$(match '^maritime-ai-service/')"
             echo "desktop=$(match '^wiii-desktop/')"
-            echo "docker=$(match '(^|/)(Dockerfile|Dockerfile\\..*)$|^maritime-ai-service/(Dockerfile|nginx/|docker-compose|compose)|^\\.dockerignore$')"
-            echo "github=$(match '^\\.github/|^\\.coderabbit\\.yaml$')"
-            echo "docs=$(match '^docs/|^README\\.md$|^CONTRIBUTING\\.md$|^CODE_OF_CONDUCT\\.md$')"
+            echo "docker=$(match '(^|/)(Dockerfile|Dockerfile\..*)$|^maritime-ai-service/(Dockerfile|nginx/|docker-compose|compose)|^\.dockerignore$')"
+            echo "github=$(match '^\.github/|^\.coderabbit\.yaml$')"
+            echo "docs=$(match '^docs/|^README\.md$|^CONTRIBUTING\.md$|^CODE_OF_CONDUCT\.md$')"
           } >> "$GITHUB_OUTPUT"
 
   repository-hygiene:
@@ -78,8 +83,13 @@ jobs:
           set -euo pipefail
 
           if [[ -n "${{ github.base_ref }}" ]]; then
-            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-            range="FETCH_HEAD...HEAD"
+            git fetch --no-tags origin "${{ github.base_ref }}"
+            base="FETCH_HEAD"
+            if git merge-base "$base" HEAD >/dev/null 2>&1; then
+              range="$base...HEAD"
+            else
+              range="$base..HEAD"
+            fi
           elif [[ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
             range="${{ github.event.before }}..${{ github.sha }}"
           else
@@ -89,7 +99,7 @@ jobs:
           git diff --check "$range"
           git diff --name-only "$range" | tee /tmp/changed-files.txt
 
-          forbidden='(^|/)(node_modules|__pycache__|\\.pytest_cache|\\.ruff_cache|\\.mypy_cache|dist-embed|dist-web|target|coverage|htmlcov)/|(^|/)\\.env($|\\.|/)|\\.(pem|key|p12|pfx|log|tmp)$'
+          forbidden='(^|/)(node_modules|__pycache__|\.pytest_cache|\.ruff_cache|\.mypy_cache|dist-embed|dist-web|target|coverage|htmlcov)/|(^|/)\.env($|\.|/)|\.(pem|key|p12|pfx|log|tmp)$'
           if grep -E "$forbidden" /tmp/changed-files.txt; then
             echo "Forbidden generated, secret, or local-only artifact detected in the change set." >&2
             exit 1
@@ -111,20 +121,40 @@ jobs:
           test -f .github/PULL_REQUEST_TEMPLATE.md
           test -f .coderabbit.yaml
 
-          missing_permissions=0
-          for workflow in .github/workflows/*.yml; do
-            if ! grep -q '^permissions:' "$workflow"; then
-              echo "::error file=$workflow::Workflow must declare top-level permissions."
-              missing_permissions=1
-            fi
-          done
+          ruby <<'RUBY'
+          require "yaml"
 
-          if grep -R "pull_request[_]target" .github/workflows; then
-            echo "Disallowed privileged PR trigger found without explicit security review." >&2
-            exit 1
-          fi
+          failed = false
+          allowed_write = {
+            ".github/workflows/codeql.yml" => ["security-events"],
+          }
 
-          exit "$missing_permissions"
+          Dir[".github/workflows/*.{yml,yaml}"].sort.each do |path|
+            data = YAML.load_file(path) || {}
+            permissions = data["permissions"]
+            unless permissions.is_a?(Hash)
+              puts "::error file=#{path}::Workflow must declare top-level permissions as a mapping."
+              failed = true
+              next
+            end
+
+            allowed = allowed_write.fetch(path, [])
+            permissions.each do |scope, value|
+              if value.to_s.downcase == "write" && !allowed.include?(scope.to_s)
+                puts "::error file=#{path}::Top-level write permission '#{scope}: write' is not allow-listed."
+                failed = true
+              end
+            end
+
+            triggers = data["on"] || data[true] || {}
+            if triggers.is_a?(Hash) && triggers.key?("pull_request_target")
+              puts "::error file=#{path}::pull_request_target requires explicit security review."
+              failed = true
+            end
+          end
+
+          exit(failed ? 1 : 0)
+          RUBY
 
   backend-unit-gate:
     name: Backend Unit Gate
@@ -223,20 +253,21 @@ jobs:
         run: |
           set -euo pipefail
 
-          for result in \
-            "${{ needs.detect-changes.result }}" \
-            "${{ needs.repository-hygiene.result }}" \
-            "${{ needs.github-governance.result }}" \
-            "${{ needs.backend-unit-gate.result }}" \
-            "${{ needs.desktop-gate.result }}"; do
+          failed=0
+          needs_json='${{ toJson(needs) }}'
+          while IFS=$'\t' read -r job result; do
             case "$result" in
               success|skipped)
                 ;;
               *)
-                echo "A merge gate job failed or was cancelled: $result" >&2
-                exit 1
+                echo "A merge gate job failed or was cancelled: $job => $result" >&2
+                failed=1
                 ;;
             esac
-          done
+          done < <(printf '%s' "$needs_json" | jq -r 'to_entries[] | [.key, .value.result] | @tsv')
+
+          if [[ "$failed" -ne 0 ]]; then
+            exit 1
+          fi
 
           echo "Merge gate passed."

@@ -115,6 +115,13 @@ As of 2026-04-26, `main` is configured with:
 
 After `.github/workflows/merge-gate.yml` is merged into `main`, add `Gate Summary` as a required status check. Do not add the check before the workflow exists on `main`, or open PRs can become stuck on a missing required context.
 
+Verify the live baseline with:
+
+```bash
+gh api repos/meiiie/wiii/branches/main/protection \
+  --jq '{required_status_checks, required_pull_request_reviews, enforce_admins, required_linear_history}'
+```
+
 ## Branch Protection Recommendation
 
 Configure `main` with:
@@ -143,6 +150,8 @@ Do not require currently failing CI checks until they are made consistently gree
 ## CodeRabbit Policy
 
 CodeRabbit is configured through `.coderabbit.yaml`.
+
+For public/open-source repositories, CodeRabbit may evaluate PRs using the base-branch configuration. Policy changes in `.coderabbit.yaml` become authoritative after they are merged into `main`.
 
 Repository policy:
 
