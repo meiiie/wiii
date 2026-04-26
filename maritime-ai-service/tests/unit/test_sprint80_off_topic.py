@@ -262,9 +262,9 @@ class TestDefaultRoutingNoDomain:
         assert result == AgentType.MEMORY.value
 
     def test_learning_without_domain_to_direct(self, supervisor):
-        """Sprint 103: Learning keywords removed — no domain match → DIRECT."""
+        """Learning-only fallback routes to TUTOR even without a domain match."""
         result = supervisor._rule_based_route("giải thích cho tôi cái này", {})
-        assert result == AgentType.DIRECT.value
+        assert result == AgentType.TUTOR.value
 
 
 # =============================================================================
@@ -371,9 +371,6 @@ class TestLLMRoutingWithValidation:
             intent="lookup", agent="RAG_AGENT",
             confidence=0.85, reasoning="User asks about ship"
         )
-        mock_structured = MagicMock()
-        mock_structured.ainvoke = AsyncMock(return_value=mock_decision)
-        mock_llm.with_structured_output = MagicMock(return_value=mock_structured)
         supervisor._llm = mock_llm
 
         state = {
@@ -383,7 +380,12 @@ class TestLLMRoutingWithValidation:
             "domain_config": _maritime_config(),
         }
 
-        result = await supervisor.route(state)
+        with patch(
+            "app.engine.multi_agent.supervisor.StructuredInvokeService.ainvoke",
+            new_callable=AsyncMock,
+            return_value=mock_decision,
+        ):
+            result = await supervisor.route(state)
 
         assert result == AgentType.DIRECT.value
         assert state["routing_metadata"]["method"] == "structured+domain_validation"
@@ -398,9 +400,6 @@ class TestLLMRoutingWithValidation:
             intent="lookup", agent="RAG_AGENT",
             confidence=0.95, reasoning="User asks about COLREGs"
         )
-        mock_structured = MagicMock()
-        mock_structured.ainvoke = AsyncMock(return_value=mock_decision)
-        mock_llm.with_structured_output = MagicMock(return_value=mock_structured)
         supervisor._llm = mock_llm
 
         state = {
@@ -410,7 +409,12 @@ class TestLLMRoutingWithValidation:
             "domain_config": _maritime_config(),
         }
 
-        result = await supervisor.route(state)
+        with patch(
+            "app.engine.multi_agent.supervisor.StructuredInvokeService.ainvoke",
+            new_callable=AsyncMock,
+            return_value=mock_decision,
+        ):
+            result = await supervisor.route(state)
 
         assert result == AgentType.RAG.value
         assert state["routing_metadata"]["method"] == "structured"
@@ -426,9 +430,6 @@ class TestLLMRoutingWithValidation:
             intent="off_topic", agent="RAG_AGENT",
             confidence=0.80, reasoning="Maybe maritime?"
         )
-        mock_structured = MagicMock()
-        mock_structured.ainvoke = AsyncMock(return_value=mock_decision)
-        mock_llm.with_structured_output = MagicMock(return_value=mock_structured)
         supervisor._llm = mock_llm
 
         state = {
@@ -438,7 +439,12 @@ class TestLLMRoutingWithValidation:
             "domain_config": _maritime_config(),
         }
 
-        result = await supervisor.route(state)
+        with patch(
+            "app.engine.multi_agent.supervisor.StructuredInvokeService.ainvoke",
+            new_callable=AsyncMock,
+            return_value=mock_decision,
+        ):
+            result = await supervisor.route(state)
 
         assert result == AgentType.DIRECT.value
 

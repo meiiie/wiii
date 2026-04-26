@@ -106,7 +106,7 @@ class TestSupervisorRoute:
     """Sprint 103: route() always uses structured output (_route_structured)."""
 
     @pytest.mark.asyncio
-    async def test_route_obvious_social_turn_sets_house_hint_and_keeps_llm_first(self, mock_llm):
+    async def test_route_obvious_social_turn_sets_house_hint_and_uses_fast_path(self, mock_llm):
         sup = _make_supervisor(mock_llm)
         state = {
             "query": "Xin chào hảo hán",
@@ -123,10 +123,11 @@ class TestSupervisorRoute:
             "intent": "social",
             "shape": "social",
         }
-        mock_route.assert_awaited_once()
+        assert state["routing_metadata"]["method"] == "conservative_fast_path"
+        mock_route.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_route_laughter_social_turn_sets_house_hint_and_keeps_llm_first(self, mock_llm):
+    async def test_route_laughter_social_turn_sets_house_hint_and_uses_fast_path(self, mock_llm):
         sup = _make_supervisor(mock_llm)
         state = {
             "query": "hẹ hẹ",
@@ -143,10 +144,11 @@ class TestSupervisorRoute:
             "intent": "social",
             "shape": "social",
         }
-        mock_route.assert_awaited_once()
+        assert state["routing_metadata"]["method"] == "conservative_fast_path"
+        mock_route.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_route_reaction_turn_sets_house_hint_and_keeps_llm_first(self, mock_llm):
+    async def test_route_reaction_turn_sets_house_hint_and_uses_fast_path(self, mock_llm):
         sup = _make_supervisor(mock_llm)
         state = {
             "query": "wow",
@@ -164,7 +166,8 @@ class TestSupervisorRoute:
             "intent": "social",
             "shape": "reaction",
         }
-        mock_route.assert_awaited_once()
+        assert state["routing_metadata"]["method"] == "conservative_fast_path"
+        mock_route.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_route_identity_probe_sets_house_hint_and_keeps_llm_first(self, mock_llm):
@@ -214,7 +217,7 @@ class TestSupervisorRoute:
         mock_route.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_route_vague_banter_turn_sets_house_hint_and_keeps_llm_first(self, mock_llm):
+    async def test_route_vague_banter_turn_sets_house_hint_and_uses_fast_path(self, mock_llm):
         sup = _make_supervisor(mock_llm)
         state = {
             "query": "gì đó",
@@ -232,7 +235,8 @@ class TestSupervisorRoute:
             "intent": "off_topic",
             "shape": "vague_banter",
         }
-        mock_route.assert_awaited_once()
+        assert state["routing_metadata"]["method"] == "conservative_fast_path"
+        mock_route.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_route_to_rag(self, mock_llm, base_state):
@@ -267,7 +271,7 @@ class TestSupervisorRoute:
         assert result == "direct"
 
     @pytest.mark.asyncio
-    async def test_route_reraises_provider_unavailable_error_instead_of_rule_based_fallback(
+    async def test_route_provider_unavailable_uses_rule_based_fallback(
         self,
         mock_llm,
         base_state,
@@ -285,8 +289,11 @@ class TestSupervisorRoute:
                 )
             ),
         ):
-            with pytest.raises(ProviderUnavailableError):
-                await sup.route(base_state)
+            result = await sup.route(base_state)
+
+        assert result == "direct"
+        assert base_state["routing_metadata"]["method"] == "rule_based"
+        assert base_state["routing_metadata"]["reason_code"] == "busy"
 
     @pytest.mark.asyncio
     async def test_structured_routing_keeps_house_provider_as_primary_but_does_not_pin_failover(
