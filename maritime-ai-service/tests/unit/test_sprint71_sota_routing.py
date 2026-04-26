@@ -28,6 +28,7 @@ if not _had_cs:
     _mock_cs.get_chat_service = lambda: None
     sys.modules[_cs_key] = _mock_cs
 
+from app.engine.multi_agent import supervisor as supervisor_module
 from app.engine.multi_agent.agent_config import AgentConfigRegistry
 from app.engine.multi_agent.supervisor import (
     SupervisorAgent, AgentType,
@@ -517,7 +518,10 @@ class TestRoutingMetadata:
     @pytest.mark.asyncio
     async def test_fast_route_sets_metadata(self):
         """Conservative fast routing sets metadata for obvious chatter."""
-        with patch.object(AgentConfigRegistry, "get_llm", return_value=None):
+        with (
+            patch.object(supervisor_module.settings, "enable_conservative_fast_routing", True),
+            patch.object(AgentConfigRegistry, "get_llm", return_value=None),
+        ):
             agent = SupervisorAgent()
             agent._llm = None
 
