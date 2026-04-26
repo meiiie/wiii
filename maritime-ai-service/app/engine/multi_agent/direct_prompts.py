@@ -1212,7 +1212,11 @@ def _build_direct_system_messages(
     # Sprint Phase2-F: Inject thinking instruction so LLM wraps reasoning in <thinking> tags
     # Without this, direct node outputs chain-of-thought inline (thinking leak)
     thinking_instruction = loader.get_thinking_instruction()
-    if thinking_instruction and (not is_chatter_role or is_selfhood_turn):
+    if (
+        isinstance(thinking_instruction, str)
+        and thinking_instruction.strip()
+        and (not is_chatter_role or is_selfhood_turn)
+    ):
         # Unified enforcement — inject at TOP for maximum model attention
         from app.engine.reasoning.thinking_enforcement import get_thinking_enforcement
         system_prompt = get_thinking_enforcement() + "\n\n" + system_prompt + "\n\n" + thinking_instruction
@@ -1247,5 +1251,4 @@ def _build_direct_system_messages(
     else:
         messages.append(HumanMessage(content=query))
     return messages
-
 
