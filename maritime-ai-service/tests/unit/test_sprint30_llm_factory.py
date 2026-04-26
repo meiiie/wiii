@@ -189,9 +189,7 @@ class TestCreateLLM:
 
         call_kwargs = mock_cls.call_args[1]
         assert call_kwargs["model"] == "gemini-3.1-pro-preview"
-        thinking_config = call_kwargs["model_kwargs"]["extra_body"]["google"]["thinking_config"]
-        assert thinking_config["thinking_budget"] == 8192
-        assert thinking_config["include_thoughts"] is True
+        assert call_kwargs["model_kwargs"]["reasoning_effort"] == "high"
 
     def test_thinking_not_added_when_budget_zero(self):
         mock_factory_settings = MagicMock()
