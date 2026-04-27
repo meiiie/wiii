@@ -4,7 +4,7 @@ Status: Active
 
 Owner: Project leadership
 
-Last updated: 2026-04-26
+Last updated: 2026-04-27
 
 Applies to: Codex, Claude Code, CodeRabbit, and other AI-assisted engineering agents working in this repository.
 
@@ -12,7 +12,7 @@ This file is the repository-level instruction source for Wiii. Codex also reads 
 
 ## Repository Context
 
-Wiii is a production-oriented multi-domain agentic RAG platform with a FastAPI backend, LangGraph orchestration, PostgreSQL/pgvector, optional Neo4j graph context, LMS integration, and a Tauri v2 desktop client.
+Wiii is a production-oriented multi-domain agentic RAG platform with a FastAPI backend, WiiiRunner orchestration, PostgreSQL/pgvector, optional Neo4j graph context, LMS integration, and a Tauri v2 desktop client. LangGraph is no longer an active runtime dependency; remaining LangGraph references should be treated as historical, compatibility, or cleanup-tracking context unless a specific file proves otherwise.
 
 Primary areas:
 
@@ -20,7 +20,7 @@ Primary areas:
 - `wiii-desktop/`: Tauri v2 desktop app, React 18, TypeScript, Zustand stores, SSE V3 streaming UI, embed app, frontend tests.
 - `docs/`: repository-level architecture, operations, governance, plans, and assets.
 - `.github/`: issue templates, PR template, CODEOWNERS, GitHub Actions, Dependabot, and review automation.
-- `.claude/`: local Claude Code workflows, skills, coordination notes, and agent knowledge.
+- `.claude/`: legacy/local Claude Code notes. Treat as non-canonical unless a maintainer explicitly says otherwise; canonical governance, architecture, and cleanup truth lives in `AGENTS.md`, `docs/`, `.github/`, and active GitHub issues.
 
 ## Operating Rules
 

@@ -1,6 +1,6 @@
 # Wiii-Native Orchestration Runtime RFC
 
-Status: Proposed
+Status: Accepted / active migration plan
 Date: 2026-04-27
 Tracking issue: #130
 Owner: Wiii maintainers
@@ -48,11 +48,10 @@ Checked on 2026-04-27 from the repository working tree.
 | Signal | Current result | Meaning |
 |---|---:|---|
 | Active `import langgraph` statements | 0 | LangGraph is no longer actively imported by normal app code. |
-| Exact `from langgraph` hits | 6 textual hits | The hits are comments/docstrings or commented-out historical imports. |
+| Exact `from langgraph` hits | 4 textual hits | The hits are commented-out historical imports in deprecated subgraph compatibility files. |
 | `MemorySaver` hits | 0 | The old LangGraph memory checkpointer is no longer present. |
 | `CompiledStateGraph` hits | 0 | No compiled LangGraph graph type remains. |
-| `get_multi_agent_graph` hits | 12 | Remaining references are in unit tests and deprecated mock paths. |
-| `build_multi_agent_graph` hits | 6 | Remaining references are in tests around deprecated behavior. |
+| `get_multi_agent_graph` / `build_multi_agent_graph` hits | 5 | Remaining tracked hits are only in `test_graph_thread_id.py`, where they assert retired public APIs are absent. |
 | Graph-named tracked Python files | 21 | Many are runner-backed streaming/helper shells or GraphRAG, not active LangGraph. |
 
 Representative current files:
@@ -70,10 +69,24 @@ Issue state update after initial drafting:
 
 - #93 Phase 1 runtime-shell purge has been verified and closed.
 - #97 Phase 2 graph/checkpointer shim removal has been verified and closed.
-- #101 remains the active test-mock cleanup track; PR #142 is open to remove
-  deprecated `get_multi_agent_graph*` mocks from unit tests.
+- #101 Phase 3 deprecated graph mock cleanup has been verified and closed after
+  PR #142 merged.
 - #128 remains open because GitHub secret-scanning alerts #1 and #2 still need
   external OpenRouter revocation/rotation before they can be resolved.
+- #129 dependency triage is down to the upstream-blocked `glib` Tauri/GTK
+  alert. The residual `rand` build-dependency alert was dismissed as
+  `tolerable_risk` after verification.
+
+Next implementation focus:
+
+- Rename or retire runner-backed `graph_*` compatibility shells only after
+  adding parity tests for chat, streaming, memory, tool calls, and FE-visible
+  event semantics.
+- Keep `graph_rag_*`, knowledge graph, learning graph, and semantic graph code
+  out of the LangGraph purge unless a file imports or depends on LangGraph
+  directly.
+- Treat `.claude/` LangGraph references as legacy local notes, not canonical
+  architecture truth.
 
 ## Verification commands
 
