@@ -66,6 +66,15 @@ Representative current files:
 - `maritime-ai-service/app/engine/llm_route_runtime.py`: request-scoped provider route and failover resolution.
 - `maritime-ai-service/app/engine/llm_runtime_profiles.py`: provider presets and default failover chains.
 
+Issue state update after initial drafting:
+
+- #93 Phase 1 runtime-shell purge has been verified and closed.
+- #97 Phase 2 graph/checkpointer shim removal has been verified and closed.
+- #101 remains the active test-mock cleanup track; PR #142 is open to remove
+  deprecated `get_multi_agent_graph*` mocks from unit tests.
+- #128 remains open because GitHub secret-scanning alerts #1 and #2 still need
+  external OpenRouter revocation/rotation before they can be resolved.
+
 ## Current Runtime Truth
 
 The active chat path is:
@@ -543,7 +552,8 @@ Create or update focused issues for:
 4. Introduce canonical provider route and capability profiles.
 5. Add turn ledger/checkpoint replacement.
 6. Unify tool runtime events.
-7. Migrate test mocks away from `get_multi_agent_graph*`.
+7. Close #101 by merging the test-mock cleanup PR and keeping retired API names
+   only in negative public-surface assertions.
 8. Delete compatibility shells after parity.
 
 ## Merge Readiness Checklist
