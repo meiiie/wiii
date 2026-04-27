@@ -901,8 +901,7 @@ class TestGraphIntegration:
             mock_settings.enable_subagent_architecture = True
             mock_settings.quality_skip_threshold = 0.85
 
-            # We can't easily test build_multi_agent_graph without full LangGraph
-            # but we can test the routing map logic
+            # Keep this focused on routing-map behavior without invoking runtime orchestration.
             _routing_map = {
                 "rag_agent": "rag_agent",
                 "tutor_agent": "tutor_agent",
