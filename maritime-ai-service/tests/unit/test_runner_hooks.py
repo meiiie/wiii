@@ -354,7 +354,7 @@ class TestWiiiRunnerHooks:
         runner.set_hooks(dispatcher)
 
         # Patch guardian_route and route_decision
-        with patch("app.engine.multi_agent.graph.guardian_route", return_value="supervisor"), \
+        with patch("app.engine.multi_agent.runtime_routes.guardian_route", return_value="supervisor"), \
              patch("app.engine.multi_agent.graph_support.route_decision", return_value="rag_agent"):
             result = await runner.run({"query": "test"})
 
@@ -395,7 +395,7 @@ class TestWiiiRunnerHooks:
         dispatcher.add_run_hooks(hooks)
         runner.set_hooks(dispatcher)
 
-        with patch("app.engine.multi_agent.graph.guardian_route", return_value="supervisor"), \
+        with patch("app.engine.multi_agent.runtime_routes.guardian_route", return_value="supervisor"), \
              patch("app.engine.multi_agent.graph_support.route_decision", return_value="rag_agent"):
             result = await runner.run({"query": "test"})
 
@@ -420,7 +420,7 @@ class TestWiiiRunnerHooks:
         runner.register_node("guardian", mock_guardian)
         runner.register_node("synthesizer", mock_synthesizer)
 
-        with patch("app.engine.multi_agent.graph.guardian_route", return_value="synthesizer"):
+        with patch("app.engine.multi_agent.runtime_routes.guardian_route", return_value="synthesizer"):
             result = await runner.run({"query": "blocked"})
 
         assert result["final_response"] == "ok"
@@ -461,7 +461,7 @@ class TestWiiiRunnerHooks:
         dispatcher.add_agent_hooks("rag_agent", rag_hooks)
         runner.set_hooks(dispatcher)
 
-        with patch("app.engine.multi_agent.graph.guardian_route", return_value="supervisor"), \
+        with patch("app.engine.multi_agent.runtime_routes.guardian_route", return_value="supervisor"), \
              patch("app.engine.multi_agent.graph_support.route_decision", return_value="rag_agent"):
             await runner.run({"query": "test"})
 

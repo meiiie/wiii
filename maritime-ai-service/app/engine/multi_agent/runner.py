@@ -157,7 +157,7 @@ class WiiiRunner:
             state["final_response"] = reason or "Nội dung không phù hợp."
 
         # 2. Guardian route
-        from app.engine.multi_agent.graph import guardian_route
+        from app.engine.multi_agent.runtime_routes import guardian_route
 
         route = guardian_route(state)
         await self._emit_route(_NODE_GUARDIAN, route, state)
@@ -240,7 +240,7 @@ class WiiiRunner:
         self._push_queue(merged_queue, _NODE_GUARDIAN, state)
 
         # 2. Guardian route
-        from app.engine.multi_agent.graph import guardian_route
+        from app.engine.multi_agent.runtime_routes import guardian_route
 
         route = guardian_route(state)
         await self._emit_route(_NODE_GUARDIAN, route, state)
