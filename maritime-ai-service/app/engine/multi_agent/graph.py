@@ -25,7 +25,6 @@ from app.engine.multi_agent.graph_support import (
     _get_domain_greetings,
     _generate_session_summary_bg,
 )
-from app.engine.multi_agent.graph_process import process_with_multi_agent_impl
 from app.engine.multi_agent.graph_trace_store import (
     _TRACERS,
     _cleanup_tracer,
@@ -471,8 +470,10 @@ async def process_with_multi_agent(
     provider: Optional[str] = None,
     model: Optional[str] = None,
 ) -> dict:
-    """High-level function to process query with the multi-agent system."""
-    return await process_with_multi_agent_impl(
+    """Compatibility wrapper for legacy graph imports."""
+    from app.engine.multi_agent.runtime import process_with_multi_agent as process
+
+    return await process(
         query=query,
         user_id=user_id,
         session_id=session_id,
@@ -481,20 +482,6 @@ async def process_with_multi_agent(
         thinking_effort=thinking_effort,
         provider=provider,
         model=model,
-        build_domain_config=_build_domain_config,
-        build_turn_local_state_defaults=_build_turn_local_state_defaults,
-        cleanup_tracer=_cleanup_tracer,
-        resolve_public_thinking_content=_resolve_public_thinking_content,
-        generate_session_summary_bg=_generate_session_summary_bg,
-        inject_host_context=_inject_host_context,
-        inject_host_session=_inject_host_session,
-        inject_operator_context=_inject_operator_context,
-        inject_living_context=_inject_living_context,
-        inject_visual_context=_inject_visual_context,
-        inject_visual_cognition_context=_inject_visual_cognition_context,
-        inject_widget_feedback_context=_inject_widget_feedback_context,
-        inject_code_studio_context=_inject_code_studio_context,
-        summary_milestones=_SUMMARY_MILESTONES,
     )
 
 
