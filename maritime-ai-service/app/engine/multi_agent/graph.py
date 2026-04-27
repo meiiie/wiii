@@ -73,6 +73,7 @@ from app.engine.multi_agent.graph_runtime_bindings import (
     _needs_analysis_tool,
     _needs_code_studio,
     _needs_lms_query,
+    _LMS_INTENT_KEYWORDS,
     _needs_direct_knowledge_search,
     _should_strip_visual_tools_from_direct,
     _inject_host_context,

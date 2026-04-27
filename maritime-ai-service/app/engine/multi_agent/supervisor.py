@@ -192,7 +192,8 @@ class SupervisorAgent:
                     strict_provider_pin=False,
                 )
             return AgentConfigRegistry.get_llm("supervisor")
-        except Exception:
+        except Exception as e:
+            logger.debug("Falling back to cached Supervisor LLM: %s", e)
             return self._llm
 
     def _resolve_house_routing_provider(self, state: AgentState) -> Optional[str]:

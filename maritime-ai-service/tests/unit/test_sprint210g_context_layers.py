@@ -235,8 +235,8 @@ class TestContextInfoEndpointCode:
         import inspect
         from app.api.v1 import chat
         source = inspect.getsource(chat.get_context_info)
-        assert "PromptLoader" in source, \
-            "Endpoint should use PromptLoader for system_prompt"
+        assert "get_prompt_loader" in source or "PromptLoader" in source, \
+            "Endpoint should use a PromptLoader access path for system_prompt"
 
     def test_endpoint_fetches_core_memory_block(self):
         """The endpoint uses CoreMemoryBlock to fetch core_memory."""

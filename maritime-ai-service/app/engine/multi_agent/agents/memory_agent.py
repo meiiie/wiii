@@ -32,14 +32,14 @@ logger = logging.getLogger(__name__)
 _SERVICE_IDENTITY_USER_IDS = {"api-client", "anonymous"}
 
 _MEMORY_BEHAVIOR_RULES = (
-    "- Dung thong tin da biet ve user de tra loi tu nhien\n"
-    "- Neu chua co fact lau dai nhung van co hoi thoai gan day, hay dua vao ngu canh do de dap tu nhien\n"
-    "- Khong noi la 'khong biet gi' neu van dang nho doan hoi thoai vua trao doi\n"
-    "- Neu user chia se thong tin moi, xac nhan da ghi nho cu the\n"
-    "- Neu thong tin duoc cap nhat, de cap thay doi\n"
-    "- Neu user hoi ve thong tin da luu, tra loi chinh xac va day du\n"
-    "- KHONG bat dau bang loi chao - di thang vao noi dung\n"
-    "- KHONG bao gom qua trinh suy nghi"
+    "- Dùng thông tin đã biết về user để trả lời tự nhiên bằng tiếng Việt\n"
+    "- Nếu chưa có fact lâu dài nhưng vẫn có hội thoại gần đây, hãy dựa vào ngữ cảnh đó để đáp tự nhiên\n"
+    "- Không nói là 'không biết gì' nếu vẫn đang nhớ đoạn hội thoại vừa trao đổi\n"
+    "- Nếu user chia sẻ thông tin mới, xác nhận đã ghi nhớ CỤ THỂ\n"
+    "- Nếu thông tin được CẬP NHẬT, đề cập thay đổi\n"
+    "- Nếu user hỏi về thông tin đã lưu, trả lời chính xác và đầy đủ\n"
+    "- KHÔNG bắt đầu bằng lời chào - đi thẳng vào nội dung\n"
+    "- KHÔNG bao gồm quá trình suy nghĩ"
 )
 
 

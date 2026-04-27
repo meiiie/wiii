@@ -122,13 +122,13 @@ def validate_domain_routing_impl(
     if not domain_keywords:
         return chosen_agent
 
+    query_lower = _normalize_router_text_impl(query)
     normalized_domain_keywords = [
         _normalize_router_text_impl(str(keyword or ""))
         for keyword in domain_keywords
         if str(keyword or "").strip()
     ]
-    query_lower = _normalize_router_text_impl(query)
-    has_domain = any(keyword in query_lower for keyword in domain_keywords)
+    has_domain = any(keyword and keyword in query_lower for keyword in normalized_domain_keywords)
     if not has_domain:
         context_parts: list[str] = []
         summary = str((context or {}).get("conversation_summary") or "").strip()
@@ -322,7 +322,12 @@ def rule_based_route_impl(
         return code_studio_agent_name
 
     domain_keywords = get_domain_keywords_fn(domain_config)
-    if any(kw in query_lower for kw in domain_keywords):
+    normalized_domain_keywords = [
+        normalize_router_text_fn(str(keyword or ""))
+        for keyword in domain_keywords
+        if str(keyword or "").strip()
+    ]
+    if any(keyword and keyword in normalized_query for keyword in normalized_domain_keywords):
         return rag_agent_name
 
     if (

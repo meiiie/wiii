@@ -547,11 +547,11 @@ class TestExecuteParallelSubagents:
 class TestFeatureFlag:
     """Feature flag gating for subagent architecture."""
 
-    def test_config_default_disabled(self, monkeypatch):
+    def test_config_default_enabled(self, monkeypatch):
         monkeypatch.delenv("ENABLE_SUBAGENT_ARCHITECTURE", raising=False)
         from app.core.config import Settings
         s = Settings(_env_file=None, google_api_key="test", api_key="test")
-        assert s.enable_subagent_architecture is False
+        assert s.enable_subagent_architecture is True
         assert s.subagent_default_timeout == 60
         assert s.subagent_max_parallel == 5
 

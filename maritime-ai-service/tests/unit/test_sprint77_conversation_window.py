@@ -669,15 +669,11 @@ class TestSupervisorContextEnhancement:
         agent = SupervisorAgent.__new__(SupervisorAgent)
         agent._llm = MagicMock()
 
-        # Mock structured output
-        mock_structured = MagicMock()
         mock_result = MagicMock()
         mock_result.agent = "RAG_AGENT"
         mock_result.confidence = 0.95
         mock_result.intent = "lookup"
         mock_result.reasoning = "test"
-        mock_structured.ainvoke = AsyncMock(return_value=mock_result)
-        agent._llm.with_structured_output = MagicMock(return_value=mock_structured)
 
         history = [
             HumanMessage(content="Tell me about COLREGs"),
@@ -688,7 +684,11 @@ class TestSupervisorContextEnhancement:
         state = {"query": "Điều 15 nói gì?", "context": context, "domain_config": {}}
 
         # _route_structured has lazy `from app.core.config import settings` — patch at source
-        with patch("app.core.config.settings") as mock_settings:
+        with patch("app.core.config.settings") as mock_settings, patch(
+            "app.engine.multi_agent.supervisor.StructuredInvokeService.ainvoke",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ) as mock_ainvoke:
             mock_settings.enable_structured_outputs = True
 
             result = await agent._route_structured(
@@ -697,9 +697,8 @@ class TestSupervisorContextEnhancement:
             )
 
         # Verify the prompt was called with recent conversation, not truncated dict
-        call_args = mock_structured.ainvoke.call_args[0][0]
-        # HumanMessage is now at index 2 (index 0: supervisor card, index 1: system instruction)
-        human_msg = next(m for m in call_args if hasattr(m, 'type') and m.type == 'human')
+        payload = mock_ainvoke.call_args.kwargs["payload"]
+        human_msg = next(m for m in payload if hasattr(m, 'type') and m.type == 'human')
         assert "Recent conversation" in human_msg.content
 
     @pytest.mark.asyncio
@@ -710,19 +709,20 @@ class TestSupervisorContextEnhancement:
         agent = SupervisorAgent.__new__(SupervisorAgent)
         agent._llm = MagicMock()
 
-        mock_structured = MagicMock()
         mock_result = MagicMock()
         mock_result.agent = "DIRECT"
         mock_result.confidence = 0.9
         mock_result.intent = "social"
         mock_result.reasoning = "greeting"
-        mock_structured.ainvoke = AsyncMock(return_value=mock_result)
-        agent._llm.with_structured_output = MagicMock(return_value=mock_structured)
 
         context = {"user_name": "Test"}
         state = {"query": "Hello", "context": context, "domain_config": {}}
 
-        with patch("app.core.config.settings") as mock_settings:
+        with patch("app.core.config.settings") as mock_settings, patch(
+            "app.engine.multi_agent.supervisor.StructuredInvokeService.ainvoke",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ) as mock_ainvoke:
             mock_settings.enable_structured_outputs = True
 
             result = await agent._route_structured(
@@ -730,8 +730,8 @@ class TestSupervisorContextEnhancement:
                 {}, state,
             )
 
-        call_args = mock_structured.ainvoke.call_args[0][0]
-        prompt_content = call_args[1].content
+        payload = mock_ainvoke.call_args.kwargs["payload"]
+        prompt_content = next(m.content for m in payload if hasattr(m, 'type') and m.type == 'human')
         # Without langchain_messages, should use str(context) fallback
         assert "Recent conversation" not in prompt_content
 

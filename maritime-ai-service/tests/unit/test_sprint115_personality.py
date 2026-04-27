@@ -174,7 +174,7 @@ class TestConfigurableAnchor:
     def test_config_default_is_6(self):
         """Default should be 6 (was 10)."""
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.identity_anchor_interval == 6
 
     def test_config_min_3(self):
@@ -465,13 +465,13 @@ class TestConfigSettings:
     def test_enable_emotional_state_default_false(self):
         """enable_emotional_state should default to False."""
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.enable_emotional_state is False
 
     def test_emotional_decay_rate_default(self):
         """emotional_decay_rate should default to 0.15."""
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.emotional_decay_rate == 0.15
 
     def test_identity_anchor_interval_custom(self):

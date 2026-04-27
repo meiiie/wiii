@@ -312,10 +312,14 @@ async def collect_tutor_model_message(
                         streamed_text_parts.append(text)
                     # Propagate reasoning deltas if callback provided
                     if on_stream_reasoning_delta is not None:
-                        reasoning = getattr(chunk, "reasoning_content", None) or getattr(
-                            getattr(chunk, "additional_kwargs", {}), "reasoning_content", None
-                        )
-                        if reasoning:
+                        reasoning = getattr(chunk, "reasoning_content", None)
+                        if not isinstance(reasoning, str):
+                            additional_kwargs = getattr(chunk, "additional_kwargs", {}) or {}
+                            if isinstance(additional_kwargs, dict):
+                                reasoning = additional_kwargs.get("reasoning_content")
+                            else:
+                                reasoning = getattr(additional_kwargs, "reasoning_content", None)
+                        if isinstance(reasoning, str) and reasoning:
                             try:
                                 await on_stream_reasoning_delta(reasoning)
                             except Exception:

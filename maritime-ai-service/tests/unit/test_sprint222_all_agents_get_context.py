@@ -4,9 +4,9 @@ import inspect
 
 
 def test_direct_response_uses_host_context_prompt():
-    """graph.py direct response path should use host_context_prompt."""
-    from app.engine.multi_agent import graph
-    source = inspect.getsource(graph)
+    """Direct response prompt runtime should use host_context_prompt."""
+    from app.engine.multi_agent import direct_prompts
+    source = inspect.getsource(direct_prompts)
     assert "host_context_prompt" in source
 
 
@@ -35,11 +35,13 @@ def test_supervisor_synthesize_uses_host_context_prompt():
 
 
 def test_tutor_agent_uses_operator_context_prompt():
-    """tutor_node should receive operator-context prompt too."""
-    from app.engine.multi_agent.agents import tutor_node
+    """Tutor request and prompt runtimes should carry operator context."""
+    from app.engine.multi_agent.agents import tutor_request_runtime, tutor_surface
 
-    source = inspect.getsource(tutor_node)
-    assert "operator_context_prompt" in source
+    request_source = inspect.getsource(tutor_request_runtime)
+    surface_source = inspect.getsource(tutor_surface)
+    assert "operator_context_prompt" in request_source
+    assert "operator_context_prompt" in surface_source
 
 
 def test_rag_agent_uses_operator_context_prompt():

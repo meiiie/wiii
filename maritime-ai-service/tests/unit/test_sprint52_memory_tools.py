@@ -15,6 +15,7 @@ Tests memory tools including ContextVar state management:
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 import contextvars
+import unicodedata
 
 
 # ============================================================================
@@ -28,6 +29,15 @@ def _reset_module_state():
     mod._semantic_memory = None
     # Reset ContextVar by setting None
     mod._memory_tool_state.set(None)
+
+
+def _plain(text: str) -> str:
+    """Return lowercase text without Vietnamese accents for stable assertions."""
+    return "".join(
+        char
+        for char in unicodedata.normalize("NFD", text)
+        if unicodedata.category(char) != "Mn"
+    ).lower()
 
 
 # ============================================================================
@@ -136,7 +146,7 @@ class TestToolSaveUserInfo:
         mod._memory_tool_state.set(None)
 
         result = await mod.tool_save_user_info.coroutine(key="name", value="Minh")
-        assert "ghi nho" in result.lower()
+        assert "ghi nho" in _plain(result)
         mock_engine.store_user_fact_upsert.assert_called_once()
 
     @pytest.mark.asyncio
@@ -148,7 +158,7 @@ class TestToolSaveUserInfo:
         mod._memory_tool_state.set(None)
 
         result = await mod.tool_save_user_info.coroutine(key="name", value="Minh")
-        assert "khong luu" in result.lower()
+        assert "khong luu" in _plain(result)
 
     @pytest.mark.asyncio
     async def test_error(self):
@@ -157,7 +167,7 @@ class TestToolSaveUserInfo:
         mod._memory_tool_state.set(None)
         with patch("app.engine.tools.memory_tools._get_state", side_effect=Exception("State error")):
             result = await mod.tool_save_user_info.coroutine(key="name", value="Minh")
-            assert "Loi" in result
+            assert "loi" in _plain(result)
 
 
 # ============================================================================
@@ -175,7 +185,7 @@ class TestToolGetUserInfo:
     async def test_all_empty(self):
         from app.engine.tools.memory_tools import tool_get_user_info
         result = await tool_get_user_info.coroutine(key="all")
-        assert "Chua co" in result
+        assert "chua co" in _plain(result)
 
     @pytest.mark.asyncio
     async def test_all_from_cache(self):
@@ -197,7 +207,7 @@ class TestToolGetUserInfo:
     async def test_key_not_found(self):
         from app.engine.tools.memory_tools import tool_get_user_info
         result = await tool_get_user_info.coroutine(key="school")
-        assert "Chua co" in result
+        assert "chua co" in _plain(result)
 
     @pytest.mark.asyncio
     async def test_fetches_from_semantic(self):
@@ -219,7 +229,7 @@ class TestToolGetUserInfo:
         mod._memory_tool_state.set(None)
 
         result = await mod.tool_get_user_info.coroutine(key="all")
-        assert "Chua co" in result
+        assert "chua co" in _plain(result)
 
 
 # ============================================================================
@@ -237,7 +247,7 @@ class TestToolRemember:
     async def test_cache_only(self):
         from app.engine.tools.memory_tools import tool_remember, _get_state
         result = await tool_remember.coroutine(information="I study STCW")
-        assert "ghi nho" in result.lower()
+        assert "ghi nho" in _plain(result)
         assert len(_get_state().user_cache.get("memories", [])) == 1
 
     @pytest.mark.asyncio
@@ -249,7 +259,7 @@ class TestToolRemember:
         mod._memory_tool_state.set(None)
 
         result = await mod.tool_remember.coroutine(information="I study STCW", category="learning")
-        assert "ghi nho" in result.lower()
+        assert "ghi nho" in _plain(result)
         mock_engine.store_explicit_insight.assert_called_once()
 
     @pytest.mark.asyncio
@@ -279,7 +289,7 @@ class TestToolForget:
     async def test_nothing_to_forget(self):
         from app.engine.tools.memory_tools import tool_forget
         result = await tool_forget.coroutine(information_keyword="nonexistent")
-        assert "Khong tim thay" in result
+        assert "khong tim thay" in _plain(result)
 
     @pytest.mark.asyncio
     async def test_forgets_from_memories_cache(self):
@@ -290,7 +300,7 @@ class TestToolForget:
             {"content": "I like reading", "category": "preference"},
         ]
         result = await tool_forget.coroutine(information_keyword="STCW")
-        assert "xoa" in result.lower()
+        assert "xoa" in _plain(result)
         assert len(state.user_cache["memories"]) == 1
 
     @pytest.mark.asyncio
@@ -299,7 +309,7 @@ class TestToolForget:
         state = _get_state()
         state.user_cache["name"] = "Minh"
         result = await tool_forget.coroutine(information_keyword="Minh")
-        assert "xoa" in result.lower()
+        assert "xoa" in _plain(result)
         assert "name" not in state.user_cache
 
     @pytest.mark.asyncio
@@ -311,7 +321,7 @@ class TestToolForget:
         mod._memory_tool_state.set(None)
 
         result = await mod.tool_forget.coroutine(information_keyword="STCW")
-        assert "xoa" in result.lower()
+        assert "xoa" in _plain(result)
         assert "2" in result
 
 
@@ -330,7 +340,7 @@ class TestToolListMemories:
     async def test_empty(self):
         from app.engine.tools.memory_tools import tool_list_memories
         result = await tool_list_memories.coroutine()
-        assert "Chua" in result or "chua" in result.lower()
+        assert "chua" in _plain(result)
 
     @pytest.mark.asyncio
     async def test_with_direct_facts(self):
@@ -379,7 +389,7 @@ class TestToolClearAllMemories:
         state = _get_state()
         state.user_cache["name"] = "Minh"
         result = await tool_clear_all_memories.coroutine()
-        assert "xoa" in result.lower()
+        assert "xoa" in _plain(result)
         assert len(state.user_cache) == 0
 
     @pytest.mark.asyncio
@@ -403,4 +413,4 @@ class TestToolClearAllMemories:
         mod._memory_tool_state.set(None)
 
         result = await mod.tool_clear_all_memories.coroutine()
-        assert "xoa" in result.lower()
+        assert "xoa" in _plain(result)

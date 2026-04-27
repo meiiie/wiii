@@ -156,7 +156,7 @@ class TestConfigFields:
 
     def test_browser_scraping_timeout_default_15(self):
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.browser_scraping_timeout == 15
 
     def test_enable_browser_scraping_override(self):
@@ -568,7 +568,7 @@ class TestRegression:
     def test_default_platform_list_includes_facebook_marketplace(self):
         """Default config should include facebook_marketplace in platform list."""
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert "facebook_marketplace" in s.product_search_platforms
 
 

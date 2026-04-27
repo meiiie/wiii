@@ -48,7 +48,7 @@ class TestGeminiProviderUnified:
     @patch("app.engine.llm_providers.gemini_provider.WiiiChatModel")
     @patch("app.engine.llm_providers.gemini_provider.settings")
     def test_thinking_via_model_kwargs(self, mock_settings, mock_chat):
-        """Thinking budget is passed via model_kwargs.extra_body."""
+        """Thinking budget maps to OpenAI-compatible reasoning_effort."""
         mock_settings.google_api_key = "test-key"
         mock_settings.google_model = "gemini-3.1-flash-lite-preview"
         mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -59,9 +59,7 @@ class TestGeminiProviderUnified:
         p.create_instance(tier="deep", thinking_budget=8192, include_thoughts=True)
 
         call_kwargs = mock_chat.call_args[1]
-        extra_body = call_kwargs["model_kwargs"]["extra_body"]
-        assert extra_body["google"]["thinking_config"]["thinking_budget"] == 8192
-        assert extra_body["google"]["thinking_config"]["include_thoughts"] is True
+        assert call_kwargs["model_kwargs"] == {"reasoning_effort": "high"}
 
     @patch("app.engine.llm_providers.gemini_provider.WiiiChatModel")
     @patch("app.engine.llm_providers.gemini_provider.settings")

@@ -354,7 +354,8 @@ def distill_visual_tool_context(
             parsed = json.loads(raw_text)
             if isinstance(parsed, dict):
                 payload = parsed
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to parse visual tool context JSON: %s", e)
             payload = None
 
     def _pick(*keys: str) -> str:
@@ -1657,4 +1658,3 @@ def get_tutor_agent_node() -> TutorAgentNode:
     if _tutor_node is None:
         _tutor_node = TutorAgentNode()
     return _tutor_node
-

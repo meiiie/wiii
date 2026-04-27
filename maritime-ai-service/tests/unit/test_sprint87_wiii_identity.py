@@ -13,7 +13,9 @@ import sys
 import types
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock
+
+from tests.unit._direct_node_test_utils import patched_direct_node_runtime
 
 # Break circular import (graph → services → chat_service → graph)
 _cs_key = "app.services.chat_service"
@@ -299,18 +301,10 @@ class TestDirectNodeUsesIdentity:
 
         captured_messages = []
 
-        async def capture_ainvoke(messages):
-            captured_messages.extend(messages)
-            return MagicMock(content="Đúng rồi, hôm nay thời tiết đẹp!", tool_calls=[])
-
-        mock_llm = MagicMock()
-        mock_llm.bind_tools.return_value = mock_llm
-        mock_llm.ainvoke = capture_ainvoke
-
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm",
-                    return_value=mock_llm), \
-             patch("app.services.output_processor.extract_thinking_from_response",
-                   return_value=("Đúng rồi, hôm nay thời tiết đẹp!", None)):
+        with patched_direct_node_runtime(
+            "Đúng rồi, hôm nay thời tiết đẹp!",
+            captured_messages=captured_messages,
+        ):
             await direct_response_node(state)
 
         system_content = captured_messages[0].content
@@ -334,18 +328,10 @@ class TestDirectNodeUsesIdentity:
 
         captured_messages = []
 
-        async def capture_ainvoke(messages):
-            captured_messages.extend(messages)
-            return MagicMock(content="Nấu cơm khá đơn giản...", tool_calls=[])
-
-        mock_llm = MagicMock()
-        mock_llm.bind_tools.return_value = mock_llm
-        mock_llm.ainvoke = capture_ainvoke
-
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm",
-                    return_value=mock_llm), \
-             patch("app.services.output_processor.extract_thinking_from_response",
-                   return_value=("Nấu cơm khá đơn giản...", None)):
+        with patched_direct_node_runtime(
+            "Nấu cơm khá đơn giản...",
+            captured_messages=captured_messages,
+        ):
             result = await direct_response_node(state)
 
         system_content = captured_messages[0].content

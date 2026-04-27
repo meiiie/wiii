@@ -29,12 +29,12 @@ class TestWebDeploymentConfig:
 
     def test_default_cors_origin_regex_empty(self):
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.cors_origin_regex == ""
 
     def test_default_subdomain_base_domain_empty(self):
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.subdomain_base_domain == ""
 
     def test_cors_origin_regex_configurable(self):

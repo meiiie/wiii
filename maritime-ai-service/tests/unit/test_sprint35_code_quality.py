@@ -44,7 +44,7 @@ class TestExceptExceptionHasVariable:
     ])
     def test_except_exception_captures_variable(self, filepath):
         """All runtime except Exception blocks should use `as e`."""
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, "r", encoding="utf-8-sig") as f:
             tree = ast.parse(f.read())
 
         for node in ast.walk(tree):

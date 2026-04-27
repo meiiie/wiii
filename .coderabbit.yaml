@@ -3,19 +3,17 @@ early_access: false
 tone_instructions: "Be direct, technical, and risk-focused. Prioritize correctness, security, maintainability, and actionable findings."
 
 reviews:
-  # Tuned 2026-04-25 for single-maintainer noise control. Core review still
-  # runs on every PR, but chatty extras (sequence diagrams, effort estimate,
-  # walkthrough duplication, draft-PR reviews) are disabled. Revert to the
-  # original `assertive` + full verbosity profile if multiple reviewers
-  # rejoin the project.
-  profile: chill
+  # Tuned 2026-04-26 for multi-agent governance. Keep the review signal strict
+  # enough to block risky automation drift, while avoiding auto-assign/auto-label
+  # mutations that can surprise human maintainers.
+  profile: assertive
   request_changes_workflow: false
   high_level_summary: true
   high_level_summary_in_walkthrough: false
   review_status: true
   review_details: true
   commit_status: true
-  fail_commit_status: false
+  fail_commit_status: true
   collapse_walkthrough: true
   changed_files_summary: true
   sequence_diagrams: false
@@ -25,7 +23,7 @@ reviews:
   related_prs: true
   suggested_labels: true
   auto_apply_labels: false
-  suggested_reviewers: false
+  suggested_reviewers: true
   auto_assign_reviewers: false
   poem: false
   enable_prompt_for_ai_agents: true
@@ -34,8 +32,8 @@ reviews:
 
   auto_review:
     enabled: true
-    auto_incremental_review: false
-    drafts: false
+    auto_incremental_review: true
+    drafts: true
     base_branches:
       - "main"
       - "develop"

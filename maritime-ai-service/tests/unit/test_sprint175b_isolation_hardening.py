@@ -336,7 +336,7 @@ class TestRLSConfig:
     def test_enable_rls_default_false(self):
         """enable_rls should default to False."""
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.enable_rls is False
 
     def test_enable_rls_configurable(self):

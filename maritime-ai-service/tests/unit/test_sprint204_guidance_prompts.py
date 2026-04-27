@@ -11,6 +11,8 @@ SOTA 2026 Reference:
   - OpenClaw: SOUL.md defines identity, runtime honors it
 """
 
+import unicodedata
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -59,6 +61,21 @@ def _mock_settings(**overrides):
     return s
 
 
+def _fold_text(text: str) -> str:
+    """Compare prompt intent without coupling tests to accented vs ASCII-safe text."""
+    text = (text or "").replace("đ", "d").replace("Đ", "D")
+    normalized = unicodedata.normalize("NFD", text)
+    return "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn").lower()
+
+
+def _assert_contains(prompt: str, expected: str) -> None:
+    assert _fold_text(expected) in _fold_text(prompt)
+
+
+def _assert_not_contains(prompt: str, expected: str) -> None:
+    assert _fold_text(expected) not in _fold_text(prompt)
+
+
 def _build_tools_context(natural=False, **extra_settings):
     """Build the tool context string from graph.py _build_direct_tools_context."""
     settings_overrides = {"enable_natural_conversation": natural, **extra_settings}
@@ -78,37 +95,37 @@ class TestGraphToolHintsNatural:
     def test_no_bat_buoc_in_tool_hints(self):
         """Natural mode should NOT contain 'BẮT BUỘC' in tool hints."""
         prompt = _build_tools_context(natural=True)
-        assert "BẮT BUỘC" not in prompt
+        _assert_not_contains(prompt, "BẮT BUỘC")
 
     def test_no_tuyet_doi_khong(self):
         """Natural mode should NOT contain 'TUYỆT ĐỐI KHÔNG'."""
         prompt = _build_tools_context(natural=True)
-        assert "TUYỆT ĐỐI KHÔNG" not in prompt
+        _assert_not_contains(prompt, "TUYỆT ĐỐI KHÔNG")
 
     def test_no_quy_tac_bat_buoc(self):
         """Natural mode should NOT have the old 'QUY TẮC BẮT BUỘC VỀ TOOL' heading."""
         prompt = _build_tools_context(natural=True)
-        assert "QUY TẮC BẮT BUỘC VỀ TOOL" not in prompt
+        _assert_not_contains(prompt, "QUY TẮC BẮT BUỘC VỀ TOOL")
 
     def test_has_identity_language(self):
         """Natural mode should use Wiii identity language."""
         prompt = _build_tools_context(natural=True)
-        assert "Wiii luôn chính xác" in prompt
+        _assert_contains(prompt, "Wiii luôn chính xác")
 
     def test_has_positive_tool_guidance(self):
         """Natural mode should describe how Wiii uses tools positively."""
         prompt = _build_tools_context(natural=True)
-        assert "CÁCH WIII SỬ DỤNG TOOL" in prompt
+        _assert_contains(prompt, "CÁCH WIII SỬ DỤNG TOOL")
 
     def test_has_knowledge_context(self):
         """Natural mode should describe Wiii's knowledge positively."""
         prompt = _build_tools_context(natural=True)
-        assert "VỀ KIẾN THỨC CỦA WIII" in prompt
+        _assert_contains(prompt, "VỀ KIẾN THỨC CỦA WIII")
 
     def test_honesty_framing(self):
         """Natural mode should frame honesty as identity trait."""
         prompt = _build_tools_context(natural=True)
-        assert "Wiii trung thực" in prompt
+        _assert_contains(prompt, "Wiii trung thực")
 
 
 # =============================================================================
@@ -122,27 +139,27 @@ class TestGraphToolHintsLegacy:
     def test_has_bat_buoc(self):
         """Legacy mode should still contain 'BẮT BUỘC'."""
         prompt = _build_tools_context(natural=False)
-        assert "BẮT BUỘC" in prompt
+        _assert_contains(prompt, "BẮT BUỘC")
 
     def test_has_tuyet_doi_khong(self):
         """Legacy mode should still contain 'TUYỆT ĐỐI KHÔNG'."""
         prompt = _build_tools_context(natural=False)
-        assert "TUYỆT ĐỐI KHÔNG" in prompt
+        _assert_contains(prompt, "TUYỆT ĐỐI KHÔNG")
 
     def test_has_quy_tac_heading(self):
         """Legacy mode should still have 'QUY TẮC BẮT BUỘC VỀ TOOL' heading."""
         prompt = _build_tools_context(natural=False)
-        assert "QUY TẮC BẮT BUỘC VỀ TOOL" in prompt
+        _assert_contains(prompt, "QUY TẮC BẮT BUỘC VỀ TOOL")
 
     def test_has_gioi_han_kien_thuc(self):
         """Legacy mode should still have 'GIỚI HẠN KIẾN THỨC' section."""
         prompt = _build_tools_context(natural=False)
-        assert "GIỚI HẠN KIẾN THỨC" in prompt
+        _assert_contains(prompt, "GIỚI HẠN KIẾN THỨC")
 
     def test_no_wiii_identity_language(self):
         """Legacy mode should NOT use Wiii identity language in tool rules."""
         prompt = _build_tools_context(natural=False)
-        assert "CÁCH WIII SỬ DỤNG TOOL" not in prompt
+        _assert_not_contains(prompt, "CÁCH WIII SỬ DỤNG TOOL")
 
 
 # =============================================================================
@@ -197,27 +214,27 @@ class TestCorrectiveRagNatural:
     def test_no_bat_buoc_in_fallback(self):
         """Natural fallback should NOT contain 'BẮT BUỘC'."""
         prompt = self._build_fallback_prompt(natural=True)
-        assert "BẮT BUỘC" not in prompt
+        _assert_not_contains(prompt, "BẮT BUỘC")
 
     def test_no_tuyet_doi_khong_in_fallback(self):
         """Natural fallback should NOT contain 'TUYỆT ĐỐI KHÔNG'."""
         prompt = self._build_fallback_prompt(natural=True)
-        assert "TUYỆT ĐỐI KHÔNG" not in prompt
+        _assert_not_contains(prompt, "TUYỆT ĐỐI KHÔNG")
 
     def test_has_helpful_identity(self):
         """Natural fallback should describe Wiii as helpful."""
         prompt = self._build_fallback_prompt(natural=True)
-        assert "Wiii luôn cố gắng giúp đỡ" in prompt
+        _assert_contains(prompt, "Wiii luôn cố gắng giúp đỡ")
 
     def test_has_source_note_guidance(self):
         """Natural fallback should guide Wiii to note sources."""
         prompt = self._build_fallback_prompt(natural=True)
-        assert "ghi chú nguồn" in prompt
+        _assert_contains(prompt, "ghi chú nguồn")
 
     def test_vietnamese_language(self):
         """Natural fallback should mention Vietnamese response."""
         prompt = self._build_fallback_prompt(natural=True)
-        assert "tiếng Việt" in prompt
+        _assert_contains(prompt, "tiếng Việt")
 
 
 # =============================================================================
@@ -231,17 +248,17 @@ class TestCorrectiveRagLegacy:
     def test_legacy_has_bat_buoc(self):
         """Legacy fallback should still contain 'BẮT BUỘC'."""
         prompt = TestCorrectiveRagNatural()._build_fallback_prompt(natural=False)
-        assert "BẮT BUỘC" in prompt
+        _assert_contains(prompt, "BẮT BUỘC")
 
     def test_legacy_has_tuyet_doi_khong(self):
         """Legacy fallback should still contain 'TUYỆT ĐỐI KHÔNG'."""
         prompt = TestCorrectiveRagNatural()._build_fallback_prompt(natural=False)
-        assert "TUYỆT ĐỐI KHÔNG" in prompt
+        _assert_contains(prompt, "TUYỆT ĐỐI KHÔNG")
 
     def test_legacy_no_wiii_identity(self):
         """Legacy fallback should NOT use Wiii identity language."""
         prompt = TestCorrectiveRagNatural()._build_fallback_prompt(natural=False)
-        assert "Wiii luôn cố gắng" not in prompt
+        _assert_not_contains(prompt, "Wiii luôn cố gắng")
 
 
 # =============================================================================
@@ -256,27 +273,27 @@ class TestWebSearchToolDescriptions:
         """tool_search_news description should not contain 'BẮT BUỘC'."""
         from app.engine.tools.web_search_tools import tool_search_news
         desc = tool_search_news.description
-        assert "BẮT BUỘC" not in desc
+        _assert_not_contains(desc, "BẮT BUỘC")
 
     def test_legal_tool_no_bat_buoc(self):
         """tool_search_legal description should not contain 'BẮT BUỘC'."""
         from app.engine.tools.web_search_tools import tool_search_legal
         desc = tool_search_legal.description
-        assert "BẮT BUỘC" not in desc
+        _assert_not_contains(desc, "BẮT BUỘC")
 
     def test_news_tool_has_content(self):
         """tool_search_news should describe what it searches."""
         from app.engine.tools.web_search_tools import tool_search_news
         desc = tool_search_news.description
-        assert "TIN TỨC" in desc
+        _assert_contains(desc, "TIN TỨC")
         assert "VnExpress" in desc
 
     def test_legal_tool_has_content(self):
         """tool_search_legal should describe what it searches."""
         from app.engine.tools.web_search_tools import tool_search_legal
         desc = tool_search_legal.description
-        assert "PHÁP LUẬT" in desc
-        assert "Thư viện Pháp luật" in desc
+        _assert_contains(desc, "PHÁP LUẬT")
+        _assert_contains(desc, "Thư viện Pháp luật")
 
 
 # =============================================================================
@@ -290,19 +307,19 @@ class TestFlagToggleIntegration:
     def test_flag_true_graph_clean(self):
         """Flag=True → graph.py tools context has zero 'BẮT BUỘC'."""
         prompt = _build_tools_context(natural=True)
-        count = prompt.count("BẮT BUỘC")
+        count = _fold_text(prompt).count(_fold_text("BẮT BUỘC"))
         assert count == 0, f"Found {count} instances of 'BẮT BUỘC' in natural mode"
 
     def test_flag_true_graph_zero_tuyet_doi(self):
         """Flag=True → graph.py tools context has zero 'TUYỆT ĐỐI KHÔNG'."""
         prompt = _build_tools_context(natural=True)
-        count = prompt.count("TUYỆT ĐỐI KHÔNG")
+        count = _fold_text(prompt).count(_fold_text("TUYỆT ĐỐI KHÔNG"))
         assert count == 0, f"Found {count} instances of 'TUYỆT ĐỐI KHÔNG'"
 
     def test_flag_false_preserves_all(self):
         """Flag=False → graph.py tools context preserves all legacy constraints."""
         prompt = _build_tools_context(natural=False)
-        assert prompt.count("BẮT BUỘC") >= 3, "Legacy should have multiple BẮT BUỘC"
+        assert _fold_text(prompt).count(_fold_text("BẮT BUỘC")) >= 3, "Legacy should have multiple BẮT BUỘC"
 
     def test_default_flag_is_false(self):
         """Default config should have enable_natural_conversation=False."""

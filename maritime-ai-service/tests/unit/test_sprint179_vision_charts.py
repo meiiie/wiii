@@ -259,11 +259,11 @@ class TestVisionConfig:
         s = Settings(google_api_key="test", api_key="test")
         assert s.vision_max_file_size_mb == 10
 
-    def test_chart_tools_disabled_by_default(self):
-        """enable_chart_tools should be False by default."""
+    def test_chart_tools_enabled_by_default(self):
+        """enable_chart_tools should be True by default."""
         from app.core.config import Settings
         s = Settings(google_api_key="test", api_key="test")
-        assert s.enable_chart_tools is False
+        assert s.enable_chart_tools is True
 
     def test_vision_can_be_enabled(self):
         """enable_vision should be settable to True."""
@@ -531,25 +531,27 @@ class TestChartTools:
             assert result == []
 
     def test_get_chart_tools_enabled(self):
-        """get_chart_tools should return 2 tools when enabled."""
+        """get_chart_tools should return all chart tools when enabled."""
         with patch("app.core.config.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(enable_chart_tools=True)
             from app.engine.tools.chart_tools import get_chart_tools
             result = get_chart_tools()
-            assert len(result) == 2
+            assert len(result) == 3
 
     def test_get_chart_tools_returns_correct_tools(self):
-        """get_chart_tools should return tool_generate_mermaid and tool_generate_chart."""
+        """get_chart_tools should return Mermaid, static chart, and interactive chart tools."""
         with patch("app.core.config.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(enable_chart_tools=True)
             from app.engine.tools.chart_tools import (
                 get_chart_tools,
                 tool_generate_mermaid,
                 tool_generate_chart,
+                tool_generate_interactive_chart,
             )
             result = get_chart_tools()
             assert tool_generate_mermaid in result
             assert tool_generate_chart in result
+            assert tool_generate_interactive_chart in result
 
     def test_mermaid_tool_has_name(self):
         """tool_generate_mermaid should have a name attribute."""
@@ -798,7 +800,7 @@ class TestFeatureGates:
         with patch("app.core.config.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(enable_chart_tools=True)
             from app.engine.tools.chart_tools import get_chart_tools
-            assert len(get_chart_tools()) == 2
+            assert len(get_chart_tools()) == 3
 
     def test_chart_tools_gate_attribute_missing(self):
         """get_chart_tools should handle missing enable_chart_tools gracefully via getattr."""

@@ -28,6 +28,7 @@ if not _had_cs:
     _mock_cs.get_chat_service = lambda: None
     sys.modules[_cs_key] = _mock_cs
 
+from app.engine.multi_agent import supervisor as supervisor_module
 from app.engine.multi_agent.agent_config import AgentConfigRegistry
 from app.engine.multi_agent.supervisor import (
     SupervisorAgent, AgentType,
@@ -47,6 +48,21 @@ elif _orig_cs is not None:
 # =============================================================================
 # Fixtures
 # =============================================================================
+
+def _bypass_failover():
+    """Bypass provider failover so structured-routing tests use mock LLMs."""
+    async def _direct(llm, messages, **kwargs):
+        del messages, kwargs
+        ainvoke = getattr(llm, "ainvoke", None)
+        if isinstance(ainvoke, AsyncMock):
+            return await ainvoke([])
+        raise Exception("Mock LLM fallback: no async ainvoke")
+
+    return patch(
+        "app.services.structured_invoke_service.ainvoke_with_failover",
+        side_effect=_direct,
+    )
+
 
 @pytest.fixture
 def supervisor():
@@ -238,10 +254,10 @@ class TestIntentAwareRuleRouting:
         result = supervisor._rule_based_route("COLREGs", config)
         assert result == AgentType.RAG.value
 
-    def test_learning_only_routes_to_direct(self, supervisor):
-        """Sprint 103: Learning keyword alone → DIRECT (no domain, no learning keywords in rule-based)."""
+    def test_learning_only_routes_to_tutor(self, supervisor):
+        """Learning keyword alone routes to tutor even without domain keywords."""
         result = supervisor._rule_based_route("giải thích cho tôi đi", {})
-        assert result == AgentType.DIRECT.value
+        assert result == AgentType.TUTOR.value
 
     def test_social_beats_domain(self, supervisor):
         """Social intent has highest priority over domain keywords."""
@@ -307,6 +323,11 @@ class TestIntentAwareRuleRouting:
 class TestConfidenceGate:
     """Test confidence-gated structured routing (Sprint 71)."""
 
+    @pytest.fixture(autouse=True)
+    def _bypass_pool(self):
+        with _bypass_failover():
+            yield
+
     @pytest.fixture
     def supervisor_with_llm(self):
         """Create SupervisorAgent with a mock LLM."""
@@ -349,7 +370,7 @@ class TestConfidenceGate:
         mock_structured = AsyncMock(return_value=mock_result)
         supervisor_with_llm._llm.with_structured_output.return_value.ainvoke = mock_structured
 
-        state = _make_state("hello")
+        state = _make_state("COLREGs rule 15?", _make_domain_config(["colregs"]))
 
         result = await supervisor_with_llm._route_structured(
             "hello", {}, "AI", "Tra cứu", "Giải thích", {}, state
@@ -406,10 +427,10 @@ class TestConfidenceGate:
         mock_structured = AsyncMock(return_value=mock_result)
         supervisor_with_llm._llm.with_structured_output.return_value.ainvoke = mock_structured
 
-        state = _make_state("hello")  # rule would say DIRECT
+        state = _make_state("hello COLREGs", _make_domain_config(["colregs"]))
 
         result = await supervisor_with_llm._route_structured(
-            "hello", {}, "AI", "Tra cứu", "Giải thích", {}, state
+            "hello COLREGs", {}, "AI", "Tra cứu", "Giải thích", {"routing_keywords": ["colregs"]}, state
         )
         # confidence >= 0.7, no override
         assert result == AgentType.RAG.value
@@ -452,6 +473,7 @@ class TestCoTRoutingPrompt:
     def test_prompt_format_succeeds(self):
         """Prompt template formats without error."""
         formatted = ROUTING_PROMPT_TEMPLATE.format(
+            scope_hint="",
             domain_name="Hàng hải",
             rag_description="Tra cứu quy định hàng hải",
             tutor_description="Dạy và giải thích kiến thức",
@@ -468,6 +490,7 @@ class TestCoTRoutingPrompt:
         full_context_str = str(long_context)
         truncated = full_context_str[:500]
         formatted = ROUTING_PROMPT_TEMPLATE.format(
+            scope_hint="",
             domain_name="AI",
             rag_description="Tra cứu",
             tutor_description="Giải thích",
@@ -487,21 +510,29 @@ class TestCoTRoutingPrompt:
 class TestRoutingMetadata:
     """Test routing metadata stored in state (Sprint 71)."""
 
+    @pytest.fixture(autouse=True)
+    def _bypass_pool(self):
+        with _bypass_failover():
+            yield
+
     @pytest.mark.asyncio
-    async def test_rule_based_route_sets_metadata(self):
-        """Rule-based routing sets metadata in state."""
-        with patch.object(AgentConfigRegistry, "get_llm", return_value=None):
+    async def test_fast_route_sets_metadata(self):
+        """Conservative fast routing sets metadata for obvious chatter."""
+        with (
+            patch.object(supervisor_module.settings, "enable_conservative_fast_routing", True),
+            patch.object(AgentConfigRegistry, "get_llm", return_value=None),
+        ):
             agent = SupervisorAgent()
             agent._llm = None
 
-        state = _make_state("xin chào")
-        await agent.route(state)
+            state = _make_state("xin chào")
+            await agent.route(state)
 
-        assert "routing_metadata" in state
-        meta = state["routing_metadata"]
-        assert meta["method"] == "rule_based"
-        assert meta["confidence"] == 1.0
-        assert "rule-based" in meta["reasoning"]
+            assert "routing_metadata" in state
+            meta = state["routing_metadata"]
+            assert meta["method"] == "conservative_fast_path"
+            assert meta["confidence"] == 1.0
+            assert meta["final_agent"] == AgentType.DIRECT.value
 
     @pytest.mark.asyncio
     async def test_structured_route_sets_metadata(self):
@@ -539,7 +570,7 @@ class TestRoutingMetadata:
         with patch.object(AgentConfigRegistry, "get_llm", return_value=MagicMock()):
             agent = SupervisorAgent()
 
-        state = _make_state("hello")
+        state = _make_state("COLREGs rule 15?", _make_domain_config(["colregs"]))
 
         # Sprint 103: No feature flag check — always structured
         agent._llm.with_structured_output.side_effect = ValueError("broken")
@@ -552,16 +583,19 @@ class TestRoutingMetadata:
     @pytest.mark.asyncio
     async def test_process_sets_routing_metadata(self):
         """process() populates routing_metadata in returned state."""
-        with patch.object(AgentConfigRegistry, "get_llm", return_value=None):
+        with (
+            patch.object(supervisor_module.settings, "enable_conservative_fast_routing", True),
+            patch.object(AgentConfigRegistry, "get_llm", return_value=None),
+        ):
             agent = SupervisorAgent()
             agent._llm = None
 
-        state = _make_state("xin chào")
-        result_state = await agent.process(state)
+            state = _make_state("xin chào")
+            result_state = await agent.process(state)
 
-        assert "routing_metadata" in result_state
-        assert result_state["next_agent"] == AgentType.DIRECT.value
-        assert result_state["routing_metadata"]["method"] == "rule_based"
+            assert "routing_metadata" in result_state
+            assert result_state["next_agent"] == AgentType.DIRECT.value
+            assert result_state["routing_metadata"]["method"] == "conservative_fast_path"
 
 
 # =============================================================================

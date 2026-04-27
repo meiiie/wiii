@@ -428,6 +428,9 @@ async def execute_direct_tool_rounds_impl(
             )
         )
         try:
+            # After the first forced call, keep tool declarations via llm_auto
+            # but do not force another tool call; otherwise current/news turns
+            # can loop through tools until max_rounds before synthesizing.
             followup_llm = llm_auto
             followup_tool_choice = None
             followup_tools = tools
@@ -460,9 +463,6 @@ async def execute_direct_tool_rounds_impl(
                         )
                     else:
                         followup_llm = bind_source.bind_tools(visual_only_tools)
-                elif forced_tool_choice:
-                    followup_llm = llm_with_tools
-                    followup_tool_choice = forced_tool_choice
             candidate_provider, _candidate_model = remember_execution_target(
                 followup_llm,
                 fallback_source=bind_source or llm_base,
