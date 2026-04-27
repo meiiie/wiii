@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AgentNodeConfig:
-    """Configuration for a single LangGraph node."""
+    """Configuration for a single WiiiRunner node."""
 
     node_id: str
     provider: str = ""

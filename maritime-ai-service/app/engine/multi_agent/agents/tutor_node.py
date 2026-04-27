@@ -691,7 +691,7 @@ class TutorAgentNode:
                     state.pop("thinking_provenance", None)
             
             # CHỈ THỊ SỐ 31 v3 SOTA: Propagate CRAG trace for synthesizer merge
-            # This follows LangGraph shared state pattern
+            # This follows the shared AgentState pattern used by WiiiRunner
             crag_trace = get_last_reasoning_trace()
             if crag_trace:
                 state["reasoning_trace"] = crag_trace

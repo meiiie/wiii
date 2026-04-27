@@ -1,7 +1,7 @@
 """
 Product Search Agent Node — Sprint 148→150→200: "Săn Hàng" → "Tìm Sâu" → "Mắt Sản Phẩm"
 
-Specialized LangGraph node for multi-platform e-commerce product search.
+Specialized WiiiRunner node for multi-platform e-commerce product search.
 Uses ReAct loop (LLM→tools→observe→decide) pattern from tutor_node.py.
 
 Sprint 150 enhancements:
@@ -147,7 +147,7 @@ class ProductSearchAgentNode:
         init_llm_impl(self)
 
     async def process(self, state: AgentState) -> AgentState:
-        """Main entry point from LangGraph."""
+        """Main entry point from WiiiRunner."""
         query = state.get("query", "")
         context = state.get("context", {})
 

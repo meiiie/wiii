@@ -1,1 +1,1 @@
-"""LangGraph workflows for multi-step AI operations."""
+"""Framework-free workflows for multi-step AI operations."""

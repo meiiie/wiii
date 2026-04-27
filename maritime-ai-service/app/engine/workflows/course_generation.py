@@ -1,5 +1,5 @@
 """
-Course Generation Workflow — 3-Node LangGraph Pipeline
+Course Generation Workflow — 3-stage framework-free pipeline
 
 CONVERT (Docling) → OUTLINE (DEEP tier) → EXPAND (LIGHT tier, parallel)
 
