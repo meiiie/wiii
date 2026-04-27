@@ -168,7 +168,7 @@ class TestGraderRemovedFromPipeline:
         for name in ("guardian", "supervisor", agent_name, "synthesizer"):
             runner.register_node(name, lambda state, _name=name: _node(_name, state))
 
-        with patch("app.engine.multi_agent.graph.guardian_route", return_value="supervisor"), \
+        with patch("app.engine.multi_agent.runtime_routes.guardian_route", return_value="supervisor"), \
              patch("app.engine.multi_agent.graph_support.route_decision", return_value=agent_name), \
              patch("app.engine.multi_agent.runner.run_input_guardrails", new=AsyncMock(return_value=(True, None))), \
              patch("app.engine.multi_agent.runner.run_output_guardrails", new=AsyncMock()):

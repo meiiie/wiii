@@ -84,7 +84,7 @@ async def test_sync_and_streaming_share_core_step_contract():
     input_guardrails = AsyncMock(return_value=(True, None))
     output_guardrails = AsyncMock(return_value=(True, None))
 
-    with patch("app.engine.multi_agent.graph.guardian_route", return_value="supervisor"), patch(
+    with patch("app.engine.multi_agent.runtime_routes.guardian_route", return_value="supervisor"), patch(
         "app.engine.multi_agent.graph_support.route_decision", return_value="direct"
     ), patch(
         "app.engine.multi_agent.runner.run_input_guardrails", input_guardrails
@@ -123,7 +123,7 @@ async def test_streaming_applies_input_guardrail_before_routing():
     def guardian_route(state):
         return "synthesizer" if not state.get("guardian_passed", True) else "supervisor"
 
-    with patch("app.engine.multi_agent.graph.guardian_route", side_effect=guardian_route), patch(
+    with patch("app.engine.multi_agent.runtime_routes.guardian_route", side_effect=guardian_route), patch(
         "app.engine.multi_agent.graph_support.route_decision", return_value="direct"
     ), patch(
         "app.engine.multi_agent.runner.run_input_guardrails", input_guardrails
