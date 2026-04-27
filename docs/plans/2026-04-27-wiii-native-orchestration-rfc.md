@@ -75,6 +75,28 @@ Issue state update after initial drafting:
 - #128 remains open because GitHub secret-scanning alerts #1 and #2 still need
   external OpenRouter revocation/rotation before they can be resolved.
 
+## Verification commands
+
+Re-run these checks before each destructive LangGraph-removal PR so the
+inventory above stays reproducible.
+
+```bash
+rg -n "^(import langgraph|from langgraph)" maritime-ai-service
+rg -n "\b(MemorySaver|CompiledStateGraph|StateGraph)\b" maritime-ai-service
+rg -n "\b(get_multi_agent_graph|build_multi_agent_graph)\b" maritime-ai-service
+```
+
+Windows PowerShell equivalent:
+
+```powershell
+Get-ChildItem maritime-ai-service -Recurse -File |
+  Select-String -Pattern '^(import langgraph|from langgraph)'
+Get-ChildItem maritime-ai-service -Recurse -File |
+  Select-String -Pattern '\b(MemorySaver|CompiledStateGraph|StateGraph)\b'
+Get-ChildItem maritime-ai-service -Recurse -File |
+  Select-String -Pattern '\b(get_multi_agent_graph|build_multi_agent_graph)\b'
+```
+
 ## Current Runtime Truth
 
 The active chat path is:
