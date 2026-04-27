@@ -6,6 +6,8 @@ from app.engine.multi_agent.graph_stream_runtime import (
     build_stream_bootstrap_impl,
     emit_stream_finalization_impl,
 )
+from app.engine.llm_runtime_metadata import resolve_runtime_llm_metadata
+from app.engine.multi_agent.graph_process import _build_process_result_payload
 from app.engine.reasoning import capture_thinking_lifecycle_event
 from app.engine.multi_agent.stream_utils import (
     create_done_event,
@@ -206,3 +208,73 @@ async def test_emit_stream_finalization_merges_bus_lifecycle_from_initial_state(
     assert lifecycle["final_text"] == metadata_event.content["thinking_content"]
     assert lifecycle["live_length"] == len(metadata_event.content["thinking_content"])
     assert "live_native" in lifecycle["provenance_mix"]
+
+
+@pytest.mark.asyncio
+async def test_emit_stream_finalization_matches_sync_runtime_metadata_contract():
+    final_state = {
+        "session_id": "session-provider",
+        "grader_score": 8.0,
+        "final_response": "ok",
+        "sources": [],
+        "thinking_content": "Runtime metadata parity check.",
+        "provider": "google",
+        "model": "gemini-3.1-flash-lite-preview",
+        "_execution_provider": "zhipu",
+        "_execution_model": "glm-5",
+        "_llm_failover_events": [
+            {
+                "from_provider": "google",
+                "to_provider": "zhipu",
+                "reason_code": "rate_limit",
+                "reason_category": "rate_limit",
+                "reason_label": "Gemini quota",
+            }
+        ],
+        "routing_metadata": {"final_agent": "direct"},
+    }
+
+    sync_payload = _build_process_result_payload(
+        result=final_state,
+        trace_id="trace-sync",
+        trace_summary={"span_count": 0},
+        tracker=None,
+        resolve_public_thinking_content=lambda state, fallback="": fallback,
+    )
+    events = [
+        event
+        async for event in emit_stream_finalization_impl(
+            final_state=final_state,
+            session_id="session-provider",
+            context={
+                "user_id": "user-provider",
+                "organization_id": "org-1",
+                "request_id": "req-1",
+            },
+            start_time=0.0,
+            resolve_runtime_llm_metadata=resolve_runtime_llm_metadata,
+            create_sources_event=create_sources_event,
+            create_metadata_event=create_metadata_event,
+            create_done_event=create_done_event,
+            registry=_RegistryStub(),
+            trace_id="trace-stream",
+        )
+    ]
+
+    metadata_event = next(event for event in events if event.type == "metadata")
+    stream_metadata = metadata_event.content
+
+    assert stream_metadata["provider"] == sync_payload["provider"] == "zhipu"
+    assert stream_metadata["model"] == sync_payload["model"] == "glm-5"
+    assert stream_metadata["runtime_authoritative"] is True
+    assert stream_metadata["failover"] == sync_payload["failover"]
+    assert stream_metadata["failover"]["switched"] is True
+    assert stream_metadata["failover"]["final_provider"] == "zhipu"
+    assert stream_metadata["failover"]["last_reason_code"] == "rate_limit"
+    assert stream_metadata["routing_metadata"] == sync_payload["routing_metadata"]
+    assert stream_metadata["agent_type"] == "direct"
+    assert stream_metadata["request_id"] == "req-1"
+    assert "org-1" in stream_metadata["thread_id"]
+    assert "user-provider" in stream_metadata["thread_id"]
+    assert "session-provider" in stream_metadata["thread_id"]
+    assert events[-1].type == "done"
