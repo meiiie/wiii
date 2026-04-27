@@ -18,13 +18,12 @@ from app.engine.multi_agent.graph_runtime_bindings import (
     _resolve_public_thinking_content,
 )
 from app.engine.multi_agent.graph_support import (
+    _SUMMARY_MILESTONES,
     _build_domain_config,
     _build_turn_local_state_defaults,
     _generate_session_summary_bg,
 )
 from app.engine.multi_agent.graph_trace_store import _cleanup_tracer
-
-_SUMMARY_MILESTONES = {6, 12, 20, 30}
 
 
 def _get_legacy_graph_patch() -> Any | None:
@@ -35,6 +34,8 @@ def _get_legacy_graph_patch() -> Any | None:
 
     legacy_process = getattr(graph_module, "process_with_multi_agent", None)
     if legacy_process is None:
+        return None
+    if legacy_process is process_with_multi_agent:
         return None
 
     is_graph_wrapper = (

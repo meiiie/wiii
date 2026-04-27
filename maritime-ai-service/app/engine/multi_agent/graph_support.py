@@ -10,6 +10,9 @@ from app.engine.multi_agent.state import AgentState
 
 logger = logging.getLogger(__name__)
 
+# Sprint 79: Generate session summary at these message milestones.
+_SUMMARY_MILESTONES = {6, 12, 20, 30}
+
 
 def _build_turn_local_state_defaults(context: Optional[dict] = None) -> dict:
     """Reset request-local fields that must never bleed across checkpointed turns."""

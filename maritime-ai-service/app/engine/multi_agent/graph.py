@@ -18,6 +18,7 @@ from typing import Any, Optional, Literal
 from app.core.config import settings
 from app.engine.multi_agent.state import AgentState
 from app.engine.multi_agent.graph_support import (
+    _SUMMARY_MILESTONES,
     _build_turn_local_state_defaults,
     route_decision,
     _build_domain_config,
@@ -55,9 +56,6 @@ from app.engine.multi_agent.subagent_dispatch import (
 from app.engine.reasoning_tracer import StepNames
 
 logger = logging.getLogger(__name__)
-
-# Sprint 79: Generate session summary at these message milestones
-_SUMMARY_MILESTONES = {6, 12, 20, 30}
 
 from app.engine.multi_agent.graph_runtime_bindings import (
     get_tool_by_name,
