@@ -102,10 +102,28 @@ jobs:
           git diff --name-only "$range" | tee /tmp/changed-files.txt
 
           forbidden='(^|/)(node_modules|__pycache__|\.pytest_cache|\.ruff_cache|\.mypy_cache|dist-embed|dist-web|target|coverage|htmlcov)/|(^|/)\.env($|\.|/)|\.(pem|key|p12|pfx|log|tmp)$'
-          if grep -E "$forbidden" /tmp/changed-files.txt; then
+          env_example='(^|/)\.env([^/]*\.)?example$'
+          forbidden_hits="$(grep -E "$forbidden" /tmp/changed-files.txt | grep -Ev "$env_example" || true)"
+          if [[ -n "$forbidden_hits" ]]; then
+            echo "$forbidden_hits"
             echo "Forbidden generated, secret, or local-only artifact detected in the change set." >&2
             exit 1
           fi
+
+          # Env templates are allowed only as examples, and only when they do
+          # not contain provider-shaped keys or non-placeholder secret values.
+          while IFS= read -r env_file; do
+            [[ -n "$env_file" ]] || continue
+            if grep -nE 'sk-or-v1-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{20,}|xox[baprs]-[0-9A-Za-z-]{10,}' "$env_file"; then
+              echo "Provider-shaped secret detected in env example: $env_file" >&2
+              exit 1
+            fi
+            if grep -nE '^[A-Z0-9_]*(SECRET|TOKEN|PASSWORD|API_KEY|ACCESS_KEY)[A-Z0-9_]*=.{12,}$' "$env_file" \
+              | grep -Ev '=(your_|fake-|test-|SET_|REPLACE_|CHANGEME|placeholder|none|null|<|\$\{)'; then
+              echo "Non-placeholder secret-like value detected in env example: $env_file" >&2
+              exit 1
+            fi
+          done < <(grep -E "$env_example" /tmp/changed-files.txt || true)
 
   github-governance:
     name: GitHub Governance Gate
