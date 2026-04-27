@@ -40,6 +40,12 @@ from app.engine.multi_agent.code_studio_tool_rounds import (
     execute_code_studio_tool_rounds_impl,
 )
 from app.engine.multi_agent.code_studio_node_runtime import code_studio_node_impl
+from app.engine.multi_agent.graph_tool_collection_compat import (
+    collect_code_studio_tools_with_settings,
+    collect_direct_tools_with_settings,
+    code_studio_required_tool_names_with_settings,
+    direct_required_tool_names_with_settings,
+)
 from app.engine.multi_agent.widget_surface import (
     _has_structured_visual_event,
     _inject_widget_blocks_from_tool_results,
@@ -249,46 +255,43 @@ def _collect_direct_tools(
     state: AgentState | None = None,
 ):
     """Preserve graph.settings patch behavior for legacy tests and callers."""
-    original_settings = _tool_collection_module.settings
-    _tool_collection_module.settings = settings
-    try:
-        return _tool_collection_module._collect_direct_tools(
-            query,
-            user_role=user_role,
-            state=state,
-        )
-    finally:
-        _tool_collection_module.settings = original_settings
+    return collect_direct_tools_with_settings(
+        query,
+        user_role=user_role,
+        state=state,
+        settings_obj=settings,
+        tool_collection_module=_tool_collection_module,
+    )
 
 
 def _collect_code_studio_tools(query: str, user_role: str = "student"):
     """Preserve graph.settings patch behavior for legacy tests and callers."""
-    original_settings = _tool_collection_module.settings
-    _tool_collection_module.settings = settings
-    try:
-        return _tool_collection_module._collect_code_studio_tools(query, user_role=user_role)
-    finally:
-        _tool_collection_module.settings = original_settings
+    return collect_code_studio_tools_with_settings(
+        query,
+        user_role=user_role,
+        settings_obj=settings,
+        tool_collection_module=_tool_collection_module,
+    )
 
 
 def _direct_required_tool_names(query: str, user_role: str = "student") -> list[str]:
     """Preserve graph.settings patch behavior for legacy tests and callers."""
-    original_settings = _tool_collection_module.settings
-    _tool_collection_module.settings = settings
-    try:
-        return _tool_collection_module._direct_required_tool_names(query, user_role=user_role)
-    finally:
-        _tool_collection_module.settings = original_settings
+    return direct_required_tool_names_with_settings(
+        query,
+        user_role=user_role,
+        settings_obj=settings,
+        tool_collection_module=_tool_collection_module,
+    )
 
 
 def _code_studio_required_tool_names(query: str, user_role: str = "student") -> list[str]:
     """Preserve graph.settings patch behavior for legacy tests and callers."""
-    original_settings = _tool_collection_module.settings
-    _tool_collection_module.settings = settings
-    try:
-        return _tool_collection_module._code_studio_required_tool_names(query, user_role=user_role)
-    finally:
-        _tool_collection_module.settings = original_settings
+    return code_studio_required_tool_names_with_settings(
+        query,
+        user_role=user_role,
+        settings_obj=settings,
+        tool_collection_module=_tool_collection_module,
+    )
 
 
 async def _execute_code_studio_tool_rounds(
