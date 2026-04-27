@@ -601,7 +601,7 @@ class ChatOrchestrator:
         model: str | None = None,
     ) -> ProcessingResult:
         """
-        Process with Multi-Agent System (LangGraph).
+        Process with the WiiiRunner multi-agent runtime.
         
         Phase 8: SOTA 2025 - Supervisor Agent
         """

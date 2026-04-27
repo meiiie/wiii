@@ -3,7 +3,7 @@ Supervisor Agent - Phase 8.2 + Sprint 71 + Sprint 103
 
 Coordinator agent that routes queries to specialized agents.
 
-Pattern: LangGraph Supervisor with tool-based handoffs
+Pattern: WiiiRunner supervisor with tool-based handoffs
 
 Sprint 103: LLM-First Routing (SOTA 2026)
 - Structured output (_route_structured) is now the PRIMARY and ONLY LLM path

@@ -42,15 +42,16 @@ flowchart TB
         DOMAIN["DomainRouter<br/>5-priority resolution"]
     end
 
-    subgraph Agents["Multi-Agent System (LangGraph)"]
+    subgraph Agents["Multi-Agent Runtime (WiiiRunner)"]
         GUARD["Guardian Agent<br/>safety + relevance"]
         SUP["Supervisor<br/>intent routing"]
         RAG["RAG Agent<br/>knowledge retrieval"]
         TUTOR["Tutor Agent<br/>pedagogical ReAct"]
         MEM["Memory Agent<br/>user context"]
         DIRECT["Direct Response<br/>greetings, simple"]
-        PRODUCT["Product Search Agent<br/>7 tools, 5 platforms"]
-        GRADE["Grader Agent<br/>quality control"]
+        CODE["Code Studio Agent<br/>apps/artifacts"]
+        PRODUCT["Product Search Agent<br/>feature-gated"]
+        PARALLEL["Parallel Dispatch<br/>feature-gated"]
         SYNTH["Synthesizer<br/>final formatting"]
     end
 
@@ -161,7 +162,7 @@ flowchart LR
 **SSE V3 Event Types** (Desktop uses V3):
 | Event | Source | Content |
 |-------|--------|---------|
-| `status` | Supervisor routing, Grader scores, pipeline steps | Pipeline progress |
+| `status` | Supervisor routing, node lifecycle, runtime checks, pipeline steps | Pipeline progress |
 | `thinking` | AI reasoning from agent nodes | Raw AI thinking |
 | `thinking_start` | Node entry (Guardian, RAG, Tutor, etc.) | Vietnamese node label |
 | `thinking_end` | Node exit | Duration in ms |
@@ -238,7 +239,7 @@ sequenceDiagram
     participant S as SessionManager
     participant I as InputProcessor
     participant DR as DomainRouter
-    participant G as LangGraph
+    participant G as WiiiRunner
     participant OP as OutputProcessor
     participant BG as BackgroundTasks
 
@@ -275,7 +276,7 @@ sequenceDiagram
     rect rgb(255, 245, 230)
         Note over O,G: STAGE 4: Agent Execution
         O->>G: process_with_multi_agent(state)
-        Note right of G: See Section 5: Multi-Agent Graph
+        Note right of G: See Section 5: WiiiRunner Runtime
         G-->>O: {"response": ..., "sources": ..., "thinking": ...}
     end
 
@@ -313,42 +314,39 @@ sequenceDiagram
 
 ---
 
-## 5. Multi-Agent Graph (LangGraph)
+## 5. WiiiRunner Multi-Agent Runtime
 
 ```mermaid
 stateDiagram-v2
-    [*] --> guardian_agent
+    [*] --> guardian
 
-    guardian_agent --> supervisor: SAFE (or fail-open)
-    guardian_agent --> synthesizer_node: BLOCKED (harmful content)
+    guardian --> supervisor: SAFE or fail-open
+    guardian --> synthesizer: BLOCKED / final response
 
-    supervisor --> direct_response_node: DIRECT (greetings, off_topic, web_search)
+    supervisor --> direct: DIRECT (greetings, off_topic, web_search)
     supervisor --> memory_agent: MEMORY (personal questions)
     supervisor --> tutor_agent: TUTOR (teaching, explanation)
     supervisor --> rag_agent: RAG (knowledge retrieval)
-    supervisor --> product_search_agent: PRODUCT_SEARCH (product queries)
+    supervisor --> code_studio_agent: CODE_STUDIO (apps/artifacts)
+    supervisor --> product_search_agent: PRODUCT_SEARCH (feature-gated)
+    supervisor --> colleague_agent: COLLEAGUE (feature-gated)
+    supervisor --> parallel_dispatch: SUBAGENTS (feature-gated)
 
-    direct_response_node --> synthesizer_node
-    product_search_agent --> synthesizer_node
+    direct --> synthesizer
+    memory_agent --> synthesizer
+    tutor_agent --> synthesizer
+    rag_agent --> synthesizer
+    code_studio_agent --> synthesizer
+    product_search_agent --> synthesizer
+    colleague_agent --> synthesizer
 
-    state rag_check <<choice>>
-    rag_agent --> rag_check
-    rag_check --> synthesizer_node: confidence >= 0.85 (EARLY EXIT)
-    rag_check --> quality_check: confidence < 0.85
+    parallel_dispatch --> aggregator
+    aggregator --> synthesizer: enough context
+    aggregator --> supervisor: retry/follow-up route, max 2
 
-    state tutor_check <<choice>>
-    tutor_agent --> tutor_check
-    tutor_check --> synthesizer_node: confidence >= 0.85 (EARLY EXIT)
-    tutor_check --> quality_check: confidence < 0.85
+    synthesizer --> [*]
 
-    memory_agent --> quality_check
-
-    quality_check --> synthesizer_node: score >= 6 (PASS)
-    quality_check --> tutor_agent: score < 6 (RETRY, max 1)
-
-    synthesizer_node --> [*]
-
-    note right of guardian_agent
+    note right of guardian
         Entry point. Fail-open on errors.
         Skip messages < 3 chars.
         Emits thinking_start/thinking_end.
@@ -375,17 +373,17 @@ stateDiagram-v2
         Pedagogical teaching style.
     end note
 
-    note right of quality_check
-        Grader Agent scores 1-10.
-        Pass >= 6, Vietnamese quality.
-        Emits status event with score.
+    note right of aggregator
+        Optional subagent fan-out.
+        Bounded retry to supervisor.
+        Feature-gated by config.
     end note
 ```
 
 **Agent State** (`AgentState` TypedDict):
 | Field | Type | Purpose |
 |-------|------|---------|
-| `messages` | `list[BaseMessage]` | LangGraph message history |
+| `messages` | `list[dict]` | Request and conversation message history |
 | `query` | `str` | Original user query |
 | `context` | `str` | Built context from InputProcessor |
 | `domain_id` | `str` | Resolved domain plugin ID |
@@ -395,7 +393,7 @@ stateDiagram-v2
 | `confidence` | `float` | 0-1 confidence score |
 | `sources` | `list[Citation]` | Retrieved sources |
 | `next_agent` | `str` | Supervisor routing decision |
-| `retry_count` | `int` | Grader retry counter (max 1) |
+| `retry_count` | `int` | Runtime retry counter for bounded self-correction |
 | `organization_id` | `str \| None` | Org context for data isolation (Sprint 160) |
 
 ---
@@ -530,7 +528,7 @@ sequenceDiagram
     participant C as Desktop/Client
     participant API as chat_stream.py
     participant GS as graph_streaming
-    participant G as LangGraph Nodes
+    participant G as WiiiRunner nodes
     participant S as stream_utils
 
     C->>API: POST /chat/stream/v3
@@ -539,7 +537,7 @@ sequenceDiagram
         Note over API,GS: Keepalive wrapper (15s heartbeat)
         API->>GS: stream_graph_response()
 
-        loop For each LangGraph node
+        loop For each WiiiRunner node
             G->>S: create_status_event(node_label)
             S-->>GS: StreamEvent(type="status")
             GS-->>API: SSE event: status
@@ -731,7 +729,7 @@ flowchart LR
     end
 
     Client --> ALOOP["Agentic Loop<br/>Tool calling"]
-    Client --> GRAPH["LangGraph Nodes"]
+    Client --> GRAPH["WiiiRunner nodes"]
 ```
 
 **MCP Transport:** Streamable HTTP (2026 standard). SSE transport deprecated.
@@ -757,7 +755,7 @@ flowchart TB
 
         SEM --> TYPE{"Task Type?"}
         TYPE -->|notification| NOTIFY["Send description<br/>as reminder"]
-        TYPE -->|agent| INVOKE["Invoke multi-agent<br/>graph with prompt"]
+        TYPE -->|agent| INVOKE["Invoke WiiiRunner<br/>with prompt"]
     end
 
     subgraph Dispatch["Notification Dispatcher"]
@@ -806,7 +804,7 @@ flowchart TB
 
     subgraph Isolation["Data Isolation"]
         SET --> THREAD["Thread ID:<br/>org_{org}__user_{uid}__session_{sid}"]
-        THREAD --> CHECKPOINT["LangGraph checkpoints<br/>(per org-user-session)"]
+        THREAD --> CHECKPOINT["thread_views + chat history<br/>(per org-user-session)"]
     end
 
     subgraph Admin["Organization Admin API"]
@@ -1099,7 +1097,7 @@ sequenceDiagram
 | Memory Agent | Active | Semantic memory retrieval |
 | Direct Response | Active | 8 tools (character, datetime, 4x web search) |
 | **Product Search Agent** | Gated | `enable_product_search=False` — 7 tools, 5 platforms, Playwright browser scraping |
-| Grader Agent | Active | Score 1-10, early exit at >= 0.85, structured outputs |
+| Grader score support | Optional/legacy | Runner self-correction can consume `grader_score` when an upstream path provides it |
 | Synthesizer | Active | Vietnamese formatting, thinking extraction |
 | CorrectiveRAG | Active | 6-step with tiered grading |
 | SemanticCache | Active | 3-tier TTL, asyncio.Lock protected, org-isolated cache keys |
@@ -1155,7 +1153,8 @@ sequenceDiagram
 | **Service** | `app/services/hybrid_search_service.py` | Dense + Sparse search |
 | **Service** | `app/services/scheduled_task_executor.py` | Proactive agent |
 | **Service** | `app/services/notification_dispatcher.py` | WS/Telegram dispatch |
-| **Agent** | `app/engine/multi_agent/graph.py` | LangGraph definition |
+| **Agent** | `app/engine/multi_agent/runner.py` | WiiiRunner orchestration loop |
+| **Agent** | `app/engine/multi_agent/graph.py` | Compatibility shell + node entrypoints |
 | **Agent** | `app/engine/multi_agent/graph_streaming.py` | SSE event emission |
 | **Agent** | `app/engine/multi_agent/agents/supervisor.py` | LLM-first routing (RoutingDecision) |
 | **Agent** | `app/engine/multi_agent/agents/tutor_node.py` | Teaching agent |

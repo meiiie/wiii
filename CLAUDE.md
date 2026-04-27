@@ -58,7 +58,7 @@ To work as a different agent:
 
 ## Project Overview
 
-**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright+Crawl4AI+Scrapling), Google OAuth + LMS integration (production-connected), multi-tenant data isolation, org-level customization, two-tier admin (system + org), Living Agent autonomy system (Soul AGI — all coding phases complete), spaced repetition skill learning, cross-platform memory sync, unified skill architecture, MCP tool exposure, Universal Context Engine (7-phase: host-agnostic context, bidirectional actions, YAML skills, browser agent), and cross-platform conversation sync. Built with FastAPI, LangGraph, Google Gemini, PostgreSQL (pgvector), and Neo4j. 385+ Python files, 70+ API endpoints, 110 feature flags, 10250+ backend tests, 1905 desktop tests. Connection pool: min=10, max=50 (Sprint 173).
+**Wiii** by **The Wiii Lab** — a multi-domain agentic RAG platform with plugin architecture, long-term memory, product search across 5 platforms, browser scraping (Playwright+Crawl4AI+Scrapling), Google OAuth + LMS integration (production-connected), multi-tenant data isolation, org-level customization, two-tier admin (system + org), Living Agent autonomy system (Soul AGI — all coding phases complete), spaced repetition skill learning, cross-platform memory sync, unified skill architecture, MCP tool exposure, Universal Context Engine (7-phase: host-agnostic context, bidirectional actions, YAML skills, browser agent), and cross-platform conversation sync. Built with FastAPI, WiiiRunner custom orchestration, Google Gemini, PostgreSQL (pgvector), and Neo4j. 385+ Python files, 70+ API endpoints, 110 feature flags, 10250+ backend tests, 1905 desktop tests. Connection pool: min=10, max=50 (Sprint 173).
 
 ### Domain Plugin System (Feb 2026)
 - **Plugin architecture**: `app/domains/*/domain.yaml` — add new domains by creating a folder + YAML config
@@ -77,7 +77,7 @@ To work as a different agent:
 ### Unified Provider Layer (Sprint 55, simplified Sprint 226)
 - **UnifiedLLMClient**: `enable_unified_client=True` (default) — `AsyncOpenAI` SDK for non-graph code paths
 - **Unified Providers**: `enable_unified_providers=False` — when enabled, all LLM providers use `ChatOpenAI` via OpenAI-compatible endpoints (eliminates `langchain-google-genai` + `langchain-ollama` dependencies)
-- **Two-path architecture**: Graph nodes → `LLMPool` → `BaseChatModel` (LangGraph compat); New code → `UnifiedLLMClient` → `AsyncOpenAI` (raw SDK)
+- **Two-path architecture**: Runner nodes → `LLMPool` → `BaseChatModel` for existing node code; new code → `UnifiedLLMClient` → `AsyncOpenAI` (raw SDK)
 - **Provider configs**: Google Gemini, OpenAI, Ollama — all via OpenAI-compatible endpoints
 - **Singleton**: `UnifiedLLMClient` with `get_client(provider)` → `AsyncOpenAI`
 - **Tier mapping**: `get_model(provider, tier)` → deep/moderate/light model names
@@ -166,7 +166,7 @@ External MCP Servers (filesystem, web, custom)
          ↓ stdio/http transport
     MCPToolManager (langchain-mcp-adapters)  ←── MCP Client: consumes tools
          ↓
-    AgenticLoop / LangGraph Nodes
+    AgenticLoop / WiiiRunner nodes
 ```
 
 ### Domain Plugin System
@@ -182,18 +182,18 @@ app/domains/
 └── _template/       # Skeleton for creating new domains
 ```
 
-### Multi-Agent System (LangGraph)
+### Multi-Agent System (WiiiRunner)
 - **Guardian Agent**: Content safety and relevance filtering (entry point, fail-open)
 - **Supervisor**: LLM-first routing via `RoutingDecision` structured output (Sprint 103). Keyword guardrails (social→DIRECT, personal→MEMORY) as fallback only. Intents: lookup, learning, personal, social, off_topic, web_search
 - **RAG Agent**: Knowledge retrieval with Corrective RAG (hybrid search)
 - **Tutor Agent**: Teaching/explanation with pedagogical approach
 - **Memory Agent**: Cross-session user context and facts
 - **Direct Response**: General queries + web/news/legal search tools (8 tools bound)
-- **Grader Agent**: Quality control (score-based re-routing)
+- **Quality Signals**: Runner-level self-correction can consume `grader_score` when present, but the old grader node is not a default runtime step
 - **Synthesizer**: Final response formatting, Vietnamese output
 
 ### Virtual Agent-per-User (Sprints 16-20)
-- **Thread System**: Composite IDs (`user_{uid}__session_{sid}` or `org_{org}__user_{uid}__session_{sid}`), per-user LangGraph checkpoints
+- **Thread System**: Composite IDs (`user_{uid}__session_{sid}` or `org_{org}__user_{uid}__session_{sid}`), per-user thread views and chat history
 - **Session Manager**: lifecycle, anti-repetition, pronoun tracking, auto-summarize
 - **Cross-Platform Conversation Sync** (Sprint 225): `thread_views` populated after every chat via `upsert_thread()`. Frontend `syncFromServer()` merges server thread list with local conversations on login. `GET /threads/{id}/messages` for lazy loading. Metadata event includes `thread_id` for local→server mapping
 

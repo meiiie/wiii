@@ -12,7 +12,7 @@ REFACTORED: This file is now a thin facade that delegates to:
 **Spec:** CHỈ THỊ KỸ THUẬT SỐ 25 - Project Restructure
 
 This service wires together:
-- Multi-Agent System (Phase 8, SOTA 2025) - LangGraph Supervisor
+- Multi-Agent System (Phase 8, SOTA 2025) - WiiiRunner Supervisor
 - Semantic Memory Engine v0.5 (pgvector + Gemini embeddings)
 - Knowledge Graph (Neo4j GraphRAG)
 - Guardrails / Guardian Agent

@@ -11,7 +11,7 @@ This repository is optimized for ongoing product engineering, not as a minimal s
 - `docs/`: repository-level documentation, plans, diagrams, screenshots, and doc indexes
 - `Documents/`: supporting reference material and vendor research
 - `tools/`: utilities, fixtures, and one-off helpers
-- `.claude/`: agent workflows, reports, and internal project knowledge
+- `.claude/`: legacy Claude-era agent workflows and project knowledge kept for reference; GitHub issues/PRs and `docs/operations/` are the current coordination surface
 
 ## Architecture At A Glance
 
@@ -20,14 +20,14 @@ Primary runtime flow:
 1. Client request enters the backend through REST, SSE, WebSocket, or LMS/embed integration.
 2. Middleware applies request correlation, organization context, auth, and rate limiting.
 3. `ChatOrchestrator` resolves session state, domain context, and request normalization.
-4. The LangGraph-based multi-agent pipeline routes work to RAG, tutor, memory, direct-response, or search/tooling paths.
+4. The WiiiRunner multi-agent pipeline routes work to RAG, tutor, memory, direct-response, Code Studio, product search, or other feature-gated tool paths.
 5. Retrieval, tools, LMS data, semantic memory, and optional browser or MCP integrations contribute context.
 6. The response is synthesized back to JSON or SSE V3 events for the desktop app and embed clients.
 
 Core subsystems:
 
 - FastAPI API layer with organization-aware middleware and auth
-- LangGraph multi-agent orchestration with RAG, tutor, memory, and direct-response paths
+- WiiiRunner multi-agent orchestration with RAG, tutor, memory, direct-response, and feature-gated tool paths
 - Retrieval stack built on PostgreSQL, pgvector, sparse search, and optional Neo4j graph context
 - LMS bridge with HMAC token exchange, webhook ingestion, and dashboard/data pull tools
 - Tauri desktop client with Zustand state, SSE V3 streaming, full-page admin surfaces, and embed mode

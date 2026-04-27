@@ -1,4 +1,4 @@
-"""Agent node wrappers for LangGraph multi-agent graph.
+"""Agent node wrappers for the WiiiRunner multi-agent runtime.
 
 Extracted from graph.py — thin delegation wrappers that call
 external agent implementations (rag_node, tutor_node, etc.).

@@ -30,7 +30,7 @@ In practical terms, Wiii Core is made of:
 
 - FastAPI entrypoints and middleware
 - ChatOrchestrator
-- LangGraph multi-agent routing
+- WiiiRunner multi-agent routing
 - RAG, tutor, memory, direct-response, and tool paths
 - streaming response assembly for desktop and embed clients
 

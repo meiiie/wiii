@@ -11,7 +11,7 @@
 
 ## 1. Wiii là gì?
 
-Wiii là trợ lý AI giáo dục do **The Wiii Lab** phát triển. Wiii giúp sinh viên tra cứu kiến thức, ôn thi, hỏi đáp bài tập. Cho giảng viên: dashboard phân tích, phát hiện sinh viên nguy cơ, báo cáo AI. Wiii chạy trên FastAPI + LangGraph, giao tiếp qua REST + SSE, bảo mật bằng HMAC-SHA256 + JWT.
+Wiii là trợ lý AI giáo dục do **The Wiii Lab** phát triển. Wiii giúp sinh viên tra cứu kiến thức, ôn thi, hỏi đáp bài tập. Cho giảng viên: dashboard phân tích, phát hiện sinh viên nguy cơ, báo cáo AI. Wiii chạy trên FastAPI + WiiiRunner, giao tiếp qua REST + SSE, bảo mật bằng HMAC-SHA256 + JWT.
 
 ---
 

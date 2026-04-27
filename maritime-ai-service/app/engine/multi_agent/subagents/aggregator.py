@@ -7,10 +7,10 @@ Pattern inspired by Claude Code hub-and-spoke:
 - Results come back as structured SubagentReport
 - Aggregator reads all reports, picks best strategy
 
-Usage in LangGraph::
+Usage in WiiiRunner::
 
-    workflow.add_node("aggregator", aggregator_node)
-    workflow.add_conditional_edges("aggregator", aggregator_route, {...})
+    runner.register_feature_node("aggregator", aggregator_node, gate_fn)
+    aggregator_route(state) decides synthesizer vs supervisor follow-up.
 """
 
 from __future__ import annotations
@@ -188,7 +188,7 @@ def _fallback_decision(reports: List[SubagentReport]) -> AggregatorDecision:
 
 
 async def aggregator_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """LangGraph node: reads subagent_reports, produces aggregator decision.
+    """WiiiRunner node: reads subagent_reports, produces aggregator decision.
 
     Writes:
     - state["_aggregator_action"]
