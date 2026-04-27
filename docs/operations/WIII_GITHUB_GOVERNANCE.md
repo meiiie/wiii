@@ -82,6 +82,7 @@ Minimum review expectations:
 - One approving review for normal changes.
 - Owner review for auth, identity, memory, migration, tenant isolation, provider runtime, deployment, or GitHub governance changes.
 - CodeRabbit review/check resolved or explicitly documented as not applicable.
+- Codex Review requested for high-risk changes once enabled, or explicitly documented as not required.
 - Screenshot or recording evidence for frontend-visible changes.
 - Explicit test evidence or explicit explanation when tests are not run.
 
@@ -164,6 +165,21 @@ Repository policy:
 - Keep `request_changes_workflow` disabled until the team confirms CodeRabbit false-positive rate on real PRs.
 
 Maintainers must resolve, defer, or explicitly reject CodeRabbit findings before merge. CodeRabbit does not replace human ownership.
+
+## Codex Review Policy
+
+Native Codex GitHub Review is configured outside the repository through Codex Settings, then guided by the top-level `AGENTS.md` file.
+
+Repository policy:
+
+- Keep a top-level `AGENTS.md` with a `## Review guidelines` section for Codex.
+- Use manual `@codex review` comments for high-risk PRs until the team confirms the noise level is acceptable.
+- Consider enabling Automatic reviews only after several useful manual reviews.
+- Treat Codex Review as an additional P0/P1-focused review signal, not as a replacement for CodeRabbit, CODEOWNERS, or maintainer accountability.
+- Resolve, defer with rationale, or explicitly reject actionable Codex findings before merge.
+- If Codex Review is not run on a high-risk PR, document why in the PR body.
+
+Setup and rollback details live in `docs/operations/WIII_CODEX_REVIEW_SETUP.md`.
 
 ## CODEOWNERS Policy
 

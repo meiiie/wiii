@@ -11,6 +11,7 @@ Use this folder for repository-level documentation that explains the product, th
 - `plans/2026-04-27-wiii-native-orchestration-rfc.md`: phased RFC for replacing remaining LangGraph assumptions with Wiii-owned runtime contracts
 - `operations/WIII_DOCUMENTATION_GOVERNANCE.md`: documentation lifecycle, cleanup controls, and issue/PR standards
 - `operations/WIII_GITHUB_GOVERNANCE.md`: GitHub issue, PR, branch, review, label, and merge standards
+- `operations/WIII_CODEX_REVIEW_SETUP.md`: Codex GitHub Review setup, rollout, operating policy, and rollback controls
 - `operations/WIII_MULTI_AGENT_MAINTAINER_PROTOCOL.md`: multi-agent ownership, maintainer review, CodeRabbit, conflict, and merge protocol
 - `operations/WIII_SYSTEM_CLEANUP_CHECKPOINT_2026-04-24.md`: current operational cleanup checkpoint and runtime truth snapshot
 - `operations/WIII_REPOSITORY_HYGIENE_AUDIT_2026-04-24.md`: final cleanup verification, retained local artifacts, and rebuild runbook
