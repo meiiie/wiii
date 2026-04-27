@@ -143,7 +143,7 @@ async def process_with_multi_agent_impl(
     agent_type_map: dict[str, Any],
     default_agent_type: Any,
 ) -> Any:
-    from app.engine.multi_agent.graph import process_with_multi_agent
+    from app.engine.multi_agent.runtime import process_with_multi_agent
 
     prepared_turn = prepared_turn_cls(
         request_scope=request_scope_cls(

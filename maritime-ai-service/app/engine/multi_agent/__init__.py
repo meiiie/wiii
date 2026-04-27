@@ -27,9 +27,9 @@ def __getattr__(name: str):
         from app.engine.multi_agent import supervisor
         return getattr(supervisor, name)
     if name == "process_with_multi_agent":
-        from app.engine.multi_agent import graph
-        return getattr(graph, name)
+        from app.engine.multi_agent.runtime import process_with_multi_agent
+        return process_with_multi_agent
     if name == "process_with_multi_agent_streaming":
-        from app.engine.multi_agent.graph_streaming import process_with_multi_agent_streaming
+        from app.engine.multi_agent.streaming_runtime import process_with_multi_agent_streaming
         return process_with_multi_agent_streaming
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
