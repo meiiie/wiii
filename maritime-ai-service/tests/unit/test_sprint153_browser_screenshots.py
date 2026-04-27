@@ -26,11 +26,11 @@ _stubs = {}
 for _key in (_graph_key, _cs_key):
     if _key not in sys.modules:
         _mod = types.ModuleType(_key)
-        # graph module needs these attributes for graph_streaming's import
+        # graph_streaming imports these helper functions from the graph module.
         if _key == _graph_key:
-            _mod.get_multi_agent_graph_async = None
-            _mod._build_domain_config = None
-        elif _key == _cs_key:
+            _mod._build_domain_config = MagicMock(return_value={})
+            _mod._build_turn_local_state_defaults = MagicMock(return_value={})
+        else:
             _mod.ChatService = type("ChatService", (), {})
             _mod.get_chat_service = lambda: None
         sys.modules[_key] = _mod
