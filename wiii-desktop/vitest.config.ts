@@ -28,9 +28,7 @@ export default defineConfig({
     // Single worker prevents Zustand store leakage between concurrent test files
     // and eliminates 15s dynamic-import timeouts under jsdom load.
     pool: "forks",
-    poolOptions: {
-      forks: { singleFork: true },
-    },
+    forks: { singleFork: true },
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "json-summary"],
