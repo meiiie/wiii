@@ -32,7 +32,7 @@ langchain-core>=1.2.18,<1.4.0
 # LangGraph REMOVED (De-LangGraphing Phase 3) — replaced by WiiiRunner (app/engine/multi_agent/runner.py)
 # langgraph, langgraph-checkpoint, langgraph-checkpoint-postgres, langgraph-prebuilt — all removed
 # psycopg3 async driver (kept for asyncpg compat)
-psycopg[binary]>=3.1.0,<4.0.0
+psycopg[binary]>=3.3.3,<4.0.0
 
 # Unified LLM Client (Sprint 55: AsyncOpenAI SDK for OpenAI-compatible endpoints)
 openai~=2.32.0
