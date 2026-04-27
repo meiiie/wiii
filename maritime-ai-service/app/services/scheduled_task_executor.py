@@ -128,8 +128,8 @@ class ScheduledTaskExecutor:
         extra = task.get("extra_data") or {}
 
         if extra.get("agent_invoke"):
-            # Agent mode: invoke multi-agent graph
-            from app.engine.multi_agent.graph import process_with_multi_agent
+            # Agent mode: invoke the WiiiRunner-backed multi-agent runtime.
+            from app.engine.multi_agent.runtime import process_with_multi_agent
 
             result = await asyncio.wait_for(
                 process_with_multi_agent(

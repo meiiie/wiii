@@ -174,7 +174,7 @@ async def _check_otp_linking(text: str, channel_type: str, sender_id: str) -> st
 
 
 async def _process_and_reply(sender_id: str, text: str) -> str:
-    """Process user message through multi-agent graph and return answer.
+    """Process user message through the multi-agent runtime and return answer.
 
     Sprint 174b: Checks OTP linking before multi-agent processing.
     """
@@ -185,7 +185,7 @@ async def _process_and_reply(sender_id: str, text: str) -> str:
 
     from app.auth.identity_resolver import resolve_user_id
     from app.engine.personality_mode import resolve_personality_mode
-    from app.engine.multi_agent.graph import process_with_multi_agent
+    from app.engine.multi_agent.runtime import process_with_multi_agent
 
     canonical_user_id = await resolve_user_id("zalo", sender_id)
     personality_mode = resolve_personality_mode("zalo")

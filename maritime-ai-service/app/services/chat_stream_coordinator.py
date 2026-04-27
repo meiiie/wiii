@@ -87,7 +87,7 @@ async def generate_stream_v3_events(
             ensure_provider_is_selectable(requested_provider)
 
         if stream_fn is None:
-            from app.engine.multi_agent.graph import (
+            from app.engine.multi_agent.streaming_runtime import (
                 process_with_multi_agent_streaming,
             )
 
