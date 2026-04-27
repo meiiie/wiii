@@ -563,7 +563,7 @@ def get_wiii_runner() -> WiiiRunner:
     if _RUNNER is not None:
         return _RUNNER
 
-    from app.engine.multi_agent.graph import (
+    from app.engine.multi_agent.runtime_nodes import (
         guardian_node,
         supervisor_node,
         rag_node,
@@ -589,7 +589,7 @@ def get_wiii_runner() -> WiiiRunner:
 
     # Feature-gated nodes
     try:
-        from app.engine.multi_agent.graph import (
+        from app.engine.multi_agent.runtime_nodes import (
             colleague_agent_node,
             product_search_node,
         )
