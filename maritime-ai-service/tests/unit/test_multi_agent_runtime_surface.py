@@ -52,6 +52,24 @@ async def test_runtime_surface_skips_unpatched_legacy_graph_module():
 
 
 @pytest.mark.asyncio
+async def test_graph_surface_delegates_to_runtime_entrypoint():
+    from app.engine.multi_agent import graph
+
+    process = AsyncMock(return_value={"response": "runtime-ok"})
+
+    with patch("app.engine.multi_agent.runtime.process_with_multi_agent", new=process):
+        result = await graph.process_with_multi_agent(
+            query="hello",
+            user_id="user-1",
+            session_id="session-1",
+        )
+
+    assert result == {"response": "runtime-ok"}
+    process.assert_awaited_once()
+    assert process.call_args.kwargs["query"] == "hello"
+
+
+@pytest.mark.asyncio
 async def test_runtime_surface_preserves_legacy_graph_patch_path():
     from app.engine.multi_agent.runtime import process_with_multi_agent
 
