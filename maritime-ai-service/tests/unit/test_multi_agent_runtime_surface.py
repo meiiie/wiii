@@ -69,6 +69,84 @@ async def test_graph_surface_delegates_to_runtime_entrypoint():
     assert process.call_args.kwargs["query"] == "hello"
 
 
+def test_graph_tool_collection_wrapper_uses_graph_settings_and_restores(monkeypatch):
+    from app.engine.multi_agent import graph
+
+    calls = []
+    original_settings = object()
+    patched_settings = object()
+    state = {"session_id": "session-1"}
+
+    class FakeToolCollection:
+        settings = original_settings
+
+        def _collect_direct_tools(self, query, *, user_role, state=None):
+            calls.append((self.settings, query, user_role, state))
+            return ["weather_tool"], ["datetime_tool"]
+
+    fake_tools = FakeToolCollection()
+    monkeypatch.setattr(graph, "_tool_collection_module", fake_tools)
+    monkeypatch.setattr(graph, "settings", patched_settings)
+
+    result = graph._collect_direct_tools(
+        "weather now",
+        user_role="teacher",
+        state=state,
+    )
+
+    assert result == (["weather_tool"], ["datetime_tool"])
+    assert calls == [(patched_settings, "weather now", "teacher", state)]
+    assert fake_tools.settings is original_settings
+
+
+def test_graph_tool_collection_wrapper_restores_settings_after_error(monkeypatch):
+    from app.engine.multi_agent import graph
+
+    original_settings = object()
+    patched_settings = object()
+
+    class FakeToolCollection:
+        settings = original_settings
+
+        def _direct_required_tool_names(self, query, *, user_role):
+            assert self.settings is patched_settings
+            raise RuntimeError("tool selection failed")
+
+    fake_tools = FakeToolCollection()
+    monkeypatch.setattr(graph, "_tool_collection_module", fake_tools)
+    monkeypatch.setattr(graph, "settings", patched_settings)
+
+    with pytest.raises(RuntimeError, match="tool selection failed"):
+        graph._direct_required_tool_names("hello", user_role="student")
+
+    assert fake_tools.settings is original_settings
+
+
+def test_graph_code_studio_tool_collection_wrapper_uses_graph_settings(monkeypatch):
+    from app.engine.multi_agent import graph
+
+    calls = []
+    original_settings = object()
+    patched_settings = object()
+
+    class FakeToolCollection:
+        settings = original_settings
+
+        def _collect_code_studio_tools(self, query, *, user_role):
+            calls.append((self.settings, query, user_role))
+            return ["code_studio"], ["render_app"]
+
+    fake_tools = FakeToolCollection()
+    monkeypatch.setattr(graph, "_tool_collection_module", fake_tools)
+    monkeypatch.setattr(graph, "settings", patched_settings)
+
+    result = graph._collect_code_studio_tools("build an app", user_role="teacher")
+
+    assert result == (["code_studio"], ["render_app"])
+    assert calls == [(patched_settings, "build an app", "teacher")]
+    assert fake_tools.settings is original_settings
+
+
 @pytest.mark.asyncio
 async def test_runtime_surface_preserves_legacy_graph_patch_path():
     from app.engine.multi_agent.runtime import process_with_multi_agent
