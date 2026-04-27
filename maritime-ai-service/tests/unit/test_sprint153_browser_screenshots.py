@@ -30,7 +30,7 @@ for _key in (_graph_key, _cs_key):
         if _key == _graph_key:
             _mod._build_domain_config = MagicMock(return_value={})
             _mod._build_turn_local_state_defaults = MagicMock(return_value={})
-        else:
+        elif _key == _cs_key:
             _mod.ChatService = type("ChatService", (), {})
             _mod.get_chat_service = lambda: None
         sys.modules[_key] = _mod
