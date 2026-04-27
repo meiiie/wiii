@@ -294,7 +294,9 @@ Capabilities should include:
 - supports OpenAI-compatible request shape
 - requires provider-specific extra body
 
-Useful pattern from prior Unsloth research:
+Provider-management pattern to keep from the earlier Unsloth-style runtime
+comparison requested by maintainers. This is a design reference only; Wiii
+should not import Unsloth code or couple orchestration to that project:
 
 - Resolve a canonical model/runtime object before routing.
 - Keep protocol compatibility at the API edge.
