@@ -92,12 +92,15 @@ export default defineConfig({
   base: isEmbed ? "/embed/" : undefined,
   build: {
     outDir: isEmbed ? "dist-embed" : isWeb ? "dist-web" : "dist",
-    // Embed/Web: modern browsers; Tauri: Chromium/WebKit
+    // Vite 8/Rolldown no longer supports lowering some modern syntax to Safari 13.
+    // Tauri shells and the hosted web/embed targets run on modern engines, so keep
+    // the production target at the shared ES2020 baseline unless Windows needs its
+    // explicit WebView2 floor.
     target: isEmbed || isWeb
       ? "es2020"
       : process.env.TAURI_PLATFORM === "windows"
         ? "chrome105"
-        : "safari13",
+        : "es2020",
     // Embed/Web: always minify; Tauri: only in release
     minify: isEmbed || isWeb ? "esbuild" : !process.env.TAURI_DEBUG ? "esbuild" : false,
     // Embed/Web: no sourcemaps; Tauri: only in debug
