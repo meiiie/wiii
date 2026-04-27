@@ -47,6 +47,14 @@ reviews:
       - "github-actions[bot]"
 
   path_filters:
+    # Positive filters make CodeRabbit review only matching paths. Keep broad
+    # source/governance includes here so code PRs cannot become skipped-but-green.
+    - ".coderabbit.yaml"
+    - "AGENTS.md"
+    - ".github/**"
+    - "docs/**"
+    - "maritime-ai-service/**"
+    - "wiii-desktop/**"
     # Force-include security-sensitive lockfiles that CodeRabbit skips by
     # default, so dependency PRs do not produce skipped-but-green reviews.
     - "**/package-lock.json"
