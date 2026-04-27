@@ -23,20 +23,20 @@ class _RegistryStub:
 
 @pytest.mark.asyncio
 async def test_build_stream_bootstrap_matches_sync_context_injection(monkeypatch):
-    import app.engine.multi_agent.graph as graph_module
+    import app.engine.multi_agent.graph_runtime_bindings as runtime_bindings
 
     def _inject_host_context(state):
         state["host_capabilities_prompt"] = "HOST CAPS"
         return "HOST PROMPT"
 
-    monkeypatch.setattr(graph_module, "_inject_host_context", _inject_host_context)
-    monkeypatch.setattr(graph_module, "_inject_host_session", lambda _state: "HOST SESSION")
-    monkeypatch.setattr(graph_module, "_inject_operator_context", lambda _state: "OPERATOR PROMPT")
-    monkeypatch.setattr(graph_module, "_inject_living_context", lambda _state: "LIVING PROMPT")
-    monkeypatch.setattr(graph_module, "_inject_visual_context", lambda _state: "")
-    monkeypatch.setattr(graph_module, "_inject_visual_cognition_context", lambda _state: "")
-    monkeypatch.setattr(graph_module, "_inject_widget_feedback_context", lambda _state: "")
-    monkeypatch.setattr(graph_module, "_inject_code_studio_context", lambda _state: "")
+    monkeypatch.setattr(runtime_bindings, "_inject_host_context", _inject_host_context)
+    monkeypatch.setattr(runtime_bindings, "_inject_host_session", lambda _state: "HOST SESSION")
+    monkeypatch.setattr(runtime_bindings, "_inject_operator_context", lambda _state: "OPERATOR PROMPT")
+    monkeypatch.setattr(runtime_bindings, "_inject_living_context", lambda _state: "LIVING PROMPT")
+    monkeypatch.setattr(runtime_bindings, "_inject_visual_context", lambda _state: "")
+    monkeypatch.setattr(runtime_bindings, "_inject_visual_cognition_context", lambda _state: "")
+    monkeypatch.setattr(runtime_bindings, "_inject_widget_feedback_context", lambda _state: "")
+    monkeypatch.setattr(runtime_bindings, "_inject_code_studio_context", lambda _state: "")
 
     bootstrap = await build_stream_bootstrap_impl(
         query="hello",
