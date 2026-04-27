@@ -228,6 +228,15 @@ class WiiiRunner:
 
         # 1. Guardian
         state = await self._run_step(_NODE_GUARDIAN, state)
+
+        # Keep streaming semantics aligned with run(): extended input
+        # guardrails are part of the active runtime contract, not only sync API.
+        guardian_passed = state.get("guardian_passed", True)
+        passed, reason = await run_input_guardrails(state, guardian_passed=guardian_passed)
+        if not passed:
+            state["guardian_passed"] = False
+            state["final_response"] = reason or "Nội dung không phù hợp."
+
         self._push_queue(merged_queue, _NODE_GUARDIAN, state)
 
         # 2. Guardian route
@@ -239,6 +248,7 @@ class WiiiRunner:
         if route == _NODE_SYNTHESIZER:
             state["current_agent"] = _NODE_SYNTHESIZER
             state = await self._run_step(_NODE_SYNTHESIZER, state)
+            await run_output_guardrails(state)
             self._push_queue(merged_queue, _NODE_SYNTHESIZER, state)
             elapsed = (time.perf_counter() - t_start) * 1000
             await self._emit_run_end(state, elapsed)
@@ -278,6 +288,7 @@ class WiiiRunner:
 
         # Synthesize
         state = await self._run_step(_NODE_SYNTHESIZER, state)
+        await run_output_guardrails(state)
         self._push_queue(merged_queue, _NODE_SYNTHESIZER, state)
 
         elapsed = (time.perf_counter() - t_start) * 1000
