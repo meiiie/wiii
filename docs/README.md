@@ -8,6 +8,7 @@ Use this folder for repository-level documentation that explains the product, th
 - `WIII_PROJECT_MENTAL_MODEL.md`: one-page product and system mental model
 - `WIII_ARCHITECTURE_AUDIT.md`: opinionated audit of architectural center, strengths, and risk areas
 - `WIII_TECHNICAL_SIMPLIFICATION_ROADMAP.md`: phased simplification plan and first landed slice
+- `plans/2026-04-27-wiii-native-orchestration-rfc.md`: phased RFC for replacing remaining LangGraph assumptions with Wiii-owned runtime contracts
 - `operations/WIII_DOCUMENTATION_GOVERNANCE.md`: documentation lifecycle, cleanup controls, and issue/PR standards
 - `operations/WIII_GITHUB_GOVERNANCE.md`: GitHub issue, PR, branch, review, label, and merge standards
 - `operations/WIII_MULTI_AGENT_MAINTAINER_PROTOCOL.md`: multi-agent ownership, maintainer review, CodeRabbit, conflict, and merge protocol
