@@ -84,7 +84,7 @@ async def build_stream_bootstrap_impl(
         **build_turn_local_state_defaults(context),
     }
 
-    from app.engine.multi_agent.graph import (
+    from app.engine.multi_agent.graph_runtime_bindings import (
         _inject_code_studio_context,
         _inject_host_context,
         _inject_host_session,

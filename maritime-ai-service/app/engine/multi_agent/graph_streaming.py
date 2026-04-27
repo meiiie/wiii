@@ -42,7 +42,7 @@ from app.core.exceptions import ProviderUnavailableError
 from app.engine.llm_runtime_metadata import resolve_runtime_llm_metadata
 from app.core.constants import PREVIEW_SNIPPET_MAX_LENGTH
 from app.engine.multi_agent.state import AgentState
-from app.engine.multi_agent.graph import (
+from app.engine.multi_agent.graph_support import (
     _build_domain_config,
     _build_turn_local_state_defaults,
 )
@@ -490,7 +490,7 @@ async def process_with_multi_agent_streaming(
     finally:
         # Sprint 139: Clean up tracer from module-level storage
         if final_state:
-            from app.engine.multi_agent.graph import _cleanup_tracer
+            from app.engine.multi_agent.graph_trace_store import _cleanup_tracer
             _cleanup_tracer(final_state.get("_trace_id"))
         # Sprint 69+153: Clean up event bus (guard against None bus_id)
         if bus_id:
