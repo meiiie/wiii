@@ -50,17 +50,11 @@ if not _had_cs:
     _mock_chat_svc.get_chat_service = lambda: None
     sys.modules[_cs_key] = _mock_chat_svc
 
-# Break graph_streaming ↔ graph mutual import
-# Note: get_multi_agent_graph_async is async, so use AsyncMock
+# Break graph_streaming -> graph import by providing the current runner helpers.
 if not _had_graph:
     _mock_graph = types.ModuleType(_graph_key)
-    _mock_graph.get_multi_agent_graph_async = AsyncMock()
     _mock_graph._build_domain_config = MagicMock(return_value={})
     _mock_graph._build_turn_local_state_defaults = MagicMock(return_value={})
-    _mock_graph.open_multi_agent_graph = AsyncMock()
-    _mock_graph._inject_host_context = MagicMock(return_value=None)
-    _mock_graph._TRACERS = {}
-    _mock_graph._cleanup_tracer = MagicMock()
     sys.modules[_graph_key] = _mock_graph
 
 from app.engine.multi_agent.graph_streaming import (

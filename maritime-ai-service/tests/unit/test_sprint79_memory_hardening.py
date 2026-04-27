@@ -62,6 +62,12 @@ def _mock_db_factory(rows=None, side_effect=None):
     return factory, mock_session
 
 
+def _close_background_coro(coro):
+    """Close mocked background coroutines so tests do not leak warnings."""
+    coro.close()
+    return MagicMock()
+
+
 # =============================================================================
 # Part 1: Running Summary Persistence
 # =============================================================================
@@ -264,18 +270,12 @@ class TestSessionSummaryMilestones:
         """asyncio.create_task called when message_count hits milestone 6."""
         from app.engine.multi_agent import graph as graph_mod
 
-        mock_graph = AsyncMock()
-        mock_graph.ainvoke = AsyncMock(return_value={
+        mock_runner = MagicMock()
+        mock_runner.run = AsyncMock(return_value={
             "final_response": "test",
             "sources": [],
             "agent_outputs": {},
         })
-
-        class _MockGraphCM:
-            async def __aenter__(self_cm):
-                return mock_graph
-            async def __aexit__(self_cm, *args):
-                pass
 
         mock_repo = MagicMock()
         mock_repo.upsert_thread.return_value = {
@@ -284,15 +284,15 @@ class TestSessionSummaryMilestones:
             "message_count": 6,
         }
 
-        with patch.object(graph_mod, "open_multi_agent_graph", return_value=_MockGraphCM()), \
-             patch.object(graph_mod, "get_agent_registry") as mock_reg, \
+        with patch("app.engine.multi_agent.runner.get_wiii_runner", return_value=mock_runner), \
+             patch("app.engine.agents.get_agent_registry") as mock_reg, \
              patch.object(graph_mod, "_build_domain_config", return_value={}), \
              patch.object(graph_mod, "_build_turn_local_state_defaults", return_value={}), \
              patch.object(graph_mod, "_inject_host_context", return_value=None), \
              patch("app.repositories.thread_repository.get_thread_repository", return_value=mock_repo), \
              patch("app.core.token_tracker.start_tracking"), \
              patch("app.core.token_tracker.get_tracker", return_value=None), \
-             patch("asyncio.create_task") as mock_create_task:
+             patch("asyncio.create_task", side_effect=_close_background_coro) as mock_create_task:
 
             mock_reg.return_value.start_request_trace.return_value = "t1"
             mock_reg.return_value.end_request_trace.return_value = {"span_count": 0, "total_duration_ms": 0}
@@ -308,18 +308,12 @@ class TestSessionSummaryMilestones:
         """No trigger when message_count is not a milestone."""
         from app.engine.multi_agent import graph as graph_mod
 
-        mock_graph = AsyncMock()
-        mock_graph.ainvoke = AsyncMock(return_value={
+        mock_runner = MagicMock()
+        mock_runner.run = AsyncMock(return_value={
             "final_response": "test",
             "sources": [],
             "agent_outputs": {},
         })
-
-        class _MockGraphCM:
-            async def __aenter__(self_cm):
-                return mock_graph
-            async def __aexit__(self_cm, *args):
-                pass
 
         mock_repo = MagicMock()
         mock_repo.upsert_thread.return_value = {
@@ -328,8 +322,8 @@ class TestSessionSummaryMilestones:
             "message_count": 5,  # NOT a milestone
         }
 
-        with patch.object(graph_mod, "open_multi_agent_graph", return_value=_MockGraphCM()), \
-             patch.object(graph_mod, "get_agent_registry") as mock_reg, \
+        with patch("app.engine.multi_agent.runner.get_wiii_runner", return_value=mock_runner), \
+             patch("app.engine.agents.get_agent_registry") as mock_reg, \
              patch.object(graph_mod, "_build_domain_config", return_value={}), \
              patch.object(graph_mod, "_build_turn_local_state_defaults", return_value={}), \
              patch.object(graph_mod, "_inject_host_context", return_value=None), \

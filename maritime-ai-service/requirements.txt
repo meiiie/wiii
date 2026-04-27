@@ -32,7 +32,7 @@ langchain-core>=1.2.18,<1.4.0
 # LangGraph REMOVED (De-LangGraphing Phase 3) — replaced by WiiiRunner (app/engine/multi_agent/runner.py)
 # langgraph, langgraph-checkpoint, langgraph-checkpoint-postgres, langgraph-prebuilt — all removed
 # psycopg3 async driver (kept for asyncpg compat)
-psycopg[binary]>=3.1.0,<4.0.0
+psycopg[binary]>=3.3.3,<4.0.0
 
 # Unified LLM Client (Sprint 55: AsyncOpenAI SDK for OpenAI-compatible endpoints)
 openai~=2.32.0
@@ -101,7 +101,7 @@ python-docx>=1.1.0
 
 # HTML Parsing (Sprint 150: Product Page Scraper)
 beautifulsoup4>=4.12.0
-lxml>=5.0.0
+lxml>=6.1.0
 
 # Browser Scraping (Sprint 152: Playwright headless Chromium + LLM extraction)
 # Optional: only needed when enable_browser_scraping=True

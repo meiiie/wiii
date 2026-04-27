@@ -350,7 +350,7 @@ class TestOTPConfig:
 
     def test_default_expiry(self):
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.otp_link_expiry_seconds == 300
 
     def test_custom_expiry(self):

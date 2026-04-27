@@ -11,6 +11,8 @@ import types
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 
+from tests.unit._direct_node_test_utils import patched_direct_node_runtime
+
 # Break circular import (same pattern as test_sprint97)
 _cs_key = "app.services.chat_service"
 if _cs_key not in sys.modules:
@@ -206,7 +208,12 @@ class TestForcedToolChoice:
             "agent_outputs": {},
         }
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_acr, \
+        with patched_direct_node_runtime(
+                "Day la tin tuc hom nay...",
+                mock_llm=mock_llm,
+                patch_bind=False,
+                collect_tools=None,
+             ), \
              patch("app.prompts.prompt_loader.get_prompt_loader") as mock_pl, \
              patch("app.engine.multi_agent.graph.settings") as mock_settings, \
              patch("app.engine.multi_agent.graph._get_or_create_tracer") as mock_tracer_fn, \
@@ -216,7 +223,6 @@ class TestForcedToolChoice:
             mock_settings.default_domain = "maritime"
             mock_settings.enable_character_tools = False
             mock_settings.enable_code_execution = False
-            mock_acr.get_llm.return_value = mock_llm
 
             mock_loader = MagicMock()
             mock_loader.get_identity.return_value = {
@@ -266,7 +272,12 @@ class TestForcedToolChoice:
             "agent_outputs": {},
         }
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_acr, \
+        with patched_direct_node_runtime(
+                "Xin chao!",
+                mock_llm=mock_llm,
+                patch_bind=False,
+                collect_tools=None,
+             ), \
              patch("app.prompts.prompt_loader.get_prompt_loader") as mock_pl, \
              patch("app.engine.multi_agent.graph.settings") as mock_settings, \
              patch("app.engine.multi_agent.graph._get_or_create_tracer") as mock_tracer_fn, \
@@ -276,7 +287,6 @@ class TestForcedToolChoice:
             mock_settings.default_domain = "maritime"
             mock_settings.enable_character_tools = False
             mock_settings.enable_code_execution = False
-            mock_acr.get_llm.return_value = mock_llm
 
             mock_loader = MagicMock()
             mock_loader.get_identity.return_value = {
@@ -321,7 +331,12 @@ class TestForcedToolChoice:
             "agent_outputs": {},
         }
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_acr, \
+        with patched_direct_node_runtime(
+                "Bay gio la 10:00",
+                mock_llm=mock_llm,
+                patch_bind=False,
+                collect_tools=None,
+             ), \
              patch("app.prompts.prompt_loader.get_prompt_loader") as mock_pl, \
              patch("app.engine.multi_agent.graph.settings") as mock_settings, \
              patch("app.engine.multi_agent.graph._get_or_create_tracer") as mock_tracer_fn, \
@@ -331,7 +346,6 @@ class TestForcedToolChoice:
             mock_settings.default_domain = "maritime"
             mock_settings.enable_character_tools = False
             mock_settings.enable_code_execution = False
-            mock_acr.get_llm.return_value = mock_llm
 
             mock_loader = MagicMock()
             mock_loader.get_identity.return_value = {
@@ -392,6 +406,9 @@ class TestForcedToolChoice:
         mock_tool.name = "tool_web_search"
         mock_tool.invoke.return_value = "Search results here"
 
+        async def _fake_ainvoke_with_fallback(llm, messages, **_kwargs):
+            return await llm.ainvoke(messages)
+
         state: AgentState = {
             "query": "tin tức hôm nay",
             "context": {"is_follow_up": False},
@@ -400,11 +417,14 @@ class TestForcedToolChoice:
             "agent_outputs": {},
         }
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_acr, \
+        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm",
+                   return_value=mock_llm), \
              patch("app.prompts.prompt_loader.get_prompt_loader") as mock_pl, \
              patch("app.engine.multi_agent.graph.settings") as mock_settings, \
              patch("app.engine.multi_agent.graph._get_or_create_tracer") as mock_tracer_fn, \
              patch("app.engine.multi_agent.graph._get_domain_greetings", return_value={}), \
+             patch("app.engine.multi_agent.graph._ainvoke_with_fallback",
+                   side_effect=_fake_ainvoke_with_fallback), \
              patch("app.engine.tools.web_search_tools.tool_web_search", mock_tool), \
              patch("app.services.output_processor.extract_thinking_from_response",
                    return_value=("Kết quả tìm kiếm: có nhiều tin tức...", None)):
@@ -413,8 +433,6 @@ class TestForcedToolChoice:
             mock_settings.default_domain = "maritime"
             mock_settings.enable_character_tools = False
             mock_settings.enable_code_execution = False
-            mock_acr.get_llm.return_value = mock_llm
-
             mock_loader = MagicMock()
             mock_loader.get_identity.return_value = {
                 "identity": {
@@ -475,10 +493,17 @@ class TestPromptContent:
             "agent_outputs": {},
         }
 
+        state["query"] = "giai thich nguyen tac su dung tool cua Wiii trong he thong"
+
+        async def capture_ainvoke_with_fallback(_llm, messages, **_kwargs):
+            return await capture_ainvoke(messages)
+
         with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_acr, \
              patch("app.engine.multi_agent.graph.settings") as mock_settings, \
              patch("app.engine.multi_agent.graph._get_or_create_tracer") as mock_tracer_fn, \
-             patch("app.engine.multi_agent.graph._get_domain_greetings", return_value={}):
+             patch("app.engine.multi_agent.graph._get_domain_greetings", return_value={}), \
+             patch("app.engine.multi_agent.graph._ainvoke_with_fallback",
+                   side_effect=capture_ainvoke_with_fallback):
 
             mock_settings.app_name = "Wiii"
             mock_settings.default_domain = "maritime"
@@ -527,6 +552,8 @@ class TestPromptContent:
             "final_response": "",
             "agent_outputs": {},
         }
+
+        state["query"] = "phan tich kha nang ho tro da linh vuc cua Wiii"
 
         with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_acr, \
              patch("app.engine.multi_agent.graph.settings") as mock_settings, \

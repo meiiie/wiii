@@ -107,15 +107,14 @@ class TestRAGPersonaFix:
         assert "is_follow_up" in params
 
     def test_corrective_rag_extracts_user_name_from_context(self):
-        """CorrectiveRAG._generate() extracts user_name from context dict."""
+        """CorrectiveRAG generation runtime extracts user_name from context dict."""
         import inspect
-        # Read the source of _generate to verify it extracts user_name
-        from app.engine.agentic_rag.corrective_rag import CorrectiveRAG
-        source = inspect.getsource(CorrectiveRAG._generate)
+        from app.engine.agentic_rag.corrective_rag_generation import generate_answer_impl
+        source = inspect.getsource(generate_answer_impl)
         assert 'context.get("user_name")' in source, \
-            "_generate must extract user_name from context"
-        assert "user_name=user_name" in source, \
-            "_generate must pass user_name to generate_from_documents"
+            "generate_answer_impl must extract user_name from context"
+        assert 'user_name=context.get("user_name")' in source, \
+            "generate_answer_impl must pass user_name to generate_from_documents"
 
 
 # =========================================================================
@@ -126,30 +125,30 @@ class TestFallbackIdentity:
     """Verify _generate_fallback injects identity from wiii_identity.yaml."""
 
     def test_fallback_source_includes_identity_import(self):
-        """_generate_fallback imports and uses get_prompt_loader for identity."""
+        """Fallback runtime imports and uses get_prompt_loader for identity."""
         import inspect
-        from app.engine.agentic_rag.corrective_rag import CorrectiveRAG
-        source = inspect.getsource(CorrectiveRAG._generate_fallback)
+        from app.engine.agentic_rag.corrective_rag_generation import generate_fallback_impl
+        source = inspect.getsource(generate_fallback_impl)
         assert "get_prompt_loader" in source, \
-            "_generate_fallback must use get_prompt_loader for identity"
+            "generate_fallback_impl must use get_prompt_loader for identity"
         assert "get_identity" in source, \
-            "_generate_fallback must call get_identity()"
+            "generate_fallback_impl must call get_identity()"
 
     def test_fallback_includes_user_name_when_available(self):
-        """_generate_fallback source references context user_name."""
+        """Fallback runtime references context user_name."""
         import inspect
-        from app.engine.agentic_rag.corrective_rag import CorrectiveRAG
-        source = inspect.getsource(CorrectiveRAG._generate_fallback)
+        from app.engine.agentic_rag.corrective_rag_generation import generate_fallback_impl
+        source = inspect.getsource(generate_fallback_impl)
         assert 'context.get("user_name"' in source, \
-            "_generate_fallback must extract user_name from context"
+            "generate_fallback_impl must extract user_name from context"
 
     def test_fallback_includes_emoji_usage(self):
-        """_generate_fallback source references emoji_usage from identity."""
+        """Fallback runtime references emoji_usage from identity."""
         import inspect
-        from app.engine.agentic_rag.corrective_rag import CorrectiveRAG
-        source = inspect.getsource(CorrectiveRAG._generate_fallback)
+        from app.engine.agentic_rag.corrective_rag_generation import generate_fallback_impl
+        source = inspect.getsource(generate_fallback_impl)
         assert "emoji_usage" in source, \
-            "_generate_fallback must inject emoji_usage from identity"
+            "generate_fallback_impl must inject emoji_usage from identity"
 
 
 # =========================================================================

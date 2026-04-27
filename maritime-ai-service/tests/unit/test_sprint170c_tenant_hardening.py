@@ -73,6 +73,15 @@ def _make_session_mock(fetchone_return=None, fetchall_return=None, scalar_return
     return mock_session
 
 
+def _latest_insert_sql(mock_conn):
+    """Return the latest knowledge_embeddings INSERT issued through asyncpg."""
+    for call_args in reversed(mock_conn.fetchval.call_args_list):
+        sql = call_args[0][0]
+        if "INSERT INTO knowledge_embeddings" in sql:
+            return sql
+    raise AssertionError("No knowledge_embeddings INSERT was executed")
+
+
 # ============================================================================
 # Group 1: Semantic Memory Repository (4 tests)
 # ============================================================================
@@ -447,9 +456,8 @@ class TestDenseSearchOrgFiltering:
             result = await repo.store_embedding("node-1", [0.1] * 768, organization_id="org-N")
 
         assert result is True
-        # Verify conn.execute was called with org_id-aware SQL
-        execute_call = mock_conn.execute.call_args
-        sql = execute_call[0][0]
+        # Verify the INSERT was called with org_id-aware SQL.
+        sql = _latest_insert_sql(mock_conn)
         assert "organization_id" in sql
 
     @pytest.mark.asyncio
@@ -469,8 +477,7 @@ class TestDenseSearchOrgFiltering:
             result = await repo.upsert_embedding("node-2", "test content", [0.1] * 768, organization_id="org-O")
 
         assert result is True
-        execute_call = mock_conn.execute.call_args
-        sql = execute_call[0][0]
+        sql = _latest_insert_sql(mock_conn)
         assert "organization_id" in sql
 
     @pytest.mark.asyncio
@@ -498,8 +505,7 @@ class TestDenseSearchOrgFiltering:
             )
 
         assert result is True
-        execute_call = mock_conn.execute.call_args
-        sql = execute_call[0][0]
+        sql = _latest_insert_sql(mock_conn)
         assert "organization_id" in sql
 
     @pytest.mark.asyncio

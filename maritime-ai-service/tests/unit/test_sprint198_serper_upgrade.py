@@ -469,6 +469,17 @@ class TestInternationalSearchSerper:
 class TestWebSearchSerper:
     """Tests for web_search_tools.py with Serper integration."""
 
+    @pytest.fixture(autouse=True)
+    def _keep_web_search_results_unfiltered(self, monkeypatch):
+        """These tests target Serper wiring; relevance ranking is covered separately."""
+        from app.engine.tools import web_search_tools
+
+        monkeypatch.setattr(
+            web_search_tools,
+            "_filter_by_relevance",
+            lambda _query, results, **_kwargs: results,
+        )
+
     @patch(_PATCH_HTTPX)
     @patch(_PATCH_SETTINGS)
     def test_web_search_uses_serper(self, mock_settings, mock_post):
@@ -742,7 +753,7 @@ class TestPlannerSerperIntegration:
         mock_settings.return_value = _mock_settings()
         mock_post.return_value = _mock_serper_response(items=[])
         mock_ddgs.return_value = [
-            {"title": "DDG Fallback", "body": "From DuckDuckGo", "href": "https://ddg.com/1"}
+            {"title": "DDG Fallback test", "body": "From DuckDuckGo test", "href": "https://ddg.com/1"}
         ]
         from app.engine.tools.web_search_tools import tool_web_search
         result = tool_web_search.invoke({"query": "test"})

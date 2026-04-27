@@ -3,9 +3,9 @@ Tests for Sprint 75: Pipeline Latency Elimination — Tier 1.
 
 Tests:
 1. Guardian singleton — _get_guardian() returns same instance, guardian_node uses singleton
-2. Tutor skips grader — graph edges route tutor_agent → synthesizer directly
+2. Tutor skips grader — WiiiRunner lanes route tutor_agent → synthesizer directly
 3. Bulk answer push — _push_answer_bulk() sends large chunks with no delay
-4. Graph structure — verify build_multi_agent_graph() edge configuration
+4. Runner structure — verify WiiiRunner node registration
 """
 
 import sys
@@ -145,57 +145,63 @@ class TestGuardianSingleton:
 # ============================================================================
 
 
-@pytest.mark.skip(reason="De-LangGraphing Phase 3: build_multi_agent_graph deprecated, use WiiiRunner")
 class TestGraderRemovedFromPipeline:
-    """Sprint 233: Grader removed from pipeline. All agents route to synthesizer."""
+    """Sprint 233: Grader removed from WiiiRunner. Agents route to synthesizer."""
 
     @staticmethod
-    def _get_graph_edges():
-        """Build graph and extract edges as (source, target) tuples."""
-        with patch("app.engine.multi_agent.graph.get_agent_registry") as mock_reg:
-            mock_reg.return_value = MagicMock()
-            mock_reg.return_value.tracer = MagicMock()
-            graph = _graph_mod.build_multi_agent_graph(checkpointer=None)
+    async def _run_lane(agent_name: str):
+        """Run a minimal WiiiRunner lane and capture step execution order."""
+        from app.engine.multi_agent.runner import WiiiRunner
 
-        graph_data = graph.get_graph()
+        calls = []
+        runner = WiiiRunner()
 
-        # LangGraph DrawableGraph: nodes may be str or objects with .id
-        nodes = set()
-        for n in graph_data.nodes:
-            nodes.add(n.id if hasattr(n, "id") else str(n))
+        async def _node(name, state):
+            calls.append(name)
+            next_state = dict(state)
+            if name == agent_name:
+                next_state["final_response"] = (
+                    "This is a sufficiently complete response from the selected lane."
+                )
+            return next_state
 
-        edges = []
-        for e in graph_data.edges:
-            src = e.source if hasattr(e, "source") else e[0]
-            tgt = e.target if hasattr(e, "target") else e[1]
-            edges.append((src, tgt))
+        for name in ("guardian", "supervisor", agent_name, "synthesizer"):
+            runner.register_node(name, lambda state, _name=name: _node(_name, state))
 
-        return nodes, edges
+        with patch("app.engine.multi_agent.graph.guardian_route", return_value="supervisor"), \
+             patch("app.engine.multi_agent.graph_support.route_decision", return_value=agent_name), \
+             patch("app.engine.multi_agent.runner.run_input_guardrails", new=AsyncMock(return_value=(True, None))), \
+             patch("app.engine.multi_agent.runner.run_output_guardrails", new=AsyncMock()):
+            await runner.run({"query": "test", "guardian_passed": True})
+
+        return calls
 
     def test_grader_node_not_in_graph(self):
-        """Sprint 233: grader node should no longer exist in compiled graph."""
-        nodes, _edges = self._get_graph_edges()
-        assert "grader" not in nodes, "grader node should be removed (Sprint 233)"
+        """Sprint 233: grader node should no longer exist in WiiiRunner."""
+        from app.engine.multi_agent.runner import get_wiii_runner
 
-    def test_rag_routes_directly_to_synthesizer(self):
-        """Sprint 233: RAG agent routes directly to synthesizer, no grader."""
-        nodes, edges = self._get_graph_edges()
+        runner = get_wiii_runner()
+        assert "grader" not in runner._nodes
+        assert "grader" not in runner._feature_nodes
 
-        assert "rag_agent" in nodes
-        assert "synthesizer" in nodes
-        assert ("rag_agent", "synthesizer") in edges, (
-            f"Expected rag_agent→synthesizer edge, got edges: {edges}"
-        )
+    @pytest.mark.asyncio
+    async def test_rag_routes_directly_to_synthesizer(self):
+        """Sprint 233: RAG agent routes to synthesizer, no grader."""
+        calls = await self._run_lane("rag_agent")
 
-    def test_tutor_routes_to_synthesizer(self):
+        assert calls == ["guardian", "supervisor", "rag_agent", "synthesizer"]
+
+    @pytest.mark.asyncio
+    async def test_tutor_routes_to_synthesizer(self):
         """Tutor agent routes directly to synthesizer."""
-        _nodes, edges = self._get_graph_edges()
-        assert ("tutor_agent", "synthesizer") in edges
+        calls = await self._run_lane("tutor_agent")
+        assert calls == ["guardian", "supervisor", "tutor_agent", "synthesizer"]
 
-    def test_memory_routes_to_synthesizer(self):
+    @pytest.mark.asyncio
+    async def test_memory_routes_to_synthesizer(self):
         """Memory agent routes directly to synthesizer."""
-        _nodes, edges = self._get_graph_edges()
-        assert ("memory_agent", "synthesizer") in edges
+        calls = await self._run_lane("memory_agent")
+        assert calls == ["guardian", "supervisor", "memory_agent", "synthesizer"]
 
 
 # ============================================================================

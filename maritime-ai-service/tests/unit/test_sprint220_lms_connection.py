@@ -267,10 +267,8 @@ class TestLMSPromptInjection:
         mock_loader.format_for_prompt.return_value = "--- THÔNG TIN HỌC TẬP (từ LMS) ---\nTest data"
         mock_loader_fn.return_value = mock_loader
 
-        with patch("app.core.config.get_settings") as mock_get_settings:
-            mock_settings = MagicMock()
+        with patch("app.core.config.settings") as mock_settings:
             mock_settings.enable_lms_integration = True
-            mock_get_settings.return_value = mock_settings
 
             from app.prompts.prompt_loader import PromptLoader
             loader = PromptLoader()

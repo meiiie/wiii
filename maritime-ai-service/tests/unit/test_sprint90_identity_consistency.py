@@ -262,11 +262,12 @@ class TestAntiRepetitionDedup:
 
     def test_build_system_prompt_still_has_identity_section(self):
         """build_system_prompt still injects identity YAML rules."""
-        import inspect
         from app.prompts.prompt_loader import PromptLoader
-        source = inspect.getsource(PromptLoader.build_system_prompt)
-        assert "TÍNH CÁCH WIII" in source, "Identity section must still be injected"
-        assert "PHONG CÁCH TRẢ LỜI" in source, "Suggestions must still be injected"
+        prompt = PromptLoader().build_system_prompt(role="student")
+        assert "WIII LIVING CORE CARD" in prompt or "CỐT LÕI NHÂN VẬT" in prompt, \
+            "Identity section must still be injected"
+        assert "GIỌNG VĂN" in prompt or "CÁCH WIII HIỆN DIỆN" in prompt, \
+            "Style guidance must still be injected"
 
 
 # =========================================================================
@@ -307,7 +308,9 @@ class TestIdentityYAMLIntegrity:
         anchor = identity["identity"]["identity_anchor"]
         assert "Wiii" in anchor
 
-    def test_avoid_count_is_7(self, identity):
-        """Sprint 90 added 2 new avoid items (pet name + follow-up greeting)."""
+    def test_avoid_count_is_current_contract(self, identity):
+        """Avoid list can grow as identity quality improves, but core rules remain."""
         avoid = identity["identity"]["response_style"]["avoid"]
-        assert len(avoid) == 7
+        assert len(avoid) >= 7
+        assert any("thú cưng" in item for item in avoid)
+        assert any("follow-up" in item for item in avoid)

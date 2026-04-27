@@ -173,6 +173,11 @@ def _normalize_router_text_impl(text: str) -> str:
         return "".join(c for c in nfkd if unicodedata.category(c) != "Mn")
 
 
+def _contains_router_phrase(normalized: str, phrase: str) -> bool:
+    """Match routing cues as standalone words/phrases, not substrings."""
+    return re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", normalized) is not None
+
+
 def _needs_code_studio_impl(query: str) -> bool:
     normalized = _normalize_router_text_impl(query)
     decision = resolve_visual_intent(query)
@@ -220,7 +225,7 @@ def _needs_code_studio_impl(query: str) -> bool:
         "screenshot",
         "browser sandbox",
     )
-    return any(kw in normalized for kw in narrowed_keywords)
+    return any(_contains_router_phrase(normalized, kw) for kw in narrowed_keywords)
 
 
 def _looks_clear_social_impl(normalized: str) -> bool:

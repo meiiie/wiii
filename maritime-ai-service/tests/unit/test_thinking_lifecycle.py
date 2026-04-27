@@ -43,18 +43,11 @@ if not _had_cs:
     _mock_chat_svc.get_chat_service = lambda: None
     sys.modules[_cs_key] = _mock_chat_svc
 
-# Break graph_streaming ↔ graph mutual import
-# Note: get_multi_agent_graph_async is async, so use AsyncMock
-from unittest.mock import AsyncMock as _AsyncMock
+# Break graph_streaming -> graph import by providing the current runner helpers.
 if not _had_graph:
     _mock_graph = types.ModuleType(_graph_key)
-    _mock_graph.get_multi_agent_graph_async = _AsyncMock()
     _mock_graph._build_domain_config = MagicMock(return_value={})
     _mock_graph._build_turn_local_state_defaults = MagicMock(return_value={})
-    _mock_graph.open_multi_agent_graph = _AsyncMock()
-    _mock_graph._inject_host_context = MagicMock(return_value=None)
-    _mock_graph._TRACERS = {}
-    _mock_graph._cleanup_tracer = MagicMock()
     sys.modules[_graph_key] = _mock_graph
 
 from app.engine.multi_agent.stream_utils import (
@@ -187,28 +180,6 @@ class TestNodeLabels:
 # Tests: graph_streaming emits lifecycle events
 # =============================================================================
 
-def _make_mock_graph(node_updates):
-    """Create a mock graph that yields the given node state updates."""
-    async def _astream(*args, **kwargs):
-        for update in node_updates:
-            yield update
-    mock_graph = MagicMock()
-    mock_graph.astream = _astream
-    return mock_graph
-
-
-class _MockGraphCM:
-    """Async context manager that returns a mock graph."""
-    def __init__(self, graph):
-        self._graph = graph
-
-    async def __aenter__(self):
-        return self._graph
-
-    async def __aexit__(self, *args):
-        pass
-
-
 def _make_narrator_result(node: str):
     """Create a mock ReasoningRenderResult with predictable labels per node."""
     labels = {
@@ -232,8 +203,7 @@ def _make_narrator_result(node: str):
 
 
 async def _collect_events(node_updates):
-    """Helper to collect all stream events from a graph run."""
-    mock_graph = _make_mock_graph(node_updates)
+    """Helper to collect stream events from a runner-backed streaming run."""
     mock_registry = MagicMock()
     mock_registry.start_request_trace.return_value = "trace-1"
     mock_registry.end_request_trace.return_value = {"span_count": 0}
@@ -247,8 +217,13 @@ async def _collect_events(node_updates):
     mock_narrator.render = _mock_render
     mock_narrator.render_fast = lambda req: _make_narrator_result(req.node)
 
-    with patch("app.engine.multi_agent.graph_streaming.open_multi_agent_graph",
-               new=lambda: _MockGraphCM(mock_graph)), \
+    async def _mock_forward_graph_events(*, initial_state, merged_queue):
+        for update in node_updates:
+            await merged_queue.put(("graph", update))
+        await merged_queue.put(("graph_done", None))
+
+    with patch("app.engine.multi_agent.graph_streaming.forward_graph_events_impl",
+               new=_mock_forward_graph_events), \
          patch("app.engine.multi_agent.graph_streaming.get_agent_registry",
                return_value=mock_registry), \
          patch("app.engine.multi_agent.graph_streaming._build_domain_config",
@@ -374,8 +349,11 @@ class TestGraphStreamingLifecycle:
     async def test_thinking_end_has_duration_ms(self):
         """thinking_end should include duration_ms in details."""
         events = await _collect_events([
-            {"supervisor": {"next_agent": "direct"}},
-            {"direct": {"final_response": "Hi"}},
+            {"supervisor": {"next_agent": "rag_agent"}},
+            {"rag_agent": {
+                "thinking_content": "Dang kiem tra nguon lien quan...",
+                "final_response": "Answer",
+            }},
         ])
 
         end_events = [e for e in events if e.type == "thinking_end"]

@@ -169,8 +169,12 @@ class TestMemoryAgentExtract:
         mock_fact.to_content.return_value = "Tên: Minh"
         mock_memory_engine._fact_extractor.extract_and_store_facts.return_value = [mock_fact]
 
-        result = await memory_agent._extract_and_store_facts("user-123", "Tôi tên là Minh", {})
-        assert result == ["Tên: Minh"]
+        facts, decisions = await memory_agent._extract_and_store_facts("user-123", "Tôi tên là Minh", {})
+        assert facts == ["Tên: Minh"]
+        assert len(decisions) == 1
+        assert decisions[0].action.value == "add"
+        assert decisions[0].fact_type == "Tên"
+        assert decisions[0].new_value == "Minh"
         mock_memory_engine._fact_extractor.extract_and_store_facts.assert_called_once_with(
             user_id="user-123", message="Tôi tên là Minh", existing_facts={},
         )
@@ -180,33 +184,33 @@ class TestMemoryAgentExtract:
         """Returns empty list when no facts extracted."""
         mock_memory_engine._fact_extractor.extract_and_store_facts.return_value = []
         result = await memory_agent._extract_and_store_facts("user-123", "Xin chào", {})
-        assert result == []
+        assert result == ([], [])
 
     @pytest.mark.asyncio
     async def test_extract_empty_without_engine(self):
         """Returns empty list when semantic memory is None."""
         agent = MemoryAgentNode(semantic_memory=None)
         result = await agent._extract_and_store_facts("user-123", "Tôi là Minh", {})
-        assert result == []
+        assert result == ([], [])
 
     @pytest.mark.asyncio
     async def test_extract_empty_without_user_id(self, memory_agent):
         """Returns empty list when user_id is empty."""
         result = await memory_agent._extract_and_store_facts("", "Tôi là Minh", {})
-        assert result == []
+        assert result == ([], [])
 
     @pytest.mark.asyncio
     async def test_extract_empty_without_message(self, memory_agent):
         """Returns empty list when message is empty."""
         result = await memory_agent._extract_and_store_facts("user-123", "", {})
-        assert result == []
+        assert result == ([], [])
 
     @pytest.mark.asyncio
     async def test_extract_handles_exception(self, memory_agent, mock_memory_engine):
         """Returns empty list on extraction error."""
         mock_memory_engine._fact_extractor.extract_and_store_facts.side_effect = Exception("LLM error")
         result = await memory_agent._extract_and_store_facts("user-123", "Tôi là Minh", {})
-        assert result == []
+        assert result == ([], [])
 
 
 # =============================================================================
@@ -222,8 +226,10 @@ class TestMemoryAgentRespond:
         existing = [{"type": "name", "content": "Minh"}]
         new = ["Tuổi: 25"]
 
-        with patch("app.services.output_processor.extract_thinking_from_response",
-                    return_value=("Chào Minh! Mình ghi nhớ bạn 25 tuổi rồi.", "")):
+        thinking_processor = MagicMock()
+        thinking_processor.process.return_value = ("Chào Minh! Mình ghi nhớ bạn 25 tuổi rồi.", "")
+        with patch("app.services.thinking_post_processor.get_thinking_processor",
+                    return_value=thinking_processor):
             result = await memory_agent._generate_response(
                 mock_llm, "Mình 25 tuổi", existing, new, "", base_state,
             )
@@ -234,13 +240,16 @@ class TestMemoryAgentRespond:
     @pytest.mark.asyncio
     async def test_llm_response_preserves_thinking(self, memory_agent, mock_llm, base_state):
         """Thinking content is stored in state."""
-        with patch("app.services.output_processor.extract_thinking_from_response",
-                    return_value=("Chào bạn!", "Some thinking")):
+        thinking_processor = MagicMock()
+        thinking_processor.process.return_value = ("Chào bạn!", "Some thinking")
+        with patch("app.services.thinking_post_processor.get_thinking_processor",
+                    return_value=thinking_processor):
             await memory_agent._generate_response(
                 mock_llm, "Xin chào", [], [], "", base_state,
             )
 
         assert base_state.get("thinking") == "Some thinking"
+        assert base_state.get("_memory_native_thinking") == "Some thinking"
 
     @pytest.mark.asyncio
     async def test_template_fallback_when_no_llm(self, memory_agent, base_state):

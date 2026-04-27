@@ -1,11 +1,11 @@
 """
-Stream Utilities for Multi-Agent Graph Streaming
+Stream utilities for WiiiRunner multi-agent streaming
 
-SOTA Dec 2025: LangGraph 1.0 astream_events() pattern
+SOTA Dec 2025: evented agent streaming pattern
 Pattern: OpenAI Responses API + Claude Extended Thinking + Gemini astream
 
-This module provides utilities to stream events from LangGraph execution,
-transforming internal graph events into user-friendly SSE events.
+This module provides utilities to stream events from WiiiRunner execution,
+transforming internal runtime events into user-friendly SSE events.
 
 **Feature: v3-full-graph-streaming**
 """

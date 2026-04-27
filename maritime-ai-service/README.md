@@ -9,7 +9,7 @@ Use this README as the backend entry point. For full architecture detail, defer 
 - FastAPI API surface for chat, streaming, threads, auth, organizations, admin, LMS, and health endpoints
 - request middleware for request IDs, organization context, auth, and rate limiting
 - `ChatOrchestrator` pipeline, session handling, domain routing, and output shaping
-- LangGraph multi-agent execution across RAG, tutor, memory, direct-response, and tool-assisted flows
+- WiiiRunner multi-agent execution across RAG, tutor, memory, direct-response, Code Studio, product search, and tool-assisted flows
 - retrieval and memory subsystems backed by PostgreSQL, pgvector, sparse search, and optional Neo4j context
 - LMS token exchange, webhook ingestion, dashboard/data pull endpoints, and tool exposure
 - production packaging, runtime config validation, and Docker Compose deployment assets
@@ -28,7 +28,7 @@ The main request path is:
 1. HTTP or SSE request enters the API router.
 2. Middleware applies request correlation, organization context, rate limiting, and auth.
 3. `ChatOrchestrator` resolves session state and domain/plugin context.
-4. The multi-agent graph routes work into retrieval, tutoring, memory, direct response, or external tools.
+4. `WiiiRunner` routes work into retrieval, tutoring, memory, direct response, Code Studio, product search, or external tools.
 5. The output layer formats the final response as JSON or SSE V3 events.
 6. Background tasks update facts, insights, or other post-response state.
 

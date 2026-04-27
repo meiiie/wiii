@@ -16,7 +16,7 @@
 4. [Core Components Deep Dive](#4-core-components-deep-dive)
    - 4.1 [API & Middleware Layer](#41-api--middleware-layer)
    - 4.2 [Chat Processing Pipeline](#42-chat-processing-pipeline)
-   - 4.3 [Multi-Agent System (LangGraph)](#43-multi-agent-system-langgraph)
+   - 4.3 [Multi-Agent Runtime (WiiiRunner)](#43-multi-agent-runtime-wiiirunner)
    - 4.4 [Corrective RAG Pipeline](#44-corrective-rag-pipeline)
    - 4.5 [Search Architecture](#45-search-architecture)
    - 4.6 [LLM Provider Layer](#46-llm-provider-layer)
@@ -82,15 +82,16 @@ graph TB
         DROUTER["DomainRouter<br/>5-priority"]
     end
 
-    subgraph "Multi-Agent System (LangGraph)"
+    subgraph "Multi-Agent Runtime (WiiiRunner)"
         GUARD["Guardian"]
         SUP["Supervisor"]
         RAG_A["RAG Agent"]
         TUTOR_A["Tutor Agent"]
         MEM_A["Memory Agent"]
         DIRECT_A["Direct Response"]
+        CODE_A["Code Studio Agent"]
         PROD_A["Product Search Agent"]
-        GRADE_A["Grader"]
+        PAR_A["Parallel Dispatch / Aggregator"]
         SYNTH["Synthesizer"]
     end
 
@@ -267,22 +268,24 @@ maritime-ai-service/                    # Backend (Python)
 │   │   │   ├── ollama_provider.py      # Ollama (Qwen3/DeepSeek-R1 thinking)
 │   │   │   └── unified_client.py       # AsyncOpenAI SDK (feature-gated)
 │   │   │
-│   │   ├── multi_agent/                # LangGraph Multi-Agent System
-│   │   │   ├── graph.py                # Graph definition + compile
+│   │   ├── multi_agent/                # WiiiRunner multi-agent runtime
+│   │   │   ├── runner.py               # Custom async orchestration loop
+│   │   │   ├── graph.py                # Compatibility shell + node entrypoints
 │   │   │   ├── graph_streaming.py      # SSE event emission + lifecycle + drain
 │   │   │   ├── state.py                # AgentState TypedDict (org_id, tool_events)
-│   │   │   ├── checkpointer.py         # AsyncPostgresSaver singleton
+│   │   │   ├── supervisor.py           # LLM-first routing (RoutingDecision)
+│   │   │   ├── guardian_runtime.py     # Content safety runtime
+│   │   │   ├── direct_node_runtime.py  # General + web/news/legal search tools
+│   │   │   ├── code_studio_node_runtime.py  # Code Studio runtime path
 │   │   │   ├── agent_loop.py           # Generalized ReAct (Path A/B)
-│   │   │   └── agents/                 # Agent nodes (9 agents)
-│   │   │       ├── supervisor.py       # LLM-first routing (RoutingDecision)
-│   │   │       ├── guardian.py         # Content safety (fail-open)
-│   │   │       ├── tutor_node.py       # Teaching + ReAct tool calling
-│   │   │       ├── rag_node.py         # Knowledge retrieval
-│   │   │       ├── memory_node.py      # User memory retrieval
-│   │   │       ├── grader_node.py      # Quality scoring (1-10)
-│   │   │       ├── synthesizer.py      # Final response formatting
-│   │   │       ├── direct_response.py  # General + web/news/legal search tools
-│   │   │       └── product_search_node.py  # Product search (7 tools, 5 platforms)
+│   │   │   ├── agents/                 # Worker agents
+│   │   │   │   ├── tutor_node.py       # Teaching + ReAct tool calling
+│   │   │   │   ├── rag_node.py         # Knowledge retrieval
+│   │   │   │   ├── memory_agent.py     # User memory retrieval
+│   │   │   │   ├── colleague_node.py   # Feature-gated colleague/soul handoff
+│   │   │   │   ├── grader_agent.py     # Optional quality scoring helper
+│   │   │   │   └── product_search_node.py  # Product search (feature-gated)
+│   │   │   └── subagents/              # Feature-gated parallel dispatch workers
 │   │   │
 │   │   ├── search_platforms/           # Product Search Platform (Sprint 148-151)
 │   │   │   ├── base.py                 # SearchPlatformAdapter ABC
@@ -444,7 +447,7 @@ wiii-desktop/                           # Desktop App (Tauri v2)
 | **Framework** | FastAPI | 0.109.2 | Async REST + WebSocket |
 | **Runtime** | Uvicorn | 0.27.1 | ASGI server |
 | **Validation** | Pydantic | >=2.9.0 | Settings + request models |
-| **Orchestration** | LangGraph | >=1.0.0 | Multi-agent state machine |
+| **Orchestration** | WiiiRunner | custom async runner | Multi-agent execution loop without LangGraph dependency |
 | **LLM (primary)** | Google Gemini | 2.0 Flash | via langchain-google-genai >=3.2.0 |
 | **LLM (failover 1)** | OpenAI | GPT-4o | via openai >=1.40.0 |
 | **LLM (failover 2)** | Ollama | Qwen3:8b | via langchain-community >=0.4.0 |
@@ -623,43 +626,39 @@ flowchart TB
 
 ---
 
-### 4.3 Multi-Agent System (LangGraph)
+### 4.3 Multi-Agent Runtime (WiiiRunner)
 
-9 agents in a directed graph with conditional edges, compiled via `StateGraph`.
+The active runtime is `WiiiRunner`, a framework-free async orchestration loop. It preserves the node-style `AgentState` contract while replacing the old `StateGraph` compile/invoke path.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> guardian_agent
+    [*] --> guardian
 
-    guardian_agent --> supervisor: SAFE (or fail-open on error)
-    guardian_agent --> synthesizer_node: BLOCKED (harmful content)
+    guardian --> supervisor: safe or fail-open
+    guardian --> synthesizer: blocked / final response
 
-    supervisor --> direct_response_node: DIRECT
-    supervisor --> memory_agent: MEMORY
-    supervisor --> tutor_agent: TUTOR
-    supervisor --> rag_agent: RAG
-    supervisor --> product_search_agent: PRODUCT_SEARCH
+    supervisor --> direct: social, simple, web/search intent
+    supervisor --> memory_agent: personal context
+    supervisor --> tutor_agent: teaching / explanation
+    supervisor --> rag_agent: retrieval
+    supervisor --> code_studio_agent: generated app / artifact work
+    supervisor --> product_search_agent: feature gate
+    supervisor --> colleague_agent: feature gate
+    supervisor --> parallel_dispatch: subagent feature gate
 
-    direct_response_node --> synthesizer_node
+    direct --> synthesizer
+    memory_agent --> synthesizer
+    tutor_agent --> synthesizer
+    rag_agent --> synthesizer
+    code_studio_agent --> synthesizer
+    product_search_agent --> synthesizer
+    colleague_agent --> synthesizer
 
-    state rag_check <<choice>>
-    rag_agent --> rag_check
-    rag_check --> synthesizer_node: confidence >= 0.85 [EARLY EXIT]
-    rag_check --> quality_check: confidence < 0.85
+    parallel_dispatch --> aggregator
+    aggregator --> synthesizer: enough context
+    aggregator --> supervisor: retry / follow-up route, max 2
 
-    state tutor_check <<choice>>
-    tutor_agent --> tutor_check
-    tutor_check --> synthesizer_node: confidence >= 0.85 [EARLY EXIT]
-    tutor_check --> quality_check: confidence < 0.85
-
-    memory_agent --> quality_check
-
-    product_search_agent --> synthesizer_node
-
-    quality_check --> synthesizer_node: score >= 6 [PASS]
-    quality_check --> tutor_agent: score < 6 [RETRY, max 1]
-
-    synthesizer_node --> [*]
+    synthesizer --> [*]
 ```
 
 | Agent | Responsibility | Key Features |
@@ -670,13 +669,14 @@ stateDiagram-v2
 | **Tutor Agent** | Teaching, explanation | ReAct tool-calling loop with domain tools |
 | **Memory Agent** | User context retrieval | Cross-session semantic memory |
 | **Direct Response** | General queries + tool dispatch | 8 tools: 3 character + datetime + 4 web search (web, news, legal, maritime). Handles off-topic, web_search intents |
-| **Product Search** | Product comparison & pricing | 7 tools across 5 platforms (Serper, WebSosanh, Facebook, TikTok, Apify). Plugin architecture with circuit breakers. Handles product_search intent |
-| **Grader** | Quality control | Score 1-10, early exit at confidence >= 0.85 |
+| **Code Studio** | Generated apps, widgets, and artifacts | Feature-aware app/runtime generation paths |
+| **Product Search** | Product comparison & pricing | Feature-gated tools across Serper, WebSosanh, Facebook, TikTok, Apify, and scraping adapters |
+| **Parallel Dispatch + Aggregator** | Optional subagent fan-out | Feature-gated parallel worker dispatch with bounded aggregator→supervisor loop |
 | **Synthesizer** | Final formatting | Vietnamese output, thinking extraction, citations |
 
 **AgentState** fields: `messages`, `query`, `context`, `domain_id`, `organization_id`, `thinking`, `agent_outputs`, `tool_call_events`, `confidence`, `sources`, `next_agent`, `retry_count`
 
-**Checkpoint persistence:** `AsyncPostgresSaver` — per-user-session LangGraph state stored in PostgreSQL.
+**Persistence:** active conversation continuity uses `thread_views`, `chat_messages`/history repositories, session summaries, and semantic memory. The old LangGraph checkpointer API is no longer part of the active runtime.
 
 ---
 
@@ -931,7 +931,7 @@ sequenceDiagram
     participant C as Client
     participant API as chat_stream.py
     participant GS as graph_streaming.py
-    participant NODES as LangGraph Nodes
+    participant NODES as WiiiRunner nodes
     participant SU as stream_utils.py
 
     C->>API: POST /chat/stream/v3
@@ -940,7 +940,7 @@ sequenceDiagram
         Note over API: _keepalive_generator() wraps stream (15s heartbeat)
     end
 
-    loop For each LangGraph node
+    loop For each WiiiRunner node
         NODES->>SU: create_status_event(label)
         SU-->>GS: StreamEvent(type="status")
         GS-->>API: SSE event: status
@@ -982,7 +982,7 @@ done           {sources: [...]}
 ```
 
 **Status vs Thinking distinction** (Sprint 63):
-- `status` events = pipeline progress (routing decisions, grader scores)
+- `status` events = pipeline progress (routing decisions, node lifecycle, runtime checks)
 - `thinking` events = raw AI reasoning content
 
 **Streaming Timeouts:**
@@ -1100,7 +1100,7 @@ flowchart TB
 
     CV --> DR["DomainRouter<br/>Filter domains by org.allowed_domains"]
     CV --> TID["Thread ID:<br/>org_{org}__user_{uid}__session_{sid}"]
-    TID --> CHECK["LangGraph checkpoints<br/>(per org-user-session)"]
+    TID --> CHECK["thread_views + chat history<br/>(per org-user-session)"]
 
     subgraph Admin["Organization Admin API"]
         CRUD["CRUD organizations"]
@@ -1364,7 +1364,7 @@ flowchart TB
 - **Cache isolation**: Cache key = `"{org_id}:{user_id}"` when org present
 - **Backfill**: Existing rows → `'default'`; knowledge_embeddings → NULL (shared)
 - **B-tree indexes** on `organization_id` for all filtered tables + composite `(user_id, organization_id)` indexes (Migration 017)
-- **Thread isolation**: `build_thread_id()` embeds org_id → cross-org LangGraph checkpoint isolation
+- **Thread isolation**: `build_thread_id()` embeds org_id → cross-org thread/history isolation
 - **86 tests** across `test_sprint160_data_isolation.py` (56) + `test_sprint170c_tenant_hardening.py` (30)
 
 ---
@@ -2027,12 +2027,6 @@ erDiagram
         timestamp updated_at
     }
 
-    langgraph_checkpoints {
-        text thread_id PK
-        bytea checkpoint
-        jsonb metadata
-    }
-
     users ||--o{ federated_identities : has
     users ||--o{ refresh_tokens : has
     users ||--o{ user_organizations : joins
@@ -2046,7 +2040,7 @@ erDiagram
 
 | Database | Tables | Purpose |
 |----------|--------|---------|
-| **PostgreSQL 17** | `knowledge_embeddings`, `semantic_memories`, `conversation_history`, `threads`, `scheduled_tasks`, `organizations`, `user_organizations`, `user_preferences`, `wiii_character_blocks`, `langgraph_checkpoints`, `users`, `federated_identities`, `refresh_tokens`, `org_audit_log`, `learning_profile`, `chat_messages`, `chat_sessions`, `wiii_skills`, `wiii_journal`, `wiii_browsing_log`, `wiii_emotional_snapshots` | Primary OLTP + vector search (HNSW) + FTS |
+| **PostgreSQL 17** | `knowledge_embeddings`, `semantic_memories`, `conversation_history`, `thread_views`, `scheduled_tasks`, `organizations`, `user_organizations`, `user_preferences`, `wiii_character_blocks`, `users`, `federated_identities`, `refresh_tokens`, `org_audit_log`, `learning_profile`, `chat_messages`, `chat_sessions`, `wiii_skills`, `wiii_journal`, `wiii_browsing_log`, `wiii_emotional_snapshots` | Primary OLTP + vector search (HNSW) + FTS |
 | **Neo4j 5** | Nodes: `Regulation`, `Concept`, `Entity`; Rels: `REFERENCES`, `RELATED_TO` | Knowledge graph relationships |
 | **MinIO** | `wiii-docs` bucket | PDF pages, extracted images |
 | **Valkey** | Key-value | Session cache, rate limit counters |
@@ -2247,7 +2241,7 @@ MINIO_ENDPOINT=localhost:9000
 | Flag | Default | Description |
 |------|---------|-------------|
 | **Core** | | |
-| `use_multi_agent` | `True` | LangGraph multi-agent system |
+| `use_multi_agent` | `True` | WiiiRunner multi-agent runtime |
 | `enable_corrective_rag` | `True` | Self-correction loop |
 | `enable_llm_failover` | `True` | Multi-provider chain |
 | `deep_reasoning_enabled` | `True` | `<thinking>` tags |

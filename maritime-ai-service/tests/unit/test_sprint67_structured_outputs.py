@@ -251,11 +251,17 @@ def _make_structured_llm(return_value):
 class TestSupervisorStructuredRoute:
     """Test Supervisor routing with structured output enabled."""
 
+    @pytest.fixture(autouse=True)
+    def _bypass_pool(self):
+        with _bypass_failover():
+            yield
+
     def _make_supervisor(self, mock_llm):
         """Create supervisor instance without __init__."""
         from app.engine.multi_agent.supervisor import SupervisorAgent
         sup = SupervisorAgent.__new__(SupervisorAgent)
         sup._llm = mock_llm
+        sup._get_llm_for_state = MagicMock(return_value=mock_llm)
         return sup
 
     @pytest.mark.asyncio

@@ -107,14 +107,17 @@ def tool_generate_visual_impl(
         except Exception as exc:
             logger.warning("Structured visual fallback HTML failed for type=%s: %s", visual_type, exc)
 
-    if renderer_kind in ("template", ""):
-        renderer_kind = "inline_html"
-    hint = runtime_metadata_text("renderer_kind_hint", "")
-    if hint and not renderer_kind.strip():
-        renderer_kind = hint
+    renderer_kind = renderer_kind.strip()
+    hint = runtime_metadata_text("renderer_kind_hint", "").strip()
+    intent_mode = runtime_metadata_text("visual_intent_mode", "").strip()
+    if not renderer_kind:
+        if hint:
+            renderer_kind = hint
+        elif intent_mode == "template" and not resolved_code_html:
+            renderer_kind = "template"
+        else:
+            renderer_kind = "inline_html"
 
-    if resolved_code_html and should_keep_structured_renderer(renderer_kind):
-        resolved_code_html = None
     if resolved_code_html:
         renderer_kind = "inline_html"
     resolved_renderer_kind = resolve_renderer_kind(visual_type, spec, renderer_kind)

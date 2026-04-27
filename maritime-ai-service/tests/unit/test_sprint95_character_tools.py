@@ -182,12 +182,12 @@ class TestConfigFlag:
 class TestTutorNodeWiring:
     """Test character tools wiring in TutorAgentNode.__init__."""
 
-    @patch("app.engine.multi_agent.agents.tutor_node.AgentConfigRegistry")
+    @patch("app.engine.multi_agent.agents.tutor_runtime.AgentConfigRegistry")
     def test_default_6_tools(self, mock_acr):
         """Without character tools enabled, should have 6 base tools."""
         mock_llm = MagicMock()
         mock_acr.get_llm.return_value = mock_llm
-        with patch("app.core.config.settings") as mock_settings:
+        with patch("app.engine.multi_agent.agents.tutor_node.settings") as mock_settings:
             mock_settings.enable_character_tools = False
             from app.engine.multi_agent.agents.tutor_node import TutorAgentNode
             import app.engine.multi_agent.agents.tutor_node as mod
@@ -202,12 +202,12 @@ class TestTutorNodeWiring:
             finally:
                 mod._tutor_node = old
 
-    @patch("app.engine.multi_agent.agents.tutor_node.AgentConfigRegistry")
+    @patch("app.engine.multi_agent.agents.tutor_runtime.AgentConfigRegistry")
     def test_more_tools_when_enabled(self, mock_acr):
         """With character tools enabled, should have base + 3 character tools."""
         mock_llm = MagicMock()
         mock_acr.get_llm.return_value = mock_llm
-        with patch("app.core.config.settings") as mock_settings:
+        with patch("app.engine.multi_agent.agents.tutor_node.settings") as mock_settings:
             mock_settings.enable_character_tools = True
             from app.engine.multi_agent.agents.tutor_node import TutorAgentNode
             import app.engine.multi_agent.agents.tutor_node as mod
@@ -223,12 +223,12 @@ class TestTutorNodeWiring:
             finally:
                 mod._tutor_node = old
 
-    @patch("app.engine.multi_agent.agents.tutor_node.AgentConfigRegistry")
+    @patch("app.engine.multi_agent.agents.tutor_runtime.AgentConfigRegistry")
     def test_graceful_when_unavailable(self, mock_acr):
         """Should handle ImportError gracefully."""
         mock_llm = MagicMock()
         mock_acr.get_llm.return_value = mock_llm
-        with patch("app.core.config.settings") as mock_settings:
+        with patch("app.engine.multi_agent.agents.tutor_node.settings") as mock_settings:
             mock_settings.enable_character_tools = True
             # Make character_tools import fail
             with patch.dict(sys.modules, {"app.engine.character.character_tools": None}):
@@ -244,12 +244,12 @@ class TestTutorNodeWiring:
                 finally:
                     mod._tutor_node = old
 
-    @patch("app.engine.multi_agent.agents.tutor_node.AgentConfigRegistry")
+    @patch("app.engine.multi_agent.agents.tutor_runtime.AgentConfigRegistry")
     def test_bind_tools_called_with_all(self, mock_acr):
         """bind_tools should be called with all tools including character."""
         mock_llm = MagicMock()
         mock_acr.get_llm.return_value = mock_llm
-        with patch("app.core.config.settings") as mock_settings:
+        with patch("app.engine.multi_agent.agents.tutor_node.settings") as mock_settings:
             mock_settings.enable_character_tools = True
             from app.engine.multi_agent.agents.tutor_node import TutorAgentNode
             import app.engine.multi_agent.agents.tutor_node as mod
@@ -273,8 +273,8 @@ class TestReActDispatch:
     @pytest.fixture
     def mock_tutor(self):
         """Create a TutorAgentNode with mocked LLM."""
-        with patch("app.engine.multi_agent.agents.tutor_node.AgentConfigRegistry") as mock_acr, \
-             patch("app.core.config.settings") as mock_settings:
+        with patch("app.engine.multi_agent.agents.tutor_runtime.AgentConfigRegistry") as mock_acr, \
+             patch("app.engine.multi_agent.agents.tutor_node.settings") as mock_settings:
             mock_settings.enable_character_tools = True
             mock_settings.default_domain = "maritime"
             mock_llm = MagicMock()

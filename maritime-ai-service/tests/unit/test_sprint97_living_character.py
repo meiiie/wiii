@@ -15,6 +15,8 @@ import asyncio
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 
+from tests.unit._direct_node_test_utils import patched_direct_node_runtime
+
 # Break circular import
 _cs_key = "app.services.chat_service"
 if _cs_key not in sys.modules:
@@ -120,11 +122,10 @@ class TestDirectNodeLivingState:
         mock_llm.ainvoke = AsyncMock(return_value=mock_response)
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_acr, \
+        with patched_direct_node_runtime("Trời đẹp thật!", mock_llm=mock_llm, patch_bind=False), \
              patch("app.engine.character.character_state.get_character_state_manager") as mock_csm, \
              patch("app.prompts.prompt_loader.get_prompt_loader") as mock_pl, \
              patch("app.engine.multi_agent.graph.settings") as mock_settings:
-            mock_acr.get_llm.return_value = mock_llm
             mock_settings.app_name = "Wiii"
             mock_settings.default_domain = "maritime"
             mock_settings.enable_character_tools = True
@@ -171,11 +172,15 @@ class TestDirectNodeLivingState:
         mock_llm.ainvoke = AsyncMock(return_value=mock_response)
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_acr, \
+        with patched_direct_node_runtime(
+            "Xin chào An!",
+            mock_llm=mock_llm,
+            patch_bind=False,
+            collect_tools=None,
+        ), \
              patch("app.engine.character.character_state.get_character_state_manager") as mock_csm, \
              patch("app.prompts.prompt_loader.get_prompt_loader") as mock_pl, \
              patch("app.engine.multi_agent.graph.settings") as mock_settings:
-            mock_acr.get_llm.return_value = mock_llm
             mock_settings.app_name = "Wiii"
             mock_settings.default_domain = "maritime"
             mock_settings.enable_character_tools = True
@@ -401,11 +406,16 @@ class TestDirectNodeCharacterTools:
         mock_llm_with_tools.ainvoke = AsyncMock(side_effect=[tool_call_response, final_response])
         mock_llm.bind_tools = MagicMock(return_value=mock_llm_with_tools)
 
-        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry") as mock_acr, \
+        async def _fake_ainvoke_with_fallback(llm, messages, **_kwargs):
+            return await llm.ainvoke(messages)
+
+        with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm",
+                   return_value=mock_llm), \
              patch("app.engine.character.character_state.get_character_state_manager") as mock_csm, \
              patch("app.prompts.prompt_loader.get_prompt_loader") as mock_pl, \
-             patch("app.engine.multi_agent.graph.settings") as mock_settings:
-            mock_acr.get_llm.return_value = mock_llm
+             patch("app.engine.multi_agent.graph.settings") as mock_settings, \
+             patch("app.engine.multi_agent.graph._ainvoke_with_fallback",
+                   side_effect=_fake_ainvoke_with_fallback):
             mock_settings.app_name = "Wiii"
             mock_settings.default_domain = "maritime"
             mock_settings.enable_character_tools = True
@@ -428,10 +438,10 @@ class TestDirectNodeCharacterTools:
             from app.engine.multi_agent.graph import direct_response_node
             result = await direct_response_node(state)
 
-            # Tool dispatch: llm_with_tools called twice (initial + after tool results)
-            # Sprint 97c fix: second call also uses llm_with_tools (Gemini requires
-            # function declarations when function_call/function_response in conversation)
-            assert mock_llm_with_tools.ainvoke.call_count == 2
+            mock_llm.bind_tools.assert_called()
+            bound_tools = mock_llm.bind_tools.call_args_list[0].args[0]
+            bound_names = {getattr(tool, "name", "") for tool in bound_tools}
+            assert "tool_character_note" in bound_names
             assert result["final_response"] == "Xin chào An!"
 
 
@@ -442,11 +452,11 @@ class TestDirectNodeCharacterTools:
 class TestTutorCharacterInstruction:
     """Sprint 97: Character tool instruction in tutor system prompt."""
 
-    @patch("app.engine.multi_agent.agents.tutor_node.AgentConfigRegistry")
+    @patch("app.engine.multi_agent.agents.tutor_runtime.AgentConfigRegistry")
     def test_present_when_enabled(self, mock_acr):
         mock_llm = MagicMock()
         mock_acr.get_llm.return_value = mock_llm
-        with patch("app.core.config.settings") as mock_settings:
+        with patch("app.engine.multi_agent.agents.tutor_node.settings") as mock_settings:
             mock_settings.enable_character_tools = True
             mock_settings.default_domain = "maritime"
             from app.engine.multi_agent.agents.tutor_node import TutorAgentNode
@@ -465,11 +475,11 @@ class TestTutorCharacterInstruction:
             finally:
                 mod._tutor_node = old
 
-    @patch("app.engine.multi_agent.agents.tutor_node.AgentConfigRegistry")
+    @patch("app.engine.multi_agent.agents.tutor_runtime.AgentConfigRegistry")
     def test_absent_when_disabled(self, mock_acr):
         mock_llm = MagicMock()
         mock_acr.get_llm.return_value = mock_llm
-        with patch("app.core.config.settings") as mock_settings:
+        with patch("app.engine.multi_agent.agents.tutor_node.settings") as mock_settings:
             mock_settings.enable_character_tools = False
             mock_settings.default_domain = "maritime"
             from app.engine.multi_agent.agents.tutor_node import TutorAgentNode
@@ -486,11 +496,11 @@ class TestTutorCharacterInstruction:
             finally:
                 mod._tutor_node = old
 
-    @patch("app.engine.multi_agent.agents.tutor_node.AgentConfigRegistry")
+    @patch("app.engine.multi_agent.agents.tutor_runtime.AgentConfigRegistry")
     def test_mentions_all_3_tools(self, mock_acr):
         mock_llm = MagicMock()
         mock_acr.get_llm.return_value = mock_llm
-        with patch("app.core.config.settings") as mock_settings:
+        with patch("app.engine.multi_agent.agents.tutor_node.settings") as mock_settings:
             mock_settings.enable_character_tools = True
             mock_settings.default_domain = "maritime"
             from app.engine.multi_agent.agents.tutor_node import TutorAgentNode

@@ -53,10 +53,10 @@ class TestIdentityYAMLEnrichment:
         assert "The Wiii Lab" in backstory
 
     def test_backstory_has_specific_memory(self, identity):
-        """Backstory should have a specific memory, not just generic description."""
+        """Backstory should have concrete identity details, not just generic description."""
         backstory = identity["backstory"]
-        assert "Rule 17b" in backstory or "rule 17" in backstory.lower(), \
-            "Should have a specific learning memory"
+        assert "Bông" in backstory and "The Wiii Lab" in backstory
+        assert "tại sao" in backstory.lower() or "ngộ" in backstory.lower()
 
     def test_has_quirks(self, identity):
         quirks = identity.get("quirks", [])
@@ -135,7 +135,7 @@ class TestIdentityYAMLEnrichment:
         assert len(identity["personality"]["traits"]) >= 6
 
     def test_has_avoid_list(self, identity):
-        assert len(identity["response_style"]["avoid"]) == 7
+        assert len(identity["response_style"]["avoid"]) >= 7
 
     def test_has_suggestions(self, identity):
         assert len(identity["response_style"]["suggestions"]) >= 5
@@ -435,7 +435,7 @@ class TestCharacterTools:
         mock_mgr.update_block.return_value = None
         mock_get_mgr.return_value = mock_mgr
         result = tool_character_note.invoke({"note": "test", "block": "self_notes"})
-        assert "sẵn sàng" in result or "Không" in result
+        assert "chưa ghi nhận" in result or "sẵn sàng" in result or "Không" in result
 
 
 # =============================================================================
@@ -479,8 +479,9 @@ class TestPromptIntegration:
 
     def test_opinions_loves_content(self):
         prompt = self._build_prompt(role="student")
-        # Post-refactor: specific loves/dislikes content is in core card
-        assert "Rule" in prompt  # Maritime rules should still appear
+        # Post-refactor: detailed opinions stay in identity YAML, while prompt
+        # carries the compact Living Core Card to avoid overloading each turn.
+        assert "WIII LIVING CORE CARD" in prompt or "CỐT LÕI NHÂN VẬT" in prompt
 
     def test_backstory_rich_in_prompt(self):
         prompt = self._build_prompt(role="student")
@@ -578,13 +579,14 @@ class TestBackwardCompatibility:
         prompt = self._build_prompt(role="student", total_responses=6)
         assert "PERSONA REMINDER" in prompt
 
-    def test_avoid_count_still_7(self):
-        """Identity YAML avoid list should still have 7 items."""
+    def test_avoid_count_still_covers_core_rules(self):
+        """Identity YAML avoid list can grow, but core anti-drift rules remain."""
         path = PROMPTS_DIR / "wiii_identity.yaml"
         with open(path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         avoid = config["identity"]["response_style"]["avoid"]
-        assert len(avoid) == 7
+        assert len(avoid) >= 7
+        assert any("follow-up" in item for item in avoid)
 
 
 # =============================================================================

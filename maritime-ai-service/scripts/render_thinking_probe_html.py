@@ -437,11 +437,10 @@ def _render_transport_card(case: dict[str, Any] | None) -> str:
         badges.append(_badge("events", case["event_count"]))
 
     raw_path = case.get("raw_path")
-    raw_link = (
-        f"<a class='raw-link' href='file:///{str(raw_path).replace('\\', '/')}' target='_blank'>Mở raw</a>"
-        if raw_path
-        else ""
-    )
+    raw_link = ""
+    if raw_path:
+        raw_href = str(raw_path).replace("\\", "/")
+        raw_link = f"<a class='raw-link' href='file:///{html.escape(raw_href, quote=True)}' target='_blank'>Mở raw</a>"
 
     return (
         "<section class='transport-card'>"

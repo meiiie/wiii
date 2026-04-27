@@ -1,0 +1,295 @@
+name: Merge Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      desktop: ${{ steps.filter.outputs.desktop }}
+      docker: ${{ steps.filter.outputs.docker }}
+      github: ${{ steps.filter.outputs.github }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed paths
+        id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${{ github.base_ref }}" ]]; then
+            git fetch --no-tags origin "${{ github.base_ref }}"
+            base="FETCH_HEAD"
+            if git merge-base "$base" HEAD >/dev/null 2>&1; then
+              range="$base...HEAD"
+            else
+              echo "No merge-base found for $base; falling back to the latest commit range." >&2
+              range="HEAD~1..HEAD"
+            fi
+          elif [[ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
+            range="${{ github.event.before }}..${{ github.sha }}"
+          else
+            range="HEAD~1..HEAD"
+          fi
+
+          git diff --name-only "$range" | tee /tmp/changed-files.txt
+
+          match() {
+            local pattern="$1"
+            if grep -E "$pattern" /tmp/changed-files.txt >/dev/null; then
+              echo "true"
+            else
+              echo "false"
+            fi
+          }
+
+          {
+            echo "backend=$(match '^maritime-ai-service/')"
+            echo "desktop=$(match '^wiii-desktop/')"
+            echo "docker=$(match '(^|/)(Dockerfile|Dockerfile\..*)$|^maritime-ai-service/(Dockerfile|nginx/|docker-compose|compose)|^\.dockerignore$')"
+            echo "github=$(match '^\.github/|^\.coderabbit\.yaml$')"
+            echo "docs=$(match '^docs/|^README\.md$|^CONTRIBUTING\.md$|^CODE_OF_CONDUCT\.md$')"
+          } >> "$GITHUB_OUTPUT"
+
+  repository-hygiene:
+    name: Repository Hygiene
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check whitespace and forbidden artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${{ github.base_ref }}" ]]; then
+            git fetch --no-tags origin "${{ github.base_ref }}"
+            base="FETCH_HEAD"
+            if git merge-base "$base" HEAD >/dev/null 2>&1; then
+              range="$base...HEAD"
+            else
+              echo "No merge-base found for $base; falling back to the latest commit range." >&2
+              range="HEAD~1..HEAD"
+            fi
+          elif [[ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
+            range="${{ github.event.before }}..${{ github.sha }}"
+          else
+            range="HEAD~1..HEAD"
+          fi
+
+          git diff --check "$range"
+          git diff --name-only "$range" | tee /tmp/changed-files.txt
+
+          forbidden='(^|/)(node_modules|__pycache__|\.pytest_cache|\.ruff_cache|\.mypy_cache|dist-embed|dist-web|target|coverage|htmlcov)/|(^|/)\.env($|\.|/)|\.(pem|key|p12|pfx|log|tmp)$'
+          env_example='(^|/)\.env([^/]*\.)?example$'
+          forbidden_hits="$(grep -E "$forbidden" /tmp/changed-files.txt | grep -Ev "$env_example" || true)"
+          if [[ -n "$forbidden_hits" ]]; then
+            echo "$forbidden_hits"
+            echo "Forbidden generated, secret, or local-only artifact detected in the change set." >&2
+            exit 1
+          fi
+
+          # Env templates are allowed only as examples, and only when they do
+          # not contain provider-shaped keys or non-placeholder secret values.
+          while IFS= read -r env_file; do
+            [[ -n "$env_file" ]] || continue
+            if grep -nE 'sk-or-v1-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{20,}|xox[baprs]-[0-9A-Za-z-]{10,}' "$env_file"; then
+              echo "Provider-shaped secret detected in env example: $env_file" >&2
+              exit 1
+            fi
+            if grep -nE '^[A-Z0-9_]*(SECRET|TOKEN|PASSWORD|API_KEY|ACCESS_KEY)[A-Z0-9_]*=.{12,}$' "$env_file" \
+              | grep -Ev '=(your_|fake-|test-|SET_|REPLACE_|CHANGEME|placeholder|none|null|<|\$\{)'; then
+              echo "Non-placeholder secret-like value detected in env example: $env_file" >&2
+              exit 1
+            fi
+          done < <(grep -E "$env_example" /tmp/changed-files.txt || true)
+
+  github-governance:
+    name: GitHub Governance Gate
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate governance-critical files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f .github/CODEOWNERS
+          test -f .github/PULL_REQUEST_TEMPLATE.md
+          test -f .coderabbit.yaml
+
+          ruby <<'RUBY'
+          require "yaml"
+
+          failed = false
+          allowed_write = {
+            ".github/workflows/codeql.yml" => ["security-events"],
+          }
+
+          Dir[".github/workflows/*.{yml,yaml}"].sort.each do |path|
+            data = YAML.load_file(path) || {}
+            permissions = data["permissions"]
+            unless permissions.is_a?(Hash)
+              puts "::error file=#{path}::Workflow must declare top-level permissions as a mapping."
+              failed = true
+              next
+            end
+
+            allowed = allowed_write.fetch(path, [])
+            permissions.each do |scope, value|
+              if value.to_s.downcase == "write" && !allowed.include?(scope.to_s)
+                puts "::error file=#{path}::Top-level write permission '#{scope}: write' is not allow-listed."
+                failed = true
+              end
+            end
+
+            triggers = data["on"] || data[true] || {}
+            if triggers.is_a?(Hash) && triggers.key?("pull_request_target")
+              puts "::error file=#{path}::pull_request_target requires explicit security review."
+              failed = true
+            end
+          end
+
+          exit(failed ? 1 : 0)
+          RUBY
+
+  backend-unit-gate:
+    name: Backend Unit Gate
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
+    # Keep the branch-protection gate self-contained so `Gate Summary` remains
+    # a stable required context even while advisory CI workflows evolve.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_USER: wiii
+          POSTGRES_PASSWORD: wiii_secret
+          POSTGRES_DB: wiii_ai
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U wiii"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://wiii:wiii_secret@localhost:5433/wiii_ai
+      API_KEY: test-key
+      GOOGLE_API_KEY: fake-key-for-unit-tests
+      ENVIRONMENT: development
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: maritime-ai-service/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: maritime-ai-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff
+
+      - name: Lint backend syntax-risk rules
+        working-directory: maritime-ai-service
+        run: ruff check app/ --select=E9,F63,F7 --output-format=github
+
+      - name: Run backend unit tests
+        working-directory: maritime-ai-service
+        run: pytest tests/unit/ -x -p no:capture --tb=short -q
+
+  desktop-gate:
+    name: Desktop Gate
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.desktop == 'true'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: wiii-desktop/package-lock.json
+
+      - name: Install desktop dependencies
+        working-directory: wiii-desktop
+        run: npm ci
+
+      - name: Run desktop tests
+        working-directory: wiii-desktop
+        run: npx vitest run
+
+      - name: Type check desktop
+        working-directory: wiii-desktop
+        run: npx tsc --noEmit
+
+      - name: Build embed bundle
+        working-directory: wiii-desktop
+        run: npm run build:embed
+
+  gate-summary:
+    name: Gate Summary
+    runs-on: ubuntu-latest
+    needs:
+      - detect-changes
+      - repository-hygiene
+      - github-governance
+      - backend-unit-gate
+      - desktop-gate
+    if: always()
+    steps:
+      - name: Enforce gate result
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          failed=0
+          needs_json='${{ toJson(needs) }}'
+          while IFS=$'\t' read -r job result; do
+            case "$result" in
+              success|skipped)
+                ;;
+              *)
+                echo "A merge gate job failed or was cancelled: $job => $result" >&2
+                failed=1
+                ;;
+            esac
+          done < <(printf '%s' "$needs_json" | jq -r 'to_entries[] | [.key, .value.result] | @tsv')
+
+          if [[ "$failed" -ne 0 ]]; then
+            exit 1
+          fi
+
+          echo "Merge gate passed."

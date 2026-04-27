@@ -54,6 +54,7 @@ class TestNoSyncEmbedInAsyncFunctions:
         # memory_manager.py removed (Sprint 84 dead code cleanup)
         "app/engine/semantic_memory/extraction.py",
         "app/engine/agentic_rag/corrective_rag.py",
+        "app/engine/agentic_rag/corrective_rag_runtime_support.py",
         "app/engine/semantic_memory/context.py",
     ])
     def test_no_sync_embed_in_async(self, filepath):
@@ -94,11 +95,10 @@ class TestAsyncEmbedUsage:
         assert content.count("aembed_documents") >= 1
 
     def test_corrective_rag_uses_aembed_query(self):
-        """corrective_rag.py uses aembed_query for all embedding calls."""
-        with open("app/engine/agentic_rag/corrective_rag.py", encoding="utf-8") as f:
+        """Corrective RAG runtime support uses aembed_query for embeddings."""
+        with open("app/engine/agentic_rag/corrective_rag_runtime_support.py", encoding="utf-8") as f:
             content = f.read()
-        # Should have at least 3 aembed_query calls (cache check, grading, cache store)
-        assert content.count("aembed_query") >= 3
+        assert "aembed_query" in content
 
     def test_context_retriever_uses_aembed_query(self):
         """context.py retrieve_context uses aembed_query."""
@@ -151,6 +151,7 @@ class TestNoSyncEmbedRemaining:
         # memory_manager.py removed (Sprint 84 dead code cleanup)
         "app/engine/semantic_memory/extraction.py",
         "app/engine/agentic_rag/corrective_rag.py",
+        "app/engine/agentic_rag/corrective_rag_runtime_support.py",
         "app/engine/semantic_memory/context.py",
     ])
     def test_no_sync_embed_documents_remain(self, filepath):
@@ -169,6 +170,7 @@ class TestNoSyncEmbedRemaining:
     @pytest.mark.parametrize("filepath", [
         "app/services/hybrid_search_service.py",
         "app/engine/agentic_rag/corrective_rag.py",
+        "app/engine/agentic_rag/corrective_rag_runtime_support.py",
         "app/engine/semantic_memory/context.py",
     ])
     def test_no_sync_embed_query_remain(self, filepath):

@@ -239,7 +239,7 @@ graph LR
 | **`app/engine/search_platforms/`** | Product Search Platform Adapters | `base.py` (ABC), `registry.py` (singleton), `circuit_breaker.py`, `adapters/` (8 adapters), `oauth/` | SearchPlatformAdapter, SearchPlatformRegistry |
 | **`app/engine/search_platforms/adapters/`** | Individual platform adapters (8 adapters) | `serper_shopping.py`, `serper_site.py`, `websosanh.py`, `apify.py`, `facebook_search.py`, `facebook_group.py`, `tiktok_research.py`, `allweb.py` | Adapter implementations |
 | **`app/engine/search_platforms/adapters/browser_base.py`** | Playwright browser scraping base | `BrowserBaseAdapter` | Browser automation for search |
-| **`app/engine/multi_agent/agents/product_search_node.py`** | Product Search agent node | `product_search_agent()` | LangGraph agent node for product search |
+| **`app/engine/multi_agent/agents/product_search_node.py`** | Product Search agent node | `product_search_agent()` | Feature-gated WiiiRunner node for product search |
 | **`app/integrations/`** | LMS Integration Layer | `lms_client.py`, `lms_enrichment.py` | LMS API client, context enrichment |
 | **`app/repositories/`** | Database access layer (15 repos) | `semantic_memory_repo.py`, `neo4j_repo.py`, `organization_repository.py`, `thread_repository.py`, `scheduler_repository.py` | CRUD operations |
 | **`app/models/`** | Pydantic schemas, DTOs | `schemas.py`, `semantic_memory.py`, `organization.py` | Data models |
@@ -277,7 +277,7 @@ graph LR
 | Subfolder | Chức năng | Key Components |
 |-----------|-----------|----------------|
 | **`agentic_rag/`** | Corrective RAG system (Composition Pattern) | `rag_agent.py`, `corrective_rag.py` (auto-composes RAGAgent), grader, verifier |
-| **`multi_agent/`** | LangGraph orchestration | `supervisor.py`, `graph.py`, `tutor_node.py`, `product_search_node.py` |
+| **`multi_agent/`** | WiiiRunner orchestration | `runner.py`, `graph.py`, `supervisor.py`, `agents/`, `graph_streaming.py` |
 | **`tools/`** | LangChain tools (RAG, Memory, Tutor, Product Search) | `rag_tools.py`, `memory_tools.py`, `tutor_tools.py`, `product_search_tools.py` |
 | **`semantic_memory/`** | Vector-based user memory + cross-platform sync | `core.py`, `extraction.py`, `context.py`, `cross_platform.py` |
 | **`search_platforms/`** | Product search plugin architecture (8 platform adapters) | `base.py` (ABC), `registry.py`, `circuit_breaker.py`, `adapters/`, `oauth/` |
@@ -673,7 +673,7 @@ Audit: All auth events → auth/auth_audit.py → auth_events table (fire-and-fo
 
 ```python
 # app/core/config.py (key flags — see CLAUDE.md for full list)
-use_multi_agent: bool = True            # LangGraph multi-agent (default)
+use_multi_agent: bool = True            # WiiiRunner multi-agent runtime (default)
 enable_corrective_rag: bool = True      # CRAG loop
 deep_reasoning_enabled: bool = True     # <thinking> tags
 enable_multi_tenant: bool = False       # Multi-org data isolation
@@ -710,7 +710,7 @@ prompts/
 | Decision | ReAct (UnifiedAgent) as default |
 |----------|--------------------------------|
 | **Context** | Need flexible agent orchestration |
-| **Decision** | Use manual ReAct loop over LangGraph |
+| **Decision** | Use manual ReAct loop over heavyweight orchestration frameworks |
 | **Rationale** | Simpler, more control, faster iteration |
 | **Status** | ✅ Active |
 
@@ -858,7 +858,7 @@ agentic_rag/
 | Repositories | 15 |
 | Domain plugins | 2 (maritime, traffic_law) |
 | Search platform adapters | 8 |
-| LangGraph agent nodes | 7 (Guardian, Supervisor, RAG, Tutor, Memory, Direct, ProductSearch) |
+| WiiiRunner nodes | 8 core/feature nodes (Guardian, Supervisor, RAG, Tutor, Memory, Direct, Code Studio, ProductSearch) plus optional subagent dispatch |
 
 ### Desktop App (wiii-desktop/) Stats
 

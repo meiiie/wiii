@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import unicodedata
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+
+
+def _ascii_fold(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text.replace("đ", "d").replace("Đ", "D"))
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch))
 
 
 def test_build_vision_runtime_provider_statuses_merges_persisted_probe_state():
@@ -400,7 +406,7 @@ async def test_probe_capability_classifies_rate_limit_without_false_timeout():
         success, note = await _probe_capability("google", VisionCapability.VISUAL_DESCRIBE)
 
     assert success is False
-    assert note == "Provider vuot gioi han hoac dang bi quota/rate limit."
+    assert _ascii_fold(note or "") == "Provider vuot gioi han hoac dang bi quota/rate limit."
 
 
 def test_probe_timeout_seconds_respects_lane_sla(monkeypatch):

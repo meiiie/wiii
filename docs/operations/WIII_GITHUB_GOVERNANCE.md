@@ -97,6 +97,32 @@ High-risk PRs require extra scrutiny:
 - MCP/tool exposure.
 - Release/deployment configuration.
 
+## Current Branch Protection Baseline
+
+As of 2026-04-26, `main` is configured with:
+
+- Pull request required before merge.
+- One approving review required.
+- CODEOWNERS review required.
+- Stale approvals dismissed when new commits are pushed.
+- Last push approval required.
+- Conversation resolution required.
+- Branches must be up to date before merge.
+- `CodeRabbit` required as a status check.
+- Admin enforcement enabled.
+- Linear history required.
+- Force pushes disabled.
+- Branch deletion disabled.
+
+After `.github/workflows/merge-gate.yml` is merged into `main`, add `Gate Summary` as a required status check. Do not add the check before the workflow exists on `main`, or open PRs can become stuck on a missing required context.
+
+Verify the live baseline with:
+
+```bash
+gh api repos/meiiie/wiii/branches/main/protection \
+  --jq '{required_status_checks, required_pull_request_reviews, enforce_admins, required_linear_history}'
+```
+
 ## Branch Protection Recommendation
 
 Configure `main` with:
@@ -108,7 +134,7 @@ Configure `main` with:
 - Require last push approval when available.
 - Require conversation resolution before merge.
 - Require the `CodeRabbit` status check.
-- Require CI checks after backend/desktop/image workflows are stable on `main`.
+- Require the `Gate Summary` status check after the merge-gate workflow is stable on `main`.
 - Require branches to be up to date before merge when practical.
 - Block force pushes.
 - Block branch deletion.
@@ -117,10 +143,8 @@ Configure `main` with:
 Recommended required checks:
 
 - CodeRabbit.
-- Backend unit tests.
-- Desktop unit tests.
-- Production image build when deployment files change.
-- Lint/type checks when available.
+- Gate Summary.
+- CodeQL checks after they are consistently green across representative PRs.
 
 Do not require currently failing CI checks until they are made consistently green on `main`; otherwise branch protection becomes noise instead of a control.
 
@@ -128,10 +152,13 @@ Do not require currently failing CI checks until they are made consistently gree
 
 CodeRabbit is configured through `.coderabbit.yaml`.
 
+For public/open-source repositories, CodeRabbit may evaluate PRs using the base-branch configuration. Policy changes in `.coderabbit.yaml` become authoritative after they are merged into `main`.
+
 Repository policy:
 
 - Review draft PRs and incremental pushes.
 - Use assertive review profile for security, correctness, and maintainability.
+- Fail CodeRabbit commit status when actionable review failures remain.
 - Keep generated/dependency/local artifacts out of review scope.
 - Apply path-specific instructions for auth, core config, multi-agent graph, RAG, living agent, MCP, migrations, frontend, GitHub automation, and operational docs.
 - Suggest labels and reviewers, but do not auto-apply or auto-assign.

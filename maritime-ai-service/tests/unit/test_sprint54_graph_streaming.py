@@ -52,17 +52,11 @@ if not _had_cs:
     _mock_chat_svc.get_chat_service = lambda: None
     sys.modules[_cs_key] = _mock_chat_svc
 
-# Break graph_streaming ↔ graph mutual import: pre-populate graph module
-# Note: get_multi_agent_graph_async is async, so use AsyncMock
+# Break graph_streaming -> graph import by providing the current runner helpers.
 if not _had_graph:
     _mock_graph = types.ModuleType(_graph_key)
-    _mock_graph.get_multi_agent_graph_async = AsyncMock()
     _mock_graph._build_domain_config = MagicMock(return_value={})
     _mock_graph._build_turn_local_state_defaults = MagicMock(return_value={})
-    _mock_graph.open_multi_agent_graph = AsyncMock()
-    _mock_graph._inject_host_context = MagicMock(return_value=None)
-    _mock_graph._TRACERS = {}
-    _mock_graph._cleanup_tracer = MagicMock()
     sys.modules[_graph_key] = _mock_graph
 
 from app.engine.multi_agent.graph_streaming import (
@@ -349,23 +343,23 @@ class TestProcessWithMultiAgentStreaming:
     """Test full multi-agent streaming."""
 
     def _mock_graph_stream(self, state_updates):
-        """Create mock async iterator from state updates."""
-        async def _astream(*args, **kwargs):
+        """Create mock WiiiRunner streaming updates."""
+        async def _run_streaming(initial_state, *, merged_queue=None):
+            final_state = dict(initial_state)
             for update in state_updates:
-                yield update
+                if merged_queue is not None:
+                    await merged_queue.put(("graph", update))
+                for node_state in update.values():
+                    if isinstance(node_state, dict):
+                        final_state.update(node_state)
+            return final_state
 
-        mock_graph = MagicMock()
-        mock_graph.astream = MagicMock(side_effect=lambda *a, **kw: _astream(*a, **kw))
-        return mock_graph
+        mock_runner = MagicMock()
+        mock_runner.run_streaming = AsyncMock(side_effect=_run_streaming)
+        return mock_runner
 
     def _get_patches(self, mock_graph):
         """Return common patches for streaming tests."""
-
-        class _MockGraphCM:
-            async def __aenter__(self_cm):
-                return mock_graph
-            async def __aexit__(self_cm, *args):
-                pass
 
         # Mock reasoning narrator for deterministic labels
         _labels = {
@@ -403,8 +397,8 @@ class TestProcessWithMultiAgentStreaming:
 
         return {
             "graph": patch(
-                "app.engine.multi_agent.graph_streaming.open_multi_agent_graph",
-                new=lambda: _MockGraphCM(),
+                "app.engine.multi_agent.runner.get_wiii_runner",
+                return_value=mock_graph,
             ),
             "registry": patch("app.engine.multi_agent.graph_streaming.get_agent_registry"),
             "domain_config": patch(
@@ -621,12 +615,12 @@ class TestProcessWithMultiAgentStreaming:
 
     @pytest.mark.asyncio
     async def test_error_in_graph_init_propagates(self):
-        """Exception in open_multi_agent_graph yields error event."""
+        """Exception while resolving WiiiRunner yields error event."""
 
         def _exploding_open():
-            raise Exception("Graph init error")
+            raise Exception("Runner init error")
 
-        with patch("app.engine.multi_agent.graph_streaming.open_multi_agent_graph",
+        with patch("app.engine.multi_agent.runner.get_wiii_runner",
                     new=_exploding_open):
             with patch("app.engine.multi_agent.graph_streaming.get_agent_registry") as mock_reg:
                 self._setup_registry(mock_reg)
@@ -645,12 +639,11 @@ class TestProcessWithMultiAgentStreaming:
     @pytest.mark.asyncio
     async def test_error_in_graph_stream_yields_error(self):
         """Exception inside try block yields error event."""
-        async def _exploding_astream(*args, **kwargs):
+        async def _exploding_run_streaming(*args, **kwargs):
             raise Exception("Stream processing error")
-            yield  # make it a generator  # noqa: E501
 
         mock_graph = MagicMock()
-        mock_graph.astream = MagicMock(side_effect=lambda *a, **kw: _exploding_astream(*a, **kw))
+        mock_graph.run_streaming = AsyncMock(side_effect=_exploding_run_streaming)
         patches = self._get_patches(mock_graph)
 
         events = []
@@ -669,16 +662,15 @@ class TestProcessWithMultiAgentStreaming:
     async def test_provider_unavailable_in_graph_stream_reraises(self):
         """Explicit provider failures must bubble up for stream coordinator UX."""
 
-        async def _exploding_astream(*args, **kwargs):
+        async def _exploding_run_streaming(*args, **kwargs):
             raise ProviderUnavailableError(
                 provider="google",
                 reason_code="rate_limit",
                 message="Provider tam thoi ban hoac da cham gioi han.",
             )
-            yield  # make it a generator  # noqa: E501
 
         mock_graph = MagicMock()
-        mock_graph.astream = MagicMock(side_effect=lambda *a, **kw: _exploding_astream(*a, **kw))
+        mock_graph.run_streaming = AsyncMock(side_effect=_exploding_run_streaming)
         patches = self._get_patches(mock_graph)
 
         with patches["graph"], patches["registry"] as mock_reg, \

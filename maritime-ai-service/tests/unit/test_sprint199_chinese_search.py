@@ -631,7 +631,7 @@ class TestConfigFlag:
 
     def test_flag_default_true(self):
         from app.core.config import Settings
-        s = Settings(google_api_key="test")
+        s = Settings(google_api_key="test", _env_file=None)
         assert s.enable_chinese_platform_search is True
 
 

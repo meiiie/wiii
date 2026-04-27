@@ -784,7 +784,8 @@ def _build_direct_tools_context(
 
     if _natural_guidance:
         parts.append(
-            "\n## VE KIEN THUC CUA WIII:"
+            "\n## GIỚI HẠN KIẾN THỨC CỦA WIII:"
+            "\n- Ve kien thuc cua Wiii: day la phan noi ro cach Wiii dung tri thuc san co va khi nao can tra cuu."
             "\n- Wiii co kien thuc huan luyen den dau 2024."
             "\n- Khi can thong tin moi (tin tuc, thoi tiet, gia ca, su kien sau 2024), "
             "Wiii dung tool tim kiem de dam bao chinh xac."
@@ -813,7 +814,7 @@ def _build_direct_tools_context(
         )
     else:
         parts.append(
-            "\n## GIOI HAN KIEN THUC (QUAN TRONG):"
+            "\n## GIỚI HẠN KIẾN THỨC (QUAN TRỌNG):"
             "\n- Kien thuc huan luyen cua ban CU - ngat vao dau nam 2024."
             "\n- Ban KHONG CO Internet truc tiep - chi co the truy cap web QUA tool_web_search."
             "\n- Ban KHONG BIET ngay gio hien tai - chi biet qua tool_current_datetime."
@@ -1212,7 +1213,11 @@ def _build_direct_system_messages(
     # Sprint Phase2-F: Inject thinking instruction so LLM wraps reasoning in <thinking> tags
     # Without this, direct node outputs chain-of-thought inline (thinking leak)
     thinking_instruction = loader.get_thinking_instruction()
-    if thinking_instruction and (not is_chatter_role or is_selfhood_turn):
+    if (
+        isinstance(thinking_instruction, str)
+        and thinking_instruction.strip()
+        and (not is_chatter_role or is_selfhood_turn)
+    ):
         # Unified enforcement — inject at TOP for maximum model attention
         from app.engine.reasoning.thinking_enforcement import get_thinking_enforcement
         system_prompt = get_thinking_enforcement() + "\n\n" + system_prompt + "\n\n" + thinking_instruction
@@ -1247,5 +1252,3 @@ def _build_direct_system_messages(
     else:
         messages.append(HumanMessage(content=query))
     return messages
-
-

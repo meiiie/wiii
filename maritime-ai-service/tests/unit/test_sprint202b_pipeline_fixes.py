@@ -18,6 +18,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _structured_invoke_uses_test_llm_mock(monkeypatch):
+    """Keep query-planner pipeline tests on the mocked structured-output seam."""
+
+    async def _ainvoke(*, llm, schema, payload, **kwargs):
+        structured_llm = llm.with_structured_output(schema)
+        return await structured_llm.ainvoke(payload)
+
+    monkeypatch.setattr(
+        "app.services.structured_invoke_service.StructuredInvokeService.ainvoke",
+        _ainvoke,
+    )
+
+
 # ─── Helpers ──────────────────────────────────────────────────────
 
 
