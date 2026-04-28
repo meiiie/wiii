@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import hmac
 import time
 from typing import Any, Awaitable, Callable
@@ -16,7 +15,7 @@ def hash_secret(secret: str | None) -> str:
     digest = hmac.new(
         _CATALOG_CACHE_FINGERPRINT_KEY,
         secret.encode("utf-8"),
-        hashlib.sha256,
+        digestmod="sha256",
     ).hexdigest()
     return digest[:12]
 
