@@ -6,6 +6,7 @@ from typing import Any
 
 from app.core.constants import MAX_CONTENT_SNIPPET_LENGTH
 from app.engine.llm_runtime_metadata import resolve_runtime_llm_metadata
+from app.engine.multi_agent.runtime_contracts import WiiiRunContext, WiiiTurnRequest
 from app.models.schemas import ChatRequest, Source
 
 
@@ -128,6 +129,28 @@ async def prepare_turn_impl(
     )
 
 
+def build_wiii_turn_request(
+    *,
+    execution_input: Any,
+    organization_id: str | None = None,
+) -> WiiiTurnRequest:
+    """Build the native WiiiRunner turn request from service execution input."""
+
+    return WiiiTurnRequest(
+        query=execution_input.query,
+        run_context=WiiiRunContext(
+            user_id=execution_input.user_id,
+            session_id=execution_input.session_id,
+            domain_id=execution_input.domain_id,
+            organization_id=organization_id,
+            context=execution_input.context,
+            thinking_effort=execution_input.thinking_effort,
+            provider=execution_input.provider,
+            model=getattr(execution_input, "model", None),
+        ),
+    )
+
+
 async def process_with_multi_agent_impl(
     *,
     context: Any,
@@ -143,7 +166,7 @@ async def process_with_multi_agent_impl(
     agent_type_map: dict[str, Any],
     default_agent_type: Any,
 ) -> Any:
-    from app.engine.multi_agent.runtime import process_with_multi_agent
+    from app.engine.multi_agent.runtime import run_wiii_turn
 
     prepared_turn = prepared_turn_cls(
         request_scope=request_scope_cls(
@@ -170,16 +193,13 @@ async def process_with_multi_agent_impl(
         provider=provider,
     )
 
-    result = await process_with_multi_agent(
-        query=execution_input.query,
-        user_id=execution_input.user_id,
-        session_id=execution_input.session_id,
-        context=execution_input.context,
-        domain_id=execution_input.domain_id,
-        thinking_effort=execution_input.thinking_effort,
-        provider=execution_input.provider,
-        model=getattr(execution_input, "model", None),
+    turn_result = await run_wiii_turn(
+        build_wiii_turn_request(
+            execution_input=execution_input,
+            organization_id=getattr(context, "organization_id", None),
+        )
     )
+    result = dict(turn_result.payload)
 
     response_text = result.get("response", "")
     sources = result.get("sources", [])

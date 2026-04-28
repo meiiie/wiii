@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.models.schemas import UserRole
+from app.engine.multi_agent.runtime_contracts import WiiiTurnRequest, WiiiTurnResult
 from app.services.chat_orchestrator import ChatOrchestrator, RequestScope
 from app.services.input_processor import ChatContext
 
@@ -736,3 +737,64 @@ async def test_process_with_multi_agent_preserves_runtime_provider_metadata():
 
     assert result.metadata["provider"] == "zhipu"
     assert str(result.metadata["model"]).startswith("glm-")
+
+
+@pytest.mark.asyncio
+async def test_process_with_multi_agent_uses_native_wiii_turn_request():
+    orchestrator = _make_orchestrator()
+    context = _make_chat_context()
+    session = _make_session()
+    execution_input = SimpleNamespace(
+        query=context.message,
+        user_id=context.user_id,
+        session_id=str(context.session_id),
+        context={"history": [], "organization_id": "org-1"},
+        domain_id="maritime",
+        thinking_effort="medium",
+        provider="nvidia",
+        model="deepseek-ai/deepseek-v3.1",
+    )
+
+    orchestrator.build_multi_agent_execution_input = AsyncMock(
+        return_value=execution_input
+    )
+
+    with patch(
+        "app.engine.multi_agent.runtime.run_wiii_turn",
+        new=AsyncMock(
+            return_value=WiiiTurnResult.from_payload(
+                {
+                    "response": "Native turn ok.",
+                    "sources": [],
+                    "tools_used": [],
+                    "grader_score": 0.0,
+                    "agent_outputs": {},
+                    "current_agent": "direct",
+                    "next_agent": "direct",
+                    "provider": "nvidia",
+                    "model": "deepseek-ai/deepseek-v3.1",
+                }
+            )
+        ),
+    ) as run_turn:
+        result = await orchestrator._process_with_multi_agent(
+            context=context,
+            session=session,
+            domain_id="maritime",
+            thinking_effort="medium",
+            provider="nvidia",
+            model="deepseek-ai/deepseek-v3.1",
+        )
+
+    turn_request = run_turn.await_args.args[0]
+    assert isinstance(turn_request, WiiiTurnRequest)
+    assert turn_request.query == "Explain COLREG Rule 5"
+    assert turn_request.run_context.user_id == "user-1"
+    assert turn_request.run_context.session_id == str(context.session_id)
+    assert turn_request.run_context.domain_id == "maritime"
+    assert turn_request.run_context.organization_id == "org-1"
+    assert turn_request.run_context.thinking_effort == "medium"
+    assert turn_request.run_context.provider == "nvidia"
+    assert turn_request.run_context.model == "deepseek-ai/deepseek-v3.1"
+    assert result.message == "Native turn ok."
+    assert result.metadata["provider"] == "nvidia"

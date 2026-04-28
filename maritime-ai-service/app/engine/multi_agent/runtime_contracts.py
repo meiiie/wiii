@@ -114,9 +114,18 @@ class WiiiStreamEvent:
 
     event_type: str
     payload: Any = None
+    raw_event: Any = None
 
     @classmethod
     def from_legacy_tuple(cls, event: Any) -> "WiiiStreamEvent":
+        if isinstance(event, cls):
+            return event
+        if hasattr(event, "type") and hasattr(event, "content"):
+            return cls(
+                event_type=str(event.type),
+                payload=getattr(event, "content", None),
+                raw_event=event,
+            )
         if isinstance(event, tuple) and event:
             payload = event[1] if len(event) > 1 else None
             return cls(event_type=str(event[0]), payload=payload)
@@ -130,6 +139,34 @@ class WiiiStreamEvent:
         if self.event_type != "graph" or not isinstance(self.payload, dict):
             return ""
         return str(next(iter(self.payload), ""))
+
+    @property
+    def type(self) -> str:
+        return self.event_type
+
+    @property
+    def content(self) -> Any:
+        return getattr(self.raw_event, "content", self.payload)
+
+    @property
+    def node(self) -> str | None:
+        return getattr(self.raw_event, "node", None)
+
+    @property
+    def step(self) -> str | None:
+        return getattr(self.raw_event, "step", None)
+
+    @property
+    def confidence(self) -> float | None:
+        return getattr(self.raw_event, "confidence", None)
+
+    @property
+    def details(self) -> dict[str, Any] | None:
+        return getattr(self.raw_event, "details", None)
+
+    @property
+    def subtype(self) -> str | None:
+        return getattr(self.raw_event, "subtype", None)
 
 
 __all__ = [
