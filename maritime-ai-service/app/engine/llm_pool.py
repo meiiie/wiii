@@ -21,6 +21,7 @@ from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
 from app.core.exceptions import ProviderUnavailableError
+from app.engine.llm_model_health import is_model_degraded, reset_model_health_state
 from app.engine.llm_runtime_state import register_llm_runtime_access
 from app.engine.llm_provider_registry import create_provider, is_supported_provider
 from app.engine.llm_timeout_policy import (
@@ -649,6 +650,7 @@ class LLMPool:
             settings_obj=settings,
             thinking_tier_cls=ThinkingTier,
             normalize_provider=cls._normalize_provider,
+            is_model_degraded_fn=is_model_degraded,
         )
 
     @classmethod
@@ -667,6 +669,7 @@ class LLMPool:
         cls._initialized = False
         cls._active_provider = None
         cls._fallback_provider = None
+        reset_model_health_state()
 
 
 # ============================================================================
@@ -754,6 +757,7 @@ def resolve_primary_timeout_seconds(
     tier: str = "moderate",
     timeout_profile: Optional[str] = None,
     provider: Optional[str] = None,
+    model_name: Optional[str] = None,
 ) -> float | None:
     return resolve_primary_timeout_seconds_impl(
         tier=tier,
@@ -767,6 +771,7 @@ def resolve_primary_timeout_seconds(
         pool_cls=LLMPool,
         timeout_profile_structured=TIMEOUT_PROFILE_STRUCTURED,
         timeout_profile_background=TIMEOUT_PROFILE_BACKGROUND,
+        model_name=model_name,
     )
 
 

@@ -204,6 +204,45 @@ def test_get_persisted_llm_runtime_policy_sanitizes_timeout_overrides():
     }
 
 
+def test_get_persisted_llm_runtime_policy_keeps_model_timeout_overrides():
+    from app.services.llm_runtime_policy_service import get_persisted_llm_runtime_policy
+
+    repo = MagicMock()
+    repo.get_settings.return_value = AdminRuntimeSettingsRecord(
+        key="llm_runtime",
+        settings={
+            "timeout_provider_overrides": {
+                "nvidia": {
+                    "moderate_seconds": 20,
+                    "models": {
+                        "deepseek-ai/deepseek-v4-flash": {"moderate_seconds": 7},
+                        "bad-empty": {"unknown": 99},
+                    },
+                },
+            }
+        },
+        description="Persisted runtime policy",
+        created_at=datetime(2026, 3, 22, 1, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 3, 22, 2, 0, tzinfo=timezone.utc),
+    )
+
+    with patch(
+        "app.services.llm_runtime_policy_service.get_admin_runtime_settings_repository",
+        return_value=repo,
+    ):
+        record = get_persisted_llm_runtime_policy()
+
+    assert record is not None
+    assert record.payload["timeout_provider_overrides"] == {
+        "nvidia": {
+            "moderate_seconds": 20.0,
+            "models": {
+                "deepseek-ai/deepseek-v4-flash": {"moderate_seconds": 7.0},
+            },
+        },
+    }
+
+
 def test_persist_current_llm_runtime_policy_uses_repo_snapshot():
     from app.core.config import settings
     from app.services.llm_runtime_policy_service import persist_current_llm_runtime_policy

@@ -301,9 +301,12 @@ class TestOpenAIProvider:
         p = OpenAIProvider()
         assert p.is_configured() is False
 
-    @patch("app.engine.llm_providers.openai_provider._openai_cb", None)
+    @patch(
+        "app.engine.llm_providers.openai_provider._get_openai_compatible_circuit_breaker",
+        return_value=None,
+    )
     @patch("app.engine.llm_providers.openai_provider.settings")
-    def test_is_available_no_circuit_breaker(self, mock_settings):
+    def test_is_available_no_circuit_breaker(self, mock_settings, _mock_cb_factory):
         mock_settings.openai_api_key = "sk-test"
         p = OpenAIProvider()
         assert p.is_available() is True

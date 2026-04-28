@@ -6,6 +6,22 @@ from typing import Optional
 
 from langchain_core.language_models import BaseChatModel
 
+from app.engine.llm_model_health import is_model_degraded
+from app.engine.llm_same_provider_runtime import extract_runtime_model_name_impl
+
+
+def _cached_llm_is_degraded(provider_name: str, llm: BaseChatModel | None) -> bool:
+    model_name = extract_runtime_model_name_impl(llm)
+    return is_model_degraded(provider_name, model_name)
+
+
+def _drop_cached_tier(cls_ref, provider_name: str, tier_key: str) -> None:
+    cls_ref._provider_pools.get(provider_name, {}).pop(tier_key, None)
+    if provider_name == cls_ref._active_provider:
+        cls_ref._pool.pop(tier_key, None)
+    if provider_name == cls_ref._fallback_provider:
+        cls_ref._fallback_pool.pop(tier_key, None)
+
 
 def create_provider_instance_impl(
     *,
@@ -21,7 +37,11 @@ def create_provider_instance_impl(
 
     provider_cache = cls_ref._provider_pools.setdefault(provider_name, {})
     if tier_key in provider_cache:
-        return provider_cache[tier_key]
+        cached_llm = provider_cache[tier_key]
+        if not _cached_llm_is_degraded(provider_name, cached_llm):
+            return cached_llm
+        _drop_cached_tier(cls_ref, provider_name, tier_key)
+        provider_cache = cls_ref._provider_pools.setdefault(provider_name, {})
 
     thinking_budget, include_thoughts = cls_ref._thinking_budget_for_tier(tier_key)
     llm = provider.create_instance(
@@ -64,23 +84,41 @@ def get_provider_instance_impl(
 
     if normalized_provider == cls_ref._active_provider and tier_key in cls_ref._pool:
         llm = cls_ref._pool[tier_key]
-        cls_ref._provider_pools.setdefault(normalized_provider, {})[tier_key] = llm
-        return cls_ref._tag_runtime_metadata(
-            llm,
-            provider_name=normalized_provider,
-            tier_key=tier_key,
-            requested_provider=requested_provider,
-        )
+        if _cached_llm_is_degraded(normalized_provider, llm):
+            _drop_cached_tier(cls_ref, normalized_provider, tier_key)
+        else:
+            cls_ref._provider_pools.setdefault(normalized_provider, {})[tier_key] = llm
+            return cls_ref._tag_runtime_metadata(
+                llm,
+                provider_name=normalized_provider,
+                tier_key=tier_key,
+                requested_provider=requested_provider,
+            )
 
     if normalized_provider == cls_ref._fallback_provider and tier_key in cls_ref._fallback_pool:
         llm = cls_ref._fallback_pool[tier_key]
-        cls_ref._provider_pools.setdefault(normalized_provider, {})[tier_key] = llm
-        return cls_ref._tag_runtime_metadata(
-            llm,
-            provider_name=normalized_provider,
-            tier_key=tier_key,
-            requested_provider=requested_provider,
-        )
+        if _cached_llm_is_degraded(normalized_provider, llm):
+            _drop_cached_tier(cls_ref, normalized_provider, tier_key)
+        else:
+            cls_ref._provider_pools.setdefault(normalized_provider, {})[tier_key] = llm
+            return cls_ref._tag_runtime_metadata(
+                llm,
+                provider_name=normalized_provider,
+                tier_key=tier_key,
+                requested_provider=requested_provider,
+            )
+
+    provider_cache = cls_ref._provider_pools.get(normalized_provider, {})
+    if tier_key in provider_cache:
+        llm = provider_cache[tier_key]
+        if not _cached_llm_is_degraded(normalized_provider, llm):
+            return cls_ref._tag_runtime_metadata(
+                llm,
+                provider_name=normalized_provider,
+                tier_key=tier_key,
+                requested_provider=requested_provider,
+            )
+        _drop_cached_tier(cls_ref, normalized_provider, tier_key)
 
     try:
         return cls_ref._create_provider_instance(
@@ -132,7 +170,12 @@ def create_primary_instance_impl(*, cls_ref, tier, settings_obj, logger_obj, thi
     tier_key = cls_ref._resolve_tier(tier)
 
     if tier_key in cls_ref._pool:
-        return cls_ref._pool[tier_key]
+        cached_llm = cls_ref._pool[tier_key]
+        cached_provider = getattr(cached_llm, "_wiii_provider_name", None) or cls_ref._active_provider
+        if cached_provider and _cached_llm_is_degraded(cached_provider, cached_llm):
+            _drop_cached_tier(cls_ref, cached_provider, tier_key)
+        else:
+            return cached_llm
 
     thinking_budget = thinking_budgets.get(tier_key, 1024)
     include_thoughts = thinking_budget > 0

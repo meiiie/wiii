@@ -22,25 +22,34 @@ def resolve_same_provider_model_fallback_impl(
     settings_obj,
     thinking_tier_cls,
     normalize_provider,
+    is_model_degraded_fn=None,
 ) -> dict[str, str] | None:
-    """Resolve a lower-latency same-provider model fallback plan.
-
-    V1 keeps this intentionally conservative:
-    - only applies to `deep` turns
-    - only when provider exposes distinct `advanced` and base models
-    - returns a moderate-tier fallback to bias for lower latency
-    """
+    """Resolve a safe same-provider model fallback plan."""
     provider = normalize_provider(provider_name)
-    if not provider or tier_key != thinking_tier_cls.DEEP.value:
+    if not provider:
         return None
 
     if provider == "google":
+        if tier_key != thinking_tier_cls.DEEP.value:
+            return None
         advanced = getattr(settings_obj, "google_model_advanced", None)
         base = getattr(settings_obj, "google_model", None)
-    elif provider in {"openai", "openrouter"}:
+    elif provider == "openai":
+        if tier_key != thinking_tier_cls.DEEP.value:
+            return None
         advanced = getattr(settings_obj, "openai_model_advanced", None)
         base = getattr(settings_obj, "openai_model", None)
+    elif provider == "openrouter":
+        if tier_key != thinking_tier_cls.DEEP.value:
+            return None
+        advanced = getattr(settings_obj, "openrouter_model_advanced", None)
+        base = getattr(settings_obj, "openrouter_model", None)
+    elif provider == "nvidia":
+        advanced = getattr(settings_obj, "nvidia_model_advanced", None)
+        base = getattr(settings_obj, "nvidia_model", None)
     elif provider == "zhipu":
+        if tier_key != thinking_tier_cls.DEEP.value:
+            return None
         advanced = getattr(settings_obj, "zhipu_model_advanced", None)
         base = getattr(settings_obj, "zhipu_model", None)
     else:
@@ -52,15 +61,37 @@ def resolve_same_provider_model_fallback_impl(
 
     if not advanced or not base or advanced == base:
         return None
-    if current == base:
-        return None
-    if current is not None and current != advanced:
+
+    if provider == "nvidia":
+        if current == base or (current is None and tier_key != thinking_tier_cls.DEEP.value):
+            from_model = base
+            to_model = advanced
+            from_tier = tier_key
+            to_tier = thinking_tier_cls.DEEP.value
+        elif current == advanced or (current is None and tier_key == thinking_tier_cls.DEEP.value):
+            from_model = advanced
+            to_model = base
+            from_tier = thinking_tier_cls.DEEP.value
+            to_tier = thinking_tier_cls.MODERATE.value
+        else:
+            return None
+    else:
+        if current == base:
+            return None
+        if current is not None and current != advanced:
+            return None
+        from_model = advanced
+        to_model = base
+        from_tier = thinking_tier_cls.DEEP.value
+        to_tier = thinking_tier_cls.MODERATE.value
+
+    if is_model_degraded_fn is not None and is_model_degraded_fn(provider, to_model):
         return None
 
     return {
         "provider": provider,
-        "from_model": advanced,
-        "to_model": base,
-        "from_tier": thinking_tier_cls.DEEP.value,
-        "to_tier": thinking_tier_cls.MODERATE.value,
+        "from_model": from_model,
+        "to_model": to_model,
+        "from_tier": from_tier,
+        "to_tier": to_tier,
     }

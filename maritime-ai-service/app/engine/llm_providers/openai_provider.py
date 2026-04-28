@@ -12,6 +12,7 @@ from typing import Any
 from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
+from app.engine.llm_model_health import is_model_degraded
 from app.engine.llm_providers.base import LLMProvider
 from app.engine.llm_providers.wiii_chat_model import WiiiChatModel
 from app.engine.openai_compatible_credentials import (
@@ -35,13 +36,26 @@ from app.engine.openrouter_routing import (
 
 logger = logging.getLogger(__name__)
 
-# Circuit breaker for OpenAI API
-_openai_cb = None
-try:
-    from app.core.resilience import get_circuit_breaker
-    _openai_cb = get_circuit_breaker("openai", failure_threshold=3, recovery_timeout=30)
-except Exception:
-    pass
+_openai_compatible_cbs: dict[str, Any] = {}
+
+
+def _get_openai_compatible_circuit_breaker(provider_alias: str):
+    """Return a provider-specific breaker for OpenAI-compatible transports."""
+    normalized_alias = str(provider_alias or "openai").strip().lower() or "openai"
+    if normalized_alias in _openai_compatible_cbs:
+        return _openai_compatible_cbs[normalized_alias]
+    try:
+        from app.core.resilience import get_circuit_breaker
+
+        circuit_breaker = get_circuit_breaker(
+            normalized_alias,
+            failure_threshold=3,
+            recovery_timeout=30,
+        )
+        _openai_compatible_cbs[normalized_alias] = circuit_breaker
+        return circuit_breaker
+    except Exception:
+        return None
 
 # o-series models that support reasoning_effort parameter
 _O_SERIES_PREFIXES = ("o1", "o3-mini", "o3", "o4-mini")
@@ -59,6 +73,9 @@ class OpenAIProvider(LLMProvider):
 
     def __init__(self, provider_alias: str = "openai"):
         self._provider_alias = str(provider_alias or "openai").strip().lower()
+        self._circuit_breaker = _get_openai_compatible_circuit_breaker(
+            self._provider_alias
+        )
 
     @property
     def name(self) -> str:
@@ -74,9 +91,38 @@ class OpenAIProvider(LLMProvider):
     def is_available(self) -> bool:
         if not self.is_configured():
             return False
-        if _openai_cb is not None:
-            return _openai_cb.is_available()
+        if self._circuit_breaker is not None:
+            return self._circuit_breaker.is_available()
         return True
+
+    def _select_healthy_model(self, *, tier: str, model: str) -> str:
+        if self._provider_alias != "nvidia":
+            return model
+
+        base = str(resolve_nvidia_model(settings) or "").strip()
+        advanced = str(resolve_nvidia_model_advanced(settings) or "").strip()
+        if not base or not advanced or base == advanced:
+            return model
+
+        if model == base and is_model_degraded("nvidia", base):
+            if not is_model_degraded("nvidia", advanced):
+                logger.warning(
+                    "[OPENAI] NVIDIA model %s is degraded; selecting %s for %s tier",
+                    base,
+                    advanced,
+                    tier,
+                )
+                return advanced
+        if model == advanced and is_model_degraded("nvidia", advanced):
+            if not is_model_degraded("nvidia", base):
+                logger.warning(
+                    "[OPENAI] NVIDIA model %s is degraded; selecting %s for %s tier",
+                    advanced,
+                    base,
+                    tier,
+                )
+                return base
+        return model
 
     def create_instance(
         self,
@@ -102,6 +148,8 @@ class OpenAIProvider(LLMProvider):
             model = resolve_openai_model_advanced(settings)
         else:
             model = resolve_openai_model(settings)
+        if not model_name:
+            model = self._select_healthy_model(tier=tier, model=model)
 
         # Detect o-series reasoning models
         is_o_series = any(model.startswith(prefix) for prefix in _O_SERIES_PREFIXES)
@@ -162,16 +210,13 @@ class OpenAIProvider(LLMProvider):
         )
         return llm
 
-    @staticmethod
-    def get_circuit_breaker():
-        return _openai_cb
+    def get_circuit_breaker(self):
+        return self._circuit_breaker
 
-    @staticmethod
-    async def record_success():
-        if _openai_cb is not None:
-            await _openai_cb.record_success()
+    async def record_success(self):
+        if self._circuit_breaker is not None:
+            await self._circuit_breaker.record_success()
 
-    @staticmethod
-    async def record_failure():
-        if _openai_cb is not None:
-            await _openai_cb.record_failure()
+    async def record_failure(self):
+        if self._circuit_breaker is not None:
+            await self._circuit_breaker.record_failure()

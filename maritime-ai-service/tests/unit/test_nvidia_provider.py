@@ -283,6 +283,59 @@ class TestOpenAIProviderWithNvidiaAlias:
         model_kwargs = captured.get("model_kwargs", {})
         assert "extra_body" not in model_kwargs
 
+    def test_create_instance_avoids_degraded_flash_model(self):
+        from app.engine.llm_model_health import (
+            record_model_failure,
+            reset_model_health_state,
+        )
+        from app.engine.llm_providers import OpenAIProvider
+
+        captured: dict = {}
+
+        def _fake_chat_model(**kwargs):
+            captured.update(kwargs)
+            return MagicMock()
+
+        try:
+            record_model_failure(
+                "nvidia",
+                "deepseek-ai/deepseek-v4-flash",
+                reason_code="timeout",
+                timeout_seconds=0.01,
+            )
+            with patch.object(
+                __import__("app.engine.llm_providers.openai_provider", fromlist=["settings"]),
+                "settings",
+                SimpleNamespace(
+                    nvidia_api_key="nvapi",
+                    nvidia_base_url=None,
+                    nvidia_model="deepseek-ai/deepseek-v4-flash",
+                    nvidia_model_advanced="deepseek-ai/deepseek-v4-pro",
+                    openai_api_key=None,
+                    openai_base_url=None,
+                ),
+            ), patch(
+                "app.engine.llm_providers.openai_provider.WiiiChatModel",
+                new=_fake_chat_model,
+            ):
+                provider = OpenAIProvider(provider_alias="nvidia")
+                provider.create_instance(tier="moderate")
+
+            assert captured["model"] == "deepseek-ai/deepseek-v4-pro"
+        finally:
+            reset_model_health_state()
+
+    def test_openai_compatible_aliases_use_distinct_circuit_breakers(self):
+        from app.engine.llm_providers import OpenAIProvider
+
+        with patch(
+            "app.engine.llm_providers.openai_provider._get_openai_compatible_circuit_breaker",
+            side_effect=lambda alias: f"cb:{alias}",
+        ):
+            assert OpenAIProvider(provider_alias="openai").get_circuit_breaker() == "cb:openai"
+            assert OpenAIProvider(provider_alias="openrouter").get_circuit_breaker() == "cb:openrouter"
+            assert OpenAIProvider(provider_alias="nvidia").get_circuit_breaker() == "cb:nvidia"
+
 
 # ---------------------------------------------------------------------------
 # Cross-cutting safety

@@ -9,7 +9,7 @@ Sprint 11: Tests failover logic in LLMPool._create_instance():
 """
 
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock, AsyncMock, call
 
 from langchain_core.language_models import BaseChatModel
 
@@ -386,6 +386,25 @@ class TestPrimaryTimeoutProfiles:
             provider="google",
         ) == 88.0
 
+    @patch("app.engine.llm_pool.settings")
+    def test_resolve_primary_timeout_seconds_honors_model_override(self, mock_settings):
+        mock_settings.llm_primary_timeout_moderate_seconds = 25.0
+        mock_settings.llm_timeout_provider_overrides = (
+            '{"nvidia":{"moderate_seconds":22,'
+            '"models":{"deepseek-ai/deepseek-v4-flash":{"moderate_seconds":7}}}}'
+        )
+
+        assert resolve_primary_timeout_seconds(
+            tier="moderate",
+            provider="nvidia",
+            model_name="deepseek-ai/deepseek-v4-flash",
+        ) == 7.0
+        assert resolve_primary_timeout_seconds(
+            tier="moderate",
+            provider="nvidia",
+            model_name="deepseek-ai/deepseek-v4-pro",
+        ) == 22.0
+
     @pytest.mark.asyncio
     @patch("app.engine.llm_pool.settings")
     async def test_ainvoke_with_failover_uses_structured_timeout_profile(self, mock_settings):
@@ -436,6 +455,70 @@ class TestPrimaryTimeoutProfiles:
             )
 
         assert result == "ok"
+
+
+class TestModelHealthRuntime:
+    def test_model_failure_with_non_positive_window_does_not_degrade(self):
+        from app.engine.llm_model_health import (
+            is_model_degraded,
+            record_model_failure,
+        )
+
+        record_model_failure(
+            "nvidia",
+            "deepseek-ai/deepseek-v4-flash",
+            reason_code="timeout",
+            timeout_seconds=0.01,
+            degraded_for_seconds=0,
+        )
+
+        assert (
+            is_model_degraded("nvidia", "deepseek-ai/deepseek-v4-flash") is False
+        )
+
+    def test_model_health_snapshot_omits_raw_error_detail(self):
+        from app.engine.llm_model_health import (
+            get_model_health_snapshot,
+            record_model_failure,
+        )
+
+        record_model_failure(
+            "nvidia",
+            "deepseek-ai/deepseek-v4-pro",
+            reason_code="server_error",
+            error=RuntimeError("provider payload with secret-token"),
+        )
+
+        entry = get_model_health_snapshot()["nvidia"]["deepseek-ai/deepseek-v4-pro"]
+        assert entry["last_error_type"] == "RuntimeError"
+        assert "last_error_detail" not in entry
+
+    def test_create_custom_model_uses_provider_healthy_alternative(self):
+        from app.engine.llm_model_health import record_model_failure
+
+        provider = _make_mock_provider("nvidia")
+        provider._select_healthy_model = MagicMock(
+            return_value="deepseek-ai/deepseek-v4-flash"
+        )
+        LLMPool._providers = {"nvidia": provider}
+        record_model_failure(
+            "nvidia",
+            "deepseek-ai/deepseek-v4-pro",
+            reason_code="timeout",
+            timeout_seconds=0.01,
+        )
+
+        result = LLMPool.create_llm_with_model_for_provider(
+            "nvidia",
+            "deepseek-ai/deepseek-v4-pro",
+            ThinkingTier.DEEP,
+        )
+
+        assert result is provider.create_instance.return_value
+        provider.create_instance.assert_called_once()
+        assert provider.create_instance.call_args.kwargs["model_name"] == (
+            "deepseek-ai/deepseek-v4-flash"
+        )
 
 
 class TestRequestScopedRouting:
@@ -921,6 +1004,40 @@ class TestRequestScopedRouting:
         assert failover_events[0]["timeout_seconds"] == pytest.approx(0.001)
 
     @pytest.mark.asyncio
+    async def test_ainvoke_with_failover_records_cross_provider_fallback_failure(self):
+        from app.engine.llm_model_health import is_model_degraded
+
+        google_llm = _FakeAsyncLLM(error=RuntimeError("503 google unavailable"))
+        nvidia_llm = _FakeAsyncLLM(error=RuntimeError("503 nvidia unavailable"))
+        setattr(nvidia_llm, "model_name", "deepseek-ai/deepseek-v4-pro")
+
+        route = ResolvedLLMRoute(
+            provider="google",
+            llm=google_llm,
+            circuit_breaker=None,
+            fallback_provider="nvidia",
+            fallback_llm=nvidia_llm,
+        )
+        mock_failure = AsyncMock()
+
+        with (
+            patch.object(LLMPool, "resolve_runtime_route", return_value=route),
+            patch.object(LLMPool, "record_failure_for_provider", new=mock_failure),
+            patch.object(LLMPool, "record_success_for_provider", new=AsyncMock()),
+        ):
+            with pytest.raises(RuntimeError, match="nvidia unavailable"):
+                await ainvoke_with_failover(
+                    google_llm,
+                    ["hello"],
+                    tier="moderate",
+                    provider="google",
+                    primary_timeout=None,
+                )
+
+        mock_failure.assert_has_awaits([call("google"), call("nvidia")])
+        assert is_model_degraded("nvidia", "deepseek-ai/deepseek-v4-pro") is True
+
+    @pytest.mark.asyncio
     async def test_ainvoke_with_failover_uses_same_provider_model_fallback_before_cross_provider(self):
         zhipu_primary = _FakeAsyncLLM(sleep_seconds=0.05, result="slow-glm5")
         setattr(zhipu_primary, "model_name", "glm-5")
@@ -1071,3 +1188,90 @@ class TestRequestScopedRouting:
                     provider="zhipu",
                     primary_timeout=0.001,
                 )
+
+    @pytest.mark.asyncio
+    @patch("app.engine.llm_pool.settings")
+    async def test_nvidia_flash_timeout_marks_model_degraded_and_falls_back_to_pro(
+        self,
+        mock_settings,
+    ):
+        from app.engine.llm_model_health import is_model_degraded
+
+        mock_settings.nvidia_model = "deepseek-ai/deepseek-v4-flash"
+        mock_settings.nvidia_model_advanced = "deepseek-ai/deepseek-v4-pro"
+        mock_settings.llm_primary_timeout_deep_seconds = 45.0
+        mock_settings.llm_timeout_provider_overrides = "{}"
+
+        nvidia_flash = _FakeAsyncLLM(sleep_seconds=0.05, result="slow-flash")
+        setattr(nvidia_flash, "model_name", "deepseek-ai/deepseek-v4-flash")
+        nvidia_pro = _FakeAsyncLLM(result="pro-ok")
+        route = ResolvedLLMRoute(
+            provider="nvidia",
+            llm=nvidia_flash,
+            circuit_breaker=None,
+            fallback_provider=None,
+            fallback_llm=None,
+        )
+        failover_events: list[dict[str, object]] = []
+
+        async def _capture_failover(event: dict[str, object]) -> None:
+            failover_events.append(event)
+
+        with (
+            patch.object(LLMPool, "resolve_runtime_route", return_value=route),
+            patch.object(
+                LLMPool,
+                "create_llm_with_model_for_provider",
+                return_value=nvidia_pro,
+            ) as mock_create_fallback,
+            patch.object(LLMPool, "record_failure_for_provider", new=AsyncMock()),
+            patch.object(LLMPool, "record_success_for_provider", new=AsyncMock()),
+        ):
+            result = await ainvoke_with_failover(
+                nvidia_flash,
+                ["hello"],
+                tier="moderate",
+                provider="nvidia",
+                on_failover=_capture_failover,
+                primary_timeout=0.001,
+            )
+
+        assert result == "pro-ok"
+        assert is_model_degraded("nvidia", "deepseek-ai/deepseek-v4-flash") is True
+        assert is_model_degraded("nvidia", "deepseek-ai/deepseek-v4-pro") is False
+        mock_create_fallback.assert_called_once_with(
+            "nvidia",
+            "deepseek-ai/deepseek-v4-pro",
+            ThinkingTier.DEEP,
+        )
+        assert failover_events[0]["fallback_scope"] == "same_provider_model"
+        assert failover_events[0]["from_model"] == "deepseek-ai/deepseek-v4-flash"
+        assert failover_events[0]["to_model"] == "deepseek-ai/deepseek-v4-pro"
+
+    @patch("app.engine.llm_pool.settings")
+    def test_nvidia_same_provider_fallback_skips_degraded_target(self, mock_settings):
+        from app.engine.llm_model_health import (
+            record_model_failure,
+            reset_model_health_state,
+        )
+
+        mock_settings.nvidia_model = "deepseek-ai/deepseek-v4-flash"
+        mock_settings.nvidia_model_advanced = "deepseek-ai/deepseek-v4-pro"
+        try:
+            record_model_failure(
+                "nvidia",
+                "deepseek-ai/deepseek-v4-pro",
+                reason_code="timeout",
+                timeout_seconds=0.01,
+            )
+
+            assert (
+                LLMPool.resolve_same_provider_model_fallback(
+                    "nvidia",
+                    "moderate",
+                    current_model_name="deepseek-ai/deepseek-v4-flash",
+                )
+                is None
+            )
+        finally:
+            reset_model_health_state()

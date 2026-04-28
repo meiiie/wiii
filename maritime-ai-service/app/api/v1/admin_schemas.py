@@ -316,12 +316,16 @@ class LlmTimeoutProfilesConfig(BaseModel):
     stream_idle_timeout_seconds: float = Field(ge=0, le=3600)
 
 
-class LlmTimeoutProviderOverride(BaseModel):
+class LlmTimeoutModelOverride(BaseModel):
     light_seconds: Optional[float] = Field(default=None, ge=0, le=600)
     moderate_seconds: Optional[float] = Field(default=None, ge=0, le=900)
     deep_seconds: Optional[float] = Field(default=None, ge=0, le=1800)
     structured_seconds: Optional[float] = Field(default=None, ge=0, le=1800)
     background_seconds: Optional[float] = Field(default=None, ge=0, le=3600)
+
+
+class LlmTimeoutProviderOverride(LlmTimeoutModelOverride):
+    models: dict[str, LlmTimeoutModelOverride] = Field(default_factory=dict)
 
 
 class LlmRuntimeConfigResponse(BaseModel):
