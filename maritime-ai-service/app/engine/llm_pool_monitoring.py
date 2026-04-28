@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def get_request_selectable_providers_impl(
@@ -71,8 +74,9 @@ def get_stats_impl(
         model_health = get_model_health_snapshot()
         if model_health:
             stats["model_health"] = model_health
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("[LLM_POOL] Could not collect model health snapshot: %s", exc)
+        stats["model_health_error"] = str(exc)
     return stats
 
 

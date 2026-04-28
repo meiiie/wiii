@@ -545,10 +545,31 @@ async def ainvoke_with_failover_impl(
         await _emit_switch(reason=reason, error=exc)
         fallback_timeout = timeout * 2 if (timeout and timeout > 0) else None
         fallback_model_name = extract_runtime_model_name_impl(fb)
-        if fallback_timeout:
-            result = await asyncio.wait_for(fb.ainvoke(messages), timeout=fallback_timeout)
-        else:
-            result = await fb.ainvoke(messages)
+        try:
+            if fallback_timeout:
+                result = await asyncio.wait_for(
+                    fb.ainvoke(messages),
+                    timeout=fallback_timeout,
+                )
+            else:
+                result = await fb.ainvoke(messages)
+        except Exception as fallback_exc:
+            fallback_is_timeout = isinstance(fallback_exc, asyncio.TimeoutError)
+            classified_fallback_failure = classify_failover_reason_impl(
+                error=fallback_exc,
+                timeout_seconds=fallback_timeout if fallback_is_timeout else None,
+            )
+            record_model_failure(
+                route.fallback_provider,
+                fallback_model_name,
+                reason_code=classified_fallback_failure["reason_code"],
+                error=fallback_exc,
+                timeout_seconds=fallback_timeout if fallback_is_timeout else None,
+            )
+            await asyncio.shield(
+                pool_cls.record_failure_for_provider(route.fallback_provider)
+            )
+            raise
         record_model_success(route.fallback_provider, fallback_model_name)
         await asyncio.shield(pool_cls.record_success_for_provider(route.fallback_provider))
         return result

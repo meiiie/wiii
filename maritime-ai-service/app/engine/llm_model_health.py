@@ -8,6 +8,7 @@ model immediately without waiting for a full provider-level probe cycle.
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -38,6 +39,7 @@ class ModelHealthRecord:
 
 
 _MODEL_HEALTH: dict[tuple[str, str], ModelHealthRecord] = {}
+_MODEL_HEALTH_LOCK = threading.RLock()
 
 
 def _normalize_provider(provider: str | None) -> str | None:
@@ -64,12 +66,13 @@ def _compact_detail(value: Any, *, max_length: int = 180) -> str | None:
 
 
 def _get_record(provider: str, model: str) -> ModelHealthRecord:
-    key = (provider, model)
-    record = _MODEL_HEALTH.get(key)
-    if record is None:
-        record = ModelHealthRecord(provider=provider, model=model, state="healthy")
-        _MODEL_HEALTH[key] = record
-    return record
+    with _MODEL_HEALTH_LOCK:
+        key = (provider, model)
+        record = _MODEL_HEALTH.get(key)
+        if record is None:
+            record = ModelHealthRecord(provider=provider, model=model, state="healthy")
+            _MODEL_HEALTH[key] = record
+        return record
 
 
 def _is_still_degraded(record: ModelHealthRecord, *, now: float) -> bool:
@@ -90,10 +93,11 @@ def record_model_success(provider: str | None, model: str | None) -> None:
     normalized_model = _normalize_model(model)
     if not normalized_provider or not normalized_model:
         return
-    record = _get_record(normalized_provider, normalized_model)
-    record.state = "healthy"
-    record.last_success_at = time.time()
-    record.degraded_until = None
+    with _MODEL_HEALTH_LOCK:
+        record = _get_record(normalized_provider, normalized_model)
+        record.state = "healthy"
+        record.last_success_at = time.time()
+        record.degraded_until = None
 
 
 def record_model_failure(
@@ -103,7 +107,7 @@ def record_model_failure(
     reason_code: str | None = None,
     error: Exception | None = None,
     timeout_seconds: float | None = None,
-    degraded_for_seconds: float = DEFAULT_DEGRADED_TTL_SECONDS,
+    degraded_for_seconds: float | None = DEFAULT_DEGRADED_TTL_SECONDS,
 ) -> None:
     """Record a model failure and temporarily degrade retry-worthy failures."""
     normalized_provider = _normalize_provider(provider)
@@ -111,28 +115,29 @@ def record_model_failure(
     if not normalized_provider or not normalized_model:
         return
 
-    now = time.time()
-    normalized_reason = (reason_code or "").strip().lower() or None
-    record = _get_record(normalized_provider, normalized_model)
-    record.last_reason_code = normalized_reason
-    record.last_error_type = type(error).__name__ if error is not None else None
-    record.last_error_detail = _compact_detail(error)
-    record.last_timeout_seconds = timeout_seconds
-    record.last_failure_at = now
+    with _MODEL_HEALTH_LOCK:
+        now = time.time()
+        normalized_reason = (reason_code or "").strip().lower() or None
+        record = _get_record(normalized_provider, normalized_model)
+        record.last_reason_code = normalized_reason
+        record.last_error_type = type(error).__name__ if error is not None else None
+        record.last_error_detail = _compact_detail(error)
+        record.last_timeout_seconds = timeout_seconds
+        record.last_failure_at = now
 
-    should_degrade = (
-        timeout_seconds is not None
-        or normalized_reason in _DEGRADING_REASON_CODES
-    )
-    if not should_degrade:
-        return
+        should_degrade = (
+            degraded_for_seconds is not None
+            and degraded_for_seconds > 0
+            and (
+                timeout_seconds is not None
+                or normalized_reason in _DEGRADING_REASON_CODES
+            )
+        )
+        if not should_degrade:
+            return
 
-    record.state = "degraded"
-    record.degraded_until = (
-        now + degraded_for_seconds
-        if degraded_for_seconds and degraded_for_seconds > 0
-        else None
-    )
+        record.state = "degraded"
+        record.degraded_until = now + degraded_for_seconds
 
 
 def is_model_degraded(provider: str | None, model: str | None) -> bool:
@@ -141,32 +146,35 @@ def is_model_degraded(provider: str | None, model: str | None) -> bool:
     normalized_model = _normalize_model(model)
     if not normalized_provider or not normalized_model:
         return False
-    record = _MODEL_HEALTH.get((normalized_provider, normalized_model))
-    if record is None:
-        return False
-    return _is_still_degraded(record, now=time.time())
+    with _MODEL_HEALTH_LOCK:
+        record = _MODEL_HEALTH.get((normalized_provider, normalized_model))
+        if record is None:
+            return False
+        return _is_still_degraded(record, now=time.time())
 
 
 def get_model_health_snapshot() -> dict[str, dict[str, dict[str, Any]]]:
     """Expose model health for diagnostics and LLMPool stats."""
-    now = time.time()
-    snapshot: dict[str, dict[str, dict[str, Any]]] = {}
-    for record in list(_MODEL_HEALTH.values()):
-        _is_still_degraded(record, now=now)
-        provider_bucket = snapshot.setdefault(record.provider, {})
-        provider_bucket[record.model] = {
-            "state": record.state,
-            "last_reason_code": record.last_reason_code,
-            "last_error_type": record.last_error_type,
-            "last_error_detail": record.last_error_detail,
-            "last_timeout_seconds": record.last_timeout_seconds,
-            "last_failure_at": record.last_failure_at,
-            "last_success_at": record.last_success_at,
-            "degraded_until": record.degraded_until,
-        }
-    return snapshot
+    with _MODEL_HEALTH_LOCK:
+        now = time.time()
+        snapshot: dict[str, dict[str, dict[str, Any]]] = {}
+        for record in list(_MODEL_HEALTH.values()):
+            _is_still_degraded(record, now=now)
+            provider_bucket = snapshot.setdefault(record.provider, {})
+            provider_bucket[record.model] = {
+                "state": record.state,
+                "last_reason_code": record.last_reason_code,
+                "last_error_type": record.last_error_type,
+                "last_error_detail": record.last_error_detail,
+                "last_timeout_seconds": record.last_timeout_seconds,
+                "last_failure_at": record.last_failure_at,
+                "last_success_at": record.last_success_at,
+                "degraded_until": record.degraded_until,
+            }
+        return snapshot
 
 
 def reset_model_health_state() -> None:
     """Clear health state, primarily for tests."""
-    _MODEL_HEALTH.clear()
+    with _MODEL_HEALTH_LOCK:
+        _MODEL_HEALTH.clear()
