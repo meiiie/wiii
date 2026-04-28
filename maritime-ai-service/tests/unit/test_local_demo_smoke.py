@@ -86,7 +86,7 @@ def test_build_chat_payload_uses_dev_login_identity_and_runtime_hints():
         org_id="default",
         domain_id="maritime",
         provider="google",
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash-lite-preview",
     )
 
     assert payload == {
@@ -98,7 +98,7 @@ def test_build_chat_payload_uses_dev_login_identity_and_runtime_hints():
         "organization_id": "default",
         "domain_id": "maritime",
         "provider": "google",
-        "model": "gemini-2.5-flash",
+        "model": "gemini-3.1-flash-lite-preview",
     }
 
 
