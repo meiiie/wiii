@@ -319,6 +319,8 @@ async def get_full_catalog_impl(
     openai_api_key: str | None,
     openrouter_base_url: str | None,
     openrouter_api_key: str | None,
+    nvidia_base_url: str | None,
+    nvidia_api_key: str | None,
     zhipu_base_url: str | None,
     zhipu_api_key: str | None,
     get_all_static_chat_models_fn: Any,
@@ -328,6 +330,7 @@ async def get_full_catalog_impl(
     normalize_openai_compatible_base_url_fn: Any,
     openai_default_base_url: str,
     openrouter_default_base_url: str,
+    nvidia_default_base_url: str,
     zhipu_default_base_url: str,
     embedding_models: dict[str, Any],
     logger: Any,
@@ -398,6 +401,25 @@ async def get_full_catalog_impl(
                     provider="openrouter",
                     base_url=base,
                     api_key=openrouter_api_key,
+                ),
+                logger=logger,
+            )
+        )
+
+    if nvidia_api_key:
+        normalized_nvidia_base = normalize_openai_compatible_base_url_fn(
+            nvidia_base_url,
+            nvidia_default_base_url,
+        )
+        tasks["nvidia"] = asyncio.create_task(
+            run_cached_discovery_fn(
+                provider_cache=cls._provider_cache,
+                provider_cache_ttl=cls._provider_cache_ttl,
+                cache_key=f"nvidia::{normalized_nvidia_base}::{hash_secret_fn(nvidia_api_key)}",
+                fetcher=lambda: cls._fetch_openai_compatible_models(
+                    provider="nvidia",
+                    base_url=normalized_nvidia_base,
+                    api_key=nvidia_api_key,
                 ),
                 logger=logger,
             )

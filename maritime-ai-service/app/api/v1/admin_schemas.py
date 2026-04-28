@@ -334,6 +334,9 @@ class LlmRuntimeConfigResponse(BaseModel):
     openrouter_base_url: Optional[str] = None
     openrouter_model: str
     openrouter_model_advanced: str
+    nvidia_base_url: Optional[str] = None
+    nvidia_model: str
+    nvidia_model_advanced: str
     zhipu_base_url: Optional[str] = None
     zhipu_model: str
     zhipu_model_advanced: str
@@ -352,6 +355,7 @@ class LlmRuntimeConfigResponse(BaseModel):
     google_api_key_configured: bool
     openai_api_key_configured: bool
     openrouter_api_key_configured: bool
+    nvidia_api_key_configured: bool
     zhipu_api_key_configured: bool
     ollama_api_key_configured: bool
     enable_llm_failover: bool
@@ -393,7 +397,7 @@ class LlmRuntimeConfigResponse(BaseModel):
 class LlmRuntimeConfigUpdate(BaseModel):
     provider: Optional[str] = Field(
         default=None,
-        description="google | zhipu | openai | openrouter | ollama",
+        description="google | zhipu | openai | openrouter | nvidia | ollama",
     )
     use_multi_agent: Optional[bool] = None
     google_api_key: Optional[str] = Field(default=None, description="Google Gemini API key")
@@ -409,6 +413,11 @@ class LlmRuntimeConfigUpdate(BaseModel):
     openrouter_base_url: Optional[str] = None
     openrouter_model: Optional[str] = Field(default=None, min_length=1, max_length=200)
     openrouter_model_advanced: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    nvidia_api_key: Optional[str] = Field(default=None, description="NVIDIA NIM API key")
+    clear_nvidia_api_key: bool = False
+    nvidia_base_url: Optional[str] = None
+    nvidia_model: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    nvidia_model_advanced: Optional[str] = Field(default=None, min_length=1, max_length=200)
     zhipu_api_key: Optional[str] = Field(default=None, description="Zhipu AI / GLM API key")
     clear_zhipu_api_key: bool = False
     zhipu_base_url: Optional[str] = None

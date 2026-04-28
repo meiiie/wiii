@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 LLM_RUNTIME_POLICY_KEY = "llm_runtime"
 LLM_RUNTIME_POLICY_DESCRIPTION = "Persisted system-wide LLM runtime policy"
-LLM_RUNTIME_POLICY_SCHEMA_VERSION = 5
+LLM_RUNTIME_POLICY_SCHEMA_VERSION = 6
 
 _STRING_FIELDS = frozenset(
     {
@@ -42,6 +42,8 @@ _STRING_FIELDS = frozenset(
         "openai_model_advanced",
         "openrouter_model",
         "openrouter_model_advanced",
+        "nvidia_model",
+        "nvidia_model_advanced",
         "zhipu_model",
         "zhipu_model_advanced",
         "ollama_model",
@@ -60,6 +62,8 @@ _OPTIONAL_STRING_FIELDS = frozenset(
         "openrouter_api_key",
         "openai_base_url",
         "openrouter_base_url",
+        "nvidia_api_key",
+        "nvidia_base_url",
         "zhipu_api_key",
         "zhipu_base_url",
         "ollama_api_key",
@@ -135,6 +139,10 @@ _ALL_POLICY_FIELDS = (
     "openai_model_advanced",
     "openrouter_model",
     "openrouter_model_advanced",
+    "nvidia_api_key",
+    "nvidia_base_url",
+    "nvidia_model",
+    "nvidia_model_advanced",
     "zhipu_api_key",
     "zhipu_base_url",
     "zhipu_model",
@@ -172,6 +180,7 @@ _SECRET_FIELDS = frozenset(
         "google_api_key",
         "openai_api_key",
         "openrouter_api_key",
+        "nvidia_api_key",
         "zhipu_api_key",
         "ollama_api_key",
     }

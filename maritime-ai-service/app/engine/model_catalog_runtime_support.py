@@ -6,11 +6,20 @@ import hashlib
 import time
 from typing import Any, Awaitable, Callable
 
+_CATALOG_CACHE_FINGERPRINT_SALT = b"wiii-model-catalog-cache-fingerprint-v1"
+
 
 def hash_secret(secret: str | None) -> str:
     if not secret:
         return "no-secret"
-    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:12]
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        secret.encode("utf-8"),
+        _CATALOG_CACHE_FINGERPRINT_SALT,
+        100_000,
+        dklen=16,
+    )
+    return digest.hex()[:12]
 
 
 async def run_cached_discovery(

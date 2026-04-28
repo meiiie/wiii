@@ -6,6 +6,9 @@ from pydantic import BaseModel
 from app.engine.model_catalog import (
     GOOGLE_DEEP_MODEL,
     GOOGLE_DEFAULT_MODEL,
+    NVIDIA_DEFAULT_BASE_URL,
+    NVIDIA_DEFAULT_MODEL,
+    NVIDIA_DEFAULT_MODEL_ADVANCED,
     OPENAI_DEFAULT_MODEL,
     OPENAI_DEFAULT_MODEL_ADVANCED,
     OPENROUTER_DEFAULT_BASE_URL,
@@ -36,10 +39,14 @@ class LLMConfig(BaseModel):
     openai_base_url: Optional[str] = None
     openrouter_api_key: Optional[str] = None
     openrouter_base_url: Optional[str] = OPENROUTER_DEFAULT_BASE_URL
+    nvidia_api_key: Optional[str] = None
+    nvidia_base_url: Optional[str] = NVIDIA_DEFAULT_BASE_URL
     openai_model: str = OPENAI_DEFAULT_MODEL
     openai_model_advanced: str = OPENAI_DEFAULT_MODEL_ADVANCED
     openrouter_model: str = OPENROUTER_DEFAULT_MODEL
     openrouter_model_advanced: str = OPENROUTER_DEFAULT_MODEL_ADVANCED
+    nvidia_model: str = NVIDIA_DEFAULT_MODEL
+    nvidia_model_advanced: str = NVIDIA_DEFAULT_MODEL_ADVANCED
     openrouter_model_fallbacks: list[str] = []
     openrouter_provider_order: list[str] = []
     openrouter_allowed_providers: list[str] = []

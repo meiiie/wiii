@@ -39,6 +39,18 @@ class TestNvidiaRegistry:
 # ---------------------------------------------------------------------------
 
 class TestNvidiaResolvers:
+    def test_default_models_are_current_deepseek_v4_targets(self):
+        from app.engine.model_catalog import (
+            NVIDIA_DEFAULT_MODEL,
+            NVIDIA_DEFAULT_MODEL_ADVANCED,
+            get_all_static_chat_models,
+        )
+
+        assert NVIDIA_DEFAULT_MODEL == "deepseek-ai/deepseek-v4-flash"
+        assert NVIDIA_DEFAULT_MODEL_ADVANCED == "deepseek-ai/deepseek-v4-pro"
+        assert NVIDIA_DEFAULT_MODEL in get_all_static_chat_models()["nvidia"]
+        assert NVIDIA_DEFAULT_MODEL_ADVANCED in get_all_static_chat_models()["nvidia"]
+
     def test_api_key_resolves_from_settings(self):
         from app.engine.openai_compatible_credentials import resolve_nvidia_api_key
 
@@ -95,6 +107,39 @@ class TestNvidiaResolvers:
 
         assert nvidia_credentials_available(SimpleNamespace(nvidia_api_key="k")) is True
         assert nvidia_credentials_available(SimpleNamespace(nvidia_api_key=None)) is False
+
+    def test_runtime_audit_selected_models_include_nvidia(self):
+        from app.services.llm_runtime_audit_snapshot_support import (
+            get_selected_models_impl,
+        )
+
+        settings_obj = SimpleNamespace(
+            llm_provider="nvidia",
+            openai_base_url=None,
+            openai_model="gpt-test",
+            openai_model_advanced="gpt-test-advanced",
+            openrouter_model="router-test",
+            openrouter_model_advanced="router-test-advanced",
+            nvidia_model="deepseek-ai/deepseek-v4-flash",
+            nvidia_model_advanced="deepseek-ai/deepseek-v4-pro",
+            google_model="gemini-test",
+            zhipu_model="glm-test",
+            zhipu_model_advanced="glm-test-advanced",
+            ollama_model="qwen-test",
+        )
+
+        selected = get_selected_models_impl(
+            settings_obj=settings_obj,
+            resolve_openai_catalog_provider_fn=lambda **_: "openai",
+            google_default_model="gemini-default",
+            openai_default_model="openai-default",
+            openai_default_model_advanced="openai-advanced-default",
+            zhipu_default_model="glm-default",
+            zhipu_default_model_advanced="glm-advanced-default",
+        )
+
+        assert selected["nvidia"]["model"] == "deepseek-ai/deepseek-v4-flash"
+        assert selected["nvidia"]["advanced"] == "deepseek-ai/deepseek-v4-pro"
 
 
 # ---------------------------------------------------------------------------

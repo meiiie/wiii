@@ -88,6 +88,9 @@ _PROVIDER_EXPECTED_CAPABILITIES: dict[str, dict[str, bool]] = {
     "openrouter": {
         "streaming": True,
     },
+    "nvidia": {
+        "streaming": True,
+    },
     "zhipu": {
         "tool_calling": True,
         "structured_output": True,
@@ -773,6 +776,8 @@ async def refresh_request_selectable_runtime_audit(
         openai_api_key=settings.openai_api_key,
         openrouter_base_url=getattr(settings, "openrouter_base_url", None),
         openrouter_api_key=getattr(settings, "openrouter_api_key", None),
+        nvidia_base_url=getattr(settings, "nvidia_base_url", None),
+        nvidia_api_key=getattr(settings, "nvidia_api_key", None),
         zhipu_base_url=getattr(settings, "zhipu_base_url", None),
         zhipu_api_key=getattr(settings, "zhipu_api_key", None),
     )

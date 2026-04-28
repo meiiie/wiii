@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any, Callable, Mapping
 
 from app.engine.openai_compatible_credentials import (
+    resolve_nvidia_model,
+    resolve_nvidia_model_advanced,
     resolve_openrouter_model,
     resolve_openrouter_model_advanced,
 )
@@ -40,6 +42,10 @@ def get_selected_models_impl(
         "openrouter": {
             "model": resolve_openrouter_model(settings_obj),
             "advanced": resolve_openrouter_model_advanced(settings_obj),
+        },
+        "nvidia": {
+            "model": resolve_nvidia_model(settings_obj),
+            "advanced": resolve_nvidia_model_advanced(settings_obj),
         },
         "zhipu": {
             "model": getattr(settings_obj, "zhipu_model", zhipu_default_model),

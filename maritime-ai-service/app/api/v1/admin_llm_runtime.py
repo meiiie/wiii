@@ -8,6 +8,10 @@ heavier runtime/model-catalog/update logic.
 from __future__ import annotations
 
 from app.engine.openai_compatible_credentials import (
+    resolve_nvidia_api_key,
+    resolve_nvidia_base_url,
+    resolve_nvidia_model,
+    resolve_nvidia_model_advanced,
     resolve_openrouter_api_key,
     resolve_openrouter_base_url,
     resolve_openrouter_model,
@@ -147,12 +151,14 @@ def build_provider_catalog_capabilities_impl(
         "google": settings_obj.google_model or google_default_model,
         "openai": settings_obj.openai_model or openai_default_model,
         "openrouter": resolve_openrouter_model(settings_obj),
+        "nvidia": resolve_nvidia_model(settings_obj),
         "zhipu": getattr(settings_obj, "zhipu_model", "glm-5"),
         "ollama": settings_obj.ollama_model,
     }
     selected_advanced_models = {
         "openai": settings_obj.openai_model_advanced or openai_default_model_advanced,
         "openrouter": resolve_openrouter_model_advanced(settings_obj),
+        "nvidia": resolve_nvidia_model_advanced(settings_obj),
         "zhipu": getattr(settings_obj, "zhipu_model_advanced", "glm-5"),
     }
     audit_providers = {}
@@ -348,6 +354,9 @@ def serialize_llm_runtime_impl(
         openrouter_base_url=resolve_openrouter_base_url(settings_obj),
         openrouter_model=resolve_openrouter_model(settings_obj),
         openrouter_model_advanced=resolve_openrouter_model_advanced(settings_obj),
+        nvidia_base_url=resolve_nvidia_base_url(settings_obj),
+        nvidia_model=resolve_nvidia_model(settings_obj),
+        nvidia_model_advanced=resolve_nvidia_model_advanced(settings_obj),
         zhipu_base_url=getattr(settings_obj, "zhipu_base_url", None),
         zhipu_model=getattr(settings_obj, "zhipu_model", "glm-5"),
         zhipu_model_advanced=getattr(settings_obj, "zhipu_model_advanced", "glm-5"),
@@ -378,6 +387,7 @@ def serialize_llm_runtime_impl(
         google_api_key_configured=bool(settings_obj.google_api_key),
         openai_api_key_configured=bool(settings_obj.openai_api_key),
         openrouter_api_key_configured=bool(resolve_openrouter_api_key(settings_obj)),
+        nvidia_api_key_configured=bool(resolve_nvidia_api_key(settings_obj)),
         zhipu_api_key_configured=bool(getattr(settings_obj, "zhipu_api_key", None)),
         ollama_api_key_configured=bool(getattr(settings_obj, "ollama_api_key", None)),
         enable_llm_failover=settings_obj.enable_llm_failover,

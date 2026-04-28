@@ -261,7 +261,10 @@ class BaseSettingsFieldsMixin:
         default=GOOGLE_DEEP_MODEL,
         description="Google Gemini model for complex/deep tasks (default: gemini-3.1-pro-preview)",
     )
-    llm_provider: str = Field(default="zhipu", description="LLM provider: google, zhipu, openai, openrouter, ollama")
+    llm_provider: str = Field(
+        default="zhipu",
+        description="LLM provider: google, zhipu, openai, openrouter, nvidia, ollama",
+    )
 
     # LLM Settings - Ollama (local/self-hosted)
     ollama_api_key: Optional[str] = Field(
@@ -685,5 +688,4 @@ class BaseSettingsFieldsMixin:
     enable_multi_tenant: bool = Field(default=False, description="Enable multi-organization support")
     default_organization_id: str = Field(default="default", description="Default org for unauthenticated users")
     enable_rls: bool = Field(default=False, description="Enable PostgreSQL Row-Level Security (requires enable_multi_tenant)")
-
 

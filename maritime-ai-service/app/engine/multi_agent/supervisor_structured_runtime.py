@@ -22,7 +22,6 @@ _SELFHOOD_FOLLOWUP_CONTEXT_MARKERS: tuple[str, ...] = (
     "ra doi",
 )
 
-
 def _looks_selfhood_followup_from_context(*, query: str, context_text: str) -> bool:
     normalized_query = _normalize_for_intent(query)
     normalized_context = _normalize_for_intent(context_text)

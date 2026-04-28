@@ -135,6 +135,45 @@ class TestSupervisorRoute:
         mock_route.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_route_ascii_greeting_instruction_uses_fast_path(self, mock_llm):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "query": "Chao Wiii, tra loi ngan",
+            "context": {},
+            "domain_config": {},
+        }
+
+        with patch.object(sup, "_route_structured", new=AsyncMock(return_value="direct")) as mock_route:
+            result = await sup.route(state)
+
+        assert result == "direct"
+        assert state["_routing_hint"] == {
+            "kind": "fast_chatter",
+            "intent": "social",
+            "shape": "social",
+        }
+        assert state["routing_metadata"]["method"] == "conservative_fast_path"
+        mock_route.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_route_greeting_learning_request_does_not_use_fast_path(self, mock_llm):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "query": "hello explain COLREG Rule 15",
+            "context": {},
+            "domain_config": {},
+        }
+
+        mock_route = AsyncMock(return_value="tutor_agent")
+        with patch.object(sup, "_route_structured", new=mock_route):
+            result = await sup.route(state)
+
+        assert result == "tutor_agent"
+        mock_route.assert_awaited_once()
+        assert mock_route.await_args.args[6] is state
+        assert state.get("_routing_hint", {}).get("kind") != "fast_chatter"
+
+    @pytest.mark.asyncio
     async def test_route_laughter_social_turn_sets_house_hint_and_uses_fast_path(self, mock_llm):
         sup = _make_supervisor(mock_llm)
         state = {

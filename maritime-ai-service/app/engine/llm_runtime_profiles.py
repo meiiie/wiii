@@ -6,6 +6,9 @@ from typing import Optional
 from app.engine.model_catalog import (
     GOOGLE_DEEP_MODEL,
     GOOGLE_DEFAULT_MODEL,
+    NVIDIA_DEFAULT_BASE_URL,
+    NVIDIA_DEFAULT_MODEL,
+    NVIDIA_DEFAULT_MODEL_ADVANCED,
     OPENAI_DEFAULT_MODEL,
     OPENAI_DEFAULT_MODEL_ADVANCED,
     OPENROUTER_DEFAULT_BASE_URL,
@@ -28,6 +31,9 @@ class RuntimeProviderPreset:
     openrouter_base_url: Optional[str] = None
     openrouter_model: Optional[str] = None
     openrouter_model_advanced: Optional[str] = None
+    nvidia_base_url: Optional[str] = None
+    nvidia_model: Optional[str] = None
+    nvidia_model_advanced: Optional[str] = None
     zhipu_base_url: Optional[str] = None
     zhipu_model: Optional[str] = None
     zhipu_model_advanced: Optional[str] = None
@@ -60,6 +66,13 @@ _PROVIDER_PRESETS: dict[str, RuntimeProviderPreset] = {
         openrouter_base_url=OPENROUTER_DEFAULT_BASE_URL,
         openrouter_model=OPENROUTER_DEFAULT_MODEL,
         openrouter_model_advanced=OPENROUTER_DEFAULT_MODEL_ADVANCED,
+    ),
+    "nvidia": RuntimeProviderPreset(
+        provider="nvidia",
+        failover_chain=("nvidia",),
+        nvidia_base_url=NVIDIA_DEFAULT_BASE_URL,
+        nvidia_model=NVIDIA_DEFAULT_MODEL,
+        nvidia_model_advanced=NVIDIA_DEFAULT_MODEL_ADVANCED,
     ),
     "zhipu": RuntimeProviderPreset(
         provider="zhipu",

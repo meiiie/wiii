@@ -15,6 +15,10 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional
 
 from app.engine.openai_compatible_credentials import (
+    resolve_nvidia_api_key,
+    resolve_nvidia_base_url,
+    resolve_nvidia_model,
+    resolve_nvidia_model_advanced,
     resolve_openai_api_key,
     resolve_openai_base_url,
     resolve_openai_model,
@@ -197,6 +201,26 @@ class UnifiedLLMClient:
                     "deep": resolve_openrouter_model_advanced(settings),
                     "moderate": resolve_openrouter_model(settings),
                     "light": resolve_openrouter_model(settings),
+                },
+                supports_thinking=False,
+                thinking_param="",
+            )
+
+        elif name == "nvidia":
+            api_key = resolve_nvidia_api_key(settings)
+            if not api_key:
+                logger.debug("Skipping nvidia unified client: no API key")
+                return None
+            model = resolve_nvidia_model(settings)
+            return ProviderConfig(
+                name="nvidia",
+                api_key=api_key,
+                base_url=resolve_nvidia_base_url(settings),
+                default_model=model,
+                models={
+                    "deep": resolve_nvidia_model_advanced(settings),
+                    "moderate": model,
+                    "light": model,
                 },
                 supports_thinking=False,
                 thinking_param="",
