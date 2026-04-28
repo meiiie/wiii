@@ -8,6 +8,7 @@ from app.engine.model_catalog import (
     get_embedding_model_metadata,
     is_legacy_google_model,
 )
+from app.engine.model_catalog_runtime_support import hash_secret
 
 
 def test_google_default_model_is_current():
@@ -39,3 +40,15 @@ def test_embedding_models_expose_dimensions():
     assert candidate_metadata.dimensions == get_embedding_dimensions(
         EMBEDDING_BENCHMARK_CANDIDATE
     )
+
+
+def test_runtime_secret_fingerprint_is_stable_and_redacted():
+    first = hash_secret("provider-api-key-1")
+    second = hash_secret("provider-api-key-1")
+    other = hash_secret("provider-api-key-2")
+
+    assert first == second
+    assert first != other
+    assert first != "provider-api-key-1"
+    assert len(first) == 12
+    assert hash_secret(None) == "no-secret"

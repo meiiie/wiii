@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import time
 from typing import Any, Awaitable, Callable
+
+_CATALOG_CACHE_FINGERPRINT_KEY = b"wiii-model-catalog-cache-fingerprint-v1"
 
 
 def hash_secret(secret: str | None) -> str:
     if not secret:
         return "no-secret"
-    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:12]
+    digest = hmac.new(
+        _CATALOG_CACHE_FINGERPRINT_KEY,
+        secret.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return digest[:12]
 
 
 async def run_cached_discovery(
