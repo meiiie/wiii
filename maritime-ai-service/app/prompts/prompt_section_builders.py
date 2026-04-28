@@ -178,6 +178,7 @@ def append_truth_user_and_session_sections(
     sections: list[str],
     *,
     user_name: str | None,
+    core_memory_block: str | None,
     user_facts: list[Any] | None,
     conversation_summary: str | None,
     mood_hint: str | None,
@@ -202,6 +203,21 @@ def append_truth_user_and_session_sections(
         "4. Mục 'THÔNG TIN NGƯỜI DÙNG' bên dưới là dữ liệu nền từ PHIÊN CŨ. "
         "KHÔNG được trình bày như thể user vừa nói trong cuộc trò chuyện này."
     )
+
+    try:
+        from app.engine.semantic_memory.memory_contract import (
+            build_wiii_memory_contract_prompt,
+        )
+
+        memory_contract = build_wiii_memory_contract_prompt(
+            core_memory_block=core_memory_block,
+            user_facts=user_facts,
+            conversation_summary=conversation_summary,
+        )
+        if memory_contract:
+            sections.append("\n" + memory_contract)
+    except Exception as exc:
+        logger.debug("[MEMORY_CONTRACT] Prompt contract unavailable: %s", exc)
 
     if user_name or user_facts:
         sections.append("\n--- THÔNG TIN NGƯỜI DÙNG (tham khảo nền, KHÔNG phải cuộc trò chuyện hiện tại) ---")

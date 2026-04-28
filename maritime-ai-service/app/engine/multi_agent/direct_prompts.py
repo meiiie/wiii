@@ -1097,6 +1097,10 @@ def _build_direct_system_messages(
         system_prompt = loader.build_system_prompt(
             role=role_name,
             user_name=ctx.get("user_name"),
+            conversation_summary=(
+                ctx.get("conversation_summary") or ctx.get("conversation_history")
+            ),
+            core_memory_block=ctx.get("core_memory_block"),
             is_follow_up=ctx.get("is_follow_up", False),
             pronoun_style=ctx.get("pronoun_style"),
             user_facts=ctx.get("user_facts", []),

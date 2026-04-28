@@ -307,6 +307,10 @@ def build_tutor_system_prompt(
     base_prompt = prompt_loader.build_system_prompt(
         role=user_role,
         user_name=user_name,
+        conversation_summary=(
+            context.get("conversation_summary") or context.get("conversation_history")
+        ),
+        core_memory_block=context.get("core_memory_block"),
         user_facts=user_facts,
         is_follow_up=is_follow_up,
         recent_phrases=recent_phrases,

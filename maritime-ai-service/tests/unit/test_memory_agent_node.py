@@ -191,6 +191,7 @@ class TestGenerateResponseContext:
         mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="Nho chu."))
         state = {
             "context": {
+                "core_memory_block": "Name: Minh\nPreference: visual learning",
                 "history_list": [
                     {"role": "user", "content": "doi qua huhu"},
                     {
@@ -218,6 +219,31 @@ class TestGenerateResponseContext:
         prompt = mock_llm.ainvoke.await_args.args[0][-1].content
         assert "Doan hoi thoai gan day" in prompt
         assert "doi qua huhu" in prompt
+        assert "Core memory block" in prompt
+        assert "visual learning" in prompt
+
+    @pytest.mark.asyncio
+    async def test_generate_response_handles_none_context(self):
+        node = _make_node()
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="Minh nè."))
+        state = {"context": None}
+
+        with patch(
+            "app.services.thinking_post_processor.ThinkingPostProcessor.process",
+            return_value=("Minh nè.", None),
+        ):
+            text = await node._generate_response(
+                mock_llm,
+                "Wiii khong nho minh ha?",
+                [],
+                [],
+                "",
+                state,
+            )
+
+        assert text == "Minh nè."
+        mock_llm.ainvoke.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
