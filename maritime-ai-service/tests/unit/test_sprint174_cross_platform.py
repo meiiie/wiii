@@ -26,6 +26,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.engine.multi_agent.runtime_contracts import WiiiTurnRequest, WiiiTurnResult
+
 
 # =============================================================================
 # 1. CONFIG TESTS
@@ -405,6 +407,28 @@ class TestMessengerWebhookCrossPlatform:
             await _process_and_reply("sender_x", "Hi")
             assert mock_process.call_args[1]["user_id"] == "canonical-uuid-999"
 
+    @pytest.mark.asyncio
+    async def test_process_uses_native_wiii_turn_request(self):
+        from app.api.v1.messenger_webhook import _process_and_reply
+
+        with patch("app.auth.identity_resolver.resolve_user_id", new_callable=AsyncMock, return_value="canonical-uuid-999"), \
+             patch("app.engine.personality_mode.resolve_personality_mode", return_value="professional"), \
+             patch(
+                 "app.engine.multi_agent.runtime.run_wiii_turn",
+                 new_callable=AsyncMock,
+                 return_value=WiiiTurnResult.from_payload({"response": "OK"}),
+             ) as mock_run_turn:
+            answer = await _process_and_reply("sender_x", "Hi")
+
+        turn_request = mock_run_turn.await_args.args[0]
+        assert isinstance(turn_request, WiiiTurnRequest)
+        assert turn_request.query == "Hi"
+        assert turn_request.run_context.user_id == "canonical-uuid-999"
+        assert turn_request.run_context.session_id == "messenger_sender_x"
+        assert turn_request.run_context.context["personality_mode"] == "professional"
+        assert turn_request.run_context.context["channel_type"] == "messenger"
+        assert answer == "OK"
+
 
 # =============================================================================
 # 6. ZALO WEBHOOK TESTS
@@ -485,6 +509,28 @@ class TestZaloWebhookProcessing:
              patch("app.engine.multi_agent.graph.process_with_multi_agent", new_callable=AsyncMock, return_value={"response": "OK"}) as mock_process:
             await _process_and_reply("zalo_777", "Hi")
             assert mock_process.call_args[1]["session_id"] == "zalo_zalo_777"
+
+    @pytest.mark.asyncio
+    async def test_process_uses_native_wiii_turn_request(self):
+        from app.api.v1.zalo_webhook import _process_and_reply
+
+        with patch("app.auth.identity_resolver.resolve_user_id", new_callable=AsyncMock, return_value="user-z"), \
+             patch("app.engine.personality_mode.resolve_personality_mode", return_value="soul"), \
+             patch(
+                 "app.engine.multi_agent.runtime.run_wiii_turn",
+                 new_callable=AsyncMock,
+                 return_value=WiiiTurnResult.from_payload({"response": "OK"}),
+             ) as mock_run_turn:
+            answer = await _process_and_reply("zalo_777", "Hi")
+
+        turn_request = mock_run_turn.await_args.args[0]
+        assert isinstance(turn_request, WiiiTurnRequest)
+        assert turn_request.query == "Hi"
+        assert turn_request.run_context.user_id == "user-z"
+        assert turn_request.run_context.session_id == "zalo_zalo_777"
+        assert turn_request.run_context.context["personality_mode"] == "soul"
+        assert turn_request.run_context.context["channel_type"] == "zalo"
+        assert answer == "OK"
 
 
 class TestZaloSendReply:
