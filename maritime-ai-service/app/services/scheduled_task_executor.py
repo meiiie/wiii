@@ -129,18 +129,26 @@ class ScheduledTaskExecutor:
 
         if extra.get("agent_invoke"):
             # Agent mode: invoke the WiiiRunner-backed multi-agent runtime.
-            from app.engine.multi_agent.runtime import process_with_multi_agent
+            from app.engine.multi_agent.runtime import run_wiii_turn
+            from app.engine.multi_agent.runtime_contracts import (
+                WiiiRunContext,
+                WiiiTurnRequest,
+            )
 
-            result = await asyncio.wait_for(
-                process_with_multi_agent(
-                    query=task["description"],
-                    user_id=task["user_id"],
-                    session_id=f"scheduled_{task['id'][:8]}",
-                    domain_id=task.get("domain_id", "maritime"),
+            turn_result = await asyncio.wait_for(
+                run_wiii_turn(
+                    WiiiTurnRequest(
+                        query=task["description"],
+                        run_context=WiiiRunContext(
+                            user_id=task["user_id"],
+                            session_id=f"scheduled_{task['id'][:8]}",
+                            domain_id=task.get("domain_id", "maritime"),
+                        ),
+                    )
                 ),
                 timeout=settings.scheduler_agent_timeout,
             )
-            # process_with_multi_agent returns {"response": ..., ...}
+            result = turn_result.payload
             return {
                 "mode": "agent",
                 "response": result.get("response", ""),

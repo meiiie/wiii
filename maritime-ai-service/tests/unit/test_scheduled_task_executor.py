@@ -19,6 +19,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.engine.multi_agent.runtime_contracts import WiiiTurnRequest, WiiiTurnResult
 from app.services.scheduled_task_executor import (
     ScheduledTaskExecutor,
     _parse_interval,
@@ -239,6 +240,33 @@ class TestExecuteAgentMode:
 
         assert result["mode"] == "agent"
         assert "MARPOL" in result["response"]
+
+    @pytest.mark.asyncio
+    async def test_execute_agent_task_uses_wiii_turn_request(
+        self,
+        executor,
+        sample_task_agent,
+    ):
+        """Agent mode passes a native Wiii turn request to the runtime."""
+        mock_settings = MagicMock()
+        mock_settings.scheduler_agent_timeout = 30
+        mock_result = WiiiTurnResult.from_payload({"response": "Scheduled native ok"})
+
+        with patch("app.core.config.settings", mock_settings), \
+             patch(
+                 "app.engine.multi_agent.runtime.run_wiii_turn",
+                 new_callable=AsyncMock,
+                 return_value=mock_result,
+             ) as mock_run_turn:
+            result = await executor._execute_single_task(sample_task_agent)
+
+        turn_request = mock_run_turn.await_args.args[0]
+        assert isinstance(turn_request, WiiiTurnRequest)
+        assert turn_request.query == sample_task_agent["description"]
+        assert turn_request.run_context.user_id == sample_task_agent["user_id"]
+        assert turn_request.run_context.session_id == "scheduled_task-age"
+        assert turn_request.run_context.domain_id == "maritime"
+        assert result == {"mode": "agent", "response": "Scheduled native ok"}
 
     @pytest.mark.asyncio
     async def test_agent_task_timeout(self, executor, sample_task_agent):

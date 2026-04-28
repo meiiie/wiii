@@ -232,23 +232,29 @@ async def _process_and_reply(sender_id: str, text: str) -> str:
 
     from app.auth.identity_resolver import resolve_user_id
     from app.engine.personality_mode import resolve_personality_mode
-    from app.engine.multi_agent.runtime import process_with_multi_agent
+    from app.engine.multi_agent.runtime import run_wiii_turn
+    from app.engine.multi_agent.runtime_contracts import WiiiRunContext, WiiiTurnRequest
 
     canonical_user_id = await resolve_user_id("messenger", sender_id)
     personality_mode = resolve_personality_mode("messenger")
 
-    result = await process_with_multi_agent(
-        query=text,
-        user_id=canonical_user_id,
-        session_id=f"messenger_{sender_id}",
-        context={
-            "user_role": "student",
-            "conversation_history": "",
-            "semantic_context": "",
-            "personality_mode": personality_mode,
-            "channel_type": "messenger",
-        },
+    turn_result = await run_wiii_turn(
+        WiiiTurnRequest(
+            query=text,
+            run_context=WiiiRunContext(
+                user_id=canonical_user_id,
+                session_id=f"messenger_{sender_id}",
+                context={
+                    "user_role": "student",
+                    "conversation_history": "",
+                    "semantic_context": "",
+                    "personality_mode": personality_mode,
+                    "channel_type": "messenger",
+                },
+            ),
+        )
     )
+    result = turn_result.payload
     return result.get("response", result.get("final_response", "Mình không hiểu câu hỏi."))
 
 
