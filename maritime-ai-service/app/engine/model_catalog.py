@@ -81,8 +81,8 @@ ZHIPU_DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
 # NVIDIA NIM — OpenAI-compatible endpoint (Issue #110)
 # Free tier available with NGC API key from build.nvidia.com.
 NVIDIA_DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
-NVIDIA_DEFAULT_MODEL = "meta/llama-3.1-70b-instruct"
-NVIDIA_DEFAULT_MODEL_ADVANCED = "meta/llama-3.1-405b-instruct"
+NVIDIA_DEFAULT_MODEL = "deepseek-ai/deepseek-v4-flash"
+NVIDIA_DEFAULT_MODEL_ADVANCED = "deepseek-ai/deepseek-v4-pro"
 
 GOOGLE_CHAT_MODELS: dict[str, ChatModelMetadata] = {
     GOOGLE_DEFAULT_MODEL: ChatModelMetadata(
@@ -423,6 +423,27 @@ OLLAMA_KNOWN_MODELS: dict[str, ChatModelMetadata] = {
     ),
 }
 
+NVIDIA_CHAT_MODELS: dict[str, ChatModelMetadata] = {
+    NVIDIA_DEFAULT_MODEL: ChatModelMetadata(
+        provider="nvidia",
+        model_name=NVIDIA_DEFAULT_MODEL,
+        display_name="DeepSeek V4 Flash (NVIDIA NIM)",
+        status="current",
+        supports_streaming=True,
+        supports_structured_output=False,
+        capability_source="static",
+    ),
+    NVIDIA_DEFAULT_MODEL_ADVANCED: ChatModelMetadata(
+        provider="nvidia",
+        model_name=NVIDIA_DEFAULT_MODEL_ADVANCED,
+        display_name="DeepSeek V4 Pro (NVIDIA NIM)",
+        status="current",
+        supports_streaming=True,
+        supports_structured_output=False,
+        capability_source="static",
+    ),
+}
+
 
 # ---------------------------------------------------------------------------
 # Multi-provider helper functions
@@ -434,6 +455,7 @@ def get_all_static_chat_models() -> dict[str, dict[str, ChatModelMetadata]]:
         "google": dict(GOOGLE_CHAT_MODELS),
         "openai": dict(OPENAI_CHAT_MODELS),
         "openrouter": dict(OPENROUTER_CHAT_MODELS),
+        "nvidia": dict(NVIDIA_CHAT_MODELS),
         "ollama": dict(OLLAMA_KNOWN_MODELS),
         "zhipu": dict(ZHIPU_CHAT_MODELS),
     }
@@ -573,6 +595,8 @@ class ModelCatalogService:
         openai_api_key: str | None = None,
         openrouter_base_url: str | None = None,
         openrouter_api_key: str | None = None,
+        nvidia_base_url: str | None = None,
+        nvidia_api_key: str | None = None,
         zhipu_base_url: str | None = None,
         zhipu_api_key: str | None = None,
     ) -> dict:
@@ -586,6 +610,8 @@ class ModelCatalogService:
             openai_api_key=openai_api_key,
             openrouter_base_url=openrouter_base_url,
             openrouter_api_key=openrouter_api_key,
+            nvidia_base_url=nvidia_base_url,
+            nvidia_api_key=nvidia_api_key,
             zhipu_base_url=zhipu_base_url,
             zhipu_api_key=zhipu_api_key,
             get_all_static_chat_models_fn=get_all_static_chat_models,
@@ -595,6 +621,7 @@ class ModelCatalogService:
             normalize_openai_compatible_base_url_fn=normalize_openai_compatible_base_url,
             openai_default_base_url=OPENAI_DEFAULT_BASE_URL,
             openrouter_default_base_url=OPENROUTER_DEFAULT_BASE_URL,
+            nvidia_default_base_url=NVIDIA_DEFAULT_BASE_URL,
             zhipu_default_base_url=ZHIPU_DEFAULT_BASE_URL,
             embedding_models=EMBEDDING_MODELS,
             logger=_catalog_logger,

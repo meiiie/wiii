@@ -112,6 +112,8 @@ pytest-cache-files-*
 .Codex/external/
 .Codex/tmp/
 .Codex/reports/
+.Codex/runtime-logs/
 **/.Codex/external/
 **/.Codex/tmp/
 **/.Codex/reports/
+**/.Codex/runtime-logs/

@@ -185,7 +185,12 @@ class Settings(BaseSettingsFieldsMixin, FeatureSettingsMixin, BaseSettings):
     validate_rag_max_iterations = field_validator("rag_max_iterations")(
         lambda cls, v: validate_range_value("rag_max_iterations", v, 1, 10)
     )
-    validate_url_fields = field_validator("ollama_base_url", "openai_base_url", "openrouter_base_url")(validate_url_field_value)
+    validate_url_fields = field_validator(
+        "ollama_base_url",
+        "openai_base_url",
+        "openrouter_base_url",
+        "nvidia_base_url",
+    )(validate_url_field_value)
 
     normalize_string_lists = field_validator(
         "embedding_failover_chain",

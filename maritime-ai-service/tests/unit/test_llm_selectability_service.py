@@ -77,6 +77,66 @@ def test_configured_healthy_provider_is_selectable(mock_stats, mock_provider_inf
     assert google.reason_code is None
 
 
+@patch("app.services.llm_selectability_service.get_supported_provider_names")
+@patch("app.services.llm_selectability_service.settings")
+@patch("app.services.llm_selectability_service.LLMPool.get_provider_info")
+@patch("app.services.llm_selectability_service.LLMPool.get_stats")
+def test_nvidia_provider_requires_streaming_only_for_selectability(
+    mock_stats,
+    mock_provider_info,
+    mock_settings,
+    mock_supported_providers,
+):
+    from app.services.llm_selectability_service import get_llm_selectability_snapshot, invalidate_llm_selectability_cache
+
+    invalidate_llm_selectability_cache()
+    mock_supported_providers.return_value = ["nvidia"]
+    mock_settings.use_multi_agent = True
+    mock_settings.nvidia_model = "deepseek-ai/deepseek-v4-flash"
+    mock_stats.return_value = {
+        "request_selectable_providers": ["nvidia"],
+        "active_provider": "nvidia",
+        "fallback_provider": None,
+    }
+    mock_provider_info.return_value = _provider(configured=True, available=True)
+
+    audit_record = LlmRuntimeAuditRecord(
+        payload={
+            "schema_version": 1,
+            "audit_updated_at": "2026-03-23T10:00:00+00:00",
+            "last_live_probe_at": "2026-03-23T10:00:00+00:00",
+            "providers": {
+                "nvidia": {
+                    "provider": "nvidia",
+                    "selected_model": "deepseek-ai/deepseek-v4-flash",
+                    "selected_model_in_catalog": True,
+                    "model_count": 2,
+                    "last_discovery_attempt_at": "2026-03-23T09:59:00+00:00",
+                    "last_live_probe_attempt_at": "2026-03-23T10:00:00+00:00",
+                    "streaming_supported": True,
+                    "structured_output_supported": False,
+                    "structured_output_source": "static",
+                    "tool_calling_supported": False,
+                    "tool_calling_source": "static",
+                    "degraded_reasons": [],
+                }
+            },
+        },
+        updated_at=datetime(2026, 3, 23, 10, 0, tzinfo=timezone.utc),
+        persisted=True,
+    )
+
+    with patch(
+        "app.services.llm_selectability_service.get_persisted_llm_runtime_audit",
+        return_value=audit_record,
+    ):
+        snapshot = get_llm_selectability_snapshot(force_refresh=True)
+
+    nvidia = next(item for item in snapshot if item.provider == "nvidia")
+    assert nvidia.state == "selectable"
+    assert nvidia.reason_code is None
+
+
 @patch("app.services.llm_selectability_service.settings")
 @patch("app.services.llm_selectability_service.LLMPool.get_provider_info")
 @patch("app.services.llm_selectability_service.LLMPool.get_stats")

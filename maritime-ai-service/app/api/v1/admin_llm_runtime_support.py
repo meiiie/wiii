@@ -7,6 +7,7 @@ from typing import Any, Optional
 from fastapi import HTTPException
 
 from app.engine.openai_compatible_credentials import (
+    resolve_nvidia_model,
     resolve_openrouter_base_url,
     resolve_openrouter_model,
     resolve_openrouter_model_advanced,
@@ -43,6 +44,8 @@ async def build_model_catalog_response_runtime_impl(
         openai_api_key=settings_obj.openai_api_key,
         openrouter_base_url=getattr(settings_obj, "openrouter_base_url", None),
         openrouter_api_key=getattr(settings_obj, "openrouter_api_key", None),
+        nvidia_base_url=getattr(settings_obj, "nvidia_base_url", None),
+        nvidia_api_key=getattr(settings_obj, "nvidia_api_key", None),
         zhipu_base_url=getattr(settings_obj, "zhipu_base_url", None),
         zhipu_api_key=getattr(settings_obj, "zhipu_api_key", None),
     )
@@ -86,6 +89,8 @@ async def build_model_catalog_response_runtime_impl(
                 provider == "openrouter"
                 and model_name == resolve_openrouter_model(settings_obj)
             ):
+                is_default = True
+            elif provider == "nvidia" and model_name == resolve_nvidia_model(settings_obj):
                 is_default = True
             elif provider == "zhipu" and model_name == getattr(settings_obj, "zhipu_model", ""):
                 is_default = True
@@ -285,6 +290,15 @@ async def update_llm_runtime_config_runtime_impl(
                 settings_obj.openrouter_model_advanced = (
                     preset.openrouter_model_advanced or settings_obj.openrouter_model_advanced
                 )
+        if provider == "nvidia":
+            if not body.nvidia_base_url and not getattr(settings_obj, "nvidia_base_url", None):
+                settings_obj.nvidia_base_url = preset.nvidia_base_url
+            if body.nvidia_model is None and not getattr(settings_obj, "nvidia_model", None):
+                settings_obj.nvidia_model = preset.nvidia_model or settings_obj.nvidia_model
+            if body.nvidia_model_advanced is None and not getattr(settings_obj, "nvidia_model_advanced", None):
+                settings_obj.nvidia_model_advanced = (
+                    preset.nvidia_model_advanced or settings_obj.nvidia_model_advanced
+                )
         if provider == "zhipu":
             if not body.zhipu_base_url and not getattr(settings_obj, "zhipu_base_url", None):
                 settings_obj.zhipu_base_url = preset.zhipu_base_url
@@ -351,6 +365,10 @@ async def update_llm_runtime_config_runtime_impl(
         settings_obj.openrouter_api_key = body.openrouter_api_key.strip() or None
     elif body.clear_openrouter_api_key:
         settings_obj.openrouter_api_key = None
+    if body.nvidia_api_key is not None:
+        settings_obj.nvidia_api_key = body.nvidia_api_key.strip() or None
+    elif body.clear_nvidia_api_key:
+        settings_obj.nvidia_api_key = None
     if body.zhipu_api_key is not None:
         settings_obj.zhipu_api_key = body.zhipu_api_key.strip() or None
     elif body.clear_zhipu_api_key:
@@ -371,6 +389,12 @@ async def update_llm_runtime_config_runtime_impl(
         settings_obj.openrouter_model = body.openrouter_model.strip()
     if body.openrouter_model_advanced is not None:
         settings_obj.openrouter_model_advanced = body.openrouter_model_advanced.strip()
+    if body.nvidia_base_url is not None:
+        settings_obj.nvidia_base_url = body.nvidia_base_url.strip() or None
+    if body.nvidia_model is not None:
+        settings_obj.nvidia_model = body.nvidia_model.strip()
+    if body.nvidia_model_advanced is not None:
+        settings_obj.nvidia_model_advanced = body.nvidia_model_advanced.strip()
     if body.zhipu_base_url is not None:
         settings_obj.zhipu_base_url = body.zhipu_base_url.strip() or None
     if body.zhipu_model is not None:

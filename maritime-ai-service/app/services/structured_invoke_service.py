@@ -17,7 +17,7 @@ from app.engine.llm_pool import (
 )
 
 logger = logging.getLogger(__name__)
-_KNOWN_PROVIDERS = {"google", "zhipu", "openai", "openrouter", "ollama"}
+_KNOWN_PROVIDERS = {"google", "zhipu", "openai", "openrouter", "nvidia", "ollama"}
 
 
 def _normalize_provider(provider: Optional[str]) -> Optional[str]:
@@ -125,7 +125,7 @@ def _structured_runtime_llm(llm: Any, schema: Type[BaseModel], *, provider_name:
 
 
 def _prefer_json_structured_path(provider: Optional[str]) -> bool:
-    return provider in {"zhipu"}
+    return provider in {"zhipu", "nvidia"}
 
 
 def _extract_text_content(response: Any) -> str:

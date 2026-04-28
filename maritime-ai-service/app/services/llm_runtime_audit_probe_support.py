@@ -8,6 +8,8 @@ from typing import Any, Mapping, Optional
 
 from app.engine.openai_compatible_credentials import (
     is_openrouter_legacy_slot_configured,
+    resolve_nvidia_api_key,
+    resolve_nvidia_base_url,
     resolve_openai_api_key,
     resolve_openai_base_url,
     resolve_openrouter_api_key,
@@ -100,6 +102,12 @@ def resolve_openai_compatible_probe_config_impl(
         return (
             resolve_openrouter_base_url(settings_obj),
             resolve_openrouter_api_key(settings_obj),
+            {},
+        )
+    if provider == "nvidia":
+        return (
+            resolve_nvidia_base_url(settings_obj),
+            resolve_nvidia_api_key(settings_obj),
             {},
         )
     return (None, None, {})
@@ -202,7 +210,7 @@ async def probe_structured_output_impl(
     structured_result_cls: Any,
     probe_openai_structured_output_fn: Any,
 ) -> bool:
-    if provider in {"zhipu", "openai", "openrouter"}:
+    if provider in {"zhipu", "openai", "openrouter", "nvidia"}:
         return await probe_openai_structured_output_fn(provider, model_name)
 
     structured_llm = llm.with_structured_output(structured_result_cls)

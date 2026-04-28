@@ -229,9 +229,9 @@ def _needs_code_studio_impl(query: str) -> bool:
 
 
 def _looks_clear_social_impl(normalized: str) -> bool:
-    if len(normalized.split()) > 6:
+    if len(normalized.split()) > 10:
         return False
-    if any(marker in normalized for marker in ("giai thich", "quy dinh", "mo phong", "ve bieu do")):
+    if any(marker in normalized for marker in ("giai thich", "explain", "quy dinh", "mo phong", "ve bieu do")):
         return False
     normalized = re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", normalized)).strip()
     letters_only = re.sub(r"[^a-z]", "", normalized)

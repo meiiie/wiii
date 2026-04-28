@@ -252,10 +252,13 @@ _PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "google": "Google Gemini",
     "openai": "OpenAI-Compatible",
     "openrouter": "OpenRouter",
+    "nvidia": "NVIDIA NIM",
     "ollama": "Ollama",
     "zhipu": "Zhipu GLM",
 }
-_ADMIN_CONFIGURABLE_PROVIDERS = frozenset({"google", "openai", "openrouter", "ollama", "zhipu"})
+_ADMIN_CONFIGURABLE_PROVIDERS = frozenset(
+    {"google", "openai", "openrouter", "nvidia", "ollama", "zhipu"}
+)
 
 
 def _get_provider_display_name(provider: str) -> str:

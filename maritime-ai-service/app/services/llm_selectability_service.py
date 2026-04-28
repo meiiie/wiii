@@ -12,6 +12,7 @@ from typing import Any, Literal, Mapping, Optional
 from app.core.config import settings
 from app.core.exceptions import ProviderUnavailableError
 from app.engine.openai_compatible_credentials import (
+    resolve_nvidia_model,
     resolve_openai_model,
     resolve_openrouter_model,
 )
@@ -52,6 +53,7 @@ _PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "zhipu": "Zhipu GLM",
     "openai": "OpenAI",
     "openrouter": "OpenRouter",
+    "nvidia": "NVIDIA NIM",
     "ollama": "Ollama",
 }
 _BUSY_MARKERS = (
@@ -80,6 +82,19 @@ _DEGRADED_BUT_ROUTABLE_REASON_CODES: tuple[ProviderDisabledReasonCode, ...] = (
     "capability_missing",
     "verifying",
 )
+_CAPABILITY_FIELDS: dict[str, tuple[str, str]] = {
+    "streaming": ("streaming_supported", "streaming_source"),
+    "structured_output": ("structured_output_supported", "structured_output_source"),
+    "tool_calling": ("tool_calling_supported", "tool_calling_source"),
+}
+_PROVIDER_REQUIRED_CAPABILITIES: dict[str, tuple[str, ...]] = {
+    "google": ("streaming", "structured_output", "tool_calling"),
+    "openai": ("streaming", "structured_output", "tool_calling"),
+    "zhipu": ("streaming", "structured_output", "tool_calling"),
+    "openrouter": ("streaming",),
+    "nvidia": ("streaming",),
+    "ollama": ("streaming",),
+}
 
 
 class LLMPool:
@@ -146,6 +161,8 @@ def _selected_model_for_provider(provider: str) -> str | None:
         return resolve_openai_model(settings)
     if provider == "openrouter":
         return resolve_openrouter_model(settings)
+    if provider == "nvidia":
+        return resolve_nvidia_model(settings)
     return None
 
 
@@ -363,29 +380,37 @@ def _provider_flag(provider_obj: Any, *, method_name: str, key: str) -> bool:
     return bool(getattr(provider_obj, key, False))
 
 
-def _resolve_required_capability_reason(state: dict[str, Any]) -> ProviderDisabledReasonCode | None:
-    capability_checks: list[tuple[str, str]] = [
-        ("streaming_supported", "streaming_source"),
+def _resolve_required_capability_reason(
+    state: dict[str, Any],
+    *,
+    provider: str | None = None,
+) -> ProviderDisabledReasonCode | None:
+    provider_key = str(provider or "").strip().lower()
+    required_capabilities = (
+        _PROVIDER_REQUIRED_CAPABILITIES.get(provider_key)
+        if getattr(settings, "use_multi_agent", True)
+        else ("streaming",)
+    )
+    if not required_capabilities:
+        required_capabilities = ("streaming", "structured_output", "tool_calling")
+
+    capability_checks = [
+        _CAPABILITY_FIELDS[capability]
+        for capability in required_capabilities
+        if capability in _CAPABILITY_FIELDS
     ]
-    if getattr(settings, "use_multi_agent", True):
-        capability_checks.extend(
-            [
-                ("structured_output_supported", "structured_output_source"),
-                ("tool_calling_supported", "tool_calling_source"),
-            ]
-        )
 
     has_unknown_capability = False
     for flag_field, source_field in capability_checks:
         flag = state.get(flag_field)
+        source = str(state.get(source_field) or "").strip().lower()
+        # A partial live-probe timeout should not hide a provider that still
+        # has catalog-backed capabilities and succeeds in real traffic.
+        if source == "probe_failed":
+            continue
         if flag is False:
             return "capability_missing"
         if flag is None:
-            source = str(state.get(source_field) or "").strip().lower()
-            # A partial live-probe timeout should not hide a provider that still
-            # has catalog-backed capabilities and succeeds in real traffic.
-            if source == "probe_failed":
-                continue
             has_unknown_capability = True
 
     if has_unknown_capability:
@@ -438,7 +463,7 @@ def _resolve_disabled_reason(
     if provider == "ollama" and any(marker in signal_text for marker in _HOST_DOWN_MARKERS):
         return "host_down"
 
-    capability_reason = _resolve_required_capability_reason(state)
+    capability_reason = _resolve_required_capability_reason(state, provider=provider)
     if capability_reason is not None:
         if (
             capability_reason == "verifying"
@@ -546,7 +571,10 @@ def get_llm_selectability_snapshot(
                 state=provider_state,
             )
             if reason_code == "verifying" and provider_audit_available and runtime_available:
-                capability_reason = _resolve_required_capability_reason(provider_state)
+                capability_reason = _resolve_required_capability_reason(
+                    provider_state,
+                    provider=provider_name,
+                )
                 if capability_reason is None and provider_state.get("selected_model_in_catalog", False):
                     reason_code = None
             if reason_code is None and runtime_available:

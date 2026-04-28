@@ -168,6 +168,29 @@ async def test_structured_invoke_skips_native_schema_path_for_auto_google_runtim
 
 
 @pytest.mark.asyncio
+async def test_structured_invoke_skips_native_schema_path_for_auto_nvidia_runtime():
+    from app.services.structured_invoke_service import StructuredInvokeService
+
+    llm = MagicMock()
+    llm._wiii_provider_name = "nvidia"
+
+    with patch(
+        "app.services.structured_invoke_service.ainvoke_with_failover",
+        new=AsyncMock(return_value=SimpleNamespace(content='{"status":"ok"}')),
+    ) as mock_invoke:
+        result = await StructuredInvokeService.ainvoke(
+            llm=llm,
+            schema=_Schema,
+            payload="hello",
+        )
+
+    assert isinstance(result, _Schema)
+    assert result.status == "ok"
+    llm.with_structured_output.assert_not_called()
+    assert mock_invoke.await_args.kwargs["provider"] == "nvidia"
+
+
+@pytest.mark.asyncio
 async def test_structured_invoke_disables_streaming_for_native_structured_path():
     from app.services.structured_invoke_service import StructuredInvokeService
 
