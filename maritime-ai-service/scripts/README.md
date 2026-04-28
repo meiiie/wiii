@@ -1,5 +1,20 @@
 # Scripts
 
+## Local Demo Smoke
+
+Use this before a localhost demo. It verifies the dev-login JWT path, admin/org
+permissions, sync chat, SSE V3 completion, and the local frontend.
+
+```bash
+python scripts/local_demo_smoke.py
+```
+
+For infrastructure-only checks while isolating provider failures:
+
+```bash
+python scripts/local_demo_smoke.py --skip-chat --skip-stream
+```
+
 Scripts cho development, testing và data ingestion.
 
 ---
