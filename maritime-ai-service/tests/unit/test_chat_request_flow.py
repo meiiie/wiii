@@ -261,6 +261,26 @@ async def test_build_multi_agent_context_does_not_mark_first_turn_as_follow_up()
 
 
 @pytest.mark.asyncio
+async def test_build_multi_agent_context_normalizes_missing_user_facts():
+    orchestrator = _make_orchestrator()
+    context = _make_chat_context()
+    context.user_facts = None
+    session = _make_session(total_responses=1)
+
+    with patch.object(
+        orchestrator,
+        "resolve_lms_identity",
+        new=AsyncMock(return_value=("lms-user-1", "maritime-lms")),
+    ):
+        multi_agent_context = await orchestrator.build_multi_agent_context(
+            context,
+            session,
+        )
+
+    assert multi_agent_context["user_facts"] == []
+
+
+@pytest.mark.asyncio
 async def test_build_multi_agent_execution_input_for_streaming_adds_transport_fields():
     orchestrator = _make_orchestrator()
     context = _make_chat_context()

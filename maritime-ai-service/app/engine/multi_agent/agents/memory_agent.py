@@ -458,7 +458,9 @@ class MemoryAgentNode:
             context_parts = []
             if recent_conversation:
                 context_parts.append(f"Doan hoi thoai gan day:\n{recent_conversation}")
-            ctx = state.get("context", {})
+            ctx = state.get("context") or {}
+            if not isinstance(ctx, dict):
+                ctx = {}
             core_memory_block = str(ctx.get("core_memory_block") or "").strip()
             if core_memory_block:
                 context_parts.append(f"Core memory block:\n{core_memory_block}")
@@ -508,7 +510,7 @@ class MemoryAgentNode:
             )
 
             messages = [SystemMessage(content=_build_memory_response_prompt(ctx.get("response_language", "vi")))]
-            langchain_messages = state.get("context", {}).get("langchain_messages", [])
+            langchain_messages = ctx.get("langchain_messages", [])
             if langchain_messages:
                 messages.extend(langchain_messages[-5:])
             messages.append(

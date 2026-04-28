@@ -42,6 +42,11 @@ async def build_multi_agent_context_impl(
         context.user_id,
         getattr(context, "organization_id", None),
     )
+    user_facts = getattr(context, "user_facts", None)
+    if user_facts is None:
+        user_facts = []
+    elif not isinstance(user_facts, list):
+        user_facts = list(user_facts) if isinstance(user_facts, tuple) else [user_facts]
 
     return {
         "user_name": context.user_name,
@@ -52,7 +57,7 @@ async def build_multi_agent_context_impl(
         "semantic_context": context.semantic_context,
         "langchain_messages": context.langchain_messages,
         "history_list": context.history_list or [],
-        "user_facts": getattr(context, "user_facts", []),
+        "user_facts": user_facts,
         "pronoun_style": (
             getattr(context, "pronoun_style", None)
             or getattr(session.state, "pronoun_style", None)
