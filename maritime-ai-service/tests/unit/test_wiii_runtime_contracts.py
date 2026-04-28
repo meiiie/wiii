@@ -92,6 +92,7 @@ def test_wiii_stream_event_preserves_stream_event_shape():
 
     event = WiiiStreamEvent.from_legacy_tuple(raw_event)
 
+    assert event.raw_event is raw_event
     assert event.type == "answer"
     assert event.content == "Xin chao."
     assert event.node == "direct"

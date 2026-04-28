@@ -189,6 +189,62 @@ async def test_generate_stream_v3_events_defaults_to_native_wiii_turn_stream():
     assert turn_request.run_context.model == "deepseek-ai/deepseek-v3.1"
     assert any("Native hello" in chunk for chunk in chunks)
     orchestrator.finalize_response_turn.assert_called_once()
+    assert (
+        orchestrator.finalize_response_turn.call_args.kwargs["response_text"]
+        == "Native hello"
+    )
+
+
+@pytest.mark.asyncio
+async def test_generate_stream_v3_events_accepts_injected_native_wiii_turn_stream():
+    orchestrator = MagicMock()
+    prepared_turn = SimpleNamespace(
+        request_scope=RequestScope("org-1", "maritime"),
+        session_id="session-1",
+        validation=SimpleNamespace(blocked=False),
+        chat_context=SimpleNamespace(user_name="Minh"),
+    )
+    orchestrator.prepare_turn = AsyncMock(return_value=prepared_turn)
+    orchestrator.build_multi_agent_execution_input = AsyncMock(
+        return_value=SimpleNamespace(
+            query="Explain Rule 5",
+            user_id="user-1",
+            session_id="session-1",
+            context={"conversation_history": ""},
+            domain_id="maritime",
+            thinking_effort=None,
+            provider=None,
+            model=None,
+        )
+    )
+
+    captured = {}
+
+    async def fake_native_stream_fn(request):
+        captured["request"] = request
+        yield WiiiStreamEvent(event_type="answer", payload="Injected native")
+        yield WiiiStreamEvent(
+            event_type="done",
+            payload={"status": "complete", "total_time": 0.5},
+        )
+
+    chunks = []
+    async for chunk in generate_stream_v3_events(
+        chat_request=_make_request(),
+        request_headers={},
+        background_save=MagicMock(),
+        start_time=0.0,
+        orchestrator=orchestrator,
+        stream_fn=fake_native_stream_fn,
+    ):
+        chunks.append(chunk)
+
+    assert isinstance(captured["request"], WiiiTurnRequest)
+    assert any("Injected native" in chunk for chunk in chunks)
+    assert (
+        orchestrator.finalize_response_turn.call_args.kwargs["response_text"]
+        == "Injected native"
+    )
 
 
 @pytest.mark.asyncio

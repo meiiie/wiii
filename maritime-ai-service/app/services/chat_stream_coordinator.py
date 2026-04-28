@@ -1,6 +1,7 @@
 """Service-level coordinator for chat streaming event orchestration."""
 
 import asyncio
+import inspect
 import logging
 import time
 from typing import AsyncGenerator, Mapping
@@ -26,6 +27,24 @@ def _source_to_payload(source):
     if hasattr(source, "dict"):
         return source.dict(exclude_none=True)
     return source
+
+
+def _expects_native_turn_request(stream_fn) -> bool:
+    """Return true when an injected stream function expects one turn request."""
+
+    try:
+        parameters = list(inspect.signature(stream_fn).parameters.values())
+    except (TypeError, ValueError):
+        return False
+
+    return (
+        len(parameters) == 1
+        and parameters[0].kind
+        in {
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        }
+    )
 
 
 async def generate_stream_v3_events(
@@ -94,6 +113,8 @@ async def generate_stream_v3_events(
             )
 
             stream_fn = stream_wiii_turn
+        else:
+            uses_native_turn_stream = _expects_native_turn_request(stream_fn)
 
         if orchestrator is None:
             from app.services.chat_service import get_chat_service
