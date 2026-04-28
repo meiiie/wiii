@@ -615,6 +615,12 @@ async def update_llm_runtime_config_runtime_impl(
             warnings.append(
                 f"openrouter_model '{orm}' is not in the known openrouter catalog."
             )
+    if body.nvidia_model is not None:
+        nm = body.nvidia_model.strip()
+        if not is_known_model("nvidia", nm):
+            warnings.append(
+                f"nvidia_model '{nm}' is not in the known nvidia catalog."
+            )
     warnings.extend(
         build_runtime_embedding_space_warnings(
             current_model=getattr(settings_obj, "embedding_model", None),

@@ -138,7 +138,7 @@ class TestSupervisorRoute:
     async def test_route_ascii_greeting_instruction_uses_fast_path(self, mock_llm):
         sup = _make_supervisor(mock_llm)
         state = {
-            "query": "Chao Wiii, chi tra loi dung mot cau ngan",
+            "query": "Chao Wiii, tra loi ngan",
             "context": {},
             "domain_config": {},
         }
@@ -170,6 +170,7 @@ class TestSupervisorRoute:
 
         assert result == "tutor_agent"
         mock_route.assert_awaited_once()
+        assert state.get("_routing_hint", {}).get("kind") != "fast_chatter"
 
     @pytest.mark.asyncio
     async def test_route_laughter_social_turn_sets_house_hint_and_uses_fast_path(self, mock_llm):

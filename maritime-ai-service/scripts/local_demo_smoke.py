@@ -22,6 +22,10 @@ DEFAULT_BACKEND_URL = "http://localhost:8080"
 DEFAULT_FRONTEND_URL = "http://127.0.0.1:1420"
 DEFAULT_ORG_ID = "default"
 DEFAULT_MESSAGE = "Xin chao Wiii, hay tra loi ngan gon de kiem tra demo local."
+DEFAULT_DEMO_EMAIL = "dev@localhost"
+DEFAULT_DEMO_NAME = "Dev User"
+DEFAULT_DEMO_ROLE = "admin"
+DEFAULT_EXPECTED_PLATFORM_ROLE = "platform_admin"
 
 
 class SmokeFailure(RuntimeError):
@@ -60,6 +64,7 @@ def request_bytes(
     headers: dict[str, str] | None = None,
     payload: dict[str, Any] | None = None,
     timeout: float = 10.0,
+    raise_http_errors: bool = True,
 ) -> HttpResponse:
     request_headers = {
         "User-Agent": "wiii-local-demo-smoke/1.0",
@@ -85,7 +90,15 @@ def request_bytes(
                 url=url,
             )
     except urllib.error.HTTPError as exc:
-        body_text = exc.read().decode("utf-8", errors="replace")
+        body = exc.read()
+        if not raise_http_errors:
+            return HttpResponse(
+                status=exc.code,
+                headers=dict(exc.headers.items()),
+                body=body,
+                url=url,
+            )
+        body_text = body.decode("utf-8", errors="replace")
         raise SmokeFailure(f"{method} {url} -> HTTP {exc.code}: {body_text}") from exc
     except urllib.error.URLError as exc:
         raise SmokeFailure(f"{method} {url} failed: {exc.reason}") from exc
@@ -229,7 +242,11 @@ class DemoSmoke:
         payload = request_bytes(
             "POST",
             self.api_url("/api/v1/auth/dev-login"),
-            payload={},
+            payload={
+                "email": self.args.demo_email,
+                "name": self.args.demo_name,
+                "role": self.args.demo_role,
+            },
             timeout=self.args.timeout,
         ).json()
         token = payload.get("access_token")
@@ -238,6 +255,21 @@ class DemoSmoke:
             raise SmokeFailure("dev-login did not return access_token")
         if not isinstance(user, dict):
             raise SmokeFailure("dev-login did not return user object")
+        if user.get("email") != self.args.demo_email:
+            raise SmokeFailure(
+                f"dev-login returned unexpected email {user.get('email')!r}; "
+                f"expected {self.args.demo_email!r}"
+            )
+        if user.get("role") != self.args.demo_role:
+            raise SmokeFailure(
+                f"dev-login returned unexpected role {user.get('role')!r}; "
+                f"expected {self.args.demo_role!r}"
+            )
+        if user.get("platform_role") != self.args.expected_platform_role:
+            raise SmokeFailure(
+                f"dev-login returned unexpected platform_role "
+                f"{user.get('platform_role')!r}; expected {self.args.expected_platform_role!r}"
+            )
         self.token = token
         self.user = user
         role = user.get("role")
@@ -269,16 +301,36 @@ class DemoSmoke:
         return f"admin_org_ids={payload.get('admin_org_ids')}"
 
     def check_org_permissions(self) -> str:
-        payload = request_bytes(
+        response = request_bytes(
             "GET",
             self.api_url(f"/api/v1/organizations/{self.args.org_id}/permissions"),
             headers=self.auth_headers(),
             timeout=self.args.timeout,
-        ).json()
+            raise_http_errors=False,
+        )
+        if response.status == 404:
+            payload = response.json()
+            detail = str(payload.get("detail", ""))
+            if "multi-tenant" in detail.lower():
+                return "skipped: multi-tenant disabled"
+            raise SmokeFailure(f"organization permissions returned HTTP 404: {detail}")
+        if response.status != 200:
+            raise SmokeFailure(
+                f"organization permissions returned HTTP {response.status}: {response.text()}"
+            )
+        payload = response.json()
         org_role = payload.get("org_role")
-        if org_role not in {"owner", "admin"}:
-            raise SmokeFailure(f"expected owner/admin org_role, got {org_role!r}")
-        return f"{self.args.org_id} org_role={org_role}"
+        if org_role in {"owner", "admin"}:
+            return f"{self.args.org_id} org_role={org_role}"
+        platform_role = payload.get("platform_role")
+        permission_role = payload.get("permission_role") or payload.get("role")
+        if platform_role == "platform_admin" and permission_role == "admin":
+            return f"{self.args.org_id} platform_role=platform_admin org_role={org_role or 'none'}"
+        raise SmokeFailure(
+            f"expected owner/admin org_role or platform_admin permission, "
+            f"got org_role={org_role!r} platform_role={platform_role!r} "
+            f"permission_role={permission_role!r}"
+        )
 
     def chat_payload(self, *, session_suffix: str) -> dict[str, Any]:
         return build_chat_payload(
@@ -368,6 +420,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backend-url", default=DEFAULT_BACKEND_URL)
     parser.add_argument("--frontend-url", default=DEFAULT_FRONTEND_URL)
     parser.add_argument("--org-id", default=DEFAULT_ORG_ID)
+    parser.add_argument("--demo-email", default=DEFAULT_DEMO_EMAIL)
+    parser.add_argument("--demo-name", default=DEFAULT_DEMO_NAME)
+    parser.add_argument("--demo-role", choices=("student", "teacher", "admin"), default=DEFAULT_DEMO_ROLE)
+    parser.add_argument("--expected-platform-role", default=DEFAULT_EXPECTED_PLATFORM_ROLE)
     parser.add_argument("--domain-id", default="maritime")
     parser.add_argument("--provider", default="auto")
     parser.add_argument("--model", default=None)
