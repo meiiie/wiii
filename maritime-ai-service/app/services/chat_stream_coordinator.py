@@ -1,6 +1,7 @@
 """Service-level coordinator for chat streaming event orchestration."""
 
 import asyncio
+import inspect
 import logging
 import time
 from typing import AsyncGenerator, Mapping
@@ -9,6 +10,7 @@ from app.core.config import settings
 from app.core.exceptions import ProviderUnavailableError
 from app.engine.llm_runtime_metadata import resolve_runtime_llm_metadata
 from app.services.llm_runtime_audit_service import record_llm_runtime_observation
+from app.services.chat_orchestrator_runtime import build_wiii_turn_request
 from app.services.model_switch_prompt_service import (
     build_model_switch_prompt_for_failover,
     build_model_switch_prompt_for_unavailable,
@@ -25,6 +27,24 @@ def _source_to_payload(source):
     if hasattr(source, "dict"):
         return source.dict(exclude_none=True)
     return source
+
+
+def _expects_native_turn_request(stream_fn) -> bool:
+    """Return true when an injected stream function expects one turn request."""
+
+    try:
+        parameters = list(inspect.signature(stream_fn).parameters.values())
+    except (TypeError, ValueError):
+        return False
+
+    return (
+        len(parameters) == 1
+        and parameters[0].kind
+        in {
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        }
+    )
 
 
 async def generate_stream_v3_events(
@@ -86,12 +106,15 @@ async def generate_stream_v3_events(
 
             ensure_provider_is_selectable(requested_provider)
 
+        uses_native_turn_stream = stream_fn is None
         if stream_fn is None:
             from app.engine.multi_agent.streaming_runtime import (
-                process_with_multi_agent_streaming,
+                stream_wiii_turn,
             )
 
-            stream_fn = process_with_multi_agent_streaming
+            stream_fn = stream_wiii_turn
+        else:
+            uses_native_turn_stream = _expects_native_turn_request(stream_fn)
 
         if orchestrator is None:
             from app.services.chat_service import get_chat_service
@@ -293,16 +316,17 @@ async def generate_stream_v3_events(
         accumulated_answer: list[str] = []
         saw_done_event = False
 
-        async for event in stream_fn(
-            query=execution_input.query,
-            user_id=execution_input.user_id,
-            session_id=execution_input.session_id,
-            context=execution_input.context,
-            domain_id=execution_input.domain_id,
-            thinking_effort=execution_input.thinking_effort,
-            provider=execution_input.provider,
-            model=getattr(execution_input, "model", None),
-        ):
+        turn_request = build_wiii_turn_request(
+            execution_input=execution_input,
+            organization_id=resolved_org_id,
+        )
+        stream_events = (
+            stream_fn(turn_request)
+            if uses_native_turn_stream
+            else stream_fn(**turn_request.to_runtime_kwargs())
+        )
+
+        async for event in stream_events:
             if event.type == "answer":
                 accumulated_answer.append(event.content)
             elif event.type == "done":

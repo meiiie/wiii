@@ -11,6 +11,7 @@ from app.engine.multi_agent.runtime_contracts import (
     WiiiTurnResult,
     WiiiTurnState,
 )
+from app.engine.multi_agent.stream_utils import StreamEvent
 
 
 def test_wiii_turn_request_adapts_to_existing_runtime_kwargs():
@@ -78,6 +79,25 @@ def test_wiii_stream_event_wraps_existing_tuple_contract():
     assert event.event_type == "graph"
     assert event.node_name == "direct"
     assert event.to_legacy_tuple() == ("graph", {"direct": {"response": "ok"}})
+
+
+def test_wiii_stream_event_preserves_stream_event_shape():
+    raw_event = StreamEvent(
+        type="answer",
+        content="Xin chao.",
+        node="direct",
+        step="direct_response",
+        details={"visibility": "answer"},
+    )
+
+    event = WiiiStreamEvent.from_legacy_tuple(raw_event)
+
+    assert event.raw_event is raw_event
+    assert event.type == "answer"
+    assert event.content == "Xin chao."
+    assert event.node == "direct"
+    assert event.step == "direct_response"
+    assert event.details == {"visibility": "answer"}
 
 
 @pytest.mark.asyncio

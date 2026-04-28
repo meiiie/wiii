@@ -5,6 +5,7 @@ import pytest
 
 from app.models.schemas import UserRole
 from app.core.exceptions import ProviderUnavailableError
+from app.engine.multi_agent.runtime_contracts import WiiiStreamEvent, WiiiTurnRequest
 from app.services.chat_orchestrator import AgentType
 from app.services.chat_orchestrator import RequestScope
 from app.services.output_processor import ProcessingResult
@@ -117,6 +118,132 @@ async def test_generate_stream_v3_events_finalizes_answer_after_stream():
             "transport_type"
         ]
         == "stream"
+    )
+
+
+@pytest.mark.asyncio
+async def test_generate_stream_v3_events_defaults_to_native_wiii_turn_stream():
+    orchestrator = MagicMock()
+    prepared_turn = SimpleNamespace(
+        request_scope=RequestScope("org-1", "maritime"),
+        session_id="session-1",
+        validation=SimpleNamespace(blocked=False),
+        chat_context=SimpleNamespace(user_name="Minh"),
+    )
+    orchestrator.prepare_turn = AsyncMock(return_value=prepared_turn)
+    orchestrator.build_multi_agent_execution_input = AsyncMock(
+        return_value=SimpleNamespace(
+            query="Explain Rule 5",
+            user_id="user-1",
+            session_id="session-1",
+            context={"conversation_history": ""},
+            domain_id="maritime",
+            thinking_effort="medium",
+            provider="nvidia",
+            model="deepseek-ai/deepseek-v3.1",
+        )
+    )
+
+    captured = {}
+
+    async def fake_stream_wiii_turn(request):
+        captured["request"] = request
+        yield WiiiStreamEvent(event_type="answer", payload="Native hello")
+        yield WiiiStreamEvent(
+            event_type="done",
+            payload={"status": "complete", "total_time": 0.5},
+        )
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "app.services.llm_selectability_service.ensure_provider_is_selectable",
+            lambda _provider: None,
+        )
+        mp.setattr(
+            "app.engine.multi_agent.streaming_runtime.stream_wiii_turn",
+            fake_stream_wiii_turn,
+        )
+        chunks = []
+        async for chunk in generate_stream_v3_events(
+            chat_request=_make_request(
+                provider="nvidia",
+                model="deepseek-ai/deepseek-v3.1",
+                thinking_effort="medium",
+            ),
+            request_headers={},
+            background_save=MagicMock(),
+            start_time=0.0,
+            orchestrator=orchestrator,
+        ):
+            chunks.append(chunk)
+
+    turn_request = captured["request"]
+    assert isinstance(turn_request, WiiiTurnRequest)
+    assert turn_request.query == "Explain Rule 5"
+    assert turn_request.run_context.user_id == "user-1"
+    assert turn_request.run_context.session_id == "session-1"
+    assert turn_request.run_context.domain_id == "maritime"
+    assert turn_request.run_context.organization_id == "org-1"
+    assert turn_request.run_context.thinking_effort == "medium"
+    assert turn_request.run_context.provider == "nvidia"
+    assert turn_request.run_context.model == "deepseek-ai/deepseek-v3.1"
+    assert any("Native hello" in chunk for chunk in chunks)
+    orchestrator.finalize_response_turn.assert_called_once()
+    assert (
+        orchestrator.finalize_response_turn.call_args.kwargs["response_text"]
+        == "Native hello"
+    )
+
+
+@pytest.mark.asyncio
+async def test_generate_stream_v3_events_accepts_injected_native_wiii_turn_stream():
+    orchestrator = MagicMock()
+    prepared_turn = SimpleNamespace(
+        request_scope=RequestScope("org-1", "maritime"),
+        session_id="session-1",
+        validation=SimpleNamespace(blocked=False),
+        chat_context=SimpleNamespace(user_name="Minh"),
+    )
+    orchestrator.prepare_turn = AsyncMock(return_value=prepared_turn)
+    orchestrator.build_multi_agent_execution_input = AsyncMock(
+        return_value=SimpleNamespace(
+            query="Explain Rule 5",
+            user_id="user-1",
+            session_id="session-1",
+            context={"conversation_history": ""},
+            domain_id="maritime",
+            thinking_effort=None,
+            provider=None,
+            model=None,
+        )
+    )
+
+    captured = {}
+
+    async def fake_native_stream_fn(request):
+        captured["request"] = request
+        yield WiiiStreamEvent(event_type="answer", payload="Injected native")
+        yield WiiiStreamEvent(
+            event_type="done",
+            payload={"status": "complete", "total_time": 0.5},
+        )
+
+    chunks = []
+    async for chunk in generate_stream_v3_events(
+        chat_request=_make_request(),
+        request_headers={},
+        background_save=MagicMock(),
+        start_time=0.0,
+        orchestrator=orchestrator,
+        stream_fn=fake_native_stream_fn,
+    ):
+        chunks.append(chunk)
+
+    assert isinstance(captured["request"], WiiiTurnRequest)
+    assert any("Injected native" in chunk for chunk in chunks)
+    assert (
+        orchestrator.finalize_response_turn.call_args.kwargs["response_text"]
+        == "Injected native"
     )
 
 
