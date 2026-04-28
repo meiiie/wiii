@@ -2,22 +2,24 @@
 
 from __future__ import annotations
 
-import hmac
+import hashlib
 import time
 from typing import Any, Awaitable, Callable
 
-_CATALOG_CACHE_FINGERPRINT_KEY = b"wiii-model-catalog-cache-fingerprint-v1"
+_CATALOG_CACHE_FINGERPRINT_SALT = b"wiii-model-catalog-cache-fingerprint-v1"
 
 
 def hash_secret(secret: str | None) -> str:
     if not secret:
         return "no-secret"
-    digest = hmac.new(
-        _CATALOG_CACHE_FINGERPRINT_KEY,
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
         secret.encode("utf-8"),
-        digestmod="sha256",
-    ).hexdigest()
-    return digest[:12]
+        _CATALOG_CACHE_FINGERPRINT_SALT,
+        100_000,
+        dklen=16,
+    )
+    return digest.hex()[:12]
 
 
 async def run_cached_discovery(
