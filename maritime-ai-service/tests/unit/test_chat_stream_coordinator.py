@@ -156,6 +156,10 @@ async def test_generate_stream_v3_events_defaults_to_native_wiii_turn_stream():
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
+            "app.services.llm_selectability_service.ensure_provider_is_selectable",
+            lambda _provider: None,
+        )
+        mp.setattr(
             "app.engine.multi_agent.streaming_runtime.stream_wiii_turn",
             fake_stream_wiii_turn,
         )
