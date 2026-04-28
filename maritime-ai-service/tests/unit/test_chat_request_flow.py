@@ -186,6 +186,9 @@ async def test_build_multi_agent_context_uses_shared_contract_fields():
     assert multi_agent_context["organization_id"] == "org-1"
     assert multi_agent_context["conversation_phase"] == "deep"
     assert multi_agent_context["total_responses"] == 7
+    assert multi_agent_context["core_memory_block"] == "Learner prefers examples."
+    assert multi_agent_context["history_list"] == [{"role": "user", "content": "Hi"}]
+    assert multi_agent_context["user_facts"] == []
     assert multi_agent_context["lms_external_id"] == "lms-user-1"
     assert multi_agent_context["lms_connector_id"] == "maritime-lms"
     assert multi_agent_context["page_context"] == {"page_type": "lesson"}
@@ -258,6 +261,26 @@ async def test_build_multi_agent_context_does_not_mark_first_turn_as_follow_up()
 
 
 @pytest.mark.asyncio
+async def test_build_multi_agent_context_normalizes_missing_user_facts():
+    orchestrator = _make_orchestrator()
+    context = _make_chat_context()
+    context.user_facts = None
+    session = _make_session(total_responses=1)
+
+    with patch.object(
+        orchestrator,
+        "resolve_lms_identity",
+        new=AsyncMock(return_value=("lms-user-1", "maritime-lms")),
+    ):
+        multi_agent_context = await orchestrator.build_multi_agent_context(
+            context,
+            session,
+        )
+
+    assert multi_agent_context["user_facts"] == []
+
+
+@pytest.mark.asyncio
 async def test_build_multi_agent_execution_input_for_streaming_adds_transport_fields():
     orchestrator = _make_orchestrator()
     context = _make_chat_context()
@@ -300,6 +323,35 @@ async def test_build_multi_agent_execution_input_for_streaming_adds_transport_fi
     assert execution_input.context["preview_types"] == ["tool", "product"]
     assert execution_input.context["preview_max_count"] == 3
     assert execution_input.context["request_id"] == "req-stream-123"
+
+
+@pytest.mark.asyncio
+async def test_build_multi_agent_execution_input_keeps_memory_contract_for_sync():
+    orchestrator = _make_orchestrator()
+    context = _make_chat_context()
+    session = _make_session(total_responses=2)
+    prepared_turn = SimpleNamespace(
+        request_scope=RequestScope("org-1", "maritime"),
+        session=session,
+        session_id="session-1",
+        chat_context=context,
+    )
+    request = _make_request()
+
+    with patch.object(
+        orchestrator,
+        "resolve_lms_identity",
+        new=AsyncMock(return_value=("lms-user-1", "maritime-lms")),
+    ):
+        execution_input = await orchestrator.build_multi_agent_execution_input(
+            request=request,
+            prepared_turn=prepared_turn,
+            include_streaming_fields=False,
+        )
+
+    assert execution_input.context["core_memory_block"] == "Learner prefers examples."
+    assert execution_input.context["history_list"] == [{"role": "user", "content": "Hi"}]
+    assert execution_input.context["user_facts"] == []
 
 
 def test_build_minimal_multi_agent_execution_input_uses_degraded_contract():

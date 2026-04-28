@@ -459,7 +459,7 @@ class TestDirectNodeUsesPromptLoader:
 
     @pytest.mark.asyncio
     async def test_direct_node_core_memory_appended(self):
-        """Core memory block should be appended to prompt."""
+        """Core memory should enter through PromptLoader's memory contract."""
         from app.engine.multi_agent.graph import direct_response_node
 
         captured_messages = []
@@ -497,9 +497,11 @@ class TestDirectNodeUsesPromptLoader:
             await direct_response_node(state)
 
         system_content = captured_messages[0].content
-        # Sprint 122 F4: core_memory_block no longer injected in direct_response_node
-        # (single authoritative fact injection path via build_system_prompt only)
-        assert "User prefers visual learning." not in system_content
+        # The direct node must not append memory by hand; PromptLoader owns the
+        # single authoritative memory injection path.
+        assert "WIII MEMORY CONTRACT" in system_content
+        assert "CORE MEMORY BLOCK" in system_content
+        assert "User prefers visual learning." in system_content
 
 
 # =============================================================================

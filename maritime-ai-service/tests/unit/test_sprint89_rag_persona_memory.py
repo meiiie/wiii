@@ -33,6 +33,8 @@ class TestRAGPersonaFix:
         params = list(sig.parameters.keys())
         assert "user_name" in params, "generate_response must accept user_name"
         assert "is_follow_up" in params, "generate_response must accept is_follow_up"
+        assert "conversation_summary" in params
+        assert "core_memory_block" in params
 
     def test_answer_generator_streaming_accepts_user_name(self):
         """AnswerGenerator.generate_response_streaming() accepts user_name param."""
@@ -43,9 +45,11 @@ class TestRAGPersonaFix:
         params = list(sig.parameters.keys())
         assert "user_name" in params
         assert "is_follow_up" in params
+        assert "conversation_summary" in params
+        assert "core_memory_block" in params
 
-    def test_answer_generator_passes_user_name_to_build_prompt(self):
-        """AnswerGenerator passes user_name to prompt_loader.build_system_prompt()."""
+    def test_answer_generator_passes_memory_contract_to_build_prompt(self):
+        """AnswerGenerator passes user identity and memory inputs to PromptLoader."""
         from app.engine.agentic_rag.answer_generator import AnswerGenerator
         from app.models.knowledge_graph import KnowledgeNode, NodeType
 
@@ -76,6 +80,8 @@ class TestRAGPersonaFix:
                 nodes=nodes,
                 user_name="Minh",
                 is_follow_up=True,
+                conversation_summary="User said Wiii should remember the project.",
+                core_memory_block="Name: Minh\nGoal: make Wiii stable",
             )
 
         # Verify build_system_prompt was called with actual user_name
@@ -85,6 +91,12 @@ class TestRAGPersonaFix:
             (call_kwargs.args and len(call_kwargs.args) > 1 and call_kwargs.args[1] == "Minh") or \
             call_kwargs[1].get("user_name") == "Minh", \
             f"build_system_prompt not called with user_name='Minh': {call_kwargs}"
+        assert call_kwargs.kwargs.get("conversation_summary") == (
+            "User said Wiii should remember the project."
+        )
+        assert call_kwargs.kwargs.get("core_memory_block") == (
+            "Name: Minh\nGoal: make Wiii stable"
+        )
 
     def test_rag_agent_generate_from_documents_accepts_user_name(self):
         """RAGAgent.generate_from_documents() accepts user_name param."""
@@ -95,6 +107,8 @@ class TestRAGPersonaFix:
         params = list(sig.parameters.keys())
         assert "user_name" in params
         assert "is_follow_up" in params
+        assert "conversation_summary" in params
+        assert "core_memory_block" in params
 
     def test_rag_agent_generate_response_accepts_user_name(self):
         """RAGAgent._generate_response() accepts user_name param."""
@@ -105,6 +119,8 @@ class TestRAGPersonaFix:
         params = list(sig.parameters.keys())
         assert "user_name" in params
         assert "is_follow_up" in params
+        assert "conversation_summary" in params
+        assert "core_memory_block" in params
 
     def test_corrective_rag_extracts_user_name_from_context(self):
         """CorrectiveRAG generation runtime extracts user_name from context dict."""
@@ -115,6 +131,7 @@ class TestRAGPersonaFix:
             "generate_answer_impl must extract user_name from context"
         assert 'user_name=context.get("user_name")' in source, \
             "generate_answer_impl must pass user_name to generate_from_documents"
+        assert 'core_memory_block=context.get("core_memory_block")' in source
 
 
 # =========================================================================

@@ -46,6 +46,11 @@ _MEMORY_BEHAVIOR_RULES = (
 def _build_memory_response_prompt(response_language: str = "vi") -> str:
     """Build memory agent prompt from wiii_identity.yaml + behavior rules."""
     thinking_instruction = get_thinking_instruction_from_shared_config({})
+    from app.engine.semantic_memory.memory_contract import (
+        build_memory_contract_policy_prompt,
+    )
+
+    memory_contract = build_memory_contract_policy_prompt()
     try:
         from app.prompts.prompt_loader import get_prompt_loader
         from app.prompts.prompt_context_utils import build_response_language_instruction
@@ -65,6 +70,7 @@ def _build_memory_response_prompt(response_language: str = "vi") -> str:
                 for part in (
                     enforcement,
                     f"Ban la {name} - {personality}\n- {emoji_usage}\n{_MEMORY_BEHAVIOR_RULES}",
+                    memory_contract,
                     build_response_language_instruction(response_language),
                     thinking_instruction,
                 )
@@ -86,6 +92,7 @@ def _build_memory_response_prompt(response_language: str = "vi") -> str:
             "Ban la Wiii - dang yeu, thich tro chuyen, giai thich ro rang.\n"
             "- Dung emoji tu nhien nhu nhan tin voi ban than (⚓🌊📚✨💡🎯😄)\n"
             f"{_MEMORY_BEHAVIOR_RULES}",
+            memory_contract,
             thinking_instruction,
         )
         if part
@@ -451,6 +458,12 @@ class MemoryAgentNode:
             context_parts = []
             if recent_conversation:
                 context_parts.append(f"Doan hoi thoai gan day:\n{recent_conversation}")
+            ctx = state.get("context") or {}
+            if not isinstance(ctx, dict):
+                ctx = {}
+            core_memory_block = str(ctx.get("core_memory_block") or "").strip()
+            if core_memory_block:
+                context_parts.append(f"Core memory block:\n{core_memory_block}")
             if existing_facts:
                 facts_str = "\n".join(f"- {fact['type']}: {fact['content']}" for fact in existing_facts)
                 context_parts.append(f"Thong tin da biet ve user:\n{facts_str}")
@@ -460,7 +473,6 @@ class MemoryAgentNode:
             if changes_summary:
                 context_parts.append(f"Thay doi: {changes_summary}")
 
-            ctx = state.get("context", {})
             lms_external_id = ctx.get("lms_external_id")
             lms_connector_id = ctx.get("lms_connector_id")
             if lms_external_id and lms_connector_id:
@@ -498,7 +510,7 @@ class MemoryAgentNode:
             )
 
             messages = [SystemMessage(content=_build_memory_response_prompt(ctx.get("response_language", "vi")))]
-            langchain_messages = state.get("context", {}).get("langchain_messages", [])
+            langchain_messages = ctx.get("langchain_messages", [])
             if langchain_messages:
                 messages.extend(langchain_messages[-5:])
             messages.append(

@@ -145,6 +145,7 @@ class PromptLoader:
         role: str,
         user_name: Optional[str] = None,
         conversation_summary: Optional[str] = None,
+        core_memory_block: Optional[str] = None,
         user_facts: Optional[List[str]] = None,
         recent_phrases: Optional[List[str]] = None,
         is_follow_up: bool = False,
@@ -166,6 +167,7 @@ class PromptLoader:
             role: User role (student, teacher, admin)
             user_name: User's name if known (from Memory)
             conversation_summary: Summary of previous conversation
+            core_memory_block: Structured long-term memory block compiled for this user
             user_facts: List of known facts about user
             recent_phrases: List of recently used opening phrases (for variation)
             is_follow_up: True if this is a follow-up message (not first in session)
@@ -373,6 +375,7 @@ class PromptLoader:
         append_truth_user_and_session_sections(
             sections,
             user_name=user_name,
+            core_memory_block=core_memory_block,
             user_facts=user_facts,
             conversation_summary=conversation_summary,
             mood_hint=mood_hint,

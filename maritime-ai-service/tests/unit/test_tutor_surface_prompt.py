@@ -9,12 +9,50 @@ class _Loader:
         return "BASE WIII PROMPT"
 
 
+class _RecordingLoader:
+    def __init__(self):
+        self.kwargs = {}
+
+    def build_system_prompt(self, **kwargs):
+        self.kwargs = kwargs
+        return "BASE WIII PROMPT"
+
+
 class _LoaderFactory:
     def __call__(self):
         return self
 
     def get_thinking_instruction(self):
         return "## THINKING\nNative thinking first."
+
+
+def test_build_tutor_system_prompt_forwards_memory_contract_inputs():
+    loader = _RecordingLoader()
+
+    build_tutor_system_prompt(
+        prompt_loader=loader,
+        prompt_loader_factory=_LoaderFactory(),
+        character_tools_enabled=False,
+        settings_obj=SimpleNamespace(
+            default_domain="maritime",
+            enable_structured_visuals=False,
+        ),
+        resolve_visual_intent_fn=lambda _query: SimpleNamespace(force_tool=False, mode="text", visual_type=None),
+        required_visual_tool_names_fn=lambda _decision: [],
+        preferred_visual_tool_name_fn=lambda: "tool_generate_visual",
+        context={
+            "user_id": "user-123",
+            "user_role": "student",
+            "conversation_summary": "User asked Wiii to continue the prior idea.",
+            "core_memory_block": "Name: Minh\nPreference: visual demos",
+            "response_language": "vi",
+        },
+        query="Tiep tuc di",
+        logger=logging.getLogger(__name__),
+    )
+
+    assert loader.kwargs["conversation_summary"] == "User asked Wiii to continue the prior idea."
+    assert loader.kwargs["core_memory_block"] == "Name: Minh\nPreference: visual demos"
 
 
 def test_build_tutor_system_prompt_unifies_identity_with_wiii_house_core():
