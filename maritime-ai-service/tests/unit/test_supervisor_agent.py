@@ -170,6 +170,7 @@ class TestSupervisorRoute:
 
         assert result == "tutor_agent"
         mock_route.assert_awaited_once()
+        assert mock_route.await_args.args[6] is state
         assert state.get("_routing_hint", {}).get("kind") != "fast_chatter"
 
     @pytest.mark.asyncio
