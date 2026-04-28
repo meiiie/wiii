@@ -291,6 +291,7 @@ async def generate_stream_v3_events(
             )
 
         accumulated_answer: list[str] = []
+        saw_done_event = False
 
         async for event in stream_fn(
             query=execution_input.query,
@@ -304,6 +305,8 @@ async def generate_stream_v3_events(
         ):
             if event.type == "answer":
                 accumulated_answer.append(event.content)
+            elif event.type == "done":
+                saw_done_event = True
 
             chunks, event_counter, should_stop = (
                 serialize_stream_event(
@@ -356,6 +359,16 @@ async def generate_stream_v3_events(
             "[STREAM-V3] Completed in %.3fs (full graph)",
             processing_time,
         )
+        if not saw_done_event:
+            done_event = await create_done_event(processing_time)
+            done_chunks, event_counter, _ = serialize_stream_event(
+                event=done_event,
+                event_counter=event_counter,
+                enable_artifacts=settings.enable_artifacts,
+                presentation_state=presentation_state,
+            )
+            for chunk in done_chunks:
+                yield chunk
 
     except ProviderUnavailableError as exc:
         logger.warning(

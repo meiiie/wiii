@@ -9,7 +9,9 @@ from typing import Any, Callable, Optional
 from langchain_core.language_models import BaseChatModel
 
 from app.core.exceptions import ProviderUnavailableError
+from app.engine.llm_model_health import record_model_failure, record_model_success
 from app.engine.llm_same_provider_runtime import extract_runtime_model_name_impl
+from app.engine.llm_timeout_policy import resolve_timeout_override
 
 
 def is_rate_limit_error_impl(error: Exception) -> bool:
@@ -41,6 +43,7 @@ def resolve_primary_timeout_seconds_impl(
     pool_cls,
     timeout_profile_structured: str,
     timeout_profile_background: str,
+    model_name: Optional[str] = None,
 ) -> float | None:
     """Resolve the first-response timeout for one invocation."""
     normalized_profile = str(timeout_profile or "").strip().lower()
@@ -58,7 +61,12 @@ def resolve_primary_timeout_seconds_impl(
         overrides = loads_timeout_provider_overrides_fn(
             getattr(settings_obj, "llm_timeout_provider_overrides", "{}")
         )
-        override_value = overrides.get(normalized_provider, {}).get(profile_key)
+        override_value = resolve_timeout_override(
+            overrides=overrides,
+            provider=normalized_provider,
+            profile_key=profile_key,
+            model_name=model_name,
+        )
         if override_value is not None:
             return override_value if override_value > 0 else None
 
@@ -303,6 +311,7 @@ async def ainvoke_with_failover_impl(
     elif getattr(llm, "_wiii_provider_name", None) == route.provider or route.provider is None:
         primary_llm = llm
 
+    primary_model_name = extract_runtime_model_name_impl(primary_llm)
     timeout = (
         primary_timeout
         if primary_timeout is not None
@@ -310,6 +319,7 @@ async def ainvoke_with_failover_impl(
             tier=tier,
             timeout_profile=timeout_profile,
             provider=route.provider,
+            model_name=primary_model_name,
         )
     )
 
@@ -322,11 +332,10 @@ async def ainvoke_with_failover_impl(
         return fallback_llm
 
     def _prepare_same_provider_fallback():
-        current_model_name = extract_runtime_model_name_impl(primary_llm)
         plan = resolve_same_provider_model_fallback_fn(
             route.provider,
             tier,
-            current_model_name=current_model_name,
+            current_model_name=primary_model_name,
         )
         if not plan:
             return None, None
@@ -437,6 +446,7 @@ async def ainvoke_with_failover_impl(
             result = await asyncio.wait_for(primary_llm.ainvoke(messages), timeout=timeout)
         else:
             result = await primary_llm.ainvoke(messages)
+        record_model_success(route.provider, primary_model_name)
         await asyncio.shield(pool_cls.record_success_for_provider(route.provider))
         return result
     except (asyncio.TimeoutError, Exception) as exc:
@@ -450,6 +460,17 @@ async def ainvoke_with_failover_impl(
             raise
 
         await asyncio.shield(pool_cls.record_failure_for_provider(route.provider))
+        classified_primary_failure = classify_failover_reason_impl(
+            error=exc,
+            timeout_seconds=timeout if is_timeout else None,
+        )
+        record_model_failure(
+            route.provider,
+            primary_model_name,
+            reason_code=classified_primary_failure["reason_code"],
+            error=exc,
+            timeout_seconds=timeout if is_timeout else None,
+        )
 
         same_provider_plan = None
         same_provider_llm = None
@@ -461,6 +482,7 @@ async def ainvoke_with_failover_impl(
                 tier=same_provider_plan["to_tier"],
                 timeout_profile=timeout_profile,
                 provider=route.provider,
+                model_name=same_provider_plan["to_model"],
             )
             reason = f"timeout_{timeout}s" if is_timeout else type(exc).__name__
             await _emit_same_provider_switch(
@@ -477,10 +499,26 @@ async def ainvoke_with_failover_impl(
                     )
                 else:
                     result = await same_provider_llm.ainvoke(messages)
+                record_model_success(
+                    same_provider_plan["provider"],
+                    same_provider_plan["to_model"],
+                )
                 await asyncio.shield(pool_cls.record_success_for_provider(route.provider))
                 return result
             except Exception as same_exc:
                 same_provider_error = same_exc
+                same_is_timeout = isinstance(same_exc, asyncio.TimeoutError)
+                classified_same_failure = classify_failover_reason_impl(
+                    error=same_exc,
+                    timeout_seconds=same_timeout if same_is_timeout else None,
+                )
+                record_model_failure(
+                    same_provider_plan["provider"],
+                    same_provider_plan["to_model"],
+                    reason_code=classified_same_failure["reason_code"],
+                    error=same_exc,
+                    timeout_seconds=same_timeout if same_is_timeout else None,
+                )
                 logger_obj.warning(
                     "[LLM_MODEL_FALLBACK] Same-provider fallback failed: provider=%s model=%s detail=%s",
                     same_provider_plan["provider"],
@@ -506,6 +544,11 @@ async def ainvoke_with_failover_impl(
         reason = f"timeout_{timeout}s" if is_timeout else type(exc).__name__
         await _emit_switch(reason=reason, error=exc)
         fallback_timeout = timeout * 2 if (timeout and timeout > 0) else None
+        fallback_model_name = extract_runtime_model_name_impl(fb)
         if fallback_timeout:
-            return await asyncio.wait_for(fb.ainvoke(messages), timeout=fallback_timeout)
-        return await fb.ainvoke(messages)
+            result = await asyncio.wait_for(fb.ainvoke(messages), timeout=fallback_timeout)
+        else:
+            result = await fb.ainvoke(messages)
+        record_model_success(route.fallback_provider, fallback_model_name)
+        await asyncio.shield(pool_cls.record_success_for_provider(route.fallback_provider))
+        return result

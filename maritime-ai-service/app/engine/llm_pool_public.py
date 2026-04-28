@@ -108,6 +108,7 @@ def resolve_primary_timeout_seconds(
     tier: str = "moderate",
     timeout_profile: Optional[str] = None,
     provider: Optional[str] = None,
+    model_name: Optional[str] = None,
 ) -> float | None:
     from app.engine import llm_pool as pool_mod
 
@@ -123,6 +124,7 @@ def resolve_primary_timeout_seconds(
         pool_cls=pool_mod.LLMPool,
         timeout_profile_structured=TIMEOUT_PROFILE_STRUCTURED,
         timeout_profile_background=TIMEOUT_PROFILE_BACKGROUND,
+        model_name=model_name,
     )
 
 
@@ -134,6 +136,7 @@ async def ainvoke_with_failover(
     provider: Optional[str] = None,
     failover_mode: str = "auto",
     prefer_selectable_fallback: bool = False,
+    allowed_fallback_providers: set[str] | list[str] | tuple[str, ...] | None = None,
     on_primary: Optional[Callable[[BaseChatModel], BaseChatModel]] = None,
     on_fallback: Optional[Callable[[BaseChatModel], BaseChatModel]] = None,
     on_switch: Optional[Callable[[str, str, str], Any]] = None,
@@ -150,6 +153,7 @@ async def ainvoke_with_failover(
         provider=provider,
         failover_mode=failover_mode,
         prefer_selectable_fallback=prefer_selectable_fallback,
+        allowed_fallback_providers=allowed_fallback_providers,
         on_primary=on_primary,
         on_fallback=on_fallback,
         on_switch=on_switch,
@@ -163,4 +167,7 @@ async def ainvoke_with_failover(
         logger_obj=pool_mod.logger,
         failover_mode_pinned=pool_mod.FAILOVER_MODE_PINNED,
         provider_unavailable_error_cls=pool_mod.ProviderUnavailableError,
+        resolve_same_provider_model_fallback_fn=pool_mod.LLMPool.resolve_same_provider_model_fallback,
+        create_llm_with_model_for_provider_fn=pool_mod.LLMPool.create_llm_with_model_for_provider,
+        thinking_tier_cls=pool_mod.ThinkingTier,
     )

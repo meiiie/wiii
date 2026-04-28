@@ -121,6 +121,46 @@ async def test_generate_stream_v3_events_finalizes_answer_after_stream():
 
 
 @pytest.mark.asyncio
+async def test_generate_stream_v3_events_emits_done_when_stream_omits_final_event():
+    orchestrator = MagicMock()
+    prepared_turn = SimpleNamespace(
+        request_scope=RequestScope("org-1", "maritime"),
+        session_id="session-1",
+        validation=SimpleNamespace(blocked=False),
+        chat_context=SimpleNamespace(user_name="Minh"),
+    )
+    orchestrator.prepare_turn = AsyncMock(return_value=prepared_turn)
+    orchestrator.build_multi_agent_execution_input = AsyncMock(return_value=(
+        SimpleNamespace(
+            query="Explain Rule 5",
+            user_id="user-1",
+            session_id="session-1",
+            context={"conversation_history": ""},
+            domain_id="maritime",
+            thinking_effort=None,
+            provider=None,
+        )
+    ))
+
+    async def fake_stream_fn(**_kwargs):
+        yield SimpleNamespace(type="answer", content="Hello without explicit done")
+
+    chunks = []
+    async for chunk in generate_stream_v3_events(
+        chat_request=_make_request(),
+        request_headers={},
+        background_save=MagicMock(),
+        start_time=0.0,
+        orchestrator=orchestrator,
+        stream_fn=fake_stream_fn,
+    ):
+        chunks.append(chunk)
+
+    assert sum(1 for chunk in chunks if "event: done" in chunk) == 1
+    orchestrator.finalize_response_turn.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_generate_stream_v3_events_uses_sync_fallback_when_multi_agent_disabled():
     orchestrator = MagicMock()
     orchestrator._use_multi_agent = False

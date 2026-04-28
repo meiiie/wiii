@@ -77,10 +77,43 @@ def build_timeout_profiles_snapshot(source: Any) -> dict[str, float]:
     return snapshot
 
 
-def sanitize_timeout_provider_overrides(
+def _sanitize_profile_values(provider_overrides: Mapping[str, Any]) -> dict[str, float]:
+    normalized_overrides: dict[str, float] = {}
+    for public_name, raw_value in provider_overrides.items():
+        if public_name not in TIMEOUT_PROFILE_SETTINGS:
+            continue
+        numeric = _coerce_float(
+            raw_value,
+            field_name=TIMEOUT_PROFILE_SETTINGS[public_name],
+        )
+        if numeric is None:
+            continue
+        normalized_overrides[public_name] = numeric
+    return normalized_overrides
+
+
+def _sanitize_model_overrides(
     value: Any,
 ) -> dict[str, dict[str, float]]:
-    """Keep only supported provider timeout overrides."""
+    if not isinstance(value, Mapping):
+        return {}
+    clean: dict[str, dict[str, float]] = {}
+    for model_name, model_overrides in value.items():
+        if not isinstance(model_name, str):
+            continue
+        normalized_model = model_name.strip()
+        if not normalized_model or not isinstance(model_overrides, Mapping):
+            continue
+        normalized_overrides = _sanitize_profile_values(model_overrides)
+        if normalized_overrides:
+            clean[normalized_model] = normalized_overrides
+    return clean
+
+
+def sanitize_timeout_provider_overrides(
+    value: Any,
+) -> dict[str, dict[str, Any]]:
+    """Keep only supported provider and model timeout overrides."""
     payload = value
     if isinstance(payload, str):
         raw = payload.strip()
@@ -96,7 +129,7 @@ def sanitize_timeout_provider_overrides(
         return {}
 
     supported_providers = set(get_supported_provider_names())
-    clean: dict[str, dict[str, float]] = {}
+    clean: dict[str, dict[str, Any]] = {}
     for provider_name, provider_overrides in payload.items():
         if not isinstance(provider_name, str):
             continue
@@ -110,17 +143,10 @@ def sanitize_timeout_provider_overrides(
         if not isinstance(provider_overrides, Mapping):
             continue
 
-        normalized_overrides: dict[str, float] = {}
-        for public_name, raw_value in provider_overrides.items():
-            if public_name not in TIMEOUT_PROFILE_SETTINGS:
-                continue
-            numeric = _coerce_float(
-                raw_value,
-                field_name=TIMEOUT_PROFILE_SETTINGS[public_name],
-            )
-            if numeric is None:
-                continue
-            normalized_overrides[public_name] = numeric
+        normalized_overrides: dict[str, Any] = _sanitize_profile_values(provider_overrides)
+        model_overrides = _sanitize_model_overrides(provider_overrides.get("models"))
+        if model_overrides:
+            normalized_overrides["models"] = model_overrides
 
         if normalized_overrides:
             clean[normalized_provider] = normalized_overrides
@@ -136,5 +162,35 @@ def dumps_timeout_provider_overrides(value: Any) -> str:
     )
 
 
-def loads_timeout_provider_overrides(value: Any) -> dict[str, dict[str, float]]:
+def loads_timeout_provider_overrides(value: Any) -> dict[str, dict[str, Any]]:
     return sanitize_timeout_provider_overrides(value)
+
+
+def resolve_timeout_override(
+    *,
+    overrides: Mapping[str, Mapping[str, Any]],
+    provider: str | None,
+    profile_key: str,
+    model_name: str | None = None,
+) -> float | None:
+    """Resolve a provider/model timeout override for one profile key."""
+    if not provider:
+        return None
+    provider_overrides = overrides.get(provider)
+    if not isinstance(provider_overrides, Mapping):
+        return None
+
+    normalized_model = str(model_name or "").strip()
+    if normalized_model:
+        raw_models = provider_overrides.get("models")
+        if isinstance(raw_models, Mapping):
+            model_overrides = raw_models.get(normalized_model)
+            if isinstance(model_overrides, Mapping):
+                model_value = model_overrides.get(profile_key)
+                if isinstance(model_value, (int, float)):
+                    return float(model_value)
+
+    provider_value = provider_overrides.get(profile_key)
+    if isinstance(provider_value, (int, float)):
+        return float(provider_value)
+    return None

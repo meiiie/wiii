@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.engine.llm_model_health import is_model_degraded
+
 
 def create_llm_with_model_for_provider_impl(
     *,
@@ -23,7 +25,9 @@ def create_llm_with_model_for_provider_impl(
 
     cache_key = f"_custom_{normalized_provider}_{model_name}_{tier.value}"
     if cache_key in pool:
-        return pool[cache_key]
+        if not is_model_degraded(normalized_provider, model_name):
+            return pool[cache_key]
+        pool.pop(cache_key, None)
 
     thinking_budget = thinking_budgets.get(tier.value, 4096)
     include_thoughts = tier in (

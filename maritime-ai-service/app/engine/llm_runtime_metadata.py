@@ -7,6 +7,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.engine.openai_compatible_credentials import (
+    resolve_nvidia_model,
     resolve_openai_model,
     resolve_openrouter_model,
 )
@@ -21,6 +22,8 @@ def _configured_model_for_provider(provider: str) -> str:
         return resolve_openai_model(settings)
     if normalized == "openrouter":
         return resolve_openrouter_model(settings)
+    if normalized == "nvidia":
+        return resolve_nvidia_model(settings)
     if normalized == "zhipu":
         return getattr(settings, "zhipu_model", "glm-5")
     if normalized == "ollama":

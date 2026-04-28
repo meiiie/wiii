@@ -65,6 +65,14 @@ def get_stats_impl(
         stats["circuit_breakers"] = circuit_breakers
     if gemini_cb is not None and "circuit_breakers" not in stats:
         stats["circuit_breaker"] = gemini_cb.get_stats()
+    try:
+        from app.engine.llm_model_health import get_model_health_snapshot
+
+        model_health = get_model_health_snapshot()
+        if model_health:
+            stats["model_health"] = model_health
+    except Exception:
+        pass
     return stats
 
 

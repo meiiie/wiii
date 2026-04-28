@@ -1,5 +1,5 @@
 """LLMConfig — LLM provider settings (Gemini, OpenAI, Ollama)."""
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -31,7 +31,7 @@ class LLMConfig(BaseModel):
     primary_timeout_background_seconds: float = 0.0
     stream_keepalive_interval_seconds: float = 15.0
     stream_idle_timeout_seconds: float = 0.0
-    timeout_provider_overrides: dict[str, dict[str, float]] = {}
+    timeout_provider_overrides: dict[str, dict[str, Any]] = {}
     google_api_key: Optional[str] = None
     google_model: str = GOOGLE_DEFAULT_MODEL
     google_model_advanced: str = GOOGLE_DEEP_MODEL

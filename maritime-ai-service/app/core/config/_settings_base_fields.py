@@ -348,7 +348,11 @@ class BaseSettingsFieldsMixin:
     )
     llm_timeout_provider_overrides: str = Field(
         default="{}",
-        description='JSON provider-specific timeout overrides: {"google": {"light_seconds": 12}}',
+        description=(
+            "JSON provider/model timeout overrides: "
+            '{"google": {"light_seconds": 12}, '
+            '"nvidia": {"models": {"deepseek-ai/deepseek-v4-flash": {"moderate_seconds": 8}}}}'
+        ),
     )
     llm_runtime_audit_refresh_interval_seconds: float = Field(
         default=300.0,
@@ -688,4 +692,3 @@ class BaseSettingsFieldsMixin:
     enable_multi_tenant: bool = Field(default=False, description="Enable multi-organization support")
     default_organization_id: str = Field(default="default", description="Default org for unauthenticated users")
     enable_rls: bool = Field(default=False, description="Enable PostgreSQL Row-Level Security (requires enable_multi_tenant)")
-
