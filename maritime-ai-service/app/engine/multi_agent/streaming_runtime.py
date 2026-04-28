@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator
 
+from app.engine.multi_agent.runtime_contracts import WiiiStreamEvent, WiiiTurnRequest
 from app.engine.multi_agent.stream_utils import StreamEvent
 
 
@@ -23,4 +24,14 @@ async def process_with_multi_agent_streaming(
     async for event in stream(*args, **kwargs):
         yield event
 
-__all__ = ["process_with_multi_agent_streaming"]
+
+async def stream_wiii_turn(
+    request: WiiiTurnRequest,
+) -> AsyncGenerator[WiiiStreamEvent, None]:
+    """Stream one native Wiii turn while preserving existing wire events."""
+
+    async for event in process_with_multi_agent_streaming(**request.to_runtime_kwargs()):
+        yield WiiiStreamEvent.from_legacy_tuple(event)
+
+
+__all__ = ["process_with_multi_agent_streaming", "stream_wiii_turn"]

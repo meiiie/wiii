@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from typing import Any
 
+from app.engine.multi_agent.runtime_contracts import WiiiTurnRequest, WiiiTurnResult
 from app.engine.multi_agent.graph_process import process_with_multi_agent_impl
 from app.engine.multi_agent.graph_runtime_bindings import (
     _inject_code_studio_context,
@@ -98,4 +99,11 @@ async def process_with_multi_agent(
     )
 
 
-__all__ = ["process_with_multi_agent"]
+async def run_wiii_turn(request: WiiiTurnRequest) -> WiiiTurnResult:
+    """Run one native Wiii turn through the existing WiiiRunner adapter."""
+
+    payload = await process_with_multi_agent(**request.to_runtime_kwargs())
+    return WiiiTurnResult.from_payload(payload)
+
+
+__all__ = ["process_with_multi_agent", "run_wiii_turn"]
