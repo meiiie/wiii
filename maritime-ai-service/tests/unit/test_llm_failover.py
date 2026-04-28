@@ -476,6 +476,23 @@ class TestModelHealthRuntime:
             is_model_degraded("nvidia", "deepseek-ai/deepseek-v4-flash") is False
         )
 
+    def test_model_health_snapshot_omits_raw_error_detail(self):
+        from app.engine.llm_model_health import (
+            get_model_health_snapshot,
+            record_model_failure,
+        )
+
+        record_model_failure(
+            "nvidia",
+            "deepseek-ai/deepseek-v4-pro",
+            reason_code="server_error",
+            error=RuntimeError("provider payload with secret-token"),
+        )
+
+        entry = get_model_health_snapshot()["nvidia"]["deepseek-ai/deepseek-v4-pro"]
+        assert entry["last_error_type"] == "RuntimeError"
+        assert "last_error_detail" not in entry
+
     def test_create_custom_model_uses_provider_healthy_alternative(self):
         from app.engine.llm_model_health import record_model_failure
 

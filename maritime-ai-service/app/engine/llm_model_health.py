@@ -165,7 +165,6 @@ def get_model_health_snapshot() -> dict[str, dict[str, dict[str, Any]]]:
                 "state": record.state,
                 "last_reason_code": record.last_reason_code,
                 "last_error_type": record.last_error_type,
-                "last_error_detail": record.last_error_detail,
                 "last_timeout_seconds": record.last_timeout_seconds,
                 "last_failure_at": record.last_failure_at,
                 "last_success_at": record.last_success_at,
