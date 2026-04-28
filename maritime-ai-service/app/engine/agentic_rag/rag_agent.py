@@ -231,6 +231,8 @@ class RAGAgent:
         user_role: str = "student",
         user_name: Optional[str] = None,
         is_follow_up: bool = False,
+        conversation_summary: Optional[str] = None,
+        core_memory_block: Optional[str] = None,
         entity_context: str = "",
         response_language: Optional[str] = None,
         host_context_prompt: str = "",  # Sprint 222
@@ -277,6 +279,8 @@ class RAGAgent:
             entity_context=entity_context,
             user_name=user_name,
             is_follow_up=is_follow_up,
+            conversation_summary=conversation_summary,
+            core_memory_block=core_memory_block,
             response_language=response_language,
             host_context_prompt=host_context_prompt,  # Sprint 222
             living_context_prompt=living_context_prompt,
@@ -414,6 +418,8 @@ class RAGAgent:
         entity_context: str = "",  # Feature: document-kg
         user_name: Optional[str] = None,
         is_follow_up: bool = False,
+        conversation_summary: Optional[str] = None,
+        core_memory_block: Optional[str] = None,
         response_language: Optional[str] = None,
         host_context_prompt: str = "",  # Sprint 222
         living_context_prompt: str = "",
@@ -450,6 +456,8 @@ class RAGAgent:
             entity_context=entity_context,
             user_name=user_name,
             is_follow_up=is_follow_up,
+            conversation_summary=conversation_summary,
+            core_memory_block=core_memory_block,
             response_language=response_language,
             host_context_prompt=host_context_prompt,  # Sprint 222
             living_context_prompt=living_context_prompt,
@@ -519,6 +527,8 @@ class RAGAgent:
         conversation_history: str = "",
         user_role: str = "student",
         entity_context: str = "",
+        conversation_summary: Optional[str] = None,
+        core_memory_block: Optional[str] = None,
         response_language: Optional[str] = None,
         host_context_prompt: str = "",  # Sprint 222
         living_context_prompt: str = "",
@@ -547,6 +557,8 @@ class RAGAgent:
             conversation_history=conversation_history,
             user_role=user_role,
             entity_context=entity_context,
+            conversation_summary=conversation_summary,
+            core_memory_block=core_memory_block,
             response_language=response_language,
             host_context_prompt=host_context_prompt,  # Sprint 222
             living_context_prompt=living_context_prompt,

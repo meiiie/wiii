@@ -830,6 +830,8 @@ async def process_streaming_impl(
             conversation_history=history,
             user_role=user_role,
             entity_context=graph_entity_context_streaming,
+            conversation_summary=context.get("conversation_summary") or history,
+            core_memory_block=context.get("core_memory_block"),
             response_language=context.get("response_language"),
             host_context_prompt=context.get("host_context_prompt", ""),  # Sprint 222
             living_context_prompt=context.get("living_context_prompt", ""),

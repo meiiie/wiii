@@ -51,6 +51,12 @@ async def build_multi_agent_context_impl(
         "conversation_history": context.conversation_history,
         "semantic_context": context.semantic_context,
         "langchain_messages": context.langchain_messages,
+        "history_list": context.history_list or [],
+        "user_facts": getattr(context, "user_facts", []),
+        "pronoun_style": (
+            getattr(context, "pronoun_style", None)
+            or getattr(session.state, "pronoun_style", None)
+        ),
         "conversation_summary": context.conversation_summary or "",
         "core_memory_block": context.core_memory_block,
         "is_follow_up": int(getattr(session.state, "total_responses", 0) or 0) > 0,
@@ -107,12 +113,6 @@ async def build_multi_agent_execution_input_impl(
         graph_context.update(
             {
                 "user_id": request.user_id,
-                "user_facts": getattr(context, "user_facts", []),
-                "pronoun_style": (
-                    getattr(context, "pronoun_style", None)
-                    or getattr(session.state, "pronoun_style", None)
-                ),
-                "history_list": context.history_list or [],
                 "show_previews": request.show_previews,
                 "preview_types": request.preview_types,
                 "preview_max_count": request.preview_max_count,

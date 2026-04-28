@@ -153,6 +153,8 @@ async def generate_answer_impl(
             user_role=context.get("user_role", "student"),
             user_name=context.get("user_name"),
             is_follow_up=context.get("is_follow_up", bool(history)),
+            conversation_summary=context.get("conversation_summary") or history,
+            core_memory_block=context.get("core_memory_block"),
             entity_context=context.get("entity_context", ""),
             response_language=context.get("response_language"),
             host_context_prompt=context.get("host_context_prompt", ""),
