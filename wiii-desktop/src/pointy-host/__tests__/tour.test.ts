@@ -2,7 +2,7 @@
  * Tour tests — step progression, missing selectors, cancellation.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { _testing, runTour } from "../tour";
+import { _testing, cancelActiveTour, runTour } from "../tour";
 import type { TourStep } from "../types";
 
 beforeEach(() => {
@@ -62,5 +62,34 @@ describe("runTour", () => {
     const result = await runTour(steps, { resolveSelector: resolver });
     expect(resolver).toHaveBeenCalledWith("wiii://step-1");
     expect(result.completed_steps).toBe(1);
+  });
+
+  it("returns 0/0 immediately for an empty steps array", async () => {
+    const result = await runTour([]);
+    expect(result.completed_steps).toBe(0);
+    expect(result.total_steps).toBe(0);
+    expect(result.cancelled).toBe(false);
+    expect(result.missing_selectors).toEqual([]);
+  });
+
+  it("clamps start_at >= steps.length to no-op completion", async () => {
+    document.body.innerHTML = `<div id="a"></div><div id="b"></div>`;
+    const steps: TourStep[] = [
+      { selector: "#a", message: "A", duration_ms: 1 },
+      { selector: "#b", message: "B", duration_ms: 1 },
+    ];
+    const result = await runTour(steps, { startAt: 9 });
+    expect(result.completed_steps).toBe(0);
+    expect(result.total_steps).toBe(2);
+  });
+
+  it("negative start_at is normalised to 0", async () => {
+    document.body.innerHTML = `<div id="z"></div>`;
+    const result = await runTour([{ selector: "#z", message: "Z", duration_ms: 1 }], { startAt: -5 });
+    expect(result.completed_steps).toBe(1);
+  });
+
+  it("cancelActiveTour without an active tour does not throw", () => {
+    expect(() => cancelActiveTour()).not.toThrow();
   });
 });
