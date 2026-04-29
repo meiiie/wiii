@@ -12,6 +12,7 @@ see app/services/REQUEST_FLOW_CONTRACT.md
 """
 
 import logging
+import time
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, BackgroundTasks, Request
@@ -68,6 +69,8 @@ def _canonicalize_stream_request_from_auth(
 async def _keepalive_generator(
     inner_gen: AsyncGenerator[str, None],
     request: Request,
+    *,
+    start_time: float | None = None,
 ) -> AsyncGenerator[str, None]:
     """
     Wrap an SSE generator with keepalive heartbeats and client disconnect detection.
@@ -80,7 +83,12 @@ async def _keepalive_generator(
     - Checks `request.is_disconnected()` to abort when client disconnects
     """
     def _inner_error_chunks() -> list[str]:
-        return _stream_presenter.emit_internal_error_sse_events()[0]
+        processing_time = None
+        if start_time is not None:
+            processing_time = max(time.time() - start_time, 0.0)
+        return _stream_presenter.emit_internal_error_sse_events(
+            processing_time=processing_time,
+        )[0]
 
     async for chunk in _stream_transport.wrap_sse_with_keepalive(
         inner_gen=inner_gen,
@@ -174,5 +182,9 @@ async def chat_stream_v3(
 
     # Sprint 26: Wrap with keepalive heartbeat + client disconnect detection
     return _stream_endpoint_support.build_chat_streaming_response(
-        event_generator=_keepalive_generator(generate_events_v3(), request),
+        event_generator=_keepalive_generator(
+            generate_events_v3(),
+            request,
+            start_time=start_time,
+        ),
     )

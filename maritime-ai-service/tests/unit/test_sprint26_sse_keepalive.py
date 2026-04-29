@@ -139,6 +139,37 @@ class TestKeepaliveGenerator:
         assert len(error_chunks) >= 1
 
     @pytest.mark.asyncio
+    async def test_handles_inner_generator_error_with_done_when_start_time_supplied(
+        self,
+        monkeypatch,
+    ):
+        """Endpoint wrapper should finalize errored streams so FE can stop thinking."""
+        async def failing_inner():
+            yield "first"
+            raise ValueError("Test error")
+
+        mock_request = MagicMock()
+        mock_request.is_disconnected = AsyncMock(return_value=False)
+
+        import app.api.v1.chat_stream as module
+
+        monkeypatch.setattr(module.time, "time", lambda: 105.0)
+
+        chunks = []
+        async for chunk in _keepalive_generator(
+            failing_inner(),
+            mock_request,
+            start_time=100.0,
+        ):
+            chunks.append(chunk)
+
+        assert "first" in chunks
+        assert any("event: error" in chunk for chunk in chunks)
+        done_chunks = [chunk for chunk in chunks if "event: done" in chunk]
+        assert len(done_chunks) == 1
+        assert '"processing_time": 5.0' in done_chunks[0]
+
+    @pytest.mark.asyncio
     async def test_empty_inner_generator(self):
         """Should handle an inner generator that yields nothing."""
         async def empty_inner():
