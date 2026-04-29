@@ -299,7 +299,7 @@ class DemoSmoke:
     def run_check(self, name: str, func) -> bool:  # type: ignore[no-untyped-def]
         start = time.monotonic()
         try:
-            detail = func()
+            func()
         except SmokeFailure as exc:
             self.failed += 1
             print(f"[FAIL] {name} - {exc}")
@@ -309,8 +309,7 @@ class DemoSmoke:
             print(f"[FAIL] {name} - unexpected error: {exc}")
             return False
         elapsed = time.monotonic() - start
-        suffix = f" - {detail}" if detail else ""
-        print(f"[PASS] {name}{suffix} ({elapsed:.1f}s)")
+        print(f"[PASS] {name} ({elapsed:.1f}s)")
         self.passed += 1
         return True
 
