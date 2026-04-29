@@ -867,8 +867,14 @@ class TestExecuteDirectToolRounds:
         llm_response.tool_calls = []
         # llm_with_tools is an object with .ainvoke() method
         llm_with_tools = MagicMock()
+        llm_with_tools._wiii_native_route = False
+        llm_with_tools._wiii_provider_name = ""
+        llm_with_tools._wiii_model_name = "test-direct"
         llm_with_tools.ainvoke = AsyncMock(return_value=llm_response)
         llm_auto = MagicMock()
+        llm_auto._wiii_native_route = False
+        llm_auto._wiii_provider_name = ""
+        llm_auto._wiii_model_name = "test-direct-auto"
         llm_auto.ainvoke = AsyncMock()
 
         async def noop_push(e):
