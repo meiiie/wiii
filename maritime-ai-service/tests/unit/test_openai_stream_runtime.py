@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -321,5 +322,119 @@ async def test_native_direct_stream_timeout_marks_model_degraded():
         assert streamed is False
         assert is_model_degraded("nvidia", "deepseek-ai/deepseek-v4-flash") is True
         assert events == []
+    finally:
+        reset_model_health_state()
+
+
+@pytest.mark.asyncio
+async def test_native_direct_stream_closes_reasoning_when_no_answer_emitted():
+    events = []
+    thinking_stop_signal = asyncio.Event()
+
+    async def _push_event(event):
+        events.append(event)
+
+    class _ReasoningOnlyStream:
+        def __aiter__(self):
+            async def _gen():
+                yield SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(reasoning_content="Still thinking"),
+                        )
+                    ]
+                )
+
+            return _gen()
+
+    class _FakeChatCompletions:
+        async def create(self, **_kwargs):
+            return _ReasoningOnlyStream()
+
+    class _FakeChat:
+        completions = _FakeChatCompletions()
+
+    class _FakeClient:
+        chat = _FakeChat()
+
+    response, streamed = await _stream_openai_compatible_answer_with_route_impl(
+        SimpleNamespace(
+            provider="nvidia",
+            llm=SimpleNamespace(_wiii_tier_key="light", _wiii_model_name="deepseek-ai/deepseek-v4-flash"),
+        ),
+        messages=[{"role": "user", "content": "Hi Wiii"}],
+        push_event=_push_event,
+        node="direct",
+        thinking_stop_signal=thinking_stop_signal,
+        supports_native_answer_streaming=lambda provider: provider == "nvidia",
+        create_openai_compatible_stream_client=lambda _provider: _FakeClient(),
+        resolve_openai_stream_model_name=lambda *_args: "deepseek-ai/deepseek-v4-flash",
+        langchain_message_to_openai_payload=lambda message: message,
+        extract_openai_delta_text=lambda delta: (str(getattr(delta, "reasoning_content", "") or ""), ""),
+    )
+
+    assert response is None
+    assert streamed is False
+    assert thinking_stop_signal.is_set() is True
+    assert [event["type"] for event in events] == [
+        "thinking_start",
+        "thinking_delta",
+        "thinking_end",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_native_direct_stream_partial_exception_does_not_mark_model_healthy():
+    from app.engine.llm_model_health import is_model_degraded, reset_model_health_state
+
+    reset_model_health_state()
+    events = []
+
+    async def _push_event(event):
+        events.append(event)
+
+    class _PartialThenFailStream:
+        def __aiter__(self):
+            async def _gen():
+                yield SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(delta=SimpleNamespace(content="Xin chao"))
+                    ]
+                )
+                raise RuntimeError("503 service unavailable")
+
+            return _gen()
+
+    class _FakeChatCompletions:
+        async def create(self, **_kwargs):
+            return _PartialThenFailStream()
+
+    class _FakeChat:
+        completions = _FakeChatCompletions()
+
+    class _FakeClient:
+        chat = _FakeChat()
+
+    try:
+        response, streamed = await _stream_openai_compatible_answer_with_route_impl(
+            SimpleNamespace(
+                provider="nvidia",
+                llm=SimpleNamespace(_wiii_tier_key="light", _wiii_model_name="deepseek-ai/deepseek-v4-flash"),
+            ),
+            messages=[{"role": "user", "content": "Hi Wiii"}],
+            push_event=_push_event,
+            node="direct",
+            thinking_stop_signal=None,
+            supports_native_answer_streaming=lambda provider: provider == "nvidia",
+            create_openai_compatible_stream_client=lambda _provider: _FakeClient(),
+            resolve_openai_stream_model_name=lambda *_args: "deepseek-ai/deepseek-v4-flash",
+            langchain_message_to_openai_payload=lambda message: message,
+            extract_openai_delta_text=lambda delta: ("", str(getattr(delta, "content", "") or "")),
+        )
+
+        assert streamed is True
+        assert response.content == "Xin chao"
+        assert events == [{"type": "answer_delta", "content": "Xin chao", "node": "direct"}]
+        assert is_model_degraded("nvidia", "deepseek-ai/deepseek-v4-flash") is True
     finally:
         reset_model_health_state()

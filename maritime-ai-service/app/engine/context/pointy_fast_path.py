@@ -118,7 +118,9 @@ def get_pointy_targets_from_context(context: dict[str, Any] | None) -> list[dict
     host_page = host_context.get("page") if isinstance(host_context.get("page"), dict) else {}
     host_metadata = host_page.get("metadata") if isinstance(host_page.get("metadata"), dict) else {}
     page_context = ctx.get("page_context") if isinstance(ctx.get("page_context"), dict) else {}
-    raw_targets = host_metadata.get("available_targets") or page_context.get("available_targets")
+    raw_targets = host_metadata.get("available_targets")
+    if raw_targets is None:
+        raw_targets = page_context.get("available_targets")
     if not isinstance(raw_targets, list):
         return []
     return [target for item in raw_targets if (target := _coerce_target(item))]
@@ -199,7 +201,7 @@ def build_pointy_fast_path_action(
             "action": POINTY_ACTION_CLICK,
             "params": {
                 "selector": target["id"],
-                "message": f"Wiii dang mo {label} cho ban.",
+                "message": f"Wiii đang mở {label} cho bạn.",
                 "source": POINTY_FAST_PATH_SOURCE,
             },
             "target": target,
@@ -211,7 +213,7 @@ def build_pointy_fast_path_action(
         "action": POINTY_ACTION_HIGHLIGHT,
         "params": {
             "selector": target["id"],
-            "message": f"Day la {label}. Wiii tro vao de ban thay ngay.",
+            "message": f"Đây là {label}. Wiii trỏ vào để bạn thấy ngay.",
             "duration_ms": 5600 if wants_click else 5200,
             "source": POINTY_FAST_PATH_SOURCE,
         },

@@ -96,7 +96,7 @@ const DEFAULT_TOOLS: PointyToolDefinition[] = [
   {
     name: "ui.click",
     description:
-      'Bam target dieu huong an toan da duoc host danh dau data-wiii-click-safe="true". Fail-closed neu target khong an toan.',
+      'Bấm vào mục điều hướng an toàn đã được host đánh dấu data-wiii-click-safe="true". Từ chối mặc định nếu mục tiêu không an toàn.',
     input_schema: {
       type: "object",
       properties: {

@@ -165,12 +165,17 @@ export function hideCursor(): void {
 
 /** Remove the cursor element entirely (for cleanup / tests). */
 export function destroyCursor(): void {
+  if (activeAnimation) {
+    activeAnimation.onfinish = null;
+    activeAnimation.oncancel = null;
+    activeAnimation.cancel();
+    activeAnimation = null;
+  }
   if (cursorEl && cursorEl.parentNode) {
     cursorEl.parentNode.removeChild(cursorEl);
   }
   cursorEl = null;
   lastPos = null;
-  activeAnimation = null;
 }
 
 export const _testing = {

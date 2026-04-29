@@ -27,11 +27,41 @@ const CONTEXT_TYPES = new Set([
 
 let _registered = false;
 
+function extractOrigin(url: string): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+function expectedParentOrigin(): string | null {
+  if (typeof document === "undefined") return null;
+  return extractOrigin(document.referrer);
+}
+
+function isAllowedContextOrigin(event: MessageEvent): boolean {
+  if (typeof window === "undefined") return false;
+
+  const expectedOrigin = expectedParentOrigin();
+  if (expectedOrigin) {
+    return event.origin === expectedOrigin;
+  }
+
+  if (window.parent === window) {
+    return !event.origin || event.origin === window.location.origin;
+  }
+
+  return false;
+}
+
 // ── Handler ──
 
 function handleContextMessage(event: MessageEvent): void {
   const msgType = event.data?.type;
   if (!msgType || typeof msgType !== "string" || !CONTEXT_TYPES.has(msgType)) return;
+  if (!isAllowedContextOrigin(event)) return;
 
   if (msgType === "wiii:page-context") {
     const payload = event.data.payload || event.data;

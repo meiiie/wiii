@@ -34,6 +34,13 @@ export interface HostContext {
   editable_scope?: Record<string, unknown> | null;
   entity_refs?: Array<Record<string, unknown>> | null;
   user_state?: Record<string, unknown> | null;
+  host_action_feedback?: {
+    last_action_result?: {
+      params?: {
+        source?: string;
+      } | null;
+    } | null;
+  } | null;
   content?: { snippet?: string; structured?: unknown } | null;
   available_actions?: Array<{
     action?: string;
@@ -174,7 +181,8 @@ function legacyToHostContext(
   studentState?: Record<string, unknown> | null,
   actions?: Array<Record<string, unknown>> | null,
 ): HostContext {
-  const metadata: Record<string, unknown> = {};
+  const metadata = Object.create(null) as Record<string, unknown>;
+  const blockedMetadataKeys = new Set(["__proto__", "prototype", "constructor"]);
   const metaKeys = [
     "action",
     "workflow_stage",
@@ -209,7 +217,13 @@ function legacyToHostContext(
     }
   }
   for (const [key, val] of Object.entries(legacy)) {
-    if (topLevelKeys.has(key) || key in metadata || val === undefined || val === null) {
+    if (
+      blockedMetadataKeys.has(key) ||
+      topLevelKeys.has(key) ||
+      Object.prototype.hasOwnProperty.call(metadata, key) ||
+      val === undefined ||
+      val === null
+    ) {
       continue;
     }
     metadata[key] = val;

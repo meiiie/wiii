@@ -131,7 +131,7 @@ class QueryAnalyzer:
         try:
             # Use LLM for analysis
             messages = make_agentic_rag_messages(
-                system="You are a query analyzer. Return only valid JSON.",
+                system="Bạn là bộ phân tích truy vấn. Chỉ trả về JSON hợp lệ.",
                 user=ANALYSIS_PROMPT.format(query=query),
             )
             

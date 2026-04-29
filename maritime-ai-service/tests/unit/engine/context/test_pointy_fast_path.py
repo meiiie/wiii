@@ -50,6 +50,28 @@ def test_extracts_valid_pointy_targets_from_host_context():
     ]
 
 
+def test_empty_host_targets_do_not_fall_back_to_stale_page_context():
+    ctx = {
+        "host_context": {
+            "page": {
+                "type": "course_list",
+                "metadata": {"available_targets": []},
+            },
+        },
+        "page_context": {
+            "available_targets": [
+                {
+                    "id": "stale-target",
+                    "selector": '[data-wiii-id="stale-target"]',
+                    "label": "Stale target",
+                }
+            ]
+        },
+    }
+
+    assert get_pointy_targets_from_context(ctx) == []
+
+
 def test_where_is_prompt_emits_highlight_action():
     action = build_pointy_fast_path_action(
         "Wiii oi, nut Kham pha khoa hoc o dau?",
@@ -106,6 +128,7 @@ def test_open_prompt_clicks_only_safe_navigation_target():
     assert action is not None
     assert action["action"] == POINTY_ACTION_CLICK
     assert action["params"]["selector"] == "browse-courses-link"
+    assert action["params"]["message"] == "Wiii đang mở Kham pha khoa hoc cho bạn."
     assert action["reason"] == "click"
 
 
@@ -124,6 +147,7 @@ def test_unsafe_click_intent_is_demoted_to_highlight():
 
     assert action is not None
     assert action["action"] == POINTY_ACTION_HIGHLIGHT
+    assert action["params"]["message"] == "Đây là Nop bai. Wiii trỏ vào để bạn thấy ngay."
     assert action["reason"] == "unsafe_click_demoted"
 
 

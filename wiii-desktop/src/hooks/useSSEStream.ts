@@ -546,6 +546,11 @@ export function useSSEStream() {
                 success: result.success,
               });
             }
+            if (result.success) {
+              eventOrderRef.current.push("pointy_fast_path");
+              chatStore.setStreamingStep("Wiii đang trỏ trên trang...");
+              chatStore.addStreamingStep("Wiii đang trỏ trên trang...", "pointy_fast_path");
+            }
             return result;
           })
           .catch((err) => {
@@ -556,11 +561,6 @@ export function useSSEStream() {
             return null;
           })
       : null;
-    if (pointyFastPathAction) {
-      eventOrderRef.current.push("pointy_fast_path");
-      chatStore.setStreamingStep("Wiii dang tro tren trang...");
-      chatStore.addStreamingStep("Wiii dang tro tren trang...", "pointy_fast_path");
-    }
 
     // Keep a per-send controller so an aborted previous request cannot
     // accidentally clear/finalize the newly-started stream.

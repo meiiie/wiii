@@ -530,16 +530,9 @@ async def _stream_openai_compatible_answer_with_route_impl(
             from app.engine.llm_model_health import record_model_success
 
             record_model_success(provider_name, model_name)
-            if not thinking_closed:
-                if thinking_stop_signal is not None:
-                    thinking_stop_signal.set()
-                if reasoning_started:
-                    await push_event({
-                        "type": "thinking_end",
-                        "content": "",
-                        "node": node,
-                    })
+            await _close_thinking_for_non_answer()
             return make_assistant_message(emitted_answer), True
+        await _close_thinking_for_non_answer()
     except Exception as exc:
         from app.engine.llm_failover_runtime import classify_failover_reason_impl
         from app.engine.llm_model_health import record_model_failure
@@ -565,10 +558,9 @@ async def _stream_openai_compatible_answer_with_route_impl(
             exc_info=True,
         )
         if emitted_answer:
-            from app.engine.llm_model_health import record_model_success
-
-            record_model_success(provider_name, model_name)
+            await _close_thinking_for_non_answer()
             return make_assistant_message(emitted_answer), True
+        await _close_thinking_for_non_answer()
     logger.info(
         "[%s] Native stream result: provider=%s model=%s answer=%d chars",
         node.upper(),

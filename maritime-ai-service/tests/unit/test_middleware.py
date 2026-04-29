@@ -124,6 +124,22 @@ class TestEmbedCSPMiddleware:
             is None
         )
 
+    def test_refuses_ambiguous_embed_asset_replacement_across_roots(self, tmp_path):
+        root_a = tmp_path / "a"
+        root_b = tmp_path / "b"
+        (root_a / "assets").mkdir(parents=True)
+        (root_b / "assets").mkdir(parents=True)
+        (root_a / "assets" / "dist-js-one.js").write_text("one", encoding="utf-8")
+        (root_b / "assets" / "dist-js-two.js").write_text("two", encoding="utf-8")
+
+        assert (
+            _find_embed_asset_replacement(
+                "/embed/assets/dist-js-stale.js",
+                roots=[root_a, root_b],
+            )
+            is None
+        )
+
     @pytest.mark.asyncio
     async def test_sets_no_store_for_embed_assets_in_development(self, monkeypatch):
         monkeypatch.setattr(settings, "environment", "development")
@@ -158,6 +174,30 @@ class TestEmbedCSPMiddleware:
         assert resp.text == "ok"
         assert resp.headers["Content-Security-Policy"] == "frame-ancestors 'self'"
         assert resp.headers["Cache-Control"] == "no-store"
+
+    @pytest.mark.asyncio
+    async def test_does_not_force_no_store_or_serve_stale_in_production(
+        self, monkeypatch, tmp_path
+    ):
+        assets_dir = tmp_path / "assets"
+        assets_dir.mkdir()
+        (assets_dir / "MarkdownLiteSegment-current.js").write_text("ok", encoding="utf-8")
+        monkeypatch.setattr(settings, "environment", "production")
+        monkeypatch.setattr(settings, "embed_allowed_origins", "")
+        monkeypatch.setattr("app.core.middleware._embed_asset_roots", lambda: [tmp_path])
+
+        async with _make_client(_make_embed_app()) as client:
+            asset_resp = await client.get("/embed/assets/embed.js")
+            stale_resp = await client.get("/embed/assets/MarkdownLiteSegment-stale.js")
+
+        assert asset_resp.status_code == 200
+        assert asset_resp.headers["Content-Security-Policy"] == "frame-ancestors 'self'"
+        assert asset_resp.headers.get("Cache-Control") != "no-store"
+        assert asset_resp.headers.get("Pragma") != "no-cache"
+        assert asset_resp.headers.get("Expires") != "0"
+
+        assert stale_resp.status_code == 404
+        assert stale_resp.text != "ok"
 
     @pytest.mark.asyncio
     async def test_keeps_non_embed_routes_cache_neutral(self, monkeypatch):

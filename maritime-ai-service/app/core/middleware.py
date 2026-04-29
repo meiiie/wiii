@@ -76,15 +76,15 @@ def _find_embed_asset_replacement(path: str, roots: list[Path] | None = None) ->
 
     prefix = match.group("prefix")
     extension = match.group("ext")
+    candidates: list[Path] = []
     for root in roots or _embed_asset_roots():
         assets_dir = root / "assets"
         if not assets_dir.exists():
             continue
         matches = sorted(assets_dir.glob(f"{prefix}-*.{extension}"))
         existing = [candidate for candidate in matches if candidate.is_file()]
-        if len(existing) == 1:
-            return existing[0]
-    return None
+        candidates.extend(existing)
+    return candidates[0] if len(candidates) == 1 else None
 
 
 class EmbedCSPMiddleware(BaseHTTPMiddleware):

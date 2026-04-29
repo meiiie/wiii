@@ -42,7 +42,17 @@ const UNSAFE_CLICK_TERMS = [
   "hoan thanh",
 ];
 
-const TARGET_ALIASES: Array<{ ids: string[]; terms: string[] }> = [
+interface PointyTargetAlias {
+  ids: string[];
+  terms: string[];
+}
+
+interface ScoredPointyTarget {
+  target: PointyFastPathTarget;
+  score: number;
+}
+
+const TARGET_ALIASES: PointyTargetAlias[] = [
   {
     ids: ["browse-courses", "browse-courses-link", "browse-courses-button"],
     terms: ["kham pha khoa hoc", "kham pha", "browse courses", "browse"],
@@ -154,7 +164,7 @@ function targetScore(prompt: string, target: PointyFastPathTarget): number {
 }
 
 function selectTarget(prompt: string, targets: PointyFastPathTarget[]): PointyFastPathTarget | null {
-  let best: { target: PointyFastPathTarget; score: number } | null = null;
+  let best: ScoredPointyTarget | null = null;
   for (const target of targets) {
     const score = targetScore(prompt, target);
     if (score <= 0) continue;
@@ -181,6 +191,9 @@ export function buildPointyFastPathAction(
   prompt: string,
   ctx: HostContext | null,
 ): PointyFastPathAction | null {
+  const lastSource = ctx?.host_action_feedback?.last_action_result?.params?.source;
+  if (lastSource === POINTY_FAST_PATH_SOURCE) return null;
+
   const normalizedPrompt = normalizePointyText(prompt);
   if (!normalizedPrompt) return null;
   const wantsLocate = hasAnyTerm(normalizedPrompt, LOCATE_TERMS);
@@ -197,7 +210,7 @@ export function buildPointyFastPathAction(
       requestId: makeRequestId(),
       params: {
         selector: target.id,
-        message: `Wiii dang mo ${label} cho ban.`,
+        message: `Wiii đang mở ${label} cho bạn.`,
         source: POINTY_FAST_PATH_SOURCE,
       },
       target,
@@ -210,7 +223,7 @@ export function buildPointyFastPathAction(
     requestId: makeRequestId(),
     params: {
       selector: target.id,
-      message: `Day la ${label}. Wiii tro vao de ban thay ngay.`,
+      message: `Đây là ${label}. Wiii trỏ vào để bạn thấy ngay.`,
       duration_ms: wantsClick ? 5600 : 5200,
       source: POINTY_FAST_PATH_SOURCE,
     },

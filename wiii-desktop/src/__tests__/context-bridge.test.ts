@@ -3,14 +3,22 @@ import { useHostContextStore } from '../stores/host-context-store';
 import { usePageContextStore } from '../stores/page-context-store';
 import { initContextBridge, cleanupContextBridge } from '../lib/context-bridge';
 
-function dispatch(data: unknown) {
-  window.dispatchEvent(new MessageEvent('message', { data }));
+function setDocumentReferrer(value: string) {
+  Object.defineProperty(document, 'referrer', {
+    value,
+    configurable: true,
+  });
+}
+
+function dispatch(data: unknown, origin = '') {
+  window.dispatchEvent(new MessageEvent('message', { data, origin }));
 }
 
 describe('context-bridge', () => {
   beforeEach(() => {
     useHostContextStore.getState().clear();
     usePageContextStore.getState().clear();
+    setDocumentReferrer('');
     // Ensure bridge is active
     cleanupContextBridge();
     initContextBridge();
@@ -235,6 +243,28 @@ describe('context-bridge', () => {
   it('ignores wiii:clear-chat (handled by EmbedApp)', () => {
     dispatch({ type: 'wiii:clear-chat' });
     expect(useHostContextStore.getState().currentContext).toBeNull();
+  });
+
+  it('rejects context messages from origins that do not match the parent referrer', () => {
+    setDocumentReferrer('https://trusted.example/lms');
+
+    dispatch({
+      type: 'wiii:page-context',
+      payload: { page_type: 'lesson', page_title: 'Injected' },
+    }, 'https://evil.example');
+
+    expect(useHostContextStore.getState().currentContext).toBeNull();
+  });
+
+  it('accepts context messages from the parent referrer origin', () => {
+    setDocumentReferrer('https://trusted.example/lms');
+
+    dispatch({
+      type: 'wiii:page-context',
+      payload: { page_type: 'lesson', page_title: 'Trusted' },
+    }, 'https://trusted.example');
+
+    expect(useHostContextStore.getState().currentContext?.page.title).toBe('Trusted');
   });
 
   // ── Lifecycle ──

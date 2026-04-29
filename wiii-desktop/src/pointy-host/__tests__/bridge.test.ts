@@ -89,6 +89,13 @@ describe("resolveSelector", () => {
     expect(resolveSelector('[data-wiii-id="login-btn"]')?.tagName).toBe("BUTTON");
     expect(resolveSelector("login-btn")?.tagName).toBe("BUTTON");
   });
+  it("prefers data-wiii-id over matching custom-element tag names", () => {
+    document.body.innerHTML = `
+      <profile-link id="wrong-target"></profile-link>
+      <button data-wiii-id="profile-link">Profile</button>
+    `;
+    expect(resolveSelector("profile-link")?.tagName).toBe("BUTTON");
+  });
 });
 
 describe("describeTarget", () => {

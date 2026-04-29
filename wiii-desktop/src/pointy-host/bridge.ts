@@ -54,18 +54,20 @@ export function resolveSelector(selector: unknown): Element | null {
   const trimmed = selector.trim();
   if (!trimmed) return null;
   if (typeof document === "undefined") return null;
+  if (/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
+    try {
+      const escaped = trimmed.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const semantic = document.querySelector(`[data-wiii-id="${escaped}"]`);
+      if (semantic) return semantic;
+    } catch {
+      return null;
+    }
+  }
   try {
     const direct = document.querySelector(trimmed);
     if (direct) return direct;
   } catch {
-    // Treat a bare semantic id such as "browse-courses" as data-wiii-id.
-  }
-  if (/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
-    try {
-      return document.querySelector(`[data-wiii-id="${trimmed.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"]`);
-    } catch {
-      return null;
-    }
+    return null;
   }
   return null;
 }

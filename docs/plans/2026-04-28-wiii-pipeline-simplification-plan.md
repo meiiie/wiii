@@ -120,7 +120,10 @@ still present as compatibility surfaces for provider objects, tool binding,
 RAG/CRAG helper calls, and older message builders. Treat this as a staged
 framework exit, not a one-shot dependency deletion.
 
-Completed first slice:
+Checkpoint evidence (first slice):
+
+Evidence: PR #190 (`codex/native-runtime-hardening-checkpoint`), backend
+runtime subset tests, and PR CI gates.
 
 - Added a Wiii-native chat runtime contract for OpenAI-compatible message
   payloads and assistant response objects.
@@ -134,7 +137,10 @@ Completed first slice:
 - Kept tool/RAG lanes on the legacy adapter until their behavior has focused
   smoke tests.
 
-Completed second slice:
+Checkpoint evidence (second slice):
+
+Evidence: PR #190 (`codex/native-runtime-hardening-checkpoint`), provider
+runtime subset tests, and PR CI gates.
 
 - Direct no-tool turns now try the Wiii-native provider handle first even when
   the request did not explicitly pin a provider; provider resolution comes from
@@ -148,7 +154,10 @@ Completed second slice:
 - NVIDIA native model selection now skips a degraded Flash/Pro model and uses
   the healthy sibling model when available.
 
-Completed third slice:
+Checkpoint evidence (third slice):
+
+Evidence: PR #190 (`codex/native-runtime-hardening-checkpoint`), direct
+tool-round subset tests, and PR CI gates.
 
 - Added framework-free native system, user, and tool-result message objects
   with the same duck-typed surface the existing runtime expects.
@@ -161,7 +170,10 @@ Completed third slice:
   OpenAI-compatible payloads and direct tool rounds can synthesize without
   constructing LangChain message classes in native mode.
 
-Completed fourth slice:
+Checkpoint evidence (fourth slice):
+
+Evidence: PR #190 (`codex/native-runtime-hardening-checkpoint`), native
+provider/tool subset tests, and PR CI gates.
 
 - Added Wiii-owned tool schema serialization from existing tool objects into
   OpenAI-compatible `type=function` payloads.
@@ -174,7 +186,10 @@ Completed fourth slice:
   route is native, while optional-tool turns stay on the legacy path until
   native streaming with tool schemas is covered.
 
-Completed fifth slice:
+Checkpoint evidence (fifth slice):
+
+Evidence: PR #190 (`codex/native-runtime-hardening-checkpoint`), native
+stream/tool-call subset tests, and PR CI gates.
 
 - Native OpenAI-compatible streaming now sends bound tool schemas and
   normalized tool-choice hints when a native handle has tools attached.
@@ -196,9 +211,8 @@ Remaining LangChain work should be split into small PRs:
   serializers.
 - RAG/CRAG: migrate `ainvoke`/`astream` helper calls to native provider
   adapters after golden RAG smoke cases exist.
-- Memory/context: move history and budget message builders to Wiii-native
-  message blocks while preserving identity, relationship, and fact memory
-  behavior.
+- Memory/context: move history and budget message builders into Wiii-native
+  message blocks, preserving identity, relationship, and fact memory behavior.
 
 Do not remove LangChain dependencies from packaging until all four areas above
 have passing smoke gates. The current safe direction is to make new hot-path
@@ -319,9 +333,10 @@ Exit criteria:
   `MemorySaver`, `CompiledStateGraph`, `get_multi_agent_graph`, or
   `build_multi_agent_graph` references remain outside explicit historical docs.
 
-### Completed fifth slice: Native optional tools
+### Checkpoint Evidence: Native Optional Tools
 
-Implemented in the Phase 5 runtime slice:
+Evidence: PR #190 (`codex/native-runtime-hardening-checkpoint`), native
+stream/tool-call subset tests, and PR CI gates.
 
 - Native OpenAI-compatible streaming now forwards bound tool schemas and
   normalized `tool_choice` instead of silently falling back to LangChain for
@@ -335,9 +350,10 @@ Implemented in the Phase 5 runtime slice:
 - The native first-chunk guard keeps a single stream iterator instance so the
   first answer/tool chunk is not duplicated or lost.
 
-### Completed sixth slice: Native RAG/CRAG socket
+### Checkpoint Evidence: Native RAG/CRAG Socket
 
-Implemented in the first Phase 6 runtime slice:
+Evidence: PR #190 (`codex/native-runtime-hardening-checkpoint`), native
+RAG/CRAG socket subset tests, and PR CI gates.
 
 - Agentic RAG now builds framework-free native message objects through a single
   `make_agentic_rag_messages()` helper rather than importing LangChain message
@@ -390,13 +406,13 @@ git status --short
 Suggested inventory commands for future implementation PRs:
 
 ```powershell
-Get-ChildItem maritime-ai-service -Recurse -File |
+Get-ChildItem . -Recurse -File |
   Select-String -Pattern '^(import langgraph|from langgraph)'
 
-Get-ChildItem maritime-ai-service -Recurse -File |
+Get-ChildItem . -Recurse -File |
   Select-String -Pattern '\b(MemorySaver|CompiledStateGraph|StateGraph)\b'
 
-Get-ChildItem maritime-ai-service -Recurse -File |
+Get-ChildItem . -Recurse -File |
   Select-String -Pattern '\b(get_multi_agent_graph|build_multi_agent_graph)\b'
 ```
 

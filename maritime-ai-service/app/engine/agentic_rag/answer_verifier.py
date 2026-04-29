@@ -157,7 +157,7 @@ class AnswerVerifier:
             ])
             
             messages = make_agentic_rag_messages(
-                system="You are a fact-checker. Return only valid JSON.",
+                system="Bạn là bộ kiểm chứng thông tin. Chỉ trả về JSON hợp lệ.",
                 user=VERIFY_PROMPT.format(
                     answer=answer[:1500],  # Limit answer length
                     sources=source_text,

@@ -4,6 +4,7 @@ import {
   buildPointyFastPathAction,
   getPointyTargetsFromContext,
   normalizePointyText,
+  POINTY_FAST_PATH_SOURCE,
 } from "@/lib/pointy-fast-path";
 
 function makeHostContext(targets: unknown[]): HostContext {
@@ -96,7 +97,10 @@ describe("pointy fast path", () => {
 
     expect(action).toMatchObject({
       action: "ui.click",
-      params: expect.objectContaining({ selector: "browse-courses-link" }),
+      params: expect.objectContaining({
+        selector: "browse-courses-link",
+        message: "Wiii đang mở Kham pha khoa hoc cho bạn.",
+      }),
       reason: "click",
     });
   });
@@ -115,8 +119,30 @@ describe("pointy fast path", () => {
 
     expect(action).toMatchObject({
       action: "ui.highlight",
+      params: expect.objectContaining({
+        message: "Đây là Nop bai. Wiii trỏ vào để bạn thấy ngay.",
+      }),
       reason: "unsafe_click_demoted",
     });
+  });
+
+  it("does not reissue an action after pointy fast-path feedback", () => {
+    const ctx: HostContext = {
+      ...makeHostContext([
+        {
+          id: "browse-courses",
+          selector: "[data-wiii-id=\"browse-courses\"]",
+          label: "Kham pha khoa hoc",
+        },
+      ]),
+      host_action_feedback: {
+        last_action_result: {
+          params: { source: POINTY_FAST_PATH_SOURCE },
+        },
+      },
+    };
+
+    expect(buildPointyFastPathAction("Wiii oi, nut Kham pha khoa hoc o dau?", ctx)).toBeNull();
   });
 
   it("does nothing when no visible target matches", () => {

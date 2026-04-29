@@ -240,7 +240,7 @@ class RetrievalGrader:
         from app.engine.structured_schemas import SingleDocGrade
 
         messages = make_agentic_rag_messages(
-            system="You are a document relevance grader.",
+            system="Bạn là bộ chấm mức độ liên quan của tài liệu.",
             user=GRADING_PROMPT.format(query=query, document=content),
         )
 
@@ -264,7 +264,7 @@ class RetrievalGrader:
     async def _grade_document_legacy(self, query: str, doc_id: str, content: str) -> DocumentGrade:
         """Grade single document using legacy JSON parsing."""
         messages = make_agentic_rag_messages(
-            system="You are a document relevance grader. Return only valid JSON.",
+            system="Bạn là bộ chấm mức độ liên quan của tài liệu. Chỉ trả về JSON hợp lệ.",
             user=GRADING_PROMPT.format(query=query, document=content),
         )
 

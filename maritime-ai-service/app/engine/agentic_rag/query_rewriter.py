@@ -108,7 +108,7 @@ class QueryRewriter:
         
         try:
             messages = make_agentic_rag_messages(
-                system="You are a query optimizer. Return only the improved query.",
+                system="Bạn là bộ tối ưu truy vấn. Chỉ trả về truy vấn đã cải thiện, không giải thích.",
                 user=REWRITE_PROMPT.format(
                     query=query,
                     feedback=feedback or "Documents retrieved were not relevant"
