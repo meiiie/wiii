@@ -1718,6 +1718,9 @@ class TestProviderFlowIntegrity:
             "app.engine.multi_agent.graph._get_or_create_tracer",
             return_value=fake_tracer,
         ), patch(
+            "app.engine.multi_agent.agent_config.AgentConfigRegistry.get_native_llm",
+            return_value=fake_llm,
+        ) as mock_get_native_llm, patch(
             "app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm",
             return_value=fake_llm,
         ) as mock_get_llm, patch(
@@ -1742,7 +1745,8 @@ class TestProviderFlowIntegrity:
             result = await direct_response_node(state)
 
         assert result["final_response"] == "Đã dựng chart"
-        assert mock_get_llm.call_args.kwargs["effort_override"] == "high"
+        assert mock_get_native_llm.call_args.kwargs["effort_override"] == "high"
+        mock_get_llm.assert_not_called()
         assert mock_execute.call_args.kwargs["provider"] is None
         assert result["provider"] == "auto"
         assert result["model"] == "glm-4.5-air"
