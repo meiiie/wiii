@@ -19,6 +19,7 @@
     "dev:embed": "cross-env BUILD_TARGET=embed vite",
     "build:embed": "cross-env BUILD_TARGET=embed vite build && node -e \"require('fs').copyFileSync('dist-embed/embed.html','dist-embed/index.html')\"",
     "build:web": "cross-env BUILD_TARGET=web tsc && cross-env BUILD_TARGET=web vite build",
+    "build:pointy": "vite build -c vite.pointy.config.ts",
     "preview:embed": "cross-env BUILD_TARGET=embed vite preview --port 1421"
   },
   "dependencies": {
