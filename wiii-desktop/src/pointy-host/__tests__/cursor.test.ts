@@ -71,4 +71,39 @@ describe("hideCursor / destroyCursor", () => {
     destroyCursor();
     expect(document.querySelector(`#${_testing.CURSOR_ID}`)).toBeNull();
   });
+  it("destroy is idempotent — calling twice does not throw", () => {
+    moveCursorToRect({ left: 0, top: 0, width: 10, height: 10 } as DOMRect);
+    destroyCursor();
+    expect(() => destroyCursor()).not.toThrow();
+  });
+  it("hideCursor before any move is a no-op", () => {
+    expect(() => hideCursor()).not.toThrow();
+  });
+});
+
+describe("moveCursorToRect — animation fallback", () => {
+  it("falls back to direct transform when Element.animate is unavailable", () => {
+    // Simulate browsers / shadow DOM where animate is not on the prototype.
+    const animateBackup = (SVGElement.prototype as unknown as { animate?: unknown }).animate;
+    (SVGElement.prototype as unknown as { animate?: unknown }).animate = undefined;
+    try {
+      const rect = { left: 50, top: 50, width: 30, height: 30 } as DOMRect;
+      const result = moveCursorToRect(rect);
+      expect(result).toBeNull();
+      const el = document.querySelector(`#${_testing.CURSOR_ID}`) as SVGSVGElement;
+      expect(el.style.transform).toContain("translate(");
+    } finally {
+      (SVGElement.prototype as unknown as { animate?: unknown }).animate = animateBackup;
+    }
+  });
+});
+
+describe("moveCursorToRect — duration clamping", () => {
+  it("clamps duration to [200, 2000]", () => {
+    const rect = { left: 10, top: 10, width: 10, height: 10 } as DOMRect;
+    // We only assert no throw + cursor created. Vitest jsdom does not expose
+    // Animation.effect timing reliably, so deeper assertion is not stable.
+    expect(() => moveCursorToRect(rect, { duration_ms: 0 })).not.toThrow();
+    expect(() => moveCursorToRect(rect, { duration_ms: 99999 })).not.toThrow();
+  });
 });

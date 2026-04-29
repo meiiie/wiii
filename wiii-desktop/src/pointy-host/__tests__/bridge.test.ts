@@ -153,6 +153,56 @@ describe("handleNavigate", () => {
   });
 });
 
+describe("isSafeUrl edge cases", () => {
+  it("rejects malformed URLs", () => {
+    expect(_testing.isSafeUrl("https://")).toBe(false);
+    expect(_testing.isSafeUrl("not a url at all")).toBe(false);
+  });
+  it("accepts the canonical LMS domain", () => {
+    expect(_testing.isSafeUrl("https://holilihu.online")).toBe(true);
+    expect(_testing.isSafeUrl("https://wiii.holilihu.online/embed/")).toBe(true);
+  });
+  it("rejects 0.0.0.0 explicitly", () => {
+    expect(_testing.isSafeUrl("http://0.0.0.0:8000")).toBe(false);
+  });
+});
+
+describe("handleHighlight edge cases", () => {
+  it("returns missing-selector when params.selector is empty string", async () => {
+    const result = await handleHighlight({ selector: "" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("selector_not_found");
+  });
+  it("does not throw when target lacks scrollIntoView", async () => {
+    document.body.innerHTML = `<div id="x"></div>`;
+    const target = document.getElementById("x") as HTMLElement & { scrollIntoView?: unknown };
+    // Force-remove scrollIntoView to simulate exotic elements.
+    target.scrollIntoView = undefined as unknown as () => void;
+    const result = await handleHighlight({ selector: "#x", message: "ok", duration_ms: 800 });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("handleNavigate edge cases", () => {
+  it("succeeds for route fallback when no onNavigate callback is provided", async () => {
+    // jsdom forbids redefining window.location.assign — we only assert the
+    // return shape. Real browsers exercise window.location.assign in QA.
+    const result = await handleNavigate({ route: "/courses/42" }, { iframeOrigin: "https://x" });
+    expect(result.success).toBe(true);
+    expect(result.data?.summary).toContain("/courses/42");
+  });
+  it("passes through when onNavigate callback throws", async () => {
+    const onNavigate = vi.fn().mockRejectedValue(new Error("router_error"));
+    const result = await handleNavigate(
+      { route: "/courses/42" },
+      { iframeOrigin: "https://x", onNavigate },
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("navigate_failed");
+    expect(result.error).toContain("router_error");
+  });
+});
+
 describe("createBridge", () => {
   it("ignores messages from other origins", async () => {
     const onNavigate = vi.fn();
@@ -218,5 +268,36 @@ describe("createBridge", () => {
     const reply = replies[0] as { result: { success: boolean; error?: string } };
     expect(reply.result.success).toBe(false);
     expect(reply.result.error).toContain("unsupported_action");
+  });
+
+  it("ignores requests whose data is not a pointy request", async () => {
+    const onNavigate = vi.fn();
+    makeBridge({ iframeOrigin: "https://wiii.example", onNavigate });
+    const noise = new MessageEvent("message", {
+      data: { type: "some-other-event", payload: { foo: 1 } },
+      origin: "https://wiii.example",
+    });
+    window.dispatchEvent(noise);
+    await Promise.resolve();
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it("logs and short-circuits when event.source is missing", async () => {
+    const logSpy = vi.fn();
+    document.body.innerHTML = `<button data-wiii-id="login"></button>`;
+    makeBridge({ iframeOrigin: "https://wiii.example", log: logSpy });
+    const event = new MessageEvent("message", {
+      data: {
+        type: "wiii:action-request",
+        id: "req-no-source",
+        action: "ui.highlight",
+        params: { selector: '[data-wiii-id="login"]' },
+      },
+      origin: "https://wiii.example",
+    });
+    // No source set on the event — bridge must not throw.
+    window.dispatchEvent(event);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(logSpy).toHaveBeenCalledWith("warn", "no_event_source");
   });
 });
