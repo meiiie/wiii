@@ -443,7 +443,9 @@ async def test_chat_stream_v3_smoke_success_transport(smoke_app):
             'event: metadata\n'
             'data: {"session_id":"session-stream","provider":"nvidia",'
             '"model":"deepseek-ai/deepseek-v4-flash",'
-            '"runtime_authoritative":true}\n\n'
+            '"runtime_authoritative":true,'
+            '"failover":{"switched":false,"initial_provider":"nvidia",'
+            '"final_provider":"nvidia"}}\n\n'
         )
         yield 'event: done\ndata: {"processing_time":0.1}\n\n'
 
@@ -478,6 +480,8 @@ async def test_chat_stream_v3_smoke_success_transport(smoke_app):
     assert '"provider":"nvidia"' in body
     assert '"model":"deepseek-ai/deepseek-v4-flash"' in body
     assert '"runtime_authoritative":true' in body
+    assert '"failover":{"switched":false' in body
+    assert '"final_provider":"nvidia"' in body
     assert "event: done" in body
 
 
