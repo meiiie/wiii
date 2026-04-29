@@ -1,3 +1,4 @@
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -119,6 +120,96 @@ async def test_generate_stream_v3_events_finalizes_answer_after_stream():
         ]
         == "stream"
     )
+
+
+@pytest.mark.asyncio
+async def test_generate_stream_v3_events_fast_social_bypasses_graph_context():
+    orchestrator = MagicMock()
+    prepared_turn = SimpleNamespace(
+        request_scope=RequestScope("org-1", "maritime"),
+        session_id="session-1",
+        validation=SimpleNamespace(blocked=False),
+        chat_context=SimpleNamespace(user_name="Minh"),
+    )
+    orchestrator.prepare_turn = AsyncMock(return_value=prepared_turn)
+
+    async def fail_stream_fn(**_kwargs):
+        raise AssertionError("fast social path should not enter graph streaming")
+        yield  # pragma: no cover
+
+    chunks = []
+    async for chunk in generate_stream_v3_events(
+        chat_request=_make_request(
+            message="hello",
+            provider="nvidia",
+            model="deepseek-ai/deepseek-v4-flash",
+        ),
+        request_headers={"X-Request-ID": "req-fast-social"},
+        background_save=MagicMock(),
+        start_time=time.time(),
+        orchestrator=orchestrator,
+        stream_fn=fail_stream_fn,
+    ):
+        chunks.append(chunk)
+
+    joined = "\n".join(chunks)
+    assert "event: answer" in joined
+    assert "Wiii" in joined
+    assert '"streaming_version": "v3-fast-social"' in joined
+    assert '"llm_invoked": false' in joined
+    assert '"transport_fast_social_path"' in joined
+    assert '"request_id": "req-fast-social"' in joined
+    orchestrator.build_multi_agent_execution_input.assert_not_called()
+    orchestrator.finalize_response_turn.assert_called_once()
+    assert (
+        orchestrator.finalize_response_turn.call_args.kwargs["response_text"]
+        != ""
+    )
+
+
+@pytest.mark.asyncio
+async def test_generate_stream_v3_events_does_not_fast_path_pointy_questions():
+    orchestrator = MagicMock()
+    prepared_turn = SimpleNamespace(
+        request_scope=RequestScope("org-1", "maritime"),
+        session_id="session-1",
+        validation=SimpleNamespace(blocked=False),
+        chat_context=SimpleNamespace(user_name="Minh"),
+    )
+    orchestrator.prepare_turn = AsyncMock(return_value=prepared_turn)
+    orchestrator.build_multi_agent_execution_input = AsyncMock(
+        return_value=SimpleNamespace(
+            query="Wiii oi, nut Kham pha khoa hoc o dau?",
+            user_id="user-1",
+            session_id="session-1",
+            context={"conversation_history": ""},
+            domain_id="maritime",
+            thinking_effort=None,
+            provider=None,
+            model=None,
+        )
+    )
+
+    async def fake_stream_fn(**kwargs):
+        assert kwargs["query"] == "Wiii oi, nut Kham pha khoa hoc o dau?"
+        yield SimpleNamespace(type="answer", content="Tool path stays active")
+        yield SimpleNamespace(type="done", content={"processing_time": 0.1})
+
+    chunks = []
+    async for chunk in generate_stream_v3_events(
+        chat_request=_make_request(
+            message="Wiii oi, nut Kham pha khoa hoc o dau?"
+        ),
+        request_headers={},
+        background_save=MagicMock(),
+        start_time=time.time(),
+        orchestrator=orchestrator,
+        stream_fn=fake_stream_fn,
+    ):
+        chunks.append(chunk)
+
+    assert any("Tool path stays active" in chunk for chunk in chunks)
+    orchestrator.build_multi_agent_execution_input.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -362,7 +453,7 @@ async def test_generate_stream_v3_events_includes_request_id_and_routing_metadat
         chat_context=SimpleNamespace(
             user_name="Minh",
             user_id="user-1",
-            message="hẹ hẹ",
+            message="Explain Rule 5",
             user_role=UserRole.STUDENT,
             session_id="session-1",
         ),
@@ -376,8 +467,8 @@ async def test_generate_stream_v3_events_includes_request_id_and_routing_metadat
                 "mode": "local_direct_llm",
                 "model": "glm-5",
                 "routing_metadata": {
-                    "method": "always_on_social_fast_path",
-                    "intent": "social",
+                    "method": "fallback_direct_path",
+                    "intent": "teaching",
                 },
             },
         )
@@ -385,7 +476,7 @@ async def test_generate_stream_v3_events_includes_request_id_and_routing_metadat
 
     chunks = []
     async for chunk in generate_stream_v3_events(
-        chat_request=_make_request(message="hẹ hẹ"),
+        chat_request=_make_request(message="Explain Rule 5"),
         request_headers={"X-Request-ID": "req-fast-social"},
         background_save=MagicMock(),
         start_time=0.0,
@@ -398,7 +489,7 @@ async def test_generate_stream_v3_events_includes_request_id_and_routing_metadat
     metadata_chunk = metadata_chunks[0]
     assert '"request_id": "req-fast-social"' in metadata_chunk
     assert '"routing_metadata": {' in metadata_chunk
-    assert '"always_on_social_fast_path"' in metadata_chunk
+    assert '"fallback_direct_path"' in metadata_chunk
 
 
 @pytest.mark.asyncio
