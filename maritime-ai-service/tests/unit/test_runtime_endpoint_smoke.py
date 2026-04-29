@@ -303,8 +303,12 @@ async def test_chat_sync_smoke_success_response(smoke_app):
     payload = response.json()
     assert payload["status"] == "success"
     assert payload["data"]["answer"] == "Chao ban, minh da xu ly xong."
+    assert payload["metadata"]["session_id"] == "session-1"
+    assert payload["metadata"]["provider"] == "google"
     assert payload["metadata"]["model"] == "gemini-3.1-flash-lite-preview"
+    assert payload["metadata"]["runtime_authoritative"] is True
     assert payload["metadata"]["failover"]["last_reason_code"] == "auth_error"
+    assert payload["metadata"]["failover"]["final_provider"] == "zhipu"
 
 
 @pytest.mark.asyncio
@@ -434,6 +438,15 @@ async def test_chat_stream_v3_smoke_success_transport(smoke_app):
 
     async def _fake_stream(*args, **kwargs):
         yield 'event: status\ndata: {"content":"Dang xu ly"}\n\n'
+        yield 'event: answer\ndata: {"content":"Chao ban qua SSE"}\n\n'
+        yield (
+            'event: metadata\n'
+            'data: {"session_id":"session-stream","provider":"nvidia",'
+            '"model":"deepseek-ai/deepseek-v4-flash",'
+            '"runtime_authoritative":true,'
+            '"failover":{"switched":false,"initial_provider":"nvidia",'
+            '"final_provider":"nvidia"}}\n\n'
+        )
         yield 'event: done\ndata: {"processing_time":0.1}\n\n'
 
     with patch(
@@ -460,6 +473,15 @@ async def test_chat_stream_v3_smoke_success_transport(smoke_app):
 
     assert response.status_code == 200
     assert "event: status" in body
+    assert "event: answer" in body
+    assert "Chao ban qua SSE" in body
+    assert "event: metadata" in body
+    assert '"session_id":"session-stream"' in body
+    assert '"provider":"nvidia"' in body
+    assert '"model":"deepseek-ai/deepseek-v4-flash"' in body
+    assert '"runtime_authoritative":true' in body
+    assert '"failover":{"switched":false' in body
+    assert '"final_provider":"nvidia"' in body
     assert "event: done" in body
 
 
