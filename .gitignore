@@ -104,6 +104,7 @@ docs/assets/screenshots/tmp/
 # === Generated build output ===
 wiii-desktop/dist-embed/
 wiii-desktop/dist-web/
+wiii-desktop/dist-pointy/
 pytest-cache-files-*
 # Keep local nested agent configs ignored, but track root Codex review guidance.
 .agents/

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Wiii Pointy — LMS demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 0;
+      background: #FAF5EE;
+      color: #1F2937;
+    }
+    header {
+      background: #F97316;
+      color: #FAF5EE;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+    main { max-width: 1024px; margin: 0 auto; padding: 24px; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+      flex: 1 1 280px;
+    }
+    .card h2 { margin: 0 0 8px; font-size: 16px; }
+    button {
+      background: #F97316;
+      color: #FAF5EE;
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    button.ghost {
+      background: transparent;
+      color: #1F2937;
+      border: 1px solid #d1d5db;
+    }
+    .controls {
+      background: #1F2937;
+      color: #FAF5EE;
+      padding: 16px 24px;
+      position: sticky;
+      bottom: 0;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .controls button { background: #FAF5EE; color: #1F2937; }
+    .log {
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+      background: #111827;
+      color: #d1fae5;
+      padding: 12px 16px;
+      max-height: 160px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Wiii Pointy demo</strong>
+    <span style="opacity:.85">Mô phỏng trang LMS — Wiii (iframe) sẽ gọi `ui.*` qua PostMessage.</span>
+  </header>
+  <main>
+    <div class="row">
+      <section class="card" data-wiii-id="course-card">
+        <h2>Khóa: Hàng Hải Cơ Bản</h2>
+        <p>Tiến độ 35%. Bài học hôm nay: <em>Quy tắc đường thủy quốc tế</em>.</p>
+        <button data-wiii-id="continue-lesson">Tiếp tục học</button>
+        <button class="ghost" data-wiii-id="open-syllabus">Xem giáo trình</button>
+      </section>
+      <section class="card" data-wiii-id="quiz-card">
+        <h2>Bài kiểm tra: COLREGs Module 2</h2>
+        <p>Còn 7 ngày. Bạn đã làm 0/15 câu.</p>
+        <button data-wiii-id="start-quiz">Bắt đầu</button>
+      </section>
+    </div>
+    <div class="row">
+      <section class="card" data-wiii-id="grades-card">
+        <h2>Điểm gần đây</h2>
+        <ul>
+          <li>An toàn hàng hải — 8.5</li>
+          <li>Khí tượng — 7.0</li>
+        </ul>
+      </section>
+      <section class="card" data-wiii-id="profile-card">
+        <h2>Hồ sơ</h2>
+        <p>Lớp tàu T2025-A. Cố vấn: Cô Lan.</p>
+        <button class="ghost" data-wiii-id="open-profile">Mở hồ sơ</button>
+      </section>
+    </div>
+  </main>
+  <div class="controls">
+    <strong>Mô phỏng AI tool call:</strong>
+    <button onclick="simulateHighlight()">ui.highlight: Tiếp tục học</button>
+    <button onclick="simulateScroll()">ui.scroll_to: Hồ sơ</button>
+    <button onclick="simulateTour()">ui.show_tour: 3 bước</button>
+    <button onclick="simulateNavigate()">ui.navigate: /quiz/123</button>
+    <button onclick="document.querySelector('.log').textContent=''">Clear log</button>
+  </div>
+  <pre class="log"></pre>
+
+  <script src="../../dist-pointy/wiii-pointy.umd.js"></script>
+  <script>
+    const log = (msg) => {
+      const el = document.querySelector('.log');
+      el.textContent += `${new Date().toLocaleTimeString()}  ${msg}\n`;
+      el.scrollTop = el.scrollHeight;
+    };
+
+    // In production this is the Wiii iframe origin. For the demo we are the
+    // iframe's "fake parent" — we send messages to ourselves.
+    const FAKE_IFRAME_ORIGIN = window.location.origin;
+    const handle = WiiiPointy.init({
+      iframeOrigin: FAKE_IFRAME_ORIGIN,
+      onNavigate: (route) => { log(`onNavigate(${route})`); },
+      log: (level, msg, ctx) => log(`[${level}] ${msg} ${ctx ? JSON.stringify(ctx) : ''}`),
+    });
+    log('Pointy initialised. Click a button below to simulate AI calls.');
+
+    let counter = 0;
+    function send(action, params) {
+      const id = `demo-${++counter}`;
+      log(`→ ${action} ${JSON.stringify(params)}`);
+      window.postMessage({ type: 'wiii:action-request', id, action, params }, FAKE_IFRAME_ORIGIN);
+    }
+    window.addEventListener('message', (e) => {
+      if (e.data?.type === 'wiii:action-response') {
+        log(`← ${e.data.id} ${JSON.stringify(e.data.result)}`);
+      }
+    });
+
+    function simulateHighlight() {
+      send('ui.highlight', {
+        selector: '[data-wiii-id="continue-lesson"]',
+        message: 'Đây là nút để tiếp tục bài học.',
+        duration_ms: 2200,
+      });
+    }
+    function simulateScroll() {
+      send('ui.scroll_to', { selector: '[data-wiii-id="profile-card"]' });
+    }
+    function simulateNavigate() {
+      send('ui.navigate', { route: '/quiz/123' });
+    }
+    function simulateTour() {
+      send('ui.show_tour', {
+        steps: [
+          { selector: '[data-wiii-id="course-card"]', message: 'Bước 1 — khóa học hôm nay.', duration_ms: 1600 },
+          { selector: '[data-wiii-id="quiz-card"]', message: 'Bước 2 — bài kiểm tra sắp tới.', duration_ms: 1600 },
+          { selector: '[data-wiii-id="grades-card"]', message: 'Bước 3 — điểm gần đây.', duration_ms: 1600 },
+        ],
+      });
+    }
+
+    window.addEventListener('beforeunload', () => handle.destroy());
+  </script>
+</body>
+</html>
