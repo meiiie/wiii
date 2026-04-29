@@ -83,6 +83,7 @@ from app.engine.multi_agent.code_studio_patterns import (
 )
 from app.engine.multi_agent.direct_runtime_bindings import (
     _extract_runtime_target,
+    _is_native_runtime_handle,
     _remember_runtime_target,
     _stream_openai_compatible_answer_with_route,
     _truncate_before_code_dump,
@@ -747,8 +748,10 @@ async def _stream_answer_with_fallback(
     FAILOVER_MODE_AUTO = "auto"
     FAILOVER_MODE_PINNED = "pinned"
     tier_key = str(getattr(llm, "_wiii_tier_key", "") or "moderate").strip().lower()
-    if getattr(llm, "_wiii_native_route", False) and not str(resolved_provider or "").strip():
-        resolved_provider = str(getattr(llm, "_wiii_provider_name", "") or "").strip().lower()
+    native_route_enabled = _is_native_runtime_handle(llm)
+    if native_route_enabled and not str(resolved_provider or "").strip():
+        native_provider, _native_model = _extract_runtime_target(llm)
+        resolved_provider = native_provider or ""
     normalized_provider = str(provider or "").strip().lower()
     effective_failover_mode = failover_mode or (
         FAILOVER_MODE_PINNED if normalized_provider and normalized_provider != "auto" else FAILOVER_MODE_AUTO
@@ -758,11 +761,12 @@ async def _stream_answer_with_fallback(
         and normalized_provider in {"", "auto"}
         and bool(str(resolved_provider or "").strip())
     )
-    if getattr(llm, "_wiii_native_route", False):
+    if native_route_enabled:
         from types import SimpleNamespace
 
+        native_provider, _native_model = _extract_runtime_target(llm)
         route = SimpleNamespace(
-            provider=str(getattr(llm, "_wiii_provider_name", "") or resolved_provider or provider).strip().lower(),
+            provider=str(native_provider or resolved_provider or provider or "").strip().lower(),
             llm=llm,
         )
         _remember_runtime_target(state, route.llm)

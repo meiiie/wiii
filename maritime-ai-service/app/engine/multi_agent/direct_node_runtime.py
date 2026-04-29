@@ -33,7 +33,11 @@ from app.engine.reasoning import (
     should_align_visible_thinking_language,
 )
 from app.engine.tools.runtime_context import build_tool_runtime_context
-from app.engine.multi_agent.graph_runtime_helpers import _copy_runtime_metadata
+from app.engine.multi_agent.graph_runtime_helpers import (
+    _copy_runtime_metadata,
+    _extract_runtime_target,
+    _is_native_runtime_handle,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -775,7 +779,7 @@ async def direct_response_node_impl(
             if (
                 llm
                 and getattr(settings, "enable_natural_conversation", False) is True
-                and not getattr(llm, "_wiii_native_route", False)
+                and not _is_native_runtime_handle(llm)
             ):
                 presence_penalty = getattr(settings, "llm_presence_penalty", 0.0)
                 frequency_penalty = getattr(settings, "llm_frequency_penalty", 0.0)
@@ -814,12 +818,8 @@ async def direct_response_node_impl(
                             "[DIRECT] Visual intent detected but tool_generate_visual not in tools list",
                         )
 
-                bound_provider = getattr(llm, "_wiii_provider_name", None) or state.get("provider")
-                bound_model = (
-                    getattr(llm, "_wiii_model_name", None)
-                    or getattr(llm, "model_name", None)
-                    or getattr(llm, "model", None)
-                )
+                bound_provider, bound_model = _extract_runtime_target(llm)
+                bound_provider = bound_provider or state.get("provider")
                 if bound_provider and str(bound_provider).strip().lower() != "auto":
                     state["_execution_provider"] = str(bound_provider)
                 if bound_model:
@@ -871,7 +871,7 @@ async def direct_response_node_impl(
                         visual_decision.force_tool,
                     )
 
-                native_direct_messages = bool(getattr(llm, "_wiii_native_route", False))
+                native_direct_messages = _is_native_runtime_handle(llm)
                 messages = build_direct_system_messages(
                     state,
                     query,

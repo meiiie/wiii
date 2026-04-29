@@ -8,6 +8,7 @@ from typing import Any, Optional
 from app.engine.multi_agent.code_studio_response import _truncate_before_code_dump
 from app.engine.multi_agent.graph_runtime_helpers import (
     _extract_runtime_target,
+    _is_native_runtime_handle,
     _remember_runtime_target,
 )
 from app.engine.multi_agent.graph_surface_runtime import render_reasoning_fast_impl
