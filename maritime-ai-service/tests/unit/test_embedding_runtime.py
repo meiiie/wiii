@@ -404,3 +404,24 @@ async def test_input_processor_semantic_fact_retrieval_uses_embedding_generator(
 
     generator.agenerate.assert_awaited_once_with("mình tên Nam")
     semantic_memory.search_relevant_facts.assert_called_once()
+
+
+def test_semantic_memory_engine_search_relevant_facts_facade_delegates_to_repository():
+    from app.engine.semantic_memory.core import SemanticMemoryEngine
+
+    engine = SemanticMemoryEngine.__new__(SemanticMemoryEngine)
+    engine._repository = MagicMock()
+    engine._repository.search_relevant_facts.return_value = ["fact"]
+
+    assert engine.search_relevant_facts(
+        user_id="user-1",
+        query_embedding=[0.1, 0.2],
+        limit=3,
+        min_similarity=0.4,
+    ) == ["fact"]
+    engine._repository.search_relevant_facts.assert_called_once_with(
+        user_id="user-1",
+        query_embedding=[0.1, 0.2],
+        limit=3,
+        min_similarity=0.4,
+    )

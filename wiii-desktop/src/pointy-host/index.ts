@@ -11,9 +11,8 @@
  *     });
  *   </script>
  *
- * The bundle is **read-only** in V1: highlight, scroll_to, navigate,
- * show_tour. No auto-click, no auto-fill. Default tutor mode keeps the
- * student in control.
+ * The bundle is tutor-safe in V1: highlight, scroll_to, navigate, show_tour,
+ * and fail-closed safe-click. No auto-fill.
  */
 import { createBridge, type BridgeHandle } from "./bridge";
 import { destroyCursor, hideCursor } from "./cursor";
@@ -94,6 +93,22 @@ const DEFAULT_TOOLS: PointyToolDefinition[] = [
     mutates_state: false,
     requires_confirmation: false,
   },
+  {
+    name: "ui.click",
+    description:
+      'Bam target dieu huong an toan da duoc host danh dau data-wiii-click-safe="true". Fail-closed neu target khong an toan.',
+    input_schema: {
+      type: "object",
+      properties: {
+        selector: { type: "string", description: "Stable data-wiii-id/CSS selector with click_safe=true" },
+        message: { type: "string", description: "Tooltip shown before the click" },
+      },
+      required: ["selector"],
+    },
+    surface: "page",
+    mutates_state: false,
+    requires_confirmation: false,
+  },
 ];
 
 let activeBridge: BridgeHandle | null = null;
@@ -159,6 +174,7 @@ export type {
   HighlightParams,
   ScrollToParams,
   NavigateParams,
+  ClickParams,
   ShowTourParams,
   TourStep,
 } from "./types";

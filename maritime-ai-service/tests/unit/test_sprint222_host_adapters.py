@@ -72,6 +72,36 @@ class TestLMSHostAdapter:
         result = adapter.format_context_for_prompt(ctx)
         assert "Đi tới bài tiếp" in result
 
+    def test_format_with_pointy_targets(self):
+        from app.engine.context.adapters.lms import LMSHostAdapter
+        from app.engine.context.host_context import HostContext
+
+        adapter = LMSHostAdapter()
+        ctx = HostContext(
+            host_type="lms",
+            page={
+                "type": "course_list",
+                "title": "Courses",
+                "metadata": {
+                    "available_targets": [
+                        {
+                            "id": "browse-courses",
+                            "selector": '[data-wiii-id="browse-courses"]',
+                            "label": "Browse courses",
+                            "click_safe": True,
+                            "click_kind": "navigation",
+                        }
+                    ]
+                },
+            },
+        )
+        result = adapter.format_context_for_prompt(ctx)
+        assert "<available_targets>" in result
+        assert "browse-courses" in result
+        assert '[data-wiii-id="browse-courses"]' in result
+        assert "click_safe=true" in result
+        assert "click_kind=navigation" in result
+
     def test_format_exam_page_has_socratic_warning(self):
         """Exam pages should also trigger Socratic warning like quiz."""
         from app.engine.context.adapters.lms import LMSHostAdapter

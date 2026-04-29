@@ -23,9 +23,11 @@ import time
 from typing import Any, List, Optional, Tuple
 from unittest.mock import Mock
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-
-from app.engine.agentic_rag.runtime_llm_socket import ainvoke_agentic_rag_llm
+from app.engine.agentic_rag.runtime_llm_socket import (
+    ainvoke_agentic_rag_llm,
+    make_agentic_rag_messages,
+)
+from app.engine.native_chat_runtime import make_assistant_message
 from app.engine.llm_factory import ThinkingTier
 from app.engine.llm_failover_runtime import is_failover_eligible_error_impl
 from app.models.knowledge_graph import KnowledgeNode
@@ -310,10 +312,10 @@ class AnswerGenerator:
         )
 
         try:
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ]
+            messages = make_agentic_rag_messages(
+                system=system_prompt,
+                user=user_prompt,
+            )
 
             # Sprint audit: Timeout-protected invoke. Live runtime now routes this
             # through the shared failover socket so sync RAG answers do not stay
@@ -505,10 +507,10 @@ class AnswerGenerator:
         TOTAL_TIMEOUT = 600  # Max total streaming time (10 min)
 
         try:
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ]
+            messages = make_agentic_rag_messages(
+                system=system_prompt,
+                user=user_prompt,
+            )
 
             # P3: Assistant pre-fill to force System 2 activation for Z.ai/GLM
             try:
@@ -520,7 +522,7 @@ class AnswerGenerator:
                     )
                     _msg_dicts = [{"role": getattr(m, "type", "system"), "content": getattr(m, "content", "")} for m in messages]
                     if should_prefill_thinking(_msg_dicts, provider=_llm_provider):
-                        messages.append(AIMessage(content="<thinking>\nPhan tich: "))
+                        messages.append(make_assistant_message("<thinking>\nPhan tich: "))
             except Exception:
                 pass
 

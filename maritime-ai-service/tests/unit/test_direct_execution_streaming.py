@@ -5,6 +5,7 @@ import pytest
 from app.engine.multi_agent.direct_execution import (
     _normalize_direct_visible_thinking,
     _stream_answer_with_fallback,
+    _stream_direct_wait_heartbeats,
 )
 
 
@@ -47,6 +48,28 @@ class _FakeLLM:
                 {"type": "text", "text": "Minh la Wiii."},
             ]
         )
+
+
+@pytest.mark.asyncio
+async def test_direct_wait_heartbeat_is_visible_progress():
+    events = []
+
+    async def _push_event(event):
+        events.append(event)
+
+    await _stream_direct_wait_heartbeats(
+        _push_event,
+        query="Wiii oi, nut Tin nhan nam o dau?",
+        phase="attune",
+        cue="lms",
+        interval_sec=0.001,
+    )
+
+    assert len(events) == 2
+    assert all(event["type"] == "status" for event in events)
+    assert all(event["details"]["subtype"] == "visible_wait" for event in events)
+    assert all(event["details"]["visibility"] == "progress" for event in events)
+    assert all(event["content"] for event in events)
 
 
 @pytest.mark.asyncio
@@ -137,6 +160,53 @@ async def test_stream_answer_with_fallback_prefers_openai_compat_stream_for_goog
     assert streamed is True
     assert response.content == "Native SDK answer."
     assert compat_calls == ["google"]
+    assert [event["type"] for event in events] == ["answer_delta"]
+
+
+@pytest.mark.asyncio
+async def test_stream_answer_with_fallback_uses_native_handle_without_langchain_pool(monkeypatch):
+    from app.engine.native_chat_runtime import NativeChatModelHandle, make_assistant_message
+
+    events = []
+    compat_calls = []
+
+    async def _push_event(event):
+        events.append(event)
+
+    async def _compat_stream(route, _messages, push_event, *, node, **_kwargs):
+        compat_calls.append((route.provider, route.llm.model_name))
+        await push_event({
+            "type": "answer_delta",
+            "content": "Native handle answer.",
+            "node": node,
+        })
+        return make_assistant_message("Native handle answer."), True
+
+    monkeypatch.setattr(
+        "app.engine.multi_agent.direct_execution._stream_openai_compatible_answer_with_route",
+        _compat_stream,
+    )
+
+    llm = NativeChatModelHandle(
+        _wiii_provider_name="nvidia",
+        _wiii_model_name="deepseek-ai/deepseek-v4-flash",
+        _wiii_tier_key="light",
+    )
+
+    response, streamed = await _stream_answer_with_fallback(
+        llm,
+        messages=[{"role": "user", "content": "Hi Wiii"}],
+        push_event=_push_event,
+        provider="nvidia",
+        resolved_provider="nvidia",
+        node="direct",
+        thinking_block_opened=False,
+        state={},
+    )
+
+    assert streamed is True
+    assert response.content == "Native handle answer."
+    assert compat_calls == [("nvidia", "deepseek-ai/deepseek-v4-flash")]
     assert [event["type"] for event in events] == ["answer_delta"]
 
 

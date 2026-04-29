@@ -20,11 +20,11 @@ afterEach(() => {
 });
 
 describe("computeTargetPoint", () => {
-  it("lands above-right of element center", () => {
+  it("lands the collaborator pointer tip on the element center", () => {
     const rect = { left: 100, top: 200, width: 40, height: 20 } as DOMRect;
     const p = computeTargetPoint(rect);
-    expect(p.x).toBe(100 + 20 + 8);
-    expect(p.y).toBe(200 + 10 - 8);
+    expect(p.x).toBe(100 + 20 - 5);
+    expect(p.y).toBe(200 + 10 - 4);
   });
 });
 
@@ -44,7 +44,10 @@ describe("moveCursorToRect", () => {
     expect(cursors.length).toBe(1);
     const el = cursors[0] as SVGSVGElement;
     expect(el.getAttribute("data-wiii-pointy")).toBe("cursor");
+    expect(el.getAttribute("data-wiii-pointy-scope")).toBe("iframe");
+    expect(el.textContent).toContain("Wiii");
     expect(el.style.opacity).toBe("1");
+    expect(["moving", "pointing"]).toContain(el.getAttribute("data-wiii-pointy-state"));
   });
 
   it("re-uses the cursor element when called twice", () => {
@@ -92,6 +95,7 @@ describe("moveCursorToRect — animation fallback", () => {
       expect(result).toBeNull();
       const el = document.querySelector(`#${_testing.CURSOR_ID}`) as SVGSVGElement;
       expect(el.style.transform).toContain("translate(");
+      expect(el.getAttribute("data-wiii-pointy-state")).toBe("pointing");
     } finally {
       (SVGElement.prototype as unknown as { animate?: unknown }).animate = animateBackup;
     }
@@ -99,7 +103,7 @@ describe("moveCursorToRect — animation fallback", () => {
 });
 
 describe("moveCursorToRect — duration clamping", () => {
-  it("clamps duration to [200, 2000]", () => {
+  it("clamps duration to [220, 1400]", () => {
     const rect = { left: 10, top: 10, width: 10, height: 10 } as DOMRect;
     // We only assert no throw + cursor created. Vitest jsdom does not expose
     // Animation.effect timing reliably, so deeper assertion is not stable.

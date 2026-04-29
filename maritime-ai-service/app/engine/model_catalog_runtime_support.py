@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 from typing import Any, Awaitable, Callable
 
 _CATALOG_CACHE_FINGERPRINT_SALT = b"wiii-model-catalog-cache-fingerprint-v1"
+_SECRET_QUERY_RE = re.compile(
+    r"([?&](?:key|api[_-]?key|access[_-]?token|token|secret|authorization)=)"
+    r"[^&\s'\"<>]+",
+    re.IGNORECASE,
+)
+_BEARER_RE = re.compile(r"(Bearer\s+)[A-Za-z0-9._-]+", re.IGNORECASE)
+_COMMON_SECRET_RE = re.compile(r"\b(?:nvapi|sk)-[A-Za-z0-9_-]+")
 
 
 def hash_secret(secret: str | None) -> str:
@@ -20,6 +28,14 @@ def hash_secret(secret: str | None) -> str:
         dklen=16,
     )
     return digest.hex()[:12]
+
+
+def sanitize_exception_for_log(exc: Exception) -> str:
+    """Return an exception summary safe for provider/runtime logs."""
+    message = str(exc)
+    message = _SECRET_QUERY_RE.sub(r"\1REDACTED", message)
+    message = _BEARER_RE.sub(r"\1REDACTED", message)
+    return _COMMON_SECRET_RE.sub("SECRET-REDACTED", message)
 
 
 async def run_cached_discovery(
@@ -38,7 +54,11 @@ async def run_cached_discovery(
     try:
         models = await fetcher()
     except Exception as exc:
-        logger.debug("Runtime model discovery failed for %s: %s", cache_key, exc)
+        logger.debug(
+            "Runtime model discovery failed for %s: %s",
+            cache_key,
+            sanitize_exception_for_log(exc),
+        )
         if cached:
             return list(cached[1]), False
         return [], False

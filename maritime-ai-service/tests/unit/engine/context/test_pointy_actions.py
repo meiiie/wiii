@@ -1,5 +1,6 @@
 """Smoke tests for the Wiii Pointy action reference module."""
 from app.engine.context.pointy_actions import (
+    POINTY_ACTION_CLICK,
     POINTY_ACTION_HIGHLIGHT,
     POINTY_ACTION_NAVIGATE,
     POINTY_ACTION_SCROLL_TO,
@@ -14,11 +15,13 @@ def test_action_names_are_stable():
     assert POINTY_ACTION_SCROLL_TO == "ui.scroll_to"
     assert POINTY_ACTION_NAVIGATE == "ui.navigate"
     assert POINTY_ACTION_SHOW_TOUR == "ui.show_tour"
+    assert POINTY_ACTION_CLICK == "ui.click"
     assert set(POINTY_ACTIONS) == {
         POINTY_ACTION_HIGHLIGHT,
         POINTY_ACTION_SCROLL_TO,
         POINTY_ACTION_NAVIGATE,
         POINTY_ACTION_SHOW_TOUR,
+        POINTY_ACTION_CLICK,
     }
 
 
@@ -33,6 +36,8 @@ def test_reference_capabilities_shape():
         assert tool["requires_confirmation"] is False
         assert tool["surface"] == "page"
         assert "input_schema" in tool
+    click_tool = next(t for t in caps["tools"] if t["name"] == POINTY_ACTION_CLICK)
+    assert "click_safe=true" in click_tool["input_schema"]["properties"]["selector"]["description"]
 
 
 def test_reference_capabilities_is_valid_for_pydantic_host_capabilities():

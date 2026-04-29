@@ -15,11 +15,10 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 from enum import Enum
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
 from app.core.singleton import singleton_factory
 from app.engine.agentic_rag.runtime_llm_socket import (
     ainvoke_agentic_rag_llm,
+    make_agentic_rag_messages,
     resolve_agentic_rag_llm,
 )
 from app.engine.llm_factory import ThinkingTier
@@ -131,10 +130,10 @@ class QueryAnalyzer:
         
         try:
             # Use LLM for analysis
-            messages = [
-                SystemMessage(content="You are a query analyzer. Return only valid JSON."),
-                HumanMessage(content=ANALYSIS_PROMPT.format(query=query))
-            ]
+            messages = make_agentic_rag_messages(
+                system="You are a query analyzer. Return only valid JSON.",
+                user=ANALYSIS_PROMPT.format(query=query),
+            )
             
             response = await ainvoke_agentic_rag_llm(
                 llm=llm,

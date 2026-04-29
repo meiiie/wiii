@@ -56,11 +56,11 @@ async def translate_to_vietnamese(text: str) -> str:
     try:
         from app.engine.agentic_rag.runtime_llm_socket import (
             ainvoke_agentic_rag_llm,
+            make_agentic_rag_messages,
             resolve_agentic_rag_llm,
         )
         from app.engine.llm_factory import ThinkingTier
         from app.engine.llm_pool import get_llm_light
-        from langchain_core.messages import HumanMessage, SystemMessage
 
         llm = resolve_agentic_rag_llm(
             tier=ThinkingTier.LIGHT,
@@ -70,16 +70,16 @@ async def translate_to_vietnamese(text: str) -> str:
         if not llm:
             return text
 
-        messages = [
-            SystemMessage(content=(
+        messages = make_agentic_rag_messages(
+            system=(
                 "Dịch đoạn văn sau sang tiếng Việt tự nhiên, chính xác. "
                 "Giữ nguyên thuật ngữ chuyên ngành hàng hải/giao thông bằng tiếng Anh "
                 "nếu cần (ví dụ: COLREGs, SOLAS, starboard). "
                 "CHỈ trả lời bản dịch tiếng Việt, KHÔNG thêm giải thích hay ghi chú. "
                 "KHÔNG bao gồm quá trình suy nghĩ."
-            )),
-            HumanMessage(content=text),
-        ]
+            ),
+            user=text,
+        )
         response = await ainvoke_agentic_rag_llm(
             llm=llm,
             messages=messages,

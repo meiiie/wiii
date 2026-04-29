@@ -90,19 +90,14 @@ async def handle_direct_node_impl(
 
     final_response = node_output.get("final_response", "")
     if final_response and not answer_emitted:
-        answer_via_bus = "direct" in bus_answer_nodes
-        answer_as_thinking = node_output.get("_answer_streamed_via_bus", False)
-        if not answer_via_bus and not answer_as_thinking:
-            async for event in extract_and_stream_emotion_then_answer(
-                final_response,
-                soul_emotion_emitted,
-            ):
-                if event.type == "emotion":
-                    soul_emotion_emitted = True
-                events.append(event)
-            answer_emitted = True
-        elif answer_via_bus or answer_as_thinking:
-            answer_emitted = True
+        async for event in extract_and_stream_emotion_then_answer(
+            final_response,
+            soul_emotion_emitted,
+        ):
+            if event.type == "emotion":
+                soul_emotion_emitted = True
+            events.append(event)
+        answer_emitted = True
 
     domain_notice = node_output.get("domain_notice")
     if domain_notice:
@@ -202,19 +197,14 @@ async def handle_product_search_node_impl(
 
     final_response = node_output.get("final_response", "")
     if final_response and not answer_emitted:
-        answer_via_bus = "product_search_agent" in bus_answer_nodes
-        answer_as_thinking = node_output.get("_answer_streamed_via_bus", False)
-        if not answer_via_bus and not answer_as_thinking:
-            async for event in extract_and_stream_emotion_then_answer(
-                final_response,
-                soul_emotion_emitted,
-            ):
-                if event.type == "emotion":
-                    soul_emotion_emitted = True
-                events.append(event)
-            answer_emitted = True
-        elif answer_via_bus:
-            answer_emitted = True
+        async for event in extract_and_stream_emotion_then_answer(
+            final_response,
+            soul_emotion_emitted,
+        ):
+            if event.type == "emotion":
+                soul_emotion_emitted = True
+            events.append(event)
+        answer_emitted = True
 
     return {
         "events": events,

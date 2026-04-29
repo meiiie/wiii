@@ -113,6 +113,98 @@ list; it is a safety map for future PRs.
 | Text cleanup filters | `public_thinking.py`, `reasoning/*` filter lists containing `langgraph` | Prevents visible framework jargon leaking to users. | Keep until replacement filter contract exists. |
 | Provider compatibility wording | `llm_providers/unified_client.py` | Mentions LangChain/LangGraph compatibility. | Update wording after provider route contract is finalized. |
 
+## 2026-04-29 LangChain Exit Status
+
+LangGraph is no longer the active orchestrator. LangChain/LangChain Core are
+still present as compatibility surfaces for provider objects, tool binding,
+RAG/CRAG helper calls, and older message builders. Treat this as a staged
+framework exit, not a one-shot dependency deletion.
+
+Completed first slice:
+
+- Added a Wiii-native chat runtime contract for OpenAI-compatible message
+  payloads and assistant response objects.
+- Added a native provider/model handle so direct no-tool turns can use NVIDIA
+  or other OpenAI-compatible providers without constructing a LangChain
+  `BaseChatModel`.
+- Switched the direct no-tool native stream path to return Wiii-native
+  assistant messages instead of LangChain `AIMessage`.
+- Added native dict message support for direct prompt building and direct
+  response extraction.
+- Kept tool/RAG lanes on the legacy adapter until their behavior has focused
+  smoke tests.
+
+Completed second slice:
+
+- Direct no-tool turns now try the Wiii-native provider handle first even when
+  the request did not explicitly pin a provider; provider resolution comes from
+  settings and grouped agent runtime profiles.
+- Native OpenAI-compatible streams now receive the same first-token timeout
+  guard used by the legacy stream path, so the UI can recover instead of
+  waiting silently on a stuck provider stream.
+- Native stream success/failure updates the existing model-health registry.
+  Timeout/rate-limit/server failures temporarily mark a concrete provider/model
+  degraded.
+- NVIDIA native model selection now skips a degraded Flash/Pro model and uses
+  the healthy sibling model when available.
+
+Completed third slice:
+
+- Added framework-free native system, user, and tool-result message objects
+  with the same duck-typed surface the existing runtime expects.
+- Direct tool rounds can now append native tool-result and synthesis messages
+  when the route is native, while legacy LangChain tool loops keep the old
+  `ToolMessage`/`HumanMessage` path.
+- Direct node execution passes the native message mode through to the tool
+  loop, giving future native tool-call adapters a stable switch point.
+- Added focused tests so native tool-result messages serialize to
+  OpenAI-compatible payloads and direct tool rounds can synthesize without
+  constructing LangChain message classes in native mode.
+
+Completed fourth slice:
+
+- Added Wiii-owned tool schema serialization from existing tool objects into
+  OpenAI-compatible `type=function` payloads.
+- Native provider handles now support `bind_tools(...)` and preserve normalized
+  tool-choice hints without constructing LangChain model wrappers.
+- Native provider handles now support `ainvoke(...)` through the existing
+  OpenAI-compatible client layer, returning Wiii-native assistant messages with
+  direct-loop-friendly `tool_calls`.
+- Direct forced-tool turns can now select the native provider handle when the
+  route is native, while optional-tool turns stay on the legacy path until
+  native streaming with tool schemas is covered.
+
+Completed fifth slice:
+
+- Native OpenAI-compatible streaming now sends bound tool schemas and
+  normalized tool-choice hints when a native handle has tools attached.
+- Native stream responses now accumulate streamed function-call chunks across
+  deltas and return direct-loop-compatible `tool_calls` without emitting
+  duplicate tool events.
+- Direct optional-tool turns can now select the native provider handle while
+  identity, emotional support, and house/social chatter stay on the protected
+  legacy path.
+- The stream first-chunk guard keeps a single iterator instance, preventing
+  duplicate first chunks from custom async iterators.
+
+Remaining LangChain work should be split into small PRs:
+
+- Provider pool: replace `LLMPool`/`BaseChatModel` as the default provider
+  route with a Wiii-owned provider adapter and health/fallback contract.
+- Tool runtime: replace `StructuredTool`, `@tool`, `ToolMessage`, and tool
+  call result objects with Wiii tool-call events plus provider-specific
+  serializers.
+- RAG/CRAG: migrate `ainvoke`/`astream` helper calls to native provider
+  adapters after golden RAG smoke cases exist.
+- Memory/context: move history and budget message builders to Wiii-native
+  message blocks while preserving identity, relationship, and fact memory
+  behavior.
+
+Do not remove LangChain dependencies from packaging until all four areas above
+have passing smoke gates. The current safe direction is to make new hot-path
+runtime code native first, then retire compatibility adapters only when their
+callers disappear.
+
 ## Target Runtime Shape
 
 Wiii should converge on a runtime that is explicit and boring in the best way:
@@ -226,6 +318,55 @@ Exit criteria:
 - No active `import langgraph`, `from langgraph`, `StateGraph`,
   `MemorySaver`, `CompiledStateGraph`, `get_multi_agent_graph`, or
   `build_multi_agent_graph` references remain outside explicit historical docs.
+
+### Completed fifth slice: Native optional tools
+
+Implemented in the Phase 5 runtime slice:
+
+- Native OpenAI-compatible streaming now forwards bound tool schemas and
+  normalized `tool_choice` instead of silently falling back to LangChain for
+  optional-tool turns.
+- Streaming tool-call deltas are accumulated into final assistant `tool_calls`
+  before the direct loop executes tools, matching the provider contract for
+  chunked function arguments.
+- Direct optional-tool turns can use the native provider path while
+  identity/emotional/social house turns remain on the protected natural voice
+  lane.
+- The native first-chunk guard keeps a single stream iterator instance so the
+  first answer/tool chunk is not duplicated or lost.
+
+### Completed sixth slice: Native RAG/CRAG socket
+
+Implemented in the first Phase 6 runtime slice:
+
+- Agentic RAG now builds framework-free native message objects through a single
+  `make_agentic_rag_messages()` helper rather than importing LangChain message
+  classes across RAG/CRAG callsites.
+- `resolve_agentic_rag_llm()` can prefer an `AgentConfigRegistry` native
+  provider handle when the OpenAI-compatible client is actually configured, and
+  falls back to the shared pool when native credentials are absent.
+- `ainvoke_agentic_rag_llm()` pins native handles to their provider name so the
+  failover socket does not accidentally replace a native NVIDIA/OpenAI-compatible
+  request with an unrelated LangChain primary.
+- CRAG fallback, translation, web-context generation, HyDE, query analysis,
+  query rewriting, retrieval grading, and answer verification now use the shared
+  RAG socket instead of constructing LangChain messages locally.
+- CRAG streaming has a native OpenAI-compatible branch for configured native
+  handles, then falls back to legacy `astream()` and finally buffered invoke.
+- CRAG streaming now has chunk/total timeout guards so a dead stream can fall
+  back instead of leaving the frontend stuck on "đang suy nghĩ".
+
+Why this order:
+
+- CRAG research emphasizes a lightweight retrieval evaluator plus corrective
+  actions when retrieved documents are weak; Self-RAG emphasizes adaptive
+  retrieval and critique rather than unconditional fixed retrieval. Wiii keeps
+  those retrieval/verification policies intact while replacing the model socket
+  underneath first.
+- Hosted retrieval systems such as OpenAI file search expose semantic/keyword
+  search, vector stores, result limits, citations, and metadata filters as
+  explicit contracts. Wiii's native RAG direction should mirror that clarity:
+  retrieval contract first, model socket second, UI stream evidence always.
 
 ## Migration Rules For Agents
 

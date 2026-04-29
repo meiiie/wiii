@@ -119,6 +119,31 @@ class LMSHostAdapter(HostAdapter):
             if labels:
                 parts.append(f"  <entity_refs>{' | '.join(labels)}</entity_refs>")
 
+        available_targets = metadata.get("available_targets")
+        if isinstance(available_targets, list):
+            target_labels: list[str] = []
+            for target in available_targets[:24]:
+                if not isinstance(target, dict):
+                    continue
+                target_id = str(target.get("id", "")).strip()
+                if not target_id:
+                    continue
+                label = str(target.get("label", "")).strip()
+                selector = str(target.get("selector", "")).strip()
+                text = target_id
+                if label:
+                    text = f'{text}="{label[:80]}"'
+                if selector and selector != target_id:
+                    text = f"{text} selector={selector}"
+                if target.get("click_safe") is True:
+                    click_kind = str(target.get("click_kind", "")).strip()
+                    text = f"{text} click_safe=true"
+                    if click_kind:
+                        text = f"{text} click_kind={click_kind}"
+                target_labels.append(text)
+            if target_labels:
+                parts.append(f"  <available_targets>{' | '.join(target_labels)}</available_targets>")
+
         if ctx.available_actions:
             labels = [
                 (

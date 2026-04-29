@@ -14,11 +14,10 @@ import logging
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
 from app.core.singleton import singleton_factory
 from app.engine.agentic_rag.runtime_llm_socket import (
     ainvoke_agentic_rag_llm,
+    make_agentic_rag_messages,
     resolve_agentic_rag_llm,
 )
 from app.engine.llm_factory import ThinkingTier
@@ -157,13 +156,13 @@ class AnswerVerifier:
                 for s in sources[:3]  # Limit to 3 sources
             ])
             
-            messages = [
-                SystemMessage(content="You are a fact-checker. Return only valid JSON."),
-                HumanMessage(content=VERIFY_PROMPT.format(
+            messages = make_agentic_rag_messages(
+                system="You are a fact-checker. Return only valid JSON.",
+                user=VERIFY_PROMPT.format(
                     answer=answer[:1500],  # Limit answer length
-                    sources=source_text
-                ))
-            ]
+                    sources=source_text,
+                ),
+            )
             
             response = await ainvoke_agentic_rag_llm(
                 llm=llm,

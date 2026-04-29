@@ -708,16 +708,75 @@ async def direct_response_node_impl(
             )
             direct_provider_override = explicit_user_provider or preferred_provider
 
+            if is_short_house_chatter or is_identity_turn or is_emotional_support_turn:
+                tools, force_tools = [], False
+            else:
+                tools, force_tools = collect_direct_tools(
+                    query,
+                    ctx.get("user_role", "student"),
+                    state=state,
+                )
+                try:
+                    from app.engine.skills.skill_recommender import select_runtime_tools
+
+                    selected_tools = select_runtime_tools(
+                        tools,
+                        query=query,
+                        intent=(state.get("routing_metadata") or {}).get("intent"),
+                        user_role=ctx.get("user_role", "student"),
+                        max_tools=min(len(tools), 7),
+                        must_include=direct_required_tool_names(
+                            query,
+                            ctx.get("user_role", "student"),
+                        ),
+                    )
+                    if selected_tools:
+                        tools = selected_tools
+                        logger.info(
+                            "[DIRECT] Runtime-selected tools: %s",
+                            [getattr(tool, "name", getattr(tool, "__name__", "unknown")) for tool in tools],
+                        )
+                except Exception as selection_error:
+                    logger.debug("[DIRECT] Runtime tool selection skipped: %s", selection_error)
+
             direct_node_id = "direct_identity" if is_identity_turn else "direct"
 
-            llm = AgentConfigRegistry.get_llm(
-                direct_node_id,
-                effort_override=thinking_effort,
-                provider_override=direct_provider_override,
-                requested_model=state.get("model"),
+            from app.engine.multi_agent.openai_stream_runtime import (
+                _supports_native_answer_streaming_impl,
             )
 
-            if llm and getattr(settings, "enable_natural_conversation", False) is True:
+            native_direct_possible = (
+                not bool(ctx.get("images") or [])
+                and not is_short_house_chatter
+                and not is_identity_turn
+                and not is_emotional_support_turn
+                and not use_house_voice_direct
+            )
+            llm = None
+            if native_direct_possible:
+                llm = AgentConfigRegistry.get_native_llm(
+                    direct_node_id,
+                    effort_override=thinking_effort,
+                    provider_override=direct_provider_override,
+                    requested_model=state.get("model"),
+                )
+                if llm and not _supports_native_answer_streaming_impl(
+                    getattr(llm, "_wiii_provider_name", None)
+                ):
+                    llm = None
+            if llm is None:
+                llm = AgentConfigRegistry.get_llm(
+                    direct_node_id,
+                    effort_override=thinking_effort,
+                    provider_override=direct_provider_override,
+                    requested_model=state.get("model"),
+                )
+
+            if (
+                llm
+                and getattr(settings, "enable_natural_conversation", False) is True
+                and not getattr(llm, "_wiii_native_route", False)
+            ):
                 presence_penalty = getattr(settings, "llm_presence_penalty", 0.0)
                 frequency_penalty = getattr(settings, "llm_frequency_penalty", 0.0)
                 if presence_penalty or frequency_penalty:
@@ -733,36 +792,6 @@ async def direct_response_node_impl(
                         pass
 
             if llm:
-                if is_short_house_chatter or is_identity_turn or is_emotional_support_turn:
-                    tools, force_tools = [], False
-                else:
-                    tools, force_tools = collect_direct_tools(
-                        query,
-                        ctx.get("user_role", "student"),
-                        state=state,
-                    )
-                    try:
-                        from app.engine.skills.skill_recommender import select_runtime_tools
-
-                        selected_tools = select_runtime_tools(
-                            tools,
-                            query=query,
-                            intent=(state.get("routing_metadata") or {}).get("intent"),
-                            user_role=ctx.get("user_role", "student"),
-                            max_tools=min(len(tools), 7),
-                            must_include=direct_required_tool_names(
-                                query,
-                                ctx.get("user_role", "student"),
-                            ),
-                        )
-                        if selected_tools:
-                            tools = selected_tools
-                            logger.info(
-                                "[DIRECT] Runtime-selected tools: %s",
-                                [getattr(tool, "name", getattr(tool, "__name__", "unknown")) for tool in tools],
-                            )
-                    except Exception as selection_error:
-                        logger.debug("[DIRECT] Runtime tool selection skipped: %s", selection_error)
                 logger.warning(
                     "[DIRECT] tools=%d, force=%s, web=%s, dt=%s, query='%s'",
                     len(tools),
@@ -842,6 +871,7 @@ async def direct_response_node_impl(
                         visual_decision.force_tool,
                     )
 
+                native_direct_messages = bool(getattr(llm, "_wiii_native_route", False))
                 messages = build_direct_system_messages(
                     state,
                     query,
@@ -850,6 +880,7 @@ async def direct_response_node_impl(
                     tools_context_override=tools_context_override,
                     visual_decision=visual_decision,
                     history_limit=history_limit,
+                    native_messages=native_direct_messages,
                 )
                 runtime_context_base = build_tool_runtime_context(
                     event_bus_id=bus_id,
@@ -878,6 +909,7 @@ async def direct_response_node_impl(
                     direct_answer_timeout_profile=direct_answer_timeout_profile,
                     direct_answer_primary_timeout=direct_answer_primary_timeout,
                     allowed_fallback_providers=direct_allowed_fallback_providers,
+                    native_tool_messages=native_direct_messages,
                 )
 
                 if tool_call_events:

@@ -65,18 +65,26 @@ async def generate_fallback_impl(
     query: str,
     context: dict[str, Any],
     settings_obj: Any,
-) -> str:
+) -> tuple[str, Optional[str]]:
     """Generate an answer from model general knowledge when RAG has no docs."""
     try:
+        from app.engine.agentic_rag.runtime_llm_socket import (
+            ainvoke_agentic_rag_llm,
+            make_agentic_rag_messages,
+            resolve_agentic_rag_llm,
+        )
+        from app.engine.llm_factory import ThinkingTier
         from app.engine.llm_pool import get_llm_light
         from app.prompts.prompt_loader import get_prompt_loader
         from app.services.output_processor import extract_thinking_from_response
-        from langchain_core.messages import HumanMessage, SystemMessage
 
-        # Prefer pool directly — the runtime socket may have stale failover chains
-        llm = get_llm_light()
+        llm = resolve_agentic_rag_llm(
+            tier=ThinkingTier.LIGHT,
+            fallback_factory=get_llm_light,
+            component="CorrectiveRAGFallback",
+        )
         if not llm:
-            return ""
+            return "", None
 
         domain_name = resolve_fallback_domain_name(context, settings_obj)
 
@@ -107,11 +115,16 @@ async def generate_fallback_impl(
             web_context=web_context,
         )
 
-        messages = [
-            SystemMessage(content=sys_content),
-            HumanMessage(content=query),
-        ]
-        response = await llm.ainvoke(messages)
+        messages = make_agentic_rag_messages(
+            system=sys_content,
+            user=query,
+        )
+        response = await ainvoke_agentic_rag_llm(
+            llm=llm,
+            messages=messages,
+            tier=ThinkingTier.LIGHT,
+            component="CorrectiveRAGFallback",
+        )
         text, native_thinking = extract_thinking_from_response(response.content)
         text = text.strip()
 
@@ -125,7 +138,7 @@ async def generate_fallback_impl(
         return (text or build_house_fallback_reply(), native_thinking)
     except Exception as exc:
         logger.warning("[CRAG] Fallback generation failed: %s", exc)
-        return build_house_fallback_reply()
+        return build_house_fallback_reply(), None
 
 
 async def generate_answer_impl(

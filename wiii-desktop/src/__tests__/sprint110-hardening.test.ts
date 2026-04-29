@@ -99,6 +99,12 @@ describe("useSSEStream — type-safe metadata", () => {
     const code = (src as any).default || src;
     expect(code).toContain("ChatResponseMetadata");
   });
+
+  it("should keep the idle guard above provider cold-start latency", async () => {
+    const src = await import("@/hooks/useSSEStream?raw");
+    const code = (src as any).default || src;
+    expect(code).toContain("const SSE_IDLE_TIMEOUT_MS = 120_000");
+  });
 });
 
 // ---------------------------------------------------------------------------

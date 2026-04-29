@@ -10,6 +10,7 @@ import { hideCursor, moveCursorToRect } from "./cursor";
 import { hideSpotlight, showSpotlight } from "./spotlight";
 import { runTour } from "./tour";
 import type {
+  ClickParams,
   HighlightParams,
   NavigateParams,
   PointyConfig,
@@ -54,10 +55,19 @@ export function resolveSelector(selector: unknown): Element | null {
   if (!trimmed) return null;
   if (typeof document === "undefined") return null;
   try {
-    return document.querySelector(trimmed);
+    const direct = document.querySelector(trimmed);
+    if (direct) return direct;
   } catch {
-    return null;
+    // Treat a bare semantic id such as "browse-courses" as data-wiii-id.
   }
+  if (/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
+    try {
+      return document.querySelector(`[data-wiii-id="${trimmed.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"]`);
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 export async function handleHighlight(params: HighlightParams): Promise<PointyResult> {
@@ -135,6 +145,35 @@ export async function handleShowTour(params: ShowTourParams): Promise<PointyResu
   });
 }
 
+export async function handleClick(params: ClickParams): Promise<PointyResult> {
+  const target = resolveSelector(params.selector);
+  if (!target) return fail(`selector_not_found:${params.selector}`);
+  if (!(target instanceof HTMLElement) || target.getAttribute("data-wiii-click-safe") !== "true") {
+    return fail(`unsafe_click_target:${params.selector}`);
+  }
+  if (
+    target.hasAttribute("disabled")
+    || target.getAttribute("aria-disabled") === "true"
+    || (target instanceof HTMLButtonElement && target.disabled)
+  ) {
+    return fail(`disabled_click_target:${params.selector}`);
+  }
+  if ("scrollIntoView" in target && typeof target.scrollIntoView === "function") {
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  moveCursorToRect(target.getBoundingClientRect(), { duration_ms: 260 });
+  showSpotlight(target, {
+    message: params.message || "Wiii dang mo muc nay cho ban.",
+    duration_ms: 900,
+  });
+  target.click();
+  return ok({
+    summary: `Da bam element: ${describeTarget(target)}`,
+    clicked: true,
+    click_kind: target.getAttribute("data-wiii-click-kind") || "safe",
+  });
+}
+
 export function describeTarget(el: Element): string {
   const labels: string[] = [];
   const id = el.getAttribute("data-wiii-id") || el.id;
@@ -208,6 +247,8 @@ async function dispatch(req: PointyRequest, config: PointyConfig): Promise<Point
       return handleNavigate(req.params as unknown as NavigateParams, config);
     case "ui.show_tour":
       return handleShowTour(req.params as unknown as ShowTourParams);
+    case "ui.click":
+      return handleClick(req.params as unknown as ClickParams);
     default:
       return fail(`unsupported_action:${req.action}`);
   }

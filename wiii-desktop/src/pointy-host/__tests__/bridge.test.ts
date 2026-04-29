@@ -7,6 +7,7 @@ import {
   _testing,
   createBridge,
   describeTarget,
+  handleClick,
   handleHighlight,
   handleNavigate,
   handleScrollTo,
@@ -86,6 +87,7 @@ describe("resolveSelector", () => {
     document.body.innerHTML = `<button id="b1" data-wiii-id="login-btn">Login</button>`;
     expect(resolveSelector("#b1")?.tagName).toBe("BUTTON");
     expect(resolveSelector('[data-wiii-id="login-btn"]')?.tagName).toBe("BUTTON");
+    expect(resolveSelector("login-btn")?.tagName).toBe("BUTTON");
   });
 });
 
@@ -125,6 +127,31 @@ describe("handleScrollTo", () => {
     document.body.innerHTML = `<section id="ch1">Chapter 1</section>`;
     const result = await handleScrollTo({ selector: "#ch1" });
     expect(result.success).toBe(true);
+  });
+});
+
+describe("handleClick", () => {
+  it("clicks only targets explicitly marked safe", async () => {
+    document.body.innerHTML = `<button data-wiii-id="browse-courses" data-wiii-click-safe="true" data-wiii-click-kind="navigation">Browse</button>`;
+    const target = document.querySelector("button")!;
+    const clickSpy = vi.spyOn(target, "click");
+    const result = await handleClick({ selector: '[data-wiii-id="browse-courses"]' });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.clicked).toBe(true);
+    expect(result.data?.click_kind).toBe("navigation");
+    expect(clickSpy).toHaveBeenCalled();
+  });
+
+  it("fails closed for unsafe targets", async () => {
+    document.body.innerHTML = `<button data-wiii-id="submit-quiz">Submit</button>`;
+    const target = document.querySelector("button")!;
+    const clickSpy = vi.spyOn(target, "click");
+    const result = await handleClick({ selector: '[data-wiii-id="submit-quiz"]' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("unsafe_click_target");
+    expect(clickSpy).not.toHaveBeenCalled();
   });
 });
 

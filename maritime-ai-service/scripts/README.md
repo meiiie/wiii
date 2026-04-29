@@ -3,16 +3,34 @@
 ## Local Demo Smoke
 
 Use this before a localhost demo. It verifies the dev-login JWT path, admin/org
-permissions, sync chat, SSE V3 completion, and the local frontend.
+permissions, runtime provider surface, sync chat, SSE V3 answer/metadata/done,
+SSE first-event latency, SSE first-answer latency, and the local frontend.
 
 ```bash
 python scripts/local_demo_smoke.py
+```
+
+Pinned NVIDIA demo gate:
+
+```bash
+python scripts/local_demo_smoke.py ^
+  --provider nvidia ^
+  --model deepseek-ai/deepseek-v4-flash ^
+  --expect-provider nvidia ^
+  --expect-model deepseek-ai/deepseek-v4-flash
 ```
 
 For infrastructure-only checks while isolating provider failures:
 
 ```bash
 python scripts/local_demo_smoke.py --skip-chat --skip-stream
+```
+
+If a model is intentionally slow during investigation, relax the SSE budget
+explicitly instead of hiding the problem:
+
+```bash
+python scripts/local_demo_smoke.py --max-first-answer-seconds 75
 ```
 
 Scripts cho development, testing và data ingestion.

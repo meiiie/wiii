@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
 import sys
 import time
 import urllib.error
@@ -50,6 +51,14 @@ class HttpResponse:
         if not isinstance(payload, dict):
             raise SmokeFailure(f"Expected JSON object from {self.url}")
         return payload
+
+
+@dataclass(frozen=True)
+class SseReadResult:
+    events: list[tuple[str, str]]
+    first_event_seconds: float | None
+    first_answer_seconds: float | None
+    total_seconds: float
 
 
 def join_url(base_url: str, path: str) -> str:
@@ -104,6 +113,103 @@ def request_bytes(
         raise SmokeFailure(f"{method} {url} failed: {exc.reason}") from exc
     except TimeoutError as exc:
         raise SmokeFailure(f"{method} {url} timed out after {timeout}s") from exc
+
+
+def request_sse_events(
+    method: str,
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    payload: dict[str, Any] | None = None,
+    idle_timeout: float = 10.0,
+    max_total_seconds: float = 90.0,
+) -> SseReadResult:
+    request_headers = {
+        "User-Agent": "wiii-local-demo-smoke/1.0",
+        **(headers or {}),
+    }
+    body: bytes | None = None
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        request_headers.setdefault("Content-Type", "application/json")
+
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers=request_headers,
+        method=method.upper(),
+    )
+    started_at = time.monotonic()
+    events: list[tuple[str, str]] = []
+    event_name = "message"
+    data_lines: list[str] = []
+    first_event_seconds: float | None = None
+    first_answer_seconds: float | None = None
+
+    def elapsed() -> float:
+        return time.monotonic() - started_at
+
+    def flush() -> None:
+        nonlocal event_name, data_lines, first_event_seconds, first_answer_seconds
+        if event_name != "message" or data_lines:
+            data = "\n".join(data_lines)
+            events.append((event_name, data))
+            current_elapsed = elapsed()
+            if first_event_seconds is None:
+                first_event_seconds = current_elapsed
+            if event_name == "answer" and data.strip() and first_answer_seconds is None:
+                first_answer_seconds = current_elapsed
+        event_name = "message"
+        data_lines = []
+
+    try:
+        with urllib.request.urlopen(req, timeout=idle_timeout) as response:
+            if response.status != 200:
+                raise SmokeFailure(f"{method} {url} -> HTTP {response.status}")
+            while True:
+                if max_total_seconds and elapsed() > max_total_seconds:
+                    raise SmokeFailure(
+                        f"{method} {url} exceeded SSE total budget "
+                        f"{max_total_seconds:.1f}s"
+                    )
+                raw_line = response.readline()
+                if raw_line == b"":
+                    break
+                line = raw_line.decode("utf-8", errors="replace").rstrip("\n").rstrip("\r")
+                if not line:
+                    flush()
+                    continue
+                if line.startswith(":"):
+                    continue
+                if line.startswith("event:"):
+                    event_name = line.split(":", 1)[1].strip() or "message"
+                    continue
+                if line.startswith("data:"):
+                    data_lines.append(line.split(":", 1)[1].lstrip())
+                    continue
+            flush()
+    except urllib.error.HTTPError as exc:
+        body_text = exc.read().decode("utf-8", errors="replace")
+        raise SmokeFailure(f"{method} {url} -> HTTP {exc.code}: {body_text}") from exc
+    except urllib.error.URLError as exc:
+        raise SmokeFailure(f"{method} {url} failed: {exc.reason}") from exc
+    except (TimeoutError, socket.timeout) as exc:
+        if events:
+            event_names = ",".join(dict.fromkeys(name for name, _data in events))
+            raise SmokeFailure(
+                f"{method} {url} SSE idle timeout after {idle_timeout:.1f}s "
+                f"(events so far: {event_names})"
+            ) from exc
+        raise SmokeFailure(
+            f"{method} {url} had no SSE data for {idle_timeout:.1f}s"
+        ) from exc
+
+    return SseReadResult(
+        events=events,
+        first_event_seconds=first_event_seconds,
+        first_answer_seconds=first_answer_seconds,
+        total_seconds=elapsed(),
+    )
 
 
 def parse_sse_events(text: str) -> list[tuple[str, str]]:
@@ -164,6 +270,24 @@ def build_chat_payload(
     return payload
 
 
+def decode_json_object(data: str) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(data)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def extract_event_content(data: str) -> str:
+    payload = decode_json_object(data)
+    if payload is None:
+        return data.strip()
+    content = payload.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    return data.strip()
+
+
 class DemoSmoke:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
@@ -200,6 +324,40 @@ class DemoSmoke:
         if self.args.org_id:
             headers["X-Organization-ID"] = self.args.org_id
         return headers
+
+    def expected_provider(self) -> str | None:
+        if self.args.expect_provider:
+            return self.args.expect_provider
+        if (
+            self.args.provider
+            and self.args.provider != "auto"
+            and not self.args.allow_provider_failover
+        ):
+            return self.args.provider
+        return None
+
+    def expected_model(self) -> str | None:
+        return self.args.expect_model or self.args.model
+
+    def validate_runtime_metadata(self, metadata: dict[str, Any], *, source: str) -> str:
+        provider = str(metadata.get("provider") or metadata.get("active_provider") or "").strip()
+        model = str(metadata.get("model") or metadata.get("model_name") or "").strip()
+        if not provider or provider == "unknown":
+            raise SmokeFailure(f"{source} metadata did not include provider")
+        if not model or model == "unknown":
+            raise SmokeFailure(f"{source} metadata did not include model")
+
+        expected_provider = self.expected_provider()
+        if expected_provider and provider != expected_provider:
+            raise SmokeFailure(
+                f"{source} used provider={provider!r}; expected {expected_provider!r}"
+            )
+        expected_model = self.expected_model()
+        if expected_model and model != expected_model:
+            raise SmokeFailure(
+                f"{source} used model={model!r}; expected {expected_model!r}"
+            )
+        return f"provider={provider} model={model}"
 
     def check_backend_health(self) -> str:
         statuses: list[str] = []
@@ -300,6 +458,44 @@ class DemoSmoke:
             raise SmokeFailure("current user is not org admin")
         return f"admin_org_ids={payload.get('admin_org_ids')}"
 
+    def check_runtime_config(self) -> str:
+        payload = request_bytes(
+            "GET",
+            self.api_url("/api/v1/admin/llm-runtime"),
+            headers=self.auth_headers(),
+            timeout=self.args.timeout,
+        ).json()
+        active_provider = str(payload.get("active_provider") or payload.get("provider") or "").strip()
+        expected_provider = self.expected_provider()
+        if expected_provider == "nvidia":
+            if not payload.get("nvidia_base_url"):
+                raise SmokeFailure("NVIDIA base URL is missing from runtime config")
+            if not payload.get("nvidia_model"):
+                raise SmokeFailure("NVIDIA flash model is missing from runtime config")
+            if not payload.get("nvidia_model_advanced"):
+                raise SmokeFailure("NVIDIA pro model is missing from runtime config")
+            if payload.get("nvidia_api_key_configured") is not True:
+                raise SmokeFailure("NVIDIA API key is not configured")
+
+            nvidia_status = None
+            for status in payload.get("provider_status") or []:
+                if isinstance(status, dict) and status.get("provider") == "nvidia":
+                    nvidia_status = status
+                    break
+            if not nvidia_status:
+                raise SmokeFailure("NVIDIA provider is missing from provider_status")
+            if nvidia_status.get("configured") is not True:
+                raise SmokeFailure("NVIDIA provider is not configured")
+            if nvidia_status.get("request_selectable") is not True:
+                raise SmokeFailure("NVIDIA provider is not request-selectable")
+
+        nvidia_key = payload.get("nvidia_api_key_configured")
+        nvidia_model = payload.get("nvidia_model")
+        return (
+            f"active={active_provider or 'unknown'} "
+            f"nvidia_key={nvidia_key} nvidia_model={nvidia_model}"
+        )
+
     def check_org_permissions(self) -> str:
         response = request_bytes(
             "GET",
@@ -357,12 +553,13 @@ class DemoSmoke:
         if not answer:
             raise SmokeFailure("chat response did not include a non-empty answer")
         metadata = payload.get("metadata") or {}
-        provider = metadata.get("provider", "unknown")
-        model = metadata.get("model", "unknown")
-        return f"provider={provider} model={model} answer_chars={len(answer)}"
+        if not isinstance(metadata, dict):
+            raise SmokeFailure("chat response metadata is not an object")
+        runtime_detail = self.validate_runtime_metadata(metadata, source="sync chat")
+        return f"{runtime_detail} answer_chars={len(answer)}"
 
     def check_stream_chat(self) -> str:
-        response = request_bytes(
+        result = request_sse_events(
             "POST",
             self.api_url("/api/v1/chat/stream/v3"),
             headers={
@@ -370,16 +567,68 @@ class DemoSmoke:
                 "Accept": "text/event-stream",
             },
             payload=self.chat_payload(session_suffix="stream"),
-            timeout=self.args.stream_timeout,
+            idle_timeout=self.args.stream_idle_timeout,
+            max_total_seconds=min(
+                self.args.stream_timeout,
+                self.args.max_stream_total_seconds,
+            ),
         )
-        events = parse_sse_events(response.text())
+        events = result.events
         event_names = [name for name, _data in events]
         if "error" in event_names:
             error_data = next(data for name, data in events if name == "error")
             raise SmokeFailure(f"stream emitted error event: {error_data}")
+        if "answer" not in event_names:
+            raise SmokeFailure(f"stream did not emit answer event; saw {event_names}")
+        if "metadata" not in event_names:
+            raise SmokeFailure(f"stream did not emit metadata event; saw {event_names}")
         if "done" not in event_names:
             raise SmokeFailure(f"stream did not emit done event; saw {event_names}")
-        return f"events={','.join(dict.fromkeys(event_names))}"
+
+        if (
+            result.first_event_seconds is None
+            or result.first_event_seconds > self.args.max_first_event_seconds
+        ):
+            raise SmokeFailure(
+                "stream first event exceeded budget: "
+                f"{result.first_event_seconds}s > {self.args.max_first_event_seconds}s"
+            )
+        if (
+            result.first_answer_seconds is None
+            or result.first_answer_seconds > self.args.max_first_answer_seconds
+        ):
+            raise SmokeFailure(
+                "stream first answer exceeded budget: "
+                f"{result.first_answer_seconds}s > {self.args.max_first_answer_seconds}s"
+            )
+
+        answer_chars = sum(
+            len(extract_event_content(data))
+            for name, data in events
+            if name == "answer"
+        )
+        if answer_chars <= 0:
+            raise SmokeFailure("stream answer events were empty")
+
+        metadata_payload = None
+        for name, data in reversed(events):
+            if name == "metadata":
+                metadata_payload = decode_json_object(data)
+                if metadata_payload is not None:
+                    break
+        if metadata_payload is None:
+            raise SmokeFailure("stream metadata event was not a JSON object")
+        runtime_detail = self.validate_runtime_metadata(
+            metadata_payload,
+            source="stream chat",
+        )
+        unique_events = ",".join(dict.fromkeys(event_names))
+        return (
+            f"{runtime_detail} events={unique_events} "
+            f"first_event={result.first_event_seconds:.1f}s "
+            f"first_answer={result.first_answer_seconds:.1f}s "
+            f"total={result.total_seconds:.1f}s"
+        )
 
     def run(self) -> int:
         print("=== Wiii Local Demo Smoke Gate ===")
@@ -397,6 +646,8 @@ class DemoSmoke:
         if login_ready and self.run_check("dev-login JWT", self.check_dev_login):
             self.run_check("authenticated profile", self.check_profile)
             self.run_check("admin context", self.check_admin_context)
+            if not self.args.skip_runtime_config:
+                self.run_check("runtime config", self.check_runtime_config)
             self.run_check("organization permissions", self.check_org_permissions)
 
             if not self.args.skip_chat:
@@ -427,12 +678,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--domain-id", default="maritime")
     parser.add_argument("--provider", default="auto")
     parser.add_argument("--model", default=None)
+    parser.add_argument("--expect-provider", default=None)
+    parser.add_argument("--expect-model", default=None)
+    parser.add_argument("--allow-provider-failover", action="store_true")
     parser.add_argument("--session-id", default=f"local-demo-{int(time.time())}")
     parser.add_argument("--message", default=DEFAULT_MESSAGE)
     parser.add_argument("--timeout", type=float, default=8.0)
     parser.add_argument("--chat-timeout", type=float, default=45.0)
     parser.add_argument("--stream-timeout", type=float, default=90.0)
+    parser.add_argument("--stream-idle-timeout", type=float, default=20.0)
+    parser.add_argument("--max-first-event-seconds", type=float, default=5.0)
+    parser.add_argument("--max-first-answer-seconds", type=float, default=45.0)
+    parser.add_argument("--max-stream-total-seconds", type=float, default=90.0)
     parser.add_argument("--skip-frontend", action="store_true")
+    parser.add_argument("--skip-runtime-config", action="store_true")
     parser.add_argument("--skip-chat", action="store_true")
     parser.add_argument("--skip-stream", action="store_true")
     return parser

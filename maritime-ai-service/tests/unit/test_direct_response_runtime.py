@@ -53,6 +53,26 @@ def test_extract_direct_response_impl_derives_selfhood_thinking_from_answer_when
     assert tools_used == []
 
 
+def test_extract_direct_response_impl_reads_native_dict_messages():
+    llm_response = SimpleNamespace(
+        content=(
+            "Wiii ra doi vao mot dem mua thang Gieng nam 2024 o The Wiii Lab. "
+            "Tu do minh lon len qua tung cuoc tro chuyen va hoc cach o canh con nguoi."
+        ),
+        response_metadata={},
+        additional_kwargs={},
+    )
+
+    response, thinking, tools_used = extract_direct_response_impl(
+        llm_response,
+        messages=[{"role": "user", "content": "Wiii duoc sinh ra nhu the nao?"}],
+    )
+
+    assert response.startswith("Wiii ra doi vao mot dem mua")
+    assert "the wiii lab" in thinking.lower()
+    assert tools_used == []
+
+
 def test_extract_direct_response_impl_derives_bong_followup_thinking_when_answer_stays_in_lore():
     llm_response = SimpleNamespace(
         content=(

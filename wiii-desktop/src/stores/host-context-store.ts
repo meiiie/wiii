@@ -74,6 +74,7 @@ export interface HostCapabilities {
 }
 
 interface LegacyPageContext {
+  [key: string]: unknown;
   page_type?: string;
   page_title?: string;
   connector_id?: string;
@@ -187,11 +188,31 @@ function legacyToHostContext(
     "quiz_options",
     "assignment_description",
   ] as const;
+  const topLevelKeys = new Set([
+    "page_type",
+    "page_title",
+    "connector_id",
+    "host_user_id",
+    "host_workspace_id",
+    "host_organization_id",
+    "user_role",
+    "selection",
+    "editable_scope",
+    "entity_refs",
+    "content_snippet",
+    "structured",
+  ]);
   for (const key of metaKeys) {
     const val = legacy[key as keyof LegacyPageContext];
     if (val !== undefined && val !== null) {
       metadata[key] = val;
     }
+  }
+  for (const [key, val] of Object.entries(legacy)) {
+    if (topLevelKeys.has(key) || key in metadata || val === undefined || val === null) {
+      continue;
+    }
+    metadata[key] = val;
   }
 
   return {

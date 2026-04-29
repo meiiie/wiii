@@ -41,6 +41,7 @@ from app.core.config import settings
 from app.core.exceptions import ProviderUnavailableError
 from app.engine.llm_runtime_metadata import resolve_runtime_llm_metadata
 from app.core.constants import PREVIEW_SNIPPET_MAX_LENGTH
+from app.engine.context.pointy_fast_path import build_pointy_fast_path_action
 from app.engine.multi_agent.state import AgentState
 from app.engine.multi_agent.graph_support import (
     _build_domain_config,
@@ -131,6 +132,7 @@ from app.engine.multi_agent.stream_utils import (
     create_code_open_event,
     create_code_delta_event,
     create_code_complete_event,
+    create_host_action_event,
 )
 
 logger = logging.getLogger(__name__)
@@ -241,6 +243,21 @@ async def process_with_multi_agent_streaming(
     try:
         # Yield initial status (pipeline — hidden from thinking rail)
         yield await create_status_event("Đang bắt đầu lượt xử lý...", None, details=_PIPELINE_STATUS_DETAILS)
+
+        pointy_fast_path = build_pointy_fast_path_action(query, context)
+        if pointy_fast_path:
+            logger.info(
+                "[POINTY_FAST_PATH] Emitting %s for target=%s reason=%s before router",
+                pointy_fast_path["action"],
+                pointy_fast_path.get("target", {}).get("id"),
+                pointy_fast_path.get("reason"),
+            )
+            yield await create_host_action_event(
+                request_id=pointy_fast_path["request_id"],
+                action=pointy_fast_path["action"],
+                params=pointy_fast_path["params"],
+                node="pointy_fast_path",
+            )
 
         bootstrap = await build_stream_bootstrap_impl(
             query=query,
@@ -362,6 +379,8 @@ async def process_with_multi_agent_streaming(
                     create_answer_event=create_answer_event,
                 )
                 for event in bus_events:
+                    if getattr(event, "type", None) == "answer":
+                        answer_emitted = True
                     yield event
                 continue
             elif msg_type == "provider_unavailable":

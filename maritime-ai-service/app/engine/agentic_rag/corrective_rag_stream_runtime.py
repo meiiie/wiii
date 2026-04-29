@@ -5,12 +5,29 @@ Keeps the main CorrectiveRAG class focused on orchestration and ownership while
 the large streaming implementation lives in a dedicated module.
 """
 
+import asyncio
 import logging
 import time
 from typing import Any, AsyncGenerator, Dict, Optional
 
+from app.engine.agentic_rag.runtime_llm_socket import (
+    ainvoke_agentic_rag_llm,
+    make_agentic_rag_messages,
+    resolve_agentic_rag_llm,
+)
+from app.engine.llm_factory import ThinkingTier
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_crag_light_llm(component: str):
+    from app.engine.llm_pool import get_llm_light
+
+    return resolve_agentic_rag_llm(
+        tier=ThinkingTier.LIGHT,
+        fallback_factory=get_llm_light,
+        component=component,
+    )
 
 
 def _build_soul_system_prompt(
@@ -68,6 +85,9 @@ async def _stream_llm_with_thinking(
     """
     full_answer = ""
     _tag_state = {"inside_thinking": False, "pending": ""}
+    stream_start = time.time()
+    chunk_timeout = 60
+    total_timeout = 240
 
     def _extract_tagged_thinking(text: str) -> tuple[str, str]:
         """Split <thinking> tags from streamed text. Returns (reasoning, visible)."""
@@ -111,8 +131,88 @@ async def _stream_llm_with_thinking(
         _tag_state["inside_thinking"] = inside
         return "".join(reasoning_parts), "".join(visible_parts)
 
+    if getattr(llm, "_wiii_native_route", False):
+        try:
+            from app.engine.multi_agent.openai_stream_runtime import (
+                _create_openai_compatible_stream_client_impl,
+                _extract_openai_delta_text_impl,
+                _resolve_openai_stream_model_name_impl,
+            )
+            from app.engine.native_chat_runtime import message_to_openai_payload
+
+            provider_name = str(getattr(llm, "_wiii_provider_name", "") or "").strip().lower()
+            tier_key = str(getattr(llm, "_wiii_tier_key", "") or "light").strip().lower()
+            client = _create_openai_compatible_stream_client_impl(provider_name)
+            model_name = _resolve_openai_stream_model_name_impl(llm, provider_name, tier_key)
+            if client is not None and model_name:
+                request_kwargs: dict[str, Any] = {
+                    "model": model_name,
+                    "messages": [message_to_openai_payload(message) for message in messages],
+                    "stream": True,
+                }
+                temperature = getattr(llm, "temperature", None)
+                if temperature is not None:
+                    request_kwargs["temperature"] = temperature
+
+                stream = await client.chat.completions.create(**request_kwargs)
+                stream_iter = stream.__aiter__()
+                while True:
+                    if time.time() - stream_start > total_timeout:
+                        logger.warning("[CRAG-V3] Native LLM stream total timeout")
+                        break
+                    try:
+                        chunk = await asyncio.wait_for(
+                            stream_iter.__anext__(),
+                            timeout=chunk_timeout,
+                        )
+                    except StopAsyncIteration:
+                        break
+                    except asyncio.TimeoutError:
+                        logger.warning("[CRAG-V3] Native LLM stream chunk timeout")
+                        break
+                    for choice in getattr(chunk, "choices", []) or []:
+                        delta = getattr(choice, "delta", None)
+                        if delta is None:
+                            continue
+                        reasoning, content = _extract_openai_delta_text_impl(delta)
+                        if content:
+                            tagged_reasoning, visible = _extract_tagged_thinking(content)
+                            if tagged_reasoning:
+                                reasoning = f"{reasoning}{tagged_reasoning}"
+                            content = visible
+                        if reasoning:
+                            yield {"type": "thinking_delta", "content": reasoning}
+                        if content:
+                            full_answer += content
+                            yield {"type": "answer", "content": content}
+                if full_answer:
+                    return
+        except Exception as native_stream_exc:
+            logger.warning(
+                "[CRAG-V3] Native LLM stream failed, falling back to invoke: %s",
+                native_stream_exc,
+            )
+
     try:
-        async for chunk in llm.astream(messages):
+        aiter = llm.astream(messages).__aiter__()
+        while True:
+            if time.time() - stream_start > total_timeout:
+                logger.warning("[CRAG-V3] LLM astream total timeout")
+                if not full_answer:
+                    raise TimeoutError("CRAG LLM stream timed out before first answer chunk")
+                break
+            try:
+                chunk = await asyncio.wait_for(
+                    aiter.__anext__(),
+                    timeout=chunk_timeout,
+                )
+            except StopAsyncIteration:
+                break
+            except asyncio.TimeoutError:
+                logger.warning("[CRAG-V3] LLM astream chunk timeout")
+                if not full_answer:
+                    raise TimeoutError("CRAG LLM stream chunk timed out before first answer chunk")
+                break
             content = chunk.content if hasattr(chunk, "content") else str(chunk)
 
             # Handle list content (Gemini native format)
@@ -147,7 +247,12 @@ async def _stream_llm_with_thinking(
         logger.warning("[CRAG-V3] LLM astream failed, falling back to ainvoke: %s", stream_exc)
         try:
             from app.services.output_processor import extract_thinking_from_response
-            response = await llm.ainvoke(messages)
+            response = await ainvoke_agentic_rag_llm(
+                llm=llm,
+                messages=messages,
+                tier=ThinkingTier.LIGHT,
+                component="CorrectiveRAGStreamInvokeFallback",
+            )
             text, thinking = extract_thinking_from_response(response.content)
             if thinking:
                 yield {"type": "thinking_delta", "content": thinking}
@@ -181,12 +286,10 @@ async def _generate_from_web_context(
     Kept for backward compatibility with callers that need a single string.
     """
     try:
-        from app.engine.llm_pool import get_llm_light
         from app.services.output_processor import extract_thinking_from_response
-        from langchain_core.messages import HumanMessage, SystemMessage
         from app.prompts.prompt_loader import get_prompt_loader
 
-        llm = get_llm_light()
+        llm = _resolve_crag_light_llm("CorrectiveRAGWebContext")
         if not llm:
             fallback_text, _ = await owner._generate_fallback(query, context)
             return fallback_text
@@ -200,11 +303,16 @@ async def _generate_from_web_context(
         system_prompt = _build_soul_system_prompt(
             personality, name_hint, context_type="web"
         )
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=f"{web_context}\n\nCâu hỏi: {query}"),
-        ]
-        response = await llm.ainvoke(messages)
+        messages = make_agentic_rag_messages(
+            system=system_prompt,
+            user=f"{web_context}\n\nCâu hỏi: {query}",
+        )
+        response = await ainvoke_agentic_rag_llm(
+            llm=llm,
+            messages=messages,
+            tier=ThinkingTier.LIGHT,
+            component="CorrectiveRAGWebContext",
+        )
         text, _ = extract_thinking_from_response(response.content)
         return text.strip() if text else ""
 
@@ -431,11 +539,9 @@ async def process_streaming_impl(
                 yield {"type": "status", "content": "Đang tạo câu trả lời từ kết quả web"}
 
                 try:
-                    from app.engine.llm_pool import get_llm_light
-                    from langchain_core.messages import HumanMessage, SystemMessage
                     from app.prompts.prompt_loader import get_prompt_loader
 
-                    _llm = get_llm_light()
+                    _llm = _resolve_crag_light_llm("CorrectiveRAGWebStream")
                     _loader = get_prompt_loader()
                     _identity = _loader.get_identity().get("identity", {})
                     _personality = _identity.get("personality", {}).get("summary", "")
@@ -443,10 +549,10 @@ async def process_streaming_impl(
                     _nhint = f"User tên {_uname}. " if _uname else ""
 
                     _sys = _build_soul_system_prompt(_personality, _nhint, context_type="web")
-                    _msgs = [
-                        SystemMessage(content=_sys),
-                        HumanMessage(content=f"{_web_context}\n\nCâu hỏi: {query}"),
-                    ]
+                    _msgs = make_agentic_rag_messages(
+                        system=_sys,
+                        user=f"{_web_context}\n\nCâu hỏi: {query}",
+                    )
 
                     web_answer = ""
                     if _llm:
@@ -485,11 +591,9 @@ async def process_streaming_impl(
 
                 fallback_answer = ""
                 try:
-                    from app.engine.llm_pool import get_llm_light
-                    from langchain_core.messages import HumanMessage, SystemMessage
                     from app.prompts.prompt_loader import get_prompt_loader
 
-                    _llm = get_llm_light()
+                    _llm = _resolve_crag_light_llm("CorrectiveRAGIntrinsicFallback")
                     _loader = get_prompt_loader()
                     _identity = _loader.get_identity().get("identity", {})
                     _personality = _identity.get("personality", {}).get("summary", "")
@@ -497,10 +601,10 @@ async def process_streaming_impl(
                     _nhint = f"User tên {_uname}. " if _uname else ""
 
                     _sys = _build_soul_system_prompt(_personality, _nhint, context_type="fallback")
-                    _msgs = [
-                        SystemMessage(content=_sys),
-                        HumanMessage(content=query),
-                    ]
+                    _msgs = make_agentic_rag_messages(
+                        system=_sys,
+                        user=query,
+                    )
 
                     if _llm:
                         async for evt in _stream_llm_with_thinking(_llm, _msgs, owner, query, context or {}):
@@ -592,11 +696,9 @@ async def process_streaming_impl(
 
             fallback_answer = ""
             try:
-                from app.engine.llm_pool import get_llm_light
-                from langchain_core.messages import HumanMessage, SystemMessage
                 from app.prompts.prompt_loader import get_prompt_loader
 
-                _llm = get_llm_light()
+                _llm = _resolve_crag_light_llm("CorrectiveRAGNoDocsFallback")
                 _loader = get_prompt_loader()
                 _identity = _loader.get_identity().get("identity", {})
                 _personality = _identity.get("personality", {}).get("summary", "")
@@ -604,10 +706,10 @@ async def process_streaming_impl(
                 _nhint = f"User tên {_uname}. " if _uname else ""
 
                 _sys = _build_soul_system_prompt(_personality, _nhint, context_type="fallback")
-                _msgs = [
-                    SystemMessage(content=_sys),
-                    HumanMessage(content=query),
-                ]
+                _msgs = make_agentic_rag_messages(
+                    system=_sys,
+                    user=query,
+                )
 
                 if _llm:
                     async for evt in _stream_llm_with_thinking(_llm, _msgs, owner, query, context or {}):

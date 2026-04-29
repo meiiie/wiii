@@ -58,6 +58,28 @@ async def test_wrap_sse_with_keepalive_sends_heartbeat_on_idle():
 
 
 @pytest.mark.asyncio
+async def test_wrap_sse_with_keepalive_repeats_heartbeats_until_data():
+    async def slow_inner():
+        await asyncio.sleep(0.035)
+        yield "data"
+
+    mock_request = MagicMock()
+    mock_request.is_disconnected = AsyncMock(return_value=False)
+
+    chunks = []
+    async for chunk in wrap_sse_with_keepalive(
+        inner_gen=slow_inner(),
+        request=mock_request,
+        keepalive_interval_sec=0.01,
+        idle_timeout_sec=0.1,
+    ):
+        chunks.append(chunk)
+
+    assert chunks.count(SSE_KEEPALIVE) >= 2
+    assert chunks[-1] == "data"
+
+
+@pytest.mark.asyncio
 async def test_wrap_sse_with_keepalive_allows_long_streams_when_idle_timeout_disabled():
     async def slow_inner():
         await asyncio.sleep(0.03)

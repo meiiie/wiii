@@ -14,14 +14,13 @@ from app.engine.multi_agent.graph_surface_runtime import render_reasoning_fast_i
 from app.engine.multi_agent.openai_stream_runtime import (
     _create_openai_compatible_stream_client_impl,
     _extract_openai_delta_text_impl,
-    _flatten_langchain_content_impl,
-    _langchain_message_to_openai_payload_impl,
     _resolve_openai_stream_model_name_impl,
     _should_enable_real_code_streaming_impl,
     _stream_openai_compatible_answer_with_route_impl,
     _supports_native_answer_streaming_impl,
 )
 from app.engine.multi_agent.state import AgentState
+from app.engine.native_chat_runtime import message_to_openai_payload
 from app.engine.multi_agent.widget_surface import _inject_widget_blocks_from_tool_results
 
 
@@ -35,6 +34,10 @@ def _graph_override(name: str, current):
     return candidate
 
 
+def _langchain_message_to_openai_payload(message: Any) -> dict[str, Any]:
+    return message_to_openai_payload(message)
+
+
 async def _stream_openai_compatible_answer_with_route(
     route,
     messages: list,
@@ -42,6 +45,7 @@ async def _stream_openai_compatible_answer_with_route(
     *,
     node: str = "direct",
     thinking_stop_signal=None,
+    primary_timeout: float | None = None,
 ) -> tuple[object | None, bool]:
     override = _graph_override("_stream_openai_compatible_answer_with_route", _stream_openai_compatible_answer_with_route)
     if override is not None:
@@ -51,6 +55,7 @@ async def _stream_openai_compatible_answer_with_route(
             push_event,
             node=node,
             thinking_stop_signal=thinking_stop_signal,
+            primary_timeout=primary_timeout,
         )
     return await _stream_openai_compatible_answer_with_route_impl(
         route,
@@ -58,10 +63,11 @@ async def _stream_openai_compatible_answer_with_route(
         push_event,
         node=node,
         thinking_stop_signal=thinking_stop_signal,
+        primary_timeout=primary_timeout,
         supports_native_answer_streaming=_supports_native_answer_streaming_impl,
         create_openai_compatible_stream_client=_create_openai_compatible_stream_client_impl,
         resolve_openai_stream_model_name=_resolve_openai_stream_model_name_impl,
-        langchain_message_to_openai_payload=_langchain_message_to_openai_payload_impl,
+        langchain_message_to_openai_payload=_langchain_message_to_openai_payload,
         extract_openai_delta_text=_extract_openai_delta_text_impl,
     )
 

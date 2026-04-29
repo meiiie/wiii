@@ -1043,16 +1043,20 @@ def _build_direct_system_messages(
     tools_context_override: Optional[str] = None,
     visual_decision=None,
     history_limit: int = 10,
+    native_messages: bool = False,
 ):
     """Build system prompt and message list for direct-style nodes.
 
     Sprint 154: Extracted from direct_response_node.
 
     Returns:
-        list: LangChain messages [SystemMessage, ...history, HumanMessage]
+        list: message objects [system, ...history, user]
     """
-    from langchain_core.messages import HumanMessage, SystemMessage
     from app.prompts.prompt_loader import get_prompt_loader
+    if native_messages:
+        from app.engine.native_chat_runtime import message_to_openai_payload
+    else:
+        from langchain_core.messages import HumanMessage, SystemMessage
 
     ctx = state.get("context", {})
     loader = get_prompt_loader()
@@ -1226,10 +1230,16 @@ def _build_direct_system_messages(
         from app.engine.reasoning.thinking_enforcement import get_thinking_enforcement
         system_prompt = get_thinking_enforcement() + "\n\n" + system_prompt + "\n\n" + thinking_instruction
 
-    messages = [SystemMessage(content=system_prompt)]
+    if native_messages:
+        messages = [{"role": "system", "content": system_prompt}]
+    else:
+        messages = [SystemMessage(content=system_prompt)]
     lc_messages = ctx.get("langchain_messages", [])
     if lc_messages and history_limit > 0:
-        messages.extend(lc_messages[-history_limit:])
+        if native_messages:
+            messages.extend(message_to_openai_payload(message) for message in lc_messages[-history_limit:])
+        else:
+            messages.extend(lc_messages[-history_limit:])
 
     # Sprint 179: Multimodal content blocks when images are present
     images = ctx.get("images") or []
@@ -1252,7 +1262,13 @@ def _build_direct_system_messages(
                         "detail": img.get("detail", "auto"),
                     }
                 })
-        messages.append(HumanMessage(content=content_blocks))
+        if native_messages:
+            messages.append({"role": "user", "content": content_blocks})
+        else:
+            messages.append(HumanMessage(content=content_blocks))
     else:
-        messages.append(HumanMessage(content=query))
+        if native_messages:
+            messages.append({"role": "user", "content": query})
+        else:
+            messages.append(HumanMessage(content=query))
     return messages

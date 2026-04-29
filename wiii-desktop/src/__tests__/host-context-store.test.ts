@@ -90,6 +90,29 @@ describe('host-context-store', () => {
     expect(ctx?.page.metadata?.quiz_question).toBe('Which vessel gives way?');
   });
 
+  it('should preserve future host metadata such as Pointy targets', () => {
+    const store = useHostContextStore.getState();
+    store.setLegacyPageContext({
+      page_type: 'course_list',
+      page_title: 'Courses',
+      available_targets: [
+        {
+          id: 'browse-courses',
+          selector: '[data-wiii-id="browse-courses"]',
+          label: 'Browse courses',
+        },
+      ],
+    });
+
+    const ctx = useHostContextStore.getState().currentContext;
+    expect(ctx?.page.metadata?.available_targets).toEqual([
+      expect.objectContaining({
+        id: 'browse-courses',
+        selector: '[data-wiii-id="browse-courses"]',
+      }),
+    ]);
+  });
+
   it('should preserve connector and workspace overlays from legacy page context', () => {
     const store = useHostContextStore.getState();
     store.setLegacyPageContext({
