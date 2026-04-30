@@ -101,25 +101,8 @@ async def generate_stream_v3_events(
     try:
         request_id = str(request_headers.get("X-Request-ID") or request_headers.get("x-request-id") or "").strip() or None
         requested_provider = getattr(chat_request, "provider", None)
-        has_attachments = bool(
-            getattr(chat_request, "images", None)
-            or getattr(chat_request, "attachments", None)
-            or getattr(chat_request, "files", None)
-        )
-        fast_social = None
-        if not has_attachments:
-            from app.engine.multi_agent.direct_social import (
-                _build_simple_social_fast_path,
-            )
-
-            fast_social = _build_simple_social_fast_path(
-                getattr(chat_request, "message", "") or ""
-            )
-
-        if requested_provider and requested_provider != "auto" and fast_social is None:
-            from app.services.llm_selectability_service import (
-                ensure_provider_is_selectable,
-            )
+        if requested_provider and requested_provider != "auto":
+            from app.services.llm_selectability_service import ensure_provider_is_selectable
 
             ensure_provider_is_selectable(requested_provider)
 
@@ -168,6 +151,21 @@ async def generate_stream_v3_events(
             "_use_multi_agent",
             getattr(settings, "use_multi_agent", True),
         )
+        has_attachments = bool(
+            getattr(chat_request, "images", None)
+            or getattr(chat_request, "attachments", None)
+            or getattr(chat_request, "files", None)
+        )
+        fast_social = None
+        if not has_attachments:
+            from app.engine.multi_agent.direct_social import (
+                _build_simple_social_fast_path,
+            )
+
+            fast_social = _build_simple_social_fast_path(
+                getattr(chat_request, "message", "") or ""
+            )
+
         if fast_social is not None:
             full_answer, fast_thinking = fast_social
             processing_time = time.time() - start_time

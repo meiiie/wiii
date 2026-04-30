@@ -138,19 +138,24 @@ async def test_generate_stream_v3_events_fast_social_bypasses_graph_context():
         yield  # pragma: no cover
 
     chunks = []
-    async for chunk in generate_stream_v3_events(
-        chat_request=_make_request(
-            message="hello",
-            provider="nvidia",
-            model="deepseek-ai/deepseek-v4-flash",
-        ),
-        request_headers={"X-Request-ID": "req-fast-social"},
-        background_save=MagicMock(),
-        start_time=time.time(),
-        orchestrator=orchestrator,
-        stream_fn=fail_stream_fn,
-    ):
-        chunks.append(chunk)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "app.services.llm_selectability_service.ensure_provider_is_selectable",
+            lambda _provider: None,
+        )
+        async for chunk in generate_stream_v3_events(
+            chat_request=_make_request(
+                message="hello",
+                provider="nvidia",
+                model="deepseek-ai/deepseek-v4-flash",
+            ),
+            request_headers={"X-Request-ID": "req-fast-social"},
+            background_save=MagicMock(),
+            start_time=time.time(),
+            orchestrator=orchestrator,
+            stream_fn=fail_stream_fn,
+        ):
+            chunks.append(chunk)
 
     joined = "\n".join(chunks)
     assert "event: answer" in joined
