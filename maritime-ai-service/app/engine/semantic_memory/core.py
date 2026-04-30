@@ -255,6 +255,31 @@ class SemanticMemoryEngine:
             logger.error("Failed to get user facts for %s: %s", user_id, e)
             return {}
 
+    def search_relevant_facts(
+        self,
+        user_id: str,
+        query_embedding: List[float],
+        limit: int = DEFAULT_SEARCH_LIMIT,
+        min_similarity: float = 0.3,
+    ) -> List[SemanticMemorySearchResult]:
+        """
+        Search user facts by query embedding.
+
+        This keeps the facade aligned with the repository API used by the
+        prompt-context builder, so semantic fact retrieval does not silently
+        fall back to broad fact injection.
+        """
+        try:
+            return self._repository.search_relevant_facts(
+                user_id=user_id,
+                query_embedding=query_embedding,
+                limit=limit,
+                min_similarity=min_similarity,
+            )
+        except Exception as exc:
+            logger.warning("Failed to search relevant facts for %s: %s", user_id, exc)
+            return []
+
     # ==================== FACT EXTRACTION (Delegated) ====================
 
     async def _extract_and_store_facts(

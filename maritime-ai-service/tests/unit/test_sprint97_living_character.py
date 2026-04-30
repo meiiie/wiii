@@ -230,6 +230,7 @@ class TestDirectNodeLivingState:
              patch("app.prompts.prompt_loader.get_prompt_loader") as mock_pl, \
              patch("app.engine.multi_agent.graph.settings") as mock_settings:
             mock_acr.get_llm.return_value = mock_llm
+            mock_acr.get_native_llm.return_value = None
             mock_settings.app_name = "Wiii"
             mock_settings.default_domain = "maritime"
             mock_settings.enable_character_tools = True
@@ -283,6 +284,7 @@ class TestDirectNodeCharacterTools:
              patch("app.prompts.prompt_loader.get_prompt_loader") as mock_pl, \
              patch("app.engine.multi_agent.graph.settings") as mock_settings:
             mock_acr.get_llm.return_value = mock_llm
+            mock_acr.get_native_llm.return_value = None
             mock_settings.app_name = "Wiii"
             mock_settings.default_domain = "maritime"
             mock_settings.enable_character_tools = True
@@ -346,6 +348,7 @@ class TestDirectNodeCharacterTools:
              patch("app.prompts.prompt_loader.get_prompt_loader") as mock_pl, \
              patch("app.engine.multi_agent.graph.settings") as mock_settings:
             mock_acr.get_llm.return_value = mock_llm
+            mock_acr.get_native_llm.return_value = None
             mock_settings.app_name = "Wiii"
             mock_settings.default_domain = "maritime"
             mock_settings.enable_character_tools = False
@@ -411,6 +414,8 @@ class TestDirectNodeCharacterTools:
 
         with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm",
                    return_value=mock_llm), \
+             patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_native_llm",
+                   return_value=None), \
              patch("app.engine.character.character_state.get_character_state_manager") as mock_csm, \
              patch("app.prompts.prompt_loader.get_prompt_loader") as mock_pl, \
              patch("app.engine.multi_agent.graph.settings") as mock_settings, \

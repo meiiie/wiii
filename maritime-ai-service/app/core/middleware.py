@@ -13,17 +13,20 @@ SOTA 2026: Every production service must propagate correlation IDs.
 """
 
 import logging
+import re
 import uuid
+from pathlib import Path
 
 import structlog
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, Response
 
 logger = logging.getLogger(__name__)
 
 # Subdomains that should NOT be treated as org slugs
 _RESERVED_SUBDOMAINS = frozenset({"www", "api", "admin", "app", "mail", "static", "cdn"})
+_EMBED_HASHED_ASSET_RE = re.compile(r"^(?P<prefix>.+)-(?P<hash>[A-Za-z0-9_-]+)\.(?P<ext>js|css)$")
 
 
 def extract_org_from_subdomain(host: str, base_domain: str) -> str | None:
@@ -57,11 +60,41 @@ def extract_org_from_subdomain(host: str, base_domain: str) -> str | None:
     return subdomain
 
 
+def _embed_asset_roots() -> list[Path]:
+    return [
+        Path("/app-embed"),
+        Path(__file__).resolve().parents[3] / "wiii-desktop" / "dist-embed",
+    ]
+
+
+def _find_embed_asset_replacement(path: str, roots: list[Path] | None = None) -> Path | None:
+    """Find the current dev asset for a stale hashed embed chunk request."""
+    filename = path.rsplit("/", 1)[-1]
+    match = _EMBED_HASHED_ASSET_RE.match(filename)
+    if not match:
+        return None
+
+    prefix = match.group("prefix")
+    extension = match.group("ext")
+    candidates: list[Path] = []
+    for root in roots or _embed_asset_roots():
+        assets_dir = root / "assets"
+        if not assets_dir.exists():
+            continue
+        matches = sorted(assets_dir.glob(f"{prefix}-*.{extension}"))
+        existing = [candidate for candidate in matches if candidate.is_file()]
+        candidates.extend(existing)
+    return candidates[0] if len(candidates) == 1 else None
+
+
 class EmbedCSPMiddleware(BaseHTTPMiddleware):
     """
     Sprint 220b: Set CSP frame-ancestors on /embed routes to allow iframe embedding.
 
     Without this, browsers block iframing due to X-Frame-Options: DENY (default).
+    Local development also disables browser caching for embed assets. Rebuilding
+    dist-embed changes hashed chunk filenames, and stale cached entry chunks can
+    otherwise request deleted dynamic chunks and break answer rendering.
     Only applies to /embed paths — other routes remain unaffected.
     """
 
@@ -71,6 +104,14 @@ class EmbedCSPMiddleware(BaseHTTPMiddleware):
         if request.url.path.startswith("/embed"):
             from app.core.config import settings
 
+            if (
+                settings.environment != "production"
+                and response.status_code == 404
+                and request.url.path.startswith("/embed/assets/")
+                and (replacement := _find_embed_asset_replacement(request.url.path))
+            ):
+                response = FileResponse(replacement)
+
             origins = settings.embed_allowed_origins.strip()
             if origins:
                 # Space-separated origins → CSP frame-ancestors directive
@@ -79,6 +120,10 @@ class EmbedCSPMiddleware(BaseHTTPMiddleware):
                 frame_ancestors = "frame-ancestors 'self'"
 
             response.headers["Content-Security-Policy"] = frame_ancestors
+            if settings.environment != "production":
+                response.headers["Cache-Control"] = "no-store"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
             # Remove X-Frame-Options — it conflicts with CSP frame-ancestors
             # and older browsers use it to block iframes
             if "X-Frame-Options" in response.headers:

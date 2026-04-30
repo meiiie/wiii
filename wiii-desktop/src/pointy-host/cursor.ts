@@ -1,27 +1,33 @@
 /**
  * Wiii Pointy — animated cursor overlay.
  *
- * Renders a single SVG circle with a "W" letter (Wiii brand orange #F97316)
- * that animates from its current position to the target element's bounding
- * rect. Pure DOM + Web Animations API; no React, no framework.
+ * Renders a Browser-Use-like collaborator cursor with a compact Wiii badge.
+ * Pure DOM + Web Animations API; no React, no framework.
  */
 
 const CURSOR_ID = "wiii-pointy-cursor";
-const CURSOR_SIZE = 36;
+const CURSOR_WIDTH = 124;
+const CURSOR_HEIGHT = 62;
+const CURSOR_TIP_X = 5;
+const CURSOR_TIP_Y = 4;
+const CURSOR_SIZE = CURSOR_WIDTH;
 const BRAND_ORANGE = "#F97316";
-const BRAND_CREAM = "#FAF5EE";
+const POINTER_BLACK = "#111827";
+const LIVE_GREEN = "#22C55E";
 
 let cursorEl: SVGSVGElement | null = null;
 let lastPos: { x: number; y: number } | null = null;
+let activeAnimation: Animation | null = null;
 
 function createCursor(): SVGSVGElement {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("id", CURSOR_ID);
-  svg.setAttribute("width", String(CURSOR_SIZE));
-  svg.setAttribute("height", String(CURSOR_SIZE));
-  svg.setAttribute("viewBox", "0 0 36 36");
+  svg.setAttribute("width", String(CURSOR_WIDTH));
+  svg.setAttribute("height", String(CURSOR_HEIGHT));
+  svg.setAttribute("viewBox", `0 0 ${CURSOR_WIDTH} ${CURSOR_HEIGHT}`);
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("data-wiii-pointy", "cursor");
+  svg.setAttribute("data-wiii-pointy-scope", "iframe");
 
   const css = svg.style;
   css.position = "fixed";
@@ -29,14 +35,36 @@ function createCursor(): SVGSVGElement {
   css.top = "0px";
   css.zIndex = "2147483646";
   css.pointerEvents = "none";
-  css.transformOrigin = "center";
-  css.filter = "drop-shadow(0 4px 8px rgba(0,0,0,0.25))";
+  css.transformOrigin = `${CURSOR_TIP_X}px ${CURSOR_TIP_Y}px`;
+  css.filter = "drop-shadow(0 12px 26px rgba(15,23,42,0.26))";
   css.opacity = "0";
   css.transition = "opacity 200ms ease-out";
+  css.overflow = "visible";
+  css.willChange = "transform, opacity";
 
   svg.innerHTML = `
-    <circle cx="18" cy="18" r="16" fill="${BRAND_ORANGE}" stroke="${BRAND_CREAM}" stroke-width="2"/>
-    <text x="18" y="23" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="16" font-weight="700" fill="${BRAND_CREAM}">W</text>
+    <style>
+      #${CURSOR_ID} .wiii-pointy-live-ring {
+        transform-origin: 105px 43px;
+        animation: wiii-pointy-live-pulse 1.25s ease-out infinite;
+      }
+      #${CURSOR_ID}[data-wiii-pointy-state="moving"] .wiii-pointy-badge {
+        filter: drop-shadow(0 0 10px rgba(249,115,22,0.28));
+      }
+      @keyframes wiii-pointy-live-pulse {
+        0% { opacity: 0.52; transform: scale(0.72); }
+        100% { opacity: 0; transform: scale(1.8); }
+      }
+    </style>
+    <path d="M5 4 L5 35 L15 25 L22 44 L31 40 L24 23 L40 23 Z" fill="${POINTER_BLACK}" stroke="white" stroke-width="2.6" stroke-linejoin="round"/>
+    <g class="wiii-pointy-badge">
+      <rect x="36" y="9" width="82" height="38" rx="19" fill="rgba(255,255,255,0.96)" stroke="rgba(17,24,39,0.12)" stroke-width="1"/>
+      <circle cx="55" cy="28" r="11" fill="${BRAND_ORANGE}"/>
+      <text x="55" y="32" text-anchor="middle" font-family="Aptos Rounded,Nunito Sans,Segoe UI,sans-serif" font-size="11" font-weight="900" fill="white">W</text>
+      <text x="83" y="32" text-anchor="middle" font-family="Aptos Rounded,Nunito Sans,Segoe UI,sans-serif" font-size="14" font-weight="850" fill="${POINTER_BLACK}">Wiii</text>
+      <circle class="wiii-pointy-live-ring" cx="105" cy="43" r="5" fill="${LIVE_GREEN}"/>
+      <circle cx="105" cy="43" r="4" fill="${LIVE_GREEN}" stroke="white" stroke-width="1.8"/>
+    </g>
   `;
   return svg;
 }
@@ -55,8 +83,8 @@ function ensureCursor(): SVGSVGElement {
  */
 export function computeTargetPoint(rect: DOMRect): { x: number; y: number } {
   return {
-    x: rect.left + rect.width / 2 + 8,
-    y: rect.top + rect.height / 2 - 8,
+    x: rect.left + rect.width / 2 - CURSOR_TIP_X,
+    y: rect.top + rect.height / 2 - CURSOR_TIP_Y,
   };
 }
 
@@ -65,6 +93,19 @@ export function computeOriginPoint(): { x: number; y: number } {
   const w = typeof window !== "undefined" ? window.innerWidth : 1024;
   const h = typeof window !== "undefined" ? window.innerHeight : 768;
   return { x: w - CURSOR_SIZE, y: h / 2 };
+}
+
+function computeArcPoint(
+  start: { x: number; y: number },
+  target: { x: number; y: number },
+): { x: number; y: number } {
+  const dx = target.x - start.x;
+  const dy = target.y - start.y;
+  const distance = Math.hypot(dx, dy);
+  return {
+    x: start.x + dx * 0.56,
+    y: start.y + dy * 0.48 - Math.min(distance * 0.18, 72),
+  };
 }
 
 export interface MoveCursorOptions {
@@ -79,28 +120,41 @@ export function moveCursorToRect(rect: DOMRect, opts: MoveCursorOptions = {}): A
   const start = lastPos ?? computeOriginPoint();
   lastPos = target;
 
+  activeAnimation?.cancel();
+  activeAnimation = null;
   cursor.style.opacity = "1";
-  const duration = Math.max(200, Math.min(opts.duration_ms ?? 600, 2000));
+  cursor.setAttribute("data-wiii-pointy-state", "moving");
+  const duration = Math.max(220, Math.min(opts.duration_ms ?? 620, 1400));
+  const finalTransform = `translate(${target.x}px, ${target.y}px) scale(1)`;
+  const arc = computeArcPoint(start, target);
 
   if (typeof cursor.animate !== "function") {
-    cursor.style.transform = `translate(${target.x}px, ${target.y}px)`;
+    cursor.style.transform = finalTransform;
+    cursor.setAttribute("data-wiii-pointy-state", "pointing");
     opts.onComplete?.();
     return null;
   }
 
   const animation = cursor.animate(
     [
-      { transform: `translate(${start.x}px, ${start.y}px) scale(0.9)` },
-      { transform: `translate(${target.x}px, ${target.y}px) scale(1.05)`, offset: 0.85 },
-      { transform: `translate(${target.x}px, ${target.y}px) scale(1.0)` },
+      { transform: `translate(${start.x}px, ${start.y}px) scale(0.92) rotate(-2deg)` },
+      { transform: `translate(${arc.x}px, ${arc.y}px) scale(1.08) rotate(-7deg)`, offset: 0.58 },
+      { transform: `translate(${target.x}px, ${target.y}px) scale(1.02) rotate(1deg)`, offset: 0.86 },
+      { transform: finalTransform },
     ],
     {
       duration,
-      easing: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+      easing: "cubic-bezier(0.22, 1, 0.36, 1)",
       fill: "forwards",
     },
   );
-  animation.onfinish = () => opts.onComplete?.();
+  activeAnimation = animation;
+  animation.onfinish = () => {
+    cursor.style.transform = finalTransform;
+    cursor.setAttribute("data-wiii-pointy-state", "pointing");
+    activeAnimation = null;
+    opts.onComplete?.();
+  };
   return animation;
 }
 
@@ -111,6 +165,12 @@ export function hideCursor(): void {
 
 /** Remove the cursor element entirely (for cleanup / tests). */
 export function destroyCursor(): void {
+  if (activeAnimation) {
+    activeAnimation.onfinish = null;
+    activeAnimation.oncancel = null;
+    activeAnimation.cancel();
+    activeAnimation = null;
+  }
   if (cursorEl && cursorEl.parentNode) {
     cursorEl.parentNode.removeChild(cursorEl);
   }

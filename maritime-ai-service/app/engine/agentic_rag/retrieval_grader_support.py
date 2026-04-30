@@ -6,13 +6,14 @@ import json
 import logging
 from typing import Any, Dict, List
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
 from app.core.constants import (
     MAX_CONTENT_SNIPPET_LENGTH,
     MAX_DOCUMENT_PREVIEW_LENGTH,
 )
-from app.engine.agentic_rag.runtime_llm_socket import ainvoke_agentic_rag_llm
+from app.engine.agentic_rag.runtime_llm_socket import (
+    ainvoke_agentic_rag_llm,
+    make_agentic_rag_messages,
+)
 from app.engine.llm_factory import ThinkingTier
 logger = logging.getLogger(__name__)
 
@@ -30,10 +31,10 @@ async def batch_grade_structured_impl(
     """Batch grade using structured output."""
     from app.engine.structured_schemas import BatchDocGrades
 
-    messages = [
-        SystemMessage(content="Grade document relevance for each document."),
-        HumanMessage(content=prompt.format(query=query, documents=docs_text)),
-    ]
+    messages = make_agentic_rag_messages(
+        system="Grade document relevance for each document.",
+        user=prompt.format(query=query, documents=docs_text),
+    )
 
     from app.services.structured_invoke_service import StructuredInvokeService
 
@@ -75,12 +76,10 @@ async def batch_grade_legacy_impl(
     parse_batch_response,
 ):
     """Batch grade using legacy JSON parsing."""
-    messages = [
-        SystemMessage(
-            content="Grade document relevance. Return only valid JSON array."
-        ),
-        HumanMessage(content=prompt.format(query=query, documents=docs_text)),
-    ]
+    messages = make_agentic_rag_messages(
+        system="Grade document relevance. Return only valid JSON array.",
+        user=prompt.format(query=query, documents=docs_text),
+    )
 
     response = await ainvoke_agentic_rag_llm(
         llm=llm,
@@ -211,9 +210,8 @@ async def generate_feedback_impl(
         return f"Low relevance ({avg_score:.1f}/10). Try more specific keywords."
 
     try:
-        messages = [
-            HumanMessage(
-                content=prompt.format(
+        messages = make_agentic_rag_messages(
+            user=prompt.format(
                     query=query,
                     avg_score=f"{avg_score:.1f}",
                     relevant_count=relevant_count,
@@ -221,9 +219,8 @@ async def generate_feedback_impl(
                     issues="; ".join(issues[:3])
                     if issues
                     else "Documents không trực tiếp trả lời query",
-                )
-            )
-        ]
+            ),
+        )
 
         response = await ainvoke_agentic_rag_llm(
             llm=llm,

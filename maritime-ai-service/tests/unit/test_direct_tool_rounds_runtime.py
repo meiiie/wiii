@@ -226,6 +226,84 @@ async def test_execute_direct_tool_rounds_forwards_runtime_tier_to_failover_help
 
 
 @pytest.mark.asyncio
+async def test_execute_direct_tool_rounds_can_use_native_tool_messages():
+    from app.engine.multi_agent.direct_tool_rounds_runtime import (
+        execute_direct_tool_rounds_impl,
+    )
+    from app.engine.native_chat_runtime import NativeToolMessage, NativeUserMessage
+
+    class FakeTool:
+        name = "tool_demo"
+
+        def invoke(self, args):
+            return f"ket qua cho {args['query']}"
+
+    captured_messages: list[list[object]] = []
+
+    async def push_event(_event):
+        return None
+
+    async def fake_ainvoke_with_fallback(_llm, messages, **_kwargs):
+        captured_messages.append(list(messages))
+        call_index = fake_ainvoke_with_fallback.calls
+        fake_ainvoke_with_fallback.calls += 1
+        if call_index == 0:
+            return SimpleNamespace(
+                content="",
+                tool_calls=[
+                    {"id": "call_1", "name": "tool_demo", "args": {"query": "abc"}}
+                ],
+            )
+        if call_index == 1:
+            return SimpleNamespace(content="", tool_calls=[])
+        return SimpleNamespace(content="Day la cau tra loi cuoi.", tool_calls=[])
+
+    fake_ainvoke_with_fallback.calls = 0
+
+    async def fake_stream_direct_answer_with_fallback(*args, **kwargs):
+        raise AssertionError("tool-bound turn should not use no-tool streaming path")
+
+    async def fake_stream_direct_wait_heartbeats(*args, **kwargs):
+        stop_signal = kwargs.get("stop_signal")
+        if stop_signal is not None:
+            await stop_signal.wait()
+            return
+        await asyncio.Future()
+
+    async def push_status_only_progress(*args, **kwargs):
+        return None
+
+    with patch(
+        "app.engine.multi_agent.graph._ainvoke_with_fallback",
+        new=fake_ainvoke_with_fallback,
+    ), patch(
+        "app.engine.multi_agent.graph._stream_direct_wait_heartbeats",
+        new=fake_stream_direct_wait_heartbeats,
+    ):
+        llm_response, messages, tool_call_events = await execute_direct_tool_rounds_impl(
+            llm_with_tools=object(),
+            llm_auto=object(),
+            messages=[],
+            tools=[FakeTool()],
+            push_event=push_event,
+            query="Tim du kien roi tong hop lai",
+            state={},
+            forced_tool_choice="tool_demo",
+            native_tool_messages=True,
+            ainvoke_with_fallback=fake_ainvoke_with_fallback,
+            stream_direct_answer_with_fallback=fake_stream_direct_answer_with_fallback,
+            stream_direct_wait_heartbeats=fake_stream_direct_wait_heartbeats,
+            push_status_only_progress=push_status_only_progress,
+        )
+
+    assert llm_response.content == "Day la cau tra loi cuoi."
+    assert [event["type"] for event in tool_call_events] == ["call", "result"]
+    assert any(isinstance(message, NativeToolMessage) for message in captured_messages[1])
+    assert isinstance(captured_messages[2][-1], NativeUserMessage)
+    assert messages == captured_messages[2]
+
+
+@pytest.mark.asyncio
 async def test_execute_direct_tool_rounds_forwards_primary_timeout_to_stream_path():
     from app.engine.multi_agent.direct_tool_rounds_runtime import (
         execute_direct_tool_rounds_impl,

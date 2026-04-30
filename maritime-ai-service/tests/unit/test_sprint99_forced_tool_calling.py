@@ -419,6 +419,8 @@ class TestForcedToolChoice:
 
         with patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm",
                    return_value=mock_llm), \
+             patch("app.engine.multi_agent.agent_config.AgentConfigRegistry.get_native_llm",
+                   return_value=None), \
              patch("app.prompts.prompt_loader.get_prompt_loader") as mock_pl, \
              patch("app.engine.multi_agent.graph.settings") as mock_settings, \
              patch("app.engine.multi_agent.graph._get_or_create_tracer") as mock_tracer_fn, \
@@ -510,6 +512,7 @@ class TestPromptContent:
             mock_settings.enable_character_tools = False
             mock_settings.enable_code_execution = False
             mock_acr.get_llm.return_value = mock_llm
+            mock_acr.get_native_llm.return_value = None
 
             mock_tracer = MagicMock()
             mock_tracer_fn.return_value = mock_tracer
@@ -565,6 +568,7 @@ class TestPromptContent:
             mock_settings.enable_character_tools = False
             mock_settings.enable_code_execution = False
             mock_acr.get_llm.return_value = mock_llm
+            mock_acr.get_native_llm.return_value = None
 
             mock_tracer = MagicMock()
             mock_tracer_fn.return_value = mock_tracer

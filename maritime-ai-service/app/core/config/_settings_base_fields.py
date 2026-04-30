@@ -39,17 +39,17 @@ class BaseSettingsFieldsMixin:
 
     # API Settings
     api_v1_prefix: str = Field(default="/api/v1", description="API version 1 prefix")
-    api_key: Optional[str] = Field(default=None, description="API Key for authentication")
-    jwt_secret_key: str = Field(default="change-me-in-production", description="JWT secret key")
+    api_key: Optional[str] = Field(default=None, description="API Key for authentication", repr=False)
+    jwt_secret_key: str = Field(default="change-me-in-production", description="JWT secret key", repr=False)
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
     jwt_expire_minutes: int = Field(default=15, description="JWT token expiration in minutes")
 
     # Google OAuth (Sprint 157: Đăng Nhập)
     enable_google_oauth: bool = Field(default=False, description="Enable Google OAuth login")
     google_oauth_client_id: Optional[str] = Field(default=None, description="Google OAuth 2.0 client ID")
-    google_oauth_client_secret: Optional[str] = Field(default=None, description="Google OAuth 2.0 client secret")
+    google_oauth_client_secret: Optional[str] = Field(default=None, description="Google OAuth 2.0 client secret", repr=False)
     oauth_redirect_base_url: Optional[str] = Field(default=None, description="Base URL for OAuth callbacks (e.g. https://api.wiii.app)")
-    session_secret_key: str = Field(default="change-session-secret-in-production", description="Session middleware secret for OAuth CSRF state")
+    session_secret_key: str = Field(default="change-session-secret-in-production", description="Session middleware secret for OAuth CSRF state", repr=False)
     # Sprint 193: Allowed redirect origins for web OAuth (comma-separated whitelist)
     oauth_allowed_redirect_origins: str = Field(
         default="http://localhost:1420,http://localhost:1421",
@@ -79,7 +79,7 @@ class BaseSettingsFieldsMixin:
 
     # Magic Link Email Auth (Sprint 224)
     enable_magic_link_auth: bool = Field(default=False, description="Enable Magic Link email authentication")
-    resend_api_key: str = Field(default="", description="Resend API key for sending magic link emails")
+    resend_api_key: str = Field(default="", description="Resend API key for sending magic link emails", repr=False)
     magic_link_base_url: str = Field(default="http://localhost:8000", description="Base URL for magic link verification endpoint")
     magic_link_expires_seconds: int = Field(default=600, ge=60, le=3600, description="Magic link token expiry (default 10 min)")
     magic_link_from_email: str = Field(default="Wiii <noreply@wiii.app>", description="Sender email for magic links")
@@ -104,7 +104,7 @@ class BaseSettingsFieldsMixin:
     postgres_host: str = Field(default="localhost", description="PostgreSQL host")
     postgres_port: int = Field(default=5433, description="PostgreSQL port (Docker maps to 5433)")
     postgres_user: str = Field(default="wiii", description="PostgreSQL user")
-    postgres_password: str = Field(default="wiii_secret", description="PostgreSQL password")
+    postgres_password: str = Field(default="wiii_secret", description="PostgreSQL password", repr=False)
     postgres_db: str = Field(default="wiii_ai", description="PostgreSQL database name")
 
     # Database - Cloud (Production) - CHỈ THỊ 19: Now using Neon
@@ -122,30 +122,30 @@ class BaseSettingsFieldsMixin:
     # Object Storage (MinIO / S3-compatible)
     minio_endpoint: Optional[str] = Field(default=None, description="MinIO endpoint (host:port, no scheme)")
     minio_external_endpoint: Optional[str] = Field(default=None, description="MinIO endpoint for browser-facing presigned URLs (defaults to minio_endpoint)")
-    minio_access_key: Optional[str] = Field(default=None, description="MinIO access key")
-    minio_secret_key: Optional[str] = Field(default=None, description="MinIO secret key")
+    minio_access_key: Optional[str] = Field(default=None, description="MinIO access key", repr=False)
+    minio_secret_key: Optional[str] = Field(default=None, description="MinIO secret key", repr=False)
     minio_bucket: str = Field(default="wiii-docs", description="Storage bucket for document images")
     minio_secure: bool = Field(default=False, description="Use HTTPS for MinIO connection")
 
     # LMS API Key (for authentication from LMS)
-    lms_api_key: Optional[str] = Field(default=None, description="API Key for LMS integration")
+    lms_api_key: Optional[str] = Field(default=None, description="API Key for LMS integration", repr=False)
 
     # LMS Callback Configuration (AI-LMS Integration v2.0)
     lms_callback_url: Optional[str] = Field(default=None, description="LMS callback URL for AI events")
-    lms_callback_secret: Optional[str] = Field(default=None, description="Shared secret for callback authentication")
+    lms_callback_secret: Optional[str] = Field(default=None, description="Shared secret for callback authentication", repr=False)
 
     # LMS Integration (Sprint 155: Cầu Nối — inbound from LMS)
     enable_lms_integration: bool = Field(default=False, description="Enable LMS webhook + API integration")
     lms_base_url: Optional[str] = Field(default=None, description="LMS REST API base URL (single-LMS compat)")
-    lms_service_token: Optional[str] = Field(default=None, description="Service account token for LMS API (single-LMS compat)")
-    lms_webhook_secret: Optional[str] = Field(default=None, description="HMAC-SHA256 secret for incoming webhooks (single-LMS compat)")
+    lms_service_token: Optional[str] = Field(default=None, description="Service account token for LMS API (single-LMS compat)", repr=False)
+    lms_webhook_secret: Optional[str] = Field(default=None, description="HMAC-SHA256 secret for incoming webhooks (single-LMS compat)", repr=False)
     lms_api_timeout: int = Field(default=10, ge=3, le=60, description="LMS API call timeout (seconds)")
 
     # Course Generation (design spec v2.0, 2026-03-22)
     use_docling_for_course_gen: bool = Field(default=False, description="Use Docling for document conversion (requires pip install docling)")
     docling_vlm_backend: str = Field(default="none", description="VLM backend for scanned pages: 'gemini', 'ollama', 'none'")
     docling_vlm_api_url: Optional[str] = Field(default=None, description="VLM API URL for Docling scanned page extraction")
-    docling_vlm_api_key: Optional[str] = Field(default=None, description="VLM API key for Docling")
+    docling_vlm_api_key: Optional[str] = Field(default=None, description="VLM API key for Docling", repr=False)
     docling_vlm_model: str = Field(default="gemini-3.1-flash-lite", description="VLM model for Docling scanned pages")
     course_gen_max_concurrent_chapters: int = Field(default=3, ge=1, le=10, description="Max parallel chapter expansions")
     course_gen_chapter_timeout_seconds: int = Field(default=120, ge=30, le=600, description="Timeout per chapter expansion")
@@ -194,14 +194,14 @@ class BaseSettingsFieldsMixin:
     neo4j_uri: str = Field(default="bolt://localhost:7687", description="Neo4j connection URI (local or Aura)")
     neo4j_user: str = Field(default="neo4j", description="Neo4j user")
     neo4j_username: Optional[str] = Field(default=None, description="Neo4j username (Aura format)")
-    neo4j_password: str = Field(default="neo4j_secret", description="Neo4j password")
+    neo4j_password: str = Field(default="neo4j_secret", description="Neo4j password", repr=False)
 
     neo4j_username_resolved = property(resolve_neo4j_username)
 
     # LLM Settings - OpenAI/OpenRouter (legacy)
-    openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
+    openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key", repr=False)
     openai_base_url: Optional[str] = Field(default=None, description="OpenAI API base URL")
-    openrouter_api_key: Optional[str] = Field(default=None, description="OpenRouter API key")
+    openrouter_api_key: Optional[str] = Field(default=None, description="OpenRouter API key", repr=False)
     openrouter_base_url: Optional[str] = Field(default=OPENROUTER_DEFAULT_BASE_URL, description="OpenRouter API base URL")
     openai_model: str = Field(default=OPENAI_DEFAULT_MODEL, description="OpenAI model for general tasks")
     openai_model_advanced: str = Field(default=OPENAI_DEFAULT_MODEL_ADVANCED, description="OpenAI model for complex tasks")
@@ -210,7 +210,7 @@ class BaseSettingsFieldsMixin:
 
     # NVIDIA NIM (Issue #110) — OpenAI-compatible endpoint at integrate.api.nvidia.com.
     # NGC API key from build.nvidia.com unlocks Llama 3.1 405B, Nemotron 70B, etc.
-    nvidia_api_key: Optional[str] = Field(default=None, description="NVIDIA NIM (NGC) API key")
+    nvidia_api_key: Optional[str] = Field(default=None, description="NVIDIA NIM (NGC) API key", repr=False)
     nvidia_base_url: Optional[str] = Field(default=NVIDIA_DEFAULT_BASE_URL, description="NVIDIA NIM API base URL")
     nvidia_model: str = Field(default=NVIDIA_DEFAULT_MODEL, description="NVIDIA model for general tasks")
     nvidia_model_advanced: str = Field(default=NVIDIA_DEFAULT_MODEL_ADVANCED, description="NVIDIA model for complex tasks")
@@ -252,7 +252,7 @@ class BaseSettingsFieldsMixin:
     )
 
     # LLM Settings - Google Gemini (cloud fallback)
-    google_api_key: Optional[str] = Field(default=None, description="Google Gemini API key")
+    google_api_key: Optional[str] = Field(default=None, description="Google Gemini API key", repr=False)
     google_model: str = Field(
         default=GOOGLE_DEFAULT_MODEL,
         description="Google Gemini model (default: gemini-3.1-flash-lite-preview, current March 2026 default)",
@@ -270,6 +270,7 @@ class BaseSettingsFieldsMixin:
     ollama_api_key: Optional[str] = Field(
         default=None,
         description="Ollama Cloud API key for direct access to https://ollama.com/api",
+        repr=False,
     )
     ollama_base_url: Optional[str] = Field(default="http://localhost:11434", description="Ollama API base URL")
     ollama_model: str = Field(
@@ -287,10 +288,10 @@ class BaseSettingsFieldsMixin:
 
     # LLM Settings - Zhipu AI / GLM (cloud fallback)
     # Vertex AI (separate from Google AI Studio — independent quota)
-    vertex_api_key: Optional[str] = Field(default=None, description="Vertex AI API key (format: AQ.xxx)")
+    vertex_api_key: Optional[str] = Field(default=None, description="Vertex AI API key (format: AQ.xxx)", repr=False)
     vertex_model: Optional[str] = Field(default=None, description="Vertex AI model (defaults to google_model if not set)")
 
-    zhipu_api_key: Optional[str] = Field(default=None, description="Zhipu AI (GLM) API key")
+    zhipu_api_key: Optional[str] = Field(default=None, description="Zhipu AI (GLM) API key", repr=False)
     zhipu_base_url: str = Field(
         default="https://open.bigmodel.cn/api/paas/v4",
         description="Zhipu AI API base URL (OpenAI-compatible)",
@@ -506,14 +507,14 @@ class BaseSettingsFieldsMixin:
     # Multi-Channel Gateway
     enable_websocket: bool = Field(default=True, description="Enable WebSocket chat endpoint")
     enable_telegram: bool = Field(default=False, description="Enable Telegram bot integration")
-    telegram_bot_token: Optional[str] = Field(default=None, description="Telegram Bot API token")
+    telegram_bot_token: Optional[str] = Field(default=None, description="Telegram Bot API token", repr=False)
     telegram_webhook_url: Optional[str] = Field(default=None, description="Telegram webhook callback URL")
     enable_messenger_webhook: bool = Field(default=False, description="Enable Facebook Messenger Platform webhook")
     facebook_app_id: Optional[str] = Field(default=None, description="Facebook App ID")
-    facebook_app_secret: Optional[str] = Field(default=None, description="Facebook App Secret for X-Hub-Signature verification")
+    facebook_app_secret: Optional[str] = Field(default=None, description="Facebook App Secret for X-Hub-Signature verification", repr=False)
     facebook_page_id: Optional[str] = Field(default=None, description="Facebook Page ID")
     enable_zalo: bool = Field(default=False, description="Enable Zalo OA notification channel")
-    zalo_oa_refresh_token: Optional[str] = Field(default=None, description="Zalo OA refresh token")
+    zalo_oa_refresh_token: Optional[str] = Field(default=None, description="Zalo OA refresh token", repr=False)
     zalo_oa_app_id: Optional[str] = Field(default=None, description="Zalo OA application ID")
 
     # Sprint 174b: OTP Identity Linking
@@ -522,7 +523,7 @@ class BaseSettingsFieldsMixin:
     # Sprint 174: Cross-Platform Identity + Dual Personality
     enable_cross_platform_identity: bool = Field(default=False, description="Enable canonical identity resolution across platforms")
     enable_zalo_webhook: bool = Field(default=False, description="Enable Zalo OA incoming message webhook")
-    zalo_webhook_token: Optional[str] = Field(default=None, description="Verify token for Zalo webhook handshake")
+    zalo_webhook_token: Optional[str] = Field(default=None, description="Verify token for Zalo webhook handshake", repr=False)
     default_personality_mode: str = Field(default="professional", description="Default personality mode: professional or soul")
     channel_personality_map: str = Field(
         default='{"web":"professional","desktop":"professional","messenger":"soul","zalo":"soul","telegram":"professional"}',
@@ -626,7 +627,7 @@ class BaseSettingsFieldsMixin:
     sandbox_default_timeout_seconds: int = Field(default=120, ge=5, le=3600, description="Default timeout for remote sandbox workloads in seconds")
     sandbox_allow_browser_workloads: bool = Field(default=False, description="Allow browser-class workloads to use the privileged sandbox executor")
     opensandbox_base_url: Optional[str] = Field(default=None, description="Base URL for OpenSandbox control plane")
-    opensandbox_api_key: Optional[str] = Field(default=None, description="API key for OpenSandbox control plane")
+    opensandbox_api_key: Optional[str] = Field(default=None, description="API key for OpenSandbox control plane", repr=False)
     opensandbox_healthcheck_path: str = Field(default="/health", description="Health check path for OpenSandbox control plane")
     opensandbox_code_template: str = Field(default="opensandbox/code-interpreter:v1.0.1", description="Default OpenSandbox runtime image for Python or command execution")
     opensandbox_browser_template: str = Field(default="opensandbox/playwright:latest", description="Default OpenSandbox runtime image for browser automation workloads")

@@ -4,11 +4,11 @@
  * The pointy bundle runs INSIDE the parent (host) page, listening for
  * `wiii:action-request` messages emitted by the Wiii iframe (Sprint 222
  * HostActionBridge). It executes UI tutoring actions (highlight, scroll,
- * navigate, multi-step tour) on the host DOM and replies via
+ * navigate, safe-click, multi-step tour) on the host DOM and replies via
  * `wiii:action-response`.
  *
- * V1 tool surface is read-only: no auto-click, no auto-fill. Default tutor
- * mode keeps the user in control.
+ * V1 safe-click is fail-closed: no auto-fill, and click only works on targets
+ * explicitly marked `data-wiii-click-safe="true"`.
  */
 
 /** Identity reserved for the Wiii iframe's PostMessage envelope. */
@@ -20,6 +20,7 @@ export const POINTY_ACTIONS = [
   "ui.scroll_to",
   "ui.navigate",
   "ui.show_tour",
+  "ui.click",
 ] as const;
 export type PointyAction = (typeof POINTY_ACTIONS)[number];
 
@@ -95,6 +96,11 @@ export interface ShowTourParams {
   steps: TourStep[];
   /** Step index to start at; defaults to 0. */
   start_at?: number;
+}
+
+export interface ClickParams {
+  selector: string;
+  message?: string;
 }
 
 export interface PointyConfig {

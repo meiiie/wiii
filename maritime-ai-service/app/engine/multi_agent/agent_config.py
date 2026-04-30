@@ -339,6 +339,104 @@ class AgentConfigRegistry:
         }.get(effective_tier, get_llm_moderate)()
 
     @classmethod
+    def get_native_llm(
+        cls,
+        node_id: str,
+        effort_override: Optional[str] = None,
+        provider_override: Optional[str] = None,
+        requested_model: Optional[str] = None,
+    ):
+        """Resolve a framework-free provider/model handle for native chat calls."""
+        from app.engine.multi_agent.openai_stream_runtime import (
+            _supports_native_answer_streaming_impl,
+        )
+        from app.engine.native_chat_runtime import NativeChatModelHandle
+
+        config, _group_profile, effective_provider, effective_tier, model_override = (
+            cls._resolve_effective_runtime(
+                node_id,
+                provider_override=provider_override,
+            )
+        )
+        if not _supports_native_answer_streaming_impl(effective_provider):
+            return None
+
+        tier_key = str(effort_override or effective_tier or "moderate").strip().lower()
+        if tier_key not in {"deep", "moderate", "light"}:
+            tier_key = effective_tier if effective_tier in {"deep", "moderate", "light"} else "moderate"
+
+        normalized_requested_model = (
+            str(requested_model).strip()
+            if requested_model is not None and str(requested_model).strip()
+            else None
+        )
+        model_name = (
+            normalized_requested_model
+            or model_override
+            or cls._resolve_native_model_name(effective_provider, tier_key)
+        )
+        if not model_name:
+            return None
+
+        return NativeChatModelHandle(
+            _wiii_provider_name=effective_provider,
+            _wiii_requested_provider=provider_override,
+            _wiii_model_name=str(model_name),
+            _wiii_tier_key=tier_key,
+            temperature=config.temperature,
+        )
+
+    @staticmethod
+    def _resolve_native_model_name(provider_name: str, tier_key: str) -> str | None:
+        """Resolve native model names without constructing LangChain provider objects."""
+        normalized = str(provider_name or "").strip().lower()
+        if normalized == "nvidia":
+            from app.engine.openai_compatible_credentials import (
+                resolve_nvidia_model,
+                resolve_nvidia_model_advanced,
+            )
+            from app.engine.llm_model_health import is_model_degraded
+
+            base = str(resolve_nvidia_model(settings) or "").strip()
+            advanced = str(resolve_nvidia_model_advanced(settings) or "").strip()
+            if tier_key == "deep":
+                selected = advanced
+                fallback = base
+            else:
+                selected = base
+                fallback = advanced
+            if (
+                selected
+                and fallback
+                and selected != fallback
+                and is_model_degraded("nvidia", selected)
+                and not is_model_degraded("nvidia", fallback)
+            ):
+                logger.warning(
+                    "[AGENT_CONFIG] NVIDIA native model %s is degraded; selecting %s for %s tier",
+                    selected,
+                    fallback,
+                    tier_key,
+                )
+                return fallback
+            return selected or fallback or None
+        if normalized == "google":
+            if tier_key == "deep":
+                return getattr(settings, "google_model_advanced", settings.google_model)
+            return settings.google_model
+        if normalized == "zhipu":
+            if tier_key == "deep":
+                return settings.zhipu_model_advanced
+            return settings.zhipu_model
+        if normalized == "openrouter":
+            return getattr(settings, "openrouter_model", None) or settings.openai_model
+        if normalized == "openai":
+            if tier_key == "deep":
+                return settings.openai_model_advanced
+            return settings.openai_model
+        return None
+
+    @classmethod
     def _get_or_create_model_llm_for_provider(
         cls,
         provider_name: str,

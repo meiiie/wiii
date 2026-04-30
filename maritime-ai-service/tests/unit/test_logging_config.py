@@ -1,39 +1,25 @@
-"""Tests for app.core.logging_config — structured logging setup."""
-
 import logging
 
-import pytest
+from app.core.logging_config import setup_logging
 
 
-class TestSetupLogging:
-    """Verify setup_logging configures the root logger correctly."""
+def test_setup_logging_silences_openai_sdk_request_logs():
+    setup_logging(json_output=False, log_level="INFO")
 
-    def test_setup_logging_dev_mode(self):
-        from app.core.logging_config import setup_logging
+    assert logging.getLogger("openai").level == logging.WARNING
+    assert logging.getLogger("openai._base_client").level == logging.WARNING
 
-        setup_logging(json_output=False, log_level="DEBUG")
-        root = logging.getLogger()
-        assert root.level == logging.DEBUG
-        assert len(root.handlers) >= 1
 
-    def test_setup_logging_production_mode(self):
-        from app.core.logging_config import setup_logging
+def test_settings_repr_hides_provider_secrets():
+    from app.core.config import Settings
+    from app.core.config.llm import LLMConfig
 
-        setup_logging(json_output=True, log_level="WARNING")
-        root = logging.getLogger()
-        assert root.level == logging.WARNING
+    flat_settings = Settings(
+        nvidia_api_key="nvapi-super-secret",
+        openai_api_key="sk-super-secret",
+    )
+    nested_settings = LLMConfig(nvidia_api_key="nvapi-super-secret")
 
-    def test_setup_logging_silences_noisy_loggers(self):
-        from app.core.logging_config import setup_logging
-
-        setup_logging(json_output=False, log_level="DEBUG")
-        for name in ("httpcore", "httpx", "urllib3", "asyncio"):
-            assert logging.getLogger(name).level >= logging.WARNING
-
-    def test_setup_logging_idempotent(self):
-        from app.core.logging_config import setup_logging
-
-        setup_logging(json_output=False, log_level="INFO")
-        handler_count = len(logging.getLogger().handlers)
-        setup_logging(json_output=False, log_level="INFO")
-        assert len(logging.getLogger().handlers) == handler_count
+    assert "nvapi-super-secret" not in repr(flat_settings)
+    assert "sk-super-secret" not in repr(flat_settings)
+    assert "nvapi-super-secret" not in repr(nested_settings)

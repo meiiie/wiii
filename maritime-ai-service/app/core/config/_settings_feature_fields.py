@@ -60,7 +60,7 @@ class FeatureSettingsMixin:
 
     # LangSmith Observability
     enable_langsmith: bool = Field(default=False, description="Enable LangSmith tracing")
-    langsmith_api_key: Optional[str] = Field(default=None, description="LangSmith API key")
+    langsmith_api_key: Optional[str] = Field(default=None, description="LangSmith API key", repr=False)
     langsmith_project: str = Field(default="wiii", description="LangSmith project name")
     langsmith_endpoint: str = Field(default="https://api.smith.langchain.com", description="LangSmith API endpoint")
 
@@ -85,12 +85,12 @@ class FeatureSettingsMixin:
     living_agent_max_skills_per_week: int = Field(default=5, ge=1, le=20, description="Max new skills to discover per week")
     living_agent_max_searches_per_heartbeat: int = Field(default=3, ge=1, le=10, description="Max web searches per heartbeat cycle")
     living_agent_max_daily_cycles: int = Field(default=48, ge=1, le=200, description="Max heartbeat cycles per 24h")
-    living_agent_callmebot_api_key: Optional[str] = Field(default=None, description="CallMeBot API key for Facebook Messenger notifications")
+    living_agent_callmebot_api_key: Optional[str] = Field(default=None, description="CallMeBot API key for Facebook Messenger notifications", repr=False)
     living_agent_notification_channel: str = Field(default="websocket", description="Notification channel for heartbeat discoveries (websocket, telegram, messenger)")
 
     # Soul AGI: Weather (Phase 1B)
     living_agent_enable_weather: bool = Field(default=False, description="Enable weather awareness via OpenWeatherMap")
-    living_agent_weather_api_key: Optional[str] = Field(default=None, description="OpenWeatherMap API key")
+    living_agent_weather_api_key: Optional[str] = Field(default=None, description="OpenWeatherMap API key", repr=False)
     living_agent_weather_city: str = Field(default="Ho Chi Minh City", description="Default city for weather queries")
 
     # Soul AGI: Briefing (Phase 2A)
@@ -134,13 +134,13 @@ class FeatureSettingsMixin:
     cross_platform_context_max_items: int = Field(default=3, ge=1, le=10, description="Max items in cross-platform activity summary")
 
     # Facebook Messenger (for webhooks)
-    facebook_verify_token: Optional[str] = Field(default=None, description="Facebook webhook verification token")
-    facebook_page_access_token: Optional[str] = Field(default=None, description="Facebook Page access token for Send API")
+    facebook_verify_token: Optional[str] = Field(default=None, description="Facebook webhook verification token", repr=False)
+    facebook_page_access_token: Optional[str] = Field(default=None, description="Facebook Page access token for Send API", repr=False)
     facebook_graph_api_version: str = Field(default="v22.0", description="Facebook Graph API version (Sprint 188)")
 
     # Zalo OA
-    zalo_oa_access_token: Optional[str] = Field(default=None, description="Zalo OA access token")
-    zalo_oa_secret_key: Optional[str] = Field(default=None, description="Zalo OA secret key for MAC verification")
+    zalo_oa_access_token: Optional[str] = Field(default=None, description="Zalo OA access token", repr=False)
+    zalo_oa_secret_key: Optional[str] = Field(default=None, description="Zalo OA secret key for MAC verification", repr=False)
 
     # Preview System (Sprint 166)
     enable_preview: bool = Field(default=True, description="Rich preview cards in streaming responses")
@@ -150,8 +150,8 @@ class FeatureSettingsMixin:
 
     # Product Search Agent
     enable_product_search: bool = Field(default=True, description="Enable product search agent")
-    serper_api_key: Optional[str] = Field(default=None, description="Serper.dev API key")
-    apify_api_token: Optional[str] = Field(default=None, description="Apify API token")
+    serper_api_key: Optional[str] = Field(default=None, description="Serper.dev API key", repr=False)
+    apify_api_token: Optional[str] = Field(default=None, description="Apify API token", repr=False)
 
     # Site Playbooks (Firecrawl pattern)
     enable_site_playbooks: bool = Field(default=True, description="Enable YAML-driven site playbooks for scraping config")
@@ -177,7 +177,7 @@ class FeatureSettingsMixin:
     )
     enable_tiktok_native_api: bool = Field(default=False, description="Enable TikTok Research API")
     tiktok_client_key: Optional[str] = Field(default=None, description="TikTok Developer Portal client key")
-    tiktok_client_secret: Optional[str] = Field(default=None, description="TikTok Developer Portal client secret")
+    tiktok_client_secret: Optional[str] = Field(default=None, description="TikTok Developer Portal client secret", repr=False)
 
     # Sprint 150: Deep Product Search
     product_search_max_iterations: int = Field(default=15, ge=5, le=30, description="Max ReAct iterations")
@@ -368,7 +368,7 @@ class FeatureSettingsMixin:
 
     # OAuth skeleton
     enable_oauth_token_store: bool = Field(default=False, description="Enable OAuth token store")
-    oauth_encryption_key: Optional[str] = Field(default=None, description="Fernet encryption key for OAuth tokens")
+    oauth_encryption_key: Optional[str] = Field(default=None, description="Fernet encryption key for OAuth tokens", repr=False)
 
     # Quality & Model Config
     quality_skip_threshold: float = Field(default=0.85, description="Skip grader when confidence >= this")

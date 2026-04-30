@@ -46,8 +46,11 @@ describe("showSpotlight", () => {
     const target = document.querySelector('[data-wiii-id="cta"]')!;
     showSpotlight(target, { message: "Nhấn vào đây để bắt đầu", duration_ms: 1000 });
     const overlay = document.querySelector(`#${_testing.OVERLAY_ID}`) as HTMLDivElement;
+    const ring = document.querySelector(`#${_testing.TARGET_RING_ID}`) as HTMLDivElement;
     const tooltip = document.querySelector(`#${_testing.TOOLTIP_ID}`) as HTMLDivElement;
     expect(overlay).not.toBeNull();
+    expect(ring).not.toBeNull();
+    expect(ring.style.opacity).toBe("1");
     expect(tooltip).not.toBeNull();
     expect(tooltip.textContent).toBe("Nhấn vào đây để bắt đầu");
     expect(overlay.style.background).toContain("radial-gradient");

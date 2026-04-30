@@ -83,6 +83,7 @@ from app.engine.multi_agent.code_studio_patterns import (
 )
 from app.engine.multi_agent.direct_runtime_bindings import (
     _extract_runtime_target,
+    _is_native_runtime_handle,
     _remember_runtime_target,
     _stream_openai_compatible_answer_with_route,
     _truncate_before_code_dump,
@@ -475,11 +476,11 @@ async def _preserve_ai_message_metadata(
     """Keep native message metadata when stream rendering trims visible content.
 
     Some providers stream plain answer deltas but only attach thought metadata on the
-    final merged AIMessage. If we replace that object with a bare AIMessage(content=...),
+    final merged message. If we replace that object with a bare response object,
     sync/stream parity breaks and visible-thought review loses the model-authored
     reasoning that is still present in the final object.
     """
-    from langchain_core.messages import AIMessage
+    from app.engine.native_chat_runtime import make_assistant_message
 
     preserved: dict[str, Any] = {}
     additional_kwargs = dict(getattr(merged_chunk, "additional_kwargs", None) or {})
@@ -533,7 +534,7 @@ async def _preserve_ai_message_metadata(
         if value in (None, "", [], {}):
             continue
         preserved[field_name] = value
-    return AIMessage(content=visible_text, **preserved)
+    return make_assistant_message(visible_text, **preserved)
 
 async def _ainvoke_with_fallback(
     llm, messages, tools=None, tool_choice=None, tier="moderate",
@@ -658,7 +659,7 @@ async def _stream_direct_wait_heartbeats(
     interval_sec: float = 6.0,
     stop_signal: Optional[asyncio.Event] = None,
 ) -> None:
-    """Emit hidden wait heartbeats so direct turns keep progress without public duplicate thinking."""
+    """Emit compact visible wait beats so slow provider paths do not feel frozen."""
     beat_index = 0
     while True:
         if stop_signal is not None:
@@ -674,11 +675,19 @@ async def _stream_direct_wait_heartbeats(
         beat_index += 1
         if beat_index > 2:
             return
+        wait_text = _build_direct_wait_heartbeat_text(
+            query=query,
+            phase=phase,
+            cue=cue,
+            beat_index=beat_index,
+            elapsed_sec=beat_index * interval_sec,
+            tool_names=tool_names,
+        )
         _hb_event: dict = {
             "type": "status",
-            "content": "Đang giữ nhịp xử lý...",
+            "content": wait_text,
             "node": "direct",
-            "details": {"visibility": "status_only"},
+            "details": {"subtype": "visible_wait", "visibility": "progress"},
         }
         await push_event(_hb_event)
 
@@ -735,10 +744,14 @@ async def _stream_answer_with_fallback(
     timeout_profile: str | None = None,
 ) -> tuple[object, bool]:
     """Stream answer text deltas for provider-backed lanes when no tools are needed."""
-    from app.engine.llm_pool import FAILOVER_MODE_AUTO, FAILOVER_MODE_PINNED, LLMPool
-    from langchain_core.messages import AIMessage
     from app.services.output_processor import extract_thinking_from_response
+    FAILOVER_MODE_AUTO = "auto"
+    FAILOVER_MODE_PINNED = "pinned"
     tier_key = str(getattr(llm, "_wiii_tier_key", "") or "moderate").strip().lower()
+    native_route_enabled = _is_native_runtime_handle(llm)
+    if native_route_enabled and not str(resolved_provider or "").strip():
+        native_provider, _native_model = _extract_runtime_target(llm)
+        resolved_provider = native_provider or ""
     normalized_provider = str(provider or "").strip().lower()
     effective_failover_mode = failover_mode or (
         FAILOVER_MODE_PINNED if normalized_provider and normalized_provider != "auto" else FAILOVER_MODE_AUTO
@@ -748,6 +761,32 @@ async def _stream_answer_with_fallback(
         and normalized_provider in {"", "auto"}
         and bool(str(resolved_provider or "").strip())
     )
+    if native_route_enabled:
+        from types import SimpleNamespace
+
+        native_provider, _native_model = _extract_runtime_target(llm)
+        route = SimpleNamespace(
+            provider=str(native_provider or resolved_provider or provider or "").strip().lower(),
+            llm=llm,
+        )
+        _remember_runtime_target(state, route.llm)
+        logger.info("[%s] Path: Native SDK handle (provider=%s)", node.upper(), route.provider)
+        native_response, native_streamed = await _stream_openai_compatible_answer_with_route(
+            route,
+            messages,
+            push_event,
+            node=node,
+            thinking_stop_signal=thinking_stop_signal,
+            primary_timeout=primary_timeout,
+        )
+        if native_response is not None:
+            return native_response, native_streamed
+        logger.warning(
+            "[%s] Native handle produced no response; falling back to legacy pool route",
+            node.upper(),
+        )
+
+    from app.engine.llm_pool import LLMPool
     if not str(resolved_provider or provider or "").strip():
         fallback_response = await llm.ainvoke(messages)
         _remember_runtime_target(state, llm)
@@ -886,6 +925,7 @@ async def _stream_answer_with_fallback(
             push_event,
             node=node,
             thinking_stop_signal=thinking_stop_signal,
+            primary_timeout=primary_timeout,
         )
         if native_response is not None:
             return native_response, native_streamed
@@ -1141,6 +1181,7 @@ async def _execute_direct_tool_rounds(
     direct_answer_timeout_profile: str | None = None,
     direct_answer_primary_timeout: float | None = None,
     allowed_fallback_providers: tuple[str, ...] | list[str] | set[str] | None = None,
+    native_tool_messages: bool = False,
 ):
     """Execute multi-round tool calling loop for direct response.
 
@@ -1148,7 +1189,7 @@ async def _execute_direct_tool_rounds(
     Gemini often calls tools sequentially (datetime → web_search → answer).
 
     Returns:
-        tuple: (AIMessage, messages, tool_call_events) — final response, messages, and
+        tuple: (assistant response, messages, tool_call_events) — final response, messages, and
                structured tool events for downstream preview emission (Sprint 166).
     """
     return await execute_direct_tool_rounds_impl(
@@ -1167,6 +1208,7 @@ async def _execute_direct_tool_rounds(
         direct_answer_timeout_profile=direct_answer_timeout_profile,
         direct_answer_primary_timeout=direct_answer_primary_timeout,
         allowed_fallback_providers=allowed_fallback_providers,
+        native_tool_messages=native_tool_messages,
         ainvoke_with_fallback=_ainvoke_with_fallback,
         stream_direct_answer_with_fallback=_stream_direct_answer_with_fallback,
         stream_direct_wait_heartbeats=_stream_direct_wait_heartbeats,
@@ -1187,4 +1229,3 @@ _STRUCTURED_VISUAL_PLACEHOLDER_MD_RE = re.compile(
     r"!\[[^\]]*\]\((?:https?://example\.com/[^)\s]+|https?://[^)\s]*chart-placeholder[^)\s]*|sandbox:[^)]+)\)",
     re.IGNORECASE,
 )
-

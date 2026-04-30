@@ -99,6 +99,22 @@ describe("useSSEStream — type-safe metadata", () => {
     const code = (src as any).default || src;
     expect(code).toContain("ChatResponseMetadata");
   });
+
+  it("should keep the idle guard above provider cold-start latency", async () => {
+    const src = await import("@/hooks/useSSEStream?raw");
+    const code = (src as any).default || src;
+    expect(code).toContain("const SSE_IDLE_TIMEOUT_MS = 120_000");
+  });
+
+  it("records Pointy fast-path progress only after host action success", async () => {
+    const src = await import("@/hooks/useSSEStream?raw");
+    const code = (src as any).default || src;
+    const successGuard = code.indexOf("if (result.success)");
+    const pointyStep = code.indexOf('eventOrderRef.current.push("pointy_fast_path")');
+    expect(successGuard).toBeGreaterThan(-1);
+    expect(pointyStep).toBeGreaterThan(successGuard);
+    expect(code).not.toContain("Wiii dang tro tren trang");
+  });
 });
 
 // ---------------------------------------------------------------------------

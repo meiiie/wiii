@@ -90,6 +90,52 @@ describe('host-context-store', () => {
     expect(ctx?.page.metadata?.quiz_question).toBe('Which vessel gives way?');
   });
 
+  it('should preserve future host metadata such as Pointy targets', () => {
+    const store = useHostContextStore.getState();
+    store.setLegacyPageContext({
+      page_type: 'course_list',
+      page_title: 'Courses',
+      available_targets: [
+        {
+          id: 'browse-courses',
+          selector: '[data-wiii-id="browse-courses"]',
+          label: 'Browse courses',
+        },
+      ],
+    });
+
+    const ctx = useHostContextStore.getState().currentContext;
+    expect(ctx?.page.metadata?.available_targets).toEqual([
+      expect.objectContaining({
+        id: 'browse-courses',
+        selector: '[data-wiii-id="browse-courses"]',
+      }),
+    ]);
+  });
+
+  it('should block dangerous legacy metadata keys', () => {
+    const store = useHostContextStore.getState();
+    const legacy = {
+      page_type: 'lesson',
+      page_title: 'Safe page',
+      constructor: 'bad',
+      prototype: 'bad',
+    } as Record<string, unknown>;
+    Object.defineProperty(legacy, '__proto__', {
+      value: { polluted: true },
+      enumerable: true,
+    });
+
+    store.setLegacyPageContext(legacy);
+
+    const metadata = useHostContextStore.getState().currentContext?.page.metadata;
+    expect(Object.getPrototypeOf(metadata)).toBeNull();
+    expect(metadata?.constructor).toBeUndefined();
+    expect(metadata?.prototype).toBeUndefined();
+    expect((metadata as Record<string, unknown>)?.__proto__).toBeUndefined();
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
   it('should preserve connector and workspace overlays from legacy page context', () => {
     const store = useHostContextStore.getState();
     store.setLegacyPageContext({

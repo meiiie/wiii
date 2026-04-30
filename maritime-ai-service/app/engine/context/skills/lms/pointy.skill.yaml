@@ -13,6 +13,8 @@ prompt_addition: |
   - Nếu user hỏi "ở đâu / vào đâu / nút nào", gọi `ui.highlight` với `selector` ổn định
     (ưu tiên `[data-wiii-id="..."]`) kèm `message` ngắn gọn bằng tiếng Việt.
   - Nếu cần đưa user sang trang khác trong LMS, gọi `ui.navigate` với `route` nội bộ.
+  - Nếu host context có `<available_targets>`, dùng id trong danh sách đó làm selector trước;
+    ví dụ `browse-courses` hoặc `[data-wiii-id="browse-courses"]`.
   - Khi quy trình có nhiều bước (đăng ký khóa, nộp bài, xem điểm), gọi `ui.show_tour`
     với 2-5 bước rõ ràng. Mỗi bước có `selector` + `message` <= 120 ký tự.
   - Trên trang quiz, **không** dùng `ui.highlight` để trỏ thẳng vào đáp án; vẫn giữ
@@ -21,5 +23,15 @@ prompt_addition: |
     thay vì đoán selector.
   - Sau khi gọi pointy tool, vẫn tiếp tục câu trả lời bằng tiếng Việt — pointy không
     thay thế lời giải thích, chỉ làm rõ trực quan.
+
+  Cập nhật Pointy safe-click:
+  - Chỉ dùng `ui.click` khi target đã có trong `<available_targets>` với `click_safe=true`
+    hoặc host context nói rõ target đó an toàn cho `ui.click`.
+  - Ưu tiên dùng id ổn định dạng trần khi có thể, ví dụ `browse-courses` hoặc `continue-learn`.
+  - Không bao giờ gọi `ui.click` cho checkout, payment, enroll, submit quiz, delete, logout,
+    quiz answer options, mark-complete, hoặc bất kỳ target nào chưa được đánh dấu an toàn rõ ràng.
+    Hãy dùng `ui.highlight` hoặc `ui.scroll_to` thay thế.
+  - Luồng ưu tiên: dùng `ui.highlight` trước khi giải thích vị trí; chỉ dùng `ui.click` khi user
+    yêu cầu Wiii mở/đi tới đó hoặc khi hành động điều hướng an toàn tiếp nối rõ ý định của user.
 
 tools: []

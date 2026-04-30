@@ -1,5 +1,7 @@
 """LMS Host Adapter - Vietnamese prompt formatting with role/stage awareness."""
 
+import html
+
 from app.engine.context.adapters.base import HostAdapter
 from app.engine.context.host_context import HostContext
 
@@ -38,6 +40,13 @@ _PAGE_SKILL_MAP: dict[str, list[str]] = {
     "admin_page": ["lms-org-admin-governance", "lms-system-admin-ops"],
     "teacher_page": ["lms-teacher-course-editor"],
 }
+
+
+def _escape_target_field(value: object, *, max_length: int | None = None) -> str:
+    text = str(value or "").strip().replace("|", "/")
+    if max_length is not None:
+        text = text[:max_length]
+    return html.escape(text, quote=True)
 
 
 class LMSHostAdapter(HostAdapter):
@@ -118,6 +127,31 @@ class LMSHostAdapter(HostAdapter):
                     labels.append(f"{ref_type}:{ref_title}")
             if labels:
                 parts.append(f"  <entity_refs>{' | '.join(labels)}</entity_refs>")
+
+        available_targets = metadata.get("available_targets")
+        if isinstance(available_targets, list):
+            target_labels: list[str] = []
+            for target in available_targets[:24]:
+                if not isinstance(target, dict):
+                    continue
+                target_id = _escape_target_field(target.get("id"), max_length=80)
+                if not target_id:
+                    continue
+                label = _escape_target_field(target.get("label"), max_length=80)
+                selector = _escape_target_field(target.get("selector"), max_length=200)
+                text = target_id
+                if label:
+                    text = f'{text}="{label}"'
+                if selector and selector != target_id:
+                    text = f"{text} selector={selector}"
+                if target.get("click_safe") is True:
+                    click_kind = _escape_target_field(target.get("click_kind"), max_length=40)
+                    text = f"{text} click_safe=true"
+                    if click_kind:
+                        text = f"{text} click_kind={click_kind}"
+                target_labels.append(text)
+            if target_labels:
+                parts.append(f"  <available_targets>{' | '.join(target_labels)}</available_targets>")
 
         if ctx.available_actions:
             labels = [

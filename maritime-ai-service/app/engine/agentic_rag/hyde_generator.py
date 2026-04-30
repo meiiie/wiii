@@ -127,12 +127,19 @@ async def _generate_hypothetical_doc(query: str) -> str:
         Hypothetical document text, or empty string on failure.
     """
     try:
-        from app.engine.agentic_rag.runtime_llm_socket import ainvoke_agentic_rag_llm
+        from app.engine.agentic_rag.runtime_llm_socket import (
+            ainvoke_agentic_rag_llm,
+            make_agentic_rag_messages,
+            resolve_agentic_rag_llm,
+        )
         from app.engine.llm_factory import ThinkingTier
         from app.engine.llm_pool import get_llm_light
-        from langchain_core.messages import HumanMessage
 
-        llm = get_llm_light()
+        llm = resolve_agentic_rag_llm(
+            tier=ThinkingTier.LIGHT,
+            fallback_factory=get_llm_light,
+            component="HyDEGenerator",
+        )
         if not llm:
             logger.debug("[HyDE] LLM light tier unavailable")
             return ""
@@ -140,7 +147,7 @@ async def _generate_hypothetical_doc(query: str) -> str:
         prompt = _HYDE_PROMPT_VI.format(query=query)
         response = await ainvoke_agentic_rag_llm(
             llm=llm,
-            messages=[HumanMessage(content=prompt)],
+            messages=make_agentic_rag_messages(user=prompt),
             tier=ThinkingTier.LIGHT,
             component="HyDEGenerator",
         )

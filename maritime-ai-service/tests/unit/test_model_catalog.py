@@ -8,7 +8,7 @@ from app.engine.model_catalog import (
     get_embedding_model_metadata,
     is_legacy_google_model,
 )
-from app.engine.model_catalog_runtime_support import hash_secret
+from app.engine.model_catalog_runtime_support import hash_secret, sanitize_exception_for_log
 
 
 def test_google_default_model_is_current():
@@ -52,3 +52,20 @@ def test_runtime_secret_fingerprint_is_stable_and_redacted():
     assert first != "provider-api-key-1"
     assert len(first) == 12
     assert hash_secret(None) == "no-secret"
+
+
+def test_runtime_discovery_exception_log_sanitizes_provider_secrets():
+    message = (
+        "Client error for url "
+        "'https://generativelanguage.googleapis.com/v1beta/models?key=AIza-secret-value' "
+        "with Bearer eyJ.secret and nvapi-private-key"
+    )
+
+    sanitized = sanitize_exception_for_log(RuntimeError(message))
+
+    assert "AIza-secret-value" not in sanitized
+    assert "eyJ.secret" not in sanitized
+    assert "nvapi-private-key" not in sanitized
+    assert "key=REDACTED" in sanitized
+    assert "Bearer REDACTED" in sanitized
+    assert "SECRET-REDACTED" in sanitized

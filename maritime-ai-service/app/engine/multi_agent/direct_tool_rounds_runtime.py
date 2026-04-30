@@ -97,6 +97,39 @@ def _build_direct_final_synthesis_instruction(
     return base
 
 
+def _build_tool_result_message(
+    content: str,
+    *,
+    tool_call_id: str,
+    native_tool_messages: bool,
+) -> Any:
+    """Create the post-tool message without hard-wiring LangChain in native lanes."""
+    if native_tool_messages:
+        from app.engine.native_chat_runtime import make_tool_message
+
+        return make_tool_message(content, tool_call_id=tool_call_id)
+
+    from langchain_core.messages import ToolMessage as _TM
+
+    return _TM(content=content, tool_call_id=tool_call_id)
+
+
+def _build_user_instruction_message(
+    content: str,
+    *,
+    native_tool_messages: bool,
+) -> Any:
+    """Create a user instruction message for final synthesis."""
+    if native_tool_messages:
+        from app.engine.native_chat_runtime import make_user_message
+
+        return make_user_message(content)
+
+    from langchain_core.messages import HumanMessage as _HM
+
+    return _HM(content=content)
+
+
 async def execute_direct_tool_rounds_impl(
     llm_with_tools,
     llm_auto,
@@ -118,10 +151,9 @@ async def execute_direct_tool_rounds_impl(
     stream_direct_answer_with_fallback,
     stream_direct_wait_heartbeats,
     push_status_only_progress,
+    native_tool_messages: bool = False,
 ):
     """Execute multi-round tool calling loop for direct response."""
-    from langchain_core.messages import ToolMessage as _TM
-
     from app.engine.tools.invocation import (
         get_tool_by_name as _get_tool_by_name_impl,
         invoke_tool_with_runtime as _invoke_tool_with_runtime_impl,
@@ -400,7 +432,13 @@ async def execute_direct_tool_rounds_impl(
                     "id": tc_id,
                 }
             )
-            messages.append(_TM(content=str(result), tool_call_id=tc_id))
+            messages.append(
+                _build_tool_result_message(
+                    str(result),
+                    tool_call_id=tc_id,
+                    native_tool_messages=native_tool_messages,
+                )
+            )
 
             # Phase 3: Detect handoff tool call and set state signal
             if state is not None and tc_name == "handoff_to_agent" and settings.enable_agent_handoffs:
@@ -504,8 +542,6 @@ async def execute_direct_tool_rounds_impl(
         getattr(llm_response, "content", "")
     )
     if tool_call_events and (remaining_tool_calls or not visible_response_text):
-        from langchain_core.messages import HumanMessage as _HM
-
         logger.warning(
             "[DIRECT] Tool loop ended without final prose "
             "(remaining_tool_calls=%s, visible_len=%d) -> forcing no-tool synthesis",
@@ -519,12 +555,13 @@ async def execute_direct_tool_rounds_impl(
         ]
         synthesis_messages = list(messages)
         synthesis_messages.append(
-            _HM(
-                content=_build_direct_final_synthesis_instruction(
+            _build_user_instruction_message(
+                _build_direct_final_synthesis_instruction(
                     query,
                     state,
                     synthesis_tool_names,
-                )
+                ),
+                native_tool_messages=native_tool_messages,
             )
         )
         synthesis_llm = llm_base or llm_auto or llm_with_tools

@@ -1,7 +1,7 @@
 """LLMConfig — LLM provider settings (Gemini, OpenAI, Ollama)."""
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.engine.model_catalog import (
     GOOGLE_DEEP_MODEL,
@@ -32,14 +32,14 @@ class LLMConfig(BaseModel):
     stream_keepalive_interval_seconds: float = 15.0
     stream_idle_timeout_seconds: float = 0.0
     timeout_provider_overrides: dict[str, dict[str, Any]] = {}
-    google_api_key: Optional[str] = None
+    google_api_key: Optional[str] = Field(default=None, repr=False)
     google_model: str = GOOGLE_DEFAULT_MODEL
     google_model_advanced: str = GOOGLE_DEEP_MODEL
-    openai_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = Field(default=None, repr=False)
     openai_base_url: Optional[str] = None
-    openrouter_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = Field(default=None, repr=False)
     openrouter_base_url: Optional[str] = OPENROUTER_DEFAULT_BASE_URL
-    nvidia_api_key: Optional[str] = None
+    nvidia_api_key: Optional[str] = Field(default=None, repr=False)
     nvidia_base_url: Optional[str] = NVIDIA_DEFAULT_BASE_URL
     openai_model: str = OPENAI_DEFAULT_MODEL
     openai_model_advanced: str = OPENAI_DEFAULT_MODEL_ADVANCED
@@ -56,12 +56,12 @@ class LLMConfig(BaseModel):
     openrouter_data_collection: Optional[str] = None
     openrouter_zdr: Optional[bool] = None
     openrouter_provider_sort: Optional[str] = None
-    ollama_api_key: Optional[str] = None
+    ollama_api_key: Optional[str] = Field(default=None, repr=False)
     ollama_base_url: Optional[str] = "http://localhost:11434"
     ollama_model: str = "qwen3:4b-instruct-2507-q4_K_M"
     ollama_keep_alive: Optional[str] = "30m"
     ollama_thinking_models: list[str] = ["qwen3", "deepseek-r1", "qwq"]
-    zhipu_api_key: Optional[str] = None
+    zhipu_api_key: Optional[str] = Field(default=None, repr=False)
     zhipu_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
     zhipu_model: str = ZHIPU_DEFAULT_MODEL
     zhipu_model_advanced: str = ZHIPU_DEFAULT_MODEL_ADVANCED

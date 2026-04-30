@@ -6,12 +6,14 @@
  */
 
 const OVERLAY_ID = "wiii-pointy-overlay";
+const TARGET_RING_ID = "wiii-pointy-target-ring";
 const TOOLTIP_ID = "wiii-pointy-tooltip";
 const BRAND_ORANGE = "#F97316";
 const BRAND_CREAM = "#FAF5EE";
 const PADDING = 8;
 
 let overlayEl: HTMLDivElement | null = null;
+let targetRingEl: HTMLDivElement | null = null;
 let tooltipEl: HTMLDivElement | null = null;
 let activeTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -27,6 +29,25 @@ function createOverlay(): HTMLDivElement {
     pointerEvents: "none",
     background: "transparent",
     transition: "background 250ms ease-out",
+  });
+  return el;
+}
+
+function createTargetRing(): HTMLDivElement {
+  const el = document.createElement("div");
+  el.id = TARGET_RING_ID;
+  el.setAttribute("data-wiii-pointy", "target-ring");
+  el.setAttribute("aria-hidden", "true");
+  Object.assign(el.style, {
+    position: "fixed",
+    zIndex: "2147483646",
+    pointerEvents: "none",
+    border: `3px solid ${BRAND_ORANGE}`,
+    borderRadius: "14px",
+    boxShadow: "0 0 0 7px rgba(249,115,22,0.18), 0 0 28px rgba(249,115,22,0.46)",
+    opacity: "0",
+    transform: "scale(0.96)",
+    transition: "opacity 180ms ease-out, transform 180ms ease-out",
   });
   return el;
 }
@@ -58,16 +79,20 @@ function createTooltip(): HTMLDivElement {
   return el;
 }
 
-function ensureElements(): { overlay: HTMLDivElement; tooltip: HTMLDivElement } {
+function ensureElements(): { overlay: HTMLDivElement; targetRing: HTMLDivElement; tooltip: HTMLDivElement } {
   if (!overlayEl || !overlayEl.isConnected) {
     overlayEl = createOverlay();
     document.body.appendChild(overlayEl);
+  }
+  if (!targetRingEl || !targetRingEl.isConnected) {
+    targetRingEl = createTargetRing();
+    document.body.appendChild(targetRingEl);
   }
   if (!tooltipEl || !tooltipEl.isConnected) {
     tooltipEl = createTooltip();
     document.body.appendChild(tooltipEl);
   }
-  return { overlay: overlayEl, tooltip: tooltipEl };
+  return { overlay: overlayEl, targetRing: targetRingEl, tooltip: tooltipEl };
 }
 
 /** Position tooltip below the target by default; flip above if it would overflow. */
@@ -97,7 +122,7 @@ export interface SpotlightOptions {
 }
 
 export function showSpotlight(target: Element, opts: SpotlightOptions = {}): void {
-  const { overlay, tooltip } = ensureElements();
+  const { overlay, targetRing, tooltip } = ensureElements();
   const rect = target.getBoundingClientRect();
 
   // Radial dim with a hole punched around the target.
@@ -105,6 +130,17 @@ export function showSpotlight(target: Element, opts: SpotlightOptions = {}): voi
   const cy = rect.top + rect.height / 2;
   const r = Math.max(rect.width, rect.height) / 2 + PADDING;
   overlay.style.background = `radial-gradient(circle at ${cx}px ${cy}px, transparent 0px, transparent ${r}px, rgba(15,23,42,0.45) ${r + 24}px)`;
+
+  const ringPad = Math.max(6, Math.min(14, Math.max(rect.width, rect.height) * 0.08));
+  Object.assign(targetRing.style, {
+    left: `${Math.max(4, rect.left - ringPad)}px`,
+    top: `${Math.max(4, rect.top - ringPad)}px`,
+    width: `${rect.width + ringPad * 2}px`,
+    height: `${rect.height + ringPad * 2}px`,
+    borderRadius: `${Math.min(18, Math.max(10, ringPad + 8))}px`,
+    opacity: "1",
+    transform: "scale(1)",
+  });
 
   if (opts.message) {
     tooltip.textContent = opts.message;
@@ -131,7 +167,7 @@ export function showSpotlight(target: Element, opts: SpotlightOptions = {}): voi
     clearTimeout(activeTimer);
     activeTimer = null;
   }
-  const ms = Math.max(800, Math.min(opts.duration_ms ?? 2200, 8000));
+  const ms = Math.max(1500, Math.min(opts.duration_ms ?? 7000, 20000));
   activeTimer = setTimeout(() => {
     hideSpotlight();
     opts.onClose?.();
@@ -144,6 +180,10 @@ export function hideSpotlight(): void {
     activeTimer = null;
   }
   if (overlayEl) overlayEl.style.background = "transparent";
+  if (targetRingEl) {
+    targetRingEl.style.opacity = "0";
+    targetRingEl.style.transform = "scale(0.98)";
+  }
   if (tooltipEl) {
     tooltipEl.style.opacity = "0";
     tooltipEl.style.transform = "translateY(4px)";
@@ -155,16 +195,19 @@ export function destroySpotlight(): void {
     clearTimeout(activeTimer);
     activeTimer = null;
   }
-  for (const el of [overlayEl, tooltipEl]) {
+  for (const el of [overlayEl, targetRingEl, tooltipEl]) {
     if (el && el.parentNode) el.parentNode.removeChild(el);
   }
   overlayEl = null;
+  targetRingEl = null;
   tooltipEl = null;
 }
 
 export const _testing = {
   OVERLAY_ID,
+  TARGET_RING_ID,
   TOOLTIP_ID,
   getOverlay: () => overlayEl,
+  getTargetRing: () => targetRingEl,
   getTooltip: () => tooltipEl,
 };

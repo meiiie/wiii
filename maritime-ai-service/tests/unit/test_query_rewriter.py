@@ -159,7 +159,12 @@ class TestRuntimeSocket:
         mock_runtime_llm = AsyncMock()
         mock_runtime_llm.ainvoke.return_value = MagicMock(content="rewritten query")
 
-        with patch("app.engine.agentic_rag.runtime_llm_socket.get_llm_for_provider", return_value=mock_runtime_llm), \
+        with patch(
+            "app.engine.multi_agent.openai_stream_runtime."
+            "_create_openai_compatible_stream_client_impl",
+            return_value=None,
+        ), \
+             patch("app.engine.agentic_rag.runtime_llm_socket.get_llm_for_provider", return_value=mock_runtime_llm), \
              patch("app.services.output_processor.extract_thinking_from_response", return_value=("rewritten query", None)):
             rewriter = QueryRewriter()
             rewriter._llm = None

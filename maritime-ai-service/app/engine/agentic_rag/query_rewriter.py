@@ -12,11 +12,10 @@ Features:
 import logging
 from typing import List, Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
 from app.core.singleton import singleton_factory
 from app.engine.agentic_rag.runtime_llm_socket import (
     ainvoke_agentic_rag_llm,
+    make_agentic_rag_messages,
     resolve_agentic_rag_llm,
 )
 from app.engine.llm_factory import ThinkingTier
@@ -108,13 +107,13 @@ class QueryRewriter:
             return self._rule_based_rewrite(query)
         
         try:
-            messages = [
-                SystemMessage(content="You are a query optimizer. Return only the improved query."),
-                HumanMessage(content=REWRITE_PROMPT.format(
+            messages = make_agentic_rag_messages(
+                system="Bạn là bộ tối ưu truy vấn. Chỉ trả về truy vấn đã cải thiện, không giải thích.",
+                user=REWRITE_PROMPT.format(
                     query=query,
                     feedback=feedback or "Documents retrieved were not relevant"
-                ))
-            ]
+                ),
+            )
             
             response = await ainvoke_agentic_rag_llm(
                 llm=llm,
@@ -153,9 +152,9 @@ class QueryRewriter:
             return self._add_domain_keywords(query)
         
         try:
-            messages = [
-                HumanMessage(content=EXPAND_PROMPT.format(query=query))
-            ]
+            messages = make_agentic_rag_messages(
+                user=EXPAND_PROMPT.format(query=query),
+            )
             
             response = await ainvoke_agentic_rag_llm(
                 llm=llm,
@@ -188,9 +187,9 @@ class QueryRewriter:
             return [query]  # Can't decompose without LLM
         
         try:
-            messages = [
-                HumanMessage(content=DECOMPOSE_PROMPT.format(query=query))
-            ]
+            messages = make_agentic_rag_messages(
+                user=DECOMPOSE_PROMPT.format(query=query),
+            )
             
             response = await ainvoke_agentic_rag_llm(
                 llm=llm,

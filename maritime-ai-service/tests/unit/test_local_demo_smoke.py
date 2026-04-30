@@ -26,12 +26,20 @@ def _demo_args(**overrides):
         "domain_id": "maritime",
         "provider": "auto",
         "model": None,
+        "expect_provider": None,
+        "expect_model": None,
+        "allow_provider_failover": False,
         "session_id": "session-1",
         "message": "Xin chao",
         "timeout": 8.0,
         "chat_timeout": 45.0,
         "stream_timeout": 90.0,
+        "stream_idle_timeout": 20.0,
+        "max_first_event_seconds": 5.0,
+        "max_first_answer_seconds": 45.0,
+        "max_stream_total_seconds": 90.0,
         "skip_frontend": True,
+        "skip_runtime_config": True,
         "skip_chat": True,
         "skip_stream": True,
         "demo_email": "dev@localhost",
@@ -201,3 +209,158 @@ def test_check_org_permissions_accepts_platform_admin_without_org_role(monkeypat
     detail = smoke.check_org_permissions()
 
     assert detail == "default platform_role=platform_admin org_role=none"
+
+
+def test_check_runtime_config_requires_pinned_nvidia_selectable(monkeypatch):
+    def fake_request_bytes(method, url, *, headers=None, **kwargs):
+        return _json_response(
+            {
+                "active_provider": "nvidia",
+                "nvidia_base_url": "https://integrate.api.nvidia.com/v1",
+                "nvidia_model": "deepseek-ai/deepseek-v4-flash",
+                "nvidia_model_advanced": "deepseek-ai/deepseek-v4-pro",
+                "nvidia_api_key_configured": True,
+                "provider_status": [
+                    {
+                        "provider": "nvidia",
+                        "configured": True,
+                        "request_selectable": True,
+                    }
+                ],
+            }
+        )
+
+    monkeypatch.setattr(local_demo_smoke, "request_bytes", fake_request_bytes)
+
+    smoke = local_demo_smoke.DemoSmoke(_demo_args(provider="nvidia"))
+    smoke.token = "ACCESS"
+    detail = smoke.check_runtime_config()
+
+    assert "active=nvidia" in detail
+    assert "nvidia_key=True" in detail
+
+
+def test_check_runtime_config_rejects_missing_nvidia_key(monkeypatch):
+    def fake_request_bytes(method, url, *, headers=None, **kwargs):
+        return _json_response(
+            {
+                "active_provider": "nvidia",
+                "nvidia_base_url": "https://integrate.api.nvidia.com/v1",
+                "nvidia_model": "deepseek-ai/deepseek-v4-flash",
+                "nvidia_model_advanced": "deepseek-ai/deepseek-v4-pro",
+                "nvidia_api_key_configured": False,
+                "provider_status": [
+                    {
+                        "provider": "nvidia",
+                        "configured": False,
+                        "request_selectable": False,
+                    }
+                ],
+            }
+        )
+
+    monkeypatch.setattr(local_demo_smoke, "request_bytes", fake_request_bytes)
+
+    smoke = local_demo_smoke.DemoSmoke(_demo_args(provider="nvidia"))
+    smoke.token = "ACCESS"
+    with pytest.raises(local_demo_smoke.SmokeFailure, match="NVIDIA API key"):
+        smoke.check_runtime_config()
+
+
+def test_check_sync_chat_enforces_provider_and_model_metadata(monkeypatch):
+    def fake_request_bytes(method, url, *, payload=None, **kwargs):
+        return _json_response(
+            {
+                "status": "success",
+                "data": {"answer": "Chao ban."},
+                "metadata": {
+                    "provider": "nvidia",
+                    "model": "deepseek-ai/deepseek-v4-flash",
+                },
+            }
+        )
+
+    monkeypatch.setattr(local_demo_smoke, "request_bytes", fake_request_bytes)
+
+    smoke = local_demo_smoke.DemoSmoke(
+        _demo_args(
+            provider="nvidia",
+            model="deepseek-ai/deepseek-v4-flash",
+        )
+    )
+    smoke.user = {"id": "dev-user-1", "role": "admin"}
+    smoke.token = "ACCESS"
+    detail = smoke.check_sync_chat()
+
+    assert "provider=nvidia" in detail
+    assert "model=deepseek-ai/deepseek-v4-flash" in detail
+
+
+def test_check_stream_chat_requires_answer_metadata_done_and_latency(monkeypatch):
+    def fake_request_sse_events(method, url, *, payload=None, **kwargs):
+        return local_demo_smoke.SseReadResult(
+            events=[
+                ("status", '{"content":"Dang chuan bi"}'),
+                ("answer", '{"content":"Chao ban qua SSE"}'),
+                (
+                    "metadata",
+                    (
+                        '{"provider":"nvidia",'
+                        '"model":"deepseek-ai/deepseek-v4-flash"}'
+                    ),
+                ),
+                ("done", '{"processing_time":0.2}'),
+            ],
+            first_event_seconds=0.2,
+            first_answer_seconds=0.8,
+            total_seconds=1.0,
+        )
+
+    monkeypatch.setattr(local_demo_smoke, "request_sse_events", fake_request_sse_events)
+
+    smoke = local_demo_smoke.DemoSmoke(
+        _demo_args(
+            provider="nvidia",
+            model="deepseek-ai/deepseek-v4-flash",
+        )
+    )
+    smoke.user = {"id": "dev-user-1", "role": "admin"}
+    smoke.token = "ACCESS"
+    detail = smoke.check_stream_chat()
+
+    assert "provider=nvidia" in detail
+    assert "first_answer=0.8s" in detail
+
+
+def test_check_stream_chat_rejects_silent_answer_latency(monkeypatch):
+    def fake_request_sse_events(method, url, *, payload=None, **kwargs):
+        return local_demo_smoke.SseReadResult(
+            events=[
+                ("status", '{"content":"Dang chuan bi"}'),
+                ("answer", '{"content":"Qua cham"}'),
+                (
+                    "metadata",
+                    (
+                        '{"provider":"nvidia",'
+                        '"model":"deepseek-ai/deepseek-v4-flash"}'
+                    ),
+                ),
+                ("done", '{"processing_time":72.0}'),
+            ],
+            first_event_seconds=0.1,
+            first_answer_seconds=72.0,
+            total_seconds=72.1,
+        )
+
+    monkeypatch.setattr(local_demo_smoke, "request_sse_events", fake_request_sse_events)
+
+    smoke = local_demo_smoke.DemoSmoke(
+        _demo_args(
+            provider="nvidia",
+            model="deepseek-ai/deepseek-v4-flash",
+        )
+    )
+    smoke.user = {"id": "dev-user-1", "role": "admin"}
+    smoke.token = "ACCESS"
+    with pytest.raises(local_demo_smoke.SmokeFailure, match="first answer"):
+        smoke.check_stream_chat()

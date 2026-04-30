@@ -37,7 +37,10 @@ def _flatten_message_content(value) -> str:
 
 def _extract_last_query(messages: list) -> str:
     for message in reversed(messages or []):
-        content = _flatten_message_content(getattr(message, "content", ""))
+        if isinstance(message, dict):
+            content = _flatten_message_content(message.get("content", ""))
+        else:
+            content = _flatten_message_content(getattr(message, "content", ""))
         if content:
             return content
     return ""
@@ -285,8 +288,13 @@ def extract_direct_response_impl(llm_response, messages: list):
     response = text_content.strip()
     tools_used_names = set()
     for message in messages:
-        if hasattr(message, "tool_calls") and message.tool_calls:
-            for tool_call in message.tool_calls:
+        tool_calls = (
+            message.get("tool_calls")
+            if isinstance(message, dict)
+            else getattr(message, "tool_calls", None)
+        )
+        if tool_calls:
+            for tool_call in tool_calls:
                 tools_used_names.add(tool_call.get("name", "unknown"))
 
     if not thinking_content:

@@ -40,6 +40,11 @@ def _extract_runtime_target(source_obj: Any | None) -> tuple[str | None, str | N
     return normalized_provider, model_name
 
 
+def _is_native_runtime_handle(source_obj: Any | None) -> bool:
+    """Return true only for handles explicitly marked as Wiii-native."""
+    return getattr(source_obj, "_wiii_native_route", False) is True
+
+
 def _remember_runtime_target(
     state: Optional[AgentState],
     source_obj: Any | None,
@@ -85,6 +90,9 @@ def _copy_runtime_metadata(source_obj: Any | None, target_obj: Any | None):
     requested_provider = getattr(source_obj, "_wiii_requested_provider", None)
     if isinstance(requested_provider, str) and requested_provider.strip():
         setattr(target_obj, "_wiii_requested_provider", requested_provider.strip().lower())
+
+    if _is_native_runtime_handle(source_obj):
+        setattr(target_obj, "_wiii_native_route", True)
 
     return target_obj
 

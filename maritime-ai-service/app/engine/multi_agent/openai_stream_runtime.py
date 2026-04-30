@@ -11,10 +11,20 @@ from typing import Any, Optional
 from app.core import config as app_config
 from app.core.config import settings
 from app.engine.openai_compatible_credentials import (
+    resolve_nvidia_api_key,
+    resolve_nvidia_base_url,
+    resolve_nvidia_model,
+    resolve_nvidia_model_advanced,
     resolve_openai_api_key,
     resolve_openai_base_url,
     resolve_openrouter_api_key,
     resolve_openrouter_base_url,
+)
+from app.engine.native_chat_runtime import (
+    make_assistant_message,
+    message_to_openai_payload,
+    normalize_tool_choice,
+    openai_response_to_assistant_message,
 )
 from app.engine.reasoning import sanitize_visible_reasoning_text
 
@@ -59,7 +69,7 @@ def _should_enable_real_code_streaming_impl(
 
 def _supports_native_answer_streaming_impl(provider: str | None) -> bool:
     normalized = str(provider or "").strip().lower()
-    return normalized in {"google", "zhipu", "openai", "openrouter"}
+    return normalized in {"google", "zhipu", "openai", "openrouter", "nvidia"}
 
 
 def _flatten_langchain_content_impl(content: Any) -> str:
@@ -86,51 +96,9 @@ def _langchain_message_to_openai_payload_impl(
     *,
     flatten_langchain_content,
 ) -> dict[str, Any]:
-    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-
-    content = flatten_langchain_content(getattr(message, "content", ""))
-    if isinstance(message, SystemMessage):
-        return {"role": "system", "content": content}
-    if isinstance(message, HumanMessage):
-        return {"role": "user", "content": content}
-    if isinstance(message, ToolMessage):
-        payload = {"role": "tool", "content": content}
-        tool_call_id = getattr(message, "tool_call_id", None)
-        if tool_call_id:
-            payload["tool_call_id"] = tool_call_id
-        return payload
-    if isinstance(message, AIMessage):
-        payload: dict[str, Any] = {"role": "assistant", "content": content}
-        tool_calls = getattr(message, "tool_calls", None) or []
-        if tool_calls:
-            payload["tool_calls"] = [
-                {
-                    "id": str(tool_call.get("id") or f"tc_{idx}"),
-                    "type": "function",
-                    "function": {
-                        "name": str(tool_call.get("name") or ""),
-                        "arguments": json.dumps(
-                            tool_call.get("args") or {},
-                            ensure_ascii=False,
-                        ),
-                    },
-                }
-                for idx, tool_call in enumerate(tool_calls)
-                if tool_call.get("name")
-            ]
-        return payload
-    role = getattr(message, "type", None) or getattr(message, "role", None) or "user"
-    if role in {"human", "user"}:
-        return {"role": "user", "content": content}
-    if role == "system":
-        return {"role": "system", "content": content}
-    if role == "tool":
-        payload = {"role": "tool", "content": content}
-        tool_call_id = getattr(message, "tool_call_id", None)
-        if tool_call_id:
-            payload["tool_call_id"] = tool_call_id
-        return payload
-    return {"role": "assistant", "content": content}
+    # Compatibility shim: callers still use the legacy function name, but the
+    # conversion is now framework-free and accepts LangChain-like duck objects.
+    return message_to_openai_payload(message)
 
 
 def _create_openai_compatible_stream_client_impl(provider_name: str):
@@ -157,6 +125,13 @@ def _create_openai_compatible_stream_client_impl(provider_name: str):
         return AsyncOpenAI(
             api_key=resolve_openrouter_api_key(settings),
             base_url=resolve_openrouter_base_url(settings),
+        )
+    if normalized == "nvidia":
+        if not resolve_nvidia_api_key(settings):
+            return None
+        return AsyncOpenAI(
+            api_key=resolve_nvidia_api_key(settings),
+            base_url=resolve_nvidia_base_url(settings),
         )
     if normalized == "openai":
         if not resolve_openai_api_key(settings):
@@ -193,11 +168,59 @@ def _resolve_openai_stream_model_name_impl(
         return settings.zhipu_model
     if normalized == "openrouter":
         return settings.openai_model or "openai/gpt-oss-20b:free"
+    if normalized == "nvidia":
+        if tier_key == "deep":
+            return resolve_nvidia_model_advanced(settings)
+        return resolve_nvidia_model(settings)
     if normalized == "openai":
         if tier_key == "deep":
             return settings.openai_model_advanced
         return settings.openai_model
     return None
+
+
+async def _ainvoke_openai_compatible_chat_impl(
+    llm: Any,
+    messages: list,
+) -> Any:
+    """Invoke one native OpenAI-compatible chat completion, including tools."""
+    provider_name = str(getattr(llm, "_wiii_provider_name", "") or "").strip().lower()
+    if not _supports_native_answer_streaming_impl(provider_name):
+        raise RuntimeError(f"Native provider is not supported: {provider_name or 'unknown'}")
+
+    client = _create_openai_compatible_stream_client_impl(provider_name)
+    if client is None:
+        raise RuntimeError(f"Native provider client is unavailable: {provider_name}")
+
+    tier_key = str(getattr(llm, "_wiii_tier_key", "") or "moderate").strip().lower()
+    model_name = _resolve_openai_stream_model_name_impl(llm, provider_name, tier_key)
+    if not model_name:
+        raise RuntimeError(f"Native model is not configured for provider: {provider_name}")
+
+    request_kwargs: dict[str, Any] = {
+        "model": model_name,
+        "messages": [message_to_openai_payload(message) for message in messages],
+    }
+    temperature = getattr(llm, "temperature", None)
+    if temperature is not None:
+        request_kwargs["temperature"] = temperature
+
+    bound_tools = list(getattr(llm, "_wiii_bound_tools", []) or [])
+    if bound_tools:
+        request_kwargs["tools"] = bound_tools
+    tool_choice = normalize_tool_choice(getattr(llm, "_wiii_tool_choice", None))
+    if tool_choice is not None:
+        request_kwargs["tool_choice"] = tool_choice
+
+    if provider_name == "openrouter":
+        from app.engine.openrouter_routing import build_openrouter_extra_body
+
+        extra_body = build_openrouter_extra_body(settings, primary_model=model_name)
+        if extra_body:
+            request_kwargs["extra_body"] = extra_body
+
+    response = await client.chat.completions.create(**request_kwargs)
+    return openai_response_to_assistant_message(response)
 
 
 def _extract_openai_delta_text_impl(delta: Any) -> tuple[str, str]:
@@ -274,6 +297,64 @@ def _extract_google_tagged_thinking_impl(
     return "".join(reasoning_parts), "".join(visible_parts)
 
 
+def _get_chunk_value(value: Any, key: str) -> Any:
+    if isinstance(value, dict):
+        return value.get(key)
+    return getattr(value, key, None)
+
+
+def _accumulate_tool_call_chunk(
+    accumulator: dict[int, dict[str, str]],
+    tool_call_chunk: Any,
+) -> None:
+    """Merge OpenAI-compatible streamed function-call chunks by index."""
+    try:
+        index = int(_get_chunk_value(tool_call_chunk, "index") or 0)
+    except Exception:
+        index = 0
+    slot = accumulator.setdefault(index, {"id": "", "name": "", "arguments": ""})
+
+    tool_call_id = _get_chunk_value(tool_call_chunk, "id")
+    if tool_call_id:
+        slot["id"] = str(tool_call_id)
+
+    function = _get_chunk_value(tool_call_chunk, "function") or {}
+    name = _get_chunk_value(function, "name")
+    if name:
+        if slot["name"] and str(name) not in slot["name"]:
+            slot["name"] = f"{slot['name']}{name}"
+        else:
+            slot["name"] = str(name)
+
+    arguments = _get_chunk_value(function, "arguments")
+    if arguments:
+        slot["arguments"] = f"{slot['arguments']}{arguments}"
+
+
+def _finalize_tool_call_chunks(
+    accumulator: dict[int, dict[str, str]],
+) -> list[dict[str, Any]]:
+    tool_calls: list[dict[str, Any]] = []
+    for index in sorted(accumulator):
+        chunk = accumulator[index]
+        name = str(chunk.get("name") or "").strip()
+        if not name:
+            continue
+        raw_arguments = str(chunk.get("arguments") or "").strip()
+        args: Any = {}
+        if raw_arguments:
+            try:
+                args = json.loads(raw_arguments)
+            except Exception:
+                args = {"_raw": raw_arguments}
+        tool_calls.append({
+            "id": str(chunk.get("id") or f"call_{index}"),
+            "name": name,
+            "args": args if isinstance(args, dict) else {"_raw": str(args)},
+        })
+    return tool_calls
+
+
 async def _stream_openai_compatible_answer_with_route_impl(
     route,
     messages: list,
@@ -281,14 +362,13 @@ async def _stream_openai_compatible_answer_with_route_impl(
     *,
     node: str = "direct",
     thinking_stop_signal: Optional[asyncio.Event] = None,
+    primary_timeout: float | None = None,
     supports_native_answer_streaming,
     create_openai_compatible_stream_client,
     resolve_openai_stream_model_name,
     langchain_message_to_openai_payload,
     extract_openai_delta_text,
 ) -> tuple[object | None, bool]:
-    from langchain_core.messages import AIMessage
-
     provider_name = str(route.provider or "").strip().lower()
     if not supports_native_answer_streaming(provider_name):
         return None, False
@@ -326,6 +406,13 @@ async def _stream_openai_compatible_answer_with_route_impl(
     if temperature is not None:
         request_kwargs["temperature"] = temperature
 
+    bound_tools = list(getattr(route.llm, "_wiii_bound_tools", []) or [])
+    if bound_tools:
+        request_kwargs["tools"] = bound_tools
+    tool_choice = normalize_tool_choice(getattr(route.llm, "_wiii_tool_choice", None))
+    if tool_choice is not None:
+        request_kwargs["tool_choice"] = tool_choice
+
     if provider_name == "openrouter":
         from app.engine.openrouter_routing import build_openrouter_extra_body
 
@@ -338,14 +425,55 @@ async def _stream_openai_compatible_answer_with_route_impl(
     emit_provider_reasoning = str(node or "").strip().lower() != "code_studio_agent"
     google_tag_state = {"inside_thinking": False, "pending": ""}
     reasoning_started = False
+    tool_call_chunks: dict[int, dict[str, str]] = {}
+
+    async def _close_thinking_for_non_answer() -> None:
+        nonlocal thinking_closed
+        if thinking_closed:
+            return
+        if thinking_stop_signal is not None:
+            thinking_stop_signal.set()
+        if reasoning_started:
+            await push_event({
+                "type": "thinking_end",
+                "content": "",
+                "node": node,
+            })
+        thinking_closed = True
 
     try:
         stream = await client.chat.completions.create(**request_kwargs)
-        async for chunk in stream:
+        stream_iter = stream.__aiter__()
+        first_stream_chunk = None
+        try:
+            if primary_timeout is not None and primary_timeout > 0:
+                first_stream_chunk = await asyncio.wait_for(
+                    anext(stream_iter),
+                    timeout=primary_timeout,
+                )
+            else:
+                first_stream_chunk = await anext(stream_iter)
+        except StopAsyncIteration:
+            first_stream_chunk = None
+
+        async def _iter_stream_chunks():
+            if first_stream_chunk is not None:
+                yield first_stream_chunk
+            while True:
+                try:
+                    yield await anext(stream_iter)
+                except StopAsyncIteration:
+                    break
+
+        async for chunk in _iter_stream_chunks():
             for choice in getattr(chunk, "choices", []) or []:
                 delta = getattr(choice, "delta", None)
                 if delta is None:
                     continue
+                for tool_call_chunk in getattr(delta, "tool_calls", []) or []:
+                    _accumulate_tool_call_chunk(tool_call_chunks, tool_call_chunk)
+                if tool_call_chunks:
+                    await _close_thinking_for_non_answer()
                 reasoning_delta, answer_delta = extract_openai_delta_text(delta)
                 if answer_delta and str(node or "").strip().lower() != "code_studio_agent":
                     tagged_reasoning, cleaned_answer = _extract_google_tagged_thinking_impl(
@@ -385,21 +513,42 @@ async def _stream_openai_compatible_answer_with_route_impl(
                 await push_event({
                     "type": "answer_delta",
                     "content": answer_delta,
-                    "node": node,
-                })
-                emitted_answer += answer_delta
-        if emitted_answer:
-            if not thinking_closed:
-                if thinking_stop_signal is not None:
-                    thinking_stop_signal.set()
-                if reasoning_started:
-                    await push_event({
-                        "type": "thinking_end",
-                        "content": "",
                         "node": node,
                     })
-            return AIMessage(content=emitted_answer), True
+                emitted_answer += answer_delta
+        tool_calls = _finalize_tool_call_chunks(tool_call_chunks)
+        if tool_calls:
+            from app.engine.llm_model_health import record_model_success
+
+            record_model_success(provider_name, model_name)
+            await _close_thinking_for_non_answer()
+            return make_assistant_message(
+                emitted_answer,
+                tool_calls=tool_calls,
+            ), bool(emitted_answer)
+        if emitted_answer:
+            from app.engine.llm_model_health import record_model_success
+
+            record_model_success(provider_name, model_name)
+            await _close_thinking_for_non_answer()
+            return make_assistant_message(emitted_answer), True
+        await _close_thinking_for_non_answer()
     except Exception as exc:
+        from app.engine.llm_failover_runtime import classify_failover_reason_impl
+        from app.engine.llm_model_health import record_model_failure
+
+        timeout_seconds = primary_timeout if isinstance(exc, asyncio.TimeoutError) else None
+        classified = classify_failover_reason_impl(
+            error=exc,
+            timeout_seconds=timeout_seconds,
+        )
+        record_model_failure(
+            provider_name,
+            model_name,
+            reason_code=classified.get("reason_code"),
+            error=exc,
+            timeout_seconds=timeout_seconds,
+        )
         logger.warning(
             "[%s] Native OpenAI-compatible stream failed (%s/%s): %s",
             node.upper(),
@@ -409,7 +558,9 @@ async def _stream_openai_compatible_answer_with_route_impl(
             exc_info=True,
         )
         if emitted_answer:
-            return AIMessage(content=emitted_answer), True
+            await _close_thinking_for_non_answer()
+            return make_assistant_message(emitted_answer), True
+        await _close_thinking_for_non_answer()
     logger.info(
         "[%s] Native stream result: provider=%s model=%s answer=%d chars",
         node.upper(),

@@ -63,8 +63,16 @@ def setup_logging(*, json_output: bool = False, log_level: str = "INFO") -> None
     root.addHandler(handler)
     root.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 
-    # Silence noisy third-party loggers
-    for noisy in ("httpcore", "httpx", "urllib3", "asyncio"):
+    # Silence noisy third-party loggers. OpenAI-compatible SDKs can log full
+    # request payloads/URLs at INFO, which is too risky for production logs.
+    for noisy in (
+        "httpcore",
+        "httpx",
+        "openai",
+        "openai._base_client",
+        "urllib3",
+        "asyncio",
+    ):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
     # Local dev: keep MCP dependency chatter out of startup logs.

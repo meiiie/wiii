@@ -12,8 +12,9 @@ This file exists as:
 2. A reference shape for ``HostActionDefinition`` payloads that the LMS
    parent should emit via ``wiii:capabilities``.
 
-V1 is read-only: no auto-click, no auto-fill. ``mutates_state`` and
-``requires_confirmation`` are both ``False`` for every Pointy tool.
+V1 is tutor-safe: highlight/scroll/tour plus fail-closed safe-click. ``ui.click``
+only works for host elements explicitly marked ``data-wiii-click-safe="true"``.
+No auto-fill.
 """
 from __future__ import annotations
 
@@ -25,12 +26,14 @@ POINTY_ACTION_HIGHLIGHT = "ui.highlight"
 POINTY_ACTION_SCROLL_TO = "ui.scroll_to"
 POINTY_ACTION_NAVIGATE = "ui.navigate"
 POINTY_ACTION_SHOW_TOUR = "ui.show_tour"
+POINTY_ACTION_CLICK = "ui.click"
 
 POINTY_ACTIONS: tuple[str, ...] = (
     POINTY_ACTION_HIGHLIGHT,
     POINTY_ACTION_SCROLL_TO,
     POINTY_ACTION_NAVIGATE,
     POINTY_ACTION_SHOW_TOUR,
+    POINTY_ACTION_CLICK,
 )
 
 
@@ -144,6 +147,34 @@ def reference_capabilities() -> dict[str, Any]:
                 "mutates_state": False,
                 "requires_confirmation": False,
             },
+            {
+                "name": POINTY_ACTION_CLICK,
+                "description": (
+                    "Click an LMS element only when host context marks it "
+                    'data-wiii-click-safe="true". Fail closed for unsafe, disabled, '
+                    "payment, enrollment, submit, destructive, or unlisted targets."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "selector": {
+                            "type": "string",
+                            "description": (
+                                "Stable data-wiii-id or CSS selector from available_targets. "
+                                "Use only when the target has click_safe=true."
+                            ),
+                        },
+                        "message": {
+                            "type": "string",
+                            "description": "Short tooltip shown just before the click.",
+                        },
+                    },
+                    "required": ["selector"],
+                },
+                "surface": "page",
+                "mutates_state": False,
+                "requires_confirmation": False,
+            },
         ],
     }
 
@@ -154,6 +185,7 @@ __all__ = [
     "POINTY_ACTION_SCROLL_TO",
     "POINTY_ACTION_NAVIGATE",
     "POINTY_ACTION_SHOW_TOUR",
+    "POINTY_ACTION_CLICK",
     "POINTY_ACTIONS",
     "reference_capabilities",
 ]

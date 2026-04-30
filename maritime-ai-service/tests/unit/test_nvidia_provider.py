@@ -142,6 +142,83 @@ class TestNvidiaResolvers:
         assert selected["nvidia"]["advanced"] == "deepseek-ai/deepseek-v4-pro"
 
 
+class TestNvidiaNativeStreaming:
+    def test_nvidia_is_supported_by_native_openai_compatible_streaming(self):
+        from app.engine.multi_agent.openai_stream_runtime import (
+            _supports_native_answer_streaming_impl,
+        )
+
+        assert _supports_native_answer_streaming_impl("nvidia") is True
+
+    def test_nvidia_stream_model_resolves_flash_and_pro_by_tier(self):
+        from app.engine.multi_agent import openai_stream_runtime
+
+        llm = SimpleNamespace(_wiii_provider_name="nvidia")
+        with patch.object(
+            openai_stream_runtime,
+            "settings",
+            SimpleNamespace(
+                nvidia_model="deepseek-ai/deepseek-v4-flash",
+                nvidia_model_advanced="deepseek-ai/deepseek-v4-pro",
+            ),
+        ):
+            assert (
+                openai_stream_runtime._resolve_openai_stream_model_name_impl(
+                    llm, "nvidia", "moderate"
+                )
+                == "deepseek-ai/deepseek-v4-flash"
+            )
+            assert (
+                openai_stream_runtime._resolve_openai_stream_model_name_impl(
+                    llm, "nvidia", "deep"
+                )
+                == "deepseek-ai/deepseek-v4-pro"
+            )
+
+    def test_nvidia_stream_client_uses_nvidia_credentials(self):
+        from app.engine.multi_agent import openai_stream_runtime
+
+        captured: dict = {}
+
+        def _fake_async_openai(**kwargs):
+            captured.update(kwargs)
+            return object()
+
+        with patch.object(
+            openai_stream_runtime,
+            "settings",
+            SimpleNamespace(
+                nvidia_api_key="nvapi-test-key",
+                nvidia_base_url="https://nvidia.example.test/v1",
+            ),
+        ), patch("openai.AsyncOpenAI", new=_fake_async_openai):
+            client = openai_stream_runtime._create_openai_compatible_stream_client_impl(
+                "nvidia"
+            )
+
+        assert client is not None
+        assert captured == {
+            "api_key": "nvapi-test-key",
+            "base_url": "https://nvidia.example.test/v1",
+        }
+
+    def test_direct_runtime_payload_wrapper_flattens_langchain_content(self):
+        from app.engine.multi_agent import direct_runtime_bindings
+
+        message = SimpleNamespace(
+            type="human",
+            content=[
+                {"text": "Xin chao"},
+                {"content": "Wiii"},
+            ],
+        )
+
+        assert direct_runtime_bindings._langchain_message_to_openai_payload(message) == {
+            "role": "user",
+            "content": "Xin chao\nWiii",
+        }
+
+
 # ---------------------------------------------------------------------------
 # OpenAIProvider — nvidia alias behavior
 # ---------------------------------------------------------------------------

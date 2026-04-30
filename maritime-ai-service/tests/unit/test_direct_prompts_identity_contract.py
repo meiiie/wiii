@@ -1,6 +1,39 @@
 from unittest.mock import MagicMock, patch
 
 
+def test_direct_system_messages_can_return_native_openai_messages():
+    from app.engine.multi_agent.direct_prompts import _build_direct_system_messages
+
+    state = {
+        "context": {},
+        "user_id": "user-1",
+    }
+
+    loader = MagicMock()
+    loader.build_system_prompt.return_value = "BASE SYSTEM PROMPT"
+    loader.get_thinking_instruction.return_value = ""
+    loader.get_persona.return_value = {
+        "agent": {
+            "name": "Wiii",
+            "goal": "Tra loi co chat",
+            "backstory": "Vai tro: tro ly hoi thoai da linh vuc.",
+        }
+    }
+
+    with patch("app.prompts.prompt_loader.get_prompt_loader", return_value=loader):
+        messages = _build_direct_system_messages(
+            state,
+            "Hi Wiii",
+            "Maritime",
+            tools_context_override="",
+            native_messages=True,
+        )
+
+    assert messages[0]["role"] == "system"
+    assert "BASE SYSTEM PROMPT" in messages[0]["content"]
+    assert messages[-1] == {"role": "user", "content": "Hi Wiii"}
+
+
 def test_direct_system_messages_add_identity_answer_contract():
     from app.engine.multi_agent.direct_prompts import _build_direct_system_messages
 

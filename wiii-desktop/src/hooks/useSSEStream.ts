@@ -24,6 +24,7 @@ import { useToastStore } from "@/stores/toast-store";
 import { useModelStore } from "@/stores/model-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { StreamBuffer } from "@/lib/stream-buffer";
+import { buildPointyFastPathAction } from "@/lib/pointy-fast-path";
 import { trackVisualTelemetry } from "@/lib/visual-telemetry";
 import type { SSEEventHandler } from "@/api/sse";
 import type {
@@ -39,7 +40,8 @@ import type {
 
 const MAX_SSE_RETRIES = 3;
 const SSE_BACKOFF_MS = 1000; // 1s, 2s, 4s
-const SSE_IDLE_TIMEOUT_MS = 30_000;
+// Provider/router cold paths can exceed 30s before the first answer token.
+const SSE_IDLE_TIMEOUT_MS = 120_000;
 const IDLE_TIMEOUT_ABORT_REASON = "stream_idle_timeout";
 const STREAM_RESTART_ABORT_REASON = "stream_restart";
 const USER_CANCEL_ABORT_REASON = "user_cancel";
@@ -521,6 +523,45 @@ export function useSSEStream() {
     thinkingMetaRef.current = undefined;
     codeOpenActiveRef.current = false;
 
+    const canUseHostActionBridge =
+      typeof window !== "undefined" && window.parent !== window;
+    const pointyFastPathAction = canUseHostActionBridge
+      ? buildPointyFastPathAction(
+          content,
+          useHostContextStore.getState().currentContext,
+        )
+      : null;
+    const pointyFastPathPromise = pointyFastPathAction
+      ? useHostContextStore.getState()
+          .requestAction(
+            pointyFastPathAction.action,
+            pointyFastPathAction.params,
+            pointyFastPathAction.requestId,
+          )
+          .then((result) => {
+            if (TRACE_SSE) {
+              console.debug("[SSE] pointy-fast-path resolved", {
+                action: pointyFastPathAction.action,
+                target: pointyFastPathAction.target.id,
+                success: result.success,
+              });
+            }
+            if (result.success) {
+              eventOrderRef.current.push("pointy_fast_path");
+              chatStore.setStreamingStep("Wiii đang trỏ trên trang...");
+              chatStore.addStreamingStep("Wiii đang trỏ trên trang...", "pointy_fast_path");
+            }
+            return result;
+          })
+          .catch((err) => {
+            console.warn(
+              "[SSE] pointy-fast-path failed:",
+              err instanceof Error ? err.message : String(err),
+            );
+            return null;
+          })
+      : null;
+
     // Keep a per-send controller so an aborted previous request cannot
     // accidentally clear/finalize the newly-started stream.
     const streamController = new AbortController();
@@ -531,6 +572,10 @@ export function useSSEStream() {
       }
     };
     scheduleIdleGuard();
+
+    if (pointyFastPathPromise) {
+      await Promise.race([pointyFastPathPromise, sleep(350)]);
+    }
 
     // Sprint 150: Create fresh StreamBuffer instances for this stream
     answerBufferRef.current = new StreamBuffer({

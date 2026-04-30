@@ -127,6 +127,202 @@ async def test_direct_response_node_wraps_runtime_provider_failure_for_explicit_
 
 
 @pytest.mark.asyncio
+async def test_direct_response_node_uses_native_handle_without_explicit_provider():
+    from app.engine.native_chat_runtime import NativeChatModelHandle, make_assistant_message
+
+    state = _base_state()
+    state["query"] = "Hay noi ngan gon ve Wiii"
+    state["routing_metadata"] = {"intent": "general"}
+    state.pop("provider", None)
+
+    kwargs = _base_direct_kwargs()
+    captured: dict = {}
+    native_handle = NativeChatModelHandle(
+        _wiii_provider_name="nvidia",
+        _wiii_model_name="deepseek-ai/deepseek-v4-flash",
+        _wiii_tier_key="light",
+    )
+    kwargs["looks_identity_selfhood_turn"] = lambda *_args, **_kwargs: False
+    kwargs["get_effective_provider"] = lambda *_args, **_kwargs: None
+    kwargs["get_explicit_user_provider"] = lambda *_args, **_kwargs: None
+    kwargs["bind_direct_tools"] = lambda llm, *_args, **_kwargs: (llm, llm, None)
+
+    def _build_messages(*_args, **build_kwargs):
+        captured["native_messages"] = build_kwargs.get("native_messages")
+        return [{"role": "user", "content": state["query"]}]
+
+    kwargs["build_direct_system_messages"] = _build_messages
+    kwargs["extract_direct_response"] = lambda *_args, **_kwargs: (
+        "Native route ok",
+        "",
+        [],
+    )
+
+    async def _execute(llm_with_tools, _llm_auto, messages, *_args, **_kwargs):
+        captured["llm"] = llm_with_tools
+        captured["messages"] = messages
+        captured["native_tool_messages"] = _kwargs.get("native_tool_messages")
+        return make_assistant_message("Native route ok"), messages, []
+
+    kwargs["execute_direct_tool_rounds"] = _execute
+
+    with patch(
+        "app.engine.multi_agent.agent_config.AgentConfigRegistry.get_native_llm",
+        return_value=native_handle,
+    ) as mock_get_native, patch(
+        "app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm",
+        side_effect=AssertionError("legacy LangChain LLM should not be constructed"),
+    ):
+        result = await direct_response_node_impl(
+            state,
+            **kwargs,
+        )
+
+    assert result["final_response"] == "Native route ok"
+    assert captured["llm"] is native_handle
+    assert captured["native_messages"] is True
+    assert captured["native_tool_messages"] is True
+    assert captured["messages"] == [{"role": "user", "content": state["query"]}]
+    mock_get_native.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_direct_response_node_uses_native_handle_for_forced_tool_turn():
+    from app.engine.native_chat_runtime import NativeChatModelHandle, make_assistant_message
+
+    state = _base_state()
+    state["query"] = "May gio roi?"
+    state["routing_metadata"] = {"intent": "lookup"}
+    state.pop("provider", None)
+
+    tool = SimpleNamespace(
+        name="tool_current_datetime",
+        description="Get current date and time",
+        parameters={"type": "object", "properties": {}},
+    )
+    native_handle = NativeChatModelHandle(
+        _wiii_provider_name="nvidia",
+        _wiii_model_name="deepseek-ai/deepseek-v4-flash",
+        _wiii_tier_key="light",
+    )
+    kwargs = _base_direct_kwargs()
+    captured: dict = {}
+    kwargs["looks_identity_selfhood_turn"] = lambda *_args, **_kwargs: False
+    kwargs["get_effective_provider"] = lambda *_args, **_kwargs: None
+    kwargs["get_explicit_user_provider"] = lambda *_args, **_kwargs: None
+    kwargs["collect_direct_tools"] = lambda *_args, **_kwargs: ([tool], True)
+    kwargs["direct_required_tool_names"] = lambda *_args, **_kwargs: ["tool_current_datetime"]
+    kwargs["bind_direct_tools"] = lambda llm, *_args, **_kwargs: (
+        llm.bind_tools([tool], tool_choice="tool_current_datetime"),
+        llm.bind_tools([tool]),
+        "tool_current_datetime",
+    )
+    kwargs["build_direct_system_messages"] = lambda *_args, **_kwargs: [
+        {"role": "user", "content": state["query"]}
+    ]
+    kwargs["extract_direct_response"] = lambda *_args, **_kwargs: (
+        "Bay gio la 10:00.",
+        "",
+        ["tool_current_datetime"],
+    )
+
+    async def _execute(llm_with_tools, _llm_auto, messages, *_args, **_kwargs):
+        captured["llm"] = llm_with_tools
+        captured["forced_tool_choice"] = _kwargs.get("forced_tool_choice")
+        captured["native_tool_messages"] = _kwargs.get("native_tool_messages")
+        return make_assistant_message("Bay gio la 10:00."), messages, [
+            {"type": "call", "name": "tool_current_datetime", "id": "call_1"},
+        ]
+
+    kwargs["execute_direct_tool_rounds"] = _execute
+
+    with patch(
+        "app.engine.multi_agent.agent_config.AgentConfigRegistry.get_native_llm",
+        return_value=native_handle,
+    ), patch(
+        "app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm",
+        side_effect=AssertionError("legacy LangChain LLM should not be constructed"),
+    ):
+        result = await direct_response_node_impl(
+            state,
+            **kwargs,
+        )
+
+    assert result["final_response"] == "Bay gio la 10:00."
+    assert captured["llm"]._wiii_native_route is True
+    assert captured["llm"]._wiii_bound_tools[0]["function"]["name"] == "tool_current_datetime"
+    assert captured["forced_tool_choice"] == "tool_current_datetime"
+    assert captured["native_tool_messages"] is True
+
+
+@pytest.mark.asyncio
+async def test_direct_response_node_uses_native_handle_for_optional_tool_turn():
+    from app.engine.native_chat_runtime import NativeChatModelHandle, make_assistant_message
+
+    state = _base_state()
+    state["query"] = "Co gi moi trong khoa hoc cua toi?"
+    state["routing_metadata"] = {"intent": "general"}
+    state.pop("provider", None)
+
+    tool = SimpleNamespace(
+        name="tool_lms_courses",
+        description="Inspect LMS courses",
+        parameters={"type": "object", "properties": {}},
+    )
+    native_handle = NativeChatModelHandle(
+        _wiii_provider_name="nvidia",
+        _wiii_model_name="deepseek-ai/deepseek-v4-flash",
+        _wiii_tier_key="light",
+    )
+    kwargs = _base_direct_kwargs()
+    captured: dict = {}
+    kwargs["looks_identity_selfhood_turn"] = lambda *_args, **_kwargs: False
+    kwargs["get_effective_provider"] = lambda *_args, **_kwargs: None
+    kwargs["get_explicit_user_provider"] = lambda *_args, **_kwargs: None
+    kwargs["collect_direct_tools"] = lambda *_args, **_kwargs: ([tool], False)
+    kwargs["direct_required_tool_names"] = lambda *_args, **_kwargs: []
+    kwargs["bind_direct_tools"] = lambda llm, *_args, **_kwargs: (
+        llm.bind_tools([tool]),
+        llm.bind_tools([tool]),
+        None,
+    )
+    kwargs["build_direct_system_messages"] = lambda *_args, **_kwargs: [
+        {"role": "user", "content": state["query"]}
+    ]
+    kwargs["extract_direct_response"] = lambda *_args, **_kwargs: (
+        "Khoa hoc cua ban dang on.",
+        "",
+        [],
+    )
+
+    async def _execute(llm_with_tools, _llm_auto, messages, *_args, **_kwargs):
+        captured["llm"] = llm_with_tools
+        captured["forced_tool_choice"] = _kwargs.get("forced_tool_choice")
+        captured["native_tool_messages"] = _kwargs.get("native_tool_messages")
+        return make_assistant_message("Khoa hoc cua ban dang on."), messages, []
+
+    kwargs["execute_direct_tool_rounds"] = _execute
+
+    with patch(
+        "app.engine.multi_agent.agent_config.AgentConfigRegistry.get_native_llm",
+        return_value=native_handle,
+    ), patch(
+        "app.engine.multi_agent.agent_config.AgentConfigRegistry.get_llm",
+        side_effect=AssertionError("legacy LangChain LLM should not be constructed"),
+    ):
+        result = await direct_response_node_impl(
+            state,
+            **kwargs,
+        )
+
+    assert result["final_response"] == "Khoa hoc cua ban dang on."
+    assert captured["llm"]._wiii_native_route is True
+    assert captured["llm"]._wiii_bound_tools[0]["function"]["name"] == "tool_lms_courses"
+    assert captured["forced_tool_choice"] is None
+    assert captured["native_tool_messages"] is True
+
+
+@pytest.mark.asyncio
 async def test_direct_response_node_salvages_final_result_when_post_processing_fails():
     state = _base_state()
     kwargs = _base_direct_kwargs()

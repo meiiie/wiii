@@ -42,6 +42,12 @@ def patched_direct_node_runtime(
                 return_value=llm,
             )
         )
+        stack.enter_context(
+            patch(
+                "app.engine.multi_agent.agent_config.AgentConfigRegistry.get_native_llm",
+                return_value=None,
+            )
+        )
         stack.enter_context(patch("app.engine.multi_agent.graph._get_effective_provider", return_value=None))
         stack.enter_context(patch("app.engine.multi_agent.graph._get_explicit_user_provider", return_value=None))
         stack.enter_context(

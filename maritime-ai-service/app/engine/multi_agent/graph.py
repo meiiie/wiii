@@ -229,6 +229,7 @@ async def _stream_openai_compatible_answer_with_route(
     *,
     node: str = "direct",
     thinking_stop_signal: Optional[asyncio.Event] = None,
+    primary_timeout: float | None = None,
 ) -> tuple[object | None, bool]:
     """Use graph-local names so tests can patch the streaming dependencies here."""
     impl = importlib.import_module(
@@ -240,6 +241,7 @@ async def _stream_openai_compatible_answer_with_route(
         push_event,
         node=node,
         thinking_stop_signal=thinking_stop_signal,
+        primary_timeout=primary_timeout,
         supports_native_answer_streaming=_supports_native_answer_streaming,
         create_openai_compatible_stream_client=_create_openai_compatible_stream_client,
         resolve_openai_stream_model_name=_resolve_openai_stream_model_name,

@@ -14,12 +14,11 @@ import logging
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
 from app.core.constants import DEFAULT_RELEVANCE_THRESHOLD, MAX_CONTENT_SNIPPET_LENGTH, MAX_DOCUMENT_PREVIEW_LENGTH
 from app.core.resilience import retry_on_transient
 from app.engine.agentic_rag.runtime_llm_socket import (
     ainvoke_agentic_rag_llm,
+    make_agentic_rag_messages,
     resolve_agentic_rag_llm,
 )
 from app.engine.llm_factory import ThinkingTier
@@ -240,10 +239,10 @@ class RetrievalGrader:
         """Grade single document using structured output."""
         from app.engine.structured_schemas import SingleDocGrade
 
-        messages = [
-            SystemMessage(content="You are a document relevance grader."),
-            HumanMessage(content=GRADING_PROMPT.format(query=query, document=content))
-        ]
+        messages = make_agentic_rag_messages(
+            system="Bạn là bộ chấm mức độ liên quan của tài liệu.",
+            user=GRADING_PROMPT.format(query=query, document=content),
+        )
 
         from app.services.structured_invoke_service import StructuredInvokeService
 
@@ -264,10 +263,10 @@ class RetrievalGrader:
     @retry_on_transient()
     async def _grade_document_legacy(self, query: str, doc_id: str, content: str) -> DocumentGrade:
         """Grade single document using legacy JSON parsing."""
-        messages = [
-            SystemMessage(content="You are a document relevance grader. Return only valid JSON."),
-            HumanMessage(content=GRADING_PROMPT.format(query=query, document=content))
-        ]
+        messages = make_agentic_rag_messages(
+            system="Bạn là bộ chấm mức độ liên quan của tài liệu. Chỉ trả về JSON hợp lệ.",
+            user=GRADING_PROMPT.format(query=query, document=content),
+        )
 
         response = await ainvoke_agentic_rag_llm(
             llm=self._llm,

@@ -41,6 +41,23 @@ def _mock_character_state_manager():
         yield
 
 
+def _message_content(message) -> str:
+    """Return text from either LangChain messages or native OpenAI payloads."""
+    if isinstance(message, dict):
+        content = message.get("content", "")
+    else:
+        content = getattr(message, "content", message)
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict):
+                parts.append(str(block.get("text") or block.get("content") or ""))
+            else:
+                parts.append(str(block or ""))
+        return "\n".join(part for part in parts if part)
+    return str(content or "")
+
+
 # =============================================================================
 # Phase 1: direct.yaml Loading
 # =============================================================================
@@ -439,8 +456,7 @@ class TestDirectNodeUsesPromptLoader:
                     return_value=("Response here", None)):
             await direct_response_node(state)
 
-        # Find the SystemMessage
-        system_content = captured_messages[0].content
+        system_content = _message_content(captured_messages[0])
         assert "đa lĩnh vực" in system_content
         assert "Wiii" in system_content
         assert "2024" in system_content
@@ -496,7 +512,7 @@ class TestDirectNodeUsesPromptLoader:
                     return_value=("Response", None)):
             await direct_response_node(state)
 
-        system_content = captured_messages[0].content
+        system_content = _message_content(captured_messages[0])
         # The direct node must not append memory by hand; PromptLoader owns the
         # single authoritative memory injection path.
         assert "WIII MEMORY CONTRACT" in system_content
