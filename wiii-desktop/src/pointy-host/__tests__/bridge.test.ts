@@ -144,14 +144,30 @@ describe("handleCursorMove", () => {
   });
 
   it("moves cursor to normalized viewport coordinates", async () => {
-    const result = await handleCursorMove({
-      x: 0.5,
-      y: 0.5,
-      coordinate_space: "normalized",
-      label: "Wiii",
+    const originalAnimate = Element.prototype.animate;
+    Object.defineProperty(Element.prototype, "animate", {
+      configurable: true,
+      value: undefined,
     });
-    expect(result.success).toBe(true);
-    expect(document.querySelector("#wiii-pointy-cursor")).not.toBeNull();
+    try {
+      const result = await handleCursorMove({
+        x: 0.5,
+        y: 0.5,
+        coordinate_space: "normalized",
+        label: "Wiii",
+      });
+      expect(result.success).toBe(true);
+      const cursor = document.querySelector("#wiii-pointy-cursor") as SVGSVGElement;
+      expect(cursor).not.toBeNull();
+      const expectedX = window.innerWidth * 0.5 - 5;
+      const expectedY = window.innerHeight * 0.5 - 4;
+      expect(cursor.style.transform).toBe(`translate(${expectedX}px, ${expectedY}px) scale(1)`);
+    } finally {
+      Object.defineProperty(Element.prototype, "animate", {
+        configurable: true,
+        value: originalAnimate,
+      });
+    }
   });
 
   it("fails closed when no selector or coordinates are provided", async () => {
