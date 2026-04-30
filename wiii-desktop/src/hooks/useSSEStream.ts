@@ -24,7 +24,10 @@ import { useToastStore } from "@/stores/toast-store";
 import { useModelStore } from "@/stores/model-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { StreamBuffer } from "@/lib/stream-buffer";
-import { buildPointyFastPathAction } from "@/lib/pointy-fast-path";
+import {
+  POINTY_FAST_PATH_SOURCE,
+  buildPointyFastPathAction,
+} from "@/lib/pointy-fast-path";
 import { trackVisualTelemetry } from "@/lib/visual-telemetry";
 import type { SSEEventHandler } from "@/api/sse";
 import type {
@@ -532,13 +535,42 @@ export function useSSEStream() {
           useHostContextStore.getState().currentContext,
         )
       : null;
+    const hostContextState = useHostContextStore.getState();
+    const supportsCursorMove =
+      hostContextState.capabilities?.tools?.some(
+        (tool) => tool.name === "ui.cursor_move",
+      ) === true;
     const pointyFastPathPromise = pointyFastPathAction
-      ? useHostContextStore.getState()
-          .requestAction(
+      ? (async () => {
+          if (supportsCursorMove) {
+            chatStore.setStreamingStep("Wiii đang nhìn vị trí trên trang...");
+            await Promise.race([
+              hostContextState.requestAction(
+                "ui.cursor_move",
+                {
+                  selector: pointyFastPathAction.target.id,
+                  label: "Wiii",
+                  duration_ms: 280,
+                  source: POINTY_FAST_PATH_SOURCE,
+                },
+                `${pointyFastPathAction.requestId}-cursor`,
+              ),
+              sleep(220),
+            ]).catch((err) => {
+              console.warn(
+                "[SSE] pointy cursor pre-move failed:",
+                err instanceof Error ? err.message : String(err),
+              );
+              return null;
+            });
+          }
+
+          return hostContextState.requestAction(
             pointyFastPathAction.action,
             pointyFastPathAction.params,
             pointyFastPathAction.requestId,
-          )
+          );
+        })()
           .then((result) => {
             if (TRACE_SSE) {
               console.debug("[SSE] pointy-fast-path resolved", {

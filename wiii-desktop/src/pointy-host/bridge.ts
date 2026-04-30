@@ -6,11 +6,12 @@
  * `wiii:action-response`. Cross-origin safe: only accepts requests from the
  * configured iframeOrigin and only replies to that same origin.
  */
-import { hideCursor, moveCursorToRect } from "./cursor";
+import { hideCursor, moveCursorToPoint, moveCursorToRect } from "./cursor";
 import { hideSpotlight, showSpotlight } from "./spotlight";
 import { runTour } from "./tour";
 import type {
   ClickParams,
+  CursorMoveParams,
   HighlightParams,
   NavigateParams,
   PointyConfig,
@@ -85,6 +86,48 @@ export async function handleHighlight(params: HighlightParams): Promise<PointyRe
     duration_ms: params.duration_ms,
   });
   return ok({ summary: `Đã trỏ vào element: ${describeTarget(target)}` });
+}
+
+export async function handleCursorMove(params: CursorMoveParams): Promise<PointyResult> {
+  if (params.selector) {
+    const target = resolveSelector(params.selector);
+    if (!target) return fail(`selector_not_found:${params.selector}`);
+    moveCursorToRect(target.getBoundingClientRect(), {
+      duration_ms: params.duration_ms ?? 360,
+      label: params.label,
+    });
+    return ok({ summary: `Đã di chuyển con trỏ tới element: ${describeTarget(target)}` });
+  }
+
+  if (
+    typeof params.x !== "number" ||
+    typeof params.y !== "number" ||
+    !Number.isFinite(params.x) ||
+    !Number.isFinite(params.y)
+  ) {
+    return fail("missing_cursor_target");
+  }
+
+  const normalized = params.coordinate_space === "normalized";
+  const x =
+    normalized && typeof window !== "undefined"
+      ? params.x * window.innerWidth
+      : params.x;
+  const y =
+    normalized && typeof window !== "undefined"
+      ? params.y * window.innerHeight
+      : params.y;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return fail("missing_cursor_target");
+  }
+  moveCursorToPoint(
+    { x, y },
+    {
+      duration_ms: params.duration_ms ?? 360,
+      label: params.label,
+    },
+  );
+  return ok({ summary: "Đã di chuyển con trỏ." });
 }
 
 export async function handleScrollTo(params: ScrollToParams): Promise<PointyResult> {
@@ -241,6 +284,8 @@ export function createBridge(config: PointyConfig): BridgeHandle {
 
 async function dispatch(req: PointyRequest, config: PointyConfig): Promise<PointyResult> {
   switch (req.action) {
+    case "ui.cursor_move":
+      return handleCursorMove(req.params as unknown as CursorMoveParams);
     case "ui.highlight":
       return handleHighlight(req.params as unknown as HighlightParams);
     case "ui.scroll_to":

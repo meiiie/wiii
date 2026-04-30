@@ -345,7 +345,10 @@ class FeatureSettingsMixin:
     )
     enable_conservative_fast_routing: bool = Field(
         default=False,
-        description="Allow obvious social/web/product/code turns to skip supervisor LLM with narrow guardrails",
+        description=(
+            "Allow obvious social/web/product/code turns to skip supervisor LLM "
+            "with narrow guardrails; opt in per deployment after rollout approval"
+        ),
     )
 
     # SoulBridge (Sprint 213)

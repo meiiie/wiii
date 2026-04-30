@@ -22,6 +22,7 @@ from typing import Any
 
 POINTY_VERSION = 1
 
+POINTY_ACTION_CURSOR_MOVE = "ui.cursor_move"
 POINTY_ACTION_HIGHLIGHT = "ui.highlight"
 POINTY_ACTION_SCROLL_TO = "ui.scroll_to"
 POINTY_ACTION_NAVIGATE = "ui.navigate"
@@ -29,6 +30,7 @@ POINTY_ACTION_SHOW_TOUR = "ui.show_tour"
 POINTY_ACTION_CLICK = "ui.click"
 
 POINTY_ACTIONS: tuple[str, ...] = (
+    POINTY_ACTION_CURSOR_MOVE,
     POINTY_ACTION_HIGHLIGHT,
     POINTY_ACTION_SCROLL_TO,
     POINTY_ACTION_NAVIGATE,
@@ -52,6 +54,46 @@ def reference_capabilities() -> dict[str, Any]:
         "version": str(POINTY_VERSION),
         "surfaces": ["page"],
         "tools": [
+            {
+                "name": POINTY_ACTION_CURSOR_MOVE,
+                "description": (
+                    "Hiển thị con trỏ cộng tác của Wiii đang di chuyển trên trang host. "
+                    "Chỉ thể hiện presence: không highlight, không click, không thay đổi dữ liệu."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "selector": {
+                            "type": "string",
+                            "description": "data-wiii-id hoặc CSS selector ổn định để con trỏ hướng tới.",
+                        },
+                        "x": {
+                            "type": "number",
+                            "description": "Tọa độ X trong viewport, hoặc 0..1 khi coordinate_space=normalized.",
+                        },
+                        "y": {
+                            "type": "number",
+                            "description": "Tọa độ Y trong viewport, hoặc 0..1 khi coordinate_space=normalized.",
+                        },
+                        "coordinate_space": {
+                            "type": "string",
+                            "enum": ["viewport", "normalized"],
+                            "description": "Hệ tọa độ: viewport hoặc normalized.",
+                        },
+                        "label": {
+                            "type": "string",
+                            "description": "Nhãn ngắn trên con trỏ, ví dụ Wiii.",
+                        },
+                        "duration_ms": {
+                            "type": "number",
+                            "description": "Thời lượng di chuyển tính bằng mili-giây.",
+                        },
+                    },
+                },
+                "surface": "page",
+                "mutates_state": False,
+                "requires_confirmation": False,
+            },
             {
                 "name": POINTY_ACTION_HIGHLIGHT,
                 "description": (
@@ -181,6 +223,7 @@ def reference_capabilities() -> dict[str, Any]:
 
 __all__ = [
     "POINTY_VERSION",
+    "POINTY_ACTION_CURSOR_MOVE",
     "POINTY_ACTION_HIGHLIGHT",
     "POINTY_ACTION_SCROLL_TO",
     "POINTY_ACTION_NAVIGATE",

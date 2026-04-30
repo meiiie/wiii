@@ -16,6 +16,7 @@ export const POINTY_PROTOCOL_VERSION = 1;
 
 /** Action names the AI can call. Keep aligned with HostCapabilities tools. */
 export const POINTY_ACTIONS = [
+  "ui.cursor_move",
   "ui.highlight",
   "ui.scroll_to",
   "ui.navigate",
@@ -60,7 +61,7 @@ export interface PointyToolDefinition {
   description: string;
   input_schema: {
     type: "object";
-    properties: Record<string, { type: string; description?: string }>;
+    properties: Record<string, { type: string; description?: string; enum?: string[] }>;
     required?: string[];
   };
   roles?: string[];
@@ -72,6 +73,15 @@ export interface PointyToolDefinition {
 export interface HighlightParams {
   selector: string;
   message?: string;
+  duration_ms?: number;
+}
+
+export interface CursorMoveParams {
+  selector?: string;
+  x?: number;
+  y?: number;
+  coordinate_space?: "viewport" | "normalized";
+  label?: string;
   duration_ms?: number;
 }
 

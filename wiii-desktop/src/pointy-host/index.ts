@@ -29,6 +29,29 @@ export const VERSION = "1.0.0";
 
 const DEFAULT_TOOLS: PointyToolDefinition[] = [
   {
+    name: "ui.cursor_move",
+    description:
+      "Hiển thị con trỏ cộng tác của Wiii đang di chuyển trên host page. Chỉ thể hiện presence: không highlight, không click.",
+    input_schema: {
+      type: "object",
+      properties: {
+        selector: { type: "string", description: "data-wiii-id/CSS selector ổn định cho mục tiêu con trỏ." },
+        x: { type: "number", description: "Tọa độ X trong viewport, hoặc 0..1 khi coordinate_space=normalized." },
+        y: { type: "number", description: "Tọa độ Y trong viewport, hoặc 0..1 khi coordinate_space=normalized." },
+        coordinate_space: {
+          type: "string",
+          enum: ["viewport", "normalized"],
+          description: "Hệ tọa độ: viewport hoặc normalized.",
+        },
+        label: { type: "string", description: "Nhãn ngắn trên con trỏ, ví dụ Wiii." },
+        duration_ms: { type: "number", description: "Thời lượng di chuyển tính bằng mili-giây." },
+      },
+    },
+    surface: "page",
+    mutates_state: false,
+    requires_confirmation: false,
+  },
+  {
     name: "ui.highlight",
     description:
       "Trỏ và làm nổi bật một phần tử trên trang để hướng dẫn người dùng. Không tự click — chỉ chỉ đường.",
@@ -171,6 +194,7 @@ export const ACTIONS = POINTY_ACTIONS;
 export type {
   PointyConfig,
   PointyToolDefinition,
+  CursorMoveParams,
   HighlightParams,
   ScrollToParams,
   NavigateParams,

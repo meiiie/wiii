@@ -8,6 +8,7 @@ import {
   createBridge,
   describeTarget,
   handleClick,
+  handleCursorMove,
   handleHighlight,
   handleNavigate,
   handleScrollTo,
@@ -126,6 +127,59 @@ describe("handleHighlight", () => {
     const result = await handleHighlight({ selector: "#nope" });
     expect(result.success).toBe(false);
     expect(result.error).toContain("selector_not_found");
+  });
+});
+
+describe("handleCursorMove", () => {
+  it("moves cursor to a selector without spotlighting or clicking", async () => {
+    const browseButton = document.createElement("button");
+    browseButton.dataset.wiiiId = "browse";
+    browseButton.textContent = "Browse";
+    document.body.appendChild(browseButton);
+    const result = await handleCursorMove({ selector: "browse", label: "Wiii" });
+    expect(result.success).toBe(true);
+    expect(result.data?.summary).toContain("browse");
+    expect(document.querySelector("#wiii-pointy-cursor")).not.toBeNull();
+    expect(document.querySelector("#wiii-pointy-overlay")).toBeNull();
+  });
+
+  it("moves cursor to normalized viewport coordinates", async () => {
+    const originalAnimate = Element.prototype.animate;
+    Object.defineProperty(Element.prototype, "animate", {
+      configurable: true,
+      value: undefined,
+    });
+    try {
+      const result = await handleCursorMove({
+        x: 0.5,
+        y: 0.5,
+        coordinate_space: "normalized",
+        label: "Wiii",
+      });
+      expect(result.success).toBe(true);
+      const cursor = document.querySelector("#wiii-pointy-cursor") as SVGSVGElement;
+      expect(cursor).not.toBeNull();
+      const expectedX = window.innerWidth * 0.5 - 5;
+      const expectedY = window.innerHeight * 0.5 - 4;
+      expect(cursor.style.transform).toBe(`translate(${expectedX}px, ${expectedY}px) scale(1)`);
+    } finally {
+      Object.defineProperty(Element.prototype, "animate", {
+        configurable: true,
+        value: originalAnimate,
+      });
+    }
+  });
+
+  it("fails closed when no selector or coordinates are provided", async () => {
+    const result = await handleCursorMove({});
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("missing_cursor_target");
+  });
+
+  it("fails closed for non-finite coordinates", async () => {
+    const result = await handleCursorMove({ x: Number.NaN, y: Infinity });
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("missing_cursor_target");
   });
 });
 
