@@ -20,7 +20,6 @@ from app.engine.multi_agent.graph import (
     _ainvoke_with_fallback,
     _build_domain_config,
     _build_visual_tool_runtime_metadata,
-    _build_simple_social_fast_path,
     _build_ambiguous_simulation_clarifier,
     _derive_code_stream_session_id,
     _should_enable_real_code_streaming,
@@ -169,30 +168,6 @@ class TestGetDomainGreetings:
         assert "hello" in greetings
         assert "thanks" in greetings
 
-
-class TestSimpleSocialFastPath:
-    def test_builds_immediate_response_for_obvious_social_turn(self):
-        response = _build_simple_social_fast_path("Xin chào hảo hán")
-
-        assert response is not None
-        assert "Wiii" in response[0]
-
-    def test_builds_immediate_response_for_laughter_social_turn(self):
-        response = _build_simple_social_fast_path("hẹ hẹ")
-
-        assert response is not None
-        assert "Wiii" in response[0]
-        assert "trêu vui" in response[0]
-
-    def test_builds_immediate_response_for_reaction_turn(self):
-        response = _build_simple_social_fast_path("wow")
-
-        assert response is None
-
-    def test_builds_immediate_response_for_vague_banter_turn(self):
-        response = _build_simple_social_fast_path("gì đó")
-
-        assert response is None
 
 class TestDirectAnswerTimeoutProfile:
     def test_zhipu_identity_turn_uses_structured_timeout_profile(self):

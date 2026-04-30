@@ -8,6 +8,7 @@ import {
   createBridge,
   describeTarget,
   handleClick,
+  handleCursorMove,
   handleHighlight,
   handleNavigate,
   handleScrollTo,
@@ -126,6 +127,34 @@ describe("handleHighlight", () => {
     const result = await handleHighlight({ selector: "#nope" });
     expect(result.success).toBe(false);
     expect(result.error).toContain("selector_not_found");
+  });
+});
+
+describe("handleCursorMove", () => {
+  it("moves cursor to a selector without spotlighting or clicking", async () => {
+    document.body.innerHTML = `<button data-wiii-id="browse">Browse</button>`;
+    const result = await handleCursorMove({ selector: "browse", label: "Wiii" });
+    expect(result.success).toBe(true);
+    expect(result.data?.summary).toContain("browse");
+    expect(document.querySelector("#wiii-pointy-cursor")).not.toBeNull();
+    expect(document.querySelector("#wiii-pointy-overlay")).toBeNull();
+  });
+
+  it("moves cursor to normalized viewport coordinates", async () => {
+    const result = await handleCursorMove({
+      x: 0.5,
+      y: 0.5,
+      coordinate_space: "normalized",
+      label: "Wiii",
+    });
+    expect(result.success).toBe(true);
+    expect(document.querySelector("#wiii-pointy-cursor")).not.toBeNull();
+  });
+
+  it("fails closed when no selector or coordinates are provided", async () => {
+    const result = await handleCursorMove({});
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("missing_cursor_target");
   });
 });
 

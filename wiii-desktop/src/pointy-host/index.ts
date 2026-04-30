@@ -29,6 +29,25 @@ export const VERSION = "1.0.0";
 
 const DEFAULT_TOOLS: PointyToolDefinition[] = [
   {
+    name: "ui.cursor_move",
+    description:
+      "Hien thi con tro Wiii dang di chuyen tren host page. Chi the hien presence: khong highlight, khong click.",
+    input_schema: {
+      type: "object",
+      properties: {
+        selector: { type: "string", description: "Stable data-wiii-id/CSS selector for the cursor target." },
+        x: { type: "number", description: "Viewport X coordinate, or 0..1 when coordinate_space=normalized." },
+        y: { type: "number", description: "Viewport Y coordinate, or 0..1 when coordinate_space=normalized." },
+        coordinate_space: { type: "string", description: "viewport | normalized" },
+        label: { type: "string", description: "Short cursor label, for example Wiii." },
+        duration_ms: { type: "number", description: "Movement duration in milliseconds." },
+      },
+    },
+    surface: "page",
+    mutates_state: false,
+    requires_confirmation: false,
+  },
+  {
     name: "ui.highlight",
     description:
       "Trỏ và làm nổi bật một phần tử trên trang để hướng dẫn người dùng. Không tự click — chỉ chỉ đường.",
@@ -171,6 +190,7 @@ export const ACTIONS = POINTY_ACTIONS;
 export type {
   PointyConfig,
   PointyToolDefinition,
+  CursorMoveParams,
   HighlightParams,
   ScrollToParams,
   NavigateParams,

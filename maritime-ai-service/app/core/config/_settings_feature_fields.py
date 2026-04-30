@@ -344,7 +344,7 @@ class FeatureSettingsMixin:
         description="Add living visual cognition guidance for SVG-first figures and Canvas-first simulations",
     )
     enable_conservative_fast_routing: bool = Field(
-        default=False,
+        default=True,
         description="Allow obvious social/web/product/code turns to skip supervisor LLM with narrow guardrails",
     )
 

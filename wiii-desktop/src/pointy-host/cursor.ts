@@ -61,7 +61,7 @@ function createCursor(): SVGSVGElement {
       <rect x="36" y="9" width="82" height="38" rx="19" fill="rgba(255,255,255,0.96)" stroke="rgba(17,24,39,0.12)" stroke-width="1"/>
       <circle cx="55" cy="28" r="11" fill="${BRAND_ORANGE}"/>
       <text x="55" y="32" text-anchor="middle" font-family="Aptos Rounded,Nunito Sans,Segoe UI,sans-serif" font-size="11" font-weight="900" fill="white">W</text>
-      <text x="83" y="32" text-anchor="middle" font-family="Aptos Rounded,Nunito Sans,Segoe UI,sans-serif" font-size="14" font-weight="850" fill="${POINTER_BLACK}">Wiii</text>
+      <text class="wiii-pointy-label" x="83" y="32" text-anchor="middle" font-family="Aptos Rounded,Nunito Sans,Segoe UI,sans-serif" font-size="14" font-weight="850" fill="${POINTER_BLACK}">Wiii</text>
       <circle class="wiii-pointy-live-ring" cx="105" cy="43" r="5" fill="${LIVE_GREEN}"/>
       <circle cx="105" cy="43" r="4" fill="${LIVE_GREEN}" stroke="white" stroke-width="1.8"/>
     </g>
@@ -74,6 +74,13 @@ function ensureCursor(): SVGSVGElement {
   cursorEl = createCursor();
   document.body.appendChild(cursorEl);
   return cursorEl;
+}
+
+function setCursorLabel(cursor: SVGSVGElement, label?: string): void {
+  const clean = String(label || "Wiii").trim().slice(0, 18) || "Wiii";
+  const labelNode = cursor.querySelector(".wiii-pointy-label");
+  if (labelNode) labelNode.textContent = clean;
+  cursor.setAttribute("aria-label", clean);
 }
 
 /**
@@ -95,6 +102,16 @@ export function computeOriginPoint(): { x: number; y: number } {
   return { x: w - CURSOR_SIZE, y: h / 2 };
 }
 
+function clampTransformPoint(point: { x: number; y: number }): { x: number; y: number } {
+  if (typeof window === "undefined") return point;
+  const maxX = Math.max(0, window.innerWidth - CURSOR_WIDTH);
+  const maxY = Math.max(0, window.innerHeight - CURSOR_HEIGHT);
+  return {
+    x: Math.max(0, Math.min(point.x, maxX)),
+    y: Math.max(0, Math.min(point.y, maxY)),
+  };
+}
+
 function computeArcPoint(
   start: { x: number; y: number },
   target: { x: number; y: number },
@@ -110,13 +127,17 @@ function computeArcPoint(
 
 export interface MoveCursorOptions {
   duration_ms?: number;
+  label?: string;
   onComplete?: () => void;
 }
 
-/** Move cursor to a target rect with spring-ish easing. */
-export function moveCursorToRect(rect: DOMRect, opts: MoveCursorOptions = {}): Animation | null {
+function moveCursorToTransformPoint(
+  rawTarget: { x: number; y: number },
+  opts: MoveCursorOptions = {},
+): Animation | null {
   const cursor = ensureCursor();
-  const target = computeTargetPoint(rect);
+  setCursorLabel(cursor, opts.label);
+  const target = clampTransformPoint(rawTarget);
   const start = lastPos ?? computeOriginPoint();
   lastPos = target;
 
@@ -156,6 +177,25 @@ export function moveCursorToRect(rect: DOMRect, opts: MoveCursorOptions = {}): A
     opts.onComplete?.();
   };
   return animation;
+}
+
+/** Move cursor so its pointer tip lands on a viewport coordinate. */
+export function moveCursorToPoint(
+  point: { x: number; y: number },
+  opts: MoveCursorOptions = {},
+): Animation | null {
+  return moveCursorToTransformPoint(
+    {
+      x: point.x - CURSOR_TIP_X,
+      y: point.y - CURSOR_TIP_Y,
+    },
+    opts,
+  );
+}
+
+/** Move cursor to a target rect with spring-ish easing. */
+export function moveCursorToRect(rect: DOMRect, opts: MoveCursorOptions = {}): Animation | null {
+  return moveCursorToTransformPoint(computeTargetPoint(rect), opts);
 }
 
 /** Hide the cursor (does not remove it from DOM, just fades out). */

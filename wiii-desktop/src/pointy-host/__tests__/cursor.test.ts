@@ -11,6 +11,7 @@ import {
   computeTargetPoint,
   destroyCursor,
   hideCursor,
+  moveCursorToPoint,
   moveCursorToRect,
 } from "../cursor";
 
@@ -56,6 +57,16 @@ describe("moveCursorToRect", () => {
     moveCursorToRect(rect1, { duration_ms: 50 });
     moveCursorToRect(rect2, { duration_ms: 50 });
     expect(document.querySelectorAll(`#${_testing.CURSOR_ID}`).length).toBe(1);
+  });
+});
+
+describe("moveCursorToPoint", () => {
+  it("moves the collaborator cursor by viewport point and updates the live label", () => {
+    moveCursorToPoint({ x: 120, y: 140 }, { label: "Wiii xem" });
+    const el = document.querySelector(`#${_testing.CURSOR_ID}`) as SVGSVGElement;
+    expect(el).not.toBeNull();
+    expect(el.textContent).toContain("Wiii xem");
+    expect(el.style.opacity).toBe("1");
   });
 });
 

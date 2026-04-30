@@ -565,10 +565,6 @@ def __getattr__(name):
             "app.engine.multi_agent.code_studio_context",
             "_infer_artifact_fast_path_title",
         ),
-        "_build_simple_social_fast_path": (
-            "app.engine.multi_agent.direct_social",
-            "_build_simple_social_fast_path",
-        ),
     }
     if name in lazy_attr_map:
         module_name, attr_name = lazy_attr_map[name]

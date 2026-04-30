@@ -123,7 +123,7 @@ async def test_generate_stream_v3_events_finalizes_answer_after_stream():
 
 
 @pytest.mark.asyncio
-async def test_generate_stream_v3_events_fast_social_bypasses_graph_context():
+async def test_generate_stream_v3_events_social_turn_invokes_native_llm_stream():
     orchestrator = MagicMock()
     prepared_turn = SimpleNamespace(
         request_scope=RequestScope("org-1", "maritime"),
@@ -132,10 +132,36 @@ async def test_generate_stream_v3_events_fast_social_bypasses_graph_context():
         chat_context=SimpleNamespace(user_name="Minh"),
     )
     orchestrator.prepare_turn = AsyncMock(return_value=prepared_turn)
+    orchestrator.build_multi_agent_execution_input = AsyncMock(
+        return_value=SimpleNamespace(
+            query="hello",
+            user_id="user-1",
+            session_id="session-1",
+            context={"conversation_history": ""},
+            domain_id="maritime",
+            thinking_effort=None,
+            provider="nvidia",
+            model="deepseek-ai/deepseek-v4-flash",
+        )
+    )
 
-    async def fail_stream_fn(**_kwargs):
-        raise AssertionError("fast social path should not enter graph streaming")
-        yield  # pragma: no cover
+    captured = {}
+
+    async def fake_native_stream_fn(request):
+        captured["request"] = request
+        yield WiiiStreamEvent(event_type="answer", payload="LLM says hello")
+        yield WiiiStreamEvent(
+            event_type="metadata",
+            payload={
+                "provider": "nvidia",
+                "model": "deepseek-ai/deepseek-v4-flash",
+                "llm_invoked": True,
+            },
+        )
+        yield WiiiStreamEvent(
+            event_type="done",
+            payload={"status": "complete", "total_time": 0.5},
+        )
 
     chunks = []
     with pytest.MonkeyPatch.context() as mp:
@@ -153,22 +179,28 @@ async def test_generate_stream_v3_events_fast_social_bypasses_graph_context():
             background_save=MagicMock(),
             start_time=time.time(),
             orchestrator=orchestrator,
-            stream_fn=fail_stream_fn,
+            stream_fn=fake_native_stream_fn,
         ):
             chunks.append(chunk)
 
     joined = "\n".join(chunks)
     assert "event: answer" in joined
-    assert "Wiii" in joined
-    assert '"streaming_version": "v3-fast-social"' in joined
-    assert '"llm_invoked": false' in joined
-    assert '"transport_fast_social_path"' in joined
-    assert '"request_id": "req-fast-social"' in joined
-    orchestrator.build_multi_agent_execution_input.assert_not_called()
+    assert "LLM says hello" in joined
+    assert '"v3-fast-social"' not in joined
+    assert '"llm_invoked": false' not in joined
+    assert '"transport_fast_social_path"' not in joined
+    assert '"llm_invoked": true' in joined
+    assert isinstance(captured["request"], WiiiTurnRequest)
+    assert captured["request"].query == "hello"
+    orchestrator.build_multi_agent_execution_input.assert_awaited_once()
+    assert (
+        orchestrator.build_multi_agent_execution_input.call_args.kwargs["request_id"]
+        == "req-fast-social"
+    )
     orchestrator.finalize_response_turn.assert_called_once()
     assert (
         orchestrator.finalize_response_turn.call_args.kwargs["response_text"]
-        != ""
+        == "LLM says hello"
     )
 
 

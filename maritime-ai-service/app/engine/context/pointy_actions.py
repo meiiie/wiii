@@ -22,6 +22,7 @@ from typing import Any
 
 POINTY_VERSION = 1
 
+POINTY_ACTION_CURSOR_MOVE = "ui.cursor_move"
 POINTY_ACTION_HIGHLIGHT = "ui.highlight"
 POINTY_ACTION_SCROLL_TO = "ui.scroll_to"
 POINTY_ACTION_NAVIGATE = "ui.navigate"
@@ -29,6 +30,7 @@ POINTY_ACTION_SHOW_TOUR = "ui.show_tour"
 POINTY_ACTION_CLICK = "ui.click"
 
 POINTY_ACTIONS: tuple[str, ...] = (
+    POINTY_ACTION_CURSOR_MOVE,
     POINTY_ACTION_HIGHLIGHT,
     POINTY_ACTION_SCROLL_TO,
     POINTY_ACTION_NAVIGATE,
@@ -52,6 +54,45 @@ def reference_capabilities() -> dict[str, Any]:
         "version": str(POINTY_VERSION),
         "surfaces": ["page"],
         "tools": [
+            {
+                "name": POINTY_ACTION_CURSOR_MOVE,
+                "description": (
+                    "Show Wiii's collaborative cursor moving on the host page. "
+                    "This is presence-only: no highlight, no click, no mutation."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "selector": {
+                            "type": "string",
+                            "description": "Stable data-wiii-id or CSS selector to move the cursor toward.",
+                        },
+                        "x": {
+                            "type": "number",
+                            "description": "Viewport X coordinate, or 0..1 when coordinate_space=normalized.",
+                        },
+                        "y": {
+                            "type": "number",
+                            "description": "Viewport Y coordinate, or 0..1 when coordinate_space=normalized.",
+                        },
+                        "coordinate_space": {
+                            "type": "string",
+                            "description": "viewport | normalized.",
+                        },
+                        "label": {
+                            "type": "string",
+                            "description": "Short cursor label, for example Wiii.",
+                        },
+                        "duration_ms": {
+                            "type": "number",
+                            "description": "Movement duration in milliseconds.",
+                        },
+                    },
+                },
+                "surface": "page",
+                "mutates_state": False,
+                "requires_confirmation": False,
+            },
             {
                 "name": POINTY_ACTION_HIGHLIGHT,
                 "description": (
@@ -181,6 +222,7 @@ def reference_capabilities() -> dict[str, Any]:
 
 __all__ = [
     "POINTY_VERSION",
+    "POINTY_ACTION_CURSOR_MOVE",
     "POINTY_ACTION_HIGHLIGHT",
     "POINTY_ACTION_SCROLL_TO",
     "POINTY_ACTION_NAVIGATE",

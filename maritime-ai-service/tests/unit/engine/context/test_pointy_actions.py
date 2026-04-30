@@ -1,6 +1,7 @@
 """Smoke tests for the Wiii Pointy action reference module."""
 from app.engine.context.pointy_actions import (
     POINTY_ACTION_CLICK,
+    POINTY_ACTION_CURSOR_MOVE,
     POINTY_ACTION_HIGHLIGHT,
     POINTY_ACTION_NAVIGATE,
     POINTY_ACTION_SCROLL_TO,
@@ -11,12 +12,14 @@ from app.engine.context.pointy_actions import (
 
 
 def test_action_names_are_stable():
+    assert POINTY_ACTION_CURSOR_MOVE == "ui.cursor_move"
     assert POINTY_ACTION_HIGHLIGHT == "ui.highlight"
     assert POINTY_ACTION_SCROLL_TO == "ui.scroll_to"
     assert POINTY_ACTION_NAVIGATE == "ui.navigate"
     assert POINTY_ACTION_SHOW_TOUR == "ui.show_tour"
     assert POINTY_ACTION_CLICK == "ui.click"
     assert set(POINTY_ACTIONS) == {
+        POINTY_ACTION_CURSOR_MOVE,
         POINTY_ACTION_HIGHLIGHT,
         POINTY_ACTION_SCROLL_TO,
         POINTY_ACTION_NAVIGATE,
