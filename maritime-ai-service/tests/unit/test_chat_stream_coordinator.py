@@ -208,6 +208,8 @@ async def test_generate_stream_v3_events_does_not_fast_path_pointy_questions():
     ):
         chunks.append(chunk)
 
+    joined = "\n".join(chunks)
+    assert "Wiii đang gom ngữ cảnh và trí nhớ" in joined
     assert any("Tool path stays active" in chunk for chunk in chunks)
     orchestrator.build_multi_agent_execution_input.assert_awaited_once()
 
@@ -434,8 +436,10 @@ async def test_generate_stream_v3_events_uses_sync_fallback_when_multi_agent_dis
     ):
         chunks.append(chunk)
 
+    joined = "\n".join(chunks)
     orchestrator.process_without_multi_agent.assert_awaited_once()
     orchestrator.build_multi_agent_execution_input.assert_not_called()
+    assert "Wiii đang mở đường trả lời nhanh" in joined
     assert any("Fast local fallback response" in chunk for chunk in chunks)
     assert any('"streaming_version": "v3-local_direct_llm"' in chunk for chunk in chunks)
     assert any('"last_reason_code": "auth_error"' in chunk for chunk in chunks)

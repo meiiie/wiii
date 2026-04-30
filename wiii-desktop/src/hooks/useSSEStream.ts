@@ -778,10 +778,10 @@ export function useSSEStream() {
           store.appendWorkerStatus(data.node, label);
         }
 
-        if (label && !isEphemeralHeartbeat) {
-          store.setStreamingStep(label);
-        }
         if (label) {
+          // Show status_only heartbeats as the current live timer status,
+          // but keep them out of the persistent step/phase timeline.
+          store.setStreamingStep(label);
           if (!isEphemeralHeartbeat) {
             store.addStreamingStep(label, data.node);
             store.appendPhaseStatus(label, data.node, data.step_id);

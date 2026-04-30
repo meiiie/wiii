@@ -101,8 +101,25 @@ async def generate_stream_v3_events(
     try:
         request_id = str(request_headers.get("X-Request-ID") or request_headers.get("x-request-id") or "").strip() or None
         requested_provider = getattr(chat_request, "provider", None)
-        if requested_provider and requested_provider != "auto":
-            from app.services.llm_selectability_service import ensure_provider_is_selectable
+        has_attachments = bool(
+            getattr(chat_request, "images", None)
+            or getattr(chat_request, "attachments", None)
+            or getattr(chat_request, "files", None)
+        )
+        fast_social = None
+        if not has_attachments:
+            from app.engine.multi_agent.direct_social import (
+                _build_simple_social_fast_path,
+            )
+
+            fast_social = _build_simple_social_fast_path(
+                getattr(chat_request, "message", "") or ""
+            )
+
+        if requested_provider and requested_provider != "auto" and fast_social is None:
+            from app.services.llm_selectability_service import (
+                ensure_provider_is_selectable,
+            )
 
             ensure_provider_is_selectable(requested_provider)
 
@@ -151,107 +168,114 @@ async def generate_stream_v3_events(
             "_use_multi_agent",
             getattr(settings, "use_multi_agent", True),
         )
-        has_attachments = bool(
-            getattr(chat_request, "images", None)
-            or getattr(chat_request, "attachments", None)
-            or getattr(chat_request, "files", None)
-        )
-        if not has_attachments:
-            from app.engine.multi_agent.direct_social import (
-                _build_simple_social_fast_path,
-            )
-
-            fast_social = _build_simple_social_fast_path(
-                getattr(chat_request, "message", "") or ""
-            )
-            if fast_social is not None:
-                full_answer, fast_thinking = fast_social
-                processing_time = time.time() - start_time
-                runtime_llm = resolve_runtime_llm_metadata(
-                    {
-                        "provider": (
-                            requested_provider
-                            if requested_provider and requested_provider != "auto"
-                            else None
-                        ),
-                        "model": getattr(chat_request, "model", None),
-                        "runtime_authoritative": False,
-                    }
-                )
-                routing_metadata = {
-                    "method": "transport_fast_social_path",
-                    "intent": "social",
-                    "final_agent": "direct",
-                    "confidence": 1.0,
+        if fast_social is not None:
+            full_answer, fast_thinking = fast_social
+            processing_time = time.time() - start_time
+            runtime_llm = resolve_runtime_llm_metadata(
+                {
+                    "provider": (
+                        requested_provider
+                        if requested_provider and requested_provider != "auto"
+                        else None
+                    ),
+                    "model": getattr(chat_request, "model", None),
+                    "runtime_authoritative": False,
                 }
-                fast_events = [
-                    await create_status_event(
-                        "Mình bắt nhịp được rồi, trả lời ngay nhé.",
-                        node="direct",
-                        details={
-                            "mode": "transport_fast_social_path",
-                            "visibility": "status_only",
-                        },
-                    ),
-                    await create_answer_event(full_answer),
-                    await create_metadata_event(
-                        processing_time=processing_time,
-                        confidence=1.0,
-                        agent_type="direct",
-                        model=runtime_llm["model"],
-                        provider=runtime_llm["provider"],
-                        failover=runtime_llm["failover"],
-                        session_id=effective_session_id_str,
-                        thinking=fast_thinking,
-                        thinking_content=fast_thinking,
-                        streaming_version="v3-fast-social",
-                        request_id=request_id,
-                        routing_metadata=routing_metadata,
-                        runtime_authoritative=False,
-                        fast_path=True,
-                        llm_invoked=False,
-                    ),
-                    await create_done_event(processing_time),
-                ]
+            )
+            routing_metadata = {
+                "method": "transport_fast_social_path",
+                "intent": "social",
+                "final_agent": "direct",
+                "confidence": 1.0,
+            }
+            fast_events = [
+                await create_status_event(
+                    "Mình bắt nhịp được rồi, trả lời ngay nhé.",
+                    node="direct",
+                    details={
+                        "mode": "transport_fast_social_path",
+                        "visibility": "status_only",
+                    },
+                ),
+                await create_answer_event(full_answer),
+                await create_metadata_event(
+                    processing_time=processing_time,
+                    confidence=1.0,
+                    agent_type="direct",
+                    model=runtime_llm["model"],
+                    provider=runtime_llm["provider"],
+                    failover=runtime_llm["failover"],
+                    session_id=effective_session_id_str,
+                    thinking=fast_thinking,
+                    thinking_content=fast_thinking,
+                    streaming_version="v3-fast-social",
+                    request_id=request_id,
+                    routing_metadata=routing_metadata,
+                    runtime_authoritative=False,
+                    fast_path=True,
+                    llm_invoked=False,
+                ),
+                await create_done_event(processing_time),
+            ]
 
-                for event in fast_events:
-                    chunks, event_counter, should_stop = serialize_stream_event(
-                        event=event,
-                        event_counter=event_counter,
-                        enable_artifacts=settings.enable_artifacts,
-                        presentation_state=presentation_state,
-                    )
-                    for chunk in chunks:
-                        yield chunk
-                    if should_stop:
-                        return
+            for event in fast_events:
+                chunks, event_counter, should_stop = serialize_stream_event(
+                    event=event,
+                    event_counter=event_counter,
+                    enable_artifacts=settings.enable_artifacts,
+                    presentation_state=presentation_state,
+                )
+                for chunk in chunks:
+                    yield chunk
+                if should_stop:
+                    return
 
-                try:
-                    orchestrator.finalize_response_turn(
-                        session_id=effective_session_id,
-                        user_id=str(chat_request.user_id),
-                        user_role=chat_request.role,
-                        message=chat_request.message,
-                        response_text=full_answer,
-                        context=finalization_context,
-                        domain_id=resolved_domain_id,
-                        organization_id=resolved_org_id,
-                        current_agent="direct",
-                        background_save=background_save,
-                        save_response_immediately=True,
-                        include_lms_insights=True,
-                        continuity_channel="web",
-                        transport_type="stream",
-                    )
-                except Exception as finalize_err:
-                    logger.warning(
-                        "[STREAM-V3] Fast social finalization failed: %s",
-                        finalize_err,
-                    )
-                return
+            try:
+                orchestrator.finalize_response_turn(
+                    session_id=effective_session_id,
+                    user_id=str(chat_request.user_id),
+                    user_role=chat_request.role,
+                    message=chat_request.message,
+                    response_text=full_answer,
+                    context=finalization_context,
+                    domain_id=resolved_domain_id,
+                    organization_id=resolved_org_id,
+                    current_agent="direct",
+                    background_save=background_save,
+                    save_response_immediately=True,
+                    include_lms_insights=True,
+                    continuity_channel="web",
+                    transport_type="stream",
+                )
+            except Exception as finalize_err:
+                logger.warning(
+                    "[STREAM-V3] Fast social finalization failed: %s",
+                    finalize_err,
+                )
+            return
 
         if not use_multi_agent:
             logger.warning("[STREAM-V3] Multi-Agent disabled, using sync fallback path")
+            fallback_status = await create_status_event(
+                "Wiii đang mở đường trả lời nhanh...",
+                node="direct",
+                details={
+                    "mode": "fallback",
+                    "subtype": "heartbeat",
+                    "visibility": "status_only",
+                },
+            )
+            chunks, event_counter, should_stop = serialize_stream_event(
+                event=fallback_status,
+                event_counter=event_counter,
+                enable_artifacts=settings.enable_artifacts,
+                presentation_state=presentation_state,
+            )
+            for chunk in chunks:
+                yield chunk
+            if should_stop:
+                return
+
             fallback_result = await orchestrator.process_without_multi_agent(
                 finalization_context,
             )
@@ -376,6 +400,25 @@ async def generate_stream_v3_events(
             return
 
         _provider = requested_provider
+        context_status = await create_status_event(
+            "Wiii đang gom ngữ cảnh và trí nhớ...",
+            node="context",
+            details={
+                "mode": "native_turn",
+                "subtype": "heartbeat",
+                "visibility": "status_only",
+            },
+        )
+        chunks, event_counter, should_stop = serialize_stream_event(
+            event=context_status,
+            event_counter=event_counter,
+            enable_artifacts=settings.enable_artifacts,
+            presentation_state=presentation_state,
+        )
+        for chunk in chunks:
+            yield chunk
+        if should_stop:
+            return
 
         try:
             execution_input = await (
