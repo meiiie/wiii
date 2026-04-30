@@ -125,6 +125,24 @@ describe("useSSEStream — type-safe metadata", () => {
     expect(heartbeatGuard).toBeGreaterThan(liveStatus);
     expect(code).toContain("keep them out of the persistent step/phase timeline");
   });
+
+  it("sets an immediate live status before the first SSE event arrives", async () => {
+    const src = await import("@/hooks/useSSEStream?raw");
+    const code = (src as any).default || src;
+    const startStreaming = code.indexOf("chatStore.startStreaming();");
+    const immediateStatus = code.indexOf('chatStore.setStreamingStep("Wiii đang nghe bạn...");');
+    expect(immediateStatus).toBeGreaterThan(startStreaming);
+  });
+
+  it("keeps silent SSE keepalives visible without creating timeline noise", async () => {
+    const src = await import("@/hooks/useSSEStream?raw");
+    const code = (src as any).default || src;
+    const keepAlive = code.indexOf("onKeepAlive: () => {");
+    const quietGuard = code.indexOf("if (!hasStreamingOutput())", keepAlive);
+    expect(keepAlive).toBeGreaterThan(-1);
+    expect(quietGuard).toBeGreaterThan(keepAlive);
+    expect(code).toContain("Wiii vẫn đang giữ kết nối và xử lý");
+  });
 });
 
 // ---------------------------------------------------------------------------

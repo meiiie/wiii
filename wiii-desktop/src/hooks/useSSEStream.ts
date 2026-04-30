@@ -515,6 +515,7 @@ export function useSSEStream() {
 
       // Start streaming
       chatStore.startStreaming();
+      chatStore.setStreamingStep("Wiii đang nghe bạn...");
       useCharacterStore.getState().clearSoulEmotion();
 
       // Sprint 153b: Clear stale think/progress tool IDs from previous streams
@@ -1036,6 +1037,9 @@ export function useSSEStream() {
       },
       onKeepAlive: () => {
         traceEvent("keepalive");
+        if (!hasStreamingOutput()) {
+          useChatStore.getState().setStreamingStep("Wiii vẫn đang giữ kết nối và xử lý...");
+        }
       },
     };
 
