@@ -115,6 +115,16 @@ describe("useSSEStream — type-safe metadata", () => {
     expect(pointyStep).toBeGreaterThan(successGuard);
     expect(code).not.toContain("Wiii dang tro tren trang");
   });
+
+  it("surfaces status_only heartbeats as the live timer status only", async () => {
+    const src = await import("@/hooks/useSSEStream?raw");
+    const code = (src as any).default || src;
+    const heartbeatGuard = code.indexOf("if (!isEphemeralHeartbeat)");
+    const liveStatus = code.indexOf("store.setStreamingStep(label);", code.indexOf("onStatus:"));
+    expect(liveStatus).toBeGreaterThan(-1);
+    expect(heartbeatGuard).toBeGreaterThan(liveStatus);
+    expect(code).toContain("keep them out of the persistent step/phase timeline");
+  });
 });
 
 // ---------------------------------------------------------------------------
