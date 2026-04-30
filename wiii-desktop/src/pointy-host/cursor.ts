@@ -16,7 +16,12 @@ const POINTER_BLACK = "#111827";
 const LIVE_GREEN = "#22C55E";
 
 let cursorEl: SVGSVGElement | null = null;
-let lastPos: { x: number; y: number } | null = null;
+export interface CursorPoint {
+  x: number;
+  y: number;
+}
+
+let lastPos: CursorPoint | null = null;
 let activeAnimation: Animation | null = null;
 
 function createCursor(): SVGSVGElement {
@@ -88,7 +93,7 @@ function setCursorLabel(cursor: SVGSVGElement, label?: string): void {
  * Lands slightly above-right of the element center to look like it's
  * "pointing" at the button rather than covering it.
  */
-export function computeTargetPoint(rect: DOMRect): { x: number; y: number } {
+export function computeTargetPoint(rect: DOMRect): CursorPoint {
   return {
     x: rect.left + rect.width / 2 - CURSOR_TIP_X,
     y: rect.top + rect.height / 2 - CURSOR_TIP_Y,
@@ -96,13 +101,13 @@ export function computeTargetPoint(rect: DOMRect): { x: number; y: number } {
 }
 
 /** Compute starting point if cursor has no last position (off-screen right edge). */
-export function computeOriginPoint(): { x: number; y: number } {
+export function computeOriginPoint(): CursorPoint {
   const w = typeof window !== "undefined" ? window.innerWidth : 1024;
   const h = typeof window !== "undefined" ? window.innerHeight : 768;
   return { x: w - CURSOR_SIZE, y: h / 2 };
 }
 
-function clampTransformPoint(point: { x: number; y: number }): { x: number; y: number } {
+function clampTransformPoint(point: CursorPoint): CursorPoint {
   if (typeof window === "undefined") return point;
   const maxX = Math.max(0, window.innerWidth - CURSOR_WIDTH);
   const maxY = Math.max(0, window.innerHeight - CURSOR_HEIGHT);
@@ -113,9 +118,9 @@ function clampTransformPoint(point: { x: number; y: number }): { x: number; y: n
 }
 
 function computeArcPoint(
-  start: { x: number; y: number },
-  target: { x: number; y: number },
-): { x: number; y: number } {
+  start: CursorPoint,
+  target: CursorPoint,
+): CursorPoint {
   const dx = target.x - start.x;
   const dy = target.y - start.y;
   const distance = Math.hypot(dx, dy);
@@ -132,7 +137,7 @@ export interface MoveCursorOptions {
 }
 
 function moveCursorToTransformPoint(
-  rawTarget: { x: number; y: number },
+  rawTarget: CursorPoint,
   opts: MoveCursorOptions = {},
 ): Animation | null {
   const cursor = ensureCursor();
@@ -181,7 +186,7 @@ function moveCursorToTransformPoint(
 
 /** Move cursor so its pointer tip lands on a viewport coordinate. */
 export function moveCursorToPoint(
-  point: { x: number; y: number },
+  point: CursorPoint,
   opts: MoveCursorOptions = {},
 ): Animation | null {
   return moveCursorToTransformPoint(
@@ -222,7 +227,7 @@ export const _testing = {
   CURSOR_ID,
   CURSOR_SIZE,
   getCursor: () => cursorEl,
-  setLastPos: (p: { x: number; y: number } | null) => {
+  setLastPos: (p: CursorPoint | null) => {
     lastPos = p;
   },
 };

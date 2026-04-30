@@ -31,16 +31,20 @@ const DEFAULT_TOOLS: PointyToolDefinition[] = [
   {
     name: "ui.cursor_move",
     description:
-      "Hien thi con tro Wiii dang di chuyen tren host page. Chi the hien presence: khong highlight, khong click.",
+      "Hiển thị con trỏ cộng tác của Wiii đang di chuyển trên host page. Chỉ thể hiện presence: không highlight, không click.",
     input_schema: {
       type: "object",
       properties: {
-        selector: { type: "string", description: "Stable data-wiii-id/CSS selector for the cursor target." },
-        x: { type: "number", description: "Viewport X coordinate, or 0..1 when coordinate_space=normalized." },
-        y: { type: "number", description: "Viewport Y coordinate, or 0..1 when coordinate_space=normalized." },
-        coordinate_space: { type: "string", description: "viewport | normalized" },
-        label: { type: "string", description: "Short cursor label, for example Wiii." },
-        duration_ms: { type: "number", description: "Movement duration in milliseconds." },
+        selector: { type: "string", description: "data-wiii-id/CSS selector ổn định cho mục tiêu con trỏ." },
+        x: { type: "number", description: "Tọa độ X trong viewport, hoặc 0..1 khi coordinate_space=normalized." },
+        y: { type: "number", description: "Tọa độ Y trong viewport, hoặc 0..1 khi coordinate_space=normalized." },
+        coordinate_space: {
+          type: "string",
+          enum: ["viewport", "normalized"],
+          description: "Hệ tọa độ: viewport hoặc normalized.",
+        },
+        label: { type: "string", description: "Nhãn ngắn trên con trỏ, ví dụ Wiii." },
+        duration_ms: { type: "number", description: "Thời lượng di chuyển tính bằng mili-giây." },
       },
     },
     surface: "page",

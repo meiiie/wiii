@@ -57,35 +57,36 @@ def reference_capabilities() -> dict[str, Any]:
             {
                 "name": POINTY_ACTION_CURSOR_MOVE,
                 "description": (
-                    "Show Wiii's collaborative cursor moving on the host page. "
-                    "This is presence-only: no highlight, no click, no mutation."
+                    "Hiển thị con trỏ cộng tác của Wiii đang di chuyển trên trang host. "
+                    "Chỉ thể hiện presence: không highlight, không click, không thay đổi dữ liệu."
                 ),
                 "input_schema": {
                     "type": "object",
                     "properties": {
                         "selector": {
                             "type": "string",
-                            "description": "Stable data-wiii-id or CSS selector to move the cursor toward.",
+                            "description": "data-wiii-id hoặc CSS selector ổn định để con trỏ hướng tới.",
                         },
                         "x": {
                             "type": "number",
-                            "description": "Viewport X coordinate, or 0..1 when coordinate_space=normalized.",
+                            "description": "Tọa độ X trong viewport, hoặc 0..1 khi coordinate_space=normalized.",
                         },
                         "y": {
                             "type": "number",
-                            "description": "Viewport Y coordinate, or 0..1 when coordinate_space=normalized.",
+                            "description": "Tọa độ Y trong viewport, hoặc 0..1 khi coordinate_space=normalized.",
                         },
                         "coordinate_space": {
                             "type": "string",
-                            "description": "viewport | normalized.",
+                            "enum": ["viewport", "normalized"],
+                            "description": "Hệ tọa độ: viewport hoặc normalized.",
                         },
                         "label": {
                             "type": "string",
-                            "description": "Short cursor label, for example Wiii.",
+                            "description": "Nhãn ngắn trên con trỏ, ví dụ Wiii.",
                         },
                         "duration_ms": {
                             "type": "number",
-                            "description": "Movement duration in milliseconds.",
+                            "description": "Thời lượng di chuyển tính bằng mili-giây.",
                         },
                     },
                 },

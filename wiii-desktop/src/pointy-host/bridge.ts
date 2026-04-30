@@ -96,10 +96,15 @@ export async function handleCursorMove(params: CursorMoveParams): Promise<Pointy
       duration_ms: params.duration_ms ?? 360,
       label: params.label,
     });
-    return ok({ summary: `Cursor moved to element: ${describeTarget(target)}` });
+    return ok({ summary: `Đã di chuyển con trỏ tới element: ${describeTarget(target)}` });
   }
 
-  if (typeof params.x !== "number" || typeof params.y !== "number") {
+  if (
+    typeof params.x !== "number" ||
+    typeof params.y !== "number" ||
+    !Number.isFinite(params.x) ||
+    !Number.isFinite(params.y)
+  ) {
     return fail("missing_cursor_target");
   }
 
@@ -112,6 +117,9 @@ export async function handleCursorMove(params: CursorMoveParams): Promise<Pointy
     normalized && typeof window !== "undefined"
       ? params.y * window.innerHeight
       : params.y;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return fail("missing_cursor_target");
+  }
   moveCursorToPoint(
     { x, y },
     {
@@ -119,7 +127,7 @@ export async function handleCursorMove(params: CursorMoveParams): Promise<Pointy
       label: params.label,
     },
   );
-  return ok({ summary: "Cursor moved." });
+  return ok({ summary: "Đã di chuyển con trỏ." });
 }
 
 export async function handleScrollTo(params: ScrollToParams): Promise<PointyResult> {

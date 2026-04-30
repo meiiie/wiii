@@ -132,7 +132,10 @@ describe("handleHighlight", () => {
 
 describe("handleCursorMove", () => {
   it("moves cursor to a selector without spotlighting or clicking", async () => {
-    document.body.innerHTML = `<button data-wiii-id="browse">Browse</button>`;
+    const browseButton = document.createElement("button");
+    browseButton.dataset.wiiiId = "browse";
+    browseButton.textContent = "Browse";
+    document.body.appendChild(browseButton);
     const result = await handleCursorMove({ selector: "browse", label: "Wiii" });
     expect(result.success).toBe(true);
     expect(result.data?.summary).toContain("browse");
@@ -153,6 +156,12 @@ describe("handleCursorMove", () => {
 
   it("fails closed when no selector or coordinates are provided", async () => {
     const result = await handleCursorMove({});
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("missing_cursor_target");
+  });
+
+  it("fails closed for non-finite coordinates", async () => {
+    const result = await handleCursorMove({ x: Number.NaN, y: Infinity });
     expect(result.success).toBe(false);
     expect(result.error).toBe("missing_cursor_target");
   });

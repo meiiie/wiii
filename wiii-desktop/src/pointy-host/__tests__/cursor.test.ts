@@ -61,8 +61,9 @@ describe("moveCursorToRect", () => {
 });
 
 describe("moveCursorToPoint", () => {
-  it("moves the collaborator cursor by viewport point and updates the live label", () => {
+  it("moves the collaborator cursor by viewport point and updates the live label", async () => {
     moveCursorToPoint({ x: 120, y: 140 }, { label: "Wiii xem" });
+    await Promise.resolve();
     const el = document.querySelector(`#${_testing.CURSOR_ID}`) as SVGSVGElement;
     expect(el).not.toBeNull();
     expect(el.textContent).toContain("Wiii xem");
