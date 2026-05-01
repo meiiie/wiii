@@ -4,7 +4,9 @@ import asyncio
 import inspect
 import logging
 import time
-from typing import AsyncGenerator, Mapping
+from contextlib import suppress
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator, Awaitable, Mapping
 
 from app.core.config import settings
 from app.core.exceptions import ProviderUnavailableError
@@ -18,6 +20,219 @@ from app.services.model_switch_prompt_service import (
 
 
 logger = logging.getLogger(__name__)
+
+
+_STAGE_HEARTBEAT_FIRST_AFTER_SEC = 2.5
+_STAGE_HEARTBEAT_INTERVAL_SEC = 7.0
+_RUNTIME_FIRST_EVENT_HEARTBEAT_AFTER_SEC = 3.5
+_RUNTIME_IDLE_HEARTBEAT_INTERVAL_SEC = 8.0
+
+
+@dataclass(frozen=True)
+class _AwaitUpdate:
+    kind: str
+    value: Any
+
+
+class _StreamLatencyTracker:
+    """Track stream stages so long waits are visible without changing routing."""
+
+    def __init__(self) -> None:
+        self._started_at = time.perf_counter()
+        self._active: dict[str, float] = {}
+        self._timeline: list[dict[str, Any]] = []
+
+    def elapsed_ms(self) -> int:
+        return int((time.perf_counter() - self._started_at) * 1000)
+
+    def start(self, stage: str) -> None:
+        if stage in self._active:
+            return
+        self._active[stage] = time.perf_counter()
+        self._timeline.append(
+            {
+                "stage": stage,
+                "started_ms": self.elapsed_ms(),
+                "status": "running",
+            }
+        )
+
+    def finish(self, stage: str, status: str = "ok") -> None:
+        started_at = self._active.pop(stage, None)
+        if started_at is None:
+            return
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        for item in reversed(self._timeline):
+            if item.get("stage") == stage and item.get("status") == "running":
+                item["duration_ms"] = duration_ms
+                item["status"] = status
+                return
+
+    def status_details(
+        self,
+        *,
+        stage: str,
+        request_id: str | None,
+        heartbeat_index: int | None = None,
+    ) -> dict[str, Any]:
+        details: dict[str, Any] = {
+            "visibility": "status_only",
+            "subtype": "heartbeat",
+            "stage": stage,
+            "elapsed_ms": self.elapsed_ms(),
+        }
+        if request_id:
+            details["request_id"] = request_id
+        if heartbeat_index is not None:
+            details["heartbeat_index"] = heartbeat_index
+        return details
+
+    def to_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "elapsed_ms": self.elapsed_ms(),
+            "timeline": [dict(item) for item in self._timeline],
+        }
+        if self._active:
+            payload["active"] = [
+                {
+                    "stage": stage,
+                    "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+                }
+                for stage, started_at in self._active.items()
+            ]
+        return payload
+
+
+async def _await_with_stage_heartbeats(
+    awaitable: Awaitable[Any],
+    *,
+    stage: str,
+    tracker: _StreamLatencyTracker,
+    request_id: str | None,
+    create_status_event,
+    heartbeat_message: str,
+    node: str,
+) -> AsyncGenerator[_AwaitUpdate, None]:
+    tracker.start(stage)
+    task = asyncio.ensure_future(awaitable)
+    timeout = _STAGE_HEARTBEAT_FIRST_AFTER_SEC
+    heartbeat_index = 0
+
+    try:
+        while not task.done():
+            done, _ = await asyncio.wait({task}, timeout=timeout)
+            if task in done:
+                break
+            heartbeat_index += 1
+            yield _AwaitUpdate(
+                "status",
+                await create_status_event(
+                    heartbeat_message,
+                    node=node,
+                    details=tracker.status_details(
+                        stage=stage,
+                        request_id=request_id,
+                        heartbeat_index=heartbeat_index,
+                    ),
+                ),
+            )
+            timeout = _STAGE_HEARTBEAT_INTERVAL_SEC
+
+        result = await task
+    except Exception:
+        tracker.finish(stage, status="error")
+        raise
+    finally:
+        if not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+    tracker.finish(stage)
+    yield _AwaitUpdate("result", result)
+
+
+async def _stream_with_idle_heartbeats(
+    stream_events,
+    *,
+    tracker: _StreamLatencyTracker,
+    request_id: str | None,
+    create_status_event,
+) -> AsyncGenerator[Any, None]:
+    iterator = stream_events.__aiter__()
+    first_event = True
+
+    while True:
+        stage = "runtime_first_event" if first_event else "runtime_idle"
+        heartbeat_message = (
+            "Wiii đang chờ model bắt đầu phản hồi..."
+            if first_event
+            else "Wiii vẫn đang đợi phần tiếp theo từ runtime..."
+        )
+        timeout = (
+            _RUNTIME_FIRST_EVENT_HEARTBEAT_AFTER_SEC
+            if first_event
+            else _RUNTIME_IDLE_HEARTBEAT_INTERVAL_SEC
+        )
+        tracker.start(stage)
+        next_task = asyncio.ensure_future(iterator.__anext__())
+        heartbeat_index = 0
+
+        try:
+            while not next_task.done():
+                done, _ = await asyncio.wait({next_task}, timeout=timeout)
+                if next_task in done:
+                    break
+                heartbeat_index += 1
+                yield await create_status_event(
+                    heartbeat_message,
+                    node="runtime",
+                    details=tracker.status_details(
+                        stage=stage,
+                        request_id=request_id,
+                        heartbeat_index=heartbeat_index,
+                    ),
+                )
+                timeout = _RUNTIME_IDLE_HEARTBEAT_INTERVAL_SEC
+
+            event = await next_task
+        except StopAsyncIteration:
+            tracker.finish(stage, status="complete")
+            break
+        except Exception:
+            tracker.finish(stage, status="error")
+            raise
+        finally:
+            if not next_task.done():
+                next_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await next_task
+
+        tracker.finish(stage)
+        first_event = False
+        yield event
+
+
+def _with_latency_metadata(event, tracker: _StreamLatencyTracker):
+    if getattr(event, "type", None) != "metadata":
+        return event
+    content = getattr(event, "content", None)
+    if not isinstance(content, dict):
+        return event
+
+    from app.engine.multi_agent.stream_utils import StreamEvent
+
+    metadata = dict(content)
+    metadata.setdefault("stream_latency", tracker.to_payload())
+    return StreamEvent(
+        type="metadata",
+        content=metadata,
+        node=getattr(event, "node", None),
+        step=getattr(event, "step", None),
+        confidence=getattr(event, "confidence", None),
+        details=getattr(event, "details", None),
+        subtype=getattr(event, "subtype", None),
+    )
 
 
 def _source_to_payload(source):
@@ -77,6 +292,12 @@ async def generate_stream_v3_events(
     yield "retry: 3000\n\n"
     event_counter = 0
     presentation_state = StreamPresentationState()
+    latency_tracker = _StreamLatencyTracker()
+    request_id = str(
+        request_headers.get("X-Request-ID")
+        or request_headers.get("x-request-id")
+        or ""
+    ).strip() or None
 
     event_counter += 1
     yield format_sse(
@@ -85,7 +306,10 @@ async def generate_stream_v3_events(
             "content": "Đang chuẩn bị lượt trả lời...",
             "step": "preparing",
             "node": "system",
-            "details": {"visibility": "status_only"},
+            "details": latency_tracker.status_details(
+                stage="preparing",
+                request_id=request_id,
+            ),
         },
         event_id=event_counter,
     )
@@ -99,7 +323,6 @@ async def generate_stream_v3_events(
         set_facebook_cookie(fb_cookie)
 
     try:
-        request_id = str(request_headers.get("X-Request-ID") or request_headers.get("x-request-id") or "").strip() or None
         requested_provider = getattr(chat_request, "provider", None)
         if requested_provider and requested_provider != "auto":
             from app.services.llm_selectability_service import ensure_provider_is_selectable
@@ -122,11 +345,35 @@ async def generate_stream_v3_events(
             chat_svc = get_chat_service()
             orchestrator = chat_svc._orchestrator
 
-        prepared_turn = await orchestrator.prepare_turn(
-            request=chat_request,
-            background_save=background_save,
-            persist_user_message_immediately=True,
-        )
+        prepared_turn = None
+        async for update in _await_with_stage_heartbeats(
+            orchestrator.prepare_turn(
+                request=chat_request,
+                background_save=background_save,
+                persist_user_message_immediately=True,
+            ),
+            stage="prepare_turn",
+            tracker=latency_tracker,
+            request_id=request_id,
+            create_status_event=create_status_event,
+            heartbeat_message="Wiii đang mở phiên và kiểm tra quyền truy cập...",
+            node="system",
+        ):
+            if update.kind == "status":
+                chunks, event_counter, should_stop = serialize_stream_event(
+                    event=update.value,
+                    event_counter=event_counter,
+                    enable_artifacts=settings.enable_artifacts,
+                    presentation_state=presentation_state,
+                )
+                for chunk in chunks:
+                    yield chunk
+                if should_stop:
+                    return
+            else:
+                prepared_turn = update.value
+        if prepared_turn is None:
+            raise RuntimeError("prepare_turn did not return a turn context")
         resolved_org_id = prepared_turn.request_scope.organization_id
         resolved_domain_id = prepared_turn.request_scope.domain_id
         effective_session_id = prepared_turn.session_id
@@ -302,8 +549,10 @@ async def generate_stream_v3_events(
             node="context",
             details={
                 "mode": "native_turn",
-                "subtype": "heartbeat",
-                "visibility": "status_only",
+                **latency_tracker.status_details(
+                    stage="context",
+                    request_id=request_id,
+                ),
             },
         )
         chunks, event_counter, should_stop = serialize_stream_event(
@@ -318,7 +567,8 @@ async def generate_stream_v3_events(
             return
 
         try:
-            execution_input = await (
+            execution_input = None
+            async for update in _await_with_stage_heartbeats(
                 orchestrator.build_multi_agent_execution_input(
                     request=chat_request,
                     prepared_turn=prepared_turn,
@@ -330,41 +580,82 @@ async def generate_stream_v3_events(
                     ),
                     provider=_provider,
                     request_id=request_id,
+                ),
+                stage="build_execution_input",
+                tracker=latency_tracker,
+                request_id=request_id,
+                create_status_event=create_status_event,
+                heartbeat_message="Wiii đang gom trí nhớ, ngữ cảnh và tín hiệu trang...",
+                node="context",
+            ):
+                if update.kind == "status":
+                    chunks, event_counter, should_stop = serialize_stream_event(
+                        event=update.value,
+                        event_counter=event_counter,
+                        enable_artifacts=settings.enable_artifacts,
+                        presentation_state=presentation_state,
+                    )
+                    for chunk in chunks:
+                        yield chunk
+                    if should_stop:
+                        return
+                else:
+                    execution_input = update.value
+            if execution_input is None:
+                raise RuntimeError(
+                    "build_multi_agent_execution_input did not return context"
                 )
-            )
         except Exception as ctx_err:
             logger.warning(
                 "[STREAM-V3] Full context build failed, using minimal: %s",
                 ctx_err,
             )
-            execution_input = (
-                orchestrator.build_minimal_multi_agent_execution_input(
-                    request=chat_request,
-                    prepared_turn=prepared_turn,
-                    thinking_effort=getattr(
-                        chat_request,
-                        "thinking_effort",
-                        None,
-                    ),
-                    provider=_provider,
-                    request_id=request_id,
+            latency_tracker.start("minimal_execution_input")
+            try:
+                execution_input = (
+                    orchestrator.build_minimal_multi_agent_execution_input(
+                        request=chat_request,
+                        prepared_turn=prepared_turn,
+                        thinking_effort=getattr(
+                            chat_request,
+                            "thinking_effort",
+                            None,
+                        ),
+                        provider=_provider,
+                        request_id=request_id,
+                    )
                 )
-            )
+            except Exception:
+                latency_tracker.finish("minimal_execution_input", status="error")
+                raise
+            latency_tracker.finish("minimal_execution_input")
 
         accumulated_answer: list[str] = []
         saw_done_event = False
 
-        turn_request = build_wiii_turn_request(
-            execution_input=execution_input,
-            organization_id=resolved_org_id,
-        )
+        latency_tracker.start("build_turn_request")
+        try:
+            turn_request = build_wiii_turn_request(
+                execution_input=execution_input,
+                organization_id=resolved_org_id,
+            )
+        except Exception:
+            latency_tracker.finish("build_turn_request", status="error")
+            raise
+        latency_tracker.finish("build_turn_request")
         stream_events = (
             stream_fn(turn_request)
             if uses_native_turn_stream
             else stream_fn(**turn_request.to_runtime_kwargs())
         )
 
-        async for event in stream_events:
+        async for event in _stream_with_idle_heartbeats(
+            stream_events,
+            tracker=latency_tracker,
+            request_id=request_id,
+            create_status_event=create_status_event,
+        ):
+            event = _with_latency_metadata(event, latency_tracker)
             if event.type == "answer":
                 accumulated_answer.append(event.content)
             elif event.type == "done":
