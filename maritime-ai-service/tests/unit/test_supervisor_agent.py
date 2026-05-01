@@ -286,6 +286,40 @@ class TestSupervisorRoute:
         mock_route.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_route_host_ui_navigation_uses_fast_path(self, mock_llm):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "query": "Wiii oi, nut Kham pha khoa hoc o dau?",
+            "context": {},
+            "domain_config": {},
+        }
+
+        mock_route = AsyncMock(return_value="memory_agent")
+        with patch.object(sup, "_route_structured", new=mock_route):
+            result = await sup.route(state)
+
+        assert result == "direct"
+        assert state["routing_metadata"]["method"] == "conservative_fast_path"
+        assert state["routing_metadata"]["intent"] == "host_ui_navigation"
+        mock_route.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_route_learning_course_question_does_not_use_host_ui_fast_path(self, mock_llm):
+        sup = _make_supervisor(mock_llm)
+        state = {
+            "query": "giai thich khoa hoc hang hai co ban cho toi",
+            "context": {},
+            "domain_config": {},
+        }
+
+        mock_route = AsyncMock(return_value="tutor_agent")
+        with patch.object(sup, "_route_structured", new=mock_route):
+            result = await sup.route(state)
+
+        assert result == "tutor_agent"
+        mock_route.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_route_to_rag(self, mock_llm, base_state):
         sup = _make_supervisor(mock_llm)
 
