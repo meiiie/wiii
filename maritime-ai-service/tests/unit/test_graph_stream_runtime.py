@@ -278,3 +278,56 @@ async def test_emit_stream_finalization_matches_sync_runtime_metadata_contract()
     assert "user-provider" in stream_metadata["thread_id"]
     assert "session-provider" in stream_metadata["thread_id"]
     assert events[-1].type == "done"
+
+
+@pytest.mark.asyncio
+async def test_emit_stream_finalization_includes_runtime_latency_timeline():
+    runtime_latency = {
+        "elapsed_ms": 42,
+        "timeline": [
+            {
+                "stage": "runtime_step",
+                "node": "supervisor",
+                "status": "ok",
+                "started_ms": 3,
+                "duration_ms": 17,
+            },
+            {
+                "stage": "runtime_route",
+                "from": "supervisor",
+                "to": "direct",
+                "status": "ok",
+                "elapsed_ms": 21,
+            },
+        ],
+    }
+    final_state = {
+        "session_id": "session-latency",
+        "grader_score": 8.0,
+        "final_response": "ok",
+        "routing_metadata": {"final_agent": "direct"},
+        "_runtime_latency": runtime_latency,
+    }
+
+    events = [
+        event
+        async for event in emit_stream_finalization_impl(
+            final_state=final_state,
+            session_id="session-latency",
+            context={"user_id": "user-latency"},
+            start_time=0.0,
+            resolve_runtime_llm_metadata=lambda *_args, **_kwargs: {
+                "provider": "nvidia",
+                "model": "deepseek-ai/deepseek-v4-flash",
+                "runtime_authoritative": True,
+            },
+            create_sources_event=create_sources_event,
+            create_metadata_event=create_metadata_event,
+            create_done_event=create_done_event,
+            registry=_RegistryStub(),
+            trace_id="trace-latency",
+        )
+    ]
+
+    metadata_event = next(event for event in events if event.type == "metadata")
+    assert metadata_event.content["runtime_latency"] == runtime_latency

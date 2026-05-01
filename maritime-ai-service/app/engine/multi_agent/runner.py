@@ -21,10 +21,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from app.core.config import settings
-from app.engine.multi_agent.stream_events import make_graph_event, make_graph_done
+from app.engine.multi_agent.stream_events import make_bus_event, make_graph_event
 from app.engine.multi_agent.state import AgentState
 from app.engine.multi_agent.guardrails import run_input_guardrails, run_output_guardrails
 from app.engine.multi_agent.next_step import (
@@ -48,6 +48,60 @@ _NODE_AGGREGATOR = "aggregator"
 
 _MAX_DISPATCH_ITERATIONS = 2  # Safety limit for aggregator→supervisor loop
 _MAX_HANDOFF_COUNT = 2  # Max agent-to-agent handoffs per request
+
+
+_RUNTIME_STEP_MESSAGES = {
+    _NODE_GUARDIAN: "Wiii đang kiểm tra an toàn...",
+    _NODE_SUPERVISOR: "Wiii đang định tuyến câu hỏi...",
+    "rag_agent": "Wiii đang tra cứu tri thức...",
+    "tutor_agent": "Wiii đang soạn phần giải thích...",
+    "memory_agent": "Wiii đang nối lại trí nhớ...",
+    "direct": "Wiii đang gọi model để trả lời...",
+    "code_studio_agent": "Wiii đang chuẩn bị Code Studio...",
+    "product_search_agent": "Wiii đang tìm tín hiệu sản phẩm...",
+    "colleague_agent": "Wiii đang hỏi thêm một góc nhìn...",
+    _NODE_PARALLEL_DISPATCH: "Wiii đang chia việc cho các agent...",
+    _NODE_AGGREGATOR: "Wiii đang tổng hợp báo cáo agent...",
+    _NODE_SYNTHESIZER: "Wiii đang chốt câu trả lời cuối...",
+}
+
+
+def _ensure_runtime_latency(state: AgentState) -> dict[str, Any]:
+    if "_runtime_latency_started_at" not in state:
+        state["_runtime_latency_started_at"] = time.perf_counter()
+    latency = state.setdefault("_runtime_latency", {"timeline": []})
+    if not isinstance(latency, dict):
+        latency = {"timeline": []}
+        state["_runtime_latency"] = latency
+    timeline = latency.setdefault("timeline", [])
+    if not isinstance(timeline, list):
+        latency["timeline"] = []
+    return latency
+
+
+def _runtime_elapsed_ms(state: AgentState) -> int:
+    started_at = state.get("_runtime_latency_started_at")
+    if not isinstance(started_at, (int, float)):
+        started_at = time.perf_counter()
+        state["_runtime_latency_started_at"] = started_at
+    return int((time.perf_counter() - started_at) * 1000)
+
+
+def _record_runtime_timeline_entry(
+    state: AgentState,
+    entry: dict[str, Any],
+) -> dict[str, Any]:
+    latency = _ensure_runtime_latency(state)
+    timeline = latency.setdefault("timeline", [])
+    timeline.append(entry)
+    latency["elapsed_ms"] = _runtime_elapsed_ms(state)
+    return entry
+
+
+def _export_runtime_latency(state: AgentState) -> dict[str, Any]:
+    latency = _ensure_runtime_latency(state)
+    latency["elapsed_ms"] = _runtime_elapsed_ms(state)
+    return latency
 
 
 class WiiiRunner:
@@ -130,6 +184,116 @@ class WiiiRunner:
         if self._hooks:
             await self._hooks.emit_route(from_step, to_step, state)
 
+    @staticmethod
+    def _push_runtime_status(
+        queue: Optional[asyncio.Queue],
+        *,
+        state: AgentState,
+        node_name: str,
+        stage: str,
+        content: str,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        """Push a status-only bus event before long-running runtime work."""
+        if queue is None:
+            return
+        details: dict[str, Any] = {
+            "visibility": "status_only",
+            "subtype": "runtime_status",
+            "stage": stage,
+            "node_name": node_name,
+            "elapsed_ms": _runtime_elapsed_ms(state),
+        }
+        if extra:
+            details.update(extra)
+        queue.put_nowait(
+            make_bus_event(
+                {
+                    "type": "status",
+                    "content": content,
+                    "node": node_name,
+                    "details": details,
+                }
+            )
+        )
+
+    @classmethod
+    def _push_runtime_route_status(
+        cls,
+        queue: Optional[asyncio.Queue],
+        *,
+        state: AgentState,
+        from_step: str,
+        to_step: str,
+    ) -> None:
+        _record_runtime_timeline_entry(
+            state,
+            {
+                "stage": "runtime_route",
+                "from": from_step,
+                "to": to_step,
+                "status": "ok",
+                "elapsed_ms": _runtime_elapsed_ms(state),
+            },
+        )
+        cls._push_runtime_status(
+            queue,
+            state=state,
+            node_name=from_step or "runner",
+            stage="runtime_route",
+            content=f"Wiii chuyển luồng sang {to_step}...",
+            extra={"route_from": from_step, "route_to": to_step},
+        )
+
+    @classmethod
+    def _start_runtime_step(
+        cls,
+        queue: Optional[asyncio.Queue],
+        *,
+        name: str,
+        state: AgentState,
+    ) -> dict[str, Any]:
+        entry = _record_runtime_timeline_entry(
+            state,
+            {
+                "stage": "runtime_step",
+                "node": name,
+                "status": "running",
+                "started_ms": _runtime_elapsed_ms(state),
+            },
+        )
+        cls._push_runtime_status(
+            queue,
+            state=state,
+            node_name=name,
+            stage="runtime_step_start",
+            content=_RUNTIME_STEP_MESSAGES.get(name, f"Wiii đang chạy {name}..."),
+        )
+        return entry
+
+    @staticmethod
+    def _finish_runtime_step(
+        *,
+        source_state: AgentState,
+        result_state: AgentState,
+        entry: dict[str, Any],
+        started_at: float,
+        status: str,
+    ) -> AgentState:
+        if result_state is not source_state:
+            result_state.setdefault(
+                "_runtime_latency_started_at",
+                source_state.get("_runtime_latency_started_at"),
+            )
+            result_state.setdefault(
+                "_runtime_latency",
+                source_state.get("_runtime_latency", {"timeline": []}),
+            )
+        entry["duration_ms"] = int((time.perf_counter() - started_at) * 1000)
+        entry["status"] = status
+        _export_runtime_latency(result_state)
+        return result_state
+
     # ------------------------------------------------------------------
     # Sync execution (replaces graph.ainvoke)
     # ------------------------------------------------------------------
@@ -161,6 +325,12 @@ class WiiiRunner:
 
         route = guardian_route(state)
         await self._emit_route(_NODE_GUARDIAN, route, state)
+        self._push_runtime_route_status(
+            None,
+            state=state,
+            from_step=_NODE_GUARDIAN,
+            to_step=route,
+        )
 
         if route == _NODE_SYNTHESIZER:
             state["current_agent"] = _NODE_SYNTHESIZER
@@ -182,7 +352,15 @@ class WiiiRunner:
                 break
 
             elif isinstance(step, NextStepHandoff):
-                await self._emit_route(state.get("current_agent", ""), step.target_agent, state)
+                current_agent = state.get("current_agent", "")
+                await self._emit_route(current_agent, step.target_agent, state)
+                if current_agent != step.target_agent:
+                    self._push_runtime_route_status(
+                        None,
+                        state=state,
+                        from_step=current_agent,
+                        to_step=step.target_agent,
+                    )
                 state["current_agent"] = step.target_agent
                 state["next_agent"] = step.target_agent
 
@@ -227,7 +405,11 @@ class WiiiRunner:
         await self._emit_run_start(state)
 
         # 1. Guardian
-        state = await self._run_step(_NODE_GUARDIAN, state)
+        state = await self._run_step(
+            _NODE_GUARDIAN,
+            state,
+            stream_queue=merged_queue,
+        )
 
         # Keep streaming semantics aligned with run(): extended input
         # guardrails are part of the active runtime contract, not only sync API.
@@ -244,10 +426,20 @@ class WiiiRunner:
 
         route = guardian_route(state)
         await self._emit_route(_NODE_GUARDIAN, route, state)
+        self._push_runtime_route_status(
+            merged_queue,
+            state=state,
+            from_step=_NODE_GUARDIAN,
+            to_step=route,
+        )
 
         if route == _NODE_SYNTHESIZER:
             state["current_agent"] = _NODE_SYNTHESIZER
-            state = await self._run_step(_NODE_SYNTHESIZER, state)
+            state = await self._run_step(
+                _NODE_SYNTHESIZER,
+                state,
+                stream_queue=merged_queue,
+            )
             await run_output_guardrails(state)
             self._push_queue(merged_queue, _NODE_SYNTHESIZER, state)
             elapsed = (time.perf_counter() - t_start) * 1000
@@ -260,13 +452,25 @@ class WiiiRunner:
         state["_handoff_count"] = 0
 
         for turn in range(max_turns):
-            step = await self._resolve_next_step(state, turn)
+            step = await self._resolve_next_step(
+                state,
+                turn,
+                stream_queue=merged_queue,
+            )
 
             if isinstance(step, NextStepFinalOutput):
                 break
 
             elif isinstance(step, NextStepHandoff):
-                await self._emit_route(state.get("current_agent", ""), step.target_agent, state)
+                current_agent = state.get("current_agent", "")
+                await self._emit_route(current_agent, step.target_agent, state)
+                if current_agent != step.target_agent:
+                    self._push_runtime_route_status(
+                        merged_queue,
+                        state=state,
+                        from_step=current_agent,
+                        to_step=step.target_agent,
+                    )
                 state["current_agent"] = step.target_agent
                 state["next_agent"] = step.target_agent
 
@@ -276,18 +480,30 @@ class WiiiRunner:
                     await self._emit_run_end(state, elapsed)
                     return state
 
-                state = await self._run_step(step.target_agent, state)
+                state = await self._run_step(
+                    step.target_agent,
+                    state,
+                    stream_queue=merged_queue,
+                )
                 self._push_queue(merged_queue, step.target_agent, state)
 
             elif isinstance(step, NextStepRunAgain):
-                state = await self._run_step(step.agent_name, state)
+                state = await self._run_step(
+                    step.agent_name,
+                    state,
+                    stream_queue=merged_queue,
+                )
                 self._push_queue(merged_queue, step.agent_name, state)
 
             state["_orchestrator_turn"] = turn + 1
             self._preserve_thinking(state)
 
         # Synthesize
-        state = await self._run_step(_NODE_SYNTHESIZER, state)
+        state = await self._run_step(
+            _NODE_SYNTHESIZER,
+            state,
+            stream_queue=merged_queue,
+        )
         await run_output_guardrails(state)
         self._push_queue(merged_queue, _NODE_SYNTHESIZER, state)
 
@@ -299,7 +515,13 @@ class WiiiRunner:
     # NextStep resolution
     # ------------------------------------------------------------------
 
-    async def _resolve_next_step(self, state: AgentState, turn: int) -> NextStep:
+    async def _resolve_next_step(
+        self,
+        state: AgentState,
+        turn: int,
+        *,
+        stream_queue: Optional[asyncio.Queue] = None,
+    ) -> NextStep:
         """Determine the next step in the orchestrator loop.
 
         - Turn 0: run supervisor, route to agent
@@ -307,13 +529,23 @@ class WiiiRunner:
         """
         if turn == 0:
             # First turn: run supervisor routing
-            state = await self._run_step(_NODE_SUPERVISOR, state)
+            state = await self._run_step(
+                _NODE_SUPERVISOR,
+                state,
+                stream_queue=stream_queue,
+            )
             from app.engine.multi_agent.graph_support import route_decision
 
             agent_name = route_decision(state)
             state["current_agent"] = agent_name
             state["next_agent"] = agent_name
             await self._emit_route(_NODE_SUPERVISOR, agent_name, state)
+            self._push_runtime_route_status(
+                stream_queue,
+                state=state,
+                from_step=_NODE_SUPERVISOR,
+                to_step=agent_name,
+            )
             return NextStepHandoff(target_agent=agent_name, reason="supervisor_route")
 
         # Subsequent turns: check for agent-initiated handoff
@@ -445,23 +677,41 @@ class WiiiRunner:
         if aggregator keeps routing back to supervisor.
         """
         # Run parallel_dispatch
-        state = await self._run_step(_NODE_PARALLEL_DISPATCH, state)
+        state = await self._run_step(
+            _NODE_PARALLEL_DISPATCH,
+            state,
+            stream_queue=merged_queue,
+        )
         self._push_queue(merged_queue, _NODE_PARALLEL_DISPATCH, state)
 
         # Run aggregator
-        state = await self._run_step(_NODE_AGGREGATOR, state)
+        state = await self._run_step(
+            _NODE_AGGREGATOR,
+            state,
+            stream_queue=merged_queue,
+        )
         self._push_queue(merged_queue, _NODE_AGGREGATOR, state)
 
         # Aggregator route: synthesizer or back to supervisor (with loop limit)
         for _iteration in range(_MAX_DISPATCH_ITERATIONS):
             next_route = self._resolve_aggregator_route(state)
             await self._emit_route(_NODE_AGGREGATOR, next_route, state)
+            self._push_runtime_route_status(
+                merged_queue,
+                state=state,
+                from_step=_NODE_AGGREGATOR,
+                to_step=next_route,
+            )
 
             if next_route != _NODE_SUPERVISOR:
                 break
 
             # Loop back: supervisor → agent → (continue or break)
-            state = await self._run_step(_NODE_SUPERVISOR, state)
+            state = await self._run_step(
+                _NODE_SUPERVISOR,
+                state,
+                stream_queue=merged_queue,
+            )
             self._push_queue(merged_queue, _NODE_SUPERVISOR, state)
 
             from app.engine.multi_agent.graph_support import route_decision
@@ -469,17 +719,35 @@ class WiiiRunner:
             agent_name = route_decision(state)
             state["current_agent"] = agent_name
             await self._emit_route(_NODE_SUPERVISOR, agent_name, state)
+            self._push_runtime_route_status(
+                merged_queue,
+                state=state,
+                from_step=_NODE_SUPERVISOR,
+                to_step=agent_name,
+            )
 
             node_fn = self._get_node(agent_name)
             if node_fn:
-                state = await self._run_step(agent_name, state)
+                state = await self._run_step(
+                    agent_name,
+                    state,
+                    stream_queue=merged_queue,
+                )
                 self._push_queue(merged_queue, agent_name, state)
 
             # After agent execution, run aggregator again to decide next step
-            state = await self._run_step(_NODE_AGGREGATOR, state)
+            state = await self._run_step(
+                _NODE_AGGREGATOR,
+                state,
+                stream_queue=merged_queue,
+            )
             self._push_queue(merged_queue, _NODE_AGGREGATOR, state)
 
-        return await self._run_step(_NODE_SYNTHESIZER, state)
+        return await self._run_step(
+            _NODE_SYNTHESIZER,
+            state,
+            stream_queue=merged_queue,
+        )
 
     @staticmethod
     def _resolve_aggregator_route(state: AgentState) -> str:
@@ -512,7 +780,13 @@ class WiiiRunner:
     # Single step execution (with hooks)
     # ------------------------------------------------------------------
 
-    async def _run_step(self, name: str, state: AgentState) -> AgentState:
+    async def _run_step(
+        self,
+        name: str,
+        state: AgentState,
+        *,
+        stream_queue: Optional[asyncio.Queue] = None,
+    ) -> AgentState:
         """Run a single node function with error handling and lifecycle hooks.
 
         Critical nodes (guardian, supervisor, synthesizer) re-raise on failure.
@@ -527,17 +801,35 @@ class WiiiRunner:
         self._inject_tier_info(name, state)
 
         t_start = time.perf_counter()
+        timeline_entry = self._start_runtime_step(
+            stream_queue,
+            name=name,
+            state=state,
+        )
         await self._emit_step_start(name, state)
 
         try:
             result = await node_fn(state)
             duration_ms = (time.perf_counter() - t_start) * 1000
             await self._emit_step_end(name, result, duration_ms)
-            return result
+            return self._finish_runtime_step(
+                source_state=state,
+                result_state=result,
+                entry=timeline_entry,
+                started_at=t_start,
+                status="ok",
+            )
         except Exception as exc:
             duration_ms = (time.perf_counter() - t_start) * 1000
             await self._emit_step_error(name, state, exc)
             logger.error("[RUNNER] Node %s failed (%.1fms): %s", name, duration_ms, exc)
+            self._finish_runtime_step(
+                source_state=state,
+                result_state=state,
+                entry=timeline_entry,
+                started_at=t_start,
+                status="error",
+            )
             # Critical infrastructure nodes re-raise; agent nodes degrade gracefully
             if name in (_NODE_GUARDIAN, _NODE_SUPERVISOR, _NODE_SYNTHESIZER):
                 raise
