@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import logging
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Awaitable, Mapping
 
@@ -141,6 +142,11 @@ async def _await_with_stage_heartbeats(
     except Exception:
         tracker.finish(stage, status="error")
         raise
+    finally:
+        if not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
     tracker.finish(stage)
     yield _AwaitUpdate("result", result)
@@ -196,6 +202,11 @@ async def _stream_with_idle_heartbeats(
         except Exception:
             tracker.finish(stage, status="error")
             raise
+        finally:
+            if not next_task.done():
+                next_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await next_task
 
         tracker.finish(stage)
         first_event = False
