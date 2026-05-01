@@ -1,3 +1,4 @@
+import asyncio
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -415,6 +416,129 @@ async def test_generate_stream_v3_events_emits_done_when_stream_omits_final_even
 
     assert sum(1 for chunk in chunks if "event: done" in chunk) == 1
     orchestrator.finalize_response_turn.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_generate_stream_v3_events_emits_prepare_heartbeat_when_turn_setup_is_slow():
+    orchestrator = MagicMock()
+    prepared_turn = SimpleNamespace(
+        request_scope=RequestScope("org-1", "maritime"),
+        session_id="session-1",
+        validation=SimpleNamespace(blocked=False),
+        chat_context=SimpleNamespace(user_name="Minh"),
+    )
+
+    async def slow_prepare_turn(**_kwargs):
+        await asyncio.sleep(0.01)
+        return prepared_turn
+
+    orchestrator.prepare_turn = AsyncMock(side_effect=slow_prepare_turn)
+    orchestrator.build_multi_agent_execution_input = AsyncMock(
+        return_value=SimpleNamespace(
+            query="Explain Rule 5",
+            user_id="user-1",
+            session_id="session-1",
+            context={"conversation_history": ""},
+            domain_id="maritime",
+            thinking_effort=None,
+            provider=None,
+            model=None,
+        )
+    )
+
+    async def fake_stream_fn(**_kwargs):
+        yield SimpleNamespace(type="answer", content="Ready after setup")
+        yield SimpleNamespace(type="done", content={"processing_time": 0.1})
+
+    chunks = []
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "app.services.chat_stream_coordinator._STAGE_HEARTBEAT_FIRST_AFTER_SEC",
+            0.001,
+        )
+        mp.setattr(
+            "app.services.chat_stream_coordinator._STAGE_HEARTBEAT_INTERVAL_SEC",
+            0.001,
+        )
+        async for chunk in generate_stream_v3_events(
+            chat_request=_make_request(),
+            request_headers={"X-Request-ID": "req-slow-prepare"},
+            background_save=MagicMock(),
+            start_time=time.time(),
+            orchestrator=orchestrator,
+            stream_fn=fake_stream_fn,
+        ):
+            chunks.append(chunk)
+
+    joined = "\n".join(chunks)
+    assert '"stage": "prepare_turn"' in joined
+    assert '"heartbeat_index": 1' in joined
+    assert '"request_id": "req-slow-prepare"' in joined
+    assert "Ready after setup" in joined
+
+
+@pytest.mark.asyncio
+async def test_generate_stream_v3_events_emits_runtime_heartbeats_and_latency_metadata():
+    orchestrator = MagicMock()
+    prepared_turn = SimpleNamespace(
+        request_scope=RequestScope("org-1", "maritime"),
+        session_id="session-1",
+        validation=SimpleNamespace(blocked=False),
+        chat_context=SimpleNamespace(user_name="Minh"),
+    )
+    orchestrator.prepare_turn = AsyncMock(return_value=prepared_turn)
+    orchestrator.build_multi_agent_execution_input = AsyncMock(
+        return_value=SimpleNamespace(
+            query="Explain Rule 5",
+            user_id="user-1",
+            session_id="session-1",
+            context={"conversation_history": ""},
+            domain_id="maritime",
+            thinking_effort=None,
+            provider="nvidia",
+            model="deepseek-ai/deepseek-v4-flash",
+        )
+    )
+
+    async def slow_native_stream_fn(_request):
+        await asyncio.sleep(0.01)
+        yield WiiiStreamEvent(event_type="answer", payload="Slow runtime hello")
+        await asyncio.sleep(0.01)
+        yield WiiiStreamEvent(
+            event_type="metadata",
+            payload={"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-flash"},
+        )
+        yield WiiiStreamEvent(
+            event_type="done",
+            payload={"status": "complete", "total_time": 0.1},
+        )
+
+    chunks = []
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "app.services.chat_stream_coordinator._RUNTIME_FIRST_EVENT_HEARTBEAT_AFTER_SEC",
+            0.001,
+        )
+        mp.setattr(
+            "app.services.chat_stream_coordinator._RUNTIME_IDLE_HEARTBEAT_INTERVAL_SEC",
+            0.001,
+        )
+        async for chunk in generate_stream_v3_events(
+            chat_request=_make_request(),
+            request_headers={"X-Request-ID": "req-slow-runtime"},
+            background_save=MagicMock(),
+            start_time=time.time(),
+            orchestrator=orchestrator,
+            stream_fn=slow_native_stream_fn,
+        ):
+            chunks.append(chunk)
+
+    joined = "\n".join(chunks)
+    assert '"stage": "runtime_first_event"' in joined
+    assert '"stage": "runtime_idle"' in joined
+    assert '"stream_latency": {' in joined
+    assert '"timeline": [' in joined
+    assert "Slow runtime hello" in joined
 
 
 @pytest.mark.asyncio
