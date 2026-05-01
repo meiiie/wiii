@@ -280,6 +280,17 @@ async def emit_stream_finalization_impl(
         )
         request_id = str((context or {}).get("request_id") or "").strip() or None
         routing_metadata = effective_state.get("routing_metadata") or {}
+        runtime_latency = None
+        raw_runtime_latency = effective_state.get("_runtime_latency")
+        if isinstance(raw_runtime_latency, dict):
+            runtime_latency = {
+                "elapsed_ms": raw_runtime_latency.get("elapsed_ms"),
+                "timeline": [
+                    dict(item)
+                    for item in raw_runtime_latency.get("timeline", [])
+                    if isinstance(item, dict)
+                ],
+            }
         agent_type = routing_metadata.get("final_agent") or effective_state.get("next_agent") or "rag_agent"
         if record_llm_runtime_observation is not None:
             try:
@@ -327,6 +338,7 @@ async def emit_stream_finalization_impl(
             evidence_images=effective_state.get("evidence_images", []),
             thread_id=meta_thread_id,
             routing_metadata=routing_metadata,
+            runtime_latency=runtime_latency,
             request_id=request_id,
         )
 
