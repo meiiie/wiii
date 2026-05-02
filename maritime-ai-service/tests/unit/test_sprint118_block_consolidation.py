@@ -182,8 +182,10 @@ class TestConsolidateBlockContent:
             await manager._consolidate_block_content(block)
 
         # Check that prompt contains target chars (~60% of 200 = 120)
-        call_args = mock_llm.ainvoke.call_args[0][0]  # List[HumanMessage]
-        prompt_text = call_args[0].content
+        # Phase 1 (#207): SEND-side now passes OpenAI-shaped dicts, not HumanMessage
+        call_args = mock_llm.ainvoke.call_args[0][0]
+        first_msg = call_args[0]
+        prompt_text = first_msg["content"] if isinstance(first_msg, dict) else first_msg.content
         assert "120" in prompt_text  # 60% of 200
 
 
