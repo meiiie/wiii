@@ -193,7 +193,7 @@ async def test_align_visible_thinking_language_selfhood_mode_uses_lighter_vietna
         )
 
     assert result == "Mình đang chạm vào câu hỏi về chính mình, nên muốn kể lại cho thật gần."
-    system_prompt = captured_messages[0][0].content
+    system_prompt = captured_messages[0][0]["content"]
     assert 'Uu tien ngoi "minh"' in system_prompt
     assert "toi dang dao sau" in system_prompt
 
