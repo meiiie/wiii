@@ -61,7 +61,7 @@ def test_direct_system_messages_add_identity_answer_contract():
             tools_context_override="",
         )
 
-    system_prompt = messages[0].content.lower()
+    system_prompt = messages[0]["content"].lower()
 
     assert "uu tien mot visible thinking that truoc answer" in system_prompt
     assert "neu provider khong tach native thought rieng" in system_prompt
@@ -106,7 +106,7 @@ def test_direct_chatter_messages_also_get_visible_thinking_supplement():
             tools_context_override="",
         )
 
-    system_prompt = messages[0].content.lower()
+    system_prompt = messages[0]["content"].lower()
 
     assert "--- visible thinking ---" in system_prompt
     assert "native thinking" in system_prompt
@@ -143,7 +143,7 @@ def test_direct_chatter_identity_still_receives_living_context_prompt():
             tools_context_override="",
         )
 
-    system_prompt = messages[0].content
+    system_prompt = messages[0]["content"]
 
     assert "## Living Context Block V1" in system_prompt
     assert "Bong" in system_prompt
@@ -177,7 +177,7 @@ def test_direct_selfhood_turn_still_gets_shared_thinking_instruction():
             tools_context_override="",
         )
 
-    system_prompt = messages[0].content
+    system_prompt = messages[0]["content"]
 
     assert "SHARED THINKING INSTRUCTION" in system_prompt
 
@@ -218,7 +218,7 @@ def test_direct_bong_followup_uses_selfhood_prompt_when_recent_context_is_origin
             tools_context_override="",
         )
 
-    system_prompt = messages[0].content.lower()
+    system_prompt = messages[0]["content"].lower()
 
     assert "selfhood/origin turn" in system_prompt
     assert "lượt hỏi nối tiếp về bông" in system_prompt
