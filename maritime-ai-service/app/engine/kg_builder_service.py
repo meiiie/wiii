@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
+
+from app.engine.messages import Message
+from app.engine.messages_adapters import to_openai_dict
 
 logger = logging.getLogger(__name__)
 
@@ -115,8 +117,8 @@ Nội dung:
 Trích xuất entities và relations."""
 
             messages = [
-                SystemMessage(content=SYSTEM_PROMPT),
-                HumanMessage(content=user_content),
+                to_openai_dict(Message(role="system", content=SYSTEM_PROMPT)),
+                to_openai_dict(Message(role="user", content=user_content)),
             ]
 
             if self._structured_llm is not None:

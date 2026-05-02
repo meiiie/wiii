@@ -174,7 +174,7 @@ class TestKGBuilderExtract:
 
         # Verify source appears in the message
         call_args = structured_llm.ainvoke.call_args[0][0]
-        user_msg = call_args[1].content
+        user_msg = call_args[1]["content"]
         assert "SOLAS_doc" in user_msg
 
     @pytest.mark.asyncio
@@ -188,7 +188,7 @@ class TestKGBuilderExtract:
         await node.extract(long_text)
 
         call_args = structured_llm.ainvoke.call_args[0][0]
-        user_msg = call_args[1].content
+        user_msg = call_args[1]["content"]
         # Text should be truncated to 2500 chars (plus prompt boilerplate)
         assert len(long_text[:2500]) <= 2500
         # The full 5000-char text should NOT be in the message
@@ -230,7 +230,7 @@ class TestKGBuilderProcess:
         await node.process(state)
 
         call_args = structured_llm.ainvoke.call_args[0][0]
-        user_msg = call_args[1].content
+        user_msg = call_args[1]["content"]
         assert "COLREGs Rule 13" in user_msg
 
     @pytest.mark.asyncio
