@@ -216,7 +216,7 @@ class TestGenerateResponseContext:
             )
 
         assert text == "Nho chu."
-        prompt = mock_llm.ainvoke.await_args.args[0][-1].content
+        prompt = mock_llm.ainvoke.await_args.args[0][-1]["content"]
         assert "Doan hoi thoai gan day" in prompt
         assert "doi qua huhu" in prompt
         assert "Core memory block" in prompt

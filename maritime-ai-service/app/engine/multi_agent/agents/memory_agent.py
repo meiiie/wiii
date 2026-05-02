@@ -13,9 +13,9 @@ Integrated with the agents/ framework for config and tracing.
 import logging
 from typing import Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
 from app.engine.agents import MEMORY_AGENT_CONFIG
+from app.engine.messages import Message
+from app.engine.messages_adapters import to_openai_dict
 from app.engine.multi_agent.public_thinking import (
     _resolve_public_thinking_content,
 )
@@ -509,17 +509,23 @@ class MemoryAgentNode:
                 else "Chua co fact lau dai nao ve user. Neu van co ngu canh hoi thoai gan day, hay dua vao do de tra loi tu nhien."
             )
 
-            messages = [SystemMessage(content=_build_memory_response_prompt(ctx.get("response_language", "vi")))]
+            messages = [
+                to_openai_dict(Message(
+                    role="system",
+                    content=_build_memory_response_prompt(ctx.get("response_language", "vi")),
+                ))
+            ]
             langchain_messages = ctx.get("langchain_messages", [])
             if langchain_messages:
                 messages.extend(langchain_messages[-5:])
             messages.append(
-                HumanMessage(
+                to_openai_dict(Message(
+                    role="user",
                     content=(
                         f"Ngu canh bo nho:\n{context_block}\n\n"
                         f"Tin nhan cua user: {query}"
-                    )
-                )
+                    ),
+                ))
             )
 
             response = await llm.ainvoke(messages)

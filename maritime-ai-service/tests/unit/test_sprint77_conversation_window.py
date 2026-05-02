@@ -501,13 +501,14 @@ class TestDirectNodeHistoryInjection:
 
         # Verify LLM was called with history messages
         call_args = mock_llm.ainvoke.call_args[0][0]
-        # Should be [System, HumanMessage(prev), AIMessage(prev), HumanMessage(new)]
-        assert isinstance(call_args[0], SystemMessage)
+        # Should be [system_dict, HumanMessage(prev), AIMessage(prev), user_dict(new)]
+        # Phase 1 migration: system/user are native dicts; history slice stays LC
+        assert isinstance(call_args[0], dict) and call_args[0]["role"] == "system"
         assert isinstance(call_args[1], HumanMessage)
         assert call_args[1].content == "What's COLREGs?"
         assert isinstance(call_args[2], AIMessage)
-        assert isinstance(call_args[-1], HumanMessage)
-        assert call_args[-1].content == "Tell me more"
+        assert isinstance(call_args[-1], dict) and call_args[-1]["role"] == "user"
+        assert call_args[-1]["content"] == "Tell me more"
 
     @pytest.mark.asyncio
     async def test_direct_node_no_history_fallback(self):
@@ -539,8 +540,9 @@ class TestDirectNodeHistoryInjection:
         call_args = mock_llm.ainvoke.call_args[0][0]
         # Just System + Human, no history
         assert len(call_args) == 2
-        assert isinstance(call_args[0], SystemMessage)
-        assert isinstance(call_args[1], HumanMessage)
+        # Phase 1 migration: native dicts
+        assert isinstance(call_args[0], dict) and call_args[0]["role"] == "system"
+        assert isinstance(call_args[1], dict) and call_args[1]["role"] == "user"
 
 
 # =========================================================================
@@ -586,11 +588,12 @@ class TestMemoryAgentHistoryInjection:
         call_args = mock_llm.ainvoke.call_args[0][0]
         # System + 2 history + Human(query) = 4
         assert len(call_args) == 4
-        assert isinstance(call_args[0], SystemMessage)
+        # Phase 1 migration: system/user are native dicts; history slice stays LC
+        assert isinstance(call_args[0], dict) and call_args[0]["role"] == "system"
         assert isinstance(call_args[1], HumanMessage)
         assert call_args[1].content == "Tên tôi là Nam"
         assert isinstance(call_args[2], AIMessage)
-        assert isinstance(call_args[-1], HumanMessage)
+        assert isinstance(call_args[-1], dict) and call_args[-1]["role"] == "user"
 
     @pytest.mark.asyncio
     async def test_memory_agent_limits_to_5_turns(self):
