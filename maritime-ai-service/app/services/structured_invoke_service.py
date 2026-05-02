@@ -148,9 +148,10 @@ def _augment_payload_for_json(schema: Type[BaseModel], payload: Any):
 
     if isinstance(payload, list):
         try:
-            from langchain_core.messages import SystemMessage
+            from app.engine.messages import Message
+            from app.engine.messages_adapters import to_openai_dict
 
-            return [SystemMessage(content=instruction), *payload]
+            return [to_openai_dict(Message(role="system", content=instruction)), *payload]
         except Exception:
             return payload
     return f"{instruction}\n\n{payload}"
