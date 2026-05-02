@@ -14,7 +14,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from langchain_core.tools import tool
+from app.engine.tools.native_tool import tool
 
 from app.engine.tools.registry import (
     ToolCategory,

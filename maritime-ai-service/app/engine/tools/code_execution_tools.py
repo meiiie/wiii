@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from langchain_core.tools import tool
+from app.engine.tools.native_tool import tool
 
 from app.core.config import settings
 from app.engine.tools.runtime_context import (

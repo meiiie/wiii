@@ -475,12 +475,12 @@ class TestVisualProductIdentification:
         assert result["confidence"] == 0.88
 
     def test_tool_registration(self):
-        """get_visual_product_search_tool returns StructuredTool with correct name."""
+        """get_visual_product_search_tool returns Tool with correct name (Phase 2 #207)."""
         from app.engine.tools.visual_product_search import get_visual_product_search_tool
-        from langchain_core.tools import StructuredTool
+        from app.engine.tools.native_tool import Tool
 
         tool = get_visual_product_search_tool()
-        assert isinstance(tool, StructuredTool)
+        assert isinstance(tool, Tool)
         assert tool.name == "tool_identify_product_from_image"
 
     def test_tool_function_signature(self):

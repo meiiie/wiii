@@ -15,7 +15,7 @@ LLM fills this as part of the structured tool call (works with Function Calling)
 """
 
 import logging
-from langchain_core.tools import tool
+from app.engine.tools.native_tool import tool
 
 logger = logging.getLogger(__name__)
 

@@ -26,7 +26,7 @@ import json
 import logging
 from typing import Any, Dict
 
-from langchain_core.tools import StructuredTool
+from app.engine.tools.native_tool import StructuredTool
 
 from app.engine.llm_runtime_profiles import GOOGLE_DEFAULT_MODEL
 

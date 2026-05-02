@@ -10,7 +10,7 @@ Sprint 13: Extended Tools & Self-Extending Skills.
 import logging
 from pathlib import Path
 
-from langchain_core.tools import tool
+from app.engine.tools.native_tool import tool
 
 from app.core.config import settings
 

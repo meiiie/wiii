@@ -499,12 +499,12 @@ class TestToolAccessors:
         assert "tool_character_log_experience" in names
 
     def test_correct_types(self):
-        """All returned tools should be StructuredTool instances."""
+        """All returned tools should be Tool instances (Phase 2 #207: StructuredTool aliased to native Tool)."""
         from app.engine.character.character_tools import get_character_tools
-        from langchain_core.tools import StructuredTool
+        from app.engine.tools.native_tool import Tool
         tools = get_character_tools()
         for t in tools:
-            assert isinstance(t, StructuredTool), f"{t.name} should be StructuredTool"
+            assert isinstance(t, Tool), f"{t.name} should be Tool"
 
 
 # =============================================================================

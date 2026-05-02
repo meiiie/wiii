@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from langchain_core.tools import tool
+from app.engine.tools.native_tool import tool
 
 from app.engine.tools.runtime_context import (
     emit_tool_bus_event,

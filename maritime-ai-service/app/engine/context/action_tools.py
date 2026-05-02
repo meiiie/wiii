@@ -8,7 +8,7 @@ import logging
 import re
 from typing import Any
 
-from langchain_core.tools import StructuredTool
+from app.engine.tools.native_tool import StructuredTool
 
 from app.engine.context.action_bridge import HostActionBridge
 

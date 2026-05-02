@@ -9,7 +9,7 @@ Valid handoff targets match the registered node names in WiiiRunner.
 
 from __future__ import annotations
 
-from langchain_core.tools import tool
+from app.engine.tools.native_tool import tool
 
 _VALID_HANDOFF_TARGETS = frozenset({
     "rag_agent",

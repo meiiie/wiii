@@ -48,7 +48,7 @@ async def probe_tool_calling_impl(
     llm: Any,
     timeout_seconds: float,
 ) -> bool:
-    from langchain_core.tools import tool
+    from app.engine.tools.native_tool import tool
 
     @tool("runtime_capability_probe")
     def runtime_capability_probe(note: str) -> str:

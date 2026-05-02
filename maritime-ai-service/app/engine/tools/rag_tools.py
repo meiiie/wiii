@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
 
-from langchain_core.tools import tool
+from app.engine.tools.native_tool import tool
 
 from app.engine.tools.registry import (
     ToolCategory, ToolAccess, get_tool_registry

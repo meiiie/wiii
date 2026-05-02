@@ -13,7 +13,7 @@ import logging
 from typing import List, Optional
 
 import httpx
-from langchain_core.tools import StructuredTool
+from app.engine.tools.native_tool import StructuredTool
 
 logger = logging.getLogger(__name__)
 

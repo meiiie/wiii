@@ -13,7 +13,7 @@ import logging
 import re
 from typing import Optional
 
-from langchain_core.tools import StructuredTool
+from app.engine.tools.native_tool import StructuredTool
 
 logger = logging.getLogger(__name__)
 
