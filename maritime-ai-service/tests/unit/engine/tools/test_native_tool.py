@@ -152,6 +152,16 @@ def test_args_property_returns_pydantic_properties():
     assert "limit" in args
 
 
+def test_args_schema_alias_returns_input_model():
+    """args_schema mirrors langchain_core StructuredTool — same Pydantic model."""
+
+    @tool
+    def f(query: str) -> str:
+        return ""
+
+    assert f.args_schema is f.input_model
+
+
 # ── StructuredTool.from_function ──
 
 def test_structured_tool_alias_is_tool():

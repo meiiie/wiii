@@ -82,6 +82,11 @@ class Tool:
         schema = self.input_model.model_json_schema()
         return schema.get("properties", {})
 
+    @property
+    def args_schema(self) -> type[BaseModel]:
+        """Pydantic input model — mirrors ``langchain_core.tools.StructuredTool.args_schema``."""
+        return self.input_model
+
     def to_openai_schema(self) -> dict[str, Any]:
         """OpenAI Chat Completions tool format."""
         return {
