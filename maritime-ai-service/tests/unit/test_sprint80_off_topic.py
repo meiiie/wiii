@@ -488,7 +488,7 @@ class TestRAGFallbackDomainConstraint:
 
         # Verify system prompt includes domain constraint
         assert len(captured_messages) == 2
-        system_content = captured_messages[0].content
+        system_content = captured_messages[0]["content"] if isinstance(captured_messages[0], dict) else captured_messages[0].content
         assert "Hàng hải" in system_content
         # Sprint 203/204: Positive framing — domain boundary uses guidance, not prohibition
         assert "hướng dẫn lại" in system_content or "Chuyên ngành" in system_content
@@ -516,7 +516,7 @@ class TestRAGFallbackDomainConstraint:
                    return_value=("Tôi chuyên về Hàng hải.", None)):
             await pipeline._generate_fallback("random question", {})
 
-        system_content = captured_messages[0].content
+        system_content = captured_messages[0]["content"] if isinstance(captured_messages[0], dict) else captured_messages[0].content
         # Should have used default domain (maritime → "Hàng hải")
         assert "Hàng hải" in system_content
 
@@ -591,7 +591,7 @@ class TestDirectNodeHelpfulBehavior:
             result = await direct_response_node(state)
 
         # System prompt should be helpful, not refusing
-        system_content = captured_messages[0].content
+        system_content = captured_messages[0]["content"] if isinstance(captured_messages[0], dict) else captured_messages[0].content
         assert "đa lĩnh vực" in system_content, "Sprint 99: multi-domain prompt"
         assert "từ chối" not in system_content, "System prompt should NOT contain refusal"
         assert "nằm ngoài chuyên môn" not in system_content, "System prompt should NOT refuse off-topic"

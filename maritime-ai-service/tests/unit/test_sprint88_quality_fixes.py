@@ -345,7 +345,7 @@ class TestDirectNodeSuggestionBased:
         ):
             await direct_response_node(state)
 
-        system_content = captured_messages[0].content
+        system_content = captured_messages[0]["content"] if isinstance(captured_messages[0], dict) else captured_messages[0].content
         # Character-driven: đáng yêu, thích trò chuyện
         assert "đáng yêu" in system_content
         assert "đa lĩnh vực" in system_content, "Sprint 99: multi-domain prompt"

@@ -307,7 +307,7 @@ class TestDirectNodeUsesIdentity:
         ):
             await direct_response_node(state)
 
-        system_content = captured_messages[0].content
+        system_content = captured_messages[0]["content"] if isinstance(captured_messages[0], dict) else captured_messages[0].content
         # Should still be helpful (Sprint 99: multi-domain, not "MỌI câu hỏi")
         assert "đa lĩnh vực" in system_content
         # Should have identity-derived personality
@@ -334,7 +334,7 @@ class TestDirectNodeUsesIdentity:
         ):
             result = await direct_response_node(state)
 
-        system_content = captured_messages[0].content
+        system_content = captured_messages[0]["content"] if isinstance(captured_messages[0], dict) else captured_messages[0].content
         assert "đa lĩnh vực" in system_content
         assert "từ chối" not in system_content
 
