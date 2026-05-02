@@ -701,8 +701,9 @@ class TestSupervisorContextEnhancement:
 
         # Verify the prompt was called with recent conversation, not truncated dict
         payload = mock_ainvoke.call_args.kwargs["payload"]
-        human_msg = next(m for m in payload if hasattr(m, 'type') and m.type == 'human')
-        assert "Recent conversation" in human_msg.content
+        # Phase 1 migration: payload entries are now native dicts with role/content
+        human_msg = next(m for m in payload if isinstance(m, dict) and m.get("role") == "user")
+        assert "Recent conversation" in human_msg["content"]
 
     @pytest.mark.asyncio
     async def test_supervisor_fallback_without_messages(self):
@@ -734,7 +735,8 @@ class TestSupervisorContextEnhancement:
             )
 
         payload = mock_ainvoke.call_args.kwargs["payload"]
-        prompt_content = next(m.content for m in payload if hasattr(m, 'type') and m.type == 'human')
+        # Phase 1 migration: payload entries are now native dicts with role/content
+        prompt_content = next(m["content"] for m in payload if isinstance(m, dict) and m.get("role") == "user")
         # Without langchain_messages, should use str(context) fallback
         assert "Recent conversation" not in prompt_content
 

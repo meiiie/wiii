@@ -27,9 +27,9 @@ import re
 from typing import Optional
 from enum import Enum
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
 from app.core.config import settings
+from app.engine.messages import Message
+from app.engine.messages_adapters import to_openai_dict
 from app.core.exceptions import ProviderUnavailableError
 from app.core.resilience import retry_on_transient
 from app.engine.multi_agent.supervisor_runtime_bindings import (
@@ -363,8 +363,6 @@ class SupervisorAgent:
             default_llm=self._llm,
             structured_invoke_service_cls=StructuredInvokeService,
             routing_decision_schema=RoutingDecision,
-            system_message_cls=SystemMessage,
-            human_message_cls=HumanMessage,
             build_supervisor_card_prompt_fn=build_supervisor_card_prompt,
             build_supervisor_micro_card_prompt_fn=build_supervisor_micro_card_prompt,
             resolve_visual_intent_fn=resolve_visual_intent,
@@ -493,11 +491,14 @@ class SupervisorAgent:
             )
 
             messages = [
-                SystemMessage(content=build_synthesis_card_prompt()),
-                HumanMessage(content=_synth_prompt.format(
-                    query=state.get("query", ""),
-                    outputs=output_text
-                ) + _host_suffix + _host_capabilities_suffix + _operator_suffix + _living_suffix + _widget_suffix)
+                to_openai_dict(Message(role="system", content=build_synthesis_card_prompt())),
+                to_openai_dict(Message(
+                    role="user",
+                    content=_synth_prompt.format(
+                        query=state.get("query", ""),
+                        outputs=output_text,
+                    ) + _host_suffix + _host_capabilities_suffix + _operator_suffix + _living_suffix + _widget_suffix,
+                )),
             ]
 
             try:

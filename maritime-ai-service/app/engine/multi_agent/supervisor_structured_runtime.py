@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.engine.messages import Message
+from app.engine.messages_adapters import to_openai_dict
 from app.engine.multi_agent.direct_intent import _normalize_for_intent
 
 
@@ -48,8 +50,6 @@ async def route_structured_impl(
     default_llm,
     structured_invoke_service_cls,
     routing_decision_schema,
-    system_message_cls,
-    human_message_cls,
     build_supervisor_card_prompt_fn,
     build_supervisor_micro_card_prompt_fn,
     resolve_visual_intent_fn,
@@ -128,33 +128,37 @@ async def route_structured_impl(
 
     if use_compact_prompt:
         messages = [
-            system_message_cls(content=build_supervisor_micro_card_prompt_fn()),
-            human_message_cls(
+            to_openai_dict(Message(role="system", content=build_supervisor_micro_card_prompt_fn())),
+            to_openai_dict(Message(
+                role="user",
                 content=compact_routing_prompt_template.format(
                     query=query,
                     context=context_str,
                     routing_hints=routing_hints_text,
-                )
-            ),
+                ),
+            )),
         ]
     else:
         messages = [
-            system_message_cls(content=build_supervisor_card_prompt_fn()),
-            system_message_cls(
+            to_openai_dict(Message(role="system", content=build_supervisor_card_prompt_fn())),
+            to_openai_dict(Message(
+                role="system",
                 content=(
                     "You are a query router. Analyze the query step by step, classify intent, "
                     "choose agent, and provide confidence."
-                )
-            ),
-            system_message_cls(
+                ),
+            )),
+            to_openai_dict(Message(
+                role="system",
                 content=(
                     "Visual policy: explanatory charts, comparisons, process diagrams, architecture diagrams, "
                     "and concept visuals should stay on DIRECT or TUTOR so those agents can call "
                     "article-figure/chart tools. Reserve CODE_STUDIO_AGENT for code execution, app/widget "
                     "generation, simulations, artifacts, files, or browser sandbox work."
-                )
-            ),
-            human_message_cls(
+                ),
+            )),
+            to_openai_dict(Message(
+                role="user",
                 content=routing_prompt_template.format(
                     domain_name=domain_name,
                     rag_description=rag_desc,
@@ -163,8 +167,8 @@ async def route_structured_impl(
                     query=query,
                     context=context_str,
                     user_role=user_role,
-                )
-            ),
+                ),
+            )),
         ]
 
     result = await structured_invoke_service_cls.ainvoke(
