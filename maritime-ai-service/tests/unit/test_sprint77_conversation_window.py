@@ -370,14 +370,15 @@ class TestTutorNodeHistoryInjection:
         call_args = mock_llm.ainvoke.call_args
         messages = call_args[0][0]
 
-        # Should be: [SystemMessage, HumanMessage(prev), AIMessage(prev), HumanMessage(new)]
-        assert isinstance(messages[0], SystemMessage)
+        # Should be: [system_dict, HumanMessage(prev), AIMessage(prev), user_dict(new)]
+        # Phase 1 migration: system/user are native dicts; history slice stays LC
+        assert isinstance(messages[0], dict) and messages[0]["role"] == "system"
         assert isinstance(messages[1], HumanMessage)
         assert messages[1].content == "Previous question"
         assert isinstance(messages[2], AIMessage)
         assert messages[2].content == "Previous answer"
-        assert isinstance(messages[-1], HumanMessage)
-        assert messages[-1].content == "New question"
+        assert isinstance(messages[-1], dict) and messages[-1]["role"] == "user"
+        assert messages[-1]["content"] == "New question"
 
     @pytest.mark.asyncio
     async def test_react_loop_no_history_still_works(self, mock_llm):
@@ -401,8 +402,9 @@ class TestTutorNodeHistoryInjection:
         messages = call_args[0][0]
         # Just system + human, no history
         assert len(messages) == 2
-        assert isinstance(messages[0], SystemMessage)
-        assert isinstance(messages[1], HumanMessage)
+        # Phase 1 migration: native dicts
+        assert isinstance(messages[0], dict) and messages[0]["role"] == "system"
+        assert isinstance(messages[1], dict) and messages[1]["role"] == "user"
 
     @pytest.mark.asyncio
     async def test_react_loop_limits_to_10_turns(self, mock_llm):
