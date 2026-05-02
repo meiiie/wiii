@@ -10,9 +10,9 @@ import json
 import logging
 from typing import Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
 from app.core.resilience import retry_on_transient
+from app.engine.messages import Message
+from app.engine.messages_adapters import to_openai_dict
 from app.engine.multi_agent.agent_config import AgentConfigRegistry
 from app.engine.multi_agent.state import AgentState
 from app.engine.agents import GRADER_AGENT_CONFIG
@@ -148,11 +148,11 @@ class GraderAgentNode:
         from app.services.structured_invoke_service import StructuredInvokeService
 
         messages = [
-            SystemMessage(content="You are a quality grader. Grade the response quality."),
-            HumanMessage(content=GRADING_PROMPT.format(
+            to_openai_dict(Message(role="system", content="You are a quality grader. Grade the response quality.")),
+            to_openai_dict(Message(role="user", content=GRADING_PROMPT.format(
                 query=query,
-                answer=answer[:1500]
-            ))
+                answer=answer[:1500],
+            ))),
         ]
 
         result = await StructuredInvokeService.ainvoke(
@@ -167,11 +167,11 @@ class GraderAgentNode:
     async def _grade_legacy(self, query: str, answer: str) -> dict:
         """Grade using legacy JSON parsing."""
         messages = [
-            SystemMessage(content="You are a quality grader. Return only valid JSON."),
-            HumanMessage(content=GRADING_PROMPT.format(
+            to_openai_dict(Message(role="system", content="You are a quality grader. Return only valid JSON.")),
+            to_openai_dict(Message(role="user", content=GRADING_PROMPT.format(
                 query=query,
-                answer=answer[:1500]
-            ))
+                answer=answer[:1500],
+            ))),
         ]
 
         response = await self._llm.ainvoke(messages)
