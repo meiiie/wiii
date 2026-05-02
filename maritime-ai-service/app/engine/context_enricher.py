@@ -14,9 +14,9 @@ import asyncio
 from typing import List, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 
-from langchain_core.messages import HumanMessage
-
 from app.core.config import settings
+from app.engine.messages import Message
+from app.engine.messages_adapters import to_openai_dict
 
 if TYPE_CHECKING:
     from app.services.chunking_service import ChunkResult
@@ -116,7 +116,7 @@ class ContextEnricher:
             )
             
             # Generate context
-            response = await llm.ainvoke([HumanMessage(content=prompt)])
+            response = await llm.ainvoke([to_openai_dict(Message(role="user", content=prompt))])
             
             # SOTA FIX: Handle Gemini 2.5 Flash content block format
             from app.services.output_processor import extract_thinking_from_response
