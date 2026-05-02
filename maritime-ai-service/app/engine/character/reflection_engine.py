@@ -304,7 +304,8 @@ class CharacterReflectionEngine:
         try:
             from app.engine.llm_factory import ThinkingTier
             from app.engine.llm_pool import get_llm_for_provider, get_llm_light
-            from langchain_core.messages import HumanMessage
+            from app.engine.messages import Message
+            from app.engine.messages_adapters import to_openai_dict
 
             llm = None
             try:
@@ -322,7 +323,7 @@ class CharacterReflectionEngine:
             if llm is None:
                 llm = get_llm_light()
 
-            result = await llm.ainvoke([HumanMessage(content=prompt)])
+            result = await llm.ainvoke([to_openai_dict(Message(role="user", content=prompt))])
 
             # Extract text content
             if hasattr(result, "content"):
