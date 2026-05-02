@@ -264,9 +264,58 @@ class SupervisorAgent:
         rag_desc = domain_config.get("rag_description", "Tra cứu quy định, luật, thủ tục")
         tutor_desc = domain_config.get("tutor_description", "Giải thích, dạy học, quiz")
 
+        # Issue #206: bound the sync structured-route LLM call so a stalled
+        # provider does not blow the conversation budget. SSE V3 path observes
+        # ~2.6s for the same prompt; we cap sync at ~10s and fall back to
+        # `_rule_based_route()` if exceeded.
+        from app.engine.multi_agent.lane_timeout_policy import (
+            resolve_supervisor_route_timeout_seconds_impl,
+        )
+        from app.engine.multi_agent.runner import _record_runtime_timeline_entry
+
+        route_timeout_s = resolve_supervisor_route_timeout_seconds_impl(
+            state=state,
+            settings_obj=settings,
+        )
+
         try:
             # Sprint 103: Always use structured routing (no feature flag check)
-            return await self._route_structured(query, context, domain_name, rag_desc, tutor_desc, domain_config, state, llm=llm)
+            return await asyncio.wait_for(
+                self._route_structured(
+                    query, context, domain_name, rag_desc, tutor_desc,
+                    domain_config, state, llm=llm,
+                ),
+                timeout=route_timeout_s,
+            )
+
+        except asyncio.TimeoutError:
+            logger.warning(
+                "LLM routing exceeded %.1fs sync bound; falling back to rules",
+                route_timeout_s,
+            )
+            try:
+                _record_runtime_timeline_entry(
+                    state,
+                    {
+                        "stage": "supervisor.route_timeout",
+                        "elapsed_ms": int(route_timeout_s * 1000),
+                        "reason": "structured_route_sync_bound",
+                    },
+                )
+            except Exception:
+                pass  # timeline emit is best-effort, never blocks routing
+            result = self._rule_based_route(query, domain_config)
+            state["routing_metadata"] = {
+                "intent": "unknown",
+                "confidence": 1.0,
+                "reasoning": (
+                    f"rule-based fallback (sync route timeout > {route_timeout_s:.1f}s)"
+                ),
+                "method": "rule_based_timeout",
+                "final_agent": result,
+                "route_timeout_seconds": route_timeout_s,
+            }
+            return result
 
         except ProviderUnavailableError as e:
             logger.warning(

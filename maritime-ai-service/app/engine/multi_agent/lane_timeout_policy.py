@@ -165,6 +165,31 @@ def resolve_direct_fallback_provider_allowlist_impl(
     return None
 
 
+def resolve_supervisor_route_timeout_seconds_impl(
+    *,
+    state: object | None,
+    settings_obj: object | None = None,
+) -> float:
+    """Bound the sync supervisor structured-route call.
+
+    Issue #206: sync `/api/v1/chat` exhibited 65.7s `supervisor.route` stalls
+    while the same prompt over SSE V3 routed in 2.6s. This bound caps the
+    structured-route LLM call and lets the existing `except Exception`
+    branch in `SupervisorAgent.route()` fall back to `_rule_based_route()`
+    safely instead of letting the demo/runtime budget exceed its bound.
+
+    Default: 10 seconds (≈ 4× SSE-observed routing latency).
+    Override via `settings.supervisor_route_sync_timeout_seconds` if it
+    exists; otherwise fall back to the constant default.
+    """
+    default_timeout = 10.0
+    if settings_obj is not None:
+        configured = getattr(settings_obj, "supervisor_route_sync_timeout_seconds", None)
+        if isinstance(configured, (int, float)) and configured > 0:
+            return float(configured)
+    return default_timeout
+
+
 def resolve_product_curation_timeout_impl(
     *,
     provider_name: str | None,
