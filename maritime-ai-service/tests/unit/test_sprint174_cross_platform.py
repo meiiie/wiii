@@ -732,8 +732,9 @@ class TestGraphPersonalityModeThreading:
             )
 
             system_message = messages[0]
-            assert "CODE STUDIO DELIVERY CONTRACT" in system_message.content
-            assert "khong mo dau bang loi chao" in system_message.content.lower()
+            # Phase 1 migration: native dict payload (role/content)
+            assert "CODE STUDIO DELIVERY CONTRACT" in system_message["content"]
+            assert "khong mo dau bang loi chao" in system_message["content"].lower()
 
 
 # =============================================================================
