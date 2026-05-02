@@ -87,6 +87,16 @@ class Tool:
         """Pydantic input model — mirrors ``langchain_core.tools.StructuredTool.args_schema``."""
         return self.input_model
 
+    @property
+    def func(self) -> Optional[Callable]:
+        """LangChain compat: sync function ref (None when wrapping a coroutine)."""
+        return None if self.is_async else self.fn
+
+    @property
+    def coroutine(self) -> Optional[Callable]:
+        """LangChain compat: coroutine ref (None when wrapping a sync function)."""
+        return self.fn if self.is_async else None
+
     def to_openai_schema(self) -> dict[str, Any]:
         """OpenAI Chat Completions tool format."""
         return {

@@ -162,6 +162,28 @@ def test_args_schema_alias_returns_input_model():
     assert f.args_schema is f.input_model
 
 
+def test_func_property_for_sync_tool():
+    """func mirrors LangChain compat: sync fn ref, None for async tools."""
+
+    @tool
+    def f(q: str) -> str:
+        return q
+
+    assert f.func is f.fn
+    assert f.coroutine is None
+
+
+def test_coroutine_property_for_async_tool():
+    """coroutine mirrors LangChain compat: coroutine ref, None for sync tools."""
+
+    @tool
+    async def f(q: str) -> str:
+        return q
+
+    assert f.coroutine is f.fn
+    assert f.func is None
+
+
 # ── StructuredTool.from_function ──
 
 def test_structured_tool_alias_is_tool():
