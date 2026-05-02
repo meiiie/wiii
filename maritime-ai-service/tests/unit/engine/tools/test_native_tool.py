@@ -8,8 +8,6 @@ shape (``.invoke``, ``.ainvoke``, ``.name``, ``.description``,
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 from pydantic import BaseModel
 
@@ -99,20 +97,20 @@ def test_invoke_async_function_via_invoke_raises():
         fetch.invoke("http://x")
 
 
-def test_ainvoke_with_async_function():
+async def test_ainvoke_with_async_function():
     @tool
     async def fetch(url: str) -> str:
         return f"fetched:{url}"
 
-    assert asyncio.run(fetch.ainvoke("http://x")) == "fetched:http://x"
+    assert await fetch.ainvoke("http://x") == "fetched:http://x"
 
 
-def test_ainvoke_with_sync_function_works():
+async def test_ainvoke_with_sync_function_works():
     @tool
     def echo(q: str) -> str:
         return q
 
-    assert asyncio.run(echo.ainvoke("hi")) == "hi"
+    assert await echo.ainvoke("hi") == "hi"
 
 
 # ── schema generation ──
