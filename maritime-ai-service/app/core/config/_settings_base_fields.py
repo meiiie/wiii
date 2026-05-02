@@ -638,6 +638,24 @@ class BaseSettingsFieldsMixin:
     # Unified LLM Client
     enable_unified_client: bool = Field(default=True, description="Enable UnifiedLLMClient (AsyncOpenAI SDK)")
 
+    # Runtime Migration Epic (#207) — feature gate for the lane-first /
+    # harness-split / native-message runtime built in Phases 0–7. Phase 0
+    # ships scaffold only; flipping this on becomes meaningful from
+    # Phase 4 onward. Kept default False so the existing path is canonical
+    # until per-org canary rollout in Phase 7.
+    enable_native_runtime: bool = Field(
+        default=False,
+        description="Enable lane-first native runtime (Runtime Migration Epic #207).",
+    )
+
+    # Issue #206 — bound sync supervisor structured-route call.
+    supervisor_route_sync_timeout_seconds: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=120.0,
+        description="Bound (s) for sync SupervisorAgent._route_structured before falling back to rule-based routing.",
+    )
+
     # Google Gemini OpenAI-compatible endpoint URL
     google_openai_compat_url: str = Field(
         default="https://generativelanguage.googleapis.com/v1beta/openai/",
