@@ -19,7 +19,7 @@ import contextvars
 import logging
 from typing import Optional
 
-from langchain_core.tools import tool
+from app.engine.tools.native_tool import tool
 
 from app.engine.character.models import (
     BlockLabel,

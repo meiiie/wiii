@@ -15,7 +15,7 @@ and routes the phase transition events to the streaming pipeline.
 """
 
 import logging
-from langchain_core.tools import tool
+from app.engine.tools.native_tool import tool
 
 logger = logging.getLogger(__name__)
 

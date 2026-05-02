@@ -11,7 +11,7 @@ import math
 import operator
 from datetime import datetime, timezone, timedelta
 
-from langchain_core.tools import tool
+from app.engine.tools.native_tool import tool
 
 from app.engine.tools.registry import (
     ToolCategory,

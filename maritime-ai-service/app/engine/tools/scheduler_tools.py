@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-from langchain_core.tools import tool
+from app.engine.tools.native_tool import tool
 
 logger = logging.getLogger(__name__)
 

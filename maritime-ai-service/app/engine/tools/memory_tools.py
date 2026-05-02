@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, Optional, Any
 
-from langchain_core.tools import tool
+from app.engine.tools.native_tool import tool
 
 from app.engine.tools.registry import (
     ToolCategory, ToolAccess, get_tool_registry

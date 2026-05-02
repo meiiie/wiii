@@ -17,7 +17,7 @@ import logging
 import functools
 from typing import Any
 
-from langchain_core.tools import tool
+from app.engine.tools.native_tool import tool
 from pydantic import ValidationError
 from app.engine.tools.visual_html_builders import (
     _DESIGN_CSS,

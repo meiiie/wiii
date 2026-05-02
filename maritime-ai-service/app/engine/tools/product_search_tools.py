@@ -13,7 +13,7 @@ import json
 import logging
 from typing import List
 
-from langchain_core.tools import tool, StructuredTool
+from app.engine.tools.native_tool import tool, StructuredTool
 
 from app.engine.tools.registry import (
     ToolCategory,

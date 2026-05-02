@@ -11,7 +11,7 @@ Feature-gated by enable_chart_tools in config.
 import json
 import logging
 
-from langchain_core.tools import tool
+from app.engine.tools.native_tool import tool
 
 logger = logging.getLogger(__name__)
 
