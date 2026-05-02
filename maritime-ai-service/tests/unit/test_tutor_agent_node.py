@@ -1832,11 +1832,11 @@ class TestTutorPublicThinkingSanitization:
             elif "messages" in kwargs:
                 messages = kwargs["messages"] or []
             if messages:
-                first_content = getattr(messages[0], "content", "")
+                first_content = messages[0]["content"] if isinstance(messages[0], dict) else getattr(messages[0], "content", "")
                 if isinstance(first_content, str):
                     captured_system_prompts.append(first_content)
                 if len(messages) > 1:
-                    second_content = getattr(messages[1], "content", "")
+                    second_content = messages[1]["content"] if isinstance(messages[1], dict) else getattr(messages[1], "content", "")
                     if isinstance(second_content, str):
                         captured_human_prompts.append(second_content)
             call_index = len(captured_system_prompts)
@@ -1954,11 +1954,11 @@ class TestTutorPublicThinkingSanitization:
             elif "messages" in kwargs:
                 messages = kwargs["messages"] or []
             if messages:
-                first_content = getattr(messages[0], "content", "")
+                first_content = messages[0]["content"] if isinstance(messages[0], dict) else getattr(messages[0], "content", "")
                 if isinstance(first_content, str):
                     captured_system_prompts.append(first_content)
                 if len(messages) > 1:
-                    second_content = getattr(messages[1], "content", "")
+                    second_content = messages[1]["content"] if isinstance(messages[1], dict) else getattr(messages[1], "content", "")
                     if isinstance(second_content, str):
                         captured_human_prompts.append(second_content)
             call_index = len(captured_system_prompts)
@@ -2065,11 +2065,11 @@ class TestTutorPublicThinkingSanitization:
             elif "messages" in kwargs:
                 messages = kwargs["messages"] or []
             if messages:
-                first_content = getattr(messages[0], "content", "")
+                first_content = messages[0]["content"] if isinstance(messages[0], dict) else getattr(messages[0], "content", "")
                 if isinstance(first_content, str):
                     captured_system_prompts.append(first_content)
                 if len(messages) > 1:
-                    second_content = getattr(messages[1], "content", "")
+                    second_content = messages[1]["content"] if isinstance(messages[1], dict) else getattr(messages[1], "content", "")
                     if isinstance(second_content, str):
                         captured_human_prompts.append(second_content)
             call_index = len(captured_system_prompts)
@@ -2187,11 +2187,11 @@ class TestTutorPublicThinkingSanitization:
             elif "messages" in kwargs:
                 messages = kwargs["messages"] or []
             if messages:
-                first_content = getattr(messages[0], "content", "")
+                first_content = messages[0]["content"] if isinstance(messages[0], dict) else getattr(messages[0], "content", "")
                 if isinstance(first_content, str):
                     captured_system_prompts.append(first_content)
                 if len(messages) > 1:
-                    second_content = getattr(messages[1], "content", "")
+                    second_content = messages[1]["content"] if isinstance(messages[1], dict) else getattr(messages[1], "content", "")
                     if isinstance(second_content, str):
                         captured_human_prompts.append(second_content)
 
