@@ -134,7 +134,8 @@ def _build_code_studio_stream_summary_messages(
     tool_call_events: list[dict] | None = None,
 ) -> list[Any]:
     """Build a final delivery-focused turn for streamed code-studio answers."""
-    from langchain_core.messages import HumanMessage
+    from app.engine.messages import Message
+    from app.engine.messages_adapters import to_openai_dict
 
     ctx = state.get("context", {})
     messages = _build_direct_system_messages(
@@ -164,5 +165,5 @@ def _build_code_studio_stream_summary_messages(
     if observations:
         delivery_lines.append("Observations:\n- " + "\n- ".join(observations[:4]))
     delivery_lines.append("Hay dua ra cau tra loi cuoi cung ngay bay gio, theo dung chat giong Code Studio cua Wiii.")
-    messages[-1] = HumanMessage(content="\n\n".join(delivery_lines))
+    messages[-1] = to_openai_dict(Message(role="user", content="\n\n".join(delivery_lines)))
     return messages

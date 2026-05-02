@@ -702,7 +702,7 @@ async def test_outline_node_prefers_prepared_source(monkeypatch):
 
     async def fake_ainvoke(**kwargs):
         payload = kwargs["payload"]
-        captured["prompt"] = payload[0].content
+        captured["prompt"] = payload[0]["content"]
         return CourseOutlineSchema(
             title="Khoa hoc",
             description="Mo ta",

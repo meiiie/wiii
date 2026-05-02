@@ -246,7 +246,8 @@ Page text:
         """Use LLM to extract the first matching group URL from search results."""
         try:
             from app.engine.llm_pool import get_llm_light
-            from langchain_core.messages import HumanMessage
+            from app.engine.messages import Message
+            from app.engine.messages_adapters import to_openai_dict
 
             prompt = f"""From this Facebook group search results page, find the URL of the group most closely matching "{group_name}".
 
@@ -259,7 +260,7 @@ Page text:
 {page_text}"""
 
             llm = get_llm_light()
-            response = llm.invoke([HumanMessage(content=prompt)])
+            response = llm.invoke([to_openai_dict(Message(role="user", content=prompt))])
             raw = response.content if hasattr(response, "content") else str(response)
 
             if isinstance(raw, list):

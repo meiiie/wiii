@@ -1043,7 +1043,7 @@ class TestSubagentPlanSearchIntegration:
 
         # Verify system message includes plan text
         call_args = mock_llm.ainvoke.call_args[0][0]
-        system_msg = call_args[0].content
+        system_msg = call_args[0]["content"] if isinstance(call_args[0], dict) else call_args[0].content
         assert "KẾ HOẠCH TÌM KIẾM TỐI ƯU" in system_msg
         assert "Test Product" in system_msg
 
@@ -1068,7 +1068,7 @@ class TestSubagentPlanSearchIntegration:
             })
 
         call_args = mock_llm.ainvoke.call_args[0][0]
-        system_msg = call_args[0].content
+        system_msg = call_args[0]["content"] if isinstance(call_args[0], dict) else call_args[0].content
         assert "KẾ HOẠCH TÌM KIẾM TỐI ƯU" not in system_msg
         assert "Wiii" in system_msg  # Base prompt still present
 

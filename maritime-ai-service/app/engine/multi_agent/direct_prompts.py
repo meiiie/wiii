@@ -1055,8 +1055,6 @@ def _build_direct_system_messages(
     from app.prompts.prompt_loader import get_prompt_loader
     if native_messages:
         from app.engine.native_chat_runtime import message_to_openai_payload
-    else:
-        from langchain_core.messages import HumanMessage, SystemMessage
 
     ctx = state.get("context", {})
     loader = get_prompt_loader()
@@ -1230,10 +1228,7 @@ def _build_direct_system_messages(
         from app.engine.reasoning.thinking_enforcement import get_thinking_enforcement
         system_prompt = get_thinking_enforcement() + "\n\n" + system_prompt + "\n\n" + thinking_instruction
 
-    if native_messages:
-        messages = [{"role": "system", "content": system_prompt}]
-    else:
-        messages = [SystemMessage(content=system_prompt)]
+    messages = [{"role": "system", "content": system_prompt}]
     lc_messages = ctx.get("langchain_messages", [])
     if lc_messages and history_limit > 0:
         if native_messages:
@@ -1262,13 +1257,7 @@ def _build_direct_system_messages(
                         "detail": img.get("detail", "auto"),
                     }
                 })
-        if native_messages:
-            messages.append({"role": "user", "content": content_blocks})
-        else:
-            messages.append(HumanMessage(content=content_blocks))
+        messages.append({"role": "user", "content": content_blocks})
     else:
-        if native_messages:
-            messages.append({"role": "user", "content": query})
-        else:
-            messages.append(HumanMessage(content=query))
+        messages.append({"role": "user", "content": query})
     return messages

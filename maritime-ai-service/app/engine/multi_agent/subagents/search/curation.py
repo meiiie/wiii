@@ -179,18 +179,19 @@ async def curate_with_llm(
 
         from app.services.structured_invoke_service import StructuredInvokeService
 
-        from langchain_core.messages import HumanMessage, SystemMessage
+        from app.engine.messages import Message
+        from app.engine.messages_adapters import to_openai_dict
 
-        messages = [
-            SystemMessage(content="Bạn là trợ lý lọc sản phẩm. Trả lời JSON theo schema được yêu cầu."),
-            HumanMessage(content=prompt),
+        chat_messages = [
+            Message(role="system", content="Bạn là trợ lý lọc sản phẩm. Trả lời JSON theo schema được yêu cầu."),
+            Message(role="user", content=prompt),
         ]
 
         result = await asyncio.wait_for(
             StructuredInvokeService.ainvoke(
                 llm=llm,
                 schema=CuratedProductSelection,
-                payload=messages,
+                payload=[to_openai_dict(m) for m in chat_messages],
                 tier="moderate",
                 timeout_profile="structured",
             ),

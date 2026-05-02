@@ -370,14 +370,15 @@ class TestTutorNodeHistoryInjection:
         call_args = mock_llm.ainvoke.call_args
         messages = call_args[0][0]
 
-        # Should be: [SystemMessage, HumanMessage(prev), AIMessage(prev), HumanMessage(new)]
-        assert isinstance(messages[0], SystemMessage)
+        # Should be: [system_dict, HumanMessage(prev), AIMessage(prev), user_dict(new)]
+        # Phase 1 migration: system/user are native dicts; history slice stays LC
+        assert isinstance(messages[0], dict) and messages[0]["role"] == "system"
         assert isinstance(messages[1], HumanMessage)
         assert messages[1].content == "Previous question"
         assert isinstance(messages[2], AIMessage)
         assert messages[2].content == "Previous answer"
-        assert isinstance(messages[-1], HumanMessage)
-        assert messages[-1].content == "New question"
+        assert isinstance(messages[-1], dict) and messages[-1]["role"] == "user"
+        assert messages[-1]["content"] == "New question"
 
     @pytest.mark.asyncio
     async def test_react_loop_no_history_still_works(self, mock_llm):
@@ -401,8 +402,9 @@ class TestTutorNodeHistoryInjection:
         messages = call_args[0][0]
         # Just system + human, no history
         assert len(messages) == 2
-        assert isinstance(messages[0], SystemMessage)
-        assert isinstance(messages[1], HumanMessage)
+        # Phase 1 migration: native dicts
+        assert isinstance(messages[0], dict) and messages[0]["role"] == "system"
+        assert isinstance(messages[1], dict) and messages[1]["role"] == "user"
 
     @pytest.mark.asyncio
     async def test_react_loop_limits_to_10_turns(self, mock_llm):
@@ -501,13 +503,14 @@ class TestDirectNodeHistoryInjection:
 
         # Verify LLM was called with history messages
         call_args = mock_llm.ainvoke.call_args[0][0]
-        # Should be [System, HumanMessage(prev), AIMessage(prev), HumanMessage(new)]
-        assert isinstance(call_args[0], SystemMessage)
+        # Should be [system_dict, HumanMessage(prev), AIMessage(prev), user_dict(new)]
+        # Phase 1 migration: system/user are native dicts; history slice stays LC
+        assert isinstance(call_args[0], dict) and call_args[0]["role"] == "system"
         assert isinstance(call_args[1], HumanMessage)
         assert call_args[1].content == "What's COLREGs?"
         assert isinstance(call_args[2], AIMessage)
-        assert isinstance(call_args[-1], HumanMessage)
-        assert call_args[-1].content == "Tell me more"
+        assert isinstance(call_args[-1], dict) and call_args[-1]["role"] == "user"
+        assert call_args[-1]["content"] == "Tell me more"
 
     @pytest.mark.asyncio
     async def test_direct_node_no_history_fallback(self):
@@ -539,8 +542,9 @@ class TestDirectNodeHistoryInjection:
         call_args = mock_llm.ainvoke.call_args[0][0]
         # Just System + Human, no history
         assert len(call_args) == 2
-        assert isinstance(call_args[0], SystemMessage)
-        assert isinstance(call_args[1], HumanMessage)
+        # Phase 1 migration: native dicts
+        assert isinstance(call_args[0], dict) and call_args[0]["role"] == "system"
+        assert isinstance(call_args[1], dict) and call_args[1]["role"] == "user"
 
 
 # =========================================================================
@@ -586,11 +590,12 @@ class TestMemoryAgentHistoryInjection:
         call_args = mock_llm.ainvoke.call_args[0][0]
         # System + 2 history + Human(query) = 4
         assert len(call_args) == 4
-        assert isinstance(call_args[0], SystemMessage)
+        # Phase 1 migration: system/user are native dicts; history slice stays LC
+        assert isinstance(call_args[0], dict) and call_args[0]["role"] == "system"
         assert isinstance(call_args[1], HumanMessage)
         assert call_args[1].content == "Tên tôi là Nam"
         assert isinstance(call_args[2], AIMessage)
-        assert isinstance(call_args[-1], HumanMessage)
+        assert isinstance(call_args[-1], dict) and call_args[-1]["role"] == "user"
 
     @pytest.mark.asyncio
     async def test_memory_agent_limits_to_5_turns(self):
@@ -698,8 +703,9 @@ class TestSupervisorContextEnhancement:
 
         # Verify the prompt was called with recent conversation, not truncated dict
         payload = mock_ainvoke.call_args.kwargs["payload"]
-        human_msg = next(m for m in payload if hasattr(m, 'type') and m.type == 'human')
-        assert "Recent conversation" in human_msg.content
+        # Phase 1 migration: payload entries are now native dicts with role/content
+        human_msg = next(m for m in payload if isinstance(m, dict) and m.get("role") == "user")
+        assert "Recent conversation" in human_msg["content"]
 
     @pytest.mark.asyncio
     async def test_supervisor_fallback_without_messages(self):
@@ -731,7 +737,8 @@ class TestSupervisorContextEnhancement:
             )
 
         payload = mock_ainvoke.call_args.kwargs["payload"]
-        prompt_content = next(m.content for m in payload if hasattr(m, 'type') and m.type == 'human')
+        # Phase 1 migration: payload entries are now native dicts with role/content
+        prompt_content = next(m["content"] for m in payload if isinstance(m, dict) and m.get("role") == "user")
         # Without langchain_messages, should use str(context) fallback
         assert "Recent conversation" not in prompt_content
 

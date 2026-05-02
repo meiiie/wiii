@@ -134,11 +134,12 @@ async def _llm_decision(
         # Build reports summary for prompt
         reports_text = "\n".join(r.to_aggregator_summary() for r in reports)
 
-        from langchain_core.messages import HumanMessage, SystemMessage
+        from app.engine.messages import Message
+        from app.engine.messages_adapters import to_openai_dict
 
-        messages = [
-            SystemMessage(content="You are an aggregator. Respond ONLY with valid JSON."),
-            HumanMessage(content=_AGGREGATOR_PROMPT.format(
+        chat_messages = [
+            Message(role="system", content="You are an aggregator. Respond ONLY with valid JSON."),
+            Message(role="user", content=_AGGREGATOR_PROMPT.format(
                 reports_text=reports_text,
                 query=query,
             )),
@@ -150,7 +151,7 @@ async def _llm_decision(
         result = await StructuredInvokeService.ainvoke(
             llm=llm,
             schema=AggregatorDecisionSchema,
-            payload=messages,
+            payload=[to_openai_dict(m) for m in chat_messages],
             tier="moderate",
         )
 

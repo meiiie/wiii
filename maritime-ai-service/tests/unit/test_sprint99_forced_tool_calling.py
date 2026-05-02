@@ -520,7 +520,7 @@ class TestPromptContent:
             from app.engine.multi_agent.graph import direct_response_node
             await direct_response_node(state)
 
-            system_content = captured_messages[0].content
+            system_content = captured_messages[0]["content"] if isinstance(captured_messages[0], dict) else captured_messages[0].content
 
             # Tier 3: Must include training cutoff
             assert "2024" in system_content
@@ -576,7 +576,7 @@ class TestPromptContent:
             from app.engine.multi_agent.graph import direct_response_node
             await direct_response_node(state)
 
-            system_content = captured_messages[0].content
+            system_content = captured_messages[0]["content"] if isinstance(captured_messages[0], dict) else captured_messages[0].content
             assert "đa lĩnh vực" in system_content
 
 

@@ -7,8 +7,8 @@ import re
 import unicodedata
 from typing import Any, Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
+from app.engine.messages import Message
+from app.engine.messages_adapters import to_openai_dict
 from app.prompts.prompt_context_utils import (
     detect_message_language,
     normalize_response_language,
@@ -346,8 +346,8 @@ async def align_visible_thinking_language(
         for translator in candidate_llms:
             response = await translator.ainvoke(
                 [
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=f"Doan can chuyen ngu:\n<<<\n{source_text}\n>>>"),
+                    to_openai_dict(Message(role="system", content=system_prompt)),
+                    to_openai_dict(Message(role="user", content=f"Doan can chuyen ngu:\n<<<\n{source_text}\n>>>")),
                 ]
             )
             translated = _extract_alignment_text(response)
@@ -361,8 +361,8 @@ async def align_visible_thinking_language(
 
             retry_response = await translator.ainvoke(
                 [
-                    SystemMessage(content=retry_prompt),
-                    HumanMessage(content=f"<<<\n{source_text}\n>>>"),
+                    to_openai_dict(Message(role="system", content=retry_prompt)),
+                    to_openai_dict(Message(role="user", content=f"<<<\n{source_text}\n>>>")),
                 ]
             )
             retried = _extract_alignment_text(retry_response)

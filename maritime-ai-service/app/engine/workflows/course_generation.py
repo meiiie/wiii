@@ -18,13 +18,14 @@ from typing import Any, Optional, TypedDict
 from uuid import uuid4
 
 import structlog
-from langchain_core.messages import HumanMessage
 
 from app.engine.llm_pool import (
     get_llm_deep,
     get_llm_light,
     is_rate_limit_error,
 )
+from app.engine.messages import Message
+from app.engine.messages_adapters import to_openai_dict
 from app.engine.workflows.course_generation_source_preparation import (
     prepare_outline_source,
 )
@@ -135,13 +136,13 @@ async def outline_node(state: CourseGenState) -> CourseGenState:
 
     llm = get_llm_deep()
 
-    messages = [HumanMessage(content=build_outline_prompt(
+    messages = [to_openai_dict(Message(role="user", content=build_outline_prompt(
         markdown=prepared_markdown,
         language=state.get("language", "vi"),
         target_chapters=state.get("target_chapters"),
         teacher_prompt=state.get("teacher_prompt", ""),
         source_mode=source_mode,
-    ))]
+    )))]
 
     outline = await StructuredInvokeService.ainvoke(
         llm=llm,
@@ -188,11 +189,11 @@ async def expand_single_chapter(state: CourseGenState) -> CourseGenState:
 
     llm = get_llm_light()
 
-    messages = [HumanMessage(content=build_expand_prompt(
+    messages = [to_openai_dict(Message(role="user", content=build_expand_prompt(
         chapter=chapter,
         source_content=relevant_content,
         language=state.get("language", "vi"),
-    ))]
+    )))]
 
     # LLM call with retry + automatic provider failover on 429
     max_retries = 2

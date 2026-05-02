@@ -201,7 +201,8 @@ class CharacterStateManager:
             Consolidated text, or None on failure.
         """
         from app.engine.llm_pool import get_llm_light
-        from langchain_core.messages import HumanMessage as _HMsg
+        from app.engine.messages import Message
+        from app.engine.messages_adapters import to_openai_dict
 
         target_chars = int(block.char_limit * self.CONSOLIDATION_TARGET)
         llm = get_llm_light()
@@ -218,7 +219,7 @@ class CharacterStateManager:
             f"{block.content}"
         )
 
-        result = await llm.ainvoke([_HMsg(content=prompt)])
+        result = await llm.ainvoke([to_openai_dict(Message(role="user", content=prompt))])
         text = result.content.strip()
 
         # Sanity check: result should be shorter and non-empty

@@ -358,7 +358,8 @@ def llm_extract_impl(
 ) -> list:
     """Use light LLM to extract structured product data from page text."""
     from app.engine.llm_pool import get_llm_light
-    from langchain_core.messages import HumanMessage
+    from app.engine.messages import Message
+    from app.engine.messages_adapters import to_openai_dict
 
     prompt = adapter._get_extraction_prompt().format(
         text=page_text[:max_prompt_text],
@@ -366,7 +367,7 @@ def llm_extract_impl(
     )
 
     llm = get_llm_light()
-    response = llm.invoke([HumanMessage(content=prompt)])
+    response = llm.invoke([to_openai_dict(Message(role="user", content=prompt))])
     raw = response.content if hasattr(response, "content") else str(response)
 
     if isinstance(raw, list):

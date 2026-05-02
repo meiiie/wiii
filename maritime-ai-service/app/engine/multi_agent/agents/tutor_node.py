@@ -6,7 +6,8 @@ import logging
 import re
 from typing import Optional, List, Dict, Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from app.engine.messages import Message
+from app.engine.messages_adapters import to_openai_dict
 
 from app.core.config import settings
 from app.engine.multi_agent.agent_config import AgentConfigRegistry
@@ -764,7 +765,7 @@ class TutorAgentNode:
             pass
 
         # Initialize messages — Sprint 77: inject conversation history
-        messages = [SystemMessage(content=system_prompt)]
+        messages = [to_openai_dict(Message(role="system", content=system_prompt))]
         lc_messages = context.get("langchain_messages", [])
         if lc_messages:
             messages.extend(lc_messages[-10:])  # Last 10 turns for tutor
@@ -790,9 +791,9 @@ class TutorAgentNode:
                             "detail": img.get("detail", "auto"),
                         }
                     })
-            messages.append(HumanMessage(content=content_blocks))
+            messages.append({"role": "user", "content": content_blocks})
         else:
-            messages.append(HumanMessage(content=query))
+            messages.append(to_openai_dict(Message(role="user", content=query)))
         
         tools_used = []
         max_iterations = 2
@@ -1144,16 +1145,17 @@ class TutorAgentNode:
                 "- Tra ve DUY NHAT mot khong gian suy nghi trong <thinking>...</thinking>."
             )
             continuation_messages = [
-                SystemMessage(content=continuation_prompt),
-                HumanMessage(
+                to_openai_dict(Message(role="system", content=continuation_prompt)),
+                to_openai_dict(Message(
+                    role="user",
                     content=(
                         f"Câu hỏi của người dùng:\n{query}\n\n"
                         f"Tóm tắt hội thoại hiện tại:\n{conversation_summary or '(không có)'}\n\n"
                         f"Mood hint hiện tại:\n{mood_hint or '(không có)'}\n\n"
                         f"Các tín hiệu vừa lộ ra từ {tool_turn_label}:\n{distilled_context}\n\n"
                         "Hãy tiếp tục suy nghĩ nội tâm của Wiii ngay sau khi vừa chốt được các tín hiệu trên."
-                    )
-                ),
+                    ),
+                )),
             ]
             try:
                 continuation_response, continuation_stream_text, _ = await collect_tutor_model_message(

@@ -351,14 +351,15 @@ class ReasoningNarrator:
 
         try:
             from app.services.structured_invoke_service import StructuredInvokeService
-            from langchain_core.messages import HumanMessage, SystemMessage
+            from app.engine.messages import Message
+            from app.engine.messages_adapters import to_openai_dict
 
             result = await StructuredInvokeService.ainvoke(
                 llm=llm,
                 schema=_NarratedReasoningSchema,
                 payload=[
-                    SystemMessage(content=self._build_system_prompt(request, node_skill)),
-                    HumanMessage(content=self._build_user_prompt(request, node_skill)),
+                    to_openai_dict(Message(role="system", content=self._build_system_prompt(request, node_skill))),
+                    to_openai_dict(Message(role="user", content=self._build_user_prompt(request, node_skill))),
                 ],
                 tier="moderate",
                 provider=request.provider,

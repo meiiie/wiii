@@ -147,10 +147,10 @@ class TestCurrentDatetime:
 
     def test_contains_day_of_week(self):
         result = tool_current_datetime.invoke("")
-        assert "Thứ:" in result or "Chủ nhật" in result
+        assert "Thứ:" in result or "Chủ Nhật" in result
 
     def test_vietnamese_day_names(self):
         """Vietnamese day names should be one of the expected values."""
         result = tool_current_datetime.invoke("")
-        expected_days = ["Hai", "Ba", "Tư", "Năm", "Sáu", "Bảy", "Chủ nhật"]
+        expected_days = ["Hai", "Ba", "Tư", "Năm", "Sáu", "Bảy", "Chủ Nhật"]
         assert any(day in result for day in expected_days)

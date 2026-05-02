@@ -32,7 +32,7 @@ def _build_messages(query: str):
 def test_direct_system_messages_adds_market_analytical_contract():
     messages = _build_messages("phan tich gia dau")
 
-    system_prompt = messages[0].content
+    system_prompt = messages[0]["content"]
     lowered = system_prompt.lower()
 
     assert "--- nhip phan tich ---" in lowered
@@ -52,7 +52,7 @@ def test_direct_system_messages_adds_market_analytical_contract():
 def test_direct_system_messages_adds_math_analytical_contract():
     messages = _build_messages("Hay giai thich that sau bai toan toan tu tu lien hop voi compact resolvent")
 
-    system_prompt = messages[0].content
+    system_prompt = messages[0]["content"]
     lowered = system_prompt.lower()
 
     assert "--- nhip phan tich ---" in lowered

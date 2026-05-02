@@ -354,26 +354,28 @@ async def _ensure_vietnamese_impl(text: str) -> str:
         return text
     try:
         from app.engine.llm_pool import get_llm_light
-        from langchain_core.messages import HumanMessage, SystemMessage
+        from app.engine.messages import Message
+        from app.engine.messages_adapters import to_openai_dict
         from app.services.output_processor import extract_thinking_from_response
 
         llm = get_llm_light()
         if not llm:
             return text
 
-        messages = [
-            SystemMessage(
+        chat_messages = [
+            Message(
+                role="system",
                 content=(
                     "Dịch đoạn văn sau sang tiếng Việt tự nhiên, chính xác. "
                     "Giữ nguyên thuật ngữ chuyên ngành hàng hải/giao thông bằng tiếng Anh "
                     "nếu cần (ví dụ: COLREGs, SOLAS, starboard). "
                     "CHỈ trả lời bản dịch tiếng Việt, KHÔNG thêm giải thích hay ghi chú. "
                     "KHÔNG bao gồm quá trình suy nghĩ."
-                )
+                ),
             ),
-            HumanMessage(content=text),
+            Message(role="user", content=text),
         ]
-        response = await llm.ainvoke(messages)
+        response = await llm.ainvoke([to_openai_dict(m) for m in chat_messages])
         translated, _ = extract_thinking_from_response(response.content)
         result = translated.strip()
         if result and len(result) > 20:

@@ -57,7 +57,8 @@ async def test_post_tool_continuation_prompt_includes_living_stream_cues(mock_ll
         elif "messages" in kwargs:
             messages = kwargs["messages"] or []
         if messages:
-            first_content = getattr(messages[0], "content", "")
+            first = messages[0]
+            first_content = first["content"] if isinstance(first, dict) else getattr(first, "content", "")
             if isinstance(first_content, str):
                 captured_system_prompts.append(first_content)
         call_index = len(captured_system_prompts)

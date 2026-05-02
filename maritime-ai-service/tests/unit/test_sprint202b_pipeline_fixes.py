@@ -380,10 +380,12 @@ class TestSynthesizeContext:
             mock_reg.get_llm.return_value = mock_llm
             result = await synthesize_response(state)
 
-        # Should have SystemMessage + 2 history messages + HumanMessage (synthesis prompt)
+        # Should have system_dict + 2 history dicts + user_dict (synthesis prompt)
         assert len(captured_messages) == 4
-        # Check that prior conversation is injected
-        assert "Sony WH-1000XM5" in captured_messages[1].content
+        # Phase 1 migration: history items are also native dicts inside workers_runtime
+        msg = captured_messages[1]
+        history_content = msg["content"] if isinstance(msg, dict) else getattr(msg, "content", "")
+        assert "Sony WH-1000XM5" in history_content
 
     @pytest.mark.asyncio
     async def test_no_history_no_crash(self):
@@ -446,7 +448,8 @@ class TestSynthesizeContext:
 
         # History message (index 1) should be truncated
         history_msg = captured_messages[1]
-        assert len(history_msg.content) <= 500
+        history_content = history_msg["content"] if isinstance(history_msg, dict) else getattr(history_msg, "content", "")
+        assert len(history_content) <= 500
 
     @pytest.mark.asyncio
     async def test_curated_sort_label_text(self):
@@ -478,7 +481,8 @@ class TestSynthesizeContext:
             await synthesize_response(state)
 
         # The last HumanMessage contains the synthesis prompt
-        synthesis_prompt = captured_messages[-1].content
+        _last = captured_messages[-1]
+        synthesis_prompt = _last["content"] if isinstance(_last, dict) else getattr(_last, "content", "")
         assert "đã được LLM lọc chọn" in synthesis_prompt
         assert "sắp xếp giá rẻ nhất" not in synthesis_prompt
 
@@ -511,7 +515,8 @@ class TestSynthesizeContext:
             mock_reg.get_llm.return_value = mock_llm
             await synthesize_response(state)
 
-        synthesis_prompt = captured_messages[-1].content
+        _last = captured_messages[-1]
+        synthesis_prompt = _last["content"] if isinstance(_last, dict) else getattr(_last, "content", "")
         assert "sắp xếp giá rẻ nhất" in synthesis_prompt
 
     @pytest.mark.asyncio

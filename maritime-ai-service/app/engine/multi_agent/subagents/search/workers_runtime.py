@@ -570,8 +570,9 @@ async def synthesize_response_impl(
     answer_streamed = False
     try:
         from app.engine.character.character_card import build_wiii_runtime_prompt
+        from app.engine.messages import Message
+        from app.engine.messages_adapters import to_openai_dict
         from app.engine.multi_agent.agent_config import AgentConfigRegistry
-        from langchain_core.messages import HumanMessage, SystemMessage
 
         llm = AgentConfigRegistry.get_llm(
             "product_search",
@@ -607,12 +608,10 @@ async def synthesize_response_impl(
             system_sections.append(str(state.get("host_context_prompt")))
 
         system_content = "\n\n".join(section for section in system_sections if section)
-        messages = [SystemMessage(content=system_content)]
+        messages = [to_openai_dict(Message(role="system", content=system_content))]
 
         recent_messages = state.get("context", {}).get("langchain_messages", [])
         if recent_messages:
-            from langchain_core.messages import AIMessage
-
             for message in recent_messages[-4:]:
                 if isinstance(message, dict):
                     role = message.get("role", "human")
@@ -623,11 +622,11 @@ async def synthesize_response_impl(
                 if not content.strip():
                     continue
                 if role in ("human", "user"):
-                    messages.append(HumanMessage(content=content[:500]))
+                    messages.append(to_openai_dict(Message(role="user", content=content[:500])))
                 elif role in ("ai", "assistant"):
-                    messages.append(AIMessage(content=content[:500]))
+                    messages.append(to_openai_dict(Message(role="assistant", content=content[:500])))
 
-        messages.append(HumanMessage(content=synthesis_prompt))
+        messages.append(to_openai_dict(Message(role="user", content=synthesis_prompt)))
 
         if event_queue:
             synthesis_narration = await render_search_narration(

@@ -193,11 +193,22 @@ class SentimentAnalyzer:
         user_id: str,
     ) -> SentimentResult:
         """Primary path: LLM with structured output."""
-        from langchain_core.messages import HumanMessage, SystemMessage
+        from app.engine.messages import Message
+        from app.engine.messages_adapters import to_openai_dict
 
         llm = self._get_llm()
         if llm is None:
             return self._default_result(user_message, user_id)
+
+        user_prompt = _USER_TEMPLATE.format(
+            user_id=user_id,
+            user_message=user_message[:500],
+            ai_response=(ai_response or "")[:500],
+        )
+        chat_messages = [
+            Message(role="system", content=_SYSTEM_PROMPT),
+            Message(role="user", content=user_prompt),
+        ]
 
         # Try structured output first
         try:
@@ -206,14 +217,7 @@ class SentimentAnalyzer:
             result = await StructuredInvokeService.ainvoke(
                 llm=llm,
                 schema=SentimentResult,
-                payload=[
-                    SystemMessage(content=_SYSTEM_PROMPT),
-                    HumanMessage(content=_USER_TEMPLATE.format(
-                        user_id=user_id,
-                        user_message=user_message[:500],
-                        ai_response=(ai_response or "")[:500],
-                    )),
-                ],
+                payload=[to_openai_dict(m) for m in chat_messages],
                 tier="light",
             )
             if isinstance(result, SentimentResult):
@@ -227,14 +231,7 @@ class SentimentAnalyzer:
 
         # Fallback: raw invoke + parse JSON
         try:
-            response = await llm.ainvoke([
-                SystemMessage(content=_SYSTEM_PROMPT),
-                HumanMessage(content=_USER_TEMPLATE.format(
-                    user_id=user_id,
-                    user_message=user_message[:500],
-                    ai_response=(ai_response or "")[:500],
-                )),
-            ])
+            response = await llm.ainvoke([to_openai_dict(m) for m in chat_messages])
             text = response.content if isinstance(response.content, str) else str(response.content)
             # Extract JSON from response (may be wrapped in markdown)
             json_str = text
