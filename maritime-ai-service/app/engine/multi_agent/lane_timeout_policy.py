@@ -48,6 +48,15 @@ def _normalize_provider_name(provider_name: str | None) -> str:
     return str(provider_name or "").strip().lower()
 
 
+def _is_host_ui_navigation_route(state: object | None) -> bool:
+    if not isinstance(state, dict):
+        return False
+    metadata = state.get("routing_metadata")
+    if not isinstance(metadata, dict):
+        return False
+    return str(metadata.get("intent") or "").strip().lower() == "host_ui_navigation"
+
+
 def _looks_origin_probe(query: str) -> bool:
     normalized = _normalize_for_intent(query)
     if not normalized:
@@ -66,14 +75,21 @@ def resolve_direct_lane_timeout_policy_impl(
     tools_bound: bool,
 ) -> LaneTimeoutPolicy:
     """Return a provider-aware timeout policy for direct no-tool turns."""
+    from app.engine.llm_pool import TIMEOUT_PROFILE_STRUCTURED
+
+    if _is_host_ui_navigation_route(state):
+        return LaneTimeoutPolicy(
+            timeout_profile=TIMEOUT_PROFILE_STRUCTURED,
+            primary_timeout=8.0,
+            reason="host_ui_navigation",
+        )
+
     if tools_bound:
         return LaneTimeoutPolicy(reason="tool_bound")
 
     normalized_provider = _normalize_provider_name(provider_name)
     if normalized_provider != "zhipu":
         return LaneTimeoutPolicy(reason="provider_default")
-
-    from app.engine.llm_pool import TIMEOUT_PROFILE_STRUCTURED
 
     if _looks_emotional_support_turn(query):
         return LaneTimeoutPolicy(

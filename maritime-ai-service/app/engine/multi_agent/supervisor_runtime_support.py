@@ -9,6 +9,72 @@ from app.engine.multi_agent.supervisor_hint_runtime import (
     _normalize_router_text_impl,
 )
 
+_HOST_UI_ACTION_MARKERS = (
+    "bam",
+    "button",
+    "chi cho",
+    "click",
+    "cuon",
+    "di toi",
+    "dua toi",
+    "highlight",
+    "mo",
+    "navigate",
+    "nhan vao",
+    "nut",
+    "o dau",
+    "open",
+    "scroll",
+    "show me",
+    "tro toi",
+    "where",
+)
+
+_HOST_UI_SURFACE_MARKERS = (
+    "browse courses",
+    "dashboard",
+    "giao dien",
+    "ho so",
+    "kham pha",
+    "khoa hoc cua toi",
+    "lesson",
+    "menu",
+    "my courses",
+    "profile",
+    "sidebar",
+    "tab",
+    "tiep tuc hoc",
+    "tong quan trang",
+    "trang nay",
+)
+
+_HOST_UI_EXPLICIT_MARKERS = (
+    "con tro",
+    "cursor",
+    "host action",
+    "pointy",
+    "ui highlight",
+    "ui scroll",
+    "ui tour",
+)
+
+
+def _contains_any_marker(normalized_query: str, markers: tuple[str, ...]) -> bool:
+    return any(marker in normalized_query for marker in markers)
+
+
+def _looks_host_ui_navigation_turn(normalized_query: str) -> bool:
+    """Detect obvious host UI guidance prompts without stealing learning turns."""
+    query = normalized_query or ""
+    if not query:
+        return False
+    if _contains_any_marker(query, _HOST_UI_EXPLICIT_MARKERS):
+        return True
+    return _contains_any_marker(query, _HOST_UI_ACTION_MARKERS) and _contains_any_marker(
+        query,
+        _HOST_UI_SURFACE_MARKERS,
+    )
+
 
 def resolve_house_routing_provider_impl(
     state: Any,
@@ -234,6 +300,14 @@ def conservative_fast_route_impl(
 
     if looks_clear_social_fn(normalized):
         return (direct_agent_name, "social", 1.0, "obvious social turn")
+
+    if _looks_host_ui_navigation_turn(normalized):
+        return (
+            direct_agent_name,
+            "host_ui_navigation",
+            1.0,
+            "obvious host UI navigation/help turn",
+        )
 
     return None
 

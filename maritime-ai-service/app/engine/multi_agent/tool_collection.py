@@ -130,6 +130,24 @@ def _should_strip_visual_tools_for_analytical_text_turn(
         return False
     return getattr(visual_decision, "presentation_intent", "text") == "text"
 
+
+def _tool_name(tool: Any) -> str:
+    return str(getattr(tool, "name", "") or getattr(tool, "__name__", "") or "").strip()
+
+
+def _is_host_ui_navigation_route(state: Optional[AgentState]) -> bool:
+    if not isinstance(state, dict):
+        return False
+    metadata = state.get("routing_metadata")
+    if not isinstance(metadata, dict):
+        return False
+    return str(metadata.get("intent") or "").strip().lower() == "host_ui_navigation"
+
+
+def _host_action_tools(tools: list[Any]) -> list[Any]:
+    return [tool for tool in tools if _tool_name(tool).startswith("host_action__")]
+
+
 def _collect_direct_tools(query: str, user_role: str = "student", state: Optional[AgentState] = None):
     """Collect tools for direct response node and determine forced calling.
 
@@ -246,6 +264,10 @@ def _collect_direct_tools(query: str, user_role: str = "student", state: Optiona
                 )
     except Exception as _e:
         logger.debug("[DIRECT] Host action tools unavailable: %s", _e)
+
+    if _is_host_ui_navigation_route(state):
+        scoped_host_tools = _host_action_tools(_direct_tools)
+        return scoped_host_tools, bool(scoped_host_tools)
 
     # Structured visuals re-enable lightweight inline diagram/chart tools for direct,
     # but keep heavy artifact/file generation inside code_studio_agent.

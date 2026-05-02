@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 import re
@@ -40,6 +41,8 @@ from app.engine.multi_agent.graph_runtime_helpers import (
 )
 
 logger = logging.getLogger(__name__)
+
+_HOST_UI_DIRECT_TOTAL_TIMEOUT_SECONDS = 24.0
 
 _IDENTITY_LORE_MARKERS = (
     "the wiii lab",
@@ -894,7 +897,7 @@ async def direct_response_node_impl(
                     metadata=build_visual_tool_runtime_metadata(state, query),
                 )
 
-                llm_response, messages, tool_call_events = await execute_direct_tool_rounds(
+                direct_execution = execute_direct_tool_rounds(
                     llm_with_tools,
                     llm_auto,
                     messages,
@@ -911,6 +914,34 @@ async def direct_response_node_impl(
                     allowed_fallback_providers=direct_allowed_fallback_providers,
                     native_tool_messages=native_direct_messages,
                 )
+                if routing_intent == "host_ui_navigation":
+                    try:
+                        llm_response, messages, tool_call_events = await asyncio.wait_for(
+                            direct_execution,
+                            timeout=_HOST_UI_DIRECT_TOTAL_TIMEOUT_SECONDS,
+                        )
+                    except asyncio.TimeoutError:
+                        from app.engine.native_chat_runtime import make_assistant_message
+
+                        logger.warning(
+                            "[DIRECT] Host UI navigation answer exceeded %.1fs; returning bounded fallback",
+                            _HOST_UI_DIRECT_TOTAL_TIMEOUT_SECONDS,
+                        )
+                        fallback_answer = (
+                            "Mình đã nhận yêu cầu trỏ trên giao diện rồi. "
+                            "Nếu Wiii chưa highlight ngay, hãy thử mở lại panel Wiii hoặc làm mới trang LMS nhé."
+                        )
+                        await push_event(
+                            {
+                                "type": "answer_delta",
+                                "content": fallback_answer,
+                                "node": "direct",
+                            }
+                        )
+                        llm_response = make_assistant_message(fallback_answer)
+                        tool_call_events = []
+                else:
+                    llm_response, messages, tool_call_events = await direct_execution
 
                 if tool_call_events:
                     state["tool_call_events"] = tool_call_events

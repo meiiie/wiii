@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -657,3 +658,56 @@ async def test_direct_response_node_strips_tools_for_emotional_support_turns():
     assert result["final_response"] == "Minh o day voi cau day."
     assert captured["tools"] == []
     assert captured["direct_answer_primary_timeout"] == pytest.approx(8.0)
+
+
+@pytest.mark.asyncio
+async def test_direct_response_node_bounds_host_ui_navigation_total_timeout(monkeypatch):
+    events = []
+    state = {
+        "query": "Wiii oi, nut Kham pha khoa hoc o dau?",
+        "context": {
+            "response_language": "vi",
+            "user_role": "student",
+        },
+        "domain_id": "maritime",
+        "domain_config": {},
+        "routing_metadata": {"intent": "host_ui_navigation"},
+        "provider": "nvidia",
+    }
+    kwargs = _base_direct_kwargs()
+    kwargs["capture_public_thinking_event"] = lambda _state, event: events.append(event)
+    kwargs["looks_identity_selfhood_turn"] = lambda *_args, **_kwargs: False
+    kwargs["get_effective_provider"] = lambda *_args, **_kwargs: "nvidia"
+    kwargs["get_explicit_user_provider"] = lambda *_args, **_kwargs: None
+    kwargs["bind_direct_tools"] = lambda llm, *_args, **_kwargs: (llm, llm, None)
+    kwargs["extract_direct_response"] = lambda llm_response, *_args, **_kwargs: (
+        str(getattr(llm_response, "content", "")),
+        "",
+        [],
+    )
+
+    async def _slow_execute(*_args, **_kwargs):
+        await asyncio.sleep(1)
+        return SimpleNamespace(content="too late", tool_calls=[]), [], []
+
+    kwargs["execute_direct_tool_rounds"] = _slow_execute
+    monkeypatch.setattr(
+        "app.engine.multi_agent.direct_node_runtime._HOST_UI_DIRECT_TOTAL_TIMEOUT_SECONDS",
+        0.01,
+    )
+
+    with patch(
+        "app.engine.multi_agent.agent_config.AgentConfigRegistry.get_native_llm",
+        return_value=SimpleNamespace(_wiii_provider_name="nvidia"),
+    ):
+        result = await direct_response_node_impl(
+            state,
+            **kwargs,
+        )
+
+    assert "Mình đã nhận yêu cầu trỏ" in result["final_response"]
+    assert any(
+        event.get("type") == "answer_delta"
+        and "Mình đã nhận yêu cầu trỏ" in event.get("content", "")
+        for event in events
+    )
