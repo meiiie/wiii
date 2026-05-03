@@ -62,14 +62,16 @@ class TestConversationWindowManagerBuildMessages:
         history = [{"role": "user", "content": "Hello"}]
         result = window_mgr.build_messages(history)
         assert len(result) == 1
-        assert isinstance(result[0], HumanMessage)
+        # Phase 9b migration: native Message replaces HumanMessage
+        assert result[0].role == "user"
         assert result[0].content == "Hello"
 
     def test_single_assistant_turn(self, window_mgr):
         history = [{"role": "assistant", "content": "Hi there"}]
         result = window_mgr.build_messages(history)
         assert len(result) == 1
-        assert isinstance(result[0], AIMessage)
+        # Phase 9b migration: native Message replaces AIMessage
+        assert result[0].role == "assistant"
         assert result[0].content == "Hi there"
 
     def test_within_window(self, window_mgr):
@@ -93,16 +95,17 @@ class TestConversationWindowManagerBuildMessages:
         assert len(result[0].content) == 5000
 
     def test_correct_types(self, window_mgr):
-        """User → HumanMessage, assistant → AIMessage."""
+        """User → role="user" Message, assistant → role="assistant" Message."""
         history = [
             {"role": "user", "content": "Q1"},
             {"role": "assistant", "content": "A1"},
             {"role": "user", "content": "Q2"},
         ]
         result = window_mgr.build_messages(history)
-        assert isinstance(result[0], HumanMessage)
-        assert isinstance(result[1], AIMessage)
-        assert isinstance(result[2], HumanMessage)
+        # Phase 9b migration: native Message replaces LC Human/AI
+        assert result[0].role == "user"
+        assert result[1].role == "assistant"
+        assert result[2].role == "user"
 
     def test_skips_empty_content(self, window_mgr):
         """Entries with empty content are skipped."""
@@ -117,11 +120,12 @@ class TestConversationWindowManagerBuildMessages:
         assert result[1].content == "World"
 
     def test_unknown_role_defaults_to_human(self, window_mgr):
-        """Unknown role defaults to HumanMessage."""
+        """Unknown role (e.g. 'system') defaults to role='user' Message."""
         history = [{"role": "system", "content": "test"}]
         result = window_mgr.build_messages(history)
         assert len(result) == 1
-        assert isinstance(result[0], HumanMessage)
+        # Phase 9b migration: native Message — anything not 'assistant' becomes role='user'
+        assert result[0].role == "user"
 
     def test_preserves_order(self, window_mgr):
         """Messages preserve chronological order."""
@@ -285,9 +289,10 @@ class TestInputProcessorContextSeparation:
         from uuid import uuid4
         context = await processor.build_context(mock_request, uuid4())
         assert len(context.langchain_messages) == 3
-        assert isinstance(context.langchain_messages[0], HumanMessage)
-        assert isinstance(context.langchain_messages[1], AIMessage)
-        assert isinstance(context.langchain_messages[2], HumanMessage)
+        # Phase 9b migration: native Message replaces LC Human/AI
+        assert context.langchain_messages[0].role == "user"
+        assert context.langchain_messages[1].role == "assistant"
+        assert context.langchain_messages[2].role == "user"
 
     @pytest.mark.asyncio
     async def test_langchain_messages_empty_when_no_history(self, mock_request):
@@ -813,7 +818,8 @@ class TestEndToEnd:
         ctx.langchain_messages = mgr.build_messages(ctx.history_list)
 
         assert len(ctx.langchain_messages) == 3
-        assert isinstance(ctx.langchain_messages[0], HumanMessage)
+        # Phase 9b migration: native Message
+        assert ctx.langchain_messages[0].role == "user"
         assert ctx.langchain_messages[0].content == "First question"
 
     def test_follow_up_has_context(self):
