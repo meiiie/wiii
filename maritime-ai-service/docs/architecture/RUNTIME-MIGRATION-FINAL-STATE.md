@@ -18,6 +18,16 @@
 
 ## What's deferred (and why)
 
+### Phase 8 follow-ups shipped (2026-05-03 evening)
+
+After the initial 7-PR series merged, a follow-up branch (``codex/runtime-phase-8-finish-langchain-removal``) chipped at the deferred list:
+
+- ``app/core/langsmith.py`` — dropped the ``langchain_core.tracers`` import. ``get_langsmith_callback`` now returns ``None``. The ``langsmith`` SDK stays a top-level dep so a future direct integration can wire observability without re-introducing langchain-core.
+- ``app/engine/runtime/adapters/anthropic_compat.py`` — third edge protocol adapter joining ``wiii_native`` + ``openai_compat``. Anthropic ``tool_use`` blocks round-trip into native ``ToolCall``; ``tool_result`` blocks split into standalone role=``tool`` Messages.
+- ``ChatOrchestrator.process(record=True)`` wiring — per-call opt-in eval recording, gated by ``settings.enable_eval_recording``. Fail-soft on recorder I/O errors so production traffic is never blocked.
+
+What's still open after Phase 8: ``WiiiChatModel(BaseChatModel)`` rewrite (the gating step for actually removing ``langchain-core`` from the dependency manifest) and the 9 RECEIVE-coupled history files. Both depend on the BaseChatModel rewrite first.
+
 ### `langchain-core` package — kept in `pyproject.toml`
 
 22 references remain in `app/` across 11 files. All of them sit in two deferred buckets:
