@@ -21,6 +21,7 @@ from app.main_app_factory_support import (
     configure_session_middleware,
     include_api_router,
     include_edge_endpoints,
+    include_metrics_endpoint,
     mount_frontend_assets,
     mount_mcp_server,
     register_agent_card_route,
@@ -82,6 +83,7 @@ def create_application() -> FastAPI:
     )
     include_api_router(app)
     include_edge_endpoints(app)
+    include_metrics_endpoint(app)
     register_agent_card_route(app, logger)
     mount_mcp_server(app, logger)
     mount_frontend_assets(app, logger)

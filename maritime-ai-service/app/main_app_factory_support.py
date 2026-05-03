@@ -126,6 +126,20 @@ def include_edge_endpoints(app: FastAPI) -> None:
     app.include_router(edge_router)
 
 
+def include_metrics_endpoint(app: FastAPI) -> None:
+    """Mount the Prometheus ``/metrics`` endpoint at root.
+
+    Phase 16 of #207. Gated by ``enable_prometheus_metrics``; when off
+    the route does not register at all (no leak vector). Mounted at
+    root, not under ``/api/v1``, to match Prometheus scraper conventions.
+    """
+    if not getattr(settings, "enable_prometheus_metrics", False):
+        return
+    from app.api.metrics_endpoint import router as metrics_router
+
+    app.include_router(metrics_router)
+
+
 def register_agent_card_route(app: FastAPI, logger_: logging.Logger) -> None:
     if not settings.enable_soul_bridge:
         return
