@@ -34,6 +34,7 @@ from app.engine.runtime.adapters.anthropic_compat import (
 from app.engine.runtime.adapters.openai_compat import (
     openai_chat_completions_to_turn_request,
 )
+from app.engine.runtime.runtime_metrics import time_block
 from app.engine.runtime.turn_request import TurnRequest
 from app.models.schemas import ChatRequest, InternalChatResponse, UserRole
 
@@ -169,18 +170,22 @@ async def openai_chat_completions(
     _ensure_enabled()
     body = await _read_json_body(request)
 
-    turn = openai_chat_completions_to_turn_request(
-        body,
-        user_id=str(auth.user_id),
-        session_id=_resolve_session_id(body, auth),
-        org_id=auth.organization_id,
-        role=resolve_interaction_role(auth),
-    )
-    internal = await _process(turn, auth=auth)
-    return _openai_completion_response(
-        internal=internal,
-        model=body.get("model") or "wiii-default",
-    )
+    with time_block(
+        "edge.openai_chat_completions.duration_ms",
+        labels={"org_id": auth.organization_id or "_personal"},
+    ):
+        turn = openai_chat_completions_to_turn_request(
+            body,
+            user_id=str(auth.user_id),
+            session_id=_resolve_session_id(body, auth),
+            org_id=auth.organization_id,
+            role=resolve_interaction_role(auth),
+        )
+        internal = await _process(turn, auth=auth)
+        return _openai_completion_response(
+            internal=internal,
+            model=body.get("model") or "wiii-default",
+        )
 
 
 @router.post("/v1/messages", tags=["Edge"])
@@ -192,18 +197,22 @@ async def anthropic_messages(
     _ensure_enabled()
     body = await _read_json_body(request)
 
-    turn = anthropic_messages_to_turn_request(
-        body,
-        user_id=str(auth.user_id),
-        session_id=_resolve_session_id(body, auth),
-        org_id=auth.organization_id,
-        role=resolve_interaction_role(auth),
-    )
-    internal = await _process(turn, auth=auth)
-    return _anthropic_messages_response(
-        internal=internal,
-        model=body.get("model") or "wiii-default",
-    )
+    with time_block(
+        "edge.anthropic_messages.duration_ms",
+        labels={"org_id": auth.organization_id or "_personal"},
+    ):
+        turn = anthropic_messages_to_turn_request(
+            body,
+            user_id=str(auth.user_id),
+            session_id=_resolve_session_id(body, auth),
+            org_id=auth.organization_id,
+            role=resolve_interaction_role(auth),
+        )
+        internal = await _process(turn, auth=auth)
+        return _anthropic_messages_response(
+            internal=internal,
+            model=body.get("model") or "wiii-default",
+        )
 
 
 __all__ = ["router"]

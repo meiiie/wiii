@@ -35,6 +35,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Literal, Optional
 
+from app.engine.runtime.runtime_metrics import inc_counter, record_latency_ms
 from app.engine.runtime.session_event_log import (
     SessionEventLog,
     get_session_event_log,
@@ -134,12 +135,14 @@ class SubagentRunner:
         from app.core.config import settings
 
         if not settings.enable_subagent_isolation:
+            inc_counter("runtime.subagent.runs", labels={"status": "disabled"})
             return SubagentResult(
                 status="disabled",
                 error="enable_subagent_isolation is False",
             )
 
         if self._runner is None:
+            inc_counter("runtime.subagent.runs", labels={"status": "no_runner"})
             return SubagentResult(
                 status="error",
                 error="SubagentRunner has no runner_callable bound",
@@ -206,6 +209,12 @@ class SubagentRunner:
                 "error": result.error,
             },
             org_id=task.parent_org_id,
+        )
+        inc_counter("runtime.subagent.runs", labels={"status": result.status})
+        record_latency_ms(
+            "runtime.subagent.duration_ms",
+            float(result.duration_ms),
+            labels={"status": result.status},
         )
         return result
 
