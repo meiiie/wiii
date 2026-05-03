@@ -44,6 +44,7 @@ from app.engine.runtime.session_event_log import (
     SessionEventLog,
     get_session_event_log,
 )
+from app.engine.runtime.tracing import span as trace_span
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,15 @@ async def native_chat_dispatch(
 
     started = time.monotonic()
     try:
-        response = await _invoke_inner(chat_request, background_save)
+        with trace_span(
+            "native_dispatch.invoke_inner",
+            attributes={
+                "session_id": session_id,
+                "org_id": org_id,
+                "user_id": getattr(chat_request, "user_id", None),
+            },
+        ):
+            response = await _invoke_inner(chat_request, background_save)
     except Exception as exc:  # noqa: BLE001
         duration_ms = int((time.monotonic() - started) * 1000)
         await log.append(
