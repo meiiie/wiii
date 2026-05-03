@@ -60,6 +60,24 @@ def _enable_runtime(monkeypatch):
     monkeypatch.setattr(
         config_module.settings, "enable_native_runtime", True, raising=False
     )
+    monkeypatch.setattr(
+        config_module.settings, "native_runtime_org_allowlist", [], raising=False
+    )
+
+
+def _set_canary_allowlist(monkeypatch, orgs):
+    """Disable global flag, set per-org allowlist (Phase 14 canary)."""
+    from app.core import config as config_module
+
+    monkeypatch.setattr(
+        config_module.settings, "enable_native_runtime", False, raising=False
+    )
+    monkeypatch.setattr(
+        config_module.settings,
+        "native_runtime_org_allowlist",
+        list(orgs),
+        raising=False,
+    )
 
 
 # ── flag-off behaviour ──
@@ -70,6 +88,9 @@ async def test_chat_completions_503_when_runtime_disabled(app, monkeypatch):
 
     monkeypatch.setattr(
         config_module.settings, "enable_native_runtime", False, raising=False
+    )
+    monkeypatch.setattr(
+        config_module.settings, "native_runtime_org_allowlist", [], raising=False
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -88,6 +109,9 @@ async def test_messages_503_when_runtime_disabled(app, monkeypatch):
 
     monkeypatch.setattr(
         config_module.settings, "enable_native_runtime", False, raising=False
+    )
+    monkeypatch.setattr(
+        config_module.settings, "native_runtime_org_allowlist", [], raising=False
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -303,3 +327,62 @@ async def test_explicit_session_id_propagates(
     assert resp.status_code == 200
     chat_request = fake_service.process_message.await_args.args[0]
     assert chat_request.session_id == "thread-42"
+
+
+# ── per-org canary rollout (Phase 14) ──
+
+@pytest.mark.asyncio
+async def test_canary_allowlisted_org_can_call(
+    app, monkeypatch, fake_internal_response
+):
+    """Global flag off + org in allowlist → 200."""
+    _set_canary_allowlist(monkeypatch, ["org-1"])
+    fake_service = SimpleNamespace(
+        process_message=AsyncMock(return_value=fake_internal_response)
+    )
+    with patch(
+        "app.services.chat_service.get_chat_service", return_value=fake_service
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_canary_non_allowlisted_org_gets_503(app, monkeypatch):
+    """Global flag off + org NOT in allowlist → 503 even when canary active."""
+    _set_canary_allowlist(monkeypatch, ["other-org"])
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.post(
+            "/v1/chat/completions",
+            json={"messages": [{"role": "user", "content": "hi"}]},
+        )
+    assert resp.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_canary_messages_endpoint_also_gated_per_org(
+    app, monkeypatch, fake_internal_response
+):
+    _set_canary_allowlist(monkeypatch, ["org-1"])
+    fake_service = SimpleNamespace(
+        process_message=AsyncMock(return_value=fake_internal_response)
+    )
+    with patch(
+        "app.services.chat_service.get_chat_service", return_value=fake_service
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/v1/messages",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            )
+    assert resp.status_code == 200

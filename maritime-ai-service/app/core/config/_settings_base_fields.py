@@ -686,6 +686,16 @@ class BaseSettingsFieldsMixin:
         le=100,
     )
 
+    native_runtime_org_allowlist: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Per-org canary rollout for the lane-first native runtime "
+            "(Phase 14 of #207). Orgs in this list see the native edge "
+            "endpoints / runtime even when ``enable_native_runtime=False`` "
+            "globally. Case-sensitive exact match against ``X-Organization-ID``."
+        ),
+    )
+
     # Issue #206 — bound sync supervisor structured-route call.
     supervisor_route_sync_timeout_seconds: float = Field(
         default=10.0,

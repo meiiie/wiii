@@ -22,7 +22,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -43,17 +43,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Edge"])
 
 
-def _ensure_enabled() -> None:
-    """Reject requests when the native runtime gate is off."""
-    from app.core.config import settings
+def _ensure_enabled(org_id: Optional[str]) -> None:
+    """Reject when the native runtime is off for the caller's org.
 
-    if not settings.enable_native_runtime:
+    Per-org canary (Phase 14): a request from an allowlisted org goes
+    through even when the global flag is off; everyone else gets a 503.
+    """
+    from app.engine.runtime.rollout import is_native_runtime_enabled_for
+
+    if not is_native_runtime_enabled_for(org_id):
         raise HTTPException(
             status_code=503,
             detail={
                 "error": {
                     "type": "service_unavailable",
-                    "message": "Native runtime edge endpoints not enabled",
+                    "message": "Native runtime edge endpoints not enabled for this org",
                 }
             },
         )
@@ -167,7 +171,7 @@ async def openai_chat_completions(
     auth: RequireAuth,
 ) -> dict[str, Any]:
     """OpenAI-compat endpoint at ``POST /v1/chat/completions``."""
-    _ensure_enabled()
+    _ensure_enabled(auth.organization_id)
     body = await _read_json_body(request)
 
     with time_block(
@@ -194,7 +198,7 @@ async def anthropic_messages(
     auth: RequireAuth,
 ) -> dict[str, Any]:
     """Anthropic-compat endpoint at ``POST /v1/messages``."""
-    _ensure_enabled()
+    _ensure_enabled(auth.organization_id)
     body = await _read_json_body(request)
 
     with time_block(

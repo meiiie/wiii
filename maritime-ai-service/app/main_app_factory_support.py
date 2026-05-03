@@ -112,11 +112,14 @@ def include_api_router(app: FastAPI) -> None:
 def include_edge_endpoints(app: FastAPI) -> None:
     """Mount OpenAI/Anthropic-compat edge endpoints at root ``/v1``.
 
-    Phase 10d of the runtime migration epic (#207). Gated by
-    ``enable_native_runtime`` so the routes only register when the lane-
-    first runtime is opt-in for that environment.
+    Phase 10d (initial wiring) + Phase 14 (per-org canary). Registers when
+    EITHER ``enable_native_runtime=True`` globally OR
+    ``native_runtime_org_allowlist`` is non-empty (canary). Per-request
+    org-level gating still happens inside the handlers.
     """
-    if not settings.enable_native_runtime:
+    from app.engine.runtime.rollout import is_native_runtime_enabled_globally_or_canary
+
+    if not is_native_runtime_enabled_globally_or_canary():
         return
     from app.api.edge_endpoints import router as edge_router
 
