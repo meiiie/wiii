@@ -168,6 +168,67 @@ class EvalRecorder:
             return []
         return sorted(p.stem for p in partition.glob("*.jsonl"))
 
+    async def list_days(self, *, org_id: Optional[str] = None) -> list[str]:
+        """List ``YYYY-MM-DD`` partition directories present for an org."""
+        org = _safe_segment(org_id, default="_personal")
+        org_dir = self.base_dir / org
+        if not org_dir.exists():
+            return []
+        # Filter to plausible date-shaped dirs to skip noise.
+        return sorted(
+            d.name
+            for d in org_dir.iterdir()
+            if d.is_dir() and len(d.name) == 10 and d.name[4] == "-"
+        )
+
+    async def prune_older_than(
+        self, *, retention_days: int, today: Optional[str] = None
+    ) -> dict[str, int]:
+        """Delete partition directories older than ``retention_days``.
+
+        Returns a per-org count of partitions removed. Idempotent — safe to
+        call from a daily cron. Pass ``today`` (YYYY-MM-DD) for tests; in
+        production it defaults to UTC today.
+        """
+        from datetime import date, datetime, timedelta, timezone
+
+        if retention_days <= 0:
+            return {}
+
+        if today is None:
+            today_dt = datetime.now(timezone.utc).date()
+        else:
+            today_dt = datetime.strptime(today, "%Y-%m-%d").date()
+        cutoff: date = today_dt - timedelta(days=retention_days)
+
+        if not self.base_dir.exists():
+            return {}
+
+        removed: dict[str, int] = {}
+        async with self._lock:
+            for org_dir in self.base_dir.iterdir():
+                if not org_dir.is_dir():
+                    continue
+                count = 0
+                for day_dir in list(org_dir.iterdir()):
+                    if not day_dir.is_dir() or len(day_dir.name) != 10:
+                        continue
+                    try:
+                        day_dt = datetime.strptime(day_dir.name, "%Y-%m-%d").date()
+                    except ValueError:
+                        continue
+                    if day_dt < cutoff:
+                        for jsonl in day_dir.glob("*.jsonl"):
+                            jsonl.unlink()
+                        try:
+                            day_dir.rmdir()
+                        except OSError:
+                            pass
+                        count += 1
+                if count:
+                    removed[org_dir.name] = count
+        return removed
+
 
 def diff_records(original: EvalRecord, replayed: dict[str, Any]) -> dict[str, Any]:
     """Compute simple regression metrics between an original record and a replay.
