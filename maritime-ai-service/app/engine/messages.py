@@ -39,6 +39,14 @@ class ToolResult(BaseModel):
     is_error: bool = False
 
 
+_ROLE_TO_LC_TYPE = {
+    "system": "system",
+    "user": "human",
+    "assistant": "ai",
+    "tool": "tool",
+}
+
+
 class Message(BaseModel):
     """Native chat message used across Wiii's runtime."""
 
@@ -47,6 +55,17 @@ class Message(BaseModel):
     name: Optional[str] = None
     tool_call_id: Optional[str] = None
     tool_calls: Optional[list[ToolCall]] = None
+
+    @property
+    def type(self) -> str:
+        """LangChain-compatible type alias.
+
+        Some legacy call sites still introspect ``msg.type`` (LC ``BaseMessage``
+        attribute). Provide a read-only alias mapping ``role`` → LC ``type`` so
+        Phase 9b RECEIVE-coupled paths keep working while the rest of the
+        codebase migrates to direct ``role`` checks.
+        """
+        return _ROLE_TO_LC_TYPE.get(self.role, "human")
 
 
 __all__ = ["Message", "MessageRole", "ToolCall", "ToolResult"]

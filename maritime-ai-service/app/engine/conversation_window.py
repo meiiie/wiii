@@ -19,7 +19,7 @@ SOTA Reference (Feb 2026):
 import logging
 from typing import Dict, List, Tuple
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from app.engine.messages import Message
 
 logger = logging.getLogger(__name__)
 
@@ -44,34 +44,37 @@ class ConversationWindowManager:
     Sprint 78: Dynamic budget-based windowing when TokenBudgetManager is available
     """
 
-    def build_messages(self, history_list: List[Dict[str, str]]) -> List[BaseMessage]:
-        """Convert recent history_list entries to LangChain HumanMessage/AIMessage.
+    def build_messages(self, history_list: List[Dict[str, str]]) -> List[Message]:
+        """Convert recent history_list entries to native Message objects.
 
         Takes last RECENT_WINDOW entries from history_list.
-        Returns List[HumanMessage | AIMessage] — preserving full content (NO truncation).
+        Returns List[Message] (role="user" or "assistant") — preserving full
+        content (NO truncation).
 
         Args:
             history_list: List of dicts with "role" and "content" keys.
                           role is "user" or "assistant".
 
         Returns:
-            List of LangChain BaseMessage objects.
+            List of native Message objects.
         """
         if not history_list:
             return []
 
         recent = history_list[-RECENT_WINDOW:]
-        messages: List[BaseMessage] = []
+        messages: List[Message] = []
 
         for entry in recent:
             role = entry.get("role", "user")
             content = entry.get("content", "")
             if not content:
                 continue
-            if role == "assistant":
-                messages.append(AIMessage(content=content))
-            else:
-                messages.append(HumanMessage(content=content))
+            messages.append(
+                Message(
+                    role="assistant" if role == "assistant" else "user",
+                    content=content,
+                )
+            )
 
         return messages
 
@@ -81,7 +84,7 @@ class ConversationWindowManager:
         system_prompt: str = "",
         core_memory: str = "",
         summary: str = "",
-    ) -> Tuple[List[BaseMessage], "ContextBudget"]:
+    ) -> Tuple[List[Message], "ContextBudget"]:
         """Build messages that fit within token budget (Sprint 78).
 
         Uses TokenBudgetManager to compute how many recent messages fit

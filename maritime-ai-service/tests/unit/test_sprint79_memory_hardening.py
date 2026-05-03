@@ -28,7 +28,7 @@ if "app.services.chat_service" not in sys.modules:
     _mock_chat_svc.get_chat_service = MagicMock
     sys.modules["app.services.chat_service"] = _mock_chat_svc
 
-from langchain_core.messages import AIMessage, HumanMessage
+from app.engine.messages import Message
 
 
 # =============================================================================
@@ -410,7 +410,7 @@ class TestIntegration:
         with patch("app.engine.context_manager.get_compactor") as mock_get:
             mock_compactor = MagicMock()
             mock_compactor.maybe_compact = AsyncMock(return_value=(
-                "", [HumanMessage(content="hi")],
+                "", [Message(role="user", content="hi")],
                 MagicMock(
                     total_used=50, total_budget=20000, utilization=0.002,
                     messages_included=1, messages_dropped=0, has_summary=False,

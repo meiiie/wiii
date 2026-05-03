@@ -1316,8 +1316,7 @@ class TutorAgentNode:
                 ),
             )
             if response is None:
-                from langchain_core.messages import AIMessage as _AIMsg
-                response = _AIMsg(content="")
+                response = Message(role="assistant", content="")
 
             _raw_turn_text, raw_turn_thinking = extract_thinking_from_response(
                 getattr(response, "content", ""),

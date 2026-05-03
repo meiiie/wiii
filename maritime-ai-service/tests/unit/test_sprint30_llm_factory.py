@@ -9,7 +9,7 @@ Covers:
 
 import pytest
 from unittest.mock import patch, MagicMock
-from langchain_core.language_models import BaseChatModel
+from app.engine.llm_providers.wiii_chat_model import WiiiChatModel
 from app.engine.llm_factory import ThinkingTier, get_thinking_budget
 
 
@@ -131,7 +131,7 @@ class TestCreateLLM:
         mock_gemini_settings.google_openai_compat_url = "https://test.example.com/"
         mock_gemini_settings.thinking_enabled = False
 
-        mock_wiii = MagicMock(spec=BaseChatModel)
+        mock_wiii = MagicMock(spec=WiiiChatModel)
 
         with patch("app.engine.llm_factory.settings", mock_factory_settings), \
              patch("app.engine.llm_providers.gemini_provider.settings", mock_gemini_settings), \

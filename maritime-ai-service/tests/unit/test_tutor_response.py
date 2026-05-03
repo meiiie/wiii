@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from langchain_core.messages import ToolMessage
+from app.engine.messages import Message
 
 from app.engine.multi_agent.agents.tutor_response import (
     collect_tutor_model_message,
@@ -50,9 +50,8 @@ def test_normalize_tutor_answer_shape_keeps_warmth_but_removes_greeting_lead():
 
 def test_recover_tutor_answer_from_messages_uses_last_substantive_tool_result():
     messages = [
-        ToolMessage(content="Error: timed out", tool_call_id="call_0"),
-        ToolMessage(
-            content=(
+        Message(role="tool", content="Error: timed out", tool_call_id="call_0"),
+        Message(role="tool", content=(
                 "**Rule 13 (V\u01b0\u1ee3t)** \u00e1p d\u1ee5ng khi m\u1ed9t t\u00e0u ti\u1ebfn \u0111\u1ebfn t\u1eeb ph\u00eda sau v\u01b0\u1ee3t qu\u00e1 22.5 \u0111\u1ed9 sau ngang m\u1ea1n.\n\n"
                 "**Rule 15 (C\u1eaft h\u01b0\u1edbng)** \u00e1p d\u1ee5ng khi hai t\u00e0u m\u00e1y c\u1eaft nhau v\u00e0 m\u1ed9t t\u00e0u th\u1ea5y t\u00e0u kia \u1edf m\u1ea1n ph\u1ea3i.\n\n"
                 "<!-- CONFIDENCE: 0.95 | IS_COMPLETE: True -->"
@@ -97,12 +96,10 @@ def test_placeholder_answer_flags_tool_markup_payload():
 
 def test_recover_tutor_answer_skips_visual_payload_json():
     messages = [
-        ToolMessage(
-            content='{"id":"visual-1","type":"chart","renderer_kind":"inline_html","visual_session_id":"vs-1"}',
+        Message(role="tool", content='{"id":"visual-1","type":"chart","renderer_kind":"inline_html","visual_session_id":"vs-1"}',
             tool_call_id="call_visual",
         ),
-        ToolMessage(
-            content=(
+        Message(role="tool", content=(
                 "**Rule 15** ap dung khi hai tau cat ngang va tau thay doi phuong o man phai "
                 "phai nhuong duong."
             ),

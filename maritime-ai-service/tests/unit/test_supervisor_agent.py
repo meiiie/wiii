@@ -11,7 +11,7 @@ import types
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
-from langchain_core.messages import AIMessage, HumanMessage
+from app.engine.messages import Message
 from app.core.exceptions import ProviderUnavailableError
 
 # Break circular import: multi_agent.__init__ → graph → agents → tutor_node
@@ -500,8 +500,8 @@ class TestSupervisorRoute:
             "query": "tạo visual cho mình xem được chứ?",
             "context": {
                 "langchain_messages": [
-                    HumanMessage(content="Giải thích Quy tắc 15 COLREGs"),
-                    AIMessage(
+                    Message(role="user", content="Giải thích Quy tắc 15 COLREGs"),
+                    Message(role="assistant",
                         content="Rule 15 trong COLREGs tập trung vào tình huống cắt hướng, tàu thấy bên mạn phải phải nhường đường."
                     ),
                 ],
@@ -532,8 +532,8 @@ class TestSupervisorRoute:
             "query": "tạo visual cho mình xem được chứ?",
             "context": {
                 "langchain_messages": [
-                    HumanMessage(content="Giải thích Quy tắc 15 COLREGs"),
-                    AIMessage(
+                    Message(role="user", content="Giải thích Quy tắc 15 COLREGs"),
+                    Message(role="assistant",
                         content="Rule 15 trong COLREGs tập trung vào tình huống cắt hướng, tàu thấy bên mạn phải phải nhường đường."
                     ),
                 ],

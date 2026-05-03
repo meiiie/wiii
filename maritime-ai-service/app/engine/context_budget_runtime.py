@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from langchain_core.messages import BaseMessage
+from app.engine.messages import Message
 
 
 DEFAULT_EFFECTIVE_WINDOW = 32_000
@@ -100,8 +100,8 @@ class TokenBudgetManager:
             return 0
         return max(1, len(text) // CHARS_PER_TOKEN)
 
-    def estimate_messages_tokens(self, messages: list[BaseMessage]) -> int:
-        """Estimate total tokens for a list of LangChain messages."""
+    def estimate_messages_tokens(self, messages: list[Message]) -> int:
+        """Estimate total tokens for a list of native Wiii messages."""
         total = 0
         for msg in messages:
             content = msg.content if hasattr(msg, "content") else str(msg)
@@ -199,8 +199,8 @@ class TokenBudgetManager:
         system_prompt: str = "",
         core_memory: str = "",
         summary: str = "",
-    ) -> tuple[list[BaseMessage], ContextBudget]:
-        """Build LangChain messages that fit within the allocated context budget."""
+    ) -> tuple[list[Message], ContextBudget]:
+        """Build native Message list that fits within the allocated context budget."""
         budget = self.allocate(
             system_prompt=system_prompt,
             core_memory=core_memory,
@@ -208,33 +208,23 @@ class TokenBudgetManager:
             history_list=history_list,
         )
 
-        messages: list[BaseMessage] = []
+        messages: list[Message] = []
         if system_prompt:
-            from langchain_core.messages import SystemMessage
-
-            messages.append(SystemMessage(content=system_prompt))
-
+            messages.append(Message(role="system", content=system_prompt))
         if core_memory:
-            from langchain_core.messages import SystemMessage
-
-            messages.append(SystemMessage(content=core_memory))
-
+            messages.append(Message(role="system", content=core_memory))
         if summary:
-            from langchain_core.messages import SystemMessage
-
-            messages.append(SystemMessage(content=summary))
+            messages.append(Message(role="system", content=summary))
 
         included_history = history_list[-budget.messages_included :] if budget.messages_included else []
         for entry in included_history:
             role = entry.get("role", "user")
             content = entry.get("content", "")
-            if role == "user":
-                from langchain_core.messages import HumanMessage
-
-                messages.append(HumanMessage(content=content))
-            else:
-                from langchain_core.messages import AIMessage
-
-                messages.append(AIMessage(content=content))
+            messages.append(
+                Message(
+                    role="assistant" if role == "assistant" else "user",
+                    content=content,
+                )
+            )
 
         return messages, budget
