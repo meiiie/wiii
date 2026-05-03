@@ -1,9 +1,9 @@
 """
 LLM Provider ABC — Interface for all LLM backends.
 
-All providers return `Any` instances, ensuring that
-consumer code (18+ files) can use `.ainvoke()` and `.astream()`
-without knowing which provider is active.
+All providers return chat-model instances that consumer code (18+ files)
+duck-types via ``.ainvoke()`` and ``.astream()``, so the failover chain
+is decoupled from any single provider class.
 """
 
 import logging

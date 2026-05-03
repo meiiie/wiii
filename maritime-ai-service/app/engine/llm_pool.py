@@ -8,7 +8,7 @@ Key Features:
 - Creates only 3 LLM instances (DEEP, MODERATE, LIGHT) per provider
 - Automatic failover: Google → OpenAI → Ollama (configurable chain)
 - Per-provider circuit breakers for fast failure detection
-- Backward compatible: all 18+ consumer files use Any methods
+- Backward compatible: all 18+ consumer files use ``.ainvoke()``/``.astream()``
 
 Reference: MEMORY_OVERFLOW_SOTA_ANALYSIS.md, OpenClaw architecture
 """
