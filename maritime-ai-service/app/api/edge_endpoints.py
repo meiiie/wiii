@@ -117,10 +117,18 @@ def _to_chat_request(turn: TurnRequest, *, auth: RequireAuth) -> ChatRequest:
 
 
 async def _process(turn: TurnRequest, *, auth: RequireAuth) -> InternalChatResponse:
-    chat_request = _to_chat_request(turn, auth=auth)
-    from app.services.chat_service import get_chat_service
+    """Run the turn via native dispatch (durable + instrumented).
 
-    return await get_chat_service().process_message(chat_request)
+    Phase 19: every request that reaches the edge endpoints has already
+    cleared the per-org Phase 14 canary gate via ``_ensure_enabled``.
+    Routing through ``native_chat_dispatch`` records the conversation
+    in the durable session log so wake() / replay can read it back. The
+    response shape is identical to bare ``ChatService.process_message``.
+    """
+    chat_request = _to_chat_request(turn, auth=auth)
+    from app.engine.runtime.native_dispatch import native_chat_dispatch
+
+    return await native_chat_dispatch(chat_request)
 
 
 def _openai_completion_response(
