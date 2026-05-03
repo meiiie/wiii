@@ -180,10 +180,28 @@ async def chat_stream_v3(
         ):
             yield chunk
 
+    # Phase 30 (#207): when ``enable_native_stream_dispatch`` is on,
+    # wrap the SSE generator with native_stream_dispatch so every UI
+    # chat lands user_message + assistant_message events in the
+    # durable session log + fires lifecycle hooks + records metrics.
+    # Pass-through keeps the SSE wire shape unchanged for the UI.
+    from app.core.config import settings
+
+    if settings.enable_native_stream_dispatch:
+        from app.engine.runtime.native_stream_dispatch import (
+            native_stream_dispatch,
+        )
+
+        wrapped_generator = native_stream_dispatch(
+            chat_request, generate_events_v3()
+        )
+    else:
+        wrapped_generator = generate_events_v3()
+
     # Sprint 26: Wrap with keepalive heartbeat + client disconnect detection
     return _stream_endpoint_support.build_chat_streaming_response(
         event_generator=_keepalive_generator(
-            generate_events_v3(),
+            wrapped_generator,
             request,
             start_time=start_time,
         ),
