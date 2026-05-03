@@ -6,10 +6,12 @@ normalises a different incoming wire format into the canonical
 endpoint was hit.
 """
 
+from .anthropic_compat import anthropic_messages_to_turn_request
 from .openai_compat import openai_chat_completions_to_turn_request
 from .wiii_native import wiii_chat_request_to_turn_request
 
 __all__ = [
     "wiii_chat_request_to_turn_request",
     "openai_chat_completions_to_turn_request",
+    "anthropic_messages_to_turn_request",
 ]
