@@ -156,6 +156,7 @@ FEATURE_TIER_GROUPS: Final[dict[FeatureTier, frozenset[str]]] = {
             "enable_rls",
             "enable_scheduler",
             "enable_scrapling",
+            "enable_eval_recording",
             "enable_native_runtime",
             "enable_session_event_log",
             "enable_skill_creation",
