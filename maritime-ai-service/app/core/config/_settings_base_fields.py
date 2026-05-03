@@ -648,6 +648,14 @@ class BaseSettingsFieldsMixin:
         description="Enable lane-first native runtime (Runtime Migration Epic #207).",
     )
 
+    enable_session_event_log: bool = Field(
+        default=False,
+        description=(
+            "Enable durable session event log (Phase 5 of #207). When False, "
+            "the in-memory fallback is used and events are lost on restart."
+        ),
+    )
+
     # Issue #206 — bound sync supervisor structured-route call.
     supervisor_route_sync_timeout_seconds: float = Field(
         default=10.0,
