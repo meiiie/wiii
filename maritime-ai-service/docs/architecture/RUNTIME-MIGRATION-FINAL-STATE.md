@@ -1,7 +1,7 @@
 # Runtime Migration Epic #207 — Final state report
 
-> **As of**: 2026-05-03
-> **Status**: Phases 0–6 shipped + Phase 7 partial (this PR). LangChain dependency reduced to a small deferred surface; full removal pending the wake/replay path (5b) and `WiiiChatModel` rewrite.
+> **As of**: 2026-05-03 (updated after Phase 9 worker session)
+> **Status**: All langchain runtime surface eliminated. `langchain-core` + `langchain-mcp-adapters` dropped from manifest; `langsmith` SDK dropped (stub keeps public surface). Remaining work is operational gates (Phase 5b harness wake/replay, canary rollout) — none of which still depend on LangChain code.
 
 ## What shipped
 
@@ -18,6 +18,16 @@
 
 ## What's deferred (and why)
 
+### Phase 9 langchain removal — DONE (2026-05-03)
+
+The Phase 9 worker session shipped the gating rewrites in three branches:
+
+- ``codex/runtime-phase-9a-wiii-chat-model`` — ``WiiiChatModel`` rewritten without ``BaseChatModel`` inheritance. Returns native ``Message`` and ``StreamChunk`` types. Streaming compat preserved via Option A (``StreamChunk.message`` self-pointing shim + ``__add__`` accumulator).
+- ``codex/runtime-phase-9b-receive-coupled`` — 9 RECEIVE-coupled history paths migrated to native ``Message`` / ``ToolCall``: ``conversation_window``, ``context_manager``, ``context_budget_runtime``, ``tutor_node:1318`` placeholder, ``tutor_tool_dispatch_runtime``, ``product_search_runtime``, ``code_studio_tool_rounds``, ``direct_tool_rounds_runtime``, ``widget_surface``. ``Message.type`` LC-compat alias added so legacy introspectors keep working.
+- ``codex/runtime-phase-9c-drop-langchain-core`` — ``app/mcp/client.py`` rewritten against the raw ``mcp`` SDK (``ClientSession`` + ``AsyncExitStack``); ``langchain-core`` removed from ``pyproject.toml``; ``langchain-mcp-adapters`` and ``langsmith`` removed from ``requirements.txt``; the no-op stub at ``app/core/langsmith.py`` is left in place so the two consumer call sites do not need to branch.
+
+After 9c, ``grep -rE "from langchain|import langchain" app/`` returns 0 lines.
+
 ### Phase 8 follow-ups shipped (2026-05-03 evening)
 
 After the initial 7-PR series merged, a follow-up branch (``codex/runtime-phase-8-finish-langchain-removal``) chipped at the deferred list:
@@ -26,28 +36,11 @@ After the initial 7-PR series merged, a follow-up branch (``codex/runtime-phase-
 - ``app/engine/runtime/adapters/anthropic_compat.py`` — third edge protocol adapter joining ``wiii_native`` + ``openai_compat``. Anthropic ``tool_use`` blocks round-trip into native ``ToolCall``; ``tool_result`` blocks split into standalone role=``tool`` Messages.
 - ``ChatOrchestrator.process(record=True)`` wiring — per-call opt-in eval recording, gated by ``settings.enable_eval_recording``. Fail-soft on recorder I/O errors so production traffic is never blocked.
 
-What's still open after Phase 8: ``WiiiChatModel(BaseChatModel)`` rewrite (the gating step for actually removing ``langchain-core`` from the dependency manifest) and the 9 RECEIVE-coupled history files. Both depend on the BaseChatModel rewrite first.
+What was still open after Phase 8 — the ``WiiiChatModel(BaseChatModel)`` rewrite, the 9 RECEIVE-coupled history files, and the dependency-manifest cleanup — was all addressed in the Phase 9 worker session above.
 
-### `langchain-core` package — kept in `pyproject.toml`
+### `langchain-core` package — REMOVED Phase 9c (2026-05-03)
 
-22 references remain in `app/` across 11 files. All of them sit in two deferred buckets:
-
-**RECEIVE-coupled** (Phase 1 left them; need Phase 5b harness wake/replay first):
-- `app/engine/context_budget_runtime.py`
-- `app/engine/context_manager.py`
-- `app/engine/conversation_window.py`
-- `app/engine/multi_agent/agents/tutor_node.py:1319` — lazy `AIMessage` placeholder
-- `app/engine/multi_agent/agents/tutor_tool_dispatch_runtime.py`
-- `app/engine/multi_agent/agents/product_search_runtime.py`
-- `app/engine/multi_agent/code_studio_tool_rounds.py`
-- `app/engine/multi_agent/direct_tool_rounds_runtime.py`
-- `app/engine/multi_agent/widget_surface.py`
-
-**Provider implementation**:
-- `app/engine/llm_providers/wiii_chat_model.py` — `class WiiiChatModel(BaseChatModel)`. Removing the inheritance requires re-implementing `_generate` / `_agenerate` / `_astream` / `bind_tools` / `with_structured_output` to satisfy ~50 consumer call sites. Lane-first dispatcher (Phase 4) provides the prerequisite, but the actual rewrite is its own PR.
-
-**Observability**:
-- `app/core/langsmith.py` — LangSmith tracer integration. Independent product decision; not in scope for the runtime migration.
+Zero ``from langchain*`` imports remain in ``app/``. ``pyproject.toml`` no longer declares ``langchain-core``; ``requirements.txt`` no longer declares ``langchain-mcp-adapters`` or ``langsmith``. The ``app/core/langsmith.py`` stub kept the public surface (``configure_langsmith`` / ``is_langsmith_enabled`` / ``get_langsmith_callback``) so call sites stay untouched; a future direct LangSmith integration can re-add the SDK in its own PR.
 
 ### Operational gates from Phase 5–7 brief
 
@@ -69,24 +62,24 @@ What's still open after Phase 8: ``WiiiChatModel(BaseChatModel)`` rewrite (the g
 
 ## Surface reduction summary
 
-| Surface | Before | After this epic |
+| Surface | Before | After Phase 9 |
 |---|---|---|
-| `langchain_core.messages` import | 22+ files (all paths) | 9 files (RECEIVE-coupled only) |
+| `langchain_core.messages` import | 22+ files (all paths) | 0 |
 | `langchain_core.tools` import | 30 files | 0 in `app/`; 1 in `tests/integration/test_manual_react.py` (legacy fallback only) |
-| `langchain_core.language_models` import | 13 files | 1 file (`wiii_chat_model.py` class definition) |
-| `BaseChatModel` type-hint usage | ~70 references | ~7 (only inside `wiii_chat_model.py`) |
+| `langchain_core.language_models` import | 13 files | 0 |
+| `BaseChatModel` type-hint / inheritance usage | ~70 references | 0 |
+| `langchain_mcp_adapters` import | 1 file (`app/mcp/client.py`) | 0 (rewritten against raw `mcp` SDK) |
 | `langchain` meta package | declared in `pyproject.toml` | removed in Phase 0 |
 | `langchain-openai` / `-google-genai` / `-ollama` | declared in `pyproject.toml` | removed in Phase 0 |
+| `langchain-core` package | declared in `pyproject.toml` + `requirements.txt` | removed in Phase 9c |
+| `langchain-mcp-adapters` package | declared in `requirements.txt` | removed in Phase 9c |
+| `langsmith` package | declared in `requirements.txt` | removed in Phase 9c (stub kept; future direct integration can re-add) |
 
 ## What this means for follow-up work
 
-The migration's *runtime* goal is reached: every SEND-side path, every tool definition, and every pure-type-hint provider seam is native Wiii code. The remaining `langchain_core` surface is:
+The runtime migration's goal is reached. Every SEND-side path, every tool definition, every provider seam, and every RECEIVE-coupled history rebuild are native Wiii code. ``WiiiChatModel`` is a plain Pydantic ``BaseModel`` returning native ``Message`` / ``StreamChunk``. The MCP client uses the raw ``mcp`` SDK directly. The dependency manifest has zero ``langchain*`` packages.
 
-- 1 class implementation (`WiiiChatModel`) — easy single-PR rewrite once consumers are confirmed to need only the duck-typed methods we already mirror.
-- 9 RECEIVE-coupled history-rebuild paths — refactor candidates once `SessionEventLog` becomes the source of truth (Phase 5b wiring).
-- 1 observability integration (`langsmith.py`) — separate concern.
-
-The eval recorder (Phase 6a) is the regression net for that follow-up work. With it shipped — even as a foundation only — every future change can be replayed against the prior production trace.
+The eval recorder (Phase 6a) is the regression net for any future runtime change. With it shipped — even as a foundation only — every future change can be replayed against the prior production trace.
 
 ## Atomic commits index
 

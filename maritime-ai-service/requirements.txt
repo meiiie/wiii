@@ -26,8 +26,9 @@ pgvector==0.2.5
 # --- AI CORE STACK (PINNED to tested minor versions) ---
 # Phase 0: langchain + langchain-community removed (0 imports in app/)
 # Phase 1-2: langchain-openai, langchain-google-genai, langchain-ollama, langchain-text-splitters removed
-# All providers now use WiiiChatModel (AsyncOpenAI SDK wrapper)
-langchain-core>=1.2.18,<1.4.0
+# Phase 9a-c (2026-05-03): langchain-core + langchain-mcp-adapters removed.
+# All providers now use WiiiChatModel (AsyncOpenAI SDK wrapper); MCP client
+# uses the raw mcp SDK directly (see app/mcp/client.py).
 
 # LangGraph REMOVED (De-LangGraphing Phase 3) — replaced by WiiiRunner (app/engine/multi_agent/runner.py)
 # langgraph, langgraph-checkpoint, langgraph-checkpoint-postgres, langgraph-prebuilt — all removed
@@ -40,7 +41,6 @@ openai~=2.32.0
 # MCP Support (Sprint 56: Model Context Protocol)
 mcp~=1.27.0
 fastapi-mcp~=0.4.0
-langchain-mcp-adapters>=0.2.2,<1.0.0
 opensandbox>=0.1.5,<0.2.0
 opensandbox-code-interpreter>=0.1.1,<0.2.0
 
@@ -88,8 +88,11 @@ opentelemetry-api>=1.41.1
 opentelemetry-sdk>=1.41.1
 opentelemetry-exporter-otlp>=1.41.1
 
-# LangSmith (Sprint 144b: LLM tracing dashboard)
-langsmith>=0.7.36,<1.0.0
+# LangSmith dropped Phase 9c (2026-05-03) — the LangChain auto-tracer was
+# removed in Phase 7 (#217); the stub in app/core/langsmith.py keeps the
+# public surface (configure_langsmith / is_langsmith_enabled /
+# get_langsmith_callback) so call sites stay untouched. A future direct
+# integration can re-add the SDK in its own PR.
 
 # Structured Logging (SOTA 2026)
 structlog>=25.5.0
