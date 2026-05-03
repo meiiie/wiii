@@ -25,7 +25,7 @@ def test_skips_widget_injection_for_structured_explanatory_turns():
 
 
 def test_strips_widget_blocks_when_structured_visual_events_exist():
-    response = Message(role="assistant", 
+    response = Message(role="assistant",
         content="```widget\n<div>Legacy chart</div>\n```\n\nBridge prose sau visual.",
     )
     tool_events = [
@@ -71,7 +71,7 @@ def test_keeps_widget_injection_for_legacy_app_fallback():
 
 
 def test_strips_markdown_placeholder_when_visual_already_open():
-    response = Message(role="assistant", 
+    response = Message(role="assistant",
         content=(
             "Day la bieu do bien dong gia dau.\n\n"
             "![Bieu do gia dau](https://example.com/chart-placeholder)\n\n"
@@ -100,7 +100,7 @@ def test_strips_markdown_placeholder_when_visual_already_open():
 
 
 def test_strips_markdown_placeholder_even_without_structured_visual_flag():
-    response = Message(role="assistant", 
+    response = Message(role="assistant",
         content=(
             "Day la bieu do bien dong gia dau.\n\n"
             "![Bieu do gia dau](https://example.com/chart-placeholder)\n\n"

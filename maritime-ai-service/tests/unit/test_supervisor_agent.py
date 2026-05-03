@@ -501,7 +501,7 @@ class TestSupervisorRoute:
             "context": {
                 "langchain_messages": [
                     Message(role="user", content="Giải thích Quy tắc 15 COLREGs"),
-                    Message(role="assistant", 
+                    Message(role="assistant",
                         content="Rule 15 trong COLREGs tập trung vào tình huống cắt hướng, tàu thấy bên mạn phải phải nhường đường."
                     ),
                 ],
@@ -533,7 +533,7 @@ class TestSupervisorRoute:
             "context": {
                 "langchain_messages": [
                     Message(role="user", content="Giải thích Quy tắc 15 COLREGs"),
-                    Message(role="assistant", 
+                    Message(role="assistant",
                         content="Rule 15 trong COLREGs tập trung vào tình huống cắt hướng, tàu thấy bên mạn phải phải nhường đường."
                     ),
                 ],
