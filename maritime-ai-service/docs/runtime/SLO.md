@@ -117,18 +117,19 @@ budget is consumed.
 
 ## On-call playbook entries
 
-Each row above maps to a runbook in `docs/runtime/runbooks/`. v1 of this
-SLO ships with the **structure**; the runbooks themselves are stubs
-that get filled as the team responds to first-time incidents.
+Each row below maps to a written runbook in `docs/runtime/runbooks/`.
+The runbooks ship with the structure + decision tree; they will get
+sharper as the team responds to first-time incidents and carries
+specific findings back into them.
 
 | Symptom                              | Runbook                                            |
 |--------------------------------------|----------------------------------------------------|
-| 5xx surge on chat surface            | `runbooks/chat-5xx-surge.md` (TODO)                |
-| p99 latency spike                    | `runbooks/chat-latency-spike.md` (TODO)            |
-| Subagent error rate spike            | `runbooks/subagent-errors.md` (TODO)               |
-| Postgres pool exhaustion             | `runbooks/db-pool-exhaustion.md` (TODO)            |
-| Provider failover storm              | `runbooks/provider-failover.md` (TODO)             |
-| Nightly replay double-failure        | `runbooks/replay-regression.md` (TODO)             |
+| 5xx surge on chat surface            | [`runbooks/chat-5xx-surge.md`](runbooks/chat-5xx-surge.md)         |
+| p99 latency spike                    | [`runbooks/chat-latency-spike.md`](runbooks/chat-latency-spike.md) |
+| Subagent error rate spike            | [`runbooks/subagent-errors.md`](runbooks/subagent-errors.md)       |
+| Postgres pool exhaustion             | [`runbooks/db-pool-exhaustion.md`](runbooks/db-pool-exhaustion.md) |
+| Provider failover storm              | [`runbooks/provider-failover.md`](runbooks/provider-failover.md)   |
+| Nightly replay double-failure        | [`runbooks/replay-regression.md`](runbooks/replay-regression.md)   |
 
 ## What is NOT in scope for v1
 
