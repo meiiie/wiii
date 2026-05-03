@@ -109,7 +109,7 @@ lxml>=6.1.0
 # Browser Scraping (Sprint 152: Playwright headless Chromium + LLM extraction)
 # Optional: only needed when enable_browser_scraping=True
 # Install browser: playwright install chromium
-playwright>=1.58.0
+playwright>=1.59.0
 
 # Telegram Bot (Sprint 12: Multi-Channel Gateway, optional)
 aiogram>=3.27.0,<4.0.0
