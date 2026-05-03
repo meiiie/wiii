@@ -29,7 +29,8 @@ is a conservative but safe approximation.
 import logging
 from typing import Dict, List, Optional, Tuple
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from app.engine.messages import Message
+from app.engine.messages_adapters import to_openai_dict
 from app.engine.context_budget_runtime import (
     CHARS_PER_TOKEN,
     MAX_SUMMARY_TOKENS,
@@ -228,7 +229,7 @@ class ConversationCompactor:
         system_prompt: str = "",
         core_memory: str = "",
         user_id: str = "",
-    ) -> Tuple[str, List[BaseMessage], ContextBudget]:
+    ) -> Tuple[str, List[Message], ContextBudget]:
         """Check if compaction needed and perform if so.
 
         Args:
@@ -391,7 +392,6 @@ class ConversationCompactor:
 
         try:
             from app.engine.llm_pool import get_llm_light
-            from langchain_core.messages import HumanMessage as _HMsg
 
             conversation = "\n".join(
                 f"{'User' if m.get('role') == 'user' else 'AI'}: {m.get('content', '')[:300]}"
@@ -413,7 +413,7 @@ class ConversationCompactor:
             )
 
             llm = get_llm_light()
-            result = await llm.ainvoke([_HMsg(content=prompt)])
+            result = await llm.ainvoke([to_openai_dict(Message(role="user", content=prompt))])
 
             import json
             raw = result.content.strip()
