@@ -148,13 +148,25 @@ export default function App() {
       // Headers are resolved at request time from getAuthHeaders() — always fresh
       const client = initClient(settings.server_url, {});
       client.setHeaderResolver(() => useSettingsStore.getState().getAuthHeaders());
-      // Sprint 192: Wire 401 interceptor for automatic token refresh
+      // Sprint 192 + Phase 31 (#207): 401 interceptor.
+      //   - oauth mode: try silent token refresh; ``refreshAccessToken``
+      //     returns true on success → original request retries.
+      //   - legacy mode: nothing to refresh. The api_key shipped with the
+      //     request is invalid (placeholder, stale, or mis-synced with
+      //     backend's .env). Force-logout clears state + lets the user
+      //     re-authenticate fresh instead of leaving them stuck on a
+      //     broken-looking app where every call silently 401s.
       client.setOnUnauthorized(async () => {
         const authState = useAuthStore.getState();
-        if (authState.authMode !== "oauth") return false;
-        return authState.refreshAccessToken(
-          useSettingsStore.getState().settings.server_url,
-        );
+        if (authState.authMode === "oauth") {
+          return authState.refreshAccessToken(
+            useSettingsStore.getState().settings.server_url,
+          );
+        }
+        if (authState.authMode === "legacy" && authState.isAuthenticated) {
+          await authState.logout();
+        }
+        return false;
       });
 
       // Start health check polling

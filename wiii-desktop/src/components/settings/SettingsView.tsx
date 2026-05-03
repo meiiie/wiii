@@ -233,7 +233,11 @@ export function SettingsView() {
           } catch { /* ignore */ }
           setDraft({
             server_url: "http://localhost:8080",
-            api_key: "local-dev-key",
+            // Phase 31 fix: same as SettingsPage. The "local-dev-key"
+            // placeholder never matched the backend's .env API_KEY, so
+            // legacy fallback would always 401. Empty string forces the
+            // user through dev-login / magic-link / OAuth.
+            api_key: "",
             facebook_cookie: "",
           });
           setTheme("system");

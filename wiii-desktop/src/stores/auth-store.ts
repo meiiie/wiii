@@ -130,7 +130,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           authMode: saved.authMode || "oauth",
         });
       } else if (saved?.authMode === "legacy") {
-        set({ authMode: "legacy", isAuthenticated: true, isLoaded: true });
+        // Phase 31 fix: A persisted ``legacy`` authMode means the previous
+        // session either chose api_key login OR was demoted from oauth
+        // because tokens went stale. In the SECOND case the legacy
+        // ``settings.api_key`` may be the dev placeholder ("local-dev-key")
+        // or an empty string — neither will pass backend verification, and
+        // the app would silently render an "authenticated" UI whose every
+        // API call returns 401 "Invalid API key". Force a fresh credential
+        // check by treating that case as ``isAuthenticated=false`` so the
+        // login screen renders.
+        let hasUsableLegacyKey = false;
+        try {
+          const { useSettingsStore } = await import(
+            "@/stores/settings-store"
+          );
+          const apiKey = useSettingsStore.getState().settings.api_key || "";
+          // The hardcoded "local-dev-key" placeholder is treated as "no
+          // credential" — backend always rejects it because it never
+          // matches the .env API_KEY config (≥16 chars in production).
+          hasUsableLegacyKey =
+            apiKey.length >= 16 && apiKey !== "local-dev-key";
+        } catch {
+          hasUsableLegacyKey = false;
+        }
+        set({
+          authMode: "legacy",
+          isAuthenticated: hasUsableLegacyKey,
+          isLoaded: true,
+        });
       } else if (saved?.authMode === "oauth") {
         // Saved oauth mode but tokens are missing/stale — demote to legacy
         // and persist the corrected mode so subsequent loads don't loop.

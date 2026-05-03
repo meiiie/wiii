@@ -362,7 +362,12 @@ export function SettingsPage() {
             } catch { /* ignore */ }
             setDraft({
               server_url: "http://localhost:8080",
-              api_key: "local-dev-key",
+              // Phase 31 fix: don't seed a placeholder api_key. The
+              // hardcoded "local-dev-key" never matched the backend's
+              // .env API_KEY (≥16 chars required), so legacy fallback
+              // would always 401. Empty string forces the user through
+              // dev-login / magic-link / OAuth, which gives a real JWT.
+              api_key: "",
               facebook_cookie: "",
             });
             setTheme("system");
