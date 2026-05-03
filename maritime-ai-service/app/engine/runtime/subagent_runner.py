@@ -223,16 +223,24 @@ _singleton: Optional[SubagentRunner] = None
 
 
 def get_subagent_runner() -> SubagentRunner:
-    """Default singleton — production binds the runner_callable lazily.
+    """Default singleton with the ChatService bridge auto-wired (Phase 15).
 
     Tests should construct ``SubagentRunner`` directly with a fake
-    ``runner_callable`` rather than rely on this; the singleton exists so
-    parent code paths can call ``get_subagent_runner().run(task)`` without
-    wiring DI everywhere.
+    ``runner_callable`` rather than rely on this. Production parents that
+    call ``get_subagent_runner().run(task)`` get a ChatService-backed
+    child without any DI ceremony. The bridge import is lazy so module
+    import stays free of side effects.
     """
     global _singleton
     if _singleton is None:
         _singleton = SubagentRunner()
+    if _singleton._runner is None:
+        # Lazy bind so importing this module never pulls ChatService.
+        from app.engine.runtime.subagent_chatservice_bridge import (
+            chatservice_subagent_runner,
+        )
+
+        _singleton._runner = chatservice_subagent_runner
     return _singleton
 
 
