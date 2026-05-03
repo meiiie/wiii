@@ -706,6 +706,35 @@ class BaseSettingsFieldsMixin:
         ),
     )
 
+    enable_otlp_export: bool = Field(
+        default=False,
+        description=(
+            "Forward Phase 24 spans to an OTLP gRPC collector "
+            "(Phase 29 of #207). Requires "
+            "``opentelemetry-exporter-otlp-proto-grpc`` installed; if "
+            "the lib is missing the processor degrades to no-op + logs "
+            "a startup warning. Default off."
+        ),
+    )
+
+    otlp_endpoint: str = Field(
+        default="http://localhost:4317",
+        description=(
+            "Target OTLP gRPC endpoint when ``enable_otlp_export=True`` "
+            "(Phase 29 of #207). Defaults to a local collector — change "
+            "this for production (e.g. https://traces.example.com:4317)."
+        ),
+    )
+
+    otlp_service_name: str = Field(
+        default="wiii-runtime",
+        description=(
+            "Resource attribute ``service.name`` reported on every "
+            "exported span. Useful when several Wiii services share one "
+            "OTLP backend."
+        ),
+    )
+
     enable_prometheus_metrics: bool = Field(
         default=False,
         description=(

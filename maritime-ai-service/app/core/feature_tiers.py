@@ -158,6 +158,7 @@ FEATURE_TIER_GROUPS: Final[dict[FeatureTier, frozenset[str]]] = {
             "enable_scrapling",
             "enable_eval_recording",
             "enable_native_runtime",
+            "enable_otlp_export",
             "enable_prometheus_metrics",
             "enable_session_event_log",
             "enable_subagent_isolation",
