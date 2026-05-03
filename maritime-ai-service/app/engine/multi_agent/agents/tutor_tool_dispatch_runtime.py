@@ -3,7 +3,19 @@
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Sequence
 
-from langchain_core.messages import AIMessage, ToolMessage
+from app.engine.messages import Message, ToolCall
+
+
+def _tool_call_dict_to_native(tool_call: dict[str, Any]) -> ToolCall:
+    """Translate the LC-style ``{"name", "args", "id"}`` dict to a native ToolCall."""
+    raw_args = tool_call.get("args") or {}
+    if not isinstance(raw_args, dict):
+        raw_args = {"value": raw_args}
+    return ToolCall(
+        id=str(tool_call.get("id") or ""),
+        name=str(tool_call.get("name") or ""),
+        arguments=raw_args,
+    )
 
 
 @dataclass(slots=True)
@@ -24,12 +36,15 @@ def _append_tool_observation(
     tool_id: str,
     result: Any,
 ) -> None:
-    messages.append(AIMessage(content="", tool_calls=[tool_call]))
     messages.append(
-        ToolMessage(
-            content=str(result),
-            tool_call_id=tool_id,
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[_tool_call_dict_to_native(tool_call)],
         )
+    )
+    messages.append(
+        Message(role="tool", content=str(result), tool_call_id=tool_id)
     )
 
 
@@ -40,12 +55,15 @@ def _append_tool_error(
     tool_id: str,
     error: Exception,
 ) -> None:
-    messages.append(AIMessage(content="", tool_calls=[tool_call]))
     messages.append(
-        ToolMessage(
-            content=f"Error: {str(error)}",
-            tool_call_id=tool_id,
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[_tool_call_dict_to_native(tool_call)],
         )
+    )
+    messages.append(
+        Message(role="tool", content=f"Error: {str(error)}", tool_call_id=tool_id)
     )
 
 
@@ -307,9 +325,16 @@ async def dispatch_tutor_tool_call(
 
     if tool_name == "tool_think":
         thought = tool_args.get("thought", "")
-        messages.append(AIMessage(content="", tool_calls=[tool_call]))
         messages.append(
-            ToolMessage(
+            Message(
+                role="assistant",
+                content="",
+                tool_calls=[_tool_call_dict_to_native(tool_call)],
+            )
+        )
+        messages.append(
+            Message(
+                role="tool",
                 content=f"[Thought recorded: {len(thought)} chars]",
                 tool_call_id=tool_id,
             )
@@ -366,9 +391,16 @@ async def dispatch_tutor_tool_call(
             )
             last_tool_was_progress = False
 
-        messages.append(AIMessage(content="", tool_calls=[tool_call]))
         messages.append(
-            ToolMessage(
+            Message(
+                role="assistant",
+                content="",
+                tool_calls=[_tool_call_dict_to_native(tool_call)],
+            )
+        )
+        messages.append(
+            Message(
+                role="tool",
                 content=f"[Progress reported. Next phase: {next_label}]",
                 tool_call_id=tool_id,
             )
