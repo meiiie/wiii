@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Optional
 
+from app.sandbox.path_grants import SandboxPathGrant
+
 
 class SandboxProvider(StrEnum):
     DISABLED = "disabled"
@@ -59,6 +61,15 @@ class SandboxExecutionRequest:
     user_id: Optional[str] = None
     session_id: Optional[str] = None
     request_id: Optional[str] = None
+
+    # Phase 23 (#207): fine-grained path access. Empty list = backward
+    # compat — executors fall back to ``working_directory`` semantics.
+    path_grants: list[SandboxPathGrant] = field(default_factory=list)
+
+    # Phase 23: optional snapshot to restore from before workload runs.
+    # The executor consumes the snapshot id, materialises files, then
+    # runs the workload on top of the restored state.
+    restore_snapshot_id: Optional[str] = None
 
 
 @dataclass(slots=True)

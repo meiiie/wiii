@@ -686,6 +686,16 @@ class BaseSettingsFieldsMixin:
         le=100,
     )
 
+    sandbox_snapshot_dir: Optional[str] = Field(
+        default=None,
+        description=(
+            "Filesystem path for SandboxSnapshot store (Phase 23 of #207). "
+            "When set, ``get_snapshot_store()`` returns a "
+            "FilesystemSnapshotStore rooted here; otherwise it falls back "
+            "to in-memory (suitable for tests + dev)."
+        ),
+    )
+
     native_runtime_org_allowlist: list[str] = Field(
         default_factory=list,
         description=(

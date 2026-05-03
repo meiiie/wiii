@@ -39,11 +39,13 @@ import logging
 import time
 from typing import Optional
 
+from app.engine.runtime.lifecycle import HookPoint, get_lifecycle
 from app.engine.runtime.runtime_metrics import inc_counter, record_latency_ms
 from app.engine.runtime.session_event_log import (
     SessionEventLog,
     get_session_event_log,
 )
+from app.engine.runtime.tracing import span as trace_span
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +112,17 @@ async def native_chat_dispatch(
     org_id = getattr(chat_request, "organization_id", None)
     user_message = getattr(chat_request, "message", "") or ""
 
+    lifecycle = get_lifecycle()
+    await lifecycle.fire(
+        HookPoint.ON_RUN_START,
+        {
+            "session_id": session_id,
+            "org_id": org_id,
+            "user_id": getattr(chat_request, "user_id", None),
+            "user_message": user_message,
+        },
+    )
+
     await log.append(
         session_id=session_id,
         event_type="user_message",
@@ -127,7 +140,15 @@ async def native_chat_dispatch(
 
     started = time.monotonic()
     try:
-        response = await _invoke_inner(chat_request, background_save)
+        with trace_span(
+            "native_dispatch.invoke_inner",
+            attributes={
+                "session_id": session_id,
+                "org_id": org_id,
+                "user_id": getattr(chat_request, "user_id", None),
+            },
+        ):
+            response = await _invoke_inner(chat_request, background_save)
     except Exception as exc:  # noqa: BLE001
         duration_ms = int((time.monotonic() - started) * 1000)
         await log.append(
@@ -148,6 +169,24 @@ async def native_chat_dispatch(
             "runtime.native_dispatch.duration_ms",
             float(duration_ms),
             labels={"status": "error"},
+        )
+        await lifecycle.fire(
+            HookPoint.ON_RUN_ERROR,
+            {
+                "session_id": session_id,
+                "org_id": org_id,
+                "duration_ms": duration_ms,
+                "error": f"{type(exc).__name__}: {exc}",
+            },
+        )
+        await lifecycle.fire(
+            HookPoint.ON_RUN_END,
+            {
+                "session_id": session_id,
+                "org_id": org_id,
+                "duration_ms": duration_ms,
+                "status": "error",
+            },
         )
         raise
 
@@ -192,6 +231,16 @@ async def native_chat_dispatch(
         "runtime.native_dispatch.duration_ms",
         float(duration_ms),
         labels={"status": "success"},
+    )
+    await lifecycle.fire(
+        HookPoint.ON_RUN_END,
+        {
+            "session_id": session_id,
+            "org_id": org_id,
+            "duration_ms": duration_ms,
+            "status": "success",
+            "tool_call_count": len(tool_calls),
+        },
     )
     return response
 
