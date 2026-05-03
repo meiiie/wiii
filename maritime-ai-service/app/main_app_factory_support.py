@@ -116,7 +116,7 @@ def include_edge_endpoints(app: FastAPI) -> None:
     ``enable_native_runtime`` so the routes only register when the lane-
     first runtime is opt-in for that environment.
     """
-    if not getattr(settings, "enable_native_runtime", False):
+    if not settings.enable_native_runtime:
         return
     from app.api.edge_endpoints import router as edge_router
 

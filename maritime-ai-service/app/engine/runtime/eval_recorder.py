@@ -169,17 +169,28 @@ class EvalRecorder:
         return sorted(p.stem for p in partition.glob("*.jsonl"))
 
     async def list_days(self, *, org_id: Optional[str] = None) -> list[str]:
-        """List ``YYYY-MM-DD`` partition directories present for an org."""
+        """List ``YYYY-MM-DD`` partition directories present for an org.
+
+        Validates each candidate via ``strptime`` so junk like ``2026-XX-01``
+        or ``abcd-ef-gh`` is filtered out — callers can rely on every
+        returned name being a real calendar date.
+        """
+        from datetime import datetime
+
         org = _safe_segment(org_id, default="_personal")
         org_dir = self.base_dir / org
         if not org_dir.exists():
             return []
-        # Filter to plausible date-shaped dirs to skip noise.
-        return sorted(
-            d.name
-            for d in org_dir.iterdir()
-            if d.is_dir() and len(d.name) == 10 and d.name[4] == "-"
-        )
+        valid: list[str] = []
+        for d in org_dir.iterdir():
+            if not d.is_dir() or len(d.name) != 10:
+                continue
+            try:
+                datetime.strptime(d.name, "%Y-%m-%d")
+            except ValueError:
+                continue
+            valid.append(d.name)
+        return sorted(valid)
 
     async def prune_older_than(
         self, *, retention_days: int, today: Optional[str] = None
@@ -223,7 +234,10 @@ class EvalRecorder:
                         try:
                             day_dir.rmdir()
                         except OSError:
-                            pass
+                            # Directory not empty (race with a concurrent
+                            # writer) or perm error — leave it for the next
+                            # cron tick. Do not count as removed.
+                            continue
                         count += 1
                 if count:
                     removed[org_dir.name] = count

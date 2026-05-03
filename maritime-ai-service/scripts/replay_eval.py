@@ -111,7 +111,7 @@ async def _replay_one(
 
     latency_ms = int((time.monotonic() - started) * 1000)
     replayed = {
-        "response": getattr(response, "response", "") or "",
+        "response": getattr(response, "message", "") or "",
         "tool_calls": (response.metadata or {}).get("tool_calls", []),
         "sources": [
             s.model_dump() if hasattr(s, "model_dump") else dict(s)

@@ -207,6 +207,36 @@ async def test_completions_rejects_non_dict_body(app, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_completions_rejects_malformed_json_with_400(app, monkeypatch):
+    """Invalid JSON should surface as a structured 400, not a 500."""
+    _enable_runtime(monkeypatch)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.post(
+            "/v1/chat/completions",
+            content=b"{not-valid-json,",
+            headers={"Content-Type": "application/json"},
+        )
+    assert resp.status_code == 400
+    assert "valid JSON" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_messages_rejects_malformed_json_with_400(app, monkeypatch):
+    _enable_runtime(monkeypatch)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.post(
+            "/v1/messages",
+            content=b"{broken",
+            headers={"Content-Type": "application/json"},
+        )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_messages_rejects_no_user_message(app, monkeypatch):
     _enable_runtime(monkeypatch)
     async with httpx.AsyncClient(

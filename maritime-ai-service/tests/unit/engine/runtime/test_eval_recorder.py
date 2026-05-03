@@ -159,6 +159,16 @@ async def test_list_days_filters_non_date_dirs(tmp_path: Path, recorder: EvalRec
     assert days == ["2026-05-01"]
 
 
+async def test_list_days_rejects_malformed_dates(tmp_path: Path, recorder: EvalRecorder):
+    """Length+hyphen heuristic alone passes garbage like ``2026-XX-01`` —
+    list_days must validate via strptime so callers can trust the output."""
+    org_dir = tmp_path / "_personal"
+    for name in ("2026-05-01", "2026-XX-01", "abcd-ef-gh", "2026-13-01", "2026-02-30"):
+        (org_dir / name).mkdir(parents=True)
+    days = await recorder.list_days()
+    assert days == ["2026-05-01"]
+
+
 # ── prune_older_than ──
 
 async def test_prune_older_than_removes_old_partitions(tmp_path: Path, recorder: EvalRecorder):

@@ -18,6 +18,7 @@ extra path acrobatics.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -45,7 +46,7 @@ def _ensure_enabled() -> None:
     """Reject requests when the native runtime gate is off."""
     from app.core.config import settings
 
-    if not getattr(settings, "enable_native_runtime", False):
+    if not settings.enable_native_runtime:
         raise HTTPException(
             status_code=503,
             detail={
@@ -55,6 +56,22 @@ def _ensure_enabled() -> None:
                 }
             },
         )
+
+
+async def _read_json_body(request: Request) -> dict:
+    """Parse the request body or surface a 400 for malformed JSON.
+
+    FastAPI's default behaviour bubbles ``json.JSONDecodeError`` up to the
+    generic exception handler (500). Edge clients expect a structured 400
+    so they can correct their wire format without alarming on-call.
+    """
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="body must be valid JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="body must be a JSON object")
+    return body
 
 
 def _last_user_message(turn: TurnRequest) -> str:
@@ -150,9 +167,7 @@ async def openai_chat_completions(
 ) -> dict[str, Any]:
     """OpenAI-compat endpoint at ``POST /v1/chat/completions``."""
     _ensure_enabled()
-    body = await request.json()
-    if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail="body must be a JSON object")
+    body = await _read_json_body(request)
 
     turn = openai_chat_completions_to_turn_request(
         body,
@@ -175,9 +190,7 @@ async def anthropic_messages(
 ) -> dict[str, Any]:
     """Anthropic-compat endpoint at ``POST /v1/messages``."""
     _ensure_enabled()
-    body = await request.json()
-    if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail="body must be a JSON object")
+    body = await _read_json_body(request)
 
     turn = anthropic_messages_to_turn_request(
         body,

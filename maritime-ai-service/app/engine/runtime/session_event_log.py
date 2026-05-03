@@ -309,12 +309,16 @@ def get_session_event_log() -> SessionEventLog:
 
     try:
         from app.core.config import settings
-
-        if getattr(settings, "enable_session_event_log", False):
-            _singleton = PostgresSessionEventLog()
-            return _singleton
-    except Exception:  # noqa: BLE001 — settings may be unavailable at import time
+    except (ImportError, AttributeError):
+        # Settings not importable yet (e.g. CLI tools, very early bootstrap).
+        # Falling back to in-memory keeps the interface usable.
         logger.debug("[session_event_log] settings unavailable; using in-memory")
+        _singleton = InMemorySessionEventLog()
+        return _singleton
+
+    if settings.enable_session_event_log:
+        _singleton = PostgresSessionEventLog()
+        return _singleton
 
     _singleton = InMemorySessionEventLog()
     return _singleton
