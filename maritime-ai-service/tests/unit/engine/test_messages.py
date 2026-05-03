@@ -126,3 +126,103 @@ def test_to_anthropic_dict_assistant_only_tool_calls_no_text_block():
 def test_to_gemini_dict_matches_openai_shape():
     msg = Message(role="user", content="hello")
     assert to_gemini_dict(msg) == to_openai_dict(msg)
+
+
+# ── Reverse adapters: provider response → Message ──
+
+
+def test_from_openai_response_plain_text():
+    from app.engine.messages_adapters import from_openai_response
+
+    msg = from_openai_response({"role": "assistant", "content": "hi", "tool_calls": None})
+    assert msg.role == "assistant"
+    assert msg.content == "hi"
+    assert msg.tool_calls is None
+
+
+def test_from_openai_response_with_tool_calls_dict():
+    from app.engine.messages_adapters import from_openai_response
+
+    raw = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {
+                "id": "c1",
+                "type": "function",
+                "function": {"name": "search", "arguments": '{"q": "x"}'},
+            }
+        ],
+    }
+    msg = from_openai_response(raw)
+    assert msg.tool_calls and len(msg.tool_calls) == 1
+    assert msg.tool_calls[0].id == "c1"
+    assert msg.tool_calls[0].name == "search"
+    assert msg.tool_calls[0].arguments == {"q": "x"}
+
+
+def test_from_openai_response_handles_invalid_arguments_json():
+    from app.engine.messages_adapters import from_openai_response
+
+    raw = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {"id": "c1", "function": {"name": "x", "arguments": "<not-json>"}},
+        ],
+    }
+    msg = from_openai_response(raw)
+    assert msg.tool_calls[0].arguments == {}
+
+
+def test_from_openai_response_with_sdk_object_shape():
+    """Mock the SDK shape — attributes instead of dict keys."""
+    from types import SimpleNamespace
+
+    from app.engine.messages_adapters import from_openai_response
+
+    sdk_msg = SimpleNamespace(
+        role="assistant",
+        content="ok",
+        tool_calls=[
+            SimpleNamespace(
+                id="c1",
+                function=SimpleNamespace(name="search", arguments='{"q":"x"}'),
+            )
+        ],
+    )
+    msg = from_openai_response(sdk_msg)
+    assert msg.content == "ok"
+    assert msg.tool_calls[0].name == "search"
+    assert msg.tool_calls[0].arguments == {"q": "x"}
+
+
+def test_from_anthropic_response_text_only():
+    from app.engine.messages_adapters import from_anthropic_response
+
+    raw = {"content": [{"type": "text", "text": "hello"}]}
+    msg = from_anthropic_response(raw)
+    assert msg.role == "assistant"
+    assert msg.content == "hello"
+    assert msg.tool_calls is None
+
+
+def test_from_anthropic_response_with_tool_use_block():
+    from app.engine.messages_adapters import from_anthropic_response
+
+    raw = {
+        "content": [
+            {"type": "text", "text": "thinking..."},
+            {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "search",
+                "input": {"q": "x"},
+            },
+        ]
+    }
+    msg = from_anthropic_response(raw)
+    assert msg.content == "thinking..."
+    assert msg.tool_calls and len(msg.tool_calls) == 1
+    assert msg.tool_calls[0].name == "search"
+    assert msg.tool_calls[0].arguments == {"q": "x"}

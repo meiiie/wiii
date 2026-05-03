@@ -8,7 +8,7 @@ Key Features:
 - Creates only 3 LLM instances (DEEP, MODERATE, LIGHT) per provider
 - Automatic failover: Google → OpenAI → Ollama (configurable chain)
 - Per-provider circuit breakers for fast failure detection
-- Backward compatible: all 18+ consumer files use BaseChatModel methods
+- Backward compatible: all 18+ consumer files use ``.ainvoke()``/``.astream()``
 
 Reference: MEMORY_OVERFLOW_SOTA_ANALYSIS.md, OpenClaw architecture
 """
@@ -17,7 +17,6 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
 from app.core.exceptions import ProviderUnavailableError
@@ -118,10 +117,10 @@ class ResolvedLLMRoute:
     """Resolved primary/fallback runtime objects for one request."""
 
     provider: Optional[str]
-    llm: BaseChatModel
+    llm: Any
     circuit_breaker: Any = None
     fallback_provider: Optional[str] = None
-    fallback_llm: Optional[BaseChatModel] = None
+    fallback_llm: Optional[Any] = None
 
 
 class LLMPool:
@@ -129,7 +128,7 @@ class LLMPool:
     SOTA Pattern: Singleton LLM Pool with Multi-Provider Failover.
 
     Pre-creates 3 LLM instances (DEEP, MODERATE, LIGHT) at startup.
-    All components share these instances via BaseChatModel interface.
+    All components share these instances via Any interface.
 
     Failover chain (configurable via settings.llm_failover_chain):
         Google Gemini → Zhipu GLM-5 → OpenAI/OpenRouter → Ollama (local)
@@ -155,9 +154,9 @@ class LLMPool:
         fallback = LLMPool.get_fallback("moderate")
     """
 
-    _pool: Dict[str, BaseChatModel] = {}
-    _fallback_pool: Dict[str, BaseChatModel] = {}
-    _provider_pools: Dict[str, Dict[str, BaseChatModel]] = {}
+    _pool: Dict[str, Any] = {}
+    _fallback_pool: Dict[str, Any] = {}
+    _provider_pools: Dict[str, Dict[str, Any]] = {}
     _initialized: bool = False
     _active_provider: Optional[str] = None
     _fallback_provider: Optional[str] = None
@@ -234,12 +233,12 @@ class LLMPool:
     @classmethod
     def _tag_runtime_metadata(
         cls,
-        llm: BaseChatModel,
+        llm: Any,
         *,
         provider_name: str,
         tier_key: str,
         requested_provider: Optional[str] = None,
-    ) -> BaseChatModel:
+    ) -> Any:
         """Attach lightweight runtime metadata for downstream failover helpers."""
         return tag_runtime_metadata_impl(
             llm,
@@ -294,7 +293,7 @@ class LLMPool:
         tier_key: str,
         *,
         requested_provider: Optional[str] = None,
-    ) -> BaseChatModel | None:
+    ) -> Any | None:
         return create_provider_instance_impl(
             cls_ref=cls,
             provider_name=provider_name,
@@ -310,7 +309,7 @@ class LLMPool:
         *,
         allow_unavailable: bool = False,
         requested_provider: Optional[str] = None,
-    ) -> BaseChatModel | None:
+    ) -> Any | None:
         return get_provider_instance_impl(
             cls_ref=cls,
             provider_name=provider_name,
@@ -341,7 +340,7 @@ class LLMPool:
         )
 
     @classmethod
-    def _create_instance(cls, tier) -> BaseChatModel:
+    def _create_instance(cls, tier) -> Any:
         return create_primary_instance_impl(
             cls_ref=cls,
             tier=tier,
@@ -361,7 +360,7 @@ class LLMPool:
         )
 
     @classmethod
-    def get_fallback(cls, tier=None) -> Optional[BaseChatModel]:
+    def get_fallback(cls, tier=None) -> Optional[Any]:
         """Get the pre-created fallback LLM for runtime failover."""
         return get_fallback_impl(
             cls_ref=cls,
@@ -372,7 +371,7 @@ class LLMPool:
     @classmethod
     def _create_instance_legacy(
         cls, tier_key: str, thinking_budget: int, include_thoughts: bool
-    ) -> BaseChatModel:
+    ) -> Any:
         return create_instance_legacy_impl(
             cls_ref=cls,
             tier_key=tier_key,
@@ -385,7 +384,7 @@ class LLMPool:
         )
 
     @classmethod
-    def _attach_tracking_callback(cls, llm: BaseChatModel, tier_key: str) -> None:
+    def _attach_tracking_callback(cls, llm: Any, tier_key: str) -> None:
         attach_tracking_callback_impl(
             llm=llm,
             tier_key=tier_key,
@@ -398,7 +397,7 @@ class LLMPool:
         return get_provider_info_impl(cls_ref=cls, name=name)
 
     @classmethod
-    def get(cls, tier=None) -> BaseChatModel:
+    def get(cls, tier=None) -> Any:
         """Get a shared LLM instance for the specified tier."""
         return get_pool_llm_impl(
             cls_ref=cls,
@@ -438,7 +437,7 @@ class LLMPool:
         failover_mode: str = FAILOVER_MODE_AUTO,
         prefer_selectable_only: bool = False,
         allowed_fallback_providers: set[str] | list[str] | tuple[str, ...] | None = None,
-    ) -> tuple[Optional[str], Optional[BaseChatModel]]:
+    ) -> tuple[Optional[str], Optional[Any]]:
         """Return the next available provider/LLM for one request route."""
         normalized_allowed_fallbacks: set[str] | None = None
         if allowed_fallback_providers:
@@ -609,7 +608,7 @@ class LLMPool:
         provider_name: str,
         model_name: str,
         tier: ThinkingTier,
-    ) -> BaseChatModel | None:
+    ) -> Any | None:
         """Create a dedicated provider-scoped LLM instance for a specific model name.
 
         Used for grouped admin profiles and per-agent model overrides.
@@ -630,7 +629,7 @@ class LLMPool:
         )
 
     @classmethod
-    def create_llm_with_model(cls, model_name: str, tier: ThinkingTier) -> BaseChatModel | None:
+    def create_llm_with_model(cls, model_name: str, tier: ThinkingTier) -> Any | None:
         """Backward-compatible helper for Google-only custom model overrides."""
         return cls.create_llm_with_model_for_provider("google", model_name, tier)
 
@@ -691,22 +690,22 @@ def _effort_to_tier(effort: Optional[str], default_tier):
     return mapping.get(effort or "", default_tier)
 
 
-def get_llm_deep() -> BaseChatModel:
+def get_llm_deep() -> Any:
     return LLMPool.get(ThinkingTier.DEEP)
 
 
-def get_llm_moderate() -> BaseChatModel:
+def get_llm_moderate() -> Any:
     return LLMPool.get(ThinkingTier.MODERATE)
 
 
-def get_llm_light() -> BaseChatModel:
+def get_llm_light() -> Any:
     return LLMPool.get(ThinkingTier.LIGHT)
 
 
 def get_llm_for_effort(
     effort: Optional[str],
     default_tier=None,
-) -> BaseChatModel:
+) -> Any:
     resolved_default = default_tier or ThinkingTier.MODERATE
     if not effort:
         return LLMPool.get(resolved_default)
@@ -719,7 +718,7 @@ def get_llm_for_provider(
     default_tier=None,
     *,
     strict_pin: bool = False,
-) -> BaseChatModel:
+) -> Any:
     resolved_default = default_tier or ThinkingTier.MODERATE
     tier = _effort_to_tier(effort, resolved_default) if effort else resolved_default
 
@@ -744,7 +743,7 @@ def get_llm_for_provider(
 
 def get_llm_fallback(
     tier: Optional[str] = "moderate",
-) -> Optional[BaseChatModel]:
+) -> Optional[Any]:
     return LLMPool.get_fallback(tier)
 
 

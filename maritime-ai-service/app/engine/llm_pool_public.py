@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
-from langchain_core.language_models import BaseChatModel
 
 _PRIMARY_TIMEOUT: float = 12.0
 
@@ -28,25 +27,25 @@ def _effort_to_tier(effort: Optional[str], default_tier):
     return mapping.get(effort or "", default_tier)
 
 
-def get_llm_deep() -> BaseChatModel:
+def get_llm_deep() -> Any:
     from app.engine.llm_pool import LLMPool, ThinkingTier
 
     return LLMPool.get(ThinkingTier.DEEP)
 
 
-def get_llm_moderate() -> BaseChatModel:
+def get_llm_moderate() -> Any:
     from app.engine.llm_pool import LLMPool, ThinkingTier
 
     return LLMPool.get(ThinkingTier.MODERATE)
 
 
-def get_llm_light() -> BaseChatModel:
+def get_llm_light() -> Any:
     from app.engine.llm_pool import LLMPool, ThinkingTier
 
     return LLMPool.get(ThinkingTier.LIGHT)
 
 
-def get_llm_for_effort(effort: Optional[str], default_tier=None) -> BaseChatModel:
+def get_llm_for_effort(effort: Optional[str], default_tier=None) -> Any:
     from app.engine.llm_pool import LLMPool, ThinkingTier
 
     resolved_default = default_tier or ThinkingTier.MODERATE
@@ -61,7 +60,7 @@ def get_llm_for_provider(
     default_tier=None,
     *,
     strict_pin: bool = False,
-) -> BaseChatModel:
+) -> Any:
     from app.engine.llm_pool import (
         FAILOVER_MODE_AUTO,
         FAILOVER_MODE_PINNED,
@@ -91,7 +90,7 @@ def get_llm_for_provider(
     return route.llm
 
 
-def get_llm_fallback(tier: Optional[str] = "moderate") -> Optional[BaseChatModel]:
+def get_llm_fallback(tier: Optional[str] = "moderate") -> Optional[Any]:
     from app.engine.llm_pool import LLMPool
 
     return LLMPool.get_fallback(tier)
@@ -137,8 +136,8 @@ async def ainvoke_with_failover(
     failover_mode: str = "auto",
     prefer_selectable_fallback: bool = False,
     allowed_fallback_providers: set[str] | list[str] | tuple[str, ...] | None = None,
-    on_primary: Optional[Callable[[BaseChatModel], BaseChatModel]] = None,
-    on_fallback: Optional[Callable[[BaseChatModel], BaseChatModel]] = None,
+    on_primary: Optional[Callable[[Any], Any]] = None,
+    on_fallback: Optional[Callable[[Any], Any]] = None,
     on_switch: Optional[Callable[[str, str, str], Any]] = None,
     on_failover: Optional[Callable[[dict[str, Any]], Any]] = None,
     primary_timeout: Optional[float] = None,

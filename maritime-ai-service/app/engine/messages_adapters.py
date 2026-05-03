@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .messages import Message
+from .messages import Message, ToolCall
 
 
 def to_openai_dict(m: Message) -> dict[str, Any]:
@@ -86,4 +86,103 @@ def to_gemini_dict(m: Message) -> dict[str, Any]:
     return to_openai_dict(m)
 
 
-__all__ = ["to_openai_dict", "to_anthropic_dict", "to_gemini_dict"]
+# ── Reverse adapters: provider response → Wiii Message ──
+
+
+def _safe_json_loads(value: Any) -> Any:
+    """Permissive JSON parse — returns ``{}`` on empty / invalid input."""
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+def from_openai_response(resp_msg: Any) -> Message:
+    """Parse an OpenAI ``ChatCompletionMessage`` (or compatible dict) into a Wiii Message.
+
+    Accepts both the SDK object form (``response.choices[0].message``) and a
+    raw dict — Gemini/Zhipu OpenAI-compat endpoints return the same shape.
+    """
+    if isinstance(resp_msg, dict):
+        content = resp_msg.get("content") or ""
+        raw_tool_calls = resp_msg.get("tool_calls")
+    else:
+        content = getattr(resp_msg, "content", None) or ""
+        raw_tool_calls = getattr(resp_msg, "tool_calls", None)
+
+    tool_calls: list[ToolCall] | None = None
+    if raw_tool_calls:
+        parsed: list[ToolCall] = []
+        for tc in raw_tool_calls:
+            if isinstance(tc, dict):
+                tc_id = tc.get("id", "")
+                fn = tc.get("function") or {}
+                fn_name = fn.get("name") if isinstance(fn, dict) else getattr(fn, "name", "")
+                fn_args = fn.get("arguments") if isinstance(fn, dict) else getattr(fn, "arguments", "")
+            else:
+                tc_id = getattr(tc, "id", "")
+                fn = getattr(tc, "function", None)
+                fn_name = getattr(fn, "name", "") if fn is not None else ""
+                fn_args = getattr(fn, "arguments", "") if fn is not None else ""
+            parsed.append(
+                ToolCall(
+                    id=tc_id or "",
+                    name=fn_name or "",
+                    arguments=_safe_json_loads(fn_args),
+                )
+            )
+        tool_calls = parsed or None
+
+    return Message(role="assistant", content=content, tool_calls=tool_calls)
+
+
+def from_anthropic_response(resp: Any) -> Message:
+    """Parse an Anthropic ``Message`` response into a Wiii Message.
+
+    Anthropic returns ``content`` as a list of typed blocks
+    (``TextBlock`` / ``ToolUseBlock``); accepts both SDK object form and dict.
+    """
+    blocks = resp.get("content") if isinstance(resp, dict) else getattr(resp, "content", [])
+    text_parts: list[str] = []
+    tool_calls: list[ToolCall] = []
+
+    for block in blocks or []:
+        block_type = block.get("type") if isinstance(block, dict) else getattr(block, "type", None)
+        if block_type == "text":
+            text = block.get("text") if isinstance(block, dict) else getattr(block, "text", "")
+            if text:
+                text_parts.append(text)
+        elif block_type == "tool_use":
+            tc_id = block.get("id") if isinstance(block, dict) else getattr(block, "id", "")
+            name = block.get("name") if isinstance(block, dict) else getattr(block, "name", "")
+            tc_input = (
+                block.get("input")
+                if isinstance(block, dict)
+                else getattr(block, "input", {})
+            )
+            tool_calls.append(
+                ToolCall(
+                    id=tc_id or "",
+                    name=name or "",
+                    arguments=tc_input if isinstance(tc_input, dict) else {},
+                )
+            )
+
+    return Message(
+        role="assistant",
+        content="\n".join(text_parts),
+        tool_calls=tool_calls or None,
+    )
+
+
+__all__ = [
+    "to_openai_dict",
+    "to_anthropic_dict",
+    "to_gemini_dict",
+    "from_openai_response",
+    "from_anthropic_response",
+]

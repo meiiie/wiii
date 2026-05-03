@@ -9,7 +9,6 @@ import logging
 import time
 from typing import Any, List
 
-from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
 from app.engine.llm_providers.base import LLMProvider
@@ -133,7 +132,7 @@ class OllamaProvider(LLMProvider):
         include_thoughts: bool = False,
         temperature: float = 0.5,
         **kwargs: Any,
-    ) -> BaseChatModel:
+    ) -> Any:
         model_name = kwargs.get("model_name") or kwargs.get("model")
         model = model_name or getattr(settings, "ollama_model", "qwen3:4b-instruct-2507-q4_K_M")
 
