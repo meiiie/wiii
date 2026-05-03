@@ -1,210 +1,215 @@
-"""
-WiiiChatModel — AsyncOpenAI-backed chat model satisfying BaseChatModel interface.
+"""WiiiChatModel — native AsyncOpenAI-backed chat model.
 
-De-LangChaining Phase 1: Single implementation replaces:
-- ChatOpenAI (langchain-openai)
-- ChatGoogleGenerativeAI (langchain-google-genai)
-- ChatOllama (langchain-ollama)
+Phase 9a (runtime migration epic #207): dropped ``BaseChatModel`` inheritance.
+The class now returns Wiii native ``Message`` and ``StreamChunk`` types instead
+of LangChain ``AIMessage`` / ``ChatGenerationChunk``.
 
-All major LLM providers (Gemini, OpenAI, Ollama, Zhipu, OpenRouter) expose
-OpenAI-compatible endpoints. This model uses the `openai` AsyncOpenAI SDK
-directly, removing the need for per-provider LangChain wrapper packages.
+Backward compatibility is preserved via duck typing:
+- Consumers reading ``.content`` keep working — ``Message.content`` exists.
+- Consumers reading ``.tool_calls`` keep working — ``Message.tool_calls`` exists.
+- Streaming consumers reading ``chunk.message.content`` keep working — ``StreamChunk.message``
+  is a self-pointing shim. Direct ``chunk.content`` access also works.
+- ``chunk.tool_call_chunks`` and ``chunk + chunk`` accumulator both supported.
 
-Consumer code (50+ files) continues using `BaseChatModel` interface unchanged.
+Provider coverage unchanged: Gemini / OpenAI / Ollama / Zhipu / OpenRouter all
+expose OpenAI-compatible endpoints, so the underlying ``openai.AsyncOpenAI`` SDK
+suffices.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-from typing import Any, AsyncIterator, Iterator, List, Optional
+from dataclasses import dataclass, field
+from typing import Any, AsyncIterator, Iterable, Optional
 
-from langchain_core.callbacks import (
-    AsyncCallbackManagerForLLMRun,
-    CallbackManagerForLLMRun,
-)
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import (
-    AIMessage,
-    AIMessageChunk,
-    BaseMessage,
-    ChatMessage,
-    FunctionMessage,
-    HumanMessage,
-    SystemMessage,
-    ToolMessage,
-)
-from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from openai import AsyncOpenAI
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.engine.messages import Message
+from app.engine.messages_adapters import from_openai_response, to_openai_dict
 
 logger = logging.getLogger(__name__)
 
+
 # ---------------------------------------------------------------------------
-# Message conversion helpers
+# StreamChunk — Wiii native streaming delta
 # ---------------------------------------------------------------------------
 
-_ROLE_MAP = {
-    HumanMessage: "user",
-    AIMessage: "assistant",
-    SystemMessage: "system",
-    ToolMessage: "tool",
-    FunctionMessage: "function",
-    ChatMessage: "user",
-}
 
+@dataclass
+class StreamChunk:
+    """A single streaming delta from the underlying OpenAI-compat endpoint.
 
-def _lc_to_openai_messages(messages: list[BaseMessage]) -> list[dict]:
-    """Convert LangChain message list to OpenAI-compatible format."""
-    result: list[dict] = []
-    for msg in messages:
-        role = _ROLE_MAP.get(type(msg), "user")
+    Provides backward-compat duck typing so existing consumers iterating
+    ``chunk.message.content`` / ``chunk.tool_call_chunks`` keep working.
+    Direct ``chunk.content`` access is the preferred new style.
+    """
 
-        # Tool messages need tool_call_id
-        if isinstance(msg, ToolMessage):
-            entry: dict[str, Any] = {
-                "role": "tool",
-                "content": _extract_text(msg.content),
-                "tool_call_id": str(msg.tool_call_id) if msg.tool_call_id else "",
-            }
-            result.append(entry)
-            continue
+    content: str = ""
+    tool_call_chunks: list[dict] = field(default_factory=list)
+    finish_reason: Optional[str] = None
 
-        entry = {"role": role}
+    @property
+    def message(self) -> "StreamChunk":
+        """Self-pointing shim for ``chunk.message.content`` legacy access."""
+        return self
 
-        # Content
-        content = _extract_text(msg.content)
-        if content:
-            entry["content"] = content
-
-        # Tool calls (AI messages with tool_calls)
-        if isinstance(msg, AIMessage) and msg.tool_calls:
-            entry["tool_calls"] = [
+    @property
+    def tool_calls(self) -> list[dict]:
+        """Resolve accumulated tool_call_chunks into completed tool_call dicts."""
+        out: list[dict] = []
+        for tcc in self.tool_call_chunks:
+            args_raw = tcc.get("args") or ""
+            try:
+                parsed = json.loads(args_raw) if isinstance(args_raw, str) and args_raw else (args_raw or {})
+            except (json.JSONDecodeError, TypeError):
+                parsed = args_raw if isinstance(args_raw, dict) else {}
+            out.append(
                 {
-                    "id": tc.get("id", f"call_{i}"),
-                    "type": "function",
-                    "function": {
-                        "name": tc["name"],
-                        "arguments": tc["args"]
-                        if isinstance(tc["args"], str)
-                        else __import__("json").dumps(tc["args"], ensure_ascii=False),
-                    },
-                }
-                for i, tc in enumerate(msg.tool_calls)
-            ]
-
-        # Name (for function messages)
-        if isinstance(msg, FunctionMessage):
-            entry["name"] = msg.name or ""
-            entry["content"] = content
-
-        result.append(entry)
-    return result
-
-
-def _extract_text(content: Any) -> str:
-    """Extract text content from message content (str or list of blocks)."""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict):
-                if block.get("type") == "text":
-                    parts.append(block.get("text", ""))
-                elif "text" in block:
-                    parts.append(block["text"])
-        return "\n".join(parts)
-    return str(content) if content is not None else ""
-
-
-def _openai_response_to_chat_result(response: Any) -> ChatResult:
-    """Convert OpenAI ChatCompletion to LangChain ChatResult."""
-    generations: list[ChatGeneration] = []
-    for choice in response.choices:
-        message = choice.message
-        content = message.content or ""
-
-        # Extract tool calls if present
-        tool_calls = []
-        if message.tool_calls:
-            import json as _json
-
-            for tc in message.tool_calls:
-                args = tc.function.arguments
-                try:
-                    parsed_args = _json.loads(args) if isinstance(args, str) else args
-                except (_json.JSONDecodeError, TypeError):
-                    parsed_args = args
-                tool_calls.append(
-                    {
-                        "name": tc.function.name,
-                        "args": parsed_args,
-                        "id": tc.id,
-                        "type": "tool_call",
-                    }
-                )
-
-        ai_msg = AIMessage(
-            content=content,
-            tool_calls=tool_calls,
-            additional_kwargs={},
-        )
-        gen = ChatGeneration(
-            message=ai_msg,
-            generation_info={
-                "finish_reason": choice.finish_reason,
-            },
-        )
-        generations.append(gen)
-
-    token_usage = getattr(response, "usage", None)
-    llm_output = {}
-    if token_usage:
-        llm_output["token_usage"] = {
-            "prompt_tokens": token_usage.prompt_tokens or 0,
-            "completion_tokens": token_usage.completion_tokens or 0,
-            "total_tokens": token_usage.total_tokens or 0,
-        }
-
-    return ChatResult(generations=generations, llm_output=llm_output)
-
-
-def _openai_chunk_to_generation_chunk(chunk: Any) -> Optional[ChatGenerationChunk]:
-    """Convert OpenAI stream chunk to LangChain ChatGenerationChunk."""
-    if not chunk.choices:
-        return None
-
-    choice = chunk.choices[0]
-    delta = choice.delta
-
-    content = delta.content or ""
-    tool_call_chunks = []
-    if delta.tool_calls:
-        for tc in delta.tool_calls:
-            tool_call_chunks.append(
-                {
-                    "name": tc.function.name if tc.function else "",
-                    "args": tc.function.arguments if tc.function else "",
-                    "id": tc.id or "",
-                    "index": tc.index if hasattr(tc, "index") else 0,
-                    "type": "tool_call_chunk",
+                    "id": tcc.get("id", "") or "",
+                    "name": tcc.get("name", "") or "",
+                    "args": parsed if isinstance(parsed, dict) else {},
+                    "type": "tool_call",
                 }
             )
+        return out
 
-    ai_chunk = AIMessageChunk(
-        content=content,
-        tool_call_chunks=tool_call_chunks,
-    )
+    def __add__(self, other: Optional["StreamChunk"]) -> "StreamChunk":
+        if other is None:
+            return self
+        merged_content = (self.content or "") + (other.content or "")
+        merged_chunks: dict[int, dict] = {}
+        for tcc in [*self.tool_call_chunks, *other.tool_call_chunks]:
+            idx = tcc.get("index", 0) or 0
+            cur = merged_chunks.setdefault(
+                idx,
+                {"name": "", "args": "", "id": "", "index": idx, "type": "tool_call_chunk"},
+            )
+            if tcc.get("name"):
+                cur["name"] = tcc["name"]
+            if tcc.get("id"):
+                cur["id"] = tcc["id"]
+            cur["args"] = (cur.get("args") or "") + (tcc.get("args") or "")
+        return StreamChunk(
+            content=merged_content,
+            tool_call_chunks=list(merged_chunks.values()),
+            finish_reason=other.finish_reason or self.finish_reason,
+        )
 
-    return ChatGenerationChunk(
-        message=ai_chunk,
-        generation_info={
-            "finish_reason": choice.finish_reason,
-        },
-    )
+    def __radd__(self, other: Optional["StreamChunk"]) -> "StreamChunk":
+        if other is None:
+            return self
+        return other.__add__(self)
+
+
+# ---------------------------------------------------------------------------
+# Backward-compat input conversion
+# ---------------------------------------------------------------------------
+
+
+def _coerce_to_openai_messages(messages: Iterable[Any]) -> list[dict]:
+    """Accept native ``Message``, plain dict, or LC ``BaseMessage`` and emit OpenAI dicts.
+
+    Phase 1 migrated SEND-side callers to dict; some history slices still pass
+    raw LC objects through unchanged. Phase 9b will remove the latter.
+    """
+    out: list[dict] = []
+    for m in messages:
+        if isinstance(m, dict):
+            out.append(m)
+        elif isinstance(m, Message):
+            out.append(to_openai_dict(m))
+        else:
+            out.append(_lc_message_to_dict(m))
+    return out
+
+
+def _lc_message_to_dict(msg: Any) -> dict:
+    """Best-effort LC ``BaseMessage`` → OpenAI dict (backward-compat history slice)."""
+    msg_type = (getattr(msg, "type", None) or msg.__class__.__name__ or "").lower()
+    if "system" in msg_type:
+        role = "system"
+    elif "ai" in msg_type or "assistant" in msg_type:
+        role = "assistant"
+    elif "tool" in msg_type:
+        role = "tool"
+    elif "function" in msg_type:
+        role = "function"
+    else:
+        role = "user"
+
+    content = getattr(msg, "content", "")
+    if isinstance(content, list):
+        text_parts: list[str] = []
+        passthrough_blocks: list[dict] = []
+        for block in content:
+            if isinstance(block, dict):
+                if block.get("type") == "text":
+                    text_parts.append(str(block.get("text") or ""))
+                elif block.get("type") == "image_url":
+                    passthrough_blocks.append(block)
+                elif "text" in block:
+                    text_parts.append(str(block["text"]))
+            elif isinstance(block, str):
+                text_parts.append(block)
+        if passthrough_blocks:
+            normalised: list[dict] = []
+            joined = "\n".join(t for t in text_parts if t).strip()
+            if joined:
+                normalised.append({"type": "text", "text": joined})
+            normalised.extend(passthrough_blocks)
+            content = normalised
+        else:
+            content = "\n".join(t for t in text_parts if t)
+
+    entry: dict[str, Any] = {"role": role}
+    if isinstance(content, list):
+        entry["content"] = content
+    else:
+        entry["content"] = "" if content is None else str(content)
+
+    tool_call_id = getattr(msg, "tool_call_id", None)
+    if tool_call_id:
+        entry["tool_call_id"] = str(tool_call_id)
+
+    name = getattr(msg, "name", None)
+    if name and role == "function":
+        entry["name"] = str(name)
+
+    tool_calls = getattr(msg, "tool_calls", None)
+    if tool_calls:
+        out_tcs: list[dict] = []
+        for i, tc in enumerate(tool_calls):
+            if isinstance(tc, dict):
+                tc_id = tc.get("id") or f"call_{i}"
+                tc_name = tc.get("name") or ""
+                tc_args = tc.get("args") or {}
+            else:
+                tc_id = getattr(tc, "id", None) or f"call_{i}"
+                tc_name = getattr(tc, "name", "") or ""
+                tc_args = getattr(tc, "args", None) or {}
+            args_str = (
+                tc_args
+                if isinstance(tc_args, str)
+                else json.dumps(tc_args, ensure_ascii=False)
+            )
+            out_tcs.append(
+                {
+                    "id": str(tc_id),
+                    "type": "function",
+                    "function": {"name": str(tc_name), "arguments": args_str},
+                }
+            )
+        entry["tool_calls"] = out_tcs
+
+    return entry
+
+
+# ---------------------------------------------------------------------------
+# Provider-specific guards (preserved from pre-Phase-9 implementation)
+# ---------------------------------------------------------------------------
 
 
 _ZHIPU_HOSTS = ("open.bigmodel.cn",)
@@ -215,7 +220,7 @@ _ZHIPU_ALLOWED_PARAMS = frozenset({
 })
 
 # LangChain/LangSmith internals that leak through call-level kwargs and break
-# AsyncOpenAI (`unexpected keyword argument`). Filter before forwarding.
+# AsyncOpenAI ("unexpected keyword argument"). Filter before forwarding.
 _LC_INTERNAL_KWARGS = frozenset({
     "ls_structured_output_format",
     "ls_provider",
@@ -236,7 +241,6 @@ _LC_INTERNAL_KWARGS = frozenset({
 
 def _strip_unsupported_params(api_kwargs: dict[str, Any], base_url: str) -> dict[str, Any]:
     """Remove parameters not supported by the target provider."""
-    # Always drop LangChain-internal kwargs that AsyncOpenAI rejects
     api_kwargs = {k: v for k, v in api_kwargs.items() if k not in _LC_INTERNAL_KWARGS}
     if any(host in base_url for host in _ZHIPU_HOSTS):
         return {k: v for k, v in api_kwargs.items() if k in _ZHIPU_ALLOWED_PARAMS}
@@ -245,8 +249,6 @@ def _strip_unsupported_params(api_kwargs: dict[str, Any], base_url: str) -> dict
 
 _VALID_TOOL_CHOICE_STRINGS = frozenset({"auto", "none", "required", "validated"})
 
-# LangChain/OpenAI aliases → Gemini-compat equivalents. `any` means "must use
-# some tool" which maps to `required`. `tool` is sometimes used similarly.
 _TOOL_CHOICE_ALIASES: dict[str, str] = {
     "any": "required",
     "tool": "required",
@@ -254,15 +256,7 @@ _TOOL_CHOICE_ALIASES: dict[str, str] = {
 
 
 def _normalize_tool_choice(value: Any) -> Any:
-    """Translate plain tool-name strings into the OpenAI/Gemini descriptor object.
-
-    Gemini's OpenAI-compat endpoint rejects `tool_choice="<name>"` (returns
-    `Invalid tool_choice ... but found "<name>"`). It only accepts one of
-    {auto,none,required,validated} as strings or `{type: function, function: {name}}`.
-    Plain name strings from callers (bind_tools(tool_choice="tool_foo")) are
-    translated here to the descriptor form. Common aliases like `any`/`tool`
-    are rewritten to `required`.
-    """
+    """Translate plain tool-name strings into the OpenAI/Gemini descriptor object."""
     if isinstance(value, str):
         aliased = _TOOL_CHOICE_ALIASES.get(value, value)
         if aliased in _VALID_TOOL_CHOICE_STRINGS:
@@ -274,6 +268,7 @@ def _normalize_tool_choice(value: Any) -> Any:
 # ---------------------------------------------------------------------------
 # Vietnamese space injection for Chinese-optimized tokenizers (Zhipu GLM)
 # ---------------------------------------------------------------------------
+
 
 _VI_VOWELS = frozenset(
     "aăâeêioôơuưy"
@@ -291,13 +286,7 @@ _SPACE_AFTER_PUNCT = frozenset(".,!?;:")
 
 
 class _ViSpaceInjector:
-    """Inject missing spaces between Vietnamese syllables in streaming tokens.
-
-    Chinese-optimized BPE tokenizers (Zhipu GLM) don't emit inter-syllable
-    spaces for Vietnamese. Tracks whether the accumulated buffer forms a
-    complete syllable (contains ≥1 vowel) and injects a space when a new
-    syllable-initial token arrives. Also injects after sentence punctuation.
-    """
+    """Inject missing spaces between Vietnamese syllables in streaming tokens."""
 
     __slots__ = ("_has_vowel", "_after_punct")
 
@@ -333,27 +322,68 @@ class _ViSpaceInjector:
 
 
 # ---------------------------------------------------------------------------
-# WiiiChatModel
+# Streaming chunk conversion
 # ---------------------------------------------------------------------------
 
 
-class WiiiChatModel(BaseChatModel):
-    """AsyncOpenAI-backed chat model satisfying the BaseChatModel interface.
+def _openai_chunk_to_stream_chunk(chunk: Any) -> Optional[StreamChunk]:
+    """Convert an OpenAI stream delta into a Wiii ``StreamChunk``."""
+    if not getattr(chunk, "choices", None):
+        return None
 
-    Usage in provider files::
+    choice = chunk.choices[0]
+    delta = getattr(choice, "delta", None)
+    if delta is None:
+        return None
+
+    content = getattr(delta, "content", None) or ""
+    tool_call_chunks: list[dict] = []
+    raw_tool_calls = getattr(delta, "tool_calls", None)
+    if raw_tool_calls:
+        for tc in raw_tool_calls:
+            fn = getattr(tc, "function", None)
+            tool_call_chunks.append(
+                {
+                    "name": (getattr(fn, "name", "") or "") if fn is not None else "",
+                    "args": (getattr(fn, "arguments", "") or "") if fn is not None else "",
+                    "id": getattr(tc, "id", None) or "",
+                    "index": getattr(tc, "index", 0) or 0,
+                    "type": "tool_call_chunk",
+                }
+            )
+
+    return StreamChunk(
+        content=content,
+        tool_call_chunks=tool_call_chunks,
+        finish_reason=getattr(choice, "finish_reason", None),
+    )
+
+
+# ---------------------------------------------------------------------------
+# WiiiChatModel — native class
+# ---------------------------------------------------------------------------
+
+
+class WiiiChatModel(BaseModel):
+    """AsyncOpenAI-backed chat model — native Wiii types, no LangChain inheritance.
+
+    Methods preserved from the BaseChatModel surface:
+    - ``ainvoke(messages, **kwargs) -> Message``
+    - ``invoke(messages, **kwargs) -> Message``
+    - ``astream(messages, **kwargs) -> AsyncIterator[StreamChunk]``
+    - ``bind_tools(tools, **kwargs) -> WiiiChatModel`` (new instance with tools)
+    - ``with_structured_output(schema, **kwargs) -> _StructuredOutputWrapper``
+
+    Usage::
 
         llm = WiiiChatModel(
             model="gemini-3.1-flash-lite-preview",
             api_key=settings.google_api_key,
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            temperature=0.5,
         )
-
-    All consumers continue to use ``BaseChatModel`` methods:
-    ``.ainvoke()``, ``.astream()``, ``.bind_tools()``, etc.
+        result: Message = await llm.ainvoke([{"role": "user", "content": "Hi"}])
     """
 
-    # Pydantic fields
     model: str = Field(description="Model name (e.g., gemini-3.1-flash-lite-preview)")
     api_key: str = Field(description="API key for the provider")
     base_url: str = Field(default="", description="OpenAI-compatible base URL")
@@ -361,186 +391,145 @@ class WiiiChatModel(BaseChatModel):
     streaming: bool = Field(default=True, description="Enable streaming")
     model_kwargs: dict = Field(
         default_factory=dict,
-        description="Extra kwargs passed to the API (e.g., extra_body for thinking)",
+        description="Extra kwargs passed to the API (tools, tool_choice, extra_body, ...)",
     )
 
-    # Cached client
+    # Pydantic v2 config — allow ``setattr`` for ``_wiii_*`` runtime metadata.
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        populate_by_name=True,
+        extra="allow",
+    )
+
     _client: Optional[AsyncOpenAI] = None
 
-    class Config:
-        arbitrary_types_allowed = True
-        populate_by_name = True
-
-    @property
-    def _llm_type(self) -> str:
-        return "wiii-chat"
-
+    # ------------------------------------------------------------------ #
+    # Provider client
+    # ------------------------------------------------------------------ #
     def _get_client(self) -> AsyncOpenAI:
-        """Get or create the AsyncOpenAI client."""
         if self._client is None:
-            kwargs: dict[str, Any] = {
-                "api_key": self.api_key,
-            }
+            kwargs: dict[str, Any] = {"api_key": self.api_key}
             if self.base_url:
                 kwargs["base_url"] = self.base_url
             object.__setattr__(self, "_client", AsyncOpenAI(**kwargs))
-        return self._client
+        return self._client  # type: ignore[return-value]
 
     # ------------------------------------------------------------------ #
-    # Core: sync _generate (required by BaseChatModel)
+    # ainvoke / invoke
     # ------------------------------------------------------------------ #
-    def _generate(
+    def _build_api_kwargs(
         self,
-        messages: list[BaseMessage],
-        stop: list[str] | None = None,
-        run_manager: CallbackManagerForLLMRun | None = None,
-        **kwargs: Any,
-    ) -> ChatResult:
-        """Sync generate — delegates to async via event loop."""
+        messages: Iterable[Any],
+        kwargs: dict[str, Any],
+        *,
+        stream: bool = False,
+    ) -> dict[str, Any]:
+        oa_msgs = _coerce_to_openai_messages(list(messages))
+
+        api_kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": oa_msgs,
+            "temperature": self.temperature,
+            **self.model_kwargs,
+        }
+        if stream:
+            api_kwargs["stream"] = True
+
+        if "tools" in kwargs:
+            api_kwargs["tools"] = kwargs["tools"]
+        if "tool_choice" in kwargs:
+            api_kwargs["tool_choice"] = kwargs["tool_choice"]
+        stop = kwargs.get("stop")
+        if stop:
+            api_kwargs["stop"] = stop
+
+        if "tool_choice" in api_kwargs:
+            api_kwargs["tool_choice"] = _normalize_tool_choice(api_kwargs["tool_choice"])
+
+        return _strip_unsupported_params(api_kwargs, self.base_url)
+
+    async def ainvoke(self, messages: Iterable[Any], **kwargs: Any) -> Message:
+        """Async invoke. Returns a native ``Message`` with ``.content`` + ``.tool_calls``."""
+        client = self._get_client()
+        api_kwargs = self._build_api_kwargs(messages, kwargs, stream=False)
+        response = await client.chat.completions.create(**api_kwargs)
+
+        if not getattr(response, "choices", None):
+            return Message(role="assistant", content="")
+
+        return from_openai_response(response.choices[0].message)
+
+    def invoke(self, messages: Iterable[Any], **kwargs: Any) -> Message:
+        """Sync invoke — bridges to ``ainvoke`` via thread-pool when in async context."""
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = None
 
-        if loop and loop.is_running():
-            # Already in async context (e.g., Jupyter) — use nest_asyncio fallback
+        if loop is not None and loop.is_running():
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(
-                    asyncio.run,
-                    self._agenerate(messages, stop=stop, run_manager=None, **kwargs),
-                )
+                future = pool.submit(asyncio.run, self.ainvoke(messages, **kwargs))
                 return future.result()
-        else:
-            return asyncio.run(
-                self._agenerate(messages, stop=stop, run_manager=None, **kwargs)
-            )
+        return asyncio.run(self.ainvoke(messages, **kwargs))
 
     # ------------------------------------------------------------------ #
-    # Core: async _agenerate
+    # astream
     # ------------------------------------------------------------------ #
-    async def _agenerate(
+    async def astream(
         self,
-        messages: list[BaseMessage],
-        stop: list[str] | None = None,
-        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        messages: Iterable[Any],
         **kwargs: Any,
-    ) -> ChatResult:
-        """Async generate using OpenAI Chat Completions API."""
+    ) -> AsyncIterator[StreamChunk]:
+        """Async stream. Yields ``StreamChunk`` (with ``.content`` + ``.message`` shim)."""
         client = self._get_client()
-        openai_messages = _lc_to_openai_messages(messages)
+        api_kwargs = self._build_api_kwargs(messages, kwargs, stream=True)
 
-        # Merge model_kwargs with call-level kwargs
-        api_kwargs: dict[str, Any] = {
-            "model": self.model,
-            "messages": openai_messages,
-            "temperature": self.temperature,
-            **self.model_kwargs,
-        }
-
-        # Tools from bind_tools()
-        if "tools" in kwargs:
-            api_kwargs["tools"] = kwargs["tools"]
-        if "tool_choice" in kwargs:
-            api_kwargs["tool_choice"] = kwargs["tool_choice"]
-
-        if stop:
-            api_kwargs["stop"] = stop
-
-        # Normalize tool_choice regardless of whether it came from kwargs or
-        # bind_tools() (which stores it in self.model_kwargs). Gemini rejects
-        # plain tool-name strings; we rewrite to the descriptor object.
-        if "tool_choice" in api_kwargs:
-            api_kwargs["tool_choice"] = _normalize_tool_choice(api_kwargs["tool_choice"])
-
-        api_kwargs = _strip_unsupported_params(api_kwargs, self.base_url)
-        response = await client.chat.completions.create(**api_kwargs)
-        return _openai_response_to_chat_result(response)
-
-    # ------------------------------------------------------------------ #
-    # Core: async _astream
-    # ------------------------------------------------------------------ #
-    async def _astream(
-        self,
-        messages: list[BaseMessage],
-        stop: list[str] | None = None,
-        run_manager: AsyncCallbackManagerForLLMRun | None = None,
-        **kwargs: Any,
-    ) -> AsyncIterator[ChatGenerationChunk]:
-        """Async stream using OpenAI Chat Completions API."""
-        client = self._get_client()
-        openai_messages = _lc_to_openai_messages(messages)
-
-        api_kwargs: dict[str, Any] = {
-            "model": self.model,
-            "messages": openai_messages,
-            "temperature": self.temperature,
-            "stream": True,
-            **self.model_kwargs,
-        }
-
-        if "tools" in kwargs:
-            api_kwargs["tools"] = kwargs["tools"]
-        if "tool_choice" in kwargs:
-            api_kwargs["tool_choice"] = kwargs["tool_choice"]
-
-        if stop:
-            api_kwargs["stop"] = stop
-
-        # Normalize tool_choice regardless of whether it came from kwargs or
-        # bind_tools() (which stores it in self.model_kwargs). Gemini rejects
-        # plain tool-name strings; we rewrite to the descriptor object.
-        if "tool_choice" in api_kwargs:
-            api_kwargs["tool_choice"] = _normalize_tool_choice(api_kwargs["tool_choice"])
-
-        api_kwargs = _strip_unsupported_params(api_kwargs, self.base_url)
-
-        _injector = (
+        injector = (
             _ViSpaceInjector()
-            if any(h in self.base_url for h in _ZHIPU_HOSTS)
+            if any(host in self.base_url for host in _ZHIPU_HOSTS)
             else None
         )
 
         stream = await client.chat.completions.create(**api_kwargs)
-        async for chunk in stream:
-            gen_chunk = _openai_chunk_to_generation_chunk(chunk)
-            if gen_chunk is not None:
-                if _injector and gen_chunk.message.content:
-                    gen_chunk.message.content = _injector.process(
-                        gen_chunk.message.content
-                    )
-                yield gen_chunk
+        async for raw_chunk in stream:
+            sc = _openai_chunk_to_stream_chunk(raw_chunk)
+            if sc is None:
+                continue
+            if injector and sc.content:
+                sc = StreamChunk(
+                    content=injector.process(sc.content),
+                    tool_call_chunks=sc.tool_call_chunks,
+                    finish_reason=sc.finish_reason,
+                )
+            yield sc
 
     # ------------------------------------------------------------------ #
-    # bind_tools override — convert LC tools to OpenAI format
+    # bind_tools / with_structured_output
     # ------------------------------------------------------------------ #
     def bind_tools(self, tools: list, **kwargs: Any) -> "WiiiChatModel":
-        """Bind tools to the model for tool calling.
-
-        Converts LangChain tool definitions to OpenAI function format
-        and stores them for use in _agenerate/_astream.
-        """
-        openai_tools = []
+        """Bind tools to the model. Returns a new ``WiiiChatModel`` with tools attached."""
+        openai_tools: list[dict] = []
         for tool in tools:
             if isinstance(tool, dict) and "type" in tool:
-                # Already in OpenAI format
                 openai_tools.append(tool)
-            elif hasattr(tool, "args_schema"):
-                # LangChain @tool / StructuredTool
-                schema = tool.args_schema.schema()
+            elif hasattr(tool, "args_schema") and getattr(tool.args_schema, "schema", None):
+                try:
+                    schema = tool.args_schema.schema()
+                except Exception:
+                    schema = getattr(tool.args_schema, "model_json_schema", lambda: {})()
                 openai_tools.append(
                     {
                         "type": "function",
                         "function": {
-                            "name": tool.name,
-                            "description": tool.description or "",
+                            "name": getattr(tool, "name", ""),
+                            "description": getattr(tool, "description", "") or "",
                             "parameters": schema,
                         },
                     }
                 )
             elif hasattr(tool, "name") and hasattr(tool, "description"):
-                # Simple tool object
                 openai_tools.append(
                     {
                         "type": "function",
@@ -552,13 +541,125 @@ class WiiiChatModel(BaseChatModel):
                     }
                 )
 
-        # Return a new instance with tools bound
-        return self.model_copy(
-            update={
-                "model_kwargs": {
-                    **self.model_kwargs,
-                    "tools": openai_tools,
-                    **kwargs,
-                }
-            }
+        new_model_kwargs = {**self.model_kwargs, "tools": openai_tools}
+        if "tool_choice" in kwargs:
+            new_model_kwargs["tool_choice"] = kwargs["tool_choice"]
+
+        return self.model_copy(update={"model_kwargs": new_model_kwargs})
+
+    def with_structured_output(
+        self,
+        schema: Any,
+        **kwargs: Any,
+    ) -> "_StructuredOutputWrapper":
+        """Native structured-output wrapper.
+
+        Returns an object whose ``ainvoke`` parses the LLM JSON response into
+        ``schema`` (a Pydantic class). The previous behaviour came from
+        ``BaseChatModel`` default; we re-implement minimally.
+        """
+        return _StructuredOutputWrapper(llm=self, output_schema=schema)
+
+
+# ---------------------------------------------------------------------------
+# Structured-output wrapper
+# ---------------------------------------------------------------------------
+
+
+class _StructuredOutputWrapper(BaseModel):
+    """Wraps ``WiiiChatModel`` to coerce JSON responses into a Pydantic schema."""
+
+    llm: Any  # WiiiChatModel — Any avoids forward-ref dance
+    output_schema: Any  # Pydantic class
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    def _build_messages_with_instruction(self, messages: Iterable[Any]) -> list[Any]:
+        try:
+            schema_text = json.dumps(
+                self.output_schema.model_json_schema(),
+                ensure_ascii=False,
+            )
+        except Exception:
+            schema_text = ""
+        instruction = (
+            "Tra ve DUY NHAT JSON hop le theo schema sau. "
+            "Khong them markdown, khong them giai thich."
         )
+        if schema_text:
+            instruction = f"{instruction}\nSchema: {schema_text}"
+
+        as_list = list(messages)
+        if as_list and isinstance(as_list[0], dict) and as_list[0].get("role") == "system":
+            head = dict(as_list[0])
+            head["content"] = (head.get("content") or "") + "\n\n" + instruction
+            as_list[0] = head
+            return as_list
+
+        if as_list and isinstance(as_list[0], Message) and as_list[0].role == "system":
+            head_msg = as_list[0]
+            updated = head_msg.model_copy(
+                update={"content": (head_msg.content or "") + "\n\n" + instruction},
+            )
+            as_list[0] = updated
+            return as_list
+
+        return [{"role": "system", "content": instruction}, *as_list]
+
+    @staticmethod
+    def _strip_fences(text: str) -> str:
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:].strip()
+        return text.strip()
+
+    async def ainvoke(self, messages: Iterable[Any], **kwargs: Any) -> Any:
+        prepared = self._build_messages_with_instruction(messages)
+        response = await self.llm.ainvoke(prepared, **kwargs)
+
+        content = getattr(response, "content", None)
+        if content is None:
+            content = str(response)
+
+        text = self._strip_fences(content if isinstance(content, str) else str(content))
+        if not text:
+            raise ValueError("Structured output: empty content from LLM")
+
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            logger.warning(
+                "Structured output JSON parse failed: %s. Content: %r",
+                exc,
+                text[:200],
+            )
+            raise
+
+        return self.output_schema.model_validate(data)
+
+    def invoke(self, messages: Iterable[Any], **kwargs: Any) -> Any:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None and loop.is_running():
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(asyncio.run, self.ainvoke(messages, **kwargs))
+                return future.result()
+        return asyncio.run(self.ainvoke(messages, **kwargs))
+
+    def bind_tools(self, tools: list, **kwargs: Any) -> "_StructuredOutputWrapper":
+        rebound_llm = self.llm.bind_tools(tools, **kwargs)
+        return _StructuredOutputWrapper(llm=rebound_llm, output_schema=self.output_schema)
+
+
+__all__ = [
+    "WiiiChatModel",
+    "StreamChunk",
+    "_StructuredOutputWrapper",
+]
