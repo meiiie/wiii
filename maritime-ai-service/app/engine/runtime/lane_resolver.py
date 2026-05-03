@@ -23,22 +23,25 @@ from __future__ import annotations
 
 from .lane import ExecutionLane
 from .runtime_intent import RuntimeIntent
+from .runtime_metrics import inc_counter
 
 
 def resolve_lane(intent: RuntimeIntent) -> ExecutionLane:
     """Return the execution lane for a turn given its resolved intent."""
     if intent.needs_vision:
-        return ExecutionLane.VISION_EXTRACTION
-
-    if (
+        lane = ExecutionLane.VISION_EXTRACTION
+    elif (
         intent.needs_structured_output
         and intent.needs_tools
         and intent.needs_streaming
     ):
-        return ExecutionLane.CLOUD_NATIVE_SDK
+        lane = ExecutionLane.CLOUD_NATIVE_SDK
+    else:
+        # Default chat lane — covers tools-only, streaming-only, plain text.
+        lane = ExecutionLane.OPENAI_COMPATIBLE_HTTP
 
-    # Default chat lane — covers tools-only, streaming-only, plain text.
-    return ExecutionLane.OPENAI_COMPATIBLE_HTTP
+    inc_counter("runtime.lane_resolver.decisions", labels={"lane": lane.value})
+    return lane
 
 
 __all__ = ["resolve_lane"]

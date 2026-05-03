@@ -1,0 +1,115 @@
+name: Nightly Replay Eval
+
+# Phase 11b of the runtime migration epic (issue #207).
+#
+# This workflow runs the replay_eval harness daily so a regression in the
+# response shape, latency profile, or source overlap shows up in the
+# morning instead of weeks later. Today it operates in HARNESS-VALIDATION
+# mode: it generates synthetic recordings on the fly and replays them in
+# --dry-run. That proves the script + EvalRecorder + diff_records loop
+# works end-to-end without a GOOGLE_API_KEY.
+#
+# When `enable_eval_recording` flips on in production, swap the synthetic
+# generation step for a step that pulls yesterday's real partition into
+# the workspace (artifact, gcsfuse, rsync — whichever the prod box
+# exposes). The replay step itself does not change.
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 02:00 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-replay-eval
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+
+    env:
+      PYTHONIOENCODING: utf-8
+      ENVIRONMENT: development
+      API_KEY: replay-harness-key
+      GOOGLE_API_KEY: replay-harness-fake-key
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: maritime-ai-service/requirements.txt
+
+      - name: Install dependencies
+        working-directory: maritime-ai-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compute yesterday's partition
+        id: date
+        run: echo "day=$(date -u -d 'yesterday' +%Y-%m-%d)" >> $GITHUB_OUTPUT
+
+      - name: Generate synthetic recordings
+        working-directory: maritime-ai-service
+        env:
+          REPLAY_DAY: ${{ steps.date.outputs.day }}
+        run: |
+          python - <<'PY'
+          import asyncio
+          import os
+          from pathlib import Path
+
+          from app.engine.runtime.eval_recorder import EvalRecord, EvalRecorder
+
+          day = os.environ["REPLAY_DAY"]
+          base = Path("eval_recordings_synthetic")
+          recorder = EvalRecorder(base_dir=base)
+
+          async def main():
+              # 5 baseline records — the dry-run replay will report these
+              # as identical (token_jaccard 1.0, no regression).
+              for i in range(5):
+                  await recorder.write(
+                      EvalRecord(
+                          session_id=f"smoke-{i}",
+                          org_id="smoke-org",
+                          timestamp=f"{day}T00:00:0{i}+00:00",
+                          request={
+                              "messages": [
+                                  {"role": "user", "content": f"hello {i}"}
+                              ]
+                          },
+                          response=f"hello back {i}",
+                          metadata={"latency_ms": 100 + i},
+                      )
+                  )
+
+          asyncio.run(main())
+          print(f"[smoke] wrote 5 synthetic records under {base}/smoke-org/{day}/")
+          PY
+
+      - name: Run replay (dry-run, expect zero regressions)
+        working-directory: maritime-ai-service
+        run: |
+          python scripts/replay_eval.py \
+            --base-dir eval_recordings_synthetic \
+            --day ${{ steps.date.outputs.day }} \
+            --org smoke-org \
+            --dry-run \
+            --report-out replay-report.html \
+            --fail-on-regression
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: replay-report-${{ steps.date.outputs.day }}
+          path: maritime-ai-service/replay-report.html
+          retention-days: 30

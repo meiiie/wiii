@@ -22,7 +22,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -34,6 +34,7 @@ from app.engine.runtime.adapters.anthropic_compat import (
 from app.engine.runtime.adapters.openai_compat import (
     openai_chat_completions_to_turn_request,
 )
+from app.engine.runtime.runtime_metrics import time_block
 from app.engine.runtime.turn_request import TurnRequest
 from app.models.schemas import ChatRequest, InternalChatResponse, UserRole
 
@@ -42,17 +43,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Edge"])
 
 
-def _ensure_enabled() -> None:
-    """Reject requests when the native runtime gate is off."""
-    from app.core.config import settings
+def _ensure_enabled(org_id: Optional[str]) -> None:
+    """Reject when the native runtime is off for the caller's org.
 
-    if not settings.enable_native_runtime:
+    Per-org canary (Phase 14): a request from an allowlisted org goes
+    through even when the global flag is off; everyone else gets a 503.
+    """
+    from app.engine.runtime.rollout import is_native_runtime_enabled_for
+
+    if not is_native_runtime_enabled_for(org_id):
         raise HTTPException(
             status_code=503,
             detail={
                 "error": {
                     "type": "service_unavailable",
-                    "message": "Native runtime edge endpoints not enabled",
+                    "message": "Native runtime edge endpoints not enabled for this org",
                 }
             },
         )
@@ -166,21 +171,25 @@ async def openai_chat_completions(
     auth: RequireAuth,
 ) -> dict[str, Any]:
     """OpenAI-compat endpoint at ``POST /v1/chat/completions``."""
-    _ensure_enabled()
+    _ensure_enabled(auth.organization_id)
     body = await _read_json_body(request)
 
-    turn = openai_chat_completions_to_turn_request(
-        body,
-        user_id=str(auth.user_id),
-        session_id=_resolve_session_id(body, auth),
-        org_id=auth.organization_id,
-        role=resolve_interaction_role(auth),
-    )
-    internal = await _process(turn, auth=auth)
-    return _openai_completion_response(
-        internal=internal,
-        model=body.get("model") or "wiii-default",
-    )
+    with time_block(
+        "edge.openai_chat_completions.duration_ms",
+        labels={"org_id": auth.organization_id or "_personal"},
+    ):
+        turn = openai_chat_completions_to_turn_request(
+            body,
+            user_id=str(auth.user_id),
+            session_id=_resolve_session_id(body, auth),
+            org_id=auth.organization_id,
+            role=resolve_interaction_role(auth),
+        )
+        internal = await _process(turn, auth=auth)
+        return _openai_completion_response(
+            internal=internal,
+            model=body.get("model") or "wiii-default",
+        )
 
 
 @router.post("/v1/messages", tags=["Edge"])
@@ -189,21 +198,25 @@ async def anthropic_messages(
     auth: RequireAuth,
 ) -> dict[str, Any]:
     """Anthropic-compat endpoint at ``POST /v1/messages``."""
-    _ensure_enabled()
+    _ensure_enabled(auth.organization_id)
     body = await _read_json_body(request)
 
-    turn = anthropic_messages_to_turn_request(
-        body,
-        user_id=str(auth.user_id),
-        session_id=_resolve_session_id(body, auth),
-        org_id=auth.organization_id,
-        role=resolve_interaction_role(auth),
-    )
-    internal = await _process(turn, auth=auth)
-    return _anthropic_messages_response(
-        internal=internal,
-        model=body.get("model") or "wiii-default",
-    )
+    with time_block(
+        "edge.anthropic_messages.duration_ms",
+        labels={"org_id": auth.organization_id or "_personal"},
+    ):
+        turn = anthropic_messages_to_turn_request(
+            body,
+            user_id=str(auth.user_id),
+            session_id=_resolve_session_id(body, auth),
+            org_id=auth.organization_id,
+            role=resolve_interaction_role(auth),
+        )
+        internal = await _process(turn, auth=auth)
+        return _anthropic_messages_response(
+            internal=internal,
+            model=body.get("model") or "wiii-default",
+        )
 
 
 __all__ = ["router"]

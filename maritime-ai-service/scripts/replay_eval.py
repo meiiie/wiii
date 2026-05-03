@@ -49,6 +49,7 @@ from app.engine.runtime.eval_recorder import (  # noqa: E402
     EvalRecorder,
     diff_records,
 )
+from app.engine.runtime.replay_context import replay_seed_scope  # noqa: E402
 
 logger = logging.getLogger("eval_replay")
 
@@ -101,7 +102,10 @@ async def _replay_one(
     orchestrator = ChatOrchestrator()
     started = time.monotonic()
     try:
-        response = await orchestrator.process(request, record=False)
+        # Pin LLM sampling to the original turn's seed when present so
+        # replay reproduces the same response shape (Phase 11c).
+        with replay_seed_scope(record.replay_seed):
+            response = await orchestrator.process(request, record=False)
     except Exception as exc:  # noqa: BLE001
         return {
             "record_id": record.record_id,

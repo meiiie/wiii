@@ -669,6 +669,33 @@ class BaseSettingsFieldsMixin:
         description="Base directory for JSONL eval records when enable_eval_recording=True.",
     )
 
+    enable_subagent_isolation: bool = Field(
+        default=False,
+        description=(
+            "Enable Anthropic-style Task subagent isolation (Phase 12 of #207). "
+            "When True, SubagentRunner spawns child agents in their own session "
+            "scope so the parent context window only sees the summary, not the "
+            "subagent's working messages."
+        ),
+    )
+
+    subagent_default_max_steps: int = Field(
+        default=10,
+        description="Default cap on subagent ReAct steps (Phase 12 of #207).",
+        ge=1,
+        le=100,
+    )
+
+    native_runtime_org_allowlist: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Per-org canary rollout for the lane-first native runtime "
+            "(Phase 14 of #207). Orgs in this list see the native edge "
+            "endpoints / runtime even when ``enable_native_runtime=False`` "
+            "globally. Case-sensitive exact match against ``X-Organization-ID``."
+        ),
+    )
+
     # Issue #206 — bound sync supervisor structured-route call.
     supervisor_route_sync_timeout_seconds: float = Field(
         default=10.0,
