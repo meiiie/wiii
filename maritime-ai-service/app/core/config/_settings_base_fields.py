@@ -706,6 +706,18 @@ class BaseSettingsFieldsMixin:
         ),
     )
 
+    enable_native_stream_dispatch: bool = Field(
+        default=False,
+        description=(
+            "Wrap /api/v1/chat/stream/v3 with native_stream_dispatch "
+            "(Phase 30 of #207). When True, the SSE pipeline records "
+            "user_message + assistant_message events to the durable "
+            "session log around every stream, fires lifecycle hooks, "
+            "and lands runtime.native_stream_dispatch.* metrics. "
+            "Pass-through preserves the SSE wire shape exactly."
+        ),
+    )
+
     enable_otlp_export: bool = Field(
         default=False,
         description=(
