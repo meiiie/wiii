@@ -656,6 +656,19 @@ class BaseSettingsFieldsMixin:
         ),
     )
 
+    enable_eval_recording: bool = Field(
+        default=False,
+        description=(
+            "Record per-turn EvalRecord JSONL for nightly replay (Phase 6 of #207). "
+            "Default OFF; opt-in per environment to avoid storage costs."
+        ),
+    )
+
+    eval_recording_dir: str = Field(
+        default="eval_recordings",
+        description="Base directory for JSONL eval records when enable_eval_recording=True.",
+    )
+
     # Issue #206 — bound sync supervisor structured-route call.
     supervisor_route_sync_timeout_seconds: float = Field(
         default=10.0,
