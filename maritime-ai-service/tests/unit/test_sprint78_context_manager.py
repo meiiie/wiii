@@ -202,8 +202,9 @@ class TestTokenBudgetManager:
         messages, budget = mgr.build_context_messages(history)
 
         assert len(messages) == 5
-        assert isinstance(messages[0], HumanMessage)  # First is user (even index)
-        assert isinstance(messages[1], AIMessage)  # Second is assistant
+        # Phase 9b migration: native Message replaces LC Human/AI
+        assert messages[0].role == "user"  # First is user (even index)
+        assert messages[1].role == "assistant"  # Second is assistant
         assert budget.messages_included == 5
 
     def test_build_context_messages_respects_budget(self):

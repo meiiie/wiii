@@ -386,13 +386,15 @@ class TestReActDispatch:
                 context={"user_role": "student"},
             )
 
-        # The second ainvoke should have received messages with ToolMessage
+        # The second ainvoke should have received messages with a tool-result entry
         call_args = mock_tutor._llm_with_tools.ainvoke.call_args_list
         assert len(call_args) == 2
-        # Messages for second call should include ToolMessage
         second_messages = call_args[1][0][0]
-        from langchain_core.messages import ToolMessage
-        tool_msgs = [m for m in second_messages if isinstance(m, ToolMessage)]
+        # Phase 9b migration: tool-result entries are native Message(role="tool", ...)
+        tool_msgs = [
+            m for m in second_messages
+            if getattr(m, "role", None) == "tool"
+        ]
         assert len(tool_msgs) >= 1
 
     @pytest.mark.asyncio
