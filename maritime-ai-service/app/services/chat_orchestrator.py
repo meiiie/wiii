@@ -413,11 +413,12 @@ class ChatOrchestrator:
     async def process(
         self,
         request: ChatRequest,
-        background_save: Optional[Callable] = None
+        background_save: Optional[Callable] = None,
+        record: bool = False,
     ) -> InternalChatResponse:
         """
         Process a chat request through the full pipeline.
-        
+
         Pipeline:
         1. Get/create session
         2. Validate input
@@ -425,11 +426,15 @@ class ChatOrchestrator:
         4. Process with agent
         5. Format output
         6. Schedule background tasks
-        
+        7. Optional eval snapshot (Phase 6 of #207, gated by settings.enable_eval_recording)
+
         Args:
             request: ChatRequest from API
             background_save: FastAPI BackgroundTasks.add_task
-            
+            record: When True AND settings.enable_eval_recording=True,
+                snapshot this turn into the JSONL eval log. Per-call
+                opt-in lets canary traffic flag itself for replay.
+
         Returns:
             InternalChatResponse ready for API serialization
         """
@@ -519,7 +524,78 @@ class ChatOrchestrator:
             transport_type="sync",
         )
 
+        if record and getattr(settings, "enable_eval_recording", False):
+            await self._record_eval_turn(
+                request=request,
+                response=response,
+                result=result,
+                session_id=session_id,
+                org_id=org_id,
+            )
+
         return response
+
+    async def _record_eval_turn(
+        self,
+        *,
+        request: ChatRequest,
+        response: InternalChatResponse,
+        result: "ProcessingResult",
+        session_id: str,
+        org_id: Optional[str],
+    ) -> None:
+        """Snapshot one turn into the eval JSONL log (Phase 6 of #207).
+
+        Fail-soft: a recorder I/O error must never bubble up into the
+        chat response — log and move on.
+        """
+        try:
+            from pathlib import Path
+
+            from app.engine.runtime.eval_recorder import EvalRecord, EvalRecorder
+
+            base_dir = Path(getattr(settings, "eval_recording_dir", "eval_recordings"))
+            recorder = EvalRecorder(base_dir=base_dir)
+
+            request_payload: dict = {
+                "message": getattr(request, "message", ""),
+                "user_id": str(getattr(request, "user_id", "")),
+                "role": (
+                    getattr(request, "role").value
+                    if hasattr(getattr(request, "role", None), "value")
+                    else str(getattr(request, "role", ""))
+                ),
+                "domain_id": getattr(request, "domain_id", None),
+                "organization_id": getattr(request, "organization_id", None),
+            }
+
+            metadata = dict(result.metadata or {})
+            metadata.setdefault("current_agent", metadata.get("current_agent", ""))
+
+            sources_payload: list[dict] = []
+            for src in getattr(response, "sources", None) or []:
+                if hasattr(src, "model_dump"):
+                    sources_payload.append(src.model_dump())
+                elif isinstance(src, dict):
+                    sources_payload.append(src)
+
+            tool_calls_payload: list[dict] = []
+            for call in metadata.get("tool_calls", []) or []:
+                if isinstance(call, dict):
+                    tool_calls_payload.append(call)
+
+            record_obj = EvalRecord(
+                session_id=session_id,
+                org_id=org_id,
+                request=request_payload,
+                response=getattr(response, "response", "") or "",
+                tool_calls=tool_calls_payload,
+                sources=sources_payload,
+                metadata=metadata,
+            )
+            await recorder.write(record_obj)
+        except Exception as exc:  # noqa: BLE001 — fail-soft on I/O
+            logger.warning("[EVAL_RECORDER] failed to record turn: %s", exc)
 
     def _should_use_local_direct_llm_fallback(self) -> bool:
         """Use direct local inference when local mode is enabled without cloud retrieval support."""

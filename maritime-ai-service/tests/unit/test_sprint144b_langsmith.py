@@ -66,8 +66,11 @@ class TestConfigureLangsmith:
         assert not is_langsmith_enabled()
         assert "LANGCHAIN_TRACING_V2" not in os.environ
 
-    def test_enabled_sets_env_vars(self):
-        """When enabled with a valid API key, all 4 env vars are set."""
+    def test_enabled_marks_module_state_without_setting_langchain_env(self):
+        """Phase 8 of #207: the LangChain auto-tracer was removed. The flag
+        still flips ``is_langsmith_enabled`` so a future direct hook can pick
+        it up, but no LANGCHAIN_* env vars are exported anymore.
+        """
         from app.core.langsmith import configure_langsmith, is_langsmith_enabled
 
         settings = _make_settings(
@@ -79,10 +82,10 @@ class TestConfigureLangsmith:
         configure_langsmith(settings)
 
         assert is_langsmith_enabled()
-        assert os.environ["LANGCHAIN_TRACING_V2"] == "true"
-        assert os.environ["LANGCHAIN_API_KEY"] == "lsv2_pt_test123"
-        assert os.environ["LANGCHAIN_PROJECT"] == "test-project"
-        assert os.environ["LANGCHAIN_ENDPOINT"] == "https://custom.endpoint.com"
+        assert "LANGCHAIN_TRACING_V2" not in os.environ
+        assert "LANGCHAIN_API_KEY" not in os.environ
+        assert "LANGCHAIN_PROJECT" not in os.environ
+        assert "LANGCHAIN_ENDPOINT" not in os.environ
 
     def test_enabled_without_api_key_stays_disabled(self):
         """When enabled but API key is None/empty, tracing is NOT activated."""
@@ -173,8 +176,14 @@ class TestGetLangsmithCallback:
             # ImportError path — returns None
             assert result is None
 
-    def test_returns_callback_when_enabled(self):
-        """When enabled and SDK available, returns a LangChainTracer."""
+    def test_returns_none_after_langchain_tracer_removal(self):
+        """Phase 8 of #207: get_langsmith_callback always returns None now.
+
+        The LangChainTracer import was dropped to remove the langchain-core
+        dependency from this module. A future direct LangSmith integration
+        will re-introduce a non-None return; until then, callers receive
+        None unconditionally — even when the flag is enabled.
+        """
         from app.core.langsmith import configure_langsmith, get_langsmith_callback
 
         settings = _make_settings(
@@ -183,38 +192,8 @@ class TestGetLangsmithCallback:
         )
         configure_langsmith(settings)
 
-        # Mock the langsmith + langchain imports inside get_langsmith_callback
-        mock_client_cls = MagicMock()
-        mock_tracer_cls = MagicMock()
-        mock_tracer_instance = MagicMock()
-        mock_tracer_cls.return_value = mock_tracer_instance
-
-        with patch("app.core.langsmith.Client", mock_client_cls, create=True), \
-             patch("app.core.langsmith.LangChainTracer", mock_tracer_cls, create=True):
-            # We need to patch the imports inside the function
-            pass
-
-        # Instead, test via the full import path
-        mock_client = MagicMock()
-        mock_tracer = MagicMock()
-
-        with patch.dict("sys.modules", {
-            "langsmith": MagicMock(Client=MagicMock(return_value=mock_client)),
-            "langchain_core": MagicMock(),
-            "langchain_core.tracers": MagicMock(LangChainTracer=MagicMock(return_value=mock_tracer)),
-        }):
-            # Re-import to pick up mocked modules
-            import importlib
-            import app.core.langsmith as mod
-            importlib.reload(mod)
-            mod._langsmith_enabled = True
-            os.environ["LANGCHAIN_PROJECT"] = "wiii"
-
-            result = mod.get_langsmith_callback("user1", "sess1", "maritime")
-            assert result is not None
-
-        # Restore module state
-        _reset_module()
+        result = get_langsmith_callback("user1", "sess1", "maritime")
+        assert result is None
 
     def test_graceful_on_exception(self):
         """If callback creation raises, returns None instead of crashing."""

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.engine.messages import Message
 from app.engine.runtime.adapters import (
+    anthropic_messages_to_turn_request,
     openai_chat_completions_to_turn_request,
     wiii_chat_request_to_turn_request,
 )
@@ -169,3 +170,165 @@ def test_openai_compat_temperature_and_max_tokens_into_metadata():
     req = openai_chat_completions_to_turn_request(body, user_id="u", session_id="s")
     assert req.metadata["temperature"] == 0.3
     assert req.metadata["max_tokens"] == 256
+
+
+# ── Anthropic Messages adapter ──
+
+def test_anthropic_compat_text_only_user_message():
+    body = {
+        "model": "claude-foo",
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+    req = anthropic_messages_to_turn_request(body, user_id="u", session_id="s")
+    assert [m.role for m in req.messages] == ["user"]
+    assert req.messages[0].content == "hi"
+    assert req.metadata["anthropic_model"] == "claude-foo"
+
+
+def test_anthropic_compat_system_prompt_prepends_system_message():
+    body = {
+        "system": "You are Wiii.",
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+    req = anthropic_messages_to_turn_request(body, user_id="u", session_id="s")
+    assert req.messages[0].role == "system"
+    assert req.messages[0].content == "You are Wiii."
+    assert req.messages[1].role == "user"
+
+
+def test_anthropic_compat_assistant_text_block():
+    body = {
+        "messages": [
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "ack"}],
+            }
+        ],
+    }
+    req = anthropic_messages_to_turn_request(body, user_id="u", session_id="s")
+    assert req.messages[0].role == "assistant"
+    assert req.messages[0].content == "ack"
+    assert req.messages[0].tool_calls is None
+
+
+def test_anthropic_compat_assistant_tool_use_block_round_trip():
+    body = {
+        "messages": [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "calling search"},
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "search",
+                        "input": {"q": "x"},
+                    },
+                ],
+            }
+        ],
+    }
+    req = anthropic_messages_to_turn_request(body, user_id="u", session_id="s")
+    msg = req.messages[0]
+    assert msg.role == "assistant"
+    assert msg.content == "calling search"
+    assert msg.tool_calls and msg.tool_calls[0].name == "search"
+    assert msg.tool_calls[0].arguments == {"q": "x"}
+
+
+def test_anthropic_compat_user_tool_result_block_split_into_tool_message():
+    body = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_1",
+                        "content": "search result",
+                    }
+                ],
+            }
+        ],
+    }
+    req = anthropic_messages_to_turn_request(body, user_id="u", session_id="s")
+    assert [m.role for m in req.messages] == ["tool"]
+    assert req.messages[0].tool_call_id == "toolu_1"
+    assert req.messages[0].content == "search result"
+
+
+def test_anthropic_compat_user_mixed_tool_result_and_text():
+    body = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "follow-up"},
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_1",
+                        "content": "result",
+                    },
+                ],
+            }
+        ],
+    }
+    req = anthropic_messages_to_turn_request(body, user_id="u", session_id="s")
+    roles = [m.role for m in req.messages]
+    assert roles == ["user", "tool"]
+
+
+def test_anthropic_compat_image_block_sets_vision_capability():
+    body = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "what is this?"},
+                    {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": "image/png", "data": "..."},
+                    },
+                ],
+            }
+        ],
+    }
+    req = anthropic_messages_to_turn_request(body, user_id="u", session_id="s")
+    assert "vision" in req.requested_capabilities
+
+
+def test_anthropic_compat_tools_capability_and_streaming_flag():
+    body = {
+        "messages": [{"role": "user", "content": "hi"}],
+        "tools": [{"name": "search"}],
+        "stream": True,
+    }
+    req = anthropic_messages_to_turn_request(body, user_id="u", session_id="s")
+    assert "tools" in req.requested_capabilities
+    assert req.requested_streaming is True
+
+
+def test_anthropic_compat_unknown_role_falls_back_to_user():
+    body = {"messages": [{"role": "system_extra", "content": "x"}]}
+    req = anthropic_messages_to_turn_request(body, user_id="u", session_id="s")
+    assert req.messages[0].role == "user"
+
+
+def test_anthropic_compat_tool_result_with_typed_content_blocks():
+    body = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_1",
+                        "content": [{"type": "text", "text": "structured result"}],
+                    }
+                ],
+            }
+        ],
+    }
+    req = anthropic_messages_to_turn_request(body, user_id="u", session_id="s")
+    assert req.messages[0].role == "tool"
+    assert req.messages[0].content == "structured result"
