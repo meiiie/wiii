@@ -176,6 +176,15 @@ class SubagentRunner:
                 },
                 org_id=task.parent_org_id,
             )
+            # Phase 20 chaos finding: error metric MUST be recorded on the
+            # exception path too, otherwise the SLO doc's
+            # "subagent error rate" alert never fires.
+            inc_counter("runtime.subagent.runs", labels={"status": "error"})
+            record_latency_ms(
+                "runtime.subagent.duration_ms",
+                float(duration_ms),
+                labels={"status": "error"},
+            )
             logger.exception("[SubagentRunner] runner raised: %s", exc)
             return SubagentResult(
                 status="error",
