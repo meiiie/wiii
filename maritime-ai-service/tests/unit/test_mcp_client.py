@@ -2,6 +2,8 @@
 Tests for app.mcp.client — MCP Client (MCPToolManager).
 
 Sprint 56: MCP Support.
+Phase 9c: rewritten against the raw ``mcp`` SDK; no more
+``langchain_mcp_adapters`` dependency.
 """
 
 import pytest
@@ -69,10 +71,15 @@ class TestMCPToolManagerInitialize:
         assert MCPToolManager.get_tools() == []
 
     @pytest.mark.asyncio
-    async def test_missing_langchain_mcp_adapters(self):
+    async def test_missing_mcp_sdk(self):
+        """When the ``mcp`` SDK is missing the manager fails soft."""
         configs = [MCPServerConfig(name="test", transport="http", url="http://test/mcp")]
 
-        with patch.dict("sys.modules", {"langchain_mcp_adapters": None, "langchain_mcp_adapters.client": None}):
+        # Force the lazy import inside ``initialize`` to fail.
+        with patch.dict(
+            "sys.modules",
+            {"mcp": None, "mcp.client.stdio": None, "mcp.client.streamable_http": None},
+        ):
             await MCPToolManager.initialize(configs)
 
         assert MCPToolManager.is_initialized()
@@ -80,46 +87,19 @@ class TestMCPToolManagerInitialize:
 
     @pytest.mark.asyncio
     async def test_stdio_without_command_skipped(self):
-        """stdio config without command is skipped."""
-        import types
-        mock_module = types.ModuleType("langchain_mcp_adapters")
-        mock_client_module = types.ModuleType("langchain_mcp_adapters.client")
-        mock_client_cls = MagicMock()
-        mock_client_instance = MagicMock()
-        mock_client_instance.get_tools = AsyncMock(return_value=[])
-        mock_client_cls.return_value = mock_client_instance
-        mock_client_module.MultiServerMCPClient = mock_client_cls
-        mock_module.client = mock_client_module
-
+        """stdio config without command is skipped — manager still finishes init."""
         configs = [MCPServerConfig(name="bad", transport="stdio")]  # No command
-
-        with patch.dict("sys.modules", {
-            "langchain_mcp_adapters": mock_module,
-            "langchain_mcp_adapters.client": mock_client_module,
-        }):
-            await MCPToolManager.initialize(configs)
-
+        await MCPToolManager.initialize(configs)
         assert MCPToolManager.is_initialized()
+        assert MCPToolManager.get_tools() == []
 
     @pytest.mark.asyncio
     async def test_http_without_url_skipped(self):
-        """http config without URL is skipped."""
-        import types
-        mock_module = types.ModuleType("langchain_mcp_adapters")
-        mock_client_module = types.ModuleType("langchain_mcp_adapters.client")
-        mock_client_cls = MagicMock()
-        mock_client_module.MultiServerMCPClient = mock_client_cls
-        mock_module.client = mock_client_module
-
+        """http config without URL is skipped — manager still finishes init."""
         configs = [MCPServerConfig(name="bad", transport="http")]  # No URL
-
-        with patch.dict("sys.modules", {
-            "langchain_mcp_adapters": mock_module,
-            "langchain_mcp_adapters.client": mock_client_module,
-        }):
-            await MCPToolManager.initialize(configs)
-
+        await MCPToolManager.initialize(configs)
         assert MCPToolManager.is_initialized()
+        assert MCPToolManager.get_tools() == []
 
 
 class TestMCPToolManagerShutdown:
@@ -132,15 +112,19 @@ class TestMCPToolManagerShutdown:
 
     @pytest.mark.asyncio
     async def test_shutdown_clears_state(self):
+        # Simulate a previously-initialized manager with a fake exit stack.
         MCPToolManager._initialized = True
         MCPToolManager._tools = [MagicMock()]
-        MCPToolManager._client = MagicMock()
-        MCPToolManager._client.close = AsyncMock()
+        fake_stack = MagicMock()
+        fake_stack.aclose = AsyncMock()
+        MCPToolManager._exit_stack = fake_stack
 
         await MCPToolManager.shutdown()
 
         assert not MCPToolManager.is_initialized()
         assert MCPToolManager.get_tools() == []
+        assert MCPToolManager._exit_stack is None
+        fake_stack.aclose.assert_awaited_once()
 
 
 class TestMCPToolManagerParseConfigs:
@@ -261,3 +245,32 @@ class TestMCPToolManagerRuntimeConfigResolution:
         )
 
         assert [config.name for config in merged] == ["one", "two"]
+
+
+class TestMCPTool:
+    """Test the MCPTool wrapper that bridges mcp SDK tools into Wiii's runtime."""
+
+    @pytest.mark.asyncio
+    async def test_ainvoke_flattens_text_content(self):
+        from app.mcp.client import MCPTool
+
+        text_block = MagicMock()
+        text_block.text = "search result"
+        result_obj = MagicMock()
+        result_obj.content = [text_block]
+
+        session = MagicMock()
+        session.call_tool = AsyncMock(return_value=result_obj)
+
+        tool = MCPTool(
+            name="search",
+            description="Search the docs",
+            parameters={"type": "object", "properties": {}},
+            session=session,
+            server_name="docs-mcp",
+        )
+
+        out = await tool.ainvoke({"query": "Rule 13"})
+
+        assert out == "search result"
+        session.call_tool.assert_awaited_once_with("search", {"query": "Rule 13"})
