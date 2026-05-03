@@ -446,6 +446,16 @@ class WiiiChatModel(BaseModel):
         if "tool_choice" in api_kwargs:
             api_kwargs["tool_choice"] = _normalize_tool_choice(api_kwargs["tool_choice"])
 
+        # Phase 11c: thread the active replay seed through to OpenAI-compat
+        # providers so eval replays reproduce the original sampling. The
+        # provider-specific param strip below drops ``seed`` for backends
+        # that don't accept it (e.g. Zhipu), so this is safe to set always.
+        from app.engine.runtime.replay_context import get_replay_seed_int
+
+        replay_seed = get_replay_seed_int()
+        if replay_seed is not None:
+            api_kwargs["seed"] = replay_seed
+
         return _strip_unsupported_params(api_kwargs, self.base_url)
 
     async def ainvoke(self, messages: Iterable[Any], **kwargs: Any) -> Message:
