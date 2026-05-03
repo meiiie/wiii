@@ -6,7 +6,6 @@ import re
 from inspect import isawaitable
 from typing import Any, Callable, Optional
 
-from langchain_core.language_models import BaseChatModel
 
 from app.core.exceptions import ProviderUnavailableError
 from app.engine.llm_model_health import record_model_failure, record_model_success
@@ -277,8 +276,8 @@ async def ainvoke_with_failover_impl(
     failover_mode: str,
     prefer_selectable_fallback: bool,
     allowed_fallback_providers: set[str] | list[str] | tuple[str, ...] | None,
-    on_primary: Optional[Callable[[BaseChatModel], BaseChatModel]],
-    on_fallback: Optional[Callable[[BaseChatModel], BaseChatModel]],
+    on_primary: Optional[Callable[[Any], Any]],
+    on_fallback: Optional[Callable[[Any], Any]],
     on_switch: Optional[Callable[[str, str, str], Any]],
     on_failover: Optional[Callable[[dict[str, Any]], Any]],
     primary_timeout: Optional[float],

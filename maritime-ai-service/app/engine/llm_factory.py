@@ -15,14 +15,13 @@ but direct usage from application code should use the pool interfaces.
 - LIGHT (1024): Quick check - basic self-check
 - MINIMAL (512): Structured tasks - minimal buffer
 
-Sprint 11: Returns BaseChatModel for multi-provider compatibility.
+Sprint 11: Returns Any for multi-provider compatibility.
 """
 
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 import logging
 
-from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
 from app.engine.llm_provider_registry import create_provider, get_supported_provider_names
@@ -84,7 +83,7 @@ def create_llm(
     include_thoughts: Optional[bool] = None,
     model: Optional[str] = None,
     provider: Optional[str] = None,
-) -> BaseChatModel:
+) -> Any:
     """
     Factory function for creating LLM instances with proper thinking config.
 
@@ -100,7 +99,7 @@ def create_llm(
             Defaults to the configured runtime provider.
 
     Returns:
-        BaseChatModel instance (Gemini, OpenAI, or Ollama)
+        Any instance (Gemini, OpenAI, or Ollama)
 
     Note:
         Response format when include_thoughts=True (Gemini only):

@@ -9,7 +9,6 @@ Issue #110: NVIDIA NIM added as alias-based OpenAI-compatible target.
 import logging
 from typing import Any
 
-from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
 from app.engine.llm_model_health import is_model_degraded
@@ -131,7 +130,7 @@ class OpenAIProvider(LLMProvider):
         include_thoughts: bool = False,
         temperature: float = 0.5,
         **kwargs: Any,
-    ) -> BaseChatModel:
+    ) -> Any:
         # Select model based on tier
         model_name = kwargs.get("model_name") or kwargs.get("model")
         if model_name:

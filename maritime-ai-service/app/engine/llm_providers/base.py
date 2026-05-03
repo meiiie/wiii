@@ -1,7 +1,7 @@
 """
 LLM Provider ABC — Interface for all LLM backends.
 
-All providers return `BaseChatModel` instances, ensuring that
+All providers return `Any` instances, ensuring that
 consumer code (18+ files) can use `.ainvoke()` and `.astream()`
 without knowing which provider is active.
 """
@@ -10,7 +10,6 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
-from langchain_core.language_models import BaseChatModel
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +46,7 @@ class LLMProvider(ABC):
         include_thoughts: bool = False,
         temperature: float = 0.5,
         **kwargs: Any,
-    ) -> BaseChatModel:
+    ) -> Any:
         """
         Create an LLM instance for the specified tier.
 
@@ -59,7 +58,7 @@ class LLMProvider(ABC):
             **kwargs: Provider-specific extra arguments
 
         Returns:
-            BaseChatModel instance ready for `.ainvoke()` / `.astream()`
+            Any instance ready for `.ainvoke()` / `.astream()`
 
         Raises:
             Exception: If instance creation fails (missing key, bad config, etc.)

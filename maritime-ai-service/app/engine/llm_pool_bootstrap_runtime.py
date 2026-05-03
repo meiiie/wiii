@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
-from langchain_core.language_models import BaseChatModel
 
 from app.engine.llm_model_health import is_model_degraded
 from app.engine.llm_same_provider_runtime import extract_runtime_model_name_impl
 
 
-def _cached_llm_is_degraded(provider_name: str, llm: BaseChatModel | None) -> bool:
+def _cached_llm_is_degraded(provider_name: str, llm: Any | None) -> bool:
     model_name = extract_runtime_model_name_impl(llm)
     return is_model_degraded(provider_name, model_name)
 
@@ -29,7 +28,7 @@ def create_provider_instance_impl(
     provider_name: str,
     tier_key: str,
     requested_provider: Optional[str] = None,
-) -> BaseChatModel | None:
+) -> Any | None:
     """Create and cache a provider-specific LLM instance on demand."""
     provider = cls_ref._ensure_provider(provider_name)
     if provider is None or not provider.is_configured():
@@ -69,7 +68,7 @@ def get_provider_instance_impl(
     allow_unavailable: bool = False,
     requested_provider: Optional[str] = None,
     logger_obj,
-) -> BaseChatModel | None:
+) -> Any | None:
     """Return a provider-specific instance, creating one lazily when needed."""
     normalized_provider = cls_ref._normalize_provider(provider_name)
     if not normalized_provider:
@@ -165,7 +164,7 @@ def init_providers_impl(*, cls_ref, settings_obj, is_supported_provider_fn, crea
     )
 
 
-def create_primary_instance_impl(*, cls_ref, tier, settings_obj, logger_obj, thinking_budgets) -> BaseChatModel:
+def create_primary_instance_impl(*, cls_ref, tier, settings_obj, logger_obj, thinking_budgets) -> Any:
     """Create the shared primary LLM instance for one tier."""
     tier_key = cls_ref._resolve_tier(tier)
 

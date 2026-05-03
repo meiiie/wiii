@@ -8,7 +8,6 @@ De-LangChaining Phase 1: Removed ChatOpenAI dependency.
 import logging
 from typing import Any
 
-from langchain_core.language_models import BaseChatModel
 
 from app.core.config import settings
 from app.engine.llm_providers.base import LLMProvider
@@ -53,7 +52,7 @@ class ZhipuProvider(LLMProvider):
         include_thoughts: bool = False,
         temperature: float = 0.5,
         **kwargs: Any,
-    ) -> BaseChatModel:
+    ) -> Any:
         model_name = kwargs.get("model_name") or kwargs.get("model")
         if model_name:
             model = model_name

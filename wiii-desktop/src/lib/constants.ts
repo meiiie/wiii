@@ -12,12 +12,23 @@ function isLocalBrowserHost(): boolean {
 
 /** Default server URL — localhost in dev, same-origin in production web builds.
  *  Docker Compose exposes the backend via nginx on :8080 (app FastAPI :8000 is
- *  internal-only), so local browser clients must target 8080. */
-export const DEFAULT_SERVER_URL = (
-  (typeof import.meta !== "undefined" && import.meta.env?.DEV) || isLocalBrowserHost()
-    ? "http://localhost:8080"
-    : typeof window !== "undefined" ? window.location.origin : ""
-);
+ *  internal-only when nginx is up). When testing the dev compose stack directly
+ *  (no nginx), set ``VITE_API_URL=http://localhost:8000`` in ``wiii-desktop/.env``
+ *  to override. */
+export const DEFAULT_SERVER_URL = (() => {
+  const envOverride =
+    typeof import.meta !== "undefined"
+      ? (import.meta.env?.VITE_API_URL as string | undefined)
+      : undefined;
+  if (envOverride) return envOverride;
+  if (
+    (typeof import.meta !== "undefined" && import.meta.env?.DEV) ||
+    isLocalBrowserHost()
+  ) {
+    return "http://localhost:8080";
+  }
+  return typeof window !== "undefined" ? window.location.origin : "";
+})();
 
 /** Default user settings */
 // Sprint 194b: DEFAULT_USER_ID removed — anonymous UUID generated at runtime
