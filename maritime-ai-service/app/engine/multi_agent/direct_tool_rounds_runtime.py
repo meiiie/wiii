@@ -103,15 +103,15 @@ def _build_tool_result_message(
     tool_call_id: str,
     native_tool_messages: bool,
 ) -> Any:
-    """Create the post-tool message without hard-wiring LangChain in native lanes."""
+    """Create the post-tool message without depending on LangChain."""
     if native_tool_messages:
         from app.engine.native_chat_runtime import make_tool_message
 
         return make_tool_message(content, tool_call_id=tool_call_id)
 
-    from langchain_core.messages import ToolMessage as _TM
+    from app.engine.messages import Message
 
-    return _TM(content=content, tool_call_id=tool_call_id)
+    return Message(role="tool", content=content, tool_call_id=tool_call_id)
 
 
 def _build_user_instruction_message(
@@ -125,9 +125,9 @@ def _build_user_instruction_message(
 
         return make_user_message(content)
 
-    from langchain_core.messages import HumanMessage as _HM
+    from app.engine.messages import Message
 
-    return _HM(content=content)
+    return Message(role="user", content=content)
 
 
 async def execute_direct_tool_rounds_impl(

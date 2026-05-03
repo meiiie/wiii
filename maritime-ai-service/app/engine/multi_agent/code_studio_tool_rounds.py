@@ -56,8 +56,26 @@ async def execute_code_studio_tool_rounds_impl(
     settings_obj,
 ):
     """Execute multi-round tool calling loop for the code studio capability."""
-    from langchain_core.messages import AIMessage as _AM, ToolMessage as _TM
+    from app.engine.messages import Message, ToolCall
     from app.engine.llm_pool import TIMEOUT_PROFILE_BACKGROUND
+
+    def _AM(content: str = "", tool_calls: list[dict] | None = None) -> Message:
+        """Native assistant message — keeps the tool-rounds construction call sites short."""
+        if tool_calls:
+            native_tcs = [
+                ToolCall(
+                    id=str(tc.get("id") or ""),
+                    name=str(tc.get("name") or ""),
+                    arguments=tc.get("args") if isinstance(tc.get("args"), dict) else {},
+                )
+                for tc in tool_calls
+            ]
+            return Message(role="assistant", content=content, tool_calls=native_tcs)
+        return Message(role="assistant", content=content)
+
+    def _TM(content: str = "", *, tool_call_id: str = "") -> Message:
+        """Native tool-result message."""
+        return Message(role="tool", content=str(content), tool_call_id=str(tool_call_id))
 
     tool_call_events: list[dict] = []
     state = state or {}

@@ -7,7 +7,7 @@ import json
 import logging
 from typing import Dict, List, Optional, Tuple
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from app.engine.messages import Message, ToolCall
 
 from app.engine.multi_agent.agents.product_search_surface import (
     _DEEP_SEARCH_PROMPT,
@@ -258,13 +258,13 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
         except Exception:
             pass
 
-    messages = [SystemMessage(content=system_prompt)]
+    messages: list = [Message(role="system", content=system_prompt)]
     lc_messages = context.get("langchain_messages", [])
     if lc_messages:
         messages.extend(lc_messages[-6:])
 
     if images and len(images) > 0:
-        content_parts = []
+        content_parts: list = []
         for image in images[:1]:
             image_data = image.get("data", "") if isinstance(image, dict) else ""
             media_type = image.get("media_type", "image/jpeg") if isinstance(image, dict) else "image/jpeg"
@@ -276,9 +276,10 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
                     }
                 )
         content_parts.append({"type": "text", "text": query})
-        messages.append(HumanMessage(content=content_parts))
+        # Multimodal block list — pass directly as dict; LLM coercion preserves the list
+        messages.append({"role": "user", "content": content_parts})
     else:
-        messages.append(HumanMessage(content=query))
+        messages.append(Message(role="user", content=query))
 
     tools_used = []
     all_thinking = []
@@ -435,8 +436,20 @@ BƯỚC 3: So sánh giá và tổng hợp kết quả.
             if allow_authored_fallback:
                 narrated_thinking.append(ack_narration.summary)
             await _emit_narration(ack_narration, include_start=False)
-            messages.append(AIMessage(content="", tool_calls=[tool_call]))
-            messages.append(ToolMessage(content=result_str, tool_call_id=tool_id))
+            messages.append(
+                Message(
+                    role="assistant",
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id=str(tool_call.get("id") or tool_id),
+                            name=str(tool_call.get("name") or ""),
+                            arguments=tool_call.get("args") if isinstance(tool_call.get("args"), dict) else {},
+                        )
+                    ],
+                )
+            )
+            messages.append(Message(role="tool", content=result_str, tool_call_id=tool_id))
             tools_used.append({"name": tool_name, "args": tool_args, "iteration": iteration})
 
             if preview_enabled and event_queue is not None:

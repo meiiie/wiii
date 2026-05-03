@@ -56,7 +56,7 @@ def _inject_widget_blocks_from_tool_results(
     structured_visuals_enabled: bool = False,
 ):
     """Inject legacy widget blocks only when the turn is not on the structured figure lane."""
-    from langchain_core.messages import AIMessage as _AM
+    from app.engine.messages import Message
 
     raw_content = llm_response.content if hasattr(llm_response, "content") else str(llm_response)
     if isinstance(raw_content, list):
@@ -68,7 +68,7 @@ def _inject_widget_blocks_from_tool_results(
 
     def _build_response(value: str):
         if hasattr(llm_response, "content"):
-            return _AM(content=value)
+            return Message(role="assistant", content=value)
         return value
 
     def _strip_widget_blocks(value: str) -> str:
