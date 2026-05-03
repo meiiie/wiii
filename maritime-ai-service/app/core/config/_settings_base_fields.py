@@ -696,6 +696,16 @@ class BaseSettingsFieldsMixin:
         ),
     )
 
+    enable_prometheus_metrics: bool = Field(
+        default=False,
+        description=(
+            "Expose ``GET /metrics`` in Prometheus text format (Phase 16 "
+            "of #207). Drains the runtime_metrics façade snapshot. Default "
+            "off so unconfigured deployments don't accidentally publish "
+            "internal metric names."
+        ),
+    )
+
     # Issue #206 — bound sync supervisor structured-route call.
     supervisor_route_sync_timeout_seconds: float = Field(
         default=10.0,
