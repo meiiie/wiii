@@ -72,8 +72,8 @@ Pillow>=10.0.0  # CHỈ THỊ 26: Image processing
 minio>=7.2.20
 
 # Web Search
-# ddgs removed Sprint 154 — duckduckgo-search>=7.0.0 is the active package (import: duckduckgo_search)
-duckduckgo-search>=7.0.0
+# ddgs removed Sprint 154 — duckduckgo-search>=7.5.5 is the active package (import: duckduckgo_search)
+duckduckgo-search>=7.5.5
 feedparser>=6.0.0  # Sprint 102: RSS news feeds (Vietnamese news aggregation)
 
 # Utils
