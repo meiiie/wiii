@@ -1485,19 +1485,19 @@ class TestCodeStudioProgressHeartbeat:
 
     @pytest.mark.asyncio
     async def test_preserves_timeout_fallback_response_without_overwrite(self):
-        from langchain_core.messages import AIMessage
+        from app.engine.messages import Message
 
         class SlowLLM:
             async def ainvoke(self, _messages):
                 await asyncio.sleep(0.01)
-                return AIMessage(content="stale primary response")
+                return Message(role="assistant", content="stale primary response")
 
         class FallbackLLM:
             def bind_tools(self, _tools):
                 return self
 
             async def ainvoke(self, _messages):
-                return AIMessage(content="fallback recovery response")
+                return Message(role="assistant", content="fallback recovery response")
 
         async def push_event(_event):
             return None

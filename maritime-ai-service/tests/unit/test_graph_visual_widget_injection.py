@@ -1,10 +1,10 @@
-from langchain_core.messages import AIMessage
+from app.engine.messages import Message
 
 from app.engine.multi_agent.graph import _inject_widget_blocks_from_tool_results
 
 
 def test_skips_widget_injection_for_structured_explanatory_turns():
-    response = AIMessage(content="Day la cau tra loi dang prose.")
+    response = Message(role="assistant", content="Day la cau tra loi dang prose.")
     tool_events = [
         {
             "type": "result",
@@ -25,7 +25,7 @@ def test_skips_widget_injection_for_structured_explanatory_turns():
 
 
 def test_strips_widget_blocks_when_structured_visual_events_exist():
-    response = AIMessage(
+    response = Message(role="assistant", 
         content="```widget\n<div>Legacy chart</div>\n```\n\nBridge prose sau visual.",
     )
     tool_events = [
@@ -49,7 +49,7 @@ def test_strips_widget_blocks_when_structured_visual_events_exist():
 
 
 def test_keeps_widget_injection_for_legacy_app_fallback():
-    response = AIMessage(content="Minh se chen mo phong ngay sau day.")
+    response = Message(role="assistant", content="Minh se chen mo phong ngay sau day.")
     tool_events = [
         {
             "type": "result",
@@ -71,7 +71,7 @@ def test_keeps_widget_injection_for_legacy_app_fallback():
 
 
 def test_strips_markdown_placeholder_when_visual_already_open():
-    response = AIMessage(
+    response = Message(role="assistant", 
         content=(
             "Day la bieu do bien dong gia dau.\n\n"
             "![Bieu do gia dau](https://example.com/chart-placeholder)\n\n"
@@ -100,7 +100,7 @@ def test_strips_markdown_placeholder_when_visual_already_open():
 
 
 def test_strips_markdown_placeholder_even_without_structured_visual_flag():
-    response = AIMessage(
+    response = Message(role="assistant", 
         content=(
             "Day la bieu do bien dong gia dau.\n\n"
             "![Bieu do gia dau](https://example.com/chart-placeholder)\n\n"

@@ -9,8 +9,7 @@ base URL handling, and integration with llm_factory / llm_pool.
 import pytest
 from unittest.mock import patch, MagicMock
 
-from langchain_core.language_models import BaseChatModel
-
+from app.engine.llm_providers.wiii_chat_model import WiiiChatModel
 from app.engine.llm_providers.gemini_provider import GeminiProvider
 from app.engine.llm_providers.ollama_provider import OllamaProvider
 from app.engine.llm_pool import LLMPool, ThinkingTier
@@ -32,7 +31,7 @@ class TestGeminiProviderUnified:
         mock_settings.google_model = "gemini-3.1-flash-lite-preview"
         mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_settings.thinking_enabled = False
-        mock_instance = MagicMock(spec=BaseChatModel)
+        mock_instance = MagicMock(spec=WiiiChatModel)
         mock_chat.return_value = mock_instance
 
         p = GeminiProvider()
@@ -53,7 +52,7 @@ class TestGeminiProviderUnified:
         mock_settings.google_model = "gemini-3.1-flash-lite-preview"
         mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_settings.thinking_enabled = True
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = GeminiProvider()
         p.create_instance(tier="deep", thinking_budget=8192, include_thoughts=True)
@@ -69,7 +68,7 @@ class TestGeminiProviderUnified:
         mock_settings.google_model = "gemini-3.1-flash-lite-preview"
         mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_settings.thinking_enabled = False
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = GeminiProvider()
         p.create_instance(tier="light", thinking_budget=0)
@@ -85,7 +84,7 @@ class TestGeminiProviderUnified:
         mock_settings.google_model = "gemini-3.1-flash-lite-preview"
         mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_settings.thinking_enabled = True
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = GeminiProvider()
         p.create_instance(tier="light", thinking_budget=0)
@@ -110,7 +109,7 @@ class TestOllamaProviderUnified:
         mock_settings.ollama_model = "qwen3:4b-instruct-2507-q4_K_M"
         mock_settings.ollama_api_key = None
         mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
-        mock_instance = MagicMock(spec=BaseChatModel)
+        mock_instance = MagicMock(spec=WiiiChatModel)
         mock_chat.return_value = mock_instance
 
         p = OllamaProvider()
@@ -131,7 +130,7 @@ class TestOllamaProviderUnified:
         mock_settings.ollama_model = "llama3.2"
         mock_settings.ollama_api_key = None
         mock_settings.ollama_thinking_models = ["qwen3"]
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = OllamaProvider()
         p.create_instance(tier="light")
@@ -147,7 +146,7 @@ class TestOllamaProviderUnified:
         mock_settings.ollama_model = "llama3.2"
         mock_settings.ollama_api_key = None
         mock_settings.ollama_thinking_models = ["qwen3"]
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = OllamaProvider()
         p.create_instance(tier="light")
@@ -163,7 +162,7 @@ class TestOllamaProviderUnified:
         mock_settings.ollama_model = "gpt-oss:20b"
         mock_settings.ollama_api_key = "ollama-cloud-key"
         mock_settings.ollama_thinking_models = ["qwen3"]
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = OllamaProvider()
         p.create_instance(tier="moderate")
@@ -179,7 +178,7 @@ class TestOllamaProviderUnified:
         mock_settings.ollama_model = "qwen3:8b"
         mock_settings.ollama_api_key = None
         mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = OllamaProvider()
         p.create_instance(tier="moderate", thinking_budget=1024, include_thoughts=True)
@@ -195,7 +194,7 @@ class TestOllamaProviderUnified:
         mock_settings.ollama_model = "llama3.2"
         mock_settings.ollama_api_key = None
         mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = OllamaProvider()
         p.create_instance(tier="moderate", thinking_budget=1024, include_thoughts=True)
@@ -211,7 +210,7 @@ class TestOllamaProviderUnified:
         mock_settings.ollama_model = "qwen3:4b-instruct-2507-q4_K_M"
         mock_settings.ollama_api_key = None
         mock_settings.ollama_thinking_models = ["qwen3", "deepseek-r1", "qwq"]
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = OllamaProvider()
         p.create_instance(tier="moderate", thinking_budget=1024, include_thoughts=True)
@@ -242,7 +241,7 @@ class TestLLMFactoryUnified:
         mock_gemini_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_gemini_settings.thinking_enabled = False
 
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         from app.engine.llm_factory import create_llm
         llm = create_llm(tier=ThinkingTier.LIGHT)
@@ -282,7 +281,7 @@ class TestLLMPoolLegacyUnified:
         mock_gemini_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_gemini_settings.thinking_enabled = True
 
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         LLMPool._providers = {}  # Empty providers to trigger legacy path
         llm = LLMPool._create_instance("moderate")

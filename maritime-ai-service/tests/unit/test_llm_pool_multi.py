@@ -8,8 +8,7 @@ active provider tracking, get_stats(), reset(), and convenience functions.
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 
-from langchain_core.language_models import BaseChatModel
-
+from app.engine.llm_providers.wiii_chat_model import WiiiChatModel
 from app.engine.llm_pool import LLMPool, ThinkingTier, get_llm_deep, get_llm_moderate, get_llm_light
 from app.engine.llm_providers.base import LLMProvider
 
@@ -23,7 +22,7 @@ def reset_pool():
 
 
 def _make_provider(name, configured=True, available=True):
-    """Create a mock provider that returns BaseChatModel instances.
+    """Create a mock provider that returns WiiiChatModel instances.
 
     Note: We use MagicMock() without spec=LLMProvider because the concrete
     providers have extra methods (get_circuit_breaker, record_success, record_failure)
@@ -36,7 +35,7 @@ def _make_provider(name, configured=True, available=True):
     p.get_circuit_breaker.return_value = None
     p.record_success = AsyncMock()
     p.record_failure = AsyncMock()
-    mock_llm = MagicMock(spec=BaseChatModel)
+    mock_llm = MagicMock(spec=WiiiChatModel)
     mock_llm._tag = f"{name}_instance"
     p.create_instance.return_value = mock_llm
     return p
@@ -109,11 +108,11 @@ class TestPoolInitialization:
 
 
 class TestTypeCompatibility:
-    """Verify all returned instances are BaseChatModel compatible."""
+    """Verify all returned instances are WiiiChatModel compatible."""
 
     @patch("app.engine.llm_pool.settings")
     def test_pool_returns_base_chat_model(self, mock_settings):
-        """All instances from pool are BaseChatModel."""
+        """All instances from pool are WiiiChatModel."""
         mock_settings.enable_llm_failover = True
         mock_settings.llm_failover_chain = ["google"]
         mock_settings.thinking_enabled = True
@@ -127,11 +126,11 @@ class TestTypeCompatibility:
 
         for tier_key in ["deep", "moderate", "light"]:
             llm = LLMPool._pool[tier_key]
-            assert isinstance(llm, BaseChatModel)
+            assert isinstance(llm, WiiiChatModel)
 
     @patch("app.engine.llm_pool.settings")
     def test_get_returns_base_chat_model(self, mock_settings):
-        """LLMPool.get() returns BaseChatModel."""
+        """LLMPool.get() returns WiiiChatModel."""
         mock_settings.enable_llm_failover = True
         mock_settings.llm_failover_chain = ["google"]
         mock_settings.thinking_enabled = True
@@ -144,11 +143,11 @@ class TestTypeCompatibility:
         LLMPool._initialized = True
 
         llm = LLMPool.get(ThinkingTier.MODERATE)
-        assert isinstance(llm, BaseChatModel)
+        assert isinstance(llm, WiiiChatModel)
 
     @patch("app.engine.llm_pool.settings")
     def test_convenience_functions_return_base_chat_model(self, mock_settings):
-        """get_llm_deep/moderate/light return BaseChatModel."""
+        """get_llm_deep/moderate/light return WiiiChatModel."""
         mock_settings.enable_llm_failover = True
         mock_settings.llm_failover_chain = ["google"]
         mock_settings.thinking_enabled = True
@@ -160,9 +159,9 @@ class TestTypeCompatibility:
             LLMPool._create_instance(tier)
         LLMPool._initialized = True
 
-        assert isinstance(get_llm_deep(), BaseChatModel)
-        assert isinstance(get_llm_moderate(), BaseChatModel)
-        assert isinstance(get_llm_light(), BaseChatModel)
+        assert isinstance(get_llm_deep(), WiiiChatModel)
+        assert isinstance(get_llm_moderate(), WiiiChatModel)
+        assert isinstance(get_llm_light(), WiiiChatModel)
 
 
 # ============================================================================

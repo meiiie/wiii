@@ -612,9 +612,14 @@ class TestImagePipelinePassthrough:
             assert "NHẬN DIỆN SẢN PHẨM TỪ ẢNH" not in _SYSTEM_PROMPT
 
     def test_multimodal_human_message(self):
-        """With images, HumanMessage should have multimodal content parts."""
-        from langchain_core.messages import HumanMessage
+        """With images, the user message should carry multimodal content parts.
 
+        Phase 9 (#207): native dispatch path uses raw OpenAI-shape dicts
+        for multimodal content (``{"role": "user", "content": [<blocks>]}``)
+        because native ``Message.content`` is ``str`` only — vision blocks
+        ride as a list at the dispatch boundary, not inside the canonical
+        ``Message`` model.
+        """
         # Simulate what _react_loop does when images are present
         images = [{"data": "dGVzdA==", "media_type": "image/jpeg"}]
         query = "Tìm sản phẩm này"
@@ -629,20 +634,20 @@ class TestImagePipelinePassthrough:
                     "image_url": {"url": f"data:{img_type};base64,{img_data}"},
                 })
         content_parts.append({"type": "text", "text": query})
-        msg = HumanMessage(content=content_parts)
+        msg = {"role": "user", "content": content_parts}
 
-        assert isinstance(msg.content, list)
-        assert len(msg.content) == 2
-        assert msg.content[0]["type"] == "image_url"
-        assert msg.content[1]["type"] == "text"
-        assert msg.content[1]["text"] == query
+        assert isinstance(msg["content"], list)
+        assert len(msg["content"]) == 2
+        assert msg["content"][0]["type"] == "image_url"
+        assert msg["content"][1]["type"] == "text"
+        assert msg["content"][1]["text"] == query
 
     def test_no_images_text_message(self):
-        """Without images, HumanMessage is plain text."""
-        from langchain_core.messages import HumanMessage
+        """Without images, the user message is plain text (native ``Message`` shape)."""
+        from app.engine.messages import Message
 
         query = "Tìm MacBook Pro M4"
-        msg = HumanMessage(content=query)
+        msg = Message(role="user", content=query)
 
         assert isinstance(msg.content, str)
         assert msg.content == query

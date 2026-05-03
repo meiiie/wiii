@@ -18,7 +18,7 @@ import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from app.engine.messages import Message
 
 from app.engine.conversation_window import (
     FORMAT_CHAR_LIMIT,
@@ -361,8 +361,8 @@ class TestTutorNodeHistoryInjection:
         node._character_tools_enabled = False
 
         history_messages = [
-            HumanMessage(content="Previous question"),
-            AIMessage(content="Previous answer"),
+            Message(role="user", content="Previous question"),
+            Message(role="assistant", content="Previous answer"),
         ]
         context = {
             "langchain_messages": history_messages,
@@ -375,12 +375,12 @@ class TestTutorNodeHistoryInjection:
         call_args = mock_llm.ainvoke.call_args
         messages = call_args[0][0]
 
-        # Should be: [system_dict, HumanMessage(prev), AIMessage(prev), user_dict(new)]
+        # Should be: [system_dict, Message(role="user", prev), Message(role="assistant", prev), user_dict(new)]
         # Phase 1 migration: system/user are native dicts; history slice stays LC
         assert isinstance(messages[0], dict) and messages[0]["role"] == "system"
-        assert isinstance(messages[1], HumanMessage)
+        assert messages[1].role == "user"
         assert messages[1].content == "Previous question"
-        assert isinstance(messages[2], AIMessage)
+        assert messages[2].role == "assistant"
         assert messages[2].content == "Previous answer"
         assert isinstance(messages[-1], dict) and messages[-1]["role"] == "user"
         assert messages[-1]["content"] == "New question"
@@ -426,7 +426,7 @@ class TestTutorNodeHistoryInjection:
         node._character_tools_enabled = False
 
         # 20 history messages
-        history = [HumanMessage(content=f"msg_{i}") for i in range(20)]
+        history = [Message(role="user", content=f"msg_{i}") for i in range(20)]
         context = {"langchain_messages": history, "user_role": "student"}
 
         await node._react_loop("New Q", context)
@@ -449,7 +449,7 @@ class TestTutorNodeHistoryInjection:
             "user_role": "student",
             "user_name": "Test",
             "conversation_history": "Should NOT appear in system prompt",
-            "langchain_messages": [HumanMessage(content="should not appear")],
+            "langchain_messages": [Message(role="user", content="should not appear")],
             "conversation_summary": "should not appear either",
         }
 
@@ -473,8 +473,8 @@ class TestDirectNodeHistoryInjection:
     async def test_direct_node_includes_history(self):
         """direct_response_node injects history between system and human messages."""
         history_messages = [
-            HumanMessage(content="What's COLREGs?"),
-            AIMessage(content="COLREGs is..."),
+            Message(role="user", content="What's COLREGs?"),
+            Message(role="assistant", content="COLREGs is..."),
         ]
         state = {
             "query": "Tell me more",
@@ -508,12 +508,12 @@ class TestDirectNodeHistoryInjection:
 
         # Verify LLM was called with history messages
         call_args = mock_llm.ainvoke.call_args[0][0]
-        # Should be [system_dict, HumanMessage(prev), AIMessage(prev), user_dict(new)]
+        # Should be [system_dict, Message(role="user", prev), Message(role="assistant", prev), user_dict(new)]
         # Phase 1 migration: system/user are native dicts; history slice stays LC
         assert isinstance(call_args[0], dict) and call_args[0]["role"] == "system"
-        assert isinstance(call_args[1], HumanMessage)
+        assert call_args[1].role == "user"
         assert call_args[1].content == "What's COLREGs?"
-        assert isinstance(call_args[2], AIMessage)
+        assert call_args[2].role == "assistant"
         assert isinstance(call_args[-1], dict) and call_args[-1]["role"] == "user"
         assert call_args[-1]["content"] == "Tell me more"
 
@@ -576,8 +576,8 @@ class TestMemoryAgentHistoryInjection:
         mock_llm.ainvoke = AsyncMock(return_value=mock_response)
 
         history_messages = [
-            HumanMessage(content="Tên tôi là Nam"),
-            AIMessage(content="Mình ghi nhớ rồi, Nam!"),
+            Message(role="user", content="Tên tôi là Nam"),
+            Message(role="assistant", content="Mình ghi nhớ rồi, Nam!"),
         ]
         state = {
             "user_id": "user1",
@@ -597,9 +597,9 @@ class TestMemoryAgentHistoryInjection:
         assert len(call_args) == 4
         # Phase 1 migration: system/user are native dicts; history slice stays LC
         assert isinstance(call_args[0], dict) and call_args[0]["role"] == "system"
-        assert isinstance(call_args[1], HumanMessage)
+        assert call_args[1].role == "user"
         assert call_args[1].content == "Tên tôi là Nam"
-        assert isinstance(call_args[2], AIMessage)
+        assert call_args[2].role == "assistant"
         assert isinstance(call_args[-1], dict) and call_args[-1]["role"] == "user"
 
     @pytest.mark.asyncio
@@ -620,7 +620,7 @@ class TestMemoryAgentHistoryInjection:
         mock_llm.ainvoke = AsyncMock(return_value=mock_response)
 
         # 10 history messages
-        history = [HumanMessage(content=f"msg_{i}") for i in range(10)]
+        history = [Message(role="user", content=f"msg_{i}") for i in range(10)]
         state = {
             "user_id": "user1",
             "query": "Test",
@@ -686,8 +686,8 @@ class TestSupervisorContextEnhancement:
         mock_result.reasoning = "test"
 
         history = [
-            HumanMessage(content="Tell me about COLREGs"),
-            AIMessage(content="COLREGs is the international regulations..."),
+            Message(role="user", content="Tell me about COLREGs"),
+            Message(role="assistant", content="COLREGs is the international regulations..."),
         ]
         context = {"langchain_messages": history}
 
@@ -758,8 +758,8 @@ class TestGraphInitialState:
     async def test_messages_populated_from_langchain_messages(self):
         """Initial state messages are populated from langchain_messages in context."""
         history = [
-            HumanMessage(content="Q1"),
-            AIMessage(content="A1"),
+            Message(role="user", content="Q1"),
+            Message(role="assistant", content="A1"),
         ]
         context = {"langchain_messages": history}
 
@@ -848,7 +848,7 @@ class TestEndToEnd:
             message="Test",
             user_role=MagicMock(),
         )
-        ctx.langchain_messages = [HumanMessage(content="prev")]
+        ctx.langchain_messages = [Message(role="user", content="prev")]
         ctx.conversation_summary = "Summary of older turns"
 
         # Simulate what ChatOrchestrator builds

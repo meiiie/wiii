@@ -8,8 +8,7 @@ Tests provider ABC, Gemini/OpenAI/Ollama provider creation, is_available, is_con
 import pytest
 from unittest.mock import patch, MagicMock, PropertyMock
 
-from langchain_core.language_models import BaseChatModel
-
+from app.engine.llm_providers.wiii_chat_model import WiiiChatModel
 from app.engine.llm_providers.base import LLMProvider
 from app.engine.llm_providers.gemini_provider import GeminiProvider
 from app.engine.llm_providers.openai_provider import OpenAIProvider
@@ -174,7 +173,7 @@ class TestGeminiProvider:
         mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
         mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_settings.thinking_enabled = True
-        mock_instance = MagicMock(spec=BaseChatModel)
+        mock_instance = MagicMock(spec=WiiiChatModel)
         mock_chat.return_value = mock_instance
 
         p = GeminiProvider()
@@ -191,7 +190,7 @@ class TestGeminiProvider:
         mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
         mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_settings.thinking_enabled = False
-        mock_instance = MagicMock(spec=BaseChatModel)
+        mock_instance = MagicMock(spec=WiiiChatModel)
         mock_chat.return_value = mock_instance
 
         p = GeminiProvider()
@@ -217,7 +216,7 @@ class TestGeminiProvider:
         mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
         mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_settings.thinking_enabled = True
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = GeminiProvider()
         p.create_instance(tier="deep", thinking_budget=8192, include_thoughts=True)
@@ -237,7 +236,7 @@ class TestGeminiProvider:
         mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
         mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_settings.thinking_enabled = True
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = GeminiProvider()
         p.create_instance(tier="moderate", thinking_budget=2048)
@@ -253,7 +252,7 @@ class TestGeminiProvider:
         mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
         mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_settings.thinking_enabled = True
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = GeminiProvider()
         p.create_instance(tier="light", thinking_budget=512)
@@ -269,7 +268,7 @@ class TestGeminiProvider:
         mock_settings.google_model_advanced = "gemini-3.1-pro-preview"
         mock_settings.google_openai_compat_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         mock_settings.thinking_enabled = False
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = GeminiProvider()
         p.create_instance(tier="deep", thinking_budget=8192)
@@ -318,7 +317,7 @@ class TestOpenAIProvider:
         mock_settings.openai_model = "gpt-4o-mini"
         mock_settings.openai_model_advanced = "gpt-4o"
         mock_settings.openai_base_url = None
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = OpenAIProvider()
         llm = p.create_instance(tier="deep")
@@ -332,7 +331,7 @@ class TestOpenAIProvider:
         mock_settings.openai_model = "gpt-4o-mini"
         mock_settings.openai_model_advanced = "gpt-4o"
         mock_settings.openai_base_url = None
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = OpenAIProvider()
         llm = p.create_instance(tier="light")
@@ -356,7 +355,7 @@ class TestOpenAIProvider:
         mock_settings.openrouter_data_collection = None
         mock_settings.openrouter_zdr = None
         mock_settings.openrouter_provider_sort = None
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = OpenAIProvider()
         p.create_instance(tier="moderate")
@@ -379,7 +378,7 @@ class TestOpenAIProvider:
         mock_settings.openrouter_data_collection = "deny"
         mock_settings.openrouter_zdr = True
         mock_settings.openrouter_provider_sort = "latency"
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = OpenAIProvider()
         p.create_instance(tier="moderate")
@@ -413,7 +412,7 @@ class TestOpenAIProvider:
         mock_settings.openrouter_data_collection = "deny"
         mock_settings.openrouter_zdr = True
         mock_settings.openrouter_provider_sort = "latency"
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = OpenAIProvider()
         p.create_instance(tier="moderate")
@@ -496,7 +495,7 @@ class TestOllamaProvider:
         mock_settings.ollama_base_url = "http://localhost:11434"
         mock_settings.ollama_model = "llama3.2"
         mock_settings.ollama_api_key = None
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = OllamaProvider()
         llm = p.create_instance(tier="moderate", temperature=0.5)
@@ -513,7 +512,7 @@ class TestOllamaProvider:
         mock_settings.ollama_base_url = "https://ollama.com/api"
         mock_settings.ollama_model = "gpt-oss:20b"
         mock_settings.ollama_api_key = "ollama-cloud-key"
-        mock_chat.return_value = MagicMock(spec=BaseChatModel)
+        mock_chat.return_value = MagicMock(spec=WiiiChatModel)
 
         p = OllamaProvider()
         p.create_instance(tier="moderate", temperature=0.1)

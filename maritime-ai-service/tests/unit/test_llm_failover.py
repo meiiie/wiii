@@ -11,8 +11,7 @@ Sprint 11: Tests failover logic in LLMPool._create_instance():
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock, call
 
-from langchain_core.language_models import BaseChatModel
-
+from app.engine.llm_providers.wiii_chat_model import WiiiChatModel
 from app.engine.llm_pool import (
     FAILOVER_MODE_AUTO,
     FAILOVER_MODE_PINNED,
@@ -49,7 +48,7 @@ def _make_mock_provider(name: str, configured: bool = True, available: bool = Tr
     if fail:
         provider.create_instance.side_effect = Exception(f"{name} provider failed")
     else:
-        mock_llm = MagicMock(spec=BaseChatModel)
+        mock_llm = MagicMock(spec=WiiiChatModel)
         mock_llm._provider_name = name  # Tag for identification
         provider.create_instance.return_value = mock_llm
     provider.get_circuit_breaker.return_value = None
@@ -171,7 +170,7 @@ class TestFailoverChain:
         mock_settings.llm_failover_chain = ["google"]
         mock_settings.thinking_enabled = True
 
-        cached_llm = MagicMock(spec=BaseChatModel)
+        cached_llm = MagicMock(spec=WiiiChatModel)
         LLMPool._pool["deep"] = cached_llm
 
         result = LLMPool._create_instance("deep")

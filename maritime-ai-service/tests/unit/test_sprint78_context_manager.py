@@ -14,7 +14,7 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
-from langchain_core.messages import AIMessage, HumanMessage
+from app.engine.messages import Message
 
 
 # =============================================================================
@@ -82,8 +82,8 @@ class TestTokenBudgetManager:
 
         mgr = TokenBudgetManager()
         messages = [
-            HumanMessage(content="Hello world"),  # 11 chars → 2 + 4 overhead = 6
-            AIMessage(content="Hi there"),  # 8 chars → 2 + 4 = 6
+            Message(role="user", content="Hello world"),  # 11 chars → 2 + 4 overhead = 6
+            Message(role="assistant", content="Hi there"),  # 8 chars → 2 + 4 = 6
         ]
         tokens = mgr.estimate_messages_tokens(messages)
         assert tokens > 0
@@ -602,7 +602,7 @@ class TestInputProcessorIntegration:
             mock_inst = MagicMock()
             mock_inst.maybe_compact = AsyncMock(return_value=(
                 "",  # no summary
-                [HumanMessage(content="prev msg")],  # messages
+                [Message(role="user", content="prev msg")],  # messages
                 MagicMock(  # budget
                     total_used=100,
                     total_budget=20000,
@@ -872,13 +872,13 @@ class TestSupervisorSummaryInjection:
 
     def test_supervisor_context_includes_summary(self):
         """Verify supervisor builds context with summary when available."""
-        from langchain_core.messages import HumanMessage, AIMessage
+        from app.engine.messages import Message
 
         # Simulate what supervisor._route_structured does
         context = {
             "langchain_messages": [
-                HumanMessage(content="Luật COLREGs là gì?"),
-                AIMessage(content="COLREGs là bộ quy tắc tránh va."),
+                Message(role="user", content="Luật COLREGs là gì?"),
+                Message(role="assistant", content="COLREGs là bộ quy tắc tránh va."),
             ],
             "conversation_summary": "User đã hỏi về luật hàng hải cơ bản.",
         }
