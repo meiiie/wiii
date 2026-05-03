@@ -20,6 +20,7 @@ from app.main_app_factory_support import (
     configure_exception_handlers,
     configure_session_middleware,
     include_api_router,
+    include_edge_endpoints,
     mount_frontend_assets,
     mount_mcp_server,
     register_agent_card_route,
@@ -80,6 +81,7 @@ def create_application() -> FastAPI:
         general_exception_handler=general_exception_handler,
     )
     include_api_router(app)
+    include_edge_endpoints(app)
     register_agent_card_route(app, logger)
     mount_mcp_server(app, logger)
     mount_frontend_assets(app, logger)
