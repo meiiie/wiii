@@ -109,6 +109,20 @@ def include_api_router(app: FastAPI) -> None:
     app.include_router(api_v1_router, prefix=settings.api_v1_prefix)
 
 
+def include_edge_endpoints(app: FastAPI) -> None:
+    """Mount OpenAI/Anthropic-compat edge endpoints at root ``/v1``.
+
+    Phase 10d of the runtime migration epic (#207). Gated by
+    ``enable_native_runtime`` so the routes only register when the lane-
+    first runtime is opt-in for that environment.
+    """
+    if not settings.enable_native_runtime:
+        return
+    from app.api.edge_endpoints import router as edge_router
+
+    app.include_router(edge_router)
+
+
 def register_agent_card_route(app: FastAPI, logger_: logging.Logger) -> None:
     if not settings.enable_soul_bridge:
         return

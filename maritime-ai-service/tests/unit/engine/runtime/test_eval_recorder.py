@@ -135,6 +135,88 @@ async def test_list_sessions(recorder: EvalRecorder):
     assert listed == ["a", "b"]
 
 
+# ── list_days ──
+
+async def test_list_days_empty(recorder: EvalRecorder):
+    assert await recorder.list_days() == []
+
+
+async def test_list_days_returns_date_partitions(tmp_path: Path, recorder: EvalRecorder):
+    # Manually create partitions to simulate multiple days.
+    org_dir = tmp_path / "_personal"
+    for day in ("2026-05-01", "2026-05-02", "2026-05-03"):
+        (org_dir / day).mkdir(parents=True)
+    days = await recorder.list_days()
+    assert days == ["2026-05-01", "2026-05-02", "2026-05-03"]
+
+
+async def test_list_days_filters_non_date_dirs(tmp_path: Path, recorder: EvalRecorder):
+    org_dir = tmp_path / "_personal"
+    (org_dir / "2026-05-01").mkdir(parents=True)
+    (org_dir / "junk-folder").mkdir(parents=True)
+    (org_dir / "2026").mkdir(parents=True)  # too short
+    days = await recorder.list_days()
+    assert days == ["2026-05-01"]
+
+
+async def test_list_days_rejects_malformed_dates(tmp_path: Path, recorder: EvalRecorder):
+    """Length+hyphen heuristic alone passes garbage like ``2026-XX-01`` —
+    list_days must validate via strptime so callers can trust the output."""
+    org_dir = tmp_path / "_personal"
+    for name in ("2026-05-01", "2026-XX-01", "abcd-ef-gh", "2026-13-01", "2026-02-30"):
+        (org_dir / name).mkdir(parents=True)
+    days = await recorder.list_days()
+    assert days == ["2026-05-01"]
+
+
+# ── prune_older_than ──
+
+async def test_prune_older_than_removes_old_partitions(tmp_path: Path, recorder: EvalRecorder):
+    org_dir = tmp_path / "_personal"
+    # Old: should be removed.
+    old_day = org_dir / "2026-04-01"
+    old_day.mkdir(parents=True)
+    (old_day / "session_x.jsonl").write_text('{"n": 1}\n', encoding="utf-8")
+    # Recent: should stay.
+    recent_day = org_dir / "2026-05-02"
+    recent_day.mkdir(parents=True)
+    (recent_day / "session_y.jsonl").write_text('{"n": 2}\n', encoding="utf-8")
+
+    removed = await recorder.prune_older_than(retention_days=7, today="2026-05-03")
+    assert removed.get("_personal") == 1
+    assert not old_day.exists()
+    assert recent_day.exists()
+
+
+async def test_prune_older_than_zero_retention_is_noop(tmp_path: Path, recorder: EvalRecorder):
+    (tmp_path / "_personal" / "2026-04-01").mkdir(parents=True)
+    removed = await recorder.prune_older_than(retention_days=0)
+    assert removed == {}
+
+
+async def test_prune_older_than_skips_malformed_day_dirs(
+    tmp_path: Path, recorder: EvalRecorder
+):
+    org_dir = tmp_path / "_personal"
+    (org_dir / "junk-folder").mkdir(parents=True)
+    (org_dir / "not-a-date").mkdir(parents=True)
+    removed = await recorder.prune_older_than(retention_days=1, today="2026-05-03")
+    # Both garbage dirs left alone.
+    assert removed == {}
+    assert (org_dir / "junk-folder").exists()
+
+
+async def test_prune_older_than_handles_multiple_orgs(
+    tmp_path: Path, recorder: EvalRecorder
+):
+    for org in ("org-1", "org-2"):
+        old = tmp_path / org / "2026-04-01"
+        old.mkdir(parents=True)
+        (old / "s.jsonl").write_text("{}\n", encoding="utf-8")
+    removed = await recorder.prune_older_than(retention_days=1, today="2026-05-03")
+    assert removed == {"org-1": 1, "org-2": 1}
+
+
 # ── diff_records ──
 
 def test_diff_identical_response_full_overlap():
