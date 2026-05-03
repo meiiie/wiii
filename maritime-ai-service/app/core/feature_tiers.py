@@ -159,6 +159,7 @@ FEATURE_TIER_GROUPS: Final[dict[FeatureTier, frozenset[str]]] = {
             "enable_eval_recording",
             "enable_native_runtime",
             "enable_session_event_log",
+            "enable_subagent_isolation",
             "enable_skill_creation",
             "enable_skill_export",
             "enable_skill_metrics",
