@@ -15,14 +15,15 @@ print("Testing Manual ReAct Pattern (LangChain 1.x)")
 print("=" * 60)
 
 # Test 1: Import tool decorator
-print("\n1. Testing @tool decorator from langchain.tools...")
+print("\n1. Testing @tool decorator import...")
 try:
-    from langchain.tools import tool
-    print("   ✅ from langchain.tools import tool - SUCCESS")
+    # Phase 2 of #207 — native Tool replaced langchain_core.tools.
+    from app.engine.tools.native_tool import tool
+    print("   ✅ from app.engine.tools.native_tool import tool - SUCCESS")
 except ImportError:
     try:
         from langchain_core.tools import tool
-        print("   ✅ from langchain_core.tools import tool - SUCCESS (fallback)")
+        print("   ✅ from langchain_core.tools import tool - SUCCESS (legacy fallback)")
     except ImportError as e:
         print(f"   ❌ FAILED - {e}")
         sys.exit(1)
