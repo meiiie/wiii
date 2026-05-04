@@ -116,14 +116,25 @@ describe("useSSEStream — type-safe metadata", () => {
     expect(code).not.toContain("Wiii dang tro tren trang");
   });
 
-  it("surfaces status_only heartbeats as the live timer status only", async () => {
+  it("hides status_only heartbeats from the live timer (Phase 32d UX cleanup)", async () => {
+    // Before Phase 32d, every status event — including the ~13
+    // status_only heartbeats per turn from the multi-agent pipeline —
+    // updated the live timer label. That repaint cadence is what the
+    // user perceived as "giật" (jerky). After Phase 32d, the live
+    // timer call lives INSIDE the !isEphemeralHeartbeat guard so only
+    // user-facing progress events update it. Internal pipeline events
+    // (guardian → supervisor → direct → synthesizer) stay in the
+    // persistent timeline for debug, not in the live timer.
     const src = await import("@/hooks/useSSEStream?raw");
     const code = (src as any).default || src;
     const heartbeatGuard = code.indexOf("if (!isEphemeralHeartbeat)");
     const liveStatus = code.indexOf("store.setStreamingStep(label);", code.indexOf("onStatus:"));
-    expect(liveStatus).toBeGreaterThan(-1);
-    expect(heartbeatGuard).toBeGreaterThan(liveStatus);
-    expect(code).toContain("keep them out of the persistent step/phase timeline");
+    expect(heartbeatGuard).toBeGreaterThan(-1);
+    expect(liveStatus).toBeGreaterThan(heartbeatGuard);
+    // The Phase 32d comment block must mention the SOTA precedent
+    // (Claude / ChatGPT / Gemini show ONE generic spinner) so a
+    // future contributor doesn't revert this for "more transparency".
+    expect(code).toContain("Phase 32d");
   });
 
   it("sets an immediate live status before the first SSE event arrives", async () => {
