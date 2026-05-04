@@ -83,6 +83,12 @@ ZHIPU_DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
 NVIDIA_DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
 NVIDIA_DEFAULT_MODEL = "deepseek-ai/deepseek-v4-flash"
 NVIDIA_DEFAULT_MODEL_ADVANCED = "deepseek-ai/deepseek-v4-pro"
+# Phase 32a (#207): Qwen3 thinking model emits ``reasoning_content`` deltas
+# that Wiii's existing thinking-stream extractor already understands.
+# Switch ``NVIDIA_MODEL_ADVANCED`` to this id when you want a visible
+# reasoning block in the UI (the streaming pipeline picks it up
+# automatically via ``_extract_openai_delta_text_impl``).
+NVIDIA_THINKING_MODEL = "qwen/qwen3-next-80b-a3b-thinking"
 
 GOOGLE_CHAT_MODELS: dict[str, ChatModelMetadata] = {
     GOOGLE_DEFAULT_MODEL: ChatModelMetadata(
@@ -437,6 +443,19 @@ NVIDIA_CHAT_MODELS: dict[str, ChatModelMetadata] = {
         provider="nvidia",
         model_name=NVIDIA_DEFAULT_MODEL_ADVANCED,
         display_name="DeepSeek V4 Pro (NVIDIA NIM)",
+        status="current",
+        supports_streaming=True,
+        supports_structured_output=False,
+        capability_source="static",
+    ),
+    # Phase 32a (#207): Reasoning-capable model. Emits ``reasoning_content``
+    # deltas that surface as ``thinking_*`` SSE events in the UI. Slower
+    # per-turn (model thinks then answers) but gives the user the
+    # transparency that Claude / o3 / DeepSeek-R1 deliver natively.
+    NVIDIA_THINKING_MODEL: ChatModelMetadata(
+        provider="nvidia",
+        model_name=NVIDIA_THINKING_MODEL,
+        display_name="Qwen3 80B Thinking (NVIDIA NIM)",
         status="current",
         supports_streaming=True,
         supports_structured_output=False,

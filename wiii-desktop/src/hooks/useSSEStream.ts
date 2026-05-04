@@ -812,10 +812,20 @@ export function useSSEStream() {
         }
 
         if (label) {
-          // Show status_only heartbeats as the current live timer status,
-          // but keep them out of the persistent step/phase timeline.
-          store.setStreamingStep(label);
+          // Phase 32d (#207): UI cleanup. The backend pipeline emits
+          // ~13 status events per turn (guardian → supervisor → direct
+          // → synthesizer with route + step_start/end variants). Each
+          // setStreamingStep call repaints the live timer label, which
+          // produces a jerky "internal pipeline" feeling that big
+          // orgs (Claude / ChatGPT / Gemini) deliberately avoid — they
+          // show ONE generic spinner ("Wiii đang nghĩ...") until the
+          // first answer or thinking event lands. We surface only the
+          // user-facing labels: explicit ``thinking_*`` events drive
+          // ThinkingBlock; routing-internal status_only events stay
+          // in the persistent timeline (debug / power users) but do
+          // NOT update the live timer.
           if (!isEphemeralHeartbeat) {
+            store.setStreamingStep(label);
             store.addStreamingStep(label, data.node);
             store.appendPhaseStatus(label, data.node, data.step_id);
           }
