@@ -427,6 +427,24 @@ async def _stream_openai_compatible_answer_with_route_impl(
     reasoning_started = False
     tool_call_chunks: dict[int, dict[str, str]] = {}
 
+    # Phase 34 (#207): boundary-aware token batching. When the
+    # ``enable_stream_smoother`` flag is on, we route every answer_delta
+    # through a StreamSmoother that flushes at sentence/punctuation
+    # boundaries so the UI repaints with even cadence regardless of
+    # whether the provider bursts 30 tokens at once or trickles char-
+    # by-char. Default off — when off, the emit path is unchanged.
+    answer_smoother = None
+    try:
+        if settings.enable_stream_smoother:
+            from app.engine.runtime.stream_smoother import StreamSmoother
+
+            answer_smoother = StreamSmoother()
+    except Exception:  # noqa: BLE001
+        # Settings unavailable / smoother import failed → fall through
+        # to the legacy path. Telemetry-style improvements never break
+        # the request.
+        answer_smoother = None
+
     async def _close_thinking_for_non_answer() -> None:
         nonlocal thinking_closed
         if thinking_closed:
@@ -510,9 +528,22 @@ async def _stream_openai_compatible_answer_with_route_impl(
                             "node": node,
                         })
                     thinking_closed = True
-                await push_event({
-                    "type": "answer_delta",
-                    "content": answer_delta,
+                # Phase 34: route through StreamSmoother when enabled.
+                # Smoother yields 0+ flushed strings per chunk based on
+                # punctuation / length / time-watchdog boundaries, so
+                # the UI sees even-cadence repaints instead of provider-
+                # burst flicker. When disabled, single direct emit.
+                if answer_smoother is not None:
+                    for flushed in answer_smoother.feed(answer_delta):
+                        await push_event({
+                            "type": "answer_delta",
+                            "content": flushed,
+                            "node": node,
+                        })
+                else:
+                    await push_event({
+                        "type": "answer_delta",
+                        "content": answer_delta,
                         "node": node,
                     })
                 emitted_answer += answer_delta
@@ -530,6 +561,17 @@ async def _stream_openai_compatible_answer_with_route_impl(
             from app.engine.llm_model_health import record_model_success
 
             record_model_success(provider_name, model_name)
+            # Phase 34: drain any answer fragment still in the smoother
+            # so the tail token (final word, punctuation) doesn't get
+            # silently dropped.
+            if answer_smoother is not None:
+                tail = answer_smoother.flush_remaining()
+                if tail:
+                    await push_event({
+                        "type": "answer_delta",
+                        "content": tail,
+                        "node": node,
+                    })
             await _close_thinking_for_non_answer()
             return make_assistant_message(emitted_answer), True
         await _close_thinking_for_non_answer()
