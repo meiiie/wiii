@@ -139,6 +139,40 @@ async def build_context_impl(
         logger_obj=logger_obj,
     )
 
+    # Phase 34 (#207): episodic recall — surface prior-session turns
+    # that look related to the current message. Best-effort; if the
+    # durable log is disabled or the DB hiccups, returns empty and we
+    # proceed with just the recent window. The returned block is
+    # appended to ``core_memory_block`` so the multi-agent context
+    # builder includes it in the system prompt without a schema change.
+    try:
+        if getattr(settings_obj, "enable_episodic_retrieval", False):
+            current_message = getattr(request, "message", "") or ""
+            from app.engine.runtime.episodic_retrieval import (
+                render_for_prompt,
+                search_prior_user_turns,
+            )
+
+            episodic_matches = await search_prior_user_turns(
+                user_id=str(user_id),
+                query=current_message,
+                limit=3,
+                exclude_session_id=str(session_id) if session_id else None,
+                org_id=getattr(request, "organization_id", None),
+            )
+            episodic_block = render_for_prompt(episodic_matches)
+            if episodic_block:
+                context.core_memory_block = (
+                    (context.core_memory_block or "") + "\n" + episodic_block
+                )
+                logger_obj.info(
+                    "[EPISODIC] Injected %d prior-turn match(es) for %s",
+                    len(episodic_matches),
+                    user_id,
+                )
+    except Exception as exc:  # noqa: BLE001
+        logger_obj.warning("[EPISODIC] retrieval skipped: %s", exc)
+
     if conversation_analyzer and context.history_list:
         try:
             context.conversation_analysis = conversation_analyzer.analyze(context.history_list)

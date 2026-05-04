@@ -718,6 +718,38 @@ class BaseSettingsFieldsMixin:
         ),
     )
 
+    enable_stream_smoother: bool = Field(
+        default=False,
+        description=(
+            "Route answer_delta events through the boundary-aware "
+            "StreamSmoother (Phase 33a/34 of #207). When True, raw "
+            "provider chunks are batched at sentence/punctuation "
+            "boundaries so the UI repaints with even cadence. Default "
+            "off so the legacy direct-emit path is preserved until "
+            "the team flips the flag for canary."
+        ),
+    )
+
+    enable_casual_fast_path: bool = Field(
+        default=False,
+        description=(
+            "When the casual_intent classifier scores >= 0.85 AND no "
+            "tools are explicitly requested, skip multi-agent (guardian "
+            "+ supervisor) and call light-tier LLM directly (Phase 33b/34 "
+            "of #207). Cuts TTFT 22-30s -> ~5s for casual greetings."
+        ),
+    )
+
+    enable_episodic_retrieval: bool = Field(
+        default=False,
+        description=(
+            "Surface keyword-matching prior turns from the same user's "
+            "session_events into the system prompt as a 'Trí nhớ từ "
+            "các phiên trước' block (Phase 33c/34 of #207). Cross-"
+            "session episodic recall."
+        ),
+    )
+
     enable_otlp_export: bool = Field(
         default=False,
         description=(
