@@ -158,6 +158,27 @@ beforeEach(() => {
 });
 
 describe("useSSEStream concurrency", () => {
+  it("flushes thinking under its original worker and step before switching identity", async () => {
+    const append = vi.spyOn(useChatStore.getState(), "appendThinkingDelta");
+    vi.mocked(sendMessageStream).mockImplementationOnce(async (_request, handlers) => {
+      handlers.onThinkingDelta?.({ content: "Worker A draft", node: "worker-a", step_id: "step-a" });
+      handlers.onThinkingDelta?.({ content: "Worker B draft", node: "worker-b", step_id: "step-b" });
+      handlers.onThinkingDelta?.({ content: "Next phase\n\n", node: "worker-b", step_id: "step-c" });
+      return { lastEventId: null, sawDone: true, eventOrder: ["thinking_delta", "done"] };
+    });
+    const { result } = renderHook(() => useSSEStream());
+    try {
+      await act(async () => { await result.current.sendMessage("Summarize the workers"); });
+      expect(append.mock.calls.map(([text, node, meta]) => [text, node, meta?.stepId])).toEqual([
+        ["Worker A draft", "worker-a", "step-a"],
+        ["Worker B draft", "worker-b", "step-b"],
+        ["Next phase\n\n", "worker-b", "step-c"],
+      ]);
+    } finally {
+      append.mockRestore();
+    }
+  });
+
   it("does not let an aborted previous stream retry against the new controller", async () => {
     const sendMessageStreamMock = vi.mocked(sendMessageStream);
 

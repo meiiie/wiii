@@ -9,6 +9,8 @@ import { useEffect, useRef, useCallback, useState } from "react";
 export function useAutoScroll(dependency: unknown) {
   const containerRef = useRef<HTMLDivElement>(null);
   const isUserScrolledUp = useRef(false);
+  const scrollFrameRef = useRef(0);
+  const followFrameRef = useRef(0);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
@@ -22,37 +24,68 @@ export function useAutoScroll(dependency: unknown) {
     }
   }, []);
 
-  // Auto-scroll when dependency changes (new content)
-  // Slight delay (50ms) lets message entry animations settle before scrolling
+  const scheduleFollow = useCallback(() => {
+    if (!containerRef.current || isUserScrolledUp.current || followFrameRef.current) return;
+    followFrameRef.current = requestAnimationFrame(() => {
+      followFrameRef.current = 0;
+      const container = containerRef.current;
+      if (!container || isUserScrolledUp.current) return;
+      container.scrollTo({ top: container.scrollHeight, behavior: "auto" });
+    });
+  }, []);
+
+  useEffect(scheduleFollow, [dependency, scheduleFollow]);
+
   useEffect(() => {
-    if (containerRef.current && !isUserScrolledUp.current) {
-      const timer = setTimeout(() => {
-        if (containerRef.current) {
-          containerRef.current.scrollTo({
-            top: containerRef.current.scrollHeight,
-            behavior: "smooth",
-          });
-        }
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [dependency]);
+    const container = containerRef.current;
+    if (!container) return;
+    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleFollow);
+    const observeContent = () => {
+      resize?.disconnect();
+      resize?.observe(container);
+      for (const child of container.children) resize?.observe(child);
+      scheduleFollow();
+    };
+    observeContent();
+    const children = new MutationObserver(observeContent);
+    children.observe(container, { childList: true });
+    return () => {
+      children.disconnect();
+      resize?.disconnect();
+      if (followFrameRef.current) cancelAnimationFrame(followFrameRef.current);
+      followFrameRef.current = 0;
+    };
+  }, [scheduleFollow]);
 
   // Detect user scroll
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    const syncScrollState = () => {
+      scrollFrameRef.current = 0;
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      const atBottom = distanceFromBottom <= 200;
+      isUserScrolledUp.current = !atBottom;
+      setIsAtBottom((current) => current === atBottom ? current : atBottom);
+    };
     const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      const scrolledUp = distanceFromBottom > 200;
-      isUserScrolledUp.current = scrolledUp;
-      setIsAtBottom(!scrolledUp);
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      isUserScrolledUp.current = distanceFromBottom > 200;
+      if (isUserScrolledUp.current && followFrameRef.current) {
+        cancelAnimationFrame(followFrameRef.current);
+        followFrameRef.current = 0;
+      }
+      if (scrollFrameRef.current) return;
+      scrollFrameRef.current = requestAnimationFrame(syncScrollState);
     };
 
-    container.addEventListener("scroll", handleScroll);
-    return () => container.removeEventListener("scroll", handleScroll);
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+      if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = 0;
+    };
   }, []);
 
   return { containerRef, scrollToBottom, isAtBottom };

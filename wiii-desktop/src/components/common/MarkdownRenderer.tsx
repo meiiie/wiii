@@ -114,8 +114,8 @@ export function MarkdownRenderer({
   // React 18 `useDeferredValue` lets us yield to high-priority updates
   // (state changes, paint) when content updates rapidly. The deferred
   // value is rendered with stale content until parsing catches up; this
-  // eliminates the perceived "giật" stutter when StreamBuffer flushes
-  // 28 chars/frame and ReactMarkdown re-tokenizes the full string.
+  // limits work when a live semantic stream commits another readable block
+  // and ReactMarkdown re-tokenizes the accumulated answer.
   // Reference: https://react.dev/reference/react/useDeferredValue
   const deferredContent = useDeferredValue(content);
   const safeContent = useMemo(
