@@ -100,8 +100,8 @@ ENV DISPLAY=:1 \
 
 EXPOSE 6080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --start-interval=1s --retries=3 \
-  CMD curl --unix-socket /run/wiii-control/semantic.sock --fail --silent --show-error --max-time 2 http://localhost/health >/dev/null \
-      && curl --fail --silent --show-error --max-time 2 http://127.0.0.1:9222/json/version >/dev/null \
+  CMD /usr/bin/curl --disable --unix-socket /run/wiii-control/semantic.sock --fail --silent --show-error --max-time 2 http://localhost/health >/dev/null \
+      && /usr/bin/curl --disable --fail --silent --show-error --max-time 2 http://127.0.0.1:9222/json/version >/dev/null \
       && pgrep -x websockify >/dev/null \
       && pgrep -x Xtigervnc >/dev/null \
       && pgrep -x openbox >/dev/null \

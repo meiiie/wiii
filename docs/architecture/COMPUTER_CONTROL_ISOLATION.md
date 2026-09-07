@@ -39,9 +39,14 @@ describe a private socket as a hostile-application sandbox.
 
 ## Verification
 
-- 2026-09-07: seven disposable Linux process tests passed using the production
+- 2026-09-07: eight disposable Linux process tests passed using the production
   control transport and HTTP handler: privileged host request accepted; workload
   connection, directory replacement and procfs descriptor recovery denied.
+- Privileged curl explicitly disables automatic config loading before all other
+  arguments. An unprivileged workload's curlrc redirects the unprotected control
+  read in the negative fixture, but cannot affect the corrected invocation.
+  The live native provider also observes successfully with a hostile profile
+  curlrc present; the health-check commands use the same protection.
 - Actual v41 image built on Docker Desktop 29.7.2. Native Windows live pack
   reconciliation passed: failed replacement rolled back, successful replacement
   preserved a fixture profile marker, four-node semantic observation found

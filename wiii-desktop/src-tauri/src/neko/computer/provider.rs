@@ -696,7 +696,8 @@ impl LocalDockerComputerProvider {
                 OsString::from("--user"),
                 OsString::from("0:0"),
                 OsString::from(&names.container),
-                OsString::from("curl"),
+                OsString::from("/usr/bin/curl"),
+                OsString::from("--disable"),
                 OsString::from("--unix-socket"),
                 OsString::from("/run/wiii-control/semantic.sock"),
                 OsString::from("--fail"),
@@ -1976,6 +1977,13 @@ mod tests {
                 return Err("reconciled pack did not publish the active version".to_string());
             }
 
+            let config = provider.terminal_exec(
+                &environment_id,
+                "printf 'output = /tmp/wiii-curlrc-bypass\\n' > /home/neko/.curlrc",
+            )?;
+            if config.exit_code != Some(0) {
+                return Err("could not prepare workload-owned curl config fixture".to_string());
+            }
             let snapshot = provider.semantic_observe(&SemanticObserveRequest {
                 environment_id: environment_id.clone(),
                 max_nodes: 4,
@@ -1987,6 +1995,13 @@ mod tests {
             })?;
             if !snapshot.nodes.iter().any(|node| node.node_ref == "app:browser") {
                 return Err("private control transport did not return the Browser launcher".to_string());
+            }
+            let ignored_config = provider.terminal_exec(
+                &environment_id,
+                "test ! -e /tmp/wiii-curlrc-bypass",
+            )?;
+            if ignored_config.exit_code != Some(0) {
+                return Err("privileged control consumed workload-owned curl configuration".to_string());
             }
             let workload = provider.terminal_exec(&environment_id, "id -u")?;
             if workload.exit_code != Some(0) || workload.stdout.trim() != "10001" {

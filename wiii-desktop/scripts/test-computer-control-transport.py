@@ -8,6 +8,7 @@ from pathlib import Path
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 
@@ -75,6 +76,28 @@ class ControlTransportTest(unittest.TestCase):
             response = connection.getresponse()
             self.assertEqual(response.status, 200)
             self.assertEqual(json.loads(response.read())["status"], "ok")
+
+    def test_root_curl_ignores_workload_configuration(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wiii-curl-config-") as home:
+            os.chmod(home, 0o777)
+            marker = str(Path(home) / "hijacked-output")
+            result = self.workload(
+                "from pathlib import Path; "
+                f"Path({str(Path(home) / '.curlrc')!r}).write_text('output = {marker}\\n')"
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            command = ["/usr/bin/curl", "--unix-socket", SOCKET, "--fail", "--silent",
+                       "--max-time", "2", "http://localhost/health"]
+            environment = {**os.environ, "CURL_HOME": home}
+            vulnerable = subprocess.run(command, env=environment, capture_output=True,
+                                        text=True, timeout=5, check=True)
+            self.assertEqual(vulnerable.stdout, "")
+            self.assertTrue(Path(marker).exists())
+            Path(marker).unlink()
+            protected = subprocess.run([command[0], "--disable", *command[1:]], env=environment,
+                                       capture_output=True, text=True, timeout=5, check=True)
+            self.assertEqual(json.loads(protected.stdout)["status"], "ok")
+            self.assertFalse(Path(marker).exists())
 
     def test_workload_cannot_connect_or_replace_endpoint(self) -> None:
         for program in [
