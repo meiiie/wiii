@@ -83,11 +83,14 @@ pub fn run() {
             let runtime = NekoRuntime::open(&data_dir.join("neko-runtime-v1.sqlite3"))
                 .map_err(std::io::Error::other)?;
             app.manage(runtime);
-            let computer = NekoComputerService::open(&data_dir).map_err(std::io::Error::other)?;
-            let app_event_pump =
-                AppEventPump::start(computer.clone()).map_err(std::io::Error::other)?;
+            let computer = NekoComputerService::open(&data_dir)
+                .and_then(|computer| {
+                    let pump = AppEventPump::start(computer.clone())?;
+                    app.manage(pump);
+                    Ok(computer)
+                })
+                .map_err(|error| format!("computer_unavailable: Computer chưa khả dụng. Dữ liệu đã được giữ nguyên; kiểm tra quyền truy cập hoặc khôi phục bản sao lưu rồi mở lại Wiii. Chi tiết: {error}"));
             app.manage(computer);
-            app.manage(app_event_pump);
             let coworker_records = CoworkerRecords::open(
                 &data_dir.join("neko-coworker-v1").join("records-v1.sqlite3"),
             )
@@ -112,7 +115,9 @@ pub fn run() {
             // Phase 2A is in-process: a graceful app exit cancels every owned
             // child. Hard-crash recovery is classified from the journal.
             if let tauri::RunEvent::Exit = event {
-                app.state::<AppEventPump>().shutdown();
+                if let Some(pump) = app.try_state::<AppEventPump>() {
+                    pump.shutdown();
+                }
                 app.state::<NekoRuntime>().kill_all(app);
             }
         });

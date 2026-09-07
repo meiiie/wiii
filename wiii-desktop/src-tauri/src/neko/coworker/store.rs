@@ -181,10 +181,22 @@ impl CoworkerRecords {
         &self,
         coworker_id: &str,
         grant_id: &str,
+        provider: &str,
+        required_scope: &str,
     ) -> Result<Option<String>, String> {
         validate_id(coworker_id, "coworkerId")?;
         validate_id(grant_id, "grantId")?;
-        lock(&self.connection)
+        let connection = lock(&self.connection);
+        let grant = account_grant_by_id(&connection, grant_id)?;
+        if !grant.is_some_and(|grant| {
+            grant.coworker_id == coworker_id
+                && grant.revoked_at.is_none()
+                && grant.provider == provider
+                && grant.scopes.iter().any(|scope| scope == required_scope)
+        }) {
+            return Ok(None);
+        }
+        connection
             .query_row(
                 "SELECT credential_ref FROM coworker_account_grants
                  WHERE grant_id = ?1 AND coworker_id = ?2 AND revoked_at IS NULL",
@@ -626,7 +638,12 @@ mod tests {
         assert_eq!(records.grant_account(account()).unwrap(), granted);
         assert_eq!(
             records
-                .active_credential_ref("wiii-coworker-neko", "grant-mail-neko")
+                .active_credential_ref(
+                    "wiii-coworker-neko",
+                    "grant-mail-neko",
+                    "gmail",
+                    "gmail.readonly"
+                )
                 .unwrap()
                 .as_deref(),
             Some("computer-profile:neko:gmail")
@@ -642,7 +659,12 @@ mod tests {
             .account_is_active("wiii-coworker-neko", "grant-mail-neko")
             .unwrap());
         assert!(records
-            .active_credential_ref("wiii-coworker-neko", "grant-mail-neko")
+            .active_credential_ref(
+                "wiii-coworker-neko",
+                "grant-mail-neko",
+                "gmail",
+                "gmail.readonly"
+            )
             .unwrap()
             .is_none());
     }
