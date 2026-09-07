@@ -28,24 +28,30 @@ interface NekoAgentState {
   agents: DetectedAgent[];
   isLoading: boolean;
   error: string | null;
-  detect: () => Promise<void>;
+  detect: (providerId?: string) => Promise<void>;
 }
 
 /** Rust-side detection; resolves empty in browser dev (no Tauri runtime). */
-async function detectAgents(): Promise<DetectedAgent[]> {
-  return getNekoControlClient().listProviders();
+async function detectAgents(providerId?: string): Promise<DetectedAgent[]> {
+  return getNekoControlClient().listProviders(providerId);
 }
 
-export const useNekoAgentStore = create<NekoAgentState>((set) => ({
+export const useNekoAgentStore = create<NekoAgentState>((set, get) => ({
   agents: [],
   isLoading: false,
   error: null,
 
-  detect: async () => {
+  detect: async (providerId) => {
+    if (get().isLoading) return;
     set({ isLoading: true, error: null });
     try {
-      const agents = await detectAgents();
-      set({ agents, error: null });
+      const agents = await detectAgents(providerId);
+      set((state) => ({
+        agents: providerId
+          ? [...state.agents.filter((agent) => !agents.some((item) => item.id === agent.id)), ...agents]
+          : agents,
+        error: null,
+      }));
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : String(cause);
       set({ error: `Không thể dò agent cục bộ: ${detail}` });

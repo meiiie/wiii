@@ -13,6 +13,7 @@ import {
   useEffect,
   useRef,
 } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { AnimatePresence, motion } from "motion/react";
 import { AlertTriangle, X } from "lucide-react";
 import { useChatStore } from "@/stores/chat-store";
@@ -67,13 +68,19 @@ function WelcomeFallback({
 }
 
 export function ChatView() {
-  const { activeConversationId, conversations } = useChatStore();
+  const { activeConversationId, conversations } = useChatStore(useShallow((state) => ({
+    activeConversationId: state.activeConversationId,
+    conversations: state.conversations,
+  })));
   const { sendMessage, cancelStream } = useSSEStream();
   const [editingMessage, setEditingMessage] = useState<string | null>(null);
 
   // Context warning state
-  const { info, compact } = useContextStore();
-  const { addToast } = useToastStore();
+  const { info, compact } = useContextStore(useShallow((state) => ({
+    info: state.info,
+    compact: state.compact,
+  })));
+  const addToast = useToastStore((state) => state.addToast);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
   // Sprint 85: Memoize active conversation lookup — O(n) -> O(1) on re-renders

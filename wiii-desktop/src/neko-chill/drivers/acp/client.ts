@@ -7,16 +7,9 @@
  * `driver.ts`; this file never inspects params.
  */
 
-export interface AcpTransport {
-  /** Write one raw line (a serialized JSON-RPC frame) to the agent. */
-  send(line: string): Promise<void>;
-  /** Subscribe to raw lines from the agent (newline-delimited frames). */
-  onLine(handler: (line: string) => void): void;
-  /** Subscribe to process exit. */
-  onExit(handler: (code: number | null) => void): void;
-  /** Terminate the underlying process. Idempotent. */
-  kill(): Promise<void>;
-}
+import type { AcpTransport } from "@/neko/acp-transport";
+
+export type { AcpTransport } from "@/neko/acp-transport";
 
 export interface JsonRpcClientHandlers {
   /**

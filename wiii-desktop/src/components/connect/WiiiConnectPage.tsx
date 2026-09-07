@@ -241,10 +241,10 @@ interface ProviderNextAction {
 }
 
 const tabs: FullPageTab[] = [
-  { id: "catalog", label: "Danh bạ", icon: <PlugZap size={15} /> },
-  { id: "connections", label: "Snapshot", icon: <Database size={15} /> },
-  { id: "paths", label: "Path policy", icon: <Route size={15} /> },
-  { id: "runtime", label: "Runtime", icon: <Activity size={15} /> },
+  { id: "catalog", label: "Ứng dụng", icon: <PlugZap size={15} /> },
+  { id: "connections", label: "Đã kết nối", icon: <Database size={15} /> },
+  { id: "paths", label: "Quyền truy cập", icon: <Route size={15} /> },
+  { id: "runtime", label: "Chẩn đoán", icon: <Activity size={15} /> },
 ];
 
 const providerFilters: Array<{
@@ -252,11 +252,11 @@ const providerFilters: Array<{
   label: string;
   hint: string;
 }> = [
-  { id: "wiii_native", label: "Wiii native", hint: "Runtime nội bộ" },
-  { id: "composio", label: "Composio", hint: "OAuth broker" },
-  { id: "channels", label: "Channels", hint: "Kênh chat" },
-  { id: "mcp", label: "MCP Servers", hint: "Tool server" },
-  { id: "workflow", label: "Workflow", hint: "Tự động hóa" },
+  { id: "wiii_native", label: "Tính năng Wiii", hint: "Có sẵn" },
+  { id: "composio", label: "Tài khoản & ứng dụng", hint: "Gmail, Calendar…" },
+  { id: "channels", label: "Kênh trò chuyện", hint: "Tin nhắn" },
+  { id: "mcp", label: "Công cụ mở rộng", hint: "MCP" },
+  { id: "workflow", label: "Tự động hóa", hint: "Quy trình" },
 ];
 
 const categoryFilters: Array<{ id: CatalogCategory; label: string }> = [
@@ -1334,7 +1334,9 @@ function buildExternalCatalogCards(
         ...(reason ? ([["Lý do", compactText(reason)]] as Array<[string, string]>) : []),
       ],
       requirements: definition.requirements,
-      disabledReason: fromBackend ? statusDetail : "Cần thiết kế adapter/vault/policy trước khi bật Connect.",
+      disabledReason: fromBackend
+        ? statusDetail
+        : "Dịch vụ kết nối chưa sẵn sàng trên máy này. Hãy cấu hình Wiii Service rồi thử lại.",
     };
   });
 }
@@ -1482,9 +1484,9 @@ function externalAgentStatusDetail(
 }
 
 function externalControlLabel(card: CatalogCard): string {
-  if (card.agentReady) return "Agent-ready";
-  if (card.connected) return "Chờ policy";
-  return "Fail-closed";
+  if (card.agentReady) return "Sẵn sàng";
+  if (card.connected) return "Chờ cấp quyền";
+  return "Đang khóa an toàn";
 }
 
 function readinessGateLabel(key: string): string {
@@ -2123,34 +2125,32 @@ function ProviderLifecyclePanel({
   });
 
   return (
-    <section
+    <details
       className="mt-4 rounded-md border border-[var(--border)] bg-surface-secondary px-3 py-3"
       data-testid="wiii-connect-lifecycle-panel"
     >
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="text-xs font-semibold uppercase text-text-tertiary">
-          Vòng đời kết nối
-        </div>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium text-text-secondary">
+        <span>Trạng thái kết nối nâng cao</span>
         <StatusPill tone={nextAction.tone}>
           {nextAction.tone === "ok"
-            ? "ready"
+            ? "sẵn sàng"
             : nextAction.tone === "pending"
               ? "đang chờ"
               : nextAction.tone === "warn"
-                ? "blocked"
+                ? "đang bị chặn"
                 : "chưa bật"}
         </StatusPill>
-      </div>
+      </summary>
 
       <div
-        className="mb-3 rounded-md border border-[var(--border)] bg-surface px-3 py-2"
+        className="mb-3 mt-3 rounded-md border border-[var(--border)] bg-surface px-3 py-2"
         data-state={flow.status}
         data-testid="wiii-connect-connection-flow-state"
       >
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="text-xs font-semibold uppercase text-text-tertiary">
-              Connection flow
+              Tiến trình
             </div>
             <div className="mt-1 truncate text-sm font-semibold text-text">
               {flow.label}
@@ -2209,7 +2209,7 @@ function ProviderLifecyclePanel({
       <p className="mt-2 text-xs text-text-tertiary">
         Agent không tự cấp quyền. Scope/write/admin phải đến từ policy hoặc approval riêng.
       </p>
-    </section>
+    </details>
   );
 }
 
@@ -2850,7 +2850,7 @@ function ConnectionDetailPanel({
   if (!card) {
     return (
       <aside className="rounded-lg border border-dashed border-[var(--border)] bg-surface-secondary p-4 text-sm text-text-secondary">
-        Chọn một kết nối để xem trạng thái, scope và điều kiện bật.
+        Chọn một tài khoản hoặc ứng dụng để xem trạng thái và quyền của Neko.
       </aside>
     );
   }
@@ -2900,14 +2900,50 @@ function ConnectionDetailPanel({
         <StatusPill tone={card.tone}>{card.status}</StatusPill>
       </div>
 
-      <dl className="mt-4 grid gap-2 text-xs">
-        {card.detailRows.map(([label, value]) => (
-          <div key={`${card.id}-${label}`} className="min-w-0 rounded-md bg-surface-secondary px-3 py-2">
-            <dt className="text-text-tertiary">{label}</dt>
-            <dd className="mt-0.5 break-words font-medium text-text">{value}</dd>
-          </div>
-        ))}
-      </dl>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={!canRequestAuthorization || authorizationLoading}
+          onClick={() => {
+            if (canRequestAuthorization) void onRequestAuthorization?.(card);
+          }}
+          className={`inline-flex h-10 items-center justify-center gap-2 rounded-md border px-4 text-sm font-semibold ${
+            canRequestAuthorization
+              ? "border-primary/30 bg-primary text-primary-foreground hover:opacity-90"
+              : "border-[var(--border)] bg-surface-secondary text-text-tertiary"
+          }`}
+        >
+          {authorizationLoading ? (
+            <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+          ) : (
+            <ExternalLink size={14} aria-hidden="true" />
+          )}
+          {card.provider === "wiii_native"
+            ? "Có sẵn trong Wiii"
+            : canRequestAuthorization
+              ? authorizationLoading
+                ? "Đang mở..."
+                : "Kết nối qua Wiii"
+              : "Chưa thể kết nối"}
+        </button>
+        <span className="self-center text-xs text-text-tertiary">
+          {card.disabledReason ?? card.statusDetail}
+        </span>
+      </div>
+
+      <details className="mt-4 rounded-md border border-[var(--border)] bg-surface-secondary px-3 py-2">
+        <summary className="cursor-pointer text-sm font-medium text-text-secondary">
+          Chi tiết kỹ thuật
+        </summary>
+        <dl className="mt-3 grid gap-2 text-xs">
+          {card.detailRows.map(([label, value]) => (
+            <div key={`${card.id}-${label}`} className="min-w-0 rounded-md bg-surface px-3 py-2">
+              <dt className="text-text-tertiary">{label}</dt>
+              <dd className="mt-0.5 break-words font-medium text-text">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
 
       <ProviderLifecyclePanel
         card={card}
@@ -2925,12 +2961,12 @@ function ConnectionDetailPanel({
       )}
 
       {card.requirements && card.requirements.length > 0 && (
-        <div className="mt-4 rounded-md border border-[var(--border)] bg-surface-secondary px-3 py-3">
-          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-text-tertiary">
+        <details className="mt-4 rounded-md border border-[var(--border)] bg-surface-secondary px-3 py-3">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-text-secondary">
             <Lock size={13} aria-hidden="true" />
-            Điều kiện bật
-          </div>
-          <ul className="space-y-1.5 text-sm text-text-secondary">
+            Yêu cầu kỹ thuật
+          </summary>
+          <ul className="mt-3 space-y-1.5 text-sm text-text-secondary">
             {card.requirements.map((requirement) => (
               <li key={`${card.id}-${requirement}`} className="flex gap-2">
                 <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-400" aria-hidden="true" />
@@ -2938,7 +2974,7 @@ function ConnectionDetailPanel({
               </li>
             ))}
           </ul>
-        </div>
+        </details>
       )}
 
       {(readinessState || canRefreshReadiness) && (
@@ -3227,6 +3263,11 @@ function ConnectionDetailPanel({
         </div>
       )}
 
+      {(canRefreshReadiness ||
+        canRefreshConnections ||
+        canDisconnectConnection ||
+        canRequestSession ||
+        canRefreshActionInventory) && (
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           type="button"
@@ -3246,32 +3287,6 @@ function ConnectionDetailPanel({
             aria-hidden="true"
           />
           Kiểm tra readiness
-        </button>
-
-        <button
-          type="button"
-          disabled={!canRequestAuthorization || authorizationLoading}
-          onClick={() => {
-            if (canRequestAuthorization) void onRequestAuthorization?.(card);
-          }}
-          className={`inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium ${
-            canRequestAuthorization
-              ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/15"
-              : "border-[var(--border)] bg-surface-secondary text-text-tertiary"
-          }`}
-        >
-          {authorizationLoading ? (
-            <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-          ) : (
-            <ExternalLink size={14} aria-hidden="true" />
-          )}
-          {card.provider === "wiii_native"
-            ? "Quan sát từ runtime"
-            : canRequestAuthorization
-              ? authorizationLoading
-                ? "Đang mở..."
-                : "Kết nối qua Wiii"
-              : "Chưa thể kết nối"}
         </button>
 
         <button
@@ -3356,9 +3371,7 @@ function ConnectionDetailPanel({
           Đồng bộ actions
         </button>
       </div>
-      <p className="mt-2 text-xs text-text-tertiary">
-        {card.disabledReason ?? card.statusDetail}
-      </p>
+      )}
     </aside>
   );
 }
@@ -3368,15 +3381,19 @@ function ConnectionCatalog({
   fallbackModel,
   providerRegistry,
   providerRegistryLoaded,
+  initialProviderSlug,
   onRuntimeRefresh,
 }: {
   snapshot: WiiiConnectRuntimeSnapshot | null;
   fallbackModel: CapabilityStatusViewModel;
   providerRegistry: WiiiConnectProviderRegistryEntry[] | null;
   providerRegistryLoaded: boolean;
+  initialProviderSlug?: string | null;
   onRuntimeRefresh?: () => Promise<unknown>;
 }) {
-  const [provider, setProvider] = useState<ProviderFilter>("wiii_native");
+  const [provider, setProvider] = useState<ProviderFilter>(
+    initialProviderSlug ? "composio" : "wiii_native",
+  );
   const [category, setCategory] = useState<CatalogCategory>("all");
   const [query, setQuery] = useState("");
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
@@ -3403,6 +3420,7 @@ function ConnectionCatalog({
     Record<string, ProviderDisconnectState>
   >({});
   const connectionPollTokenRef = useRef(0);
+  const appliedFocusRef = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -3421,6 +3439,18 @@ function ConnectionCatalog({
       ),
     [snapshot, fallbackModel, providerRegistry, providerConnectionLists, providerReadinessStates],
   );
+
+  useEffect(() => {
+    const target = initialProviderSlug?.trim().toLowerCase();
+    if (!target || appliedFocusRef.current === target) return;
+    const card = cards.find((candidate) => candidate.providerSlug.toLowerCase() === target);
+    if (!card) return;
+    appliedFocusRef.current = target;
+    setProvider(card.provider);
+    setCategory("all");
+    setQuery("");
+    setSelectedCardId(card.id);
+  }, [cards, initialProviderSlug]);
 
   const normalizedQuery = query.trim().toLowerCase();
   const filteredCards = cards.filter((card) => {
@@ -3759,19 +3789,19 @@ function ConnectionCatalog({
           <div>
             <div className="flex items-center gap-2">
               <PlugZap size={16} className="text-text-secondary" aria-hidden="true" />
-              <h2 className="text-sm font-semibold text-text">Danh bạ kết nối</h2>
+              <h2 className="text-sm font-semibold text-text">Ứng dụng và tài khoản</h2>
             </div>
             <p className="mt-1 max-w-3xl text-sm text-text-secondary">
-              Danh bạ kết nối giống OpenHuman: chọn provider trước, xem trạng thái thật,
-              rồi mới mở adapter khi Wiii có vault, permission gate và audit.
+              Chọn nơi Neko được phép làm việc. Mỗi kết nối cho biết rõ tài khoản,
+              quyền đang cấp, trạng thái sử dụng và cách ngắt quyền.
             </p>
           </div>
           <StatusPill tone={providerRegistryLoaded || snapshot ? "ok" : "pending"}>
             {providerRegistryLoaded
-              ? "Registry backend"
+              ? "Danh mục đã đồng bộ"
               : snapshot
-                ? "Đọc từ snapshot backend"
-                : "Đang dùng fallback local"}
+                ? "Dữ liệu từ phiên làm việc"
+                : "Chế độ ngoại tuyến"}
           </StatusPill>
         </div>
 
@@ -3780,6 +3810,7 @@ function ConnectionCatalog({
             <button
               key={item.id}
               type="button"
+              aria-label={`${item.label}${item.id === "composio" ? " (Composio)" : ""}`}
               onClick={() => {
                 setProvider(item.id);
                 setSelectedCardId(null);
@@ -3874,13 +3905,13 @@ function ConnectionCatalog({
                 </p>
                 <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
                   <div className="min-w-0 rounded-md bg-surface-secondary px-2 py-2">
-                    <div className="text-text-tertiary">Agent-ready</div>
+                    <div className="text-text-tertiary">Neko dùng được</div>
                     <div className="mt-0.5 truncate font-medium text-text">
                       {card.agentReady ? "Có" : "Chưa"}
                     </div>
                   </div>
                   <div className="min-w-0 rounded-md bg-surface-secondary px-2 py-2">
-                    <div className="text-text-tertiary">Điều khiển</div>
+                    <div className="text-text-tertiary">Trạng thái</div>
                     <div className="mt-0.5 truncate font-medium text-text">
                       {externalControlLabel(card)}
                     </div>
@@ -5545,6 +5576,7 @@ function RuntimeSection({
 
 export function WiiiConnectPage() {
   const [activeTab, setActiveTab] = useState<ConnectTab>("catalog");
+  const focusProviderSlug = useUIStore((state) => state.wiiiConnectFocusProvider);
   const [providerRegistry, setProviderRegistry] = useState<WiiiConnectProviderRegistryEntry[] | null>(null);
   const [providerRegistryLoaded, setProviderRegistryLoaded] = useState(false);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<WiiiConnectRuntimeSnapshot | null>(null);
@@ -5881,8 +5913,8 @@ export function WiiiConnectPage() {
 
   return (
     <FullPageView
-      title="Wiii Connect"
-      subtitle="Connection registry V0"
+      title="Kết nối"
+      subtitle="Tài khoản và ứng dụng của Neko"
       icon={<PlugZap size={18} />}
       tabs={tabs}
       activeTab={activeTab}
@@ -5893,35 +5925,35 @@ export function WiiiConnectPage() {
         <section>
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
-              <h1 className="text-xl font-semibold text-text">Wiii Connect</h1>
+              <h1 className="text-xl font-semibold text-text">Neko được phép làm việc ở đâu?</h1>
               <p className="mt-1 max-w-3xl text-sm text-text-secondary">
-                Trạng thái kết nối, capability và path policy đang được Wiii dùng trong lượt runtime gần nhất.
+                Kết nối tài khoản, xem chính xác quyền Neko đang có và thu hồi quyền bất cứ lúc nào.
               </p>
             </div>
             <StatusPill tone={snapshotTone}>
-              {snapshot ? `${stats.ready}/${stats.total} agent-ready` : "Chưa có snapshot"}
+              {snapshot ? `${stats.ready}/${stats.total} sẵn sàng` : "Chưa có dữ liệu"}
             </StatusPill>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <SummaryMetric
               icon={Database}
-              label="Kết nối"
-              value={snapshot ? `${stats.total}` : `${fallbackModel.items.length} local`}
+              label="Tài khoản"
+              value={snapshot ? `${stats.total}` : `${fallbackModel.items.length} mục`}
               tone={snapshot ? "ok" : "pending"}
             />
             <SummaryMetric
               icon={CheckCircle2}
-              label="Agent-ready"
+              label="Neko dùng được"
               value={snapshot ? `${stats.ready}/${stats.total}` : fallbackModel.summary}
               tone={snapshotTone}
             />
             <SummaryMetric
               icon={Route}
-              label="Path policy"
+              label="Quyền hoạt động"
               value={
                 snapshot?.capability_summary
-                  ? `${stats.readyPathCount}/${stats.pathCount} ready`
+                  ? `${stats.readyPathCount}/${stats.pathCount} sẵn sàng`
                   : snapshot
                     ? `${stats.pathCount}`
                     : "Đang chờ"
@@ -5936,13 +5968,13 @@ export function WiiiConnectPage() {
             />
             <SummaryMetric
               icon={AlertTriangle}
-              label="Cảnh báo"
+              label="Cần chú ý"
               value={`${stats.warningCount}${runtimeSnapshotError ? "+API" : ""}`}
               tone={stats.warningCount > 0 || runtimeSnapshotError ? "warn" : "ok"}
             />
             <SummaryMetric
               icon={RefreshCw}
-              label="Runtime sync"
+              label="Đồng bộ"
               value={runtimeSyncLabel}
               tone={
                 runtimeSnapshotError || doctorError
@@ -5955,12 +5987,34 @@ export function WiiiConnectPage() {
           </div>
         </section>
 
+        {focusProviderSlug === "gmail" && activeTab === "catalog" ? (
+          <section
+            className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3"
+            data-testid="gmail-connection-guide"
+          >
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-surface text-primary">
+                <ShieldCheck size={16} aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-text">Kết nối Gmail thử nghiệm của Neko</h2>
+                <p className="mt-1 max-w-3xl text-sm leading-5 text-text-secondary">
+                  Gmail đang đăng nhập trong Máy của Neko không tự cấp quyền API. Hãy bấm
+                  “Kết nối Gmail”, chọn đúng tài khoản Google đó và chấp thuận quyền đọc.
+                  Wiii không sao chép cookie Chrome; bạn có thể ngắt kết nối ngay tại đây.
+                </p>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
         {activeTab === "catalog" && (
           <ConnectionCatalog
             snapshot={snapshot}
             fallbackModel={fallbackModel}
             providerRegistry={providerRegistry}
             providerRegistryLoaded={providerRegistryLoaded}
+            initialProviderSlug={focusProviderSlug}
             onRuntimeRefresh={refreshRuntimeControlPlane}
           />
         )}

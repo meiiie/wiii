@@ -41,6 +41,7 @@ export interface SessionCommandItem extends CommandItemBase {
   sessionId: string;
   active: boolean;
   status: NekoSession["status"];
+  transcriptSearchText: (query: string) => boolean;
 }
 
 export type NekoCommandItem = ActionCommandItem | AgentCommandItem | SessionCommandItem;
@@ -53,15 +54,7 @@ function normalize(value: string): string {
     .replace(/đ/g, "d");
 }
 
-export function sessionSearchableText(session: NekoSession): string {
-  const preview = session.messages
-    .flatMap((message) => [
-      message.text ?? "",
-      ...(message.blocks ?? []).map((block) =>
-        "content" in block && typeof block.content === "string" ? block.content : "",
-      ),
-    ])
-    .join(" ");
+function sessionMetadataSearchableText(session: NekoSession): string {
   return normalize([
     session.title,
     session.agentName,
@@ -69,7 +62,35 @@ export function sessionSearchableText(session: NekoSession): string {
     session.workspace?.path ?? "",
     session.launchProfile?.provider ?? "",
     session.launchProfile?.model ?? "",
-    preview,
+    session.backendSessionId ?? "",
+  ].join(" "));
+}
+
+function sessionTranscriptIncludes(session: NekoSession, query: string): boolean {
+  for (const message of session.messages) {
+    if (message.text && normalize(message.text).includes(query)) return true;
+    for (const block of message.blocks ?? []) {
+      if (
+        "content" in block
+        && typeof block.content === "string"
+        && normalize(block.content).includes(query)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function sessionSearchableText(session: NekoSession): string {
+  return normalize([
+    sessionMetadataSearchableText(session),
+    ...session.messages.flatMap((message) => [
+      message.text ?? "",
+      ...(message.blocks ?? []).flatMap((block) =>
+        "content" in block && typeof block.content === "string" ? [block.content] : [],
+      ),
+    ]),
   ].join(" "));
 }
 
@@ -94,7 +115,7 @@ export function buildNekoCommandItems(
   sidebarOpen: boolean,
 ): NekoCommandItem[] {
   const actions: ActionCommandItem[] = [
-    actionItem("new", "Phiên mới", "Chọn dự án, agent và model"),
+    actionItem("new", "Phiên mới", "Soạn lời nhắn trong Project hiện tại"),
     actionItem(
       "toggle-sidebar",
       sidebarOpen ? "Ẩn cây dự án và phiên" : "Hiện cây dự án và phiên",
@@ -132,7 +153,8 @@ export function buildNekoCommandItems(
       description: `${session.workspace?.name ?? "Chưa gắn dự án"} · ${session.agentName}`,
       active: session.id === activeSession?.id,
       status: session.status,
-      searchText: sessionSearchableText(session),
+      searchText: sessionMetadataSearchableText(session),
+      transcriptSearchText: (query) => sessionTranscriptIncludes(session, query),
     }));
 
   return [...actions, ...commands, ...sessionItems];
@@ -142,11 +164,19 @@ export function filterNekoCommandItems(
   items: NekoCommandItem[],
   query: string,
 ): NekoCommandItem[] {
+  const metadataMatches = filterNekoCommandMetadata(items, query);
+  if (metadataMatches.length > 0 || !query.trim()) return metadataMatches;
+  const normalized = normalize(query.trim());
+  return items.filter((item) =>
+    item.kind === "session" && item.transcriptSearchText(normalized),
+  );
+}
+
+export function filterNekoCommandMetadata(
+  items: NekoCommandItem[],
+  query: string,
+): NekoCommandItem[] {
   const normalized = normalize(query.trim());
   if (!normalized) return items;
-  return items.filter((item) =>
-    item.searchText.includes(normalized)
-    || normalize(item.label).includes(normalized)
-    || normalize(item.description).includes(normalized),
-  );
+  return items.filter((item) => item.searchText.includes(normalized));
 }

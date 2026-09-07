@@ -15,6 +15,7 @@ import { DOMAIN_ICONS } from "@/lib/domain-config";
 import { getOrgDisplayName } from "@/lib/org-config";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import type { ContextStatus } from "@/stores/context-store";
+import { useShallow } from "zustand/react/shallow";
 
 const CONTEXT_BADGE_COLORS: Record<ContextStatus, string> = {
   unknown: "text-text-tertiary",
@@ -29,12 +30,25 @@ export function StatusBar() {
   // Only show on Tauri desktop (useful for dev/debug context)
   const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   if (!isTauri) return null;
-  const { activeDomainId } = useDomainStore();
-  const { isStreaming, streamingStep } = useChatStore();
-  const { info, status, togglePanel } = useContextStore();
+  const activeDomainId = useDomainStore((state) => state.activeDomainId);
+  const { isStreaming, streamingStep } = useChatStore(useShallow((state) => ({
+    isStreaming: state.isStreaming,
+    streamingStep: state.streamingStep,
+  })));
+  const { info, status, togglePanel } = useContextStore(useShallow((state) => ({
+    info: state.info,
+    status: state.status,
+    togglePanel: state.togglePanel,
+  })));
   const toggleCharacterPanel = useUIStore((s) => s.toggleCharacterPanel);
-  const { activeOrg, multiTenantEnabled } = useOrgStore();
-  const { mood, moodEnabled } = useCharacterStore();
+  const { activeOrg, multiTenantEnabled } = useOrgStore(useShallow((state) => ({
+    activeOrg: state.activeOrg,
+    multiTenantEnabled: state.multiTenantEnabled,
+  })));
+  const { mood, moodEnabled } = useCharacterStore(useShallow((state) => ({
+    mood: state.mood,
+    moodEnabled: state.moodEnabled,
+  })));
   const { state: avatarState, mood: avatarMood, soulEmotion } = useAvatarState();
   const currentOrg = activeOrg();
 

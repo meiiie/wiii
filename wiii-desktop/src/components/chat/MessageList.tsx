@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { motion } from "motion/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown } from "lucide-react";
@@ -78,12 +79,21 @@ export function MessageList({
     streamingContent,
     streamingStep,
     streamingStartTime,
-  } = useChatStore();
+  } = useChatStore(useShallow((state) => ({
+    isStreaming: state.isStreaming,
+    streamingBlocks: state.streamingBlocks,
+    streamingPhases: state.streamingPhases,
+    streamingSources: state.streamingSources,
+    streamingContent: state.streamingContent,
+    streamingStep: state.streamingStep,
+    streamingStartTime: state.streamingStartTime,
+  })));
 
   const { show_thinking, thinking_level } = useSettingsStore((s) => s.settings);
   const { state: avatarState, mood: avatarMood, soulEmotion } = useAvatarState();
   const visibleStreamingBlocks = getVisibleStreamingBlocks(streamingBlocks, show_thinking, thinking_level);
-  const shouldHideTimer = hasRenderableStreamingBlocks(visibleStreamingBlocks) || Boolean(streamingContent);
+  const hasVisibleStreamingOutput =
+    hasRenderableStreamingBlocks(visibleStreamingBlocks) || Boolean(streamingContent);
   const scrollDependency = isStreaming
     ? `${messages.length}:${streamingContent.length}:${streamingBlocks.length}:${streamingPhases.length}:${streamingStep ?? ""}`
     : messages.length;
@@ -213,11 +223,11 @@ export function MessageList({
                   onSuggestedQuestion={onSuggestedQuestion}
                 />
 
-                {/* Streaming timer — only show when no thinking blocks visible yet */}
-                {streamingStartTime && !shouldHideTimer && (
+                {/* Buffered block rendering must never look stalled between blocks. */}
+                {streamingStartTime && (
                   <StreamingTimer
                     startTime={streamingStartTime}
-                    hasAnswer={false}
+                    hasAnswer={hasVisibleStreamingOutput}
                     statusText={streamingStep}
                   />
                 )}
@@ -281,7 +291,7 @@ function StreamingTimer({
     >
       <span className="streaming-timer__dot" aria-hidden="true" />
       <span className="streaming-timer__label">
-        {hasAnswer ? "Wiii đang hoàn thiện" : "Wiii đang suy nghĩ"}
+        {hasAnswer ? "Wiii đang viết" : "Wiii đang suy nghĩ"}
       </span>
       <span className="streaming-timer__time">{timeStr}</span>
       {statusText?.trim() ? (

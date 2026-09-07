@@ -12,6 +12,7 @@ import type { ActiveView } from "@/stores/ui-store";
 function resetStore() {
   useUIStore.setState({
     activeView: "chat",
+    wiiiConnectFocusProvider: null,
     sidebarOpen: true,
     orgManagerTargetOrgId: null,
     commandPaletteOpen: false,
@@ -72,6 +73,13 @@ describe("Sprint 192: ui-store activeView", () => {
   it("openWiiiConnect sets activeView to wiii-connect", () => {
     useUIStore.getState().openWiiiConnect();
     expect(useUIStore.getState().activeView).toBe("wiii-connect");
+    expect(useUIStore.getState().wiiiConnectFocusProvider).toBeNull();
+  });
+
+  it("opens the connection manager on a requested provider", () => {
+    useUIStore.getState().openWiiiConnect(" Gmail ");
+    expect(useUIStore.getState().activeView).toBe("wiii-connect");
+    expect(useUIStore.getState().wiiiConnectFocusProvider).toBe("gmail");
   });
 
   it("closeWiiiConnect returns to chat", () => {

@@ -8,10 +8,18 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { DriverEvent } from "@/neko-chill/drivers/types";
 import type { AcpTransport } from "@/neko-chill/drivers/acp/client";
 import { AcpDriver } from "@/neko-chill/drivers/acp/driver";
+import {
+  WIII_COMPUTER_AGENT_METHODS,
+  WIII_COMPUTER_HISTORY_AGENT_METHODS,
+  WIII_COMPUTER_PROCEDURE_AGENT_METHODS,
+  WIII_SIGNAL_INBOX_AGENT_METHODS,
+  WIII_WORK_PLANE_AGENT_METHODS,
+  type AgentComputerBridge,
+} from "@/neko-computer/agent-bridge";
 
 type Frame = Record<string, any>;
 
@@ -155,6 +163,101 @@ async function startDurableDriver(
 }
 
 describe("AcpDriver golden replay (real neko-core v0.24.0 fixture)", () => {
+  it("routes only the typed Wiii Computer extension through the host bridge", async () => {
+    const events: DriverEvent[] = [];
+    const transport = new FakeTransport();
+    const computerBridge: AgentComputerBridge = {
+      handles: (method) => method === WIII_COMPUTER_AGENT_METHODS.status,
+      handle: vi.fn(async () => ({ available: true, code: "ready" })),
+      dispose: vi.fn(async () => {}),
+    };
+    const driver = new AcpDriver({
+      sessionId: "local-computer",
+      cwd: "C:/tmp/project",
+      transport,
+      onEvent: (event) => events.push(event),
+      computerBridge,
+    });
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: 800,
+      method: WIII_COMPUTER_AGENT_METHODS.status,
+      params: {},
+    });
+    await tick();
+
+    expect(transport.sent.find((frame) => frame.id === 800)).toMatchObject({
+      result: { available: true, code: "ready" },
+    });
+    expect(computerBridge.handle).toHaveBeenCalledWith(WIII_COMPUTER_AGENT_METHODS.status, {});
+    await driver.dispose();
+    expect(computerBridge.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("places a bounded Signal Inbox consultation in initialize deterministically", async () => {
+    const events: DriverEvent[] = [];
+    const transport = new FakeTransport();
+    const computerBridge: AgentComputerBridge = {
+      handles: (method) => method === WIII_SIGNAL_INBOX_AGENT_METHODS.consult,
+      handle: vi.fn(async () => ({
+        protocolVersion: "wiii-signal-inbox.v1",
+        encrypted: true,
+        itemCount: 3,
+        readyCount: 1,
+        gapCount: 0,
+        counts: [],
+        pendingRefs: ["signal-opaque-1"],
+      })),
+      dispose: vi.fn(async () => {}),
+    };
+    const driver = new AcpDriver({
+      sessionId: "local-signal-preflight",
+      cwd: "C:/tmp/project",
+      transport,
+      onEvent: (event) => events.push(event),
+      computerBridge,
+    });
+
+    const starting = driver.start();
+    await tick();
+    expect(computerBridge.handle).toHaveBeenCalledWith(
+      WIII_SIGNAL_INBOX_AGENT_METHODS.consult,
+      { maxRefs: 8 },
+    );
+    expect(transport.sent[0]).toMatchObject({
+      method: "initialize",
+      params: {
+        clientCapabilities: {
+          _meta: {
+            "dev.wiii.signal-inbox.v1": {
+              protocolVersion: "wiii-signal-inbox.v1",
+              methods: [WIII_SIGNAL_INBOX_AGENT_METHODS.consult],
+              contentFree: true,
+              deterministicPreflight: {
+                readyCount: 1,
+                pendingRefs: ["signal-opaque-1"],
+              },
+            },
+          },
+        },
+      },
+    });
+    transport.inject({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id,
+      result: { protocolVersion: 1 },
+    });
+    await tick();
+    transport.inject({
+      jsonrpc: "2.0",
+      id: transport.sent[1].id,
+      result: { sessionId: "agent-signal-preflight", configOptions: [] },
+    });
+    await starting;
+    await driver.dispose();
+  });
+
   it("creates a durable ACP session when the agent advertises resume", async () => {
     const events: DriverEvent[] = [];
     const transport = new FakeTransport();
@@ -163,6 +266,38 @@ describe("AcpDriver golden replay (real neko-core v0.24.0 fixture)", () => {
     expect(transport.sent[1]).toMatchObject({
       method: "session/new",
       params: { cwd: "C:/tmp/project", mcpServers: [] },
+    });
+    expect(transport.sent[0]).toMatchObject({
+      method: "initialize",
+      params: {
+        clientCapabilities: {
+          fs: { readTextFile: false, writeTextFile: false },
+          terminal: false,
+          _meta: {
+            "dev.wiii.computer.v1": {
+              semanticProtocol: "neko-computer.semantic.v1",
+              methods: Object.values(WIII_COMPUTER_AGENT_METHODS),
+            },
+            "dev.wiii.computer-history.v1": {
+              schemaVersion: "wiii-computer-history.v1",
+              methods: Object.values(WIII_COMPUTER_HISTORY_AGENT_METHODS),
+              encryptedAtRest: true,
+            },
+            "dev.wiii.work-plane.v1": {
+              protocolVersion: "wiii-work-plane.preview.v1",
+              methods: Object.values(WIII_WORK_PLANE_AGENT_METHODS),
+              sourceAuthority: "source_application",
+              displayLeaseRequired: false,
+            },
+            "dev.wiii.computer-procedures.v1": {
+              protocolVersion: "wiii-computer-procedures.v1",
+              methods: Object.values(WIII_COMPUTER_PROCEDURE_AGENT_METHODS),
+              maxSteps: 16,
+              runtimeValuesStored: false,
+            },
+          },
+        },
+      },
     });
     expect(driver.backendSessionId).toBe("neko-durable-new");
     expect(driver.runtime.contextContinuity).toBe("resumable");

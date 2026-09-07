@@ -23,6 +23,19 @@ import {
   UnsupportedMethodError,
   type AcpTransport,
 } from "./client";
+import {
+  WIII_COMPUTER_AGENT_CAPABILITY,
+  WIII_COMPUTER_AGENT_METHODS,
+  WIII_COMPUTER_HISTORY_AGENT_CAPABILITY,
+  WIII_COMPUTER_HISTORY_AGENT_METHODS,
+  WIII_COMPUTER_PROCEDURE_AGENT_CAPABILITY,
+  WIII_COMPUTER_PROCEDURE_AGENT_METHODS,
+  WIII_SIGNAL_INBOX_AGENT_CAPABILITY,
+  WIII_SIGNAL_INBOX_AGENT_METHODS,
+  WIII_WORK_PLANE_AGENT_CAPABILITY,
+  WIII_WORK_PLANE_AGENT_METHODS,
+  type AgentComputerBridge,
+} from "@/neko-computer/agent-bridge";
 
 export const ACP_PROTOCOL_VERSION = 1;
 
@@ -43,6 +56,8 @@ interface AcpDriverOptions {
   resumeSessionId?: string | null;
   transport: AcpTransport;
   onEvent: DriverEventHandler;
+  /** Optional host-owned Computer capability; never provider launch authority. */
+  computerBridge?: AgentComputerBridge;
 }
 
 /** Extract text from ACP content shapes: `"str"` or `{ type:"text", text }`. */
@@ -311,6 +326,7 @@ export class AcpDriver implements Driver {
   private readonly resumeSessionId: string | null;
   private readonly emit: DriverEventHandler;
   private readonly client: AcpJsonRpcClient;
+  private readonly computerBridge: AgentComputerBridge | null;
   private acpSessionId: string | null = null;
   private supportsClose = false;
   get backendSessionId(): string | null {
@@ -332,6 +348,7 @@ export class AcpDriver implements Driver {
     this.cwd = options.cwd;
     this.resumeSessionId = options.resumeSessionId ?? null;
     this.emit = options.onEvent;
+    this.computerBridge = options.computerBridge ?? null;
     this.client = new AcpJsonRpcClient(options.transport, {
       onAgentRequest: (method, params) => this.handleAgentRequest(method, params),
       onNotification: (method, params) => this.handleNotification(method, params),
@@ -344,6 +361,20 @@ export class AcpDriver implements Driver {
   }
 
   async start(): Promise<void> {
+    const signalInboxPreflight = this.computerBridge?.handles(WIII_SIGNAL_INBOX_AGENT_METHODS.consult)
+      ? await this.computerBridge
+          .handle(WIII_SIGNAL_INBOX_AGENT_METHODS.consult, { maxRefs: 8 })
+          .catch(() => ({
+            protocolVersion: "wiii-signal-inbox.v1",
+            encrypted: true,
+            itemCount: 0,
+            readyCount: 0,
+            gapCount: 0,
+            counts: [],
+            pendingRefs: [],
+            unavailable: true,
+          }))
+      : null;
     const init = (await this.client.request("initialize", {
       protocolVersion: ACP_PROTOCOL_VERSION,
       // v0 policy (PROTOCOL-NOTES): no client fs/terminal — every side effect
@@ -351,6 +382,38 @@ export class AcpDriver implements Driver {
       clientCapabilities: {
         fs: { readTextFile: false, writeTextFile: false },
         terminal: false,
+        // Provider-neutral optional extension. ACP agents that do not know
+        // this metadata ignore it; supporting agents call only these typed
+        // host methods and never receive native provisioning authority.
+        _meta: {
+          [WIII_COMPUTER_AGENT_CAPABILITY]: {
+            semanticProtocol: "neko-computer.semantic.v1",
+            methods: Object.values(WIII_COMPUTER_AGENT_METHODS),
+          },
+          [WIII_COMPUTER_HISTORY_AGENT_CAPABILITY]: {
+            schemaVersion: "wiii-computer-history.v1",
+            methods: Object.values(WIII_COMPUTER_HISTORY_AGENT_METHODS),
+            encryptedAtRest: true,
+          },
+          [WIII_WORK_PLANE_AGENT_CAPABILITY]: {
+            protocolVersion: "wiii-work-plane.preview.v1",
+            methods: Object.values(WIII_WORK_PLANE_AGENT_METHODS),
+            sourceAuthority: "source_application",
+            displayLeaseRequired: false,
+          },
+          [WIII_SIGNAL_INBOX_AGENT_CAPABILITY]: {
+            protocolVersion: "wiii-signal-inbox.v1",
+            methods: Object.values(WIII_SIGNAL_INBOX_AGENT_METHODS),
+            contentFree: true,
+            deterministicPreflight: signalInboxPreflight,
+          },
+          [WIII_COMPUTER_PROCEDURE_AGENT_CAPABILITY]: {
+            protocolVersion: "wiii-computer-procedures.v1",
+            methods: Object.values(WIII_COMPUTER_PROCEDURE_AGENT_METHODS),
+            maxSteps: 16,
+            runtimeValuesStored: false,
+          },
+        },
       },
       clientInfo: {
         name: "wiii-neko-chill",
@@ -506,6 +569,9 @@ export class AcpDriver implements Driver {
       pending.resolve({ outcome: { outcome: "cancelled" } });
     }
     this.pendingPermissions.clear();
+    await this.computerBridge?.dispose().catch(() => {
+      /* Native runtime cleanup still wins if the display lease is already gone. */
+    });
     if (this.acpSessionId && this.supportsClose) {
       await this.client
         .request("session/close", { sessionId: this.acpSessionId }, 1_000)
@@ -685,6 +751,9 @@ export class AcpDriver implements Driver {
   }
 
   private handleAgentRequest(method: string, params: unknown): Promise<unknown> {
+    if (this.computerBridge?.handles(method)) {
+      return this.computerBridge.handle(method, params);
+    }
     if (method === "session/request_permission") {
       return new Promise((resolve) => {
         const p = params as {

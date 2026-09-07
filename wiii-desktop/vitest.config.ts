@@ -30,10 +30,9 @@ export default defineConfig({
       "**/playwright/**",
       "**/e2e/**",
     ],
-    // Single worker prevents Zustand store leakage between concurrent test files
-    // and eliminates 15s dynamic-import timeouts under jsdom load.
     pool: "forks",
-    forks: { singleFork: true },
+    fileParallelism: true,
+    maxWorkers: 4,
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "json-summary"],

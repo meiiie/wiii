@@ -50,7 +50,11 @@ interface NekoWorkspaceState {
   setTab: (sessionId: string, tab: NekoWorkspaceTab) => void;
   setFollowAgent: (sessionId: string, follow: boolean) => void;
   setPinned: (sessionId: string, pinned: boolean) => void;
-  refresh: (sessionId: string, workspace: WorkspaceRef) => Promise<void>;
+  refresh: (
+    sessionId: string,
+    workspace: WorkspaceRef,
+    options?: { force?: boolean },
+  ) => Promise<void>;
   openFile: (sessionId: string, workspace: WorkspaceRef, path: string) => Promise<void>;
   openChange: (sessionId: string, workspace: WorkspaceRef, path: string) => Promise<void>;
   observeActivity: (
@@ -68,6 +72,23 @@ interface NekoWorkspaceState {
 
 const requestVersions = new Map<string, number>();
 const refreshVersions = new Map<string, number>();
+const refreshOperations = new Map<string, Promise<void>>();
+const refreshCompletedAt = new Map<string, number>();
+const AUTO_REFRESH_TTL_MS = 1_500;
+
+function refreshKey(sessionId: string, workspace: WorkspaceRef): string {
+  return `${sessionId}\u0000${workspace.path.replace(/\\/g, "/").toLocaleLowerCase()}`;
+}
+
+function clearRefreshMetadata(sessionId: string): void {
+  const prefix = `${sessionId}\u0000`;
+  for (const key of refreshCompletedAt.keys()) {
+    if (key.startsWith(prefix)) refreshCompletedAt.delete(key);
+  }
+  for (const key of refreshOperations.keys()) {
+    if (key.startsWith(prefix)) refreshOperations.delete(key);
+  }
+}
 
 function emptySession(): NekoWorkspaceSession {
   return {
@@ -187,48 +208,64 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
       };
     }),
 
-  refresh: async (sessionId, workspace) => {
-    const refreshVersion = (refreshVersions.get(sessionId) ?? 0) + 1;
-    refreshVersions.set(sessionId, refreshVersion);
+  refresh: async (sessionId, workspace, options) => {
     get().ensureSession(sessionId);
-    set((state) => ({
-      sessions: {
-        ...state.sessions,
-        [sessionId]: {
-          ...(state.sessions[sessionId] ?? emptySession()),
-          refreshing: true,
-          error: null,
-        },
-      },
-    }));
-    const [files, changes] = await Promise.allSettled([
-      listWorkspaceFiles(workspace.path),
-      listWorkspaceChanges(workspace.path),
-    ]);
-    if (refreshVersions.get(sessionId) !== refreshVersion) return;
-    set((state) => {
-      const current = state.sessions[sessionId];
-      if (!current) return state;
-      const errors = [files, changes]
-        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
-        .map((result) => errorMessage(result.reason));
-      return {
+    const key = refreshKey(sessionId, workspace);
+    const running = refreshOperations.get(key);
+    if (running) return running;
+    const completedAt = refreshCompletedAt.get(key) ?? 0;
+    if (!options?.force && Date.now() - completedAt < AUTO_REFRESH_TTL_MS) return;
+
+    const operation = (async () => {
+      const refreshVersion = (refreshVersions.get(sessionId) ?? 0) + 1;
+      refreshVersions.set(sessionId, refreshVersion);
+      set((state) => ({
         sessions: {
           ...state.sessions,
           [sessionId]: {
-            ...current,
-            refreshing: false,
-            entries: files.status === "fulfilled" ? files.value.entries : current.entries,
-            filesTruncated:
-              files.status === "fulfilled" ? files.value.truncated : current.filesTruncated,
-            changes:
-              changes.status === "fulfilled" ? changes.value.changes : current.changes,
-            isGit: changes.status === "fulfilled" ? changes.value.isGit : current.isGit,
-            error: errors.length ? errors.join(" · ") : null,
+            ...(state.sessions[sessionId] ?? emptySession()),
+            refreshing: true,
+            error: null,
           },
         },
-      };
-    });
+      }));
+      const [files, changes] = await Promise.allSettled([
+        listWorkspaceFiles(workspace.path),
+        listWorkspaceChanges(workspace.path),
+      ]);
+      refreshCompletedAt.set(key, Date.now());
+      if (refreshVersions.get(sessionId) !== refreshVersion) return;
+      set((state) => {
+        const current = state.sessions[sessionId];
+        if (!current) return state;
+        const errors = [files, changes]
+          .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+          .map((result) => errorMessage(result.reason));
+        return {
+          sessions: {
+            ...state.sessions,
+            [sessionId]: {
+              ...current,
+              refreshing: false,
+              entries: files.status === "fulfilled" ? files.value.entries : current.entries,
+              filesTruncated:
+                files.status === "fulfilled" ? files.value.truncated : current.filesTruncated,
+              changes:
+                changes.status === "fulfilled" ? changes.value.changes : current.changes,
+              isGit: changes.status === "fulfilled" ? changes.value.isGit : current.isGit,
+              error: errors.length ? errors.join(" · ") : null,
+            },
+          },
+        };
+      });
+    })();
+
+    refreshOperations.set(key, operation);
+    try {
+      await operation;
+    } finally {
+      if (refreshOperations.get(key) === operation) refreshOperations.delete(key);
+    }
   },
 
   openFile: async (sessionId, workspace, path) => {
@@ -412,6 +449,7 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
   clearSession: (sessionId) => {
     requestVersions.delete(sessionId);
     refreshVersions.delete(sessionId);
+    clearRefreshMetadata(sessionId);
     set((state) => {
       const sessions = { ...state.sessions };
       delete sessions[sessionId];

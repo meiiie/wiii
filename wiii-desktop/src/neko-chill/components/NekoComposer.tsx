@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
   Bot,
@@ -17,6 +17,11 @@ import {
   CLIENT_COMMANDS,
   type ClientCommandName,
 } from "../command-items";
+import {
+  clearNekoComposerDraft,
+  readNekoComposerDraft,
+  writeNekoComposerDraft,
+} from "../composer-drafts";
 
 interface SlashSuggestion {
   name: string;
@@ -83,7 +88,7 @@ function ControlSelect({
   );
 }
 
-export function NekoComposer({
+function NekoComposerComponent({
   session,
   disabled,
   streaming,
@@ -93,7 +98,8 @@ export function NekoComposer({
   onClientCommand,
   insertRequest,
 }: NekoComposerProps) {
-  const [draft, setDraft] = useState("");
+  const draftScope = `session:${session.id}`;
+  const [draft, setDraftState] = useState(() => readNekoComposerDraft(draftScope));
   const [highlight, setHighlight] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -126,6 +132,11 @@ export function NekoComposer({
   }, [session.commands, slashQuery]);
   const slashOpen = slashQuery !== null && !slashDismissed && !composerDisabled;
 
+  const setDraft = (value: string) => {
+    setDraftState(value);
+    writeNekoComposerDraft(draftScope, value);
+  };
+
   useEffect(() => {
     if (!insertRequest) return;
     setDraft(insertRequest.text);
@@ -149,7 +160,8 @@ export function NekoComposer({
     const text = draft.trim();
     if (!text || composerDisabled) return;
     const local = CLIENT_COMMANDS.find((command) => `/${command.name}` === text);
-    setDraft("");
+    setDraftState("");
+    clearNekoComposerDraft(draftScope);
     setSlashDismissed(false);
     if (local?.clientCommand) onClientCommand(local.clientCommand);
     else onSend(text);
@@ -222,7 +234,7 @@ export function NekoComposer({
           )}
         </div>
 
-        <div className="relative rounded-[14px] border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] p-2.5 shadow-[0_4px_18px_rgba(30,30,28,0.05)] focus-within:ring-2 focus-within:ring-[var(--nk-focus-soft)]">
+        <div className="nk-input-field relative rounded-[14px] border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] p-2.5 shadow-[0_4px_18px_rgba(30,30,28,0.05)]">
           <textarea
             ref={textareaRef}
             className="max-h-44 min-h-[48px] w-full resize-none bg-transparent px-1 pt-0.5 text-[13.5px] leading-[20px] text-[var(--nk-text)] placeholder:text-[var(--nk-ghost)] focus:outline-none"
@@ -349,3 +361,23 @@ export function NekoComposer({
     </div>
   );
 }
+
+export const NekoComposer = memo(
+  NekoComposerComponent,
+  (previous, next) => (
+    previous.session.id === next.session.id
+    && previous.session.status === next.session.status
+    && previous.session.agentName === next.session.agentName
+    && previous.session.workspace?.name === next.session.workspace?.name
+    && previous.session.workspace?.path === next.session.workspace?.path
+    && previous.session.controls === next.session.controls
+    && previous.session.commands === next.session.commands
+    && previous.session.launchProfile === next.session.launchProfile
+    && previous.session.pendingPermission === next.session.pendingPermission
+    && previous.session.pendingControlId === next.session.pendingControlId
+    && previous.session.cancelPending === next.session.cancelPending
+    && previous.disabled === next.disabled
+    && previous.streaming === next.streaming
+    && previous.insertRequest?.token === next.insertRequest?.token
+  ),
+);
