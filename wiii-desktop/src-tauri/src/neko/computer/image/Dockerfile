@@ -66,6 +66,7 @@ RUN useradd --create-home --uid 10001 --shell /bin/bash neko \
 COPY --chown=root:root wiii.html /usr/share/novnc/wiii.html
 COPY --chown=root:root semantic_bridge.py /usr/local/lib/wiii-computer/semantic_bridge.py
 COPY --chown=root:root work_plane_bridge.py /usr/local/lib/wiii-computer/work_plane_bridge.py
+COPY --chown=root:root project_paths.py /usr/local/lib/wiii-computer/project_paths.py
 COPY --chown=root:root panel.conf /usr/share/wiii-computer/panel.conf
 COPY --chown=root:root wallpaper.svg /usr/share/wiii-computer/wallpaper.svg
 COPY --chown=root:root desktop-items-0.conf /usr/share/wiii-computer/desktop-items-0.conf
@@ -76,6 +77,9 @@ COPY --chown=root:root wiii-browser /usr/local/bin/wiii-browser
 RUN rsvg-convert --width 1440 --height 900 \
       /usr/share/wiii-computer/wallpaper.svg \
       --output /usr/share/wiii-computer/wallpaper.png \
+    && install -m 0644 /usr/share/wiii-computer/desktop/browser.desktop /usr/share/applications/wiii-browser.desktop \
+    && install -m 0644 /usr/share/wiii-computer/desktop/files.desktop /usr/share/applications/wiii-files.desktop \
+    && install -m 0644 /usr/share/wiii-computer/desktop/terminal.desktop /usr/share/applications/wiii-terminal.desktop \
     && chmod 0755 \
       /usr/local/bin/wiii-computer-entrypoint \
       /usr/local/bin/wiii-browser \

@@ -27,6 +27,7 @@ BRIDGE_PATH = (
 SPEC = importlib.util.spec_from_file_location("wiii_semantic_bridge", BRIDGE_PATH)
 assert SPEC is not None and SPEC.loader is not None
 sys.dont_write_bytecode = True
+sys.path.insert(0, str(BRIDGE_PATH.parent))
 BRIDGE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(BRIDGE)
 
@@ -36,12 +37,116 @@ class StableWorkstationContractTest(unittest.TestCase):
         with BRIDGE.APP_EVENT_LOCK:
             BRIDGE.APP_EVENT_BUFFER.clear()
             BRIDGE.APP_EVENT_SEQUENCE = 0
-            BRIDGE.APP_EVENT_GAP = False
         with BRIDGE.OBSERVATION_SCOPE_LOCK:
             BRIDGE.OBSERVATION_SCOPES.clear()
         with BRIDGE.NATIVE_OBSERVATION_LOCK:
             BRIDGE.NATIVE_APP_GENERATIONS.clear()
             BRIDGE.NATIVE_OBSERVATIONS.clear()
+
+    def test_event_overflow_is_relative_to_each_consumers_cursor(self) -> None:
+        event = MagicMock()
+        event.source.getApplication.return_value.name = "Google Chrome"
+        event.type = "object:text-changed:insert"
+        for _ in range(BRIDGE.MAX_APP_EVENT_BUFFER + 2):
+            BRIDGE.record_app_event(event)
+        current = BRIDGE.app_event_cursor(BRIDGE.APP_EVENT_SEQUENCE - 1)
+        lagged = BRIDGE.app_event_cursor(0)
+        for cursor, gap in [(current, False), (lagged, True), (current, False), (None, True)]:
+            with self.subTest(cursor=cursor):
+                batch = BRIDGE.poll_app_events({
+                    "environmentId": "computer-test", "afterCursor": cursor,
+                })["batch"]
+                self.assertEqual(batch["gapDetected"], gap)
+                self.assertTrue(batch["events"])
+
+    def test_semantic_files_filter_protected_entries_before_pagination(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            for name in [".env", ".ENV.production", "signing.pfx", "private.key", ".npmrc", "notes.txt"]:
+                Path(root, name).write_text("fixture", encoding="utf-8")
+            Path(root, ".ssh").mkdir()
+            nodes = BRIDGE.project_file_nodes(root, max_entries=1)
+        self.assertEqual([node["name"] for node in nodes], ["notes.txt"])
+
+    def test_browser_protected_field_redacts_description_and_value(self) -> None:
+        raw = {
+            "nodeId": "protected", "backendDOMNodeId": 42,
+            "role": {"value": "textbox"}, "name": {"value": "Password"},
+            "description": {"value": "private-description-fixture"},
+            "value": {"value": "private-value-fixture"},
+            "properties": [],
+        }
+        with (
+            patch.object(BRIDGE, "active_browser_page", return_value={"id": "page", "url": "https://example.invalid"}),
+            patch.object(BRIDGE, "browser_frame_targets", return_value=[]),
+            patch.object(BRIDGE, "realtime_clock_state", return_value=None),
+            patch.object(BRIDGE, "cdp_dom_attributes", return_value={"type": "password"}),
+            patch.object(BRIDGE, "cdp_dom_visual_targets", return_value=[]),
+            patch.object(BRIDGE, "CdpConnection") as connection,
+        ):
+            connection.return_value.__enter__.return_value.call.side_effect = (
+                lambda method, *args: {"nodes": [raw]} if method == "Accessibility.getFullAXTree" else {}
+            )
+            nodes, targets = BRIDGE.cdp_semantic_nodes()
+        self.assertEqual(len(nodes), 1)
+        self.assertIsNone(nodes[0]["value"])
+        self.assertIsNone(nodes[0]["description"])
+        self.assertNotIn("set_text", nodes[0]["actions"])
+        self.assertNotIn("private-description-fixture", json.dumps([nodes, targets]))
+
+    def test_browser_mutation_revalidates_the_observed_scope(self) -> None:
+        node = {
+            "ref": "web-control", "parentRef": "app:browser", "appId": "browser",
+            "role": "entry", "name": "Draft", "description": None, "value": "before",
+            "states": ["enabled"], "actions": ["set_text"], "bounds": None, "sources": ["browser"],
+        }
+        target = lambda item: (None, {"node": item, "interfaces": {}, "cdp": {"targetId": "page", "backendDOMNodeId": 42}})
+        changed = {**node, "value": "edited-by-user"}
+        for state in [changed, node]:
+            with (
+                self.subTest(changed=state is changed),
+                patch.object(BRIDGE, "cdp_semantic_nodes", side_effect=[
+                    ([node], {node["ref"]: target(node)}),
+                    ([state], {node["ref"]: target(state)}),
+                ]),
+                patch.object(BRIDGE, "browser_state_token", return_value="irrelevant"),
+                patch.object(BRIDGE, "cdp_act", return_value=True) as dispatch,
+            ):
+                snapshot = BRIDGE.bridge_request("/observe", {
+                    "environmentId": "computer-test", "scopeRef": "app:browser", "maxNodes": 100,
+                })["snapshot"]
+                result = BRIDGE.act({
+                    "environmentId": "computer-test", "stateVersion": snapshot["stateVersion"],
+                    "targetRef": node["ref"], "expectedRole": "entry", "expectedName": "Draft",
+                    "action": "set_text", "text": "replacement",
+                })["result"]
+            if state is changed:
+                self.assertEqual(result["code"], "semantic_stale_snapshot")
+                dispatch.assert_not_called()
+            else:
+                self.assertEqual(result["outcome"], "completed")
+                dispatch.assert_called_once()
+
+    def test_browser_invoke_does_not_claim_effect_from_background_changes(self) -> None:
+        node = {
+            "ref": "web-submit", "appId": "browser", "role": "button", "name": "Submit",
+            "actions": ["invoke"], "states": ["enabled"],
+        }
+        facts = {"node": node, "interfaces": {}, "cdp": {"targetId": "page", "backendDOMNodeId": 42}}
+        with (
+            patch.object(BRIDGE, "browser_snapshot", return_value=({"stateVersion": "sha256:current", "nodes": [node]}, {node["ref"]: (None, facts)})),
+            patch.object(BRIDGE, "browser_state_token", side_effect=["before", "unrelated-animation"]),
+            patch.object(BRIDGE, "browser_pages", side_effect=[[{"id": "page"}], [{"id": "page"}, {"id": "unrelated-popup"}]]),
+            patch.object(BRIDGE, "cdp_act", return_value=False) as dispatch,
+        ):
+            result = BRIDGE.act({
+                "environmentId": "computer-test", "stateVersion": "sha256:current",
+                "targetRef": node["ref"], "expectedRole": "button", "expectedName": "Submit", "action": "invoke",
+            })["result"]
+        dispatch.assert_called_once()
+        self.assertEqual(result["outcome"], "completed")
+        self.assertFalse(result["verified"])
+        self.assertEqual(result["effect"], "unverifiable")
+        self.assertEqual(result["escalation"], "observe")
 
     def test_long_poll_does_not_block_health_or_control_requests(self) -> None:
         entered = threading.Event()
@@ -2080,41 +2185,6 @@ class StableWorkstationContractTest(unittest.TestCase):
             [call.args[0] for call in close.call_args_list],
             ["ad-heavy", "popup"],
         )
-
-    def test_browser_observation_cache_retains_an_isolated_action_locator(self) -> None:
-        snapshot = {"stateVersion": "sha256:" + "a" * 64, "nodes": []}
-        target = (
-            None,
-            {
-                "node": {"ref": "web-control", "role": "button", "name": "Run"},
-                "interfaces": {},
-                "cdp": {"targetId": "page", "frameId": "page", "backendDOMNodeId": 42},
-            },
-        )
-        with BRIDGE.BROWSER_OBSERVATION_LOCK:
-            BRIDGE.BROWSER_OBSERVATIONS.clear()
-        try:
-            BRIDGE.remember_browser_observation(
-                "computer-test",
-                snapshot,
-                {"web-control": target},
-            )
-            first = BRIDGE.cached_browser_target_observation(
-                "computer-test",
-                snapshot["stateVersion"],
-                "web-control",
-            )
-            self.assertIsNotNone(first)
-            first[1]["web-control"][1]["node"]["name"] = "Changed"
-            second = BRIDGE.cached_browser_target_observation(
-                "computer-test",
-                snapshot["stateVersion"],
-                "web-control",
-            )
-            self.assertEqual(second[1]["web-control"][1]["node"]["name"], "Run")
-        finally:
-            with BRIDGE.BROWSER_OBSERVATION_LOCK:
-                BRIDGE.BROWSER_OBSERVATIONS.clear()
 
     def test_unresponsive_page_uses_browser_control_target_for_recovery(self) -> None:
         class BusyCdp:

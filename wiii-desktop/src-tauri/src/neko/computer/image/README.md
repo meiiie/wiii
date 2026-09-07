@@ -22,6 +22,16 @@ One control request runs at a time; event long-polls and health checks remain
 independent. Observations redact protected control contents. Protected Project
 paths are excluded from enumeration, direct reads and mutations.
 
+Browser control actions re-read the observed scope before checking its version;
+an old locator cache cannot authorize a mutation. Generic browser `invoke`
+reports dispatch completion but leaves the task effect unverified: background
+animations, arbitrary new tabs and global DOM changes are not action evidence.
+The caller must observe again and must not automatically repeat the mutation.
+Typed adapter readback remains the route to confirmed task-level outcomes.
+
+The panel and desktop use the same managed launchers and persistent profile.
+Event gaps are computed per consumer cursor, not globally when the ring wraps.
+
 ## Pilot trust limitation
 
 Project path checks reject traversal and existing symlinks, but do not provide

@@ -18,6 +18,8 @@ import time
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from project_paths import protected_path
+
 PROTOCOL_VERSION = "wiii-work-plane.preview.v1"
 PROJECT_REF = "work:project"
 DEFAULT_ROOT = "/workspace/project"
@@ -149,16 +151,6 @@ def decode_ref(resource_ref: str) -> str:
         raise BridgeError("invalid_resource_ref: malformed file identity") from error
 
 
-def protected_path(path: PurePosixPath) -> bool:
-    protected_names = {".git", ".ssh", ".aws", ".azure", ".gnupg", ".npmrc", ".pypirc", ".wiii-perf-secret"}
-    return any(
-        part.casefold() in protected_names
-        or part.casefold().startswith(".env")
-        or PurePosixPath(part).suffix.casefold() in {".pem", ".key", ".p12", ".pfx"}
-        for part in path.parts
-    )
-
-
 def logical_path(value: str) -> PurePosixPath:
     if not isinstance(value, str) or not value or len(value) > 240 or "\x00" in value:
         raise BridgeError("invalid_path: logical Project path is invalid")
@@ -247,7 +239,9 @@ def root_resource(root: Path) -> dict[str, Any]:
         "parentRef": None,
         "revision": directory_revision(root),
         "mediaType": None,
-        "capabilities": ["project.file.create"],
+        "capabilities": ["project.file.create"] + (
+            ["spreadsheet.workbook.create"] if spreadsheet_available() else []
+        ),
         "source": "project",
         "metadata": {},
     }
@@ -1947,14 +1941,8 @@ def apply_spreadsheet_chart(
     rectangle.Width = max(size.Width, 5000)
     rectangle.Height = max(size.Height, 3500)
     charts = sheet.getCharts()
-    for existing_name in list(charts.getElementNames()):
-        existing = charts.getByName(existing_name)
-        existing_embedded = existing.getEmbeddedObject()
-        existing_title = ""
-        if bool(getattr(existing_embedded, "HasMainTitle", False)):
-            existing_title = str(existing_embedded.getTitle().String)
-        if existing_name == chart_name or (title and existing_title == title):
-            charts.removeByName(existing_name)
+    if charts.hasByName(chart_name):
+        charts.removeByName(chart_name)
     charts.addNewByName(
         chart_name,
         rectangle,

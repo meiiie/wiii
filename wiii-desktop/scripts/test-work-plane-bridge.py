@@ -4,9 +4,11 @@ from __future__ import annotations
 import importlib.util
 import os
 import stat
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 BRIDGE_PATH = (
     Path(__file__).resolve().parents[1]
@@ -21,6 +23,7 @@ SPEC = importlib.util.spec_from_file_location("wiii_work_plane_bridge", BRIDGE_P
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError("Unable to load Work Plane bridge")
 BRIDGE = importlib.util.module_from_spec(SPEC)
+sys.path.insert(0, str(BRIDGE_PATH.parent))
 SPEC.loader.exec_module(BRIDGE)
 
 
@@ -68,6 +71,38 @@ class WorkPlaneBridgeContractTests(unittest.TestCase):
         self.assertNotIn("docker", encoded)
         self.assertNotIn("/workspace/project", encoded)
         self.assertNotIn("environmentid", encoded)
+
+    def test_project_root_advertises_workbook_creation_only_when_office_is_available(self) -> None:
+        for available in (False, True):
+            with self.subTest(available=available), patch.object(BRIDGE, "spreadsheet_available", return_value=available):
+                root = BRIDGE.describe()["root"]
+            self.assertEqual("spreadsheet.workbook.create" in root["capabilities"], available)
+            self.assertIn("project.file.create", root["capabilities"])
+
+    def test_chart_upsert_preserves_another_chart_with_the_same_title(self) -> None:
+        document = MagicMock()
+        office = MagicMock()
+        sheet = document.getSheets.return_value.getByName.return_value
+        charts = sheet.getCharts.return_value
+        entries = {name: MagicMock() for name in ["target", "unrelated"]}
+        for chart in entries.values():
+            chart.getEmbeddedObject.return_value.HasMainTitle = True
+            chart.getEmbeddedObject.return_value.getTitle.return_value.String = "Same title"
+        charts.getElementNames.side_effect = lambda: tuple(entries)
+        charts.hasByName.side_effect = lambda name: name in entries
+        charts.getByName.side_effect = lambda name: entries[name]
+        charts.removeByName.side_effect = lambda name: entries.pop(name)
+        charts.addNewByName.side_effect = lambda name, *args: entries.update({name: MagicMock()})
+        sheet.getCellRangeByName.return_value.Size.Width = 5000
+        sheet.getCellRangeByName.return_value.Size.Height = 3500
+        untouched = entries["unrelated"]
+        result = BRIDGE.apply_spreadsheet_chart(office, document, {
+            "sheet": "Sheet1", "name": "target", "sourceRange": "A1:B4", "anchorRange": "D1:H9",
+            "chartType": "column", "title": "Same title",
+        })
+        self.assertEqual(result, {"sheet": "Sheet1", "name": "target"})
+        self.assertIs(entries["unrelated"], untouched)
+        charts.removeByName.assert_called_once_with("target")
 
     def test_file_slice_preserves_unrelated_source_state(self) -> None:
         before_unchanged = (self.root / "unchanged.bin").read_bytes()
