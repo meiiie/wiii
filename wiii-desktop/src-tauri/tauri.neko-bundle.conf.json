@@ -1,0 +1,8 @@
+{
+  "build": { "features": ["bundled-neko"] },
+  "bundle": {
+    "resources": {
+      "../.build/neko-bundle/": "runtime/neko/"
+    }
+  }
+}

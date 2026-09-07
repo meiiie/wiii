@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-computer-seat-acquire"
+description = "Enables the neko_computer_seat_acquire command without any pre-configured scope."
+commands.allow = ["neko_computer_seat_acquire"]
+
+[[permission]]
+identifier = "deny-neko-computer-seat-acquire"
+description = "Denies the neko_computer_seat_acquire command without any pre-configured scope."
+commands.deny = ["neko_computer_seat_acquire"]

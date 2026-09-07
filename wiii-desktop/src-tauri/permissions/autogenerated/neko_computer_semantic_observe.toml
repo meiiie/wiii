@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-computer-semantic-observe"
+description = "Enables the neko_computer_semantic_observe command without any pre-configured scope."
+commands.allow = ["neko_computer_semantic_observe"]
+
+[[permission]]
+identifier = "deny-neko-computer-semantic-observe"
+description = "Denies the neko_computer_semantic_observe command without any pre-configured scope."
+commands.deny = ["neko_computer_semantic_observe"]

@@ -48,6 +48,7 @@
         "workbench-files",
         "workbench-network",
         "workbench-agents",
+        "workbench-computer",
         "workbench-notifications"
       ],
       "csp": {
@@ -58,7 +59,7 @@
         "img-src": "'self' asset: http://asset.localhost blob: data: https://www.google.com https://wiii.holilihu.online",
         "connect-src": "'self' ipc: http://ipc.localhost http://localhost:* http://127.0.0.1:* https: ws://localhost:* ws://127.0.0.1:* wss:",
         "worker-src": "'self' blob:",
-        "frame-src": "'self' blob:",
+        "frame-src": "'self' blob: http://127.0.0.1:*",
         "media-src": "'self' blob: data:",
         "object-src": "'none'",
         "base-uri": "'self'",

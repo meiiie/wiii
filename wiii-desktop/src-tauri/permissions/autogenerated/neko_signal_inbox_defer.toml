@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-signal-inbox-defer"
+description = "Enables the neko_signal_inbox_defer command without any pre-configured scope."
+commands.allow = ["neko_signal_inbox_defer"]
+
+[[permission]]
+identifier = "deny-neko-signal-inbox-defer"
+description = "Denies the neko_signal_inbox_defer command without any pre-configured scope."
+commands.deny = ["neko_signal_inbox_defer"]

@@ -5,6 +5,7 @@ use super::lifecycle::{OperationPhase, RunState};
 use super::provider::{
     self, spawn_owned, terminate_child_tree, AgentAvailability, AgentInfo, AgentProfile, OwnedChild,
 };
+use super::provider_sessions::{self, ProviderSessionCatalog};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -190,12 +191,22 @@ impl NekoRuntime {
         })
     }
 
-    pub fn list_providers(&self) -> Result<Vec<AgentInfo>, String> {
-        provider::list()
+    pub fn list_providers(&self, provider_id: Option<&str>) -> Result<Vec<AgentInfo>, String> {
+        provider::list_selected(provider_id)
     }
 
     pub fn list_profiles(&self, provider_id: &str, cwd: &str) -> Result<Vec<AgentProfile>, String> {
         provider::profiles(provider_id, cwd)
+    }
+
+    pub fn discover_provider_sessions(
+        &self,
+        provider_id: &str,
+        workspace_paths: &[String],
+    ) -> Result<ProviderSessionCatalog, String> {
+        // Discovery owns only transient read-only provider processes. It does
+        // not enter the durable execution journal or create a Wiii session.
+        provider_sessions::discover(provider_id, workspace_paths)
     }
 
     pub fn list_sessions(
@@ -516,6 +527,7 @@ impl NekoRuntime {
                 found: true,
                 availability: AgentAvailability::Available,
                 supports_profiles: resolved.definition.supports_profiles(),
+                detail: None,
             },
         };
         let ownership_commit = (|| -> Result<(), String> {

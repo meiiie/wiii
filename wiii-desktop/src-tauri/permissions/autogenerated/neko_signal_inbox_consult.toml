@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-signal-inbox-consult"
+description = "Enables the neko_signal_inbox_consult command without any pre-configured scope."
+commands.allow = ["neko_signal_inbox_consult"]
+
+[[permission]]
+identifier = "deny-neko-signal-inbox-consult"
+description = "Denies the neko_signal_inbox_consult command without any pre-configured scope."
+commands.deny = ["neko_signal_inbox_consult"]

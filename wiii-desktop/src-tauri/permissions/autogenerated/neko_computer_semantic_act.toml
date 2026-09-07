@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-computer-semantic-act"
+description = "Enables the neko_computer_semantic_act command without any pre-configured scope."
+commands.allow = ["neko_computer_semantic_act"]
+
+[[permission]]
+identifier = "deny-neko-computer-semantic-act"
+description = "Denies the neko_computer_semantic_act command without any pre-configured scope."
+commands.deny = ["neko_computer_semantic_act"]

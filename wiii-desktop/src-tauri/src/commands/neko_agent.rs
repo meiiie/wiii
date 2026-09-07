@@ -6,6 +6,7 @@
 
 use crate::neko::journal::{ReplayPage, SessionRecord};
 use crate::neko::provider::{AgentInfo, AgentProfile};
+use crate::neko::provider_sessions::ProviderSessionCatalog;
 use crate::neko::runtime::{
     unknown_outcome_error, NekoRuntime, SessionCancelRequest, SessionCancelResult,
     SessionStartRequest, SessionStartResult, SessionWriteRequest,
@@ -15,9 +16,10 @@ use tauri::{AppHandle, State};
 #[tauri::command]
 pub async fn neko_control_provider_list(
     runtime: State<'_, NekoRuntime>,
+    provider_id: Option<String>,
 ) -> Result<Vec<AgentInfo>, String> {
     let runtime = runtime.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || runtime.list_providers())
+    tauri::async_runtime::spawn_blocking(move || runtime.list_providers(provider_id.as_deref()))
         .await
         .map_err(|error| format!("Neko provider discovery task failed: {error}"))?
 }
@@ -32,6 +34,20 @@ pub async fn neko_control_provider_profiles(
     tauri::async_runtime::spawn_blocking(move || runtime.list_profiles(&provider_id, &cwd))
         .await
         .map_err(|error| format!("Neko provider profile task failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn neko_control_provider_sessions(
+    runtime: State<'_, NekoRuntime>,
+    provider_id: String,
+    workspace_paths: Vec<String>,
+) -> Result<ProviderSessionCatalog, String> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime.discover_provider_sessions(&provider_id, &workspace_paths)
+    })
+    .await
+    .map_err(|error| format!("Neko provider session discovery task failed: {error}"))?
 }
 
 #[tauri::command]

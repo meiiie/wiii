@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-computer-doctor"
+description = "Enables the neko_computer_doctor command without any pre-configured scope."
+commands.allow = ["neko_computer_doctor"]
+
+[[permission]]
+identifier = "deny-neko-computer-doctor"
+description = "Denies the neko_computer_doctor command without any pre-configured scope."
+commands.deny = ["neko_computer_doctor"]

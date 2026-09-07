@@ -6,6 +6,7 @@
   "permissions": [
     "dialog:allow-open",
     "allow-pick-document",
+    "allow-neko-resolve-workspace",
     "allow-neko-list-workspace-files",
     "allow-neko-read-workspace-file",
     "allow-neko-workspace-changes",

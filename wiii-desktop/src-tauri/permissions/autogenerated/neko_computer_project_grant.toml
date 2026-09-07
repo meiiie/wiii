@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-computer-project-grant"
+description = "Enables the neko_computer_project_grant command without any pre-configured scope."
+commands.allow = ["neko_computer_project_grant"]
+
+[[permission]]
+identifier = "deny-neko-computer-project-grant"
+description = "Denies the neko_computer_project_grant command without any pre-configured scope."
+commands.deny = ["neko_computer_project_grant"]
