@@ -38,3 +38,28 @@ it("waits for a full scan instead of issuing an overlapping per-provider scan", 
   await Promise.all([all, selected]);
   expect(useNekoAgentStore.getState().probeStates.neko).toBe("ready");
 });
+
+it("keeps cleanup-proven discovery failures on their provider while another provider becomes ready", async () => {
+  listProviders.mockImplementation(async (id: string) => id === "codex"
+    ? [{ id, found: false, availability: "probe_failed", discoveryError: "Probe exited; cleanup proven" }]
+    : [{ id, found: true, availability: "available" }]);
+  await Promise.all([useNekoAgentStore.getState().detect("codex"), useNekoAgentStore.getState().detect("neko")]);
+  expect(useNekoAgentStore.getState().error).toBeNull();
+  expect(useNekoAgentStore.getState().agents).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: "codex", availability: "probe_failed" }),
+    expect.objectContaining({ id: "neko", availability: "available" }),
+  ]));
+});
+
+it("does not clear uncertain native cleanup when a concurrent provider succeeds", async () => {
+  let succeed!: (value: unknown) => void;
+  listProviders.mockImplementation((id: string) => id === "codex"
+    ? Promise.reject(new Error("native cleanup unproven"))
+    : new Promise((resolve) => { succeed = resolve; }));
+  const unsafe = useNekoAgentStore.getState().detect("codex");
+  const safe = useNekoAgentStore.getState().detect("neko");
+  await unsafe;
+  succeed([{ id: "neko", found: true, availability: "available" }]);
+  await safe;
+  expect(useNekoAgentStore.getState().error).toContain("native cleanup unproven");
+});

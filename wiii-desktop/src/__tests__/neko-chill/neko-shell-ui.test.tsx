@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import NekoChillApp from "@/neko-chill/NekoChillApp";
 import {
@@ -21,6 +21,12 @@ import {
 } from "@/neko-chill/stores/neko-session-store";
 import { useNekoWorkspaceStore } from "@/neko-chill/stores/neko-workspace-store";
 import { useNekoProjectStore } from "@/neko-chill/stores/neko-project-store";
+import { chooseWorkspaceFolder } from "@/neko-chill/workspace";
+
+vi.mock("@/neko-chill/workspace", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/neko-chill/workspace")>(),
+  chooseWorkspaceFolder: vi.fn(async () => null),
+}));
 
 vi.mock("@/neko-coworker/NekoCoworkerHome", () => ({
   NekoCoworkerHome: () => <div data-testid="neko-coworker-home">Coworker workstation</div>,
@@ -61,7 +67,9 @@ function makeSession(
 }
 
 describe("Neko Chill shell UI", () => {
+  const hydrateProjects = useNekoProjectStore.getState().hydrate;
   beforeEach(() => {
+    vi.mocked(chooseWorkspaceFolder).mockReset().mockResolvedValue(null);
     useNekoAgentStore.setState({
       agents: [],
       isLoading: false,
@@ -82,7 +90,36 @@ describe("Neko Chill shell UI", () => {
       hydrated: true,
       hydrating: false,
       error: null,
+      hydrate: hydrateProjects,
     });
+  });
+
+  it("offers a retry when Project storage cannot be read and removes the notice after recovery", async () => {
+    const hydrate = vi.fn(async () => {});
+    useNekoProjectStore.setState({ hydrated: false, error: "Storage unavailable", hydrate });
+    render(<NekoChillApp />);
+    expect(screen.getByRole("alert").textContent).toContain("Dữ liệu đã lưu được giữ nguyên");
+    const calls = hydrate.mock.calls.length;
+    hydrate.mockImplementationOnce(async () => {
+      useNekoProjectStore.setState({ hydrated: true, error: null });
+    });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Thử tải lại Project" })));
+    expect(hydrate).toHaveBeenCalledTimes(calls + 1);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps a failed folder picker recoverable in the owning session", async () => {
+    vi.mocked(chooseWorkspaceFolder).mockRejectedValueOnce(new Error("Folder access denied"));
+    useNekoSessionStore.setState({
+      sessions: { active: makeSession("active", "No folder", null, { status: "idle" }) },
+      activeSessionId: "active",
+    });
+    render(<NekoChillApp />);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Chọn thư mục" })));
+    expect(screen.getByText(/Không thể mở thư mục.*Folder access denied/)).toBeTruthy();
+    expect(useNekoSessionStore.getState().sessions.active.workspace).toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Chọn thư mục" })));
+    expect(chooseWorkspaceFolder).toHaveBeenCalledTimes(2);
   });
 
   it("opens coworker workstation management as a first-class Neko surface", async () => {
@@ -193,6 +230,7 @@ describe("Neko Chill shell UI", () => {
       type: "tool_execution",
       id: "failed-command",
       status: "completed",
+      outcome: "failed",
       tool: { id: "failed-command", name: "Bash(npm test)", result: "exit 1 — command FAILED" },
     }} />);
     expect(screen.getByLabelText("Bash thất bại. Mở chi tiết")).toBeTruthy();
@@ -214,7 +252,10 @@ describe("Neko Chill shell UI", () => {
       "think",
       "tool",
     ]);
-    expect(toolActivityFailed({ ...tool, tool: { ...tool.tool, result: "exit 2" } })).toBe(true);
+    expect(toolActivityFailed({ ...tool, tool: { ...tool.tool, result: "exit 2" } })).toBe(false);
+    expect(toolActivityFailed({ ...tool, outcome: "completed", tool: { ...tool.tool, result: "Read error.log" } })).toBe(false);
+    expect(toolActivityFailed({ ...tool, outcome: "failed", tool: { ...tool.tool, result: "" } })).toBe(true);
+    expect(toolActivityFailed({ ...tool, outcome: "cancelled", tool: { ...tool.tool, result: "Đã dừng" } })).toBe(true);
 
     const session = makeSession("grouped", "Grouped activity", { name: "Wiii", path: "E:\\Wiii" }, {
       messages: [{
@@ -368,7 +409,7 @@ describe("Neko Chill shell UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Gửi và mở phiên" }));
     await vi.waitFor(() => {
       expect(createSession).toHaveBeenCalledTimes(1);
-      expect(sendPrompt).toHaveBeenCalledWith("Kiểm tra runtime");
+      expect(sendPrompt).toHaveBeenCalledWith("Kiểm tra runtime", expect.any(Function));
     });
     expect(createSession).toHaveBeenCalledWith(
       expect.objectContaining({ id: "gemini" }),
@@ -981,7 +1022,7 @@ describe("Neko Chill shell UI", () => {
 
     await vi.waitFor(() => {
       expect(createSession).toHaveBeenCalledTimes(1);
-      expect(sendPrompt).toHaveBeenCalledWith("Kiểm tra authentication");
+      expect(sendPrompt).toHaveBeenCalledWith("Kiểm tra authentication", expect.any(Function));
     });
     expect(createSession.mock.invocationCallOrder[0])
       .toBeLessThan(sendPrompt.mock.invocationCallOrder[0]);

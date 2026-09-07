@@ -1406,6 +1406,7 @@ export interface ToolExecutionBlockData extends DisplayPresentationMeta {
   tool: ToolCallInfo;
   node?: string;
   status: "pending" | "completed";
+  outcome?: "completed" | "failed" | "cancelled";
 }
 
 /** An answer/content block with markdown text */

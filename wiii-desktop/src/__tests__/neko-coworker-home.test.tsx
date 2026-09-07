@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { CoworkerComputerStatus } from "@/neko-computer/contracts";
 
 const mocks = vi.hoisted(() => ({
   consultSignalInbox: vi.fn(),
@@ -12,12 +13,13 @@ const mocks = vi.hoisted(() => ({
   removeComputer: vi.fn(),
   removeComputerPackage: vi.fn(),
   status: {
+    coworkerId: "neko",
     environmentId: null,
     environment: null,
     activeProjectId: null,
     activeProjectPath: null,
     grants: [],
-  },
+  } as CoworkerComputerStatus,
 }));
 
 vi.mock("@/neko-computer/client", () => ({
@@ -65,9 +67,29 @@ const summary = {
 describe("Neko coworker Signal Inbox", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.status = { coworkerId: "neko", environmentId: null, environment: null,
+      activeProjectId: null, activeProjectPath: null, grants: [] };
     mocks.refresh.mockResolvedValue(mocks.status);
     mocks.doctorComputer.mockResolvedValue(doctor);
     mocks.consultSignalInbox.mockResolvedValue(summary);
+  });
+
+  it("does not grant or activate sibling roots of a multi-root Project", async () => {
+    const root = { name: "First", path: "C:/fixture/first" };
+    const sibling = { name: "Second", path: "C:/fixture/second" };
+    mocks.status = { ...mocks.status, activeProjectId: "project-test", activeProjectPath: root.path,
+      grants: [{ coworkerId: "neko", projectId: "project-test", projectName: "Fixture",
+        projectPath: root.path, accessMode: "read_write", createdAt: "fixture", updatedAt: "fixture" }] };
+    mocks.grant.mockResolvedValue(undefined);
+    render(<NekoCoworkerHome projects={[{ id: "project-test", name: "Fixture", roots: [root, sibling],
+      preferredHarnessId: "neko", createdAt: 1, updatedAt: 1 }]} />);
+    await waitFor(() => expect(mocks.consultSignalInbox).toHaveBeenCalledOnce());
+    expect(screen.getAllByText("Đang mở")).toHaveLength(1);
+    const grant = screen.getByRole("button", { name: /Cấp quyền/ });
+    fireEvent.click(grant);
+    await waitFor(() => expect(mocks.grant).toHaveBeenCalledWith({
+      projectId: "project-test", projectName: "Fixture", projectPath: sibling.path,
+    }));
   });
 
   it("renders bounded attention counts on entry and refreshes only on demand", async () => {

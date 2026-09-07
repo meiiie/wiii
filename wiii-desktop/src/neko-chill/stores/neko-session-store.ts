@@ -707,10 +707,8 @@ function toToolBlock(activity: DriverActivity): ToolExecutionBlockData {
       name: activity.title,
       result: activity.detail,
     },
-    // ContentBlock's tool status is binary; running states stay "pending",
-    // every terminal state (completed/failed/cancelled) renders "completed"
-    // with the outcome carried in tool.result.
     status: activity.status === "pending" || activity.status === "in_progress" ? "pending" : "completed",
+    outcome: activity.status === "pending" || activity.status === "in_progress" ? undefined : activity.status,
   };
 }
 
@@ -2326,6 +2324,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
             if (existing) {
               existing.tool = next.tool;
               existing.status = next.status;
+              existing.outcome = next.outcome;
             } else {
               message.blocks!.push(next);
             }

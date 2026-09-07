@@ -126,10 +126,12 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
     [projects],
   );
   const grantedKeys = useMemo(
-    () => new Set((status?.grants ?? []).flatMap((item) => item.projectId ? [item.projectId] : [])),
+    () => new Set((status?.grants ?? []).flatMap((item) => item.projectId
+      ? [JSON.stringify([item.projectId, item.projectPath])] : [])),
     [status?.grants],
   );
-  const activeKey = status?.activeProjectId ?? null;
+  const activeKey = status?.activeProjectId && status.activeProjectPath
+    ? JSON.stringify([status.activeProjectId, status.activeProjectPath]) : null;
 
   const runProjectAction = async (key: string, operation: () => Promise<void>) => {
     setBusyProject(key);
@@ -272,9 +274,9 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
           <div className="divide-y divide-[var(--nk-border)]">
             {roots.length ? roots.map(({ projectId, projectName, root }) => {
               const projectRef = { projectId, projectName, projectPath: root.path };
-              const actionKey = `${projectId}:${root.path}`;
-              const granted = grantedKeys.has(projectId);
-              const active = activeKey === projectId;
+              const actionKey = JSON.stringify([projectId, root.path]);
+              const granted = grantedKeys.has(actionKey);
+              const active = activeKey === actionKey;
               const busy = busyProject === actionKey;
               return (
                 <div key={`${projectId}:${root.path}`} className="flex items-center gap-3 px-4 py-3">

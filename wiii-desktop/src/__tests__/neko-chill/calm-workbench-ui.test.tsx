@@ -84,7 +84,7 @@ describe("calm workbench interaction contracts", () => {
     fireEvent.change(input, { target: { value: "Kiểm tra dự án" } });
     await vi.waitFor(() => expect((screen.getByRole("button", { name: "Gửi và mở phiên" }) as HTMLButtonElement).disabled).toBe(false));
     await act(async () => { fireEvent.keyDown(input, { key: "Enter" }); });
-    await vi.waitFor(() => expect(useNekoSessionStore.getState().sendPrompt).toHaveBeenCalledWith("Kiểm tra dự án"));
+    await vi.waitFor(() => expect(useNekoSessionStore.getState().sendPrompt).toHaveBeenCalledWith("Kiểm tra dự án", expect.any(Function)));
     expect(useNekoSessionStore.getState().createSession).toHaveBeenCalledTimes(1);
   });
 
