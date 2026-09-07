@@ -32,7 +32,9 @@ bundle identifiers may retain older names to preserve upgrades.
 ### Candidate
 
 A maintainer starts `Desktop Release` manually. The workflow validates and
-tests the exact commit once, then builds this release matrix:
+tests the exact commit once. Owner decision on 2026-09-07 narrows the first
+public stable release to Windows x64. The default `windows` scope builds only
+that target; the explicit `complete` scope retains the broader candidate matrix:
 
 | Target | Runner | Public packages | Trust state |
 | --- | --- | --- | --- |
@@ -69,8 +71,9 @@ A stable run is triggered only by a pushed `wiii-v<version>` tag. The tag must
 match `VERSION` and point to the reviewed release commit. Windows builds marked
 `signed` require an Authenticode certificate and signature verification. Builds
 explicitly configured `unsigned` must verify `NotSigned` and disclose that state
-in the installer filename, manifest and public release notes. Linux and
-macOS packages are built from that same commit. All packages, checksums, and
+in the installer filename, manifest and public release notes. Tag runs default
+to the planned Windows-only scope, not the emergency path. Linux/macOS are
+deferred and must not be advertised as supported by this release. All packages, checksums, and
 manifests receive GitHub artifact provenance attestations before publication.
 
 The current macOS packages are deliberately named `unnotarized`. Tauri applies
@@ -107,9 +110,15 @@ Before a stable tag is created:
 6. The tagged commit is the exact commit approved for release.
 
 The stable workflow additionally verifies the tag, declared Windows trust state
-(Authenticode status and exact signer thumbprint when signed), the complete
-five-binary/four-manifest matrix, every SHA-256 sidecar, manifest version and
+(Authenticode status and exact signer thumbprint when signed), the exact
+selected inventory (one binary and one manifest for `windows`, five binaries
+and four manifests for `complete`), every SHA-256 sidecar, manifest version and
 commit bindings, and GitHub provenance attestation.
+
+The planned Windows scope keeps source review, tests, actual installer
+acceptance, persistence/upgrade checks, checksum verification and provenance.
+It is not a waiver of those gates. Installed-package acceptance must use an
+isolated user or VM, never reset the owner's signed-in Computer.
 
 ## 4. Operator commands
 
@@ -214,8 +223,10 @@ treated as an optional release detail.
 
 ## 8. Protected emergency publication
 
-The normal stable contract is the complete four-target matrix. A Windows-only
-break-glass release is allowed only when all of these conditions hold:
+The planned `windows` scope is an ordinary official release and does not use
+this path. For a release explicitly committed to the complete four-target
+matrix, a Windows-only break-glass release is allowed only when all of these
+conditions hold:
 
 1. A reviewed stable tag contains a time-critical security or recovery fix.
 2. A confirmed GitHub-hosted Linux or macOS runner outage prevents the complete
