@@ -1086,6 +1086,9 @@ def replace_browser_page(
 
 
 def navigate_browser(target: str) -> dict[str, Any] | None:
+    parsed = urlsplit(target)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Browser navigation requires an HTTP(S) target.")
     try:
         page = active_browser_page()
     except Exception:
@@ -1101,8 +1104,18 @@ def navigate_browser(target: str) -> dict[str, Any] | None:
         except Exception:
             if launcher_process_ids(APP_LAUNCHERS_BY_REF["app:browser"]):
                 raise
-            launch_application(APP_LAUNCHERS_BY_REF["app:browser"], target)
-            return None
+            launch_application(APP_LAUNCHERS_BY_REF["app:browser"])
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline:
+                try:
+                    page = active_browser_page()
+                except Exception:
+                    page = None
+                if page is not None:
+                    break
+                time.sleep(0.1)
+            if page is None:
+                raise RuntimeError("Chrome started but its navigation adapter is not ready.")
     before = {
         "pageId": page.get("id"),
         "url": bounded_text(page.get("url"), 2000),
@@ -1141,15 +1154,8 @@ def navigate_browser(target: str) -> dict[str, Any] | None:
     return before
 
 
-def launch_application(launcher: dict[str, Any], target: str | None = None) -> subprocess.Popen:
+def launch_application(launcher: dict[str, Any]) -> subprocess.Popen:
     argv = launcher["argv"]
-    if target is not None:
-        if launcher["appId"] != "browser":
-            raise ValueError("Only the browser launcher accepts a navigation target.")
-        parsed = urlsplit(target)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("Browser launch requires an HTTP(S) navigation target.")
-        argv = ("wiii-browser", "--", target)
     environment = os.environ.copy()
     environment.update(launcher.get("environment", {}))
     return subprocess.Popen(

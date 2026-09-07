@@ -1860,18 +1860,30 @@ class StableWorkstationContractTest(unittest.TestCase):
         self.assertNotIn("QT_LINUX_ACCESSIBILITY_ALWAYS_ON", BRIDGE.os.environ)
 
     def test_browser_launch_keeps_navigation_out_of_command_options(self) -> None:
-        launcher = BRIDGE.CORE_APP_LAUNCHERS[0]
         target = "https://example.com/?query=--user-data-dir%3D/tmp/other"
-        with patch.object(BRIDGE.subprocess, "Popen") as popen:
-            BRIDGE.launch_application(launcher, target)
-        self.assertEqual(popen.call_args.args[0], ("wiii-browser", "--", target))
+        page = {"id": "new-page", "url": "about:blank"}
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        connection.call.return_value = {}
+        with (
+            patch.object(BRIDGE, "active_browser_page", side_effect=[None, None, page]),
+            patch.object(BRIDGE, "replace_browser_page", side_effect=RuntimeError("not running")),
+            patch.object(BRIDGE, "launcher_process_ids", return_value=set()),
+            patch.object(BRIDGE, "CdpConnection", return_value=connection),
+            patch.object(BRIDGE.time, "sleep"),
+            patch.object(BRIDGE.subprocess, "Popen") as popen,
+        ):
+            result = BRIDGE.navigate_browser(target)
+        self.assertEqual(popen.call_args.args[0], BRIDGE.APP_LAUNCHERS_BY_REF["app:browser"]["argv"])
+        self.assertNotIn(target, str(popen.call_args))
+        connection.call.assert_any_call("Page.navigate", {"url": target})
+        self.assertEqual(result["navigationTargetId"], "new-page")
 
     def test_browser_launch_rejects_command_flags_and_active_scheme_targets(self) -> None:
-        launcher = BRIDGE.CORE_APP_LAUNCHERS[0]
         for target in ("--user-data-dir=/tmp/other", "javascript:alert(1)", "file:///etc/passwd"):
             with self.subTest(target=target), patch.object(BRIDGE.subprocess, "Popen") as popen:
                 with self.assertRaises(ValueError):
-                    BRIDGE.launch_application(launcher, target)
+                    BRIDGE.navigate_browser(target)
                 popen.assert_not_called()
 
     def test_wechat_launcher_uses_a_stable_application_identity(self) -> None:
