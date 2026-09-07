@@ -3,6 +3,7 @@
  * Sprint 81: Foundation UX component.
  */
 import { X, CheckCircle, AlertCircle, Info } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { useToastStore } from "@/stores/toast-store";
 import type { ToastType } from "@/stores/toast-store";
 
@@ -27,7 +28,10 @@ const ICON_COLORS: Record<ToastType, string> = {
 };
 
 export function ToastContainer() {
-  const { toasts, removeToast } = useToastStore();
+  const { toasts, removeToast } = useToastStore(useShallow((state) => ({
+    toasts: state.toasts,
+    removeToast: state.removeToast,
+  })));
 
   if (toasts.length === 0) return null;
 

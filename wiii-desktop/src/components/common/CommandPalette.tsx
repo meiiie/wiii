@@ -76,8 +76,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       },
       {
         id: "open-wiii-connect",
-        label: "Wiii Connect",
-        description: "Quản lý kết nối",
+        label: "Tài khoản & ứng dụng",
+        description: "Cấp, kiểm tra hoặc thu hồi quyền của Neko",
         icon: <PlugZap size={16} />,
         action: () => { openWiiiConnect(); onClose(); },
         category: "action",
