@@ -11,6 +11,8 @@ describe("SemanticStreamBuffer complete-block presentation", () => {
     buffer.push("Title\n-");
     expect(onFlush).not.toHaveBeenCalled();
     buffer.push(" item\n\n");
+    expect(onFlush).not.toHaveBeenCalled();
+    buffer.drain();
     expect(onFlush).toHaveBeenCalledExactlyOnceWith("Title\n- item\n\n");
     onFlush.mockClear();
     buffer.push("```js\ncode\n```");
@@ -109,7 +111,33 @@ describe("SemanticStreamBuffer complete-block presentation", () => {
     expect(flushes).toEqual([]);
 
     buffer.push("\n");
+    expect(flushes).toEqual([]);
+    buffer.drain();
     expect(flushes).toEqual(["- Mục một\n- Mục hai\n\n"]);
+  });
+
+  it("keeps an interrupting fence intact even with blank lines after prose", () => {
+    const onFlush = vi.fn();
+    const buffer = new SemanticStreamBuffer({ onFlush });
+    buffer.push("Intro\n```ts\n\ncode\n");
+    expect(onFlush).not.toHaveBeenCalled();
+    buffer.push("```\n");
+    expect(onFlush).toHaveBeenCalledExactlyOnceWith("Intro\n```ts\n\ncode\n```\n");
+  });
+
+  it("waits for loose list continuation and emits it before the next top-level block", () => {
+    const flushes: string[] = [];
+    const buffer = new SemanticStreamBuffer({ onFlush: (text) => flushes.push(text) });
+    buffer.push("- first paragraph\n\n");
+    expect(flushes).toEqual([]);
+    buffer.push("  continued paragraph\n- second\n\n");
+    expect(flushes).toEqual([]);
+    buffer.push("Next paragraph\n\n");
+    expect(flushes).toEqual([
+      "- first paragraph\n\n  continued paragraph\n- second\n\n",
+      "Next paragraph\n\n",
+    ]);
+    expect(buffer.pending).toBe(0);
   });
 
   it("waits for the closing fence before committing code", () => {

@@ -70,6 +70,12 @@ export function useAutoScroll(dependency: unknown) {
       setIsAtBottom((current) => current === atBottom ? current : atBottom);
     };
     const handleScroll = () => {
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      isUserScrolledUp.current = distanceFromBottom > 200;
+      if (isUserScrolledUp.current && followFrameRef.current) {
+        cancelAnimationFrame(followFrameRef.current);
+        followFrameRef.current = 0;
+      }
       if (scrollFrameRef.current) return;
       scrollFrameRef.current = requestAnimationFrame(syncScrollState);
     };

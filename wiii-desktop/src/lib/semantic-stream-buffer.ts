@@ -6,6 +6,7 @@ const ATX_HEADING = /^[\t ]{0,3}#{1,6}(?:[\t ]+|$)/u;
 const SETEXT_HEADING = /^[\t ]{0,3}(?:=+|-+)[\t ]*$/u;
 const THEMATIC_BREAK = /^[\t ]{0,3}(?:(?:\*[\t ]*){3,}|(?:-[\t ]*){3,}|(?:_[\t ]*){3,})$/u;
 const FENCE_OPEN = /^[\t ]{0,3}(`{3,}|~{3,})/u;
+const LIST_ITEM = /^[\t ]{0,3}(?:[-+*]|\d{1,9}[.)])[\t ]+/u;
 
 export function findCompleteMarkdownBlockBoundary(value: string): number {
   let boundary = 0;
@@ -22,6 +23,8 @@ export class SemanticStreamBuffer {
   private pendingLength = 0;
   private contentLines = 0;
   private fence: string | null = null;
+  private inList = false;
+  private listSeparator = false;
   private readonly onFlush: (text: string) => void;
 
   constructor(options: SemanticStreamBufferOptions) {
@@ -42,20 +45,27 @@ export class SemanticStreamBuffer {
       const newline = text.indexOf("\n", cursor);
       const end = newline < 0 ? text.length : newline + 1;
       const fragment = text.slice(cursor, end);
-      this.chunks.push(fragment);
       this.lineChunks.push(fragment);
       this.pendingLength += fragment.length;
       cursor = end;
       if (newline < 0) break;
-      const line = this.lineChunks.join("").replace(/\r?\n$/u, "");
+      const completeLine = this.lineChunks.join("");
+      const line = completeLine.replace(/\r?\n$/u, "");
       this.lineChunks = [];
+      if (this.inList && this.listSeparator && !this.fence && line.trim()
+        && !/^[\t ]/u.test(line) && !LIST_ITEM.test(line)) {
+        this.pendingLength -= completeLine.length;
+        this.drain();
+        this.pendingLength = completeLine.length;
+      }
+      this.chunks.push(completeLine);
       if (this.completesBlock(line)) this.drain();
     }
   }
 
   drain(): void {
     if (!this.pendingLength) return;
-    const text = this.chunks.join("");
+    const text = this.chunks.join("") + this.lineChunks.join("");
     this.discard();
     this.onFlush(text);
   }
@@ -66,20 +76,30 @@ export class SemanticStreamBuffer {
     this.pendingLength = 0;
     this.contentLines = 0;
     this.fence = null;
+    this.inList = false;
+    this.listSeparator = false;
   }
 
   private completesBlock(line: string): boolean {
     if (this.fence) {
       const trimmed = line.trim();
       const marker = this.fence[0];
-      return trimmed.length >= this.fence.length
+      const closed = trimmed.length >= this.fence.length
         && [...trimmed].every((character) => character === marker);
+      if (closed) this.fence = null;
+      return closed && !this.inList;
+    }
+    this.fence = line.match(FENCE_OPEN)?.[1] ?? null;
+    if (this.fence) return false;
+    if (LIST_ITEM.test(line) && !THEMATIC_BREAK.test(line)) this.inList = true;
+    if (this.inList) {
+      this.listSeparator = !line.trim();
+      return false;
     }
     if (this.contentLines === 0) {
       if (!line.trim()) return false;
       this.contentLines = 1;
-      this.fence = line.match(FENCE_OPEN)?.[1] ?? null;
-      return !this.fence && (ATX_HEADING.test(line) || THEMATIC_BREAK.test(line));
+      return ATX_HEADING.test(line) || THEMATIC_BREAK.test(line);
     }
     this.contentLines += 1;
     return !line.trim() || (this.contentLines === 2 && SETEXT_HEADING.test(line));

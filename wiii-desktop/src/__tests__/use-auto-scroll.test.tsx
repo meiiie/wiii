@@ -44,6 +44,23 @@ afterEach(() => {
 });
 
 describe("auto-follow after rendered layout changes", () => {
+  it("cancels a queued follow when the user scrolls before its frame", () => {
+    render(<Transcript />);
+    const container = screen.getByTestId("transcript");
+    Object.defineProperties(container, {
+      scrollHeight: { value: 1200 }, clientHeight: { value: 400 },
+    });
+    container.scrollTo = vi.fn();
+    paint();
+    vi.mocked(container.scrollTo).mockClear();
+    act(() => resize());
+    container.scrollTop = 100;
+    fireEvent.scroll(container);
+    paint();
+    expect(container.scrollTo).not.toHaveBeenCalled();
+    expect(container.dataset.follow).toBe("false");
+  });
+
   it("follows deferred growth without another source update and coalesces resize events", () => {
     const view = render(<Transcript />);
     const container = screen.getByTestId("transcript");
