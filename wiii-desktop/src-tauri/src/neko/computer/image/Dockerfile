@@ -69,6 +69,7 @@ COPY --chown=root:root work_plane_bridge.py /usr/local/lib/wiii-computer/work_pl
 COPY --chown=root:root project_paths.py /usr/local/lib/wiii-computer/project_paths.py
 COPY --chown=root:root panel.conf /usr/share/wiii-computer/panel.conf
 COPY --chown=root:root wallpaper.svg /usr/share/wiii-computer/wallpaper.svg
+COPY --chown=root:root neko-peek-mark.svg /usr/share/wiii-computer/neko-peek-mark.svg
 COPY --chown=root:root desktop-items-0.conf /usr/share/wiii-computer/desktop-items-0.conf
 COPY --chown=root:root desktop/ /usr/share/wiii-computer/desktop/
 COPY --chown=root:root chrome-managed-policies.json /etc/opt/chrome/policies/managed/wiii-ai.json
