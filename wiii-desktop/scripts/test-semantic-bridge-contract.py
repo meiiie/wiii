@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import http.client
 import json
 from pathlib import Path
 import subprocess
@@ -25,6 +27,7 @@ BRIDGE_PATH = (
 SPEC = importlib.util.spec_from_file_location("wiii_semantic_bridge", BRIDGE_PATH)
 assert SPEC is not None and SPEC.loader is not None
 sys.dont_write_bytecode = True
+sys.path.insert(0, str(BRIDGE_PATH.parent))
 BRIDGE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(BRIDGE)
 
@@ -34,12 +37,165 @@ class StableWorkstationContractTest(unittest.TestCase):
         with BRIDGE.APP_EVENT_LOCK:
             BRIDGE.APP_EVENT_BUFFER.clear()
             BRIDGE.APP_EVENT_SEQUENCE = 0
-            BRIDGE.APP_EVENT_GAP = False
         with BRIDGE.OBSERVATION_SCOPE_LOCK:
             BRIDGE.OBSERVATION_SCOPES.clear()
         with BRIDGE.NATIVE_OBSERVATION_LOCK:
             BRIDGE.NATIVE_APP_GENERATIONS.clear()
             BRIDGE.NATIVE_OBSERVATIONS.clear()
+
+    def test_event_overflow_is_relative_to_each_consumers_cursor(self) -> None:
+        event = MagicMock()
+        event.source.getApplication.return_value.name = "Google Chrome"
+        event.type = "object:text-changed:insert"
+        for _ in range(BRIDGE.MAX_APP_EVENT_BUFFER + 2):
+            BRIDGE.record_app_event(event)
+        current = BRIDGE.app_event_cursor(BRIDGE.APP_EVENT_SEQUENCE - 1)
+        lagged = BRIDGE.app_event_cursor(0)
+        for cursor, gap in [(current, False), (lagged, True), (current, False), (None, True)]:
+            with self.subTest(cursor=cursor):
+                batch = BRIDGE.poll_app_events({
+                    "environmentId": "computer-test", "afterCursor": cursor,
+                })["batch"]
+                self.assertEqual(batch["gapDetected"], gap)
+                self.assertTrue(batch["events"])
+
+    def test_semantic_files_filter_protected_entries_before_pagination(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            for name in [".env", ".ENV.production", "signing.pfx", "private.key", ".npmrc", "notes.txt"]:
+                Path(root, name).write_text("fixture", encoding="utf-8")
+            Path(root, ".ssh").mkdir()
+            nodes = BRIDGE.project_file_nodes(root, max_entries=1)
+        self.assertEqual([node["name"] for node in nodes], ["notes.txt"])
+
+    def test_browser_protected_field_redacts_description_and_value(self) -> None:
+        raw = {
+            "nodeId": "protected", "backendDOMNodeId": 42,
+            "role": {"value": "textbox"}, "name": {"value": "Password"},
+            "description": {"value": "private-description-fixture"},
+            "value": {"value": "private-value-fixture"},
+            "properties": [],
+        }
+        with (
+            patch.object(BRIDGE, "active_browser_page", return_value={"id": "page", "url": "https://example.invalid"}),
+            patch.object(BRIDGE, "browser_frame_targets", return_value=[]),
+            patch.object(BRIDGE, "realtime_clock_state", return_value=None),
+            patch.object(BRIDGE, "cdp_dom_attributes", return_value={"type": "password"}),
+            patch.object(BRIDGE, "cdp_dom_visual_targets", return_value=[]),
+            patch.object(BRIDGE, "CdpConnection") as connection,
+        ):
+            connection.return_value.__enter__.return_value.call.side_effect = (
+                lambda method, *args: {"nodes": [raw]} if method == "Accessibility.getFullAXTree" else {}
+            )
+            nodes, targets = BRIDGE.cdp_semantic_nodes()
+        self.assertEqual(len(nodes), 1)
+        self.assertIsNone(nodes[0]["value"])
+        self.assertIsNone(nodes[0]["description"])
+        self.assertNotIn("set_text", nodes[0]["actions"])
+        self.assertNotIn("private-description-fixture", json.dumps([nodes, targets]))
+
+    def test_browser_mutation_revalidates_the_observed_scope(self) -> None:
+        node = {
+            "ref": "web-control", "parentRef": "app:browser", "appId": "browser",
+            "role": "entry", "name": "Draft", "description": None, "value": "before",
+            "states": ["enabled"], "actions": ["set_text"], "bounds": None, "sources": ["browser"],
+        }
+        target = lambda item: (None, {"node": item, "interfaces": {}, "cdp": {"targetId": "page", "backendDOMNodeId": 42}})
+        changed = {**node, "value": "edited-by-user"}
+        for state in [changed, node]:
+            with (
+                self.subTest(changed=state is changed),
+                patch.object(BRIDGE, "cdp_semantic_nodes", side_effect=[
+                    ([node], {node["ref"]: target(node)}),
+                    ([state], {node["ref"]: target(state)}),
+                ]),
+                patch.object(BRIDGE, "browser_state_token", return_value="irrelevant"),
+                patch.object(BRIDGE, "cdp_act", return_value=True) as dispatch,
+            ):
+                snapshot = BRIDGE.bridge_request("/observe", {
+                    "environmentId": "computer-test", "scopeRef": "app:browser", "maxNodes": 100,
+                })["snapshot"]
+                result = BRIDGE.act({
+                    "environmentId": "computer-test", "stateVersion": snapshot["stateVersion"],
+                    "targetRef": node["ref"], "expectedRole": "entry", "expectedName": "Draft",
+                    "action": "set_text", "text": "replacement",
+                })["result"]
+            if state is changed:
+                self.assertEqual(result["code"], "semantic_stale_snapshot")
+                dispatch.assert_not_called()
+            else:
+                self.assertEqual(result["outcome"], "completed")
+                dispatch.assert_called_once()
+
+    def test_browser_invoke_does_not_claim_effect_from_background_changes(self) -> None:
+        node = {
+            "ref": "web-submit", "appId": "browser", "role": "button", "name": "Submit",
+            "actions": ["invoke"], "states": ["enabled"],
+        }
+        facts = {"node": node, "interfaces": {}, "cdp": {"targetId": "page", "backendDOMNodeId": 42}}
+        with (
+            patch.object(BRIDGE, "browser_snapshot", return_value=({"stateVersion": "sha256:current", "nodes": [node]}, {node["ref"]: (None, facts)})),
+            patch.object(BRIDGE, "browser_state_token", side_effect=["before", "unrelated-animation"]),
+            patch.object(BRIDGE, "browser_pages", side_effect=[[{"id": "page"}], [{"id": "page"}, {"id": "unrelated-popup"}]]),
+            patch.object(BRIDGE, "cdp_act", return_value=False) as dispatch,
+        ):
+            result = BRIDGE.act({
+                "environmentId": "computer-test", "stateVersion": "sha256:current",
+                "targetRef": node["ref"], "expectedRole": "button", "expectedName": "Submit", "action": "invoke",
+            })["result"]
+        dispatch.assert_called_once()
+        self.assertEqual(result["outcome"], "completed")
+        self.assertFalse(result["verified"])
+        self.assertEqual(result["effect"], "unverifiable")
+        self.assertEqual(result["escalation"], "observe")
+
+    def test_long_poll_does_not_block_health_or_control_requests(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        poll_results = []
+
+        def request_route(path, _request):
+            if path == "/events":
+                entered.set()
+                if not release.wait(5):
+                    raise TimeoutError("test failed to release event poll")
+            return {"status": "ok"}
+
+        with BRIDGE.ThreadingHTTPServer(("127.0.0.1", 0), BRIDGE.SemanticBridgeHandler) as server:
+            host, port = server.server_address
+            server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+            server_thread.start()
+
+            def poll():
+                client = http.client.HTTPConnection(host, port, timeout=6)
+                try:
+                    client.request("POST", "/events", body=b"{}")
+                    response = client.getresponse()
+                    poll_results.append(response.status)
+                    response.read()
+                finally:
+                    client.close()
+
+            with patch.object(BRIDGE, "bridge_request", side_effect=request_route):
+                poll_thread = threading.Thread(target=poll, daemon=True)
+                poll_thread.start()
+                try:
+                    self.assertTrue(entered.wait(2))
+                    for method, route, body in [("GET", "/health", None), ("POST", "/observe", b"{}")]:
+                        client = http.client.HTTPConnection(host, port, timeout=1)
+                        try:
+                            client.request(method, route, body=body)
+                            response = client.getresponse()
+                            self.assertEqual(response.status, 200)
+                            response.read()
+                        finally:
+                            client.close()
+                    self.assertFalse(release.is_set())
+                finally:
+                    release.set()
+                    poll_thread.join(2)
+                    server.shutdown()
+                    server_thread.join(2)
+            self.assertEqual(poll_results, [200])
 
     def test_atspi_events_are_content_free_and_cursor_resumable(self) -> None:
         class FakeApplication:
@@ -590,6 +746,11 @@ class StableWorkstationContractTest(unittest.TestCase):
         connection = MagicMock()
         connection.__enter__.return_value = connection
 
+        def watchdog_open(path, *args, **kwargs):
+            if str(path).startswith("/proc/") and str(path).endswith("/cmdline"):
+                return io.BytesIO(b"python\x00clock-watchdog\x00token\x00")
+            return open(path, *args, **kwargs)
+
         def start_watchdog(*_args, **_kwargs):
             BRIDGE.realtime_clock_write("page", "token", 123456)
             process = MagicMock()
@@ -602,6 +763,7 @@ class StableWorkstationContractTest(unittest.TestCase):
             patch.object(BRIDGE.secrets, "token_hex", return_value="token"),
             patch.object(BRIDGE.subprocess, "Popen", side_effect=start_watchdog) as popen,
             patch.object(BRIDGE, "CdpConnection", return_value=connection),
+            patch.object(BRIDGE, "open", side_effect=watchdog_open, create=True),
         ):
             held = BRIDGE.realtime_clock_hold(page)
             state = BRIDGE.realtime_clock_state(page)
@@ -642,6 +804,22 @@ class StableWorkstationContractTest(unittest.TestCase):
             call("Debugger.enable"),
             call("Debugger.pause"),
         ])
+
+    @unittest.skipUnless(BRIDGE.os.name == "posix", "Linux watchdog process identity")
+    def test_realtime_clock_rejects_a_reused_process_id(self) -> None:
+        def unrelated_process_open(path, *args, **kwargs):
+            if str(path).startswith("/proc/") and str(path).endswith("/cmdline"):
+                return io.BytesIO(b"python\x00unrelated-process\x00")
+            return open(path, *args, **kwargs)
+
+        with (
+            tempfile.TemporaryDirectory() as root,
+            patch.object(BRIDGE, "REALTIME_CLOCK_DIR", root),
+            patch.object(BRIDGE, "open", side_effect=unrelated_process_open, create=True),
+        ):
+            BRIDGE.realtime_clock_write("page", "token", 123456)
+            self.assertIsNone(BRIDGE.realtime_clock_state({"id": "page"}))
+            self.assertFalse(Path(BRIDGE.realtime_clock_path("page")).exists())
 
     def test_ai_frame_preserves_bounded_declared_shortcuts_for_the_focused_target(self) -> None:
         frame = BRIDGE.ai_frame("browser", [{
@@ -1786,6 +1964,33 @@ class StableWorkstationContractTest(unittest.TestCase):
         self.assertEqual(environment["QT_LINUX_ACCESSIBILITY_ALWAYS_ON"], "1")
         self.assertNotIn("QT_LINUX_ACCESSIBILITY_ALWAYS_ON", BRIDGE.os.environ)
 
+    def test_browser_launch_keeps_navigation_out_of_command_options(self) -> None:
+        target = "https://example.com/?query=--user-data-dir%3D/tmp/other"
+        page = {"id": "new-page", "url": "about:blank"}
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        connection.call.return_value = {}
+        with (
+            patch.object(BRIDGE, "active_browser_page", side_effect=[None, None, page]),
+            patch.object(BRIDGE, "replace_browser_page", side_effect=RuntimeError("not running")),
+            patch.object(BRIDGE, "launcher_process_ids", return_value=set()),
+            patch.object(BRIDGE, "CdpConnection", return_value=connection),
+            patch.object(BRIDGE.time, "sleep"),
+            patch.object(BRIDGE.subprocess, "Popen") as popen,
+        ):
+            result = BRIDGE.navigate_browser(target)
+        self.assertEqual(popen.call_args.args[0], BRIDGE.APP_LAUNCHERS_BY_REF["app:browser"]["argv"])
+        self.assertNotIn(target, str(popen.call_args))
+        connection.call.assert_any_call("Page.navigate", {"url": target})
+        self.assertEqual(result["navigationTargetId"], "new-page")
+
+    def test_browser_launch_rejects_command_flags_and_active_scheme_targets(self) -> None:
+        for target in ("--user-data-dir=/tmp/other", "javascript:alert(1)", "file:///etc/passwd"):
+            with self.subTest(target=target), patch.object(BRIDGE.subprocess, "Popen") as popen:
+                with self.assertRaises(ValueError):
+                    BRIDGE.navigate_browser(target)
+                popen.assert_not_called()
+
     def test_wechat_launcher_uses_a_stable_application_identity(self) -> None:
         launcher = BRIDGE.OPTIONAL_APP_LAUNCHERS[0]
 
@@ -1981,41 +2186,6 @@ class StableWorkstationContractTest(unittest.TestCase):
             ["ad-heavy", "popup"],
         )
 
-    def test_browser_observation_cache_retains_an_isolated_action_locator(self) -> None:
-        snapshot = {"stateVersion": "sha256:" + "a" * 64, "nodes": []}
-        target = (
-            None,
-            {
-                "node": {"ref": "web-control", "role": "button", "name": "Run"},
-                "interfaces": {},
-                "cdp": {"targetId": "page", "frameId": "page", "backendDOMNodeId": 42},
-            },
-        )
-        with BRIDGE.BROWSER_OBSERVATION_LOCK:
-            BRIDGE.BROWSER_OBSERVATIONS.clear()
-        try:
-            BRIDGE.remember_browser_observation(
-                "computer-test",
-                snapshot,
-                {"web-control": target},
-            )
-            first = BRIDGE.cached_browser_target_observation(
-                "computer-test",
-                snapshot["stateVersion"],
-                "web-control",
-            )
-            self.assertIsNotNone(first)
-            first[1]["web-control"][1]["node"]["name"] = "Changed"
-            second = BRIDGE.cached_browser_target_observation(
-                "computer-test",
-                snapshot["stateVersion"],
-                "web-control",
-            )
-            self.assertEqual(second[1]["web-control"][1]["node"]["name"], "Run")
-        finally:
-            with BRIDGE.BROWSER_OBSERVATION_LOCK:
-                BRIDGE.BROWSER_OBSERVATIONS.clear()
-
     def test_unresponsive_page_uses_browser_control_target_for_recovery(self) -> None:
         class BusyCdp:
             def __enter__(self):
@@ -2079,7 +2249,7 @@ class StableWorkstationContractTest(unittest.TestCase):
 
         connection.assert_not_called()
 
-    def test_redirected_navigation_is_verified_from_new_document_identity(self) -> None:
+    def test_unapproved_redirect_is_not_verified_by_a_new_document_identity(self) -> None:
         class FakeCdp:
             def __enter__(self):
                 return self
@@ -2100,7 +2270,7 @@ class StableWorkstationContractTest(unittest.TestCase):
             patch.object(BRIDGE, "active_browser_page", return_value=page),
             patch.object(BRIDGE, "CdpConnection", return_value=FakeCdp()),
         ):
-            self.assertTrue(
+            self.assertFalse(
                 BRIDGE.browser_navigation_completed(
                     "https://httpbin.org/redirect/2",
                     {"pageId": "redirected-page", "url": "https://example.com/", "ready": "complete", "timeOrigin": 10},
@@ -2133,6 +2303,34 @@ class StableWorkstationContractTest(unittest.TestCase):
             patch.object(BRIDGE, "browser_page_state", return_value=state),
         ):
             self.assertFalse(BRIDGE.browser_navigation_completed("https://example.invalid/", dict(state)))
+
+    def test_native_protected_fields_omit_content_from_observation(self) -> None:
+        entry = MagicMock()
+        entry.getRoleName.return_value = "entry"
+        entry.name = "API token"
+        entry.description = "private-description-fixture"
+        entry.childCount = 0
+        atspi = MagicMock()
+        atspi.Registry.getDesktop.return_value = entry
+        with (
+            patch.object(BRIDGE, "require_atspi"),
+            patch.object(BRIDGE, "pyatspi", atspi),
+            patch.object(BRIDGE, "project_file_nodes", return_value=[]),
+            patch.object(BRIDGE, "state_names", return_value=["editable"]),
+            patch.object(BRIDGE, "node_value", return_value="private-value-fixture"),
+            patch.object(BRIDGE, "normalized_actions", return_value=(["focus", "set_text"], {"set_text": entry})),
+            patch.object(BRIDGE, "node_bounds", return_value=None),
+            patch.object(BRIDGE, "accessibility_object_identity", return_value="entry-1"),
+        ):
+            snapshot, targets = BRIDGE.observe("computer-test", 100, native_only=True)
+        node = next(node for node in snapshot["nodes"] if node["name"] == "API token")
+        self.assertIn("protected", node["states"])
+        self.assertNotIn("set_text", node["actions"])
+        self.assertNotIn("set_text", targets[node["ref"]][1]["interfaces"])
+        self.assertIsNone(node["value"])
+        self.assertIsNone(node["description"])
+        self.assertNotIn("private-value-fixture", json.dumps(snapshot))
+        self.assertNotIn("private-description-fixture", json.dumps(snapshot))
 
     def test_sensitive_dom_fields_are_read_only_to_the_agent(self) -> None:
         self.assertTrue(BRIDGE.is_sensitive_field("Password", {}, {"type": "password"}))
@@ -2187,7 +2385,7 @@ class StableWorkstationContractTest(unittest.TestCase):
         self.assertEqual(original, BRIDGE.web_node_ref("page", "frame", "node", 42))
         self.assertNotEqual(original, BRIDGE.web_node_ref("page", "frame", "node", 43))
 
-    def test_unrelated_snapshot_change_does_not_stale_an_unchanged_target(self) -> None:
+    def test_stale_snapshot_cannot_authorize_a_same_named_target(self) -> None:
         class Editable:
             value = ""
 
@@ -2233,12 +2431,9 @@ class StableWorkstationContractTest(unittest.TestCase):
         with patch.object(BRIDGE, "observe", side_effect=snapshots), patch.object(BRIDGE.time, "sleep"):
             result = BRIDGE.act(request)
 
-        self.assertEqual(result["result"]["outcome"], "completed")
-        self.assertTrue(result["result"]["verified"])
-        self.assertEqual(result["result"]["effect"], "confirmed")
-        self.assertEqual(result["result"]["route"], "accessibility_text")
-        self.assertEqual(result["result"]["evidence"], ["value_readback"])
-        self.assertEqual(editable.value, "Cửu Âm Chân Kinh")
+        self.assertEqual(result["result"]["outcome"], "rejected")
+        self.assertEqual(result["result"]["code"], "semantic_stale_snapshot")
+        self.assertEqual(editable.value, "")
 
     def test_changed_target_still_fails_closed(self) -> None:
         changed_node = {

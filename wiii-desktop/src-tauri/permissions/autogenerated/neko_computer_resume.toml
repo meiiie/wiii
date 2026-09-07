@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-computer-resume"
+description = "Enables the neko_computer_resume command without any pre-configured scope."
+commands.allow = ["neko_computer_resume"]
+
+[[permission]]
+identifier = "deny-neko-computer-resume"
+description = "Denies the neko_computer_resume command without any pre-configured scope."
+commands.deny = ["neko_computer_resume"]

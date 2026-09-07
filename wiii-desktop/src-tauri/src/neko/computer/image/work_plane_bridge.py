@@ -10,12 +10,15 @@ import os
 import re
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path, PurePosixPath
 from typing import Any
+
+from project_paths import protected_path
 
 PROTOCOL_VERSION = "wiii-work-plane.preview.v1"
 PROJECT_REF = "work:project"
@@ -24,7 +27,7 @@ MAX_FILES = 10_000
 MAX_FILE_BYTES = 128 * 1024
 MAX_QUERY_BYTES = 64 * 1024
 MAX_CELLS = 512
-SPREADSHEET_EXTENSIONS = {".ods", ".xlsx", ".xls", ".csv"}
+SPREADSHEET_EXTENSIONS = {".ods", ".xlsx", ".xls"}
 CELL_RANGE = re.compile(r"^\$?([A-Z]{1,3})\$?([1-9][0-9]{0,6})(?::\$?([A-Z]{1,3})\$?([1-9][0-9]{0,6}))?$")
 FORMULA_CHARACTERS = re.compile(r"^=[A-Za-z0-9_.$:+\-*/(),; <>=]+$")
 FORMULA_FUNCTION = re.compile(r"([A-Za-z_][A-Za-z0-9_.]*)\s*\(")
@@ -122,22 +125,12 @@ def file_revision(path: Path) -> str:
 
 def directory_revision(root: Path) -> str:
     digest = hashlib.sha256()
-    count = 0
-    for current, directories, files in os.walk(root, followlinks=False):
-        directories[:] = sorted(
-            name for name in directories if not (Path(current) / name).is_symlink()
+    for path in list_files(root):
+        relative = path.relative_to(root).as_posix()
+        metadata = path.lstat()
+        digest.update(
+            f"file\0{relative}\0{metadata.st_size}\0{metadata.st_mtime_ns}\n".encode("utf-8")
         )
-        for name in sorted(files):
-            count += 1
-            if count > MAX_FILES:
-                raise BridgeError("project_too_large: Work Plane supports at most 10000 files")
-            path = Path(current) / name
-            relative = path.relative_to(root).as_posix()
-            stat = path.lstat()
-            kind = "symlink" if path.is_symlink() else "file"
-            digest.update(
-                f"{kind}\0{relative}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode("utf-8")
-            )
     return "sha256:" + digest.hexdigest()
 
 
@@ -164,6 +157,8 @@ def logical_path(value: str) -> PurePosixPath:
     path = PurePosixPath(value.replace("\\", "/"))
     if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
         raise BridgeError("path_escape: path must stay inside the granted Project")
+    if protected_path(path):
+        raise BridgeError("protected_path: credential and repository metadata are not Work Plane resources")
     return path
 
 
@@ -244,7 +239,9 @@ def root_resource(root: Path) -> dict[str, Any]:
         "parentRef": None,
         "revision": directory_revision(root),
         "mediaType": None,
-        "capabilities": ["project.file.create"],
+        "capabilities": ["project.file.create"] + (
+            ["spreadsheet.workbook.create"] if spreadsheet_available() else []
+        ),
         "source": "project",
         "metadata": {},
     }
@@ -550,11 +547,13 @@ def list_files(root: Path) -> list[Path]:
     paths: list[Path] = []
     for current, directories, files in os.walk(root, followlinks=False):
         directories[:] = sorted(
-            name for name in directories if not (Path(current) / name).is_symlink()
+            name for name in directories
+            if not (Path(current) / name).is_symlink()
+            and not protected_path((Path(current) / name).relative_to(root))
         )
         for name in sorted(files):
             path = Path(current) / name
-            if not path.is_symlink():
+            if not path.is_symlink() and not protected_path(path.relative_to(root)):
                 paths.append(path)
             if len(paths) > MAX_FILES:
                 raise BridgeError("project_too_large: Work Plane supports at most 10000 files")
@@ -1122,12 +1121,15 @@ def completed(
 
 
 def atomic_write(path: Path, payload: bytes) -> None:
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
     handle, temporary = tempfile.mkstemp(prefix=".wiii-work-", dir=path.parent)
     try:
         with os.fdopen(handle, "wb") as output:
             output.write(payload)
             output.flush()
             os.fsync(output.fileno())
+        if mode is not None:
+            os.chmod(temporary, mode)
         os.replace(temporary, path)
     except Exception:
         try:
@@ -1939,14 +1941,8 @@ def apply_spreadsheet_chart(
     rectangle.Width = max(size.Width, 5000)
     rectangle.Height = max(size.Height, 3500)
     charts = sheet.getCharts()
-    for existing_name in list(charts.getElementNames()):
-        existing = charts.getByName(existing_name)
-        existing_embedded = existing.getEmbeddedObject()
-        existing_title = ""
-        if bool(getattr(existing_embedded, "HasMainTitle", False)):
-            existing_title = str(existing_embedded.getTitle().String)
-        if existing_name == chart_name or (title and existing_title == title):
-            charts.removeByName(existing_name)
+    if charts.hasByName(chart_name):
+        charts.removeByName(chart_name)
     charts.addNewByName(
         chart_name,
         rectangle,

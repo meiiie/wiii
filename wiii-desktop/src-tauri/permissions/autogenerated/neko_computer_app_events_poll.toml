@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-computer-app-events-poll"
+description = "Enables the neko_computer_app_events_poll command without any pre-configured scope."
+commands.allow = ["neko_computer_app_events_poll"]
+
+[[permission]]
+identifier = "deny-neko-computer-app-events-poll"
+description = "Denies the neko_computer_app_events_poll command without any pre-configured scope."
+commands.deny = ["neko_computer_app_events_poll"]

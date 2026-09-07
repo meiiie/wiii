@@ -46,6 +46,7 @@ fn every_workbench_capability_excludes_the_splash_window() {
         "workbench-files",
         "workbench-network",
         "workbench-agents",
+        "workbench-computer",
         "workbench-notifications",
     ] {
         let capability = read_json(&format!("capabilities/{name}.json"));
@@ -72,6 +73,7 @@ fn tauri_config_enables_only_the_reviewed_capability_set() {
             "workbench-files",
             "workbench-network",
             "workbench-agents",
+            "workbench-computer",
             "workbench-notifications"
         ])
     );
@@ -101,6 +103,7 @@ fn main_webview_has_no_raw_agent_process_primitive() {
     let mut reviewed = vec![
         "allow-neko-control-provider-list",
         "allow-neko-control-provider-profiles",
+        "allow-neko-control-provider-sessions",
         "allow-neko-control-session-list",
         "allow-neko-control-session-start",
         "allow-neko-control-session-write",
@@ -111,5 +114,63 @@ fn main_webview_has_no_raw_agent_process_primitive() {
     assert_eq!(
         granted, reviewed,
         "agent capability grants an unreviewed permission set"
+    );
+}
+
+#[test]
+fn main_webview_computer_authority_is_explicit_and_coworker_grant_scoped() {
+    let computer = read_json("capabilities/workbench-computer.json");
+    assert_eq!(computer["windows"], serde_json::json!(["main"]));
+
+    let mut granted = computer["permissions"]
+        .as_array()
+        .expect("computer capability declares permissions")
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .expect("computer permissions are identifiers")
+        })
+        .collect::<Vec<_>>();
+    granted.sort_unstable();
+
+    let mut reviewed = vec![
+        "allow-neko-computer-app-events-poll",
+        "allow-neko-computer-browser-navigate",
+        "allow-neko-computer-coworker-status",
+        "allow-neko-computer-doctor",
+        "allow-neko-computer-ensure",
+        "allow-neko-computer-events-read",
+        "allow-neko-computer-history-delete",
+        "allow-neko-computer-history-query",
+        "allow-neko-computer-history-set-enabled",
+        "allow-neko-computer-history-status",
+        "allow-neko-computer-package-install",
+        "allow-neko-computer-package-remove",
+        "allow-neko-computer-project-grant",
+        "allow-neko-computer-project-revoke",
+        "allow-neko-computer-remove",
+        "allow-neko-computer-reset",
+        "allow-neko-computer-resume",
+        "allow-neko-computer-seat-acquire",
+        "allow-neko-computer-seat-release",
+        "allow-neko-computer-semantic-act",
+        "allow-neko-computer-semantic-observe",
+        "allow-neko-computer-suspend",
+        "allow-neko-computer-terminal-exec",
+        "allow-neko-computer-work-plane-describe",
+        "allow-neko-computer-work-plane-execute",
+        "allow-neko-computer-work-plane-query",
+        "allow-neko-signal-inbox-claim",
+        "allow-neko-signal-inbox-consult",
+        "allow-neko-signal-inbox-defer",
+        "allow-neko-signal-inbox-resolve",
+        "allow-neko-signal-inbox-revoke-account",
+    ];
+    reviewed.sort_unstable();
+
+    assert_eq!(
+        granted, reviewed,
+        "computer capability grants an unreviewed permission set"
     );
 }

@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import stat
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 BRIDGE_PATH = (
     Path(__file__).resolve().parents[1]
@@ -20,6 +23,7 @@ SPEC = importlib.util.spec_from_file_location("wiii_work_plane_bridge", BRIDGE_P
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError("Unable to load Work Plane bridge")
 BRIDGE = importlib.util.module_from_spec(SPEC)
+sys.path.insert(0, str(BRIDGE_PATH.parent))
 SPEC.loader.exec_module(BRIDGE)
 
 
@@ -67,6 +71,55 @@ class WorkPlaneBridgeContractTests(unittest.TestCase):
         self.assertNotIn("docker", encoded)
         self.assertNotIn("/workspace/project", encoded)
         self.assertNotIn("environmentid", encoded)
+
+    def test_project_root_advertises_workbook_creation_only_when_office_is_available(self) -> None:
+        for available in (False, True):
+            with self.subTest(available=available), patch.object(BRIDGE, "spreadsheet_available", return_value=available):
+                root = BRIDGE.describe()["root"]
+            self.assertEqual("spreadsheet.workbook.create" in root["capabilities"], available)
+            self.assertIn("project.file.create", root["capabilities"])
+
+    def test_chart_upsert_preserves_another_chart_with_the_same_title(self) -> None:
+        document = MagicMock()
+        office = MagicMock()
+        sheet = document.getSheets.return_value.getByName.return_value
+        charts = sheet.getCharts.return_value
+        entries = {name: MagicMock() for name in ["target", "unrelated"]}
+        for chart in entries.values():
+            chart.getEmbeddedObject.return_value.HasMainTitle = True
+            chart.getEmbeddedObject.return_value.getTitle.return_value.String = "Same title"
+        charts.getElementNames.side_effect = lambda: tuple(entries)
+        charts.hasByName.side_effect = lambda name: name in entries
+        charts.getByName.side_effect = lambda name: entries[name]
+        charts.removeByName.side_effect = lambda name: entries.pop(name)
+        charts.addNewByName.side_effect = lambda name, *args: entries.update({name: MagicMock()})
+        sheet.getCellRangeByName.return_value.Size.Width = 5000
+        sheet.getCellRangeByName.return_value.Size.Height = 3500
+        untouched = entries["unrelated"]
+        result = BRIDGE.apply_spreadsheet_chart(office, document, {
+            "sheet": "Sheet1", "name": "target", "sourceRange": "A1:B4", "anchorRange": "D1:H9",
+            "chartType": "column", "title": "Same title",
+        })
+        self.assertEqual(result, {"sheet": "Sheet1", "name": "target"})
+        self.assertIs(entries["unrelated"], untouched)
+        charts.removeByName.assert_called_once_with("target")
+
+    def test_csv_does_not_advertise_or_execute_rich_workbook_mutations(self) -> None:
+        path = self.root / "data.csv"
+        path.write_text("Region,Sales\nNorth,10\n", encoding="utf-8")
+        with patch.object(BRIDGE, "spreadsheet_available", return_value=True):
+            resource = BRIDGE.file_resource(self.root, path)
+        self.assertEqual(resource["resourceType"], "project.file")
+        self.assertFalse(any(capability.startswith("spreadsheet.") for capability in resource["capabilities"]))
+        before = path.read_bytes()
+        with patch.object(BRIDGE, "OfficeSession") as office:
+            with self.assertRaisesRegex(BRIDGE.BridgeError, "unsupported_resource"):
+                BRIDGE.execute(self.transaction(
+                    "spreadsheet.chart.upsert", resource["ref"], resource["revision"],
+                    {"sheet": "Sheet1", "name": "Chart", "chartType": "column", "sourceRange": "A1:B2", "anchorRange": "D1:H9"},
+                ))
+            office.assert_not_called()
+        self.assertEqual(path.read_bytes(), before)
 
     def test_file_slice_preserves_unrelated_source_state(self) -> None:
         before_unchanged = (self.root / "unchanged.bin").read_bytes()
@@ -274,6 +327,44 @@ class WorkPlaneBridgeContractTests(unittest.TestCase):
         self.assertTrue(result["truncated"])
         self.assertTrue(result["items"][0]["ref"].startswith("work:file:"))
         self.assertNotIn(str(self.root), str(result))
+
+    def test_protected_files_are_neither_listed_nor_addressable(self) -> None:
+        paths = [".env", "nested/.ENV.production", ".git/config", ".ssh/id_ed25519", "signing.pfx"]
+        original_revision = BRIDGE.directory_revision(self.root)
+        for relative in paths:
+            path = self.root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("private-fixture", encoding="utf-8")
+        result = BRIDGE.query({"resourceRef": BRIDGE.PROJECT_REF, "view": "children"})
+        self.assertEqual({item["name"] for item in result["items"]}, {"notes.txt", "unchanged.bin"})
+        self.assertEqual(BRIDGE.directory_revision(self.root), original_revision)
+        source = BRIDGE.file_resource(self.root, self.root / "notes.txt")
+        for relative in paths:
+            with self.subTest(relative=relative):
+                with self.assertRaisesRegex(BRIDGE.BridgeError, "protected_path"):
+                    BRIDGE.query({"resourceRef": BRIDGE.encode_ref(relative), "view": "content"})
+                operations = [
+                    self.transaction("project.file.create", BRIDGE.PROJECT_REF, original_revision, {"path": relative, "content": "overwrite"}),
+                    self.transaction("project.file.patch_text", BRIDGE.encode_ref(relative), original_revision, {"expectedText": "private-fixture", "replacement": "overwrite"}),
+                    self.transaction("project.file.rename", source["ref"], source["revision"], {"destination": relative}),
+                ]
+                for operation in operations:
+                    with self.assertRaisesRegex(BRIDGE.BridgeError, "protected_path"):
+                        BRIDGE.execute(operation)
+                self.assertEqual((self.root / relative).read_text(encoding="utf-8"), "private-fixture")
+
+    @unittest.skipUnless(os.name == "posix", "POSIX executable permissions")
+    def test_text_patch_preserves_executable_mode(self) -> None:
+        source = self.root / "notes.txt"
+        source.chmod(0o750)
+        resource = BRIDGE.file_resource(self.root, source)
+        result = BRIDGE.execute(self.transaction(
+            "project.file.patch_text", resource["ref"], resource["revision"],
+            {"expectedText": "alpha", "replacement": "updated"},
+        ))
+        self.assertEqual(result["outcome"], "completed")
+        self.assertEqual(stat.S_IMODE(source.stat().st_mode), 0o750)
+        self.assertEqual(source.read_text(encoding="utf-8"), "updated\nbeta\n")
 
 
 if __name__ == "__main__":

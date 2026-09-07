@@ -13,6 +13,9 @@ repository = "https://github.com/meiiie/wiii"
 name = "wiii_desktop_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
+[features]
+bundled-neko = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -31,7 +34,9 @@ tokio = { version = "1", features = ["net"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 uuid = { version = "1.25.0", features = ["v4"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+iana-time-zone = "0.1.65"
 sha2 = "0.10.9"
+chacha20poly1305 = "0.10.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -39,6 +44,7 @@ libc = "0.2"
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",
+  "Win32_Security_Cryptography",
   "Win32_Security",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_JobObjects",

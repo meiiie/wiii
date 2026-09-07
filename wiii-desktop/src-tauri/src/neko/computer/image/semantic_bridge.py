@@ -16,12 +16,15 @@ import sys
 import threading
 import time
 from collections import OrderedDict, deque
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import parse_qs, quote, quote_plus, urlsplit
 from urllib.request import Request, urlopen
 
 import websocket
+
+from project_paths import protected_path
 
 PROTOCOL_VERSION = "neko-computer.semantic.v1"
 AI_FRAME_VERSION = "wiii-ai-frame.v1"
@@ -48,7 +51,6 @@ MAX_APP_EVENT_BUFFER = 2048
 MAX_APP_EVENT_POLL = 512
 MAX_OBSERVATION_SCOPE_CACHE = 256
 MAX_NATIVE_OBSERVATION_CACHE = 8
-MAX_BROWSER_OBSERVATION_CACHE = 8
 SEMANTIC_BRIDGE_HOST = "127.0.0.1"
 SEMANTIC_BRIDGE_PORT = 9234
 REALTIME_CLOCK_DIR = "/tmp/wiii-computer-clock"
@@ -97,10 +99,10 @@ SENSITIVE_FIELD_TERMS = (
 pyatspi = None
 APP_EVENT_EPOCH = secrets.token_hex(8)
 APP_EVENT_LOCK = threading.Lock()
+SEMANTIC_CONTROL_LOCK = threading.Lock()
 APP_EVENT_CONDITION = threading.Condition(APP_EVENT_LOCK)
 APP_EVENT_BUFFER: deque[dict[str, Any]] = deque(maxlen=MAX_APP_EVENT_BUFFER)
 APP_EVENT_SEQUENCE = 0
-APP_EVENT_GAP = False
 APP_EVENT_WATCHER_STATE = "not_started"
 OBSERVATION_SCOPE_LOCK = threading.Lock()
 OBSERVATION_SCOPES: dict[tuple[str, str], str | None] = {}
@@ -109,11 +111,6 @@ NATIVE_APP_GENERATIONS: dict[str, int] = {}
 NATIVE_OBSERVATIONS: OrderedDict[
     tuple[str, str, int],
     tuple[int, dict[str, Any], dict[str, tuple[Any, dict[str, Any]]]],
-] = OrderedDict()
-BROWSER_OBSERVATION_LOCK = threading.Lock()
-BROWSER_OBSERVATIONS: OrderedDict[
-    tuple[str, str],
-    tuple[dict[str, Any], dict[str, tuple[Any, dict[str, Any]]]],
 ] = OrderedDict()
 ACTIVE_BROWSER_TARGET_LOCK = threading.Lock()
 ACTIVE_BROWSER_TARGET_ID: str | None = None
@@ -137,42 +134,6 @@ def remember_observation_scope(
 def observation_scope_for(environment_id: str, state_version: str) -> str | None:
     with OBSERVATION_SCOPE_LOCK:
         return OBSERVATION_SCOPES.get((environment_id, state_version))
-
-
-def remember_browser_observation(
-    environment_id: str,
-    snapshot: dict[str, Any],
-    targets: dict[str, tuple[Any, dict[str, Any]]],
-) -> None:
-    browser_targets = {
-        ref: target
-        for ref, target in targets.items()
-        if is_browser_target_ref(ref)
-    }
-    if not browser_targets:
-        return
-    key = (environment_id, str(snapshot.get("stateVersion") or ""))
-    if not key[1]:
-        return
-    with BROWSER_OBSERVATION_LOCK:
-        BROWSER_OBSERVATIONS.pop(key, None)
-        BROWSER_OBSERVATIONS[key] = (copy.deepcopy(snapshot), copy.deepcopy(browser_targets))
-        while len(BROWSER_OBSERVATIONS) > MAX_BROWSER_OBSERVATION_CACHE:
-            BROWSER_OBSERVATIONS.popitem(last=False)
-
-
-def cached_browser_target_observation(
-    environment_id: str,
-    state_version: str,
-    target_ref: str,
-) -> tuple[dict[str, Any], dict[str, tuple[Any, dict[str, Any]]]] | None:
-    key = (environment_id, state_version)
-    with BROWSER_OBSERVATION_LOCK:
-        cached = BROWSER_OBSERVATIONS.get(key)
-        if cached is None or target_ref not in cached[1]:
-            return None
-        BROWSER_OBSERVATIONS.move_to_end(key)
-        return copy.deepcopy(cached[0]), copy.deepcopy(cached[1])
 
 
 def remember_active_browser_target(target_id: Any) -> None:
@@ -319,7 +280,7 @@ def app_event_kind(event_type: str) -> str:
 
 
 def record_app_event(event: Any) -> None:
-    global APP_EVENT_GAP, APP_EVENT_SEQUENCE
+    global APP_EVENT_SEQUENCE
     source = safe(lambda: event.source)
     application_name = bounded_text(
         safe(lambda: source.getApplication().name, ""),
@@ -340,8 +301,6 @@ def record_app_event(event: Any) -> None:
     with APP_EVENT_CONDITION:
         APP_EVENT_SEQUENCE += 1
         sequence = APP_EVENT_SEQUENCE
-        if len(APP_EVENT_BUFFER) == MAX_APP_EVENT_BUFFER:
-            APP_EVENT_GAP = True
         APP_EVENT_BUFFER.append(
             {
                 "sequence": sequence,
@@ -357,7 +316,6 @@ def record_app_event(event: Any) -> None:
 
 
 def poll_app_events(request: dict[str, Any]) -> dict[str, Any]:
-    global APP_EVENT_GAP
     environment_id = request.get("environmentId")
     if not isinstance(environment_id, str) or not environment_id or len(environment_id) > 160:
         raise ValueError("The app-event environment is invalid.")
@@ -372,7 +330,7 @@ def poll_app_events(request: dict[str, Any]) -> dict[str, Any]:
     def page_after_cursor() -> tuple[list[dict[str, Any]], int, bool]:
         current_sequence = APP_EVENT_SEQUENCE
         oldest_sequence = APP_EVENT_BUFFER[0]["sequence"] if APP_EVENT_BUFFER else current_sequence + 1
-        gap_detected = APP_EVENT_GAP
+        gap_detected = parsed_cursor is None and oldest_sequence > 1
         after_sequence = 0
         if parsed_cursor is not None:
             epoch, after_sequence = parsed_cursor
@@ -401,7 +359,6 @@ def poll_app_events(request: dict[str, Any]) -> dict[str, Any]:
             {key: value for key, value in record.items() if key != "sequence"}
             for record in page
         ]
-        APP_EVENT_GAP = False
     return {
         "status": "ok",
         "batch": {
@@ -1085,6 +1042,9 @@ def replace_browser_page(
 
 
 def navigate_browser(target: str) -> dict[str, Any] | None:
+    parsed = urlsplit(target)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Browser navigation requires an HTTP(S) target.")
     try:
         page = active_browser_page()
     except Exception:
@@ -1100,8 +1060,18 @@ def navigate_browser(target: str) -> dict[str, Any] | None:
         except Exception:
             if launcher_process_ids(APP_LAUNCHERS_BY_REF["app:browser"]):
                 raise
-            launch_application(APP_LAUNCHERS_BY_REF["app:browser"], target)
-            return None
+            launch_application(APP_LAUNCHERS_BY_REF["app:browser"])
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline:
+                try:
+                    page = active_browser_page()
+                except Exception:
+                    page = None
+                if page is not None:
+                    break
+                time.sleep(0.1)
+            if page is None:
+                raise RuntimeError("Chrome started but its navigation adapter is not ready.")
     before = {
         "pageId": page.get("id"),
         "url": bounded_text(page.get("url"), 2000),
@@ -1140,12 +1110,8 @@ def navigate_browser(target: str) -> dict[str, Any] | None:
     return before
 
 
-def launch_application(launcher: dict[str, Any], target: str | None = None) -> subprocess.Popen:
+def launch_application(launcher: dict[str, Any]) -> subprocess.Popen:
     argv = launcher["argv"]
-    if target is not None:
-        if launcher["appId"] != "browser":
-            raise ValueError("Only the browser launcher accepts a navigation target.")
-        argv = (*argv[:-1], target)
     environment = os.environ.copy()
     environment.update(launcher.get("environment", {}))
     return subprocess.Popen(
@@ -1166,7 +1132,9 @@ def browser_url_matches_target(current_value: str, target: str) -> bool:
         return True
     current = urlsplit(current_value)
     return bool(
-        current.hostname == expected.hostname
+        current.scheme == expected.scheme
+        and current.netloc == expected.netloc
+        and current.path == expected.path
         and expected_query
         and all(parse_qs(current.query).get(key) == values for key, values in expected_query.items())
     )
@@ -1227,15 +1195,7 @@ def browser_navigation_completed(
     current_url = after.get("url")
     if isinstance(current_url, str) and browser_url_matches_target(current_url, target):
         return True
-    if before is None:
-        expected_scheme = urlsplit(target).scheme.casefold()
-        current_scheme = urlsplit(str(current_url or "")).scheme.casefold()
-        return bool(
-            target_id is not None
-            and expected_scheme in {"http", "https"}
-            and current_scheme in {"http", "https"}
-        )
-    return any(after.get(field) != before.get(field) for field in ("pageId", "url", "timeOrigin"))
+    return False
 
 
 def workstation_nodes() -> list[dict[str, Any]]:
@@ -1248,7 +1208,8 @@ def workstation_nodes() -> list[dict[str, Any]]:
 def project_file_nodes(root: str = "/workspace/project", max_entries: int = 256) -> list[dict[str, Any]]:
     adapter = adapter_payload(APP_LAUNCHERS_BY_REF.get("app:files"))
     try:
-        entries = list(os.scandir(root))
+        with os.scandir(root) as scanned:
+            entries = [entry for entry in scanned if not protected_path(PurePosixPath(entry.name))]
     except OSError:
         return []
     entries.sort(
@@ -2483,7 +2444,7 @@ def cdp_semantic_nodes() -> tuple[list[dict[str, Any]], dict[str, tuple[Any, dic
             "appId": "browser",
             "role": role,
             "name": name,
-            "description": bounded_text(ax_value(raw, "description")) or None,
+            "description": None if protected else bounded_text(ax_value(raw, "description")) or None,
             "value": None if protected else bounded_text(ax_value(raw, "value")) or None,
             "states": states,
             "actions": actions,
@@ -2880,70 +2841,6 @@ def cdp_act(facts: dict[str, Any], action: str, text: str | None) -> bool:
                 object_id,
             )
     raise RuntimeError("Chrome rejected the semantic web action.")
-
-
-def refresh_cdp_target(facts: dict[str, Any]) -> tuple[Any, dict[str, Any]] | None:
-    cdp_facts = facts.get("cdp", {})
-    target_id = str(cdp_facts.get("targetId") or "")
-    backend_node_id = cdp_facts.get("backendDOMNodeId")
-    if not target_id or not isinstance(backend_node_id, int):
-        return None
-    try:
-        page = cdp_target_page(target_id)
-        with CdpConnection(page, timeout=2.0) as cdp:
-            cdp.call("Accessibility.enable")
-            raw_nodes = cdp.call(
-                "Accessibility.getPartialAXTree",
-                {"backendNodeId": backend_node_id, "fetchRelatives": False},
-            ).get("nodes", [])
-            raw = next(
-                (
-                    item
-                    for item in raw_nodes
-                    if isinstance(item, dict)
-                    and item.get("backendDOMNodeId") == backend_node_id
-                    and not item.get("ignored")
-                ),
-                None,
-            )
-            if raw is None:
-                return None
-            role = normalized_ax_role(ax_value(raw, "role"))
-            properties = {
-                str(item.get("name")): ax_value(item, "value")
-                for item in raw.get("properties", [])
-                if isinstance(item, dict)
-            }
-            attributes = (
-                cdp_dom_attributes(cdp, backend_node_id)
-                if role in FORM_CONTROL_ROLES
-                else {}
-            )
-            raw_name = bounded_text(ax_value(raw, "name"))
-            name = (
-                semantic_control_name(
-                    raw_name,
-                    attributes,
-                    cdp_dom_label(cdp, backend_node_id) if not raw_name else "",
-                )
-                if role in FORM_CONTROL_ROLES
-                else raw_name
-            )
-    except Exception:
-        return None
-    node = copy.deepcopy(facts.get("node", {}))
-    node["role"] = role
-    node["name"] = name
-    states = ["disabled"] if ax_state_is_true(properties.get("disabled")) else ["enabled"]
-    for state in ("focused", "selected", "checked", "expanded", "required", "readonly"):
-        if ax_state_is_true(properties.get(state)):
-            states.append(state)
-    node["states"] = states
-    if is_sensitive_field(name, properties, attributes):
-        node["actions"] = [
-            action for action in node.get("actions", []) if action != "set_text"
-        ]
-    return None, {"node": node, "interfaces": {}, "cdp": dict(cdp_facts)}
 
 
 def cdp_action_readback(
@@ -3366,6 +3263,8 @@ def observe(
             actions = [action for action in actions if action != "set_text"]
             interfaces.pop("set_text", None)
             states = sorted({*states, "protected"})
+            value = None
+            description = None
 
         emitted_ref = parent_ref
         if not recognized_application and should_emit(role, name, value, states, actions, depth):
@@ -3775,20 +3674,9 @@ def act(request: dict[str, Any]) -> dict[str, Any]:
         }
         targets = {target_ref: fast_canvas_target}
     elif is_browser_target_ref(target_ref):
-        cached = cached_browser_target_observation(
-            environment_id,
-            request_state_version,
-            target_ref,
+        snapshot, targets = browser_snapshot(
+            environment_id, 1000, scope_ref=observed_scope, retained_target_ref=target_ref,
         )
-        if cached is None:
-            snapshot, targets = browser_snapshot(environment_id, 1000)
-        else:
-            snapshot, targets = cached
-            refreshed = refresh_cdp_target(targets[target_ref][1])
-            if refreshed is None:
-                targets.pop(target_ref, None)
-            else:
-                targets[target_ref] = refreshed
     elif target_ref.startswith("ui-"):
         snapshot, targets = native_action_snapshot(
             environment_id,
@@ -3815,7 +3703,7 @@ def act(request: dict[str, Any]) -> dict[str, Any]:
         else observed_scope
     )
     identity_matches = request.get("expectedRole") == node["role"] and request.get("expectedName") == node["name"]
-    if request.get("stateVersion") != before_version and not identity_matches:
+    if request.get("stateVersion") != before_version:
         return reject(request, "semantic_stale_snapshot", "The target changed after it was observed; observe again before acting.", before_version)
     if not identity_matches:
         return reject(request, "semantic_target_mismatch", "The target identity no longer matches the observed control.", before_version)
@@ -4023,32 +3911,8 @@ def act(request: dict[str, Any]) -> dict[str, Any]:
                 time.sleep(0.05)
         after_version = fast_snapshot["stateVersion"]
     elif is_browser_target_ref(target_ref) and action == "invoke":
-        deadline = time.monotonic() + 1.8
-        after_token = browser_state_token()
-        pages_after = {
-            str(page.get("id"))
-            for page in browser_pages()
-            if isinstance(page.get("id"), str)
-        }
-        verified = after_token != browser_token_before or bool(
-            pages_after - (web_page_ids_before or set())
-        )
-        while not verified and time.monotonic() < deadline:
-            time.sleep(0.04)
-            after_token = browser_state_token()
-            pages_after = {
-                str(page.get("id"))
-                for page in browser_pages()
-                if isinstance(page.get("id"), str)
-            }
-            verified = after_token != browser_token_before or bool(
-                pages_after - (web_page_ids_before or set())
-            )
-        after_version = (
-            browser_effect_version(before_version, after_token, pages_after)
-            if verified
-            else before_version
-        )
+        verified = False
+        after_version = before_version
     elif is_browser_target_ref(target_ref) and action in {"press_key", "input_sequence"}:
         after_token = browser_state_token()
         pages_after = {
@@ -4190,7 +4054,6 @@ def bridge_request(path: str, request: dict[str, Any]) -> dict[str, Any]:
             snapshot["stateVersion"],
             snapshot.get("scopeRef"),
         )
-        remember_browser_observation(request["environmentId"], snapshot, targets)
         return {"status": "ok", "snapshot": snapshot}
     if path == "/act":
         return act(request)
@@ -4214,7 +4077,12 @@ class SemanticBridgeHandler(BaseHTTPRequestHandler):
             request = json.loads(self.rfile.read(content_length).decode("utf-8-sig"))
             if not isinstance(request, dict):
                 raise ValueError("The semantic bridge request must be an object.")
-            self.write_json(200, bridge_request(self.path, request))
+            if self.path == "/events":
+                response = bridge_request(self.path, request)
+            else:
+                with SEMANTIC_CONTROL_LOCK:
+                    response = bridge_request(self.path, request)
+            self.write_json(200, response)
         except Exception as error:
             self.write_json(
                 400,
@@ -4239,7 +4107,7 @@ class SemanticBridgeHandler(BaseHTTPRequestHandler):
 
 def serve() -> None:
     start_app_event_watcher()
-    HTTPServer((SEMANTIC_BRIDGE_HOST, SEMANTIC_BRIDGE_PORT), SemanticBridgeHandler).serve_forever()
+    ThreadingHTTPServer((SEMANTIC_BRIDGE_HOST, SEMANTIC_BRIDGE_PORT), SemanticBridgeHandler).serve_forever()
 
 
 def main() -> int:

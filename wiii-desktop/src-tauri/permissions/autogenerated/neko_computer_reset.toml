@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-computer-reset"
+description = "Enables the neko_computer_reset command without any pre-configured scope."
+commands.allow = ["neko_computer_reset"]
+
+[[permission]]
+identifier = "deny-neko-computer-reset"
+description = "Denies the neko_computer_reset command without any pre-configured scope."
+commands.deny = ["neko_computer_reset"]

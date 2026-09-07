@@ -537,6 +537,162 @@
           "markdownDescription": "Enables the close_splash command without any pre-configured scope."
         },
         {
+          "description": "Enables the neko_computer_app_events_poll command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-app-events-poll",
+          "markdownDescription": "Enables the neko_computer_app_events_poll command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_browser_navigate command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-browser-navigate",
+          "markdownDescription": "Enables the neko_computer_browser_navigate command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_coworker_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-coworker-status",
+          "markdownDescription": "Enables the neko_computer_coworker_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_doctor command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-doctor",
+          "markdownDescription": "Enables the neko_computer_doctor command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_ensure command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-ensure",
+          "markdownDescription": "Enables the neko_computer_ensure command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_events_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-events-read",
+          "markdownDescription": "Enables the neko_computer_events_read command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_history_delete command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-history-delete",
+          "markdownDescription": "Enables the neko_computer_history_delete command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_history_query command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-history-query",
+          "markdownDescription": "Enables the neko_computer_history_query command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_history_set_enabled command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-history-set-enabled",
+          "markdownDescription": "Enables the neko_computer_history_set_enabled command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_history_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-history-status",
+          "markdownDescription": "Enables the neko_computer_history_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_package_install command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-package-install",
+          "markdownDescription": "Enables the neko_computer_package_install command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_package_remove command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-package-remove",
+          "markdownDescription": "Enables the neko_computer_package_remove command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_project_grant command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-project-grant",
+          "markdownDescription": "Enables the neko_computer_project_grant command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_project_revoke command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-project-revoke",
+          "markdownDescription": "Enables the neko_computer_project_revoke command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_remove command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-remove",
+          "markdownDescription": "Enables the neko_computer_remove command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_reset command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-reset",
+          "markdownDescription": "Enables the neko_computer_reset command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_resume command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-resume",
+          "markdownDescription": "Enables the neko_computer_resume command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_seat_acquire command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-seat-acquire",
+          "markdownDescription": "Enables the neko_computer_seat_acquire command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_seat_release command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-seat-release",
+          "markdownDescription": "Enables the neko_computer_seat_release command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_semantic_act command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-semantic-act",
+          "markdownDescription": "Enables the neko_computer_semantic_act command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_semantic_observe command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-semantic-observe",
+          "markdownDescription": "Enables the neko_computer_semantic_observe command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_suspend command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-suspend",
+          "markdownDescription": "Enables the neko_computer_suspend command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_terminal_exec command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-terminal-exec",
+          "markdownDescription": "Enables the neko_computer_terminal_exec command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_work_plane_describe command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-work-plane-describe",
+          "markdownDescription": "Enables the neko_computer_work_plane_describe command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_work_plane_execute command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-work-plane-execute",
+          "markdownDescription": "Enables the neko_computer_work_plane_execute command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_computer_work_plane_query command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-computer-work-plane-query",
+          "markdownDescription": "Enables the neko_computer_work_plane_query command without any pre-configured scope."
+        },
+        {
           "description": "Enables the neko_control_events_read command without any pre-configured scope.",
           "type": "string",
           "const": "allow-neko-control-events-read",
@@ -553,6 +709,12 @@
           "type": "string",
           "const": "allow-neko-control-provider-profiles",
           "markdownDescription": "Enables the neko_control_provider_profiles command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_control_provider_sessions command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-control-provider-sessions",
+          "markdownDescription": "Enables the neko_control_provider_sessions command without any pre-configured scope."
         },
         {
           "description": "Enables the neko_control_session_cancel command without any pre-configured scope.",
@@ -591,6 +753,42 @@
           "markdownDescription": "Enables the neko_read_workspace_file command without any pre-configured scope."
         },
         {
+          "description": "Enables the neko_resolve_workspace command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-resolve-workspace",
+          "markdownDescription": "Enables the neko_resolve_workspace command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_signal_inbox_claim command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-signal-inbox-claim",
+          "markdownDescription": "Enables the neko_signal_inbox_claim command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_signal_inbox_consult command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-signal-inbox-consult",
+          "markdownDescription": "Enables the neko_signal_inbox_consult command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_signal_inbox_defer command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-signal-inbox-defer",
+          "markdownDescription": "Enables the neko_signal_inbox_defer command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_signal_inbox_resolve command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-signal-inbox-resolve",
+          "markdownDescription": "Enables the neko_signal_inbox_resolve command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the neko_signal_inbox_revoke_account command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-signal-inbox-revoke-account",
+          "markdownDescription": "Enables the neko_signal_inbox_revoke_account command without any pre-configured scope."
+        },
+        {
           "description": "Enables the neko_workspace_changes command without any pre-configured scope.",
           "type": "string",
           "const": "allow-neko-workspace-changes",
@@ -621,6 +819,162 @@
           "markdownDescription": "Denies the close_splash command without any pre-configured scope."
         },
         {
+          "description": "Denies the neko_computer_app_events_poll command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-app-events-poll",
+          "markdownDescription": "Denies the neko_computer_app_events_poll command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_browser_navigate command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-browser-navigate",
+          "markdownDescription": "Denies the neko_computer_browser_navigate command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_coworker_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-coworker-status",
+          "markdownDescription": "Denies the neko_computer_coworker_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_doctor command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-doctor",
+          "markdownDescription": "Denies the neko_computer_doctor command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_ensure command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-ensure",
+          "markdownDescription": "Denies the neko_computer_ensure command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_events_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-events-read",
+          "markdownDescription": "Denies the neko_computer_events_read command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_history_delete command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-history-delete",
+          "markdownDescription": "Denies the neko_computer_history_delete command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_history_query command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-history-query",
+          "markdownDescription": "Denies the neko_computer_history_query command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_history_set_enabled command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-history-set-enabled",
+          "markdownDescription": "Denies the neko_computer_history_set_enabled command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_history_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-history-status",
+          "markdownDescription": "Denies the neko_computer_history_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_package_install command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-package-install",
+          "markdownDescription": "Denies the neko_computer_package_install command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_package_remove command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-package-remove",
+          "markdownDescription": "Denies the neko_computer_package_remove command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_project_grant command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-project-grant",
+          "markdownDescription": "Denies the neko_computer_project_grant command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_project_revoke command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-project-revoke",
+          "markdownDescription": "Denies the neko_computer_project_revoke command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_remove command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-remove",
+          "markdownDescription": "Denies the neko_computer_remove command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_reset command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-reset",
+          "markdownDescription": "Denies the neko_computer_reset command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_resume command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-resume",
+          "markdownDescription": "Denies the neko_computer_resume command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_seat_acquire command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-seat-acquire",
+          "markdownDescription": "Denies the neko_computer_seat_acquire command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_seat_release command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-seat-release",
+          "markdownDescription": "Denies the neko_computer_seat_release command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_semantic_act command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-semantic-act",
+          "markdownDescription": "Denies the neko_computer_semantic_act command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_semantic_observe command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-semantic-observe",
+          "markdownDescription": "Denies the neko_computer_semantic_observe command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_suspend command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-suspend",
+          "markdownDescription": "Denies the neko_computer_suspend command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_terminal_exec command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-terminal-exec",
+          "markdownDescription": "Denies the neko_computer_terminal_exec command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_work_plane_describe command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-work-plane-describe",
+          "markdownDescription": "Denies the neko_computer_work_plane_describe command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_work_plane_execute command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-work-plane-execute",
+          "markdownDescription": "Denies the neko_computer_work_plane_execute command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_computer_work_plane_query command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-computer-work-plane-query",
+          "markdownDescription": "Denies the neko_computer_work_plane_query command without any pre-configured scope."
+        },
+        {
           "description": "Denies the neko_control_events_read command without any pre-configured scope.",
           "type": "string",
           "const": "deny-neko-control-events-read",
@@ -637,6 +991,12 @@
           "type": "string",
           "const": "deny-neko-control-provider-profiles",
           "markdownDescription": "Denies the neko_control_provider_profiles command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_control_provider_sessions command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-control-provider-sessions",
+          "markdownDescription": "Denies the neko_control_provider_sessions command without any pre-configured scope."
         },
         {
           "description": "Denies the neko_control_session_cancel command without any pre-configured scope.",
@@ -673,6 +1033,42 @@
           "type": "string",
           "const": "deny-neko-read-workspace-file",
           "markdownDescription": "Denies the neko_read_workspace_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_resolve_workspace command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-resolve-workspace",
+          "markdownDescription": "Denies the neko_resolve_workspace command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_signal_inbox_claim command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-signal-inbox-claim",
+          "markdownDescription": "Denies the neko_signal_inbox_claim command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_signal_inbox_consult command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-signal-inbox-consult",
+          "markdownDescription": "Denies the neko_signal_inbox_consult command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_signal_inbox_defer command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-signal-inbox-defer",
+          "markdownDescription": "Denies the neko_signal_inbox_defer command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_signal_inbox_resolve command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-signal-inbox-resolve",
+          "markdownDescription": "Denies the neko_signal_inbox_resolve command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_signal_inbox_revoke_account command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-signal-inbox-revoke-account",
+          "markdownDescription": "Denies the neko_signal_inbox_revoke_account command without any pre-configured scope."
         },
         {
           "description": "Denies the neko_workspace_changes command without any pre-configured scope.",
