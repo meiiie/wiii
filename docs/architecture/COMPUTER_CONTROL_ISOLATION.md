@@ -31,7 +31,7 @@ provider rollback behavior.
 
 ## Second boundary: revocable Wiii input execution
 
-Pack `semantic-v42` starts with no active input authority. The native seat
+Pack `semantic-v43` starts with no active input authority. The native seat
 service activates an opaque lease through the private transport; every action
 must present that exact lease again at execution time, after waiting in the
 semantic queue. A stale or revoked lease cannot reactivate itself.
@@ -55,6 +55,11 @@ must not return success or enable a new lease. Repeating release can reconcile
 an uncertain response without repeating the interrupted action. The action
 reports interruption, not rollback: effects already delivered may remain and a
 fresh observation is required. Observe itself never grants control.
+
+Native dispatch does not hold the cancellation condition across a potentially
+blocking call. Revocation can therefore invalidate the lease and reach its
+quiescence deadline while that call is blocked. The active action remains owned
+until it exits, so a timeout never acknowledges takeover or permits a new lease.
 
 Profile files, sign-ins and ordinary application processes are preserved. The
 standalone semantic `act` CLI is no longer an authority bypass. Tiny scoped
@@ -112,3 +117,15 @@ claim cancellation of all guest programs from the private socket or input lease.
   as above. Clippy passed with warnings denied. The v42 image was rebuilt.
 - Unix harness execution is deferred, not a blocker for Windows-only release.
   Installed desktop/real ACP session acceptance is not inferred from these tests.
+- The blocked-native-dispatch regression first failed on the previous lock
+  placement, then passed after moving dispatch outside the condition. All eleven
+  revocation cases passed; an in-flight call may finish after a timeout, but
+  subsequent input is refused and only successful reconciliation acknowledges
+  quiescence. This does not claim preemption of an arbitrary native OS call.
+- Pack v43 was rebuilt and the actual Windows/Chrome takeover passed in
+  2,217 ms after two key pairs, with no post-ack input and the fixture profile
+  retained (65.81 s total including setup/readback/cleanup). Native serial
+  execution passed 132 tests, with two live cases ignored and the takeover
+  case executed separately; Clippy passed. An earlier parallel native run had
+  four provider startup/process timing failures (128 passes). Serial success
+  does not erase those load-sensitive failures or prove an end-to-end SLA.

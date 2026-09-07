@@ -125,6 +125,36 @@ class InputRevocationTest(unittest.TestCase):
         self.authority.revoke("lease-one", cleanup=lambda: None)
         self.authority.activate("lease-two")
 
+    def test_blocked_dispatch_does_not_block_revocation_deadline(self):
+        entered = threading.Event()
+        finish = threading.Event()
+        effects = []
+
+        def native_call():
+            entered.set()
+            finish.wait(3)
+            effects.append("in-flight")
+
+        def active():
+            self.authority.dispatch(native_call)
+            self.authority.dispatch(effects.append, "must-not-run")
+
+        running = self.pool.submit(self.authority.run, "lease-one", active)
+        self.assertTrue(entered.wait(1))
+        revoke = self.pool.submit(self.authority.revoke, "lease-one", timeout=0.01)
+        try:
+            self.assertTrue(self.authority.cancelled.wait(0.5))
+            with self.assertRaises(TimeoutError):
+                revoke.result(timeout=1)
+            with self.assertRaises(RuntimeError):
+                self.authority.activate("lease-two")
+        finally:
+            finish.set()
+        with self.assertRaises(InputRevoked):
+            running.result(timeout=1)
+        self.authority.revoke("lease-one")
+        self.assertEqual(effects, ["in-flight"])
+
     def test_pointer_release_runs_even_when_press_response_is_lost(self):
         events = []
 

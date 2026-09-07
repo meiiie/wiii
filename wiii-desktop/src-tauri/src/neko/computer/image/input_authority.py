@@ -72,7 +72,7 @@ class InputAuthority:
     def dispatch(self, action, *args, **kwargs):
         with self.condition:
             self.checkpoint()
-            return action(*args, **kwargs)
+        return action(*args, **kwargs)
 
     def wait(self, seconds):
         cancelled = getattr(self.local, "cancelled", None)

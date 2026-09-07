@@ -18,8 +18,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const IMAGE_REF: &str = "wiii/web-computer:semantic-v42";
-const OBSOLETE_IMAGE_REFS: [&str; 40] = [
+const IMAGE_REF: &str = "wiii/web-computer:semantic-v43";
+const OBSOLETE_IMAGE_REFS: [&str; 42] = [
+    "wiii/web-computer:semantic-v42",
     "wiii/web-computer:semantic-v41",
     "wiii/web-computer:semantic-v40",
     "wiii/web-computer:semantic-v39",
@@ -43,6 +44,7 @@ const OBSOLETE_IMAGE_REFS: [&str; 40] = [
     "wiii/web-computer:semantic-v21",
     "wiii/web-computer:semantic-v20",
     "wiii/web-computer:semantic-v19",
+    "wiii/web-computer:semantic-v18",
     "wiii/web-computer:semantic-v17",
     "wiii/web-computer:semantic-v16",
     "wiii/web-computer:semantic-v15",
@@ -62,9 +64,9 @@ const OBSOLETE_IMAGE_REFS: [&str; 40] = [
     "wiii/local-computer:pilot-v1",
 ];
 const OWNER_LABEL: &str = "neko-computer-v1";
-const PACK_ID: &str = "web-computer-semantic-v42";
+const PACK_ID: &str = "web-computer-semantic-v43";
 const PACK_SCHEMA_VERSION: &str = "wiii-computer-pack.v2";
-const PACK_VERSION: &str = "semantic-v42";
+const PACK_VERSION: &str = "semantic-v43";
 const PACK_CHANNEL: &str = "preview";
 const PROFILE_SCHEMA_VERSION: u32 = 1;
 pub(crate) const CORE_PACKAGE_ID: &str = "web-computer-core";
@@ -892,7 +894,7 @@ impl LocalDockerComputerProvider {
     }
 
     fn materialize_build_context(&self) -> Result<PathBuf, String> {
-        let context = self.state_root.join("image-semantic-v42");
+        let context = self.state_root.join("image-semantic-v43");
         fs::create_dir_all(&context)
             .map_err(|error| format!("create Wiii computer image context failed: {error}"))?;
         write_if_changed(
