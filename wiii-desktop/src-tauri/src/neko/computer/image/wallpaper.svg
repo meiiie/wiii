@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="38%" r="62%">
+      <stop offset="0" stop-color="#fffdf8"/>
+      <stop offset="1" stop-color="#e9e4da"/>
+    </radialGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#34302b" flood-opacity=".18"/>
+    </filter>
+  </defs>
+  <rect width="1440" height="900" fill="url(#glow)"/>
+  <image href="neko-peek-mark.svg" x="592" y="250" width="256" height="256" filter="url(#shadow)"/>
+  <text x="720" y="556" text-anchor="middle" fill="#2b2926" font-family="system-ui, sans-serif" font-size="32" font-weight="600">Wiii Web Computer</text>
+  <text x="720" y="594" text-anchor="middle" fill="#77716a" font-family="system-ui, sans-serif" font-size="16">A durable workspace for people and agents</text>
+</svg>
