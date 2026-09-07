@@ -2,7 +2,9 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectHome } from "@/neko-chill/components/ProjectHome";
 import { NekoWorkspacePane } from "@/neko-chill/components/NekoWorkspacePane";
-import { clearNekoComposerDraft } from "@/neko-chill/composer-drafts";
+import { NekoComposer } from "@/neko-chill/components/NekoComposer";
+import { clearNekoComposerDraft, readNekoComposerDraft } from "@/neko-chill/composer-drafts";
+import type { NekoSession } from "@/neko-chill/stores/neko-session-store";
 import { useNekoAgentStore } from "@/neko-chill/stores/neko-agent-store";
 import { useNekoProjectStore } from "@/neko-chill/stores/neko-project-store";
 import { useNekoSessionStore } from "@/neko-chill/stores/neko-session-store";
@@ -20,6 +22,7 @@ const project = {
 
 describe("calm workbench interaction contracts", () => {
   beforeEach(() => {
+    clearNekoComposerDraft("session:composer-review");
     clearNekoComposerDraft(`project:${project.id}`);
     useNekoProjectStore.setState({ projects: [project], hydrated: true });
     useNekoAgentStore.setState({
@@ -32,6 +35,33 @@ describe("calm workbench interaction contracts", () => {
     useNekoWorkspaceStore.setState({ sessions: {}, refresh: vi.fn(async () => {}) });
     useNekoWorkspaceStore.getState().ensureSession(project.id);
     useNekoWorkspaceStore.getState().toggle(project.id);
+  });
+
+  it("keeps an unaccepted session draft across failure and remount, and clears only on acceptance", async () => {
+    const session = {
+      id: "composer-review", agentName: "Neko Core", status: "idle", controls: [], commands: [], workspace,
+    } as unknown as NekoSession;
+    let accept!: () => void;
+    let complete!: () => void;
+    const onSend = vi.fn((_text: string, accepted: () => void) => {
+      accept = accepted;
+      return new Promise<void>((resolve) => { complete = resolve; });
+    });
+    const props = { session, onSend, disabled: false, streaming: false,
+      onCancel: vi.fn(), onSetConfigOption: vi.fn(), onClientCommand: vi.fn() };
+    const first = render(<NekoComposer {...props} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Giữ bản nháp này" } });
+    fireEvent.click(screen.getByRole("button", { name: "Gửi tin nhắn" }));
+    expect(readNekoComposerDraft("session:composer-review")).toBe("Giữ bản nháp này");
+    await act(async () => { complete(); });
+    first.unmount();
+    render(<NekoComposer {...props} />);
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("Giữ bản nháp này");
+    fireEvent.click(screen.getByRole("button", { name: "Gửi tin nhắn" }));
+    act(() => accept());
+    expect(readNekoComposerDraft("session:composer-review")).toBe("");
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
+    await act(async () => { complete(); });
   });
 
   it.each([

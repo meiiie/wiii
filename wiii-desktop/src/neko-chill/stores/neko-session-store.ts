@@ -297,7 +297,7 @@ function ownershipFact(
   session: Pick<
     NekoSession,
     "id" | "agentId" | "kind" | "projectId" | "execution" | "status"
-  >,
+  > & Partial<Pick<NekoSession, "runtime" | "closePending" | "deletePending">>,
 ): NekoSessionOwnershipFact {
   const kind = topLevelKind(session);
   return {
@@ -307,7 +307,10 @@ function ownershipFact(
     projectId: session.projectId ?? null,
     taskId: kind === "worker" ? session.execution?.taskId ?? null : null,
     runId: kind === "worker" ? session.execution?.runId ?? null : null,
-    active: session.status !== "exited" && session.status !== "error",
+    active: Boolean(session.runtime || session.closePending || session.deletePending)
+      || runtimes.get(session.id) !== null
+      || runtimes.hasRetainedCleanup(session.id)
+      || (session.status !== "exited" && session.status !== "error"),
   };
 }
 
@@ -672,7 +675,7 @@ interface NekoSessionState {
   ) => Promise<string>;
   /** One-time migration path for a legacy transcript with no workspace. */
   attachWorkspace: (sessionId: string, workspace: WorkspaceRef) => Promise<void>;
-  sendPrompt: (text: string) => Promise<void>;
+  sendPrompt: (text: string, onAccepted?: () => void) => Promise<void>;
   cancelTurn: () => Promise<void>;
   resolvePermission: (optionId: string | null) => Promise<void>;
   setConfigOption: (optionId: string, value: string | boolean) => Promise<void>;
@@ -1303,7 +1306,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
       }
     },
 
-    sendPrompt: async (text) => {
+    sendPrompt: async (text, onAccepted) => {
       const activeModeExit = modeExitOperation;
       if (activeModeExit) await activeModeExit;
       const sessionId = get().activeSessionId;
@@ -1358,7 +1361,8 @@ export const useNekoSessionStore = create<NekoSessionState>()(
           if (!agentStore.agents.some((agent) => agent.id === session.agentId)) await agentStore.detect(session.agentId);
           const checked = useNekoAgentStore.getState();
           const agent = checked.agents.find((a) => a.id === session.agentId);
-          if (checked.isLoading || checked.error || !agent?.found || agent.availability !== "available") {
+          if (checked.error || (checked.isLoading && checked.probeStates[session.agentId] !== "ready")
+            || !agent?.found || agent.availability !== "available") {
             set((state) => {
               const s = state.sessions[sessionId];
               if (s?.status === "connecting") {
@@ -1540,6 +1544,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
           const driver = runtimes.requireInstance(sessionId, providerInstanceId, "prompt");
           const invocation = driver.prompt(modelPrompt);
           promptStarted = true;
+          onAccepted?.();
           set((state) => {
             const current = state.sessions[sessionId];
             if (current && inputEventId) {

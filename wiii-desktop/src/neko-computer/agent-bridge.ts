@@ -77,7 +77,7 @@ const METHOD_SET = new Set<string>([
 
 export interface AgentComputerBridge {
   handles(method: string): boolean;
-  handle(method: string, params: unknown): Promise<unknown>;
+  handle(method: string, params: unknown, signal?: AbortSignal): Promise<unknown>;
   dispose(): Promise<void>;
 }
 
@@ -470,8 +470,6 @@ function defaultDependencies(): AgentComputerBridgeDependencies {
 
 export class WiiiComputerAgentBridge implements AgentComputerBridge {
   private readonly ownerId: string;
-  private readonly cleanupOperationId = computerRequestId();
-  private readonly procedureRuntime: ComputerProcedureRuntime;
   private lease: { environmentId: string; leaseId: string } | null = null;
   private workstationManifestCache: {
     key: string;
@@ -490,8 +488,11 @@ export class WiiiComputerAgentBridge implements AgentComputerBridge {
       throw new Error("Wiii Computer requires a stable Project identity");
     }
     this.ownerId = `agent-session:${sessionId}`;
-    this.procedureRuntime = new ComputerProcedureRuntime({
-      projectId,
+  }
+
+  private procedureRuntime(signal?: AbortSignal): ComputerProcedureRuntime {
+    return new ComputerProcedureRuntime({
+      projectId: this.projectId,
       resolveContext: async () => {
         const current = await this.status();
         if (!current.available || !current.computer || !current.workstation) {
@@ -509,12 +510,13 @@ export class WiiiComputerAgentBridge implements AgentComputerBridge {
       describeWorkPlane: (environmentId) => (
         this.dependencies.workPlaneDescribe(environmentId, this.projectId)
       ),
-      executeWorkPlane: (input, operationId) => (
-        this.dependencies.workPlaneExecute(input, operationId)
-      ),
+      executeWorkPlane: (input, operationId) => {
+        signal?.throwIfAborted();
+        return this.dependencies.workPlaneExecute(input, operationId);
+      },
       hasLease: (environmentId) => this.lease?.environmentId === environmentId,
-      acquire: (operationId) => this.acquire(operationId),
-      act: (input) => this.act(input),
+      acquire: (operationId) => this.acquire(operationId, signal),
+      act: (input) => this.act(input, signal),
       release: (operationId) => this.release(operationId),
     });
   }
@@ -523,7 +525,8 @@ export class WiiiComputerAgentBridge implements AgentComputerBridge {
     return METHOD_SET.has(method);
   }
 
-  async handle(method: string, params: unknown): Promise<unknown> {
+  async handle(method: string, params: unknown, signal?: AbortSignal): Promise<unknown> {
+    signal?.throwIfAborted();
     switch (method) {
       case WIII_COMPUTER_AGENT_METHODS.status:
         return this.status();
@@ -532,9 +535,9 @@ export class WiiiComputerAgentBridge implements AgentComputerBridge {
         return this.dependencies.observe(computer.environmentId, observeOptionsFrom(params));
       }
       case WIII_COMPUTER_AGENT_METHODS.acquire:
-        return this.acquire(operationIdFrom(params));
+        return this.acquire(operationIdFrom(params), signal);
       case WIII_COMPUTER_AGENT_METHODS.act:
-        return this.act(parseActParams(params));
+        return this.act(parseActParams(params), signal);
       case WIII_COMPUTER_AGENT_METHODS.release:
         return { released: await this.release(operationIdFrom(params)) };
       case WIII_COMPUTER_HISTORY_AGENT_METHODS.status:
@@ -571,6 +574,7 @@ export class WiiiComputerAgentBridge implements AgentComputerBridge {
       case WIII_WORK_PLANE_AGENT_METHODS.execute: {
         const computer = await this.requireActiveComputer();
         const { operationId, ...transaction } = workTransactionFrom(params);
+        signal?.throwIfAborted();
         return this.dependencies.workPlaneExecute({
           environmentId: computer.environmentId,
           projectId: this.projectId,
@@ -578,18 +582,16 @@ export class WiiiComputerAgentBridge implements AgentComputerBridge {
         }, operationId);
       }
       case WIII_COMPUTER_PROCEDURE_AGENT_METHODS.catalog:
-        return this.procedureRuntime.catalog();
+        return this.procedureRuntime().catalog();
       case WIII_COMPUTER_PROCEDURE_AGENT_METHODS.run:
-        return this.procedureRuntime.run(parseProcedureRun(params));
+        return this.procedureRuntime(signal).run(parseProcedureRun(params));
       default:
         throw new Error(`Unsupported Wiii Computer method: ${method}`);
     }
   }
 
   async dispose(): Promise<void> {
-    await this.release(this.cleanupOperationId).catch((error) => {
-      console.error("Computer lease cleanup failed", error);
-    });
+    await this.release(computerRequestId());
   }
 
   private async workstationManifest(
@@ -695,11 +697,13 @@ export class WiiiComputerAgentBridge implements AgentComputerBridge {
 
   private async acquire(
     operationId: string,
+    signal?: AbortSignal,
   ): Promise<{ acquired: true; seatState: "agent_controlled" }> {
     const computer = await this.requireActiveComputer();
     if (this.lease && this.lease.environmentId !== computer.environmentId) {
-      await this.release(this.cleanupOperationId);
+      await this.release(computerRequestId());
     }
+    signal?.throwIfAborted();
     const seat = await this.dependencies.acquireSeat(
       computer.environmentId,
       this.ownerId,
@@ -713,8 +717,9 @@ export class WiiiComputerAgentBridge implements AgentComputerBridge {
     return { acquired: true, seatState: "agent_controlled" };
   }
 
-  private async act(params: AgentActParams): Promise<ComputerSemanticActResult> {
+  private async act(params: AgentActParams, signal?: AbortSignal): Promise<ComputerSemanticActResult> {
     const computer = await this.requireActiveComputer();
+    signal?.throwIfAborted();
     if (!this.lease || this.lease.environmentId !== computer.environmentId) {
       throw new Error("computer_lease_required: acquire agent control before acting");
     }

@@ -53,7 +53,10 @@ export function WorkbenchGate({ host = detectWorkbenchHost() }: { host?: Workben
         <ErrorBoundary>
           <Suspense fallback={<BootSplash label="Wiii đang mở không gian cục bộ..." />}>
             <NekoChillApp
-              onOpenManaged={openManaged}
+              onOpenManaged={() => {
+                useUIStore.getState().navigateToChat();
+                openManaged();
+              }}
               onOpenConnections={() => {
                 useUIStore.getState().openWiiiConnect("gmail");
                 openManaged();

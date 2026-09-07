@@ -839,7 +839,7 @@ describe("Neko Chill shell UI", () => {
       .toBe(true);
     fireEvent.change(composer, { target: { value: "khởi động lại" } });
     fireEvent.click(screen.getByRole("button", { name: "Gửi tin nhắn" }));
-    expect(sendPrompt).toHaveBeenCalledWith("khởi động lại");
+    expect(sendPrompt).toHaveBeenCalledWith("khởi động lại", expect.any(Function));
   });
 
   it("keeps the close action available when a session is in error", () => {

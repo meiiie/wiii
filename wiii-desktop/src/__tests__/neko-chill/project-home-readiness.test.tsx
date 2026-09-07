@@ -193,11 +193,12 @@ describe("Project Home readiness and missing Neko recovery", () => {
     let resolve!: (value: DetectedAgent[]) => void;
     host.providers.mockReturnValueOnce(new Promise<DetectedAgent[]>((done) => { resolve = done; }));
     const first = detect();
-    await detect();
+    const joined = detect();
+    await vi.waitFor(() => expect(host.providers).toHaveBeenCalledOnce());
     expect(host.providers).toHaveBeenCalledOnce();
     expect(useNekoAgentStore.getState().isLoading).toBe(true);
     resolve([missing]);
-    await first;
+    await Promise.all([first, joined]);
     expect(useNekoAgentStore.getState().isLoading).toBe(false);
     expect(useNekoAgentStore.getState().agents).toEqual([missing]);
   });

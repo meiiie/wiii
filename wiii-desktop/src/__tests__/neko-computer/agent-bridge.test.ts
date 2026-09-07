@@ -328,6 +328,31 @@ function enableProcedureFixtures(deps: AgentComputerBridgeDependencies): void {
 }
 
 describe("WiiiComputerAgentBridge", () => {
+  it("does not acquire after its turn was cancelled during status resolution", async () => {
+    const deps = dependencies();
+    let complete!: (value: CoworkerComputerStatus) => void;
+    vi.mocked(deps.resolveStatus).mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));
+    const bridge = new WiiiComputerAgentBridge("cancelled-turn", "project-wiii", deps);
+    const authority = new AbortController();
+    const result = bridge.handle(WIII_COMPUTER_AGENT_METHODS.acquire, { operationId: "acquire-cancelled" }, authority.signal);
+    const rejected = expect(result).rejects.toThrow();
+    authority.abort();
+    complete(status());
+    await rejected;
+    expect(deps.acquireSeat).not.toHaveBeenCalled();
+  });
+
+  it("uses distinct cleanup identities for leases held in different turns", async () => {
+    const deps = dependencies();
+    const bridge = new WiiiComputerAgentBridge("two-turns", "project-wiii", deps);
+    await bridge.handle(WIII_COMPUTER_AGENT_METHODS.acquire, { operationId: "first" });
+    await bridge.dispose();
+    await bridge.handle(WIII_COMPUTER_AGENT_METHODS.acquire, { operationId: "second" });
+    await bridge.dispose();
+    const calls = vi.mocked(deps.releaseSeat).mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[0][2]).not.toBe(calls[1][2]);
+  });
   it("publishes the exact Neko Core Computer wire methods", () => {
     expect(Object.values(WIII_COMPUTER_AGENT_METHODS)).toHaveLength(5);
     expect(Object.values(WIII_COMPUTER_AGENT_METHODS).every((method) =>

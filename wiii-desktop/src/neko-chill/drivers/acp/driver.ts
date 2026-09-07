@@ -333,6 +333,10 @@ export class AcpDriver implements Driver {
     return this.acpSessionId;
   }
   private turnRunning = false;
+  private turnAuthority: AbortController | null = null;
+  private computerRequests = new Set<Promise<unknown>>();
+  private computerCleanup: Promise<void> = Promise.resolve();
+  private disposed = false;
   private permissionSeq = 0;
   private readonly pendingPermissions = new Map<string, PendingPermission>();
   /** Per-session activity cache so tool_call_update can merge partial data. */
@@ -355,9 +359,11 @@ export class AcpDriver implements Driver {
       onProtocolError: (message) =>
         this.emitEvent({ type: "error", sessionId: this.sessionId, message, fatal: true }),
     });
-    options.transport.onExit((code) =>
-      this.emitEvent({ type: "process-exited", sessionId: this.sessionId, code }),
-    );
+    options.transport.onExit((code) => {
+      this.disposed = true;
+      void this.revokeComputer().catch(() => {});
+      this.emitEvent({ type: "process-exited", sessionId: this.sessionId, code });
+    });
   }
 
   async start(): Promise<void> {
@@ -471,19 +477,24 @@ export class AcpDriver implements Driver {
   }
 
   async prompt(text: string): Promise<void> {
-    if (!this.acpSessionId) throw new Error("driver not started");
+    if (!this.acpSessionId || this.disposed) throw new Error("driver not available");
     if (this.turnRunning) throw new Error("a turn is already running");
     this.turnRunning = true;
-    this.emitEvent({ type: "turn-started", sessionId: this.sessionId });
+    const authority = new AbortController();
+    this.turnAuthority = authority;
+    let stopReason: TurnStopReason = "error";
     try {
+      await this.computerCleanup;
+      authority.signal.throwIfAborted();
+      if (this.disposed) throw new Error("driver not available");
+      this.emitEvent({ type: "turn-started", sessionId: this.sessionId });
       const result = (await this.client.request("session/prompt", {
         sessionId: this.acpSessionId,
         prompt: [{ type: "text", text }],
       })) as { stopReason?: unknown };
-      const stopReason = STOP_REASONS.includes(result?.stopReason as TurnStopReason)
+      stopReason = STOP_REASONS.includes(result?.stopReason as TurnStopReason)
         ? (result.stopReason as TurnStopReason)
         : "error";
-      this.emitEvent({ type: "turn-finished", sessionId: this.sessionId, stopReason });
     } catch (err) {
       this.emitEvent({
         type: "error",
@@ -491,15 +502,38 @@ export class AcpDriver implements Driver {
         message: err instanceof Error ? err.message : String(err),
         fatal: false,
       });
-      this.emitEvent({ type: "turn-finished", sessionId: this.sessionId, stopReason: "error" });
     } finally {
-      this.turnRunning = false;
+      try {
+        await this.revokeComputer();
+      } catch (error) {
+        stopReason = "error";
+        this.emitEvent({ type: "error", sessionId: this.sessionId, fatal: true,
+          message: error instanceof Error ? error.message : String(error) });
+      } finally {
+        this.turnRunning = false;
+        this.emitEvent({ type: "turn-finished", sessionId: this.sessionId, stopReason });
+      }
     }
   }
 
   async cancel(): Promise<void> {
     if (!this.acpSessionId || !this.turnRunning) return;
-    await this.client.notify("session/cancel", { sessionId: this.acpSessionId });
+    const cleanup = this.revokeComputer();
+    await Promise.all([
+      cleanup,
+      this.client.notify("session/cancel", { sessionId: this.acpSessionId }),
+    ]);
+  }
+
+  private revokeComputer(): Promise<void> {
+    this.turnAuthority?.abort();
+    this.turnAuthority = null;
+    const requests = [...this.computerRequests];
+    this.computerCleanup = this.computerCleanup.catch(() => {}).then(async () => {
+      await Promise.allSettled(requests);
+      await this.computerBridge?.dispose();
+    });
+    return this.computerCleanup;
   }
 
   async resolvePermission(decision: PermissionDecision): Promise<void> {
@@ -564,12 +598,13 @@ export class AcpDriver implements Driver {
   }
 
   async dispose(): Promise<void> {
+    this.disposed = true;
     // Unanswered permission requests fail closed before the process dies.
     for (const [, pending] of this.pendingPermissions) {
       pending.resolve({ outcome: { outcome: "cancelled" } });
     }
     this.pendingPermissions.clear();
-    await this.computerBridge?.dispose().catch(() => {
+    await this.revokeComputer().catch(() => {
       /* Native runtime cleanup still wins if the display lease is already gone. */
     });
     if (this.acpSessionId && this.supportsClose) {
@@ -752,7 +787,22 @@ export class AcpDriver implements Driver {
 
   private handleAgentRequest(method: string, params: unknown): Promise<unknown> {
     if (this.computerBridge?.handles(method)) {
-      return this.computerBridge.handle(method, params);
+      const mutating = method === WIII_COMPUTER_AGENT_METHODS.acquire
+        || method === WIII_COMPUTER_AGENT_METHODS.act
+        || method === WIII_WORK_PLANE_AGENT_METHODS.execute
+        || method === WIII_COMPUTER_PROCEDURE_AGENT_METHODS.run;
+      if (this.disposed || (mutating && (!this.turnRunning || !this.turnAuthority))) {
+        return Promise.reject(new Error("computer_turn_inactive: Computer mutations require an active user turn"));
+      }
+      const pending = mutating
+        ? this.computerBridge.handle(method, params, this.turnAuthority!.signal)
+        : this.computerBridge.handle(method, params);
+      this.computerRequests.add(pending);
+      void pending.then(
+        () => this.computerRequests.delete(pending),
+        () => this.computerRequests.delete(pending),
+      );
+      return pending;
     }
     if (method === "session/request_permission") {
       return new Promise((resolve) => {

@@ -14,12 +14,15 @@ interface NekoProviderSessionState {
   ) => Promise<void>;
 }
 
+let refreshGeneration = 0;
+
 export const useNekoProviderSessionStore = create<NekoProviderSessionState>((set) => ({
   catalogs: {},
   loading: false,
   error: null,
 
   refresh: async (agents, workspacePaths, options) => {
+    const generation = ++refreshGeneration;
     const available = agents.filter((agent) => agent.found);
     if (available.length === 0) {
       set({ catalogs: {}, loading: false, error: null });
@@ -53,6 +56,7 @@ export const useNekoProviderSessionStore = create<NekoProviderSessionState>((set
         };
       }),
     );
+    if (generation !== refreshGeneration) return;
     const catalogs: Record<string, NekoProviderSessionCatalog> = {};
     const failures: string[] = [];
     for (const [index, result] of results.entries()) {

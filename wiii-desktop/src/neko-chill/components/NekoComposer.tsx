@@ -40,7 +40,7 @@ interface NekoComposerProps {
   session: NekoSession;
   disabled: boolean;
   streaming: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string, onAccepted: () => void) => void | Promise<void>;
   onCancel: () => void;
   onSetConfigOption: (optionId: string, value: string | boolean) => void;
   onClientCommand: (command: ClientCommandName) => void;
@@ -102,11 +102,13 @@ function NekoComposerComponent({
   const [draft, setDraftState] = useState(() => readNekoComposerDraft(draftScope));
   const [highlight, setHighlight] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mode = session.controls.find((option) => option.category === "mode" && option.kind === "select");
   const model = session.controls.find((option) => option.category === "model" && option.kind === "select");
   const interactionBlocked =
-    disabled ||
+    disabled || submitting ||
     streaming ||
     Boolean(session.pendingPermission) ||
     Boolean(session.pendingControlId);
@@ -156,15 +158,31 @@ function NekoComposerComponent({
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
-  const submit = () => {
+  const submit = async () => {
     const text = draft.trim();
-    if (!text || composerDisabled) return;
+    if (!text || composerDisabled || submittingRef.current) return;
     const local = CLIENT_COMMANDS.find((command) => `/${command.name}` === text);
-    setDraftState("");
-    clearNekoComposerDraft(draftScope);
-    setSlashDismissed(false);
-    if (local?.clientCommand) onClientCommand(local.clientCommand);
-    else onSend(text);
+    const accepted = () => {
+      if (readNekoComposerDraft(draftScope) !== draft) return;
+      clearNekoComposerDraft(draftScope);
+      setDraftState((current) => current === draft ? "" : current);
+      setSlashDismissed(false);
+    };
+    if (local?.clientCommand) {
+      onClientCommand(local.clientCommand);
+      accepted();
+      return;
+    }
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      await onSend(text, accepted);
+    } catch {
+      // The session owns the failure message; the unsent draft remains here.
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
   };
 
   return (

@@ -79,12 +79,13 @@ function agentMidTurnFrames(): Frame[] {
   ).map((r) => r.frame!);
 }
 
-async function startDriver(events: DriverEvent[], transport: FakeTransport): Promise<AcpDriver> {
+async function startDriver(events: DriverEvent[], transport: FakeTransport, computerBridge?: AgentComputerBridge): Promise<AcpDriver> {
   const driver = new AcpDriver({
     sessionId: "local-1",
     cwd: "C:/tmp/project",
     transport,
     onEvent: (event) => events.push(event),
+    computerBridge,
   });
   const [initResp, newResp] = agentResponses();
   const starting = driver.start();
@@ -163,6 +164,46 @@ async function startDurableDriver(
 }
 
 describe("AcpDriver golden replay (real neko-core v0.24.0 fixture)", () => {
+  it("denies out-of-turn mutations and releases an acquisition that completes during cancellation", async () => {
+    const transport = new FakeTransport();
+    let finishAcquire!: () => void;
+    let signal: AbortSignal | undefined;
+    let leased = false;
+    const computerBridge: AgentComputerBridge = {
+      handles: () => true,
+      handle: vi.fn(async (method, _params, authority) => {
+        if (method !== WIII_COMPUTER_AGENT_METHODS.acquire) return {};
+        signal = authority;
+        await new Promise<void>((resolve) => { finishAcquire = resolve; });
+        leased = true;
+        return { acquired: true };
+      }),
+      dispose: vi.fn(async () => { leased = false; }),
+    };
+    const driver = await startDriver([], transport, computerBridge);
+    for (const [index, method] of [WIII_COMPUTER_AGENT_METHODS.acquire, WIII_COMPUTER_AGENT_METHODS.act,
+      WIII_WORK_PLANE_AGENT_METHODS.execute, WIII_COMPUTER_PROCEDURE_AGENT_METHODS.run].entries()) {
+      transport.inject({ jsonrpc: "2.0", id: 800 + index, method, params: {} });
+    }
+    await tick();
+    expect(transport.sent.filter((frame) => frame.id >= 800).every((frame) => frame.error?.message.includes("computer_turn_inactive"))).toBe(true);
+    const turn = driver.prompt("test");
+    await tick();
+    transport.inject({ jsonrpc: "2.0", id: 900, method: WIII_COMPUTER_AGENT_METHODS.acquire, params: {} });
+    await tick();
+    const cancelling = driver.cancel();
+    expect(signal?.aborted).toBe(true);
+    transport.inject({ jsonrpc: "2.0", id: 901, method: WIII_COMPUTER_AGENT_METHODS.act, params: {} });
+    await tick();
+    expect(transport.sent.find((frame) => frame.id === 901)?.error.message).toContain("computer_turn_inactive");
+    finishAcquire();
+    await cancelling;
+    expect(leased).toBe(false);
+    const prompt = transport.sent.find((frame) => frame.method === "session/prompt")!;
+    transport.inject({ jsonrpc: "2.0", id: prompt.id, result: { stopReason: "cancelled" } });
+    await turn;
+    await driver.dispose();
+  });
   it("routes only the typed Wiii Computer extension through the host bridge", async () => {
     const events: DriverEvent[] = [];
     const transport = new FakeTransport();

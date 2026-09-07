@@ -173,8 +173,7 @@ export const useNekoProjectStore = create<NekoProjectState>((set, get) => ({
       set({ projects: parseProjects(raw), hydrated: true, error: null });
     } catch (cause) {
       set({
-        projects: [],
-        hydrated: true,
+        hydrated: false,
         error: cause instanceof Error ? cause.message : String(cause),
       });
     } finally {
@@ -183,6 +182,7 @@ export const useNekoProjectStore = create<NekoProjectState>((set, get) => ({
   },
 
   ensureWorkspaceProjects: async (workspaces) => {
+    if (!get().hydrated) return;
     const current = get().projects;
     const next = [...current];
     for (const workspace of uniqueRoots(workspaces)) {
@@ -203,6 +203,7 @@ export const useNekoProjectStore = create<NekoProjectState>((set, get) => ({
   },
 
   createProject: async (name, roots) => {
+    if (!get().hydrated) throw new Error("Chưa đọc được danh mục Project; hãy kiểm tra lại trước khi thay đổi.");
     const normalizedRoots = assertProjectInput(name, roots);
     const current = get().projects;
     const conflict = conflictingProject(current, normalizedRoots);
@@ -225,6 +226,7 @@ export const useNekoProjectStore = create<NekoProjectState>((set, get) => ({
   },
 
   updateProject: async (id, name, roots) => {
+    if (!get().hydrated) throw new Error("Chưa đọc được danh mục Project; hãy kiểm tra lại trước khi thay đổi.");
     const normalizedRoots = assertProjectInput(name, roots);
     const current = get().projects;
     const conflict = conflictingProject(current, normalizedRoots, id);
@@ -244,6 +246,7 @@ export const useNekoProjectStore = create<NekoProjectState>((set, get) => ({
   },
 
   setPreferredHarness: async (id, harnessId) => {
+    if (!get().hydrated) throw new Error("Chưa đọc được danh mục Project; hãy kiểm tra lại trước khi thay đổi.");
     const current = get().projects;
     const next = current.map((item) => item.id === id ? {
       ...item,

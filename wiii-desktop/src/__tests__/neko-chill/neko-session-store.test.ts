@@ -245,7 +245,7 @@ describe("neko-session-store", () => {
     expect(driver.prompts).toEqual(["Tiếp tục"]);
   });
 
-  it("blocks a second active worker for one task before another provider starts", async () => {
+  it.each(["idle", "error"] as const)("blocks a second worker while the first still owns a %s runtime", async (status) => {
     let starts = 0;
     _setDriverFactoryForTests(async (_agent, sessionId, _launch, onEvent) => {
       starts += 1;
@@ -264,6 +264,10 @@ describe("neko-session-store", () => {
       },
     );
 
+    if (status === "error") {
+      useNekoSessionStore.getState().handleEvent({ type: "error", sessionId: first, message: "driver fault", fatal: true });
+      expect(session(first).runtime).not.toBeNull();
+    }
     await expect(useNekoSessionStore.getState().createSession(
       AGENT,
       WORKSPACE,
@@ -587,7 +591,9 @@ describe("neko-session-store", () => {
       _setDriverFactoryForTests(factory);
       useNekoAgentStore.setState({ agents: [AGENT], ...state });
       useNekoSessionStore.getState().setActiveSession(id);
-      await useNekoSessionStore.getState().sendPrompt("Chưa được gửi");
+      const accepted = vi.fn();
+      await useNekoSessionStore.getState().sendPrompt("Chưa được gửi", accepted);
+      expect(accepted).not.toHaveBeenCalled();
       expect(factory).not.toHaveBeenCalled();
       expect(session(id).statusDetail).toContain("Quản lý harness");
     },

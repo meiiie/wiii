@@ -28,6 +28,7 @@ interface NekoAgentState {
   agents: DetectedAgent[];
   isLoading: boolean;
   error: string | null;
+  probeStates: Record<string, "checking" | "ready" | "error">;
   detect: (providerId?: string) => Promise<void>;
 }
 
@@ -36,27 +37,45 @@ async function detectAgents(providerId?: string): Promise<DetectedAgent[]> {
   return getNekoControlClient().listProviders(providerId);
 }
 
+const probes = new Map<string, Promise<void>>();
+
 export const useNekoAgentStore = create<NekoAgentState>((set, get) => ({
   agents: [],
   isLoading: false,
   error: null,
+  probeStates: {},
 
   detect: async (providerId) => {
-    if (get().isLoading) return;
+    const key = providerId ?? "*";
+    const existing = probes.get("*") ?? probes.get(key);
+    if (existing) return existing;
+    const preceding = providerId ? [] : [...probes.values()];
+    const requestedIds = providerId ? [providerId] : get().agents.map((agent) => agent.id);
+    const markProbes = (status: "checking" | "ready" | "error") => set((state) => ({
+      probeStates: { ...state.probeStates, ...Object.fromEntries(requestedIds.map((id) => [id, status])) },
+    }));
     set({ isLoading: true, error: null });
-    try {
-      const agents = await detectAgents(providerId);
-      set((state) => ({
-        agents: providerId
-          ? [...state.agents.filter((agent) => !agents.some((item) => item.id === agent.id)), ...agents]
-          : agents,
-        error: null,
-      }));
-    } catch (cause) {
-      const detail = cause instanceof Error ? cause.message : String(cause);
-      set({ error: `Không thể dò agent cục bộ: ${detail}` });
-    } finally {
-      set({ isLoading: false });
-    }
+    markProbes("checking");
+    const probe = (async () => {
+      try {
+        await Promise.all(preceding);
+        const agents = await detectAgents(providerId);
+        set((state) => ({
+          agents: providerId
+            ? [...state.agents.filter((agent) => !agents.some((item) => item.id === agent.id)), ...agents]
+            : agents,
+          probeStates: { ...state.probeStates, ...Object.fromEntries(agents.map((agent) => [agent.id, "ready" as const])) },
+        }));
+      } catch (cause) {
+        const detail = cause instanceof Error ? cause.message : String(cause);
+        set({ error: `Không thể dò agent cục bộ: ${detail}` });
+        markProbes("error");
+      } finally {
+        probes.delete(key);
+        set({ isLoading: probes.size > 0 });
+      }
+    })();
+    probes.set(key, probe);
+    return probe;
   },
 }));

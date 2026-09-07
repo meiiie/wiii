@@ -68,4 +68,14 @@ describe("Neko provider session discovery", () => {
       workspacePaths: ["E:\\Projects\\wiii"],
     });
   });
+
+  it("does not replace a newer refresh with a slower old catalog", async () => {
+    let finishOld!: (value: unknown) => void;
+    listProviderSessions.mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve; }));
+    const old = useNekoProviderSessionStore.getState().refresh([agents[0]], ["C:/old"]);
+    await useNekoProviderSessionStore.getState().refresh([], []);
+    finishOld({ providerId: "codex", sessions: [{ id: "stale" }] });
+    await old;
+    expect(useNekoProviderSessionStore.getState()).toMatchObject({ catalogs: {}, loading: false, error: null });
+  });
 });

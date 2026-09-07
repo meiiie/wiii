@@ -110,7 +110,7 @@ function SurfaceLoadingState() {
 function NekoWorkspacePane(props: ComponentProps<typeof LazyNekoWorkspacePane>) {
   return (
     <Suspense fallback={<SurfaceLoadingState />}>
-      <LazyNekoWorkspacePane {...props} />
+      <LazyNekoWorkspacePane key={props.session?.id ?? props.target?.id} {...props} />
     </Suspense>
   );
 }
@@ -973,7 +973,7 @@ export default function NekoChillApp({
                 session={session}
                 disabled={session.status === "connecting" || session.status === "error"}
                 streaming={session.status === "streaming"}
-                onSend={(text) => void sendPrompt(text)}
+                onSend={(text, onAccepted) => sendPrompt(text, onAccepted)}
                 onCancel={() => void cancelTurn()}
                 onSetConfigOption={(optionId, value) => void setConfigOption(optionId, value)}
                 onClientCommand={handleClientCommand}

@@ -61,6 +61,26 @@ describe("Neko Project registry", () => {
     });
   });
 
+  it("preserves unreadable storage and blocks every write until a successful retry", async () => {
+    const key = "neko-chill-projects.json:projects";
+    const corrupt = { v: 999, projects: [project("custom", "My multi-root project", "C:/custom")] };
+    storage.set(key, corrupt);
+    useNekoProjectStore.setState({ hydrated: false });
+    const store = useNekoProjectStore.getState();
+    await store.hydrate();
+    expect(useNekoProjectStore.getState().hydrated).toBe(false);
+    await store.ensureWorkspaceProjects([{ name: "restored", path: "C:/restored" }]);
+    await expect(store.createProject("new", [{ name: "new", path: "C:/new" }])).rejects.toThrow("Chưa đọc");
+    await expect(store.updateProject("custom", "renamed", [{ name: "custom", path: "C:/custom" }])).rejects.toThrow("Chưa đọc");
+    await expect(store.setPreferredHarness("custom", "neko")).rejects.toThrow("Chưa đọc");
+    expect(storage.get(key)).toBe(corrupt);
+    storage.set(key, { ...corrupt, v: 1 });
+    await store.hydrate();
+    expect(useNekoProjectStore.getState().projects[0].name).toBe("My multi-root project");
+    await store.setPreferredHarness("custom", "neko");
+    expect(useNekoProjectStore.getState().projects[0].preferredHarnessId).toBe("neko");
+  });
+
   it("treats equivalent Windows workspace spellings as the same identity", async () => {
     expect(workspaceKey("E:\\work\\wiii\\.\\src\\..")).toBe(
       workspaceKey("e:/work/wiii/"),
