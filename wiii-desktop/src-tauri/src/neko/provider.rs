@@ -14,7 +14,8 @@ use std::sync::mpsc;
 #[cfg(windows)]
 use std::thread;
 #[cfg(windows)]
-use std::time::{Duration, Instant};
+use std::time::Instant;
+use std::time::Duration;
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -22,7 +23,6 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 #[cfg(windows)]
 const CREATE_SUSPENDED: u32 = 0x0000_0004;
-#[cfg(windows)]
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const NEKO_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 #[cfg(windows)]
@@ -74,7 +74,6 @@ impl SpawnOwnedError {
         }
     }
 
-    #[cfg(any(windows, test))]
     fn after_proven_cleanup(error: io::Error) -> Self {
         Self {
             error,
@@ -1113,7 +1112,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn provider_roster_reports_host_containment_as_unsupported() {
-        let providers = list().unwrap();
+        let providers = list_selected(None).unwrap();
         assert!(!providers.is_empty());
         assert!(providers.iter().all(|provider| {
             !provider.found && provider.availability == AgentAvailability::HostUnsupported
