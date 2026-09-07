@@ -10,7 +10,7 @@
  * 5. inputFocused → "listening"
  * 6. Default → "idle"
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useCharacterStore } from "@/stores/character-store";
@@ -22,9 +22,6 @@ import type { SoulEmotionData } from "@/stores/character-store";
 const COMPLETE_DECAY_MS = 2000;
 /** Soul emotion auto-decay duration (ms) */
 const SOUL_EMOTION_DECAY_MS = 30_000;
-/** Polling interval to detect transient state expiry (ms) */
-const POLL_INTERVAL_MS = 500;
-
 export interface AvatarStateResult {
   state: AvatarState;
   mood: MoodType | undefined;
@@ -33,7 +30,7 @@ export interface AvatarStateResult {
 
 export function useAvatarState(): AvatarStateResult {
   const isStreaming = useChatStore((s) => s.isStreaming);
-  const streamingContent = useChatStore((s) => s.streamingContent);
+  const hasStreamingContent = useChatStore((s) => Boolean(s.streamingContent));
   const streamError = useChatStore((s) => s.streamError);
   const streamCompletedAt = useChatStore((s) => s.streamCompletedAt);
   const inputFocused = useUIStore((s) => s.inputFocused);
@@ -42,16 +39,15 @@ export function useAvatarState(): AvatarStateResult {
   const soulEmotion = useCharacterStore((s) => s.soulEmotion);
   const soulEmotionTimestamp = useCharacterStore((s) => s.soulEmotionTimestamp);
 
+  const [clockRevision, setClockRevision] = useState(0);
+  const now = Date.now();
+
   // Compute effective soul emotion (null if decayed past 30s)
   const effectiveSoulEmotion = (() => {
     if (!soulEmotion || !soulEmotionTimestamp) return null;
-    if (Date.now() - soulEmotionTimestamp > SOUL_EMOTION_DECAY_MS) return null;
+    if (now - soulEmotionTimestamp > SOUL_EMOTION_DECAY_MS) return null;
     return soulEmotion;
   })();
-
-  // Force re-render when "complete" state expires
-  const [, setTick] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Derive state
   const deriveState = (): AvatarState => {
@@ -59,10 +55,10 @@ export function useAvatarState(): AvatarStateResult {
     if (streamError && !isStreaming) return "error";
     // 2. Complete state decays after 2s
     if (streamCompletedAt && !isStreaming) {
-      if (Date.now() - streamCompletedAt < COMPLETE_DECAY_MS) return "complete";
+      if (now - streamCompletedAt < COMPLETE_DECAY_MS) return "complete";
     }
     // 3. Speaking
-    if (isStreaming && streamingContent) return "speaking";
+    if (isStreaming && hasStreamingContent) return "speaking";
     // 4. Thinking
     if (isStreaming) return "thinking";
     // 5. Listening
@@ -73,34 +69,22 @@ export function useAvatarState(): AvatarStateResult {
 
   const state = deriveState();
 
-  // Poll when transient state exists (complete decay or soul emotion decay)
+  // Wake once at the next semantic deadline instead of polling the whole chat.
   useEffect(() => {
-    const completePending = streamCompletedAt && !isStreaming &&
-      (Date.now() - streamCompletedAt < COMPLETE_DECAY_MS);
-    const soulPending = soulEmotion && soulEmotionTimestamp &&
-      (Date.now() - soulEmotionTimestamp < SOUL_EMOTION_DECAY_MS);
-    const needsPoll = completePending || soulPending;
-
-    if (needsPoll) {
-      if (!timerRef.current) {
-        timerRef.current = setInterval(() => {
-          setTick((t) => t + 1);
-        }, POLL_INTERVAL_MS);
-      }
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, [streamCompletedAt, isStreaming, soulEmotion, soulEmotionTimestamp]);
+    const current = Date.now();
+    const deadlines = [
+      streamCompletedAt && !isStreaming
+        ? streamCompletedAt + COMPLETE_DECAY_MS
+        : null,
+      soulEmotion && soulEmotionTimestamp
+        ? soulEmotionTimestamp + SOUL_EMOTION_DECAY_MS
+        : null,
+    ].filter((deadline): deadline is number => deadline !== null && deadline > current);
+    if (deadlines.length === 0) return;
+    const delay = Math.max(0, Math.min(...deadlines) - current + 1);
+    const timer = setTimeout(() => setClockRevision((value) => value + 1), delay);
+    return () => clearTimeout(timer);
+  }, [clockRevision, streamCompletedAt, isStreaming, soulEmotion, soulEmotionTimestamp]);
 
   return {
     state,
