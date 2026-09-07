@@ -915,6 +915,10 @@ impl LocalDockerComputerProvider {
             include_bytes!("image/wallpaper.svg"),
         )?;
         write_if_changed(
+            &context.join("neko-peek-mark.svg"),
+            include_bytes!("image/neko-peek-mark.svg"),
+        )?;
+        write_if_changed(
             &context.join("desktop-items-0.conf"),
             include_bytes!("image/desktop-items-0.conf"),
         )?;

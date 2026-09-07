@@ -93,6 +93,46 @@ class StableWorkstationContractTest(unittest.TestCase):
         self.assertNotIn("set_text", nodes[0]["actions"])
         self.assertNotIn("private-description-fixture", json.dumps([nodes, targets]))
 
+    def test_localized_protected_labels_cover_vietnamese_and_chinese(self) -> None:
+        for label in ["Mã xác minh", "Mật khẩu", "Khóa API", "Ma xac thuc", "验证码", "驗證碼", "访问令牌", "密碼"]:
+            with self.subTest(label=label):
+                self.assertTrue(BRIDGE.is_sensitive_field(label, {}, {}))
+                self.assertTrue(BRIDGE.is_sensitive_accessibility_field("entry", label, None))
+                decomposed = BRIDGE.unicodedata.normalize("NFD", label)
+                self.assertTrue(BRIDGE.is_sensitive_field(decomposed, {}, {}))
+        self.assertFalse(BRIDGE.is_sensitive_field("Nội dung tin nhắn", {}, {}))
+
+    def test_native_text_readback_preserves_whitespace(self) -> None:
+        value = "  first  line\nsecond\n"
+        accessible = MagicMock()
+        accessible.queryText.return_value.getText.return_value = value
+        target = (accessible, {"node": {"role": "text"}})
+        self.assertEqual(BRIDGE.node_value(accessible, "text"), value)
+        self.assertTrue(BRIDGE.native_action_readback(target, "set_text", value))
+
+    def test_generic_native_invoke_requires_target_owned_evidence(self) -> None:
+        action = MagicMock()
+        action.nActions = 1
+        action.getName.return_value = "click"
+        action.doAction.return_value = True
+        node = {"ref": "ui-settings", "appId": "wechat", "role": "push button", "name": "Settings", "actions": ["invoke"], "states": []}
+        target = (object(), {"node": node, "interfaces": {"invoke": action}})
+        with (
+            patch.object(BRIDGE, "native_action_snapshot", return_value=({"stateVersion": "sha256:before", "nodes": [node]}, {node["ref"]: target})),
+            patch.object(BRIDGE, "observe", return_value=({"stateVersion": "sha256:incoming-message", "nodes": []}, {})),
+        ):
+            result = BRIDGE.act({
+                "environmentId": "computer-test", "stateVersion": "sha256:before", "targetRef": node["ref"],
+                "expectedRole": node["role"], "expectedName": node["name"], "action": "invoke",
+            })["result"]
+        action.doAction.assert_called_once_with(0)
+        self.assertFalse(result["verified"])
+        self.assertEqual(result["effect"], "unverifiable")
+
+    def test_computer_wallpaper_reuses_the_approved_neko_mark_bytes(self) -> None:
+        canonical = BRIDGE_PATH.parents[6] / "docs/assets/brand/neko-family-v1/logo/neko-peek-mark.svg"
+        self.assertEqual((BRIDGE_PATH.parent / "neko-peek-mark.svg").read_bytes(), canonical.read_bytes())
+
     def test_browser_mutation_revalidates_the_observed_scope(self) -> None:
         node = {
             "ref": "web-control", "parentRef": "app:browser", "appId": "browser",

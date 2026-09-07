@@ -585,9 +585,12 @@ def query_content(request: dict[str, Any], root: Path) -> dict[str, Any]:
         raise BridgeError("unsupported_view: use spreadsheet view for workbook resources")
     offset = bounded_integer(request.get("offset", 0), 0, 10_000_000, "offset")
     limit = bounded_integer(request.get("maxBytes", MAX_QUERY_BYTES), 1, MAX_QUERY_BYTES, "maxBytes")
+    resource = file_resource(root, path)
     with path.open("rb") as source:
         source.seek(offset)
         payload = source.read(limit + 1)
+    if file_revision(path) != resource["revision"]:
+        raise BridgeError("source_changed: file changed during read; query again")
     truncated = len(payload) > limit
     payload = payload[:limit]
     next_offset = offset + len(payload) if truncated else None
@@ -599,7 +602,7 @@ def query_content(request: dict[str, Any], root: Path) -> dict[str, Any]:
         encoding = "base64"
     return {
         "protocolVersion": PROTOCOL_VERSION,
-        "resource": file_resource(root, path),
+        "resource": resource,
         "items": [],
         "data": {
             "offset": offset,
@@ -1020,6 +1023,10 @@ def query_spreadsheet(request: dict[str, Any], root: Path) -> dict[str, Any]:
         raise BridgeError("unsupported_resource: spreadsheet view requires a workbook")
     sheet_name = request.get("sheet")
     range_name = request.get("range")
+    if sheet_name is not None and not isinstance(range_name, str):
+        raise BridgeError("range_required: select an explicit A1 range of at most 512 cells")
+    if sheet_name is not None:
+        parse_range(range_name)
     with OfficeSession() as office:
         document = office.open(path, read_only=True)
         try:
@@ -1033,7 +1040,7 @@ def query_spreadsheet(request: dict[str, Any], root: Path) -> dict[str, Any]:
                 if not isinstance(sheet_name, str) or sheet_name not in names:
                     raise BridgeError("sheet_not_found: workbook does not contain the requested sheet")
                 selected_sheet = sheets.getByName(sheet_name)
-                selected_range = range_name or used_range(selected_sheet)
+                selected_range = range_name
                 if not isinstance(selected_range, str):
                     raise BridgeError("invalid_range: expected an A1 range")
                 data["selection"] = {
@@ -2089,10 +2096,26 @@ def execute_spreadsheet_layout(
                 return ensure_revision(request, file_revision(path)) or rejection(
                     request, "stale_revision", "Workbook changed.", before, [], "query_resource"
                 )
-            readback = apply_spreadsheet_layout(document, input_value)
+            apply_spreadsheet_layout(document, input_value)
             document.store()
         finally:
             document.close(True)
+        persisted = office.open(path, read_only=True)
+        try:
+            readback = page_layout_payload(persisted, input_value["sheet"])
+        finally:
+            persisted.close(True)
+        start_col, start_row, end_col, end_row = parse_range(input_value["printRange"].upper(), max_cells=1_000_000)
+        expected = {
+            "sheet": input_value["sheet"],
+            "printRanges": [f"{column_name(start_col)}{start_row + 1}:{column_name(end_col)}{end_row + 1}"],
+            "orientation": input_value["orientation"],
+            "fitWidth": input_value["fitWidth"],
+            "fitHeight": input_value["fitHeight"],
+            "margins": {side: input_value.get("margin", 800) for side in ("left", "right", "top", "bottom")},
+        }
+        if readback != expected:
+            raise BridgeError("effect_unverified: saved page layout differs from the request; inspect before retrying")
     after = file_revision(path)
     return completed(
         request,
@@ -2106,6 +2129,19 @@ def execute_spreadsheet_layout(
         ],
         reversible=True,
     )
+
+
+def page_layout_payload(document: Any, sheet_name: str) -> dict[str, Any]:
+    sheet = document.getSheets().getByName(sheet_name)
+    style = document.getStyleFamilies().getByName("PageStyles").getByName(sheet.PageStyle)
+    return {
+        "sheet": sheet_name,
+        "printRanges": [range_address_text(area) for area in sheet.getPrintAreas()],
+        "orientation": "landscape" if style.IsLandscape else "portrait",
+        "fitWidth": int(style.ScaleToPagesX),
+        "fitHeight": int(style.ScaleToPagesY),
+        "margins": {side: int(getattr(style, f"{side.title()}Margin")) for side in ("left", "right", "top", "bottom")},
+    }
 
 
 def execute_spreadsheet_batch(

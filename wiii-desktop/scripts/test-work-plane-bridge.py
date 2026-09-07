@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 BRIDGE_PATH = (
@@ -120,6 +121,57 @@ class WorkPlaneBridgeContractTests(unittest.TestCase):
                 ))
             office.assert_not_called()
         self.assertEqual(path.read_bytes(), before)
+
+    def test_content_read_refuses_a_revision_changed_during_capture(self) -> None:
+        path = self.root / "notes.txt"
+        revision = BRIDGE.file_revision
+        calls = 0
+
+        def changed_revision(source):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                path.write_text("concurrent replacement", encoding="utf-8")
+            return revision(source)
+
+        with patch.object(BRIDGE, "file_revision", side_effect=changed_revision):
+            with self.assertRaisesRegex(BRIDGE.BridgeError, "source_changed"):
+                BRIDGE.query({"resourceRef": BRIDGE.encode_ref("notes.txt"), "view": "content"})
+
+    def test_spreadsheet_selection_requires_a_bounded_range_before_opening_office(self) -> None:
+        path = self.root / "book.xlsx"
+        path.write_bytes(b"fixture")
+        with patch.object(BRIDGE, "OfficeSession") as office:
+            for selection, code in [({"sheet": "Sheet1"}, "range_required"), ({"sheet": "Sheet1", "range": "A1:Z1000"}, "range_too_large")]:
+                with self.subTest(selection=selection), self.assertRaisesRegex(BRIDGE.BridgeError, code):
+                    BRIDGE.query({"resourceRef": BRIDGE.encode_ref(path.name), "view": "spreadsheet", **selection})
+            office.assert_not_called()
+
+    def test_layout_evidence_reads_the_reopened_document_and_rejects_normalized_mismatch(self) -> None:
+        path = self.root / "layout.xlsx"
+        path.write_bytes(b"fixture")
+        payload = {"sheet": "Sheet1", "printRange": "A1:B4", "orientation": "landscape", "fitWidth": 1, "fitHeight": 0, "margin": 800}
+        for margin in (800, 900):
+            with self.subTest(margin=margin), patch.object(BRIDGE, "OfficeSession") as session, patch.object(BRIDGE, "apply_spreadsheet_layout", return_value=payload):
+                office = session.return_value.__enter__.return_value
+                writable, reopened = MagicMock(), MagicMock()
+                office.open.side_effect = [writable, reopened]
+                reopened.getSheets.return_value.getByName.return_value.getPrintAreas.return_value = [
+                    SimpleNamespace(StartColumn=0, StartRow=0, EndColumn=1, EndRow=3),
+                ]
+                style = reopened.getStyleFamilies.return_value.getByName.return_value.getByName.return_value
+                style.IsLandscape = True
+                style.ScaleToPagesX = 1
+                style.ScaleToPagesY = 0
+                style.LeftMargin = style.RightMargin = style.TopMargin = style.BottomMargin = margin
+                request = self.transaction("spreadsheet.sheet.layout", BRIDGE.encode_ref(path.name), BRIDGE.file_revision(path), payload)
+                if margin == 800:
+                    self.assertEqual(BRIDGE.execute(request)["outcome"], "completed")
+                else:
+                    with self.assertRaisesRegex(BRIDGE.BridgeError, "effect_unverified"):
+                        BRIDGE.execute(request)
+                self.assertEqual([call.kwargs for call in office.open.call_args_list], [{"read_only": False}, {"read_only": True}])
+                reopened.close.assert_called_once_with(True)
 
     def test_file_slice_preserves_unrelated_source_state(self) -> None:
         before_unchanged = (self.root / "unchanged.bin").read_bytes()

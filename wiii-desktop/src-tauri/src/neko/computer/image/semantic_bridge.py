@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 from collections import OrderedDict, deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import PurePosixPath
@@ -95,6 +96,27 @@ SENSITIVE_FIELD_TERMS = (
     "credit card",
     "cvv",
     "cvc",
+    "mật khẩu",
+    "mã xác minh",
+    "mã xác thực",
+    "mã dùng một lần",
+    "mã truy cập",
+    "khóa api",
+    "khoá api",
+    "mat khau",
+    "ma xac minh",
+    "ma xac thuc",
+    "khoa api",
+    "密码",
+    "密碼",
+    "验证码",
+    "驗證碼",
+    "动态口令",
+    "動態口令",
+    "访问令牌",
+    "存取權杖",
+    "密钥",
+    "金鑰",
 )
 pyatspi = None
 APP_EVENT_EPOCH = secrets.token_hex(8)
@@ -1766,7 +1788,7 @@ def node_value(accessible, role: str) -> str | None:
         return None
     text_iface = safe(accessible.queryText)
     if text_iface is not None:
-        text = bounded_text(safe(lambda: text_iface.getText(0, -1), ""))
+        text = str(safe(lambda: text_iface.getText(0, MAX_TEXT), "") or "")[:MAX_TEXT]
         if text:
             return text
     value_iface = safe(accessible.queryValue)
@@ -2108,7 +2130,7 @@ def is_sensitive_field(name: str, properties: dict[str, Any], attributes: dict[s
     autocomplete = attributes.get("autocomplete", "").casefold()
     if autocomplete in {"current-password", "new-password", "one-time-code", "cc-number", "cc-csc"}:
         return True
-    identity = " ".join((name, *attributes.values())).casefold().replace("_", " ").replace("-", " ")
+    identity = unicodedata.normalize("NFKC", " ".join((name, *attributes.values()))).casefold().replace("_", " ").replace("-", " ")
     return any(term in identity for term in SENSITIVE_FIELD_TERMS)
 
 
@@ -3925,6 +3947,9 @@ def act(request: dict[str, Any]) -> dict[str, Any]:
     elif direct_action_readback:
         verified = True
         after_version = action_effect_version(before_version, target_ref, action)
+    elif launcher is None and action == "invoke":
+        verified = False
+        after_version = before_version
     else:
         time.sleep(0.25 if launcher is not None else 0.08)
         verification_deadline = time.monotonic() + (

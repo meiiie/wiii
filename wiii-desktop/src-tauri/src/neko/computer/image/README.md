@@ -23,11 +23,16 @@ independent. Observations redact protected control contents. Protected Project
 paths are excluded from enumeration, direct reads and mutations.
 
 Browser control actions re-read the observed scope before checking its version;
-an old locator cache cannot authorize a mutation. Generic browser `invoke`
+an old locator cache cannot authorize a mutation. Generic browser and native `invoke`
 reports dispatch completion but leaves the task effect unverified: background
 animations, arbitrary new tabs and global DOM changes are not action evidence.
 The caller must observe again and must not automatically repeat the mutation.
 Typed adapter readback remains the route to confirmed task-level outcomes.
+
+Spreadsheet queries with a `sheet` require an explicit A1 `range` of at most
+512 cells. Queries without a sheet return workbook metadata. Print-layout
+evidence is read back from the saved document, not reconstructed from the
+request. Native text values retain whitespace; names remain normalized labels.
 
 The panel and desktop use the same managed launchers and persistent profile.
 Event gaps are computed per consumer cursor, not globally when the ring wraps.
@@ -46,3 +51,16 @@ passed security test.
 
 The image alone does not prove native authority or live application behavior.
 Protocol fixtures do not replace installer, account or end-to-end acceptance.
+
+## Deferred experimental limits
+
+The paused/stepped game clock is experimental. A failed CDP action after a
+resume can leave simulation time advancing until explicit clock recovery. Do
+not use it for unattended or human-comparison benchmark claims before the
+failure cleanup gate passes.
+
+The browser's 1,000-node output ceiling is not a bound on accessibility-tree
+capture work. Very large pages can still stall the guest control queue while
+their tree is collected. Container resource limits do not establish a latency
+guarantee. Bounded capture and honest partial-tree metadata remain follow-up
+work; this pilot does not promise real-time operation.
