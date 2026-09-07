@@ -34,6 +34,11 @@ always `wiii-v<version>` and requires a dated matching section below.
 
 ### Changed
 
+- The initial public stable desktop release is scoped to Windows x64 with an
+  explicitly unsigned installer. Linux/macOS are deferred; planned Windows
+  publication retains review, installer acceptance, integrity and provenance
+  gates without using the emergency publication route.
+
 - Desktop now opens local-first while existing managed-account intent migrates
   additively; empty/stale auth metadata no longer opens Wiii Service, while
   hosted web remains remote-authority-only.
