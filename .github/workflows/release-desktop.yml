@@ -15,9 +15,10 @@ on:
       release_scope:
         description: Release matrix to build (emergency scope requires a stable tag and protected approval)
         required: true
-        default: complete
+        default: windows
         type: choice
         options:
+          - windows
           - complete
           - windows-only-emergency
       windows_signing:
@@ -84,13 +85,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          release_scope="${RELEASE_SCOPE_INPUT:-complete}"
+          release_scope="${RELEASE_SCOPE_INPUT:-windows}"
           case "$WIII_WINDOWS_SIGNING" in
             unsigned|authenticode) ;;
             *) echo 'Unsupported Windows signing mode.' >&2; exit 1 ;;
           esac
           case "$release_scope" in
-            complete|windows-only-emergency) ;;
+            windows|complete|windows-only-emergency) ;;
             *) echo 'Unsupported release scope.' >&2; exit 1 ;;
           esac
           if [[ "$release_scope" == 'windows-only-emergency' ]]; then
@@ -107,6 +108,8 @@ jobs:
               echo 'Emergency publication requires a meaningful public reason of at least 20 non-space characters.' >&2
               exit 1
             fi
+            matrix='{"include":[{"release_target":"windows-x64","runner":"windows-latest","rust_target":""}]}'
+          elif [[ "$release_scope" == 'windows' ]]; then
             matrix='{"include":[{"release_target":"windows-x64","runner":"windows-latest","rust_target":""}]}'
           else
             release_scope='complete'
@@ -434,9 +437,24 @@ jobs:
               echo
               echo '## Platform trust notice'
               echo
-              echo 'This is an official release without publisher certificate signing: Windows is unsigned, Linux is checksummed, and macOS is ad-hoc signed and not Apple-notarized.'
-              echo 'Windows SmartScreen or macOS Gatekeeper may warn or block installation. Verify SHA-256 and provenance; do not disable OS protection globally.'
-              echo 'Local harness execution is currently supported on Windows only. Linux/macOS packages do not imply local harness support. Neko Core requires separate installation; the optional Computer pilot requires Docker.'
+              echo 'This official release has no Windows publisher certificate. The Windows installer is explicitly unsigned.'
+              echo 'Windows SmartScreen may warn or block installation. Verify SHA-256 and provenance; do not disable OS protection globally.'
+              echo 'Neko Core requires separate installation and account configuration; the optional Computer pilot requires Docker Desktop.'
+            } >> artifacts/publish-release-notes.md
+          fi
+          if [[ "$RELEASE_SCOPE_VALUE" == 'windows' ]]; then
+            {
+              echo
+              echo '## Supported platform'
+              echo
+              echo 'Windows x64 only. Linux and macOS are not included or supported in this release. This is the planned product scope, not an emergency or a temporary runner outage.'
+              echo 'Automatic Wiii and Neko updates are not enabled. Computer is an optional same-user experimental desktop, not a sandbox for hostile applications.'
+            } >> artifacts/publish-release-notes.md
+          elif [[ "$RELEASE_SCOPE_VALUE" == 'complete' ]]; then
+            {
+              echo
+              echo 'Linux packages are checksummed. macOS packages are ad-hoc signed and not Apple-notarized; verify provenance and use per-app approval, never disable Gatekeeper globally.'
+              echo 'Linux/macOS packages do not imply local harness execution support.'
             } >> artifacts/publish-release-notes.md
           fi
           if [[ "$RELEASE_SCOPE_VALUE" == 'windows-only-emergency' ]]; then
