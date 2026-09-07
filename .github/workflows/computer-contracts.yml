@@ -7,6 +7,7 @@ on:
       - '.github/workflows/computer-contracts.yml'
       - 'wiii-desktop/src-tauri/src/neko/computer/image/**'
       - 'wiii-desktop/scripts/test-semantic-bridge-contract.py'
+      - 'wiii-desktop/scripts/test-computer-control-transport.py'
       - 'wiii-desktop/scripts/test-work-plane-bridge.py'
   push:
     branches: [main]
@@ -14,6 +15,7 @@ on:
       - '.github/workflows/computer-contracts.yml'
       - 'wiii-desktop/src-tauri/src/neko/computer/image/**'
       - 'wiii-desktop/scripts/test-semantic-bridge-contract.py'
+      - 'wiii-desktop/scripts/test-computer-control-transport.py'
       - 'wiii-desktop/scripts/test-work-plane-bridge.py'
 
 permissions:
@@ -36,3 +38,25 @@ jobs:
         run: |
           python -B wiii-desktop/scripts/test-semantic-bridge-contract.py -v
           python -B wiii-desktop/scripts/test-work-plane-bridge.py -v
+
+  control-isolation:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build the actual Computer image
+        run: docker build --tag wiii-computer-control:ci wiii-desktop/src-tauri/src/neko/computer/image
+      - name: Verify kernel-enforced private control in a disposable container
+        run: |
+          docker run --rm --user 0:0 --network none --read-only \
+            --cpus 1 --memory 256m --pids-limit 64 \
+            --cap-drop ALL --cap-add SETUID --cap-add SETGID \
+            --security-opt no-new-privileges:true \
+            --tmpfs /run/wiii-control:rw,nosuid,nodev,noexec,mode=0700,size=1m \
+            --tmpfs /tmp:rw,nosuid,nodev,size=16m \
+            --env WIII_ISOLATED_CONTROL_TEST=1 \
+            --mount "type=bind,source=${GITHUB_WORKSPACE}/wiii-desktop,target=/source,readonly" \
+            --entrypoint python3 wiii-computer-control:ci \
+            -B /source/scripts/test-computer-control-transport.py

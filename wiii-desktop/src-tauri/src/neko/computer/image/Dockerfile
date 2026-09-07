@@ -65,6 +65,7 @@ RUN useradd --create-home --uid 10001 --shell /bin/bash neko \
 
 COPY --chown=root:root wiii.html /usr/share/novnc/wiii.html
 COPY --chown=root:root semantic_bridge.py /usr/local/lib/wiii-computer/semantic_bridge.py
+COPY --chown=root:root control_transport.py /usr/local/lib/wiii-computer/control_transport.py
 COPY --chown=root:root work_plane_bridge.py /usr/local/lib/wiii-computer/work_plane_bridge.py
 COPY --chown=root:root project_paths.py /usr/local/lib/wiii-computer/project_paths.py
 COPY --chown=root:root panel.conf /usr/share/wiii-computer/panel.conf
@@ -88,7 +89,7 @@ RUN rsvg-convert --width 1440 --height 900 \
       /usr/local/lib/wiii-computer/work_plane_bridge.py \
       /usr/share/wiii-computer/desktop/*.desktop
 
-USER neko
+USER root
 WORKDIR /workspace/project
 ENV DISPLAY=:1 \
     HOME=/home/neko \
@@ -99,10 +100,10 @@ ENV DISPLAY=:1 \
 
 EXPOSE 6080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --start-interval=1s --retries=3 \
-  CMD curl --fail --silent --show-error --max-time 2 http://127.0.0.1:9234/health >/dev/null \
+  CMD curl --unix-socket /run/wiii-control/semantic.sock --fail --silent --show-error --max-time 2 http://localhost/health >/dev/null \
       && curl --fail --silent --show-error --max-time 2 http://127.0.0.1:9222/json/version >/dev/null \
       && pgrep -x websockify >/dev/null \
       && pgrep -x Xtigervnc >/dev/null \
       && pgrep -x openbox >/dev/null \
       || exit 1
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/wiii-computer-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/wiii-computer-entrypoint"]

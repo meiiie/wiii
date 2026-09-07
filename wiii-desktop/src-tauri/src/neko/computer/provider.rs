@@ -18,8 +18,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const IMAGE_REF: &str = "wiii/web-computer:semantic-v40";
-const OBSOLETE_IMAGE_REFS: [&str; 38] = [
+const IMAGE_REF: &str = "wiii/web-computer:semantic-v41";
+const OBSOLETE_IMAGE_REFS: [&str; 39] = [
+    "wiii/web-computer:semantic-v40",
     "wiii/web-computer:semantic-v39",
     "wiii/web-computer:semantic-v38",
     "wiii/web-computer:semantic-v37",
@@ -60,9 +61,9 @@ const OBSOLETE_IMAGE_REFS: [&str; 38] = [
     "wiii/local-computer:pilot-v1",
 ];
 const OWNER_LABEL: &str = "neko-computer-v1";
-const PACK_ID: &str = "web-computer-semantic-v40";
+const PACK_ID: &str = "web-computer-semantic-v41";
 const PACK_SCHEMA_VERSION: &str = "wiii-computer-pack.v2";
-const PACK_VERSION: &str = "semantic-v40";
+const PACK_VERSION: &str = "semantic-v41";
 const PACK_CHANNEL: &str = "preview";
 const PROFILE_SCHEMA_VERSION: u32 = 1;
 pub(crate) const CORE_PACKAGE_ID: &str = "web-computer-core";
@@ -692,8 +693,12 @@ impl LocalDockerComputerProvider {
             [
                 OsString::from("exec"),
                 OsString::from("--interactive"),
+                OsString::from("--user"),
+                OsString::from("0:0"),
                 OsString::from(&names.container),
                 OsString::from("curl"),
+                OsString::from("--unix-socket"),
+                OsString::from("/run/wiii-control/semantic.sock"),
                 OsString::from("--fail"),
                 OsString::from("--silent"),
                 OsString::from("--show-error"),
@@ -703,7 +708,7 @@ impl LocalDockerComputerProvider {
                 OsString::from("Content-Type: application/json"),
                 OsString::from("--data-binary"),
                 OsString::from("@-"),
-                OsString::from(format!("http://127.0.0.1:9234/{route}")),
+                OsString::from(format!("http://localhost/{route}")),
             ],
             None,
             SEMANTIC_TIMEOUT,
@@ -733,6 +738,8 @@ impl LocalDockerComputerProvider {
             [
                 OsString::from("exec"),
                 OsString::from("--interactive"),
+                OsString::from("--user"),
+                OsString::from("10001:10001"),
                 OsString::from(&names.container),
                 OsString::from("python3"),
                 OsString::from("/usr/local/lib/wiii-computer/work_plane_bridge.py"),
@@ -764,6 +771,8 @@ impl LocalDockerComputerProvider {
             docker,
             [
                 OsString::from("exec"),
+                OsString::from("--user"),
+                OsString::from("10001:10001"),
                 OsString::from(&names.container),
                 OsString::from("python3"),
                 OsString::from("/usr/local/lib/wiii-computer/semantic_bridge.py"),
@@ -793,6 +802,8 @@ impl LocalDockerComputerProvider {
             docker,
             [
                 OsString::from("exec"),
+                OsString::from("--user"),
+                OsString::from("10001:10001"),
                 OsString::from("--workdir"),
                 OsString::from("/workspace/project"),
                 OsString::from(&names.container),
@@ -818,6 +829,8 @@ impl LocalDockerComputerProvider {
         self.docker_checked_owned(
             vec![
                 OsString::from("exec"),
+                OsString::from("--user"),
+                OsString::from("10001:10001"),
                 OsString::from("--env"),
                 OsString::from("DISPLAY=:1"),
                 OsString::from(&names.container),
@@ -875,7 +888,7 @@ impl LocalDockerComputerProvider {
     }
 
     fn materialize_build_context(&self) -> Result<PathBuf, String> {
-        let context = self.state_root.join("image-semantic-v40");
+        let context = self.state_root.join("image-semantic-v41");
         fs::create_dir_all(&context)
             .map_err(|error| format!("create Wiii computer image context failed: {error}"))?;
         write_if_changed(
@@ -897,6 +910,10 @@ impl LocalDockerComputerProvider {
         write_if_changed(
             &context.join("semantic_bridge.py"),
             include_bytes!("image/semantic_bridge.py"),
+        )?;
+        write_if_changed(
+            &context.join("control_transport.py"),
+            include_bytes!("image/control_transport.py"),
         )?;
         write_if_changed(
             &context.join("work_plane_bridge.py"),
@@ -1057,9 +1074,15 @@ impl LocalDockerComputerProvider {
             OsString::from(resources.shared_memory_bytes.to_string()),
             OsString::from("--cap-drop"),
             OsString::from("ALL"),
+            OsString::from("--cap-add"),
+            OsString::from("SETUID"),
+            OsString::from("--cap-add"),
+            OsString::from("SETGID"),
             OsString::from("--security-opt"),
             OsString::from("no-new-privileges:true"),
             OsString::from("--read-only"),
+            OsString::from("--tmpfs"),
+            OsString::from("/run/wiii-control:rw,nosuid,nodev,noexec,mode=0700,size=1m"),
             OsString::from("--tmpfs"),
             OsString::from(format!(
                 "/tmp:rw,nosuid,nodev,size={}",
@@ -1854,7 +1877,7 @@ mod tests {
         assert!(dockerfile.contains("--interval=30s"));
         assert!(dockerfile.contains("--start-interval=1s"));
         assert!(dockerfile.contains("--timeout=5s"));
-        assert!(dockerfile.contains("http://127.0.0.1:9234/health"));
+        assert!(dockerfile.contains("--unix-socket /run/wiii-control/semantic.sock"));
         assert!(dockerfile.contains("http://127.0.0.1:9222/json/version"));
         assert!(!dockerfile.contains("--interval=2s"));
     }
@@ -1896,6 +1919,8 @@ mod tests {
             provider.docker_checked(
                 [
                     "exec",
+                    "--user",
+                    "10001:10001",
                     &names.container,
                     "sh",
                     "-lc",
@@ -1933,6 +1958,8 @@ mod tests {
             provider.docker_checked(
                 [
                     "exec",
+                    "--user",
+                    "10001:10001",
                     &names.container,
                     "sh",
                     "-lc",
@@ -1949,6 +1976,30 @@ mod tests {
                 return Err("reconciled pack did not publish the active version".to_string());
             }
 
+            let snapshot = provider.semantic_observe(&SemanticObserveRequest {
+                environment_id: environment_id.clone(),
+                max_nodes: 4,
+                scope_ref: Some("workstation:main".to_string()),
+                continuation: None,
+                since_state_version: None,
+                known_node_versions: Vec::new(),
+                visual_ref: None,
+            })?;
+            if !snapshot.nodes.iter().any(|node| node.node_ref == "app:browser") {
+                return Err("private control transport did not return the Browser launcher".to_string());
+            }
+            let workload = provider.terminal_exec(&environment_id, "id -u")?;
+            if workload.exit_code != Some(0) || workload.stdout.trim() != "10001" {
+                return Err("Terminal workload did not retain its unprivileged identity".to_string());
+            }
+            let bypass = provider.terminal_exec(
+                &environment_id,
+                "curl --unix-socket /run/wiii-control/semantic.sock --fail --silent --max-time 2 http://localhost/health",
+            )?;
+            if bypass.exit_code == Some(0) || !bypass.stdout.is_empty() {
+                return Err("Terminal workload reached the private control endpoint".to_string());
+            }
+
             if provider.container_exists(&names.rollback_container)? {
                 return Err("successful reconciliation left a rollback shell behind".to_string());
             }
@@ -1961,6 +2012,8 @@ mod tests {
             provider.docker_checked(
                 [
                     "exec",
+                    "--user",
+                    "10001:10001",
                     &names.container,
                     "sh",
                     "-lc",

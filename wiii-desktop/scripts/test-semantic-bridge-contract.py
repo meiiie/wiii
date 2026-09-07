@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import http.client
+from http.server import ThreadingHTTPServer
 import json
 from pathlib import Path
 import subprocess
@@ -200,7 +201,7 @@ class StableWorkstationContractTest(unittest.TestCase):
                     raise TimeoutError("test failed to release event poll")
             return {"status": "ok"}
 
-        with BRIDGE.ThreadingHTTPServer(("127.0.0.1", 0), BRIDGE.SemanticBridgeHandler) as server:
+        with ThreadingHTTPServer(("127.0.0.1", 0), BRIDGE.SemanticBridgeHandler) as server:
             host, port = server.server_address
             server_thread = threading.Thread(target=server.serve_forever, daemon=True)
             server_thread.start()

@@ -17,7 +17,7 @@ import threading
 import time
 import unicodedata
 from collections import OrderedDict, deque
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import parse_qs, quote, quote_plus, urlsplit
@@ -52,8 +52,6 @@ MAX_APP_EVENT_BUFFER = 2048
 MAX_APP_EVENT_POLL = 512
 MAX_OBSERVATION_SCOPE_CACHE = 256
 MAX_NATIVE_OBSERVATION_CACHE = 8
-SEMANTIC_BRIDGE_HOST = "127.0.0.1"
-SEMANTIC_BRIDGE_PORT = 9234
 REALTIME_CLOCK_DIR = "/tmp/wiii-computer-clock"
 REALTIME_CLOCK_WATCHDOG_MS = 30_000
 REALTIME_CLOCK_RESUME_GRACE_SECONDS = 0.35
@@ -4131,8 +4129,29 @@ class SemanticBridgeHandler(BaseHTTPRequestHandler):
 
 
 def serve() -> None:
+    from control_transport import private_server
+
+    server = private_server(SemanticBridgeHandler)
+    deadline = time.monotonic() + 30
+    while True:
+        try:
+            with open("/tmp/wiii-dbus-env", encoding="utf-8") as source:
+                environment = source.read(4097)
+            prefix = "export DBUS_SESSION_BUS_ADDRESS='"
+            if not environment.startswith(prefix) or not environment.endswith("'\n") or len(environment) > 4096:
+                raise ValueError("Computer accessibility session is invalid")
+            address = environment[len(prefix):-2]
+            if not address.startswith("unix:") or "\n" in address:
+                raise ValueError("Computer accessibility address is invalid")
+            os.environ["DBUS_SESSION_BUS_ADDRESS"] = address
+            break
+        except FileNotFoundError:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Computer accessibility session is unavailable")
+            time.sleep(0.05)
     start_app_event_watcher()
-    ThreadingHTTPServer((SEMANTIC_BRIDGE_HOST, SEMANTIC_BRIDGE_PORT), SemanticBridgeHandler).serve_forever()
+    with server:
+        server.serve_forever()
 
 
 def main() -> int:
